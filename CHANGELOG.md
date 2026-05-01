@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] — Phase 3: Windows Launcher
+
+### Added
+- `scripts/create-launcher.js` — Creates `Launch Toolbox.lnk` via VBScript helper (cscript). Sets Target = `node.exe`, Arguments = absolute path to `server.js`, WorkingDirectory = repo root, WindowStyle = hidden (no console flash). Supports `--dry-run` (no file written) and `--help` flags.
+- `test/unit/createLauncher.test.js` — 7 unit tests covering dry-run output, shortcut config values, no-write guarantee, and `--help` text
+
+### Notes
+- `npm run create-launcher` (already in package.json from Phase 0) invokes this script
+- The `.lnk` file is gitignored — it is a per-machine artifact
+
 ## [1.1.0] — Phase 2: First-Run Setup Wizard
 
 ### Added
