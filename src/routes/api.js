@@ -1,0 +1,195 @@
+// src/routes/api.js — Express router for internal API endpoints.
+//
+// Provides health check, configuration read/write, and ServiceNow session
+// management endpoints. These are consumed by the Toolbox front-end dashboard
+// and the connection wizard — not by the proxy pass-through functionality.
+
+'use strict';
+
+const express    = require('express');
+const { saveConfigToDisk, isServiceConfigured } = require('../config/loader');
+const snowSession = require('../services/snowSession');
+
+// ── Router Factory ────────────────────────────────────────────────────────────
+
+/**
+ * Creates and returns an Express router with all internal API endpoints.
+ * The configuration object is passed by reference so live updates (e.g. from
+ * POST /api/proxy-config) are immediately reflected in the proxy behaviour.
+ *
+ * @param {import('../config/loader').ProxyConfig} configuration
+ * @returns {import('express').Router}
+ */
+function createApiRouter(configuration) {
+  const router = express.Router();
+
+  // ── GET /api/proxy-status ────────────────────────────────────────────────
+  // Health check endpoint used by the Toolbox front-end for auto-detection.
+  // Returns which services are configured and ready — never exposes credentials.
+
+  router.get('/api/proxy-status', (req, res) => {
+    const isJiraHasBasicAuth = !!(configuration.jira.username && configuration.jira.apiToken);
+    const isJiraHasPat       = !!configuration.jira.pat;
+    const isJiraReady        = isServiceConfigured(configuration.jira) && (isJiraHasBasicAuth || isJiraHasPat);
+
+    const isSnowHasBasicAuth    = !!(configuration.snow.username && configuration.snow.password);
+    const isSnowSessionCurrent  = snowSession.isSessionActive();
+    const isSnowReady           = (isServiceConfigured(configuration.snow) && isSnowHasBasicAuth) || isSnowSessionCurrent;
+
+    const snowBaseUrl = (isServiceConfigured(configuration.snow) ? configuration.snow.baseUrl : null)
+      || snowSession.resolveSnowBaseUrl('') || null;
+
+    const isGithubReady = !!configuration.github.pat;
+
+    res.json({
+      proxy:     true,
+      version:   '1.0.0',
+      sslVerify: configuration.sslVerify !== false,
+      jira: {
+        configured:     isServiceConfigured(configuration.jira),
+        hasCredentials: isJiraHasBasicAuth || isJiraHasPat,
+        ready:          isJiraReady,
+        baseUrl:        isServiceConfigured(configuration.jira) ? configuration.jira.baseUrl : null,
+      },
+      snow: {
+        configured:       isServiceConfigured(configuration.snow) || !!snowBaseUrl,
+        hasCredentials:   isSnowHasBasicAuth,
+        sessionMode:      isSnowSessionCurrent,
+        sessionExpiresAt: isSnowSessionCurrent ? snowSession.getSessionStatus().expiresAt : null,
+        ready:            isSnowReady,
+        baseUrl:          snowBaseUrl,
+      },
+      github: {
+        configured:     isGithubReady,
+        hasCredentials: isGithubReady,
+        ready:          isGithubReady,
+      },
+    });
+  });
+
+  // ── GET /api/proxy-config ────────────────────────────────────────────────
+  // Returns non-sensitive configuration for the Admin Hub UI.
+  // Base URLs are returned; credentials are summarised as boolean flags.
+
+  router.get('/api/proxy-config', (req, res) => {
+    res.json({
+      port: configuration.port,
+      jira: {
+        baseUrl:        configuration.jira.baseUrl || '',
+        hasCredentials: !!(configuration.jira.username && configuration.jira.apiToken) || !!configuration.jira.pat,
+      },
+      snow: {
+        baseUrl:        configuration.snow.baseUrl || '',
+        hasCredentials: !!(configuration.snow.username && configuration.snow.password),
+      },
+      github: {
+        hasCredentials: !!configuration.github.pat,
+      },
+    });
+  });
+
+  // ── POST /api/proxy-config ────────────────────────────────────────────────
+  // Accepts updated credentials from the Toolbox Admin Hub and saves to disk.
+  // Merges — does not overwrite. Missing fields in the request are left unchanged.
+
+  router.post('/api/proxy-config', (req, res) => {
+    const incomingConfig = req.body;
+
+    if (!incomingConfig || typeof incomingConfig !== 'object') {
+      return res.status(400).json({ error: 'Invalid body', message: 'Request body must be a JSON object.' });
+    }
+
+    mergeJiraConfig(configuration, incomingConfig.jira);
+    mergeSnowConfig(configuration, incomingConfig.snow);
+    mergeGithubConfig(configuration, incomingConfig.github);
+
+    if (incomingConfig.sslVerify !== undefined) {
+      configuration.sslVerify = !!incomingConfig.sslVerify;
+    }
+
+    // Strip trailing slashes after merge to normalise any user-provided values
+    if (configuration.jira.baseUrl) configuration.jira.baseUrl = configuration.jira.baseUrl.replace(/\/+$/, '');
+    if (configuration.snow.baseUrl) configuration.snow.baseUrl = configuration.snow.baseUrl.replace(/\/+$/, '');
+
+    saveConfigToDisk(configuration);
+
+    console.log('  ✅ Config updated via Admin Hub');
+    res.json({ success: true });
+  });
+
+  // ── /api/snow-session ─────────────────────────────────────────────────────
+  // Manages the SNow in-memory session token forwarded from the browser relay
+  // after Okta authentication.
+
+  router.get('/api/snow-session', (req, res) => {
+    res.json(snowSession.getSessionStatus());
+  });
+
+  router.post('/api/snow-session', (req, res) => {
+    const { gck, baseUrl, expiresIn } = req.body || {};
+
+    const cleanGck = (gck || '').trim();
+    if (!cleanGck) {
+      return res.status(400).json({ error: 'Missing gck', message: 'gck session token is required.' });
+    }
+
+    const sessionLifetime  = parseInt(expiresIn, 10) || snowSession.DEFAULT_SESSION_LIFETIME_SECONDS;
+    const resolvedBaseUrl  = (baseUrl || '').trim() || configuration.snow.baseUrl || '';
+
+    snowSession.storeSession(cleanGck, resolvedBaseUrl, sessionLifetime);
+
+    res.json({ ok: true, expiresAt: snowSession.getSessionStatus().expiresAt, expiresIn: sessionLifetime });
+  });
+
+  router.delete('/api/snow-session', (req, res) => {
+    snowSession.clearSession();
+    res.json({ ok: true });
+  });
+
+  return router;
+}
+
+// ── Private Helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Merges incoming Jira configuration fields into the live config object.
+ * Only fields that are present and defined in the incoming data are applied.
+ *
+ * @param {object} configuration  - Live config (mutated in place)
+ * @param {object} [incomingJira] - Partial Jira config from the request
+ */
+function mergeJiraConfig(configuration, incomingJira) {
+  if (!incomingJira) return;
+  if (incomingJira.baseUrl  !== undefined) configuration.jira.baseUrl  = incomingJira.baseUrl;
+  if (incomingJira.username !== undefined) configuration.jira.username = incomingJira.username;
+  if (incomingJira.apiToken !== undefined) configuration.jira.apiToken = incomingJira.apiToken;
+  if (incomingJira.pat      !== undefined) configuration.jira.pat      = incomingJira.pat;
+}
+
+/**
+ * Merges incoming ServiceNow configuration fields into the live config object.
+ *
+ * @param {object} configuration  - Live config (mutated in place)
+ * @param {object} [incomingSnow] - Partial SNow config from the request
+ */
+function mergeSnowConfig(configuration, incomingSnow) {
+  if (!incomingSnow) return;
+  if (incomingSnow.baseUrl  !== undefined) configuration.snow.baseUrl  = incomingSnow.baseUrl;
+  if (incomingSnow.username !== undefined) configuration.snow.username = incomingSnow.username;
+  if (incomingSnow.password !== undefined) configuration.snow.password = incomingSnow.password;
+}
+
+/**
+ * Merges incoming GitHub configuration fields into the live config object.
+ *
+ * @param {object} configuration    - Live config (mutated in place)
+ * @param {object} [incomingGithub] - Partial GitHub config from the request
+ */
+function mergeGithubConfig(configuration, incomingGithub) {
+  if (!incomingGithub) return;
+  if (incomingGithub.pat !== undefined) configuration.github.pat = (incomingGithub.pat || '').trim();
+}
+
+// ── Exports ───────────────────────────────────────────────────────────────────
+
+module.exports = createApiRouter;
