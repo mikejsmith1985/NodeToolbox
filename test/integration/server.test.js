@@ -48,9 +48,17 @@ describe('Server integration smoke tests', () => {
     expect(response.status).toBe(204);
   });
 
-  it('serves toolbox.html for GET /', async () => {
+  it('serves toolbox.html or redirects to setup for GET /', async () => {
+    // In test environments the config file is absent, so the first-run redirect
+    // (302 → /setup) fires. On a configured server it serves toolbox.html (200)
+    // or a 404 page if the HTML file is missing. All three are valid outcomes.
     const response = await request(app).get('/');
-    expect([200, 404]).toContain(response.status);
-    expect(response.headers['content-type']).toMatch(/text\/html/);
+    expect([200, 302, 404]).toContain(response.status);
+
+    if (response.status === 302) {
+      expect(response.headers['location']).toBe('/setup');
+    } else {
+      expect(response.headers['content-type']).toMatch(/text\/html/);
+    }
   });
 });

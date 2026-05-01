@@ -9,11 +9,12 @@
 const path    = require('path');
 const express = require('express');
 
-const { loadConfig, createConfigTemplate } = require('./src/config/loader');
+const { loadConfig, createConfigTemplate, isServiceConfigured } = require('./src/config/loader');
 const { applyCorsHeaders }                  = require('./src/middleware/cors');
 const createProxyRouter                     = require('./src/routes/proxy');
 const createApiRouter                       = require('./src/routes/api');
 const createSchedulerRouter                 = require('./src/routes/scheduler');
+const createSetupRouter                     = require('./src/routes/setup');
 const { serveStaticFile }                   = require('./src/utils/staticFileServer');
 const { startSchedulerLoop }                = require('./src/services/repoMonitor');
 
@@ -52,11 +53,29 @@ app.use(applyCorsHeaders);
 // All service proxies: /jira-proxy/*, /snow-proxy/*, /github-proxy/*
 app.use(createProxyRouter(configuration));
 
+// Setup wizard: GET /setup, POST /api/setup
+app.use(createSetupRouter(configuration));
+
 // Internal APIs: /api/proxy-status, /api/proxy-config, /api/snow-session
 app.use(createApiRouter(configuration));
 
 // Scheduler APIs: /api/scheduler/*
 app.use(createSchedulerRouter(configuration));
+
+// First-run detection: GET / redirects to /setup when no service is configured.
+// Placed before the static file middleware so misconfigured instances always see
+// the wizard instead of a non-functional dashboard.
+app.get('/', (req, res, next) => {
+  const isAnyServiceConfigured =
+    isServiceConfigured(configuration.jira)   ||
+    isServiceConfigured(configuration.snow)   ||
+    !!(configuration.github && configuration.github.pat);
+
+  if (!isAnyServiceConfigured) {
+    return res.redirect(302, '/setup');
+  }
+  next();
+});
 
 // Static dashboard: GET / → serves public/toolbox.html
 app.use(serveStaticFile());
