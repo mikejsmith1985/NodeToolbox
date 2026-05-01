@@ -1,0 +1,51 @@
+{
+  "name": "node-toolbox",
+  "version": "1.0.0",
+  "description": "Enterprise proxy server for Jira, GitHub, and ServiceNow — Express-based, zero terminal configuration",
+  "keywords": [
+    "toolbox",
+    "proxy",
+    "jira",
+    "github",
+    "servicenow",
+    "enterprise"
+  ],
+  "homepage": "https://github.com/mikejsmith1985/NodeToolbox",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/mikejsmith1985/NodeToolbox.git"
+  },
+  "license": "MIT",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:open": "node server.js --open",
+    "create-launcher": "node scripts/create-launcher.js",
+    "test": "jest --testPathPattern='test/' --forceExit",
+    "test:unit": "jest --testPathPattern='test/unit/' --forceExit",
+    "test:integration": "jest --testPathPattern='test/integration/' --forceExit",
+    "test:watch": "jest --testPathPattern='test/' --watch"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0",
+    "nock": "^13.5.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/test/**/*.test.js"
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "server.js"
+    ]
+  }
+}
