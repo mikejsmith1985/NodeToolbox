@@ -22,6 +22,7 @@
     "start": "node server.js",
     "start:open": "node server.js --open",
     "create-launcher": "node scripts/create-launcher.js",
+    "local-release": "powershell -ExecutionPolicy Bypass -File scripts\\local-release.ps1",
     "test": "jest --testPathPattern='test/' --forceExit",
     "test:unit": "jest --testPathPattern='test/unit/' --forceExit",
     "test:integration": "jest --testPathPattern='test/integration/' --forceExit",
