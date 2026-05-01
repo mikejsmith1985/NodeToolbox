@@ -47,10 +47,16 @@ if [[ -n "$new_source_files" ]]; then
                 has_test=true
             fi
         else
-            # JS/TS: check for .test and .spec variants
+            # JS/TS: check for .test and .spec variants — both colocated and in test/ hierarchy
+            basename_only=$(basename "${new_file%.*}")
             for test_suffix in ".test.${extension}" ".spec.${extension}"; do
                 expected_test="${base_name}${test_suffix}"
                 if echo "$staged_files" | grep -qF "$expected_test" || [[ -f "$expected_test" ]]; then
+                    has_test=true
+                    break
+                fi
+                # Also search the test/ directory tree (supports test/unit/ and test/integration/ layouts)
+                if find "test" -name "${basename_only}${test_suffix}" 2>/dev/null | grep -q .; then
                     has_test=true
                     break
                 fi
