@@ -1,11 +1,15 @@
 // src/utils/portManager.js — Port conflict detection and graceful recovery at startup.
 //
 // When NodeToolbox starts, it first checks whether the target port is already
-// occupied. If another NodeToolbox instance is running there, the new launch
-// simply opens a browser tab to the existing session and exits (reuse).
-// If an unrelated process is using the port, we attempt to kill it so startup
-// can proceed. This prevents the "Port already in use" error from silently
-// closing the console window on corporate PCs.
+// occupied. If it is, we kill the occupant (whatever it is) and let startup
+// proceed. We NEVER reuse an existing NodeToolbox instance: it might be an older
+// buggy version that continues serving broken responses.
+//
+// Why kill instead of reuse: v0.0.9/v0.0.10 had a critical HTML-serving bug.
+// If a user launched the fixed v0.0.11+ exe while an old v0.0.9 session was
+// stuck on port 5555, the old "reuse" logic would open the browser to the broken
+// server and exit immediately. Killing the old instance ensures only the newest
+// version runs, which prevents the "HTML not found" regression on corporate PCs.
 
 'use strict';
 
@@ -127,38 +131,29 @@ function killProcessOnPort(port) {
 /**
  * Resolves a port conflict before NodeToolbox binds its listener.
  *
- * Decision tree:
- *   1. Probe HTTP → is NodeToolbox already running?
- *      YES → open browser to existing session, call process.exit(0). Never returns.
- *      NO  → attempt to kill the occupant, wait killWaitMs, return so caller retries.
+ * Kills whatever process is currently occupying the port, then waits
+ * killWaitMs for the OS to release the binding before returning.
  *
- * The caller should proceed with app.listen() after this function returns.
- * If the port is still occupied after the kill attempt, the existing
- * server.on('error') EADDRINUSE handler will catch the failure and display
- * a human-readable message.
+ * The caller proceeds with app.listen() after this function returns.
+ * If the port is still occupied after the kill (e.g. access denied),
+ * the existing server.on('error') EADDRINUSE handler catches it.
+ *
+ * WHY NO REUSE: Before v0.0.13, this function detected an existing NodeToolbox
+ * instance and opened a browser to it (reuse path). That caused "HTML not found"
+ * on corporate PCs — the old stuck session was a buggy pre-fix version, so
+ * redirecting the user to it kept them on a broken server. Killing always ensures
+ * only the newest version runs.
  *
  * @param {number}   port                - The port that is already in use
- * @param {function} openBrowserCallback - Called with (port) to open the dashboard
+ * @param {function} openBrowserCallback - Kept for API compatibility; no longer called here.
+ *                                         The server opens the browser after app.listen() succeeds.
  * @param {number}   [killWaitMs]        - Override the post-kill wait (default 1500ms; use 0 in tests)
  * @returns {Promise<void>}
  */
 async function resolvePortConflict(port, openBrowserCallback, killWaitMs = DEFAULT_KILL_WAIT_MS) {
-  const isNodeToolboxAlreadyRunning = await probeForRunningNodeToolbox(port);
-
-  if (isNodeToolboxAlreadyRunning) {
-    printReuseMessage(port);
-    openBrowserCallback(port);
-
-    // Small pause so the browser command has time to dispatch before exit
-    await pause(500);
-    process.exit(0);
-    return; // unreachable — satisfies static analysis tools
-  }
-
-  // Unknown process on the port — try to free it and let the caller retry
   console.log('');
-  console.log('  ⚠  Port ' + port + ' is occupied by another process.');
-  console.log('     Attempting to free it automatically...');
+  console.log('  ⚠  Port ' + port + ' is occupied. Attempting to free it...');
+  console.log('     (Any previous NodeToolbox session will be replaced by this launch.)');
 
   await killProcessOnPort(port);
 
@@ -190,28 +185,6 @@ function buildKillCommand(port) {
 
   // macOS / Linux: lsof lists the PID listening on the port; kill -9 terminates it
   return 'lsof -ti tcp:' + port + ' | xargs kill -9 2>/dev/null || true';
-}
-
-/**
- * Prints a friendly message explaining that NodeToolbox is already running
- * and that this new launch will hand off to the existing instance.
- *
- * @param {number} port
- */
-function printReuseMessage(port) {
-  const dashboardUrl = 'http://localhost:' + port;
-  console.log('');
-  console.log('  ╔══════════════════════════════════════════════╗');
-  console.log('  ║         NodeToolbox — Already Running        ║');
-  console.log('  ╠══════════════════════════════════════════════╣');
-  console.log('  ║                                              ║');
-  console.log('  ║  An existing NodeToolbox session was found.  ║');
-  console.log('  ║  Opening your browser to the dashboard...    ║');
-  console.log('  ║                                              ║');
-  console.log('  ║  Dashboard → ' + dashboardUrl + '          ║');
-  console.log('  ║                                              ║');
-  console.log('  ╚══════════════════════════════════════════════╝');
-  console.log('');
 }
 
 /**

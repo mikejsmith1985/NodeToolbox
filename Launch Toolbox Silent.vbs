@@ -14,7 +14,7 @@
 
 Option Explicit
 
-Dim objFSO, objShell, scriptDirectory, exePath, batPath, objFile
+Dim objFSO, objShell, scriptDirectory, exePath, batPath
 
 Set objFSO   = CreateObject("Scripting.FileSystemObject")
 Set objShell = CreateObject("WScript.Shell")
@@ -23,16 +23,26 @@ Set objShell = CreateObject("WScript.Shell")
 ' the script works no matter where the user extracts the release zip.
 scriptDirectory = objFSO.GetParentFolderName(WScript.ScriptFullName)
 
-' ── Exe distribution: find the packaged executable ───────────────────────────
+' ── Exe distribution: find the NEWEST packaged executable ──────────────────
 ' The exe is named nodetoolbox-vX.Y.Z.exe so we search by prefix rather than
-' hard-coding a version number, which would break on every release.
-exePath = ""
-For Each objFile In objFSO.GetFolder(scriptDirectory).Files
-    If LCase(Left(objFile.Name, 12)) = "nodetoolbox-" And LCase(Right(objFile.Name, 4)) = ".exe" Then
-        exePath = objFile.Path
-        Exit For
+' hard-coding a version number. We iterate ALL matching files and track the one
+' with the latest DateLastModified — this prevents older stuck versions from
+' being launched when multiple versions exist in the same folder.
+Dim latestExePath, latestExeDate, objCandidate
+latestExePath = ""
+latestExeDate = CDate("1900-01-01")
+
+For Each objCandidate In objFSO.GetFolder(scriptDirectory).Files
+    If LCase(Left(objCandidate.Name, 12)) = "nodetoolbox-" And LCase(Right(objCandidate.Name, 4)) = ".exe" Then
+        ' DateLastModified wins over filesystem sort order — always runs the newest build
+        If objCandidate.DateLastModified > latestExeDate Then
+            latestExeDate = objCandidate.DateLastModified
+            latestExePath = objCandidate.Path
+        End If
     End If
 Next
+
+exePath = latestExePath
 
 If exePath <> "" Then
     ' Window style 0 = SW_HIDE — the exe starts with no console window.
