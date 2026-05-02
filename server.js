@@ -92,7 +92,10 @@ if (require.main === module) {
     printStartupBanner(listenPort);
     startSchedulerLoop(configuration);
 
-    if (process.argv.includes('--open')) {
+    // Open the dashboard automatically when:
+    //   --open  : passed explicitly by Launch Toolbox.bat
+    //   process.pkg : the server is running as the bundled .exe (double-click)
+    if (process.argv.includes('--open') || !!process.pkg) {
       openBrowserToDashboard(listenPort);
     }
   });
