@@ -1,14 +1,19 @@
-// test/unit/pkg-snapshot.test.js — Verifies that the static file server pre-loads
-// toolbox.html at module startup using fs.readFileSync (which IS patched by
-// @yao-pkg/pkg for snapshot assets) rather than relying on fs.existsSync (which
-// is NOT reliably patched). This ensures the dashboard loads correctly when the
-// server is run as the bundled .exe on any machine, not just the build machine.
+// test/unit/pkg-snapshot.test.js — Verifies that the static file server
+// pre-loads toolbox.html at module startup using the generated JS module
+// (src/generated/dashboardHtmlContent.js) as the primary source, falling back
+// to fs.readFileSync for development environments.
 //
-// Root cause (Issue #22): After the setup wizard on a corporate PC, the browser
-// is redirected to GET /. serveStaticFile() calls findToolboxHtml(), which uses
-// fs.existsSync to check paths. In the pkg exe, existsSync is not patched for
-// snapshot assets, so it returns false for all paths and the 404 "File Not Found"
-// page is served instead of the dashboard.
+// Root cause (Issue #22, confirmed in v0.0.11): The readFileSync approach
+// appeared to work on the build machine because C:\...\public\toolbox.html
+// existed on disk. On any other machine (including the user's corporate PC)
+// that path doesn't exist, readFileSync throws, cachedDashboardHtml stays null,
+// and the "File Not Found" page is returned after the setup wizard.
+//
+// Fix (v0.0.11): local-release.ps1 runs scripts/generate-dashboard-module.js
+// BEFORE the pkg build. That script converts toolbox.html into
+// src/generated/dashboardHtmlContent.js. @yao-pkg/pkg compiles JS modules
+// directly into the snapshot so require() always works — no fs path matching,
+// no build-machine-specific paths, no silent failures.
 
 'use strict';
 
@@ -65,7 +70,8 @@ describe('serveStaticFile — serves dashboard from cache when existsSync fails 
   beforeAll(() => {
     // Replace fs.existsSync with a stub that always returns false — this simulates
     // the @yao-pkg/pkg environment where existsSync is not patched for snapshot
-    // assets. The readFileSync-based cache should mean the middleware still works.
+    // assets. The generated JS module (require() path) should mean the middleware
+    // still works even when existsSync is broken.
     jest.resetModules();
     originalExistsSync = fs.existsSync;
     fs.existsSync = () => false;
@@ -79,7 +85,8 @@ describe('serveStaticFile — serves dashboard from cache when existsSync fails 
 
   it('returns 200 with HTML for GET / even when existsSync always returns false', async () => {
     // Before the fix: findToolboxHtml() returns null → 404 "File Not Found" page.
-    // After the fix: cachedDashboardHtml is served → 200 dashboard.
+    // After the fix: cachedDashboardHtml is loaded from the generated JS module
+    // via require() so the 200 is returned regardless of existsSync or readFileSync.
     const { serveStaticFile, cachedDashboardHtml } = testModule;
 
     if (cachedDashboardHtml === null) {

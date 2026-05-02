@@ -109,9 +109,10 @@ if ($DryRun) {
     }
     Write-Host "  2. mkdir dist\           - create output directory"
     Write-Host "  3. Compress-Archive      - bundle slim zip into $ZipOutputPath"
-    Write-Host "  4. pkg                   - build single-file exe at $ExeOutputPath"
-    Write-Host "  4b. Compress-Archive     - wrap exe into $ExeZipOutputPath (browser-safe download)"
-    Write-Host "  5. gh release create     - publish GitHub Release $GitTag with both artifacts"
+    Write-Host "  4. generate-dashboard   - compile toolbox.html into src/generated/dashboardHtmlContent.js"
+    Write-Host "  5. pkg                   - build single-file exe at $ExeOutputPath"
+    Write-Host "  5b. Compress-Archive     - wrap exe into $ExeZipOutputPath (browser-safe download)"
+    Write-Host "  6. gh release create     - publish GitHub Release $GitTag with both artifacts"
     Write-Host ""
     Write-Host "  Version:    $AppVersion"
     Write-Host "  Tag:        $GitTag"
@@ -139,7 +140,7 @@ Write-Host "  NodeToolbox Release Builder - v$AppVersion"
 Write-Host ""
 
 # Step 1: Install all dependencies (including @yao-pkg/pkg for the exe build)
-Write-Host "  [1/5] npm install..."
+Write-Host "  [1/6] npm install..."
 Push-Location $RepoRoot
 try {
     npm install --silent
@@ -150,7 +151,7 @@ try {
 Write-Host "       ✅ Dependencies installed"
 
 # Step 2: Create dist/ output directory (clean slate — remove previous builds)
-Write-Host "  [2/5] Preparing dist/ directory..."
+Write-Host "  [2/6] Preparing dist/ directory..."
 if (Test-Path $DistDir) {
     Remove-Item $DistDir -Recurse -Force
 }
@@ -158,7 +159,7 @@ New-Item -ItemType Directory -Path $DistDir | Out-Null
 Write-Host "       ✅ dist\ ready"
 
 # Step 3: Build the slim zip — collect paths that actually exist
-Write-Host "  [3/5] Building zip: $ZipFileName..."
+Write-Host "  [3/6] Building zip: $ZipFileName..."
 
 # @() ensures these are always arrays even when Where-Object returns $null (strict mode safe)
 [array]$pathsToBundle = @($IncludedPaths | Where-Object { Test-Path $_ })
@@ -192,10 +193,24 @@ Remove-Item $StagingDir -Recurse -Force
 $zipSizeKb = [math]::Round((Get-Item $ZipOutputPath).Length / 1KB)
 Write-Host "       ✅ $ZipOutputPath ($zipSizeKb KB)"
 
-# Step 4: Build the single-file Windows exe using @yao-pkg/pkg.
+# Step 4: Generate the dashboard HTML module before the pkg build.
+# scripts/generate-dashboard-module.js reads public/toolbox.html and writes it
+# as src/generated/dashboardHtmlContent.js. pkg compiles JS modules directly into
+# the snapshot so the HTML is always available via require() on any machine,
+# regardless of whether C:\...\public\toolbox.html exists on that machine's disk.
+Write-Host "  [4/6] Generating dashboard HTML module..."
+Push-Location $RepoRoot
+try {
+    node scripts/generate-dashboard-module.js
+    if ($LASTEXITCODE -ne 0) { throw "generate-dashboard-module failed with exit code $LASTEXITCODE" }
+} finally {
+    Pop-Location
+}
+
+# Step 5: Build the single-file Windows exe using @yao-pkg/pkg.
 # Bundles the Node.js runtime + all app code + public assets into one .exe.
 # End users can run NodeToolbox without any extraction or npm install step.
-Write-Host "  [4/5] Building exe: $ExeFileName..."
+Write-Host "  [5/6] Building exe: $ExeFileName..."
 Push-Location $RepoRoot
 try {
     npx pkg server.js --targets node20-win-x64 --output $ExeOutputPath --silent
@@ -220,11 +235,11 @@ Remove-Item $ExeZipStagingDir -Recurse -Force
 $exeZipSizeKb = [math]::Round((Get-Item $ExeZipOutputPath).Length / 1KB)
 Write-Host "       ✅ $ExeZipOutputPath ($exeZipSizeKb KB)"
 
-# Step 5: Commit version bump (if applicable), tag, and publish GitHub Release.
+# Step 6: Commit version bump (if applicable), tag, and publish GitHub Release.
 # gh release create handles creating the release AND uploading the assets in one
 # command. We force-delete any existing release/tag of the same version first so
 # re-running the script always produces a clean, up-to-date release.
-Write-Host "  [5/5] Publishing GitHub Release $GitTag..."
+Write-Host "  [6/6] Publishing GitHub Release $GitTag..."
 
 Push-Location $RepoRoot
 try {

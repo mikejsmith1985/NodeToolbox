@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.11] — Fix: Dashboard HTML Compiled Into Exe Snapshot
+
+### Fixed
+- **"File Not Found" page shown after setup wizard — confirmed root cause and real fix
+  (Issue #22, v0.0.10 partial fix)** — The v0.0.10 fix pre-loaded `toolbox.html` via
+  `fs.readFileSync` at module startup. This appeared to work on the build machine because
+  `C:\...\public\toolbox.html` existed on the build machine's real disk — not from the
+  pkg snapshot. On any other machine (including the user's corporate PC) that path does
+  not exist, `readFileSync` throws silently, `cachedDashboardHtml` stays `null`, and the
+  "File Not Found" page is returned. The real fix converts `toolbox.html` into a JavaScript
+  module (`src/generated/dashboardHtmlContent.js`) before the `pkg` build.
+  `@yao-pkg/pkg` compiles JS modules directly into the exe snapshot so `require()` always
+  works identically on every machine — no filesystem path matching, no build-machine-
+  specific absolute paths, no silent failures.
+
+### Added
+- **`scripts/generate-dashboard-module.js`** — New pre-build script that reads
+  `public/toolbox.html` and writes it as `src/generated/dashboardHtmlContent.js`
+  (a `module.exports = "..."` string). `local-release.ps1` runs this automatically
+  before the `pkg` build step so the HTML is always compiled into the exe snapshot.
+- **`test/integration/exe-real-world-flow.test.js`** — New integration test that
+  copies the `.exe` to an isolated temp directory, renames `public/toolbox.html` on
+  the build machine (blocking the readFileSync fallback), and validates the full user
+  flow: server start → redirect to setup → POST credentials → dashboard returns 200
+  with valid HTML. This is the "exact real world scenario" test that would have caught
+  the v0.0.10 partial fix before release.
+
+### Changed
+- **`src/utils/staticFileServer.js`** — Pre-load priority updated: `require('../generated/
+  dashboardHtmlContent')` is now the primary path (pkg snapshot via JS module); `readFileSync`
+  is the fallback for development/zip environments where the generated file is absent.
+- **`scripts/local-release.ps1`** — Adds step `[4/6]` to run `generate-dashboard-module.js`
+  before the `pkg` build; step count updated from 5 to 6 throughout.
+- **`src/generated/`** added to `.gitignore` — the generated module is a build artifact,
+  not source code.
+
+### Tests
+- `test/unit/generate-dashboard-module.test.js` — NEW: 6 tests verifying the generator
+  script creates a valid JS module that exactly matches `public/toolbox.html`.
+- `test/integration/exe-real-world-flow.test.js` — NEW: 5 integration tests (see above).
+- `test/unit/pkg-snapshot.test.js` — Updated descriptions to reflect the JS-module-first
+  approach instead of the readFileSync approach.
+
 ## [0.0.10] — Fix: Dashboard Loads After Setup, Silent Launch Option
 
 ### Fixed
