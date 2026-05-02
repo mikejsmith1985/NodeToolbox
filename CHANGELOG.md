@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `test/unit/local-release.test.js` — Wrapped all tests in `describeOnWindows` guard (`process.platform === 'win32' ? describe : describe.skip`). Tests were calling `powershell.exe` directly, which does not exist on Linux CI runners, causing 6 test failures on every push to main.
-- `scripts/local-release.ps1` — Fixed `$LASTEXITCODE` access under `Set-StrictMode -Version Latest` in `pwsh` (GitHub Actions `windows-latest` runner). Variable is now null-coalesced before comparison to avoid `VariableIsUndefined` error.
+- `scripts/local-release.ps1` — Fixed `$LASTEXITCODE` access under `Set-StrictMode -Version Latest` in `pwsh` (GitHub Actions `windows-latest` runner). Pre-initialize `$LASTEXITCODE = 0` before the `npm install` native command; accessing the variable before any native command sets it throws `VariableIsUndefined` in strict mode.
 - `scripts/local-release.ps1` — Coerced `Where-Object` pipeline results to `[array]` so `.Count` property is always available under strict mode (returns `$null` instead of empty array when no items match).
 
 ## [0.0.2] — Phase 7: Proxy Auto-Wire
