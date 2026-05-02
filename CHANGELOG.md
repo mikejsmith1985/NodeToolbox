@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8] — Fix: Exe Auto-Opens Browser, Pkg Asset Path Verified
+
+### Fixed
+- **Exe browser auto-open** — Double-clicking `nodetoolbox-vX.Y.Z.exe` no longer leaves the
+  user staring at a console window. The server now detects `process.pkg` (truthy in all
+  bundled exe builds) and automatically opens `http://localhost:5555` in the default
+  browser — identical behaviour to `Launch Toolbox.bat --open`, no command-line flags needed.
+- **Static-asset path compatibility with pkg** — Confirmed `staticFileServer.js` derives
+  `PUBLIC_DIRECTORY_PATH` from `__dirname`, which `@yao-pkg/pkg` remaps to the virtual
+  snapshot filesystem root at bundle time. The `public/**/*` assets declared in
+  `package.json → pkg.assets` are therefore resolved correctly inside the `.exe`.
+
+### Tests Added
+- `test/unit/exe-launch.test.js` — 5 new tests covering: `process.pkg` presence in the
+  auto-open condition, preservation of the `--open` argv path, combined `||` logic in the
+  single `if` block, `__dirname` usage in `staticFileServer.js`, and absence of `process.cwd()`
+  calls that would break inside the pkg bundle.
+
 ## [0.0.7] — Fix: Launcher Window Disappears, Exe Download Blocked
 
 ### Fixed
