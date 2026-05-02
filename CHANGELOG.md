@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.9] — Fix: Startup Errors Now Visible, Corporate SSL Fixed
+
+### Fixed
+- **Server crash on port conflict was silent** — Without a `server.on('error')` handler,
+  an `EADDRINUSE` error (port 5555 already in use by another process) threw an unhandled
+  exception: the console window closed instantly and the user saw nothing. A handler is
+  now in place with a clear human-readable message that explains the two recovery options
+  (close the conflicting process, or change the port in config). The window is kept open
+  via `process.stdin.resume()` so the user can read the message before dismissing it.
+- **Unexpected startup panics also kept invisible** — Added `process.on('uncaughtException')`
+  to catch module-not-found and other startup throws (e.g. a failed `npm ci`) with plain-
+  English guidance, and the same stdin-resume keep-alive so the window stays open.
+- **`Launch Toolbox.bat` used `start` — errors always hidden** — The previous `start
+  "NodeToolbox Server" node server.js` spawned a detached child window. If the server
+  crashed in that child, the child window closed immediately. Changed to running
+  `node server.js --open` directly in the bat's own window (POC pattern): the bat
+  window IS the server window, stays open until the user closes it, and any crash output
+  is fully visible.
+- **`npm ci --silent` suppressed install errors** — Removed `--silent` so npm install
+  output (including errors) is visible. Added diagnostic hints in the error message:
+  corporate proxy hints, registry config command.
+- **`sslVerify` defaulted to `true` — broke on corporate SSL inspection** — `toolbox-poc.js`
+  line 221 uses `rejectUnauthorized: false` explicitly. This is required for Zscaler /
+  Forcepoint / corporate MITM proxies that replace upstream TLS certs. Changed the
+  NodeToolbox default to `false` to match the proven POC behaviour. Users who require
+  strict cert verification can set `"sslVerify": true` in their config file.
+
+### Tests Added / Updated
+- `test/unit/startup-reliability.test.js` — 7 new tests: `server.on('error')` presence,
+  EADDRINUSE message, stdin keep-alive, `uncaughtException` handler, bat direct execution,
+  `--open` passthrough, `sslVerify: false` default.
+- `test/unit/bat-launcher.test.js` — Updated "server process launch" section to assert
+  **direct** node execution (no `start`) and scoped the `/b` check to the launch line only.
+- `test/unit/loader.test.js` — Updated `sslVerify` default assertion to `false`.
+
 ## [0.0.8] — Fix: Exe Auto-Opens Browser, Pkg Asset Path Verified
 
 ### Fixed
