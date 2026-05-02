@@ -99,11 +99,57 @@ if (require.main === module) {
       openBrowserToDashboard(listenPort);
     }
   });
+
+  // Handle server-level errors — most importantly EADDRINUSE (port already in use).
+  // Without this handler the error throws as an unhandled exception: the console
+  // window closes instantly and the user sees nothing at all.
+  server.on('error', (serverError) => {
+    console.error('');
+    if (serverError.code === 'EADDRINUSE') {
+      console.error('  ❌ Port ' + listenPort + ' is already in use by another program.');
+      console.error('     To fix this, either:');
+      console.error('       1. Close whatever is already running on port ' + listenPort + ',');
+      console.error('          then re-launch NodeToolbox.');
+      console.error('       2. Change the "port" value in your toolbox-proxy.json config');
+      console.error('          (found in %APPDATA%\\NodeToolbox\\toolbox-proxy.json)');
+      console.error('          and re-launch NodeToolbox.');
+    } else {
+      console.error('  ❌ Server startup error: ' + serverError.message);
+    }
+    console.error('');
+    // Keep the console window open so the user can read the message before it
+    // disappears — critical for the .exe (double-click) distribution where there
+    // is no parent terminal to scroll back through.
+    process.stdin.resume();
+    console.error('  Press Ctrl+C or close this window to exit.');
+  });
 }
 
 // ── Exports (for testing) ─────────────────────────────────────────────────────
 
 module.exports = { app, server };
+
+// ── Uncaught-Exception Safety Net ─────────────────────────────────────────────
+
+// Catches any throw that escapes all other error handlers — e.g., a missing
+// npm package (Cannot find module) on a fresh install where npm ci was skipped.
+// Without this the console window closes instantly. With it the user sees the
+// error and can diagnose the problem.
+if (require.main === module) {
+  process.on('uncaughtException', (unexpectedError) => {
+    console.error('');
+    console.error('  ❌ Unexpected startup error: ' + unexpectedError.message);
+    if (unexpectedError.code === 'MODULE_NOT_FOUND') {
+      console.error('');
+      console.error('  This usually means Node.js modules are not installed.');
+      console.error('  Try running: npm ci --omit=dev');
+      console.error('  in the NodeToolbox folder, then re-launch.');
+    }
+    console.error('');
+    process.stdin.resume();
+    console.error('  Press Ctrl+C or close this window to exit.');
+  });
+}
 
 // ── Private Helpers ───────────────────────────────────────────────────────────
 

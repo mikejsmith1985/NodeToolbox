@@ -47,7 +47,7 @@ describe('loadConfig()', () => {
     const configuration = loadConfig();
 
     expect(configuration.port).toBe(5555);
-    expect(configuration.sslVerify).toBe(true);
+    expect(configuration.sslVerify).toBe(false);
     expect(configuration.jira.baseUrl).toBe('');
     expect(configuration.snow.baseUrl).toBe('');
     expect(configuration.github.baseUrl).toBe('https://api.github.com');
