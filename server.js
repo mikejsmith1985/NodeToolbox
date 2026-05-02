@@ -94,9 +94,8 @@ let server = null;
  *
  * Startup sequence:
  *   1. Check if the port is already occupied (isPortInUse).
- *   2. If occupied → resolvePortConflict:
- *        - NodeToolbox found → opens browser to existing session, exits 0.
- *        - Other process found → kills it and waits before proceeding.
+ *   2. If occupied → resolvePortConflict: kills the occupant, waits for OS
+ *        to release the port, then falls through.
  *   3. Bind app.listen() — EADDRINUSE handler still catches any remaining failure.
  *
  * Keeping this logic async allows the pre-flight port check without restructuring
@@ -109,9 +108,9 @@ async function launchServer() {
   const portIsCurrentlyBusy = await isPortInUse(listenPort);
 
   if (portIsCurrentlyBusy) {
-    // resolvePortConflict either calls process.exit(0) (reuse path) or returns
-    // after attempting to clear the port (kill path). Either way we fall through
-    // to app.listen() — if the port is still occupied, EADDRINUSE handles it.
+    // resolvePortConflict kills the occupant and waits for the OS to release
+    // the port binding. Falls through to app.listen() regardless.
+    // If the port is still occupied after the kill, EADDRINUSE handles it.
     await resolvePortConflict(listenPort, openBrowserToDashboard);
   }
 

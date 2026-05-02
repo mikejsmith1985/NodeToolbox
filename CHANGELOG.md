@@ -7,24 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **Port conflict auto-recovery at startup** — When NodeToolbox starts and the
-  target port is already occupied, the server now responds intelligently:
-  - If a live NodeToolbox instance is detected (via `/api/proxy-status` probe),
-    the new launch opens a browser tab to the existing session and exits cleanly
-    (exit code 0) — no duplicate server is started.
-  - If an unrelated process is occupying the port, NodeToolbox attempts to kill
-    it automatically (PowerShell `Get-NetTCPConnection` on Windows, `lsof` on
-    macOS/Linux) and retries the listener. If the kill fails, the existing
-    human-readable EADDRINUSE message is shown.
-- `src/utils/portManager.js` — New utility module: `isPortInUse`, `probeForRunningNodeToolbox`,
-  `killProcessOnPort`, `resolvePortConflict`.
-- `test/unit/portManager.test.js` — 17 unit tests covering all conflict-resolution paths.
+### Fixed
+- **Root cause of "HTML not found" on corporate PCs** — The `resolvePortConflict`
+  function previously detected an existing NodeToolbox on port 5555 and redirected the
+  browser to it, then called `process.exit(0)`. If that old stuck session was a
+  pre-fix v0.0.9/v0.0.10 instance, the user was silently handed back to a broken server.
+  v0.0.13 removes this "reuse" path entirely: any process occupying port 5555 is now
+  killed unconditionally so only the newest, fixed version runs.
+- **VBS launcher now picks the newest exe** — `Launch Toolbox Silent.vbs` previously
+  exited the loop on the first `nodetoolbox-*.exe` match, which was filesystem-order
+  dependent. It now iterates all matches and selects the file with the most recent
+  `DateLastModified`, ensuring upgrades take effect immediately.
+- **`/api/proxy-status` version** — Was hardcoded as `"1.0.0"`. Now reads from
+  `package.json` so the version reported to clients is always accurate.
 
-### Tests
-- `test/integration/exe-real-world-flow.test.js` — Backs up and restores
-  `%APPDATA%\NodeToolbox\toolbox-proxy.json` before and after the test so each
-  run starts in fresh-install state regardless of any previously saved configuration.
+### Added
+- **`GET /api/diagnostic`** — New endpoint returning runtime health information:
+  `cachedHtmlLoaded`, `htmlLoadMethod` (`'require'` / `'readFileSync'` / `null`),
+  `pkgSnapshot`, `nodeVersion`, and `platform`. Enables remote triage of HTML-serving
+  failures on corporate PCs without physical access to the machine.
+- **`cachedHtmlLoadMethod`** export on `staticFileServer` — Tracks which code path
+  successfully populated the HTML cache at startup (`'require'` in the pkg exe,
+  `'readFileSync'` in development/ZIP). Consumed by `/api/diagnostic`.
 
 ## [0.0.11] — Fix: Dashboard HTML Compiled Into Exe Snapshot
 

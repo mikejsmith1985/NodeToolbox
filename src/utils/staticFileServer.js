@@ -63,16 +63,31 @@ const HTML_CONTENT_TYPE = 'text/html; charset=utf-8';
  */
 let cachedDashboardHtml = null;
 
+/**
+ * Records which code path successfully populated cachedDashboardHtml.
+ * 'require'      → loaded from the pkg snapshot (production .exe path, v0.0.11+ fix)
+ * 'readFileSync' → loaded from disk (development or ZIP distribution path)
+ * null           → neither source was available at startup
+ *
+ * Exposed by GET /api/diagnostic so corporate-PC failures can be triaged
+ * without physical access to the machine.
+ *
+ * @type {'require'|'readFileSync'|null}
+ */
+let cachedHtmlLoadMethod = null;
+
 try {
   // Primary: generated module compiled into the pkg snapshot.
   // eslint-disable-next-line import/no-unresolved
   cachedDashboardHtml = require('../generated/dashboardHtmlContent');
+  cachedHtmlLoadMethod = 'require';
 } catch (_requireError) {
   // Generated module not present in this environment (development / CI).
   // Fall back to reading the HTML from disk — works when public/ is accessible.
   try {
     const dashboardHtmlPath = path.join(PUBLIC_DIRECTORY_PATH, TOOLBOX_HTML_FILENAME);
     cachedDashboardHtml = fs.readFileSync(dashboardHtmlPath, 'utf-8');
+    cachedHtmlLoadMethod = 'readFileSync';
   } catch (_readError) {
     // File genuinely absent — runtime fallback search will run on each request.
   }
@@ -194,4 +209,4 @@ function buildHtmlNotFoundPage() {
 
 // ── Exports ───────────────────────────────────────────────────────────────────
 
-module.exports = { cachedDashboardHtml, findToolboxHtml, serveStaticFile };
+module.exports = { cachedDashboardHtml, cachedHtmlLoadMethod, findToolboxHtml, serveStaticFile };
