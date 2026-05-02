@@ -45,7 +45,10 @@ $DistDir        = Join-Path $RepoRoot 'dist'
 # The portable bat launcher is always included in the distributable.
 # The .lnk shortcut is NOT included because it embeds absolute paths from the
 # build machine and breaks when the user extracts to a different location.
-$BatchLauncherPath = Join-Path $RepoRoot 'Launch Toolbox.bat'
+$BatchLauncherPath  = Join-Path $RepoRoot 'Launch Toolbox.bat'
+# The silent VBScript launcher lets users start NodeToolbox without any visible
+# console window — useful for corporate users who find the terminal concerning.
+$SilentLauncherPath = Join-Path $RepoRoot 'Launch Toolbox Silent.vbs'
 
 # ── Version Resolution ─────────────────────────────────────────────────────────
 
@@ -90,7 +93,8 @@ $IncludedPaths = @(
     (Join-Path $RepoRoot 'public'),
     (Join-Path $RepoRoot 'src'),
     (Join-Path $RepoRoot 'scripts'),
-    $BatchLauncherPath
+    $BatchLauncherPath,
+    $SilentLauncherPath
 )
 
 # ── Dry-Run Output ─────────────────────────────────────────────────────────────
@@ -115,6 +119,7 @@ if ($DryRun) {
     Write-Host "  Exe:        $ExeOutputPath (dist\$ExeFileName)"
     Write-Host "  Exe zip:    $ExeZipOutputPath (dist\$ExeZipFileName)"
     Write-Host "  Launcher:   $BatchLauncherPath  (portable -- uses %`~dp0)"
+    Write-Host "  Silent:     $SilentLauncherPath  (headless -- hides console)"
     Write-Host ""
     Write-Host "  Included paths:"
     foreach ($includedItem in $IncludedPaths) {
@@ -203,7 +208,15 @@ Write-Host "       ✅ $ExeOutputPath ($exeSizeKb KB)"
 
 # Wrap the exe in its own dedicated zip so users can download it without
 # browser security warnings that block direct .exe file downloads.
-Compress-Archive -Path $ExeOutputPath -DestinationPath $ExeZipOutputPath -Force
+# Also include the silent VBScript launcher so exe users can hide the terminal.
+$ExeZipStagingDir = Join-Path $DistDir 'exe-staging'
+New-Item -ItemType Directory -Path $ExeZipStagingDir | Out-Null
+Copy-Item $ExeOutputPath $ExeZipStagingDir -Force
+if (Test-Path $SilentLauncherPath) {
+    Copy-Item $SilentLauncherPath $ExeZipStagingDir -Force
+}
+Compress-Archive -Path (Join-Path $ExeZipStagingDir '*') -DestinationPath $ExeZipOutputPath -Force
+Remove-Item $ExeZipStagingDir -Recurse -Force
 $exeZipSizeKb = [math]::Round((Get-Item $ExeZipOutputPath).Length / 1KB)
 Write-Host "       ✅ $ExeZipOutputPath ($exeZipSizeKb KB)"
 
