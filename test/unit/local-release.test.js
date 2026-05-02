@@ -103,5 +103,12 @@ describeOnWindows('local-release.ps1', () => {
       const output = runDryRun();
       expect(output).toMatch(/\.exe|nodetoolbox.*exe/i);
     });
+
+    it('reports that a GitHub Release will be published', () => {
+      // The script must publish directly to GitHub — running the script is the
+      // complete release process, not just a local build step.
+      const output = runDryRun();
+      expect(output).toMatch(/GitHub Release|gh release create/i);
+    });
   });
 });

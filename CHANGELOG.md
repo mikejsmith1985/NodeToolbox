@@ -28,8 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `Launch Toolbox.bat` now auto-installs production dependencies (`npm ci
   --omit=dev`) when `node_modules` is absent, enabling the slim zip workflow.
-- Release script (`local-release.ps1`) updated to produce both zip and exe
-  artifacts.
+- Release script (`local-release.ps1`) now publishes the GitHub Release
+  directly using `gh release create` — no GitHub Actions required.
+  Running the script is the complete release process: build zip, build exe,
+  create tag, upload assets.
+- Release script (`local-release.ps1`) accepts an optional `patch`/`minor`/`major`
+  positional argument to bump the version in `package.json` before building.
 
 ## [0.0.5] — Fix: v0.0.4 Issue Resolution (Issue #15)
 
