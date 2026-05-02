@@ -33,6 +33,13 @@ const PUBLIC_HTML_PATH  = path.join(PROJECT_ROOT, 'public', 'toolbox.html');
 const BACKUP_HTML_PATH  = PUBLIC_HTML_PATH + '.bak';
 const TEMP_EXE_DIR      = path.join(require('os').tmpdir(), 'nodetoolbox-test-' + Date.now());
 
+// Config path matches loader.js: %APPDATA%\NodeToolbox\toolbox-proxy.json
+const CONFIG_FILE_PATH  = path.join(
+  process.env.APPDATA || path.join(require('os').homedir(), 'AppData', 'Roaming'),
+  'NodeToolbox', 'toolbox-proxy.json'
+);
+const BACKUP_CONFIG_PATH = CONFIG_FILE_PATH + '.integration-test-bak';
+
 /** Server port — must match DEFAULT_PORT in server.js */
 const PROXY_SERVER_PORT = 5555;
 
@@ -163,6 +170,14 @@ describe('exe real-world flow — dashboard served from pkg snapshot (not real d
     const tempExePath = path.join(TEMP_EXE_DIR, path.basename(exePath));
     fs.copyFileSync(exePath, tempExePath);
 
+    // Back up any existing config so the exe starts in "fresh install" state.
+    // Without this, a previously saved config causes GET / to return 200 (dashboard)
+    // instead of 302 (redirect to /setup), breaking the setup-wizard part of the test.
+    if (fs.existsSync(CONFIG_FILE_PATH)) {
+      fs.copyFileSync(CONFIG_FILE_PATH, BACKUP_CONFIG_PATH);
+      fs.unlinkSync(CONFIG_FILE_PATH);
+    }
+
     // Rename public/toolbox.html on the build machine so the exe cannot fall
     // back to reading from the real disk (which would give a false pass on the
     // build machine where the path C:\...\public\toolbox.html exists).
@@ -185,9 +200,14 @@ describe('exe real-world flow — dashboard served from pkg snapshot (not real d
   });
 
   afterAll(() => {
-    // Kill the exe process first, then restore the HTML file.
+    // Kill the exe process first, then restore files.
     if (exeProcess) {
       try { exeProcess.kill('SIGKILL'); } catch (_e) { /* already stopped */ }
+    }
+    // Restore the config file that was backed up before the test.
+    if (fs.existsSync(BACKUP_CONFIG_PATH)) {
+      try { fs.copyFileSync(BACKUP_CONFIG_PATH, CONFIG_FILE_PATH); } catch (_e) { /* best effort */ }
+      try { fs.unlinkSync(BACKUP_CONFIG_PATH); } catch (_e) { /* best effort */ }
     }
     // Always restore the renamed HTML file, even if a test failed.
     if (fs.existsSync(BACKUP_HTML_PATH)) {

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Tests
+- `test/integration/exe-real-world-flow.test.js` — Backs up and restores
+  `%APPDATA%\NodeToolbox\toolbox-proxy.json` before and after the test so each
+  run starts in fresh-install state regardless of any previously saved configuration.
+
 ## [0.0.11] — Fix: Dashboard HTML Compiled Into Exe Snapshot
 
 ### Fixed
