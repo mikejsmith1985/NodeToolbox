@@ -85,7 +85,10 @@ Write-Host "  [1/4] npm install..."
 Push-Location $RepoRoot
 try {
     npm install --silent
-    if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
+    # $LASTEXITCODE must be captured immediately after the native command; under
+    # Set-StrictMode -Version Latest the automatic variable isn't pre-initialized.
+    [int]$npmExitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
+    if ($npmExitCode -ne 0) { throw "npm install failed with exit code $npmExitCode" }
 } finally {
     Pop-Location
 }
@@ -107,8 +110,9 @@ Write-Host "       ✅ dist\ ready"
 # Step 4: Build the zip — collect paths that actually exist
 Write-Host "  [4/4] Building zip: $ZipFileName..."
 
-$pathsToBundle = $IncludedPaths | Where-Object { Test-Path $_ }
-$missingPaths  = $IncludedPaths | Where-Object { -not (Test-Path $_) }
+# @() ensures these are always arrays even when Where-Object returns $null (strict mode safe)
+[array]$pathsToBundle = @($IncludedPaths | Where-Object { Test-Path $_ })
+[array]$missingPaths  = @($IncludedPaths | Where-Object { -not (Test-Path $_) })
 
 if ($missingPaths.Count -gt 0) {
     Write-Warning "  ⚠ The following paths are missing and will not be included:"
