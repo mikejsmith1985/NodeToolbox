@@ -17,6 +17,7 @@ const createSchedulerRouter                 = require('./src/routes/scheduler');
 const createSetupRouter                     = require('./src/routes/setup');
 const { serveStaticFile }                   = require('./src/utils/staticFileServer');
 const { startSchedulerLoop }                = require('./src/services/repoMonitor');
+const { isPortInUse, resolvePortConflict }  = require('./src/utils/portManager');
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -87,7 +88,33 @@ const listenPort = configuration.port || DEFAULT_PORT;
 // Only bind a TCP port when the file is executed directly (node server.js).
 // When required by tests, only the Express app object is needed — no port binding.
 let server = null;
-if (require.main === module) {
+
+/**
+ * Async startup wrapper that handles port conflicts before binding the listener.
+ *
+ * Startup sequence:
+ *   1. Check if the port is already occupied (isPortInUse).
+ *   2. If occupied → resolvePortConflict:
+ *        - NodeToolbox found → opens browser to existing session, exits 0.
+ *        - Other process found → kills it and waits before proceeding.
+ *   3. Bind app.listen() — EADDRINUSE handler still catches any remaining failure.
+ *
+ * Keeping this logic async allows the pre-flight port check without restructuring
+ * the rest of the startup (banner, scheduler, browser open) which stay synchronous
+ * inside the listen callback.
+ *
+ * @returns {Promise<void>}
+ */
+async function launchServer() {
+  const portIsCurrentlyBusy = await isPortInUse(listenPort);
+
+  if (portIsCurrentlyBusy) {
+    // resolvePortConflict either calls process.exit(0) (reuse path) or returns
+    // after attempting to clear the port (kill path). Either way we fall through
+    // to app.listen() — if the port is still occupied, EADDRINUSE handles it.
+    await resolvePortConflict(listenPort, openBrowserToDashboard);
+  }
+
   server = app.listen(listenPort, '127.0.0.1', () => {
     printStartupBanner(listenPort);
     startSchedulerLoop(configuration);
@@ -123,6 +150,10 @@ if (require.main === module) {
     process.stdin.resume();
     console.error('  Press Ctrl+C or close this window to exit.');
   });
+}
+
+if (require.main === module) {
+  launchServer();
 }
 
 // ── Exports (for testing) ─────────────────────────────────────────────────────

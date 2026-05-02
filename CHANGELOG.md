@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Port conflict auto-recovery at startup** — When NodeToolbox starts and the
+  target port is already occupied, the server now responds intelligently:
+  - If a live NodeToolbox instance is detected (via `/api/proxy-status` probe),
+    the new launch opens a browser tab to the existing session and exits cleanly
+    (exit code 0) — no duplicate server is started.
+  - If an unrelated process is occupying the port, NodeToolbox attempts to kill
+    it automatically (PowerShell `Get-NetTCPConnection` on Windows, `lsof` on
+    macOS/Linux) and retries the listener. If the kill fails, the existing
+    human-readable EADDRINUSE message is shown.
+- `src/utils/portManager.js` — New utility module: `isPortInUse`, `probeForRunningNodeToolbox`,
+  `killProcessOnPort`, `resolvePortConflict`.
+- `test/unit/portManager.test.js` — 17 unit tests covering all conflict-resolution paths.
+
 ### Tests
 - `test/integration/exe-real-world-flow.test.js` — Backs up and restores
   `%APPDATA%\NodeToolbox\toolbox-proxy.json` before and after the test so each
