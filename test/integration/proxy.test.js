@@ -141,6 +141,71 @@ describe('GET /github-proxy/*', () => {
   });
 });
 
+// ── Query String Forwarding Tests ────────────────────────────────────────────
+
+describe('Query string forwarding', () => {
+  afterEach(() => nock.cleanAll());
+
+  it('forwards query string parameters to the Jira API', async () => {
+    const configuration = {
+      jira:   { baseUrl: 'https://jira.example.com', pat: 'test-pat' },
+      snow:   { baseUrl: '' },
+      github: { baseUrl: 'https://api.github.com', pat: '' },
+      sslVerify: true,
+    };
+
+    nock('https://jira.example.com')
+      .get('/rest/agile/1.0/board')
+      .query({ name: 'My Board', maxResults: '50' })
+      .reply(200, { values: [{ id: 1, name: 'My Board' }] });
+
+    const response = await request(buildTestApp(configuration))
+      .get('/jira-proxy/rest/agile/1.0/board?name=My%20Board&maxResults=50');
+
+    expect(response.status).toBe(200);
+    expect(response.body.values[0].name).toBe('My Board');
+  });
+
+  it('forwards query string parameters to the ServiceNow API', async () => {
+    const configuration = {
+      jira:   { baseUrl: '', pat: '' },
+      snow:   { baseUrl: 'https://snow.example.com', username: 'user', password: 'pass' },
+      github: { baseUrl: 'https://api.github.com', pat: '' },
+      sslVerify: true,
+    };
+
+    nock('https://snow.example.com')
+      .get('/api/now/table/incident')
+      .query({ sysparm_limit: '10', sysparm_query: 'state=1' })
+      .reply(200, { result: [] });
+
+    const response = await request(buildTestApp(configuration))
+      .get('/snow-proxy/api/now/table/incident?sysparm_limit=10&sysparm_query=state%3D1');
+
+    expect(response.status).toBe(200);
+  });
+
+  it('forwards query string parameters to the GitHub API', async () => {
+    const configuration = {
+      jira:   { baseUrl: '', pat: '' },
+      snow:   { baseUrl: '' },
+      github: { baseUrl: 'https://api.github.com', pat: 'ghp_test' },
+      sslVerify: true,
+    };
+
+    nock('https://api.github.com')
+      .get('/repos/myorg/myrepo/commits')
+      .query({ sha: 'main', per_page: '20' })
+      .reply(200, [{ sha: 'abc123' }]);
+
+    const response = await request(buildTestApp(configuration))
+      .get('/github-proxy/repos/myorg/myrepo/commits?sha=main&per_page=20');
+
+    expect(response.status).toBe(200);
+    expect(response.body[0].sha).toBe('abc123');
+  });
+});
+
 // ── CORS Preflight Tests ──────────────────────────────────────────────────────
 
 describe('OPTIONS preflight', () => {
