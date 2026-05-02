@@ -1,5 +1,5 @@
 // test/integration/api.test.js — Integration tests for the API routes.
-// Tests /api/proxy-status, /api/proxy-config, and /api/snow-session endpoints.
+// Tests /api/proxy-status, /api/proxy-config, /api/snow-session, and /api/diagnostic endpoints.
 
 'use strict';
 
@@ -157,5 +157,78 @@ describe('/api/snow-session', () => {
     const getResponse = await request(buildTestApp(configuration))
       .get('/api/snow-session');
     expect(getResponse.body.hasSession).toBe(false);
+  });
+});
+
+// ── /api/proxy-status version field ─────────────────────────────────────────
+
+describe('GET /api/proxy-status — version accuracy', () => {
+  it('returns the actual package.json version, not a hardcoded placeholder', async () => {
+    // If the server hardcodes "1.0.0" the port-conflict recovery will never detect
+    // a version mismatch and will keep reusing old broken NodeToolbox instances.
+    const { version: expectedVersion } = require('../../package.json');
+
+    const configuration = {
+      jira:   { baseUrl: '', pat: '' },
+      snow:   { baseUrl: '', username: '', password: '' },
+      github: { pat: '' },
+      sslVerify: true,
+    };
+
+    const response = await request(buildTestApp(configuration))
+      .get('/api/proxy-status');
+
+    expect(response.status).toBe(200);
+    expect(response.body.version).toBe(expectedVersion);
+  });
+});
+
+// ── /api/diagnostic ───────────────────────────────────────────────────────────
+
+describe('GET /api/diagnostic', () => {
+  let configuration;
+
+  beforeEach(() => {
+    configuration = {
+      jira:   { baseUrl: '', pat: '' },
+      snow:   { baseUrl: '', username: '', password: '' },
+      github: { pat: '' },
+      sslVerify: true,
+    };
+  });
+
+  it('returns HTTP 200', async () => {
+    const response = await request(buildTestApp(configuration))
+      .get('/api/diagnostic');
+    expect(response.status).toBe(200);
+  });
+
+  it('reports whether the dashboard HTML is cached (cachedHtmlLoaded)', async () => {
+    const response = await request(buildTestApp(configuration))
+      .get('/api/diagnostic');
+    // Field must exist and be a boolean — the exact value depends on environment
+    expect(typeof response.body.cachedHtmlLoaded).toBe('boolean');
+  });
+
+  it('reports which code path loaded the HTML (htmlLoadMethod)', async () => {
+    const response = await request(buildTestApp(configuration))
+      .get('/api/diagnostic');
+    // Allowed values: 'require', 'readFileSync', or null (not loaded)
+    const { htmlLoadMethod } = response.body;
+    expect(['require', 'readFileSync', null]).toContain(htmlLoadMethod);
+  });
+
+  it('reports whether running inside a pkg snapshot (pkgSnapshot)', async () => {
+    const response = await request(buildTestApp(configuration))
+      .get('/api/diagnostic');
+    // Must be a boolean — false in test environment (not packaged)
+    expect(typeof response.body.pkgSnapshot).toBe('boolean');
+  });
+
+  it('includes Node.js runtime info (nodeVersion, platform)', async () => {
+    const response = await request(buildTestApp(configuration))
+      .get('/api/diagnostic');
+    expect(typeof response.body.nodeVersion).toBe('string');
+    expect(typeof response.body.platform).toBe('string');
   });
 });

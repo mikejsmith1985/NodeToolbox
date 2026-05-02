@@ -63,4 +63,12 @@ describe('Launch Toolbox Silent.vbs — content correctness', () => {
     // User-facing guidance when the launcher is placed in the wrong directory
     expect(vbsContent).toMatch(/MsgBox/i);
   });
+
+  it('picks the exe with the most recent DateLastModified when multiple versions exist', () => {
+    // If a user has nodetoolbox-v0.0.9.exe and nodetoolbox-v0.0.12.exe in the same
+    // folder, running the older (buggy) version defeats the entire upgrade.
+    // The VBS must compare DateLastModified and select the NEWEST file, not the first
+    // one returned by filesystem iteration (which is order-dependent).
+    expect(vbsContent).toMatch(/DateLastModified/i);
+  });
 });

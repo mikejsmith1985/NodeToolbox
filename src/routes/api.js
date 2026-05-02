@@ -1,14 +1,18 @@
 // src/routes/api.js — Express router for internal API endpoints.
 //
-// Provides health check, configuration read/write, and ServiceNow session
-// management endpoints. These are consumed by the Toolbox front-end dashboard
-// and the connection wizard — not by the proxy pass-through functionality.
+// Provides health check, configuration read/write, ServiceNow session management,
+// and a diagnostic endpoint for corporate-PC debugging. These are consumed by the
+// Toolbox front-end dashboard and the connection wizard — not by the proxy pass-through.
 
 'use strict';
 
 const express    = require('express');
 const { saveConfigToDisk, isServiceConfigured } = require('../config/loader');
 const snowSession = require('../services/snowSession');
+const { cachedDashboardHtml, cachedHtmlLoadMethod } = require('../utils/staticFileServer');
+
+/** Application version read once at startup — avoids repeated disk I/O per request */
+const APP_VERSION = require('../../package.json').version;
 
 // ── Router Factory ────────────────────────────────────────────────────────────
 
@@ -43,7 +47,7 @@ function createApiRouter(configuration) {
 
     res.json({
       proxy:     true,
-      version:   '1.0.0',
+      version:   APP_VERSION,
       sslVerify: configuration.sslVerify !== false,
       jira: {
         configured:     isServiceConfigured(configuration.jira),
@@ -144,6 +148,26 @@ function createApiRouter(configuration) {
   router.delete('/api/snow-session', (req, res) => {
     snowSession.clearSession();
     res.json({ ok: true });
+  });
+
+  // ── GET /api/diagnostic ──────────────────────────────────────────────────
+  // Runtime health snapshot for corporate-PC debugging — returns how the HTML
+  // was loaded, whether we are inside a pkg snapshot, and Node.js runtime info.
+  // Safe to expose: no credentials, no config values.
+
+  router.get('/api/diagnostic', (req, res) => {
+    res.json({
+      // Whether toolbox.html was successfully pre-loaded at startup
+      cachedHtmlLoaded:  cachedDashboardHtml !== null,
+      // Which code path loaded it: 'require' (snapshot), 'readFileSync' (disk), or null
+      htmlLoadMethod:    cachedHtmlLoadMethod,
+      // True when running inside a pkg-compiled .exe (vs node server.js)
+      pkgSnapshot:       !!process.pkg,
+      // Node.js runtime version — helps diagnose compatibility issues
+      nodeVersion:       process.version,
+      // Operating system platform — 'win32', 'darwin', 'linux'
+      platform:          process.platform,
+    });
   });
 
   return router;

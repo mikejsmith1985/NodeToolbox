@@ -195,25 +195,30 @@ describe('killProcessOnPort', () => {
 describe('resolvePortConflict', () => {
   afterEach(() => jest.restoreAllMocks());
 
-  it('opens browser and exits with code 0 when NodeToolbox is already running', async () => {
-    // Start a real NodeToolbox-like responder so the HTTP probe gets proxy: true
+  it('kills old NodeToolbox instead of redirecting so the newest version always runs', async () => {
+    // When an OLD NodeToolbox is running (could be a buggy version), the new launch
+    // must replace it rather than silently hand the user back to the broken instance.
     const { server: liveNodeToolbox, port: livePort } =
       await startHttpResponder({ proxy: true, version: '1.0.0' });
 
     const mockOpenBrowser = jest.fn();
+    const execSpy = jest
+      .spyOn(childProcess, 'exec')
+      .mockImplementation((command, callback) => callback(null, '', ''));
     const exitSpy = jest
       .spyOn(process, 'exit')
       .mockImplementation(() => { /* suppress actual exit in tests */ });
 
     try {
-      // Pass killWaitMs = 0 so the test doesn't sleep for 1.5 seconds
       await portManager.resolvePortConflict(livePort, mockOpenBrowser, 0);
     } finally {
       await closeServer(liveNodeToolbox);
     }
 
-    expect(mockOpenBrowser).toHaveBeenCalledWith(livePort);
-    expect(exitSpy).toHaveBeenCalledWith(0);
+    // Must attempt to kill the old process — NOT open the browser or exit
+    expect(execSpy).toHaveBeenCalledTimes(1);
+    expect(mockOpenBrowser).not.toHaveBeenCalled();
+    expect(exitSpy).not.toHaveBeenCalled();
   });
 
   it('does NOT call process.exit when the occupant is not NodeToolbox', async () => {
@@ -256,7 +261,9 @@ describe('resolvePortConflict', () => {
     expect(execSpy.mock.calls[0][0]).toMatch(String(foreignPort));
   });
 
-  it('does NOT kill when NodeToolbox is already running (reuse path)', async () => {
+  it('kills old NodeToolbox to allow the newest version to take over the port', async () => {
+    // Even when the occupant IS NodeToolbox, it should be killed — it might be
+    // an older buggy version that would otherwise continue serving broken responses.
     const { server: liveNodeToolbox, port: livePort } =
       await startHttpResponder({ proxy: true });
 
@@ -272,8 +279,8 @@ describe('resolvePortConflict', () => {
       await closeServer(liveNodeToolbox);
     }
 
-    // Should reuse, not kill
-    expect(execSpy).not.toHaveBeenCalled();
+    // Must kill the old NodeToolbox so the new version can bind the port
+    expect(execSpy).toHaveBeenCalledTimes(1);
   });
 });
 
