@@ -2,11 +2,20 @@
 //
 // The release script packages NodeToolbox into a distributable zip.
 // Tests exercise -DryRun mode so no files are written and no npm commands are run.
+//
+// Note: local-release.ps1 is a Windows-only script (requires PowerShell + WScript.Shell).
+// These tests are skipped automatically on non-Windows platforms.
 
 'use strict';
 
-const path         = require('path');
+const path             = require('path');
 const { execFileSync } = require('child_process');
+
+// ── Platform Guard ─────────────────────────────────────────────────────────────
+
+// The release script depends on PowerShell (powershell.exe) and WScript.Shell,
+// both of which are Windows-only. On Linux/Mac CI nodes these tests are skipped.
+const describeOnWindows = process.platform === 'win32' ? describe : describe.skip;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -29,7 +38,7 @@ function runDryRun() {
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
-describe('local-release.ps1', () => {
+describeOnWindows('local-release.ps1', () => {
   describe('-DryRun mode', () => {
     it('exits with code 0 in dry-run mode', () => {
       expect(() => runDryRun()).not.toThrow();
