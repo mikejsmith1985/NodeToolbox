@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `test/unit/bat-launcher.test.js` — 9 new tests covering: bat file existence, `npm ci`
   auto-install logic, `start` command structure (no `/b`, has window title `"NodeToolbox
   Server"`, passes `--open`), working-directory anchor via `%~dp0`.
+- `test/integration/bat-launch.test.js` — 5 functional tests that **actually execute
+  `Launch Toolbox.bat` via `cmd.exe`**, let the bat exit, then verify the server is
+  still alive on port 5555. Uses `netstat -ano` + `taskkill /F /PID` for
+  environment-agnostic process management (no PowerShell restrictions).
 
 ## [0.0.6] — Persistent Config, Credential Obfuscation & Slim Distribution
 
