@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.6] — Persistent Config, Credential Obfuscation & Slim Distribution
+
+### Added
+- **Persistent config across upgrades**: credentials are now stored in
+  `%APPDATA%\NodeToolbox\toolbox-proxy.json` instead of alongside `server.js`.
+  Upgrading to a new version no longer requires re-running the setup wizard.
+- **Credential obfuscation**: PATs, API tokens, and passwords are base64-encoded
+  on disk so they are not visible in plain text to a casual viewer.
+- **Automatic migration**: on first launch of v0.0.6+, any existing co-located
+  `toolbox-proxy.json` is automatically imported to AppData and the original file
+  is removed.
+- **Slim distribution zip**: `node_modules` is no longer bundled in the release
+  zip. The zip now contains ~30 files instead of ~5 000+, making extraction
+  near-instant. Dependencies are auto-installed via `npm ci` on first launch.
+- **Single-file Windows exe**: the release now ships a standalone
+  `nodetoolbox-vX.Y.Z.exe` built with `@yao-pkg/pkg`. No extraction or Node.js
+  install required — download and double-click.
+
+### Changed
+- `Launch Toolbox.bat` now auto-installs production dependencies (`npm ci
+  --omit=dev`) when `node_modules` is absent, enabling the slim zip workflow.
+- Release script (`local-release.ps1`) updated to produce both zip and exe
+  artifacts.
+
 ## [0.0.5] — Fix: v0.0.4 Issue Resolution (Issue #15)
 
 ### Fixed

@@ -1,9 +1,9 @@
-# scripts/local-release.ps1 — Packages NodeToolbox into a distributable zip.
+# scripts/local-release.ps1 — Packages NodeToolbox into distributable artifacts.
 #
-# Produces dist/nodetoolbox-vX.Y.Z.zip containing everything an end user needs
-# to run NodeToolbox: server.js, package.json + dependencies, public/, scripts/,
-# and the generated launcher shortcut. The zip is self-contained — no git history,
-# no dev dependencies, no test files.
+# Produces two distributable artifacts in dist/:
+#   1. nodetoolbox-vX.Y.Z.zip  — slim zip (no node_modules) for users who prefer extraction
+#   2. nodetoolbox-vX.Y.Z.exe  — single-file Windows executable (no extraction required)
+# Credentials are stored in AppData\Roaming\NodeToolbox\ and persist across upgrades.
 #
 # Usage:
 #   .\scripts\local-release.ps1               # full release build
@@ -42,6 +42,8 @@ $PackageData    = Get-Content $PackageJson -Raw | ConvertFrom-Json
 $AppVersion     = $PackageData.version
 $ZipFileName    = "nodetoolbox-v$AppVersion.zip"
 $ZipOutputPath  = Join-Path $DistDir $ZipFileName
+$ExeFileName    = "nodetoolbox-v$AppVersion.exe"
+$ExeOutputPath  = Join-Path $DistDir $ExeFileName
 
 # Files and directories included in the distributable.
 # Note: Launch Toolbox.bat uses %~dp0 to self-locate — it works from any
@@ -50,12 +52,12 @@ $ZipOutputPath  = Join-Path $DistDir $ZipFileName
 $IncludedPaths = @(
     (Join-Path $RepoRoot 'server.js'),
     (Join-Path $RepoRoot 'package.json'),
+    (Join-Path $RepoRoot 'package-lock.json'),
     (Join-Path $RepoRoot 'README.md'),
     (Join-Path $RepoRoot '.env.example'),
     (Join-Path $RepoRoot 'public'),
     (Join-Path $RepoRoot 'src'),
     (Join-Path $RepoRoot 'scripts'),
-    (Join-Path $RepoRoot 'node_modules'),
     $BatchLauncherPath
 )
 
@@ -71,6 +73,7 @@ if ($DryRun) {
     Write-Host ""
     Write-Host "  Version:    $AppVersion"
     Write-Host "  Output:     $ZipOutputPath (dist\$ZipFileName)"
+    Write-Host "  Exe:        $ExeOutputPath (dist\$ExeFileName)"
     Write-Host "  Launcher:   $BatchLauncherPath  (portable -- uses %`~dp0)"
     Write-Host ""
     Write-Host "  Included paths:"
@@ -91,7 +94,7 @@ Write-Host "  NodeToolbox Release Builder - v$AppVersion"
 Write-Host ""
 
 # Step 1: Install dependencies
-Write-Host "  [1/3] npm install..."
+Write-Host "  [1/4] npm install..."
 Push-Location $RepoRoot
 try {
     npm install --silent
@@ -102,7 +105,7 @@ try {
 Write-Host "       ✅ Dependencies installed"
 
 # Step 2: Create dist/ output directory (clean slate - remove previous builds)
-Write-Host "  [2/3] Preparing dist/ directory..."
+Write-Host "  [2/4] Preparing dist/ directory..."
 if (Test-Path $DistDir) {
     Remove-Item $DistDir -Recurse -Force
 }
@@ -110,7 +113,7 @@ New-Item -ItemType Directory -Path $DistDir | Out-Null
 Write-Host "       ✅ dist\ ready"
 
 # Step 3: Build the zip — collect paths that actually exist
-Write-Host "  [3/3] Building zip: $ZipFileName..."
+Write-Host "  [3/4] Building zip: $ZipFileName..."
 
 # @() ensures these are always arrays even when Where-Object returns $null (strict mode safe)
 [array]$pathsToBundle = @($IncludedPaths | Where-Object { Test-Path $_ })
@@ -143,6 +146,23 @@ Remove-Item $StagingDir -Recurse -Force
 
 $zipSizeKb = [math]::Round((Get-Item $ZipOutputPath).Length / 1KB)
 Write-Host "       ✅ $ZipOutputPath ($zipSizeKb KB)"
+
+# Step 4: Build the single-file Windows exe using @yao-pkg/pkg.
+# Bundles Node.js runtime + all app code + public assets into one .exe.
+# End users can run NodeToolbox without any extraction or npm install step.
+Write-Host "  [4/4] Building exe: $ExeFileName..."
+Push-Location $RepoRoot
+try {
+    npx pkg server.js --targets node20-win-x64 --output $ExeOutputPath --silent
+    if ($LASTEXITCODE -ne 0) { throw "pkg build failed with exit code $LASTEXITCODE" }
+} finally {
+    Pop-Location
+}
+$exeSizeKb = [math]::Round((Get-Item $ExeOutputPath).Length / 1KB)
+Write-Host "       ✅ $ExeOutputPath ($exeSizeKb KB)"
+
 Write-Host ""
-Write-Host "  ✅ Release build complete: $ZipOutputPath"
+Write-Host "  ✅ Release build complete:"
+Write-Host "     ZIP: $ZipOutputPath"
+Write-Host "     EXE: $ExeOutputPath"
 Write-Host ""
