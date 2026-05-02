@@ -32,13 +32,21 @@ $DistDir        = Join-Path $RepoRoot 'dist'
 $LauncherName   = 'Launch Toolbox.lnk'
 $LauncherPath   = Join-Path $RepoRoot $LauncherName
 
+# The portable bat launcher is always included in the distributable.
+# The .lnk shortcut is only relevant when created locally (npm run create-launcher)
+# because it embeds absolute paths that are machine-specific.
+$BatchLauncherPath = Join-Path $RepoRoot 'Launch Toolbox.bat'
+
 # Read version from package.json so the zip filename always matches the release
 $PackageData    = Get-Content $PackageJson -Raw | ConvertFrom-Json
 $AppVersion     = $PackageData.version
 $ZipFileName    = "nodetoolbox-v$AppVersion.zip"
 $ZipOutputPath  = Join-Path $DistDir $ZipFileName
 
-# Files and directories included in the distributable
+# Files and directories included in the distributable.
+# Note: Launch Toolbox.bat uses %~dp0 to self-locate — it works from any
+# extraction path. The .lnk shortcut is NOT included because it embeds
+# absolute paths from the build machine and breaks on the user's machine.
 $IncludedPaths = @(
     (Join-Path $RepoRoot 'server.js'),
     (Join-Path $RepoRoot 'package.json'),
@@ -48,7 +56,7 @@ $IncludedPaths = @(
     (Join-Path $RepoRoot 'src'),
     (Join-Path $RepoRoot 'scripts'),
     (Join-Path $RepoRoot 'node_modules'),
-    $LauncherPath
+    $BatchLauncherPath
 )
 
 # ── Dry-Run Output ─────────────────────────────────────────────────────────────
@@ -57,14 +65,13 @@ if ($DryRun) {
     Write-Host ""
     Write-Host "  [dry-run] local-release.ps1 would perform the following steps:"
     Write-Host ""
-    Write-Host "  1. npm install           — install production + dev dependencies"
-    Write-Host "  2. node scripts/create-launcher.js — create $LauncherName"
-    Write-Host "  3. mkdir dist\           — create output directory"
-    Write-Host "  4. Compress-Archive      — bundle into $ZipOutputPath"
+    Write-Host "  1. npm install           - install production + dev dependencies"
+    Write-Host "  2. mkdir dist\           - create output directory"
+    Write-Host "  3. Compress-Archive      - bundle into $ZipOutputPath"
     Write-Host ""
     Write-Host "  Version:    $AppVersion"
     Write-Host "  Output:     $ZipOutputPath (dist\$ZipFileName)"
-    Write-Host "  Launcher:   $LauncherPath"
+    Write-Host "  Launcher:   $BatchLauncherPath  (portable -- uses %`~dp0)"
     Write-Host ""
     Write-Host "  Included paths:"
     foreach ($includedItem in $IncludedPaths) {
@@ -80,11 +87,11 @@ if ($DryRun) {
 # ── Full Release Build ─────────────────────────────────────────────────────────
 
 Write-Host ""
-Write-Host "  🚀 NodeToolbox Release Builder — v$AppVersion"
+Write-Host "  NodeToolbox Release Builder - v$AppVersion"
 Write-Host ""
 
-# Step 1: Install dependencies (production + devDependencies for the launcher script)
-Write-Host "  [1/4] npm install..."
+# Step 1: Install dependencies
+Write-Host "  [1/3] npm install..."
 Push-Location $RepoRoot
 try {
     npm install --silent
@@ -94,21 +101,16 @@ try {
 }
 Write-Host "       ✅ Dependencies installed"
 
-# Step 2: Create the Windows shortcut
-Write-Host "  [2/4] Creating launcher shortcut..."
-$nodeOutput = node (Join-Path $RepoRoot 'scripts' 'create-launcher.js') 2>&1
-Write-Host "       ✅ $LauncherPath"
-
-# Step 3: Create dist/ output directory (clean slate - remove previous builds)
-Write-Host "  [3/4] Preparing dist/ directory..."
+# Step 2: Create dist/ output directory (clean slate - remove previous builds)
+Write-Host "  [2/3] Preparing dist/ directory..."
 if (Test-Path $DistDir) {
     Remove-Item $DistDir -Recurse -Force
 }
 New-Item -ItemType Directory -Path $DistDir | Out-Null
 Write-Host "       ✅ dist\ ready"
 
-# Step 4: Build the zip — collect paths that actually exist
-Write-Host "  [4/4] Building zip: $ZipFileName..."
+# Step 3: Build the zip — collect paths that actually exist
+Write-Host "  [3/3] Building zip: $ZipFileName..."
 
 # @() ensures these are always arrays even when Where-Object returns $null (strict mode safe)
 [array]$pathsToBundle = @($IncludedPaths | Where-Object { Test-Path $_ })

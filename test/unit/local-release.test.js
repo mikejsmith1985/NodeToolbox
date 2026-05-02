@@ -49,9 +49,10 @@ describeOnWindows('local-release.ps1', () => {
       expect(output).toMatch(/npm install/i);
     });
 
-    it('reports that the launcher would be created', () => {
+    it('reports that the portable bat launcher will be included', () => {
       const output = runDryRun();
-      expect(output).toMatch(/create-launcher|Launch Toolbox\.lnk/i);
+      // Dry-run should mention the .bat launcher (not the old .lnk shortcut)
+      expect(output).toMatch(/Launch Toolbox\.bat|%~dp0|portable bat/i);
     });
 
     it('reports the output zip file path', () => {
@@ -63,6 +64,12 @@ describeOnWindows('local-release.ps1', () => {
       const output = runDryRun();
       // Version comes from package.json — any semver pattern is valid
       expect(output).toMatch(/\d+\.\d+\.\d+/);
+    });
+
+    it('does NOT include the .lnk shortcut in the bundle (machine-specific paths)', () => {
+      const output = runDryRun();
+      // .lnk files embed absolute build-machine paths — they must never be bundled
+      expect(output).not.toMatch(/Launch Toolbox\.lnk/i);
     });
 
     it('does NOT create a dist/ directory in dry-run mode', () => {

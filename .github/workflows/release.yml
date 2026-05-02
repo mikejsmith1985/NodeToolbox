@@ -38,10 +38,6 @@ jobs:
       - name: Run test suite
         run: npm test
 
-      - name: Create Windows launcher shortcut
-        run: node scripts/create-launcher.js
-        # Runs on windows-latest so WScript.Shell (via VBScript/cscript) is available
-
       - name: Package distributable zip
         run: powershell -ExecutionPolicy Bypass -File scripts\local-release.ps1
         # Produces dist/nodetoolbox-vX.Y.Z.zip
