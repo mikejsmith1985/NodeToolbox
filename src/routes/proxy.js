@@ -28,7 +28,8 @@ function createProxyRouter(configuration) {
   // Supports Basic Auth (username + apiToken) and PAT (Bearer token).
 
   router.all('/jira-proxy/*', (req, res) => {
-    const jiraPath = buildDownstreamPath(req.path, '/jira-proxy');
+    // Use req.url (not req.path) so query strings are preserved and forwarded downstream.
+    const jiraPath = buildDownstreamPath(req.url, '/jira-proxy');
     proxyRequest(req, res, configuration.jira, jiraPath, null, configuration.sslVerify);
   });
 
@@ -37,7 +38,8 @@ function createProxyRouter(configuration) {
   // has been handed off; falls back to Basic Auth credentials if configured.
 
   router.all('/snow-proxy/*', (req, res) => {
-    const snowPath = buildDownstreamPath(req.path, '/snow-proxy');
+    // Use req.url (not req.path) so query strings are preserved and forwarded downstream.
+    const snowPath = buildDownstreamPath(req.url, '/snow-proxy');
 
     // Resolve the effective base URL — session base URL takes priority over config
     const effectiveBaseUrl = snowSession.resolveSnowBaseUrl(configuration.snow.baseUrl);
@@ -59,7 +61,8 @@ function createProxyRouter(configuration) {
       });
     }
 
-    const githubPath = buildDownstreamPath(req.path, '/github-proxy');
+    // Use req.url (not req.path) so query strings are preserved and forwarded downstream.
+    const githubPath = buildDownstreamPath(req.url, '/github-proxy');
     proxyRequest(req, res, configuration.github, githubPath, null, configuration.sslVerify);
   });
 
