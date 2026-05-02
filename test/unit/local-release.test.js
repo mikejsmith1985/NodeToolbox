@@ -110,5 +110,13 @@ describeOnWindows('local-release.ps1', () => {
       const output = runDryRun();
       expect(output).toMatch(/GitHub Release|gh release create/i);
     });
+
+    it('reports that the exe will be wrapped in its own zip for safe download', () => {
+      // Raw .exe files are flagged as dangerous by browsers and email scanners.
+      // Wrapping the exe in a dedicated -exe.zip lets users download without
+      // security warnings while still getting the single-file executable.
+      const output = runDryRun();
+      expect(output).toMatch(/-exe\.zip/i);
+    });
   });
 });
