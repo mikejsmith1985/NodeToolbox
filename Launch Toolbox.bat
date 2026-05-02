@@ -28,4 +28,4 @@ if not exist "node_modules" (
     echo Done.
 )
 
-start "" /b node server.js --open
+start "NodeToolbox Server" node server.js --open

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.7] — Fix: Launcher Window Disappears, Exe Download Blocked
+
+### Fixed
+- **`Launch Toolbox.bat`** — Server window disappearing on launch (v0.0.6 regression).
+  The `start /b` flag ran Node inside the launcher's console window without creating
+  a new one. When the bat file exited, the console closed and killed the Node process
+  with it. Changed to `start "NodeToolbox Server"` which opens a dedicated, persistent
+  server window — the dashboard stays alive after the launcher closes.
+- **Exe download blocked by browser** — The raw `nodetoolbox-vX.Y.Z.exe` triggered
+  security warnings in Chrome/Edge that prevented download. The release now ships the
+  exe inside a dedicated `nodetoolbox-vX.Y.Z-exe.zip`, bypassing browser exe filters.
+
+### Tests Added
+- `test/unit/bat-launcher.test.js` — 9 new tests covering: bat file existence, `npm ci`
+  auto-install logic, `start` command structure (no `/b`, has window title `"NodeToolbox
+  Server"`, passes `--open`), working-directory anchor via `%~dp0`.
+
 ## [0.0.6] — Persistent Config, Credential Obfuscation & Slim Distribution
 
 ### Added
