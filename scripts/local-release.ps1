@@ -84,11 +84,11 @@ Write-Host ""
 Write-Host "  [1/4] npm install..."
 Push-Location $RepoRoot
 try {
+    # Pre-initialize so Set-StrictMode -Version Latest never sees it unset
+    $LASTEXITCODE = 0
     npm install --silent
-    # $LASTEXITCODE must be captured immediately after the native command; under
-    # Set-StrictMode -Version Latest the automatic variable isn't pre-initialized.
-    [int]$npmExitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
-    if ($npmExitCode -ne 0) { throw "npm install failed with exit code $npmExitCode" }
+    [int]$npmInstallExitCode = $LASTEXITCODE
+    if ($npmInstallExitCode -ne 0) { throw "npm install failed with exit code $npmInstallExitCode" }
 } finally {
     Pop-Location
 }
