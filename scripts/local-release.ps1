@@ -69,10 +69,14 @@ if ($BumpType -ne '') {
 $PackageData    = Get-Content $PackageJson -Raw | ConvertFrom-Json
 $AppVersion     = $PackageData.version
 $GitTag         = "v$AppVersion"
-$ZipFileName    = "nodetoolbox-v$AppVersion.zip"
-$ZipOutputPath  = Join-Path $DistDir $ZipFileName
-$ExeFileName    = "nodetoolbox-v$AppVersion.exe"
-$ExeOutputPath  = Join-Path $DistDir $ExeFileName
+$ZipFileName      = "nodetoolbox-v$AppVersion.zip"
+$ZipOutputPath    = Join-Path $DistDir $ZipFileName
+$ExeFileName      = "nodetoolbox-v$AppVersion.exe"
+$ExeOutputPath    = Join-Path $DistDir $ExeFileName
+# The exe is shipped inside its own dedicated zip to prevent browser security
+# warnings that block direct .exe downloads from GitHub Releases.
+$ExeZipFileName   = "nodetoolbox-v$AppVersion-exe.zip"
+$ExeZipOutputPath = Join-Path $DistDir $ExeZipFileName
 
 # Files and directories included in the distributable zip.
 # node_modules is intentionally excluded — Launch Toolbox.bat auto-installs
@@ -102,12 +106,14 @@ if ($DryRun) {
     Write-Host "  2. mkdir dist\           - create output directory"
     Write-Host "  3. Compress-Archive      - bundle slim zip into $ZipOutputPath"
     Write-Host "  4. pkg                   - build single-file exe at $ExeOutputPath"
+    Write-Host "  4b. Compress-Archive     - wrap exe into $ExeZipOutputPath (browser-safe download)"
     Write-Host "  5. gh release create     - publish GitHub Release $GitTag with both artifacts"
     Write-Host ""
     Write-Host "  Version:    $AppVersion"
     Write-Host "  Tag:        $GitTag"
     Write-Host "  Output:     $ZipOutputPath (dist\$ZipFileName)"
     Write-Host "  Exe:        $ExeOutputPath (dist\$ExeFileName)"
+    Write-Host "  Exe zip:    $ExeZipOutputPath (dist\$ExeZipFileName)"
     Write-Host "  Launcher:   $BatchLauncherPath  (portable -- uses %`~dp0)"
     Write-Host ""
     Write-Host "  Included paths:"
@@ -195,6 +201,12 @@ try {
 $exeSizeKb = [math]::Round((Get-Item $ExeOutputPath).Length / 1KB)
 Write-Host "       ✅ $ExeOutputPath ($exeSizeKb KB)"
 
+# Wrap the exe in its own dedicated zip so users can download it without
+# browser security warnings that block direct .exe file downloads.
+Compress-Archive -Path $ExeOutputPath -DestinationPath $ExeZipOutputPath -Force
+$exeZipSizeKb = [math]::Round((Get-Item $ExeZipOutputPath).Length / 1KB)
+Write-Host "       ✅ $ExeZipOutputPath ($exeZipSizeKb KB)"
+
 # Step 5: Commit version bump (if applicable), tag, and publish GitHub Release.
 # gh release create handles creating the release AND uploading the assets in one
 # command. We force-delete any existing release/tag of the same version first so
@@ -227,8 +239,10 @@ try {
     git push origin $GitTag
     if ($LASTEXITCODE -ne 0) { throw "git push tag failed with exit code $LASTEXITCODE" }
 
-    # Create the GitHub Release and attach both artifacts
-    gh release create $GitTag $ZipOutputPath $ExeOutputPath `
+    # Create the GitHub Release and attach both artifacts.
+    # $ExeZipOutputPath is used instead of the raw .exe so users aren't blocked
+    # by browser security warnings that flag unsigned .exe direct downloads.
+    gh release create $GitTag $ZipOutputPath $ExeZipOutputPath `
         --title "NodeToolbox $GitTag" `
         --generate-notes `
         --latest
@@ -241,6 +255,6 @@ Write-Host "       ✅ GitHub Release $GitTag published"
 Write-Host ""
 Write-Host "  ✅ Release complete:"
 Write-Host "     ZIP: $ZipOutputPath"
-Write-Host "     EXE: $ExeOutputPath"
+Write-Host "     EXE: $ExeZipOutputPath"
 Write-Host "     URL: https://github.com/mikejsmith1985/NodeToolbox/releases/tag/$GitTag"
 Write-Host ""

@@ -1,6 +1,6 @@
 {
   "name": "node-toolbox",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Enterprise proxy server for Jira, GitHub, and ServiceNow — Express-based, zero terminal configuration",
   "keywords": [
     "toolbox",
@@ -42,7 +42,9 @@
     "node": ">=18.0.0"
   },
   "pkg": {
-    "assets": ["public/**/*"]
+    "assets": [
+      "public/**/*"
+    ]
   },
   "jest": {
     "testEnvironment": "node",
