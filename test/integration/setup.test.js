@@ -1,4 +1,4 @@
-// test/integration/setup.test.js — Integration tests for the first-run setup wizard.
+// test/integration/setup.test.js — Integration tests for the guided first-run setup wizard.
 // Verifies that GET /setup serves the HTML wizard and POST /api/setup validates
 // and saves credentials, redirecting to the dashboard on success.
 
@@ -42,24 +42,67 @@ describe('GET /setup', () => {
     expect(response.headers['content-type']).toMatch(/text\/html/);
   });
 
-  it('includes the three service cards (Jira, GitHub, ServiceNow)', async () => {
+  it('has a welcome/intro step', async () => {
     const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
-    const html = response.text;
-    expect(html).toMatch(/Jira/i);
-    expect(html).toMatch(/GitHub/i);
-    expect(html).toMatch(/ServiceNow/i);
+    // First step should greet the user warmly — check for wizard step markers
+    expect(response.text).toMatch(/data-step="welcome"|id="step-welcome"/i);
   });
 
-  it('includes a form that posts to /api/setup', async () => {
+  it('has a Jira setup step', async () => {
+    const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
+    expect(response.text).toMatch(/data-step="jira"|id="step-jira"/i);
+  });
+
+  it('has a GitHub setup step', async () => {
+    const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
+    expect(response.text).toMatch(/data-step="github"|id="step-github"/i);
+  });
+
+  it('has a ServiceNow setup step', async () => {
+    const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
+    expect(response.text).toMatch(/data-step="snow"|id="step-snow"/i);
+  });
+
+  it('has a completion/done step', async () => {
+    const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
+    expect(response.text).toMatch(/data-step="done"|id="step-done"/i);
+  });
+
+  it('includes Skip buttons for optional services (GitHub and ServiceNow)', async () => {
+    const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
+    // Both GitHub and ServiceNow are optional — must be skippable
+    expect(response.text).toMatch(/skip/i);
+  });
+
+  it('includes a progress indicator', async () => {
+    const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
+    expect(response.text).toMatch(/progress|step-indicator|step \d|of \d/i);
+  });
+
+  it('sends the form payload to /api/setup', async () => {
     const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
     expect(response.text).toMatch(/\/api\/setup/);
   });
 
-  it('pre-fills the Jira base URL if already configured', async () => {
+  it('pre-fills the Jira base URL when already configured', async () => {
     const configuration = buildBlankConfig();
     configuration.jira.baseUrl = 'https://prefilled.atlassian.net';
     const response = await request(buildTestApp(configuration)).get('/setup');
     expect(response.text).toContain('https://prefilled.atlassian.net');
+  });
+
+  it('pre-fills the ServiceNow base URL when already configured', async () => {
+    const configuration = buildBlankConfig();
+    configuration.snow.baseUrl = 'https://myinstance.service-now.com';
+    const response = await request(buildTestApp(configuration)).get('/setup');
+    expect(response.text).toContain('https://myinstance.service-now.com');
+  });
+
+  it('has no external script or stylesheet URLs (enterprise offline safety)', async () => {
+    const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
+    // Must not load any CDN resources — all CSS/JS must be inline
+    expect(response.text).not.toMatch(/src="https?:\/\//);
+    expect(response.text).not.toMatch(/href="https?:\/\//);
   });
 });
 

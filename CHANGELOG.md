@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.1] — Phase 6: Friendly Guided Setup Wizard
+
+### Added
+- `src/routes/setup.js` — Fully redesigned as a 5-step guided wizard (Welcome → Jira → GitHub → ServiceNow → Done). Each step uses plain, jargon-free language with skip buttons for optional services. Progress indicator with animated dots. Zero external CDN dependencies — self-contained inline HTML.
+- `test/integration/setup.test.js` — Expanded from 9 to 17 tests. New GET tests: welcome step, jira/github/snow/done step presence, skip buttons, progress indicator, `/api/setup` reference, Jira/SNow URL pre-fill, no external CDN URLs. POST contract unchanged.
+
+### Changed
+- `public/toolbox.html` — Removed all Python (`toolbox-server.py`) references:
+  - Replaced Python wizard steps in `tbxConnWizStep3()` and `tbxWizS3Proxy()` with Node.js download/launch instructions
+  - Renamed `tbxWizDownloadServerPy()` → `tbxWizDownloadServerJs()` (opens NodeToolbox releases page)
+  - Updated `proxyStartCommand` → `node server.js`
+  - Updated `adminHubCopyStartCommand()`, bat launcher, and silent VBScript launcher to reference `node server.js`
+  - Updated proxy update banner download link to GitHub Releases page
+  - Removed 1,922-line embedded `toolbox-server.py` block (replaced with one-line comment)
+- `package.json` — Version bumped from `1.0.0` to `0.0.1` for initial release tag
+
 ## [1.4.0] — Phase 5: Release Pipeline
 
 ### Added
