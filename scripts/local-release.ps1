@@ -18,7 +18,10 @@ param(
     [switch]$DryRun
 )
 
-Set-StrictMode -Version Latest
+# $ErrorActionPreference = 'Stop' causes PowerShell cmdlet errors to terminate
+# the script immediately. Set-StrictMode is intentionally omitted: it interacts
+# poorly with automatic variables like $LASTEXITCODE on fresh PowerShell sessions
+# (throws VariableIsUndefined even on assignment in some versions).
 $ErrorActionPreference = 'Stop'
 
 # ── Constants ──────────────────────────────────────────────────────────────────
@@ -84,11 +87,8 @@ Write-Host ""
 Write-Host "  [1/4] npm install..."
 Push-Location $RepoRoot
 try {
-    # Pre-initialize so Set-StrictMode -Version Latest never sees it unset
-    $LASTEXITCODE = 0
     npm install --silent
-    [int]$npmInstallExitCode = $LASTEXITCODE
-    if ($npmInstallExitCode -ne 0) { throw "npm install failed with exit code $npmInstallExitCode" }
+    if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
 } finally {
     Pop-Location
 }
