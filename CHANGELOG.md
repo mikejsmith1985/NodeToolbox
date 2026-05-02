@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.10] — Fix: Dashboard Loads After Setup, Silent Launch Option
+
+### Fixed
+- **"File Not Found" page shown immediately after setup wizard (Issue #22)** — After
+  completing the setup wizard in the `.exe` distribution, the browser was redirected to
+  `/` but received the "⚠ toolbox.html not found" error page instead of the dashboard.
+  Root cause: `@yao-pkg/pkg` patches `fs.readFileSync` for snapshot assets but does NOT
+  reliably patch `fs.existsSync`. `findToolboxHtml()` used `existsSync`, which returned
+  `false` for every path in the snapshot, so the middleware concluded the file was missing.
+  Fix: `toolbox.html` is now pre-loaded at module startup using `readFileSync` (which IS
+  intercepted by pkg). Every subsequent `GET /` is served from that in-memory cache —
+  no per-request `existsSync` call required, and the fix works identically in zip and
+  exe distributions.
+
+### Added
+- **`Launch Toolbox Silent.vbs`** — New headless launcher included in both the zip and
+  exe-zip distributions. Double-clicking the VBScript starts NodeToolbox without any
+  visible console window (`WScript.Shell.Run` with windowStyle `0 = SW_HIDE`). The
+  browser auto-opens to the dashboard exactly as with the regular launchers. Works with
+  both distribution types: finds `nodetoolbox-*.exe` for the exe-zip and falls back to
+  `Launch Toolbox.bat` for the zip distribution. Includes a `MsgBox` error if neither
+  launcher is found (e.g. wrong directory). Aimed at corporate users who find the
+  terminal window concerning or are worried about accidentally closing it.
+
+### Changed
+- **`scripts/local-release.ps1`** — The exe-zip now contains both the `.exe` and the
+  new `Launch Toolbox Silent.vbs`. Previously it contained only the `.exe`. The zip
+  also includes `Launch Toolbox Silent.vbs` alongside the existing bat launcher.
+
+### Tests
+- `test/unit/pkg-snapshot.test.js` — NEW: 4 tests covering `cachedDashboardHtml` export,
+  HTML content validity, and that `serveStaticFile` returns 200 when `existsSync` is
+  stubbed to `false` (direct simulation of the pkg environment).
+- `test/unit/silent-launcher.test.js` — NEW: 7 tests verifying the VBScript file exists,
+  is non-empty, uses `WScript.Shell`, passes window style `0` (hidden), searches for
+  `nodetoolbox-*.exe` by prefix, falls back to `Launch Toolbox.bat`, and shows a
+  `MsgBox` error when nothing is found.
+
 ## [0.0.9] — Fix: Startup Errors Now Visible, Corporate SSL Fixed
 
 ### Fixed
