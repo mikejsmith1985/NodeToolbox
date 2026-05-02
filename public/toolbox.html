@@ -6,7 +6,7 @@
   <title>Toolbox v0.24.25</title>
 
 <style>
-﻿    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
       /* Dark theme is the default */
@@ -1409,17 +1409,17 @@ color: #fff;
 .wt-conn-github { background:rgba(88,166,255,.12); color:#58a6ff; }
 
 </style>
-﻿</head>
+</head>
 <body>
 
-﻿
+
 <div id="tbx-update-banner"></div>
 
 <!-- ═══════════════════════════════════════════════════════════════
      VIEW: HOME
 ════════════════════════════════════════════════════════════════ -->
 
-﻿<div id="view-home" class="view active">
+<div id="view-home" class="view active">
   <div class="tbx-header">
     <div class="logo">
       <div class="logo-icon">🧰</div>
@@ -1512,12 +1512,26 @@ color: #fff;
       <span class="tbx-section-divider-label" style="color:var(--text-muted);">🛠 Text Tools</span>
       <div class="tbx-section-divider-line"></div>
     </div>
-    <div class="grid">
+    <div class="grid" style="margin-bottom:28px;">
       <div class="card" onclick="showView('text-tools')" data-view="text-tools">
         <div class="card-icon" style="background:rgba(139,92,246,.15);font-size:20px;">🛠</div>
         <div class="card-title">Text Tools</div>
         <div class="card-desc">Smart Formatter, JSON Formatter, Case Converter, URL Encoder/Decoder, Base64, and Element Extractor — all in one place.</div>
         <div class="card-tags"><span class="tag">JSON</span><span class="tag">Markdown</span><span class="tag">Encode</span><span class="tag">Base64</span></div>
+      </div>
+    </div>
+
+    <!-- Administration -->
+    <div class="tbx-section-divider">
+      <span class="tbx-section-divider-label" style="color:#ef4444;">🛡️ Administration</span>
+      <div class="tbx-section-divider-line" style="background:linear-gradient(to right,#ef444433,transparent);"></div>
+    </div>
+    <div class="grid" style="margin-bottom:28px;">
+      <div class="card" onclick="showView('admin-hub')" data-view="admin-hub">
+        <div class="card-icon" style="background:rgba(239,68,68,.15);font-size:20px;">🛡️</div>
+        <div class="card-title">Admin Hub</div>
+        <div class="card-desc">POC leadership tools — team oversight, reporting dashboards, and administrative configuration for NodeToolbox.</div>
+        <div class="card-tags"><span class="tag">Admin</span><span class="tag">Leadership</span><span class="tag">Reports</span></div>
       </div>
     </div>
 
@@ -1547,7 +1561,7 @@ color: #fff;
      VIEW: MY ISSUES
 ════════════════════════════════════════════════════════════════ -->
 
-﻿<div id="view-my-issues" class="view">
+<div id="view-my-issues" class="view">
   <div class="tbx-header">
     <button class="back-btn" onclick="showView('home')">← Home</button>
     <span class="sep">|</span>
@@ -1843,7 +1857,7 @@ color: #fff;
      VIEW: TEXT TOOLS (unified: Smart Formatter, JSON, Case Converter, URL, Base64, Element Extractor)
 ════════════════════════════════════════════════════════════════ -->
 
-﻿<div id="view-text-tools" class="view">
+<div id="view-text-tools" class="view">
   <div class="tbx-header">
     <button class="back-btn" onclick="showView('home')">← Home</button>
     <span class="sep">|</span>
@@ -2079,7 +2093,7 @@ color: #fff;
      VIEW: SNOW HUB  (Change Request Generator + PRB Generator)
 ════════════════════════════════════════════════════════════════ -->
 
-﻿<div id="view-snow-hub" class="view">
+<div id="view-snow-hub" class="view">
   <div class="tbx-header">
     <button class="back-btn" onclick="showView('home')">← Home</button>
     <span class="sep">|</span>
@@ -3102,7 +3116,7 @@ $listener.Start()
 
 
 <script id="extractor-src" type="text/plain">
-﻿(function () {
+(function () {
   'use strict';
   try {
   var PANEL_ID = '__tbx_extractor_v1';
@@ -3308,7 +3322,7 @@ $listener.Start()
      ALL JAVASCRIPT
 ════════════════════════════════════════════════════════════════ -->
 <script>
-﻿// ── Toolbox version & update config ──────────────────────────────────────────
+// ── Toolbox version & update config ──────────────────────────────────────────
 var TOOLBOX_VERSION = '0.24.25';
 var MIN_PROXY_SERVER_VERSION = '0.24.25'; // bumped by release script — oldest proxy that works with this UI build
 var TOOLBOX_UPDATE_REPO = 'mikejsmith1985/ToolBox';   // public, used for version check
@@ -5433,8 +5447,11 @@ function snhOnOpen() {
 function crCheckCredWarnings() {
   var jiraWarn = document.getElementById('cr-jira-warn');
   var snowWarn = document.getElementById('cr-snow-warn');
-  if (jiraWarn) jiraWarn.style.display = !CRG.relay.jiraReady ? 'flex' : 'none';
-  if (snowWarn) snowWarn.style.display = !CRG.relay.snowReady ? 'flex' : 'none';
+  // In NodeToolbox proxy mode the relay is never used, so CRG.relay.jiraReady is always
+  // false. Suppress warnings for proxy-mode users — the server handles credentials.
+  var isInProxyMode = typeof IS_NODETOOLBOX_SERVER !== 'undefined' && IS_NODETOOLBOX_SERVER;
+  if (jiraWarn) jiraWarn.style.display = (!isInProxyMode && !CRG.relay.jiraReady) ? 'flex' : 'none';
+  if (snowWarn) snowWarn.style.display = (!isInProxyMode && !CRG.relay.snowReady) ? 'flex' : 'none';
 }
 
 // ── Issue type badge ──────────────────────────────────────────────────────────
@@ -6751,7 +6768,7 @@ function crSaveSettings() {
 }
 
 
-﻿// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // GLOBAL PAT AUTH LAYER
 // Provides PAT-first Jira/SNow API calls. Tries direct fetch
 // first (if CORS allows), falls back to relay-with-PAT, then
@@ -9017,7 +9034,7 @@ tbxRestoreCardOrder();
 tbxInitCardDrag();
 
 
-﻿// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 //  MY ISSUES TOOL
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -12038,7 +12055,7 @@ function miFlashExportBtn(msg) {
 }
 
 
-﻿// ══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
 // PRB SETUP WIZARD
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -12408,7 +12425,7 @@ function prbWizS6() {
 }
 
 
-﻿// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // DEV INTEGRATIONS TOOL
 // ═══════════════════════════════════════════════════════════════
 
@@ -12497,10 +12514,23 @@ function devSaveSettings() {
 function devTestJiraPAT() {
   var el = document.getElementById('dev-cfg-jira-pat');
   var pat = el ? el.value.trim() : tbxGetJiraPAT();
-  if (!pat) { var r = document.getElementById('dev-pat-result'); if(r) r.innerHTML = crAlert('Enter a PAT first.','warn'); return; }
-  var base = tbxGetJiraUrl().replace(/\/$/,'');
   var res = document.getElementById('dev-pat-result');
+  if (!pat) { if (res) res.innerHTML = crAlert('Enter a PAT first.', 'warn'); return; }
   if (res) res.innerHTML = crAlert(crSpinner() + ' Testing…', 'info');
+  // In NodeToolbox proxy mode, route through the server-side /jira-proxy to avoid CORS.
+  // The proxy injects the configured PAT automatically — no direct browser credential needed.
+  if (typeof IS_NODETOOLBOX_SERVER !== 'undefined' && IS_NODETOOLBOX_SERVER) {
+    tbxJiraRequest('GET', '/rest/api/2/myself', null)
+      .then(function(d) {
+        var name = d.displayName || d.name || '?';
+        if (res) res.innerHTML = crAlert('✅ Valid — authenticated as <strong>' + crEsc(name) + '</strong>.', 'success');
+      }).catch(function(err) {
+        var msg = err && err.message ? err.message : String(err);
+        if (res) res.innerHTML = crAlert('❌ PAT test failed: ' + crEsc(msg), 'error');
+      });
+    return;
+  }
+  var base = tbxGetJiraUrl().replace(/\/$/,'');
   if (!base) { if(res) res.innerHTML = crAlert('Set Jira URL in Settings first.','warn'); return; }
   fetch(base + '/rest/api/2/myself', { headers: { 'Authorization': 'Bearer ' + pat, 'Accept': 'application/json' } })
   .then(function(r){ return r.json(); }).then(function(d){
@@ -12932,7 +12962,7 @@ function devDownload(filename, content) {
 }
 
 
-﻿// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // DEV INTEGRATIONS SETUP WIZARD
 // ═══════════════════════════════════════════════════════════════
 
@@ -13127,10 +13157,9 @@ function devWizS0() {
     'This tool automatically posts your git commits and merges as comments on the matching Jira ticket — ' +
     'keeping your team informed without any manual effort.</p>' +
     '</div>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px;">' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;">' +
     devWizFeatureCard('⟳', 'GitHub Sync', 'Polls your repo and posts commits to Jira automatically while Toolbox is open.') +
     devWizFeatureCard('✏', 'Manual Post', 'Paste a branch name or commit message to post a one-off comment to Jira.') +
-    devWizFeatureCard('⚙', 'Git Hooks', 'Install PowerShell hooks that run offline — no browser needed after setup.') +
     '</div>' +
     '<p style="font-size:12px;color:var(--text-muted);text-align:center;margin:0;">' +
     'This wizard walks you through setup in about 2 minutes. You\'ll need a Jira PAT token to get started.</p>';
@@ -13243,7 +13272,7 @@ function devWizS3() {
 function devWizS4() {
   return '<h2 style="margin:0 0 6px;font-size:17px;">🚀 Choose Your Workflow</h2>' +
     '<p style="color:var(--text-muted);font-size:13px;margin:0 0 16px;line-height:1.6;">' +
-    'Pick the method that fits how you work. You can use all three — they\'re independent.</p>' +
+    'Pick the method that fits how you work. You can use both — they\'re independent.</p>' +
     '<div style="display:flex;flex-direction:column;gap:10px;">' +
     devWizMethodCard('⟳', 'GitHub Sync (Recommended)', '#22c55e',
       'While Toolbox is open, polls GitHub every 15 min (configurable). Finds all commits with Jira keys and posts comments automatically. Uses your Jira PAT to post directly.',
@@ -13253,10 +13282,6 @@ function devWizS4() {
       'Paste any branch name, commit SHA, or text containing a Jira key and post a comment on demand.',
       ['Go to ✏ Manual Post tab', 'Paste your branch name or text', 'Click Post to Jira'],
       'Good for one-off linking or retroactive updates.') +
-    devWizMethodCard('⚙', 'Git Hooks (Offline)', '#a78bfa',
-      'Download PowerShell scripts and install them as git hooks. Runs after every commit — no browser, no Toolbox, fully automated.',
-      ['Go to ⚙ Hook Generator tab', 'Download post-commit.ps1 + install-hooks.ps1', 'Run: .\\install-hooks.ps1 -RepoPath "C:\\your\\repo"'],
-      'Runs offline. Requires PowerShell. Works on any git operation even without Toolbox open.') +
     '</div>';
 }
 
@@ -13294,7 +13319,7 @@ function devWizS5() {
     '<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;line-height:1.7;margin-bottom:16px;">' +
     '<strong>Quick start:</strong><br>' +
     '① Go to <strong>⟳ GitHub Sync</strong> tab → click <strong>▶ Start</strong><br>' +
-    '② Or go to <strong>⚙ Hook Generator</strong> to download offline git hooks<br>' +
+    '② Or use <strong>✏ Manual Post</strong> to link a commit on demand<br>' +
     '③ Re-open this wizard anytime via the <strong>🧙 Setup Wizard</strong> button in the tab bar' +
     '</div>' +
     '<p style="font-size:11px;color:var(--text-muted);text-align:center;margin:0;">' +
@@ -13352,7 +13377,7 @@ function devWizParseRepo(input) {
 }
 
 
-﻿// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // SPRINT DASHBOARD
 // ═══════════════════════════════════════════════════════════════
 
@@ -13662,7 +13687,7 @@ function sdMoveIssueSprint(issueKey, sel) {
 }
 
 
-﻿// ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
 // 🐛  DEFECT MANAGEMENT
 // ═══════════════════════════════════════════════════════════════════════
 var SD_DEFECT_STATE = {
@@ -14399,7 +14424,7 @@ function sdSaveCfg() {
 }
 
 
-﻿// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // ART VIEW
 // ═══════════════════════════════════════════════════════════════
 
@@ -17621,7 +17646,7 @@ function artStopAutoRefresh() {
 }
 
 
-﻿// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // METRICS TAB
 // ═══════════════════════════════════════════════════════════════
 
@@ -18055,7 +18080,7 @@ function sdRenderThroughput(data, period) {
 }
 
 
-﻿// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // DSU – DAILY STANDUP
 // ═══════════════════════════════════════════════════════════════
 
@@ -18363,7 +18388,7 @@ function sdToggleReleaseIssues(cardId) {
 }
 
 
-﻿// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // SPRINT PLANNING
 // ═══════════════════════════════════════════════════════════════
 
@@ -18503,7 +18528,7 @@ function spSaveDone(saved, errors, status) {
 
 
 
-﻿// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // SD STANDUP BOARD WALK + PLANNING HIERARCHY
 // ═══════════════════════════════════════════════════════════════
 
@@ -19930,7 +19955,7 @@ function sdRenderEpicSection(grp) {
 }
 
 
-﻿// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // STORY POINTING
 // ═══════════════════════════════════════════════════════════════
 
@@ -20448,7 +20473,7 @@ function ptRestart() {
   ptRender();
 }
 
-﻿// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // WORK LOG TIMER
 // ═══════════════════════════════════════════════════════════════
 
@@ -20741,7 +20766,7 @@ function wlRenderHistory() {
 // Wizard is triggered by prbOnOpen() when user navigates to PRB Generator
 
 
-﻿// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // PRB SYNC MONITOR
 // Polls Jira for issues with PRB numbers in summary, syncs
 // status changes and comments to the corresponding SNow PRB.
@@ -21310,7 +21335,7 @@ function prbSyncExportPowerShell() {
 }
 
 
-﻿// ══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
 //  DSU BOARD — 6-section standup view
 // ══════════════════════════════════════════════════════════════════════
 var DSU_FIELDS = 'summary,status,priority,assignee,issuetype,created,updated,duedate,fixVersions,issuelinks,labels,customfield_10016,customfield_10028,customfield_10014,customfield_10301';
@@ -44374,7 +44399,7 @@ function trSearchUsers() {
     });
 }
 </script>
-﻿<!-- ═══════════════════════════════════════════════════════════════
+<!-- ═══════════════════════════════════════════════════════════════
      PRB SETUP WIZARD OVERLAY
 ════════════════════════════════════════════════════════════════ -->
 <div id="prb-wizard-bd" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.58);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:16px;">
@@ -44399,7 +44424,7 @@ function trSearchUsers() {
      DEV WORKSPACE (unified: Work Log Timer + Dev Integrations)
 ══════════════════════════════════════════════════════════ -->
 
-﻿<div id="view-dev-workspace" class="view">
+<div id="view-dev-workspace" class="view">
   <div class="tbx-header">
     <button class="back-btn" onclick="showView('home')">← Home</button>
     <span class="sep">|</span>
@@ -44701,7 +44726,7 @@ function trSearchUsers() {
      VIEW: ART VIEW
 ════════════════════════════════════════════════════════════════ -->
 
-﻿<div id="view-sprint-dashboard" class="view">
+<div id="view-sprint-dashboard" class="view">
   <div class="tbx-header">
     <button class="back-btn" onclick="showView('home')">🏠 Home</button>
     <span class="sep">|</span>
@@ -45014,7 +45039,7 @@ function trSearchUsers() {
 </div><!-- /view-sprint-dashboard -->
 
 
-﻿<div id="view-art" class="view">
+<div id="view-art" class="view">
   <div class="tbx-header">
     <button class="back-btn" onclick="showView('home')">← Home</button>
     <span class="sep">|</span>
@@ -45314,7 +45339,7 @@ function trSearchUsers() {
      VIEW: CODE WALKTHROUGH
 ════════════════════════════════════════════════════════════════ -->
 
-﻿<div id="view-code-walkthrough" class="view">
+<div id="view-code-walkthrough" class="view">
   <div class="tbx-header">
     <button class="back-btn" onclick="showView('home')">← Home</button>
     <span class="sep">|</span>
@@ -45378,7 +45403,7 @@ function trSearchUsers() {
      DSU BOARD VIEW
 ══════════════════════════════════════════════════════════ -->
 
-﻿<div id="view-dsu-board" class="view">
+<div id="view-dsu-board" class="view">
   <div class="tbx-header">
     <button class="back-btn" onclick="showView('sprint-dashboard')">← Team Dashboard</button>
     <span class="sep">|</span>
@@ -45467,7 +45492,7 @@ function trSearchUsers() {
 
 <!-- ── TOOLBOX SETTINGS VIEW ─────────────────────────────────────────────── -->
 
-﻿<div id="view-toolbox-settings" class="view">
+<div id="view-toolbox-settings" class="view">
   <div class="tbx-header">
     <button class="back-btn" onclick="showView('home')">← Home</button>
     <span class="sep">|</span>
@@ -45681,7 +45706,7 @@ function trSearchUsers() {
      VIEW: AI CHAT
 ════════════════════════════════════════════════════════════════ -->
 
-﻿<div id="view-ai-chat" class="view" style="display:none!important;visibility:hidden;pointer-events:none;">
+<div id="view-ai-chat" class="view" style="display:none!important;visibility:hidden;pointer-events:none;">
   <div class="tbx-header">
     <button class="back-btn" onclick="showView('home')">← Home</button>
     <span class="sep">|</span>
@@ -45974,7 +45999,7 @@ function trSearchUsers() {
 </div>
 
 <script>
-﻿// ── Toolbox Global Settings ────────────────────────────────────────────────────
+// ── Toolbox Global Settings ────────────────────────────────────────────────────
 function tbxGSOnOpen() {
   var ju = document.getElementById('tbx-gs-jira-url');
   if (ju) ju.value = localStorage.getItem('tbxCRGenJiraUrl') || '';
@@ -47654,7 +47679,7 @@ function artCopyAIPrompt() {
 }
 
 </script>
-﻿
+
 <!-- ── Setup Wizard Overlay ──────────────────────────────────────────────── -->
 <div id="tbx-wizard">
   <div class="tbx-wiz-wrap">

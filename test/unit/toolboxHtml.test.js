@@ -51,6 +51,90 @@ describe('toolbox.html — NodeToolbox proxy auto-wire', () => {
 
 });
 
+// ── HTML Hygiene ──────────────────────────────────────────────────────────────
+
+describe('toolbox.html — HTML hygiene', () => {
+
+  it('contains no BOM (U+FEFF) byte-order-mark characters', () => {
+    // BOM characters appear as garbled glyphs in some browsers.
+    // They must not appear anywhere in the HTML after the file opening.
+    const hasBom = toolboxHtmlContent.includes('\uFEFF');
+    expect(hasBom).toBe(false);
+  });
+
+});
+
+// ── Home Page Grid ────────────────────────────────────────────────────────────
+
+describe('toolbox.html — home page card grid', () => {
+
+  it('includes an Admin Hub card in the home page view', () => {
+    // Admin Hub was implemented but its card was missing from the home grid.
+    // The card must exist as an actual DOM element (not just in a JS querySelector string).
+    // The onclick handler pattern distinguishes a real card from a JS selector string.
+    expect(toolboxHtmlContent).toContain("onclick=\"showView('admin-hub')\"");
+  });
+
+});
+
+// ── Proxy Mode Credential Warnings ───────────────────────────────────────────
+
+describe('toolbox.html — SNow Hub credential warning in proxy mode', () => {
+
+  it('crCheckCredWarnings does not show Jira warning when running in NodeToolbox proxy mode', () => {
+    // When IS_NODETOOLBOX_SERVER is true the relay is not used, so CRG.relay.jiraReady
+    // is never set. The warning must be suppressed for proxy-mode users.
+    const functionStart = toolboxHtmlContent.indexOf('function crCheckCredWarnings');
+    const functionBody  = toolboxHtmlContent.slice(functionStart, functionStart + 800);
+    expect(functionBody).toContain('IS_NODETOOLBOX_SERVER');
+  });
+
+});
+
+// ── Dev Workspace PAT Test ────────────────────────────────────────────────────
+
+describe('toolbox.html — Dev Workspace Jira PAT test', () => {
+
+  it('devTestJiraPAT routes through tbxJiraRequest when IS_NODETOOLBOX_SERVER is true', () => {
+    // Direct fetch() is CORS-blocked in the browser. In proxy mode the request
+    // must go through the server-side /jira-proxy endpoint via tbxJiraRequest.
+    const functionStart = toolboxHtmlContent.indexOf('function devTestJiraPAT');
+    const functionBody  = toolboxHtmlContent.slice(functionStart, functionStart + 800);
+    expect(functionBody).toContain('IS_NODETOOLBOX_SERVER');
+    expect(functionBody).toContain('tbxJiraRequest');
+  });
+
+});
+
+// ── Dev Workspace Wizard Scope ────────────────────────────────────────────────
+
+describe('toolbox.html — Dev Workspace setup wizard', () => {
+
+  it('welcome step (devWizS0) does not advertise Git Hooks as a supported feature', () => {
+    // Git Hooks require offline PowerShell execution and are not supported in
+    // the NodeToolbox browser environment. The welcome card must be removed.
+    const s0Start = toolboxHtmlContent.indexOf('function devWizS0');
+    const s0Body  = toolboxHtmlContent.slice(s0Start, s0Start + 1200);
+    expect(s0Body).not.toContain('Git Hooks');
+  });
+
+  it('workflow step (devWizS4) does not offer Git Hooks as a workflow option', () => {
+    const s4Start = toolboxHtmlContent.indexOf('function devWizS4');
+    const s4Body  = toolboxHtmlContent.slice(s4Start, s4Start + 1500);
+    expect(s4Body).not.toContain('Git Hooks');
+  });
+
+  it('summary step (devWizS5) does not reference the Hook Generator tab', () => {
+    // The Hook Generator tab is unsupported. The wizard summary must not direct
+    // the user to a tab that does not exist or does not function correctly.
+    const s5Start = toolboxHtmlContent.indexOf('function devWizS5');
+    // Use a 2500-char slice to capture the full function body (the function is ~300 lines of JS strings)
+    const s5Body  = toolboxHtmlContent.slice(s5Start, s5Start + 2500);
+    expect(s5Body).not.toContain('Hook Generator');
+  });
+
+});
+
 // ── Connection Wizard Removal ─────────────────────────────────────────────────
 
 describe('toolbox.html — in-app connection wizard removed', () => {
