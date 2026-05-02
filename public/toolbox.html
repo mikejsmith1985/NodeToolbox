@@ -1154,49 +1154,6 @@
       .wt-hero h1 span { -webkit-text-fill-color:#333; color:#333; }
     }
 
-/* ΓöÇΓöÇ Connection Setup Wizard ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
-#tbx-conn-wiz-overlay { display:none; position:fixed; inset:0; z-index:9998; background:rgba(0,0,0,.72); overflow-y:auto; animation:tbxCwFadeIn .2s ease; }
-@keyframes tbxCwFadeIn { from { opacity:0; } to { opacity:1; } }
-.tbx-cw-card { background:var(--bg); border-radius:20px; max-width:600px; width:calc(100% - 32px); margin:40px auto 80px; padding:44px 36px 36px; position:relative; box-shadow:0 24px 64px rgba(0,0,0,.4); }
-.tbx-cw-x-btn { position:absolute; top:16px; right:16px; background:none; border:none; font-size:22px; cursor:pointer; color:var(--text-muted); line-height:1; padding:6px 8px; border-radius:6px; transition:all .15s; }
-.tbx-cw-x-btn:hover { color:var(--text); background:var(--surface); }
-.tbx-cw-emoji { font-size:60px; text-align:center; display:block; margin-bottom:12px; }
-.tbx-cw-title { font-size:28px; font-weight:800; text-align:center; margin:0 0 8px; line-height:1.2; }
-.tbx-cw-sub { font-size:15px; color:var(--text-muted); text-align:center; margin:0 0 24px; line-height:1.65; }
-.tbx-cw-progress { display:flex; gap:6px; justify-content:center; margin-bottom:28px; align-items:center; }
-.tbx-cw-dot { width:10px; height:10px; border-radius:50%; background:var(--border); transition:all .25s; flex-shrink:0; }
-.tbx-cw-dot.active { background:var(--accent); width:28px; border-radius:5px; }
-.tbx-cw-dot.done { background:var(--accent); opacity:.5; }
-.tbx-cw-label { display:block; font-size:14px; font-weight:700; color:var(--text-primary); margin-bottom:8px; }
-.tbx-cw-input { width:100%; box-sizing:border-box; padding:13px 15px; font-size:15px; border:2px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text); transition:border-color .15s; }
-.tbx-cw-input:focus { outline:none; border-color:var(--accent); }
-.tbx-cw-hint { font-size:12px; color:var(--text-muted); margin-top:8px; line-height:1.55; }
-.tbx-cw-example { font-size:12px; background:#22c55e12; border:1px solid #22c55e44; color:#22c55e; border-radius:8px; padding:8px 12px; margin-top:8px; font-family:monospace; }
-.tbx-cw-steps { display:flex; flex-direction:column; gap:12px; margin-bottom:12px; width:100%; }
-.tbx-cw-step-row { display:flex; gap:14px; align-items:flex-start; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
-.tbx-cw-step-num { width:28px; height:28px; min-width:28px; border-radius:50%; background:var(--accent); color:#fff; font-size:13px; font-weight:800; display:flex; align-items:center; justify-content:center; margin-top:1px; flex-shrink:0; }
-.tbx-cw-step-title { font-weight:700; font-size:14px; margin:0 0 5px; }
-.tbx-cw-step-desc { font-size:13px; color:var(--text-muted); line-height:1.55; margin:0 0 8px; }
-.tbx-cw-status-box { padding:12px 16px; border-radius:10px; font-size:14px; font-weight:600; margin-top:10px; line-height:1.5; }
-.tbx-cw-status-box.ok   { background:#22c55e18; color:#22c55e; border:1px solid #22c55e55; }
-.tbx-cw-status-box.err  { background:#ef444418; color:#ef4444; border:1px solid #ef444455; }
-.tbx-cw-status-box.wait { background:#eab30818; color:#eab308; border:1px solid #eab30855; }
-.tbx-cw-nav { display:flex; gap:10px; justify-content:flex-end; margin-top:24px; align-items:center; flex-wrap:wrap; width:100%; }
-.tbx-cw-skip-link { margin-right:auto; font-size:13px; color:var(--text-muted); cursor:pointer; border:none; background:none; padding:4px 0; }
-.tbx-cw-skip-link:hover { color:var(--text); text-decoration:underline; }
-.tbx-cw-bookmarklet { display:inline-block; padding:10px 20px; background:#f59e0b; color:#fff; border-radius:8px; font-size:14px; font-weight:700; text-decoration:none; cursor:grab; border:2px dashed rgba(255,255,255,.5); margin-top:4px; }
-.tbx-cw-bookmarklet:hover { opacity:.9; text-decoration:none; }
-.tbx-cw-code-block { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 14px; font-family:monospace; font-size:13px; color:var(--text); position:relative; margin-top:6px; }
-.tbx-cw-code-copy { position:absolute !important; top:6px; right:6px; }
-.tbx-cw-dismiss-row { display:flex; gap:12px; align-items:center; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-top:8px; cursor:pointer; }
-.tbx-cw-dismiss-row input[type=checkbox] { width:20px; height:20px; cursor:pointer; flex-shrink:0; accent-color:var(--accent); }
-.tbx-cw-dismiss-row label { font-size:14px; cursor:pointer; line-height:1.45; font-weight:500; }
-.tbx-cw-celebrate { text-align:center; padding:8px 0 16px; }
-.tbx-cw-celebrate .celebrate-emoji { font-size:72px; display:block; margin-bottom:8px; animation:tbxCwBounce .6s ease; }
-@keyframes tbxCwBounce { 0%,100%{transform:scale(1)} 50%{transform:scale(1.18)} }
-.tbx-cw-divider { border:none; border-top:1px solid var(--border); margin:20px 0; }
-.tbx-cw-proxy-offer { background:var(--surface); border:1px solid #3b82f666; border-radius:12px; padding:16px; margin-top:14px; }
-
 
 
 /* ── Restored styles (Admin Hub, Mermaid, Pitch Deck, misc) ── */
@@ -1379,7 +1336,7 @@ background:linear-gradient(90deg,#9a6700,#7d5400); color:#fff;
 .tbx-wiz-role-card { width:80px; padding:10px 8px; border:2px solid var(--border); border-radius:10px; cursor:pointer; transition:all .15s; text-align:center; }
 .tbx-wiz-role-card:hover { border-color:var(--accent); background:var(--surface); }
 .tbx-wiz-role-card.selected { border-color:var(--accent); background:var(--surface); box-shadow:0 0 0 3px var(--accent)22; }
-/* ── Connection Setup Wizard ────────────────────────────────────────────── */
+/* ── Role Selection ─────────────────────────────────────────────────────────── */
 .art-persona-btn { display:none; } /* retained to avoid stale-reference errors */
 .tbx-role-option { display:flex; align-items:center; gap:14px; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 16px; cursor:pointer; text-align:left; width:100%; transition:all .15s; color:var(--text); font-size:14px; }
 .tbx-role-option:hover { border-color:var(--accent); background:var(--accent-muted); }
@@ -3469,12 +3426,6 @@ function homeInit() {
   var saved = localStorage.getItem('tbxHomePersona') || 'all';
   homeSetPersona(saved);
 
-  // Show the connection setup wizard on first launch (skipped once 'permanent' is set).
-  if (localStorage.getItem('tbxConnSetupDone') !== 'permanent' &&
-      !sessionStorage.getItem('tbxConnWizSkipped')) {
-    setTimeout(function() { if (typeof tbxConnWizShow === 'function') tbxConnWizShow(); }, 200);
-    return;
-  }
 
   // Route every user directly to Reports Hub on the first page load of each session.
   // The Back button on Reports Hub returns here so all tool cards remain accessible.
@@ -5330,6 +5281,26 @@ function crRelayRequest(sys, method, path, body) {
 }
 
 function crJiraFetch(path, method, body) {
+  if (IS_NODETOOLBOX_SERVER) {
+    var fetchOptions = {
+      method:  method || 'GET',
+      headers: { 'Accept': 'application/json' },
+    };
+    if (body !== null && body !== undefined) {
+      fetchOptions.headers['Content-Type'] = 'application/json';
+      fetchOptions.body = JSON.stringify(body);
+    }
+    return fetch(NODETOOLBOX_ORIGIN + '/jira-proxy' + path, fetchOptions)
+      .then(function(response) {
+        return {
+          ok:     response.ok,
+          status: response.status,
+          json:   function() { return response.json(); },
+          text:   function() { return response.text(); },
+        };
+      });
+  }
+  // Fallback: browser relay for file:// access (legacy mode).
   return tbxRetryOnce('jira', function() {
     if (!CRG.relay.jiraWin || CRG.relay.jiraWin.closed) {
       return Promise.reject(new Error('Jira relay not connected. Go to Settings → Open & Connect Jira.'));
@@ -5345,6 +5316,28 @@ function crJiraFetch(path, method, body) {
 }
 
 function crSnowFetch(path, opts) {
+  if (IS_NODETOOLBOX_SERVER) {
+    var method = (opts && opts.method) || 'GET';
+    var bodyValue = (opts && opts.body) ? JSON.parse(opts.body) : null;
+    var fetchOptions = {
+      method:  method,
+      headers: { 'Accept': 'application/json' },
+    };
+    if (bodyValue !== null) {
+      fetchOptions.headers['Content-Type'] = 'application/json';
+      fetchOptions.body = JSON.stringify(bodyValue);
+    }
+    return fetch(NODETOOLBOX_ORIGIN + '/snow-proxy' + path, fetchOptions)
+      .then(function(response) {
+        return {
+          ok:     response.ok,
+          status: response.status,
+          json:   function() { return response.json(); },
+          text:   function() { return response.text(); },
+        };
+      });
+  }
+  // Fallback: browser relay for file:// access (legacy mode).
   return tbxRetryOnce('snow', function() {
     if (!CRG.relay.snowWin || CRG.relay.snowWin.closed) {
       return Promise.reject(new Error('SNow relay not connected. Go to Settings → Open & Connect ServiceNow.'));
@@ -6792,9 +6785,57 @@ function tbxMarkRelayDead() {
   }
 }
 
+// ── NodeToolbox Proxy Auto-Wire ───────────────────────────────────────────────
+// When toolbox.html is served by NodeToolbox (localhost), all Jira and SNow
+// requests route through NodeToolbox's server-side proxy endpoints instead of
+// the browser relay. NodeToolbox injects server-stored credentials, so no
+// relay tab or PAT forwarding is needed.
+
+/** True when the page is served by NodeToolbox rather than opened as a local file. */
+var IS_NODETOOLBOX_SERVER = (
+  window.location.protocol === 'http:' &&
+  window.location.hostname === 'localhost'
+);
+
+/** Base URL of the NodeToolbox server (e.g. http://localhost:5555), or null in file:// mode. */
+var NODETOOLBOX_ORIGIN = IS_NODETOOLBOX_SERVER ? window.location.origin : null;
+
+/**
+ * Makes a proxied fetch through NodeToolbox's server-side proxy endpoint.
+ * Returns a Promise that resolves with parsed JSON, matching the shape expected
+ * by tbxJiraRequest / tbxSnowRequest callers.
+ *
+ * @param {string} proxyPath - e.g. '/jira-proxy' or '/snow-proxy'
+ * @param {string} method    - HTTP verb
+ * @param {string} apiPath   - downstream API path, e.g. '/rest/api/2/myself'
+ * @param {object|null} body - request body (will be JSON-serialised), or null
+ * @returns {Promise<object>} parsed JSON response from the downstream service
+ */
+function tbxNodeToolboxFetch(proxyPath, method, apiPath, body) {
+  var fetchOptions = {
+    method:  method || 'GET',
+    headers: { 'Accept': 'application/json' },
+  };
+  if (body !== null && body !== undefined) {
+    fetchOptions.headers['Content-Type'] = 'application/json';
+    fetchOptions.body = JSON.stringify(body);
+  }
+  return fetch(NODETOOLBOX_ORIGIN + proxyPath + apiPath, fetchOptions)
+    .then(function(response) {
+      if (!response.ok) {
+        return response.text().then(function(errorText) {
+          throw new Error('Proxy request failed: HTTP ' + response.status + (errorText ? ' — ' + errorText.slice(0, 200) : ''));
+        });
+      }
+      return response.json();
+    });
+}
+
 function tbxJiraRequest(method, path, body) {
-  // Always route through the relay — direct fetch is always blocked by CORS from file://.
-  // PAT (if saved) is forwarded as the Authorization header inside crRelayRequest.
+  if (IS_NODETOOLBOX_SERVER) {
+    return tbxNodeToolboxFetch('/jira-proxy', method, path, body);
+  }
+  // Fallback: browser relay for file:// access (legacy mode).
   return crRelayRequest('jira', method, path, body).catch(function(e) {
     var m = e && e.message ? e.message : '';
     if (m.indexOf('relay not connected') >= 0 || m.indexOf('Relay tab is closed') >= 0) tbxMarkRelayDead();
@@ -6813,7 +6854,10 @@ function tbxVerifyJiraConnection(containerId) {
 }
 
 function tbxSnowRequest(method, path, body) {
-  // SNow PAT hidden for now — always use relay
+  if (IS_NODETOOLBOX_SERVER) {
+    return tbxNodeToolboxFetch('/snow-proxy', method, path, body);
+  }
+  // Fallback: browser relay for file:// access (legacy mode).
   return crRelayRequest('snow', method, path, body);
 }
 
@@ -23646,556 +23690,6 @@ window.PipelineView = {
 // Purpose: guide brand-new users through Jira URL ΓåÆ Relay ΓåÆ optional Proxy
 // with kindergarten-level clarity ΓÇö no assumed technical knowledge.
 //
-// Storage keys:
-//   localStorage  'tbxConnSetupDone'   = 'permanent'  ΓåÆ never show again
-//   sessionStorage 'tbxConnWizSkipped' = '1'          ΓåÆ hide for this session
-
-/** Mutable state for the active connection wizard session. */
-var CONN_WIZ = {
-  step:            0,     // Active step: 0=welcome, 1=jiraUrl, 2=relay, 3=proxy, 4=done
-  relayTestStatus: '',    // '' | 'testing' | 'ok' | 'fail'
-  proxyTestStatus: '',    // '' | 'testing' | 'ok' | 'fail'
-  relayPollIv:     null,  // setTimeout ID used while polling for relay handshake
-  proxyPollTimer:  null   // setTimeout ID used while waiting for proxy probe result
-};
-
-/**
- * Shows the connection wizard overlay. If Jira URL and a working connection
- * are already configured, short-circuits directly to the "all done" step so
- * returning users aren't forced through a tutorial they don't need.
- */
-function tbxConnWizShow() {
-  var savedJiraUrl   = localStorage.getItem('tbxCRGenJiraUrl') || '';
-  var hasJiraUrl     = !!savedJiraUrl.trim();
-  var hasRelayActive = !!(window.CRG && CRG.relay && CRG.relay.jiraReady);
-  var hasProxyActive = !!(localStorage.getItem('tbxJiraProxyUrl'));
-  var isAlreadyReady = hasJiraUrl && (hasRelayActive || hasProxyActive);
-
-  if (isAlreadyReady) {
-    // Skip the tutorial ΓÇö user is already connected.
-    CONN_WIZ.step            = 4;
-    CONN_WIZ.relayTestStatus = hasRelayActive ? 'ok' : '';
-    CONN_WIZ.proxyTestStatus = hasProxyActive ? 'ok' : '';
-  } else {
-    CONN_WIZ.step            = 0;
-    CONN_WIZ.relayTestStatus = '';
-    CONN_WIZ.proxyTestStatus = '';
-  }
-
-  var overlayEl = document.getElementById('tbx-conn-wiz-overlay');
-  if (overlayEl) { overlayEl.style.display = 'block'; tbxConnWizRender(); }
-}
-
-/**
- * Re-launches the wizard from the Admin Hub even after permanent dismissal.
- * Always starts from Step 0 regardless of connection state so the user can
- * experience the full flow. Auto-detection short-circuit only applies to the
- * passive on-open trigger, not an explicit user-initiated relaunch.
- */
-function tbxConnWizRelaunch() {
-  sessionStorage.removeItem('tbxConnWizSkipped');
-  localStorage.removeItem('tbxConnSetupDone');
-  // Clear in-memory relay flag so the already-connected short-circuit in
-  // tbxConnWizShow() cannot fire ΓÇö the user explicitly wants to see the full flow.
-  if (window.CRG && CRG.relay) { CRG.relay.jiraReady = false; }
-  // Force step 0 and blank test state.
-  CONN_WIZ.step            = 0;
-  CONN_WIZ.relayTestStatus = '';
-  CONN_WIZ.proxyTestStatus = '';
-  var overlayEl = document.getElementById('tbx-conn-wiz-overlay');
-  if (overlayEl) { overlayEl.style.display = 'block'; tbxConnWizRender(); }
-}
-
-/**
- * Renders the active wizard step. Sets progress dots, injects step HTML, and
- * wires the relay bookmarklet href via DOM (not innerHTML) to satisfy CSP.
- */
-function tbxConnWizRender() {
-  var innerEl = document.getElementById('tbx-cw-inner');
-  if (!innerEl) return;
-
-  // Map the 5-step branching flow onto 4 visible progress dots.
-  // Proxy setup (step 3) shares the same visible dot position as relay (step 2).
-  var TOTAL_VISIBLE_DOTS = 4;
-  var visibleStep = CONN_WIZ.step > 3 ? CONN_WIZ.step - 1 : CONN_WIZ.step;
-  var progressHtml = '';
-  for (var dotIdx = 0; dotIdx < TOTAL_VISIBLE_DOTS; dotIdx++) {
-    var dotClass = dotIdx < visibleStep  ? 'tbx-cw-dot done'
-                 : dotIdx === visibleStep ? 'tbx-cw-dot active'
-                                          : 'tbx-cw-dot';
-    progressHtml += '<div class="' + dotClass + '"></div>';
-  }
-  var progressEl = document.getElementById('tbx-cw-progress');
-  if (progressEl) progressEl.innerHTML = progressHtml;
-
-  var stepBuilders = [
-    tbxConnWizStep0,
-    tbxConnWizStep1,
-    tbxConnWizStep2,
-    tbxConnWizStep3,
-    tbxConnWizStep4
-  ];
-  var buildFn = stepBuilders[CONN_WIZ.step] || tbxConnWizStep0;
-  innerEl.innerHTML = buildFn();
-
-  // The bookmarklet href contains a javascript: URI ΓÇö set it via DOM after
-  // innerHTML assignment to avoid CSP issues with inline script content.
-  if (CONN_WIZ.step === 2) {
-    setTimeout(function() {
-      var bmEl = document.getElementById('tbx-cw-relay-bm');
-      if (bmEl && typeof crRelayScript === 'function') {
-        bmEl.href = 'javascript:' + encodeURIComponent(crRelayScript());
-      }
-    }, 0);
-  }
-}
-
-/**
- * Navigates to the specified step. Always stops active polling first so
- * stale timers from the previous step cannot fire after the transition.
- */
-function tbxConnWizGo(targetStep) {
-  tbxConnWizStopPolling();
-  CONN_WIZ.step = targetStep;
-  tbxConnWizRender();
-}
-
-/** Cancels any active relay handshake or proxy detection timers. */
-function tbxConnWizStopPolling() {
-  if (CONN_WIZ.relayPollIv)   { clearTimeout(CONN_WIZ.relayPollIv);   CONN_WIZ.relayPollIv   = null; }
-  if (CONN_WIZ.proxyPollTimer) { clearTimeout(CONN_WIZ.proxyPollTimer); CONN_WIZ.proxyPollTimer = null; }
-}
-
-/** Hides the wizard for this browser session only. Reappears on the next page load. */
-function tbxConnWizSkipSession() {
-  tbxConnWizStopPolling();
-  sessionStorage.setItem('tbxConnWizSkipped', '1');
-  var overlayEl = document.getElementById('tbx-conn-wiz-overlay');
-  if (overlayEl) overlayEl.style.display = 'none';
-}
-
-/**
- * Permanently dismisses the wizard. Requires the opt-in checkbox to be checked
- * and a browser confirmation dialog to prevent accidental permanent dismissal.
- */
-/** @deprecated Superseded by tbxConnWizNeverShow ΓÇö kept to avoid reference errors if cached HTML calls it. */
-function tbxConnWizConfirmDone() { tbxConnWizNeverShow(); }
-
-// ΓöÇΓöÇ Step content builders ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
-
-/** Step 0: Friendly welcome screen. */
-function tbxConnWizStep0() {
-  return '<span class="tbx-cw-emoji">≡ƒº░</span>' +
-    '<div class="tbx-cw-title">Welcome to Toolbox! ≡ƒæï</div>' +
-    '<div class="tbx-cw-sub">Let\'s get you connected to Jira so everything works!<br>' +
-      'We\'ll walk through every step ΓÇö one at a time.<br>' +
-      '<strong>It only takes about 2 minutes.</strong></div>' +
-    '<div class="tbx-cw-nav">' +
-      '<button class="cr-btn cr-btn-ghost tbx-cw-skip-link" onclick="tbxConnWizSkipSession()">Not now</button>' +
-      '<button class="cr-btn cr-btn-primary" style="font-size:16px;padding:12px 28px;" onclick="tbxConnWizGo(1)">Let\'s Go! ≡ƒÜÇ</button>' +
-    '</div>';
-}
-
-/** Step 1: Capture and validate the Jira base URL. */
-function tbxConnWizStep1() {
-  // Pre-fill with the org's known Jira URL if nothing is saved yet.
-  var DEFAULT_JIRA_URL = 'https://jira.healthspring-jira-prod.aws.zilverton.com';
-  var savedJiraUrl = localStorage.getItem('tbxCRGenJiraUrl') || localStorage.getItem('tbxJiraBase') || DEFAULT_JIRA_URL;
-  return '<span class="tbx-cw-emoji">≡ƒÅá</span>' +
-    '<div class="tbx-cw-title">Where is your Jira?</div>' +
-    '<div class="tbx-cw-sub">Jira is the tool your team uses to track work.<br>We need its web address ΓÇö the URL you type to open Jira in your browser.</div>' +
-    '<div style="width:100%;">' +
-      '<label class="tbx-cw-label" for="tbx-cw-jira-url">≡ƒôì Your Jira web address</label>' +
-      '<input id="tbx-cw-jira-url" class="tbx-cw-input" type="url" ' +
-        'placeholder="https://yourcompany.atlassian.net"' +
-        (savedJiraUrl ? ' value="' + crEsc(savedJiraUrl) + '"' : '') + '>' +
-      '<div class="tbx-cw-hint">≡ƒÆí Tip: Copy and paste it from your browser\'s address bar while Jira is open.</div>' +
-      '<div class="tbx-cw-example">Γ£à Examples: &nbsp;https://acme.atlassian.net &nbsp;&nbsp; https://jira.mycompany.com</div>' +
-    '</div>' +
-    '<div id="tbx-cw-url-status"></div>' +
-    '<div class="tbx-cw-nav">' +
-      '<button class="cr-btn cr-btn-ghost tbx-cw-skip-link" onclick="tbxConnWizSkipSession()">Skip for now</button>' +
-      '<button class="cr-btn cr-btn-ghost" onclick="tbxConnWizGo(0)">ΓåÉ Back</button>' +
-      '<button class="cr-btn cr-btn-primary" onclick="tbxConnWizSaveJiraUrl()">Save &amp; Continue ΓåÆ</button>' +
-    '</div>';
-}
-
-/** Step 2: Relay bookmarklet setup and connection test. */
-function tbxConnWizStep2() {
-  // Detect Chrome (excludes Edge which also has "Chrome" in its UA).
-  // The Relay uses window.name to find the Jira tab, but Chrome 88+ erases
-  // window.name on any cross-origin navigation — so the Relay simply cannot
-  // work in Chrome.  Edge does not have this restriction.
-  var isChrome = /Chrome/.test(navigator.userAgent) && !/Edg\//.test(navigator.userAgent);
-
-  var browserBannerHtml = isChrome
-    ? '<div style="background:#fef3c7;border:2px solid #f59e0b;border-radius:12px;padding:14px 16px;margin-bottom:20px;font-size:14px;line-height:1.65;">' +
-        '<div style="font-size:18px;font-weight:800;margin-bottom:6px;">🟡 You\'re using Chrome — skip straight to Proxy setup!</div>' +
-        '<div style="margin-bottom:10px;">The <strong>Browser Relay</strong> does <em>not work in Chrome</em>. ' +
-        'Chrome has a privacy rule that wipes a tab\'s internal name when you visit a site from a different domain ' +
-        '(like going from a local file to your Jira server). Toolbox uses that name to find the Jira tab — ' +
-        'so in Chrome it always loses the tab and can\'t connect.</div>' +
-        '<div style="margin-bottom:12px;">The <strong>Proxy Server</strong> is the easy fix — it\'s a tiny program ' +
-        'that runs in the background on your computer. Once it\'s set up, Toolbox connects to Jira automatically ' +
-        'every time you open it. No extra tabs, no bookmarks needed.</div>' +
-        '<button class="cr-btn cr-btn-primary" style="font-size:15px;padding:10px 22px;" onclick="tbxConnWizGo(3)">⚡ Take me to Proxy Server Setup →</button>' +
-      '</div>'
-    : '<div style="background:#dcfce7;border:2px solid #22c55e;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:13px;line-height:1.6;">' +
-        '✅ <strong>Great news — your browser supports the Relay!</strong> ' +
-        'Follow the four steps below to get connected in about two minutes.' +
-      '</div>';
-
-  var isRelayOk      = CONN_WIZ.relayTestStatus === 'ok';
-  var isRelayTesting = CONN_WIZ.relayTestStatus === 'testing';
-  var isRelayFailed  = CONN_WIZ.relayTestStatus === 'fail';
-
-  var statusHtml = '';
-  if (isRelayTesting) {
-    statusHtml = '<div class="tbx-cw-status-box wait">ΓÅ│ Testing your connection ΓÇö hang tight for a few secondsΓÇª</div>';
-  } else if (isRelayOk) {
-    statusHtml = '<div class="tbx-cw-status-box ok">Γ£à Connected! Toolbox can now talk to Jira! ≡ƒÑ│</div>';
-  } else if (isRelayFailed) {
-    statusHtml = '<div class="tbx-cw-status-box err">Γ¥î Couldn\'t connect. No worries ΓÇö let\'s try Plan B! ≡ƒæç</div>';
-  }
-
-  var proxyOfferHtml = isRelayFailed
-    ? '<div class="tbx-cw-proxy-offer">' +
-        '<div style="font-weight:700;font-size:15px;margin-bottom:6px;">≡ƒûÑ∩╕Å Let\'s try Plan B ΓÇö the Proxy Server</div>' +
-        '<div style="font-size:13px;color:var(--text-muted);line-height:1.55;margin-bottom:12px;">' +
-          'The Proxy is a tiny app that runs quietly on your computer. Set it up once and Toolbox connects automatically ΓÇö no extra browser tab required!' +
-        '</div>' +
-        '<button class="cr-btn cr-btn-primary" onclick="tbxConnWizGo(3)">Set Up Proxy Server ΓåÆ</button>' +
-      '</div>'
-    : '';
-
-  // Only show the 4-step instructions when the relay hasn't passed yet.
-  var instructionsHtml = isRelayOk ? '' :
-    '<div class="tbx-cw-steps">' +
-      '<div class="tbx-cw-step-row">' +
-        '<div class="tbx-cw-step-num">1</div>' +
-        '<div>' +
-          '<div class="tbx-cw-step-title">≡ƒîÉ Open Jira in another tab</div>' +
-          '<div class="tbx-cw-step-desc">Click the button to open Jira. A new tab will appear ΓÇö keep it open!</div>' +
-          '<button class="cr-btn cr-btn-ghost cr-btn-sm" onclick="tbxConnWizOpenJiraTab()">Open Jira Tab ≡ƒöù</button>' +
-          '<div id="tbx-cw-popup-warn" style="display:none;margin-top:8px;" class="tbx-cw-status-box err">' +
-            '≡ƒÜ½ Popup blocked! Click the popup-blocked icon in your browser\'s address bar and allow popups for this page, then try again.' +
-          '</div>' +
-        '</div>' +
-      '</div>' +
-      '<div class="tbx-cw-step-row">' +
-        '<div class="tbx-cw-step-num">2</div>' +
-        '<div>' +
-          '<div class="tbx-cw-step-title">≡ƒôî Drag the Relay Bookmark to your toolbar</div>' +
-          '<div class="tbx-cw-step-desc">Drag the yellow button below up to your browser\'s bookmarks bar. You only need to do this <strong>once ever</strong>!</div>' +
-          '<a id="tbx-cw-relay-bm" class="tbx-cw-bookmarklet" href="#" title="Drag me to your bookmarks bar! Γÿ¥∩╕Å">≡ƒôÄ Toolbox Relay</a>' +
-          '<div class="tbx-cw-hint">≡ƒÆí Can\'t see your bookmarks bar? Press <kbd>Ctrl+Shift+B</kbd> (Windows) or <kbd>ΓîÿΓçºB</kbd> (Mac) to show it.</div>' +
-        '</div>' +
-      '</div>' +
-      '<div class="tbx-cw-step-row">' +
-        '<div class="tbx-cw-step-num">3</div>' +
-        '<div>' +
-          '<div class="tbx-cw-step-title">≡ƒû▒∩╕Å Go to the Jira tab and click the bookmark</div>' +
-          '<div class="tbx-cw-step-desc">Switch to the Jira tab, then click <strong>≡ƒôÄ Toolbox Relay</strong> in your bookmarks bar. A brief message will flash on screen ΓÇö that\'s normal!</div>' +
-        '</div>' +
-      '</div>' +
-      '<div class="tbx-cw-step-row">' +
-        '<div class="tbx-cw-step-num">4</div>' +
-        '<div>' +
-          '<div class="tbx-cw-step-title">Γ£à Come back here and click Test!</div>' +
-          '<div class="tbx-cw-step-desc">Switch back to this Toolbox tab, then press the Test button below.</div>' +
-        '</div>' +
-      '</div>' +
-    '</div>';
-
-  return '<span class="tbx-cw-emoji">' + (isRelayOk ? '🎉' : '🔌') + '</span>' +
-    '<div class="tbx-cw-title">' + (isRelayOk ? 'You\'re Connected!' : 'Connect Toolbox to Jira!') + '</div>' +
-    '<div class="tbx-cw-sub">' +
-      (isRelayOk
-        ? 'Toolbox is linked to Jira via the Browser Relay. 🥳'
-        : 'Jira\'s security blocks direct connections. We use a special bookmark called the <strong>Relay</strong> as a bridge — it\'s safe and easy!') +
-    '</div>' +
-    browserBannerHtml +
-    instructionsHtml + statusHtml + proxyOfferHtml +
-    '<div class="tbx-cw-nav">' +
-      '<button class="cr-btn cr-btn-ghost tbx-cw-skip-link" onclick="tbxConnWizSkipSession()">Skip for now</button>' +
-      '<button class="cr-btn cr-btn-ghost" onclick="tbxConnWizGo(1)">ΓåÉ Back</button>' +
-      (!isRelayOk
-        ? '<button class="cr-btn cr-btn-primary" onclick="tbxConnWizTestRelay()" ' + (isRelayTesting ? 'disabled' : '') + '>≡ƒº¬ Test My Connection</button>'
-        : '<button class="cr-btn cr-btn-primary" onclick="tbxConnWizGo(4)">Continue ≡ƒÄë</button>') +
-    '</div>';
-}
-
-/** Step 3: Proxy server setup. Only reached when relay test fails. */
-function tbxConnWizStep3() {
-  var isProxyOk      = CONN_WIZ.proxyTestStatus === 'ok';
-  var isProxyTesting = CONN_WIZ.proxyTestStatus === 'testing';
-  var isProxyFailed  = CONN_WIZ.proxyTestStatus === 'fail';
-  var serverDownloadUrl = 'https://github.com/' + TOOLBOX_UPDATE_REPO + '/releases/latest';
-
-  var statusHtml = '';
-  if (isProxyTesting) {
-    statusHtml = '<div class="tbx-cw-status-box wait">ΓÅ│ Looking for the server on your computer (localhost:5555)ΓÇª</div>';
-  } else if (isProxyOk) {
-    statusHtml = '<div class="tbx-cw-status-box ok">Γ£à Proxy Server found and running! Toolbox is connected!</div>';
-  } else if (isProxyFailed) {
-    statusHtml = '<div class="tbx-cw-status-box err">Γ¥î Couldn\'t find the server. Did it start without errors in the terminal? Try running the command again and click Test.</div>';
-  }
-
-  return '<span class="tbx-cw-emoji">🚀</span>' +
-    '<div class="tbx-cw-title">Plan B: NodeToolbox Proxy Server</div>' +
-    '<div class="tbx-cw-sub">A lightweight Node.js server that runs quietly on your computer and relays API calls — set it up once and Toolbox connects automatically every time!</div>' +
-    '<div class="tbx-cw-steps">' +
-      '<div class="tbx-cw-step-row">' +
-        '<div class="tbx-cw-step-num">1</div>' +
-        '<div>' +
-          '<div class="tbx-cw-step-title">📥 Download NodeToolbox (first time only)</div>' +
-          '<div class="tbx-cw-step-desc">Download the latest release zip from GitHub. It contains everything you need — no extra installs required.</div>' +
-          '<a class="cr-btn cr-btn-primary cr-btn-sm" href="https://github.com/' + TOOLBOX_UPDATE_REPO + '/releases/latest" target="_blank" rel="noopener">⬇️ Open NodeToolbox Releases</a>' +
-        '</div>' +
-      '</div>' +
-      '<div class="tbx-cw-step-row">' +
-        '<div class="tbx-cw-step-num">2</div>' +
-        '<div>' +
-          '<div class="tbx-cw-step-title">📂 Unzip and run</div>' +
-          '<div class="tbx-cw-step-desc">Unzip the download to a folder on your computer — like your Desktop. Then double-click <strong>Launch Toolbox.lnk</strong> to start the server. A browser tab will open automatically.</div>' +
-          '<div class="tbx-cw-hint">💡 If no shortcut is present, open a terminal in the folder and run:</div>' +
-          '<div class="tbx-cw-code-block">node server.js<button class="cr-btn cr-btn-ghost cr-btn-sm tbx-cw-code-copy" onclick="tbxConnWizCopyCommand()">📋 Copy</button></div>' +
-          '<div class="tbx-cw-hint">⚠️ Keep the terminal open while using Toolbox — closing it stops the server.</div>' +
-        '</div>' +
-      '</div>' +
-      '<div class="tbx-cw-step-row">' +
-        '<div class="tbx-cw-step-num">3</div>' +
-        '<div>' +
-          '<div class="tbx-cw-step-title">🔌 Come back here and click Test</div>' +
-          '<div class="tbx-cw-step-desc">Once NodeToolbox is running (you\'ll see a message in the terminal or a browser tab opens), click the button below!</div>' +
-        '</div>' +
-      '</div>' +
-    '</div>' +
-    statusHtml +
-    '<div class="tbx-cw-nav">' +
-      '<button class="cr-btn cr-btn-ghost tbx-cw-skip-link" onclick="tbxConnWizSkipSession()">Skip for now</button>' +
-      '<button class="cr-btn cr-btn-ghost" onclick="tbxConnWizGo(2)">← Back</button>' +
-      (!isProxyOk
-        ? '<button class="cr-btn cr-btn-primary" onclick="tbxConnWizTestProxy()" ' + (isProxyTesting ? 'disabled' : '') + '>🔌 Test Proxy Connection</button>'
-        : '<button class="cr-btn cr-btn-primary" onclick="tbxConnWizGo(4)">Continue 🎉</button>') +
-    '</div>';
-}
-
-/** Step 4: Success / permanent dismiss confirmation. */
-/** Step 4: Completion / all-done screen. */
-function tbxConnWizStep4() {
-  var isRelayOk   = CONN_WIZ.relayTestStatus === 'ok';
-  var isProxyOk   = CONN_WIZ.proxyTestStatus === 'ok';
-  var isConnected = isRelayOk || isProxyOk;
-  var methodLabel = isProxyOk ? 'Proxy Server' : isRelayOk ? 'Browser Relay' : '';
-
-  return '<div class="tbx-cw-celebrate">' +
-    '<span class="celebrate-emoji">' + (isConnected ? '≡ƒÄë' : '≡ƒÅü') + '</span>' +
-    '<div class="tbx-cw-title">' + (isConnected ? 'You\'re All Set!' : 'Almost There!') + '</div>' +
-    '<div class="tbx-cw-sub">' +
-      (isConnected
-        ? 'Toolbox is connected to Jira via <strong>' + crEsc(methodLabel) + '</strong>. You\'re ready to go! ≡ƒÜÇ'
-        : 'You can skip for now ΓÇö the wizard will remind you next time you open Toolbox.<br>You can also re-launch it anytime from Admin Hub.') +
-    '</div>' +
-  '</div>' +
-  '<div class="tbx-cw-nav" style="justify-content:center;">' +
-    '<button class="cr-btn cr-btn-primary" style="font-size:16px;padding:12px 32px;" onclick="tbxConnWizSkipSession()">Close Γ£à</button>' +
-  '</div>' +
-  // Permanent dismiss is an opt-in action below the primary close ΓÇö not required to close.
-  '<div style="text-align:center;margin-top:16px;">' +
-    '<button class="cr-btn cr-btn-ghost tbx-cw-skip-link" style="font-size:12px;" onclick="tbxConnWizNeverShow()">Don\'t show this wizard on startup</button>' +
-  '</div>';
-}
-
-/**
- * Permanently dismisses the wizard after a simple confirm dialog.
- * No checkbox required ΓÇö the confirm dialog IS the double-confirmation.
- */
-function tbxConnWizNeverShow() {
-  var isConfirmed = confirm(
-    'Turn off the startup wizard permanently?\n\n' +
-    'You can re-launch it anytime from:\nAdmin Hub ΓåÆ ≡ƒºÖ Setup Wizard ΓåÆ Connection Wizard'
-  );
-  if (!isConfirmed) return;
-  localStorage.setItem('tbxConnSetupDone', 'permanent');
-  tbxConnWizStopPolling();
-  var overlayEl = document.getElementById('tbx-conn-wiz-overlay');
-  if (overlayEl) overlayEl.style.display = 'none';
-  tbxToast('Γ£à Startup wizard turned off ΓÇö re-launch from Admin Hub anytime.');
-}
-
-// ΓöÇΓöÇ Wizard action handlers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
-
-/**
- * Validates the URL entered in step 1 and saves it to both localStorage keys
- * so every Toolbox tool picks up the new value immediately.
- */
-function tbxConnWizSaveJiraUrl() {
-  var inputEl = document.getElementById('tbx-cw-jira-url');
-  if (!inputEl) return;
-
-  var cleanJiraUrl = inputEl.value.trim().replace(/\/+$/, '');
-  if (!cleanJiraUrl) {
-    tbxConnWizSetStatus('tbx-cw-url-status', 'err',
-      'Γ¥î Please enter your Jira URL before continuing.');
-    return;
-  }
-  if (!cleanJiraUrl.startsWith('http://') && !cleanJiraUrl.startsWith('https://')) {
-    tbxConnWizSetStatus('tbx-cw-url-status', 'err',
-      'Γ¥î The address needs to start with <strong>https://</strong> ΓÇö check the URL and try again.');
-    return;
-  }
-
-  // Write to both keys for full backward-compatibility across all Toolbox tools.
-  localStorage.setItem('tbxCRGenJiraUrl', cleanJiraUrl);
-  localStorage.setItem('tbxJiraBase',     cleanJiraUrl);
-
-  // Keep the Admin Hub input in sync if it happens to be rendered right now.
-  var adminHubInput = document.getElementById('ah-jira-base-url');
-  if (adminHubInput) adminHubInput.value = cleanJiraUrl;
-
-  tbxConnWizSetStatus('tbx-cw-url-status', 'ok', 'Γ£à Saved! Now let\'s connect to Jira.');
-  // Short pause so the user can see the success message before transitioning.
-  setTimeout(function() { tbxConnWizGo(2); }, 700);
-}
-
-/**
- * Opens the user's Jira URL in a new tab for relay setup.
- * Shows a clear error message when the browser blocks the popup.
- */
-function tbxConnWizOpenJiraTab() {
-  var jiraUrl = localStorage.getItem('tbxCRGenJiraUrl') || '';
-  if (!jiraUrl) {
-    alert('Please save your Jira URL first (go back to Step 1).');
-    return;
-  }
-  var openedWindow = window.open(jiraUrl, '__tbx_conn_jira');
-  var popupWarnEl  = document.getElementById('tbx-cw-popup-warn');
-  // window.open returns null or a closed window when blocked by popup protection.
-  if (!openedWindow || openedWindow.closed || typeof openedWindow.closed === 'undefined') {
-    if (popupWarnEl) popupWarnEl.style.display = '';
-  } else {
-    if (popupWarnEl) popupWarnEl.style.display = 'none';
-    // Register the window reference so the existing relay ping mechanism can reach it.
-    if (window.CRG && CRG.relay) CRG.relay.jiraWin = openedWindow;
-  }
-}
-
-/**
- * Tests the relay connection in two stages:
- *   1. Polls for the CRG.relay.jiraReady handshake flag (set by the bookmarklet
- *      via postMessage ΓÇö proves the bookmarklet fired and is listening).
- *   2. Makes a real authenticated Jira API call (/rest/api/2/myself) to confirm
- *      the relay can actually proxy requests. The handshake alone is not enough
- *      because it only proves the bookmarklet ran, not that API calls succeed.
- */
-function tbxConnWizTestRelay() {
-  CONN_WIZ.relayTestStatus = 'testing';
-  tbxConnWizRender();
-
-  var RELAY_POLL_TIMEOUT_MS = 4000;
-  var relayPollStartTime    = Date.now();
-
-  function pollForHandshake() {
-    var isHandshakeReady = !!(window.CRG && CRG.relay && CRG.relay.jiraReady);
-    if (isHandshakeReady) {
-      // Handshake confirmed ΓÇö now verify actual API access.
-      tbxConnWizVerifyJiraApi();
-      return;
-    }
-    if ((Date.now() - relayPollStartTime) >= RELAY_POLL_TIMEOUT_MS) {
-      // Timed out ΓÇö bookmarklet was not clicked or relay is not responsive.
-      CONN_WIZ.relayTestStatus = 'fail';
-      tbxConnWizRender();
-      return;
-    }
-    // Send a ping to the Jira relay tab so the bookmarklet's listener can respond.
-    try {
-      if (window.CRG && CRG.relay && CRG.relay.jiraWin && !CRG.relay.jiraWin.closed) {
-        CRG.relay.jiraWin.postMessage({ __crg: true, __crg_ping: true }, '*');
-      }
-    } catch (pingErr) { /* cross-origin postMessage may throw ΓÇö that's expected */ }
-    CONN_WIZ.relayPollIv = setTimeout(pollForHandshake, 500);
-  }
-
-  pollForHandshake();
-}
-
-/**
- * Stage 2 of relay testing: makes an authenticated Jira API call.
- * /rest/api/2/myself validates both connectivity and authentication in one shot.
- * A valid response always contains accountId, name, or displayName.
- */
-function tbxConnWizVerifyJiraApi() {
-  tbxJiraRequest('GET', '/rest/api/2/myself', null)
-    .then(function(responseData) {
-      var isValidUser = !!(responseData &&
-        (responseData.accountId || responseData.name || responseData.displayName));
-      CONN_WIZ.relayTestStatus = isValidUser ? 'ok' : 'fail';
-      tbxConnWizRender();
-    })
-    .catch(function() {
-      CONN_WIZ.relayTestStatus = 'fail';
-      tbxConnWizRender();
-    });
-}
-
-/**
- * Tests whether a local proxy server is running by triggering the shared probe
- * and checking the result after the probe's 2-second network timeout.
- */
-function tbxConnWizTestProxy() {
-  CONN_WIZ.proxyTestStatus = 'testing';
-  tbxConnWizRender();
-
-  // Clear the session-scoped "already probed" guard so tbxRunProxyProbe() executes.
-  sessionStorage.removeItem('tbxProxyChecked');
-  if (typeof _tbxProxyRetryTimer !== 'undefined' && _tbxProxyRetryTimer) {
-    clearInterval(_tbxProxyRetryTimer);
-    _tbxProxyRetryTimer = null;
-  }
-  if (typeof _tbxProxyRetryCount !== 'undefined') _tbxProxyRetryCount = 0;
-
-  tbxRunProxyProbe();
-
-  // Probe resolves asynchronously (2 s network timeout). Check the outcome at 2.5 s.
-  CONN_WIZ.proxyPollTimer = setTimeout(function() {
-    var isProxyConfigured    = !!(localStorage.getItem('tbxJiraProxyUrl'));
-    CONN_WIZ.proxyTestStatus = isProxyConfigured ? 'ok' : 'fail';
-    tbxConnWizRender();
-  }, 2500);
-}
-
-/** Copies the proxy start command to the clipboard and confirms with a toast. */
-function tbxConnWizCopyCommand() {
-  var proxyStartCommand = 'node server.js';
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(proxyStartCommand)
-      .then(function() { tbxToast('≡ƒôï Command copied!'); });
-  } else {
-    // Fallback for environments without the async Clipboard API.
-    var tempEl = document.createElement('input');
-    tempEl.value = proxyStartCommand;
-    document.body.appendChild(tempEl);
-    tempEl.select();
-    document.execCommand('copy');
-    document.body.removeChild(tempEl);
-    tbxToast('≡ƒôï Command copied!');
-  }
-}
-
-/**
- * Updates a status indicator element's CSS state class and innerHTML.
- * Passing an empty statusType clears the box entirely.
- */
-function tbxConnWizSetStatus(elementId, statusType, messageHtml) {
-  var statusEl = document.getElementById(elementId);
-  if (!statusEl) return;
-  if (!statusType) { statusEl.className = ''; statusEl.innerHTML = ''; return; }
-  statusEl.className = 'tbx-cw-status-box ' + statusType;
-  statusEl.innerHTML = messageHtml;
-}
-
 
 var AIC = { history: [], streaming: false };
 
@@ -48169,16 +47663,6 @@ function artCopyAIPrompt() {
     <div id="tbx-wiz-inner" class="tbx-wiz-step"></div>
   </div>
 </div>
-
-<!-- ── Connection Setup Wizard Overlay ──────────────────────────────────── -->
-<div id="tbx-conn-wiz-overlay">
-  <div class="tbx-cw-card">
-    <button class="tbx-cw-x-btn" onclick="tbxConnWizSkipSession()" title="Skip for now (you'll see this again next time)">✕</button>
-    <div id="tbx-cw-progress" class="tbx-cw-progress"></div>
-    <div id="tbx-cw-inner"></div>
-  </div>
-</div>
-
 
 <!-- NodeToolbox (node server.js) replaces toolbox-server.py — no embedded script needed. -->
 
