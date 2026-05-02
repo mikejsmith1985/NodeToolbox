@@ -1,14 +1,23 @@
 // src/utils/staticFileServer.js — Static file discovery and safe serving middleware.
 //
-// Locates and serves the Toolbox HTML dashboard. Designed for both the development
-// flow (file at public/toolbox.html) and the standalone end-user distribution where
-// the HTML file may be in the user's Downloads, Desktop, or Documents folder.
+// Locates and serves the Toolbox HTML dashboard. Designed for three distribution
+// modes:
+//   1. Development / zip extract — file is at public/toolbox.html on disk.
+//   2. pkg .exe bundle — file is in the snapshot virtual filesystem; existsSync is
+//      NOT patched by @yao-pkg/pkg but readFileSync IS, so we pre-load at startup.
+//   3. Fallback search — ~/Downloads, ~/Desktop, ~/Documents (legacy compatibility).
+//
+// Issue #22 root cause: @yao-pkg/pkg patches fs.readFile/readFileSync for snapshot
+// assets but does NOT reliably patch fs.existsSync. findToolboxHtml() used existsSync
+// which silently returned false in the exe, producing the "File Not Found" page
+// immediately after the setup wizard. The fix is to read the HTML once at module
+// load time (readFileSync IS intercepted) and cache it — every GET / thereafter
+// serves from that cache without touching existsSync at all.
 
 'use strict';
 
 const fs   = require('fs');
 const path = require('path');
-const http = require('http');
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -20,6 +29,30 @@ const PUBLIC_DIRECTORY_PATH = path.join(__dirname, '..', '..', 'public');
 
 /** Standard content-type for HTML responses */
 const HTML_CONTENT_TYPE = 'text/html; charset=utf-8';
+
+// ── Startup pre-load (pkg snapshot fix) ──────────────────────────────────────
+
+// Read toolbox.html at module load time using fs.readFileSync.
+// In a pkg exe, readFileSync IS patched to serve from the snapshot even when
+// existsSync (used by findToolboxHtml) would incorrectly return false.
+// In development and zip distributions, readFileSync reads from the real disk.
+// Either way a single synchronous read at startup avoids repeated per-request
+// filesystem probing and eliminates the pkg existsSync gap entirely.
+
+/**
+ * Dashboard HTML pre-loaded from the snapshot or disk at startup.
+ * Null only when public/toolbox.html is genuinely absent (e.g. a stripped CI image).
+ * Exported so tests can verify the cache is populated without making an HTTP request.
+ *
+ * @type {string|null}
+ */
+let cachedDashboardHtml = null;
+try {
+  const dashboardHtmlPath = path.join(PUBLIC_DIRECTORY_PATH, TOOLBOX_HTML_FILENAME);
+  cachedDashboardHtml = fs.readFileSync(dashboardHtmlPath, 'utf-8');
+} catch (_readError) {
+  // File absent at startup (e.g. CI, stripped container) — runtime fallback will run
+}
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -56,11 +89,17 @@ function findToolboxHtml() {
 
 /**
  * Returns an Express middleware that serves toolbox.html for GET / requests.
- * Resolves the file path fresh on every request so that swapping the file
- * does not require a server restart.
  *
- * Security: Only serves files that are explicitly located by findToolboxHtml().
- * There is no general file system traversal — callers cannot request arbitrary paths.
+ * Serving priority:
+ *   1. cachedDashboardHtml — pre-loaded at startup; works in both pkg exe and
+ *      zip distributions without any per-request filesystem call. This is the
+ *      primary path and fixes the pkg existsSync gap (Issue #22).
+ *   2. findToolboxHtml() filesystem search — legacy fallback for edge cases
+ *      where the file was absent at startup (e.g. hot-swap without restart).
+ *   3. 404 "File Not Found" page — only when neither path has the file.
+ *
+ * Security: Only serves files explicitly located by the two methods above.
+ * There is no general filesystem traversal — callers cannot request arbitrary paths.
  *
  * @returns {import('express').RequestHandler}
  */
@@ -71,6 +110,17 @@ function serveStaticFile() {
       return next();
     }
 
+    // Primary path: serve from the pre-loaded cache.
+    // This is the only path that works inside a pkg exe because existsSync is
+    // not patched for snapshot assets but readFileSync (used at init) is.
+    if (cachedDashboardHtml !== null) {
+      res.setHeader('Content-Type', HTML_CONTENT_TYPE);
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).end(cachedDashboardHtml);
+    }
+
+    // Fallback: file was absent at startup — try finding it on disk now.
+    // Covers cases where toolbox.html was placed in user directories after startup.
     const htmlFilePath = findToolboxHtml();
 
     if (!htmlFilePath) {
@@ -118,4 +168,4 @@ function buildHtmlNotFoundPage() {
 
 // ── Exports ───────────────────────────────────────────────────────────────────
 
-module.exports = { findToolboxHtml, serveStaticFile };
+module.exports = { cachedDashboardHtml, findToolboxHtml, serveStaticFile };
