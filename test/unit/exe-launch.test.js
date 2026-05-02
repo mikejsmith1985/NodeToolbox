@@ -38,13 +38,16 @@ describe('server.js — pkg exe auto-open', () => {
     // Both triggers must control the same openBrowserToDashboard() call so
     // there is a single code path that either the bat (--open) or the exe
     // (process.pkg) can activate.
+    //
+    // Scoped to the specific `if` that contains '--open' in the condition
+    // itself — avoids matching unrelated `if` blocks added later (e.g.
+    // the async launchServer wrapper which also references openBrowserToDashboard).
     const openBrowserBlock = SERVER_SOURCE.match(
-      /if\s*\(.*?openBrowserToDashboard/s
+      /if\s*\([^)]*--open[^)]*\)[\s\S]{0,300}openBrowserToDashboard/
     );
     expect(openBrowserBlock).not.toBeNull();
     const conditionText = openBrowserBlock[0];
     expect(conditionText).toMatch(/process\.pkg/);
-    expect(conditionText).toMatch(/--open/);
   });
 });
 
