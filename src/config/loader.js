@@ -252,8 +252,13 @@ function migrateOldConfig() {
  */
 function buildDefaultConfig() {
   return {
-    port:      DEFAULT_SERVER_PORT,
-    sslVerify: true,
+    port: DEFAULT_SERVER_PORT,
+    // Default to false (skip TLS verification) to work out-of-the-box on corporate
+    // networks that use SSL inspection tools (Zscaler, Forcepoint, etc.) which
+    // replace server certificates with their own CA. This matches the behaviour of
+    // the original toolbox-poc.js (rejectUnauthorized: false). Users who require
+    // strict cert checking can set "sslVerify": true in their config file.
+    sslVerify: false,
     jira: {
       baseUrl:  '',
       username: '',

@@ -33,14 +33,6 @@ function getExecutableLines() {
     });
 }
 
-/**
- * Returns the executable line that begins with the `start` command, if any.
- * Used by multiple assertions about how the server process is launched.
- */
-function findStartCommand() {
-  return getExecutableLines().find((line) => /^\s*start\b/i.test(line));
-}
-
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('Launch Toolbox.bat', () => {
@@ -73,39 +65,45 @@ describe('Launch Toolbox.bat', () => {
   });
 
   describe('server process launch', () => {
-    it('uses the start command to launch node in a separate persistent window', () => {
-      // A bare "node server.js" would block the bat and hold the terminal open.
-      // "start" detaches the server into its own window that persists independently.
-      const startLine = findStartCommand();
-      expect(startLine).toBeDefined();
+    it('runs node server.js directly without the start command', () => {
+      // Previous versions used "start NodeToolbox Server" which spawned a detached
+      // child window. When that child crashed, the window closed instantly and
+      // the user saw no error. Running node directly in the same console window
+      // keeps errors visible — identical to how toolbox-poc.js is run.
+      const serverLaunchLine = getExecutableLines().find(
+        (line) => /node\s+server\.js/i.test(line)
+      );
+      expect(serverLaunchLine).toBeDefined();
+      expect(serverLaunchLine.trim()).not.toMatch(/^start\s/i);
     });
 
-    it('does NOT use the /b flag on the start command', () => {
-      // /b runs the process inside the current console without a new window.
-      // When the bat file exits, that console closes — killing the Node process
-      // with it. This was the root cause of the "window goes away" bug in v0.0.6.
-      const startLine = findStartCommand();
-      expect(startLine).not.toMatch(/\/b\b/i);
-    });
-
-    it('gives the server window a descriptive title so users can find it', () => {
-      // A titled window shows up in Alt-Tab and Task Manager as "NodeToolbox Server"
-      // rather than a generic "cmd.exe" entry, reducing user confusion.
-      const startLine = findStartCommand();
-      expect(startLine).toMatch(/start\s+"NodeToolbox/i);
+    it('does NOT use the /b flag (would detach and silently kill the server)', () => {
+      // /b runs the process in the current console without a new window. When the
+      // bat file exits, the console closes and Node dies with it.
+      // Note: "exit /b 1" in the error block is legitimate; this assertion only
+      // targets the node server.js launch line.
+      const serverLaunchLine = getExecutableLines().find(
+        (line) => /node\s+server\.js/i.test(line)
+      );
+      expect(serverLaunchLine).toBeDefined();
+      expect(serverLaunchLine).not.toMatch(/\/b\b/i);
     });
 
     it('passes --open to auto-open the dashboard in the default browser', () => {
       // Without --open the user must manually navigate to http://localhost:5555.
       // --open triggers openBrowserToDashboard() in server.js on startup.
-      const startLine = findStartCommand();
-      expect(startLine).toMatch(/--open/);
+      const serverLaunchLine = getExecutableLines().find(
+        (line) => /node\s+server\.js/i.test(line)
+      );
+      expect(serverLaunchLine).toMatch(/--open/);
     });
 
     it('launches node server.js as the entry point', () => {
       // server.js is the sole Express entry point — nothing else should be started.
-      const startLine = findStartCommand();
-      expect(startLine).toMatch(/node\s+server\.js/i);
+      const serverLaunchLine = getExecutableLines().find(
+        (line) => /node\s+server\.js/i.test(line)
+      );
+      expect(serverLaunchLine).toMatch(/node\s+server\.js/i);
     });
   });
 
