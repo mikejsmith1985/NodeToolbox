@@ -1,20 +1,32 @@
-# scripts/local-release.ps1 — Packages NodeToolbox into a distributable zip.
+# scripts/local-release.ps1 — Packages NodeToolbox into distributable artifacts
+# and publishes a GitHub Release — all in one command.
 #
-# Produces dist/nodetoolbox-vX.Y.Z.zip containing everything an end user needs
-# to run NodeToolbox: server.js, package.json + dependencies, public/, scripts/,
-# and the generated launcher shortcut. The zip is self-contained — no git history,
-# no dev dependencies, no test files.
+# Produces two distributable artifacts in dist/:
+#   1. nodetoolbox-vX.Y.Z.zip  — slim zip (no node_modules) for users who prefer extraction
+#   2. nodetoolbox-vX.Y.Z.exe  — single-file Windows executable (no extraction required)
+# Credentials are stored in AppData\Roaming\NodeToolbox\ and persist across upgrades.
 #
 # Usage:
-#   .\scripts\local-release.ps1               # full release build
-#   .\scripts\local-release.ps1 -DryRun       # print plan, write nothing
+#   .\scripts\local-release.ps1                  # release at current version
+#   .\scripts\local-release.ps1 patch            # bump patch version, then release
+#   .\scripts\local-release.ps1 minor            # bump minor version, then release
+#   .\scripts\local-release.ps1 major            # bump major version, then release
+#   .\scripts\local-release.ps1 patch -DryRun    # preview without writing anything
 #
 # Requirements:
 #   - Node.js + npm on PATH
-#   - Windows (for launcher creation via WScript.Shell)
+#   - gh CLI authenticated (gh auth login)
+#   - git configured with push access to the remote
 #   - PowerShell 5.1+ (Compress-Archive is built-in on Windows 10+)
 
 param(
+    # Optional version bump type applied before building. When omitted the
+    # current version in package.json is used without modification.
+    [Parameter(Position = 0)]
+    [ValidateSet('major', 'minor', 'patch', '')]
+    [string]$BumpType = '',
+
+    # Preview mode — prints the plan without installing, building, tagging, or publishing.
     [switch]$DryRun
 )
 
@@ -29,33 +41,51 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot       = Split-Path -Parent $PSScriptRoot
 $PackageJson    = Join-Path $RepoRoot 'package.json'
 $DistDir        = Join-Path $RepoRoot 'dist'
-$LauncherName   = 'Launch Toolbox.lnk'
-$LauncherPath   = Join-Path $RepoRoot $LauncherName
 
 # The portable bat launcher is always included in the distributable.
-# The .lnk shortcut is only relevant when created locally (npm run create-launcher)
-# because it embeds absolute paths that are machine-specific.
+# The .lnk shortcut is NOT included because it embeds absolute paths from the
+# build machine and breaks when the user extracts to a different location.
 $BatchLauncherPath = Join-Path $RepoRoot 'Launch Toolbox.bat'
 
-# Read version from package.json so the zip filename always matches the release
+# ── Version Resolution ─────────────────────────────────────────────────────────
+
+# Bump package.json version in-place before reading it, if a bump type was given.
+# --no-git-tag-version prevents npm from making its own commit and tag — the
+# release script handles all git operations explicitly for full control.
+if ($BumpType -ne '') {
+    Write-Host ""
+    Write-Host "  Bumping version ($BumpType)..."
+    Push-Location $RepoRoot
+    try {
+        npm version $BumpType --no-git-tag-version --silent
+        if ($LASTEXITCODE -ne 0) { throw "npm version bump failed with exit code $LASTEXITCODE" }
+    } finally {
+        Pop-Location
+    }
+    Write-Host "       ✅ Version bumped"
+}
+
+# Read version after any bump so the zip/exe names always match the tag
 $PackageData    = Get-Content $PackageJson -Raw | ConvertFrom-Json
 $AppVersion     = $PackageData.version
+$GitTag         = "v$AppVersion"
 $ZipFileName    = "nodetoolbox-v$AppVersion.zip"
 $ZipOutputPath  = Join-Path $DistDir $ZipFileName
+$ExeFileName    = "nodetoolbox-v$AppVersion.exe"
+$ExeOutputPath  = Join-Path $DistDir $ExeFileName
 
-# Files and directories included in the distributable.
-# Note: Launch Toolbox.bat uses %~dp0 to self-locate — it works from any
-# extraction path. The .lnk shortcut is NOT included because it embeds
-# absolute paths from the build machine and breaks on the user's machine.
+# Files and directories included in the distributable zip.
+# node_modules is intentionally excluded — Launch Toolbox.bat auto-installs
+# them via "npm ci --omit=dev" on first run, keeping the zip tiny.
 $IncludedPaths = @(
     (Join-Path $RepoRoot 'server.js'),
     (Join-Path $RepoRoot 'package.json'),
+    (Join-Path $RepoRoot 'package-lock.json'),
     (Join-Path $RepoRoot 'README.md'),
     (Join-Path $RepoRoot '.env.example'),
     (Join-Path $RepoRoot 'public'),
     (Join-Path $RepoRoot 'src'),
     (Join-Path $RepoRoot 'scripts'),
-    (Join-Path $RepoRoot 'node_modules'),
     $BatchLauncherPath
 )
 
@@ -65,21 +95,28 @@ if ($DryRun) {
     Write-Host ""
     Write-Host "  [dry-run] local-release.ps1 would perform the following steps:"
     Write-Host ""
-    Write-Host "  1. npm install           - install production + dev dependencies"
+    Write-Host "  1. npm install           - install all dependencies (incl. dev tools)"
+    if ($BumpType -ne '') {
+        Write-Host "  1b. npm version $BumpType    - bump version in package.json + package-lock.json"
+    }
     Write-Host "  2. mkdir dist\           - create output directory"
-    Write-Host "  3. Compress-Archive      - bundle into $ZipOutputPath"
+    Write-Host "  3. Compress-Archive      - bundle slim zip into $ZipOutputPath"
+    Write-Host "  4. pkg                   - build single-file exe at $ExeOutputPath"
+    Write-Host "  5. gh release create     - publish GitHub Release $GitTag with both artifacts"
     Write-Host ""
     Write-Host "  Version:    $AppVersion"
+    Write-Host "  Tag:        $GitTag"
     Write-Host "  Output:     $ZipOutputPath (dist\$ZipFileName)"
+    Write-Host "  Exe:        $ExeOutputPath (dist\$ExeFileName)"
     Write-Host "  Launcher:   $BatchLauncherPath  (portable -- uses %`~dp0)"
     Write-Host ""
     Write-Host "  Included paths:"
     foreach ($includedItem in $IncludedPaths) {
-        $includesExists = if (Test-Path $includedItem) { '' } else { ' [MISSING]' }
-        Write-Host "    $includedItem$includesExists"
+        $itemExists = if (Test-Path $includedItem) { '' } else { ' [MISSING]' }
+        Write-Host "    $includedItem$itemExists"
     }
     Write-Host ""
-    Write-Host "  Run without -DryRun to build the release."
+    Write-Host "  Run without -DryRun to build and publish the release."
     Write-Host ""
     exit 0
 }
@@ -90,8 +127,8 @@ Write-Host ""
 Write-Host "  NodeToolbox Release Builder - v$AppVersion"
 Write-Host ""
 
-# Step 1: Install dependencies
-Write-Host "  [1/3] npm install..."
+# Step 1: Install all dependencies (including @yao-pkg/pkg for the exe build)
+Write-Host "  [1/5] npm install..."
 Push-Location $RepoRoot
 try {
     npm install --silent
@@ -101,16 +138,16 @@ try {
 }
 Write-Host "       ✅ Dependencies installed"
 
-# Step 2: Create dist/ output directory (clean slate - remove previous builds)
-Write-Host "  [2/3] Preparing dist/ directory..."
+# Step 2: Create dist/ output directory (clean slate — remove previous builds)
+Write-Host "  [2/5] Preparing dist/ directory..."
 if (Test-Path $DistDir) {
     Remove-Item $DistDir -Recurse -Force
 }
 New-Item -ItemType Directory -Path $DistDir | Out-Null
 Write-Host "       ✅ dist\ ready"
 
-# Step 3: Build the zip — collect paths that actually exist
-Write-Host "  [3/3] Building zip: $ZipFileName..."
+# Step 3: Build the slim zip — collect paths that actually exist
+Write-Host "  [3/5] Building zip: $ZipFileName..."
 
 # @() ensures these are always arrays even when Where-Object returns $null (strict mode safe)
 [array]$pathsToBundle = @($IncludedPaths | Where-Object { Test-Path $_ })
@@ -138,11 +175,72 @@ foreach ($sourcePath in $pathsToBundle) {
 
 Compress-Archive -Path (Join-Path $StagingDir '*') -DestinationPath $ZipOutputPath -Force
 
-# Clean up staging dir — only the zip should remain in dist/
+# Clean up staging dir — only the final artifacts should remain in dist/
 Remove-Item $StagingDir -Recurse -Force
 
 $zipSizeKb = [math]::Round((Get-Item $ZipOutputPath).Length / 1KB)
 Write-Host "       ✅ $ZipOutputPath ($zipSizeKb KB)"
+
+# Step 4: Build the single-file Windows exe using @yao-pkg/pkg.
+# Bundles the Node.js runtime + all app code + public assets into one .exe.
+# End users can run NodeToolbox without any extraction or npm install step.
+Write-Host "  [4/5] Building exe: $ExeFileName..."
+Push-Location $RepoRoot
+try {
+    npx pkg server.js --targets node20-win-x64 --output $ExeOutputPath --silent
+    if ($LASTEXITCODE -ne 0) { throw "pkg build failed with exit code $LASTEXITCODE" }
+} finally {
+    Pop-Location
+}
+$exeSizeKb = [math]::Round((Get-Item $ExeOutputPath).Length / 1KB)
+Write-Host "       ✅ $ExeOutputPath ($exeSizeKb KB)"
+
+# Step 5: Commit version bump (if applicable), tag, and publish GitHub Release.
+# gh release create handles creating the release AND uploading the assets in one
+# command. We force-delete any existing release/tag of the same version first so
+# re-running the script always produces a clean, up-to-date release.
+Write-Host "  [5/5] Publishing GitHub Release $GitTag..."
+
+Push-Location $RepoRoot
+try {
+    # Commit the version bump files if npm version changed them
+    if ($BumpType -ne '') {
+        git add package.json package-lock.json
+        git commit -m "chore: bump version to $GitTag"
+        git push origin HEAD
+        if ($LASTEXITCODE -ne 0) { throw "git push failed with exit code $LASTEXITCODE" }
+    }
+
+    # Remove any stale local tag so we can recreate it pointing at HEAD
+    git tag -d $GitTag 2>&1 | Out-Null
+
+    # Remove the existing GitHub Release and remote tag if they exist —
+    # this makes the publish step idempotent (safe to re-run after a failed build)
+    $releaseExists = gh release view $GitTag 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        gh release delete $GitTag --yes 2>&1 | Out-Null
+    }
+    git push origin ":refs/tags/$GitTag" 2>&1 | Out-Null  # delete remote tag if present
+
+    # Create the tag on the current HEAD and push it
+    git tag $GitTag
+    git push origin $GitTag
+    if ($LASTEXITCODE -ne 0) { throw "git push tag failed with exit code $LASTEXITCODE" }
+
+    # Create the GitHub Release and attach both artifacts
+    gh release create $GitTag $ZipOutputPath $ExeOutputPath `
+        --title "NodeToolbox $GitTag" `
+        --generate-notes `
+        --latest
+    if ($LASTEXITCODE -ne 0) { throw "gh release create failed with exit code $LASTEXITCODE" }
+} finally {
+    Pop-Location
+}
+
+Write-Host "       ✅ GitHub Release $GitTag published"
 Write-Host ""
-Write-Host "  ✅ Release build complete: $ZipOutputPath"
+Write-Host "  ✅ Release complete:"
+Write-Host "     ZIP: $ZipOutputPath"
+Write-Host "     EXE: $ExeOutputPath"
+Write-Host "     URL: https://github.com/mikejsmith1985/NodeToolbox/releases/tag/$GitTag"
 Write-Host ""

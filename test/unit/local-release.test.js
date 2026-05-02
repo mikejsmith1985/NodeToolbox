@@ -83,5 +83,32 @@ describeOnWindows('local-release.ps1', () => {
 
       expect(fs.existsSync(distPath)).toBe(false);
     });
+
+    it('does NOT include node_modules in the distributable bundle', () => {
+      // node_modules causes thousands of tiny files — extracting them on Windows
+      // is extremely slow. The bundle must omit them; users install via npm ci on first run.
+      const output = runDryRun();
+      expect(output).not.toMatch(/node_modules/i);
+    });
+
+    it('includes package-lock.json for reproducible end-user installs', () => {
+      // package-lock.json is required so end users can run "npm ci --omit=dev"
+      // and get exactly the same dependency tree as the release build.
+      const output = runDryRun();
+      expect(output).toMatch(/package-lock\.json/i);
+    });
+
+    it('reports that an exe will be built for single-file distribution', () => {
+      // A standalone .exe lets users run NodeToolbox without any extraction step.
+      const output = runDryRun();
+      expect(output).toMatch(/\.exe|nodetoolbox.*exe/i);
+    });
+
+    it('reports that a GitHub Release will be published', () => {
+      // The script must publish directly to GitHub — running the script is the
+      // complete release process, not just a local build step.
+      const output = runDryRun();
+      expect(output).toMatch(/GitHub Release|gh release create/i);
+    });
   });
 });

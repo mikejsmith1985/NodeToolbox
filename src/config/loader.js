@@ -3,22 +3,40 @@
 // Configuration is sourced in two layers (lowest to highest priority):
 //   1. toolbox-proxy.json  — written by the /setup wizard or edited manually
 //   2. Environment variables — Forge Vault compatible, override any file values
+//
+// Credentials are stored in %APPDATA%\NodeToolbox\ so they persist across
+// version upgrades. On first launch after a legacy install, any co-located
+// toolbox-proxy.json is automatically migrated to AppData.
 
 'use strict';
 
 const fs   = require('fs');
 const path = require('path');
+const os   = require('os');
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-/** Filename of the credentials config file — always co-located with server.js */
+/** Filename of the credentials config file */
 const CONFIG_FILENAME = 'toolbox-proxy.json';
 
 /**
- * Absolute path to the config file, resolved relative to the project root.
- * Using __dirname from this module (src/config/) requires going up two levels.
+ * Persistent AppData directory for NodeToolbox config.
+ * Using APPDATA keeps credentials outside the installation folder so they
+ * survive zip-extraction upgrades without user intervention.
  */
-const CONFIG_FILE_PATH = path.join(__dirname, '..', '..', CONFIG_FILENAME);
+const CONFIG_DIR_PATH = path.join(process.env.APPDATA || os.homedir(), 'NodeToolbox');
+
+/** Absolute path to the config file inside the AppData folder */
+const CONFIG_FILE_PATH = path.join(CONFIG_DIR_PATH, CONFIG_FILENAME);
+
+/**
+ * Legacy path where config was stored in v0.0.5 and earlier (alongside server.js).
+ * Used only during the one-time migration check on startup.
+ * process.pkg is set by @yao-pkg/pkg when running as a bundled .exe.
+ */
+const LEGACY_CONFIG_FILE_PATH = process.pkg
+  ? path.join(path.dirname(process.execPath), CONFIG_FILENAME)
+  : path.join(__dirname, '..', '..', CONFIG_FILENAME);
 
 /** Default port — matches the legacy server so existing bookmarks still work */
 const DEFAULT_SERVER_PORT = 5555;
@@ -32,16 +50,32 @@ const JIRA_URL_PLACEHOLDER_PATTERNS = ['your-instance', 'your-jira'];
 /** Maximum number of branches/PRs tracked per repo in the scheduler state */
 const MAX_SEEN_BRANCHES_PER_REPO = 500;
 
+/**
+ * Credential fields that are base64-encoded when written to disk.
+ * This prevents credentials from being visible in plain text to a casual viewer.
+ * The _obfuscated flag in the config file signals that encoding is applied.
+ */
+const OBFUSCATED_CREDENTIAL_FIELDS = {
+  jira:   ['username', 'apiToken', 'pat'],
+  snow:   ['username', 'password'],
+  github: ['pat'],
+};
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
  * Loads proxy configuration from toolbox-proxy.json and environment variables.
+ * Runs the one-time legacy migration before loading so credentials are always
+ * read from the persistent AppData location.
+ *
  * Environment variables take priority, allowing Forge Vault injected credentials
  * to override any saved defaults without touching the config file.
  *
  * @returns {ProxyConfig} Merged configuration object
  */
 function loadConfig() {
+  migrateOldConfig();
+
   const configuration = buildDefaultConfig();
 
   applyFileConfig(configuration);
@@ -53,8 +87,9 @@ function loadConfig() {
 }
 
 /**
- * Persists the current in-memory configuration to toolbox-proxy.json.
- * Safe to call from any context — Node.js is single-threaded so no locking is needed.
+ * Persists the current in-memory configuration to toolbox-proxy.json in AppData.
+ * Credential fields are base64-encoded before writing so they are not stored
+ * as plain text. Safe to call from any context — Node.js is single-threaded.
  *
  * @param {ProxyConfig} configuration - The current in-memory config object to save
  */
@@ -93,6 +128,11 @@ function saveConfigToDisk(configuration) {
     },
   };
 
+  // Encode credentials before writing so they are not plaintext on disk
+  diskConfig._obfuscated = true;
+  encodeCredentialsForDisk(diskConfig);
+  ensureConfigDirExists();
+
   try {
     fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(diskConfig, null, 2) + '\n', 'utf8');
   } catch (writeError) {
@@ -101,11 +141,13 @@ function saveConfigToDisk(configuration) {
 }
 
 /**
- * Creates a starter toolbox-proxy.json template on first run so users can see
- * what fields are available before the setup wizard fills them in.
+ * Creates a starter toolbox-proxy.json template in AppData on first run so users
+ * can see what fields are available before the setup wizard fills them in.
  * Skips creation if the file already exists.
  */
 function createConfigTemplate() {
+  ensureConfigDirExists();
+
   if (fs.existsSync(CONFIG_FILE_PATH)) return;
 
   const templateConfig = {
@@ -141,7 +183,7 @@ function createConfigTemplate() {
 
   try {
     fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(templateConfig, null, 2) + '\n');
-    console.log('  📝 Created ' + CONFIG_FILENAME + ' — edit with your credentials or use the setup wizard at /setup');
+    console.log('  📝 Created ' + CONFIG_FILENAME + ' in ' + CONFIG_DIR_PATH);
   } catch (writeError) {
     console.error('  ⚠ Could not create ' + CONFIG_FILENAME + ': ' + writeError.message);
   }
@@ -165,6 +207,42 @@ function isServiceConfigured(serviceConfig) {
 }
 
 // ── Private Helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Migrates a legacy co-located config file (v0.0.5 and earlier) to the persistent
+ * AppData location. Automatically called on every startup — a no-op after first run.
+ *
+ * Migration rules:
+ *   - No legacy file → skip entirely
+ *   - AppData file already exists → clean up legacy file only (AppData wins)
+ *   - Otherwise → encode credentials, write to AppData, delete legacy file
+ */
+function migrateOldConfig() {
+  if (!fs.existsSync(LEGACY_CONFIG_FILE_PATH)) return;
+
+  // AppData config already exists — just remove the redundant legacy copy
+  if (fs.existsSync(CONFIG_FILE_PATH)) {
+    deleteLegacyConfigFile();
+    return;
+  }
+
+  let legacyFileData;
+  try {
+    legacyFileData = JSON.parse(fs.readFileSync(LEGACY_CONFIG_FILE_PATH, 'utf8'));
+  } catch (parseError) {
+    console.warn('  ⚠ Could not parse legacy config for migration: ' + parseError.message);
+    return;
+  }
+
+  ensureConfigDirExists();
+
+  // Mark as obfuscated and encode before writing to the new location
+  legacyFileData._obfuscated = true;
+  encodeCredentialsForDisk(legacyFileData);
+  fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(legacyFileData, null, 2) + '\n', 'utf8');
+  deleteLegacyConfigFile();
+  console.log('  ✅ Config migrated to ' + CONFIG_DIR_PATH);
+}
 
 /**
  * Builds the safe default configuration object that is used as the starting
@@ -211,6 +289,11 @@ function applyFileConfig(configuration) {
   } catch (parseError) {
     console.error('  ⚠ Failed to parse ' + CONFIG_FILENAME + ': ' + parseError.message);
     return;
+  }
+
+  // Decode credentials before merging — obfuscation is transparent to callers
+  if (fileConfig._obfuscated) {
+    decodeCredentialsFromDisk(fileConfig);
   }
 
   if (fileConfig.port)      configuration.port      = fileConfig.port;
@@ -325,12 +408,78 @@ function normalizeBaseUrls(configuration) {
 
 // ── Exports ───────────────────────────────────────────────────────────────────
 
+/**
+ * Base64-encodes each credential field listed in OBFUSCATED_CREDENTIAL_FIELDS
+ * for the matching service section in diskConfig. Mutates diskConfig in place.
+ * Only encodes non-empty string values — empty fields are left as-is.
+ * Callers are responsible for setting _obfuscated = true before writing to disk.
+ *
+ * @param {object} diskConfig - The config object about to be written to disk
+ */
+function encodeCredentialsForDisk(diskConfig) {
+  for (const [serviceName, fieldNames] of Object.entries(OBFUSCATED_CREDENTIAL_FIELDS)) {
+    if (!diskConfig[serviceName]) continue;
+    for (const fieldName of fieldNames) {
+      const fieldValue = diskConfig[serviceName][fieldName];
+      if (fieldValue) {
+        diskConfig[serviceName][fieldName] = Buffer.from(fieldValue, 'utf8').toString('base64');
+      }
+    }
+  }
+}
+
+/**
+ * Base64-decodes each credential field listed in OBFUSCATED_CREDENTIAL_FIELDS
+ * from the matching service section in fileData. Mutates fileData in place.
+ * Wraps each decode in try/catch so a single corrupt value does not block startup.
+ *
+ * @param {object} fileData - The parsed JSON object read from disk
+ */
+function decodeCredentialsFromDisk(fileData) {
+  for (const [serviceName, fieldNames] of Object.entries(OBFUSCATED_CREDENTIAL_FIELDS)) {
+    if (!fileData[serviceName]) continue;
+    for (const fieldName of fieldNames) {
+      const fieldValue = fileData[serviceName][fieldName];
+      if (!fieldValue) continue;
+      try {
+        fileData[serviceName][fieldName] = Buffer.from(fieldValue, 'base64').toString('utf8');
+      } catch (_decodeError) {
+        // Leave the value unchanged — it may have been written by an older version
+      }
+    }
+  }
+}
+
+/**
+ * Creates the AppData config directory if it does not already exist.
+ * Called before any file write so we never get ENOENT on a fresh machine.
+ */
+function ensureConfigDirExists() {
+  if (!fs.existsSync(CONFIG_DIR_PATH)) {
+    fs.mkdirSync(CONFIG_DIR_PATH, { recursive: true });
+  }
+}
+
+/**
+ * Removes the legacy co-located config file after a successful migration.
+ * Non-fatal — a warning is logged if the delete fails (e.g., read-only filesystem).
+ */
+function deleteLegacyConfigFile() {
+  try {
+    fs.unlinkSync(LEGACY_CONFIG_FILE_PATH);
+  } catch (deleteError) {
+    console.warn('  ⚠ Could not remove legacy config file: ' + deleteError.message);
+  }
+}
+
 module.exports = {
   loadConfig,
   saveConfigToDisk,
   createConfigTemplate,
+  migrateOldConfig,
   isServiceConfigured,
   CONFIG_FILE_PATH,
+  CONFIG_DIR_PATH,
   MAX_SEEN_BRANCHES_PER_REPO,
 };
 

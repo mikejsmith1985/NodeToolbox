@@ -38,9 +38,9 @@ jobs:
       - name: Run test suite
         run: npm test
 
-      - name: Package distributable zip
+      - name: Package distributable zip and exe
         run: powershell -ExecutionPolicy Bypass -File scripts\local-release.ps1
-        # Produces dist/nodetoolbox-vX.Y.Z.zip
+        # Produces dist/nodetoolbox-vX.Y.Z.zip and dist/nodetoolbox-vX.Y.Z.exe
 
       - name: Extract version from tag
         id: get_version
@@ -57,5 +57,6 @@ jobs:
           generate_release_notes: true
           files: |
             dist/nodetoolbox-${{ steps.get_version.outputs.VERSION }}.zip
+            dist/nodetoolbox-${{ steps.get_version.outputs.VERSION }}.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
