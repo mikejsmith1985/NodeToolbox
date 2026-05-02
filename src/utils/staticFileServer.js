@@ -2,17 +2,24 @@
 //
 // Locates and serves the Toolbox HTML dashboard. Designed for three distribution
 // modes:
-//   1. Development / zip extract — file is at public/toolbox.html on disk.
-//   2. pkg .exe bundle — file is in the snapshot virtual filesystem; existsSync is
-//      NOT patched by @yao-pkg/pkg but readFileSync IS, so we pre-load at startup.
+//   1. pkg .exe bundle — HTML is pre-compiled as a JS module into the snapshot.
+//      require('../generated/dashboardHtmlContent') ALWAYS works inside the exe
+//      because JS modules are compiled directly into the binary, unlike fs assets
+//      which rely on path interception that is build-machine-specific.
+//   2. Development / zip extract — generated module may not exist; falls back to
+//      fs.readFileSync reading public/toolbox.html from the real disk.
 //   3. Fallback search — ~/Downloads, ~/Desktop, ~/Documents (legacy compatibility).
 //
-// Issue #22 root cause: @yao-pkg/pkg patches fs.readFile/readFileSync for snapshot
-// assets but does NOT reliably patch fs.existsSync. findToolboxHtml() used existsSync
-// which silently returned false in the exe, producing the "File Not Found" page
-// immediately after the setup wizard. The fix is to read the HTML once at module
-// load time (readFileSync IS intercepted) and cache it — every GET / thereafter
-// serves from that cache without touching existsSync at all.
+// Issue #22 root cause (confirmed): after the setup wizard on a corporate PC, the
+// browser is redirected to GET /. On the build machine, readFileSync resolved
+// C:\...\public\toolbox.html from the real disk (not the pkg snapshot) so it
+// appeared to work. On any other machine that path doesn't exist, readFileSync
+// throws, cachedDashboardHtml stays null, and the "File Not Found" page is returned.
+//
+// Fix (v0.0.11): local-release.ps1 runs scripts/generate-dashboard-module.js
+// BEFORE the pkg build. That script converts toolbox.html into
+// src/generated/dashboardHtmlContent.js. pkg compiles JS modules into the snapshot
+// so require() works identically on every machine, bypassing fs interception entirely.
 
 'use strict';
 
@@ -32,26 +39,43 @@ const HTML_CONTENT_TYPE = 'text/html; charset=utf-8';
 
 // ── Startup pre-load (pkg snapshot fix) ──────────────────────────────────────
 
-// Read toolbox.html at module load time using fs.readFileSync.
-// In a pkg exe, readFileSync IS patched to serve from the snapshot even when
-// existsSync (used by findToolboxHtml) would incorrectly return false.
-// In development and zip distributions, readFileSync reads from the real disk.
-// Either way a single synchronous read at startup avoids repeated per-request
-// filesystem probing and eliminates the pkg existsSync gap entirely.
+// Priority 1: require the pre-compiled JS module.
+//   local-release.ps1 runs scripts/generate-dashboard-module.js before the pkg
+//   build. That script writes src/generated/dashboardHtmlContent.js which pkg
+//   compiles into the snapshot as code. require() is ALWAYS intercepted for JS
+//   modules in pkg — no fs path matching involved. This is the only approach
+//   that is guaranteed to work on every machine, not just the build machine.
+//
+// Priority 2: fs.readFileSync fallback.
+//   In development and zip distributions the generated module does not exist,
+//   so we fall back to reading from the real disk. This works because the
+//   developer has the full project directory with public/toolbox.html present.
+//
+// Either way the result is cached once at module load time. Every GET /
+// thereafter serves from the cache without any per-request filesystem I/O.
 
 /**
- * Dashboard HTML pre-loaded from the snapshot or disk at startup.
- * Null only when public/toolbox.html is genuinely absent (e.g. a stripped CI image).
- * Exported so tests can verify the cache is populated without making an HTTP request.
+ * Dashboard HTML pre-loaded from the generated JS module (pkg snapshot) or
+ * from disk (development/zip). Null only when neither source is available.
+ * Exported so tests can verify the cache is populated without making HTTP requests.
  *
  * @type {string|null}
  */
 let cachedDashboardHtml = null;
+
 try {
-  const dashboardHtmlPath = path.join(PUBLIC_DIRECTORY_PATH, TOOLBOX_HTML_FILENAME);
-  cachedDashboardHtml = fs.readFileSync(dashboardHtmlPath, 'utf-8');
-} catch (_readError) {
-  // File absent at startup (e.g. CI, stripped container) — runtime fallback will run
+  // Primary: generated module compiled into the pkg snapshot.
+  // eslint-disable-next-line import/no-unresolved
+  cachedDashboardHtml = require('../generated/dashboardHtmlContent');
+} catch (_requireError) {
+  // Generated module not present in this environment (development / CI).
+  // Fall back to reading the HTML from disk — works when public/ is accessible.
+  try {
+    const dashboardHtmlPath = path.join(PUBLIC_DIRECTORY_PATH, TOOLBOX_HTML_FILENAME);
+    cachedDashboardHtml = fs.readFileSync(dashboardHtmlPath, 'utf-8');
+  } catch (_readError) {
+    // File genuinely absent — runtime fallback search will run on each request.
+  }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -91,9 +115,10 @@ function findToolboxHtml() {
  * Returns an Express middleware that serves toolbox.html for GET / requests.
  *
  * Serving priority:
- *   1. cachedDashboardHtml — pre-loaded at startup; works in both pkg exe and
- *      zip distributions without any per-request filesystem call. This is the
- *      primary path and fixes the pkg existsSync gap (Issue #22).
+ *   1. cachedDashboardHtml — pre-loaded at startup from the generated JS module
+ *      (pkg snapshot, always works) or from disk (development/zip). This is the
+ *      primary path and the ONLY path that works reliably in the bundled .exe
+ *      on any machine (not just the build machine).
  *   2. findToolboxHtml() filesystem search — legacy fallback for edge cases
  *      where the file was absent at startup (e.g. hot-swap without restart).
  *   3. 404 "File Not Found" page — only when neither path has the file.
@@ -111,8 +136,9 @@ function serveStaticFile() {
     }
 
     // Primary path: serve from the pre-loaded cache.
-    // This is the only path that works inside a pkg exe because existsSync is
-    // not patched for snapshot assets but readFileSync (used at init) is.
+    // In the pkg exe this is the only path that works — cachedDashboardHtml is
+    // populated from the generated JS module (compiled into the snapshot), not
+    // from fs which would fail on any machine other than the build machine.
     if (cachedDashboardHtml !== null) {
       res.setHeader('Content-Type', HTML_CONTENT_TYPE);
       res.setHeader('Cache-Control', 'no-store');
