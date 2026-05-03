@@ -7,7 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.13] — Fix: v0.0.13 UI Issues
+
 ### Fixed
+- **Relay warnings showed despite proxy being connected** — `TOOLBOX_VERSION` and
+  `MIN_PROXY_SERVER_VERSION` were still set to the old standalone HTML Toolbox value
+  `'0.24.25'`. The Node.js proxy reports `'0.0.13'` from `package.json`, so the UI
+  incorrectly treated the proxy as outdated and showed relay-required banners everywhere.
+  Updated constants to match Node.js versioning; `MIN_PROXY_SERVER_VERSION` is now
+  `'0.0.1'` so any v0.x proxy is accepted.
+- **`tbxUpdateConnBar` only checked relay, not proxy** — All connection status dots
+  evaluated only `CRG.relay.jiraReady` / `CRG.relay.snowReady` (bookmarklet relay).
+  Now also reads `sessionStorage.tbxProxyStatus` so dots go green when the proxy server
+  has Jira / ServiceNow credentials configured. Mode label shows `"proxy"` instead of
+  `"relay"` when connected via proxy.
+- **`tbxRenderJiraAuthWidget` always showed relay setup steps** — Dev Workspace, Sprint
+  Dashboard, ART View, Work Log, DSU, and My Issues all displayed relay instructions even
+  when the proxy had Jira ready. Now shows a `"Jira connected via proxy"` green badge
+  and returns early when proxy Jira is ready, skipping the relay setup flow entirely.
+- **`miSyncRelayStatus` only checked relay** — My Issues connection bar showed a relay
+  warning even when the proxy was fully connected. Now ORs proxy Jira ready with relay
+  ready so the warning is hidden in both connected modes.
+- **AdminHub stuck on "Loading…"** — `adminHubOnOpen()` existed but was never called
+  because `admin-hub` was missing from the `showView` dispatch IIFE. Added the missing
+  case so AdminHub initialises correctly when the user navigates to it.
+- **Text Tools URL Encoder and Base64 panels stacked vertically** — Both tools were
+  missing the `<div class="panels">` wrapper that provides the two-column CSS Grid
+  layout used by Smart Formatter and JSON Formatter. Wrapped each tool's input/output
+  `<div class="panel">` pair in `.panels` so they render side-by-side. The Base64 error
+  message div was moved inside the input panel to avoid disrupting the grid.
+- **Update checker pointed at old ToolBox repo** — `TOOLBOX_UPDATE_REPO` was
+  `'mikejsmith1985/ToolBox'`. Changed to `'mikejsmith1985/NodeToolbox'` so GitHub
+  release checks target the correct repository.
+- **`<title>` still read "Toolbox v0.24.25"** — Browser tab now shows
+  `"NodeToolbox v0.0.13"` to match the Node.js application name and version.
+
+---
+
+### Fixed (v0.0.12 / previous [Unreleased])
 - **Root cause of "HTML not found" on corporate PCs** — The `resolvePortConflict`
   function previously detected an existing NodeToolbox on port 5555 and redirected the
   browser to it, then called `process.exit(0)`. If that old stuck session was a

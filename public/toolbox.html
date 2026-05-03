@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Toolbox v0.24.25</title>
+  <title>NodeToolbox v0.0.13</title>
 
 <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1956,55 +1956,59 @@ color: #fff;
 
     <!-- ── URL ENCODER / DECODER ── -->
     <div id="tt-panel-url-tool" class="tt-panel" style="display:none;">
-    <div class="panel">
-      <div class="panel-header">
-        <span class="panel-title">Input</span>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <div class="url-mode">
-            <input type="radio" name="url-mode" id="url-enc" value="encode" checked onchange="urlProcess()"><label for="url-enc">Encode</label>
-            <input type="radio" name="url-mode" id="url-dec" value="decode" onchange="urlProcess()"><label for="url-dec">Decode</label>
+    <div class="panels">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Input</span>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <div class="url-mode">
+              <input type="radio" name="url-mode" id="url-enc" value="encode" checked onchange="urlProcess()"><label for="url-enc">Encode</label>
+              <input type="radio" name="url-mode" id="url-dec" value="decode" onchange="urlProcess()"><label for="url-dec">Decode</label>
+            </div>
+            <div class="url-mode">
+              <input type="radio" name="url-scope" id="url-comp" value="component" checked onchange="urlProcess()"><label for="url-comp">Component</label>
+              <input type="radio" name="url-scope" id="url-full" value="full" onchange="urlProcess()"><label for="url-full">Full URI</label>
+            </div>
+            <button class="url-btn url-btn-ghost" onclick="urlClear()">Clear</button>
           </div>
-          <div class="url-mode">
-            <input type="radio" name="url-scope" id="url-comp" value="component" checked onchange="urlProcess()"><label for="url-comp">Component</label>
-            <input type="radio" name="url-scope" id="url-full" value="full" onchange="urlProcess()"><label for="url-full">Full URI</label>
-          </div>
-          <button class="url-btn url-btn-ghost" onclick="urlClear()">Clear</button>
         </div>
+        <textarea id="url-input" placeholder="Paste text or URL here…" spellcheck="false" oninput="urlProcess()"></textarea>
       </div>
-      <textarea id="url-input" placeholder="Paste text or URL here…" spellcheck="false" oninput="urlProcess()"></textarea>
-    </div>
-    <div class="panel">
-      <div class="panel-header">
-        <span class="panel-title">Output</span>
-        <button id="url-copy-btn" class="url-btn url-btn-primary" onclick="urlCopy()">Copy</button>
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Output</span>
+          <button id="url-copy-btn" class="url-btn url-btn-primary" onclick="urlCopy()">Copy</button>
+        </div>
+        <textarea id="url-output" readonly placeholder="Result will appear here…" spellcheck="false"></textarea>
       </div>
-      <textarea id="url-output" readonly placeholder="Result will appear here…" spellcheck="false"></textarea>
     </div>
   
     </div>
 
     <!-- ── BASE64 ── -->
     <div id="tt-panel-base64" class="tt-panel" style="display:none;">
-    <div class="panel">
-      <div class="panel-header">
-        <span class="panel-title">Input</span>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div class="b64-mode">
-            <input type="radio" name="b64-mode" id="b64-enc" value="encode" checked onchange="b64Process()"><label for="b64-enc">Encode → Base64</label>
-            <input type="radio" name="b64-mode" id="b64-dec" value="decode" onchange="b64Process()"><label for="b64-dec">Decode ← Base64</label>
+    <div class="panels">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Input</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div class="b64-mode">
+              <input type="radio" name="b64-mode" id="b64-enc" value="encode" checked onchange="b64Process()"><label for="b64-enc">Encode → Base64</label>
+              <input type="radio" name="b64-mode" id="b64-dec" value="decode" onchange="b64Process()"><label for="b64-dec">Decode ← Base64</label>
+            </div>
+            <button class="b64-btn b64-btn-ghost" onclick="b64Clear()">Clear</button>
           </div>
-          <button class="b64-btn b64-btn-ghost" onclick="b64Clear()">Clear</button>
         </div>
+        <textarea id="b64-input" placeholder="Paste text here…" spellcheck="false" oninput="b64Process()"></textarea>
+        <div id="b64-error" class="b64-error"></div>
       </div>
-      <textarea id="b64-input" placeholder="Paste text here…" spellcheck="false" oninput="b64Process()"></textarea>
-    </div>
-    <div id="b64-error" class="b64-error"></div>
-    <div class="panel">
-      <div class="panel-header">
-        <span class="panel-title">Output</span>
-        <button id="b64-copy-btn" class="b64-btn b64-btn-primary" onclick="b64Copy()">Copy</button>
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Output</span>
+          <button id="b64-copy-btn" class="b64-btn b64-btn-primary" onclick="b64Copy()">Copy</button>
+        </div>
+        <textarea id="b64-output" readonly placeholder="Result will appear here…" spellcheck="false"></textarea>
       </div>
-      <textarea id="b64-output" readonly placeholder="Result will appear here…" spellcheck="false"></textarea>
     </div>
   
     </div>
@@ -3323,9 +3327,9 @@ $listener.Start()
 ════════════════════════════════════════════════════════════════ -->
 <script>
 // ── Toolbox version & update config ──────────────────────────────────────────
-var TOOLBOX_VERSION = '0.24.25';
-var MIN_PROXY_SERVER_VERSION = '0.24.25'; // bumped by release script — oldest proxy that works with this UI build
-var TOOLBOX_UPDATE_REPO = 'mikejsmith1985/ToolBox';   // public, used for version check
+var TOOLBOX_VERSION = '0.0.13';
+var MIN_PROXY_SERVER_VERSION = '0.0.1'; // bumped by release script — oldest proxy that works with this UI build
+var TOOLBOX_UPDATE_REPO = 'mikejsmith1985/NodeToolbox'; // public, used for version check
 var TOOLBOX_DOWNLOAD_URL = '';                         // set by release script → Confluence attachment URL
 
 // ── Update checker ────────────────────────────────────────────────────────────
@@ -4028,6 +4032,7 @@ function fbCopy(text) {
     if (id === 'dsu-board') dsuOnOpen();
     if (id === 'toolbox-settings') tbxGSOnOpen();
     if (id === 'code-walkthrough') wtOnOpen();
+    if (id === 'admin-hub') adminHubOnOpen();
     if (id === 'ai-chat') { showView('home'); return; } // AI tool hidden — redirect home
   };
 })();
@@ -4819,8 +4824,16 @@ function tbxShowReconnectToast(msg) {
 // ── Global Connection Bar ─────────────────────────────────────────────────────
 // Updates all connection bar instances across CRG, PRB, My Issues views.
 function tbxUpdateConnBar() {
-  var jOk = !!(CRG.relay.jiraReady);
-  var sOk = !!(CRG.relay.snowReady);
+  // Read the most recent proxy probe result — set by tbxRunProxyProbe().
+  // When the proxy is running with services ready, treat those as connected
+  // without requiring the browser-relay bookmarklet.
+  var liveProxyStatus = null;
+  try { liveProxyStatus = JSON.parse(sessionStorage.getItem('tbxProxyStatus') || 'null'); } catch(ignoreParseError) {}
+  var isProxyJiraReady = !!(liveProxyStatus && liveProxyStatus.jira && liveProxyStatus.jira.ready);
+  var isProxySnowReady = !!(liveProxyStatus && liveProxyStatus.snow && liveProxyStatus.snow.ready);
+
+  var jOk = !!(CRG.relay.jiraReady) || isProxyJiraReady;
+  var sOk = !!(CRG.relay.snowReady) || isProxySnowReady;
   var cOk = !!(CRG.relay.confReady);
   var snowUrl = crGet('snowUrl') || localStorage.getItem('tbxCRGenSnowUrl') || '';
   var bars = [
@@ -4866,9 +4879,13 @@ function tbxUpdateConnBar() {
     if (mode) {
       var anyOk = bar.hasConf ? (jOk || cOk) : (jOk || sOk);
       if (anyOk) {
+        // Show "proxy" label when connected via proxy server; "relay" when bookmarklet-connected.
+        var connectedViaProxy = (jOk && isProxyJiraReady && !CRG.relay.jiraReady) ||
+          (sOk && isProxySnowReady && !CRG.relay.snowReady);
+        var connLabel = connectedViaProxy ? 'proxy' : 'relay';
         var connAt = bar.hasConf ? (cOk ? CRG.relay.confConnAt : CRG.relay.jiraConnAt) : (jOk ? CRG.relay.jiraConnAt : CRG.relay.snowConnAt);
         var ts = tbxFormatConnTime(connAt);
-        mode.innerHTML = 'relay' + (ts ? ' <span class="conn-ts">\u00B7 connected ' + ts + '</span>' : '');
+        mode.innerHTML = connLabel + (ts ? ' <span class="conn-ts">\u00B7 connected ' + ts + '</span>' : '');
       } else {
         mode.innerHTML = '';
       }
@@ -6973,6 +6990,26 @@ function tbxRenderJiraAuthWidget(containerId) {
   var hasPat    = !!tbxGetJiraPAT();
   var relayWin  = CRG.relay.jiraWin && !CRG.relay.jiraWin.closed;
   var relayReady = relayWin && CRG.relay.jiraReady;
+
+  // ── Proxy running with Jira ready — no relay or CORS workaround needed ──
+  // When the NodeToolbox proxy server is up and has Jira credentials configured,
+  // all API calls route through it at http://localhost:5555 — the browser relay
+  // bookmarklet is entirely optional. Show a "connected via proxy" status instead
+  // of the relay setup steps so users are not confused.
+  var cachedProxyStatus = null;
+  try { cachedProxyStatus = JSON.parse(sessionStorage.getItem('tbxProxyStatus') || 'null'); } catch(ignoreParseError) {}
+  var isProxyJiraReady = !!(cachedProxyStatus && cachedProxyStatus.jira && cachedProxyStatus.jira.ready);
+  if (isProxyJiraReady) {
+    var proxyLabel = hasPat ? '🔑🖥 Jira connected — PAT via proxy' : '🖥 Jira connected via proxy';
+    el.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;' +
+      'padding:8px 14px;background:#22c55e18;border:1px solid #22c55e44;border-radius:8px;font-size:12px;">' +
+      '<span style="color:#22c55e;font-weight:600;">' + proxyLabel + '</span>' +
+      '<button class="cr-btn cr-btn-ghost cr-btn-sm" onclick="tbxVerifyJiraConnection(\'' + containerId + '\')" ' +
+      'style="font-size:11px;">↻ Test</button>' +
+      '</div>';
+    return;
+  }
 
   // ── Relay is connected and ready ─────────────────────────────
   if (relayReady) {
@@ -9396,7 +9433,12 @@ function miRenderIntel() {
 }
 
 function miSyncRelayStatus() {
-  var ready = !!(CRG && CRG.relay && CRG.relay.jiraReady);
+  // Consider Jira "ready" if the relay is connected OR if the proxy server has
+  // Jira credentials configured — both transport methods provide full API access.
+  var cachedProxyStatus = null;
+  try { cachedProxyStatus = JSON.parse(sessionStorage.getItem('tbxProxyStatus') || 'null'); } catch(ignoreParseError) {}
+  var isProxyJiraReady = !!(cachedProxyStatus && cachedProxyStatus.jira && cachedProxyStatus.jira.ready);
+  var ready = !!(CRG && CRG.relay && CRG.relay.jiraReady) || isProxyJiraReady;
   // Update My Issues connection bar
   tbxUpdateConnBar();
   var warn = document.getElementById('mi-relay-warn');
