@@ -7,7 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.0.13] — Fix: v0.0.13 UI Issues
+## [0.0.14] — Fix: Reports Hub rendering, version display, relay vs proxy status
+
+### Fixed
+- **Reports Hub showed unreadable ANSI escape sequences and control characters** — Raw
+  Jira ticket descriptions containing ANSI colour codes (e.g. `\x1b[32m`) or other C0/C1
+  control bytes were rendered verbatim in the Reports Hub, producing garbled output.
+  Added `stripControlCharactersFromText()` which strips full ANSI CSI sequences before
+  falling back to lone ESC and remaining non-printable bytes; applied to both ADF and
+  plain-text paths inside `miRenderJiraText()`.
+- **Version displayed as v0.0.13 instead of v0.0.14** — `TOOLBOX_VERSION` constant and
+  the `<title>` tag were both hardcoded to `'0.0.13'`. Updated to `'0.0.14'`. Also fixed
+  `server.js` where `APP_VERSION` was permanently hardcoded to `'1.0.0'`; it now reads
+  the version from `package.json` at startup so the server and UI always agree.
+- **"RELAY dependency" banner shown for all services** — `miSyncRelayStatus()` always
+  showed a "Jira relay connected" message regardless of how the user was authenticated.
+  It now shows three distinct states: `"Jira connected via proxy"` when authenticated
+  with a PAT/proxy, `"Jira relay connected"` when connected via the bookmarklet relay,
+  and `"not connected — configure credentials"` when neither is active.
+
+## [0.0.13]— Fix: v0.0.13 UI Issues
 
 ### Fixed
 - **Relay warnings showed despite proxy being connected** — `TOOLBOX_VERSION` and

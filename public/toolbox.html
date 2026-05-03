@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NodeToolbox v0.0.13</title>
+  <title>NodeToolbox v0.0.14</title>
 
 <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -3327,7 +3327,7 @@ $listener.Start()
 ════════════════════════════════════════════════════════════════ -->
 <script>
 // ── Toolbox version & update config ──────────────────────────────────────────
-var TOOLBOX_VERSION = '0.0.13';
+var TOOLBOX_VERSION = '0.0.14';
 var MIN_PROXY_SERVER_VERSION = '0.0.1'; // bumped by release script — oldest proxy that works with this UI build
 var TOOLBOX_UPDATE_REPO = 'mikejsmith1985/NodeToolbox'; // public, used for version check
 var TOOLBOX_DOWNLOAD_URL = '';                         // set by release script → Confluence attachment URL
@@ -9450,9 +9450,18 @@ function miSyncRelayStatus() {
   }
   var connStatus = document.getElementById('mi-jira-conn-status');
   if (connStatus) {
-    connStatus.innerHTML = ready
-      ? crAlert('✅ Jira relay connected — ready to fetch your issues.', 'success')
-      : crAlert('⚠️ Not connected. Follow the steps below to connect.', 'warn');
+    var connStatusMessage;
+    if (!ready) {
+      // Neither proxy nor relay is available — prompt the user to configure one
+      connStatusMessage = crAlert('⚠️ Not connected. Configure credentials in Toolbox Settings or connect the relay.', 'warn');
+    } else if (isProxyJiraReady) {
+      // Connected via the proxy server using PAT or basic auth — no relay bookmarklet needed
+      connStatusMessage = crAlert('✅ Jira connected via proxy — ready to fetch your issues.', 'success');
+    } else {
+      // Connected via the browser relay bookmarklet
+      connStatusMessage = crAlert('✅ Jira relay connected — ready to fetch your issues.', 'success');
+    }
+    connStatus.innerHTML = connStatusMessage;
   }
   if (ready) {
     var step4 = document.getElementById('mi-step-4');
@@ -40675,13 +40684,45 @@ function miMentionSelect(username, displayName) {
   miMentionHide();
 }
 
+/**
+ * Strips ANSI escape sequences and non-printable control characters from a string.
+ * Jira API responses and relay-forwarded text can contain terminal color codes
+ * (e.g. ESC[32m...ESC[0m) or stray control bytes that render as garbage glyphs
+ * in the browser. This normalisation step runs before any HTML escaping or
+ * sanitisation so the downstream renderers only ever see clean, printable text.
+ *
+ * Characters removed:
+ *   • ANSI escape sequences  — /\x1b\[[0-9;]*[A-Za-z]/g
+ *   • Standalone ESC (0x1b)  — /\x1b/g
+ *   • C0 control chars       — 0x00–0x08, 0x0b, 0x0c, 0x0e–0x1f  (tab 0x09 and LF 0x0a are kept)
+ *   • DEL and C1 controls    — 0x7f–0x9f
+ *
+ * @param {string} rawInput - Raw text that may contain control codes
+ * @returns {string} Printable text with all control codes removed
+ */
+function stripControlCharactersFromText(rawInput) {
+  if (!rawInput) return rawInput;
+  return String(rawInput)
+    // Remove full ANSI CSI escape sequences first (ESC [ ... final-byte)
+    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+    // Remove any remaining lone ESC characters
+    .replace(/\x1b/g, '')
+    // Remove C0 control characters — keep HT (0x09) and LF (0x0a) which are meaningful in text
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+    // Remove DEL (0x7f) and C1 control block (0x80–0x9f)
+    .replace(/[\x7f-\x9f]/g, '');
+}
+
 function miRenderJiraText(raw) {
   if (!raw) return '';
   if (typeof raw === 'object') {
     var adfText = miAdfToText(raw).trim();
-    return crEsc(adfText).replace(/\n/g, '<br>');
+    // Strip control characters from ADF-converted text before rendering
+    var cleanAdfText = stripControlCharactersFromText(adfText);
+    return crEsc(cleanAdfText).replace(/\n/g, '<br>');
   }
-  var text = String(raw).trim();
+  // Strip ANSI codes and control characters before any further processing
+  var text = stripControlCharactersFromText(String(raw)).trim();
   if (!text) return '';
   // Detect HTML by looking for common block or inline element tags
   if (/<(p|br|div|span|ul|li|ol|strong|em|b|i|h[1-6]|table|tr|td|th)[\s>\/]/i.test(text)) {
