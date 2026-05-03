@@ -2,12 +2,16 @@
 //
 // Tests three user-visible bugs:
 //   1. Unreadable (ANSI/control) characters appearing in the Reports Hub
-//   2. Version mismatch: UI showing v0.0.13 instead of v0.0.14
+//   2. Version mismatch: UI not showing the same version as the server API
 //   3. RELAY dependency shown when PAT/proxy credentials are configured
 //
 // These are written as RED tests first (TDD). They describe the expected
 // user experience — run them before the fix to confirm they fail, then
 // run after the fix to confirm they pass.
+//
+// NOTE: Version tests are intentionally version-agnostic — they compare the
+// UI against the live API response rather than a hardcoded string, so they
+// remain valid across releases without needing manual updates.
 
 'use strict';
 
@@ -94,44 +98,70 @@ test.describe('Bug 1 — Reports Hub: unreadable characters are stripped', () =>
 
 // ── Bug 2: Version mismatch ───────────────────────────────────────────────────
 
-test.describe('Bug 2 — Version: UI must show v0.0.14 everywhere', () => {
-  test('page <title> contains the correct version', async ({ page }) => {
+// These tests are version-agnostic by design: they fetch the current version
+// from the API and verify that every UI surface shows that same version.
+// This prevents the tests from going stale on every release.
+test.describe('Bug 2 — Version: UI must show the same version as the server everywhere', () => {
+  test('page <title> contains the same version as the API', async ({ page }) => {
+    // Fetch the authoritative version from the server itself
+    const apiResponse = await page.request.get('/api/proxy-status');
+    expect(apiResponse.status()).toBe(200);
+    const { version: apiVersion } = await apiResponse.json();
+
     await loadDashboard(page);
-    const title = await page.title();
-    // Must NOT show the stale 0.0.13 version
-    expect(title).not.toContain('0.0.13');
-    // Must show the correct version from package.json
-    expect(title).toContain('0.0.14');
+    const pageTitle = await page.title();
+
+    // Title must match the live API version — never the old hardcoded value
+    expect(pageTitle).not.toContain('0.0.13');
+    expect(pageTitle).toContain(apiVersion);
   });
 
-  test('API /api/proxy-status returns version 0.0.14', async ({ page }) => {
-    const response = await page.request.get('/api/proxy-status');
-    expect(response.status()).toBe(200);
-    const body = await response.json();
-    expect(body.version).toBe('0.0.14');
+  test('API /api/proxy-status returns a real version (not stale 1.0.0 or 0.0.13)', async ({ page }) => {
+    const apiResponse = await page.request.get('/api/proxy-status');
+    expect(apiResponse.status()).toBe(200);
+    const body = await apiResponse.json();
+
+    // server.js used to hardcode '1.0.0' — ensure that regression is gone
+    expect(body.version).not.toBe('1.0.0');
+    // Stale HTML had 0.0.13 — ensure it was updated
+    expect(body.version).not.toBe('0.0.13');
+    // Must be a valid semver string
+    expect(body.version).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  test('TOOLBOX_VERSION JS constant in the page is 0.0.14', async ({ page }) => {
+  test('TOOLBOX_VERSION JS constant matches the API version', async ({ page }) => {
+    const apiResponse = await page.request.get('/api/proxy-status');
+    const { version: apiVersion } = await apiResponse.json();
+
     await loadDashboard(page);
-    const version = await page.evaluate(() => {
+    const toolboxVersion = await page.evaluate(() => {
+      // TOOLBOX_VERSION is a global var declared early in toolbox.html
       return typeof TOOLBOX_VERSION !== 'undefined' ? TOOLBOX_VERSION : null;
     });
-    expect(version).not.toBe('0.0.13');
-    expect(version).toBe('0.0.14');
+
+    // The JS constant must not be stale or null
+    expect(toolboxVersion).not.toBeNull();
+    expect(toolboxVersion).not.toBe('0.0.13');
+    // Must match what the server reports — UI and server must agree
+    expect(toolboxVersion).toBe(apiVersion);
   });
 
-  test('version badge element shows v0.0.14 on the home screen', async ({ page }) => {
+  test('version badge element shows the current API version on the home screen', async ({ page }) => {
+    const apiResponse = await page.request.get('/api/proxy-status');
+    const { version: apiVersion } = await apiResponse.json();
+
     await loadDashboard(page);
-    // The badge is rendered by homeInit() — give it a moment to run
+    // homeInit() renders the badge asynchronously — give it a moment
     await page.waitForTimeout(500);
     const badgeText = await page.evaluate(() => {
       const badgeElement = document.getElementById('tbx-version-badge');
       return badgeElement ? badgeElement.textContent : null;
     });
-    // Badge may not be visible on every view, but when it exists it must show the right version
+
+    // When the badge exists it must show the live version, not a stale one
     if (badgeText !== null) {
       expect(badgeText).not.toContain('0.0.13');
-      expect(badgeText).toContain('0.0.14');
+      expect(badgeText).toContain(apiVersion);
     }
   });
 });
