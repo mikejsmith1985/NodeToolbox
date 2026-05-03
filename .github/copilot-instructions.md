@@ -74,3 +74,31 @@ This project uses **GitHub Flow**:
 - Documentation → Haiku-tier model
 - Always classify task complexity before choosing approach
 
+## Release Process (MANDATORY — READ BEFORE RELEASING)
+
+**NEVER use GitHub Actions to release.** NodeToolbox uses a local pipeline.
+
+### The Only Correct Way to Release
+
+```powershell
+cd "C:\ProjectsWin\NodeToolbox"
+.\scripts\local-release.ps1 patch    # bug fix
+.\scripts\local-release.ps1 minor    # new feature
+.\scripts\local-release.ps1 major    # breaking change
+.\scripts\local-release.ps1 0.1.4    # exact version (safe to re-run after failure)
+```
+
+The script:
+1. Sets the version in `package.json`
+2. Builds the zip and exe artifacts
+3. Commits the version bump to the current branch
+4. **Merges to main** (tags must live on `main`)
+5. Creates the git tag and GitHub Release with assets attached
+
+### Rules Agents Must Follow
+- ❌ NEVER create or modify `.github/workflows/*.yml` for release
+- ❌ NEVER push a tag manually and wait for CI to create the release
+- ❌ NEVER run `npm version` with git tag creation (`--no-git-tag-version` is required)
+- ✅ ALWAYS pass an explicit version number when re-running after a failed attempt
+- ✅ ALWAYS run from a feature branch — the script merges to `main` for you
+
