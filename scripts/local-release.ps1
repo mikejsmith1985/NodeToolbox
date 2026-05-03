@@ -272,7 +272,7 @@ try {
     git pull origin main
     if ($LASTEXITCODE -ne 0) { throw "git pull main failed" }
     git merge $originalBranch --no-edit
-    if ($LASTEXITCODE -ne 0) { throw "git merge $originalBranch failed — resolve conflicts then re-run" }
+    if ($LASTEXITCODE -ne 0) { throw "git merge $originalBranch failed - resolve conflicts then re-run" }
     git push origin main
     if ($LASTEXITCODE -ne 0) { throw "git push main failed with exit code $LASTEXITCODE" }
     Write-Host "       ✅ Merged and pushed to main"
