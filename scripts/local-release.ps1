@@ -287,9 +287,12 @@ try {
     }
 
     # Remove the existing GitHub Release and remote tag if they exist —
-    # this makes the publish step idempotent (safe to re-run after a failed build)
-    $releaseExists = gh release view $GitTag 2>&1
-    if ($LASTEXITCODE -eq 0) {
+    # this makes the publish step idempotent (safe to re-run after a failed build).
+    # Use try/catch: gh release view exits non-zero (throwing NativeCommandError
+    # under $ErrorActionPreference = 'Stop') when no release exists.
+    $releaseExists = $false
+    try { $null = gh release view $GitTag 2>$null; $releaseExists = $true } catch { $releaseExists = $false }
+    if ($releaseExists) {
         gh release delete $GitTag --yes 2>&1 | Out-Null
     }
     git push origin ":refs/tags/$GitTag" 2>&1 | Out-Null  # delete remote tag if present
