@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NodeToolbox v0.0.15</title>
+  <title>NodeToolbox v0.0.16</title>
 
 <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -3327,7 +3327,7 @@ $listener.Start()
 ════════════════════════════════════════════════════════════════ -->
 <script>
 // ── Toolbox version & update config ──────────────────────────────────────────
-var TOOLBOX_VERSION = '0.0.15';
+var TOOLBOX_VERSION = '0.0.16';
 var MIN_PROXY_SERVER_VERSION = '0.0.1'; // bumped by release script — oldest proxy that works with this UI build
 var TOOLBOX_UPDATE_REPO = 'mikejsmith1985/NodeToolbox'; // public, used for version check
 var TOOLBOX_DOWNLOAD_URL = '';                         // set by release script → Confluence attachment URL
@@ -4880,7 +4880,7 @@ function tbxUpdateConnBar() {
       var anyOk = bar.hasConf ? (jOk || cOk) : (jOk || sOk);
       if (anyOk) {
         // Show "proxy" label when connected via proxy server; "relay" when bookmarklet-connected.
-        var connectedViaProxy = (jOk && isProxyJiraReady && !CRG.relay.jiraReady) ||
+        var connectedViaProxy = (jOk && isProxyJiraReady && !tbxJiraReady()) ||
           (sOk && isProxySnowReady && !CRG.relay.snowReady);
         var connLabel = connectedViaProxy ? 'proxy' : 'relay';
         var connAt = bar.hasConf ? (cOk ? CRG.relay.confConnAt : CRG.relay.jiraConnAt) : (jOk ? CRG.relay.jiraConnAt : CRG.relay.snowConnAt);
@@ -4931,7 +4931,7 @@ function tbxConnect() {
     return;
   }
   // Open/focus Jira relay popup if not connected
-  if (!CRG.relay.jiraReady) {
+  if (!tbxJiraReady()) {
     CRG.relay.jiraWin = window.open(jiraUrl, '__crg_jira', tbxRelayWinSpec('jira'));
     crAutoPing('jira');
   }
@@ -4985,7 +4985,7 @@ setInterval(function() {
     }
     // Tab became visible — re-probe relays
     var jiraUrl = localStorage.getItem('tbxCRGenJiraUrl') || '';
-    if (jiraUrl && !CRG.relay.jiraReady) tbxProbeRelay('jira');
+    if (jiraUrl && !tbxJiraReady()) tbxProbeRelay('jira');
     var snowUrl = localStorage.getItem('tbxCRGenSnowUrl') || '';
     if (snowUrl && !CRG.relay.snowReady) tbxProbeRelay('snow');
     // Refresh all auth UI immediately
@@ -5192,7 +5192,7 @@ function crPingJira() {
   CRG.relay.jiraReady = false;
   CRG.relay.jiraWin.postMessage({ __crg: true, __crg_ping: true }, '*');
   setTimeout(function() {
-    if (!CRG.relay.jiraReady) {
+    if (!tbxJiraReady()) {
       var msg = (CRG.relay.jiraWin && !CRG.relay.jiraWin.closed)
         ? 'No response — Jira tab is open but hasn\'t replied. Make sure you clicked the <strong>📎 Toolbox Relay</strong> bookmarklet on the Jira tab, then click <strong>Test Connection</strong> again.'
         : 'No response. Complete <strong>Step 3</strong>: click the <strong>Jira Relay</strong> bookmarklet on the Jira tab, then click <strong>Test Connection</strong> again.';
@@ -5467,7 +5467,7 @@ function crCheckCredWarnings() {
   // In NodeToolbox proxy mode the relay is never used, so CRG.relay.jiraReady is always
   // false. Suppress warnings for proxy-mode users — the server handles credentials.
   var isInProxyMode = typeof IS_NODETOOLBOX_SERVER !== 'undefined' && IS_NODETOOLBOX_SERVER;
-  if (jiraWarn) jiraWarn.style.display = (!isInProxyMode && !CRG.relay.jiraReady) ? 'flex' : 'none';
+  if (jiraWarn) jiraWarn.style.display = (!isInProxyMode && !tbxJiraReady()) ? 'flex' : 'none';
   if (snowWarn) snowWarn.style.display = (!isInProxyMode && !CRG.relay.snowReady) ? 'flex' : 'none';
 }
 
@@ -5504,7 +5504,7 @@ function crFetchFixVersions() {
   if (list) list.innerHTML = '';
   if (statusEl) statusEl.textContent = '';
   if (!proj || proj.length < 2) return;
-  if (!CRG.relay.jiraReady) return; // silently skip — no relay yet
+  if (!tbxJiraReady()) return; // silently skip — no relay yet
   clearTimeout(crFVDebounce);
   crFVDebounce = setTimeout(function() {
     if (statusEl) statusEl.textContent = '⏳ Loading versions…';
@@ -5535,7 +5535,7 @@ function crFetchIssues() {
   var fv   = document.getElementById('cr-fixversion').value.trim();
   if (!proj) { document.getElementById('cr-fetch-result').innerHTML = crAlert('Please enter a Project Key.', 'warn'); return; }
   if (!fv)   { document.getElementById('cr-fetch-result').innerHTML = crAlert('Please enter a Fix Version.', 'warn'); return; }
-  if (!CRG.relay.jiraReady) {
+  if (!tbxJiraReady()) {
     document.getElementById('cr-fetch-result').innerHTML = crAlert('Jira relay not connected. <button class="cr-btn cr-btn-ghost cr-btn-sm" onclick="tbxConnect()">🔌 Connect →</button>', 'warn');
     return;
   }
@@ -5633,7 +5633,7 @@ function crResyncIssues() {
   proj = proj.trim().toUpperCase();
   fv   = fv.trim();
   if (!proj || !fv) { alert('No fix version loaded yet — use Step 1 to fetch issues first.'); return; }
-  if (!CRG.relay.jiraReady) { tbxShowReconnectToast('Jira relay not connected.'); return; }
+  if (!tbxJiraReady()) { tbxShowReconnectToast('Jira relay not connected.'); return; }
 
   var btn3  = document.getElementById('cr-resync-btn-3');
   var btn4  = document.getElementById('cr-resync-btn-4');
@@ -6831,6 +6831,23 @@ var IS_NODETOOLBOX_SERVER = (
   window.location.hostname === 'localhost'
 );
 
+/**
+ * Returns true when a Jira API call can be made — either via the NodeToolbox
+ * proxy server (proxy mode, no relay required) or via the browser relay
+ * bookmarklet (legacy file:// mode).
+ *
+ * All Jira operation guards should call this instead of reading
+ * CRG.relay.jiraReady directly, so that proxy-connected users never see
+ * "connect relay" messages for Jira.
+ */
+function tbxJiraReady() {
+  // In proxy mode every Jira call routes through /jira-proxy on the local
+  // server — the browser relay bookmarklet is never needed.
+  if (IS_NODETOOLBOX_SERVER) return true;
+  // Legacy file:// mode: require the bookmarklet relay.
+  return !!(typeof CRG !== 'undefined' && CRG.relay && CRG.relay.jiraReady);
+}
+
 /** Base URL of the NodeToolbox server (e.g. http://localhost:5555), or null in file:// mode. */
 var NODETOOLBOX_ORIGIN = IS_NODETOOLBOX_SERVER ? window.location.origin : null;
 
@@ -7694,7 +7711,7 @@ function prbIssueSearchDebounce(safeId, term, searchProject) {
 
 function prbIssueSearchNow(safeId, term, searchProject) {
   if (!term || term.length < 2) return;
-  if (!CRG.relay.jiraReady) {
+  if (!tbxJiraReady()) {
     var r = document.getElementById(safeId + '-results');
     if (r) r.innerHTML = '<div class="cr-alert cr-alert-warn" style="font-size:11px;">Jira relay not connected.</div>';
     return;
@@ -7859,7 +7876,7 @@ function prbCreateIssue(payload, label) {
 }
 function prbCreate() {
   if (!PRB.currentPRB) { alert('Fetch a Problem first.'); return; }
-  if (!CRG.relay.jiraReady) { tbxShowReconnectToast('Jira relay not connected.'); return; }
+  if (!tbxJiraReady()) { tbxShowReconnectToast('Jira relay not connected.'); return; }
 
   // Persist form values for next time
   prbSaveFormValues();
@@ -8031,7 +8048,7 @@ function prbRetryDefectOnly(storyKey) {
   if (!storyKey) { alert('Enter the existing Story key (e.g. ENFCT-123).'); return; }
   var state = PRB._lastCreate;
   if (!state || !state.defectPayload) { alert('No previous create context found. Use the main Create button instead.'); return; }
-  if (!CRG.relay.jiraReady) { tbxShowReconnectToast('Jira relay not connected.'); return; }
+  if (!tbxJiraReady()) { tbxShowReconnectToast('Jira relay not connected.'); return; }
 
   var resEl = document.getElementById('prb-results');
   if (resEl) resEl.innerHTML = '<div class="cr-alert cr-alert-info">⏳ Creating Defect…</div>';
@@ -8082,7 +8099,7 @@ function prbRetryStoryOnly(defectKey) {
   if (!defectKey) { alert('Enter the existing Defect key (e.g. ENFCT-123).'); return; }
   var state = PRB._lastCreate;
   if (!state || !state.storyPayload) { alert('No previous create context found. Use the main Create button instead.'); return; }
-  if (!CRG.relay.jiraReady) { tbxShowReconnectToast('Jira relay not connected.'); return; }
+  if (!tbxJiraReady()) { tbxShowReconnectToast('Jira relay not connected.'); return; }
 
   var resEl = document.getElementById('prb-results');
   if (resEl) resEl.innerHTML = '<div class="cr-alert cr-alert-info">⏳ Creating Story…</div>';
@@ -8359,7 +8376,7 @@ function prbExportPushJira() {
   var keyEl = document.getElementById('prb-dist-issue-key') || document.getElementById('prb-imp-jira-key');
   var key = keyEl ? keyEl.value.trim().toUpperCase() : '';
   if (!key) { alert('Enter a Distribution Issue Key first (e.g. TEAM-123).'); return; }
-  if (!CRG.relay.jiraReady) { alert('Jira relay is not connected. Connect to Jira first.'); return; }
+  if (!tbxJiraReady()) { alert('Jira is not connected. Connect to Jira first.'); return; }
   var json = JSON.stringify(prbBuildConfigObject(), null, 2);
   var jiraUrl = crGet('jiraUrl').replace(/\/$/, '');
   // Build multipart/form-data body via Blob
@@ -8455,7 +8472,7 @@ function prbImportPullJira() {
   var statusEl = document.getElementById('prb-imp-jira-status');
   var key = keyEl ? keyEl.value.trim().toUpperCase() : '';
   if (!key) { alert('Enter a Jira issue key first.'); return; }
-  if (!CRG.relay.jiraReady) { alert('Jira relay is not connected.'); return; }
+  if (!tbxJiraReady()) { alert('Jira is not connected.'); return; }
   var jiraUrl = crGet('jiraUrl').replace(/\/$/, '');
   if (statusEl) statusEl.innerHTML = '<div class="cr-alert cr-alert-info" style="font-size:12px;">⏳ Fetching config from ' + key + '…</div>';
   tbxRelayRequest('jira', {
@@ -8713,7 +8730,7 @@ function prbFbAddAllDiscovered() {
  */
 function prbFetchFieldOptions(jiraField) {
   prbFbSaveCurrentRows();
-  if (!CRG.relay.jiraReady) { tbxShowReconnectToast('Jira relay not connected.'); return; }
+  if (!tbxJiraReady()) { tbxShowReconnectToast('Jira relay not connected.'); return; }
   var pkEl = document.getElementById('prb-fb-project-key') || document.getElementById('prb-s-project');
   var projectKey = ((pkEl ? pkEl.value.trim() : '') || prbGet('jiraProject') || '').toUpperCase();
   if (!projectKey) { alert('Set a Jira Project Key in Settings first (or type it in the Field Discovery box above).'); return; }
@@ -8787,7 +8804,7 @@ function prbFetchFieldsByType() {
   var resEl = document.getElementById('prb-fb-sample-result');
   var projectKey = (pkEl ? pkEl.value.trim().toUpperCase() : '') || prbGet('jiraProject').toUpperCase();
   if (!projectKey) { if (resEl) resEl.innerHTML = '<div class="cr-alert cr-alert-warn">Enter a Jira Project Key first.</div>'; return; }
-  if (!CRG.relay.jiraReady) { if (resEl) resEl.innerHTML = '<div class="cr-alert cr-alert-error">Jira relay not connected. Connect in the Settings tab first.</div>'; return; }
+  if (!tbxJiraReady()) { if (resEl) resEl.innerHTML = '<div class="cr-alert cr-alert-error">Jira relay not connected. Connect in the Settings tab first.</div>'; return; }
 
   var typeSelect   = document.getElementById('prb-fb-issue-type');
   var selectedId   = typeSelect ? typeSelect.value : '';
@@ -8999,7 +9016,7 @@ function prbSearchUsers() {
   var q   = ((document.getElementById('prb-user-search') || {}).value || '').trim();
   var res = document.getElementById('prb-user-results');
   if (!q) return;
-  if (!CRG.relay.jiraReady) {
+  if (!tbxJiraReady()) {
     if (res) res.innerHTML = '<div class="cr-alert cr-alert-warn">Jira relay not connected.</div>';
     return;
   }
@@ -9532,7 +9549,7 @@ function miPingJira() {
   CRG.relay.jiraReady = false;
   CRG.relay.jiraWin.postMessage({ __crg: true, __crg_ping: true }, '*');
   setTimeout(function() {
-    if (!CRG.relay.jiraReady) {
+    if (!tbxJiraReady()) {
       result.innerHTML = crAlert('No response. Click the <strong>Jira Relay</strong> bookmarklet on the Jira tab, then try again.', 'warn');
     }
   }, 3000);
@@ -9549,7 +9566,7 @@ function miFetch() {
 
 function miFetchMine() {
   miSyncRelayStatus();
-  if (!CRG.relay.jiraReady) return;
+  if (!tbxJiraReady()) return;
 
   var btn = document.getElementById('mi-fetch-btn');
   btn.disabled = true;
@@ -9664,7 +9681,7 @@ function miSetSource(src, silent) {
 // ── JQL Query ─────────────────────────────────────────────────────────────────
 function miRunJQL() {
   miSyncRelayStatus();
-  if (!CRG.relay.jiraReady) return;
+  if (!tbxJiraReady()) return;
   var jqlEl = document.getElementById('mi-jql-input');
   var jql = (jqlEl ? jqlEl.value : '').trim();
   if (!jql) { document.getElementById('mi-jql-status').textContent = '⚠ Enter a JQL query'; return; }
@@ -9723,7 +9740,7 @@ function miSelectJQLHistory(idx) {
 // ── Saved Filters ─────────────────────────────────────────────────────────────
 function miLoadSavedFilters() {
   miSyncRelayStatus();
-  if (!CRG.relay.jiraReady) return;
+  if (!tbxJiraReady()) return;
   var statusEl = document.getElementById('mi-filter-status');
   statusEl.textContent = '⏳ Loading…';
   tbxJiraRequest('GET', '/rest/api/2/filter/favourite')
@@ -9759,7 +9776,7 @@ function miShowFilterPreview(filterId) {
 
 function miRunSavedFilter() {
   miSyncRelayStatus();
-  if (!CRG.relay.jiraReady) return;
+  if (!tbxJiraReady()) return;
   var sel = document.getElementById('mi-filter-select');
   var filterId = sel.value;
   if (!filterId) { document.getElementById('mi-filter-status').textContent = '⚠ Select a filter first'; return; }
@@ -9781,7 +9798,7 @@ function miLoadBoards() { miSearchBoards(); }
 
 function miSearchBoards() {
   miSyncRelayStatus();
-  if (!CRG.relay.jiraReady) return;
+  if (!tbxJiraReady()) return;
   var statusEl = document.getElementById('mi-board-status');
   var inp = document.getElementById('mi-board-search');
   var q = (inp ? inp.value : '').trim();
@@ -9893,7 +9910,7 @@ function miToggleQF(qfId) {
 
 function miRunBoard() {
   miSyncRelayStatus();
-  if (!CRG.relay.jiraReady) return;
+  if (!tbxJiraReady()) return;
   var boardId = MI.selectedBoardId;
   if (!boardId) { document.getElementById('mi-board-status').textContent = '⚠ Search and select a board first'; return; }
   var statusEl = document.getElementById('mi-board-status');
@@ -11970,7 +11987,7 @@ function miResetFieldConfig() {
 }
 
 function miDiscoverFields() {
-  if (!CRG.relay.jiraReady) { miFlashFPStatus('⚠ Connect to Jira first'); return; }
+  if (!tbxJiraReady()) { miFlashFPStatus('⚠ Connect to Jira first'); return; }
   miFlashFPStatus('🔍 Fetching field list…');
   var el = document.getElementById('mi-fp-avail-list');
   el.innerHTML = '<div style="padding:16px;text-align:center;">' + crSpinner() + ' Loading fields from Jira…</div>';
@@ -15506,7 +15523,7 @@ function artMRConnect() {
   var statusEl = document.getElementById('art-conn-status');
   function setStatus(html) { if (statusEl) statusEl.innerHTML = html; }
 
-  if (!CRG.relay.jiraReady) {
+  if (!tbxJiraReady()) {
     CRG.relay.jiraWin = window.open(jiraUrl, '__crg_jira', tbxRelayWinSpec('jira'));
     crAutoPing('jira');
   }
@@ -21010,7 +21027,7 @@ function prbSyncStop() {
 // ── Core sync engine ──────────────────────────────────────────
 
 function prbSyncRunNow() {
-  if (!CRG.relay.jiraReady) {
+  if (!tbxJiraReady()) {
     prbSyncLog('error', '', '', 'Jira relay not connected — skipping sync');
     prbSyncUpdateStatusBar();
     return;
@@ -21162,7 +21179,7 @@ function prbSyncFetchSnowSysId(prbNum) {
 function prbSyncFetchStatuses() {
   var project = prbGet('jiraProject') || '';
   if (!project) { prbSyncNotify('Set a Jira Project Key in Settings first.', 'warn'); return; }
-  if (!CRG.relay.jiraReady) { prbSyncNotify('Connect Jira relay first.', 'warn'); return; }
+  if (!tbxJiraReady()) { prbSyncNotify('Connect to Jira first.', 'warn'); return; }
 
   crRelayRequest('jira', 'GET', '/rest/api/2/project/' + encodeURIComponent(project) + '/statuses', null)
   .then(function(data) {
@@ -23763,8 +23780,8 @@ window.PipelineView = {
 
 //
 // Launched every time the app opens until the user permanently dismisses it.
-// Purpose: guide brand-new users through Jira URL ΓåÆ Relay ΓåÆ optional Proxy
-// with kindergarten-level clarity ΓÇö no assumed technical knowledge.
+// Purpose: guide brand-new users through Jira URL → Relay → optional Proxy
+// with kindergarten-level clarity — no assumed technical knowledge.
 //
 
 var AIC = { history: [], streaming: false };
@@ -23793,7 +23810,7 @@ function aicSaveSettings() {
   localStorage.setItem('tbxAIChatEndpoint', ep.trim());
   localStorage.setItem('tbxAIChatModel',    model.trim());
   localStorage.setItem('tbxAIChatSystem',   sys);
-  aicSetStatus('ok', 'Saved ΓÇö testing connectionΓÇª');
+  aicSetStatus('ok', 'Saved — testing connection...');
   setTimeout(aicPing, 200);
 }
 
@@ -23827,13 +23844,13 @@ function aicShowTab(tab) {
 
 
 
-// ΓöÇΓöÇ Reports Hub ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// -- Reports Hub --------------------------------------------------------------
 var RH_STATE = { activeTab: 'features', lastGenerated: null,
   // generating* = true while a fetch is in-flight (prevents duplicate requests)
   generatingSprintHealth: false, generatingFlow: false, generatingQuality: false,
   generatingDefects: false, generatingFeatures: false, generatingRisks: false,
   generatingIndividual: false,
-  // loaded* = true once a tab has been successfully rendered; cleared only by the Γå╗ Refresh button.
+  // loaded* = true once a tab has been successfully rendered; cleared only by the ↻ Refresh button.
   // Tab switches reuse the existing DOM panel without re-fetching until the user manually refreshes.
   loadedSprintHealth: false, loadedFlow: false, loadedQuality: false,
   loadedDefects: false, loadedFeatures: false, loadedRisks: false,
@@ -23842,7 +23859,7 @@ var RH_STATE = { activeTab: 'features', lastGenerated: null,
   featureVersions: [], featurePIValues: [], featurePIValuesLoaded: false,
   featureVersionsLoaded: false, featurePIMode: 'pi',
   riskData: null, individualData: null, individualUser: '',
-  // Feature report sort and filter state ΓÇö persists across re-renders
+  // Feature report sort and filter state — persists across re-renders
   featureChildMap: {}, featureTeamMap: {}, featureSortCol: 'status', featureSortDir: 'asc', featureStatusFilter: '', featureTeamFilters: [] };
 
 var RH_FEAT_DETAIL_CACHE = {};
@@ -23858,7 +23875,7 @@ function rhRenderHero() {
   var trends = [];
   Object.keys(throughput).forEach(function(k) {
     if (k === '__benchmark__') return;
-    // throughput[k] is an object {monthly:[...], closed, inProgress, ...} ΓÇö read the monthly array
+    // throughput[k] is an object {monthly:[...], closed, inProgress, ...} — read the monthly array
     var m = ((throughput[k] && throughput[k].monthly) || []).filter(function(x){ return x.source !== 'reference'; });
     if (m.length >= 2) {
       var last = m[m.length-1].count || 0;
@@ -23868,7 +23885,7 @@ function rhRenderHero() {
   });
   var avgTrend = trends.length ? Math.round(trends.reduce(function(a,b){return a+b;},0)/trends.length) : null;
   var trendColor = avgTrend === null ? 'var(--text-muted)' : avgTrend >= 0 ? 'var(--success)' : 'var(--danger)';
-  var trendIcon = avgTrend === null ? 'ΓÇö' : avgTrend >= 0 ? 'Γåæ' : 'Γåô';
+  var trendIcon = avgTrend === null ? '—' : avgTrend >= 0 ? '↑' : '↓';
 
   function kpiCard(icon, label, value, valueColor, sub) {
     return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;position:relative;overflow:hidden;">' +
@@ -23880,17 +23897,17 @@ function rhRenderHero() {
   }
 
   var html = '';
-  html += kpiCard('≡ƒÅâ', 'ART Teams', teams.length || teamCount || 'ΓÇö', 'var(--accent)', 'Configured in ART settings');
+  html += kpiCard('≡ƒÅâ', 'ART Teams', teams.length || teamCount || '—', 'var(--accent)', 'Configured in ART settings');
   if (avgTrend !== null) {
     html += kpiCard('≡ƒôê', 'Throughput Trend', trendIcon + ' ' + Math.abs(avgTrend) + '%', trendColor, 'Avg month-over-month');
   } else {
     html += kpiCard('≡ƒôê', 'Throughput Trend', 'No data', 'var(--text-muted)', 'Run Impact Dashboard first');
   }
-  html += kpiCard('ΓÅ│', 'Reports', '<span style="font-size:13px;font-weight:600;color:var(--text-muted);">LoadingΓÇª</span>', null, 'Sprint health &amp; quality scanning');
+  html += kpiCard('', 'Reports', '<span style="font-size:13px;font-weight:600;color:var(--text-muted);">Loading...</span>', null, 'Sprint health &amp; quality scanning');
   html += '<div id="rh-health-score-kpi" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;position:relative;overflow:hidden;">' +
     '<div style="position:absolute;top:10px;right:14px;font-size:22px;opacity:0.15;">≡ƒÆ»</div>' +
     '<div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">ART Health Score</div>' +
-    '<div style="font-size:26px;font-weight:800;color:var(--text-muted);line-height:1;">ΓÇö</div>' +
+    '<div style="font-size:26px;font-weight:800;color:var(--text-muted);line-height:1;">—</div>' +
     '<div style="font-size:11px;color:var(--text-muted);margin-top:5px;">Updates as reports load</div></div>';
   el.innerHTML = html;
 }
@@ -23928,7 +23945,7 @@ function rhFetchFeatureVersions(teams, onDone) {
           if (version.name) versionNameSet[version.name] = true;
         });
       })
-      .catch(function() { /* ignore per-project fetch failures ΓÇö other projects still contribute */ })
+      .catch(function() { /* ignore per-project fetch failures — other projects still contribute */ })
       .then(function() {
         remainingCount--;
         if (remainingCount === 0) onDone(Object.keys(versionNameSet).sort());
@@ -23937,7 +23954,7 @@ function rhFetchFeatureVersions(teams, onDone) {
 }
 
 // Fetches distinct PI values from customfield_10301 across all ART team projects.
-// PI is a structured custom field ΓÇö its values are NOT fix versions and cannot be
+// PI is a structured custom field — its values are NOT fix versions and cannot be
 // discovered from the project versions API. We query live issues instead.
 function rhFetchFeaturePIValues(teams, onDone) {
   var projectKeys = teams.map(function(t) { return t.projectKey.trim().toUpperCase(); });
@@ -23977,7 +23994,7 @@ function rhFetchFeaturePIValues(teams, onDone) {
   }
 
   // Strategy 1: Fan out parallel autocomplete calls, one per PI year in the relevant window.
-  // A single empty-prefix call is capped at ~15 results alphabetically ΓÇö it fills up with
+  // A single empty-prefix call is capped at ~15 results alphabetically — it fills up with
   // oldest PIs (20.x, 21.x ...) and never reaches the current year. Year-specific prefixes
   // ("PI 26", "PI 25" ...) each return only 4-5 values, well within the per-call cap.
   var currentTwoDigitYear = new Date().getFullYear() % 100; // e.g. 26 for 2026
@@ -24004,12 +24021,12 @@ function rhFetchFeaturePIValues(teams, onDone) {
     });
     if (piValues.length > 0) {
       var sorted = sortPIValues(piValues);
-      // Auto-select the PI whose date range contains today ΓÇö pass it as the default filter.
+      // Auto-select the PI whose date range contains today — pass it as the default filter.
       onDone(sorted, findCurrentPI(sorted));
       return;
     }
 
-    // All year-prefix calls returned nothing ΓÇö fall through to issue-scraping
+    // All year-prefix calls returned nothing — fall through to issue-scraping
     var keysStr = projectKeys.join(',');
     var jqlDesc = 'project in (' + keysStr + ') AND cf[10301] is not EMPTY ORDER BY created DESC';
 
@@ -24071,7 +24088,7 @@ function rhGenerate() {
 }
 
 // Delegates to the shared HTML escape utility (now includes double-quote escaping).
-// Kept for backward compatibility ΓÇö all callers are attribute-safe with the full 4-char set.
+// Kept for backward compatibility — all callers are attribute-safe with the full 4-char set.
 function rhEsc(s) { return tbxEsc(s); }
 
 function rhSetPanel(tab, html) {
@@ -24088,13 +24105,13 @@ function rhEmptyState(msg) {
 }
 
 function rhLoadingState(msg) {
-  return '<div style="text-align:center;padding:50px 20px;color:var(--text-muted);font-size:13px;">ΓÅ│ ' + msg + '</div>';
+  return '<div style="text-align:center;padding:50px 20px;color:var(--text-muted);font-size:13px;"> ' + msg + '</div>';
 }
 
 function rhUpdateTimestamp() {
   var el = document.getElementById('rh-last-generated');
   if (el && RH_STATE.lastGenerated) {
-    el.textContent = 'Cached ┬╖ generated ' + new Date(RH_STATE.lastGenerated).toLocaleTimeString();
+    el.textContent = 'Cached · generated ' + new Date(RH_STATE.lastGenerated).toLocaleTimeString();
   }
 }
 
@@ -24117,57 +24134,57 @@ function rhTableEnd() {
 function rhReportPitch(tabId) {
   var pitches = {
     throughput: [
-      'Compares completed issues across <strong>all ART teams</strong> for the last 6+ months ΓÇö in one table.',
+      'Compares completed issues across <strong>all ART teams</strong> for the last 6+ months — in one table.',
       'Native Jira locks throughput reports to a single board; Toolbox aggregates all project boards simultaneously.',
       'Spot teams accelerating, plateauing, or declining <em>before</em> it becomes a PI-level conversation.',
       'Use for: PI capacity planning, velocity benchmarking, quarterly exec reporting.'
     ],
     'sprint-health': [
       'Real-time pulse: how far through their sprint goal is each team <em>right now</em>?',
-      '≡ƒö┤ &lt;30% done &nbsp;|&nbsp; ≡ƒƒí 30ΓÇô50% &nbsp;|&nbsp; ≡ƒƒó &gt;50% ΓÇö health triaged in seconds.',
-      'Identify at-risk teams before the sprint ends ΓÇö not after the retrospective.',
+      '🐛 &lt;30% done &nbsp;|&nbsp; 📊 30–50% &nbsp;|&nbsp; ≡ƒƒó &gt;50% — health triaged in seconds.',
+      'Identify at-risk teams before the sprint ends — not after the retrospective.',
       'Use for: Scrum of Scrums prep, mid-sprint steering, escalation decisions.'
     ],
     flow: [
       'Two metrics in one: <strong>Flow</strong> (what actually closed) and <strong>Aging</strong> (what\'s stuck in-progress).',
-      'Flow = issues completed in the last 30 days with approx. cycle time (created ΓåÆ closed). Aging = current WIP sorted by age.',
-      'WIP that never closes is invisible in sprint metrics ΓÇö Aging surfaces it as an early warning weeks before retros.',
+      'Flow = issues completed in the last 30 days with approx. cycle time (created → closed). Aging = current WIP sorted by age.',
+      'WIP that never closes is invisible in sprint metrics — Aging surfaces it as an early warning weeks before retros.',
       'Use for: impediment identification, ART sync, PI retrospectives, throughput conversations.'
     ],
     quality: [
-      'Open defect count by priority (Critical ΓåÆ Low) for every ART team ΓÇö aggregated in one view.',
+      'Open defect count by priority (Critical → Low) for every ART team — aggregated in one view.',
       '≡ƒÜ¿ Any Critical defect is a stop-ship concern; surfaced immediately at the top.',
       'Aggregate quality visibility is impossible in native Jira without switching boards.',
       'Use for: release gating, sprint reviews, executive risk briefings.'
     ],
     defects: [
-      'Full inventory of open bugs across all ART teams ΓÇö breakdown by team, priority, and status.',
+      'Full inventory of open bugs across all ART teams — breakdown by team, priority, and status.',
       'Identifies which teams carry the most quality debt and where critical blockers live.',
       'Drill down to specific defects blocking a release or PI boundary.',
       'Use for: triage ownership, pre-release audits, quality trend conversations.'
     ],
     features: [
-      'All Features and Epics across the ART ΓÇö PI, status, due dates, and dependencies in one view.',
+      'All Features and Epics across the ART — PI, status, due dates, and dependencies in one view.',
       'Replaces manual PI board updates and deck-building for stakeholder reviews.',
-      'Dependency chains and risk flags surfaced inline ΓÇö no Jira board-hopping required.',
+      'Dependency chains and risk flags surfaced inline — no Jira board-hopping required.',
       'Use for: PI execution reviews, cross-team dependency calls, stakeholder briefings.'
     ],
     risks: [
       'Every open risk-type issue and "risk"-labeled item across all ART teams in one place.',
-      'Critical risks flagged immediately ΓÇö a clean board means your ART is operating safely.',
-      'Risk tracking is a core RTE responsibility in SAFe PI execution ΓÇö this automates it.',
+      'Critical risks flagged immediately — a clean board means your ART is operating safely.',
+      'Risk tracking is a core RTE responsibility in SAFe PI execution — this automates it.',
       'Use for: ART sync, Scrum of Scrums, executive risk briefings.'
     ],
     individual: [
       'All open work for a specific person: Features, Epics, Stories, Bugs, and Tasks in one view.',
-      'Automatically flags over-commitment ΓÇö Features <em>and</em> Stories <em>and</em> Bugs in flight simultaneously.',
+      'Automatically flags over-commitment — Features <em>and</em> Stories <em>and</em> Bugs in flight simultaneously.',
       'Enter any Jira display name or account ID to pull anyone\'s current workload instantly.',
       'Use for: 1:1 prep, sprint review, capacity rebalancing decisions.'
     ],
     impact: [
       'Tracks team throughput vs targets and delivery quality trends over rolling time periods.',
       'Connects completed Jira work to business outcomes and cross-team benchmarks.',
-      'Data sourced from the Impact Dashboard cache ΓÇö refresh there first if numbers appear stale.',
+      'Data sourced from the Impact Dashboard cache — refresh there first if numbers appear stale.',
       'Use for: Quarterly Business Reviews, PI retrospectives, executive delivery briefings.'
     ]
   };
@@ -24184,7 +24201,7 @@ function rhKeyBadge(key) {
   return ' <span style="display:inline-block;padding:1px 6px;border-radius:8px;background:var(--surface2);color:var(--text-muted);font-size:10px;font-weight:600;margin-left:3px;">' + rhEsc(key) + '</span>';
 }
 
-// ΓöÇΓöÇ THROUGHPUT ΓÇö reads from Impact Dashboard localStorage cache ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// -- THROUGHPUT — reads from Impact Dashboard localStorage cache ----------------
 
 function rhRenderThroughput() {
   var el = document.getElementById('rh-panel-throughput');
@@ -24193,13 +24210,13 @@ function rhRenderThroughput() {
   var teams = rhGetArtTeams();
   var throughputData = {};
   try { throughputData = JSON.parse(localStorage.getItem('tbxImpactThroughput') || '{}'); } catch(e) {}
-  // bmData replaced by impactReadBenchmarkThroughput() ΓÇö see benchmark rows below
+  // bmData replaced by impactReadBenchmarkThroughput() — see benchmark rows below
   var impactSettings = {};
   try { impactSettings = JSON.parse(localStorage.getItem('tbxImpactSettings') || '{}'); } catch(e) {}
 
   var teamNames = Object.keys(throughputData);
   if (!teamNames.length) {
-    el.innerHTML = rhInsightBox('<strong>No throughput data cached yet.</strong> Open the <strong>Impact Dashboard</strong> and click Γå╗ Refresh to collect data first. Once collected, this report reads it instantly ΓÇö no additional Jira calls needed.') +
+    el.innerHTML = rhInsightBox('<strong>No throughput data cached yet.</strong> Open the <strong>Impact Dashboard</strong> and click ↻ Refresh to collect data first. Once collected, this report reads it instantly — no additional Jira calls needed.') +
       rhEmptyState('Throughput data not yet available.');
     return;
   }
@@ -24209,14 +24226,14 @@ function rhRenderThroughput() {
   var hasRef = sampleMonthly.some(function(m) { return m.source === 'reference'; });
 
   var html = rhReportPitch('throughput') + rhNarrativeCard(rhNarrativeThroughput(teams, throughputData));
-  html += rhInsightBox('<strong>Toolbox-exclusive:</strong> 6-month cross-team throughput in one table. Native Jira scopes all reports to a single board ΓÇö this view aggregates across ' + teamNames.length + ' project boards simultaneously, with a control-group benchmark for objective comparison.');
+  html += rhInsightBox('<strong>Toolbox-exclusive:</strong> 6-month cross-team throughput in one table. Native Jira scopes all reports to a single board — this view aggregates across ' + teamNames.length + ' project boards simultaneously, with a control-group benchmark for objective comparison.');
 
-  html += '<details style="margin-bottom:14px;font-size:12px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">Γä╣ How to read this report</summary>';
+  html += '<details style="margin-bottom:14px;font-size:12px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">ℹ️ How to read this report</summary>';
   html += '<div style="padding:8px 12px;background:var(--bg);border-radius:6px;margin-top:6px;line-height:1.7;color:var(--text-muted);">';
   html += '<strong>Throughput</strong> = number of issues completed per month (regardless of size). It is a leading indicator of team capacity.<br>';
   html += '<strong>Trend %</strong> = change vs. the prior clean month. Positive = improving output. Negative = capacity constraint or scope creep.<br>';
-  html += '<strong>Benchmark row</strong> = a reference team used to calibrate expectations ΓÇö useful when comparing high/low performers.<br>';
-  html += '<em>Data source: tbxImpactThroughput cache. Refresh by opening Impact Dashboard ΓåÆ Collect.</em>';
+  html += '<strong>Benchmark row</strong> = a reference team used to calibrate expectations — useful when comparing high/low performers.<br>';
+  html += '<em>Data source: tbxImpactThroughput cache. Refresh by opening Impact Dashboard → Collect.</em>';
   html += '</div></details>';
 
   // Legend row
@@ -24253,8 +24270,8 @@ function rhRenderThroughput() {
     var newest = ms[ms.length - 1].closed || 0;
     var pct = oldest > 0 ? Math.round(((newest - oldest) / oldest) * 100) : null;
     var trendHtml = pct !== null
-      ? '<span style="font-weight:700;color:' + (pct >= 0 ? 'var(--success)' : 'var(--danger)') + ';">' + (pct >= 0 ? 'Γû▓ +' : 'Γû╝ ') + pct + '%</span>'
-      : '<span style="color:var(--text-muted);">ΓÇö</span>';
+      ? '<span style="font-weight:700;color:' + (pct >= 0 ? 'var(--success)' : 'var(--danger)') + ';">' + (pct >= 0 ? '▲ +' : '▼ ') + pct + '%</span>'
+      : '<span style="color:var(--text-muted);">—</span>';
     html += '<td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:right;">' + trendHtml + '</td>';
     html += '</tr>';
   });
@@ -24267,7 +24284,7 @@ function rhRenderThroughput() {
   });
   html += '<td style="padding:8px 12px;border-bottom:1px solid var(--border);"></td></tr>';
 
-  // Benchmark ART rows ΓÇö one per configured benchmark team
+  // Benchmark ART rows — one per configured benchmark team
   var bmDataDict = impactReadBenchmarkThroughput();
   var bmTeamsForTable = impactGetBenchmarkTeams(impactSettings);
   bmTeamsForTable.forEach(function(bmt) {
@@ -24283,10 +24300,10 @@ function rhRenderThroughput() {
   });
 
   html += rhTableEnd();
-  if (hasRef) html += '<div style="font-size:10px;color:var(--text-muted);margin-top:8px;font-style:italic;">* Migration month ΓÇö pre-migration count shown for reference, excluded from trend calculation</div>';
+  if (hasRef) html += '<div style="font-size:10px;color:var(--text-muted);margin-top:8px;font-style:italic;">* Migration month — pre-migration count shown for reference, excluded from trend calculation</div>';
 
   var lastFetched = throughputData[teamNames[0]].fetched;
-  if (lastFetched) html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Data collected: ' + new Date(lastFetched).toLocaleString() + ' ┬╖ Re-run via Impact Dashboard ΓåÆ Γå╗ Refresh</div>';
+  if (lastFetched) html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Data collected: ' + new Date(lastFetched).toLocaleString() + ' · Re-run via Impact Dashboard → ↻ Refresh</div>';
 
   el.innerHTML = html;
   rhUpdateHealthScore();
@@ -24301,17 +24318,17 @@ function rhRenderImpact() {
 }
 
 
-// ΓöÇΓöÇ SPRINT HEALTH ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// -- SPRINT HEALTH -------------------------------------------------------------
 
 function rhFetchSprintHealth() {
   var teams = rhGetArtTeams();
   if (!teams.length) {
-    rhSetPanel('sprint-health', rhEmptyState('No ART teams configured. Add teams in <strong>ART View ΓåÆ Settings</strong>.'));
+    rhSetPanel('sprint-health', rhEmptyState('No ART teams configured. Add teams in <strong>ART View → Settings</strong>.'));
     RH_STATE.generatingSprintHealth = false;
     return;
   }
   RH_STATE.generatingSprintHealth = true;
-  rhSetPanel('sprint-health', rhLoadingState('Querying active sprint data across ' + teams.length + ' teamsΓÇª'));
+  rhSetPanel('sprint-health', rhLoadingState('Querying active sprint data across ' + teams.length + ' teams...'));
 
   var promises = teams.map(function(team) {
     var key = team.projectKey.trim().toUpperCase();
@@ -24372,32 +24389,32 @@ function rhRenderSprintHealth(results) {
 
   var bannerColor = atRisk > 0 ? '#ef444418' : watch > 0 ? '#f59e0b18' : '#10b98118';
   var bannerBorder = atRisk > 0 ? '#ef4444' : watch > 0 ? '#f59e0b' : '#10b981';
-  var bannerIcon = atRisk > 0 ? '≡ƒö┤' : watch > 0 ? '≡ƒƒí' : '≡ƒƒó';
+  var bannerIcon = atRisk > 0 ? '🐛' : watch > 0 ? '📊' : '≡ƒƒó';
   var bannerMsg = atRisk > 0
-    ? atRisk + ' team' + (atRisk>1?'s':'')+' at risk ΓÇö delivery in jeopardy this sprint'
+    ? atRisk + ' team' + (atRisk>1?'s':'')+' at risk — delivery in jeopardy this sprint'
     : watch > 0
-    ? watch + ' team' + (watch>1?'s':'')+' to watch ΓÇö behind pace for sprint close'
-    : 'ART on track ΓÇö all teams pacing well this sprint';
+    ? watch + ' team' + (watch>1?'s':'')+' to watch — behind pace for sprint close'
+    : 'ART on track — all teams pacing well this sprint';
 
   html += '<div style="background:' + bannerColor + ';border-left:4px solid ' + bannerBorder + ';border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">';
   html += '<span style="font-size:20px;">' + bannerIcon + '</span>';
   html += '<div><div style="font-size:13px;font-weight:700;color:var(--text);">' + bannerMsg + '</div>';
-  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">≡ƒƒó On Track: ' + onTrack + ' &nbsp;┬╖&nbsp; ≡ƒƒí Watch: ' + watch + ' &nbsp;┬╖&nbsp; ≡ƒö┤ At Risk: ' + atRisk + (errCount?' &nbsp;┬╖&nbsp; ΓÜá Errors: '+errCount:'') + '</div></div>';
+  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">≡ƒƒó On Track: ' + onTrack + ' &nbsp;·&nbsp; 📊 Watch: ' + watch + ' &nbsp;·&nbsp; 🐛 At Risk: ' + atRisk + (errCount?' &nbsp;·&nbsp; ⚠ Errors: '+errCount:'') + '</div></div>';
   html += '</div>';
 
-  html += rhInsightBox('<strong>Sprint Health Scorecard</strong> ΓÇö real-time sprint completion rate across all ART teams from a single view. No board-hopping required. ≡ƒƒó On Track = &gt;50% resolved ┬╖ ≡ƒƒí Watch = 30ΓÇô50% ┬╖ ≡ƒö┤ At Risk = &lt;30%.');
+  html += rhInsightBox('<strong>Sprint Health Scorecard</strong> — real-time sprint completion rate across all ART teams from a single view. No board-hopping required. ≡ƒƒó On Track = &gt;50% resolved · 📊 Watch = 30–50% · 🐛 At Risk = &lt;30%.');
 
   html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:16px;">';
   results.forEach(function(r) {
     if (r.error) {
       html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;">';
       html += '<div style="font-weight:700;font-size:13px;margin-bottom:6px;">' + rhEsc(r.name) + ' ' + rhKeyBadge(r.key) + '</div>';
-      html += '<div style="font-size:11px;color:var(--danger);">ΓÜá ' + rhEsc(r.error) + '</div></div>';
+      html += '<div style="font-size:11px;color:var(--danger);">⚠ ' + rhEsc(r.error) + '</div></div>';
       return;
     }
     var pct = r.total > 0 ? Math.round((r.done / r.total) * 100) : 0;
     var statusColor = pct >= 50 ? '#10b981' : pct >= 30 ? '#f59e0b' : '#ef4444';
-    var statusLabel = pct >= 50 ? '≡ƒƒó On Track' : pct >= 30 ? '≡ƒƒí Watch' : '≡ƒö┤ At Risk';
+    var statusLabel = pct >= 50 ? '≡ƒƒó On Track' : pct >= 30 ? '📊 Watch' : '🐛 At Risk';
     html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;border-top:3px solid ' + statusColor + ';">';
     html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">';
     html += '<div><div style="font-weight:700;font-size:13px;">' + rhEsc(r.name) + '</div>';
@@ -24419,19 +24436,19 @@ function rhRenderSprintHealth(results) {
   });
   html += '</div>';
 
-  html += '<details style="font-size:12px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">Γä╣ How to read this report</summary>';
+  html += '<details style="font-size:12px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">ℹ️ How to read this report</summary>';
   html += '<div style="padding:8px 12px;background:var(--bg);border-radius:6px;margin-top:6px;line-height:1.7;color:var(--text-muted);">';
-  html += '≡ƒƒó On Track = &gt;50% issues resolved ┬╖ ≡ƒƒí Watch = 30ΓÇô50% ┬╖ ≡ƒö┤ At Risk = &lt;30%.<br>';
-  html += '<strong>In Progress</strong> count &gt;5 (amber) signals too much WIP ΓÇö a common sprint health anti-pattern.<br>';
+  html += '≡ƒƒó On Track = &gt;50% issues resolved · 📊 Watch = 30–50% · 🐛 At Risk = &lt;30%.<br>';
+  html += '<strong>In Progress</strong> count &gt;5 (amber) signals too much WIP — a common sprint health anti-pattern.<br>';
   html += '<strong>Blockers</strong> = issues flagged as impediments. Even one warrants immediate follow-up.<br>';
-  html += '<em>Data: Live Jira query using sprint in openSprints() ΓÇö works across all board configurations.</em>';
+  html += '<em>Data: Live Jira query using sprint in openSprints() — works across all board configurations.</em>';
   html += '</div></details>';
 
   rhSetPanel('sprint-health', html);
   rhUpdateHealthScore();
 }
 
-// ΓöÇΓöÇ FLOW & AGING ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// -- FLOW & AGING --------------------------------------------------------------
 
 function rhFetchFlow() {
   var teams = rhGetArtTeams();
@@ -24441,7 +24458,7 @@ function rhFetchFlow() {
     return;
   }
   RH_STATE.generatingFlow = true;
-  rhSetPanel('flow', rhLoadingState('Analyzing flow and aging across ' + teams.length + ' teamsΓÇª'));
+  rhSetPanel('flow', rhLoadingState('Analyzing flow and aging across ' + teams.length + ' teams...'));
 
   var now = Date.now();
   var sevenDaysAgoMs = now - 7 * 86400000;
@@ -24460,7 +24477,7 @@ function rhFetchFlow() {
         var inProgressIssues = (responses[0] && responses[0].issues) || [];
         var doneIssues       = (responses[1] && responses[1].issues) || [];
 
-        // ΓöÇΓöÇ Aging metrics: how long current WIP has been sitting ΓöÇΓöÇ
+        // -- Aging metrics: how long current WIP has been sitting --
         var agingData = { wipCount: 0, avgAge: 0, maxAge: 0, staleCount: 0, oldestSummary: '', oldestKey: '' };
         if (inProgressIssues.length) {
           var agesDays    = inProgressIssues.map(function(i) { return Math.floor((now - new Date(i.fields.created).getTime()) / 86400000); });
@@ -24477,10 +24494,10 @@ function rhFetchFlow() {
           };
         }
 
-        // ΓöÇΓöÇ Flow metrics: throughput and approx. cycle time for closed issues ΓöÇΓöÇ
+        // -- Flow metrics: throughput and approx. cycle time for closed issues --
         var flowData = { closedLast30d: 0, closedThisWeek: 0, avgCycleTimeDays: 0, medianCycleTimeDays: 0 };
         if (doneIssues.length) {
-          // Cycle time proxy: created ΓåÆ updated (closed). Minimum 1 day to avoid zero values.
+          // Cycle time proxy: created → updated (closed). Minimum 1 day to avoid zero values.
           var cycleDays = doneIssues.map(function(i) {
             return Math.max(1, Math.floor((new Date(i.fields.updated).getTime() - new Date(i.fields.created).getTime()) / 86400000));
           });
@@ -24514,7 +24531,7 @@ function rhRenderFlow(results) {
   var html = rhReportPitch('flow');
   html += rhNarrativeCard(rhNarrativeFlow(results));
 
-  // ΓöÇΓöÇ ≡ƒöä FLOW SECTION ΓÇö issues that actually closed in the last 30 days ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- ≡ƒöä FLOW SECTION — issues that actually closed in the last 30 days --------
   var validResults = results.filter(function(r) { return !r.error; });
   var totalClosed30d = validResults.reduce(function(s, r) { return s + (r.closedLast30d || 0); }, 0);
   var teamsWithClosures = validResults.filter(function(r) { return r.closedLast30d > 0; });
@@ -24524,7 +24541,7 @@ function rhRenderFlow(results) {
 
   html += '<div style="margin:0 0 8px;display:flex;align-items:center;gap:10px;">';
   html += '<span style="font-size:14px;font-weight:800;">≡ƒöä Flow</span>';
-  html += '<span style="font-size:11px;color:var(--text-muted);">Issues <em>completed</em> in the last 30 days ΓÇö throughput &amp; approx. cycle time</span>';
+  html += '<span style="font-size:11px;color:var(--text-muted);">Issues <em>completed</em> in the last 30 days — throughput &amp; approx. cycle time</span>';
   html += '</div>';
 
   // ART-level flow summary strip
@@ -24545,7 +24562,7 @@ function rhRenderFlow(results) {
     if (r.error) {
       html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;">';
       html += '<div style="font-weight:700;font-size:12px;">' + rhEsc(r.name) + ' ' + rhKeyBadge(r.key) + '</div>';
-      html += '<div style="font-size:11px;color:var(--danger);margin-top:4px;">ΓÜá ' + rhEsc(r.error) + '</div></div>';
+      html += '<div style="font-size:11px;color:var(--danger);margin-top:4px;">⚠ ' + rhEsc(r.error) + '</div></div>';
       return;
     }
     var closed = r.closedLast30d || 0;
@@ -24556,7 +24573,7 @@ function rhRenderFlow(results) {
     html += '<div style="font-size:10px;background:' + cardTopColor + '22;color:' + cardTopColor + ';border-radius:4px;padding:2px 7px;font-weight:700;">' + (closed > 0 ? closed + ' closed' : 'None closed') + '</div>';
     html += '</div>';
     html += '<div style="display:flex;gap:8px;">';
-    html += '<div style="flex:1;text-align:center;"><div style="font-size:20px;font-weight:800;color:' + cardTopColor + ';">' + (closed || 'ΓÇö') + '</div><div style="font-size:9px;color:var(--text-muted);">Closed 30d</div></div>';
+    html += '<div style="flex:1;text-align:center;"><div style="font-size:20px;font-weight:800;color:' + cardTopColor + ';">' + (closed || '—') + '</div><div style="font-size:9px;color:var(--text-muted);">Closed 30d</div></div>';
     if (closed > 0) {
       var itemCycleColor = r.avgCycleTimeDays <= 5 ? '#10b981' : r.avgCycleTimeDays <= 14 ? '#f59e0b' : '#ef4444';
       html += '<div style="flex:1;text-align:center;"><div style="font-size:20px;font-weight:800;color:' + itemCycleColor + ';">' + r.avgCycleTimeDays + 'd</div><div style="font-size:9px;color:var(--text-muted);">Avg Cycle*</div></div>';
@@ -24566,7 +24583,7 @@ function rhRenderFlow(results) {
   });
   html += '</div>';
 
-  // ΓöÇΓöÇ ΓÅ▒ AGING SECTION ΓÇö items currently stuck in progress ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- ⚡ AGING SECTION — items currently stuck in progress ---------------------
   var agingValid  = validResults.filter(function(r) { return r.wipCount > 0; });
   var troubled    = agingValid.filter(function(r) { return r.avgAge > 14; }).length;
   var warning     = agingValid.filter(function(r) { return r.avgAge > 7 && r.avgAge <= 14; }).length;
@@ -24575,24 +24592,24 @@ function rhRenderFlow(results) {
 
   var agingBannerBg     = troubled > 0 ? '#ef444418' : warning > 0 ? '#f59e0b18' : '#10b98118';
   var agingBannerBorder = troubled > 0 ? '#ef4444'   : warning > 0 ? '#f59e0b'   : '#10b981';
-  var agingBannerIcon   = troubled > 0 ? '≡ƒö┤' : warning > 0 ? '≡ƒƒí' : '≡ƒƒó';
+  var agingBannerIcon   = troubled > 0 ? '🐛' : warning > 0 ? '📊' : '≡ƒƒó';
   var agingBannerMsg = troubled > 0
-    ? troubled + ' team' + (troubled > 1 ? 's' : '') + ' have severely aged WIP (>14d avg) ΓÇö flow is likely blocked'
+    ? troubled + ' team' + (troubled > 1 ? 's' : '') + ' have severely aged WIP (>14d avg) — flow is likely blocked'
     : warning > 0
-    ? warning  + ' team' + (warning  > 1 ? 's' : '') + ' showing elevated WIP age (7ΓÇô14d avg) ΓÇö worth investigating'
+    ? warning  + ' team' + (warning  > 1 ? 's' : '') + ' showing elevated WIP age (7–14d avg) — worth investigating'
     : agingValid.length > 0
-    ? 'WIP aging is healthy ΓÇö in-progress items are moving within expected timeframes'
-    : 'No in-progress work detected ΓÇö teams may have clean boards';
+    ? 'WIP aging is healthy — in-progress items are moving within expected timeframes'
+    : 'No in-progress work detected — teams may have clean boards';
 
   html += '<div style="margin:0 0 8px;display:flex;align-items:center;gap:10px;">';
-  html += '<span style="font-size:14px;font-weight:800;">ΓÅ▒ Aging</span>';
-  html += '<span style="font-size:11px;color:var(--text-muted);">Items <em>currently</em> in-progress ΓÇö how long work has been sitting without closing</span>';
+  html += '<span style="font-size:14px;font-weight:800;">⚡ Aging</span>';
+  html += '<span style="font-size:11px;color:var(--text-muted);">Items <em>currently</em> in-progress — how long work has been sitting without closing</span>';
   html += '</div>';
 
   html += '<div style="background:' + agingBannerBg + ';border-left:4px solid ' + agingBannerBorder + ';border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">';
   html += '<span style="font-size:20px;">' + agingBannerIcon + '</span>';
   html += '<div><div style="font-size:13px;font-weight:700;">' + agingBannerMsg + '</div>';
-  if (agingValid.length) html += '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">ART avg WIP age: <strong>' + artAvgAge + ' days</strong> &nbsp;┬╖&nbsp; SAFe target: &lt;5 days per story</div>';
+  if (agingValid.length) html += '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">ART avg WIP age: <strong>' + artAvgAge + ' days</strong> &nbsp;·&nbsp; SAFe target: &lt;5 days per story</div>';
   html += '</div></div>';
 
   html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:16px;">';
@@ -24600,35 +24617,35 @@ function rhRenderFlow(results) {
     if (r.error) {
       html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;">';
       html += '<div style="font-weight:700;font-size:12px;">' + rhEsc(r.name) + ' ' + rhKeyBadge(r.key) + '</div>';
-      html += '<div style="font-size:11px;color:var(--danger);margin-top:4px;">ΓÜá ' + rhEsc(r.error) + '</div></div>';
+      html += '<div style="font-size:11px;color:var(--danger);margin-top:4px;">⚠ ' + rhEsc(r.error) + '</div></div>';
       return;
     }
     var ageColor = r.avgAge > 14 ? '#ef4444' : r.avgAge > 7 ? '#f59e0b' : '#10b981';
-    var ageLabel = r.avgAge > 14 ? '≡ƒö┤ Blocked' : r.avgAge > 7 ? '≡ƒƒí Slowing' : '≡ƒƒó Flowing';
-    if (!r.wipCount) { ageColor = 'var(--text-muted)'; ageLabel = 'ΓÇö No WIP'; }
+    var ageLabel = r.avgAge > 14 ? '🐛 Blocked' : r.avgAge > 7 ? '📊 Slowing' : '≡ƒƒó Flowing';
+    if (!r.wipCount) { ageColor = 'var(--text-muted)'; ageLabel = '— No WIP'; }
     html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;border-top:3px solid ' + ageColor + ';">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
     html += '<div style="font-weight:700;font-size:12px;">' + rhEsc(r.name) + '</div>';
     html += '<div style="font-size:10px;font-weight:700;color:' + ageColor + ';">' + ageLabel + '</div>';
     html += '</div>';
     html += '<div style="display:flex;gap:8px;">';
-    html += '<div style="flex:1;text-align:center;"><div style="font-size:20px;font-weight:800;color:' + ageColor + ';">' + (!r.wipCount ? 'ΓÇö' : r.avgAge + 'd') + '</div><div style="font-size:9px;color:var(--text-muted);">Avg Age</div></div>';
+    html += '<div style="flex:1;text-align:center;"><div style="font-size:20px;font-weight:800;color:' + ageColor + ';">' + (!r.wipCount ? '—' : r.avgAge + 'd') + '</div><div style="font-size:9px;color:var(--text-muted);">Avg Age</div></div>';
     html += '<div style="flex:1;text-align:center;"><div style="font-size:20px;font-weight:800;">' + (r.wipCount || 0) + '</div><div style="font-size:9px;color:var(--text-muted);">In Progress</div></div>';
     if (r.maxAge > 0) html += '<div style="flex:1;text-align:center;"><div style="font-size:20px;font-weight:800;color:' + (r.maxAge > 21 ? '#ef4444' : 'var(--text-muted)') + ';">' + r.maxAge + 'd</div><div style="font-size:9px;color:var(--text-muted);">Oldest</div></div>';
     html += '</div>';
-    if (r.oldestSummary) html += '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;border-top:1px solid var(--border);padding-top:5px;" title="' + rhEsc(r.oldestSummary) + '">≡ƒôî ' + (r.oldestKey ? rhKeyLink(r.oldestKey) + ' ' : '') + rhEsc(r.oldestSummary.substring(0, 55)) + (r.oldestSummary.length > 55 ? 'ΓÇª' : '') + '</div>';
+    if (r.oldestSummary) html += '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;border-top:1px solid var(--border);padding-top:5px;" title="' + rhEsc(r.oldestSummary) + '">≡ƒôî ' + (r.oldestKey ? rhKeyLink(r.oldestKey) + ' ' : '') + rhEsc(r.oldestSummary.substring(0, 55)) + (r.oldestSummary.length > 55 ? '...' : '') + '</div>';
     html += '</div>';
   });
   html += '</div>';
 
-  html += rhInsightBox('* <strong>Approx. cycle time</strong> = issue close date minus created date. This is a proxy ΓÇö Jira does not expose the exact moment an item entered "In Progress" without querying each issue\'s full changelog (expensive). Cycle times may appear longer than actual active work time. Use for <em>trend comparison</em> across teams, not as an absolute measurement.');
+  html += rhInsightBox('* <strong>Approx. cycle time</strong> = issue close date minus created date. This is a proxy — Jira does not expose the exact moment an item entered "In Progress" without querying each issue\'s full changelog (expensive). Cycle times may appear longer than actual active work time. Use for <em>trend comparison</em> across teams, not as an absolute measurement.');
 
-  html += '<details style="font-size:12px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">Γä╣ How to read this report</summary>';
+  html += '<details style="font-size:12px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">ℹ️ How to read this report</summary>';
   html += '<div style="padding:8px 12px;background:var(--bg);border-radius:6px;margin-top:6px;line-height:1.7;color:var(--text-muted);">';
-  html += '<strong>≡ƒöä Flow</strong> ΓÇö shows issues that <em>completed</em> in the last 30 days. A high closed count means the team is delivering. Zero closures = the team has WIP that isn\'t reaching done.<br>';
-  html += '<strong>Avg Cycle Time*</strong> = average days from issue creation to close. SAFe recommendation: keep stories under 5 active days. Colors: ≡ƒƒó &le;5d ┬╖ ≡ƒƒí 6ΓÇô14d ┬╖ ≡ƒö┤ &gt;14d.<br>';
-  html += '<strong>ΓÅ▒ Aging</strong> ΓÇö shows items <em>currently stuck</em> in In Progress, sorted by team average age. High WIP age is an early warning signal that surfaces weeks before sprint metrics show a problem.<br>';
-  html += '≡ƒö┤ Blocked = avg WIP age &gt;14d &nbsp;┬╖&nbsp; ≡ƒƒí Slowing = 7ΓÇô14d &nbsp;┬╖&nbsp; ≡ƒƒó Flowing = &lt;7d<br>';
+  html += '<strong>≡ƒöä Flow</strong> — shows issues that <em>completed</em> in the last 30 days. A high closed count means the team is delivering. Zero closures = the team has WIP that isn\'t reaching done.<br>';
+  html += '<strong>Avg Cycle Time*</strong> = average days from issue creation to close. SAFe recommendation: keep stories under 5 active days. Colors: ≡ƒƒó &le;5d · 📊 6–14d · 🐛 &gt;14d.<br>';
+  html += '<strong>⚡ Aging</strong> — shows items <em>currently stuck</em> in In Progress, sorted by team average age. High WIP age is an early warning signal that surfaces weeks before sprint metrics show a problem.<br>';
+  html += '🐛 Blocked = avg WIP age &gt;14d &nbsp;·&nbsp; 📊 Slowing = 7–14d &nbsp;·&nbsp; ≡ƒƒó Flowing = &lt;7d<br>';
   html += '<em>Data: Live Jira queries. Flow = statusCategory Done, last 30 days. Aging = statusCategory "In Progress".</em>';
   html += '</div></details>';
 
@@ -24636,7 +24653,7 @@ function rhRenderFlow(results) {
   rhUpdateHealthScore();
 }
 
-// ΓöÇΓöÇ QUALITY RADAR ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// -- QUALITY RADAR -------------------------------------------------------------
 
 function rhDefectQuery(key, suffix) {
   var typeLists = [
@@ -24665,7 +24682,7 @@ function rhFetchQuality() {
     return;
   }
   RH_STATE.generatingQuality = true;
-  rhSetPanel('quality', rhLoadingState('Scanning open defects across ' + teams.length + ' teamsΓÇª'));
+  rhSetPanel('quality', rhLoadingState('Scanning open defects across ' + teams.length + ' teams...'));
 
   var promises = teams.map(function(team) {
     var key = team.projectKey.trim().toUpperCase();
@@ -24745,9 +24762,9 @@ function rhRenderQuality(results) {
 
   var TIER_ORDER  = ['Critical', 'High', 'Medium', 'Low', 'Lowest'];
   var TIER_COLORS = { Critical: '#ef4444', High: '#f97316', Medium: '#f59e0b', Low: '#3b82f6', Lowest: '#6b7280' };
-  var TIER_ICONS  = { Critical: '≡ƒö┤', High: '≡ƒƒá', Medium: '≡ƒƒí', Low: '≡ƒö╡', Lowest: 'ΓÜ½' };
+  var TIER_ICONS  = { Critical: '🐛', High: '≡ƒƒá', Medium: '📊', Low: '≡ƒö╡', Lowest: '🔒' };
 
-  // ΓöÇΓöÇ ART-level aggregate totals ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- ART-level aggregate totals ---------------------------------------------
   var artTotal = 0, artProd = 0, artNonProd = 0;
   var artStale = 0, artProdStale = 0, artNonProdStale = 0;
   var artTiers = {};
@@ -24769,7 +24786,7 @@ function rhRenderQuality(results) {
   var artCritical = artTiers.Critical.total;
   var artHigh     = artTiers.High.total;
 
-  // ΓöÇΓöÇ Jira deep-link helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Jira deep-link helpers -------------------------------------------------
   var jiraBase = '';
   try { jiraBase = tbxJiraBaseUrl(); } catch(e) {}
 
@@ -24806,42 +24823,42 @@ function rhRenderQuality(results) {
     return '#10b981';
   }
 
-  // ΓöÇΓöÇ HTML assembly ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- HTML assembly ----------------------------------------------------------
   var html = rhReportPitch('quality');
   html += rhNarrativeCard(rhNarrativeQuality(results));
 
-  // Alert banner ΓÇö surface the most urgent finding immediately.
+  // Alert banner — surface the most urgent finding immediately.
   if (artCritical > 0) {
     html += '<div style="background:#ef444422;border-left:5px solid #ef4444;border-radius:0 10px 10px 0;padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px;">';
     html += '<span style="font-size:28px;">≡ƒÜ¿</span>';
     html += '<div><div style="font-size:15px;font-weight:900;color:#ef4444;">' + artCritical + ' CRITICAL defect' + (artCritical>1?'s':'')+' open across the ART</div>';
-    html += '<div style="font-size:12px;color:var(--text-muted);margin-top:3px;">Release risk ΓÇö requires immediate attention before any PI increment boundary</div></div>';
+    html += '<div style="font-size:12px;color:var(--text-muted);margin-top:3px;">Release risk — requires immediate attention before any PI increment boundary</div></div>';
     html += '</div>';
   } else if (artHigh > 0) {
     html += '<div style="background:#f9731622;border-left:5px solid #f97316;border-radius:0 10px 10px 0;padding:14px 18px;margin-bottom:18px;">';
-    html += '<span style="font-size:15px;font-weight:900;color:#f97316;">ΓÜá ' + artHigh + ' High-severity defect' + (artHigh>1?'s':'') + ' open ΓÇö monitor before next release train.</span></div>';
+    html += '<span style="font-size:15px;font-weight:900;color:#f97316;">⚠ ' + artHigh + ' High-severity defect' + (artHigh>1?'s':'') + ' open — monitor before next release train.</span></div>';
   } else {
     html += '<div style="background:#10b98122;border-left:5px solid #10b981;border-radius:0 10px 10px 0;padding:14px 18px;margin-bottom:18px;">';
-    html += '<span style="font-size:15px;font-weight:900;color:#10b981;">Γ£à No critical or high-severity defects open ΓÇö ART quality posture is healthy.</span></div>';
+    html += '<span style="font-size:15px;font-weight:900;color:#10b981;">✓ No critical or high-severity defects open — ART quality posture is healthy.</span></div>';
   }
 
-  html += rhInsightBox('<strong>Quality Radar</strong> ΓÇö 3 metric cards with per-team breakdowns. Click any team card to view that data in Jira. Click a priority tier row to filter to that severity.');
+  html += rhInsightBox('<strong>Quality Radar</strong> — 3 metric cards with per-team breakdowns. Click any team card to view that data in Jira. Click a priority tier row to filter to that severity.');
 
-  // ΓöÇΓöÇ Card 1: Total Open ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Card 1: Total Open -----------------------------------------------------
   var totalAccent = artCritical > 0 ? '#ef4444' : artHigh > 0 ? '#f97316' : '#10b981';
   html += '<div style="background:var(--surface);border:1px solid var(--border);border-top:4px solid ' + totalAccent + ';border-radius:12px;padding:20px;margin-bottom:16px;">';
   html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;">';
   html += '<div><div style="font-size:16px;font-weight:900;color:var(--text);">≡ƒôï Total Open Defects</div>';
-  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">All open defects by team ΓÇö Prod vs Non-Prod</div></div>';
+  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">All open defects by team — Prod vs Non-Prod</div></div>';
   html += '<div style="text-align:right;"><div style="font-size:42px;font-weight:900;color:' + (artTotal>0?totalAccent:'var(--text-muted)') + ';line-height:1;">' + artTotal + '</div>';
-  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">≡ƒÅ¡ <strong style="color:' + (artProd>0?'#ef4444':'var(--text-muted)') + ';">' + artProd + '</strong> Prod &nbsp;┬╖&nbsp; ≡ƒöº <strong style="color:' + (artNonProd>0?'#f59e0b':'var(--text-muted)') + ';">' + artNonProd + '</strong> Non-Prod</div>';
+  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">≡ƒÅ¡ <strong style="color:' + (artProd>0?'#ef4444':'var(--text-muted)') + ';">' + artProd + '</strong> Prod &nbsp;·&nbsp; ≡ƒöº <strong style="color:' + (artNonProd>0?'#f59e0b':'var(--text-muted)') + ';">' + artNonProd + '</strong> Non-Prod</div>';
   html += '</div></div>';
   html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
   results.forEach(function(r) {
     if (r.error) {
       html += '<div style="min-width:140px;flex:1;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;">';
       html += '<div style="font-size:12px;font-weight:700;">' + rhEsc(r.name) + '</div>';
-      html += '<div style="font-size:10px;color:var(--danger);margin-top:6px;">ΓÜá Fetch error</div></div>';
+      html += '<div style="font-size:10px;color:var(--danger);margin-top:6px;">⚠ Fetch error</div></div>';
       return;
     }
     var rc  = teamRiskColor(r);
@@ -24849,7 +24866,7 @@ function rhRenderQuality(results) {
     html += '<div style="min-width:140px;flex:1;background:var(--bg);border:1px solid var(--border);border-left:4px solid ' + rc + ';border-radius:10px;padding:14px;"' + jiraOnClick(url) + '>';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
     html += '<div style="font-size:12px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;">' + rhEsc(r.name) + '</div>';
-    html += (url ? '<span style="font-size:10px;color:var(--accent);font-weight:700;">Γåù</span>' : '');
+    html += (url ? '<span style="font-size:10px;color:var(--accent);font-weight:700;">✕</span>' : '');
     html += '</div>';
     html += '<div style="font-size:34px;font-weight:900;color:' + (r.total>0?rc:'var(--text-muted)') + ';line-height:1;margin-bottom:10px;">' + r.total + '</div>';
     html += '<div style="border-top:1px solid var(--border);padding-top:8px;display:flex;flex-direction:column;gap:4px;">';
@@ -24859,12 +24876,12 @@ function rhRenderQuality(results) {
   });
   html += '</div></div>';
 
-  // ΓöÇΓöÇ Card 2: Priority Breakdown ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Card 2: Priority Breakdown ---------------------------------------------
   html += '<div style="background:var(--surface);border:1px solid var(--border);border-top:4px solid #f59e0b;border-radius:12px;padding:20px;margin-bottom:16px;">';
   html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;flex-wrap:wrap;gap:10px;">';
   html += '<div><div style="font-size:16px;font-weight:900;color:var(--text);">≡ƒÄ» Priority Breakdown</div>';
   html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Click a tier row to open that severity slice in Jira</div></div>';
-  // ART-level tier badge strip ΓÇö only show tiers that have at least one issue.
+  // ART-level tier badge strip — only show tiers that have at least one issue.
   html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
   TIER_ORDER.forEach(function(tier) {
     var td = artTiers[tier];
@@ -24880,7 +24897,7 @@ function rhRenderQuality(results) {
     if (r.error) {
       html += '<div style="min-width:180px;flex:1;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;">';
       html += '<div style="font-size:12px;font-weight:700;">' + rhEsc(r.name) + '</div>';
-      html += '<div style="font-size:10px;color:var(--danger);margin-top:6px;">ΓÜá Fetch error</div></div>';
+      html += '<div style="font-size:10px;color:var(--danger);margin-top:6px;">⚠ Fetch error</div></div>';
       return;
     }
     var rc  = teamRiskColor(r);
@@ -24888,9 +24905,9 @@ function rhRenderQuality(results) {
     html += '<div style="min-width:180px;flex:1;background:var(--bg);border:1px solid var(--border);border-left:4px solid ' + rc + ';border-radius:10px;padding:14px;">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
     html += '<div style="font-size:12px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px;">' + rhEsc(r.name) + '</div>';
-    html += (url ? '<a href="' + url + '" target="_blank" style="font-size:10px;color:var(--accent);font-weight:700;text-decoration:none;" onclick="event.stopPropagation()">Γåù</a>' : '');
+    html += (url ? '<a href="' + url + '" target="_blank" style="font-size:10px;color:var(--accent);font-weight:700;text-decoration:none;" onclick="event.stopPropagation()">✕</a>' : '');
     html += '</div>';
-    // One row per priority tier ΓÇö each independently clickable to filter by severity.
+    // One row per priority tier — each independently clickable to filter by severity.
     TIER_ORDER.forEach(function(tier, idx) {
       var td        = (r.tierData && r.tierData[tier]) || { total: 0, prod: 0, nonProd: 0 };
       var tierColor = td.total > 0 ? TIER_COLORS[tier] : 'var(--text-muted)';
@@ -24915,20 +24932,20 @@ function rhRenderQuality(results) {
   });
   html += '</div></div>';
 
-  // ΓöÇΓöÇ Card 3: Stale >30 Days ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Card 3: Stale >30 Days -------------------------------------------------
   html += '<div style="background:var(--surface);border:1px solid var(--border);border-top:4px solid #6366f1;border-radius:12px;padding:20px;margin-bottom:16px;">';
   html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;">';
-  html += '<div><div style="font-size:16px;font-weight:900;color:var(--text);">ΓÅ░ Stale &gt;30 Days</div>';
-  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Defects open more than 30 days ΓÇö unresolved technical debt</div></div>';
+  html += '<div><div style="font-size:16px;font-weight:900;color:var(--text);">🕐 Stale &gt;30 Days</div>';
+  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Defects open more than 30 days — unresolved technical debt</div></div>';
   html += '<div style="text-align:right;"><div style="font-size:42px;font-weight:900;color:' + (artStale>0?'#6366f1':'var(--text-muted)') + ';line-height:1;">' + artStale + '</div>';
-  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">≡ƒÅ¡ <strong style="color:' + (artProdStale>0?'#ef4444':'var(--text-muted)') + ';">' + artProdStale + '</strong> Prod &nbsp;┬╖&nbsp; ≡ƒöº <strong style="color:' + (artNonProdStale>0?'#f59e0b':'var(--text-muted)') + ';">' + artNonProdStale + '</strong> Non-Prod</div>';
+  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">≡ƒÅ¡ <strong style="color:' + (artProdStale>0?'#ef4444':'var(--text-muted)') + ';">' + artProdStale + '</strong> Prod &nbsp;·&nbsp; ≡ƒöº <strong style="color:' + (artNonProdStale>0?'#f59e0b':'var(--text-muted)') + ';">' + artNonProdStale + '</strong> Non-Prod</div>';
   html += '</div></div>';
   html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
   results.forEach(function(r) {
     if (r.error) {
       html += '<div style="min-width:140px;flex:1;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;">';
       html += '<div style="font-size:12px;font-weight:700;">' + rhEsc(r.name) + '</div>';
-      html += '<div style="font-size:10px;color:var(--danger);margin-top:6px;">ΓÜá Fetch error</div></div>';
+      html += '<div style="font-size:10px;color:var(--danger);margin-top:6px;">⚠ Fetch error</div></div>';
       return;
     }
     var sv  = r.staleOver30 || 0;
@@ -24938,7 +24955,7 @@ function rhRenderQuality(results) {
     html += '<div style="min-width:140px;flex:1;background:var(--bg);border:1px solid var(--border);border-left:4px solid ' + sc + ';border-radius:10px;padding:14px;"' + jiraOnClick(url) + '>';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
     html += '<div style="font-size:12px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;">' + rhEsc(r.name) + '</div>';
-    html += (url ? '<span style="font-size:10px;color:var(--accent);font-weight:700;">Γåù</span>' : '');
+    html += (url ? '<span style="font-size:10px;color:var(--accent);font-weight:700;">✕</span>' : '');
     html += '</div>';
     html += '<div style="font-size:34px;font-weight:900;color:' + (sv>0?sc:'var(--text-muted)') + ';line-height:1;margin-bottom:10px;">' + sv + '</div>';
     html += '<div style="border-top:1px solid var(--border);padding-top:8px;display:flex;flex-direction:column;gap:4px;">';
@@ -24948,13 +24965,13 @@ function rhRenderQuality(results) {
   });
   html += '</div></div>';
 
-  html += '<details style="font-size:12px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">Γä╣ How to read this report</summary>';
+  html += '<details style="font-size:12px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">ℹ️ How to read this report</summary>';
   html += '<div style="padding:8px 12px;background:var(--bg);border-radius:6px;margin-top:6px;line-height:1.8;color:var(--text-muted);">';
-  html += '<strong>Priority tiers</strong>: ≡ƒö┤ Critical (Blocker/P1/Highest) ΓåÆ ≡ƒƒá High (Major/P2) ΓåÆ ≡ƒƒí Medium (P3) ΓåÆ ≡ƒö╡ Low (P4) ΓåÆ ΓÜ½ Lowest.<br>';
+  html += '<strong>Priority tiers</strong>: 🐛 Critical (Blocker/P1/Highest) → ≡ƒƒá High (Major/P2) → 📊 Medium (P3) → ≡ƒö╡ Low (P4) → 🔒 Lowest.<br>';
   html += '<strong>P / NP</strong> in priority rows = Prod count / Non-Prod count for that tier.<br>';
-  html += '<strong>Stale colour</strong>: ≡ƒƒú &gt;0 items, ≡ƒƒá &gt;2, ≡ƒö┤ &gt;5 per team.<br>';
+  html += '<strong>Stale colour</strong>: ≡ƒƒú &gt;0 items, ≡ƒƒá &gt;2, 🐛 &gt;5 per team.<br>';
   html += '<strong>≡ƒÅ¡ Prod</strong> = customfield_10253 contains "prod". <strong>≡ƒöº Non-Prod</strong> = all other values (Dev, QA, UAT, blank).<br>';
-  html += '<strong>Γåù Click team card</strong> to open all open defects for that team in Jira. Click a priority row to filter by that severity.<br>';
+  html += '<strong>✕ Click team card</strong> to open all open defects for that team in Jira. Click a priority row to filter by that severity.<br>';
   html += '<em>Jira links require the Jira base URL to be set in CR Generator settings.</em>';
   html += '</div></details>';
 
@@ -24962,15 +24979,15 @@ function rhRenderQuality(results) {
   rhUpdateHealthScore();
 }
 
-// ΓöÇΓöÇ REPORTS HUB COPY TO CLIPBOARD ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// -- REPORTS HUB COPY TO CLIPBOARD --------------------------------------------
 
 function rhCopyReport() {
   var tab = RH_STATE.activeTab || 'throughput';
   var text = rhBuildCopyText(tab);
-  if (!text) { tbxToast('No report data available yet ΓÇö generate the report first.'); return; }
+  if (!text) { tbxToast('No report data available yet — generate the report first.'); return; }
   var btn = document.querySelector('[onclick="rhCopyReport()"]');
   function done() {
-    if (btn) { var orig = btn.textContent; btn.textContent = 'Γ£à Copied!'; setTimeout(function(){ btn.textContent = orig; }, 2000); }
+    if (btn) { var orig = btn.textContent; btn.textContent = '✓ Copied!'; setTimeout(function(){ btn.textContent = orig; }, 2000); }
   }
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(function(){ tbxToast('Report copied to clipboard!'); done(); }).catch(function(){
@@ -24987,8 +25004,8 @@ function rhCopyFallback(text) {
 }
 
 function rhBuildCopyText(tab) {
-  var sep = 'ΓöÇ'.repeat(62);
-  var dbl = 'ΓòÉ'.repeat(62);
+  var sep = '-'.repeat(62);
+  var dbl = '×'.repeat(62);
   var ts = RH_STATE.lastGenerated ? new Date(RH_STATE.lastGenerated).toLocaleString() : new Date().toLocaleString();
 
   if (tab === 'throughput') {
@@ -25008,9 +25025,9 @@ function rhBuildCopyText(tab) {
     lines.push('HOW THIS REPORT IS GENERATED');
     lines.push(sep);
     lines.push('Toolbox-exclusive: 6-month cross-team throughput in one table. Native Jira');
-    lines.push('scopes all reports to a single board ΓÇö this view aggregates across ' + teamNames.length + ' project');
+    lines.push('scopes all reports to a single board — this view aggregates across ' + teamNames.length + ' project');
     lines.push('boards simultaneously, with a control-group benchmark for objective comparison.');
-    lines.push('Data source: tbxImpactThroughput cache ΓÇö collected via Impact Dashboard.');
+    lines.push('Data source: tbxImpactThroughput cache — collected via Impact Dashboard.');
     lines.push('');
 
     // Build table
@@ -25037,7 +25054,7 @@ function rhBuildCopyText(tab) {
       var ms = clean.length >= 2 ? clean : d.monthly;
       var oldest = ms[0].closed || 0; var newest = ms[ms.length-1].closed || 0;
       var pct = oldest > 0 ? Math.round(((newest-oldest)/oldest)*100) : null;
-      row += rhPad(pct !== null ? (pct >= 0 ? 'Γû▓ +'+pct+'%' : 'Γû╝ '+pct+'%') : 'ΓÇö', 9, true);
+      row += rhPad(pct !== null ? (pct >= 0 ? '▲ +'+pct+'%' : '▼ '+pct+'%') : '—', 9, true);
       lines.push(row);
     });
     lines.push(sep);
@@ -25057,19 +25074,19 @@ function rhBuildCopyText(tab) {
       lines.push(bmRow);
     });
     if (sampleMonthly.some(function(m){ return m.source==='reference'; })) {
-      lines.push('* Migration month ΓÇö pre-migration count shown for reference, excluded from trend calc.');
+      lines.push('* Migration month — pre-migration count shown for reference, excluded from trend calc.');
     }
     lines.push('');
     lines.push('HOW TO READ THIS REPORT');
     lines.push(sep);
-    lines.push('ΓÇó Throughput = issues completed per month (regardless of size). A leading indicator');
+    lines.push('• Throughput = issues completed per month (regardless of size). A leading indicator');
     lines.push('  of team capacity.');
-    lines.push('ΓÇó Trend % = change vs. the prior clean (non-migration) month. Positive = improving');
+    lines.push('• Trend % = change vs. the prior clean (non-migration) month. Positive = improving');
     lines.push('  output. Negative = capacity constraint or scope creep.');
-    lines.push('ΓÇó Benchmark row = a reference team used to calibrate expectations ΓÇö useful for');
+    lines.push('• Benchmark row = a reference team used to calibrate expectations — useful for');
     lines.push('  comparing high/low performers against a control group.');
-    lines.push('ΓÇó Legacy (blue in UI) = pre-migration Jira data imported via Toolbox export tool.');
-    lines.push('ΓÇó Live (green in UI) = data from the current Jira instance.');
+    lines.push('• Legacy (blue in UI) = pre-migration Jira data imported via Toolbox export tool.');
+    lines.push('• Live (green in UI) = data from the current Jira instance.');
     return lines.join('\n');
   }
 
@@ -25078,9 +25095,9 @@ function rhBuildCopyText(tab) {
     var onTrack = results.filter(function(r){ return !r.error && r.pctDone >= 50; }).length;
     var watch   = results.filter(function(r){ return !r.error && r.pctDone >= 30 && r.pctDone < 50; }).length;
     var atRisk  = results.filter(function(r){ return !r.error && r.pctDone < 30; }).length;
-    var artStatus = atRisk > 0 ? '≡ƒö┤ ART AT RISK ΓÇö ' + atRisk + ' team(s) with delivery in jeopardy'
-      : watch > 0 ? '≡ƒƒí WATCH ΓÇö ' + watch + ' team(s) behind sprint pace'
-      : '≡ƒƒó ART ON TRACK ΓÇö all teams pacing well this sprint';
+    var artStatus = atRisk > 0 ? '🐛 ART AT RISK — ' + atRisk + ' team(s) with delivery in jeopardy'
+      : watch > 0 ? '📊 WATCH — ' + watch + ' team(s) behind sprint pace'
+      : '≡ƒƒó ART ON TRACK — all teams pacing well this sprint';
 
     var lines = [];
     lines.push(dbl);
@@ -25103,8 +25120,8 @@ function rhBuildCopyText(tab) {
     lines.push(hdr2);
     lines.push(sep);
     results.forEach(function(r) {
-      if (r.error) { lines.push(rhPad(r.name, 18) + 'ΓÜá ' + r.error); return; }
-      var status = r.pctDone >= 50 ? '≡ƒƒó On Track' : r.pctDone >= 30 ? '≡ƒƒí Watch' : '≡ƒö┤ At Risk';
+      if (r.error) { lines.push(rhPad(r.name, 18) + '⚠ ' + r.error); return; }
+      var status = r.pctDone >= 50 ? '≡ƒƒó On Track' : r.pctDone >= 30 ? '📊 Watch' : '🐛 At Risk';
       var row = rhPad(r.name, 18) + rhPad(status, 14) + rhPad(r.pctDone+'%', 7, true)
         + rhPad(r.done+'/'+r.total, 12, true) + rhPad(String(r.inProgress||0), 5, true)
         + rhPad(String(r.blockers||0), 10, true) + '  ' + (r.sprintName || '');
@@ -25113,14 +25130,14 @@ function rhBuildCopyText(tab) {
     lines.push('');
     lines.push('HOW TO READ THIS REPORT');
     lines.push(sep);
-    lines.push('ΓÇó ≡ƒƒó On Track = >50% of sprint issues resolved.');
-    lines.push('ΓÇó ≡ƒƒí Watch = 30ΓÇô50% resolved ΓÇö behind pace, needs monitoring.');
-    lines.push('ΓÇó ≡ƒö┤ At Risk = <30% resolved ΓÇö delivery in jeopardy this sprint.');
-    lines.push('ΓÇó WIP (In Progress) count >5 signals too much work-in-progress ΓÇö a common');
+    lines.push('• ≡ƒƒó On Track = >50% of sprint issues resolved.');
+    lines.push('• 📊 Watch = 30–50% resolved — behind pace, needs monitoring.');
+    lines.push('• 🐛 At Risk = <30% resolved — delivery in jeopardy this sprint.');
+    lines.push('• WIP (In Progress) count >5 signals too much work-in-progress — a common');
     lines.push('  sprint health anti-pattern that indicates context switching.');
-    lines.push('ΓÇó Blockers = issues linked with "Blocks" relationship. Even one warrants');
+    lines.push('• Blockers = issues linked with "Blocks" relationship. Even one warrants');
     lines.push('  immediate follow-up with the team.');
-    lines.push('ΓÇó Data: Live Jira query using sprint in openSprints() ΓÇö works across all');
+    lines.push('• Data: Live Jira query using sprint in openSprints() — works across all');
     lines.push('  board configurations without requiring a shared board.');
     return lines.join('\n');
   }
@@ -25132,9 +25149,9 @@ function rhBuildCopyText(tab) {
     if (validCount) artAvg = Math.round(artAvg / validCount);
     var troubled = results.filter(function(r){ return !r.error && r.avgAge > 14; }).length;
     var warning  = results.filter(function(r){ return !r.error && r.avgAge > 7 && r.avgAge <= 14; }).length;
-    var artStatus = troubled > 0 ? '≡ƒö┤ ' + troubled + ' team(s) have severely aged work (>14d avg) ΓÇö flow is blocked'
-      : warning > 0 ? '≡ƒƒí ' + warning + ' team(s) showing elevated flow age (7ΓÇô14d avg)'
-      : '≡ƒƒó ART flow is healthy ΓÇö items moving within expected timeframes';
+    var artStatus = troubled > 0 ? '🐛 ' + troubled + ' team(s) have severely aged work (>14d avg) — flow is blocked'
+      : warning > 0 ? '📊 ' + warning + ' team(s) showing elevated flow age (7–14d avg)'
+      : '≡ƒƒó ART flow is healthy — items moving within expected timeframes';
 
     var lines = [];
     lines.push(dbl);
@@ -25158,24 +25175,24 @@ function rhBuildCopyText(tab) {
     lines.push(hdr3);
     lines.push(sep);
     results.forEach(function(r) {
-      if (r.error) { lines.push(rhPad(r.name, 18) + 'ΓÜá ' + r.error); return; }
-      var label = r.count === 0 ? 'ΓÇö No WIP' : r.avgAge > 14 ? '≡ƒö┤ Blocked' : r.avgAge > 7 ? '≡ƒƒí Slowing' : '≡ƒƒó Flowing';
-      var row = rhPad(r.name, 18) + rhPad(label, 14) + rhPad(r.count===0?'ΓÇö':(r.avgAge+'d'), 9, true)
-        + rhPad(String(r.count), 5, true) + rhPad(r.oldest?(r.oldest+'d'):'ΓÇö', 8, true)
+      if (r.error) { lines.push(rhPad(r.name, 18) + '⚠ ' + r.error); return; }
+      var label = r.count === 0 ? '— No WIP' : r.avgAge > 14 ? '🐛 Blocked' : r.avgAge > 7 ? '📊 Slowing' : '≡ƒƒó Flowing';
+      var row = rhPad(r.name, 18) + rhPad(label, 14) + rhPad(r.count===0?'—':(r.avgAge+'d'), 9, true)
+        + rhPad(String(r.count), 5, true) + rhPad(r.oldest?(r.oldest+'d'):'—', 8, true)
         + rhPad(String(r.stale||0), 7, true) + '  ' + (r.oldestSummary ? r.oldestSummary.substring(0,50) : '');
       lines.push(row);
     });
     lines.push('');
     lines.push('HOW TO READ THIS REPORT');
     lines.push(sep);
-    lines.push('ΓÇó Avg Age = average days items have been In Progress. SAFe recommendation:');
+    lines.push('• Avg Age = average days items have been In Progress. SAFe recommendation:');
     lines.push('  keep stories under 5 days in-progress to maintain healthy flow.');
-    lines.push('ΓÇó Oldest = single longest-running item. Often forgotten, blocked, or a');
+    lines.push('• Oldest = single longest-running item. Often forgotten, blocked, or a');
     lines.push('  hidden dependency that nobody is actively managing.');
-    lines.push('ΓÇó Stale = items not updated in 5+ days. A stale item is often a blocker');
+    lines.push('• Stale = items not updated in 5+ days. A stale item is often a blocker');
     lines.push('  in disguise.');
-    lines.push('ΓÇó ≡ƒö┤ Blocked = avg >14d ┬╖ ≡ƒƒí Slowing = 7ΓÇô14d ┬╖ ≡ƒƒó Flowing = <7d');
-    lines.push('ΓÇó Data: Live Jira query on statusCategory = "In Progress" items with');
+    lines.push('• 🐛 Blocked = avg >14d · 📊 Slowing = 7–14d · ≡ƒƒó Flowing = <7d');
+    lines.push('• Data: Live Jira query on statusCategory = "In Progress" items with');
     lines.push('  created/updated timestamps across all configured team project keys.');
     return lines.join('\n');
   }
@@ -25185,9 +25202,9 @@ function rhBuildCopyText(tab) {
     var artTotal = 0, artCritical = 0, artHigh = 0, zeroDefect = 0;
     results.forEach(function(r){ if (!r.error){ artTotal+=r.total; artCritical+=r.critical; artHigh+=r.high; if(r.total===0)zeroDefect++; } });
     var artStatus = artCritical > 0
-      ? '≡ƒÜ¿ ' + artCritical + ' CRITICAL defect(s) open ΓÇö release risk, immediate attention required'
-      : artHigh > 0 ? 'ΓÜá ' + artHigh + ' High-severity defect(s) open ΓÇö monitor before next release'
-      : 'Γ£à No critical or high-severity defects ΓÇö ART quality posture is healthy';
+      ? '≡ƒÜ¿ ' + artCritical + ' CRITICAL defect(s) open — release risk, immediate attention required'
+      : artHigh > 0 ? '⚠ ' + artHigh + ' High-severity defect(s) open — monitor before next release'
+      : '✓ No critical or high-severity defects — ART quality posture is healthy';
 
     var lines = [];
     lines.push(dbl);
@@ -25211,8 +25228,8 @@ function rhBuildCopyText(tab) {
     lines.push(hdr4);
     lines.push(sep);
     results.forEach(function(r) {
-      if (r.error) { lines.push(rhPad(r.name, 18) + 'ΓÜá ' + r.error); return; }
-      var risk = r.critical > 0 ? '≡ƒö┤ High Risk' : r.high > 0 ? '≡ƒƒí Watch' : '≡ƒƒó Healthy';
+      if (r.error) { lines.push(rhPad(r.name, 18) + '⚠ ' + r.error); return; }
+      var risk = r.critical > 0 ? '🐛 High Risk' : r.high > 0 ? '📊 Watch' : '≡ƒƒó Healthy';
       var row = rhPad(r.name, 18) + rhPad(risk, 14) + rhPad(String(r.total), 6, true)
         + rhPad(String(r.critical), 10, true) + rhPad(String(r.high), 6, true) + rhPad(String(r.newLast30||0), 9, true);
       lines.push(row);
@@ -25220,15 +25237,15 @@ function rhBuildCopyText(tab) {
     lines.push('');
     lines.push('HOW TO READ THIS REPORT');
     lines.push(sep);
-    lines.push('ΓÇó Critical = P1/Blocker/Highest priority open defects ΓÇö release blockers.');
+    lines.push('• Critical = P1/Blocker/Highest priority open defects — release blockers.');
     lines.push('  Any critical defect should block a PI increment boundary.');
-    lines.push('ΓÇó High = P2/Major ΓÇö serious but not necessarily release-blocking. Should');
+    lines.push('• High = P2/Major — serious but not necessarily release-blocking. Should');
     lines.push('  have a mitigation plan before release.');
-    lines.push('ΓÇó New 30d = defects opened in the last 30 days. A rising rate signals');
+    lines.push('• New 30d = defects opened in the last 30 days. A rising rate signals');
     lines.push('  quality degradation or insufficient test coverage.');
-    lines.push('ΓÇó Zero Defect teams have no open defects at any severity ΓÇö recognize');
+    lines.push('• Zero Defect teams have no open defects at any severity — recognize');
     lines.push('  and celebrate them in your next standup or retrospective.');
-    lines.push('ΓÇó Data: Live Jira query with automatic issue-type fallback chain.');
+    lines.push('• Data: Live Jira query with automatic issue-type fallback chain.');
     return lines.join('\n');
   }
 
@@ -25244,7 +25261,7 @@ function rhBuildCopyText(tab) {
     var total = allIssues.length;
     var critical = allIssues.filter(function(i){ return rhPriorityColor((i.fields.priority&&i.fields.priority.name)||'') === '#ef4444'; }).length;
     var stuck = allIssues.filter(function(i){ return (now-new Date(i.fields.updated).getTime())>5*86400000; }).length;
-    var lines = [dbl, '  ≡ƒö┤ DEFECT TRACKER', '  Reports Hub ΓÇö ' + ts, dbl, '', rhNarrativeDefects(data).replace(/<[^>]+>/g,''), ''];
+    var lines = [dbl, '  🐛 DEFECT TRACKER', '  Reports Hub — ' + ts, dbl, '', rhNarrativeDefects(data).replace(/<[^>]+>/g,''), ''];
     lines.push(sep);
     lines.push('HOW THIS IS GENERATED');
     lines.push(sep);
@@ -25255,19 +25272,19 @@ function rhBuildCopyText(tab) {
     data.forEach(function(r) {
       var issues = r.issues || [];
       lines.push(sep);
-      lines.push(r.name + ' (' + r.key + ') ΓÇö ' + issues.length + ' open');
+      lines.push(r.name + ' (' + r.key + ') — ' + issues.length + ' open');
       lines.push(sep);
-      if (!issues.length) { lines.push('  No open defects Γ£à'); lines.push(''); return; }
+      if (!issues.length) { lines.push('  No open defects ✓'); lines.push(''); return; }
       lines.push(rhPad('P',3) + rhPad('Key',14) + rhPad('Status',18) + rhPad('Fix Version',16) + rhPad('Due',12) + 'Summary');
-      lines.push('ΓöÇ'.repeat(90));
+      lines.push('-'.repeat(90));
       issues.forEach(function(i) {
-        var p = (i.fields.priority&&i.fields.priority.name)||'ΓÇö';
+        var p = (i.fields.priority&&i.fields.priority.name)||'—';
         var dot = rhPriorityDot(p);
-        var s = (i.fields.status&&i.fields.status.name)||'ΓÇö';
-        var fv = (i.fields.fixVersions||[]).map(function(v){return v.name;}).join(', ')||'ΓÇö';
-        var due = i.fields.duedate ? new Date(i.fields.duedate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}) : 'ΓÇö';
+        var s = (i.fields.status&&i.fields.status.name)||'—';
+        var fv = (i.fields.fixVersions||[]).map(function(v){return v.name;}).join(', ')||'—';
+        var due = i.fields.duedate ? new Date(i.fields.duedate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}) : '—';
         var isStuck = (now-new Date(i.fields.updated).getTime())>5*86400000;
-        lines.push(rhPad(dot,4)+rhPad(i.key,14)+rhPad(s,18)+rhPad(fv,16)+rhPad(due+(isStuck?' ΓÅ│':''),12)+(i.fields.summary||''));
+        lines.push(rhPad(dot,4)+rhPad(i.key,14)+rhPad(s,18)+rhPad(fv,16)+rhPad(due+(isStuck?' ':''),12)+(i.fields.summary||''));
       });
       lines.push('');
     });
@@ -25286,7 +25303,7 @@ function rhBuildCopyText(tab) {
     if (!issues) return null;
     var piLabel = RH_STATE.featurePIFilter ? ' (PI: ' + RH_STATE.featurePIFilter + ')' : '';
     var teamLabel = RH_STATE.featureTeamFilter ? ' (Team: ' + RH_STATE.featureTeamFilter + ')' : '';
-    var lines = [dbl, '  ≡ƒù║∩╕Å FEATURE BOARD' + piLabel + teamLabel, '  Reports Hub ΓÇö ' + ts, dbl, ''];
+    var lines = [dbl, '  🏋️ FEATURE BOARD' + piLabel + teamLabel, '  Reports Hub — ' + ts, dbl, ''];
     if (issues.length) {
       var narrative = rhNarrativeFlow ? '' : '';
       // Build narrative from feature data
@@ -25300,24 +25317,24 @@ function rhBuildCopyText(tab) {
     lines.push('Filters: PI/Fix Version match or label match. Dependencies from Jira issue links.');
     lines.push('');
     lines.push(rhPad('P',3)+rhPad('Key',14)+rhPad('Status',18)+rhPad('Fix Version',16)+rhPad('Due',12)+'Summary / Dependencies');
-    lines.push('ΓöÇ'.repeat(95));
+    lines.push('-'.repeat(95));
     (issues||[]).forEach(function(i) {
-      var p = (i.fields.priority&&i.fields.priority.name)||'ΓÇö';
+      var p = (i.fields.priority&&i.fields.priority.name)||'—';
       var dot = rhPriorityDot(p);
-      var s = (i.fields.status&&i.fields.status.name)||'ΓÇö';
-      var fv = (i.fields.fixVersions||[]).map(function(v){return v.name;}).join(', ')||'ΓÇö';
-      var due = i.fields.duedate ? new Date(i.fields.duedate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}) : 'ΓÇö';
+      var s = (i.fields.status&&i.fields.status.name)||'—';
+      var fv = (i.fields.fixVersions||[]).map(function(v){return v.name;}).join(', ')||'—';
+      var due = i.fields.duedate ? new Date(i.fields.duedate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}) : '—';
       lines.push(rhPad(dot,4)+rhPad(i.key,14)+rhPad(s,18)+rhPad(fv,16)+rhPad(due,12)+(i.fields.summary||'').substring(0,60));
       var links = i.fields.issuelinks||[];
       links.forEach(function(l){
         var linked=l.inwardIssue||l.outwardIssue; if(!linked) return;
         var dir=l.inwardIssue?(l.type&&l.type.inward||'blocked by'):(l.type&&l.type.outward||'depends on');
-        lines.push('   Γå│ '+dir+' '+linked.key);
+        lines.push('   └ '+dir+' '+linked.key);
       });
     });
     lines.push('');
     lines.push(sep); lines.push('HOW TO READ THIS REPORT'); lines.push(sep);
-    lines.push('[C] Critical  [H] High  [M] Medium  [L] Low  [-] Lowest  |  Γå│ = Jira issue link (dependency or blocker)');
+    lines.push('[C] Critical  [H] High  [M] Medium  [L] Low  [-] Lowest  |  └ = Jira issue link (dependency or blocker)');
     lines.push('PI filter: type a PI name or Fix Version to narrow scope.');
     lines.push('Target Start/End from SAFe custom fields if configured in your Jira instance.');
     return lines.join('\n');
@@ -25328,26 +25345,26 @@ function rhBuildCopyText(tab) {
     if (!issues) return null;
     var critical = (issues||[]).filter(function(r){return rhPriorityColor((r.fields.priority&&r.fields.priority.name)||'') === '#ef4444';}).length;
     var unassigned = (issues||[]).filter(function(r){return !r.fields.assignee;}).length;
-    var lines = [dbl, '  ΓÜá∩╕Å RISK BOARD', '  Reports Hub ΓÇö ' + ts, dbl, '', rhNarrativeRisks(issues).replace(/<[^>]+>/g,''), ''];
+    var lines = [dbl, '  ⚠️ RISK BOARD', '  Reports Hub — ' + ts, dbl, '', rhNarrativeRisks(issues).replace(/<[^>]+>/g,''), ''];
     lines.push(sep); lines.push('HOW THIS IS GENERATED'); lines.push(sep);
     lines.push('Jira query: issuetype = "Risk" AND statusCategory != Done across ART teams.');
     lines.push('Fallback: labels in ("risk","Risk","RISK") if no Risk issue type found.');
     lines.push('Unassigned risks = no Assignee set in Jira. Overdue = past Jira due date.');
     lines.push('');
     lines.push(rhPad('P',3)+rhPad('Key',14)+rhPad('Status',18)+rhPad('Owner',22)+'Risk Description');
-    lines.push('ΓöÇ'.repeat(90));
+    lines.push('-'.repeat(90));
     (issues||[]).forEach(function(i) {
-      var p = (i.fields.priority&&i.fields.priority.name)||'ΓÇö';
+      var p = (i.fields.priority&&i.fields.priority.name)||'—';
       var dot = rhPriorityDot(p);
-      var s = (i.fields.status&&i.fields.status.name)||'ΓÇö';
-      var owner = (i.fields.assignee&&(i.fields.assignee.displayName||i.fields.assignee.name))||'ΓÜá UNASSIGNED';
+      var s = (i.fields.status&&i.fields.status.name)||'—';
+      var owner = (i.fields.assignee&&(i.fields.assignee.displayName||i.fields.assignee.name))||'⚠ UNASSIGNED';
       lines.push(rhPad(dot,4)+rhPad(i.key,14)+rhPad(s,18)+rhPad(owner,22)+(i.fields.summary||'').substring(0,60));
     });
     lines.push(''); lines.push('Total: '+(issues||[]).length+'  |  Critical: '+critical+'  |  Unassigned: '+unassigned);
     lines.push('');
     lines.push(sep); lines.push('HOW TO READ THIS REPORT'); lines.push(sep);
     lines.push('[C] Critical  [H] High  [M] Medium  [L] Low  [-] Lowest');
-    lines.push('ΓÜá UNASSIGNED risks are the highest-priority governance concern ΓÇö no owner = no accountability.');
+    lines.push('⚠ UNASSIGNED risks are the highest-priority governance concern — no owner = no accountability.');
     lines.push('SAFe guidance: all risks should be resolved, owned, or formally accepted before PI boundary.');
     return lines.join('\n');
   }
@@ -25360,13 +25377,13 @@ function rhBuildCopyText(tab) {
     (issues||[]).forEach(function(i){var t=(i.fields.issuetype&&i.fields.issuetype.name)||'Other';if(!byType[t])byType[t]=[];byType[t].push(i);});
     var typeOrder = ['Feature','Epic','Story','Task','Sub-task','Bug','Defect'];
     var sortedTypes = typeOrder.filter(function(t){return byType[t];}).concat(Object.keys(byType).filter(function(t){return typeOrder.indexOf(t)<0;}));
-    var lines = [dbl, '  ≡ƒæñ INDIVIDUAL BOARD ΓÇö ' + user, '  Reports Hub ΓÇö ' + ts, dbl, ''];
+    var lines = [dbl, '  👤 INDIVIDUAL BOARD — ' + user, '  Reports Hub — ' + ts, dbl, ''];
     lines.push(issues.length + ' open items assigned to ' + user);
     sortedTypes.forEach(function(t){ lines.push('  ' + t + ': ' + byType[t].length); });
     lines.push('');
     lines.push(sep); lines.push('HOW THIS IS GENERATED'); lines.push(sep);
     lines.push('Jira query: assignee = "' + user + '" AND statusCategory != Done across all ART project keys.');
-    lines.push('Results grouped by issue type: Feature/Epic (PI commitments) ΓåÆ Story ΓåÆ Bug (quality debt).');
+    lines.push('Results grouped by issue type: Feature/Epic (PI commitments) → Story → Bug (quality debt).');
     lines.push('');
     sortedTypes.forEach(function(typeName) {
       var typeIssues = byType[typeName];
@@ -25374,12 +25391,12 @@ function rhBuildCopyText(tab) {
       lines.push(typeName.toUpperCase() + ' (' + typeIssues.length + ')');
       lines.push(sep);
       lines.push(rhPad('P',3)+rhPad('Key',14)+rhPad('Status',18)+rhPad('Fix Version',16)+'Summary');
-      lines.push('ΓöÇ'.repeat(80));
+      lines.push('-'.repeat(80));
       typeIssues.forEach(function(i){
-        var p = (i.fields.priority&&i.fields.priority.name)||'ΓÇö';
+        var p = (i.fields.priority&&i.fields.priority.name)||'—';
         var dot = rhPriorityDot(p);
-        var s = (i.fields.status&&i.fields.status.name)||'ΓÇö';
-        var fv = (i.fields.fixVersions||[]).map(function(v){return v.name;}).join(', ')||'ΓÇö';
+        var s = (i.fields.status&&i.fields.status.name)||'—';
+        var fv = (i.fields.fixVersions||[]).map(function(v){return v.name;}).join(', ')||'—';
         lines.push(rhPad(dot,4)+rhPad(i.key,14)+rhPad(s,18)+rhPad(fv,16)+(i.fields.summary||'').substring(0,60));
       });
       lines.push('');
@@ -25387,7 +25404,7 @@ function rhBuildCopyText(tab) {
     lines.push(sep); lines.push('HOW TO READ THIS REPORT'); lines.push(sep);
     lines.push('[C] Critical  [H] High  [M] Medium  [L] Low  [-] Lowest');
     lines.push('Over-commitment flag: triggered when someone has Features, Stories, AND Bugs in-flight simultaneously.');
-    lines.push('Types ordered: Feature/Epic (highest commitment) ΓåÆ Story ΓåÆ Bug (quality debt).');
+    lines.push('Types ordered: Feature/Epic (highest commitment) → Story → Bug (quality debt).');
     return lines.join('\n');
   }
 
@@ -25401,7 +25418,7 @@ function rhPad(str, width, rightAlign) {
   return rightAlign ? pad + s : s + pad;
 }
 
-// ΓöÇΓöÇ TREND ARROWS & HEALTH SCORE ENGINE ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// -- TREND ARROWS & HEALTH SCORE ENGINE ---------------------------------------
 
 function rhStoreTrendMetric(key, value) {
   try {
@@ -25417,10 +25434,10 @@ function rhTrendArrow(key, current, lowerIsBetter) {
     var prev = hist[key];
     if (prev === undefined || prev === null || isNaN(Number(prev)) || isNaN(Number(current))) return '';
     var delta = Number(current) - Number(prev);
-    if (delta === 0) return ' <span style="color:var(--text-muted);font-size:10px;">ΓåÆ</span>';
+    if (delta === 0) return ' <span style="color:var(--text-muted);font-size:10px;">→</span>';
     var good = lowerIsBetter ? delta < 0 : delta > 0;
     var color = good ? '#10b981' : '#ef4444';
-    var arrow = delta > 0 ? 'Γåæ' : 'Γåô';
+    var arrow = delta > 0 ? '↑' : '↓';
     return ' <span style="color:' + color + ';font-size:10px;font-weight:700;" title="Previously ' + prev + '">' + arrow + ' ' + Math.abs(delta) + '</span>';
   } catch(e) { return ''; }
 }
@@ -25499,7 +25516,7 @@ function rhUpdateHealthScore() {
   rhStoreTrendMetric('healthScore', hs.score);
 }
 
-// ΓöÇΓöÇ NARRATIVE ENGINE ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// -- NARRATIVE ENGINE ----------------------------------------------------------
 
 function rhNarrativeCard(text) {
   return '<div style="background:linear-gradient(135deg,var(--surface) 0%,var(--bg) 100%);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;padding:14px 16px;margin-bottom:14px;">' +
@@ -25523,15 +25540,15 @@ function rhNarrativeSprint(results) {
   var date = rhToday();
   var s = 'As of <strong>' + date + '</strong>, the ART has ' + teamsDesc + ' with active sprints. ';
   if (atRisk === valid.length) {
-    s += 'All teams are below sprint pace ΓÇö this is an ART-wide pattern that warrants a same-day sync with the RTE. ';
+    s += 'All teams are below sprint pace — this is an ART-wide pattern that warrants a same-day sync with the RTE. ';
   } else if (atRisk > 0 && onTrack > 0) {
     s += onTrack + ' ' + (onTrack===1?'team is':'teams are') + ' on track (&gt;50% complete), while ' + rhPluralize(atRisk, 'team') + ' ' + (atRisk===1?'is':'are') + ' at risk (&lt;30%). ';
   } else if (atRisk > 0) {
-    s += 'No teams have crossed the 50% completion threshold ΓÇö delivery risk is elevated across the board. ';
+    s += 'No teams have crossed the 50% completion threshold — delivery risk is elevated across the board. ';
   } else if (watch > 0) {
-    s += 'All teams are above the at-risk threshold, though ' + rhPluralize(watch, 'team') + ' remain below 50% ΓÇö worth monitoring heading into sprint close. ';
+    s += 'All teams are above the at-risk threshold, though ' + rhPluralize(watch, 'team') + ' remain below 50% — worth monitoring heading into sprint close. ';
   } else {
-    s += 'All teams are on track or better ΓÇö ' + (avgPct >= 70 ? 'strong pace heading into sprint close.' : 'sprint is progressing well.') + ' ';
+    s += 'All teams are on track or better — ' + (avgPct >= 70 ? 'strong pace heading into sprint close.' : 'sprint is progressing well.') + ' ';
   }
   if (blockers > 0) {
     s += '<strong>' + rhPluralize(blockers, 'active blocker') + '</strong> ' + (blockers===1?'needs':'need') + ' immediate escalation before sprint velocity is impacted. ';
@@ -25561,7 +25578,7 @@ function rhNarrativeFlow(results) {
     if (artAvgCycleTime > 0) summary += ' with an avg approx. cycle time of <strong>' + artAvgCycleTime + ' days</strong>';
     summary += '. ';
   } else {
-    summary += 'no closed items were found in the last 30 days ΓÇö the ART may have WIP that is not completing. ';
+    summary += 'no closed items were found in the last 30 days — the ART may have WIP that is not completing. ';
   }
 
   if (totalWip > 0) {
@@ -25570,11 +25587,11 @@ function rhNarrativeFlow(results) {
 
   if (agingTroubled.length > 0) {
     summary += agingTroubled.map(function(r) { return '<strong>' + rhEsc(r.name) + '</strong> (' + r.avgAge + 'd avg WIP age)'; }).join(', ');
-    summary += ' ' + (agingTroubled.length === 1 ? 'has' : 'have') + ' severely aged work ΓÇö likely blocked or deprioritized. ';
+    summary += ' ' + (agingTroubled.length === 1 ? 'has' : 'have') + ' severely aged work — likely blocked or deprioritized. ';
   } else if (agingWarning.length > 0) {
-    summary += agingWarning.map(function(r) { return rhEsc(r.name); }).join(', ') + ' showing elevated WIP age ΓÇö worth a check-in before items become blocked. ';
+    summary += agingWarning.map(function(r) { return rhEsc(r.name); }).join(', ') + ' showing elevated WIP age — worth a check-in before items become blocked. ';
   } else if (totalWip > 0) {
-    summary += 'WIP aging is healthy ΓÇö all teams are moving work within expected timeframes. ';
+    summary += 'WIP aging is healthy — all teams are moving work within expected timeframes. ';
   }
   return summary;
 }
@@ -25590,11 +25607,11 @@ function rhNarrativeQuality(results) {
   var trend = rhTrendArrow('qualityTotal', artTotal, true);
   var s = 'As of <strong>' + rhToday() + '</strong>, the ART has <strong>' + artTotal + ' open defect' + (artTotal===1?'':'s') + '</strong>' + (trend ? ' ' + trend : '') + '. ';
   if (artCrit > 0) {
-    s += '<strong style="color:#ef4444;">' + rhPluralize(artCrit, 'critical defect') + '</strong> ' + (artCrit===1?'is':'are') + ' open ΓÇö these are release blockers that must be resolved or accepted before any PI increment boundary. ';
+    s += '<strong style="color:#ef4444;">' + rhPluralize(artCrit, 'critical defect') + '</strong> ' + (artCrit===1?'is':'are') + ' open — these are release blockers that must be resolved or accepted before any PI increment boundary. ';
   } else if (artHigh > 0) {
     s += 'No critical defects are open. ' + rhPluralize(artHigh, 'high-severity defect') + ' warrant monitoring before the next release. ';
   } else if (artTotal === 0) {
-    s += 'The ART is defect-free at this snapshot ΓÇö excellent quality posture. ';
+    s += 'The ART is defect-free at this snapshot — excellent quality posture. ';
   } else {
     s += 'No critical or high-severity defects are open. Quality posture is acceptable. ';
   }
@@ -25602,7 +25619,7 @@ function rhNarrativeQuality(results) {
     s += rhEsc(worstTeam.name) + ' carries the highest critical load (' + worstTeam.critical + ') and should be the first escalation point. ';
   }
   if (zeroDef > 0) {
-    s += rhPluralize(zeroDef, 'team') + ' ' + (zeroDef===1?'has':'have') + ' zero open defects ΓÇö recognize their quality discipline.';
+    s += rhPluralize(zeroDef, 'team') + ' ' + (zeroDef===1?'has':'have') + ' zero open defects — recognize their quality discipline.';
   }
   rhStoreTrendMetric('qualityTotal', artTotal);
   return s;
@@ -25628,10 +25645,10 @@ function rhNarrativeThroughput(teams, throughputData) {
   var avgTrend = trendSums.length ? Math.round(trendSums.reduce(function(s,v){return s+v;},0)/trendSums.length) : null;
   var s = 'As of <strong>' + rhToday() + '</strong>, throughput data spans <strong>' + rhPluralize(teamNames.length, 'team') + '</strong>. ';
   if (avgTrend !== null) {
-    s += 'The ART is trending <strong>' + (avgTrend >= 0 ? 'Γû▓ +' + avgTrend : 'Γû╝ ' + avgTrend) + '% on average</strong> (first clean month vs. latest). ';
-    if (avgTrend > 15) s += 'This is a strong acceleration signal ΓÇö teams are maturing in the new environment. ';
+    s += 'The ART is trending <strong>' + (avgTrend >= 0 ? '▲ +' + avgTrend : '▼ ' + avgTrend) + '% on average</strong> (first clean month vs. latest). ';
+    if (avgTrend > 15) s += 'This is a strong acceleration signal — teams are maturing in the new environment. ';
     else if (avgTrend > 0) s += 'Modest but positive momentum. ';
-    else if (avgTrend < -15) s += 'A declining trend warrants investigation ΓÇö capacity constraints or scope growth may be the driver. ';
+    else if (avgTrend < -15) s += 'A declining trend warrants investigation — capacity constraints or scope growth may be the driver. ';
     else s += 'Throughput is relatively flat. ';
   }
   if (topTeam && topTeam !== bottomTeam) {
@@ -25654,26 +25671,26 @@ function rhNarrativeDefects(results) {
   var trend = rhTrendArrow('defectTotal', total, true);
   var s = 'As of <strong>' + rhToday() + '</strong>, the ART has <strong>' + total + ' open defect' + (total===1?'':'s') + '</strong>' + (trend ? ' ' + trend : '') + ' across ' + rhPluralize(valid.length, 'team') + '. ';
   if (critical > 0) {
-    s += '<strong style="color:#ef4444;">' + rhPluralize(critical, 'critical/blocker defect') + '</strong> ' + (critical===1?'requires':'require') + ' immediate action ΓÇö release should not proceed until resolved or formally accepted. ';
+    s += '<strong style="color:#ef4444;">' + rhPluralize(critical, 'critical/blocker defect') + '</strong> ' + (critical===1?'requires':'require') + ' immediate action — release should not proceed until resolved or formally accepted. ';
   } else {
     s += 'No critical or blocker defects are open. ';
   }
   if (stuck > 0) {
-    s += '<strong>' + rhPluralize(stuck, 'item') + '</strong> have not been updated in 5+ days ΓÇö likely blocked, deprioritized, or forgotten. These need owner accountability. ';
+    s += '<strong>' + rhPluralize(stuck, 'item') + '</strong> have not been updated in 5+ days — likely blocked, deprioritized, or forgotten. These need owner accountability. ';
   }
   if (overdue > 0) {
     s += '<strong style="color:#ef4444;">' + rhPluralize(overdue, 'defect') + '</strong> ' + (overdue===1?'is':'are') + ' past due date and require immediate triage. ';
   }
   if (heaviest && total > 0) {
     var hPct = Math.round(((heaviest.issues||[]).length / total) * 100);
-    if (hPct > 40) s += '<strong>' + rhEsc(heaviest.name) + '</strong> carries ' + hPct + '% of the ART\'s defect load ΓÇö consider focused quality support for this team.';
+    if (hPct > 40) s += '<strong>' + rhEsc(heaviest.name) + '</strong> carries ' + hPct + '% of the ART\'s defect load — consider focused quality support for this team.';
   }
   rhStoreTrendMetric('defectTotal', total);
   return s;
 }
 
 function rhNarrativeRisks(issues) {
-  if (!issues || !issues.length) return 'No open risk items found across the ART. Either risks are being managed proactively, or they haven\'t been documented in Jira yet ΓÇö the latter is more common.';
+  if (!issues || !issues.length) return 'No open risk items found across the ART. Either risks are being managed proactively, or they haven\'t been documented in Jira yet — the latter is more common.';
   var critical = issues.filter(function(r){ return rhPriorityColor((r.fields.priority&&r.fields.priority.name)||'') === '#ef4444'; }).length;
   var unassigned = issues.filter(function(r){ return !r.fields.assignee; }).length;
   var overdue = issues.filter(function(r){ return r.fields.duedate && new Date(r.fields.duedate) < new Date(); }).length;
@@ -25683,26 +25700,26 @@ function rhNarrativeRisks(issues) {
   var trend = rhTrendArrow('riskTotal', issues.length, true);
   var s = 'As of <strong>' + rhToday() + '</strong>, there are <strong>' + rhPluralize(issues.length, 'open risk') + '</strong>' + (trend ? ' ' + trend : '') + ' across ' + rhPluralize(teamCount, 'team') + '. ';
   if (critical > 0) {
-    s += '<strong style="color:#ef4444;">' + rhPluralize(critical, 'critical risk') + '</strong> require escalation to the RTE immediately ΓÇö critical risks left unaddressed are the most common cause of PI planning failures. ';
+    s += '<strong style="color:#ef4444;">' + rhPluralize(critical, 'critical risk') + '</strong> require escalation to the RTE immediately — critical risks left unaddressed are the most common cause of PI planning failures. ';
   }
   if (unassigned > 0) {
-    s += '<strong style="color:#f59e0b;">' + rhPluralize(unassigned, 'risk') + ' ' + (unassigned===1?'has':'have') + ' no owner</strong> ΓÇö unowned risks are virtually guaranteed to be forgotten. Assign accountability before the next ART sync. ';
+    s += '<strong style="color:#f59e0b;">' + rhPluralize(unassigned, 'risk') + ' ' + (unassigned===1?'has':'have') + ' no owner</strong> — unowned risks are virtually guaranteed to be forgotten. Assign accountability before the next ART sync. ';
   }
   if (overdue > 0) {
     s += rhPluralize(overdue, 'risk') + ' ' + (overdue===1?'is':'are') + ' past their target resolution date. ';
   }
   if (!critical && !unassigned && !overdue) {
-    s += 'All risks are assigned and within target dates ΓÇö a well-managed risk backlog.';
+    s += 'All risks are assigned and within target dates — a well-managed risk backlog.';
   }
   rhStoreTrendMetric('riskTotal', issues.length);
   return s;
 }
 
-// ΓöÇΓöÇ SHARED HELPERS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// -- SHARED HELPERS ------------------------------------------------------------
 
 // Maps a Jira priority name to a color using Jira's 5-tier warm-to-cool ramp.
-// Tier 1 (Critical/Blocker/Highest) ΓåÆ red, Tier 2 (High) ΓåÆ orange,
-// Tier 3 (Medium) ΓåÆ amber, Tier 4 (Low) ΓåÆ blue, Tier 5 (Lowest/unknown) ΓåÆ gray.
+// Tier 1 (Critical/Blocker/Highest) → red, Tier 2 (High) → orange,
+// Tier 3 (Medium) → amber, Tier 4 (Low) → blue, Tier 5 (Lowest/unknown) → gray.
 function rhPriorityColor(p) {
   // Delegates to the shared canonical palette so all tools stay in sync.
   return tbxPriorityColor(p);
@@ -25735,32 +25752,32 @@ function rhPriorityIcon(p) {
 
   var path;
   if (isCritical) {
-    // Double upward chevron ΓÇö Tier 1: Critical / Blocker / Highest
+    // Double upward chevron — Tier 1: Critical / Blocker / Highest
     path = '<path d="M8 1 L15 8 L10.5 8 L10.5 9.5 L5.5 9.5 L5.5 8 L1 8 Z" fill="' + color + '"/>' +
            '<path d="M8 5.5 L15 12.5 L10.5 12.5 L10.5 14 L5.5 14 L5.5 12.5 L1 12.5 Z" fill="' + color + '" opacity="0.55"/>';
   } else if (isHigh) {
-    // Single upward arrow ΓÇö Tier 2: High
+    // Single upward arrow — Tier 2: High
     path = '<path d="M8 1.5 L14.5 9 L10.5 9 L10.5 14.5 L5.5 14.5 L5.5 9 L1.5 9 Z" fill="' + color + '"/>';
   } else if (isMedium) {
-    // Right-pointing arrow ΓÇö Tier 3: Medium
+    // Right-pointing arrow — Tier 3: Medium
     path = '<path d="M1.5 5.5 L9 5.5 L9 1.5 L14.5 8 L9 14.5 L9 10.5 L1.5 10.5 Z" fill="' + color + '"/>';
   } else if (isLow) {
-    // Single downward arrow ΓÇö Tier 4: Low (vertical mirror of High)
+    // Single downward arrow — Tier 4: Low (vertical mirror of High)
     path = '<path d="M8 14.5 L14.5 7 L10.5 7 L10.5 1.5 L5.5 1.5 L5.5 7 L1.5 7 Z" fill="' + color + '"/>';
   } else {
-    // Double downward chevron ΓÇö Tier 5: Lowest / unrecognised (vertical mirror of Critical)
+    // Double downward chevron — Tier 5: Lowest / unrecognised (vertical mirror of Critical)
     path = '<path d="M8 15 L15 8 L10.5 8 L10.5 6.5 L5.5 6.5 L5.5 8 L1 8 Z" fill="' + color + '"/>' +
            '<path d="M8 10.5 L15 3.5 L10.5 3.5 L10.5 2 L5.5 2 L5.5 3.5 L1 3.5 Z" fill="' + color + '" opacity="0.55"/>';
   }
 
-  return '<span title="' + rhEsc(p || 'ΓÇö') + '" style="display:inline-flex;align-items:center;vertical-align:middle;">' +
+  return '<span title="' + rhEsc(p || '—') + '" style="display:inline-flex;align-items:center;vertical-align:middle;">' +
     '<svg viewBox="0 0 16 16" width="14" height="14" style="display:block;" xmlns="http://www.w3.org/2000/svg">' +
     path + '</svg></span>';
 }
 
 // Delegates to the shared palette. Kept for backward compatibility with all
 // existing Reports Hub call sites. Previously this function had conflicting
-// colour values vs sdStatusColor ΓÇö now both use the same canonical palette.
+// colour values vs sdStatusColor — now both use the same canonical palette.
 function rhStatusColor(statusName) { return tbxStatusColor(statusName); }
 
 function rhDonutChart(segments, size, centerLabel) {
@@ -25801,19 +25818,19 @@ function rhKeyLink(key) {
   // tbxCRGenJiraUrl is the canonical Jira base URL set during app configuration
   // stopPropagation prevents the row-level onclick (expand) from firing when the link is clicked
   var base = tbxJiraBaseUrl();
-  if (base) return '<a href="' + base + '/browse/' + rhEsc(key) + '" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:none;font-weight:600;">' + rhEsc(key) + ' Γåù</a>';
+  if (base) return '<a href="' + base + '/browse/' + rhEsc(key) + '" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:none;font-weight:600;">' + rhEsc(key) + ' ✕</a>';
   return rhEsc(key);
 }
 
 function rhDueCell(duedate, extraStyle) {
-  if (!duedate) return '<td style="padding:7px 10px;border-bottom:1px solid var(--border);color:var(--text-muted);' + (extraStyle||'') + '">ΓÇö</td>';
+  if (!duedate) return '<td style="padding:7px 10px;border-bottom:1px solid var(--border);color:var(--text-muted);' + (extraStyle||'') + '">—</td>';
   var d = new Date(duedate);
   var overdue = d < new Date();
   var str = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
-  return '<td style="padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap;' + (overdue ? 'color:#ef4444;font-weight:600;' : 'color:var(--text-muted);') + (extraStyle||'') + '">' + str + (overdue ? ' ΓÜá' : '') + '</td>';
+  return '<td style="padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap;' + (overdue ? 'color:#ef4444;font-weight:600;' : 'color:var(--text-muted);') + (extraStyle||'') + '">' + str + (overdue ? ' ⚠' : '') + '</td>';
 }
 
-// ΓöÇΓöÇ DEFECT TRACKER ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// -- DEFECT TRACKER ------------------------------------------------------------
 
 function rhFetchTeamDefects(team) {
   var key = team.projectKey.trim().toUpperCase();
@@ -25840,7 +25857,7 @@ function rhFetchDefects() {
   var teams = rhGetArtTeams();
   if (!teams.length) { rhSetPanel('defects', rhEmptyState('No ART teams configured.')); return; }
   RH_STATE.generatingDefects = true;
-  rhSetPanel('defects', rhLoadingState('Scanning open defects across ' + teams.length + ' teamsΓÇª'));
+  rhSetPanel('defects', rhLoadingState('Scanning open defects across ' + teams.length + ' teams...'));
   Promise.all(teams.map(rhFetchTeamDefects)).then(function(results) {
     RH_STATE.defectData = results;
     RH_STATE.generatingDefects = false;
@@ -25901,13 +25918,13 @@ function rhRenderDefects(results) {
     html += '<div style="background:#ef444418;border-left:4px solid #ef4444;border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">';
     html += '<span style="font-size:18px;">≡ƒÜ¿</span><div>';
     html += '<div style="font-size:13px;font-weight:700;color:#ef4444;">' + byCrit + ' Critical/Blocker defect' + (byCrit > 1 ? 's' : '') + ' open across the ART</div>';
-    html += '<div style="font-size:11px;color:var(--text-muted);">Requires immediate attention ΓÇö these are release blockers</div></div></div>';
+    html += '<div style="font-size:11px;color:var(--text-muted);">Requires immediate attention — these are release blockers</div></div></div>';
   } else if (total > 0) {
     html += '<div style="background:#f59e0b18;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;padding:10px 16px;margin-bottom:16px;">';
-    html += '<span style="font-weight:700;color:#f59e0b;">' + total + ' open defect' + (total > 1 ? 's' : '') + ' across ' + results.filter(function(r) { return (r.issues || []).length > 0; }).length + ' teams ΓÇö no critical blockers</span></div>';
+    html += '<span style="font-weight:700;color:#f59e0b;">' + total + ' open defect' + (total > 1 ? 's' : '') + ' across ' + results.filter(function(r) { return (r.issues || []).length > 0; }).length + ' teams — no critical blockers</span></div>';
   } else {
     html += '<div style="background:#10b98118;border-left:4px solid #10b981;border-radius:0 8px 8px 0;padding:10px 16px;margin-bottom:16px;">';
-    html += '<span style="font-weight:700;color:#10b981;">Γ£à No open defects across all ART teams</span></div>';
+    html += '<span style="font-weight:700;color:#10b981;">✓ No open defects across all ART teams</span></div>';
   }
 
   if (total > 0) {
@@ -25936,12 +25953,12 @@ function rhRenderDefects(results) {
     html += '<span style="font-weight:700;font-size:13px;">' + rhEsc(r.name) + '</span>';
     html += rhKeyBadge(r.key);
     html += '<span style="font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:2px 8px;">' + issues.length + ' open</span>';
-    if (stuck > 0) html += '<span style="font-size:11px;background:#f59e0b18;border:1px solid #f59e0b;border-radius:12px;padding:2px 8px;color:#f59e0b;">ΓÅ│ ' + stuck + ' possibly stuck</span>';
-    if (r.error) html += '<span style="font-size:11px;color:var(--danger);">ΓÜá ' + rhEsc(r.error) + '</span>';
+    if (stuck > 0) html += '<span style="font-size:11px;background:#f59e0b18;border:1px solid #f59e0b;border-radius:12px;padding:2px 8px;color:#f59e0b;"> ' + stuck + ' possibly stuck</span>';
+    if (r.error) html += '<span style="font-size:11px;color:var(--danger);">⚠ ' + rhEsc(r.error) + '</span>';
     html += '</summary>';
 
     if (!issues.length) {
-      html += '<div style="padding:14px 16px;font-size:12px;color:var(--text-muted);">Γ£à No open defects</div>';
+      html += '<div style="padding:14px 16px;font-size:12px;color:var(--text-muted);">✓ No open defects</div>';
     } else {
       html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
       html += '<thead><tr style="background:var(--bg);">';
@@ -25952,24 +25969,24 @@ function rhRenderDefects(results) {
       html += '</tr></thead><tbody>';
 
       issues.forEach(function(i) {
-        var p = (i.fields.priority && i.fields.priority.name) || 'ΓÇö';
+        var p = (i.fields.priority && i.fields.priority.name) || '—';
         var pColor = rhPriorityColor(p);
-        var sname = (i.fields.status && i.fields.status.name) || 'ΓÇö';
-        var fixVers = (i.fields.fixVersions || []).map(function(v) { return v.name; }).join(', ') || 'ΓÇö';
+        var sname = (i.fields.status && i.fields.status.name) || '—';
+        var fixVers = (i.fields.fixVersions || []).map(function(v) { return v.name; }).join(', ') || '—';
         var lastUpdDays = (now - new Date(i.fields.updated).getTime()) / 86400000;
         var isStuck = lastUpdDays > 5;
         var due = i.fields.duedate;
-        var dueStr = due ? new Date(due).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : 'ΓÇö';
+        var dueStr = due ? new Date(due).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—';
         var isOverdue = due && new Date(due) < new Date();
 
         html += '<tr' + (isStuck ? ' style="background:rgba(245,158,11,0.04);"' : '') + '>';
         html += '<td style="padding:7px 10px;border-bottom:1px solid var(--border);text-align:center;">' + rhPriorityIcon(p) + '</td>';
         html += '<td style="padding:7px 10px;border-bottom:1px solid var(--border);">' + rhStatusBadge(sname);
-        if (isStuck) html += ' <span title="Not updated in ' + Math.round(lastUpdDays) + 'd" style="font-size:9px;color:#f59e0b;cursor:help;">ΓÅ│</span>';
+        if (isStuck) html += ' <span title="Not updated in ' + Math.round(lastUpdDays) + 'd" style="font-size:9px;color:#f59e0b;cursor:help;"></span>';
         html += '</td>';
         html += '<td style="padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap;">' + rhKeyLink(i.key) + '</td>';
         html += '<td style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted);">' + rhEsc(fixVers) + '</td>';
-        html += '<td style="padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap;' + (isOverdue ? 'color:#ef4444;font-weight:700;' : 'color:var(--text-muted);') + '">' + dueStr + (isOverdue ? ' ΓÜá' : '') + '</td>';
+        html += '<td style="padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap;' + (isOverdue ? 'color:#ef4444;font-weight:700;' : 'color:var(--text-muted);') + '">' + dueStr + (isOverdue ? ' ⚠' : '') + '</td>';
         html += '<td style="padding:7px 10px;border-bottom:1px solid var(--border);">' + rhEsc(i.fields.summary || '') + '</td>';
         html += '</tr>';
       });
@@ -25978,20 +25995,20 @@ function rhRenderDefects(results) {
     html += '</details>';
   });
 
-  html += '<details style="font-size:12px;margin-top:4px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">Γä╣ How to read this report</summary>';
+  html += '<details style="font-size:12px;margin-top:4px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">ℹ️ How to read this report</summary>';
   html += '<div style="padding:8px 12px;background:var(--bg);border-radius:6px;margin-top:6px;line-height:1.7;color:var(--text-muted);">';
-  html += '<strong>Priority icon:</strong> ≡ƒö┤ Critical/Blocker ┬╖ ≡ƒƒá High/Major ┬╖ ≡ƒƒí Medium ┬╖ ≡ƒö╡ Low ┬╖ ΓÜ½ Lowest<br>';
-  html += '<strong>ΓÅ│ Possibly Stuck</strong> = defect not updated in 5+ days ΓÇö likely blocked, deprioritized, or lost track of.<br>';
+  html += '<strong>Priority icon:</strong> 🐛 Critical/Blocker · ≡ƒƒá High/Major · 📊 Medium · ≡ƒö╡ Low · 🔒 Lowest<br>';
+  html += '<strong> Possibly Stuck</strong> = defect not updated in 5+ days — likely blocked, deprioritized, or lost track of.<br>';
   html += '<strong>Fix Version</strong> = target release version set in Jira. Helps track when a defect is planned to ship.<br>';
-  html += '<strong>Due Date ΓÜá</strong> = past due. Requires immediate triage and owner accountability.<br>';
-  html += '<em>Data: Live Jira query per team with automatic issue-type fallback (Bug ΓåÆ Defect ΓåÆ Defect/Bug).</em>';
+  html += '<strong>Due Date ⚠</strong> = past due. Requires immediate triage and owner accountability.<br>';
+  html += '<em>Data: Live Jira query per team with automatic issue-type fallback (Bug → Defect → Defect/Bug).</em>';
   html += '</div></details>';
 
   rhSetPanel('defects', html);
   rhUpdateHealthScore();
 }
 
-// ΓöÇΓöÇ FEATURE BOARD ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// -- FEATURE BOARD -------------------------------------------------------------
 
 // Switches between PI and Fix Version filter modes without re-fetching data.
 // Clears the current filter value because it belongs to the old field type,
@@ -26004,7 +26021,7 @@ function rhUpdateFeatureMode(newMode) {
   var isPI = newMode === 'pi';
   // If we're switching to PI mode and haven't loaded PI values yet, trigger a background fetch
   if (isPI && !RH_STATE.featurePIValuesLoaded) {
-    // PI values not loaded yet ΓÇö let rhFetchFeatures handle the full flow:
+    // PI values not loaded yet — let rhFetchFeatures handle the full flow:
     // it will fetch PI values, auto-select the current PI, then load feature data.
     rhFetchFeatures();
     return;
@@ -26030,7 +26047,7 @@ function rhFilterVersionOptions(filterText) {
 
   // Preserve the current selection so switching back to "all" keeps the chosen value
   var currentValue = select.value;
-  var placeholderText = 'ΓÇö Select ' + (isPI ? 'PI' : 'Fix Version') + ' ΓÇö';
+  var placeholderText = '— Select ' + (isPI ? 'PI' : 'Fix Version') + ' —';
   select.innerHTML = '<option value="">' + placeholderText + '</option>';
   filtered.forEach(function(v) {
     var opt = document.createElement('option');
@@ -26045,7 +26062,7 @@ function rhFilterVersionOptions(filterText) {
 // Wrapped in a known div ID so rhUpdateFeatureMode() can replace it in-place.
 // Uses a text filter input + <select> dropdown for a visible, clickable option list.
 // `versions` carries either featurePIValues (PI mode) or featureVersions (Fix Version mode)
-// depending on which the caller passes ΓÇö the select shows exactly what was given.
+// depending on which the caller passes — the select shows exactly what was given.
 function rhFeatureFormHtml(teams, piFilter, teamFilter, versions) {
   var isPIMode = RH_STATE.featurePIMode === 'pi';
   var selectStyle = 'width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:12px;box-sizing:border-box;';
@@ -26063,7 +26080,7 @@ function rhFeatureFormHtml(teams, piFilter, teamFilter, versions) {
 
   var h = '<div id="rh-feat-form-wrap" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:16px;">';
 
-  // ΓöÇΓöÇ PI / Fix Version ΓÇö pill toggle + filter input + select dropdown ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- PI / Fix Version — pill toggle + filter input + select dropdown ---------
   h += '<div style="flex:2;min-width:240px;">';
   // Label row: field name + PI|Fix Version pill toggle
   h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">';
@@ -26074,22 +26091,22 @@ function rhFeatureFormHtml(teams, piFilter, teamFilter, versions) {
   h += '</div></div>';
 
   if (hasLoadedOptions) {
-    // Filter text input ΓÇö rebuilds the <select> options on each keystroke
-    h += '<input type="text" id="rh-feat-pi-filter" placeholder="Type to filterΓÇª" style="' + inputStyle + '" oninput="rhFilterVersionOptions(this.value)">';
-    // Actual visible dropdown ΓÇö the value here is what gets sent to the JQL query
+    // Filter text input — rebuilds the <select> options on each keystroke
+    h += '<input type="text" id="rh-feat-pi-filter" placeholder="Type to filter..." style="' + inputStyle + '" oninput="rhFilterVersionOptions(this.value)">';
+    // Actual visible dropdown — the value here is what gets sent to the JQL query
     h += '<select id="rh-feat-pi" style="' + selectStyle + '">';
-    h += '<option value="">ΓÇö Select ' + (isPIMode ? 'PI' : 'Fix Version') + ' ΓÇö</option>';
+    h += '<option value="">— Select ' + (isPIMode ? 'PI' : 'Fix Version') + ' —</option>';
     optionList.forEach(function(v) {
       h += '<option value="' + rhEsc(v) + '"' + (piFilter === v ? ' selected' : '') + '>' + rhEsc(v) + '</option>';
     });
     h += '</select>';
   } else {
-    // Values are still loading ΓÇö show a disabled placeholder select.
+    // Values are still loading — show a disabled placeholder select.
     // CRITICAL: value="" is required so select.value returns "" (falsy), not the
-    // placeholder text. Without it, the Load button reads "Loading PI valuesΓÇª"
+    // placeholder text. Without it, the Load button reads "Loading PI values..."
     // as a real JQL filter value and stores it in RH_STATE.featurePIFilter.
     h += '<select id="rh-feat-pi" disabled style="' + selectStyle + 'opacity:0.55;cursor:not-allowed;">';
-    h += '<option value="">Loading ' + (isPIMode ? 'PI values' : 'fix versions') + 'ΓÇª</option>';
+    h += '<option value="">Loading ' + (isPIMode ? 'PI values' : 'fix versions') + '...</option>';
     h += '</select>';
   }
 
@@ -26111,12 +26128,12 @@ function rhFetchFeatures(piFilter, teamFilter) {
   var isPI = RH_STATE.featurePIMode === 'pi';
 
   // Fetch the appropriate option list on first call for the active mode.
-  // PI values come from customfield_10301 on real issues ΓÇö NOT from fix versions.
+  // PI values come from customfield_10301 on real issues — NOT from fix versions.
   // Fix Version values come from the project versions API.
   if (isPI && !RH_STATE.featurePIValuesLoaded) {
     RH_STATE.generatingFeatures = true;
     var versionPanel = document.getElementById('rh-panel-features');
-    if (versionPanel) versionPanel.innerHTML = rhFeatureFormHtml(teams, piFilter || '', teamFilter || '', []) + rhLoadingState('Fetching PI values from JiraΓÇª');
+    if (versionPanel) versionPanel.innerHTML = rhFeatureFormHtml(teams, piFilter || '', teamFilter || '', []) + rhLoadingState('Fetching PI values from Jira...');
     rhFetchFeaturePIValues(teams, function(loadedPIValues, currentPI) {
       // Mark as loaded BEFORE the recursive call so this branch never runs again for this session.
       RH_STATE.featurePIValuesLoaded = true;
@@ -26133,7 +26150,7 @@ function rhFetchFeatures(piFilter, teamFilter) {
   if (!isPI && !RH_STATE.featureVersionsLoaded) {
     RH_STATE.generatingFeatures = true;
     var versionPanel2 = document.getElementById('rh-panel-features');
-    if (versionPanel2) versionPanel2.innerHTML = rhFeatureFormHtml(teams, piFilter || '', teamFilter || '', []) + rhLoadingState('Fetching available fix versionsΓÇª');
+    if (versionPanel2) versionPanel2.innerHTML = rhFeatureFormHtml(teams, piFilter || '', teamFilter || '', []) + rhLoadingState('Fetching available fix versions...');
     rhFetchFeatureVersions(teams, function(loadedVersions) {
       // Mark as loaded BEFORE the recursive call so this branch never runs again for this session.
       RH_STATE.featureVersionsLoaded = true;
@@ -26149,9 +26166,9 @@ function rhFetchFeatures(piFilter, teamFilter) {
   RH_STATE.featurePIFilter = piFilter || '';
   RH_STATE.featureTeamFilter = teamFilter || '';
   var panel = document.getElementById('rh-panel-features');
-  if (panel) panel.innerHTML = rhFeatureFormHtml(teams, piFilter || '', teamFilter || '', isPI ? RH_STATE.featurePIValues : RH_STATE.featureVersions) + rhLoadingState('Discovering features across ' + filteredTeams.length + ' team' + (filteredTeams.length > 1 ? 's' : '') + 'ΓÇª');
+  if (panel) panel.innerHTML = rhFeatureFormHtml(teams, piFilter || '', teamFilter || '', isPI ? RH_STATE.featurePIValues : RH_STATE.featureVersions) + rhLoadingState('Discovering features across ' + filteredTeams.length + ' team' + (filteredTeams.length > 1 ? 's' : '') + '...');
 
-  // ΓöÇΓöÇ Bottom-up discovery: team stories ΓåÆ Feature Link ΓåÆ parent features ΓöÇΓöÇ
+  // -- Bottom-up discovery: team stories → Feature Link → parent features --
   // Features live in a portfolio-level project, NOT in team project keys.
   // We discover them by fetching team stories first, reading their Feature Link
   // (or parent) field, then batch-fetching the linked parent issues.
@@ -26207,7 +26224,7 @@ function rhFetchFeatures(piFilter, teamFilter) {
     }
 
     // Step 3: Batch-fetch parent features from portfolio project
-    if (panel) panel.innerHTML = rhFeatureFormHtml(teams, piFilter || '', teamFilter || '', isPI ? RH_STATE.featurePIValues : RH_STATE.featureVersions) + rhLoadingState('Found ' + parentKeys.length + ' linked feature' + (parentKeys.length > 1 ? 's' : '') + ' ΓÇö loading detailsΓÇª');
+    if (panel) panel.innerHTML = rhFeatureFormHtml(teams, piFilter || '', teamFilter || '', isPI ? RH_STATE.featurePIValues : RH_STATE.featureVersions) + rhLoadingState('Found ' + parentKeys.length + ' linked feature' + (parentKeys.length > 1 ? 's' : '') + ' — loading details...');
     var featFields = 'summary,status,priority,fixVersions,duedate,updated,assignee,issuelinks,customfield_10015,customfield_10016,customfield_10014,customfield_10301,labels,issuetype';
     var batches = [];
     for (var bi = 0; bi < parentKeys.length; bi += 50) batches.push(parentKeys.slice(bi, bi + 50));
@@ -26223,7 +26240,7 @@ function rhFetchFeatures(piFilter, teamFilter) {
       batchResults.forEach(function(b) { features = features.concat(b); });
 
       // Step 4: Build child map (% complete) and team map from team story results.
-      // Both maps are derived from the same team story data we already fetched ΓÇö
+      // Both maps are derived from the same team story data we already fetched —
       // no additional Jira calls needed.
       var childMap = {};
       var featureTeamMap = {};
@@ -26266,11 +26283,11 @@ function rhFetchFeatures(piFilter, teamFilter) {
     });
   }).catch(function(err) {
     RH_STATE.generatingFeatures = false;
-    if (panel) panel.innerHTML = rhFeatureFormHtml(teams, piFilter || '', teamFilter || '', isPI ? RH_STATE.featurePIValues : RH_STATE.featureVersions) + rhInsightBox('ΓÜá ' + ((err && err.message) || 'Failed to load features'));
+    if (panel) panel.innerHTML = rhFeatureFormHtml(teams, piFilter || '', teamFilter || '', isPI ? RH_STATE.featurePIValues : RH_STATE.featureVersions) + rhInsightBox('⚠ ' + ((err && err.message) || 'Failed to load features'));
   });
 }
 
-// ΓöÇΓöÇ FEATURE REPORT ΓÇö child issue batch fetch for % complete ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// -- FEATURE REPORT — child issue batch fetch for % complete -------------------
 // Makes ONE JQL call covering all loaded feature keys.
 // Tries both classic Jira "Epic Link" and next-gen "parent" relationships.
 // Groups children by parent feature key and returns a map of
@@ -26309,7 +26326,7 @@ function rhFetchFeatureChildMap(featureIssues, onDone) {
       onDone(childMap);
     })
     .catch(function() {
-      // Child fetch failure is non-fatal ΓÇö report renders without % complete data
+      // Child fetch failure is non-fatal — report renders without % complete data
       onDone({});
     });
 }
@@ -26319,7 +26336,7 @@ function rhFetchFeatureChildMap(featureIssues, onDone) {
 function rhPercentCompleteHtml(featureKey) {
   var childData = RH_STATE.featureChildMap[featureKey];
   if (!childData || childData.totalCount === 0) {
-    return '<span style="color:var(--text-muted);font-size:11px;">ΓÇö</span>';
+    return '<span style="color:var(--text-muted);font-size:11px;">—</span>';
   }
   var percentage = childData.totalSP > 0
     ? Math.round((childData.weightedSP / childData.totalSP) * 100)
@@ -26350,20 +26367,20 @@ function rhFeatureBusinessRuleAlerts(issue) {
   var targetStartRaw     = issue.fields.customfield_10015 || issue.fields.customfield_10020 || '';
   var targetEndRaw       = issue.fields.duedate || issue.fields.customfield_10021 || '';
 
-  // Rule 1 ΓÇö started but stuck in funnel
+  // Rule 1 — started but stuck in funnel
   if (targetStartRaw) {
     var startDate = new Date(String(targetStartRaw).substring(0, 10));
     var isInFunnel = statusName.indexOf('funnel') !== -1;
     if (!isNaN(startDate) && startDate < today && isInFunnel) {
-      alerts.push('<div style="background:#ef444418;border:1px solid #ef444440;border-radius:4px;padding:4px 8px;font-size:11px;color:#ef4444;margin-bottom:4px;">≡ƒÜ¿ <strong>Start date passed</strong> ΓÇö still in Funnel. Review readiness or update plan.</div>');
+      alerts.push('<div style="background:#ef444418;border:1px solid #ef444440;border-radius:4px;padding:4px 8px;font-size:11px;color:#ef4444;margin-bottom:4px;">≡ƒÜ¿ <strong>Start date passed</strong> — still in Funnel. Review readiness or update plan.</div>');
     }
   }
-  // Rule 2 ΓÇö end date passed but not in testing or done
+  // Rule 2 — end date passed but not in testing or done
   if (targetEndRaw) {
     var endDate = new Date(String(targetEndRaw).substring(0, 10));
     var isInTestingOrDone = statusName.indexOf('test') !== -1 || statusName.indexOf('accept') !== -1 || statusName.indexOf('review') !== -1 || statusCategoryKey === 'done';
     if (!isNaN(endDate) && endDate < today && !isInTestingOrDone) {
-      alerts.push('<div style="background:#f59e0b18;border:1px solid #f59e0b40;border-radius:4px;padding:4px 8px;font-size:11px;color:#d97706;margin-bottom:4px;">ΓÅ░ <strong>End date passed</strong> ΓÇö not yet in testing or done. Risk of PI miss.</div>');
+      alerts.push('<div style="background:#f59e0b18;border:1px solid #f59e0b40;border-radius:4px;padding:4px 8px;font-size:11px;color:#d97706;margin-bottom:4px;">🕐 <strong>End date passed</strong> — not yet in testing or done. Risk of PI miss.</div>');
     }
   }
   return alerts;
@@ -26373,7 +26390,7 @@ function rhFeatureBusinessRuleAlerts(issue) {
 // Clicking the header sets sort state and re-renders only the table body.
 function rhFeatSortHeader(label, colKey, currentSortCol, currentSortDir) {
   var isActive  = currentSortCol === colKey;
-  var sortArrow = isActive ? (currentSortDir === 'asc' ? ' Γû▓' : ' Γû╝') : '';
+  var sortArrow = isActive ? (currentSortDir === 'asc' ? ' ▲' : ' ▼') : '';
   var headerStyle = 'padding:8px 10px;text-align:left;font-size:10px;font-weight:600;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap;user-select:none;' +
     (isActive ? 'color:var(--accent);' : 'color:var(--text-muted);');
   return '<th style="' + headerStyle + '" onclick="rhFeatSetSort(\'' + colKey + '\')">' + label + sortArrow + '</th>';
@@ -26416,7 +26433,7 @@ function rhFeatToggleExpand(key) {
   detailRow.style.display = 'table-row';
   var contentEl = document.getElementById('rh-feat-detail-content-' + key);
   if (contentEl && !contentEl.dataset.loaded) {
-    contentEl.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">ΓÅ│ LoadingΓÇª</span>';
+    contentEl.innerHTML = '<span style="font-size:11px;color:var(--text-muted);"> Loading...</span>';
     rhFeatLoadDetail(key);
   }
 }
@@ -26446,7 +26463,7 @@ function rhFeatRenderDetail(key, transitions, fields) {
   if (!contentEl) return;
   contentEl.dataset.loaded = '1';
 
-  var currentStatus = (fields.status && fields.status.name) || 'ΓÇö';
+  var currentStatus = (fields.status && fields.status.name) || '—';
   var targetStartValue = fields.customfield_10015 || '';
   var dueDateValue = fields.duedate || '';
 
@@ -26460,7 +26477,7 @@ function rhFeatRenderDetail(key, transitions, fields) {
     var body = typeof lastCmt.body === 'string' ? lastCmt.body : (lastCmt.body && lastCmt.body.content ? JSON.stringify(lastCmt.body.content).substring(0, 200) : '');
     lastCmtHtml = '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;padding:6px 8px;background:var(--bg);border-radius:4px;">' +
       '<strong>' + rhEsc(author) + '</strong> <span style="opacity:.6;">' + rhEsc(date) + '</span><br>' +
-      rhEsc(body.substring(0, 300)) + (body.length > 300 ? 'ΓÇª' : '') + '</div>';
+      rhEsc(body.substring(0, 300)) + (body.length > 300 ? '...' : '') + '</div>';
   }
 
   var h = '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">';
@@ -26471,7 +26488,7 @@ function rhFeatRenderDetail(key, transitions, fields) {
   h += '<div style="font-size:11px;margin-bottom:4px;">Current: <strong>' + rhEsc(currentStatus) + '</strong></div>';
   if (transitions.length) {
     h += '<select id="rh-feat-trans-' + key + '" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);font-size:11px;width:100%;">';
-    h += '<option value="">Move toΓÇª</option>';
+    h += '<option value="">Move to...</option>';
     transitions.forEach(function(t) {
       h += '<option value="' + t.id + '">' + rhEsc(t.name) + '</option>';
     });
@@ -26499,7 +26516,7 @@ function rhFeatRenderDetail(key, transitions, fields) {
   // Comment
   h += '<div style="flex:1;min-width:200px;">';
   h += '<label style="font-size:10px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:3px;">Add Comment</label>';
-  h += '<textarea id="rh-feat-comment-' + key + '" rows="2" placeholder="Write a commentΓÇª" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);font-size:11px;resize:vertical;"></textarea>';
+  h += '<textarea id="rh-feat-comment-' + key + '" rows="2" placeholder="Write a comment..." style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);font-size:11px;resize:vertical;"></textarea>';
   h += '<button onclick="rhFeatPostComment(\'' + key + '\')" style="margin-top:4px;padding:3px 10px;border:1px solid var(--border);border-radius:4px;background:var(--accent);color:#fff;font-size:10px;cursor:pointer;">Post</button>';
   h += '<span id="rh-feat-comment-msg-' + key + '" style="margin-left:8px;font-size:10px;"></span>';
   if (lastCmtHtml) h += lastCmtHtml;
@@ -26518,12 +26535,12 @@ function rhFeatUpdateStatus(key) {
     .then(function() {
       // Refresh the detail panel to show updated status
       var contentEl = document.getElementById('rh-feat-detail-content-' + key);
-      if (contentEl) { contentEl.dataset.loaded = ''; contentEl.innerHTML = '<span style="font-size:11px;color:#10b981;">Γ£ô Status updated ΓÇö reloadingΓÇª</span>'; }
+      if (contentEl) { contentEl.dataset.loaded = ''; contentEl.innerHTML = '<span style="font-size:11px;color:#10b981;">✔ Status updated — reloading...</span>'; }
       rhFeatLoadDetail(key);
     })
     .catch(function(err) {
       var contentEl = document.getElementById('rh-feat-detail-content-' + key);
-      if (contentEl) contentEl.insertAdjacentHTML('beforeend', '<div style="font-size:11px;color:#ef4444;margin-top:4px;">Γ¥î ' + rhEsc((err && err.message) || 'Update failed') + '</div>');
+      if (contentEl) contentEl.insertAdjacentHTML('beforeend', '<div style="font-size:11px;color:#ef4444;margin-top:4px;">❌ ' + rhEsc((err && err.message) || 'Update failed') + '</div>');
     });
 }
 
@@ -26543,7 +26560,7 @@ function rhFeatUpdateField(key, fieldId) {
     .catch(function(err) {
       input.style.borderColor = '#ef4444';
       var contentEl = document.getElementById('rh-feat-detail-content-' + key);
-      if (contentEl) contentEl.insertAdjacentHTML('beforeend', '<div style="font-size:11px;color:#ef4444;margin-top:4px;">Γ¥î ' + rhEsc((err && err.message) || 'Save failed') + '</div>');
+      if (contentEl) contentEl.insertAdjacentHTML('beforeend', '<div style="font-size:11px;color:#ef4444;margin-top:4px;">❌ ' + rhEsc((err && err.message) || 'Save failed') + '</div>');
     });
 }
 
@@ -26554,12 +26571,12 @@ function rhFeatPostComment(key) {
   if (!textarea || !textarea.value.trim()) return;
   var commentText = textarea.value.trim();
   textarea.disabled = true;
-  if (msgEl) msgEl.innerHTML = '<span style="color:var(--text-muted);">PostingΓÇª</span>';
+  if (msgEl) msgEl.innerHTML = '<span style="color:var(--text-muted);">Posting...</span>';
   tbxJiraRequest('POST', '/rest/api/2/issue/' + key + '/comment', { body: commentText })
     .then(function() {
       textarea.value = '';
       textarea.disabled = false;
-      if (msgEl) msgEl.innerHTML = '<span style="color:#10b981;">Γ£ô Comment posted</span>';
+      if (msgEl) msgEl.innerHTML = '<span style="color:#10b981;">✔ Comment posted</span>';
       setTimeout(function() { if (msgEl) msgEl.innerHTML = ''; }, 3000);
       // Refresh detail to show the new comment
       var contentEl = document.getElementById('rh-feat-detail-content-' + key);
@@ -26568,7 +26585,7 @@ function rhFeatPostComment(key) {
     })
     .catch(function(err) {
       textarea.disabled = false;
-      if (msgEl) msgEl.innerHTML = '<span style="color:#ef4444;">Γ¥î ' + rhEsc((err && err.message) || 'Post failed') + '</span>';
+      if (msgEl) msgEl.innerHTML = '<span style="color:#ef4444;">❌ ' + rhEsc((err && err.message) || 'Post failed') + '</span>';
     });
 }
 
@@ -26632,22 +26649,22 @@ function rhBuildFeatureTable(issues) {
   var today = new Date(); today.setHours(0, 0, 0, 0);
 
   sortedIssues.forEach(function(issue, rowIdx) {
-    var priorityName   = (issue.fields.priority && issue.fields.priority.name) || 'ΓÇö';
-    var statusName     = (issue.fields.status && issue.fields.status.name) || 'ΓÇö';
+    var priorityName   = (issue.fields.priority && issue.fields.priority.name) || '—';
+    var statusName     = (issue.fields.status && issue.fields.status.name) || '—';
     var isDone         = !!(issue.fields.status && issue.fields.status.statusCategory && issue.fields.status.statusCategory.key === 'done');
-    var fixVersionText = (issue.fields.fixVersions || []).map(function(v) { return v.name; }).join(', ') || 'ΓÇö';
+    var fixVersionText = (issue.fields.fixVersions || []).map(function(v) { return v.name; }).join(', ') || '—';
     var dueDateRaw     = issue.fields.duedate || '';
     var targetStartRaw = issue.fields.customfield_10015 || issue.fields.customfield_10020 || '';
     var targetEndRaw   = dueDateRaw || issue.fields.customfield_10021 || '';
 
     var formatDate = function(raw) {
-      if (!raw) return 'ΓÇö';
+      if (!raw) return '—';
       var d = new Date(String(raw).substring(0, 10));
-      return isNaN(d) ? 'ΓÇö' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+      return isNaN(d) ? '—' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
     };
     var isTargetEndOverdue = targetEndRaw && !isDone && new Date(String(targetEndRaw).substring(0, 10)) < today;
 
-    // Dependencies ΓÇö surface "blocks", "is blocked by", "depends on" link types
+    // Dependencies — surface "blocks", "is blocked by", "depends on" link types
     var depsHtml = '';
     (issue.fields.issuelinks || []).forEach(function(link) {
       var linkedIssue = link.inwardIssue || link.outwardIssue;
@@ -26658,7 +26675,7 @@ function rhBuildFeatureTable(issues) {
       depsHtml += '<div style="font-size:10px;margin-bottom:2px;">' +
         '<span style="color:' + linkColor + ';">' + rhEsc(direction) + '</span> ' + rhKeyLink(linkedIssue.key) + '</div>';
     });
-    if (!depsHtml) depsHtml = '<span style="color:var(--text-muted);font-size:11px;">ΓÇö</span>';
+    if (!depsHtml) depsHtml = '<span style="color:var(--text-muted);font-size:11px;">—</span>';
 
     // Collect business rule alerts for this row
     var rowAlerts = rhFeatureBusinessRuleAlerts(issue);
@@ -26669,16 +26686,16 @@ function rhBuildFeatureTable(issues) {
     h += '<tr style="cursor:pointer;' + rowStyle + '" onclick="rhFeatToggleExpand(\'' + issue.key + '\')">';
     h += '<td style="padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;width:80px;">' + rhPriorityIcon(priorityName) + ' <span style="font-size:10px;font-weight:600;color:' + rhPriorityColor(priorityName) + ';">' + rhEsc(priorityName) + '</span></td>';
 
-    // Feature column ΓÇö key + summary + alert badges stacked
+    // Feature column — key + summary + alert badges stacked
     h += '<td style="padding:8px 10px;border-bottom:1px solid var(--border);min-width:200px;max-width:280px;">';
-    h += '<div style="font-weight:600;font-size:12px;">' + rhKeyLink(issue.key) + (isDone ? ' <span style="font-size:10px;color:#10b981;font-weight:400;">Γ£ô</span>' : '') + '</div>';
-    h += '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">' + rhEsc((issue.fields.summary || '').substring(0, 80)) + (issue.fields.summary && issue.fields.summary.length > 80 ? 'ΓÇª' : '') + '</div>';
+    h += '<div style="font-weight:600;font-size:12px;">' + rhKeyLink(issue.key) + (isDone ? ' <span style="font-size:10px;color:#10b981;font-weight:400;">✔</span>' : '') + '</div>';
+    h += '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">' + rhEsc((issue.fields.summary || '').substring(0, 80)) + (issue.fields.summary && issue.fields.summary.length > 80 ? '...' : '') + '</div>';
     if (hasAlert) h += '<div style="margin-top:4px;">' + rowAlerts.join('') + '</div>';
     h += '</td>';
 
     h += '<td style="padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;">' + rhStatusBadge(statusName) + '</td>';
     h += '<td style="padding:8px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted);white-space:nowrap;">' + formatDate(targetStartRaw) + '</td>';
-    h += '<td style="padding:8px 10px;border-bottom:1px solid var(--border);font-size:11px;white-space:nowrap;' + (isTargetEndOverdue ? 'color:#ef4444;font-weight:700;' : 'color:var(--text-muted);') + '">' + formatDate(targetEndRaw) + (isTargetEndOverdue ? ' ΓÜá' : '') + '</td>';
+    h += '<td style="padding:8px 10px;border-bottom:1px solid var(--border);font-size:11px;white-space:nowrap;' + (isTargetEndOverdue ? 'color:#ef4444;font-weight:700;' : 'color:var(--text-muted);') + '">' + formatDate(targetEndRaw) + (isTargetEndOverdue ? ' ⚠' : '') + '</td>';
     h += '<td style="padding:8px 10px;border-bottom:1px solid var(--border);">' + rhPercentCompleteHtml(issue.key) + '</td>';
     h += '<td style="padding:8px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted);">' + rhEsc(fixVersionText) + '</td>';
     h += '<td style="padding:8px 10px;border-bottom:1px solid var(--border);">' + depsHtml + '</td>';
@@ -26708,11 +26725,11 @@ function rhRenderFeatures(issues, piFilter, teamFilter, teams) {
   var alertCount = issues.filter(function(i) { return rhFeatureBusinessRuleAlerts(i).length > 0; }).length;
 
   h += rhInsightBox('<strong>' + issues.length + ' feature' + (issues.length > 1 ? 's' : '') + ' loaded</strong>' +
-    (doneCount ? ' ΓÇö ' + doneCount + ' completed Γ£ô' : '') +
-    (alertCount ? ' ┬╖ <span style="color:#ef4444;font-weight:700;">ΓÜá ' + alertCount + ' alert' + (alertCount > 1 ? 's' : '') + '</span>' : '') +
-    '. Sortable columns ΓÇö click any header. Status and team filters update the view without a re-fetch.');
+    (doneCount ? ' — ' + doneCount + ' completed ✔' : '') +
+    (alertCount ? ' · <span style="color:#ef4444;font-weight:700;">⚠ ' + alertCount + ' alert' + (alertCount > 1 ? 's' : '') + '</span>' : '') +
+    '. Sortable columns — click any header. Status and team filters update the view without a re-fetch.');
 
-  // ΓöÇΓöÇ Post-fetch filter bar (status + team toggles) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Post-fetch filter bar (status + team toggles) -------------------------
   var uniqueStatuses = [];
   issues.forEach(function(issue) { var sn = (issue.fields.status && issue.fields.status.name) || ''; if (sn && uniqueStatuses.indexOf(sn) === -1) uniqueStatuses.push(sn); });
   uniqueStatuses.sort();
@@ -26729,7 +26746,7 @@ function rhRenderFeatures(issues, piFilter, teamFilter, teams) {
   });
   h += '</select></div>';
 
-  // Team filter ΓÇö pill toggles (one per ART team based on project key prefix)
+  // Team filter — pill toggles (one per ART team based on project key prefix)
   if (allTeams.length > 1) {
     h += '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">';
     h += '<span style="font-size:11px;font-weight:600;color:var(--text-muted);">Teams:</span>';
@@ -26755,14 +26772,14 @@ function rhRenderFeatures(issues, piFilter, teamFilter, teams) {
 
   h += rhBuildFeatureTable(filteredIssues);
 
-  h += '<details style="font-size:12px;margin-top:12px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">Γä╣ How to read this report</summary>';
+  h += '<details style="font-size:12px;margin-top:12px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">ℹ️ How to read this report</summary>';
   h += '<div style="padding:8px 12px;background:var(--bg);border-radius:6px;margin-top:6px;line-height:1.7;color:var(--text-muted);">';
-  h += '<strong>Sortable headers</strong> ΓÇö click any column header to sort ascending/descending.<br>';
-  h += '<strong>Status & Team filters</strong> ΓÇö filter loaded data without re-fetching from Jira.<br>';
-  h += '<strong>% Complete</strong> ΓÇö status-weighted story point roll-up from child issues: Done=100%, In Progress=50%, To Do=0%.<br>';
-  h += '<strong>≡ƒÜ¿ Start date passed</strong> ΓÇö Target start has passed and feature is still in Funnel status.<br>';
-  h += '<strong>ΓÅ░ End date passed</strong> ΓÇö Target end date has passed and feature is not yet in testing or done.<br>';
-  h += '<strong>Dependencies</strong> ΓÇö Jira issue links surfaced inline (blocks, is blocked by, depends on).<br>';
+  h += '<strong>Sortable headers</strong> — click any column header to sort ascending/descending.<br>';
+  h += '<strong>Status & Team filters</strong> — filter loaded data without re-fetching from Jira.<br>';
+  h += '<strong>% Complete</strong> — status-weighted story point roll-up from child issues: Done=100%, In Progress=50%, To Do=0%.<br>';
+  h += '<strong>≡ƒÜ¿ Start date passed</strong> — Target start has passed and feature is still in Funnel status.<br>';
+  h += '<strong>🕐 End date passed</strong> — Target end date has passed and feature is not yet in testing or done.<br>';
+  h += '<strong>Dependencies</strong> — Jira issue links surfaced inline (blocks, is blocked by, depends on).<br>';
   h += '<em>Data: Live Jira query for issuetype in ("Feature","Epic") across configured ART teams.</em>';
   h += '</div></details>';
 
@@ -26808,13 +26825,13 @@ function rhFeatToggleTeamFilter(projectKey) {
 
 
 
-// ΓöÇΓöÇ RISK BOARD ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// -- RISK BOARD ----------------------------------------------------------------
 
 function rhFetchRisks() {
   var teams = rhGetArtTeams();
   if (!teams.length) { rhSetPanel('risks', rhEmptyState('No ART teams configured.')); return; }
   RH_STATE.generatingRisks = true;
-  rhSetPanel('risks', rhLoadingState('Scanning risks across ' + teams.length + ' teamsΓÇª'));
+  rhSetPanel('risks', rhLoadingState('Scanning risks across ' + teams.length + ' teams...'));
   var keys = teams.map(function(t) { return t.projectKey.trim().toUpperCase(); }).join(',');
   var fields = 'summary,status,priority,assignee,duedate,updated,labels,issuelinks,customfield_10272';
   var jql1 = 'project in (' + keys + ') AND issuetype = "Risk" AND statusCategory != Done ORDER BY priority ASC';
@@ -26845,14 +26862,14 @@ function rhRenderRisks(issues) {
     h += '<span style="font-weight:700;color:#ef4444;">≡ƒÜ¿ ' + critical + ' Critical risk' + (critical > 1 ? 's' : '') + ' require immediate attention</span></div>';
   } else if (issues.length > 0) {
     h += '<div style="background:#f59e0b18;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;padding:10px 16px;margin-bottom:16px;">';
-    h += '<span style="font-weight:700;color:#f59e0b;">ΓÜá ' + issues.length + ' open risk' + (issues.length > 1 ? 's' : '') + ' ΓÇö no critical flags</span></div>';
+    h += '<span style="font-weight:700;color:#f59e0b;">⚠ ' + issues.length + ' open risk' + (issues.length > 1 ? 's' : '') + ' — no critical flags</span></div>';
   } else {
     h += '<div style="background:#10b98118;border-left:4px solid #10b981;border-radius:0 8px 8px 0;padding:10px 16px;margin-bottom:16px;">';
-    h += '<span style="font-weight:700;color:#10b981;">Γ£à No open risks found ΓÇö no "Risk" issue type or "risk" label issues found</span></div>';
+    h += '<span style="font-weight:700;color:#10b981;">✓ No open risks found — no "Risk" issue type or "risk" label issues found</span></div>';
   }
   if (!issues.length) { rhSetPanel('risks', h); return; }
 
-  h += rhInsightBox('<strong>Risk Board</strong> ΓÇö open risk items across the full ART. Queries the Jira "Risk" issue type first; if none exist, falls back to issues labeled "risk". Surfacing ART-level risk in a single view is a core RTE responsibility in SAFe.');
+  h += rhInsightBox('<strong>Risk Board</strong> — open risk items across the full ART. Queries the Jira "Risk" issue type first; if none exist, falls back to issues labeled "risk". Surfacing ART-level risk in a single view is a core RTE responsibility in SAFe.');
 
   var byStatus = {}, byTeam = {}, byPriority = {};
   issues.forEach(function(i) {
@@ -26903,15 +26920,15 @@ function rhRenderRisks(issues) {
   });
   h += '</tr></thead><tbody>';
   issues.forEach(function(i) {
-    var p = (i.fields.priority && i.fields.priority.name) || 'ΓÇö';
+    var p = (i.fields.priority && i.fields.priority.name) || '—';
     var pColor = rhPriorityColor(p);
-    var sname = (i.fields.status && i.fields.status.name) || 'ΓÇö';
+    var sname = (i.fields.status && i.fields.status.name) || '—';
     var assignee = i.fields.assignee || null;
-    var owner = (assignee && (assignee.displayName || assignee.name)) || 'ΓÜá Unassigned';
+    var owner = (assignee && (assignee.displayName || assignee.name)) || '⚠ Unassigned';
     var avatarUrl = assignee && assignee.avatarUrls && (assignee.avatarUrls['24x24'] || assignee.avatarUrls['32x32'] || assignee.avatarUrls['16x16'] || '');
     var isUnassigned = !assignee;
     var due = i.fields.duedate;
-    var dueStr = due ? new Date(due).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : 'ΓÇö';
+    var dueStr = due ? new Date(due).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—';
     var isOverdue = due && new Date(due) < new Date();
     h += '<tr>';
     h += '<td style="padding:8px 12px;border-bottom:1px solid var(--border);white-space:nowrap;">';
@@ -26941,16 +26958,16 @@ function rhRenderRisks(issues) {
         ? i.fields.customfield_10272
         : (i.fields.customfield_10272.value || i.fields.customfield_10272.name || '');
     }
-    h += '<td style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted);max-width:180px;">' + rhEsc(riskResponse.substring(0, 150) || 'ΓÇö') + '</td>';
-    h += '<td style="padding:8px 12px;border-bottom:1px solid var(--border);white-space:nowrap;' + (isOverdue ? 'color:#ef4444;font-weight:700;' : 'color:var(--text-muted);') + '">' + dueStr + (isOverdue ? ' ΓÜá' : '') + '</td>';
+    h += '<td style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted);max-width:180px;">' + rhEsc(riskResponse.substring(0, 150) || '—') + '</td>';
+    h += '<td style="padding:8px 12px;border-bottom:1px solid var(--border);white-space:nowrap;' + (isOverdue ? 'color:#ef4444;font-weight:700;' : 'color:var(--text-muted);') + '">' + dueStr + (isOverdue ? ' ⚠' : '') + '</td>';
     h += '</tr>';
   });
   h += '</tbody></table></div>';
 
-  h += '<details style="font-size:12px;margin-top:12px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">Γä╣ How to read this report</summary>';
+  h += '<details style="font-size:12px;margin-top:12px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">ℹ️ How to read this report</summary>';
   h += '<div style="padding:8px 12px;background:var(--bg);border-radius:6px;margin-top:6px;line-height:1.7;color:var(--text-muted);">';
   h += '<strong>Data sources</strong>: Jira "Risk" issue type first. Falls back to issues with "risk" label if none found.<br>';
-  h += '<strong>ΓÜá Unassigned risks</strong> are the most dangerous ΓÇö they belong to no one and are likely to be forgotten.<br>';
+  h += '<strong>⚠ Unassigned risks</strong> are the most dangerous — they belong to no one and are likely to be forgotten.<br>';
   h += '<strong>SAFe guidance</strong>: resolve or accept risks before PI boundary. Escalate Critical risks to RTE immediately.<br>';
   h += '<em>To track risks consistently, ask teams to use the Jira "Risk" issue type or apply a "risk" label.</em>';
   h += '</div></details>';
@@ -26959,14 +26976,14 @@ function rhRenderRisks(issues) {
   rhUpdateHealthScore();
 }
 
-// ΓöÇΓöÇ INDIVIDUAL BOARD ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// -- INDIVIDUAL BOARD ----------------------------------------------------------
 
 function rhIndividualFormHtml(user) {
-  var h = rhInsightBox('<strong>Individual Board</strong> ΓÇö All open work assigned to a specific team member across every ART project board in one view. Surfaces over-commitment and cross-team dependencies instantly.');
+  var h = rhInsightBox('<strong>Individual Board</strong> — All open work assigned to a specific team member across every ART project board in one view. Surfaces over-commitment and cross-team dependencies instantly.');
   h += '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:16px;">';
   h += '<div style="flex:1;min-width:200px;position:relative;">';
   h += '<label style="font-size:10px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Team Member</label>';
-  h += '<input type="text" id="rh-ind-user" autocomplete="off" value="' + rhEsc(user || '') + '" placeholder="Search by name or usernameΓÇª" ' +
+  h += '<input type="text" id="rh-ind-user" autocomplete="off" value="' + rhEsc(user || '') + '" placeholder="Search by name or username..." ' +
     'style="width:100%;padding:7px 11px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:13px;box-sizing:border-box;" ' +
     'oninput="rhIndividualSearch(this.value)" onkeydown="rhIndividualKeydown(event)">';
   h += '<div id="rh-ind-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;z-index:200;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.18);"></div>';
@@ -27063,7 +27080,7 @@ function rhFetchIndividual(user) {
   user = user.trim();
   RH_STATE.individualUser = user;
   var panel = document.getElementById('rh-panel-individual');
-  if (panel) panel.innerHTML = rhIndividualFormHtml(user) + rhLoadingState('Loading work for <strong>' + rhEsc(user) + '</strong>ΓÇª');
+  if (panel) panel.innerHTML = rhIndividualFormHtml(user) + rhLoadingState('Loading work for <strong>' + rhEsc(user) + '</strong>...');
   var keys = teams.map(function(t) { return t.projectKey.trim().toUpperCase(); }).join(',');
   var assigneeVal = user === 'currentUser()' ? 'currentUser()' : '"' + user + '"';
   var jql = 'project in (' + keys + ') AND assignee = ' + assigneeVal + ' AND statusCategory != Done ORDER BY issuetype ASC, priority ASC';
@@ -27074,7 +27091,7 @@ function rhFetchIndividual(user) {
     rhRenderIndividual(data.issues || [], user, false);
     rhUpdateTimestamp();
   }).catch(function(err) {
-    if (panel) panel.innerHTML = rhIndividualFormHtml(user) + rhInsightBox('ΓÜá Could not load: ' + ((err && err.message) || 'Unknown error'));
+    if (panel) panel.innerHTML = rhIndividualFormHtml(user) + rhInsightBox('⚠ Could not load: ' + ((err && err.message) || 'Unknown error'));
   });
 }
 
@@ -27099,16 +27116,16 @@ function rhRenderIndividual(issues, user, fromCache) {
   var hasBug = byType['Bug'] || byType['Defect'];
   if (hasFeatureOrEpic && hasStory && hasBug) {
     h += '<div style="background:#ef444418;border-left:4px solid #ef4444;border-radius:0 8px 8px 0;padding:10px 16px;margin-bottom:14px;">';
-    h += '<span style="font-weight:700;color:#ef4444;">ΓÜá Possible over-commitment</span> <span style="font-size:12px;color:var(--text-muted);">ΓÇö this person has Features, Stories, AND Bugs in flight simultaneously</span></div>';
+    h += '<span style="font-weight:700;color:#ef4444;">⚠ Possible over-commitment</span> <span style="font-size:12px;color:var(--text-muted);">— this person has Features, Stories, AND Bugs in flight simultaneously</span></div>';
   }
 
   h += '<div style="margin-bottom:14px;padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">';
-  h += '<div style="font-size:14px;font-weight:700;">≡ƒæñ ' + rhEsc(user) + '</div>';
+  h += '<div style="font-size:14px;font-weight:700;">👤 ' + rhEsc(user) + '</div>';
   h += '<div style="font-size:11px;color:var(--text-muted);">' + issues.length + ' open item' + (issues.length > 1 ? 's' : '') + '</div>';
   sortedTypes.forEach(function(t) { h += '<span style="font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:2px 8px;">' + rhEsc(t) + ' <strong>' + byType[t].length + '</strong></span>'; });
   h += '</div>';
 
-  var typeIcons = { Feature: '≡ƒù║∩╕Å', Epic: '≡ƒÅö∩╕Å', Story: '≡ƒôû', Bug: '≡ƒÉ¢', Defect: '≡ƒÉ¢', Task: 'Γ£à' };
+  var typeIcons = { Feature: '🏋️', Epic: '≡ƒÅö️', Story: '≡ƒôû', Bug: '≡ƒÉ¢', Defect: '≡ƒÉ¢', Task: '✓' };
   sortedTypes.forEach(function(typeName) {
     var typeIssues = byType[typeName];
     var icon = typeIcons[typeName] || '≡ƒôï';
@@ -27124,12 +27141,12 @@ function rhRenderIndividual(issues, user, fromCache) {
     });
     h += '</tr></thead><tbody>';
     typeIssues.forEach(function(i) {
-      var p = (i.fields.priority && i.fields.priority.name) || 'ΓÇö';
+      var p = (i.fields.priority && i.fields.priority.name) || '—';
       var pColor = rhPriorityColor(p);
-      var sname = (i.fields.status && i.fields.status.name) || 'ΓÇö';
-      var fixVers = (i.fields.fixVersions || []).map(function(v) { return v.name; }).join(', ') || 'ΓÇö';
+      var sname = (i.fields.status && i.fields.status.name) || '—';
+      var fixVers = (i.fields.fixVersions || []).map(function(v) { return v.name; }).join(', ') || '—';
       var due = i.fields.duedate;
-      var dueStr = due ? new Date(due).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : 'ΓÇö';
+      var dueStr = due ? new Date(due).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—';
       var isOverdue = due && new Date(due) < new Date();
       h += '<tr>';
       h += '<td style="padding:6px 12px;border-bottom:1px solid var(--border);text-align:center;">' + rhPriorityIcon(p) + '</td>';
@@ -27137,17 +27154,17 @@ function rhRenderIndividual(issues, user, fromCache) {
       h += '<td style="padding:6px 12px;border-bottom:1px solid var(--border);max-width:300px;">' + rhEsc(i.fields.summary || '') + '</td>';
       h += '<td style="padding:6px 12px;border-bottom:1px solid var(--border);">' + rhStatusBadge(sname) + '</td>';
       h += '<td style="padding:6px 12px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted);">' + rhEsc(fixVers) + '</td>';
-      h += '<td style="padding:6px 12px;border-bottom:1px solid var(--border);' + (isOverdue ? 'color:#ef4444;font-weight:700;' : 'color:var(--text-muted);') + '">' + dueStr + (isOverdue ? ' ΓÜá' : '') + '</td>';
+      h += '<td style="padding:6px 12px;border-bottom:1px solid var(--border);' + (isOverdue ? 'color:#ef4444;font-weight:700;' : 'color:var(--text-muted);') + '">' + dueStr + (isOverdue ? ' ⚠' : '') + '</td>';
       h += '</tr>';
     });
     h += '</tbody></table></div></details>';
   });
 
-  h += '<details style="font-size:12px;margin-top:4px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">Γä╣ How to read this report</summary>';
+  h += '<details style="font-size:12px;margin-top:4px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">ℹ️ How to read this report</summary>';
   h += '<div style="padding:8px 12px;background:var(--bg);border-radius:6px;margin-top:6px;line-height:1.7;color:var(--text-muted);">';
   h += 'Enter a Jira username (e.g. <code>john.smith</code>) or <code>currentUser()</code> for yourself.<br>';
-  h += '<strong>ΓÜá Over-commitment flag</strong>: triggered when someone has Features, Stories, AND Bugs in-flight simultaneously.<br>';
-  h += '<strong>Types grouped in order</strong>: Feature/Epic (PI commitments) ΓåÆ Story (sprint work) ΓåÆ Bug (quality debt).<br>';
+  h += '<strong>⚠ Over-commitment flag</strong>: triggered when someone has Features, Stories, AND Bugs in-flight simultaneously.<br>';
+  h += '<strong>Types grouped in order</strong>: Feature/Epic (PI commitments) → Story (sprint work) → Bug (quality debt).<br>';
   h += '<em>Data: Live Jira query on assignee field across all configured ART project keys.</em>';
   h += '</div></details>';
 
@@ -41025,7 +41042,7 @@ function prbFetchJiraPriorities() {
   var btn = document.getElementById('prb-fetch-priorities-btn');
   var resultEl = document.getElementById('prb-priority-map-result');
   if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Fetching…'; }
-  if (!CRG.relay.jiraReady) {
+  if (!tbxJiraReady()) {
     if (btn) { btn.disabled = false; btn.innerHTML = '⬇ Fetch from Jira'; }
     if (resultEl) { resultEl.style.color = '#ef4444'; resultEl.textContent = '❌ Jira relay not connected.'; }
     return;
@@ -42638,7 +42655,7 @@ function tbxAutoReconnect() {
   var jiraUrl = crGet('jiraUrl') || localStorage.getItem('tbxCRGenJiraUrl') || '';
   var snowUrl = crGet('snowUrl') || localStorage.getItem('tbxCRGenSnowUrl') || '';
   var confUrl = tbxGetConfUrl();
-  if (jiraUrl && !CRG.relay.jiraReady) tbxProbeRelay('jira');
+  if (jiraUrl && !tbxJiraReady()) tbxProbeRelay('jira');
   if (snowUrl && !CRG.relay.snowReady) tbxProbeRelay('snow');
   if (confUrl && !CRG.relay.confReady) tbxProbeRelay('conf');
 }
@@ -45032,7 +45049,7 @@ function trSearchUsers() {
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <div>
           <h3 style="margin:0">Performance Metrics</h3>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:2px">2026 Delivery Excellence · <span id="sd-metrics-board-type">detecting board typeΓÇª</span></div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px">2026 Delivery Excellence · <span id="sd-metrics-board-type">detecting board type...</span></div>
         </div>
         <button class="cr-btn cr-btn-primary cr-btn-sm" onclick="sdLoadMetrics()">🔄 Load Metrics</button>
       </div>
@@ -45082,7 +45099,7 @@ function trSearchUsers() {
         <strong style="color:#f97316;">🚨 Critical</strong>: ≤ 2 weeks &nbsp;·&nbsp;
         <strong style="color:#eab308;">🟡 Watch</strong>: ≤ 4 weeks &nbsp;·&nbsp;
         <strong style="color:#22c55e;">🟢 On Track</strong>: &gt; 4 weeks &nbsp;·&nbsp;
-        <strong style="color:var(--text-muted);">Γ¼£ No Date</strong>: unscheduled.
+        <strong style="color:var(--text-muted);">🔔 No Date</strong>: unscheduled.
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
         <div>

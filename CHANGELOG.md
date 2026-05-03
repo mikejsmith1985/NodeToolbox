@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.16] — Fix: Garbled characters, version display, Jira relay dependency (issue #31)
+
+### Fixed
+- **Garbled / mojibake characters throughout UI** — 1,595 garbled Unicode sequences
+  (mojibake from a CP1252→UTF-8 re-encoding incident) replaced with the correct symbols:
+  `—`, `•`, `·`, `…`, `↑`, `↓`, `▲`, `▼`, `⚠`, `✓`, `✔`, `→`, `↻`, `✕`, `⚡`, `🐛`,
+  `📊`, `❌`, `ℹ️`, `🔒`, and others. Reports Hub copy-text and on-screen labels now
+  display correctly.
+- **Version shown as v0.0.13 / v0.0.15 instead of v0.0.16** — `TOOLBOX_VERSION` constant
+  and the `<title>` tag were stale. Both now reflect `0.0.16` to match `package.json`.
+- **Jira operations blocked by "connect relay" message when proxy is connected** — All
+  Jira operation guards (`!CRG.relay.jiraReady`) have been replaced with the new
+  `tbxJiraReady()` helper which returns `true` immediately when the NodeToolbox proxy
+  server is active (`IS_NODETOOLBOX_SERVER = true`). Relay is still required in legacy
+  file:// mode. SNow relay guards are unchanged.
+
 ## [0.0.14] — Fix: Reports Hub rendering, version display, relay vs proxy status
 
 ### Fixed
