@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.17] — Fix: Reports Hub blank, garbled emoji, relay warning in proxy mode
+
+### Fixed
+- **Reports Hub opened blank / showed no content** — `rhOnOpen()` was never wired into
+  the `showView()` monkey-patch dispatcher that fires per-view initialization hooks. All
+  other views (Sprint Dashboard, My Issues, Work Log, etc.) had their `xOnOpen()` called
+  correctly; Reports Hub was simply absent from the list. Added the dispatch so `rhOnOpen()`
+  fires on every navigation to the Reports Hub, restoring connection-bar setup, hero render,
+  and tab state.
+- **72 garbled emoji characters remaining from prior fix** — The previous mojibake fix
+  (v0.0.16) corrected 1,595 sequences but missed 72 four-byte emoji (📦, 📈, 🗓, 🚨,
+  🟢, 🟠, 💯, 💡, 🔄, 🔍, 🔧, 📋, 📌, 📖, 🌊, 🐛, 🏃, 🏭, 🎯, 🔬, and others).
+  The root cause was CP437 encoding of `F0 9F xx xx` UTF-8 byte sequences — the same
+  codec corruption that caused the original incident. Applied a full CP437 reverse-lookup
+  decode to recover all remaining emoji.
+- **"Relay required — PAT saved, not connected" banner shown when connected via proxy** —
+  `tbxRenderJiraAuthWidget()` checks `tbxProxyStatus` from `sessionStorage`, but this key
+  is populated by an async fetch to `/api/proxy-status` that may not have resolved yet on
+  first render. The function would fall through to the relay warning block. Added an
+  `IS_NODETOOLBOX_SERVER` guard: when running on localhost and the async probe has not yet
+  completed (`tbxProxyChecked` not set), the widget now shows "⏧ Connecting to Jira via
+  proxy…" instead of the alarming relay-required banner.
+
 ## [0.0.16] — Fix: Garbled characters, version display, Jira relay dependency (issue #31)
 
 ### Fixed
