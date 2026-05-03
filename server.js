@@ -24,8 +24,8 @@ const { isPortInUse, resolvePortConflict }  = require('./src/utils/portManager')
 /** Default TCP port for the proxy server — matches the original ToolBox server for bookmark compatibility */
 const DEFAULT_PORT = 5555;
 
-/** Version string shown in the startup banner and /api/proxy-status response */
-const APP_VERSION = '1.0.0';
+/** Version string read from package.json — single source of truth shared with api.js */
+const APP_VERSION = require('./package.json').version;
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
