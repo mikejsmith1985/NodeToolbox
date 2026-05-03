@@ -4034,6 +4034,7 @@ function fbCopy(text) {
     if (id === 'code-walkthrough') wtOnOpen();
     if (id === 'admin-hub') adminHubOnOpen();
     if (id === 'ai-chat') { showView('home'); return; } // AI tool hidden — redirect home
+    if (id === 'reports-hub') { try { rhOnOpen(); } catch(e) { console.warn('[showView] rhOnOpen failed:', e); } }
   };
 })();
 
@@ -7060,6 +7061,11 @@ function tbxRenderJiraAuthWidget(containerId) {
   }
 
   // ── PAT saved but no relay — CORS will block direct fetches ──
+  // NodeToolbox proxy: show connecting state while async probe is in-flight
+  if (IS_NODETOOLBOX_SERVER && !sessionStorage.getItem('tbxProxyChecked')) {
+    el.innerHTML = '<div style="padding:8px 14px;border:1px solid #94a3b844;border-radius:8px;font-size:12px;color:#888;">⧗ Connecting to Jira via proxy…</div>';
+    return;
+  }
   if (hasPat) {
     var savedUrl = localStorage.getItem('tbxCRGenJiraUrl') || '';
     el.innerHTML = '<div style="background:var(--surface);border:1px solid #eab30866;border-radius:10px;padding:14px;">' +
@@ -23897,15 +23903,15 @@ function rhRenderHero() {
   }
 
   var html = '';
-  html += kpiCard('≡ƒÅâ', 'ART Teams', teams.length || teamCount || '—', 'var(--accent)', 'Configured in ART settings');
+  html += kpiCard('🏃', 'ART Teams', teams.length || teamCount || '—', 'var(--accent)', 'Configured in ART settings');
   if (avgTrend !== null) {
-    html += kpiCard('≡ƒôê', 'Throughput Trend', trendIcon + ' ' + Math.abs(avgTrend) + '%', trendColor, 'Avg month-over-month');
+    html += kpiCard('📈', 'Throughput Trend', trendIcon + ' ' + Math.abs(avgTrend) + '%', trendColor, 'Avg month-over-month');
   } else {
-    html += kpiCard('≡ƒôê', 'Throughput Trend', 'No data', 'var(--text-muted)', 'Run Impact Dashboard first');
+    html += kpiCard('📈', 'Throughput Trend', 'No data', 'var(--text-muted)', 'Run Impact Dashboard first');
   }
   html += kpiCard('', 'Reports', '<span style="font-size:13px;font-weight:600;color:var(--text-muted);">Loading...</span>', null, 'Sprint health &amp; quality scanning');
   html += '<div id="rh-health-score-kpi" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;position:relative;overflow:hidden;">' +
-    '<div style="position:absolute;top:10px;right:14px;font-size:22px;opacity:0.15;">≡ƒÆ»</div>' +
+    '<div style="position:absolute;top:10px;right:14px;font-size:22px;opacity:0.15;">💯</div>' +
     '<div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">ART Health Score</div>' +
     '<div style="font-size:26px;font-weight:800;color:var(--text-muted);line-height:1;">—</div>' +
     '<div style="font-size:11px;color:var(--text-muted);margin-top:5px;">Updates as reports load</div></div>';
@@ -24097,7 +24103,7 @@ function rhSetPanel(tab, html) {
 }
 
 function rhInsightBox(msg) {
-  return '<div style="background:rgba(96,165,250,.07);border-left:3px solid #60a5fa;border-radius:0 6px 6px 0;padding:10px 14px;font-size:12px;color:var(--text-muted);margin-bottom:14px;line-height:1.6;">≡ƒÆí ' + msg + '</div>';
+  return '<div style="background:rgba(96,165,250,.07);border-left:3px solid #60a5fa;border-radius:0 6px 6px 0;padding:10px 14px;font-size:12px;color:var(--text-muted);margin-bottom:14px;line-height:1.6;">💡 ' + msg + '</div>';
 }
 
 function rhEmptyState(msg) {
@@ -24141,7 +24147,7 @@ function rhReportPitch(tabId) {
     ],
     'sprint-health': [
       'Real-time pulse: how far through their sprint goal is each team <em>right now</em>?',
-      '🐛 &lt;30% done &nbsp;|&nbsp; 📊 30–50% &nbsp;|&nbsp; ≡ƒƒó &gt;50% — health triaged in seconds.',
+      '🐛 &lt;30% done &nbsp;|&nbsp; 📊 30–50% &nbsp;|&nbsp; 🟢 &gt;50% — health triaged in seconds.',
       'Identify at-risk teams before the sprint ends — not after the retrospective.',
       'Use for: Scrum of Scrums prep, mid-sprint steering, escalation decisions.'
     ],
@@ -24153,7 +24159,7 @@ function rhReportPitch(tabId) {
     ],
     quality: [
       'Open defect count by priority (Critical → Low) for every ART team — aggregated in one view.',
-      '≡ƒÜ¿ Any Critical defect is a stop-ship concern; surfaced immediately at the top.',
+      '🚨 Any Critical defect is a stop-ship concern; surfaced immediately at the top.',
       'Aggregate quality visibility is impossible in native Jira without switching boards.',
       'Use for: release gating, sprint reviews, executive risk briefings.'
     ],
@@ -24191,7 +24197,7 @@ function rhReportPitch(tabId) {
   var bullets = pitches[tabId];
   if (!bullets) return '';
   return '<div style="background:var(--bg);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:11px 16px;margin-bottom:16px;">' +
-    '<div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px;">≡ƒôï About this report</div>' +
+    '<div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px;">📋 About this report</div>' +
     '<ul style="margin:0;padding-left:18px;font-size:12px;line-height:1.75;color:var(--text);">' +
     bullets.map(function(b) { return '<li style="margin-bottom:2px;">' + b + '</li>'; }).join('') +
     '</ul></div>';
@@ -24291,7 +24297,7 @@ function rhRenderThroughput() {
     var bmRowData = bmDataDict[bmt.projectKey.toUpperCase()];
     if (!bmRowData || !bmRowData.monthly) return;
     html += '<tr style="color:var(--success);">';
-    html += '<td style="padding:8px 12px;border-bottom:1px solid var(--border);">≡ƒö¼ <strong>' + rhEsc(bmt.name) + '</strong> <span style="font-size:10px;color:var(--text-muted);font-weight:400;">control group</span></td>';
+    html += '<td style="padding:8px 12px;border-bottom:1px solid var(--border);">🔬 <strong>' + rhEsc(bmt.name) + '</strong> <span style="font-size:10px;color:var(--text-muted);font-weight:400;">control group</span></td>';
     bmRowData.monthly.forEach(function(m) {
       var isRef = m.source === 'reference';
       html += '<td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:right;' + (isRef ? 'color:var(--text-muted);font-style:italic;' : '') + '">' + (m.closed || 0) + (isRef ? '*' : '') + '</td>';
@@ -24389,7 +24395,7 @@ function rhRenderSprintHealth(results) {
 
   var bannerColor = atRisk > 0 ? '#ef444418' : watch > 0 ? '#f59e0b18' : '#10b98118';
   var bannerBorder = atRisk > 0 ? '#ef4444' : watch > 0 ? '#f59e0b' : '#10b981';
-  var bannerIcon = atRisk > 0 ? '🐛' : watch > 0 ? '📊' : '≡ƒƒó';
+  var bannerIcon = atRisk > 0 ? '🐛' : watch > 0 ? '📊' : '🟢';
   var bannerMsg = atRisk > 0
     ? atRisk + ' team' + (atRisk>1?'s':'')+' at risk — delivery in jeopardy this sprint'
     : watch > 0
@@ -24399,10 +24405,10 @@ function rhRenderSprintHealth(results) {
   html += '<div style="background:' + bannerColor + ';border-left:4px solid ' + bannerBorder + ';border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">';
   html += '<span style="font-size:20px;">' + bannerIcon + '</span>';
   html += '<div><div style="font-size:13px;font-weight:700;color:var(--text);">' + bannerMsg + '</div>';
-  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">≡ƒƒó On Track: ' + onTrack + ' &nbsp;·&nbsp; 📊 Watch: ' + watch + ' &nbsp;·&nbsp; 🐛 At Risk: ' + atRisk + (errCount?' &nbsp;·&nbsp; ⚠ Errors: '+errCount:'') + '</div></div>';
+  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">🟢 On Track: ' + onTrack + ' &nbsp;·&nbsp; 📊 Watch: ' + watch + ' &nbsp;·&nbsp; 🐛 At Risk: ' + atRisk + (errCount?' &nbsp;·&nbsp; ⚠ Errors: '+errCount:'') + '</div></div>';
   html += '</div>';
 
-  html += rhInsightBox('<strong>Sprint Health Scorecard</strong> — real-time sprint completion rate across all ART teams from a single view. No board-hopping required. ≡ƒƒó On Track = &gt;50% resolved · 📊 Watch = 30–50% · 🐛 At Risk = &lt;30%.');
+  html += rhInsightBox('<strong>Sprint Health Scorecard</strong> — real-time sprint completion rate across all ART teams from a single view. No board-hopping required. 🟢 On Track = &gt;50% resolved · 📊 Watch = 30–50% · 🐛 At Risk = &lt;30%.');
 
   html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:16px;">';
   results.forEach(function(r) {
@@ -24414,7 +24420,7 @@ function rhRenderSprintHealth(results) {
     }
     var pct = r.total > 0 ? Math.round((r.done / r.total) * 100) : 0;
     var statusColor = pct >= 50 ? '#10b981' : pct >= 30 ? '#f59e0b' : '#ef4444';
-    var statusLabel = pct >= 50 ? '≡ƒƒó On Track' : pct >= 30 ? '📊 Watch' : '🐛 At Risk';
+    var statusLabel = pct >= 50 ? '🟢 On Track' : pct >= 30 ? '📊 Watch' : '🐛 At Risk';
     html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;border-top:3px solid ' + statusColor + ';">';
     html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">';
     html += '<div><div style="font-weight:700;font-size:13px;">' + rhEsc(r.name) + '</div>';
@@ -24431,14 +24437,14 @@ function rhRenderSprintHealth(results) {
       html += '<div style="flex:1;text-align:center;"><div style="font-size:18px;font-weight:800;color:#ef4444;">' + r.blockers + '</div><div style="font-size:10px;color:var(--text-muted);">Blockers</div></div>';
     }
     html += '</div>';
-    if (r.sprintName) html += '<div style="font-size:10px;color:var(--text-muted);margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">≡ƒôà ' + rhEsc(r.sprintName) + '</div>';
+    if (r.sprintName) html += '<div style="font-size:10px;color:var(--text-muted);margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">📅 ' + rhEsc(r.sprintName) + '</div>';
     html += '</div>';
   });
   html += '</div>';
 
   html += '<details style="font-size:12px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">ℹ️ How to read this report</summary>';
   html += '<div style="padding:8px 12px;background:var(--bg);border-radius:6px;margin-top:6px;line-height:1.7;color:var(--text-muted);">';
-  html += '≡ƒƒó On Track = &gt;50% issues resolved · 📊 Watch = 30–50% · 🐛 At Risk = &lt;30%.<br>';
+  html += '🟢 On Track = &gt;50% issues resolved · 📊 Watch = 30–50% · 🐛 At Risk = &lt;30%.<br>';
   html += '<strong>In Progress</strong> count &gt;5 (amber) signals too much WIP — a common sprint health anti-pattern.<br>';
   html += '<strong>Blockers</strong> = issues flagged as impediments. Even one warrants immediate follow-up.<br>';
   html += '<em>Data: Live Jira query using sprint in openSprints() — works across all board configurations.</em>';
@@ -24531,7 +24537,7 @@ function rhRenderFlow(results) {
   var html = rhReportPitch('flow');
   html += rhNarrativeCard(rhNarrativeFlow(results));
 
-  // -- ≡ƒöä FLOW SECTION — issues that actually closed in the last 30 days --------
+  // -- 🔄 FLOW SECTION — issues that actually closed in the last 30 days --------
   var validResults = results.filter(function(r) { return !r.error; });
   var totalClosed30d = validResults.reduce(function(s, r) { return s + (r.closedLast30d || 0); }, 0);
   var teamsWithClosures = validResults.filter(function(r) { return r.closedLast30d > 0; });
@@ -24540,7 +24546,7 @@ function rhRenderFlow(results) {
     : 0;
 
   html += '<div style="margin:0 0 8px;display:flex;align-items:center;gap:10px;">';
-  html += '<span style="font-size:14px;font-weight:800;">≡ƒöä Flow</span>';
+  html += '<span style="font-size:14px;font-weight:800;">🔄 Flow</span>';
   html += '<span style="font-size:11px;color:var(--text-muted);">Issues <em>completed</em> in the last 30 days — throughput &amp; approx. cycle time</span>';
   html += '</div>';
 
@@ -24592,7 +24598,7 @@ function rhRenderFlow(results) {
 
   var agingBannerBg     = troubled > 0 ? '#ef444418' : warning > 0 ? '#f59e0b18' : '#10b98118';
   var agingBannerBorder = troubled > 0 ? '#ef4444'   : warning > 0 ? '#f59e0b'   : '#10b981';
-  var agingBannerIcon   = troubled > 0 ? '🐛' : warning > 0 ? '📊' : '≡ƒƒó';
+  var agingBannerIcon   = troubled > 0 ? '🐛' : warning > 0 ? '📊' : '🟢';
   var agingBannerMsg = troubled > 0
     ? troubled + ' team' + (troubled > 1 ? 's' : '') + ' have severely aged WIP (>14d avg) — flow is likely blocked'
     : warning > 0
@@ -24621,7 +24627,7 @@ function rhRenderFlow(results) {
       return;
     }
     var ageColor = r.avgAge > 14 ? '#ef4444' : r.avgAge > 7 ? '#f59e0b' : '#10b981';
-    var ageLabel = r.avgAge > 14 ? '🐛 Blocked' : r.avgAge > 7 ? '📊 Slowing' : '≡ƒƒó Flowing';
+    var ageLabel = r.avgAge > 14 ? '🐛 Blocked' : r.avgAge > 7 ? '📊 Slowing' : '🟢 Flowing';
     if (!r.wipCount) { ageColor = 'var(--text-muted)'; ageLabel = '— No WIP'; }
     html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;border-top:3px solid ' + ageColor + ';">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
@@ -24633,7 +24639,7 @@ function rhRenderFlow(results) {
     html += '<div style="flex:1;text-align:center;"><div style="font-size:20px;font-weight:800;">' + (r.wipCount || 0) + '</div><div style="font-size:9px;color:var(--text-muted);">In Progress</div></div>';
     if (r.maxAge > 0) html += '<div style="flex:1;text-align:center;"><div style="font-size:20px;font-weight:800;color:' + (r.maxAge > 21 ? '#ef4444' : 'var(--text-muted)') + ';">' + r.maxAge + 'd</div><div style="font-size:9px;color:var(--text-muted);">Oldest</div></div>';
     html += '</div>';
-    if (r.oldestSummary) html += '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;border-top:1px solid var(--border);padding-top:5px;" title="' + rhEsc(r.oldestSummary) + '">≡ƒôî ' + (r.oldestKey ? rhKeyLink(r.oldestKey) + ' ' : '') + rhEsc(r.oldestSummary.substring(0, 55)) + (r.oldestSummary.length > 55 ? '...' : '') + '</div>';
+    if (r.oldestSummary) html += '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;border-top:1px solid var(--border);padding-top:5px;" title="' + rhEsc(r.oldestSummary) + '">📌 ' + (r.oldestKey ? rhKeyLink(r.oldestKey) + ' ' : '') + rhEsc(r.oldestSummary.substring(0, 55)) + (r.oldestSummary.length > 55 ? '...' : '') + '</div>';
     html += '</div>';
   });
   html += '</div>';
@@ -24642,10 +24648,10 @@ function rhRenderFlow(results) {
 
   html += '<details style="font-size:12px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">ℹ️ How to read this report</summary>';
   html += '<div style="padding:8px 12px;background:var(--bg);border-radius:6px;margin-top:6px;line-height:1.7;color:var(--text-muted);">';
-  html += '<strong>≡ƒöä Flow</strong> — shows issues that <em>completed</em> in the last 30 days. A high closed count means the team is delivering. Zero closures = the team has WIP that isn\'t reaching done.<br>';
-  html += '<strong>Avg Cycle Time*</strong> = average days from issue creation to close. SAFe recommendation: keep stories under 5 active days. Colors: ≡ƒƒó &le;5d · 📊 6–14d · 🐛 &gt;14d.<br>';
+  html += '<strong>🔄 Flow</strong> — shows issues that <em>completed</em> in the last 30 days. A high closed count means the team is delivering. Zero closures = the team has WIP that isn\'t reaching done.<br>';
+  html += '<strong>Avg Cycle Time*</strong> = average days from issue creation to close. SAFe recommendation: keep stories under 5 active days. Colors: 🟢 &le;5d · 📊 6–14d · 🐛 &gt;14d.<br>';
   html += '<strong>⚡ Aging</strong> — shows items <em>currently stuck</em> in In Progress, sorted by team average age. High WIP age is an early warning signal that surfaces weeks before sprint metrics show a problem.<br>';
-  html += '🐛 Blocked = avg WIP age &gt;14d &nbsp;·&nbsp; 📊 Slowing = 7–14d &nbsp;·&nbsp; ≡ƒƒó Flowing = &lt;7d<br>';
+  html += '🐛 Blocked = avg WIP age &gt;14d &nbsp;·&nbsp; 📊 Slowing = 7–14d &nbsp;·&nbsp; 🟢 Flowing = &lt;7d<br>';
   html += '<em>Data: Live Jira queries. Flow = statusCategory Done, last 30 days. Aging = statusCategory "In Progress".</em>';
   html += '</div></details>';
 
@@ -24762,7 +24768,7 @@ function rhRenderQuality(results) {
 
   var TIER_ORDER  = ['Critical', 'High', 'Medium', 'Low', 'Lowest'];
   var TIER_COLORS = { Critical: '#ef4444', High: '#f97316', Medium: '#f59e0b', Low: '#3b82f6', Lowest: '#6b7280' };
-  var TIER_ICONS  = { Critical: '🐛', High: '≡ƒƒá', Medium: '📊', Low: '≡ƒö╡', Lowest: '🔒' };
+  var TIER_ICONS  = { Critical: '🐛', High: '🟠', Medium: '📊', Low: '🔵', Lowest: '🔒' };
 
   // -- ART-level aggregate totals ---------------------------------------------
   var artTotal = 0, artProd = 0, artNonProd = 0;
@@ -24830,7 +24836,7 @@ function rhRenderQuality(results) {
   // Alert banner — surface the most urgent finding immediately.
   if (artCritical > 0) {
     html += '<div style="background:#ef444422;border-left:5px solid #ef4444;border-radius:0 10px 10px 0;padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px;">';
-    html += '<span style="font-size:28px;">≡ƒÜ¿</span>';
+    html += '<span style="font-size:28px;">🚨</span>';
     html += '<div><div style="font-size:15px;font-weight:900;color:#ef4444;">' + artCritical + ' CRITICAL defect' + (artCritical>1?'s':'')+' open across the ART</div>';
     html += '<div style="font-size:12px;color:var(--text-muted);margin-top:3px;">Release risk — requires immediate attention before any PI increment boundary</div></div>';
     html += '</div>';
@@ -24848,10 +24854,10 @@ function rhRenderQuality(results) {
   var totalAccent = artCritical > 0 ? '#ef4444' : artHigh > 0 ? '#f97316' : '#10b981';
   html += '<div style="background:var(--surface);border:1px solid var(--border);border-top:4px solid ' + totalAccent + ';border-radius:12px;padding:20px;margin-bottom:16px;">';
   html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;">';
-  html += '<div><div style="font-size:16px;font-weight:900;color:var(--text);">≡ƒôï Total Open Defects</div>';
+  html += '<div><div style="font-size:16px;font-weight:900;color:var(--text);">📋 Total Open Defects</div>';
   html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">All open defects by team — Prod vs Non-Prod</div></div>';
   html += '<div style="text-align:right;"><div style="font-size:42px;font-weight:900;color:' + (artTotal>0?totalAccent:'var(--text-muted)') + ';line-height:1;">' + artTotal + '</div>';
-  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">≡ƒÅ¡ <strong style="color:' + (artProd>0?'#ef4444':'var(--text-muted)') + ';">' + artProd + '</strong> Prod &nbsp;·&nbsp; ≡ƒöº <strong style="color:' + (artNonProd>0?'#f59e0b':'var(--text-muted)') + ';">' + artNonProd + '</strong> Non-Prod</div>';
+  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">🏭 <strong style="color:' + (artProd>0?'#ef4444':'var(--text-muted)') + ';">' + artProd + '</strong> Prod &nbsp;·&nbsp; 🔧 <strong style="color:' + (artNonProd>0?'#f59e0b':'var(--text-muted)') + ';">' + artNonProd + '</strong> Non-Prod</div>';
   html += '</div></div>';
   html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
   results.forEach(function(r) {
@@ -24870,8 +24876,8 @@ function rhRenderQuality(results) {
     html += '</div>';
     html += '<div style="font-size:34px;font-weight:900;color:' + (r.total>0?rc:'var(--text-muted)') + ';line-height:1;margin-bottom:10px;">' + r.total + '</div>';
     html += '<div style="border-top:1px solid var(--border);padding-top:8px;display:flex;flex-direction:column;gap:4px;">';
-    html += '<div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--text-muted);">≡ƒÅ¡ Prod</span><span style="font-weight:800;font-size:13px;color:' + ((r.prod||0)>0?'#ef4444':'var(--text-muted)') + ';">' + (r.prod||0) + '</span></div>';
-    html += '<div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--text-muted);">≡ƒöº Non-Prod</span><span style="font-weight:800;font-size:13px;color:' + ((r.nonProd||0)>0?'#f59e0b':'var(--text-muted)') + ';">' + (r.nonProd||0) + '</span></div>';
+    html += '<div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--text-muted);">🏭 Prod</span><span style="font-weight:800;font-size:13px;color:' + ((r.prod||0)>0?'#ef4444':'var(--text-muted)') + ';">' + (r.prod||0) + '</span></div>';
+    html += '<div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--text-muted);">🔧 Non-Prod</span><span style="font-weight:800;font-size:13px;color:' + ((r.nonProd||0)>0?'#f59e0b':'var(--text-muted)') + ';">' + (r.nonProd||0) + '</span></div>';
     html += '</div></div>';
   });
   html += '</div></div>';
@@ -24879,7 +24885,7 @@ function rhRenderQuality(results) {
   // -- Card 2: Priority Breakdown ---------------------------------------------
   html += '<div style="background:var(--surface);border:1px solid var(--border);border-top:4px solid #f59e0b;border-radius:12px;padding:20px;margin-bottom:16px;">';
   html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;flex-wrap:wrap;gap:10px;">';
-  html += '<div><div style="font-size:16px;font-weight:900;color:var(--text);">≡ƒÄ» Priority Breakdown</div>';
+  html += '<div><div style="font-size:16px;font-weight:900;color:var(--text);">🎯 Priority Breakdown</div>';
   html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Click a tier row to open that severity slice in Jira</div></div>';
   // ART-level tier badge strip — only show tiers that have at least one issue.
   html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
@@ -24938,7 +24944,7 @@ function rhRenderQuality(results) {
   html += '<div><div style="font-size:16px;font-weight:900;color:var(--text);">🕐 Stale &gt;30 Days</div>';
   html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Defects open more than 30 days — unresolved technical debt</div></div>';
   html += '<div style="text-align:right;"><div style="font-size:42px;font-weight:900;color:' + (artStale>0?'#6366f1':'var(--text-muted)') + ';line-height:1;">' + artStale + '</div>';
-  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">≡ƒÅ¡ <strong style="color:' + (artProdStale>0?'#ef4444':'var(--text-muted)') + ';">' + artProdStale + '</strong> Prod &nbsp;·&nbsp; ≡ƒöº <strong style="color:' + (artNonProdStale>0?'#f59e0b':'var(--text-muted)') + ';">' + artNonProdStale + '</strong> Non-Prod</div>';
+  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">🏭 <strong style="color:' + (artProdStale>0?'#ef4444':'var(--text-muted)') + ';">' + artProdStale + '</strong> Prod &nbsp;·&nbsp; 🔧 <strong style="color:' + (artNonProdStale>0?'#f59e0b':'var(--text-muted)') + ';">' + artNonProdStale + '</strong> Non-Prod</div>';
   html += '</div></div>';
   html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
   results.forEach(function(r) {
@@ -24959,18 +24965,18 @@ function rhRenderQuality(results) {
     html += '</div>';
     html += '<div style="font-size:34px;font-weight:900;color:' + (sv>0?sc:'var(--text-muted)') + ';line-height:1;margin-bottom:10px;">' + sv + '</div>';
     html += '<div style="border-top:1px solid var(--border);padding-top:8px;display:flex;flex-direction:column;gap:4px;">';
-    html += '<div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--text-muted);">≡ƒÅ¡ Prod</span><span style="font-weight:800;font-size:13px;color:' + ((r.prodStale||0)>0?'#ef4444':'var(--text-muted)') + ';">' + (r.prodStale||0) + '</span></div>';
-    html += '<div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--text-muted);">≡ƒöº Non-Prod</span><span style="font-weight:800;font-size:13px;color:' + ((r.nonProdStale||0)>0?'#f59e0b':'var(--text-muted)') + ';">' + (r.nonProdStale||0) + '</span></div>';
+    html += '<div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--text-muted);">🏭 Prod</span><span style="font-weight:800;font-size:13px;color:' + ((r.prodStale||0)>0?'#ef4444':'var(--text-muted)') + ';">' + (r.prodStale||0) + '</span></div>';
+    html += '<div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--text-muted);">🔧 Non-Prod</span><span style="font-weight:800;font-size:13px;color:' + ((r.nonProdStale||0)>0?'#f59e0b':'var(--text-muted)') + ';">' + (r.nonProdStale||0) + '</span></div>';
     html += '</div></div>';
   });
   html += '</div></div>';
 
   html += '<details style="font-size:12px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">ℹ️ How to read this report</summary>';
   html += '<div style="padding:8px 12px;background:var(--bg);border-radius:6px;margin-top:6px;line-height:1.8;color:var(--text-muted);">';
-  html += '<strong>Priority tiers</strong>: 🐛 Critical (Blocker/P1/Highest) → ≡ƒƒá High (Major/P2) → 📊 Medium (P3) → ≡ƒö╡ Low (P4) → 🔒 Lowest.<br>';
+  html += '<strong>Priority tiers</strong>: 🐛 Critical (Blocker/P1/Highest) → 🟠 High (Major/P2) → 📊 Medium (P3) → 🔵 Low (P4) → 🔒 Lowest.<br>';
   html += '<strong>P / NP</strong> in priority rows = Prod count / Non-Prod count for that tier.<br>';
-  html += '<strong>Stale colour</strong>: ≡ƒƒú &gt;0 items, ≡ƒƒá &gt;2, 🐛 &gt;5 per team.<br>';
-  html += '<strong>≡ƒÅ¡ Prod</strong> = customfield_10253 contains "prod". <strong>≡ƒöº Non-Prod</strong> = all other values (Dev, QA, UAT, blank).<br>';
+  html += '<strong>Stale colour</strong>: 🟣 &gt;0 items, 🟠 &gt;2, 🐛 &gt;5 per team.<br>';
+  html += '<strong>🏭 Prod</strong> = customfield_10253 contains "prod". <strong>🔧 Non-Prod</strong> = all other values (Dev, QA, UAT, blank).<br>';
   html += '<strong>✕ Click team card</strong> to open all open defects for that team in Jira. Click a priority row to filter by that severity.<br>';
   html += '<em>Jira links require the Jira base URL to be set in CR Generator settings.</em>';
   html += '</div></details>';
@@ -25018,7 +25024,7 @@ function rhBuildCopyText(tab) {
 
     var lines = [];
     lines.push(dbl);
-    lines.push('  ≡ƒôê  ART THROUGHPUT REPORT');
+    lines.push('  📈  ART THROUGHPUT REPORT');
     lines.push('  Generated: ' + ts);
     lines.push(dbl);
     lines.push('');
@@ -25068,7 +25074,7 @@ function rhBuildCopyText(tab) {
     bmTeamsCopyList.forEach(function(bmt) {
       var bmRowData = bmDataDictCopy[bmt.projectKey.toUpperCase()];
       if (!bmRowData || !bmRowData.monthly) return;
-      var bmRow = rhPad('≡ƒö¼ ' + bmt.name + ' (control)', nameW);
+      var bmRow = rhPad('🔬 ' + bmt.name + ' (control)', nameW);
       bmRowData.monthly.forEach(function(m){ bmRow += rhPad(String(m.closed||0)+(m.source==='reference'?'*':''), colW, true); });
       bmRow += rhPad('', 9, true);
       lines.push(bmRow);
@@ -25097,11 +25103,11 @@ function rhBuildCopyText(tab) {
     var atRisk  = results.filter(function(r){ return !r.error && r.pctDone < 30; }).length;
     var artStatus = atRisk > 0 ? '🐛 ART AT RISK — ' + atRisk + ' team(s) with delivery in jeopardy'
       : watch > 0 ? '📊 WATCH — ' + watch + ' team(s) behind sprint pace'
-      : '≡ƒƒó ART ON TRACK — all teams pacing well this sprint';
+      : '🟢 ART ON TRACK — all teams pacing well this sprint';
 
     var lines = [];
     lines.push(dbl);
-    lines.push('  ≡ƒÅü  SPRINT HEALTH SCORECARD');
+    lines.push('  🏁  SPRINT HEALTH SCORECARD');
     lines.push('  Generated: ' + ts);
     lines.push(dbl);
     lines.push('');
@@ -25121,7 +25127,7 @@ function rhBuildCopyText(tab) {
     lines.push(sep);
     results.forEach(function(r) {
       if (r.error) { lines.push(rhPad(r.name, 18) + '⚠ ' + r.error); return; }
-      var status = r.pctDone >= 50 ? '≡ƒƒó On Track' : r.pctDone >= 30 ? '📊 Watch' : '🐛 At Risk';
+      var status = r.pctDone >= 50 ? '🟢 On Track' : r.pctDone >= 30 ? '📊 Watch' : '🐛 At Risk';
       var row = rhPad(r.name, 18) + rhPad(status, 14) + rhPad(r.pctDone+'%', 7, true)
         + rhPad(r.done+'/'+r.total, 12, true) + rhPad(String(r.inProgress||0), 5, true)
         + rhPad(String(r.blockers||0), 10, true) + '  ' + (r.sprintName || '');
@@ -25130,7 +25136,7 @@ function rhBuildCopyText(tab) {
     lines.push('');
     lines.push('HOW TO READ THIS REPORT');
     lines.push(sep);
-    lines.push('• ≡ƒƒó On Track = >50% of sprint issues resolved.');
+    lines.push('• 🟢 On Track = >50% of sprint issues resolved.');
     lines.push('• 📊 Watch = 30–50% resolved — behind pace, needs monitoring.');
     lines.push('• 🐛 At Risk = <30% resolved — delivery in jeopardy this sprint.');
     lines.push('• WIP (In Progress) count >5 signals too much work-in-progress — a common');
@@ -25151,11 +25157,11 @@ function rhBuildCopyText(tab) {
     var warning  = results.filter(function(r){ return !r.error && r.avgAge > 7 && r.avgAge <= 14; }).length;
     var artStatus = troubled > 0 ? '🐛 ' + troubled + ' team(s) have severely aged work (>14d avg) — flow is blocked'
       : warning > 0 ? '📊 ' + warning + ' team(s) showing elevated flow age (7–14d avg)'
-      : '≡ƒƒó ART flow is healthy — items moving within expected timeframes';
+      : '🟢 ART flow is healthy — items moving within expected timeframes';
 
     var lines = [];
     lines.push(dbl);
-    lines.push('  ≡ƒîè  FLOW & AGING REPORT');
+    lines.push('  🌊  FLOW & AGING REPORT');
     lines.push('  Generated: ' + ts);
     lines.push(dbl);
     lines.push('');
@@ -25176,7 +25182,7 @@ function rhBuildCopyText(tab) {
     lines.push(sep);
     results.forEach(function(r) {
       if (r.error) { lines.push(rhPad(r.name, 18) + '⚠ ' + r.error); return; }
-      var label = r.count === 0 ? '— No WIP' : r.avgAge > 14 ? '🐛 Blocked' : r.avgAge > 7 ? '📊 Slowing' : '≡ƒƒó Flowing';
+      var label = r.count === 0 ? '— No WIP' : r.avgAge > 14 ? '🐛 Blocked' : r.avgAge > 7 ? '📊 Slowing' : '🟢 Flowing';
       var row = rhPad(r.name, 18) + rhPad(label, 14) + rhPad(r.count===0?'—':(r.avgAge+'d'), 9, true)
         + rhPad(String(r.count), 5, true) + rhPad(r.oldest?(r.oldest+'d'):'—', 8, true)
         + rhPad(String(r.stale||0), 7, true) + '  ' + (r.oldestSummary ? r.oldestSummary.substring(0,50) : '');
@@ -25191,7 +25197,7 @@ function rhBuildCopyText(tab) {
     lines.push('  hidden dependency that nobody is actively managing.');
     lines.push('• Stale = items not updated in 5+ days. A stale item is often a blocker');
     lines.push('  in disguise.');
-    lines.push('• 🐛 Blocked = avg >14d · 📊 Slowing = 7–14d · ≡ƒƒó Flowing = <7d');
+    lines.push('• 🐛 Blocked = avg >14d · 📊 Slowing = 7–14d · 🟢 Flowing = <7d');
     lines.push('• Data: Live Jira query on statusCategory = "In Progress" items with');
     lines.push('  created/updated timestamps across all configured team project keys.');
     return lines.join('\n');
@@ -25202,13 +25208,13 @@ function rhBuildCopyText(tab) {
     var artTotal = 0, artCritical = 0, artHigh = 0, zeroDefect = 0;
     results.forEach(function(r){ if (!r.error){ artTotal+=r.total; artCritical+=r.critical; artHigh+=r.high; if(r.total===0)zeroDefect++; } });
     var artStatus = artCritical > 0
-      ? '≡ƒÜ¿ ' + artCritical + ' CRITICAL defect(s) open — release risk, immediate attention required'
+      ? '🚨 ' + artCritical + ' CRITICAL defect(s) open — release risk, immediate attention required'
       : artHigh > 0 ? '⚠ ' + artHigh + ' High-severity defect(s) open — monitor before next release'
       : '✓ No critical or high-severity defects — ART quality posture is healthy';
 
     var lines = [];
     lines.push(dbl);
-    lines.push('  ≡ƒÉ¢  QUALITY RADAR');
+    lines.push('  🐛  QUALITY RADAR');
     lines.push('  Generated: ' + ts);
     lines.push(dbl);
     lines.push('');
@@ -25229,7 +25235,7 @@ function rhBuildCopyText(tab) {
     lines.push(sep);
     results.forEach(function(r) {
       if (r.error) { lines.push(rhPad(r.name, 18) + '⚠ ' + r.error); return; }
-      var risk = r.critical > 0 ? '🐛 High Risk' : r.high > 0 ? '📊 Watch' : '≡ƒƒó Healthy';
+      var risk = r.critical > 0 ? '🐛 High Risk' : r.high > 0 ? '📊 Watch' : '🟢 Healthy';
       var row = rhPad(r.name, 18) + rhPad(risk, 14) + rhPad(String(r.total), 6, true)
         + rhPad(String(r.critical), 10, true) + rhPad(String(r.high), 6, true) + rhPad(String(r.newLast30||0), 9, true);
       lines.push(row);
@@ -25506,7 +25512,7 @@ function rhUpdateHealthScore() {
     var w = Math.round((c.score / c.max) * 100);
     return '<span title="' + c.label + ': ' + c.score + '/' + c.max + '" style="display:inline-block;width:12px;height:4px;border-radius:2px;background:' + hs.grade.color + ';opacity:' + (w/100*0.7+0.3).toFixed(2) + ';margin-right:2px;"></span>';
   }).join('');
-  el.innerHTML = '<div style="position:absolute;top:10px;right:14px;font-size:22px;opacity:0.15;">≡ƒÆ»</div>' +
+  el.innerHTML = '<div style="position:absolute;top:10px;right:14px;font-size:22px;opacity:0.15;">💯</div>' +
     '<div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">ART Health Score</div>' +
     '<div style="font-size:26px;font-weight:800;color:' + hs.grade.color + ';line-height:1;">' + hs.score + '<span style="font-size:14px;">/100</span></div>' +
     '<div style="font-size:11px;margin-top:5px;display:flex;align-items:center;gap:6px;">' +
@@ -25520,7 +25526,7 @@ function rhUpdateHealthScore() {
 
 function rhNarrativeCard(text) {
   return '<div style="background:linear-gradient(135deg,var(--surface) 0%,var(--bg) 100%);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;padding:14px 16px;margin-bottom:14px;">' +
-    '<div style="font-size:9px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;">≡ƒô¥ Director Summary</div>' +
+    '<div style="font-size:9px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;">📝 Director Summary</div>' +
     '<div style="font-size:13px;line-height:1.65;color:var(--text);">' + text + '</div></div>';
 }
 
@@ -25916,7 +25922,7 @@ function rhRenderDefects(results) {
 
   if (byCrit > 0) {
     html += '<div style="background:#ef444418;border-left:4px solid #ef4444;border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">';
-    html += '<span style="font-size:18px;">≡ƒÜ¿</span><div>';
+    html += '<span style="font-size:18px;">🚨</span><div>';
     html += '<div style="font-size:13px;font-weight:700;color:#ef4444;">' + byCrit + ' Critical/Blocker defect' + (byCrit > 1 ? 's' : '') + ' open across the ART</div>';
     html += '<div style="font-size:11px;color:var(--text-muted);">Requires immediate attention — these are release blockers</div></div></div>';
   } else if (total > 0) {
@@ -25997,7 +26003,7 @@ function rhRenderDefects(results) {
 
   html += '<details style="font-size:12px;margin-top:4px;"><summary style="cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0;">ℹ️ How to read this report</summary>';
   html += '<div style="padding:8px 12px;background:var(--bg);border-radius:6px;margin-top:6px;line-height:1.7;color:var(--text-muted);">';
-  html += '<strong>Priority icon:</strong> 🐛 Critical/Blocker · ≡ƒƒá High/Major · 📊 Medium · ≡ƒö╡ Low · 🔒 Lowest<br>';
+  html += '<strong>Priority icon:</strong> 🐛 Critical/Blocker · 🟠 High/Major · 📊 Medium · 🔵 Low · 🔒 Lowest<br>';
   html += '<strong> Possibly Stuck</strong> = defect not updated in 5+ days — likely blocked, deprioritized, or lost track of.<br>';
   html += '<strong>Fix Version</strong> = target release version set in Jira. Helps track when a defect is planned to ship.<br>';
   html += '<strong>Due Date ⚠</strong> = past due. Requires immediate triage and owner accountability.<br>';
@@ -26086,8 +26092,8 @@ function rhFeatureFormHtml(teams, piFilter, teamFilter, versions) {
   h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">';
   h += '<span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;">Filter By</span>';
   h += '<div style="' + pillWrapStyle + '">';
-  h += pillButtonHtml('≡ƒùô PI', 'pi', isPIMode);
-  h += pillButtonHtml('≡ƒôª Fix Version', 'fixversion', !isPIMode);
+  h += pillButtonHtml('🗓 PI', 'pi', isPIMode);
+  h += pillButtonHtml('📦 Fix Version', 'fixversion', !isPIMode);
   h += '</div></div>';
 
   if (hasLoadedOptions) {
@@ -26112,7 +26118,7 @@ function rhFeatureFormHtml(teams, piFilter, teamFilter, versions) {
 
   h += '</div>';
 
-  h += '<button class="cr-btn cr-btn-primary cr-btn-sm" onclick="rhFetchFeatures(document.getElementById(\'rh-feat-pi\').value||undefined)" style="white-space:nowrap;align-self:flex-end;">≡ƒöì Load</button>';
+  h += '<button class="cr-btn cr-btn-primary cr-btn-sm" onclick="rhFetchFeatures(document.getElementById(\'rh-feat-pi\').value||undefined)" style="white-space:nowrap;align-self:flex-end;">🔍 Load</button>';
   h += '</div>';
   return h;
 }
@@ -26372,7 +26378,7 @@ function rhFeatureBusinessRuleAlerts(issue) {
     var startDate = new Date(String(targetStartRaw).substring(0, 10));
     var isInFunnel = statusName.indexOf('funnel') !== -1;
     if (!isNaN(startDate) && startDate < today && isInFunnel) {
-      alerts.push('<div style="background:#ef444418;border:1px solid #ef444440;border-radius:4px;padding:4px 8px;font-size:11px;color:#ef4444;margin-bottom:4px;">≡ƒÜ¿ <strong>Start date passed</strong> — still in Funnel. Review readiness or update plan.</div>');
+      alerts.push('<div style="background:#ef444418;border:1px solid #ef444440;border-radius:4px;padding:4px 8px;font-size:11px;color:#ef4444;margin-bottom:4px;">🚨 <strong>Start date passed</strong> — still in Funnel. Review readiness or update plan.</div>');
     }
   }
   // Rule 2 — end date passed but not in testing or done
@@ -26777,7 +26783,7 @@ function rhRenderFeatures(issues, piFilter, teamFilter, teams) {
   h += '<strong>Sortable headers</strong> — click any column header to sort ascending/descending.<br>';
   h += '<strong>Status & Team filters</strong> — filter loaded data without re-fetching from Jira.<br>';
   h += '<strong>% Complete</strong> — status-weighted story point roll-up from child issues: Done=100%, In Progress=50%, To Do=0%.<br>';
-  h += '<strong>≡ƒÜ¿ Start date passed</strong> — Target start has passed and feature is still in Funnel status.<br>';
+  h += '<strong>🚨 Start date passed</strong> — Target start has passed and feature is still in Funnel status.<br>';
   h += '<strong>🕐 End date passed</strong> — Target end date has passed and feature is not yet in testing or done.<br>';
   h += '<strong>Dependencies</strong> — Jira issue links surfaced inline (blocks, is blocked by, depends on).<br>';
   h += '<em>Data: Live Jira query for issuetype in ("Feature","Epic") across configured ART teams.</em>';
@@ -26859,7 +26865,7 @@ function rhRenderRisks(issues) {
   h += rhNarrativeCard(rhNarrativeRisks(issues));
   if (critical > 0) {
     h += '<div style="background:#ef444418;border-left:4px solid #ef4444;border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:16px;">';
-    h += '<span style="font-weight:700;color:#ef4444;">≡ƒÜ¿ ' + critical + ' Critical risk' + (critical > 1 ? 's' : '') + ' require immediate attention</span></div>';
+    h += '<span style="font-weight:700;color:#ef4444;">🚨 ' + critical + ' Critical risk' + (critical > 1 ? 's' : '') + ' require immediate attention</span></div>';
   } else if (issues.length > 0) {
     h += '<div style="background:#f59e0b18;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;padding:10px 16px;margin-bottom:16px;">';
     h += '<span style="font-weight:700;color:#f59e0b;">⚠ ' + issues.length + ' open risk' + (issues.length > 1 ? 's' : '') + ' — no critical flags</span></div>';
@@ -26988,7 +26994,7 @@ function rhIndividualFormHtml(user) {
     'oninput="rhIndividualSearch(this.value)" onkeydown="rhIndividualKeydown(event)">';
   h += '<div id="rh-ind-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;z-index:200;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.18);"></div>';
   h += '</div>';
-  h += '<button class="cr-btn cr-btn-primary" onclick="rhFetchIndividual(document.getElementById(\'rh-ind-user\').value)" style="white-space:nowrap;align-self:flex-end;">≡ƒöì Load Work</button>';
+  h += '<button class="cr-btn cr-btn-primary" onclick="rhFetchIndividual(document.getElementById(\'rh-ind-user\').value)" style="white-space:nowrap;align-self:flex-end;">🔍 Load Work</button>';
   h += '</div>';
   return h;
 }
@@ -27125,10 +27131,10 @@ function rhRenderIndividual(issues, user, fromCache) {
   sortedTypes.forEach(function(t) { h += '<span style="font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:2px 8px;">' + rhEsc(t) + ' <strong>' + byType[t].length + '</strong></span>'; });
   h += '</div>';
 
-  var typeIcons = { Feature: '🏋️', Epic: '≡ƒÅö️', Story: '≡ƒôû', Bug: '≡ƒÉ¢', Defect: '≡ƒÉ¢', Task: '✓' };
+  var typeIcons = { Feature: '🏋️', Epic: '🏔️', Story: '📖', Bug: '🐛', Defect: '🐛', Task: '✓' };
   sortedTypes.forEach(function(typeName) {
     var typeIssues = byType[typeName];
-    var icon = typeIcons[typeName] || '≡ƒôï';
+    var icon = typeIcons[typeName] || '📋';
     h += '<details open style="margin-bottom:10px;">';
     h += '<summary style="cursor:pointer;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 14px;list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">';
     h += icon + ' <span style="font-weight:600;font-size:12px;">' + rhEsc(typeName) + '</span>';
