@@ -20,10 +20,11 @@
 #   - PowerShell 5.1+ (Compress-Archive is built-in on Windows 10+)
 
 param(
-    # Optional version bump type applied before building. When omitted the
-    # current version in package.json is used without modification.
+    # Optional version bump type or explicit version number.
+    # Accepts: 'major', 'minor', 'patch' (increments from current), or an
+    # explicit semver like '1.2.3' (sets that exact version regardless of current).
+    # When omitted, the current version in package.json is used without modification.
     [Parameter(Position = 0)]
-    [ValidateSet('major', 'minor', 'patch', '')]
     [string]$BumpType = '',
 
     # Preview mode — prints the plan without installing, building, tagging, or publishing.
@@ -52,20 +53,30 @@ $SilentLauncherPath = Join-Path $RepoRoot 'Launch Toolbox Silent.vbs'
 
 # ── Version Resolution ─────────────────────────────────────────────────────────
 
-# Bump package.json version in-place before reading it, if a bump type was given.
+# Bump or set package.json version before reading it, if a bump type or explicit
+# version was given.
 # --no-git-tag-version prevents npm from making its own commit and tag — the
 # release script handles all git operations explicitly for full control.
+# --allow-same-version lets re-runs safely set the same version without erroring
+# (useful when a previous release attempt partially bumped the version).
 if ($BumpType -ne '') {
     Write-Host ""
-    Write-Host "  Bumping version ($BumpType)..."
+    if ($BumpType -match '^\d+\.\d+\.\d+$') {
+        # Explicit version string (e.g. "0.0.14") — set it directly.
+        # This prevents double-bumping when the Release Manager card passes an exact
+        # next-version rather than a relative bump type.
+        Write-Host "  Setting explicit version ($BumpType)..."
+    } else {
+        Write-Host "  Bumping version ($BumpType)..."
+    }
     Push-Location $RepoRoot
     try {
-        npm version $BumpType --no-git-tag-version --silent
+        npm version $BumpType --no-git-tag-version --allow-same-version --silent
         if ($LASTEXITCODE -ne 0) { throw "npm version bump failed with exit code $LASTEXITCODE" }
     } finally {
         Pop-Location
     }
-    Write-Host "       ✅ Version bumped"
+    Write-Host "       ✅ Version set"
 }
 
 # Read version after any bump so the zip/exe names always match the tag
@@ -235,24 +246,45 @@ Remove-Item $ExeZipStagingDir -Recurse -Force
 $exeZipSizeKb = [math]::Round((Get-Item $ExeZipOutputPath).Length / 1KB)
 Write-Host "       ✅ $ExeZipOutputPath ($exeZipSizeKb KB)"
 
-# Step 6: Commit version bump (if applicable), tag, and publish GitHub Release.
-# gh release create handles creating the release AND uploading the assets in one
-# command. We force-delete any existing release/tag of the same version first so
-# re-running the script always produces a clean, up-to-date release.
+# Step 6: Commit version bump (if applicable), merge to main, tag, and publish.
+# The release tag must live on main so that all future git describe calls see it
+# regardless of which branch they're on.
 Write-Host "  [6/6] Publishing GitHub Release $GitTag..."
 
 Push-Location $RepoRoot
 try {
+    $originalBranch = git branch --show-current 2>$null
+
     # Commit the version bump files if npm version changed them
     if ($BumpType -ne '') {
         git add package.json package-lock.json
         git commit -m "chore: bump version to $GitTag"
         git push origin HEAD
-        if ($LASTEXITCODE -ne 0) { throw "git push failed with exit code $LASTEXITCODE" }
+        if ($LASTEXITCODE -ne 0) { throw "git push of version bump failed with exit code $LASTEXITCODE" }
     }
 
-    # Remove any stale local tag so we can recreate it pointing at HEAD
-    git tag -d $GitTag 2>&1 | Out-Null
+    # Merge the current branch into main so the release tag lives on main.
+    # This ensures `git describe` returns the correct version from any branch after
+    # the release and keeps the release history on the primary branch.
+    Write-Host "       Merging '$originalBranch' → main..."
+    git checkout main
+    if ($LASTEXITCODE -ne 0) { throw "git checkout main failed" }
+    git pull origin main
+    if ($LASTEXITCODE -ne 0) { throw "git pull main failed" }
+    git merge $originalBranch --no-edit
+    if ($LASTEXITCODE -ne 0) { throw "git merge $originalBranch failed — resolve conflicts then re-run" }
+    git push origin main
+    if ($LASTEXITCODE -ne 0) { throw "git push main failed with exit code $LASTEXITCODE" }
+    Write-Host "       ✅ Merged and pushed to main"
+
+    # Remove any stale local tag so we can recreate it pointing at HEAD (main).
+    # Guard with git tag -l first to avoid a NativeCommandError under
+    # $ErrorActionPreference = 'Stop' when no local tag exists.
+    $existingLocalTag = git tag -l $GitTag 2>$null
+    if ($existingLocalTag) {
+        Write-Host "       Removing stale local tag $GitTag..."
+        git tag -d $GitTag | Out-Null
+    }
 
     # Remove the existing GitHub Release and remote tag if they exist —
     # this makes the publish step idempotent (safe to re-run after a failed build)
@@ -262,10 +294,13 @@ try {
     }
     git push origin ":refs/tags/$GitTag" 2>&1 | Out-Null  # delete remote tag if present
 
-    # Create the tag on the current HEAD and push it
+    # Create the tag on main HEAD and push it
     git tag $GitTag
     git push origin $GitTag
     if ($LASTEXITCODE -ne 0) { throw "git push tag failed with exit code $LASTEXITCODE" }
+
+    # Return to the original feature branch so the developer's workspace is unchanged
+    git checkout $originalBranch 2>&1 | Out-Null
 
     # Create the GitHub Release and attach both artifacts.
     # $ExeZipOutputPath is used instead of the raw .exe so users aren't blocked
