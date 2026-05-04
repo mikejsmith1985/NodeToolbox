@@ -7,7 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.0.18] — Fix: SNow Hub Connect button, setup redirect loop, relay-mode PAT requirement, default Jira URL
+## [0.0.19] — Fix: CORS on proxy "Test Connection", relay Open button no-ops without saved URL
+
+### Fixed
+- **"Test Connection" in Toolbox Settings caused a CORS error in proxy mode** — `tbxTestJiraPAT()`
+  called Jira directly from the browser (`fetch(jiraBaseUrl + '/rest/api/2/myself', ...)`), which
+  CORS policy blocked even when the NodeToolbox proxy server was running at `localhost:5555`. In
+  proxy mode (`IS_NODETOOLBOX_SERVER === true`) the browser must never call Jira directly — the
+  proxy is the intended intermediary. Added an early-return guard: when `IS_NODETOOLBOX_SERVER`,
+  the test now calls `/jira-proxy/rest/api/2/myself` (the server-side proxy route) and shows a
+  "Proxy connected — authenticated as …" success message instead of a CORS failure.
+  (GitHub issue #35)
+- **"Open & Connect" relay button in Toolbox Settings did nothing on a fresh install** —
+  `crOpenJiraRelay()` reads the Jira URL from `localStorage.getItem('tbxCRGenJiraUrl')`. The
+  v0.0.18 fix defaulted the Jira URL input to the org Healthspring instance in `tbxGSOnOpen()`,
+  but only set the DOM field value (`ju.value`), never writing to localStorage. First-time relay
+  users who opened Settings, saw the correct URL already populated, and clicked "Open & Connect"
+  received an empty-URL error because the field value had never been persisted. `tbxGSOnOpen()`
+  now also calls `localStorage.setItem('tbxCRGenJiraUrl', ju.value)` and `crSaveUrls()` when
+  applying the default, so the relay button works without requiring a manual "Save" step first.
+  (GitHub issue #35)
+
+## [0.0.18]— Fix: SNow Hub Connect button, setup redirect loop, relay-mode PAT requirement, default Jira URL
 
 ### Fixed
 - **SNow Hub "Connect" button did nothing** — `snhOnOpen()` never called `tbxInitConnBar()`,

@@ -6952,6 +6952,21 @@ function tbxTestJiraPAT() {
   if (!base) { alert('Set Jira URL first (in Toolbox Settings ⚙️).'); return; }
   var res = document.getElementById('tbxgs-pat-result') || document.getElementById('tbx-global-pat-result');
   if (res) res.innerHTML = crAlert(crSpinner() + ' Testing PAT…', 'info');
+  // In proxy mode (IS_NODETOOLBOX_SERVER), route the connectivity test through the local
+  // proxy to eliminate CORS. The proxy injects credentials from the server config file,
+  // so no Authorization header is needed here. Relay mode and direct PAT mode follow below.
+  if (IS_NODETOOLBOX_SERVER) {
+    fetch('/jira-proxy/rest/api/2/myself', { headers: { 'Accept': 'application/json' } })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var displayName = data.displayName || data.name || '?';
+        if (res) res.innerHTML = crAlert('✅ Proxy connected — authenticated as <strong>' + crEsc(displayName) + '</strong>.', 'success');
+      })
+      .catch(function(proxyErr) {
+        if (res) res.innerHTML = crAlert('❌ Proxy connection failed: ' + crEsc((proxyErr && proxyErr.message) || 'Check toolbox-proxy.json credentials.'), 'error');
+      });
+    return;
+  }
   fetch(base + '/rest/api/2/myself', {
     headers: { 'Authorization': 'Bearer ' + pat, 'Accept': 'application/json' }
   }).then(function(r) { return r.json(); }).then(function(data) {
@@ -46134,7 +46149,13 @@ function tbxGSOnOpen() {
   var gs = tbxGetGlobalSettings();
   if (pat) pat.value = gs.jiraPat || '';
   // Default Jira URL to the org instance when the user hasn't saved one yet
-  if (ju && !ju.value) ju.value = 'https://jira.healthspring-jira-prod.aws.zilverton.com';
+  if (ju && !ju.value) {
+    ju.value = 'https://jira.healthspring-jira-prod.aws.zilverton.com';
+    // Persist the default URL to localStorage so relay functions (crOpenJiraRelay,
+    // crSaveUrls) can read it without requiring the user to manually click Save first.
+    localStorage.setItem('tbxCRGenJiraUrl', ju.value);
+    if (typeof crSaveUrls === 'function') crSaveUrls();
+  }
   // In browser-relay mode, start on the Browser Relay tab when no PAT is configured —
   // the relay does not require a PAT and showing the PAT tab first misleads relay users.
   if (!IS_NODETOOLBOX_SERVER && !(gs && gs.jiraPat)) tbxGSToggleAuthTab('relay');
