@@ -39,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   relay path, which pre-populates the Jira URL from the org default, ensuring Chrome
   proxy users do not need to manually re-enter a URL that is already configured on the
   running server.
+- **Edge relay wizard step now works in server mode** — `tbxWizOpenRelay()` was
+  sending `window.postMessage` pings to detect when the relay bookmarklet connected.
+  In v0.1.5 server mode, `crRelayScript()` generates the HTTP bridge bookmarklet which
+  never responds to postMessage. The wizard now calls `crAutoPingBridge('jira')` in
+  server mode (mirroring `crOpenJiraRelay()`) and restricts postMessage pings to
+  `file://` / Edge legacy mode. This unblocks the wizard relay path for Edge users
+  who access Toolbox through the NodeToolbox server.
 
 ### Fixed
 - **Assignment group member lookup now returns results** —`crLoadGroupMembers` was
