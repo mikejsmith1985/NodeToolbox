@@ -3459,21 +3459,6 @@ function homeInit() {
   homeSetPersona(saved);
 
 
-  // Route every user directly to Reports Hub on the first page load of each session.
-  // The Back button on Reports Hub returns here so all tool cards remain accessible.
-  // requestAnimationFrame defers the navigation until after the home view paints,
-  // preventing "page not responding" on slower machines.
-  if (!sessionStorage.getItem('tbxHomeAutoRouted')) {
-    sessionStorage.setItem('tbxHomeAutoRouted', '1');
-    var routeToReports = function() {
-      requestAnimationFrame(function() { if (typeof showView === 'function') showView('reports-hub'); });
-    };
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', routeToReports);
-    } else {
-      routeToReports();
-    }
-  }
 }
 
 // ── Home persona strip ───────────────────────────────────────────────────────
@@ -23989,7 +23974,20 @@ function rhOnOpen() {
   var hiddenTabs = ['throughput', 'sprint-health', 'flow', 'quality', 'individual', 'impact'];
   if (hiddenTabs.indexOf(RH_STATE.activeTab) !== -1) RH_STATE.activeTab = 'features';
   if (!RH_STATE.activeTab) RH_STATE.activeTab = 'features';
-  rhShowTab(RH_STATE.activeTab);
+  // Clear any stale in-flight flags for the active tab before calling rhShowTab.
+  // If the user navigated away mid-fetch the generating flag may still be true,
+  // which would cause rhShowTab's guard (!generating && !loaded) to skip the
+  // auto-load and leave the panel empty until a manual ↻ Refresh is pressed.
+  // We only reset the flag if the data was never successfully loaded — an
+  // already-loaded tab keeps its cache and doesn't re-fetch unnecessarily.
+  var activeTab = RH_STATE.activeTab;
+  if (activeTab === 'features'     && !RH_STATE.loadedFeatures)     RH_STATE.generatingFeatures = false;
+  if (activeTab === 'defects'      && !RH_STATE.loadedDefects)      RH_STATE.generatingDefects = false;
+  if (activeTab === 'risks'        && !RH_STATE.loadedRisks)        RH_STATE.generatingRisks = false;
+  if (activeTab === 'sprint-health' && !RH_STATE.loadedSprintHealth) RH_STATE.generatingSprintHealth = false;
+  if (activeTab === 'flow'         && !RH_STATE.loadedFlow)         RH_STATE.generatingFlow = false;
+  if (activeTab === 'quality'      && !RH_STATE.loadedQuality)      RH_STATE.generatingQuality = false;
+  rhShowTab(activeTab);
 }
 
 function rhGetArtTeams() {

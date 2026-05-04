@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Default landing view is now the Home Screen** — `homeInit()` previously redirected every fresh
+  browser session to the Reports Hub via a `requestAnimationFrame` + `sessionStorage` one-shot
+  guard. That block has been removed; the application now opens directly on the Home Screen as
+  intended, giving users immediate access to all tool cards.
+
 ### Fixed
+- **Reports Hub auto-loads data on every open** — Navigating away from Reports Hub while a fetch
+  was in-flight left `RH_STATE.generatingFeatures` (and equivalent flags for other tabs) permanently
+  `true`. On re-entry `rhShowTab()`'s guard (`!generating && !loaded`) evaluated to `false` and
+  skipped the auto-load, leaving the panel empty until the user manually pressed ↻ Refresh.
+  `rhOnOpen()` now resets each active-tab generating flag (only when that tab's data was never
+  successfully loaded) before calling `rhShowTab()`, ensuring the auto-load always fires on open.
 - **Reports Hub card missing from home screen** — The `📈 Reports Hub` card was absent from
   `#view-home`, making the tool unreachable via the home screen grid. Added the card back in its
   own "Reports" section between "Agile & Delivery" and "SNow Hub", consistent with the existing
