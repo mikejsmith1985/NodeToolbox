@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   section so the dashboard can display connection state.
 
 ### Fixed
+- **Assignment group member lookup now returns results** — `crLoadGroupMembers` was
+  using a SQL-style subquery (`sys_id IN (SELECT user FROM sys_user_grmember...)`)
+  that SNow's Table API silently ignores — it returns HTTP 200 with an empty result
+  array instead of an error, so the reliable fallback was never reached. The primary
+  query is now a direct `sys_user_grmember` lookup with `sysparm_display_value=true`,
+  which returns both `user.value` (sys_id) and `user.display_value` (name) in one
+  call. An empty result now triggers a dot-walk fallback on `sys_user` as a last
+  resort for environments where grmember reads are restricted. Results are sorted
+  alphabetically.
 - **ServiceNow writes now work with Okta/SSO relay connection** — In NodeToolbox server
   mode, `crSnowFetch` and `tbxSnowRequest` were routing all SNow API calls through the
   Node.js proxy (`/snow-proxy/*`). The proxy can inject `X-UserToken` (g_ck) but cannot

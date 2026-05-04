@@ -4255,21 +4255,38 @@ function crSearchGroups(q, cb) {
 }
 
 function crLoadGroupMembers(groupSysId, cb) {
-  crSnowFetch('/api/now/table/sys_user?sysparm_query=sys_id IN (SELECT user FROM sys_user_grmember WHERE group=' + groupSysId + ')&sysparm_fields=sys_id,name&sysparm_orderby=name&sysparm_limit=100')
-    .then(function(r) { return r.json(); })
-    .then(function(j) { cb(null, (j.result || [])); })
-    .catch(function(e) { crLoadGroupMembersFallback(groupSysId, cb); });
-}
-
-function crLoadGroupMembersFallback(groupSysId, cb) {
-  crSnowFetch('/api/now/table/sys_user_grmember?sysparm_query=group=' + groupSysId + '&sysparm_display_value=true&sysparm_fields=user&sysparm_limit=100')
+  // Query sys_user_grmember directly — the previous approach used a SQL-style
+  // subquery that SNow's Table API silently ignores (returns 200 + empty result
+  // instead of an error), so the fallback was never triggered.
+  // sysparm_display_value=true causes SNow to return user.value (sys_id) and
+  // user.display_value (full name) in a single request with no second lookup.
+  crSnowFetch('/api/now/table/sys_user_grmember?sysparm_query=group=' + groupSysId +
+              '&sysparm_display_value=true&sysparm_fields=user&sysparm_limit=200')
     .then(function(r) { return r.json(); })
     .then(function(j) {
       var members = (j.result || []).map(function(m) {
         return { sys_id: m.user.value, name: m.user.display_value };
       });
-      cb(null, members);
+      // Sort alphabetically so the dropdown is easy to scan
+      members.sort(function(a, b) { return (a.name || '').localeCompare(b.name || ''); });
+      // If the membership table returned nothing, try the dot-walk query on sys_user
+      // as a last-resort fallback (some SNow configurations restrict grmember reads)
+      if (members.length === 0) {
+        crLoadGroupMembersFallback(groupSysId, cb);
+      } else {
+        cb(null, members);
+      }
     })
+    .catch(function(e) { crLoadGroupMembersFallback(groupSysId, cb); });
+}
+
+function crLoadGroupMembersFallback(groupSysId, cb) {
+  // Last-resort: query sys_user via dot-walk through the membership table.
+  // Works when the caller lacks direct read access to sys_user_grmember.
+  crSnowFetch('/api/now/table/sys_user?sysparm_query=sys_user_grmember.group=' + groupSysId +
+              '&sysparm_fields=sys_id,name&sysparm_orderby=name&sysparm_limit=200')
+    .then(function(r) { return r.json(); })
+    .then(function(j) { cb(null, (j.result || [])); })
     .catch(function(e) { cb(e, []); });
 }
 
