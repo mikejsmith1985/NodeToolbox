@@ -258,7 +258,7 @@ try {
     # Commit the version bump files if npm version changed them
     if ($BumpType -ne '') {
         git add package.json package-lock.json
-        git commit -m "chore: bump version to $GitTag"
+        git commit -m "chore: bump version to $GitTag`n`nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
         git push origin HEAD
         if ($LASTEXITCODE -ne 0) { throw "git push of version bump failed with exit code $LASTEXITCODE" }
     }
@@ -295,7 +295,10 @@ try {
     if ($releaseExists) {
         gh release delete $GitTag --yes 2>&1 | Out-Null
     }
-    git push origin ":refs/tags/$GitTag" 2>&1 | Out-Null  # delete remote tag if present
+    # Delete remote tag if it exists — wrapped in try/catch because git returns a
+    # non-zero exit code (and writes to stderr) when the tag is absent, which triggers
+    # a NativeCommandError under $ErrorActionPreference = 'Stop'.
+    try { git push origin ":refs/tags/$GitTag" 2>$null } catch { <# tag not present remotely, nothing to delete #> }
 
     # Create the tag on main HEAD and push it
     git tag $GitTag
