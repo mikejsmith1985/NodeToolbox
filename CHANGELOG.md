@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.18] — Fix: SNow Hub Connect button, setup redirect loop, relay-mode PAT requirement, default Jira URL
+
+### Fixed
+- **SNow Hub "Connect" button did nothing** — `snhOnOpen()` never called `tbxInitConnBar()`,
+  so the connection-bar dots were never painted and the Connect button had no bound handler.
+  Added `tbxInitConnBar('snh', ['jira', 'snow'], 'snhConnect')` to `snhOnOpen()` and wrote a
+  new `snhConnect()` handler: proxy mode sends the user to Toolbox Settings to configure
+  service credentials; relay mode opens the Jira + ServiceNow relay popup windows via
+  `tbxConnect()`.
+- **First-run setup wizard redirected back to `/setup` after saving Jira credentials** —
+  `isServiceConfigured()` only checked the base URL, not whether any credentials were
+  present. A fresh install (or old install) with a pre-filled Jira URL but no PAT would pass
+  the URL check, save to disk, then immediately re-trigger the setup redirect because no
+  credentials existed. Updated `isServiceConfigured()` to require at least one usable
+  credential (`pat`, `apiToken`, or `password`), preventing the loop. Also added URL
+  placeholder validation in `handlePostSetup` (server-side) and the setup wizard pre-fill
+  logic (client-side) so placeholder URLs are never silently accepted.
+- **Toolbox Settings defaulted to "Personal Access Token" tab in relay mode** — Users running
+  the relay build were confronted with the PAT tab, entered their token, got a CORS error,
+  and assumed the tool was broken. PATs require a relay to proxy API calls — the relay alone
+  is sufficient without a PAT. `tbxGSOnOpen()` now switches to the "Browser Relay" tab
+  automatically when running in relay mode and no PAT is already saved.
+
+### Changed
+- **Default Jira URL pre-filled to the organisation's Jira instance** in both the first-run
+  setup wizard and the Toolbox Settings URL field. Users now only need to paste their PAT —
+  the URL is correct out of the box. The config template (`toolbox-proxy.json`) is also
+  updated for new installs.
+
 ## [0.0.17] — Fix: Reports Hub blank, garbled emoji, relay warning in proxy mode
 
 ### Fixed

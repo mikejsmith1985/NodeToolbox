@@ -5458,8 +5458,25 @@ function snhShowTab(tab) {
 }
 
 function snhOnOpen() {
+  // Initialise the connection bar so status dots and the Connect button are wired up
+  tbxInitConnBar('snh', ['jira', 'snow'], 'snhConnect');
   var saved = localStorage.getItem('tbxSnowHubTab') || 'crg';
   snhShowTab(saved);
+}
+
+/**
+ * Handles the SNow Hub Connect button.
+ * In proxy mode the proxy server manages service credentials — send the user to
+ * Toolbox Settings to configure the proxy connection details.
+ * In relay mode open browser relay windows for Jira and ServiceNow.
+ */
+function snhConnect() {
+  if (IS_NODETOOLBOX_SERVER) {
+    showView('toolbox-settings');
+    return;
+  }
+  // Relay mode: open popup windows for both Jira and ServiceNow
+  tbxConnect();
 }
 
 function crCheckCredWarnings() {
@@ -46116,6 +46133,11 @@ function tbxGSOnOpen() {
   var pat = document.getElementById('tbx-gs-jira-pat');
   var gs = tbxGetGlobalSettings();
   if (pat) pat.value = gs.jiraPat || '';
+  // Default Jira URL to the org instance when the user hasn't saved one yet
+  if (ju && !ju.value) ju.value = 'https://jira.healthspring-jira-prod.aws.zilverton.com';
+  // In browser-relay mode, start on the Browser Relay tab when no PAT is configured —
+  // the relay does not require a PAT and showing the PAT tab first misleads relay users.
+  if (!IS_NODETOOLBOX_SERVER && !(gs && gs.jiraPat)) tbxGSToggleAuthTab('relay');
   var jbm = document.getElementById('tbxgs-jira-bm');
   if (jbm) jbm.href = 'javascript:' + encodeURIComponent(crRelayScript());
   var cbm = document.getElementById('tbxgs-confluence-bm');

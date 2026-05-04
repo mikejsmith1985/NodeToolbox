@@ -9,7 +9,7 @@
 'use strict';
 
 const express  = require('express');
-const { saveConfigToDisk } = require('../config/loader');
+const { saveConfigToDisk, JIRA_URL_PLACEHOLDER_PATTERNS } = require('../config/loader');
 
 // ── Named Constants ───────────────────────────────────────────────────────────
 
@@ -18,6 +18,12 @@ const WIZARD_TOTAL_SERVICE_STEPS = 3;
 
 /** Step name referenced in data-step attributes and JS navigation */
 const STEP_NAMES = ['welcome', 'jira', 'github', 'snow', 'done'];
+
+/**
+ * The organisation's Jira instance URL — pre-filled in the wizard so users
+ * only need to paste their PAT without hunting for the URL.
+ */
+const DEFAULT_JIRA_BASE_URL = 'https://jira.healthspring-jira-prod.aws.zilverton.com';
 
 // ── Router Factory ────────────────────────────────────────────────────────────
 
@@ -68,7 +74,8 @@ function handlePostSetup(req, res, configuration) {
   const cleanSnowUsername = snowUsername.trim();
   const cleanSnowPassword = snowPassword.trim();
 
-  const hasJiraConfig   = !!(cleanJiraBaseUrl && cleanJiraPat);
+  const hasJiraConfig   = !!(cleanJiraBaseUrl && cleanJiraPat &&
+    !JIRA_URL_PLACEHOLDER_PATTERNS.some((p) => cleanJiraBaseUrl.indexOf(p) >= 0));
   const hasGithubConfig = !!cleanGithubPat;
   const hasSnowConfig   = !!(cleanSnowBaseUrl && cleanSnowUsername && cleanSnowPassword);
 
@@ -100,7 +107,12 @@ function handlePostSetup(req, res, configuration) {
  * @returns {string} Full HTML document
  */
 function buildWizardHtml(configuration) {
-  const prefillJiraBaseUrl = escapeHtmlAttribute(configuration.jira && configuration.jira.baseUrl || '');
+  // Replace placeholder URLs with the organisation default so users only need to enter a PAT.
+  // This also prevents old installs that still have the template placeholder URL from causing
+  // a redirect loop after setup (isServiceConfigured rejects placeholder URLs).
+  const rawJiraBaseUrl      = configuration.jira && configuration.jira.baseUrl || '';
+  const isPlaceholderJiraUrl = JIRA_URL_PLACEHOLDER_PATTERNS.some((p) => rawJiraBaseUrl.indexOf(p) >= 0);
+  const prefillJiraBaseUrl  = escapeHtmlAttribute(isPlaceholderJiraUrl || !rawJiraBaseUrl ? DEFAULT_JIRA_BASE_URL : rawJiraBaseUrl);
   const prefillSnowBaseUrl = escapeHtmlAttribute(configuration.snow && configuration.snow.baseUrl || '');
 
   return `<!DOCTYPE html>

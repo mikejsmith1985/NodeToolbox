@@ -44,7 +44,10 @@ const DEFAULT_SERVER_PORT = 5555;
 /** Default GitHub API base URL — overridable for GitHub Enterprise instances */
 const DEFAULT_GITHUB_BASE_URL = 'https://api.github.com';
 
-/** Placeholder strings that indicate the user has not filled in their Jira URL */
+/**
+ * Placeholder strings that indicate the user has not filled in their Jira URL.
+ * Any base URL containing one of these substrings is treated as unconfigured.
+ */
 const JIRA_URL_PLACEHOLDER_PATTERNS = ['your-instance', 'your-jira'];
 
 /** Maximum number of branches/PRs tracked per repo in the scheduler state */
@@ -153,9 +156,10 @@ function createConfigTemplate() {
   const templateConfig = {
     port: DEFAULT_SERVER_PORT,
     jira: {
-      baseUrl:  'https://your-instance.atlassian.net',
-      username: 'your-email@company.com',
-      apiToken: 'your-api-token-here',
+      // Pre-filled with the organisation's Jira URL — user only needs to add their PAT
+      baseUrl:  'https://jira.healthspring-jira-prod.aws.zilverton.com',
+      username: '',
+      apiToken: '',
       pat:      '',
     },
     snow: {
@@ -190,20 +194,27 @@ function createConfigTemplate() {
 }
 
 /**
- * Determines whether a service has a real (non-placeholder) base URL configured.
- * Used to distinguish between "user filled in a real URL" and "default template value."
+ * Determines whether a service is fully configured with both a real base URL
+ * and at least one usable credential.
  *
- * @param {{ baseUrl: string }} serviceConfig
- * @returns {boolean} True if the service appears to have a real base URL
+ * A base URL alone is not sufficient — the proxy server needs a credential to
+ * authenticate against the service. Without this check, a fresh install that
+ * has only the pre-filled Jira URL (but no PAT yet) would incorrectly skip the
+ * first-run setup wizard and leave users stuck on an unauthenticated dashboard.
+ *
+ * @param {{ baseUrl: string, pat?: string, apiToken?: string, password?: string }} serviceConfig
+ * @returns {boolean} True when the service has a real URL and at least one credential
  */
 function isServiceConfigured(serviceConfig) {
   if (!serviceConfig.baseUrl) return false;
 
-  const hasPlaceholder = JIRA_URL_PLACEHOLDER_PATTERNS.some(
+  const hasPlaceholderUrl = JIRA_URL_PLACEHOLDER_PATTERNS.some(
     (placeholderPattern) => serviceConfig.baseUrl.indexOf(placeholderPattern) >= 0
   );
+  if (hasPlaceholderUrl) return false;
 
-  return !hasPlaceholder;
+  // A URL without credentials cannot make authenticated API calls
+  return !!(serviceConfig.pat || serviceConfig.apiToken || serviceConfig.password);
 }
 
 // ── Private Helpers ───────────────────────────────────────────────────────────
@@ -483,6 +494,7 @@ module.exports = {
   createConfigTemplate,
   migrateOldConfig,
   isServiceConfigured,
+  JIRA_URL_PLACEHOLDER_PATTERNS,
   CONFIG_FILE_PATH,
   CONFIG_DIR_PATH,
   MAX_SEEN_BRANCHES_PER_REPO,
