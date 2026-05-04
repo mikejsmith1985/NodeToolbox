@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Reports Hub card missing from home screen** — The `📈 Reports Hub` card was absent from
+  `#view-home`, making the tool unreachable via the home screen grid. Added the card back in its
+  own "Reports" section between "Agile & Delivery" and "SNow Hub", consistent with the existing
+  note that Reports Hub is always visible (not controlled by POC Tool Visibility toggles).
+
 ## [0.0.19] — Fix: CORS on proxy "Test Connection", relay Open button no-ops without saved URL
 
 ### Fixed
