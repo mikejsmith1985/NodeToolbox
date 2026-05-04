@@ -4821,6 +4821,40 @@ function tbxShowReconnectToast(msg) {
   setTimeout(function() { if (toast.parentElement) toast.remove(); }, 10000);
 }
 
+// ── Connection-bar shared state ───────────────────────────────────────────────
+// Declare all globals consumed by tbxInitConnBar, tbxRenderConnectionBar, and
+// tbxRunProxyProbe so that *OnOpen callbacks firing after navigation never throw
+// a ReferenceError. Without these declarations:
+//   • tbxInitConnBar crashes on TBX_CONN_BARS_REGISTRY → blank Reports Hub screen
+//   • tbxRunProxyProbe .catch() crashes on _tbxProxyRetryTimer → retry loop never starts
+//   • all non-Home connection bars stay grey regardless of proxy state
+var TBX_CONN_BARS_REGISTRY      = [];    // de-dup registry: [{ prefix, services }, …]
+var TBX_PROXY_AUTH_FAILED       = false; // true when proxy returns 401/403
+var _tbxProxyRetryTimer         = null;  // setInterval handle for the silent retry loop
+var _tbxProxyRetryCount         = 0;     // retries attempted since last successful probe
+var TBX_PROXY_MAX_RETRIES       = 10;    // cap: 10 × 3 s = 30 s total retry window
+var TBX_PROXY_RETRY_INTERVAL_MS = 3000;  // ms between background retry probes
+
+// ── Missing widget-refresh stubs ─────────────────────────────────────────────
+// These are called inside tbxRunProxyProbe and the visibilitychange handler but
+// were never implemented. Stubs prevent the ReferenceError that was blocking
+// tbxUpdateConnBar() from firing after a successful proxy probe.
+
+// Refreshes any connection/auth widgets currently visible on screen.
+// Delegates to homeRenderConnStatus so the Home page dot updates immediately
+// when the proxy probe completes, without requiring a page reload.
+function tbxRefreshVisibleAuthWidgets() {
+  if (typeof homeRenderConnStatus === 'function') homeRenderConnStatus();
+}
+
+// Re-renders per-view data-age badges (e.g. "cached 2 m ago").
+// Reserved for future implementation — currently a no-op.
+function tbxRenderAllAuthBadges() {}
+
+// Re-renders per-view data-freshness timestamps shown next to cached results.
+// Reserved for future implementation — currently a no-op.
+function tbxRenderDataAgeBadges() {}
+
 // ── Global Connection Bar ─────────────────────────────────────────────────────
 // Updates all connection bar instances across CRG, PRB, My Issues views.
 function tbxUpdateConnBar() {
@@ -43798,14 +43832,13 @@ function tbxRunProxyProbe() {
         TBX_PROXY_AUTH_FAILED = false;
         // Check server version and show a banner if the proxy is running an older build.
         tbxCheckProxyServerVersion(statusData.version);
-        // Refresh any auth widgets that are already visible on screen.
+        // Repaint all connection-bar dots first — this is the critical path.
+        // Called before widget-refresh helpers so dots always turn green even
+        // if an optional helper throws unexpectedly in the future.
+        tbxUpdateConnBar();
+        // Refresh any auth widgets and home-page status dot.
         tbxRefreshVisibleAuthWidgets();
         tbxRenderAllAuthBadges();
-        // Repaint all connection-bar dots and hide Connect buttons for views that are
-        // already open — without this call the bars stay grey until the user navigates
-        // away and back, because tbxUpdateConnBar() only fires when tbxInitConnBar()
-        // is called (i.e. on view open).
-        tbxUpdateConnBar();
         // If My Issues is open and the tagged section hasn't fetched yet, kick it off now.
         // This handles the race condition where miOnOpen fired before the proxy probe finished.
         if (document.getElementById('view-my-issues') &&
