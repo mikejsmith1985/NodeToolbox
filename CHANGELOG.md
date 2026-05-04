@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   section so the dashboard can display connection state.
 
 ### Fixed
+- **ServiceNow writes now work with Okta/SSO relay connection** — In NodeToolbox server
+  mode, `crSnowFetch` and `tbxSnowRequest` were routing all SNow API calls through the
+  Node.js proxy (`/snow-proxy/*`). The proxy can inject `X-UserToken` (g_ck) but cannot
+  forward the browser's HttpOnly session cookies that Okta SSO requires. Both functions
+  now prefer the browser relay when it is active, routing requests directly from the SNow
+  tab with `credentials: "include"` so cookies are sent automatically. The server proxy
+  remains as a fallback for Basic Auth service-account setups.
 - **CTASK section no longer implies Toolbox creates the SNow auto-CTASKs** — The "CTASKs
   to create" section has been restructured into two clearly labelled sub-sections:
   "Auto-created by SNow — Toolbox will rename & configure" (Implementation CTASK and

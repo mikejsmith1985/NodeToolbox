@@ -5400,6 +5400,32 @@ function crJiraFetch(path, method, body) {
 
 function crSnowFetch(path, opts) {
   if (IS_NODETOOLBOX_SERVER) {
+    // SNow Okta/SSO sessions rely on HttpOnly browser cookies that the Node.js
+    // server cannot access or forward. When the browser relay is active, route
+    // through it so the browser sends its own session cookies automatically and
+    // the relay tab adds X-UserToken (g_ck) for SNow's CSRF requirement.
+    // Only fall back to the server proxy when no relay is available — that path
+    // works only with a Basic Auth service account, not with Okta SSO.
+    var isRelayActive = !!(CRG.relay && CRG.relay.snowReady &&
+                           CRG.relay.snowWin && !CRG.relay.snowWin.closed);
+    if (isRelayActive) {
+      return tbxRetryOnce('snow', function() {
+        var relayMethod = (opts && opts.method) || 'GET';
+        var relayBody   = (opts && opts.body) ? JSON.parse(opts.body) : null;
+        // null authHeader → relay uses credentials:"include" (browser cookies)
+        return crRelayFetch(CRG.relay.snowWin, relayMethod, path, relayBody, null)
+          .then(function(res) {
+            return {
+              ok:     res.status >= 200 && res.status < 300,
+              status: res.status,
+              json:   function() { return Promise.resolve(res.data); },
+              text:   function() { return Promise.resolve(JSON.stringify(res.data)); },
+            };
+          });
+      });
+    }
+
+    // Relay not available — use server-side proxy (Basic Auth service accounts only)
     var method = (opts && opts.method) || 'GET';
     var bodyValue = (opts && opts.body) ? JSON.parse(opts.body) : null;
     var fetchOptions = {
@@ -6998,6 +7024,13 @@ function tbxVerifyJiraConnection(containerId) {
 
 function tbxSnowRequest(method, path, body) {
   if (IS_NODETOOLBOX_SERVER) {
+    // Prefer relay when active — SNow Okta sessions use HttpOnly browser cookies
+    // that the server proxy cannot forward. The relay sends cookies automatically.
+    var isRelayActive = !!(CRG.relay && CRG.relay.snowReady &&
+                           CRG.relay.snowWin && !CRG.relay.snowWin.closed);
+    if (isRelayActive) {
+      return crRelayRequest('snow', method, path, body);
+    }
     return tbxNodeToolboxFetch('/snow-proxy', method, path, body);
   }
   // Fallback: browser relay for file:// access (legacy mode).
