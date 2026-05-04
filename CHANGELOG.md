@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   section so the dashboard can display connection state.
 
 ### Fixed
+- **CTASK section no longer implies Toolbox creates the SNow auto-CTASKs** — The "CTASKs
+  to create" section has been restructured into two clearly labelled sub-sections:
+  "Auto-created by SNow — Toolbox will rename & configure" (Implementation CTASK and
+  Technical Checkout) and "Additional CTASKs — created by Toolbox" (custom templates).
+  The misleading disabled checkboxes have been replaced with a pencil icon. An inline
+  "+ Add CTASK" button now opens the template form directly, removing the need to navigate
+  to Settings to add a custom CTASK. An empty-state hint is shown when no custom templates
+  exist.
+
+### Fixed
 - **Connection bar shows correct Jira/proxy status on every page** — Six global variables
   (`TBX_CONN_BARS_REGISTRY`, `TBX_PROXY_AUTH_FAILED`, `_tbxProxyRetryTimer`,
   `_tbxProxyRetryCount`, `TBX_PROXY_MAX_RETRIES`, `TBX_PROXY_RETRY_INTERVAL_MS`) were
