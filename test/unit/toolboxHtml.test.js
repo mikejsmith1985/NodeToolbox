@@ -285,3 +285,48 @@ describe('toolbox.html — in-app connection wizard removed', () => {
   });
 
 });
+
+// ── Version Display ───────────────────────────────────────────────────────────
+//
+// TOOLBOX_VERSION in toolbox.html must match the version in package.json.
+// The release script patches both files; this test catches any drift between them.
+
+describe('toolbox.html — TOOLBOX_VERSION matches package.json', () => {
+
+  it('TOOLBOX_VERSION literal matches the version in package.json', () => {
+    const pkg = JSON.parse(
+      require('fs').readFileSync(
+        require('path').join(__dirname, '..', '..', 'package.json'),
+        'utf8'
+      )
+    );
+    // Expect the exact string assignment to be present.
+    const expectedAssignment = `var TOOLBOX_VERSION = '${pkg.version}'`;
+    expect(toolboxHtmlContent).toContain(expectedAssignment);
+  });
+
+});
+
+// ── Proxy Auto-Detect on Startup ──────────────────────────────────────────────
+//
+// tbxAutoDetectProxy() must be called in a startup IIFE so the connection bar
+// turns green immediately when the page loads — without requiring any user action.
+
+describe('toolbox.html — proxy auto-detect fires on startup', () => {
+
+  it('tbxAutoDetectProxy is defined', () => {
+    expect(toolboxHtmlContent).toContain('function tbxAutoDetectProxy()');
+  });
+
+  it('a startup IIFE calls tbxAutoDetectProxy() guarded by IS_NODETOOLBOX_SERVER', () => {
+    // The startup block must be an IIFE that only runs the probe when the page
+    // is served by the NodeToolbox server — not when opened as a bare file://.
+    expect(toolboxHtmlContent).toContain('IS_NODETOOLBOX_SERVER');
+    expect(toolboxHtmlContent).toContain('tbxAutoDetectProxy()');
+    // Verify the call is wrapped in an IIFE (not a loose top-level call that
+    // could run before the DOM is ready or before the function is defined).
+    const startupIifePattern = /\(function\s*\(\)\s*\{[^}]*IS_NODETOOLBOX_SERVER[^}]*tbxAutoDetectProxy\(\)/s;
+    expect(startupIifePattern.test(toolboxHtmlContent)).toBe(true);
+  });
+
+});

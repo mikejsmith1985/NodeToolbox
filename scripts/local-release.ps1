@@ -83,6 +83,17 @@ if ($BumpType -ne '') {
 $PackageData    = Get-Content $PackageJson -Raw | ConvertFrom-Json
 $AppVersion     = $PackageData.version
 $GitTag         = "v$AppVersion"
+
+# ── Sync TOOLBOX_VERSION in toolbox.html ─────────────────────────────────────
+# toolbox.html contains a hardcoded TOOLBOX_VERSION literal used for the version
+# badge and update-checker. Patch it to match package.json so the UI always
+# shows the correct version after a release. Uses ReadAllText / WriteAllText
+# (not Get-Content / Set-Content) to avoid CRLF mutation on the large file.
+$ToolboxHtmlPath = Join-Path $RepoRoot 'public\toolbox.html'
+$toolboxRawContent = [System.IO.File]::ReadAllText($ToolboxHtmlPath)
+$toolboxRawContent = $toolboxRawContent -replace "var TOOLBOX_VERSION = '[^']*'", "var TOOLBOX_VERSION = '$AppVersion'"
+[System.IO.File]::WriteAllText($ToolboxHtmlPath, $toolboxRawContent)
+Write-Host "       ✅ TOOLBOX_VERSION synced to $AppVersion in toolbox.html"
 $ZipFileName      = "nodetoolbox-v$AppVersion.zip"
 $ZipOutputPath    = Join-Path $DistDir $ZipFileName
 $ExeFileName      = "nodetoolbox-v$AppVersion.exe"

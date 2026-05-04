@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+### Fixed
+- **Version badge now reflects the installed release** — `TOOLBOX_VERSION` in `toolbox.html` was
+  hardcoded and never updated by the release script, causing the version badge and update-checker
+  to always show `0.0.16` regardless of the installed build. The release script now patches the
+  literal in `toolbox.html` after bumping `package.json`, and the value has been corrected to
+  `0.1.0` for the current release.
+- **Proxy connection bar turns green on startup** — `tbxAutoDetectProxy()` was defined but never
+  called, so the proxy probe only ran when the user navigated into a view that called
+  `tbxInitConnBar()`. A startup IIFE (guarded by `IS_NODETOOLBOX_SERVER`) now calls it immediately
+  on page load, so the connection bar dots turn green without any user interaction.
 - **Default landing view is now the Home Screen** — `homeInit()` previously redirected every fresh
   browser session to the Reports Hub via a `requestAnimationFrame` + `sessionStorage` one-shot
   guard. That block has been removed; the application now opens directly on the Home Screen as
