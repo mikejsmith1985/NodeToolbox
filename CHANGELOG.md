@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `#view-home`, making the tool unreachable via the home screen grid. Added the card back in its
   own "Reports" section between "Agile & Delivery" and "SNow Hub", consistent with the existing
   note that Reports Hub is always visible (not controlled by POC Tool Visibility toggles).
+- **Reports Hub connection bar: proxy mode fixes** — Four related bugs prevented the conn-bar
+  from correctly reflecting proxy status:
+  - `tbxUpdateConnBar()` bars array was missing the `rh` (Reports Hub) prefix, so the update loop
+    never touched Reports Hub DOM nodes; dots stayed grey even when proxy was connected.
+  - `tbxRunProxyProbe()` and `tbxSaveProxyCredentials()` did not call `tbxUpdateConnBar()` after
+    storing `tbxProxyStatus`, so bars already on screen never refreshed after a successful probe.
+  - `rhOnOpen()` passed no `connectFn` to `tbxInitConnBar`, falling back to `tbxConnect()` which
+    opens a relay popup — broken in proxy mode. Added `rhConnect()` that mirrors `snhConnect()`:
+    redirects to Toolbox Settings in proxy mode, falls back to relay otherwise.
+  - `connectedViaProxy` used `!tbxJiraReady()` which is always `false` in `IS_NODETOOLBOX_SERVER`
+    mode (because `tbxJiraReady()` unconditionally returns `true` there), causing the mode label
+    to always read "relay" instead of "proxy". Fixed to `isProxyJiraReady || isProxySnowReady`.
 
 ## [0.0.19] — Fix: CORS on proxy "Test Connection", relay Open button no-ops without saved URL
 

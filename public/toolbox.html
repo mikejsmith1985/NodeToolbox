@@ -4852,6 +4852,7 @@ function tbxUpdateConnBar() {
   var cOk = !!(CRG.relay.confReady);
   var snowUrl = crGet('snowUrl') || localStorage.getItem('tbxCRGenSnowUrl') || '';
   var bars = [
+    { prefix:'rh',  hasSNow:false, hasConf:false },
     { prefix:'snh', hasSNow:true,  hasConf:false },
     { prefix:'mi',  hasSNow:true,  hasConf:false },
     { prefix:'dw',  hasSNow:false, hasConf:false },
@@ -4894,9 +4895,11 @@ function tbxUpdateConnBar() {
     if (mode) {
       var anyOk = bar.hasConf ? (jOk || cOk) : (jOk || sOk);
       if (anyOk) {
-        // Show "proxy" label when connected via proxy server; "relay" when bookmarklet-connected.
-        var connectedViaProxy = (jOk && isProxyJiraReady && !tbxJiraReady()) ||
-          (sOk && isProxySnowReady && !CRG.relay.snowReady);
+        // Show "proxy" label when the proxy server is providing any connected service.
+        // Previously this used !tbxJiraReady() which is false in IS_NODETOOLBOX_SERVER
+        // mode (tbxJiraReady() unconditionally returns true there), causing the label to
+        // always show "relay" even when connected via proxy.
+        var connectedViaProxy = isProxyJiraReady || isProxySnowReady;
         var connLabel = connectedViaProxy ? 'proxy' : 'relay';
         var connAt = bar.hasConf ? (cOk ? CRG.relay.confConnAt : CRG.relay.jiraConnAt) : (jOk ? CRG.relay.jiraConnAt : CRG.relay.snowConnAt);
         var ts = tbxFormatConnTime(connAt);
@@ -5476,6 +5479,21 @@ function snhOnOpen() {
   tbxInitConnBar('snh', ['jira', 'snow'], 'snhConnect');
   var saved = localStorage.getItem('tbxSnowHubTab') || 'crg';
   snhShowTab(saved);
+}
+
+/**
+ * Handles the Reports Hub Connect button.
+ * In proxy mode the proxy server manages Jira credentials — send the user to
+ * Toolbox Settings to configure the proxy connection details.
+ * In relay mode open the Jira browser relay window.
+ */
+function rhConnect() {
+  if (IS_NODETOOLBOX_SERVER) {
+    showView('toolbox-settings');
+    return;
+  }
+  // Relay mode: open the Jira relay popup
+  tbxConnect();
 }
 
 /**
@@ -23965,7 +23983,7 @@ function rhRenderHero() {
 }
 
 function rhOnOpen() {
-  tbxInitConnBar('rh', ['jira']);
+  tbxInitConnBar('rh', ['jira'], 'rhConnect');
   rhRenderHero();
   // Default active tab is features; fall back to features if user had a hidden tab selected
   var hiddenTabs = ['throughput', 'sprint-health', 'flow', 'quality', 'individual', 'impact'];
@@ -43785,6 +43803,11 @@ function tbxRunProxyProbe() {
         // Refresh any auth widgets that are already visible on screen.
         tbxRefreshVisibleAuthWidgets();
         tbxRenderAllAuthBadges();
+        // Repaint all connection-bar dots and hide Connect buttons for views that are
+        // already open — without this call the bars stay grey until the user navigates
+        // away and back, because tbxUpdateConnBar() only fires when tbxInitConnBar()
+        // is called (i.e. on view open).
+        tbxUpdateConnBar();
         // If My Issues is open and the tagged section hasn't fetched yet, kick it off now.
         // This handles the race condition where miOnOpen fired before the proxy probe finished.
         if (document.getElementById('view-my-issues') &&
@@ -43895,6 +43918,8 @@ function tbxSaveProxyCredentials(containerId) {
           sessionStorage.setItem('tbxProxyStatus', JSON.stringify(statusData));
           tbxRefreshVisibleAuthWidgets();
           tbxRenderAllAuthBadges();
+          // Repaint conn-bar dots for any view already open after credentials are saved.
+          tbxUpdateConnBar();
         });
     })
     .catch(function(saveErr) {

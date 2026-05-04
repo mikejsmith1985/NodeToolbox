@@ -135,6 +135,88 @@ describe('toolbox.html — Dev Workspace setup wizard', () => {
 
 });
 
+// ── Reports Hub Connection Bar (proxy-mode) ───────────────────────────────────
+//
+// Four bugs caused the Reports Hub connection bar to always show grey dots and a
+// non-functional Connect button when the proxy server was running:
+//
+//   1. 'rh' prefix was absent from tbxUpdateConnBar's bars array — the update
+//      loop silently skipped Reports Hub on every proxy-probe completion.
+//   2. tbxRunProxyProbe() never called tbxUpdateConnBar() after writing
+//      tbxProxyStatus — so even bars that ARE in the array missed the result
+//      when the user was already on the view.
+//   3. rhOnOpen() passed no connectFn to tbxInitConnBar → tbxConnect() was used,
+//      which opens a relay popup window (broken in proxy mode).
+//   4. connectedViaProxy used !tbxJiraReady() which returns false in proxy mode,
+//      so the mode label always read "relay" instead of "proxy".
+
+describe('toolbox.html — Reports Hub connection bar proxy fixes', () => {
+
+  it('tbxUpdateConnBar bars array includes the rh (Reports Hub) prefix', () => {
+    // Without this entry the update loop never touches the Reports Hub conn-bar
+    // DOM nodes, so dots stay grey and the Connect button stays visible even when
+    // the proxy server is fully connected.
+    const updateConnBarStart = toolboxHtmlContent.indexOf('function tbxUpdateConnBar');
+    const updateConnBarBody  = toolboxHtmlContent.slice(updateConnBarStart, updateConnBarStart + 1200);
+    expect(updateConnBarBody).toContain("prefix:'rh'");
+  });
+
+  it('rhConnect() function exists and is proxy-mode aware', () => {
+    // rhConnect() must exist so Reports Hub can provide its own connect handler,
+    // mirroring the pattern used by snhConnect() for SNow Hub.
+    expect(toolboxHtmlContent).toContain('function rhConnect');
+    const rhConnectStart = toolboxHtmlContent.indexOf('function rhConnect');
+    const rhConnectBody  = toolboxHtmlContent.slice(rhConnectStart, rhConnectStart + 400);
+    expect(rhConnectBody).toContain('IS_NODETOOLBOX_SERVER');
+  });
+
+  it("rhConnect() redirects to Toolbox Settings in proxy mode instead of opening a relay popup", () => {
+    // In proxy mode the relay popup is irrelevant; the user must configure
+    // credentials via Settings.  Opening a popup window (tbxConnect) would be
+    // a no-op or confusing, so we redirect to 'toolbox-settings' instead.
+    const rhConnectStart = toolboxHtmlContent.indexOf('function rhConnect');
+    const rhConnectBody  = toolboxHtmlContent.slice(rhConnectStart, rhConnectStart + 400);
+    expect(rhConnectBody).toContain("showView('toolbox-settings')");
+  });
+
+  it('rhOnOpen() passes rhConnect as the connectFn to tbxInitConnBar', () => {
+    // Without 'rhConnect' the bar defaults to tbxConnect(), which opens a relay
+    // popup — this is the Connect button being broken in proxy mode.
+    const rhOnOpenStart = toolboxHtmlContent.indexOf('function rhOnOpen');
+    const rhOnOpenBody  = toolboxHtmlContent.slice(rhOnOpenStart, rhOnOpenStart + 300);
+    expect(rhOnOpenBody).toContain("'rhConnect'");
+  });
+
+  it('tbxRunProxyProbe() calls tbxUpdateConnBar() after storing tbxProxyStatus', () => {
+    // Without this call, all conn-bar dots remain grey for the lifetime of the
+    // current view whenever the probe completes while the view is already open.
+    const probeStart       = toolboxHtmlContent.indexOf('function tbxRunProxyProbe');
+    // Use 3500 chars — the tbxProxyStatus write and the tbxUpdateConnBar() call that
+    // follows are ~2833 chars into the function, past the original 2500 estimate.
+    const probeBody        = toolboxHtmlContent.slice(probeStart, probeStart + 3500);
+    const statusWriteIdx   = probeBody.indexOf("sessionStorage.setItem('tbxProxyStatus'");
+    expect(statusWriteIdx).toBeGreaterThan(-1);
+    // tbxUpdateConnBar must be called after the status is stored (not before).
+    const afterStatusWrite = probeBody.slice(statusWriteIdx);
+    expect(afterStatusWrite).toContain('tbxUpdateConnBar()');
+  });
+
+  it('connectedViaProxy label in tbxUpdateConnBar does not rely on !tbxJiraReady()', () => {
+    // !tbxJiraReady() evaluates to false in IS_NODETOOLBOX_SERVER mode because
+    // tbxJiraReady() returns true unconditionally in proxy mode — meaning
+    // connectedViaProxy was always false and the label always read "relay".
+    const updateConnBarStart = toolboxHtmlContent.indexOf('function tbxUpdateConnBar');
+    // Use 3600 chars — connectedViaProxy is ~3195 chars into the function, past the
+    // original 2500-char estimate.
+    const updateConnBarBody  = toolboxHtmlContent.slice(updateConnBarStart, updateConnBarStart + 3600);
+    const connViaProxyIdx    = updateConnBarBody.indexOf('connectedViaProxy =');
+    expect(connViaProxyIdx).toBeGreaterThan(-1);
+    const connViaProxyLine   = updateConnBarBody.slice(connViaProxyIdx, connViaProxyIdx + 200);
+    expect(connViaProxyLine).not.toContain('!tbxJiraReady()');
+  });
+
+});
+
 // ── Connection Wizard Removal ─────────────────────────────────────────────────
 
 describe('toolbox.html — in-app connection wizard removed', () => {
