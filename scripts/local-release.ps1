@@ -317,8 +317,11 @@ try {
     git push origin $GitTag
     if ($LASTEXITCODE -ne 0) { throw "git push tag failed with exit code $LASTEXITCODE" }
 
-    # Return to the original feature branch so the developer's workspace is unchanged
-    git checkout $originalBranch 2>&1 | Out-Null
+    # Return to the original feature branch so the developer's workspace is unchanged.
+    # git writes "Switched to branch '...'" to stderr even on success, which triggers a
+    # NativeCommandError under $ErrorActionPreference = 'Stop'. The --quiet flag suppresses
+    # that informational message; the try/catch handles any residual stderr output safely.
+    try { git checkout --quiet $originalBranch } catch { <# stderr noise from git, not a real error #> }
 
     # Create the GitHub Release and attach both artifacts.
     # $ExeZipOutputPath is used instead of the raw .exe so users aren't blocked
