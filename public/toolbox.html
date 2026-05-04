@@ -47665,6 +47665,15 @@ function tbxWizOpenRelay() {
   CRG.relay.jiraWin = window.open(url, '__crg_jira');
   CRG.relay.jiraReady = false;
   tbxWizRender();
+
+  // In server mode the bookmarklet uses the HTTP bridge (not postMessage) to signal
+  // readiness — crAutoPingBridge polls /api/relay-bridge/status and sets
+  // CRG.relay.jiraReady when the bookmarklet registers. The interval below then
+  // picks it up on its next tick, keeping the wizard flow consistent for both modes.
+  if (IS_NODETOOLBOX_SERVER) {
+    crAutoPingBridge('jira');
+  }
+
   tbxWizRelayPollIv = setInterval(function() {
     if (CRG.relay.jiraReady) {
       clearInterval(tbxWizRelayPollIv); tbxWizRelayPollIv = null;
@@ -47675,7 +47684,11 @@ function tbxWizOpenRelay() {
       clearInterval(tbxWizRelayPollIv); tbxWizRelayPollIv = null;
       tbxWizRender(); return;
     }
-    try { CRG.relay.jiraWin.postMessage({ __crg: true, __crg_ping: true }, '*'); } catch(e) {}
+    // In file:// mode (Edge legacy / no server) use postMessage pings so the
+    // bookmarklet can pong back and prove the relay channel is open.
+    if (!IS_NODETOOLBOX_SERVER) {
+      try { CRG.relay.jiraWin.postMessage({ __crg: true, __crg_ping: true }, '*'); } catch(e) {}
+    }
   }, 500);
 }
 
