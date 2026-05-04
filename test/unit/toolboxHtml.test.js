@@ -217,6 +217,53 @@ describe('toolbox.html — Reports Hub connection bar proxy fixes', () => {
 
 });
 
+// ── Home Screen Default + Reports Hub Auto-load ───────────────────────────────
+//
+// Root bugs:
+//   1. tbxHomeInit() contained a one-shot requestAnimationFrame block that
+//      redirected every first page load to 'reports-hub', bypassing the home
+//      screen.  The Home Screen should be the landing view.
+//
+//   2. rhOnOpen() did not reset stale RH_STATE.generating* flags before calling
+//      rhShowTab().  If a fetch was abandoned mid-flight (user navigated away
+//      before the API responded), generatingFeatures stayed true on re-entry and
+//      rhShowTab()'s guard condition (!generatingFeatures && !loadedFeatures)
+//      blocked the auto-load, leaving the panel empty until a manual ↻ Refresh.
+
+describe('toolbox.html — home screen default and Reports Hub auto-load', () => {
+
+  it('homeInit does NOT auto-route to reports-hub on first session load', () => {
+    // The requestAnimationFrame block that called showView('reports-hub') must be
+    // gone — the Home Screen is now the default landing view.
+    const homeInitStart = toolboxHtmlContent.indexOf('function homeInit()');
+    expect(homeInitStart).toBeGreaterThan(-1);
+    // Scan the function body (generous 1500-char window covers the whole function).
+    const homeInitBody = toolboxHtmlContent.slice(homeInitStart, homeInitStart + 1500);
+    expect(homeInitBody).not.toContain("showView('reports-hub')");
+  });
+
+  it('homeInit does NOT set the tbxHomeAutoRouted session flag', () => {
+    // The auto-route relied on sessionStorage 'tbxHomeAutoRouted' as a one-shot
+    // guard.  With the auto-route gone the flag should also be removed from homeInit.
+    const homeInitStart = toolboxHtmlContent.indexOf('function homeInit()');
+    const homeInitBody  = toolboxHtmlContent.slice(homeInitStart, homeInitStart + 1500);
+    expect(homeInitBody).not.toContain('tbxHomeAutoRouted');
+  });
+
+  it('rhOnOpen resets generatingFeatures before calling rhShowTab so stale in-flight state cannot block auto-load', () => {
+    // Without this reset, navigating away mid-fetch leaves generatingFeatures=true;
+    // subsequent opens of Reports Hub skip the auto-load because rhShowTab's guard
+    // condition (!generatingFeatures && !loadedFeatures) evaluates to false.
+    const rhOnOpenStart = toolboxHtmlContent.indexOf('function rhOnOpen()');
+    expect(rhOnOpenStart).toBeGreaterThan(-1);
+    // 1300-char window: the reset lines are ~940 chars into the function body
+    // due to the explanatory comment block added above them.
+    const rhOnOpenBody = toolboxHtmlContent.slice(rhOnOpenStart, rhOnOpenStart + 1300);
+    expect(rhOnOpenBody).toContain('generatingFeatures = false');
+  });
+
+});
+
 // ── Connection Wizard Removal ─────────────────────────────────────────────────
 
 describe('toolbox.html — in-app connection wizard removed', () => {
