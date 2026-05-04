@@ -2328,25 +2328,40 @@ color: #fff;
           </div>
           <!-- CTASK checklist -->
           <div id="cr-ctask-section" style="margin-top:16px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
-            <div style="font-size:13px;font-weight:700;margin-bottom:10px;">📋 CTASKs to create</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">These CTASKs will be created automatically for each selected environment.</div>
-            <!-- Fixed auto-CTASKs (always created, not toggleable) -->
+            <div style="font-size:13px;font-weight:700;margin-bottom:4px;">📋 CTASK Workflow</div>
+
+            <!-- ── Auto-created by SNow ── -->
+            <!-- SNow automatically creates these 2 CTASKs when a CHG is submitted.     -->
+            <!-- Toolbox does NOT create them — it only renames and configures them.     -->
+            <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin:10px 0 6px;">
+              Auto-created by SNow — Toolbox will rename &amp; configure
+            </div>
             <div style="display:flex;flex-direction:column;gap:6px;" id="cr-ctask-fixed">
-              <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;opacity:0.85;">
-                <input type="checkbox" checked disabled style="accent-color:var(--accent);cursor:not-allowed;">
+              <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;opacity:0.7;">
+                <span style="font-size:16px;line-height:1;" title="SNow creates this — Toolbox will rename it">✎</span>
                 <span style="font-size:12px;flex:1;"><strong>Implementation CTASK</strong> <span id="cr-ctask-impl-preview" style="color:var(--text-muted);">— Enrollment - AWS - [ENV]</span></span>
-                <span style="font-size:10px;color:var(--text-muted);background:var(--border);padding:2px 6px;border-radius:4px;" title="SNow creates this automatically — CRG will rename it">SNow auto ✎</span>
+                <span style="font-size:10px;color:var(--text-muted);background:var(--border);padding:2px 6px;border-radius:4px;">SNow auto</span>
               </div>
-              <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;opacity:0.85;">
-                <input type="checkbox" checked disabled style="accent-color:var(--accent);cursor:not-allowed;">
+              <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;opacity:0.7;">
+                <span style="font-size:16px;line-height:1;" title="SNow creates this — Toolbox will rename it and set description">✎</span>
                 <span style="font-size:12px;flex:1;"><strong>Technical Checkout</strong></span>
-                <span style="font-size:10px;color:var(--text-muted);background:var(--border);padding:2px 6px;border-radius:4px;" title="SNow creates this automatically — CRG will rename it and set description">SNow auto ✎</span>
+                <span style="font-size:10px;color:var(--text-muted);background:var(--border);padding:2px 6px;border-radius:4px;">SNow auto</span>
               </div>
             </div>
-            <!-- Dynamic custom templates -->
-            <div id="cr-ctask-custom" style="display:flex;flex-direction:column;gap:6px;margin-top:6px;"></div>
-            <div style="margin-top:8px;">
-              <button class="cr-btn cr-btn-ghost cr-btn-sm" onclick="crShowTab('settings');setTimeout(function(){document.getElementById('cr-ctask-settings-card').scrollIntoView({behavior:'smooth'});},200)">⚙ Manage CTASK templates</button>
+
+            <!-- ── Additional CTASKs created by Toolbox ── -->
+            <!-- Custom templates are POSTed to SNow as new CTASKs by Toolbox.          -->
+            <!-- Use the settings panel to define reusable templates per environment.   -->
+            <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin:12px 0 6px;">
+              Additional CTASKs — created by Toolbox
+            </div>
+            <div id="cr-ctask-custom" style="display:flex;flex-direction:column;gap:6px;"></div>
+            <div id="cr-ctask-custom-empty" style="font-size:12px;color:var(--text-muted);padding:6px 2px;display:none;">
+              No additional CTASKs. Use "+ Add CTASK" to define one.
+            </div>
+            <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="cr-btn cr-btn-ghost cr-btn-sm" onclick="crShowTab('settings');setTimeout(function(){document.getElementById('cr-ctask-settings-card').scrollIntoView({behavior:'smooth'});crAddCtaskTemplate();},200)">+ Add CTASK</button>
+              <button class="cr-btn cr-btn-ghost cr-btn-sm" onclick="crShowTab('settings');setTimeout(function(){document.getElementById('cr-ctask-settings-card').scrollIntoView({behavior:'smooth'});},200)">⚙ Manage templates</button>
             </div>
           </div>
           <div class="cr-row" style="justify-content:flex-end;margin-top:8px;">
@@ -6256,11 +6271,19 @@ function crRefreshCtaskList() {
 
   var selectedEnvIds = crGetSelectedEnvs().map(function(e) { return e.id; });
 
-  var container = document.getElementById('cr-ctask-custom');
+  var container  = document.getElementById('cr-ctask-custom');
+  var emptyNotice = document.getElementById('cr-ctask-custom-empty');
   if (!container) return;
   var templates = crGetCtaskTemplates();
-  if (!templates.length) { container.innerHTML = ''; return; }
 
+  if (!templates.length) {
+    container.innerHTML = '';
+    // Show the empty-state hint so users know the "+ Add CTASK" button is how they add more.
+    if (emptyNotice) emptyNotice.style.display = '';
+    return;
+  }
+
+  if (emptyNotice) emptyNotice.style.display = 'none';
   container.innerHTML = templates.map(function(tpl) {
     var matchesEnv = !tpl.envs || tpl.envs.length === 0 || tpl.envs.indexOf('all') >= 0 ||
       tpl.envs.some(function(e) { return selectedEnvIds.indexOf(e) >= 0; });
