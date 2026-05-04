@@ -15,6 +15,7 @@ const createProxyRouter                     = require('./src/routes/proxy');
 const createApiRouter                       = require('./src/routes/api');
 const createSchedulerRouter                 = require('./src/routes/scheduler');
 const createSetupRouter                     = require('./src/routes/setup');
+const relayBridgeRouter                     = require('./src/routes/relayBridge');
 const { serveStaticFile }                   = require('./src/utils/staticFileServer');
 const { startSchedulerLoop }                = require('./src/services/repoMonitor');
 const { isPortInUse, resolvePortConflict }  = require('./src/utils/portManager');
@@ -59,6 +60,9 @@ app.use(createSetupRouter(configuration));
 
 // Internal APIs: /api/proxy-status, /api/proxy-config, /api/snow-session
 app.use(createApiRouter(configuration));
+
+// Relay bridge: /api/relay-bridge/* — HTTP-based relay for Chrome (bypasses COOP)
+app.use('/api/relay-bridge', relayBridgeRouter);
 
 // Scheduler APIs: /api/scheduler/*
 app.use(createSchedulerRouter(configuration));

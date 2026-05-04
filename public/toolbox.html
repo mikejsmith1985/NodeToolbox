@@ -4354,7 +4354,107 @@ function crUpdateInspectorCTA() {
 }
 
 // ── Relay bookmarklet script ──────────────────────────────────────────────────
+
+/**
+ * Generates the HTTP-bridge bookmarklet for server mode.
+ * Instead of postMessage (which Chrome's COOP blocks), the bookmarklet uses HTTP
+ * long-polling against the NodeToolbox server on localhost.  Because Chrome treats
+ * http://localhost as a trusted secure context, there are no mixed-content or CORS
+ * restrictions when fetching from an HTTPS SNow/Jira page.
+ *
+ * @param {string} serverOrigin — e.g. "http://localhost:5555"
+ * @returns {string} bookmarklet javascript: URL content (not yet encoded)
+ */
+function crRelayScriptBridge(serverOrigin) {
+  return '(function(){' +
+    'if(window.__crg_bridge_active)return;' +
+    'var h=location.hostname;var p=location.pathname;' +
+    'if(h.indexOf("service-now")<0&&h.indexOf("jira")<0&&h.indexOf("atlassian")<0){' +
+      'alert("\\u26a0\\ufe0f Toolbox Relay\\n\\nThis bookmarklet should be clicked on a Jira, Confluence, or ServiceNow page.\\n\\nCurrent domain: "+h);return;' +
+    '}' +
+    'var sys=h.indexOf("service-now")>=0?"snow":(h.indexOf("atlassian")>=0&&p.indexOf("/wiki")>=0)?"conf":"jira";' +
+    // Extract g_ck for ServiceNow CSRF token injection
+    'var gck="";' +
+    'if(sys==="snow"){' +
+      'try{gck=window.g_ck||"";}catch(e){}' +
+      'if(!gck){try{gck=(window.NOW&&window.NOW.GlideConfig&&window.NOW.GlideConfig.g_ck)||"";}catch(e){}}' +
+    '}' +
+    'var srv=' + JSON.stringify(serverOrigin) + ';' +
+    // Register with the NodeToolbox server — this is what the status endpoint detects
+    'fetch(srv+"/api/relay-bridge/register?sys="+sys,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})' +
+      '.then(function(){' +
+        'window.__crg_bridge_active=true;' +
+        // Show visual badge so the user knows the bookmarklet is active
+        'var col=sys==="snow"?(gck?"#238636":"#b08800"):sys==="conf"?"#7c3aed":"#0969da";' +
+        'var lbl=sys==="snow"?(gck?"\\u2713 g_ck":"\\u26a0 no g_ck"):sys==="conf"?"Confluence":"Jira";' +
+        'var b=document.createElement("div");' +
+        'b.style="position:fixed;bottom:16px;right:16px;background:"+col+";color:#fff;padding:10px 16px;border-radius:8px;font:600 13px sans-serif;z-index:2147483647;box-shadow:0 4px 16px rgba(0,0,0,.4);cursor:pointer";' +
+        'b.innerHTML="\\uD83D\\uDD0C Relay Active \\u2014 "+lbl+" \\u2014 Toolbox Connected";' +
+        'b.onclick=function(){b.remove();};' +
+        'document.body.appendChild(b);' +
+        'try{window.blur();}catch(e){}' +
+        // Deregister on page unload so NodeToolbox immediately sees the relay as gone
+        'window.addEventListener("pagehide",function(){' +
+          'window.__crg_bridge_active=false;' +
+          'try{navigator.sendBeacon(srv+"/api/relay-bridge/deregister?sys="+sys,"{}");}catch(e){}' +
+        '});' +
+        // Start the continuous polling loop
+        '(function poll(){' +
+          'if(!window.__crg_bridge_active)return;' +
+          'fetch(srv+"/api/relay-bridge/poll?sys="+sys)' +
+            '.then(function(r){return r.json();})' +
+            '.then(function(j){' +
+              'if(j.request)executeRequest(j.request);' +
+              // Immediately re-enter poll after handling (or when null — idle)
+              'if(window.__crg_bridge_active)poll();' +
+            '})' +
+            '.catch(function(e){' +
+              // Brief back-off on network error so we do not spam on transient failures
+              'if(window.__crg_bridge_active)setTimeout(poll,2000);' +
+            '});' +
+        '})();' +
+      '})' +
+      '.catch(function(e){' +
+        'alert("\\u274c Toolbox Relay Bridge\\n\\nCould not reach NodeToolbox at "+srv+"\\n\\nMake sure NodeToolbox is running, then try again.\\n\\nError: "+(e&&e.message||e));' +
+      '});' +
+    // Execute one relayed request and post the result back to the server
+    'function executeRequest(req){' +
+      'var hdrs={"Content-Type":"application/json","Accept":"application/json","X-Requested-With":"XMLHttpRequest"};' +
+      // SNow requires X-UserToken (g_ck) on every mutating request to satisfy CSRF checks
+      'if(sys==="snow"&&gck)hdrs["X-UserToken"]=gck;' +
+      'if(sys==="jira"||sys==="conf")hdrs["X-Atlassian-Token"]="no-check";' +
+      'if(req.authHeader)hdrs["Authorization"]=req.authHeader;' +
+      'var ctrl=new AbortController();' +
+      'var to=setTimeout(function(){ctrl.abort();},25000);' +
+      // credentials:"include" sends the browser session cookies that Okta SSO requires
+      'var opts={method:req.method||"GET",credentials:req.authHeader?"omit":"include",headers:hdrs,signal:ctrl.signal};' +
+      'if(req.body!=null)opts.body=JSON.stringify(req.body);' +
+      'var url=location.origin+req.path;' +
+      'fetch(url,opts)' +
+        '.then(function(r){' +
+          'clearTimeout(to);' +
+          'return r.text().then(function(txt){' +
+            'var data;try{data=JSON.parse(txt);}catch(pe){data={_raw:txt.slice(0,500)};}' +
+            'return fetch(srv+"/api/relay-bridge/result",{method:"POST",headers:{"Content-Type":"application/json"},' +
+              'body:JSON.stringify({id:req.id,sys:sys,ok:r.ok,status:r.status,data:data})});' +
+          '});' +
+        '})' +
+        '.catch(function(err){' +
+          'clearTimeout(to);' +
+          'fetch(srv+"/api/relay-bridge/result",{method:"POST",headers:{"Content-Type":"application/json"},' +
+            'body:JSON.stringify({id:req.id,sys:sys,ok:false,error:err.message})}).catch(function(){});' +
+        '});' +
+    '}' +
+  '})()';
+}
+
 function crRelayScript() {
+  // In server mode, generate the HTTP-bridge bookmarklet that polls localhost via HTTP.
+  // This bypasses Chrome's COOP restrictions which silently block window.postMessage
+  // across cross-origin window references (SNow and Jira Cloud both set COOP: same-origin).
+  if (IS_NODETOOLBOX_SERVER) {
+    return crRelayScriptBridge(NODETOOLBOX_ORIGIN || 'http://localhost:5555');
+  }
   return '(function(){' +
     'if(window.__crg_active)return;' +
     // Domain detection — warn if not on Jira, ServiceNow, or Confluence
@@ -5022,6 +5122,24 @@ function tbxConnect() {
 // relay for this session.  Auto-reconnect across page reloads is intentionally
 // NOT supported — the bookmarklet must be clicked once per session.
 function tbxProbeRelay(sys) {
+  // In server mode the relay uses HTTP long-polling — no window handle to probe.
+  // The bridge self-deregisters via sendBeacon on pagehide; liveness is confirmed
+  // by the 30s interval that checks /api/relay-bridge/status.
+  if (IS_NODETOOLBOX_SERVER) {
+    fetch('/api/relay-bridge/status?sys=' + sys)
+      .then(function(r) { return r.json(); })
+      .then(function(json) {
+        var readyKey = sys === 'snow' ? 'snowReady' : sys === 'conf' ? 'confReady' : 'jiraReady';
+        if (!json.active && CRG.relay[readyKey]) {
+          // Bookmarklet navigated away without sending the deregister beacon
+          CRG.relay[readyKey] = false;
+          tbxShowRelayStatus(sys, 'disconnected');
+        }
+      })
+      .catch(function() {});
+    return;
+  }
+
   var winKey  = sys === 'jira' ? 'jiraWin'   : sys === 'conf' ? 'confWin'   : 'snowWin';
 
   if (!CRG.relay[winKey]) return; // no handle this session — nothing to probe
@@ -5037,10 +5155,17 @@ function tbxProbeRelay(sys) {
   try { CRG.relay[winKey].postMessage({ __crg: true, __crg_ping: true }, '*'); } catch(e) {}
 }
 
-// Refresh "connected X ago" timestamps every 30 seconds; also refresh data-age badges
+// Refresh "connected X ago" timestamps every 30 seconds; also refresh data-age badges.
+// In server mode, also probe bridge liveness so stale ready flags are cleared promptly
+// if the bookmarklet's sendBeacon deregister was dropped (e.g. immediate close/crash).
 setInterval(function() {
   if (CRG.relay.jiraReady || CRG.relay.snowReady) tbxUpdateConnBar();
   tbxRenderDataAgeBadges();
+  if (IS_NODETOOLBOX_SERVER) {
+    if (CRG.relay.snowReady) tbxProbeRelay('snow');
+    if (CRG.relay.jiraReady) tbxProbeRelay('jira');
+    if (CRG.relay.confReady) tbxProbeRelay('conf');
+  }
 }, 30000);
 
 // ── Global visibility change: re-probe relays when user returns to this browser tab ──
@@ -5156,8 +5281,8 @@ function crOpenJiraRelay() {
   CRG.relay.jiraWin = window.open(url, '__crg_jira', tbxRelayWinSpec('jira'));
   var msg = crSpinner() + ' Jira tab opened — click the 📎 <strong>Toolbox Relay</strong> bookmark in that tab, then come back here…';
   ['cr-jira-test-result', 'tbxgs-jira-relay-result'].forEach(function(id) { var r = document.getElementById(id); if (r) r.innerHTML = msg; });
-  // Auto-ping: if extension is installed the relay responds immediately
-  crAutoPing('jira');
+  // In server mode use the HTTP bridge ping — avoids COOP breakage in Chrome
+  if (IS_NODETOOLBOX_SERVER) { crAutoPingBridge('jira'); } else { crAutoPing('jira'); }
 }
 
 function crOpenSnowRelay() {
@@ -5169,7 +5294,8 @@ function crOpenSnowRelay() {
   CRG.relay.snowWin = window.open(url, '__crg_snow', tbxRelayWinSpec('snow'));
   var msg = crSpinner() + ' SNow tab opened — click the 📎 <strong>Toolbox Relay</strong> bookmark in that tab, then come back here…';
   ['cr-snow-test-result', 'tbxgs-snow-relay-result'].forEach(function(id) { var r = document.getElementById(id); if (r) r.innerHTML = msg; });
-  crAutoPing('snow');
+  // In server mode use the HTTP bridge ping — avoids COOP breakage in Chrome
+  if (IS_NODETOOLBOX_SERVER) { crAutoPingBridge('snow'); } else { crAutoPing('snow'); }
 }
 
 function crOpenConfRelay() {
@@ -5180,7 +5306,8 @@ function crOpenConfRelay() {
   var msg = crSpinner() + ' Confluence tab opened — click the 📎 <strong>Toolbox Relay</strong> bookmark in that tab, then come back here…' +
     '<div style="margin-top:6px;font-size:11px;color:#a78bfa;">💡 <em>Tip: if you have a second monitor, move the Confluence tab there so Rovo stays visible while Toolbox fills the report automatically.</em></div>';
   ['tbxgs-conf-relay-result', 'art-conn-status'].forEach(function(id) { var r = document.getElementById(id); if (r) r.innerHTML = msg; });
-  crAutoPing('conf');
+  // In server mode use the HTTP bridge ping — avoids COOP breakage in Chrome
+  if (IS_NODETOOLBOX_SERVER) { crAutoPingBridge('conf'); } else { crAutoPing('conf'); }
 }
 
 /** Returns window.open feature string for relay windows.
@@ -5273,6 +5400,28 @@ function crPingJira() {
 function crPingSnow() {
   var resIds = ['cr-snow-test-result', 'tbxgs-snow-relay-result'];
   function setRes(html) { resIds.forEach(function(id) { var r = document.getElementById(id); if (r) r.innerHTML = html; }); }
+
+  // In server mode, query the bridge status endpoint rather than relying on postMessage
+  if (IS_NODETOOLBOX_SERVER) {
+    setRes(crSpinner() + ' Checking bridge status…');
+    fetch('/api/relay-bridge/status?sys=snow')
+      .then(function(r) { return r.json(); })
+      .then(function(json) {
+        if (json.active) {
+          CRG.relay.snowReady = true;
+          setRes(crAlert('✅ SNow relay bridge is active and connected.', 'success'));
+          tbxShowRelayStatus('snow', 'connected');
+        } else {
+          CRG.relay.snowReady = false;
+          setRes(crAlert('Relay bridge not active. Open a SNow tab and click the 📎 <strong>Toolbox Relay</strong> bookmarklet, then come back and test again.', 'warn'));
+        }
+      })
+      .catch(function(err) {
+        setRes(crAlert('Could not reach relay bridge endpoint: ' + (err.message || err), 'error'));
+      });
+    return;
+  }
+
   if (!CRG.relay.snowWin || CRG.relay.snowWin.closed) {
     setRes(crAlert('No SNow relay tab open. Click <strong>Open &amp; Connect</strong> first.', 'warn'));
     return;
@@ -5315,6 +5464,109 @@ function crRelayFetch(win, method, path, body, authHeader) {
     win.postMessage({ __crg: true, id: id, method: method, path: path, body: body || null, authHeader: authHeader || null }, '*');
   });
 }
+
+/**
+ * HTTP-bridge equivalent of crRelayFetch for server mode.
+ * Enqueues a request with the relay bridge server endpoint and long-polls for the result.
+ * The bookmarklet (running on the SNow/Jira page) executes the actual fetch and posts
+ * results back via the server, so COOP never affects the communication path.
+ *
+ * @param {string} sys         — 'snow' | 'jira' | 'conf'
+ * @param {string} method      — HTTP method
+ * @param {string} path        — API path on the target system (e.g. /api/now/table/...)
+ * @param {*}      body        — Request body (will be JSON-serialised by bookmarklet)
+ * @param {string} authHeader  — Optional Authorization header value
+ * @returns {Promise<{ok,status,data}>}
+ */
+function crRelayFetchBridge(sys, method, path, body, authHeader) {
+  return new Promise(function(resolve, reject) {
+    var id = '__crg_bridge_' + (++CRG.relay.counter) + '_' + Date.now();
+    tbxDLog('→ bridge ' + method + ' ' + path.slice(0,70) + ' [' + id.slice(-6) + ']');
+
+    var requestPayload = JSON.stringify({ sys: sys, id: id, method: method, path: path, body: body || null, authHeader: authHeader || null });
+
+    fetch('/api/relay-bridge/request', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    requestPayload,
+    })
+    .then(function(r) {
+      if (!r.ok) { reject(new Error('Bridge request enqueue failed: HTTP ' + r.status)); return; }
+      // Long-poll for the result — server holds this open until the bookmarklet responds
+      return fetch('/api/relay-bridge/result/' + encodeURIComponent(id) + '?sys=' + sys);
+    })
+    .then(function(r) {
+      if (!r) return;
+      return r.json().then(function(body) {
+        if (r.status === 408) {
+          tbxDLog('✗ bridge timeout [' + id.slice(-6) + ']');
+          reject(new Error(body.error || 'Relay bridge timed out (30s).'));
+          return;
+        }
+        var result = body.result || {};
+        tbxDLog('← bridge ' + result.status + ' [' + id.slice(-6) + ']');
+        if (result.error) { reject(new Error(result.error)); return; }
+        resolve(result);
+      });
+    })
+    .catch(function(err) {
+      tbxDLog('✗ bridge error [' + id.slice(-6) + ']: ' + (err.message || err));
+      reject(new Error('Relay bridge network error: ' + (err.message || err)));
+    });
+  });
+}
+
+/**
+ * HTTP-bridge equivalent of crAutoPing for server mode.
+ * Polls /api/relay-bridge/status every 500ms until the bookmarklet registers,
+ * then fires the same success callback path as the postMessage ping route.
+ *
+ * @param {string} sys — 'snow' | 'jira' | 'conf'
+ */
+function crAutoPingBridge(sys) {
+  var isPolling = true;
+  var consecutiveFailures = 0;
+  var MAX_CONSECUTIVE_FAILURES = 3;
+
+  function checkStatus() {
+    if (!isPolling) return;
+
+    fetch('/api/relay-bridge/status?sys=' + sys)
+      .then(function(r) { return r.json(); })
+      .then(function(json) {
+        consecutiveFailures = 0;
+        if (!isPolling) return;
+
+        if (json.active) {
+          isPolling = false;
+          tbxDLog('crAutoPingBridge: ' + sys + ' relay bookmarklet registered');
+          if (sys === 'snow') {
+            CRG.relay.snowReady = true;
+            tbxShowRelayStatus('snow', 'connected');
+          } else if (sys === 'jira') {
+            CRG.relay.jiraReady = true;
+            tbxShowRelayStatus('jira', 'connected');
+          } else if (sys === 'conf') {
+            CRG.relay.confReady = true;
+            tbxShowRelayStatus('conf', 'connected');
+          }
+        } else {
+          setTimeout(checkStatus, 500);
+        }
+      })
+      .catch(function() {
+        if (++consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+          tbxDLog('crAutoPingBridge: lost contact with server — stopping ping for ' + sys);
+          isPolling = false;
+          return;
+        }
+        setTimeout(checkStatus, 1000);
+      });
+  }
+
+  checkStatus();
+}
+
 
 // Auto-retry: attempt reconnect + one retry on relay-closed errors
 function tbxRetryOnce(sys, fetchFn) {
@@ -5369,6 +5621,18 @@ function tbxRetryOnce(sys, fetchFn) {
 // Shared relay dispatcher — used by PRB Generator and any module that needs
 // a simple (sys, method, path, body) → Promise<data> interface
 function crRelayRequest(sys, method, path, body) {
+  // In server mode, use the HTTP bridge — bypasses COOP restrictions in Chrome.
+  // The bridge doesn't need a valid window reference; connectivity is tracked via
+  // the bookmarklet's /register call rather than postMessage acknowledgement.
+  if (IS_NODETOOLBOX_SERVER) {
+    var isReady = sys === 'snow' ? CRG.relay.snowReady : sys === 'conf' ? CRG.relay.confReady : CRG.relay.jiraReady;
+    if (!isReady) {
+      return Promise.reject(new Error(sys.toUpperCase() + ' relay not connected. Open & Connect from Settings.'));
+    }
+    var patBridge = sys === 'jira' ? tbxGetJiraPAT() : sys === 'conf' ? tbxGetJiraPAT() : tbxGetSnowPAT();
+    var authHeaderBridge = patBridge ? ('Bearer ' + patBridge) : null;
+    return crRelayFetchBridge(sys, method, path, body, authHeaderBridge).then(function(res) { return res.data; });
+  }
   return tbxRetryOnce(sys, function() {
     var win = sys === 'snow' ? CRG.relay.snowWin : CRG.relay.jiraWin;
     if (!win || win.closed) {
@@ -5423,23 +5687,23 @@ function crSnowFetch(path, opts) {
     // the relay tab adds X-UserToken (g_ck) for SNow's CSRF requirement.
     // Only fall back to the server proxy when no relay is available — that path
     // works only with a Basic Auth service account, not with Okta SSO.
-    var isRelayActive = !!(CRG.relay && CRG.relay.snowReady &&
-                           CRG.relay.snowWin && !CRG.relay.snowWin.closed);
+    //
+    // In server mode the relay is tracked via /api/relay-bridge/status (HTTP bridge),
+    // so we only check snowReady — no window reference needed.
+    var isRelayActive = !!(CRG.relay && CRG.relay.snowReady);
     if (isRelayActive) {
-      return tbxRetryOnce('snow', function() {
-        var relayMethod = (opts && opts.method) || 'GET';
-        var relayBody   = (opts && opts.body) ? JSON.parse(opts.body) : null;
-        // null authHeader → relay uses credentials:"include" (browser cookies)
-        return crRelayFetch(CRG.relay.snowWin, relayMethod, path, relayBody, null)
-          .then(function(res) {
-            return {
-              ok:     res.status >= 200 && res.status < 300,
-              status: res.status,
-              json:   function() { return Promise.resolve(res.data); },
-              text:   function() { return Promise.resolve(JSON.stringify(res.data)); },
-            };
-          });
-      });
+      var relayMethod = (opts && opts.method) || 'GET';
+      var relayBody   = (opts && opts.body) ? JSON.parse(opts.body) : null;
+      // null authHeader → bookmarklet uses credentials:"include" (browser session cookies)
+      return crRelayFetchBridge('snow', relayMethod, path, relayBody, null)
+        .then(function(res) {
+          return {
+            ok:     res.status >= 200 && res.status < 300,
+            status: res.status,
+            json:   function() { return Promise.resolve(res.data); },
+            text:   function() { return Promise.resolve(JSON.stringify(res.data)); },
+          };
+        });
     }
 
     // Relay not available — use server-side proxy (Basic Auth service accounts only)
@@ -7043,8 +7307,8 @@ function tbxSnowRequest(method, path, body) {
   if (IS_NODETOOLBOX_SERVER) {
     // Prefer relay when active — SNow Okta sessions use HttpOnly browser cookies
     // that the server proxy cannot forward. The relay sends cookies automatically.
-    var isRelayActive = !!(CRG.relay && CRG.relay.snowReady &&
-                           CRG.relay.snowWin && !CRG.relay.snowWin.closed);
+    // In server mode (HTTP bridge), relay is tracked via snowReady — no window needed.
+    var isRelayActive = !!(CRG.relay && CRG.relay.snowReady);
     if (isRelayActive) {
       return crRelayRequest('snow', method, path, body);
     }
