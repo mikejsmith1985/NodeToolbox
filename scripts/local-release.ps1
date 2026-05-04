@@ -266,9 +266,10 @@ Push-Location $RepoRoot
 try {
     $originalBranch = git branch --show-current 2>$null
 
-    # Commit the version bump files if npm version changed them
+    # Commit the version bump files if npm version changed them.
+    # toolbox.html is included because the TOOLBOX_VERSION literal was patched above.
     if ($BumpType -ne '') {
-        git add package.json package-lock.json
+        git add package.json package-lock.json public/toolbox.html
         git commit -m "chore: bump version to $GitTag`n`nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
         git push origin HEAD
         if ($LASTEXITCODE -ne 0) { throw "git push of version bump failed with exit code $LASTEXITCODE" }
