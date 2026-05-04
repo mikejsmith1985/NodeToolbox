@@ -45,6 +45,11 @@ function createApiRouter(configuration) {
 
     const isGithubReady = !!configuration.github.pat;
 
+    const confluenceConfig        = configuration.confluence || {};
+    const isConfluenceHasCredentials = !!(confluenceConfig.username && confluenceConfig.apiToken);
+    const isConfluenceConfigured  = !!(confluenceConfig.baseUrl);
+    const isConfluenceReady       = isConfluenceConfigured && isConfluenceHasCredentials;
+
     res.json({
       proxy:     true,
       version:   APP_VERSION,
@@ -68,6 +73,12 @@ function createApiRouter(configuration) {
         hasCredentials: isGithubReady,
         ready:          isGithubReady,
       },
+      confluence: {
+        configured:     isConfluenceConfigured,
+        hasCredentials: isConfluenceHasCredentials,
+        ready:          isConfluenceReady,
+        baseUrl:        isConfluenceConfigured ? confluenceConfig.baseUrl : null,
+      },
     });
   });
 
@@ -76,6 +87,7 @@ function createApiRouter(configuration) {
   // Base URLs are returned; credentials are summarised as boolean flags.
 
   router.get('/api/proxy-config', (req, res) => {
+    const confluenceConfig = configuration.confluence || {};
     res.json({
       port: configuration.port,
       jira: {
@@ -88,6 +100,10 @@ function createApiRouter(configuration) {
       },
       github: {
         hasCredentials: !!configuration.github.pat,
+      },
+      confluence: {
+        baseUrl:        confluenceConfig.baseUrl || '',
+        hasCredentials: !!(confluenceConfig.username && confluenceConfig.apiToken),
       },
     });
   });
@@ -106,14 +122,16 @@ function createApiRouter(configuration) {
     mergeJiraConfig(configuration, incomingConfig.jira);
     mergeSnowConfig(configuration, incomingConfig.snow);
     mergeGithubConfig(configuration, incomingConfig.github);
+    mergeConfluenceConfig(configuration, incomingConfig.confluence);
 
     if (incomingConfig.sslVerify !== undefined) {
       configuration.sslVerify = !!incomingConfig.sslVerify;
     }
 
     // Strip trailing slashes after merge to normalise any user-provided values
-    if (configuration.jira.baseUrl) configuration.jira.baseUrl = configuration.jira.baseUrl.replace(/\/+$/, '');
-    if (configuration.snow.baseUrl) configuration.snow.baseUrl = configuration.snow.baseUrl.replace(/\/+$/, '');
+    if (configuration.jira.baseUrl)       configuration.jira.baseUrl       = configuration.jira.baseUrl.replace(/\/+$/, '');
+    if (configuration.snow.baseUrl)       configuration.snow.baseUrl       = configuration.snow.baseUrl.replace(/\/+$/, '');
+    if (configuration.confluence.baseUrl) configuration.confluence.baseUrl = configuration.confluence.baseUrl.replace(/\/+$/, '');
 
     saveConfigToDisk(configuration);
 
@@ -212,6 +230,23 @@ function mergeSnowConfig(configuration, incomingSnow) {
 function mergeGithubConfig(configuration, incomingGithub) {
   if (!incomingGithub) return;
   if (incomingGithub.pat !== undefined) configuration.github.pat = (incomingGithub.pat || '').trim();
+}
+
+/**
+ * Merges incoming Confluence configuration fields into the live config object.
+ * Confluence Cloud uses Basic Auth — username is the Atlassian email, apiToken
+ * is a Cloud API token generated at id.atlassian.com (not the same as Jira PAT).
+ *
+ * @param {object} configuration        - Live config (mutated in place)
+ * @param {object} [incomingConfluence] - Partial Confluence config from the request
+ */
+function mergeConfluenceConfig(configuration, incomingConfluence) {
+  if (!incomingConfluence) return;
+  // Ensure the confluence object exists even if this is the first time it is set
+  configuration.confluence = configuration.confluence || {};
+  if (incomingConfluence.baseUrl  !== undefined) configuration.confluence.baseUrl  = incomingConfluence.baseUrl;
+  if (incomingConfluence.username !== undefined) configuration.confluence.username = incomingConfluence.username;
+  if (incomingConfluence.apiToken !== undefined) configuration.confluence.apiToken = incomingConfluence.apiToken;
 }
 
 // ── Exports ───────────────────────────────────────────────────────────────────

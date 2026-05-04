@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Confluence Cloud proxy** — New `/confluence-proxy/*` route forwards requests to
+  `https://zilverton.atlassian.net` with server-side Basic Auth (Atlassian email +
+  Cloud API token). Supports both the v1 API (`/wiki/rest/api/`) and v2 (`/wiki/api/v2/`).
+  Credentials are configurable via `toolbox-proxy.json`, environment variables
+  (`TBX_CONFLUENCE_URL`, `CONFLUENCE_USERNAME`, `CONFLUENCE_API_TOKEN`), or the Admin Hub.
+  The `/api/proxy-status` and `/api/proxy-config` endpoints now include a `confluence`
+  section so the dashboard can display connection state.
+
 ### Fixed
 - **Connection bar shows correct Jira/proxy status on every page** — Six global variables
   (`TBX_CONN_BARS_REGISTRY`, `TBX_PROXY_AUTH_FAILED`, `_tbxProxyRetryTimer`,

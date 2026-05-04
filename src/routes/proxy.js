@@ -66,6 +66,25 @@ function createProxyRouter(configuration) {
     proxyRequest(req, res, configuration.github, githubPath, null, configuration.sslVerify);
   });
 
+  // ── Confluence Proxy ─────────────────────────────────────────────────────────
+  // Strips the /confluence-proxy prefix and forwards to the Confluence Cloud tenant.
+  // Confluence Cloud is at https://zilverton.atlassian.net — auth is Basic Auth using
+  // an Atlassian email address and a Cloud API token (not the same as a Jira self-hosted PAT).
+  // Example downstream path: /wiki/rest/api/space or /wiki/api/v2/pages
+
+  router.all('/confluence-proxy/*', (req, res) => {
+    if (!configuration.confluence.baseUrl) {
+      return res.status(502).json({
+        error:   'Confluence not configured',
+        message: 'Set TBX_CONFLUENCE_URL and credentials in toolbox-proxy.json or environment variables.',
+      });
+    }
+
+    // Use req.url (not req.path) so query strings are preserved and forwarded downstream.
+    const confluencePath = buildDownstreamPath(req.url, '/confluence-proxy');
+    proxyRequest(req, res, configuration.confluence, confluencePath, null, configuration.sslVerify);
+  });
+
   return router;
 }
 

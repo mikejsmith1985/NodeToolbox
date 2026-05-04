@@ -59,9 +59,10 @@ const MAX_SEEN_BRANCHES_PER_REPO = 500;
  * The _obfuscated flag in the config file signals that encoding is applied.
  */
 const OBFUSCATED_CREDENTIAL_FIELDS = {
-  jira:   ['username', 'apiToken', 'pat'],
-  snow:   ['username', 'password'],
-  github: ['pat'],
+  jira:       ['username', 'apiToken', 'pat'],
+  snow:       ['username', 'password'],
+  github:     ['pat'],
+  confluence: ['username', 'apiToken'],
 };
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -117,6 +118,11 @@ function saveConfigToDisk(configuration) {
       baseUrl: configuration.github.baseUrl,
       pat:     configuration.github.pat,
     },
+    confluence: {
+      baseUrl:  configuration.confluence.baseUrl,
+      username: configuration.confluence.username,
+      apiToken: configuration.confluence.apiToken,
+    },
     scheduler: {
       repoMonitor: {
         enabled:       !!schedulerMonitor.enabled,
@@ -170,6 +176,13 @@ function createConfigTemplate() {
     github: {
       baseUrl: DEFAULT_GITHUB_BASE_URL,
       pat:     '',
+    },
+    // Confluence Cloud — uses your Atlassian email + an API token from
+    // https://id.atlassian.com/manage-profile/security/api-tokens
+    confluence: {
+      baseUrl:  'https://zilverton.atlassian.net',
+      username: '',
+      apiToken: '',
     },
     scheduler: {
       repoMonitor: {
@@ -285,6 +298,14 @@ function buildDefaultConfig() {
       baseUrl: DEFAULT_GITHUB_BASE_URL,
       pat:     '',
     },
+    // Confluence Cloud uses Basic Auth (email + Atlassian API token).
+    // The base URL is the Atlassian tenant root (e.g. https://zilverton.atlassian.net).
+    // API paths include /wiki/rest/api/ — the browser sends these as-is.
+    confluence: {
+      baseUrl:  '',
+      username: '',
+      apiToken: '',
+    },
     scheduler: {},
   };
 }
@@ -334,6 +355,15 @@ function applyFileConfig(configuration) {
     if (fileConfig.github.baseUrl) configuration.github.baseUrl = fileConfig.github.baseUrl;
   }
 
+  if (fileConfig.confluence) {
+    const confluenceFields = ['baseUrl', 'username', 'apiToken'];
+    confluenceFields.forEach((fieldName) => {
+      if (fileConfig.confluence[fieldName]) {
+        configuration.confluence[fieldName] = fileConfig.confluence[fieldName];
+      }
+    });
+  }
+
   if (fileConfig.scheduler) {
     configuration.scheduler = JSON.parse(JSON.stringify(fileConfig.scheduler));
   }
@@ -371,6 +401,11 @@ function applyEnvironmentConfig(configuration) {
   // TBX_GITHUB_TOKEN takes priority over GITHUB_TOKEN (namespace-prefixed version wins)
   if (process.env.GITHUB_TOKEN)     configuration.github.pat = process.env.GITHUB_TOKEN;
   if (process.env.TBX_GITHUB_TOKEN) configuration.github.pat = process.env.TBX_GITHUB_TOKEN;
+
+  // Confluence Cloud — uses Basic Auth (email + Atlassian API token), not a PAT
+  if (process.env.TBX_CONFLUENCE_URL)      configuration.confluence.baseUrl  = process.env.TBX_CONFLUENCE_URL;
+  if (process.env.CONFLUENCE_USERNAME)     configuration.confluence.username = process.env.CONFLUENCE_USERNAME;
+  if (process.env.CONFLUENCE_API_TOKEN)    configuration.confluence.apiToken = process.env.CONFLUENCE_API_TOKEN;
 
   // TBX_SSL_VERIFY=false disables cert verification for Zscaler/corporate SSL inspection
   const sslVerifyValue = (process.env.TBX_SSL_VERIFY || '').trim().toLowerCase();
@@ -420,6 +455,9 @@ function normalizeBaseUrls(configuration) {
   }
   configuration.github.baseUrl = (configuration.github.baseUrl || DEFAULT_GITHUB_BASE_URL)
     .replace(/\/+$/, '');
+  if (configuration.confluence.baseUrl) {
+    configuration.confluence.baseUrl = configuration.confluence.baseUrl.replace(/\/+$/, '');
+  }
 }
 
 // ── Exports ───────────────────────────────────────────────────────────────────
@@ -504,8 +542,9 @@ module.exports = {
  * @typedef {object} ProxyConfig
  * @property {number}   port       - Port the server listens on
  * @property {boolean}  sslVerify  - Whether to verify TLS certificates
- * @property {JiraConfig}   jira
- * @property {SnowConfig}   snow
- * @property {GithubConfig} github
- * @property {SchedulerConfig} scheduler
+ * @property {JiraConfig}        jira
+ * @property {SnowConfig}        snow
+ * @property {GithubConfig}      github
+ * @property {ConfluenceConfig}  confluence
+ * @property {SchedulerConfig}   scheduler
  */
