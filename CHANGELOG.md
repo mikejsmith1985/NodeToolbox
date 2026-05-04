@@ -8,7 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **Version badge now reflects the installed release** — `TOOLBOX_VERSION` in `toolbox.html` was
+- **Connection bar shows correct Jira/proxy status on every page** — Six global variables
+  (`TBX_CONN_BARS_REGISTRY`, `TBX_PROXY_AUTH_FAILED`, `_tbxProxyRetryTimer`,
+  `_tbxProxyRetryCount`, `TBX_PROXY_MAX_RETRIES`, `TBX_PROXY_RETRY_INTERVAL_MS`) were
+  referenced by `tbxInitConnBar()` and `tbxRunProxyProbe()` but never declared. The resulting
+  `ReferenceError` crashed every view's `*OnOpen()` callback silently (caught in `showView`'s
+  try/catch), which had two cascading effects: (1) connection bar dots stayed grey on all
+  non-Home views regardless of proxy state, and (2) `rhShowTab()` was never called in
+  `rhOnOpen()`, leaving the Reports Hub blank until a manual Refresh. All six variables are now
+  declared with their correct initial values before the connection bar section.
+- **Proxy probe reliably repaints connection dots** — `tbxRefreshVisibleAuthWidgets()`,
+  `tbxRenderAllAuthBadges()`, and `tbxRenderDataAgeBadges()` were called inside
+  `tbxRunProxyProbe` and the relay reconnect handler but never defined, causing the `.then()`
+  callback to throw before `tbxUpdateConnBar()` could fire. Stubs for all three functions have
+  been added; `tbxRefreshVisibleAuthWidgets()` now also refreshes the Home page status dot.
+  `tbxUpdateConnBar()` is now called before the optional widget helpers so dots always turn
+  green even if a helper fails in the future.
+
+### Fixed
+- **Version badge now reflects the installed release**— `TOOLBOX_VERSION` in `toolbox.html` was
   hardcoded and never updated by the release script, causing the version badge and update-checker
   to always show `0.0.16` regardless of the installed build. The release script now patches the
   literal in `toolbox.html` after bumping `package.json`, and the value has been corrected to
