@@ -32,7 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   section so the dashboard can display connection state.
 
 ### Fixed
-- **Assignment group member lookup now returns results** — `crLoadGroupMembers` was
+- **Chrome wizard now auto-assigns Jira URL from proxy server** — When Chrome users
+  complete the proxy connection test in the onboarding wizard (`tbxWizTestProxy`), the
+  `jira.baseUrl` returned by `/api/proxy-status` is now persisted to `tbxCRGenJiraUrl`
+  in localStorage and synced to the Global Settings URL input. This mirrors the Edge
+  relay path, which pre-populates the Jira URL from the org default, ensuring Chrome
+  proxy users do not need to manually re-enter a URL that is already configured on the
+  running server.
+
+### Fixed
+- **Assignment group member lookup now returns results** —`crLoadGroupMembers` was
   using a SQL-style subquery (`sys_id IN (SELECT user FROM sys_user_grmember...)`)
   that SNow's Table API silently ignores — it returns HTTP 200 with an empty result
   array instead of an error, so the reliable fallback was never reached. The primary
