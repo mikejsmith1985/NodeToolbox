@@ -3341,7 +3341,7 @@ $listener.Start()
 ════════════════════════════════════════════════════════════════ -->
 <script>
 // ── Toolbox version & update config ──────────────────────────────────────────
-var TOOLBOX_VERSION = '0.0.16';
+var TOOLBOX_VERSION = '0.1.0';
 var MIN_PROXY_SERVER_VERSION = '0.0.1'; // bumped by release script — oldest proxy that works with this UI build
 var TOOLBOX_UPDATE_REPO = 'mikejsmith1985/NodeToolbox'; // public, used for version check
 var TOOLBOX_DOWNLOAD_URL = '';                         // set by release script → Confluence attachment URL
@@ -47010,6 +47010,17 @@ function wtTourPrev() {
 (function() {
   var sec = document.getElementById('wt-home-section');
   if (sec) sec.style.display = '';
+})();
+
+// ── Startup: auto-detect proxy on page load ───────────────────────────────────
+// When the app is served by the NodeToolbox server (IS_NODETOOLBOX_SERVER), run
+// the proxy probe immediately so the connection bar dots turn green without any
+// user action (e.g. navigating away and back). The guard inside
+// tbxAutoDetectProxy() ensures this only fires once per browser session.
+(function() {
+  if (typeof IS_NODETOOLBOX_SERVER !== 'undefined' && IS_NODETOOLBOX_SERVER) {
+    tbxAutoDetectProxy();
+  }
 })();
 
 // ── Setup Wizard ──────────────────────────────────────────────────────────────
