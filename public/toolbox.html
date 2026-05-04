@@ -47758,6 +47758,17 @@ function tbxWizTestProxy() {
       localStorage.setItem('tbxJiraProxyUrl', proxyBase);
       TBX_WIZ.proxyOk = true;
 
+      // Auto-assign the Jira base URL from the proxy server's configuration — mirrors
+      // the Edge relay path where the Jira URL is pre-populated from the org default.
+      // The proxy server is the source of truth for proxy-mode users, so its configured
+      // Jira URL should always be persisted when the test succeeds.
+      if (data.jira && data.jira.baseUrl) {
+        localStorage.setItem('tbxCRGenJiraUrl', data.jira.baseUrl);
+        var jiraUrlSettingsInput = document.getElementById('tbx-gs-jira-url');
+        if (jiraUrlSettingsInput) jiraUrlSettingsInput.value = data.jira.baseUrl;
+        if (typeof crSaveUrls === 'function') crSaveUrls();
+      }
+
       // Give the user a more informative message when Jira creds are already configured.
       var jiraReadyMsg = (data.jira && data.jira.ready)
         ? ' Jira credentials detected — you\'re all set.'
