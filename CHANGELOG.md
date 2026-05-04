@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **HTTP relay bridge for Chrome (COOP fix)** — Chrome enforces
+  `Cross-Origin-Opener-Policy: same-origin` on both ServiceNow and Jira Cloud, which
+  silently severs the `window.postMessage` relay channel and sets `window.opener` to
+  `null` in the opened tab. The relay now uses an HTTP long-polling bridge through
+  `http://localhost:5555` instead of `postMessage`. Because Chrome unconditionally
+  treats `http://localhost` as a secure context, bookmarklets on HTTPS SNow/Jira pages
+  can fetch the local server without any mixed-content or CORS restrictions. New
+  backend route: `src/routes/relayBridge.js` — endpoints `/register`, `/deregister`,
+  `/status`, `/request`, `/poll`, `/result/:id`. The postMessage path is preserved for
+  `file://` / legacy mode (Edge enterprise where COOP is relaxed via group policy).
+  New frontend functions: `crRelayScriptBridge`, `crRelayFetchBridge`, `crAutoPingBridge`.
+  All relay-ready flags (`snowReady`, `jiraReady`, `confReady`) are now authoritative
+  without a live window reference in server mode.
+
+### Added
 - **Confluence Cloud proxy** — New `/confluence-proxy/*` route forwards requests to
   `https://zilverton.atlassian.net` with server-side Basic Auth (Atlassian email +
   Cloud API token). Supports both the v1 API (`/wiki/rest/api/`) and v2 (`/wiki/api/v2/`).
