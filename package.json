@@ -1,6 +1,6 @@
 {
   "name": "node-toolbox",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "description": "Enterprise proxy server for Jira, GitHub, and ServiceNow — Express-based, zero terminal configuration",
   "keywords": [
     "toolbox",
