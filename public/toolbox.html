@@ -29531,6 +29531,58 @@ function rmUpdateUnifiedCard() {
 }
 // Hygiene Check — rules-based story hygiene validation engine.
 
+// ── Hygiene module state ──────────────────────────────────────────────────────
+// HG_STATE holds the runtime results for the Sprint Dashboard hygiene tab.
+// It is mutated by hgRender/hgRunRules and read by hgBuildHTML.
+var HG_STATE = {
+  lastRun:              null,   // Date of most recent rule evaluation
+  results:              [],     // Array of { rule, violations[] } for custom rules
+  builtInFetched:       false,  // True once the enterprise-standards Jira fetch completes
+  fetchingBuiltIn:      false,  // Guard flag to prevent duplicate in-flight fetches
+  builtInIssues:        [],     // Feature/Risk issues returned by the built-in JQL query
+  builtInResults:       [],     // Evaluated violations for built-in rules
+  builtInProjectClause: ''      // JQL project clause used for the last built-in fetch
+};
+
+// HG_BUILT_IN_RULES is the factory default set of enterprise hygiene standards.
+// These cover the most common compliance gaps for Feature and Risk issue types.
+// Built-in rules (id prefix "bi-") are read-only in structure but can be disabled
+// or have their name/severity overridden via the Admin Hub UI.
+// Users can extend this list by adding custom rules through the Admin Hub.
+var HG_BUILT_IN_RULES = [
+  // ── Feature rules ──────────────────────────────────────────────────────────
+  // A Feature must always have a written description so that the intent of the
+  // work is clear to downstream teams before development begins.
+  { id: 'bi-feat-desc',       name: 'Feature Description',      issueType: 'Feature', field: 'description',       label: 'Description',       severity: 'critical', isDisabled: false },
+  // Without an assignee, ownership is ambiguous and Features get lost in refinement.
+  { id: 'bi-feat-assignee',   name: 'Feature Assignee',          issueType: 'Feature', field: 'assignee',           label: 'Assignee',           severity: 'critical', isDisabled: false },
+  // Priority drives PI planning decisions — unset Features can't be ranked.
+  { id: 'bi-feat-priority',   name: 'Feature Priority',          issueType: 'Feature', field: 'priority',           label: 'Priority',           severity: 'warning',  isDisabled: false },
+  // Fix versions map Features to Program Increments; missing one means no release forecast.
+  { id: 'bi-feat-fixver',     name: 'Feature Fix Version',       issueType: 'Feature', field: 'fixVersions',        label: 'Fix Version',        severity: 'warning',  isDisabled: false },
+  // Acceptance criteria (common SAFe/enterprise custom field).
+  // Field key may differ — update in Admin Hub → Enterprise Standards if yours is different.
+  { id: 'bi-feat-ac',         name: 'Feature Acceptance Criteria', issueType: 'Feature', field: 'customfield_10033', label: 'Acceptance Criteria', severity: 'warning',  isDisabled: false },
+  // Story-point estimate needed for capacity planning and velocity tracking.
+  { id: 'bi-feat-points',     name: 'Feature Story Points',      issueType: 'Feature', field: 'customfield_10016',  label: 'Story Points',       severity: 'warning',  isDisabled: false },
+
+  // ── Risk rules ─────────────────────────────────────────────────────────────
+  // A Risk without a description cannot be assessed or mitigated.
+  { id: 'bi-risk-desc',       name: 'Risk Description',          issueType: 'Risk',    field: 'description',        label: 'Description',        severity: 'critical', isDisabled: false },
+  // Risks must be owned — unassigned Risks are nobody's problem.
+  { id: 'bi-risk-assignee',   name: 'Risk Assignee',             issueType: 'Risk',    field: 'assignee',           label: 'Assignee',           severity: 'critical', isDisabled: false },
+  // Risk severity ranking requires a priority value.
+  { id: 'bi-risk-priority',   name: 'Risk Priority',             issueType: 'Risk',    field: 'priority',           label: 'Priority',           severity: 'critical', isDisabled: false },
+  // Risks without a target resolution date can remain open indefinitely.
+  { id: 'bi-risk-duedate',    name: 'Risk Due Date',             issueType: 'Risk',    field: 'duedate',            label: 'Due Date',           severity: 'warning',  isDisabled: false },
+  // Mitigation plan field (common SAFe custom field). Update field key in Admin Hub if needed.
+  { id: 'bi-risk-mitigation', name: 'Risk Mitigation Plan',      issueType: 'Risk',    field: 'customfield_10034',  label: 'Mitigation Plan',    severity: 'warning',  isDisabled: false }
+];
+
+// HG_FIX_VERSION_CACHE is a simple per-session cache that prevents re-fetching
+// Jira fix versions for the same project key during a single browser session.
+var HG_FIX_VERSION_CACHE = {};
+
 function hgAutoName(type, cfg) {
   if (type === 'stale') return 'Stale in ' + (cfg.statusCategory || 'In Progress') + ' (' + (cfg.days || 5) + ' days)';
   if (type === 'missing_field') return 'Missing ' + (cfg.fieldLabel || 'Field') + (cfg.issueTypes && cfg.issueTypes.length ? ' on ' + cfg.issueTypes.join('/') : '');
@@ -35077,7 +35129,19 @@ function adminHubRemoveArtTeam(teamIndex) {
 function adminHubRender() {
   var body = document.getElementById('admin-hub-body');
   if (!body) return;
-  body.innerHTML = adminHubBuildHTML();
+  // Wrap in try/catch so a JS error in any sub-builder shows a visible message
+  // rather than leaving the panel completely blank with no feedback.
+  try {
+    body.innerHTML = adminHubBuildHTML();
+  } catch (renderError) {
+    body.innerHTML =
+      '<div style="padding:24px;color:#ef4444;font-size:13px;">' +
+      '⚠️ <strong>Admin Hub failed to load.</strong><br>' +
+      '<span style="font-size:11px;color:var(--text-muted);">' +
+      crEsc(renderError.message || String(renderError)) +
+      '</span></div>';
+    console.error('[AdminHub] Render error:', renderError);
+  }
 }
 
 function adminHubResetHygieneRules() {
