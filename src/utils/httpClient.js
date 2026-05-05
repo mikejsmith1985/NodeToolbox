@@ -110,19 +110,38 @@ function proxyRequest(clientReq, clientRes, serviceConfig, targetPathWithQuery, 
   });
 
   outboundRequest.on('error', (networkError) => {
-    console.error('  ⚠ Proxy error → ' + serviceConfig.baseUrl + targetPathWithQuery + ': ' + networkError.message);
+    // Prefer the human-readable message; fall back to the error code so the
+    // response never arrives with an empty "message" field.
+    const errorDescription = networkError.message || networkError.code || 'Unknown network error';
+    console.error('  ⚠ Proxy error → ' + serviceConfig.baseUrl + targetPathWithQuery + ': ' + errorDescription);
     // Only send an error response if headers haven't been sent already
     if (!clientRes.headersSent) {
-      clientRes.status(502).json({ error: 'Proxy error', message: networkError.message });
+      clientRes.status(502).json({ error: 'Proxy error', message: errorDescription });
     }
   });
 
-  // GET and HEAD have no request body — end the request immediately
+  // GET and HEAD have no request body — end the outbound request immediately
   if (clientReq.method === 'GET' || clientReq.method === 'HEAD') {
     outboundRequest.end();
   } else {
-    // For POST/PUT/PATCH/DELETE, pipe the request body to the upstream service
-    clientReq.pipe(outboundRequest);
+    // Express body-parser middleware (express.json) runs before the proxy router
+    // and eagerly consumes the raw request stream, storing the parsed result in
+    // clientReq.body.  Piping clientReq at this point would send an empty body
+    // to the upstream service, causing some servers (e.g. ServiceNow) to close
+    // the connection with a TCP RST — which Node reports as a network error with
+    // an empty message string (the source of the "Proxy error / message: ''" 502).
+    //
+    // When body-parser has already parsed the body we re-serialize it so the
+    // exact original payload is forwarded with a correct Content-Length header.
+    if (clientReq.body !== undefined) {
+      const serializedBody = Buffer.from(JSON.stringify(clientReq.body), 'utf8');
+      // Set Content-Length now — before .end() sends the request headers
+      outboundRequest.setHeader('Content-Length', serializedBody.length);
+      outboundRequest.end(serializedBody);
+    } else {
+      // Body has not been pre-parsed (e.g. non-JSON content type) — pipe as-is
+      clientReq.pipe(outboundRequest);
+    }
   }
 }
 

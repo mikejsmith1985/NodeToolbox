@@ -232,3 +232,105 @@ describe('GET /api/diagnostic', () => {
     expect(typeof response.body.platform).toBe('string');
   });
 });
+
+// ── /api/shutdown ─────────────────────────────────────────────────────────────
+
+describe('POST /api/shutdown', () => {
+  let exitSpy;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    // Prevent process.exit() from actually terminating the Jest process
+    exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    exitSpy.mockRestore();
+  });
+
+  it('responds with ok:true and a message', async () => {
+    const configuration = {
+      jira: { baseUrl: '', pat: '' }, snow: { baseUrl: '' },
+      github: { pat: '' }, sslVerify: true,
+    };
+
+    const response = await request(buildTestApp(configuration))
+      .post('/api/shutdown');
+
+    expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
+    expect(typeof response.body.message).toBe('string');
+  });
+
+  it('calls process.exit(0) after the response delay', async () => {
+    const configuration = {
+      jira: { baseUrl: '', pat: '' }, snow: { baseUrl: '' },
+      github: { pat: '' }, sslVerify: true,
+    };
+
+    await request(buildTestApp(configuration)).post('/api/shutdown');
+
+    expect(exitSpy).not.toHaveBeenCalled(); // not called before timeout fires
+    jest.runAllTimers();
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+});
+
+// ── /api/restart ──────────────────────────────────────────────────────────────
+
+describe('POST /api/restart', () => {
+  let exitSpy;
+  let spawnSpy;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    exitSpy  = jest.spyOn(process, 'exit').mockImplementation(() => {});
+    // Prevent a real child process from being spawned during the test
+    spawnSpy = jest.spyOn(require('child_process'), 'spawn')
+      .mockReturnValue({ unref: () => {} });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    exitSpy.mockRestore();
+    spawnSpy.mockRestore();
+  });
+
+  it('responds with ok:true and a message', async () => {
+    const configuration = {
+      jira: { baseUrl: '', pat: '' }, snow: { baseUrl: '' },
+      github: { pat: '' }, sslVerify: true,
+    };
+
+    const response = await request(buildTestApp(configuration))
+      .post('/api/restart');
+
+    expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
+    expect(typeof response.body.message).toBe('string');
+  });
+
+  it('spawns a detached child process then calls process.exit(0)', async () => {
+    const configuration = {
+      jira: { baseUrl: '', pat: '' }, snow: { baseUrl: '' },
+      github: { pat: '' }, sslVerify: true,
+    };
+
+    // Clear any prior spawn calls made by Jest's own worker pool setup
+    spawnSpy.mockClear();
+
+    await request(buildTestApp(configuration)).post('/api/restart');
+
+    jest.runAllTimers();
+
+    // Verify the key properties of the spawn call without deep-comparing process.env
+    expect(spawnSpy).toHaveBeenCalled();
+    const spawnCallArgs = spawnSpy.mock.calls[0];
+    expect(spawnCallArgs[0]).toBe(process.execPath);          // same node/exe binary
+    expect(Array.isArray(spawnCallArgs[1])).toBe(true);       // argv args forwarded
+    expect(spawnCallArgs[2].detached).toBe(true);             // fully detached
+    expect(spawnCallArgs[2].stdio).toBe('ignore');            // no I/O attached
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+});

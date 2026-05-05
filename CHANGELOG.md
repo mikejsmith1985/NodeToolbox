@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`jira.configured` returned `false` when only a base URL was set** — `isServiceConfigured()`
+  in `loader.js` required both a URL and at least one credential, so the `configured` field in
+  `GET /api/proxy-status` was `false` even when the user had typed in a Jira URL but not yet
+  added a PAT or API token. Introduced `isServiceBaseUrlSet()` which checks the URL only
+  (no credential requirement), and updated the `proxy-status` handler to use it for the
+  `configured` and `baseUrl` response fields. `isServiceConfigured()` (requires both URL and
+  credential) is retained for the `ready` field and for the setup-wizard guard. Also fixed a
+  `TypeError: Cannot read properties of undefined (reading 'baseUrl')` crash in
+  `saveConfigToDisk()` when `configuration.confluence` was absent.
+
+- **Chrome proxy 502 with empty error message** — `proxyRequest()` in `httpClient.js` was
+  calling `clientReq.pipe(outboundRequest)` for POST/PUT/PATCH/DELETE requests even though
+  `express.json()` middleware had already consumed the request stream before the proxy router
+  ran. Piping an already-consumed stream sent an empty body to the upstream service (e.g.
+  ServiceNow). Some servers respond to an empty POST body by closing the TCP connection with
+  RST rather than returning an HTTP error, which Node.js surfaces as a network error with an
+  empty `message` string — producing the `{"error":"Proxy error","message":""}` 502 seen in
+  Chrome from v0.1.8 onward (Chrome users were newly routed through the SNow server-side
+  proxy via the `crRelayRequest()` fallback added in that release). Fix: when `req.body` is
+  populated (express.json() parsed it), the body is re-serialized into a Buffer and written
+  directly with a correct `Content-Length` header instead of piping. Also improved the error
+  handler to fall back to `networkError.code` when `networkError.message` is empty, so the
+  502 response always contains a useful diagnostic string.
+
 - **Chrome proxy: wizard no longer shows "Download & Start" steps** — When the user opens
   the setup wizard from the running NodeToolbox server (`IS_NODETOOLBOX_SERVER = true`),
   the proxy setup step (Step 3) now shows a condensed "server is already running" view
@@ -28,6 +52,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configured) or "SNow uses Okta — use Edge with the relay bookmarklet" (no credentials).
 
 ### Added
+- **Admin Hub: "Server Control" panel** — New panel in the Admin Hub with **Restart Server**
+  and **Stop Server** buttons. Both use a two-step inline confirmation to prevent accidental
+  clicks. Designed for users running NodeToolbox via the silent VBScript launcher where no
+  terminal window is available for Ctrl+C. After restart, the UI polls `/api/proxy-status`
+  every 1.5 seconds and shows a "Reload now" link once the server is back online. New backend
+  endpoints: `POST /api/restart` (spawns a detached child process then exits) and
+  `POST /api/shutdown` (exits the process). New frontend functions:
+  `adminHubBuildServerControlPanel()`, `adminHubExecuteServerAction()`,
+  `adminHubRevealServerAction()`, `adminHubCancelServerAction()`, `adminHubPollForServerReady()`.
+
+- **Admin Hub: "Check for Updates" panel** — A new "Version & Updates" panel in the Admin
+  Hub shows the current version and provides a "Check for Updates" button. Clicking it
+  queries the public GitHub Releases API (`/repos/mikejsmith1985/NodeToolbox/releases/latest`)
+  and displays whether a newer version is available along with the release notes excerpt and
+  a one-click download link. No authentication is required (public repo). New frontend
+  functions: `adminHubBuildUpdatePanel()`, `adminHubCheckForUpdates()`,
+  `adminHubIsVersionNewer()`.
 - **HTTP relay bridge for Chrome (COOP fix)** — Chrome enforces
   `Cross-Origin-Opener-Policy: same-origin` on both ServiceNow and Jira Cloud, which
   silently severs the `window.postMessage` relay channel and sets `window.opener` to

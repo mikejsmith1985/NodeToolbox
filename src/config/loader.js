@@ -119,9 +119,9 @@ function saveConfigToDisk(configuration) {
       pat:     configuration.github.pat,
     },
     confluence: {
-      baseUrl:  configuration.confluence.baseUrl,
-      username: configuration.confluence.username,
-      apiToken: configuration.confluence.apiToken,
+      baseUrl:  (configuration.confluence || {}).baseUrl  || '',
+      username: (configuration.confluence || {}).username || '',
+      apiToken: (configuration.confluence || {}).apiToken || '',
     },
     scheduler: {
       repoMonitor: {
@@ -207,6 +207,23 @@ function createConfigTemplate() {
 }
 
 /**
+ * Determines whether a service has a real, non-placeholder base URL set.
+ * Does NOT check credentials — use this for the "configured" status field
+ * that indicates the user has entered a URL for this service.
+ *
+ * @param {{ baseUrl: string }} serviceConfig
+ * @returns {boolean} True when the service has a real, non-placeholder URL
+ */
+function isServiceBaseUrlSet(serviceConfig) {
+  if (!serviceConfig.baseUrl) return false;
+
+  const hasPlaceholderUrl = JIRA_URL_PLACEHOLDER_PATTERNS.some(
+    (placeholderPattern) => serviceConfig.baseUrl.indexOf(placeholderPattern) >= 0
+  );
+  return !hasPlaceholderUrl;
+}
+
+/**
  * Determines whether a service is fully configured with both a real base URL
  * and at least one usable credential.
  *
@@ -219,12 +236,7 @@ function createConfigTemplate() {
  * @returns {boolean} True when the service has a real URL and at least one credential
  */
 function isServiceConfigured(serviceConfig) {
-  if (!serviceConfig.baseUrl) return false;
-
-  const hasPlaceholderUrl = JIRA_URL_PLACEHOLDER_PATTERNS.some(
-    (placeholderPattern) => serviceConfig.baseUrl.indexOf(placeholderPattern) >= 0
-  );
-  if (hasPlaceholderUrl) return false;
+  if (!isServiceBaseUrlSet(serviceConfig)) return false;
 
   // A URL without credentials cannot make authenticated API calls
   return !!(serviceConfig.pat || serviceConfig.apiToken || serviceConfig.password);
@@ -531,6 +543,7 @@ module.exports = {
   saveConfigToDisk,
   createConfigTemplate,
   migrateOldConfig,
+  isServiceBaseUrlSet,
   isServiceConfigured,
   JIRA_URL_PLACEHOLDER_PATTERNS,
   CONFIG_FILE_PATH,
