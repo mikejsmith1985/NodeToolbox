@@ -233,7 +233,149 @@ describe('GET /api/diagnostic', () => {
   });
 });
 
-// ── /api/shutdown ─────────────────────────────────────────────────────────────
+// ── /api/snow-diag ────────────────────────────────────────────────────────────
+// Provides all server-side ServiceNow state in one call for the diagnostic report.
+// Must never expose raw credentials — username is masked, password is never returned.
+
+describe('GET /api/snow-diag', () => {
+  // Reset relay bridge and snow session state before each test
+  beforeEach(() => {
+    snowSession.clearSession();
+    require('../../src/routes/relayBridge')._resetBridgeStateForTests();
+  });
+
+  it('returns HTTP 200', async () => {
+    const configuration = {
+      jira: { baseUrl: '', pat: '' },
+      snow: { baseUrl: '', username: '', password: '' },
+      github: { pat: '' }, sslVerify: true,
+    };
+    const response = await request(buildTestApp(configuration)).get('/api/snow-diag');
+    expect(response.status).toBe(200);
+  });
+
+  it('reports snow.hasCredentials: false when no username/password set', async () => {
+    const configuration = {
+      jira: { baseUrl: '', pat: '' },
+      snow: { baseUrl: 'https://acme.service-now.com', username: '', password: '' },
+      github: { pat: '' }, sslVerify: true,
+    };
+    const response = await request(buildTestApp(configuration)).get('/api/snow-diag');
+    expect(response.body.snow.hasCredentials).toBe(false);
+  });
+
+  it('reports snow.hasCredentials: true when both username and password are set', async () => {
+    const configuration = {
+      jira: { baseUrl: '', pat: '' },
+      snow: { baseUrl: 'https://acme.service-now.com', username: 'svc_toolbox', password: 'secret' },
+      github: { pat: '' }, sslVerify: true,
+    };
+    const response = await request(buildTestApp(configuration)).get('/api/snow-diag');
+    expect(response.body.snow.hasCredentials).toBe(true);
+  });
+
+  it('returns a masked username, never the raw password', async () => {
+    const configuration = {
+      jira: { baseUrl: '', pat: '' },
+      snow: { baseUrl: 'https://acme.service-now.com', username: 'svc_toolbox', password: 'super-secret' },
+      github: { pat: '' }, sslVerify: true,
+    };
+    const response = await request(buildTestApp(configuration)).get('/api/snow-diag');
+    const responseText = JSON.stringify(response.body);
+
+    // Raw password must never appear
+    expect(responseText).not.toContain('super-secret');
+    // Username is masked: visible prefix + asterisks + visible suffix
+    expect(response.body.snow.usernameMasked).toBeDefined();
+    expect(response.body.snow.usernameMasked).not.toBe('svc_toolbox');
+    expect(response.body.snow.usernameMasked).toContain('*');
+  });
+
+  it('returns usernameMasked as null when no username is configured', async () => {
+    const configuration = {
+      jira: { baseUrl: '', pat: '' },
+      snow: { baseUrl: '', username: '', password: '' },
+      github: { pat: '' }, sslVerify: true,
+    };
+    const response = await request(buildTestApp(configuration)).get('/api/snow-diag');
+    expect(response.body.snow.usernameMasked).toBeNull();
+  });
+
+  it('reports the SNow base URL', async () => {
+    const configuration = {
+      jira: { baseUrl: '', pat: '' },
+      snow: { baseUrl: 'https://acme.service-now.com', username: '', password: '' },
+      github: { pat: '' }, sslVerify: true,
+    };
+    const response = await request(buildTestApp(configuration)).get('/api/snow-diag');
+    expect(response.body.snow.baseUrl).toBe('https://acme.service-now.com');
+  });
+
+  it('reports snow.sessionActive: false when no g_ck session is stored', async () => {
+    const configuration = {
+      jira: { baseUrl: '', pat: '' },
+      snow: { baseUrl: '', username: '', password: '' },
+      github: { pat: '' }, sslVerify: true,
+    };
+    const response = await request(buildTestApp(configuration)).get('/api/snow-diag');
+    expect(response.body.snow.sessionActive).toBe(false);
+    expect(response.body.snow.sessionExpiresAt).toBeNull();
+  });
+
+  it('reports snow.sessionActive: true when an active g_ck session is present', async () => {
+    snowSession.storeSession('live-gck-token', 'https://acme.service-now.com', 7200);
+
+    const configuration = {
+      jira: { baseUrl: '', pat: '' },
+      snow: { baseUrl: '', username: '', password: '' },
+      github: { pat: '' }, sslVerify: true,
+    };
+    const response = await request(buildTestApp(configuration)).get('/api/snow-diag');
+    expect(response.body.snow.sessionActive).toBe(true);
+    expect(response.body.snow.sessionExpiresAt).toBeDefined();
+    // The raw g_ck token must never appear in the response
+    expect(JSON.stringify(response.body)).not.toContain('live-gck-token');
+  });
+
+  it('reports relay.snowActive: false when the SNow relay bookmarklet is not registered', async () => {
+    const configuration = {
+      jira: { baseUrl: '', pat: '' },
+      snow: { baseUrl: '', username: '', password: '' },
+      github: { pat: '' }, sslVerify: true,
+    };
+    const response = await request(buildTestApp(configuration)).get('/api/snow-diag');
+    expect(response.body.relay.snowActive).toBe(false);
+  });
+
+  it('reports relay.jiraActive: false when the Jira relay bookmarklet is not registered', async () => {
+    const configuration = {
+      jira: { baseUrl: '', pat: '' },
+      snow: { baseUrl: '', username: '', password: '' },
+      github: { pat: '' }, sslVerify: true,
+    };
+    const response = await request(buildTestApp(configuration)).get('/api/snow-diag');
+    expect(response.body.relay.jiraActive).toBe(false);
+  });
+
+  it('reports relay.snowActive: true after the SNow bookmarklet registers', async () => {
+    // Register the SNow relay via HTTP so the bridge state is set
+    const relayBridgeRouter = require('../../src/routes/relayBridge');
+    const tempApp = require('express')();
+    tempApp.use(require('express').json());
+    tempApp.use('/api/relay-bridge', relayBridgeRouter);
+    await request(tempApp).post('/api/relay-bridge/register?sys=snow').send({});
+
+    const configuration = {
+      jira: { baseUrl: '', pat: '' },
+      snow: { baseUrl: '', username: '', password: '' },
+      github: { pat: '' }, sslVerify: true,
+    };
+    const response = await request(buildTestApp(configuration)).get('/api/snow-diag');
+    expect(response.body.relay.snowActive).toBe(true);
+  });
+});
+
+
 
 describe('POST /api/shutdown', () => {
   let exitSpy;

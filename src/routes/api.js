@@ -11,6 +11,8 @@ const express    = require('express');
 const { saveConfigToDisk, isServiceConfigured, isServiceBaseUrlSet } = require('../config/loader');
 const snowSession = require('../services/snowSession');
 const { cachedDashboardHtml, cachedHtmlLoadMethod } = require('../utils/staticFileServer');
+const { prepareUpdate, spawnReplacementAndExit }   = require('../utils/updater');
+const relayBridge = require('./relayBridge');
 
 /** Application version read once at startup — avoids repeated disk I/O per request */
 const APP_VERSION = require('../../package.json').version;
@@ -264,10 +266,96 @@ function createApiRouter(configuration) {
     }, 300);
   });
 
+  // ── POST /api/update ────────────────────────────────────────────────────
+  // Downloads a specific release version from GitHub, extracts it to a staging
+  // directory, then spawns the new process and exits the current one.
+  // Expects { version: "0.2.10" } in the request body.
+  // Responds before the download begins because the process exits mid-download
+  // from the browser's perspective — polling /api/version detects when the
+  // replacement is ready.
+
+  router.post('/api/update', async (req, res) => {
+    const requestedVersion = (req.body && req.body.version) ? String(req.body.version).trim() : '';
+
+    if (!requestedVersion) {
+      return res.status(400).json({ ok: false, error: 'version is required' });
+    }
+
+    // Guard against requesting the version already running — nothing to do.
+    if (requestedVersion === APP_VERSION) {
+      return res.json({ alreadyLatest: true });
+    }
+
+    // Respond immediately so the browser knows the update is in progress.
+    // The server process will exit once the download + extraction completes.
+    res.json({ ok: true, restarting: true });
+
+    try {
+      console.log(`  ⬇ Update requested: v${APP_VERSION} → v${requestedVersion}`);
+      const { newExecPath, newExecArgs } = await prepareUpdate(requestedVersion);
+      console.log(`  ✅ Update staged — spawning v${requestedVersion} and exiting.`);
+      spawnReplacementAndExit(newExecPath, newExecArgs);
+    } catch (updateError) {
+      // The response has already been sent, so log the failure server-side.
+      // The browser will notice the server went away and show the restart polling UI.
+      console.error('  ❌ Update failed:', updateError.message);
+    }
+  });
+
+  // ── GET /api/snow-diag ──────────────────────────────────────────────────
+  // Returns all server-side ServiceNow diagnostic state in a single request.
+  // Used by the Admin Hub "SNow Diagnostics" report button so the client can
+  // include proxy credentials status and relay bridge state in the copy-paste report.
+  //
+  // Security: raw credentials are NEVER returned. Username is masked (e.g. svc_t****x).
+  // Password is omitted entirely. The g_ck token is never exposed.
+
+  router.get('/api/snow-diag', (req, res) => {
+    const snowConfig      = configuration.snow || {};
+    const sessionStatus   = snowSession.getSessionStatus();
+
+    res.json({
+      snow: {
+        baseUrl:          snowConfig.baseUrl || null,
+        hasCredentials:   !!(snowConfig.username && snowConfig.password),
+        usernameMasked:   maskCredentialUsername(snowConfig.username || ''),
+        sessionActive:    !!sessionStatus.isActive,
+        sessionExpiresAt: sessionStatus.isActive ? (sessionStatus.expiresAt || null) : null,
+      },
+      relay: {
+        snowActive: relayBridge.getBridgeStatus('snow'),
+        jiraActive: relayBridge.getBridgeStatus('jira'),
+      },
+    });
+  });
+
   return router;
 }
 
 // ── Private Helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Masks a service account username so it can be included in diagnostic reports
+ * without exposing the full credential. Reveals up to 4 leading characters and
+ * the last character — enough to confirm which account is configured without
+ * disclosing anything useful to an attacker.
+ *
+ * Examples:
+ *   'svc_toolbox'  → 'svc_****x'
+ *   'admin'        → 'admi****n'
+ *   'ab'           → '****'      (too short to reveal anything meaningful)
+ *   ''             → null        (not configured)
+ *
+ * @param {string} username - Raw username from config (may be empty)
+ * @returns {string|null} Masked username, or null if username is empty
+ */
+function maskCredentialUsername(username) {
+  if (!username) return null;
+  if (username.length <= 4) return '****';
+  const visiblePrefixLength = Math.min(4, Math.floor(username.length / 3));
+  return username.slice(0, visiblePrefixLength) + '****' + username.slice(-1);
+}
+
 
 /**
  * Merges incoming Jira configuration fields into the live config object.
