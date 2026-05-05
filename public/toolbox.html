@@ -3149,7 +3149,6 @@ $listener.Start()
     <!-- Internal tab strip -->
     <div class="cr-tabs">
       <button id="rm-tabBtn-changes"  class="cr-tab active" onclick="rmShowInternalTab('changes')">📋 My Changes</button>
-      <button id="rm-tabBtn-monitor"  class="cr-tab"        onclick="rmShowInternalTab('monitor')">🔁 Repo Monitor</button>
       <button id="rm-tabBtn-settings" class="cr-tab"        onclick="rmShowInternalTab('settings')">⚙ Settings</button>
     </div>
 
@@ -3253,66 +3252,6 @@ $listener.Start()
       </div>
 
     </div><!-- /rm-view-changes -->
-
-    <!-- ── REPO MONITOR VIEW ── -->
-    <div id="rm-view-monitor" style="display:none;">
-
-      <!-- Run controls and status bar -->
-      <div class="cr-card" style="padding:12px 14px;margin-bottom:8px;">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-          <span id="rm-sync-dot" style="width:10px;height:10px;border-radius:50%;background:#888;display:inline-block;flex-shrink:0;"></span>
-          <span id="rm-sync-status" style="font-size:13px;font-weight:600;color:var(--text);">Stopped</span>
-          <button id="rm-toggle-btn" class="cr-btn cr-btn-sm" onclick="rmToggle()" style="padding:4px 12px;">▶ Start</button>
-          <button class="cr-btn cr-btn-ghost cr-btn-sm" onclick="rmRunNow(true)" style="padding:4px 10px;">⚡ Check Now</button>
-          <span style="margin-left:auto;font-size:11px;color:var(--text-muted);white-space:nowrap;">
-            Events:&nbsp;<strong id="rm-count">0</strong>&nbsp;·&nbsp;
-            Next:&nbsp;<strong id="rm-next">—</strong>&nbsp;·&nbsp;
-            Last:&nbsp;<strong id="rm-last">Never</strong>
-          </span>
-        </div>
-      </div>
-
-      <!-- Unified schedule card: proxy controls vs browser-only controls -->
-      <div class="cr-card" style="padding:14px 16px;margin-bottom:8px;">
-        <!-- Shown when tbxJiraProxyUrl is configured in Admin Hub -->
-        <div id="rm-proxy-controls" style="display:none;">
-          <div style="font-size:13px;font-weight:700;margin-bottom:8px;">🔌 Server-Side Schedule (Proxy)</div>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-            <input type="checkbox" id="rm-server-toggle" style="width:16px;height:16px;cursor:pointer;"
-              onchange="rmToggleServerSchedule()">
-            <label for="rm-server-toggle" style="font-size:13px;cursor:pointer;font-weight:600;">Enable server-side schedule</label>
-          </div>
-          <div style="font-size:11px;color:var(--text-muted);">
-            When enabled, the NodeToolbox proxy runs the repo monitor on a schedule even when this browser tab is closed.
-          </div>
-        </div>
-        <!-- Shown when no proxy URL is configured -->
-        <div id="rm-local-controls">
-          <div style="font-size:13px;font-weight:700;margin-bottom:8px;">🖥 Browser Monitor</div>
-          <div style="font-size:11px;color:var(--text-muted);">
-            Running in browser mode — the monitor only runs while this tab is open.
-            Configure a NodeToolbox proxy in Admin Hub to enable server-side scheduling.
-          </div>
-        </div>
-        <!-- Repos watching (both modes) -->
-        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light);">
-          <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px;">Watching:</div>
-          <div id="rm-repos-summary" style="font-size:12px;color:var(--text-muted);font-style:italic;">No repos configured — add repos in Settings.</div>
-        </div>
-        <!-- Schedule summary (both modes) -->
-        <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light);">
-          <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px;">Schedule:</div>
-          <div id="rm-schedule-summary" style="font-size:12px;color:var(--text-muted);">—</div>
-        </div>
-      </div>
-
-      <!-- In-memory rolling activity log (last 60 rm* events) -->
-      <div class="cr-card" style="padding:14px 16px;">
-        <div style="font-weight:700;font-size:13px;margin-bottom:8px;">📜 Monitor Log</div>
-        <div id="rm-log-entries" style="max-height:300px;overflow-y:auto;"></div>
-      </div>
-
-    </div><!-- /rm-view-monitor -->
 
     <!-- ── SETTINGS VIEW ── -->
     <div id="rm-view-settings" style="display:none;">
@@ -3610,7 +3549,7 @@ $listener.Start()
 ════════════════════════════════════════════════════════════════ -->
 <script>
 // ── Toolbox version & update config ──────────────────────────────────────────
-var TOOLBOX_VERSION = '0.2.7';
+var TOOLBOX_VERSION = '0.2.8';
 var MIN_PROXY_SERVER_VERSION = '0.0.1'; // bumped by release script — oldest proxy that works with this UI build
 var TOOLBOX_UPDATE_REPO = 'mikejsmith1985/NodeToolbox'; // public, used for version check
 var TOOLBOX_DOWNLOAD_URL = '';                         // set by release script → Confluence attachment URL
@@ -13760,7 +13699,7 @@ function devOnOpen() {
 }
 
 // ── Dev Workspace — top-level tab routing ────────────────────────────────────
-var DW_TABS = ['time', 'gitsync', 'settings'];
+var DW_TABS = ['time', 'gitsync', 'monitor', 'settings'];
 
 function dwShowTab(tab) {
   DW_TABS.forEach(function(t) {
@@ -13775,6 +13714,7 @@ function dwShowTab(tab) {
     wlRenderTimers(); wlRenderToday(); wlRenderHistory();
   }
   if (tab === 'gitsync') { devSyncRenderUI(); tbxRenderAllAuthBadges(); }
+  if (tab === 'monitor') { rmUpdateUnifiedCard(); rmRenderScheduleSummary(); rmRenderReposSummary(); }
   if (tab === 'settings') devLoadSettingsUI();
 }
 
@@ -28649,10 +28589,19 @@ function rmLoadMyCHGs() {
       rmUpdateConnBar('error', 'Could not identify SNow user');
       return;
     }
+    // Build state filter: explicit != chains are more reliable across SNow instances
+    // than the NOT IN operator, which can behave inconsistently when URL-encoded.
     var stateFilter = RM_FILTER.states.length
       ? '^stateIN' + RM_FILTER.states.join(',')
-      : '^stateNOT IN3,4';
-    var q = 'sysparm_query=' + encodeURIComponent('assigned_to=' + identity.sysId + stateFilter + '^ORDERBYDESCplanned_start_date') +
+      : '^state!=3^state!=4';
+    // Query both assigned_to AND requested_by so CHGs appear regardless of whether
+    // the user is the assignee or the opener (enterprise CHGs are often assigned
+    // to a group or manager, while the developer is the requested_by / opened_by).
+    var userBase = identity.sysId;
+    var q = 'sysparm_query=' + encodeURIComponent(
+        'assigned_to=' + userBase + stateFilter +
+        '^ORrequested_by=' + userBase + stateFilter +
+        '^ORDERBYDESCplanned_start_date') +
       '&sysparm_display_value=all&sysparm_limit=25' +
       '&sysparm_fields=' + encodeURIComponent('sys_id,number,short_description,state,start_date,end_date,planned_start_date,planned_end_date,type');
     crSnowFetch('/api/now/table/change_request?' + q)
@@ -28749,7 +28698,7 @@ function rmMarkBranchSeen(repoPath, branchName) {
 
 // ── RM panel internal tab routing ────────────────────────────────────────────
 // Mirrors the snhShowTab pattern used at the SNow Hub level.
-var RM_INNER_TABS = ['changes', 'monitor', 'settings'];
+var RM_INNER_TABS = ['changes', 'settings'];
 
 function rmShowInternalTab(tab) {
   RM_INNER_TABS.forEach(function(t) {
@@ -28759,12 +28708,6 @@ function rmShowInternalTab(tab) {
     if (view) view.style.display = (t === tab) ? '' : 'none';
   });
   localStorage.setItem('tbxRMTab', tab);
-  // Refresh dynamic content when switching to context-specific views
-  if (tab === 'monitor') {
-    rmUpdateUnifiedCard();
-    rmRenderScheduleSummary();
-    rmRenderReposSummary();
-  }
   if (tab === 'settings') rmLoadSettingsUI();
 }
 
@@ -45694,6 +45637,7 @@ function trSearchUsers() {
   <div class="cr-tabs" style="padding:0 20px;">
     <button id="dw-tab-time"     class="cr-tab active"  onclick="dwShowTab('time')">⏱ Time Tracking</button>
     <button id="dw-tab-gitsync"  class="cr-tab"         onclick="dwShowTab('gitsync')">🔧 Git Sync</button>
+    <button id="dw-tab-monitor"  class="cr-tab"         onclick="dwShowTab('monitor')">🔁 Repo Monitor</button>
     <button id="dw-tab-settings" class="cr-tab"         onclick="dwShowTab('settings')">⚙ Settings</button>
     <button class="cr-btn cr-btn-ghost cr-btn-sm" onclick="devWizOpen(0)" style="margin-left:auto;font-size:11px;" title="Git Sync Setup Wizard">🧙 Setup Wizard</button>
   </div>
@@ -45837,6 +45781,71 @@ function trSearchUsers() {
       </div><!-- /dev-tab-hooks -->
     </main>
   </div><!-- /dw-panel-gitsync -->
+
+  <!-- ── REPO MONITOR PANEL ── -->
+  <!-- This panel hosts the same rm* DOM elements and functions used by the SNow Hub RM tab.
+       Repo Monitor is a dev-workflow tool (git repo health, sync schedules) and belongs here,
+       not inside the ServiceNow Release Management context. -->
+  <div id="dw-panel-monitor" class="dw-panel" style="display:none;">
+    <main style="max-width:960px;width:100%;margin:0 auto;padding:16px 20px 60px;display:flex;flex-direction:column;gap:16px;">
+
+      <!-- Run controls and status bar -->
+      <div class="cr-card" style="padding:12px 14px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span id="rm-sync-dot" style="width:10px;height:10px;border-radius:50%;background:#888;display:inline-block;flex-shrink:0;"></span>
+          <span id="rm-sync-status" style="font-size:13px;font-weight:600;color:var(--text);">Stopped</span>
+          <button id="rm-toggle-btn" class="cr-btn cr-btn-sm" onclick="rmToggle()" style="padding:4px 12px;">▶ Start</button>
+          <button class="cr-btn cr-btn-ghost cr-btn-sm" onclick="rmRunNow(true)" style="padding:4px 10px;">⚡ Check Now</button>
+          <span style="margin-left:auto;font-size:11px;color:var(--text-muted);white-space:nowrap;">
+            Events:&nbsp;<strong id="rm-count">0</strong>&nbsp;·&nbsp;
+            Next:&nbsp;<strong id="rm-next">—</strong>&nbsp;·&nbsp;
+            Last:&nbsp;<strong id="rm-last">Never</strong>
+          </span>
+        </div>
+      </div>
+
+      <!-- Unified schedule card: proxy controls vs browser-only controls -->
+      <div class="cr-card" style="padding:14px 16px;margin-bottom:8px;">
+        <!-- Shown when tbxJiraProxyUrl is configured in Admin Hub -->
+        <div id="rm-proxy-controls" style="display:none;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:8px;">🔌 Server-Side Schedule (Proxy)</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <input type="checkbox" id="rm-server-toggle" style="width:16px;height:16px;cursor:pointer;"
+              onchange="rmToggleServerSchedule()">
+            <label for="rm-server-toggle" style="font-size:13px;cursor:pointer;font-weight:600;">Enable server-side schedule</label>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);">
+            When enabled, the NodeToolbox proxy runs the repo monitor on a schedule even when this browser tab is closed.
+          </div>
+        </div>
+        <!-- Shown when no proxy URL is configured -->
+        <div id="rm-local-controls">
+          <div style="font-size:13px;font-weight:700;margin-bottom:8px;">🖥 Browser Monitor</div>
+          <div style="font-size:11px;color:var(--text-muted);">
+            Running in browser mode — the monitor only runs while this tab is open.
+            Configure a NodeToolbox proxy in Admin Hub to enable server-side scheduling.
+          </div>
+        </div>
+        <!-- Repos watching (both modes) -->
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light);">
+          <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px;">Watching:</div>
+          <div id="rm-repos-summary" style="font-size:12px;color:var(--text-muted);font-style:italic;">No repos configured — add repos in Settings.</div>
+        </div>
+        <!-- Schedule summary (both modes) -->
+        <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light);">
+          <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px;">Schedule:</div>
+          <div id="rm-schedule-summary" style="font-size:12px;color:var(--text-muted);">—</div>
+        </div>
+      </div>
+
+      <!-- In-memory rolling activity log (last 60 rm* events) -->
+      <div class="cr-card" style="padding:14px 16px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:8px;">📜 Monitor Log</div>
+        <div id="rm-log-entries" style="max-height:300px;overflow-y:auto;"></div>
+      </div>
+
+    </main>
+  </div><!-- /dw-panel-monitor -->
 
   <!-- ── SETTINGS PANEL ── -->
   <div id="dw-panel-settings" class="dw-panel" style="display:none;">
