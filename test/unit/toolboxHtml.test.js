@@ -44,8 +44,11 @@ describe('toolbox.html — NodeToolbox proxy auto-wire', () => {
   });
 
   it('routes crSnowFetch through /snow-proxy when on NodeToolbox', () => {
-    const crSnowFetchStart = toolboxHtmlContent.indexOf('function crSnowFetch');
-    const crSnowFetchBody  = toolboxHtmlContent.slice(crSnowFetchStart, crSnowFetchStart + 800);
+    // Extract the full crSnowFetch function body by finding the next top-level
+    // function definition — avoids brittle fixed-size slice windows.
+    const crSnowFetchStart  = toolboxHtmlContent.indexOf('function crSnowFetch');
+    const nextFunctionStart = toolboxHtmlContent.indexOf('\nfunction ', crSnowFetchStart + 1);
+    const crSnowFetchBody   = toolboxHtmlContent.slice(crSnowFetchStart, nextFunctionStart);
     expect(crSnowFetchBody).toContain('/snow-proxy');
   });
 

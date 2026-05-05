@@ -15,6 +15,7 @@ const fsMock = require('fs');
 const {
   loadConfig,
   isServiceConfigured,
+  isServiceBaseUrlSet,
   createConfigTemplate,
   migrateOldConfig,
   CONFIG_FILE_PATH,
@@ -149,6 +150,23 @@ describe('loadConfig()', () => {
   });
 });
 
+// ── isServiceBaseUrlSet() ─────────────────────────────────────────────────────
+
+describe('isServiceBaseUrlSet()', () => {
+  it('returns false when baseUrl is empty', () => {
+    expect(isServiceBaseUrlSet({ baseUrl: '' })).toBe(false);
+  });
+
+  it('returns false when baseUrl contains placeholder text', () => {
+    expect(isServiceBaseUrlSet({ baseUrl: 'https://your-instance.atlassian.net' })).toBe(false);
+    expect(isServiceBaseUrlSet({ baseUrl: 'https://your-jira.atlassian.net' })).toBe(false);
+  });
+
+  it('returns true for a real base URL even without credentials', () => {
+    expect(isServiceBaseUrlSet({ baseUrl: 'https://acme.atlassian.net' })).toBe(true);
+  });
+});
+
 // ── isServiceConfigured() ────────────────────────────────────────────────────
 
 describe('isServiceConfigured()', () => {
@@ -161,8 +179,15 @@ describe('isServiceConfigured()', () => {
     expect(isServiceConfigured({ baseUrl: 'https://your-jira.atlassian.net' })).toBe(false);
   });
 
-  it('returns true for a real base URL', () => {
-    expect(isServiceConfigured({ baseUrl: 'https://acme.atlassian.net' })).toBe(true);
+  it('returns false when baseUrl is real but credentials are missing', () => {
+    expect(isServiceConfigured({ baseUrl: 'https://acme.atlassian.net' })).toBe(false);
+    expect(isServiceConfigured({ baseUrl: 'https://acme.atlassian.net', pat: '' })).toBe(false);
+  });
+
+  it('returns true when baseUrl is real and at least one credential is present', () => {
+    expect(isServiceConfigured({ baseUrl: 'https://acme.atlassian.net', pat: 'token123' })).toBe(true);
+    expect(isServiceConfigured({ baseUrl: 'https://snow.example.com', apiToken: 'tok' })).toBe(true);
+    expect(isServiceConfigured({ baseUrl: 'https://snow.example.com', password: 'pw' })).toBe(true);
   });
 });
 

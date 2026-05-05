@@ -7,7 +7,7 @@
 'use strict';
 
 const express    = require('express');
-const { saveConfigToDisk, isServiceConfigured } = require('../config/loader');
+const { saveConfigToDisk, isServiceConfigured, isServiceBaseUrlSet } = require('../config/loader');
 const snowSession = require('../services/snowSession');
 const { cachedDashboardHtml, cachedHtmlLoadMethod } = require('../utils/staticFileServer');
 
@@ -34,13 +34,13 @@ function createApiRouter(configuration) {
   router.get('/api/proxy-status', (req, res) => {
     const isJiraHasBasicAuth = !!(configuration.jira.username && configuration.jira.apiToken);
     const isJiraHasPat       = !!configuration.jira.pat;
-    const isJiraReady        = isServiceConfigured(configuration.jira) && (isJiraHasBasicAuth || isJiraHasPat);
+    const isJiraReady        = isServiceBaseUrlSet(configuration.jira) && (isJiraHasBasicAuth || isJiraHasPat);
 
     const isSnowHasBasicAuth    = !!(configuration.snow.username && configuration.snow.password);
     const isSnowSessionCurrent  = snowSession.isSessionActive();
-    const isSnowReady           = (isServiceConfigured(configuration.snow) && isSnowHasBasicAuth) || isSnowSessionCurrent;
+    const isSnowReady           = (isServiceBaseUrlSet(configuration.snow) && isSnowHasBasicAuth) || isSnowSessionCurrent;
 
-    const snowBaseUrl = (isServiceConfigured(configuration.snow) ? configuration.snow.baseUrl : null)
+    const snowBaseUrl = (isServiceBaseUrlSet(configuration.snow) ? configuration.snow.baseUrl : null)
       || snowSession.resolveSnowBaseUrl('') || null;
 
     const isGithubReady = !!configuration.github.pat;
@@ -55,13 +55,13 @@ function createApiRouter(configuration) {
       version:   APP_VERSION,
       sslVerify: configuration.sslVerify !== false,
       jira: {
-        configured:     isServiceConfigured(configuration.jira),
+        configured:     isServiceBaseUrlSet(configuration.jira),
         hasCredentials: isJiraHasBasicAuth || isJiraHasPat,
         ready:          isJiraReady,
-        baseUrl:        isServiceConfigured(configuration.jira) ? configuration.jira.baseUrl : null,
+        baseUrl:        isServiceBaseUrlSet(configuration.jira) ? configuration.jira.baseUrl : null,
       },
       snow: {
-        configured:       isServiceConfigured(configuration.snow) || !!snowBaseUrl,
+        configured:       isServiceBaseUrlSet(configuration.snow) || !!snowBaseUrl,
         hasCredentials:   isSnowHasBasicAuth,
         sessionMode:      isSnowSessionCurrent,
         sessionExpiresAt: isSnowSessionCurrent ? snowSession.getSessionStatus().expiresAt : null,
