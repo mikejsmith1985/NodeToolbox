@@ -11,6 +11,7 @@ const express    = require('express');
 const { saveConfigToDisk, isServiceConfigured, isServiceBaseUrlSet } = require('../config/loader');
 const snowSession = require('../services/snowSession');
 const { cachedDashboardHtml, cachedHtmlLoadMethod } = require('../utils/staticFileServer');
+const { prepareUpdate, spawnReplacementAndExit }   = require('../utils/updater');
 
 /** Application version read once at startup — avoids repeated disk I/O per request */
 const APP_VERSION = require('../../package.json').version;
@@ -262,6 +263,42 @@ function createApiRouter(configuration) {
       restartedProcess.unref();
       process.exit(0);
     }, 300);
+  });
+
+  // ── POST /api/update ────────────────────────────────────────────────────
+  // Downloads a specific release version from GitHub, extracts it to a staging
+  // directory, then spawns the new process and exits the current one.
+  // Expects { version: "0.2.10" } in the request body.
+  // Responds before the download begins because the process exits mid-download
+  // from the browser's perspective — polling /api/version detects when the
+  // replacement is ready.
+
+  router.post('/api/update', async (req, res) => {
+    const requestedVersion = (req.body && req.body.version) ? String(req.body.version).trim() : '';
+
+    if (!requestedVersion) {
+      return res.status(400).json({ ok: false, error: 'version is required' });
+    }
+
+    // Guard against requesting the version already running — nothing to do.
+    if (requestedVersion === APP_VERSION) {
+      return res.json({ alreadyLatest: true });
+    }
+
+    // Respond immediately so the browser knows the update is in progress.
+    // The server process will exit once the download + extraction completes.
+    res.json({ ok: true, restarting: true });
+
+    try {
+      console.log(`  ⬇ Update requested: v${APP_VERSION} → v${requestedVersion}`);
+      const { newExecPath, newExecArgs } = await prepareUpdate(requestedVersion);
+      console.log(`  ✅ Update staged — spawning v${requestedVersion} and exiting.`);
+      spawnReplacementAndExit(newExecPath, newExecArgs);
+    } catch (updateError) {
+      // The response has already been sent, so log the failure server-side.
+      // The browser will notice the server went away and show the restart polling UI.
+      console.error('  ❌ Update failed:', updateError.message);
+    }
   });
 
   return router;
