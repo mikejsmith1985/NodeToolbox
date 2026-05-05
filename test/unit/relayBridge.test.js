@@ -147,7 +147,45 @@ describe('GET /api/relay-bridge/poll', () => {
   });
 });
 
-// ── Full round-trip ───────────────────────────────────────────────────────────
+// ── getBridgeStatus() exported helper ────────────────────────────────────────
+// This function is used by the /api/snow-diag endpoint so it can report relay
+// state without making an internal HTTP request.
+
+describe('getBridgeStatus()', () => {
+  it('returns false for the snow channel before any registration', () => {
+    expect(relayBridgeRouter.getBridgeStatus('snow')).toBe(false);
+  });
+
+  it('returns false for the jira channel before any registration', () => {
+    expect(relayBridgeRouter.getBridgeStatus('jira')).toBe(false);
+  });
+
+  it('returns false for an unknown system identifier', () => {
+    expect(relayBridgeRouter.getBridgeStatus('unknown-system')).toBe(false);
+  });
+
+  it('returns true after the snow bookmarklet registers', async () => {
+    const testApp = buildTestApp();
+    await request(testApp).post('/api/relay-bridge/register?sys=snow').send({});
+    expect(relayBridgeRouter.getBridgeStatus('snow')).toBe(true);
+  });
+
+  it('returns false again after the snow bookmarklet deregisters', async () => {
+    const testApp = buildTestApp();
+    await request(testApp).post('/api/relay-bridge/register?sys=snow').send({});
+    await request(testApp).post('/api/relay-bridge/deregister?sys=snow').send({});
+    expect(relayBridgeRouter.getBridgeStatus('snow')).toBe(false);
+  });
+
+  it('tracks snow and jira channels independently', async () => {
+    const testApp = buildTestApp();
+    await request(testApp).post('/api/relay-bridge/register?sys=snow').send({});
+    // Registering snow must not affect jira
+    expect(relayBridgeRouter.getBridgeStatus('snow')).toBe(true);
+    expect(relayBridgeRouter.getBridgeStatus('jira')).toBe(false);
+  });
+});
+
 
 describe('relay bridge full round-trip (request → poll → result → collect)', () => {
   it('delivers a request to the bookmarklet and returns the result to the caller', async () => {

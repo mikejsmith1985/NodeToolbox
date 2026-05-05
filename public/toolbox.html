@@ -34556,6 +34556,21 @@ function adminHubBuildDiagnosticsPanel() {
   h += '<span id="ah-diag-status" style="font-size:12px;color:var(--text-muted);"></span>';
   h += '</div>';
   h += '</div>';
+
+  // ── SNow-specific diagnostic report ──────────────────────────────────────────
+  // Separate card because it makes live API calls to ServiceNow and includes
+  // identity, relay, and My Changes query results — all critical for debugging
+  // the "My Changes is empty" class of proxy-mode issues.
+  h += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;">';
+  h += '<div style="font-weight:700;font-size:15px;color:var(--text);margin-bottom:4px;">❄️ ServiceNow Diagnostics</div>';
+  h += '<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">Generates a detailed SNow-specific report: connection mode, cached identity, relay status, live connectivity ping, identity verification, and a live My Changes query — the exact query Release Management uses. Paste this report when reporting SNow issues.</div>';
+  h += '<div id="ah-snow-diag-output" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:12px;font-family:monospace;font-size:11px;white-space:pre;overflow-x:auto;max-height:400px;overflow-y:auto;color:var(--text);line-height:1.5;"></div>';
+  h += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
+  h += '<button class="cr-btn cr-btn-primary cr-btn-sm" id="ah-snow-diag-btn" onclick="snwDiagCopyReport(\'ah-snow-diag-btn\', \'ah-snow-diag-output\', \'ah-snow-diag-status\')">❄️ Copy SNow Report</button>';
+  h += '<span id="ah-snow-diag-status" style="font-size:12px;color:var(--text-muted);"></span>';
+  h += '</div>';
+  h += '</div>';
+
   return h;
 }
 
@@ -44307,7 +44322,317 @@ function tbxFetchDiagReport(onComplete) {
     .catch(function(err) { onComplete(buildFullReport(null), 'Server not reachable: ' + err.message); });
 }
 
-function tbxFetchProjectStatuses(projectKey) {
+  // Try to fetch server diagnostics; fall back gracefully if server is down
+  fetch(proxyUrl + '/api/diagnostics', { signal: AbortSignal.timeout(5000) })
+    .then(function(r) { return r.json(); })
+    .then(function(serverData) { onComplete(buildFullReport(serverData), null); })
+    .catch(function(err) { onComplete(buildFullReport(null), 'Server not reachable: ' + err.message); });
+}
+
+// ── SNow Diagnostic Report ────────────────────────────────────────────────────
+//
+// Generates a comprehensive, copy-paste-ready ServiceNow diagnostic report.
+// Three sections:
+//   1. Static  — reads localStorage + in-memory state instantly (no network)
+//   2. Server  — fetches /api/snow-diag (proxy credentials + relay bridge status)
+//   3. Live    — makes actual SNow API calls: connectivity ping, identity verify,
+//                and the My Changes query RM tab uses internally
+//
+// Because the live tests hit the real SNow instance, this button is manual-only —
+// it never runs automatically on page load.
+
+/**
+ * Top-level handler for the "❄️ Copy SNow Report" Admin Hub button.
+ * Orchestrates all three report sections, renders the report inline, then
+ * copies it to the clipboard.
+ *
+ * @param {string} buttonId   - DOM id of the button to disable while running
+ * @param {string} outputDivId - DOM id of the <pre> area to render the report in
+ * @param {string} statusId    - DOM id of the status label for feedback text
+ */
+function snwDiagCopyReport(buttonId, outputDivId, statusId) {
+  var btn       = document.getElementById(buttonId);
+  var outputDiv = document.getElementById(outputDivId);
+  var statusEl  = document.getElementById(statusId);
+
+  if (btn)      { btn.disabled = true; btn.textContent = '⏳ Running…'; }
+  if (statusEl) { statusEl.textContent = ''; }
+  if (outputDiv){ outputDiv.textContent = '⏳ Gathering diagnostics…'; outputDiv.style.display = 'block'; }
+
+  // Fetch server config and run live SNow tests in parallel — both are async
+  // and independent, so we kick them off together to keep latency low.
+  var serverPromise = fetch('/api/snow-diag', { signal: AbortSignal.timeout(5000) })
+    .then(function(r) { return r.json(); })
+    .catch(function() { return null; }); // server unreachable — report will note this
+
+  var livePromise = snwDiagRunLiveTests();
+
+  Promise.all([serverPromise, livePromise])
+    .then(function(results) {
+      var serverData  = results[0];
+      var liveResults = results[1];
+      var reportText  = snwDiagBuildFullReport(serverData, liveResults);
+
+      if (outputDiv) { outputDiv.textContent = reportText; }
+
+      // Copy to clipboard — prefer async Clipboard API; fall back to execCommand
+      var copySucceeded = false;
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(reportText).then(function() {
+            if (btn) { btn.disabled = false; btn.textContent = '✅ Copied!'; setTimeout(function() { if (btn) btn.textContent = '❄️ Copy SNow Report'; }, 3000); }
+          });
+          copySucceeded = true;
+        }
+      } catch (clipboardError) { /* fall through to execCommand */ }
+
+      if (!copySucceeded) {
+        fbCopy(reportText);
+        if (btn) { btn.disabled = false; btn.textContent = '✅ Copied!'; setTimeout(function() { if (btn) btn.textContent = '❄️ Copy SNow Report'; }, 3000); }
+      } else if (!navigator.clipboard) {
+        fbCopy(reportText);
+        if (btn) { btn.disabled = false; btn.textContent = '✅ Copied!'; setTimeout(function() { if (btn) btn.textContent = '❄️ Copy SNow Report'; }, 3000); }
+      }
+
+      if (statusEl) { statusEl.textContent = 'Report copied to clipboard.'; }
+    })
+    .catch(function(unexpectedError) {
+      if (statusEl) { statusEl.textContent = '⚠ ' + (unexpectedError.message || 'Unexpected error'); }
+      if (btn) { btn.disabled = false; btn.textContent = '❄️ Copy SNow Report'; }
+    });
+}
+
+/**
+ * Reads all SNow-relevant state from localStorage and in-memory globals.
+ * Returns an object with labelled values; never makes any network calls.
+ *
+ * @returns {{ connectionMode: string, proxyUrl: string|null, relayActive: boolean,
+ *             snowReady: boolean, cachedSysId: string, cachedUser: string,
+ *             cachedDisplayName: string, runtimeSysId: string, rmPrefs: object|null }}
+ */
+function snwDiagBuildStaticSection() {
+  var isRelayActive = !!(typeof CRG !== 'undefined' && CRG.relay && CRG.relay.snowReady);
+  var proxyUrl      = localStorage.getItem('tbxSnowProxyUrl') || null;
+  var isSnowReady   = (typeof tbxSnowReady === 'function') ? tbxSnowReady() : false;
+
+  // Which connection mode is actually active right now?
+  var connectionMode = isRelayActive ? 'RELAY (bookmarklet active)' :
+                       proxyUrl      ? 'PROXY (service account)' :
+                                       'NONE (not connected)';
+
+  // Cached identity — set by "My SNow Identity" in RM Settings or My Issues Settings
+  var cachedSysId      = localStorage.getItem('tbxMISnowSysId')      || '';
+  var cachedUser       = localStorage.getItem('tbxMISnowUser')        || '';
+  var cachedDisplayName= localStorage.getItem('tbxMISnowDisplayName') || '';
+
+  // Runtime identity stored in MI_SNOW in-memory object (resets on page reload)
+  var runtimeSysId = (typeof MI_SNOW !== 'undefined' && MI_SNOW.sysId) ? MI_SNOW.sysId : '';
+
+  // RM display preferences — controls which state filters apply to My Changes
+  var rmPrefs = null;
+  try { rmPrefs = JSON.parse(localStorage.getItem('tbxRMDisplayPrefs') || 'null'); } catch(ignoredParseError) {}
+
+  return {
+    connectionMode:   connectionMode,
+    proxyUrl:         proxyUrl,
+    relayActive:      isRelayActive,
+    snowReady:        isSnowReady,
+    cachedSysId:      cachedSysId,
+    cachedUser:       cachedUser,
+    cachedDisplayName:cachedDisplayName,
+    runtimeSysId:     runtimeSysId,
+    rmPrefs:          rmPrefs,
+  };
+}
+
+/**
+ * Runs three live ServiceNow API calls and returns the results.
+ * All three are attempted regardless of failures so the full picture is visible.
+ *
+ * Tests:
+ *   1. Connectivity ping  — any SNow table read (confirms the connection works)
+ *   2. Identity verify    — looks up the cached sys_id to confirm it resolves to a real user
+ *   3. My Changes query   — the exact query Release Management uses (shows what RM would find)
+ *
+ * @returns {Promise<{ ping: object, identity: object, myChanges: object }>}
+ */
+function snwDiagRunLiveTests() {
+  var cachedSysId = localStorage.getItem('tbxMISnowSysId') || '';
+
+  // Test 1: connectivity ping — just verify we can reach SNow at all
+  var pingPromise = crSnowFetch('/api/now/table/sys_user?sysparm_limit=1&sysparm_fields=sys_id')
+    .then(function(r) {
+      return { ok: r.ok, status: r.status };
+    })
+    .catch(function(pingError) {
+      return { ok: false, status: null, error: pingError.message };
+    });
+
+  // Test 2: identity verification — confirm the cached sys_id belongs to a real SNow user
+  var identityPromise = cachedSysId
+    ? crSnowFetch('/api/now/table/sys_user?sysparm_query=sys_id=' + encodeURIComponent(cachedSysId) + '&sysparm_fields=sys_id,user_name,name&sysparm_limit=1')
+        .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, status: r.status, data: data }; }); })
+        .catch(function(identityError) { return { ok: false, error: identityError.message }; })
+    : Promise.resolve({ skipped: true, reason: 'No sys_id cached — set identity in RM Settings first' });
+
+  // Test 3: My Changes query — exactly what rmLoadMyCHGs() would execute
+  // Uses the same state filters that are active in RM display preferences
+  var rmStateCodes = ['1','2','-4'];  // Open, In Progress, Scheduled
+  try {
+    var rmPrefs = JSON.parse(localStorage.getItem('tbxRMDisplayPrefs') || '{}');
+    if (rmPrefs.states && rmPrefs.states.length) {
+      // Map human-readable state labels back to SNow state codes for the query
+      var stateCodeMap = { open: '1', in_progress: '2', scheduled: '-4', closed: '3', cancelled: '4' };
+      var mappedCodes = rmPrefs.states.map(function(s) { return stateCodeMap[s]; }).filter(Boolean);
+      if (mappedCodes.length) rmStateCodes = mappedCodes;
+    }
+  } catch(ignoredPrefsError) {}
+
+  var myChangesPromise = cachedSysId
+    ? crSnowFetch('/api/now/table/change_request?sysparm_query=assigned_to=' + encodeURIComponent(cachedSysId) + '^stateIN' + rmStateCodes.join(',') + '&sysparm_limit=10&sysparm_fields=number,short_description,state,u_environment')
+        .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, status: r.status, data: data, stateCodes: rmStateCodes }; }); })
+        .catch(function(changesError) { return { ok: false, error: changesError.message }; })
+    : Promise.resolve({ skipped: true, reason: 'No sys_id cached — cannot run My Changes query without an identity' });
+
+  return Promise.all([pingPromise, identityPromise, myChangesPromise])
+    .then(function(results) {
+      return { ping: results[0], identity: results[1], myChanges: results[2] };
+    });
+}
+
+/**
+ * Formats all three data sources into a single copy-paste-ready text report.
+ *
+ * @param {object|null} serverData  - Response from GET /api/snow-diag (null if unreachable)
+ * @param {object}      liveResults - Output of snwDiagRunLiveTests()
+ * @returns {string} Multi-line plain-text report
+ */
+function snwDiagBuildFullReport(serverData, liveResults) {
+  var SEP = '═'.repeat(55);
+  var now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  var staticState = snwDiagBuildStaticSection();
+  var lines = [];
+
+  lines.push(SEP);
+  lines.push('SERVICENOW DIAGNOSTIC REPORT — ' + now);
+  lines.push('NodeToolbox v' + ((typeof TOOLBOX_VERSION !== 'undefined') ? TOOLBOX_VERSION : '?'));
+  lines.push(SEP);
+
+  // ── Section 1: Connection mode ──────────────────────────────────────────────
+  lines.push('');
+  lines.push('CONNECTION MODE');
+  lines.push('  Mode             : ' + staticState.connectionMode);
+  lines.push('  Proxy URL        : ' + (staticState.proxyUrl || '(not set)'));
+  lines.push('  Relay active     : ' + (staticState.relayActive ? 'YES' : 'NO'));
+  lines.push('  tbxSnowReady()   : ' + (staticState.snowReady ? 'YES' : 'NO ⚠'));
+
+  // ── Section 2: Cached identity ──────────────────────────────────────────────
+  lines.push('');
+  lines.push('CACHED IDENTITY (localStorage)');
+  var sysIdStatus = staticState.cachedSysId ? ('✅ ' + staticState.cachedSysId) : '⚠ NOT SET — My Changes cannot run';
+  lines.push('  tbxMISnowSysId      : ' + sysIdStatus);
+  lines.push('  tbxMISnowUser       : ' + (staticState.cachedUser      || '(not set)'));
+  lines.push('  tbxMISnowDisplayName: ' + (staticState.cachedDisplayName || '(not set)'));
+  lines.push('  MI_SNOW.sysId (RAM) : ' + (staticState.runtimeSysId   || '(not set — resets on reload)'));
+
+  // ── Section 3: RM display preferences ──────────────────────────────────────
+  lines.push('');
+  lines.push('RM DISPLAY PREFERENCES');
+  if (staticState.rmPrefs) {
+    var stateList = (staticState.rmPrefs.states || []).join(', ') || '(all states)';
+    lines.push('  State filters    : ' + stateList);
+    lines.push('  Auto-load last   : ' + (staticState.rmPrefs.autoLoad ? 'YES' : 'NO'));
+  } else {
+    lines.push('  (using defaults — no tbxRMDisplayPrefs in localStorage)');
+  }
+
+  // ── Section 4: Server config ────────────────────────────────────────────────
+  lines.push('');
+  lines.push('SERVER CONFIG (/api/snow-diag)');
+  if (serverData && serverData.snow) {
+    var sn = serverData.snow;
+    lines.push('  SNow base URL    : ' + (sn.baseUrl || '(not set) ⚠'));
+    lines.push('  Has credentials  : ' + (sn.hasCredentials ? 'YES' : 'NO ⚠'));
+    lines.push('  Username (masked): ' + (sn.usernameMasked || '(none)'));
+    lines.push('  g_ck session     : ' + (sn.sessionActive ? 'YES (expires ' + (sn.sessionExpiresAt || '?') + ')' : 'NO'));
+  } else {
+    lines.push('  (server not reachable — is NodeToolbox running?)');
+  }
+  if (serverData && serverData.relay) {
+    var relay = serverData.relay;
+    lines.push('  Relay — SNow     : ' + (relay.snowActive ? 'YES ✅' : 'NO'));
+    lines.push('  Relay — Jira     : ' + (relay.jiraActive ? 'YES ✅' : 'NO'));
+  }
+
+  // ── Section 5: Live test results ────────────────────────────────────────────
+  if (liveResults) {
+    // Test 1: ping
+    lines.push('');
+    lines.push('LIVE TEST 1 — Connectivity Ping');
+    var pingResult = liveResults.ping || {};
+    if (pingResult.error) {
+      lines.push('  Result           : ❌ ' + pingResult.error);
+    } else {
+      lines.push('  HTTP status      : ' + (pingResult.status || '?') + ' ' + (pingResult.ok ? '✅' : '⚠'));
+      lines.push('  SNow reachable   : ' + (pingResult.ok ? 'YES' : 'NO — check proxy URL and credentials'));
+    }
+
+    // Test 2: identity verification
+    lines.push('');
+    lines.push('LIVE TEST 2 — Identity Verification');
+    var identResult = liveResults.identity || {};
+    if (identResult.skipped) {
+      lines.push('  Result           : ⏭ ' + identResult.reason);
+    } else if (identResult.error) {
+      lines.push('  Result           : ❌ ' + identResult.error);
+    } else {
+      var userRecords = (identResult.data && identResult.data.result) || [];
+      if (userRecords.length) {
+        var foundUser = userRecords[0];
+        lines.push('  Found user       : ' + (foundUser.name || '?') + ' (' + (foundUser.user_name || '?') + ') ✅');
+        lines.push('  sys_id confirmed : ' + (foundUser.sys_id || staticState.cachedSysId));
+      } else {
+        lines.push('  Result           : ⚠ No SNow user found for sys_id "' + staticState.cachedSysId + '"');
+        lines.push('  Action           : Go to RM Settings → My SNow Identity → re-search and pin your account');
+      }
+    }
+
+    // Test 3: My Changes query
+    lines.push('');
+    lines.push('LIVE TEST 3 — My Changes Query');
+    var changesResult = liveResults.myChanges || {};
+    if (changesResult.skipped) {
+      lines.push('  Result           : ⏭ ' + changesResult.reason);
+    } else if (changesResult.error) {
+      lines.push('  Result           : ❌ ' + changesResult.error);
+    } else {
+      var changeRecords = (changesResult.data && changesResult.data.result) || [];
+      var stateCodes = (changesResult.stateCodes || []).join(', ');
+      lines.push('  Assigned to      : ' + (staticState.cachedSysId || '?') + ' (' + (staticState.cachedUser || 'unknown') + ')');
+      lines.push('  State codes      : ' + stateCodes);
+      lines.push('  HTTP status      : ' + (changesResult.status || '?') + ' ' + (changesResult.ok ? '✅' : '⚠'));
+      if (changeRecords.length) {
+        lines.push('  Found            : ' + changeRecords.length + ' change request(s)');
+        changeRecords.forEach(function(cr) {
+          lines.push('    → ' + (cr.number || '?') + '  [state:' + (cr.state || '?') + ']  ' + (cr.short_description || '').slice(0, 60));
+        });
+      } else {
+        lines.push('  Found            : 0 change requests ⚠');
+        lines.push('  Possible causes  :');
+        lines.push('    1. Cached sys_id is the service account, not your personal account');
+        lines.push('       → Open RM Settings → My SNow Identity → search your username');
+        lines.push('    2. Your changes are in states not covered by the active filter');
+        lines.push('       → Open RM Settings → Display Preferences → add more state filters');
+        lines.push('    3. Your changes are assigned to a group, not to you personally');
+      }
+    }
+  }
+
+  lines.push('');
+  lines.push(SEP);
+  return lines.join('\n');
+}
+
   if (!projectKey) return Promise.resolve([]);
   if (TBX_PROJECT_STATUSES_CACHE[projectKey]) {
     return Promise.resolve(TBX_PROJECT_STATUSES_CACHE[projectKey]);
