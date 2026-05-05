@@ -45,6 +45,15 @@ const DEFAULT_SERVER_PORT = 5555;
 const DEFAULT_GITHUB_BASE_URL = 'https://api.github.com';
 
 /**
+ * SHA-256 hash of the default admin credentials "admin:toolbox".
+ * Stored as a hash so no plaintext password appears in source or config files.
+ * Users can change the password by updating `admin.credentialHash` in
+ * toolbox-proxy.json. To generate a replacement hash, run:
+ *   node -e "const c=require('crypto');console.log(c.createHash('sha256').update('username:password').digest('hex'))"
+ */
+const DEFAULT_ADMIN_CREDENTIAL_HASH = '6e45408d5007f22b0a3467e2700cce6395b27b8c65cc2a36f51521decad782dd';
+
+/**
  * Placeholder strings that indicate the user has not filled in their Jira URL.
  * Any base URL containing one of these substrings is treated as unconfigured.
  */
@@ -123,6 +132,10 @@ function saveConfigToDisk(configuration) {
       username: (configuration.confluence || {}).username || '',
       apiToken: (configuration.confluence || {}).apiToken || '',
     },
+    admin: {
+      // Persist the credential hash — allows users to change it via the config file
+      credentialHash: (configuration.admin || {}).credentialHash || DEFAULT_ADMIN_CREDENTIAL_HASH,
+    },
     scheduler: {
       repoMonitor: {
         enabled:       !!schedulerMonitor.enabled,
@@ -183,6 +196,12 @@ function createConfigTemplate() {
       baseUrl:  'https://zilverton.atlassian.net',
       username: '',
       apiToken: '',
+    },
+    // Admin Hub credentials — stored as a SHA-256 hash of "username:password".
+    // Default credentials: admin / toolbox — change by replacing this hash.
+    // Generate a new hash: node -e "const c=require('crypto');console.log(c.createHash('sha256').update('admin:newpassword').digest('hex'))"
+    admin: {
+      credentialHash: DEFAULT_ADMIN_CREDENTIAL_HASH,
     },
     scheduler: {
       repoMonitor: {
@@ -318,6 +337,11 @@ function buildDefaultConfig() {
       username: '',
       apiToken: '',
     },
+    // Admin Hub unlock credentials — stored as a SHA-256 hash, never plaintext.
+    // Default: admin / toolbox — change by updating credentialHash in toolbox-proxy.json.
+    admin: {
+      credentialHash: DEFAULT_ADMIN_CREDENTIAL_HASH,
+    },
     scheduler: {},
   };
 }
@@ -374,6 +398,10 @@ function applyFileConfig(configuration) {
         configuration.confluence[fieldName] = fileConfig.confluence[fieldName];
       }
     });
+  }
+
+  if (fileConfig.admin && fileConfig.admin.credentialHash) {
+    configuration.admin.credentialHash = fileConfig.admin.credentialHash;
   }
 
   if (fileConfig.scheduler) {
@@ -549,6 +577,7 @@ module.exports = {
   CONFIG_FILE_PATH,
   CONFIG_DIR_PATH,
   MAX_SEEN_BRANCHES_PER_REPO,
+  DEFAULT_ADMIN_CREDENTIAL_HASH,
 };
 
 /**
