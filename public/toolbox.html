@@ -3356,7 +3356,7 @@ $listener.Start()
 ════════════════════════════════════════════════════════════════ -->
 <script>
 // ── Toolbox version & update config ──────────────────────────────────────────
-var TOOLBOX_VERSION = '0.1.7';
+var TOOLBOX_VERSION = '0.1.8';
 var MIN_PROXY_SERVER_VERSION = '0.0.1'; // bumped by release script — oldest proxy that works with this UI build
 var TOOLBOX_UPDATE_REPO = 'mikejsmith1985/NodeToolbox'; // public, used for version check
 var TOOLBOX_DOWNLOAD_URL = '';                         // set by release script → Confluence attachment URL
@@ -7257,23 +7257,28 @@ function tbxJiraReady() {
 }
 
 /**
- * Returns true when a ServiceNow API call can be made — either via the
- * NodeToolbox proxy server (no relay required) or via the browser relay
- * bookmarklet (legacy file:// mode).
+ * Returns true when a ServiceNow API call can be made right now — either via
+ * the browser relay bookmarklet (any mode) or via the server-side /snow-proxy
+ * (server mode only, requires Basic Auth service account credentials).
  *
- * All SNow operation guards should call this instead of reading
- * CRG.relay.snowReady directly, so that proxy-mode users (including Chrome
- * users who cannot use the relay) never see "connect relay" prompts for SNow.
+ * The relay bookmarklet is always authoritative when connected. In server mode,
+ * the proxy is only a viable path when tbxRunProxyProbe() has confirmed the
+ * server's snow.ready=true — that flag is stored as tbxSnowProxyUrl in
+ * localStorage and cleared automatically for Okta/SSO instances where the
+ * proxy cannot authenticate on the user's behalf.
  *
- * Note: the proxy path uses Basic Auth service accounts. Users who need
- * Okta/SSO must connect the relay manually via Settings → Open & Connect SNow.
+ * Important: for Okta SNow users running Chrome, this will correctly return
+ * false (relay unavailable + proxy not credentialed) so SNow features are
+ * disabled rather than silently failing with 401s.
  */
 function tbxSnowReady() {
-  // In server mode the proxy handles SNow calls via /snow-proxy —
-  // the browser relay bookmarklet is optional (but preferred for SSO).
-  if (IS_NODETOOLBOX_SERVER) return true;
-  // Legacy file:// mode: require the bookmarklet relay.
-  return !!(typeof CRG !== 'undefined' && CRG.relay && CRG.relay.snowReady);
+  // Relay is always valid when connected — works in Edge and file:// mode.
+  if (typeof CRG !== 'undefined' && CRG.relay && CRG.relay.snowReady) return true;
+  // In server mode: the proxy can serve SNow only when tbxRunProxyProbe() has
+  // confirmed snow.ready=true from /api/proxy-status. That function stores the
+  // proxy URL in tbxSnowProxyUrl and clears it for Okta-only instances.
+  if (IS_NODETOOLBOX_SERVER) return !!localStorage.getItem('tbxSnowProxyUrl');
+  return false;
 }
 
 /** Base URL of the NodeToolbox server (e.g. http://localhost:5555), or null in file:// mode. */
@@ -47881,9 +47886,24 @@ function tbxWizDownloadServerJs() {
 function tbxWizS4() {
   var sc = TBX_WIZ.snowChoice;
   var su = localStorage.getItem('tbxCRGenSnowUrl') || '';
-  // In proxy mode, the server handles SNow calls via /snow-proxy — no relay needed.
-  // Show a simplified flow that just saves the SNow base URL without relay setup.
   var isProxyMode = (TBX_WIZ.authChoice === 'proxy');
+
+  // Determine if the server-side SNow proxy has credentials configured.
+  // tbxRunProxyProbe() already ran during wizard step 3 — its result is cached here.
+  var isSnowProxyReady = false;
+  try {
+    var cachedStatus = JSON.parse(sessionStorage.getItem('tbxProxyStatus') || 'null');
+    isSnowProxyReady = !!(cachedStatus && cachedStatus.snow && cachedStatus.snow.ready);
+  } catch(ignoreParseError) {}
+
+  // Hint text for the proxy mode SNow step — be honest about what will work.
+  // If the server has SNow credentials, the proxy handles calls automatically.
+  // If not (e.g. Okta SSO), the user must use Edge with the relay bookmarklet.
+  var proxyHintHtml = isSnowProxyReady
+    ? '💡 The proxy server will route ServiceNow calls automatically — no relay or browser tab needed.'
+    : '⚠️ ServiceNow uses Okta/SSO — the proxy cannot authenticate on your behalf. ' +
+      'Save your SNow URL here and use <strong>Edge</strong> with the relay bookmarklet for full SNow access.';
+
   return '<div class="tbx-wiz-h1">ServiceNow Connection</div>' +
     '<div class="tbx-wiz-sub">Required for the Change Request Generator and PRB Generator tools</div>' +
     '<div class="tbx-wiz-choice">' +
@@ -47899,14 +47919,10 @@ function tbxWizS4() {
         '<div><label class="cr-label">ServiceNow Base URL</label>' +
           '<input id="tbxwiz-snow-url" class="cr-input" type="url" placeholder="https://yourinstance.service-now.com"' + (su ? ' value="' + crEsc(su) + '"' : '') + '></div>' +
         '<div style="font-size:12px;color:var(--text-muted);">' +
-          (isProxyMode
-            // Proxy mode: the server routes SNow calls through /snow-proxy — no relay tab needed.
-            ? '💡 The proxy server will route ServiceNow calls automatically. Enter your instance URL and save — no relay or browser tab needed.'
-            : 'Use the same <strong>📎 Toolbox Relay</strong> bookmark — click it on your ServiceNow tab to activate.') +
+          (isProxyMode ? proxyHintHtml : 'Use the same <strong>📎 Toolbox Relay</strong> bookmark — click it on your ServiceNow tab to activate.') +
         '</div>' +
         '<div style="display:flex;gap:8px;align-items:center;">' +
           (isProxyMode
-            // Proxy mode: just save the URL and proceed — no relay connection flow.
             ? '<button class="cr-btn cr-btn-primary cr-btn-sm" onclick="tbxWizSaveSnowUrlForProxy()">💾 Save &amp; Continue</button>'
             : '<button class="cr-btn cr-btn-primary cr-btn-sm" onclick="tbxWizOpenSnow()">🔌 Save &amp; Open SNow Tab</button>') +
           '<span id="tbxwiz-snow-status" style="font-size:12px;"></span>' +
@@ -47921,8 +47937,12 @@ function tbxWizS4() {
 /**
  * Saves the ServiceNow base URL for proxy mode and advances to the done step.
  * Unlike tbxWizOpenSnow(), this path does not open a relay tab or wait for a
- * bookmarklet connection — the proxy server handles SNow calls directly.
- * Also persists tbxSnowProxyUrl so the app knows the proxy is handling SNow.
+ * bookmarklet connection.
+ *
+ * NOTE: we intentionally do NOT set tbxSnowProxyUrl here. That key is managed
+ * exclusively by tbxRunProxyProbe() based on snow.ready from /api/proxy-status.
+ * Setting it manually would incorrectly mark SNow as proxy-ready for Okta users
+ * whose proxy cannot authenticate with a service account.
  */
 function tbxWizSaveSnowUrlForProxy() {
   var inp = document.getElementById('tbxwiz-snow-url');
@@ -47933,8 +47953,6 @@ function tbxWizSaveSnowUrlForProxy() {
     return;
   }
   localStorage.setItem('tbxCRGenSnowUrl', url);
-  // Mark SNow as proxy-configured so the app knows to route calls through /snow-proxy.
-  localStorage.setItem('tbxSnowProxyUrl', IS_NODETOOLBOX_SERVER ? window.location.origin : 'http://localhost:5555');
   crSaveUrls();
   var snowUrlInput = document.getElementById('tbx-gs-snow-url');
   if (snowUrlInput) snowUrlInput.value = url;
