@@ -3267,6 +3267,27 @@ $listener.Start()
         <button class="cr-btn cr-btn-ghost cr-btn-sm" onclick="showView('toolbox-settings')">⚙ Open Toolbox Settings →</button>
       </div>
 
+      <!-- SNow identity card — critical in proxy mode because auto-detection resolves to the
+           service account rather than the real user. The user types their own username here,
+           the proxy looks it up, and the result is shared with the My Issues view. -->
+      <div class="cr-card" style="padding:14px 16px;margin-bottom:8px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:10px;">👤 My SNow Identity</div>
+        <div style="font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:10px;">
+          "My Changes" queries using <em>your</em> personal SNow account. In proxy mode,
+          auto-detection resolves to the service account — if your changes don't appear,
+          enter your SNow username below to identify yourself.
+        </div>
+        <div id="rm-identity-badge" style="margin-bottom:10px;font-size:12px;"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+          <input id="rm-identity-input" class="cr-input" style="width:220px;"
+            placeholder="Enter your SNow username…"
+            onkeydown="if(event.key==='Enter')rmSearchSnowIdentity()">
+          <button class="cr-btn cr-btn-sm" onclick="rmSearchSnowIdentity()">🔍 Lookup</button>
+          <button class="cr-btn cr-btn-ghost cr-btn-sm" onclick="rmClearSnowIdentity()">✕ Clear</button>
+        </div>
+        <div id="rm-identity-results" style="font-size:12px;"></div>
+      </div>
+
       <!-- CHG display preferences — controls "My Active Changes" list behaviour -->
       <div class="cr-card" style="padding:14px 16px;">
         <div style="font-weight:700;font-size:13px;margin-bottom:10px;">📋 My Changes — Display Preferences</div>
@@ -11082,8 +11103,9 @@ function miSnowSearchUser() {
   if (!q) return;
   var el = document.getElementById('mi-snow-search-results');
   if (!el) return;
-  if (!(CRG && CRG.relay && CRG.relay.snowReady)) {
-    el.innerHTML = '<span style="color:#f97316;font-size:12px;">⚠ SNow relay not connected. Connect first via the main toolbar.</span>';
+  // Allow proxy mode as well — crRelayRequest falls back to /snow-proxy when relay is absent.
+  if (!tbxSnowReady()) {
+    el.innerHTML = '<span style="color:#f97316;font-size:12px;">⚠ SNow not connected. Connect via the main toolbar first.</span>';
     return;
   }
   el.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">' + crSpinner() + ' Searching…</span>';
@@ -28736,6 +28758,8 @@ function rmLoadDisplayPreferences() {
   // Populate auto-load toggle
   var autoLoadEl = document.getElementById('rm-pref-auto-load');
   if (autoLoadEl) autoLoadEl.checked = prefs.isAutoLoadEnabled;
+  // Render the current identity so the user can see who "My Changes" will query as.
+  rmRenderIdentityBadge();
 }
 
 function rmSaveDisplayPreferences() {
@@ -28759,6 +28783,123 @@ function rmSaveDisplayPreferences() {
     }
   } catch (storageErr) {
     tbxToast('⚠️ Could not save preferences — localStorage may be full.');
+  }
+}
+
+// ── RM SNow identity management ───────────────────────────────────────────────
+// In proxy mode, auto-detection resolves the service account (not the real user)
+// because the server authenticates with Basic Auth credentials, not the browser
+// session. These helpers let the user look up and pin their personal SNow identity
+// so that "My Changes" queries the correct person.
+
+/**
+ * Renders the current SNow identity in the RM Settings badge element.
+ * Reads from the shared tbxMISnowSysId localStorage keys so it reflects
+ * exactly who the "My Changes" query will be issued on behalf of.
+ */
+function rmRenderIdentityBadge() {
+  var badgeEl = document.getElementById('rm-identity-badge');
+  if (!badgeEl) return;
+  var sysId       = localStorage.getItem('tbxMISnowSysId') || '';
+  var userName    = localStorage.getItem('tbxMISnowUser') || '';
+  var displayName = localStorage.getItem('tbxMISnowDisplayName') || userName;
+  if (sysId) {
+    var nameLabel    = crEsc(displayName);
+    var userSubLabel = (userName && userName !== displayName)
+      ? ' <span style="color:var(--text-muted);">(' + crEsc(userName) + ')</span>' : '';
+    badgeEl.innerHTML = '<span style="color:#22c55e;">👤 Identified as: <strong>' + nameLabel + '</strong>' + userSubLabel + '</span>';
+  } else {
+    badgeEl.innerHTML = '<span style="color:#f59e0b;">⚠ No identity set — search below to identify yourself.</span>';
+  }
+}
+
+/**
+ * Searches SNow sys_user by display name or username using whichever transport
+ * is currently active (relay bridge or server proxy). Shows clickable results
+ * in the RM Settings identity card.
+ */
+function rmSearchSnowIdentity() {
+  var inputEl   = document.getElementById('rm-identity-input');
+  var resultsEl = document.getElementById('rm-identity-results');
+  if (!inputEl || !resultsEl) return;
+  var searchTerm = inputEl.value.trim();
+  if (!searchTerm) return;
+  if (!tbxSnowReady()) {
+    resultsEl.innerHTML = '<span style="color:#f97316;">⚠ SNow not connected. Connect via the main toolbar first.</span>';
+    return;
+  }
+  resultsEl.innerHTML = crSpinner() + ' Searching…';
+  // Query against both display name and login name so either works as input.
+  crSnowFetch(
+    '/api/now/table/sys_user?sysparm_query=active=true^nameLIKE' + encodeURIComponent(searchTerm) +
+    '^ORuser_nameLIKE' + encodeURIComponent(searchTerm) +
+    '&sysparm_fields=sys_id,name,user_name,email&sysparm_limit=10'
+  )
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    var users = data.result || [];
+    if (!users.length) {
+      resultsEl.innerHTML = '<span style="color:var(--text-muted);">No users found matching "' + crEsc(searchTerm) + '"</span>';
+      return;
+    }
+    resultsEl.innerHTML = users.map(function(snowUser) {
+      var fullName  = crEsc(snowUser.name || snowUser.user_name || '');
+      var loginSpan = snowUser.user_name ? ' <span style="color:var(--text-muted);">(' + crEsc(snowUser.user_name) + ')</span>' : '';
+      var emailSpan = snowUser.email ? ' — <span style="color:var(--text-muted);">' + crEsc(snowUser.email) + '</span>' : '';
+      return '<div class="mi-snow-user-option"' +
+        ' data-sysid="'   + crEsc(snowUser.sys_id       || '') + '"' +
+        ' data-username="' + crEsc(snowUser.user_name    || '') + '"' +
+        ' data-display="'  + crEsc(snowUser.name || snowUser.user_name || '') + '"' +
+        ' onclick="rmSelectSnowIdentityFromEl(this)">' +
+        '<strong>' + fullName + '</strong>' + loginSpan + emailSpan +
+        '</div>';
+    }).join('');
+  })
+  .catch(function(lookupErr) {
+    resultsEl.innerHTML = '<span style="color:#ef4444;">Error: ' + crEsc(String(lookupErr)) + '</span>';
+  });
+}
+
+/**
+ * onclick bridge for identity result rows in RM Settings.
+ * Reads data attributes to avoid HTML attribute quoting issues with JSON.stringify.
+ *
+ * @param {HTMLElement} rowEl - The clicked result row element
+ */
+function rmSelectSnowIdentityFromEl(rowEl) {
+  var sysId       = rowEl.getAttribute('data-sysid')   || '';
+  var userName    = rowEl.getAttribute('data-username') || '';
+  var displayName = rowEl.getAttribute('data-display')  || '';
+  // Write to both in-memory state and localStorage — shared with My Issues view.
+  MI_SNOW.sysId       = sysId;
+  MI_SNOW.userName    = userName;
+  MI_SNOW.displayName = displayName;
+  MI_SNOW.detectedVia = 'selected';
+  MI_SNOW.groups      = [];  // reset group cache so next fetch re-queries
+  localStorage.setItem('tbxMISnowSysId', sysId);
+  localStorage.setItem('tbxMISnowUser', userName);
+  localStorage.setItem('tbxMISnowDisplayName', displayName);
+  var resultsEl = document.getElementById('rm-identity-results');
+  if (resultsEl) {
+    resultsEl.innerHTML = '<span style="color:#22c55e;">✓ Identity set to: <strong>' + crEsc(displayName) + '</strong></span>';
+  }
+  rmRenderIdentityBadge();
+}
+
+/**
+ * Clears the cached SNow identity from memory and localStorage.
+ * Auto-detection will re-run on the next "My Changes" load, which is useful
+ * when switching accounts or after the service account identity gets cached.
+ */
+function rmClearSnowIdentity() {
+  MI_SNOW.sysId = ''; MI_SNOW.userName = ''; MI_SNOW.displayName = ''; MI_SNOW.groups = []; MI_SNOW.detectedVia = '';
+  localStorage.removeItem('tbxMISnowSysId');
+  localStorage.removeItem('tbxMISnowUser');
+  localStorage.removeItem('tbxMISnowDisplayName');
+  rmRenderIdentityBadge();
+  var resultsEl = document.getElementById('rm-identity-results');
+  if (resultsEl) {
+    resultsEl.innerHTML = '<span style="color:var(--text-muted);">Identity cleared. Search above to set a new one.</span>';
   }
 }
 
@@ -29257,7 +29398,15 @@ function rmRenderMyCHGs(records, identity) {
   var el = document.getElementById('rm-my-chgs');
   if (!el) return;
   if (!records.length) {
-    el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:4px 0;">✅ No active changes assigned to ' + crEsc((identity && identity.displayName) || 'you') + '.</div>';
+    // In proxy mode (no relay), the identity may have been resolved as the service account.
+    // Offer a direct link to RM Settings so the user can correct it without hunting around.
+    var isProxyModeWithoutRelay = IS_NODETOOLBOX_SERVER && !(CRG.relay && CRG.relay.snowReady);
+    var proxyHint = isProxyModeWithoutRelay
+      ? '<div style="margin-top:6px;font-size:11px;color:var(--text-muted);">Using proxy mode — if you expect to see changes, verify your identity in ' +
+        '<button class="cr-btn cr-btn-ghost cr-btn-sm" style="font-size:11px;padding:1px 6px;" ' +
+        'onclick="rmShowInternalTab(\'settings\')">⚙ RM Settings</button></div>'
+      : '';
+    el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:4px 0;">✅ No active changes assigned to ' + crEsc((identity && identity.displayName) || 'you') + '.' + proxyHint + '</div>';
     return;
   }
   var stateColors = { '-5':'#64748b','-4':'#0284c7','-3':'#7c3aed','-2':'#d97706','-1':'#059669','0':'#2563eb' };
