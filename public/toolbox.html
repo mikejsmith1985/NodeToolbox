@@ -2130,6 +2130,7 @@ color: #fff;
   <div class="snh-tab-strip">
     <button id="snh-tab-crg" class="cr-tab active" onclick="snhShowTab('crg')">📋 Change Request</button>
     <button id="snh-tab-prb" class="cr-tab"        onclick="snhShowTab('prb')">🐛 PRB Generator</button>
+    <button id="snh-tab-rm"  class="cr-tab"        onclick="snhShowTab('rm')">📦 Release Management</button>
   </div>
   <!-- Panel: Change Request Generator -->
   <div id="snh-panel-crg" class="snh-panel">
@@ -3140,6 +3141,259 @@ $listener.Start()
   </main>
 
   </div><!-- /snh-panel-prb -->
+
+  <!-- Panel: Release Management -->
+  <div id="snh-panel-rm" class="snh-panel" style="display:none;">
+  <main>
+
+    <!-- Internal tab strip -->
+    <div class="cr-tabs">
+      <button id="rm-tabBtn-changes"  class="cr-tab active" onclick="rmShowInternalTab('changes')">📋 My Changes</button>
+      <button id="rm-tabBtn-monitor"  class="cr-tab"        onclick="rmShowInternalTab('monitor')">🔁 Repo Monitor</button>
+      <button id="rm-tabBtn-settings" class="cr-tab"        onclick="rmShowInternalTab('settings')">⚙ Settings</button>
+    </div>
+
+    <!-- ── MY CHANGES VIEW ── -->
+    <div id="rm-view-changes">
+
+      <!-- Connection status bar -->
+      <div class="cr-card" style="padding:8px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span id="rm-conn-dot" style="font-size:14px;">⏳</span>
+        <span id="rm-conn-label" style="font-size:12px;color:var(--text-muted);">Checking connection…</span>
+        <div id="rm-relay-warn" style="font-size:11px;color:#d97706;margin-left:auto;"></div>
+      </div>
+
+      <!-- CHG number loader -->
+      <div class="cr-card" style="padding:12px 14px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+          <span style="font-size:13px;font-weight:700;color:var(--text);">📦 Load Change Request</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <input id="rm-chg-input" class="cr-input" style="width:160px;font-family:monospace;"
+            placeholder="CHG0012345" onkeydown="if(event.key==='Enter')rmLoadCHG()">
+          <button id="rm-load-btn"    class="cr-btn cr-btn-sm"       onclick="rmLoadCHG()">🔍 Load</button>
+          <button id="rm-clear-btn"   class="cr-btn cr-btn-ghost cr-btn-sm" style="display:none;" onclick="rmClear()">✕ Clear</button>
+          <button id="rm-refresh-btn" class="cr-btn cr-btn-ghost cr-btn-sm" style="display:none;" onclick="rmRefreshCHG()">↻ Refresh</button>
+          <span id="rm-load-status" style="font-size:12px;color:var(--text-muted);"></span>
+        </div>
+      </div>
+
+      <!-- CHG detail card — hidden until a CHG is loaded -->
+      <div id="rm-chg-card" style="display:none;margin-bottom:8px;"></div>
+
+      <!-- Scheduled automations — hidden until a CHG is loaded -->
+      <div id="rm-auto-panel" style="display:none;margin-bottom:8px;"></div>
+
+      <!-- Change tasks section — hidden until a CHG is loaded -->
+      <div id="rm-tasks-section" style="display:none;margin-bottom:8px;">
+        <div class="cr-card">
+          <div class="cr-card-body" style="padding:12px 14px;">
+            <div style="font-weight:700;font-size:13px;margin-bottom:8px;">📝 Change Tasks</div>
+            <div id="rm-tasks-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CHG activity log — hidden until a CHG is loaded -->
+      <div id="rm-log-section" style="display:none;margin-bottom:8px;">
+        <div class="cr-card">
+          <div class="cr-card-body" style="padding:12px 14px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+              <span style="font-weight:700;font-size:13px;">📋 CHG Activity Log</span>
+              <button class="cr-btn cr-btn-ghost cr-btn-sm" onclick="rmClearLog()" style="margin-left:auto;">🗑 Clear</button>
+            </div>
+            <div id="rm-log">
+              <div data-rm-placeholder style="color:var(--text-muted);font-style:italic;font-size:12px;">No entries yet.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- My Active Changes list (loaded on tab open via rmLoadMyCHGs) -->
+      <div class="cr-card" style="margin-bottom:8px;">
+        <div class="cr-card-body" style="padding:12px 14px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+            <span style="font-weight:700;font-size:13px;">📂 My Active Changes</span>
+            <span id="rm-my-chgs-status" style="font-size:11px;color:var(--text-muted);"></span>
+            <button class="cr-btn cr-btn-ghost cr-btn-sm" style="margin-left:auto;" onclick="rmToggleFilter()">⚙ Filter</button>
+          </div>
+          <!-- State filter panel (toggled by rmToggleFilter) -->
+          <div id="rm-state-filter" style="display:none;margin-bottom:10px;padding:10px;
+            background:var(--surface2);border-radius:6px;border:1px solid var(--border);">
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600;">Filter by state:</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;"><input type="checkbox" value="-5"> Draft</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;"><input type="checkbox" value="-4"> Assessment</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;"><input type="checkbox" value="-3"> Authorization</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;"><input type="checkbox" value="-2"> Scheduled</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;"><input type="checkbox" value="-1"> Implement</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;"><input type="checkbox" value="0"> Review</label>
+            </div>
+            <div style="margin-top:8px;">
+              <button class="cr-btn cr-btn-sm" onclick="rmSaveFilter()">Apply</button>
+            </div>
+          </div>
+          <div id="rm-my-chgs">
+            <div style="font-size:12px;color:var(--text-muted);padding:4px 0;">Loading…</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Approval monitor (populated by rmRenderApprovalMonitor on CHG load) -->
+      <div class="cr-card">
+        <div class="cr-card-body" style="padding:12px 14px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+            <span style="font-weight:700;font-size:13px;">✅ Approval Monitor</span>
+            <span id="rm-approval-status" style="font-size:11px;color:var(--text-muted);"></span>
+          </div>
+          <div id="rm-approval-list">
+            <div style="font-size:12px;color:var(--text-muted);font-style:italic;">Connect ServiceNow to check approvals.</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /rm-view-changes -->
+
+    <!-- ── REPO MONITOR VIEW ── -->
+    <div id="rm-view-monitor" style="display:none;">
+
+      <!-- Run controls and status bar -->
+      <div class="cr-card" style="padding:12px 14px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span id="rm-sync-dot" style="width:10px;height:10px;border-radius:50%;background:#888;display:inline-block;flex-shrink:0;"></span>
+          <span id="rm-sync-status" style="font-size:13px;font-weight:600;color:var(--text);">Stopped</span>
+          <button id="rm-toggle-btn" class="cr-btn cr-btn-sm" onclick="rmToggle()" style="padding:4px 12px;">▶ Start</button>
+          <button class="cr-btn cr-btn-ghost cr-btn-sm" onclick="rmRunNow(true)" style="padding:4px 10px;">⚡ Check Now</button>
+          <span style="margin-left:auto;font-size:11px;color:var(--text-muted);white-space:nowrap;">
+            Events:&nbsp;<strong id="rm-count">0</strong>&nbsp;·&nbsp;
+            Next:&nbsp;<strong id="rm-next">—</strong>&nbsp;·&nbsp;
+            Last:&nbsp;<strong id="rm-last">Never</strong>
+          </span>
+        </div>
+      </div>
+
+      <!-- Unified schedule card: proxy controls vs browser-only controls -->
+      <div class="cr-card" style="padding:14px 16px;margin-bottom:8px;">
+        <!-- Shown when tbxJiraProxyUrl is configured in Admin Hub -->
+        <div id="rm-proxy-controls" style="display:none;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:8px;">🔌 Server-Side Schedule (Proxy)</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <input type="checkbox" id="rm-server-toggle" style="width:16px;height:16px;cursor:pointer;"
+              onchange="rmToggleServerSchedule()">
+            <label for="rm-server-toggle" style="font-size:13px;cursor:pointer;font-weight:600;">Enable server-side schedule</label>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);">
+            When enabled, the NodeToolbox proxy runs the repo monitor on a schedule even when this browser tab is closed.
+          </div>
+        </div>
+        <!-- Shown when no proxy URL is configured -->
+        <div id="rm-local-controls">
+          <div style="font-size:13px;font-weight:700;margin-bottom:8px;">🖥 Browser Monitor</div>
+          <div style="font-size:11px;color:var(--text-muted);">
+            Running in browser mode — the monitor only runs while this tab is open.
+            Configure a NodeToolbox proxy in Admin Hub to enable server-side scheduling.
+          </div>
+        </div>
+        <!-- Repos watching (both modes) -->
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light);">
+          <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px;">Watching:</div>
+          <div id="rm-repos-summary" style="font-size:12px;color:var(--text-muted);font-style:italic;">No repos configured — add repos in Settings.</div>
+        </div>
+        <!-- Schedule summary (both modes) -->
+        <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light);">
+          <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px;">Schedule:</div>
+          <div id="rm-schedule-summary" style="font-size:12px;color:var(--text-muted);">—</div>
+        </div>
+      </div>
+
+      <!-- In-memory rolling activity log (last 60 rm* events) -->
+      <div class="cr-card" style="padding:14px 16px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:8px;">📜 Monitor Log</div>
+        <div id="rm-log-entries" style="max-height:300px;overflow-y:auto;"></div>
+      </div>
+
+    </div><!-- /rm-view-monitor -->
+
+    <!-- ── SETTINGS VIEW ── -->
+    <div id="rm-view-settings" style="display:none;">
+
+      <div class="cr-card" style="padding:14px 16px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:14px;">⚙ Repo Monitor Settings</div>
+
+        <!-- GitHub repos to watch -->
+        <div style="margin-bottom:12px;">
+          <label class="cr-label">GitHub Repos to Monitor (one per line)</label>
+          <textarea id="rm-cfg-repos" class="cr-input" rows="4"
+            placeholder="org/repo-name&#10;org/another-repo"
+            style="width:100%;font-family:monospace;font-size:12px;resize:vertical;"></textarea>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Accepts owner/repo or full GitHub URL formats.</div>
+        </div>
+
+        <!-- Branch name regex filter -->
+        <div style="margin-bottom:12px;">
+          <label class="cr-label">Branch Name Pattern (regex)</label>
+          <input id="rm-cfg-branch-pattern" class="cr-input" style="width:100%;" placeholder="feature\/TICKET-\d+">
+        </div>
+
+        <!-- Poll frequency -->
+        <div style="margin-bottom:12px;">
+          <label class="cr-label">Poll Interval (minutes)</label>
+          <input id="rm-cfg-interval" class="cr-input" type="number" min="1" max="60" style="width:80px;" value="5">
+        </div>
+
+        <!-- Jira transition names to fire on each GitHub event -->
+        <div style="margin-bottom:12px;">
+          <div class="cr-label" style="margin-bottom:6px;">Jira Transitions on GitHub Events</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div>
+              <label class="cr-label" style="font-size:11px;">On branch created</label>
+              <input id="rm-cfg-trans-branch" class="cr-input" placeholder="In Progress">
+            </div>
+            <div>
+              <label class="cr-label" style="font-size:11px;">On commit pushed</label>
+              <input id="rm-cfg-trans-commit" class="cr-input" placeholder="">
+            </div>
+            <div>
+              <label class="cr-label" style="font-size:11px;">On PR opened</label>
+              <input id="rm-cfg-trans-pr-open" class="cr-input" placeholder="">
+            </div>
+            <div>
+              <label class="cr-label" style="font-size:11px;">On PR merged</label>
+              <input id="rm-cfg-trans-pr-merge" class="cr-input" placeholder="">
+            </div>
+          </div>
+        </div>
+
+        <!-- Active-hours schedule window -->
+        <div style="margin-bottom:14px;">
+          <div class="cr-label" style="margin-bottom:6px;">Active Hours Schedule</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;">
+            <div>
+              <label class="cr-label" style="font-size:11px;">Start</label>
+              <input id="rm-cfg-start-time" class="cr-input" type="time" style="width:100px;" value="07:00">
+            </div>
+            <div>
+              <label class="cr-label" style="font-size:11px;">End</label>
+              <input id="rm-cfg-end-time" class="cr-input" type="time" style="width:100px;" value="19:00">
+            </div>
+          </div>
+          <!-- Day-picker buttons rendered by rmRenderDayPicker() on settings open -->
+          <div id="rm-cfg-days-row" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;"></div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input type="checkbox" id="rm-cfg-catch-up" checked style="width:16px;height:16px;cursor:pointer;">
+            <label for="rm-cfg-catch-up" style="font-size:12px;cursor:pointer;">Run immediately on startup if outside scheduled window (catch-up mode)</label>
+          </div>
+        </div>
+
+        <div>
+          <button class="cr-btn cr-btn-sm" onclick="rmSaveRepoMonitorSettings()">💾 Save Settings</button>
+        </div>
+      </div>
+
+    </div><!-- /rm-view-settings -->
+
+  </main>
+  </div><!-- /snh-panel-rm -->
 </div><!-- /view-snow-hub -->
 
 <!-- ═══════════════════════════════════════════════════════════════
@@ -3356,7 +3610,7 @@ $listener.Start()
 ════════════════════════════════════════════════════════════════ -->
 <script>
 // ── Toolbox version & update config ──────────────────────────────────────────
-var TOOLBOX_VERSION = '0.2.3';
+var TOOLBOX_VERSION = '0.2.4';
 var MIN_PROXY_SERVER_VERSION = '0.0.1'; // bumped by release script — oldest proxy that works with this UI build
 var TOOLBOX_UPDATE_REPO = 'mikejsmith1985/NodeToolbox'; // public, used for version check
 var TOOLBOX_DOWNLOAD_URL = '';                         // set by release script → Confluence attachment URL
@@ -5811,7 +6065,7 @@ function crOnOpen() {
 }
 
 // ── SNow Hub — top-level tab routing ────────────────────────────────────────
-var SNH_TABS = ['crg', 'prb'];
+var SNH_TABS = ['crg', 'prb', 'rm'];
 
 function snhShowTab(tab) {
   SNH_TABS.forEach(function(t) {
@@ -5823,6 +6077,7 @@ function snhShowTab(tab) {
   localStorage.setItem('tbxSnowHubTab', tab);
   if (tab === 'crg') crOnOpen();
   if (tab === 'prb') prbOnOpen();
+  if (tab === 'rm') rmOnOpen();
 }
 
 function snhOnOpen() {
@@ -28492,6 +28747,27 @@ function rmMarkBranchSeen(repoPath, branchName) {
   rmSaveState(state);
 }
 
+// ── RM panel internal tab routing ────────────────────────────────────────────
+// Mirrors the snhShowTab pattern used at the SNow Hub level.
+var RM_INNER_TABS = ['changes', 'monitor', 'settings'];
+
+function rmShowInternalTab(tab) {
+  RM_INNER_TABS.forEach(function(t) {
+    var btn  = document.getElementById('rm-tabBtn-' + t);
+    var view = document.getElementById('rm-view-' + t);
+    if (btn)  btn.classList.toggle('active', t === tab);
+    if (view) view.style.display = (t === tab) ? '' : 'none';
+  });
+  localStorage.setItem('tbxRMTab', tab);
+  // Refresh dynamic content when switching to context-specific views
+  if (tab === 'monitor') {
+    rmUpdateUnifiedCard();
+    rmRenderScheduleSummary();
+    rmRenderReposSummary();
+  }
+  if (tab === 'settings') rmLoadSettingsUI();
+}
+
 function rmOnOpen() {
   rmUpdateRelayWarn();
   rmLoadFilterFromStorage();
@@ -28499,6 +28775,8 @@ function rmOnOpen() {
   var lastCHG = localStorage.getItem('tbxRMLastCHG');
   var input = document.getElementById('rm-chg-input');
   if (input && lastCHG && !input.value) input.value = lastCHG;
+  // Restore the last-active internal tab (defaults to 'changes')
+  rmShowInternalTab(localStorage.getItem('tbxRMTab') || 'changes');
   rmLoadMyCHGs();
 }
 
@@ -29609,6 +29887,37 @@ var OPT_STATS = {
   cacheMisses: 0, // Number of requests that required a live network call
   dedupHits:   0  // Number of duplicate in-flight requests collapsed into one
 };
+
+// ── Release Management module state ──────────────────────────────────────────
+// RM holds the runtime state for the currently-loaded change request and its
+// scheduled automations. It is reset by rmClear() and populated by rmLoadCHG().
+var RM = {
+  chgSysId:          '',    // sys_id of the loaded change request
+  chgNumber:         '',    // Display number, e.g. "CHG0012345"
+  chgRec:            null,  // Full SNow record object returned by the API
+  tasks:             [],    // Array of CTASK records for the loaded CHG
+  fired:             { implement: false, review: false, close: false },
+  armed:             { implement: false, review: false, close: false },
+  timers:            { implement: null, review: null, close: null },
+  customTimes:       { implement: '', review: '', close: '' },
+  log:               [],    // In-memory automation event log (non-persisted)
+  countdownInterval: null,  // setInterval handle for live countdown refresh
+  _lastLoaded:       null   // Timestamp of most recent rmLoadMyCHGs() completion
+};
+
+// Repo Monitor runtime flags and timers (all reset on rmStop / page reload).
+var RM_IS_RUNNING  = false; // True while the browser-side poll loop is active
+var RM_TIMER       = null;  // setInterval handle for the poll loop
+var RM_CD_TIMER    = null;  // setInterval handle for countdown label refresh
+var RM_NEXT_AT     = 0;     // Epoch ms timestamp for the next scheduled poll
+var RM_POST_COUNT  = 0;     // Total Jira posts fired in this session
+
+// Repo Monitor configuration constants.
+var RM_ACTIVITY_LOG_KEY  = 'tbxRMActivityLog'; // localStorage key for the persisted SNow event log
+var RM_ACTIVITY_LOG_MAX  = 200;                // Maximum entries kept in the persisted log
+var RM_DEFAULT_REPOS     = [];                 // Default repo list when no settings exist
+var RM_DAY_LABELS        = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+var RM_FILTER            = { states: [] };     // Active CHG state filter (empty = show all)
 
 function hgAutoName(type, cfg) {
   if (type === 'stale') return 'Stale in ' + (cfg.statusCategory || 'In Progress') + ' (' + (cfg.days || 5) + ' days)';
