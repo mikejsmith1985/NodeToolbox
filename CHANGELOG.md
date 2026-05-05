@@ -17,12 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ServiceNow wizard step (Step 4) now shows a "Save & Continue" button that saves the
   SNow base URL and advances directly to the done step. The previous "Save & Open SNow Tab"
   button incorrectly opened a relay connection flow that does not work in Chrome.
-- **Chrome proxy: app no longer prompts "Connect SNow relay" after proxy setup** — Added
-  `tbxSnowReady()` helper (mirrors `tbxJiraReady()`) that returns `true` in server/proxy
-  mode. All functional SNow guards now use `tbxSnowReady()` instead of
-  `CRG.relay.snowReady` directly, so proxy users can use CR/PRB/CHG/RM features without
-  connecting a relay bookmarklet. The `crRelayRequest()` path also falls back to the
-  existing `/snow-proxy` route in server mode instead of rejecting.
+- **`tbxSnowReady()` uses proxy probe result, not server mode flag** — the initial
+  implementation incorrectly returned `true` for all server-mode users, which would
+  cause silent 401 failures for Okta/SSO SNow users whose proxy has no Basic Auth
+  credentials. Now checks `tbxSnowProxyUrl` in localStorage, which `tbxRunProxyProbe()`
+  already sets only when `snow.ready=true` and clears for Okta instances. SNow features
+  remain disabled in Chrome for Okta users (correct behavior — relay required).
+- **Wizard SNow step in proxy mode shows honest hint** — reads `snow.ready` from the
+  cached proxy status to show either "proxy handles SNow automatically" (service account
+  configured) or "SNow uses Okta — use Edge with the relay bookmarklet" (no credentials).
 
 ### Added
 - **HTTP relay bridge for Chrome (COOP fix)** — Chrome enforces
