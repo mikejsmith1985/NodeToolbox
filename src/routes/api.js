@@ -7,7 +7,7 @@
 'use strict';
 
 const express    = require('express');
-const { saveConfigToDisk, isServiceConfigured } = require('../config/loader');
+const { saveConfigToDisk, isServiceConfigured, isServiceBaseUrlSet } = require('../config/loader');
 const snowSession = require('../services/snowSession');
 const { cachedDashboardHtml, cachedHtmlLoadMethod } = require('../utils/staticFileServer');
 
@@ -34,13 +34,13 @@ function createApiRouter(configuration) {
   router.get('/api/proxy-status', (req, res) => {
     const isJiraHasBasicAuth = !!(configuration.jira.username && configuration.jira.apiToken);
     const isJiraHasPat       = !!configuration.jira.pat;
-    const isJiraReady        = isServiceConfigured(configuration.jira) && (isJiraHasBasicAuth || isJiraHasPat);
+    const isJiraReady        = isServiceBaseUrlSet(configuration.jira) && (isJiraHasBasicAuth || isJiraHasPat);
 
     const isSnowHasBasicAuth    = !!(configuration.snow.username && configuration.snow.password);
     const isSnowSessionCurrent  = snowSession.isSessionActive();
-    const isSnowReady           = (isServiceConfigured(configuration.snow) && isSnowHasBasicAuth) || isSnowSessionCurrent;
+    const isSnowReady           = (isServiceBaseUrlSet(configuration.snow) && isSnowHasBasicAuth) || isSnowSessionCurrent;
 
-    const snowBaseUrl = (isServiceConfigured(configuration.snow) ? configuration.snow.baseUrl : null)
+    const snowBaseUrl = (isServiceBaseUrlSet(configuration.snow) ? configuration.snow.baseUrl : null)
       || snowSession.resolveSnowBaseUrl('') || null;
 
     const isGithubReady = !!configuration.github.pat;
@@ -55,13 +55,13 @@ function createApiRouter(configuration) {
       version:   APP_VERSION,
       sslVerify: configuration.sslVerify !== false,
       jira: {
-        configured:     isServiceConfigured(configuration.jira),
+        configured:     isServiceBaseUrlSet(configuration.jira),
         hasCredentials: isJiraHasBasicAuth || isJiraHasPat,
         ready:          isJiraReady,
-        baseUrl:        isServiceConfigured(configuration.jira) ? configuration.jira.baseUrl : null,
+        baseUrl:        isServiceBaseUrlSet(configuration.jira) ? configuration.jira.baseUrl : null,
       },
       snow: {
-        configured:       isServiceConfigured(configuration.snow) || !!snowBaseUrl,
+        configured:       isServiceBaseUrlSet(configuration.snow) || !!snowBaseUrl,
         hasCredentials:   isSnowHasBasicAuth,
         sessionMode:      isSnowSessionCurrent,
         sessionExpiresAt: isSnowSessionCurrent ? snowSession.getSessionStatus().expiresAt : null,
@@ -186,6 +186,46 @@ function createApiRouter(configuration) {
       // Operating system platform — 'win32', 'darwin', 'linux'
       platform:          process.platform,
     });
+  });
+
+  // ── POST /api/shutdown ──────────────────────────────────────────────────
+  // Gracefully stops the server process. Accessible from localhost only —
+  // the server never binds to a public interface so no extra auth is needed.
+  // Responds before the process exits so the browser can display a message.
+
+  router.post('/api/shutdown', (_req, res) => {
+    res.json({ ok: true, message: 'Server is shutting down.' });
+    // Small delay lets the HTTP response reach the browser before the process ends
+    setTimeout(() => {
+      console.log('  🛑 Shutdown requested from Admin Hub — stopping server.');
+      process.exit(0);
+    }, 300);
+  });
+
+  // ── POST /api/restart ────────────────────────────────────────────────────
+  // Spawns a fresh detached copy of the server process, then exits this one.
+  // Works for both plain `node server.js` and the pkg-compiled .exe launcher.
+  // The new process starts after the port is released, using the same argv flags
+  // (e.g. --open) that were originally passed to the current process.
+
+  router.post('/api/restart', (_req, res) => {
+    res.json({ ok: true, message: 'Server is restarting.' });
+    setTimeout(() => {
+      console.log('  🔄 Restart requested from Admin Hub — restarting server.');
+      const { spawn } = require('child_process');
+      // When running as a pkg-compiled exe, argv[1] is the internal snapshot path
+      // (e.g. /snapshot/server.js) — skip it and pass only the user args that follow.
+      // When running as plain node, argv[1] is the script path and must be included.
+      const spawnArgs = process.pkg ? process.argv.slice(2) : process.argv.slice(1);
+      const restartedProcess = spawn(process.execPath, spawnArgs, {
+        detached: true,
+        stdio:    'ignore',
+        cwd:      process.cwd(),
+        env:      process.env,
+      });
+      restartedProcess.unref();
+      process.exit(0);
+    }, 300);
   });
 
   return router;
