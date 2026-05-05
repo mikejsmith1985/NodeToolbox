@@ -6,6 +6,7 @@
 
 'use strict';
 
+const crypto     = require('crypto');
 const express    = require('express');
 const { saveConfigToDisk, isServiceConfigured, isServiceBaseUrlSet } = require('../config/loader');
 const snowSession = require('../services/snowSession');
@@ -136,6 +137,41 @@ function createApiRouter(configuration) {
     saveConfigToDisk(configuration);
 
     console.log('  ✅ Config updated via Admin Hub');
+    res.json({ success: true });
+  });
+
+  // ── POST /api/admin-verify ────────────────────────────────────────────────
+  // Verifies Admin Hub credentials server-side so the check works regardless
+  // of whether the browser is in a secure context (HTTPS / localhost) —
+  // window.crypto.subtle is unavailable over plain HTTP on non-localhost origins.
+  //
+  // Body: { username: string, password: string }
+  // Returns 200 { success: true } on match, 401 on mismatch, 400 on bad input.
+  // Does NOT set any session — the client stores the unlock flag in sessionStorage.
+
+  router.post('/api/admin-verify', (req, res) => {
+    const { username, password } = req.body || {};
+
+    if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
+      return res.status(400).json({ error: 'Bad request', message: 'username and password are required.' });
+    }
+
+    // Compute SHA-256 of "username:password" — same algorithm as the old client-side check
+    // so existing credential hashes stored in toolbox-proxy.json remain valid.
+    const inputHash = crypto
+      .createHash('sha256')
+      .update(username + ':' + password)
+      .digest('hex');
+
+    const storedHash = (configuration.admin && configuration.admin.credentialHash) || '';
+
+    if (!storedHash || inputHash !== storedHash) {
+      // Log failed attempts to help diagnose lockouts (no rate-limiting needed: local server only)
+      console.warn('  ⚠ Admin Hub: failed unlock attempt for user "' + username + '"');
+      return res.status(401).json({ error: 'Unauthorized', message: 'Incorrect credentials.' });
+    }
+
+    console.log('  🔓 Admin Hub unlocked by user "' + username + '"');
     res.json({ success: true });
   });
 

@@ -3356,7 +3356,7 @@ $listener.Start()
 ════════════════════════════════════════════════════════════════ -->
 <script>
 // ── Toolbox version & update config ──────────────────────────────────────────
-var TOOLBOX_VERSION = '0.2.1';
+var TOOLBOX_VERSION = '0.2.2';
 var MIN_PROXY_SERVER_VERSION = '0.0.1'; // bumped by release script — oldest proxy that works with this UI build
 var TOOLBOX_UPDATE_REPO = 'mikejsmith1985/NodeToolbox'; // public, used for version check
 var TOOLBOX_DOWNLOAD_URL = '';                         // set by release script → Confluence attachment URL
@@ -35477,26 +35477,38 @@ function adminHubSubmitCredentials() {
   }
   if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Verifying…'; }
   if (errorEl) errorEl.style.display = 'none';
-  var encoder = new TextEncoder();
-  crypto.subtle.digest('SHA-256', encoder.encode(username + ':' + password)).then(function(buf) {
-    var hashHex = Array.from(new Uint8Array(buf)).map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
-    if (hashHex === ADMIN_HUB_CREDENTIAL_HASH) {
-      sessionStorage.setItem('tbxAdminUnlocked', '1');
-      var modal = document.getElementById('admin-hub-unlock-modal');
-      if (modal) modal.remove();
-      adminHubRender();
-      tbxApplyFeatureFlags(); // refresh home card visibility now that admin is unlocked
-      tbxToast('🔓 Advanced features unlocked.');
-      tbxRenderGlobalRolePill();
-    } else {
-      if (errorEl) { errorEl.textContent = 'Incorrect credentials — access denied.'; errorEl.style.display = 'block'; }
+
+  // Verify credentials server-side via POST /api/admin-verify.
+  // This avoids the window.crypto.subtle dependency which is only available in
+  // secure contexts (HTTPS or localhost) — plain HTTP over an IP address would
+  // throw "browser crypto unavailable" with the old client-side approach.
+  var verifyUrl = (NODETOOLBOX_ORIGIN || 'http://localhost:5555') + '/api/admin-verify';
+  fetch(verifyUrl, {
+    method:      'POST',
+    credentials: 'omit',
+    headers:     { 'Content-Type': 'application/json' },
+    body:        JSON.stringify({ username: username, password: password })
+  })
+    .then(function(response) { return response.json().then(function(data) { return { ok: response.ok, data: data }; }); })
+    .then(function(result) {
+      if (result.ok && result.data.success) {
+        sessionStorage.setItem('tbxAdminUnlocked', '1');
+        var modal = document.getElementById('admin-hub-unlock-modal');
+        if (modal) modal.remove();
+        adminHubRender();
+        tbxApplyFeatureFlags(); // refresh home card visibility now that admin is unlocked
+        tbxToast('🔓 Advanced features unlocked.');
+        tbxRenderGlobalRolePill();
+      } else {
+        if (errorEl) { errorEl.textContent = 'Incorrect credentials — access denied.'; errorEl.style.display = 'block'; }
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Unlock'; }
+        if (passwordEl) { passwordEl.value = ''; passwordEl.focus(); }
+      }
+    })
+    .catch(function() {
+      if (errorEl) { errorEl.textContent = 'Could not reach NodeToolbox server — is it running?'; errorEl.style.display = 'block'; }
       if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Unlock'; }
-      if (passwordEl) { passwordEl.value = ''; passwordEl.focus(); }
-    }
-  }).catch(function() {
-    if (errorEl) { errorEl.textContent = 'Verification error — browser crypto unavailable.'; errorEl.style.display = 'block'; }
-    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Unlock'; }
-  });
+    });
 }
 
 function adminHubTestProxy(service) {
