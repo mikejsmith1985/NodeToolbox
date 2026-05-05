@@ -5104,8 +5104,11 @@ function tbxConnect() {
     CRG.relay.jiraWin = window.open(jiraUrl, '__crg_jira', tbxRelayWinSpec('jira'));
     crAutoPing('jira');
   }
-  // Open/focus ServiceNow relay popup if not connected and URL exists
-  if (!CRG.relay.snowReady && snowUrl) {
+  // Open/focus ServiceNow relay popup if not connected and URL exists.
+  // In server mode tbxSnowReady() returns true because the proxy handles SNow —
+  // suppress the popup so Chrome proxy users are not asked to connect a relay
+  // that won't work in Chrome.
+  if (!tbxSnowReady() && snowUrl) {
     CRG.relay.snowWin = window.open(snowUrl, '__crg_snow', tbxRelayWinSpec('snow'));
     crAutoPing('snow');
   }
@@ -5627,6 +5630,13 @@ function crRelayRequest(sys, method, path, body) {
   if (IS_NODETOOLBOX_SERVER) {
     var isReady = sys === 'snow' ? CRG.relay.snowReady : sys === 'conf' ? CRG.relay.confReady : CRG.relay.jiraReady;
     if (!isReady) {
+      // For SNow in server mode, fall back to the server-side proxy instead of
+      // rejecting. This allows Chrome and other relay-incompatible browsers to
+      // use SNow features via Basic Auth service accounts. Users who need
+      // Okta/SSO must connect the relay manually from Settings.
+      if (sys === 'snow') {
+        return tbxNodeToolboxFetch('/snow-proxy', method, path, body);
+      }
       return Promise.reject(new Error(sys.toUpperCase() + ' relay not connected. Open & Connect from Settings.'));
     }
     var patBridge = sys === 'jira' ? tbxGetJiraPAT() : sys === 'conf' ? tbxGetJiraPAT() : tbxGetSnowPAT();
@@ -6319,7 +6329,7 @@ function crShowAIPromptResult() {
 
 // ── Step 4 — Validate with SNow (diagnostic POST + field audit) ───────────────
 function crValidateWithSnow() {
-  if (!CRG.relay.snowReady) { tbxShowReconnectToast('ServiceNow relay not connected.'); return; }
+  if (!tbxSnowReady()) { tbxShowReconnectToast('ServiceNow relay not connected.'); return; }
   var envs = crGetSelectedEnvs();
   if (!envs.length) { alert('Select at least one environment first.'); return; }
   var btn   = document.getElementById('cr-validate-btn');
@@ -6832,8 +6842,7 @@ function crGroupSearch(prefix, q) {
   var resultsEl = document.getElementById('cr-' + prefix + '-ag-results');
   if (!q || q.length < 2) { if (resultsEl) resultsEl.style.display = 'none'; return; }
   crGroupSearchDebounce[prefix] = setTimeout(function() {
-    if (!CRG.relay || !CRG.relay.snowReady) {
-      if (resultsEl) { resultsEl.innerHTML = '<div class="list-group-item list-group-item-warning" style="font-size:12px;">⚠️ SNow relay not connected</div>'; resultsEl.style.display = ''; }
+    if (!CRG.relay || !tbxSnowReady()) {
       return;
     }
     crSearchGroups(q, function(err, groups) {
@@ -6902,7 +6911,7 @@ document.addEventListener('click', function(e) {
 // ── Change Request creation ───────────────────────────────────────────────────
 
 function crCreateAll() {
-  if (!CRG.relay.snowReady) {
+  if (!tbxSnowReady()) {
     tbxShowReconnectToast('ServiceNow relay not connected.');
     return;
   }
@@ -7027,8 +7036,8 @@ function crReset() {
 function crInspect() {
   var chg = document.getElementById('cr-insp-chg').value.trim();
   if (!chg) { document.getElementById('cr-inspect-result').innerHTML = crAlert('Please enter a CHG number.', 'warn'); return; }
-  if (!CRG.relay.snowReady) {
-    document.getElementById('cr-inspect-result').innerHTML = crAlert('SNow relay not connected. <button class="cr-btn cr-btn-ghost cr-btn-sm" onclick="tbxConnect()">🔌 Connect →</button>', 'warn');
+  if (!tbxSnowReady()) {
+    document.getElementById('cr-inspect-result').innerHTML = crAlert('SNow not connected. Configure ServiceNow in ⚙️ Toolbox Settings.', 'warn');
     return;
   }
   var btn = document.getElementById('cr-inspect-btn');
@@ -7245,6 +7254,26 @@ function tbxJiraReady() {
   if (IS_NODETOOLBOX_SERVER) return true;
   // Legacy file:// mode: require the bookmarklet relay.
   return !!(typeof CRG !== 'undefined' && CRG.relay && CRG.relay.jiraReady);
+}
+
+/**
+ * Returns true when a ServiceNow API call can be made — either via the
+ * NodeToolbox proxy server (no relay required) or via the browser relay
+ * bookmarklet (legacy file:// mode).
+ *
+ * All SNow operation guards should call this instead of reading
+ * CRG.relay.snowReady directly, so that proxy-mode users (including Chrome
+ * users who cannot use the relay) never see "connect relay" prompts for SNow.
+ *
+ * Note: the proxy path uses Basic Auth service accounts. Users who need
+ * Okta/SSO must connect the relay manually via Settings → Open & Connect SNow.
+ */
+function tbxSnowReady() {
+  // In server mode the proxy handles SNow calls via /snow-proxy —
+  // the browser relay bookmarklet is optional (but preferred for SSO).
+  if (IS_NODETOOLBOX_SERVER) return true;
+  // Legacy file:// mode: require the bookmarklet relay.
+  return !!(typeof CRG !== 'undefined' && CRG.relay && CRG.relay.snowReady);
 }
 
 /** Base URL of the NodeToolbox server (e.g. http://localhost:5555), or null in file:// mode. */
@@ -7767,8 +7796,8 @@ function prbPingJira() { crPingRelay('jira'); }
 function prbFetch() {
   var num = ((document.getElementById('prb-number') || {}).value || '').trim().toUpperCase();
   if (!num) { prbFetchResult('<div class="cr-alert cr-alert-warn">Please enter a Problem number.</div>'); return; }
-  if (!CRG.relay.snowReady) {
-    prbFetchResult('<div class="cr-alert cr-alert-error">❌ SNow relay not connected. Install the relay bookmarklet from the Change Request Generator → Settings tab while on a SNow page.</div>');
+  if (!tbxSnowReady()) {
+    prbFetchResult('<div class="cr-alert cr-alert-error">❌ SNow not connected. Set up ServiceNow in ⚙️ Toolbox Settings.</div>');
     return;
   }
   var btn = document.getElementById('prb-fetch-btn');
@@ -10946,7 +10975,9 @@ function miSnowClearIdentity() {
 function miSnowInit() {
   var snowSection = document.getElementById('mi-snow-section');
   if (!snowSection) return;
-  var snowReady = !!(CRG && CRG.relay && CRG.relay.snowReady);
+  // Use tbxSnowReady() instead of CRG.relay.snowReady directly — in server mode
+  // the proxy handles SNow without requiring the relay bookmarklet.
+  var snowReady = tbxSnowReady();
   if (!snowReady) {
     snowSection.innerHTML =
       '<div class="mi-snow-header"><span class="mi-snow-title">🌐 ServiceNow</span></div>' +
@@ -21458,8 +21489,8 @@ function prbSyncRunNow() {
     prbSyncUpdateStatusBar();
     return;
   }
-  if (!CRG.relay.snowReady) {
-    prbSyncLog('error', '', '', 'SNow relay not connected — skipping sync');
+  if (!tbxSnowReady()) {
+    prbSyncLog('error', '', '', 'SNow not connected — skipping sync');
     prbSyncUpdateStatusBar();
     return;
   }
@@ -27729,7 +27760,7 @@ function rmCatchUpRepo(repoPath, requestHeaders, settings, apiBaseOverride, sinc
 
 function rmCheckConn() {
   rmUpdateConnBar('checking');
-  if (!CRG.relay.snowReady) { rmUpdateConnBar('disconnected'); return; }
+  if (!tbxSnowReady()) { rmUpdateConnBar('disconnected'); return; }
   crSnowFetch('/api/now/table/change_request?sysparm_limit=1&sysparm_fields=sys_id')
     .then(function() {
       rmUpdateConnBar('connected', null, Date.now());
@@ -28277,7 +28308,7 @@ function rmLoadCHG() {
   var num = input ? input.value.trim().toUpperCase() : '';
   if (!num) { rmSetStatus('Enter a CHG number first.', 'warn'); return; }
   rmUpdateRelayWarn();
-  if (!CRG.relay.snowReady) { rmSetStatus('⚠️ SNow relay not connected.', 'warn'); return; }
+  if (!tbxSnowReady()) { rmSetStatus('⚠️ ServiceNow not connected. Configure it in ⚙️ Settings.', 'warn'); return; }
   rmSetStatus('⏳ Loading ' + num + '…');
   var btn = document.getElementById('rm-load-btn');
   if (btn) btn.disabled = true;
@@ -28344,7 +28375,7 @@ function rmLoadMyCHGs() {
   var el = document.getElementById('rm-my-chgs');
   var statusEl = document.getElementById('rm-my-chgs-status');
   if (!el) return;
-  if (!CRG.relay.snowReady) {
+  if (!tbxSnowReady()) {
     el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:4px 0;">Connect ServiceNow to load your active changes.</div>';
     if (statusEl) statusEl.textContent = '';
     rmUpdateConnBar('disconnected');
@@ -28459,7 +28490,7 @@ function rmMarkBranchSeen(repoPath, branchName) {
 function rmOnOpen() {
   rmUpdateRelayWarn();
   rmLoadFilterFromStorage();
-  rmUpdateConnBar(CRG.relay.snowReady ? 'connected' : 'disconnected');
+  rmUpdateConnBar(tbxSnowReady() ? 'connected' : 'disconnected');
   var lastCHG = localStorage.getItem('tbxRMLastCHG');
   var input = document.getElementById('rm-chg-input');
   if (input && lastCHG && !input.value) input.value = lastCHG;
@@ -29435,7 +29466,7 @@ function rmUpdateConnBar(status, identity, lastLoaded) {
 function rmUpdateRelayWarn() {
   var el = document.getElementById('rm-relay-warn');
   if (el) el.innerHTML = ''; // kept hidden; conn bar handles all status display
-  if (!CRG.relay.snowReady) rmUpdateConnBar('disconnected');
+  if (!tbxSnowReady()) rmUpdateConnBar('disconnected');
 }
 
 function rmUpdateServerStatusBanner(runtimeData) {
@@ -47696,12 +47727,47 @@ function tbxWizOpenRelay() {
 
 /**
  * Renders the Proxy Server setup wizard step (step 3 when authChoice === 'proxy').
- * Guides the user through downloading NodeToolbox, starting it, and
- * testing the connection. Once the test succeeds, sets tbxJiraProxyUrl in
- * localStorage so the rest of the app routes requests through the local server.
+ *
+ * In server mode (IS_NODETOOLBOX_SERVER = true) the user is already viewing this
+ * page from the running NodeToolbox server — the download and start instructions
+ * are irrelevant and confusing. We show a condensed "server is running" view with
+ * just the credential verification test.
+ *
+ * In file:// mode, we show the full three-step download → start → test guide.
  */
 function tbxWizS3Proxy() {
   var ok = TBX_WIZ.proxyOk;
+
+  // ── Server mode: NodeToolbox is already running ───────────────────────────────
+  // The user reached this wizard from the running server, so there is nothing to
+  // download or start. Just verify that Jira credentials are configured correctly.
+  if (IS_NODETOOLBOX_SERVER) {
+    return '<div class="tbx-wiz-h1">Proxy Server Setup</div>' +
+      '<div class="tbx-wiz-sub">NodeToolbox is already running — just verify the Jira connection below</div>' +
+      '<div style="display:flex;flex-direction:column;gap:12px;width:100%;">' +
+        '<div style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.35);border-radius:8px;padding:10px 14px;font-size:12px;line-height:1.5;">' +
+          '<strong style="color:#22c55e;">✅ Server is running</strong> — NodeToolbox is serving this page. No download or setup needed.' +
+        '</div>' +
+        '<div class="tbx-onboard-step">' +
+          '<div class="step-num">1</div>' +
+          '<div class="step-body">' +
+            '<div class="step-title">🔌 Verify Jira credentials</div>' +
+            '<div class="step-hint">Click below to confirm that Jira credentials are configured in the proxy admin panel.</div>' +
+            '<div class="tbx-onboard-url-row">' +
+              '<button class="cr-btn cr-btn-primary cr-btn-sm" onclick="tbxWizTestProxy()">🔌 Test Connection</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div id="tbxwiz-proxy-status">' +
+          (ok ? '<div class="tbx-wiz-status ok">✅ Proxy server is running! Toolbox will route Jira calls through it.</div>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="tbx-wiz-nav"><button class="cr-btn cr-btn-ghost" onclick="tbxWizGo(2)">← Back</button>' +
+      (ok ? '<button class="cr-btn cr-btn-primary" onclick="tbxWizGo(4)">Next →</button>' : '') +
+      '</div>';
+  }
+
+  // ── File:// mode: guide the user through downloading and starting the server ──
   return '<div class="tbx-wiz-h1">Proxy Server Setup</div>' +
     '<div class="tbx-wiz-sub">NodeToolbox — a lightweight Node.js server that relays Jira calls — works in Chrome and every browser</div>' +
     '<div style="display:flex;flex-direction:column;gap:12px;width:100%;">' +
@@ -47743,15 +47809,20 @@ function tbxWizS3Proxy() {
 }
 
 /**
- * Probes localhost:5555/api/proxy-status. On success, persists the proxy URL to
+ * Probes /api/proxy-status. On success, persists the proxy URL to
  * localStorage (tbxJiraProxyUrl) so the request layer picks it up automatically,
  * then re-renders the wizard step with a success badge.
+ *
+ * In server mode the probe uses the current page origin — there is no need to
+ * hard-code localhost:5555 since the server is whatever served this page.
  */
 function tbxWizTestProxy() {
   var statusEl  = document.getElementById('tbxwiz-proxy-status');
-  var proxyBase = 'http://localhost:5555';
+  // In server mode use the current origin — the server is already running here.
+  // In file:// mode fall back to the default localhost:5555 port.
+  var proxyBase = IS_NODETOOLBOX_SERVER ? window.location.origin : 'http://localhost:5555';
 
-  if (statusEl) statusEl.innerHTML = '<div class="tbx-wiz-status wait">⏳ Checking for proxy server at localhost:5555…</div>';
+  if (statusEl) statusEl.innerHTML = '<div class="tbx-wiz-status wait">⏳ Checking proxy server' + (IS_NODETOOLBOX_SERVER ? '' : ' at localhost:5555') + '…</div>';
 
   // Use AbortController for a 4-second timeout so the test fails fast if the
   // server is not running rather than hanging until the browser's default timeout.
@@ -47810,6 +47881,9 @@ function tbxWizDownloadServerJs() {
 function tbxWizS4() {
   var sc = TBX_WIZ.snowChoice;
   var su = localStorage.getItem('tbxCRGenSnowUrl') || '';
+  // In proxy mode, the server handles SNow calls via /snow-proxy — no relay needed.
+  // Show a simplified flow that just saves the SNow base URL without relay setup.
+  var isProxyMode = (TBX_WIZ.authChoice === 'proxy');
   return '<div class="tbx-wiz-h1">ServiceNow Connection</div>' +
     '<div class="tbx-wiz-sub">Required for the Change Request Generator and PRB Generator tools</div>' +
     '<div class="tbx-wiz-choice">' +
@@ -47825,12 +47899,16 @@ function tbxWizS4() {
         '<div><label class="cr-label">ServiceNow Base URL</label>' +
           '<input id="tbxwiz-snow-url" class="cr-input" type="url" placeholder="https://yourinstance.service-now.com"' + (su ? ' value="' + crEsc(su) + '"' : '') + '></div>' +
         '<div style="font-size:12px;color:var(--text-muted);">' +
-          (TBX_WIZ.authChoice === 'proxy'
-            ? 'The Proxy Server handles ServiceNow connections automatically — no additional setup needed here.'
+          (isProxyMode
+            // Proxy mode: the server routes SNow calls through /snow-proxy — no relay tab needed.
+            ? '💡 The proxy server will route ServiceNow calls automatically. Enter your instance URL and save — no relay or browser tab needed.'
             : 'Use the same <strong>📎 Toolbox Relay</strong> bookmark — click it on your ServiceNow tab to activate.') +
         '</div>' +
         '<div style="display:flex;gap:8px;align-items:center;">' +
-          '<button class="cr-btn cr-btn-primary cr-btn-sm" onclick="tbxWizOpenSnow()">🔌 Save &amp; Open SNow Tab</button>' +
+          (isProxyMode
+            // Proxy mode: just save the URL and proceed — no relay connection flow.
+            ? '<button class="cr-btn cr-btn-primary cr-btn-sm" onclick="tbxWizSaveSnowUrlForProxy()">💾 Save &amp; Continue</button>'
+            : '<button class="cr-btn cr-btn-primary cr-btn-sm" onclick="tbxWizOpenSnow()">🔌 Save &amp; Open SNow Tab</button>') +
           '<span id="tbxwiz-snow-status" style="font-size:12px;"></span>' +
         '</div>' +
       '</div>'
@@ -47838,6 +47916,29 @@ function tbxWizS4() {
     '<div class="tbx-wiz-nav"><button class="cr-btn cr-btn-ghost" onclick="tbxWizGo(3)">← Back</button>' +
     (sc === 'yes' ? '<button class="cr-btn cr-btn-primary" onclick="tbxWizGo(5)">Next →</button>' : '') +
     '</div>';
+}
+
+/**
+ * Saves the ServiceNow base URL for proxy mode and advances to the done step.
+ * Unlike tbxWizOpenSnow(), this path does not open a relay tab or wait for a
+ * bookmarklet connection — the proxy server handles SNow calls directly.
+ * Also persists tbxSnowProxyUrl so the app knows the proxy is handling SNow.
+ */
+function tbxWizSaveSnowUrlForProxy() {
+  var inp = document.getElementById('tbxwiz-snow-url');
+  var url = inp ? inp.value.trim().replace(/\/+$/, '') : '';
+  if (!url) {
+    var statusEl = document.getElementById('tbxwiz-snow-status');
+    if (statusEl) statusEl.innerHTML = '<span style="color:#ef4444;">Please enter your ServiceNow URL first.</span>';
+    return;
+  }
+  localStorage.setItem('tbxCRGenSnowUrl', url);
+  // Mark SNow as proxy-configured so the app knows to route calls through /snow-proxy.
+  localStorage.setItem('tbxSnowProxyUrl', IS_NODETOOLBOX_SERVER ? window.location.origin : 'http://localhost:5555');
+  crSaveUrls();
+  var snowUrlInput = document.getElementById('tbx-gs-snow-url');
+  if (snowUrlInput) snowUrlInput.value = url;
+  tbxWizGo(5);
 }
 
 function tbxWizOpenSnow() {

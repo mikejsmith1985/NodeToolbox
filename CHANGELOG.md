@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Chrome proxy: wizard no longer shows "Download & Start" steps** — When the user opens
+  the setup wizard from the running NodeToolbox server (`IS_NODETOOLBOX_SERVER = true`),
+  the proxy setup step (Step 3) now shows a condensed "server is already running" view
+  with a single "Test Connection" button instead of the three-step download/unzip/start
+  guide that was shown even though the server was already serving the page.
+- **Chrome proxy: SNow wizard step no longer opens a relay tab** — In proxy mode the
+  ServiceNow wizard step (Step 4) now shows a "Save & Continue" button that saves the
+  SNow base URL and advances directly to the done step. The previous "Save & Open SNow Tab"
+  button incorrectly opened a relay connection flow that does not work in Chrome.
+- **Chrome proxy: app no longer prompts "Connect SNow relay" after proxy setup** — Added
+  `tbxSnowReady()` helper (mirrors `tbxJiraReady()`) that returns `true` in server/proxy
+  mode. All functional SNow guards now use `tbxSnowReady()` instead of
+  `CRG.relay.snowReady` directly, so proxy users can use CR/PRB/CHG/RM features without
+  connecting a relay bookmarklet. The `crRelayRequest()` path also falls back to the
+  existing `/snow-proxy` route in server mode instead of rejecting.
+
 ### Added
 - **HTTP relay bridge for Chrome (COOP fix)** — Chrome enforces
   `Cross-Origin-Opener-Policy: same-origin` on both ServiceNow and Jira Cloud, which
