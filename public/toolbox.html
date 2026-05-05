@@ -3356,7 +3356,7 @@ $listener.Start()
 ════════════════════════════════════════════════════════════════ -->
 <script>
 // ── Toolbox version & update config ──────────────────────────────────────────
-var TOOLBOX_VERSION = '0.2.2';
+var TOOLBOX_VERSION = '0.2.3';
 var MIN_PROXY_SERVER_VERSION = '0.0.1'; // bumped by release script — oldest proxy that works with this UI build
 var TOOLBOX_UPDATE_REPO = 'mikejsmith1985/NodeToolbox'; // public, used for version check
 var TOOLBOX_DOWNLOAD_URL = '';                         // set by release script → Confluence attachment URL
@@ -29582,6 +29582,33 @@ var HG_BUILT_IN_RULES = [
 // HG_FIX_VERSION_CACHE is a simple per-session cache that prevents re-fetching
 // Jira fix versions for the same project key during a single browser session.
 var HG_FIX_VERSION_CACHE = {};
+
+// DEV_PANEL holds all runtime state for the Network Activity Monitor overlay.
+// It is mutated directly by devPanel* functions and read by adminHubBuildLocalDevPanelSection.
+// panelLeft/panelTop start as null so devPanelOpen() can centre the panel on first launch.
+var DEV_PANEL = {
+  log:             [],    // Array of captured API call entries for the current session
+  nextId:          1,     // Auto-incrementing ID assigned to each new log entry
+  selectedEntryId: null,  // ID of the entry currently shown in the detail pane, or null
+  activeFilter:    'all', // Which log filter tab is active: 'all' | 'errors' | 'slow' | 'cached' | service name
+  isPaused:        false, // When true, new log entries are suppressed until unpaused
+  isOpen:          false, // Whether the Dev Panel overlay is currently visible
+  isHotPathsOpen:  false, // Whether the Hot Paths sub-panel is expanded
+  isDragging:      false, // True while the user is dragging the panel by its header
+  dragOffsetX:     0,     // Mouse X offset from panel left edge at drag start
+  dragOffsetY:     0,     // Mouse Y offset from panel top edge at drag start
+  panelLeft:       null,  // Pixel position of the panel (null = auto-centred on first open)
+  panelTop:        null,  // Pixel position of the panel (null = auto-centred on first open)
+  MAX_LOG_ENTRIES: 500    // Rolling-window cap — oldest entry is evicted when this is reached
+};
+
+// OPT_STATS tracks cache and deduplication hits for the current session.
+// Used by the Dev Panel to display the cache hit rate in the stats bar.
+var OPT_STATS = {
+  cacheHits:   0, // Number of responses served from the in-memory cache
+  cacheMisses: 0, // Number of requests that required a live network call
+  dedupHits:   0  // Number of duplicate in-flight requests collapsed into one
+};
 
 function hgAutoName(type, cfg) {
   if (type === 'stale') return 'Stale in ' + (cfg.statusCategory || 'In Progress') + ' (' + (cfg.days || 5) + ' days)';
