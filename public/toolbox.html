@@ -3256,77 +3256,61 @@ $listener.Start()
     <!-- ── SETTINGS VIEW ── -->
     <div id="rm-view-settings" style="display:none;">
 
+      <!-- ServiceNow connection notice — CHG data requires a live SNow relay -->
+      <div class="cr-card" style="padding:14px 16px;margin-bottom:8px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:10px;">🔌 ServiceNow Connection</div>
+        <div style="font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:12px;">
+          Release Management reads change requests directly from your ServiceNow instance.
+          Configure the SNow relay URL and credentials in
+          <strong style="color:var(--text);">Toolbox Settings → ServiceNow Connection</strong>.
+        </div>
+        <button class="cr-btn cr-btn-ghost cr-btn-sm" onclick="showView('toolbox-settings')">⚙ Open Toolbox Settings →</button>
+      </div>
+
+      <!-- CHG display preferences — controls "My Active Changes" list behaviour -->
       <div class="cr-card" style="padding:14px 16px;">
-        <div style="font-weight:700;font-size:13px;margin-bottom:14px;">⚙ Repo Monitor Settings</div>
+        <div style="font-weight:700;font-size:13px;margin-bottom:10px;">📋 My Changes — Display Preferences</div>
 
-        <!-- GitHub repos to watch -->
         <div style="margin-bottom:12px;">
-          <label class="cr-label">GitHub Repos to Monitor (one per line)</label>
-          <textarea id="rm-cfg-repos" class="cr-input" rows="4"
-            placeholder="org/repo-name&#10;org/another-repo"
-            style="width:100%;font-family:monospace;font-size:12px;resize:vertical;"></textarea>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Accepts owner/repo or full GitHub URL formats.</div>
-        </div>
-
-        <!-- Branch name regex filter -->
-        <div style="margin-bottom:12px;">
-          <label class="cr-label">Branch Name Pattern (regex)</label>
-          <input id="rm-cfg-branch-pattern" class="cr-input" style="width:100%;" placeholder="feature\/TICKET-\d+">
-        </div>
-
-        <!-- Poll frequency -->
-        <div style="margin-bottom:12px;">
-          <label class="cr-label">Poll Interval (minutes)</label>
-          <input id="rm-cfg-interval" class="cr-input" type="number" min="1" max="60" style="width:80px;" value="5">
-        </div>
-
-        <!-- Jira transition names to fire on each GitHub event -->
-        <div style="margin-bottom:12px;">
-          <div class="cr-label" style="margin-bottom:6px;">Jira Transitions on GitHub Events</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            <div>
-              <label class="cr-label" style="font-size:11px;">On branch created</label>
-              <input id="rm-cfg-trans-branch" class="cr-input" placeholder="In Progress">
-            </div>
-            <div>
-              <label class="cr-label" style="font-size:11px;">On commit pushed</label>
-              <input id="rm-cfg-trans-commit" class="cr-input" placeholder="">
-            </div>
-            <div>
-              <label class="cr-label" style="font-size:11px;">On PR opened</label>
-              <input id="rm-cfg-trans-pr-open" class="cr-input" placeholder="">
-            </div>
-            <div>
-              <label class="cr-label" style="font-size:11px;">On PR merged</label>
-              <input id="rm-cfg-trans-pr-merge" class="cr-input" placeholder="">
-            </div>
+          <div class="cr-label" style="margin-bottom:6px;">Default State Filter</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
+            Choose which CHG states are shown in "My Active Changes" by default.
+            You can also adjust this on the fly using the Filter button in the My Changes view.
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;" id="rm-pref-state-checks">
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" id="rm-pref-state--5" value="-5"> Draft</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" id="rm-pref-state--4" value="-4"> Assessment</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" id="rm-pref-state--3" value="-3"> Authorization</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" id="rm-pref-state--2" value="-2" checked> Scheduled</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" id="rm-pref-state--1" value="-1" checked> Implement</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;"><input type="checkbox" id="rm-pref-state-0"  value="0"  checked> Review</label>
           </div>
         </div>
 
-        <!-- Active-hours schedule window -->
-        <div style="margin-bottom:14px;">
-          <div class="cr-label" style="margin-bottom:6px;">Active Hours Schedule</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;">
-            <div>
-              <label class="cr-label" style="font-size:11px;">Start</label>
-              <input id="rm-cfg-start-time" class="cr-input" type="time" style="width:100px;" value="07:00">
-            </div>
-            <div>
-              <label class="cr-label" style="font-size:11px;">End</label>
-              <input id="rm-cfg-end-time" class="cr-input" type="time" style="width:100px;" value="19:00">
-            </div>
-          </div>
-          <!-- Day-picker buttons rendered by rmRenderDayPicker() on settings open -->
-          <div id="rm-cfg-days-row" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;"></div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <input type="checkbox" id="rm-cfg-catch-up" checked style="width:16px;height:16px;cursor:pointer;">
-            <label for="rm-cfg-catch-up" style="font-size:12px;cursor:pointer;">Run immediately on startup if outside scheduled window (catch-up mode)</label>
-          </div>
+        <div style="margin-bottom:12px;">
+          <div class="cr-label" style="margin-bottom:6px;">Auto-load Behaviour</div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
+            <input type="checkbox" id="rm-pref-auto-load" style="width:16px;height:16px;cursor:pointer;">
+            Remember last loaded CHG number and re-load it automatically when this tab opens
+          </label>
         </div>
 
         <div>
-          <button class="cr-btn cr-btn-sm" onclick="rmSaveRepoMonitorSettings()">💾 Save Settings</button>
+          <button class="cr-btn cr-btn-sm" onclick="rmSaveDisplayPreferences()">💾 Save Preferences</button>
+          <span id="rm-pref-save-status" style="font-size:11px;color:var(--text-muted);margin-left:10px;"></span>
         </div>
+      </div>
+
+      <!-- Repo Monitor is configured in Dev Workspace — cross-link for discoverability -->
+      <div style="font-size:11px;color:var(--text-muted);padding:8px 4px;line-height:1.6;">
+        <!-- The GitHub Repo Monitor (branch watch, Jira auto-transitions, poll schedule) lives in
+             Dev Workspace → Repo Monitor → Settings. It is a developer workflow tool, not a
+             ServiceNow Release Management tool — this is intentional separation of concerns. -->
+        Looking for GitHub Repo Monitor settings? Go to
+        <button class="cr-btn cr-btn-ghost cr-btn-sm" style="font-size:11px;padding:2px 8px;"
+          onclick="showView('dev-workspace'); dwShowTab('monitor');">
+          Dev Workspace → Repo Monitor
+        </button>
       </div>
 
     </div><!-- /rm-view-settings -->
@@ -13711,7 +13695,7 @@ function dwShowTab(tab) {
     wlRenderTimers(); wlRenderToday(); wlRenderHistory();
   }
   if (tab === 'gitsync') { devSyncRenderUI(); tbxRenderAllAuthBadges(); }
-  if (tab === 'monitor') { rmUpdateUnifiedCard(); rmRenderScheduleSummary(); rmRenderReposSummary(); }
+  if (tab === 'monitor') { rmUpdateUnifiedCard(); rmRenderScheduleSummary(); rmRenderReposSummary(); rmLoadSettingsUI(); }
   if (tab === 'settings') devLoadSettingsUI();
 }
 
@@ -28705,7 +28689,9 @@ function rmShowInternalTab(tab) {
     if (view) view.style.display = (t === tab) ? '' : 'none';
   });
   localStorage.setItem('tbxRMTab', tab);
-  if (tab === 'settings') rmLoadSettingsUI();
+  // Load the Release Management display preferences when the settings sub-tab opens.
+  // (Repo Monitor settings are now in Dev Workspace → Repo Monitor.)
+  if (tab === 'settings') rmLoadDisplayPreferences();
 }
 
 function rmOnOpen() {
@@ -28718,6 +28704,62 @@ function rmOnOpen() {
   // Restore the last-active internal tab (defaults to 'changes')
   rmShowInternalTab(localStorage.getItem('tbxRMTab') || 'changes');
   rmLoadMyCHGs();
+  // Auto-load the last CHG if the user has turned on that preference
+  var prefs = rmGetDisplayPreferences();
+  if (prefs.isAutoLoadEnabled && lastCHG) rmLoadCHG();
+}
+
+// ── Release Management display preferences ─────────────────────────────────
+// These are user-facing CHG preferences stored separately from Repo Monitor
+// settings (which live in Dev Workspace → Repo Monitor → Settings).
+
+function rmGetDisplayPreferences() {
+  var defaults = {
+    defaultStateFilter: ['-2', '-1', '0'],  // Scheduled, Implement, Review
+    isAutoLoadEnabled:  false
+  };
+  try {
+    var stored = JSON.parse(localStorage.getItem('tbxRMDisplayPrefs') || '{}');
+    if (Array.isArray(stored.defaultStateFilter)) defaults.defaultStateFilter = stored.defaultStateFilter;
+    if (typeof stored.isAutoLoadEnabled === 'boolean') defaults.isAutoLoadEnabled = stored.isAutoLoadEnabled;
+  } catch (parseErr) { /* return defaults on any parse failure */ }
+  return defaults;
+}
+
+function rmLoadDisplayPreferences() {
+  var prefs = rmGetDisplayPreferences();
+  // Populate default state-filter checkboxes
+  ['-5', '-4', '-3', '-2', '-1', '0'].forEach(function(stateValue) {
+    var checkboxEl = document.getElementById('rm-pref-state-' + stateValue);
+    if (checkboxEl) checkboxEl.checked = prefs.defaultStateFilter.indexOf(stateValue) !== -1;
+  });
+  // Populate auto-load toggle
+  var autoLoadEl = document.getElementById('rm-pref-auto-load');
+  if (autoLoadEl) autoLoadEl.checked = prefs.isAutoLoadEnabled;
+}
+
+function rmSaveDisplayPreferences() {
+  // Read state checkboxes from the preferences form
+  var selectedStates = [];
+  ['-5', '-4', '-3', '-2', '-1', '0'].forEach(function(stateValue) {
+    var checkboxEl = document.getElementById('rm-pref-state-' + stateValue);
+    if (checkboxEl && checkboxEl.checked) selectedStates.push(stateValue);
+  });
+  var autoLoadEl = document.getElementById('rm-pref-auto-load');
+  var prefs = {
+    defaultStateFilter: selectedStates,
+    isAutoLoadEnabled:  autoLoadEl ? autoLoadEl.checked : false
+  };
+  try {
+    localStorage.setItem('tbxRMDisplayPrefs', JSON.stringify(prefs));
+    var statusEl = document.getElementById('rm-pref-save-status');
+    if (statusEl) {
+      statusEl.textContent = '✅ Saved';
+      setTimeout(function() { statusEl.textContent = ''; }, 2000);
+    }
+  } catch (storageErr) {
+    tbxToast('⚠️ Could not save preferences — localStorage may be full.');
+  }
 }
 
 function rmParseSnowDate(utcStr) {
@@ -43715,8 +43757,9 @@ function snhUpdateRoleGatedTabs() {
 }
 
 function tbxApplyFeatureFlags() {
-  var isSnowVisible = localStorage.getItem('tbxFeatureSnowVisible') === '1';
-  var isAIVisible   = localStorage.getItem('tbxFeatureAIVisible') === '1';
+  var isSnowVisible   = localStorage.getItem('tbxFeatureSnowVisible') === '1';
+  var isAIVisible     = localStorage.getItem('tbxFeatureAIVisible') === '1';
+  var isAdminUnlocked = sessionStorage.getItem('tbxAdminUnlocked') === '1';
 
   // -- My Issues SNow section --
   tbxSetElementVisible('mi-snow-section', isSnowVisible);
@@ -43730,6 +43773,16 @@ function tbxApplyFeatureFlags() {
   document.querySelectorAll('#dsu-ai-prompt-btn').forEach(function(el) {
     el.style.display = isAIVisible ? '' : 'none';
   });
+
+  // -- Release Management tab is an advanced feature gated behind admin unlock.
+  //    When the lock is re-engaged and this tab was active, fall back to Change Request.
+  var rmTabEl = document.getElementById('snh-tab-rm');
+  if (rmTabEl) {
+    rmTabEl.style.display = isAdminUnlocked ? '' : 'none';
+    if (!isAdminUnlocked && rmTabEl.classList.contains('active')) {
+      snhShowTab('crg');
+    }
+  }
 
   // Apply per-tool home card visibility independently of the AI/SNow flags.
   tbxApplyToolCardVisibility();
@@ -45904,6 +45957,82 @@ function trSearchUsers() {
       <div class="cr-card" style="padding:14px 16px;">
         <div style="font-weight:700;font-size:13px;margin-bottom:8px;">📜 Monitor Log</div>
         <div id="rm-log-entries" style="max-height:300px;overflow-y:auto;"></div>
+      </div>
+
+      <!-- ── Repo Monitor Settings ─────────────────────────────────────────────
+           These settings control which repos are watched and when the monitor
+           runs. Saving here is equivalent to Save Settings in the old location. -->
+      <div class="cr-card" style="padding:14px 16px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:14px;">⚙ Repo Monitor Settings</div>
+
+        <!-- GitHub repos to watch -->
+        <div style="margin-bottom:12px;">
+          <label class="cr-label">GitHub Repos to Monitor (one per line)</label>
+          <textarea id="rm-cfg-repos" class="cr-input" rows="4"
+            placeholder="org/repo-name&#10;org/another-repo"
+            style="width:100%;font-family:monospace;font-size:12px;resize:vertical;"></textarea>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Accepts owner/repo or full GitHub URL formats.</div>
+        </div>
+
+        <!-- Branch name regex filter -->
+        <div style="margin-bottom:12px;">
+          <label class="cr-label">Branch Name Pattern (regex)</label>
+          <input id="rm-cfg-branch-pattern" class="cr-input" style="width:100%;" placeholder="feature\/TICKET-\d+">
+        </div>
+
+        <!-- Poll frequency -->
+        <div style="margin-bottom:12px;">
+          <label class="cr-label">Poll Interval (minutes)</label>
+          <input id="rm-cfg-interval" class="cr-input" type="number" min="1" max="60" style="width:80px;" value="5">
+        </div>
+
+        <!-- Jira transition names to fire on each GitHub event -->
+        <div style="margin-bottom:12px;">
+          <div class="cr-label" style="margin-bottom:6px;">Jira Transitions on GitHub Events</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div>
+              <label class="cr-label" style="font-size:11px;">On branch created</label>
+              <input id="rm-cfg-trans-branch" class="cr-input" placeholder="In Progress">
+            </div>
+            <div>
+              <label class="cr-label" style="font-size:11px;">On commit pushed</label>
+              <input id="rm-cfg-trans-commit" class="cr-input" placeholder="">
+            </div>
+            <div>
+              <label class="cr-label" style="font-size:11px;">On PR opened</label>
+              <input id="rm-cfg-trans-pr-open" class="cr-input" placeholder="">
+            </div>
+            <div>
+              <label class="cr-label" style="font-size:11px;">On PR merged</label>
+              <input id="rm-cfg-trans-pr-merge" class="cr-input" placeholder="">
+            </div>
+          </div>
+        </div>
+
+        <!-- Active-hours schedule window -->
+        <div style="margin-bottom:14px;">
+          <div class="cr-label" style="margin-bottom:6px;">Active Hours Schedule</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;">
+            <div>
+              <label class="cr-label" style="font-size:11px;">Start</label>
+              <input id="rm-cfg-start-time" class="cr-input" type="time" style="width:100px;" value="07:00">
+            </div>
+            <div>
+              <label class="cr-label" style="font-size:11px;">End</label>
+              <input id="rm-cfg-end-time" class="cr-input" type="time" style="width:100px;" value="19:00">
+            </div>
+          </div>
+          <!-- Day-picker buttons rendered by rmRenderDayPicker() when this tab opens -->
+          <div id="rm-cfg-days-row" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;"></div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input type="checkbox" id="rm-cfg-catch-up" checked style="width:16px;height:16px;cursor:pointer;">
+            <label for="rm-cfg-catch-up" style="font-size:12px;cursor:pointer;">Run immediately on startup if outside scheduled window (catch-up mode)</label>
+          </div>
+        </div>
+
+        <div>
+          <button class="cr-btn cr-btn-sm" onclick="rmSaveRepoMonitorSettings()">💾 Save Settings</button>
+        </div>
       </div>
 
     </main>
