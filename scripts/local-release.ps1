@@ -1,7 +1,7 @@
 # scripts/local-release.ps1 — Packages NodeToolbox into distributable artifacts
 # and publishes a GitHub Release — all in one command.
 #
-# Produces two distributable artifacts in dist/:
+# Produces two distributable artifacts:
 #   1. nodetoolbox-vX.Y.Z.zip  — slim zip (no node_modules) for users who prefer extraction
 #   2. nodetoolbox-vX.Y.Z.exe  — single-file Windows executable (no extraction required)
 # Credentials are stored in AppData\Roaming\NodeToolbox\ and persist across upgrades.
@@ -134,7 +134,7 @@ if ($DryRun) {
     Write-Host "  4. generate-dashboard   - compile toolbox.html into src/generated/dashboardHtmlContent.js"
     Write-Host "  5. pkg                   - build single-file exe at $ExeOutputPath"
     Write-Host "  5b. Compress-Archive     - wrap exe into $ExeZipOutputPath (browser-safe download)"
-    Write-Host "  6. gh release create     - publish GitHub Release $GitTag with both artifacts"
+    Write-Host "  6. gh release create     - publish GitHub Release $GitTag with zip and exe-zip"
     Write-Host ""
     Write-Host "  Version:    $AppVersion"
     Write-Host "  Tag:        $GitTag"
@@ -323,7 +323,9 @@ try {
     # that informational message; the try/catch handles any residual stderr output safely.
     try { git checkout --quiet $originalBranch } catch { <# stderr noise from git, not a real error #> }
 
-    # Create the GitHub Release and attach both artifacts.
+    # Create the GitHub Release and attach two artifacts:
+    #   1. Slim zip  — for users who extract and run via npm / bat launcher
+    #   2. Exe zip   — for users who want a single-file Windows executable
     # $ExeZipOutputPath is used instead of the raw .exe so users aren't blocked
     # by browser security warnings that flag unsigned .exe direct downloads.
     gh release create $GitTag $ZipOutputPath $ExeZipOutputPath `
@@ -338,7 +340,7 @@ try {
 Write-Host "       ✅ GitHub Release $GitTag published"
 Write-Host ""
 Write-Host "  ✅ Release complete:"
-Write-Host "     ZIP: $ZipOutputPath"
-Write-Host "     EXE: $ExeZipOutputPath"
-Write-Host "     URL: https://github.com/mikejsmith1985/NodeToolbox/releases/tag/$GitTag"
+Write-Host "     ZIP:  $ZipOutputPath"
+Write-Host "     EXE:  $ExeZipOutputPath"
+Write-Host "     URL:  https://github.com/mikejsmith1985/NodeToolbox/releases/tag/$GitTag"
 Write-Host ""
