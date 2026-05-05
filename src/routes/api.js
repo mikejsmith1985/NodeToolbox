@@ -188,6 +188,46 @@ function createApiRouter(configuration) {
     });
   });
 
+  // ── POST /api/shutdown ──────────────────────────────────────────────────
+  // Gracefully stops the server process. Accessible from localhost only —
+  // the server never binds to a public interface so no extra auth is needed.
+  // Responds before the process exits so the browser can display a message.
+
+  router.post('/api/shutdown', (_req, res) => {
+    res.json({ ok: true, message: 'Server is shutting down.' });
+    // Small delay lets the HTTP response reach the browser before the process ends
+    setTimeout(() => {
+      console.log('  🛑 Shutdown requested from Admin Hub — stopping server.');
+      process.exit(0);
+    }, 300);
+  });
+
+  // ── POST /api/restart ────────────────────────────────────────────────────
+  // Spawns a fresh detached copy of the server process, then exits this one.
+  // Works for both plain `node server.js` and the pkg-compiled .exe launcher.
+  // The new process starts after the port is released, using the same argv flags
+  // (e.g. --open) that were originally passed to the current process.
+
+  router.post('/api/restart', (_req, res) => {
+    res.json({ ok: true, message: 'Server is restarting.' });
+    setTimeout(() => {
+      console.log('  🔄 Restart requested from Admin Hub — restarting server.');
+      const { spawn } = require('child_process');
+      // When running as a pkg-compiled exe, argv[1] is the internal snapshot path
+      // (e.g. /snapshot/server.js) — skip it and pass only the user args that follow.
+      // When running as plain node, argv[1] is the script path and must be included.
+      const spawnArgs = process.pkg ? process.argv.slice(2) : process.argv.slice(1);
+      const restartedProcess = spawn(process.execPath, spawnArgs, {
+        detached: true,
+        stdio:    'ignore',
+        cwd:      process.cwd(),
+        env:      process.env,
+      });
+      restartedProcess.unref();
+      process.exit(0);
+    }, 300);
+  });
+
   return router;
 }
 

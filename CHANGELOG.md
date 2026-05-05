@@ -42,6 +42,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configured) or "SNow uses Okta — use Edge with the relay bookmarklet" (no credentials).
 
 ### Added
+- **Admin Hub: "Server Control" panel** — New panel in the Admin Hub with **Restart Server**
+  and **Stop Server** buttons. Both use a two-step inline confirmation to prevent accidental
+  clicks. Designed for users running NodeToolbox via the silent VBScript launcher where no
+  terminal window is available for Ctrl+C. After restart, the UI polls `/api/proxy-status`
+  every 1.5 seconds and shows a "Reload now" link once the server is back online. New backend
+  endpoints: `POST /api/restart` (spawns a detached child process then exits) and
+  `POST /api/shutdown` (exits the process). New frontend functions:
+  `adminHubBuildServerControlPanel()`, `adminHubExecuteServerAction()`,
+  `adminHubRevealServerAction()`, `adminHubCancelServerAction()`, `adminHubPollForServerReady()`.
+
 - **Admin Hub: "Check for Updates" panel** — A new "Version & Updates" panel in the Admin
   Hub shows the current version and provides a "Check for Updates" button. Clicking it
   queries the public GitHub Releases API (`/repos/mikejsmith1985/NodeToolbox/releases/latest`)
