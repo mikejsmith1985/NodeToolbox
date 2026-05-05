@@ -276,6 +276,20 @@ router.get('/result/:id', (req, res) => {
 
 module.exports = router;
 
+// ── Exported helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Returns whether the relay bridge is active for a given system identifier.
+ * Used by the /api/snow-diag endpoint so diagnostic reports can include relay state
+ * without making an internal HTTP request to /api/relay-bridge/status/:sys.
+ *
+ * @param {string} sys - System identifier: 'snow', 'jira', or 'conf'
+ * @returns {boolean} True when the bookmarklet has registered and not deregistered
+ */
+module.exports.getBridgeStatus = function getBridgeStatus(sys) {
+  return !!(bridgeState[sys] && bridgeState[sys].isActive);
+};
+
 // Exposed only for unit testing — resets all bridge channels to a clean state.
 // Never call this in production code.
 module.exports._resetBridgeStateForTests = function() {
