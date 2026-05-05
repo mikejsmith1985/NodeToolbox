@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **SNow Hub — Release Management tab now gated behind admin unlock** — The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow Hub tab strip regardless of admin status. It is now hidden by default and only revealed after admin unlock (`tbxAdminUnlocked === '1'`). `tbxApplyFeatureFlags()` was updated to control tab visibility; if the RM tab was active when the admin lock was re-engaged, it automatically falls back to the Change Request tab.
+- **SNow Hub → Release Management → Settings showed wrong content** — The Settings sub-tab displayed "⚙ Repo Monitor Settings" (GitHub repos, branch pattern, poll interval, Jira transitions on GitHub events, active hours schedule) which has nothing to do with Release Management. Replaced with correct content: a **ServiceNow Connection** notice pointing to Toolbox Settings, and a **My Changes Display Preferences** section with default state filter checkboxes and an auto-load-last-CHG toggle. Added `rmSaveDisplayPreferences()`, `rmLoadDisplayPreferences()`, and `rmGetDisplayPreferences()` to persist and restore these preferences via `tbxRMDisplayPrefs` in localStorage.
+- **Repo Monitor settings inaccessible after move to Dev Workspace** — When the Repo Monitor operational panel was moved to Dev Workspace, the settings form (repos, branch pattern, poll interval, Jira transitions, active hours, catch-up mode) was left in the wrong place (SNow Hub RM). The settings card is now correctly placed inside `dw-panel-monitor` (Dev Workspace → Repo Monitor) directly below the activity log. `dwShowTab('monitor')` now also calls `rmLoadSettingsUI()` to populate the form on every open.
+
+### Fixed
 - **Admin Hub "DEV_PANEL is not defined"** — `DEV_PANEL` (Network Activity Monitor state) and `OPT_STATS` (cache hit counters) were referenced throughout the Admin Hub and Dev Panel code but never declared. Admin Hub failed to render after unlock. Both objects are now declared with full initial state alongside the other module globals.
 
 ### Fixed
