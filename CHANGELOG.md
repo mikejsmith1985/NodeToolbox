@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Admin Hub blank panel (crash)** — `hgGetGlobalRules()` threw `ReferenceError: HG_BUILT_IN_RULES is not defined` whenever `localStorage` had no saved hygiene rules, which propagated through `adminHubBuildHygieneRulesPanel()` → `adminHubBuildHTML()` and left `admin-hub-body` empty. Fixed by defining `HG_BUILT_IN_RULES` as an array of 11 default enterprise Feature/Risk hygiene rules (6 Feature, 5 Risk) at the hygiene module initialisation block. Also defined `HG_STATE` (runtime hygiene results object) and `HG_FIX_VERSION_CACHE` (per-session version-list cache) which were similarly referenced but never declared, preventing latent crashes in the hygiene tab.
+
+- **Admin Hub shows error message on unexpected failures** — `adminHubRender()` had no error handling, so any uncaught JS exception during panel construction produced a silently blank panel. Added a `try/catch` that renders a visible `⚠️ Admin Hub failed to load.` banner with the error message and logs to the console, making future issues immediately diagnosable.
+
+### Performance
+- **Gzip compression for all responses** — Installed the `compression` npm package and mounted `app.use(compression())` as the first Express middleware in `server.js`. The primary beneficiary is `toolbox.html` (2.75 MB uncompressed) which compresses to ~300–400 KB on the wire — roughly an 8× reduction — improving both initial page load time and the in-app update download speed.
+
+### Fixed
 - **`jira.configured` returned `false` when only a base URL was set** — `isServiceConfigured()`
   in `loader.js` required both a URL and at least one credential, so the `configured` field in
   `GET /api/proxy-status` was `false` even when the user had typed in a Jira URL but not yet

@@ -6,8 +6,9 @@
 
 'use strict';
 
-const path    = require('path');
-const express = require('express');
+const path        = require('path');
+const express     = require('express');
+const compression = require('compression');
 
 const { loadConfig, createConfigTemplate, isServiceConfigured } = require('./src/config/loader');
 const { applyCorsHeaders }                  = require('./src/middleware/cors');
@@ -43,6 +44,11 @@ const configuration = loadConfig();
 // ── Express Application ───────────────────────────────────────────────────────
 
 const app = express();
+
+// Compress all responses with gzip/deflate — dramatically reduces the 2.75MB
+// toolbox.html payload to ~300-400KB, improving both initial load and update downloads.
+// Must be registered before any route or middleware that sends responses.
+app.use(compression());
 
 // Parse JSON request bodies — required for POST /api/proxy-config and /api/snow-session
 app.use(express.json({ limit: '1mb' }));
