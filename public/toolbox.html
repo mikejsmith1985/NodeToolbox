@@ -33707,6 +33707,112 @@ function adminHubBuildConsentPanel() {
   return h;
 }
 
+// ── Admin Hub — Version & Updates panel ──────────────────────────────────────
+
+/**
+ * Returns true when latestVersionStr is newer than currentVersionStr using
+ * basic semver (major.minor.patch) comparison.
+ *
+ * @param {string} latestVersionStr  - e.g. "0.1.9"
+ * @param {string} currentVersionStr - e.g. "0.1.8"
+ * @returns {boolean}
+ */
+function adminHubIsVersionNewer(latestVersionStr, currentVersionStr) {
+  var latestParts  = latestVersionStr.split('.').map(Number);
+  var currentParts = currentVersionStr.split('.').map(Number);
+  for (var partIndex = 0; partIndex < 3; partIndex++) {
+    var latestPart  = latestParts[partIndex]  || 0;
+    var currentPart = currentParts[partIndex] || 0;
+    if (latestPart > currentPart) return true;
+    if (latestPart < currentPart) return false;
+  }
+  return false; // versions are identical
+}
+
+/**
+ * Fetches the latest release from GitHub and updates the update-panel result
+ * area to show whether an update is available.
+ *
+ * @param {string} refreshButtonId - DOM id of the button that triggered the check
+ */
+function adminHubCheckForUpdates(refreshButtonId) {
+  var refreshButton = document.getElementById(refreshButtonId);
+  var resultArea    = document.getElementById('ah-update-result');
+  var statusArea    = document.getElementById('ah-update-status');
+
+  if (refreshButton) refreshButton.disabled = true;
+  if (statusArea)    statusArea.textContent  = 'Checking…';
+  if (resultArea)    resultArea.style.display = 'none';
+
+  var githubReleasesApiUrl = 'https://api.github.com/repos/' + TOOLBOX_UPDATE_REPO + '/releases/latest';
+
+  fetch(githubReleasesApiUrl)
+    .then(function(response) { return response.json(); })
+    .then(function(releaseData) {
+      var latestVersionStr = (releaseData.tag_name || '').replace(/^v/, '');
+      var releasePageUrl   = releaseData.html_url || ('https://github.com/' + TOOLBOX_UPDATE_REPO + '/releases/latest');
+      var downloadUrl      = TOOLBOX_DOWNLOAD_URL ||
+        ('https://github.com/' + TOOLBOX_UPDATE_REPO + '/releases/latest/download/toolbox.html');
+
+      if (!latestVersionStr) {
+        if (statusArea) statusArea.textContent = '⚠ Could not read version from GitHub.';
+        return;
+      }
+
+      var isNewerVersionAvailable = adminHubIsVersionNewer(latestVersionStr, TOOLBOX_VERSION);
+
+      if (isNewerVersionAvailable) {
+        var releaseBody = releaseData.body ? releaseData.body.substring(0, 400) : '';
+        if (resultArea) {
+          resultArea.innerHTML =
+            '<div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:12px 14px;font-size:12px;color:#713f12;">' +
+            '<strong>🔔 v' + latestVersionStr + ' is available</strong><br>' +
+            '<span style="font-size:11px;opacity:.8;">You are on v' + TOOLBOX_VERSION + '</span><br>' +
+            (releaseBody ? '<pre style="font-size:10px;white-space:pre-wrap;margin:8px 0 10px;opacity:.85;">' + crEsc(releaseBody) + '</pre>' : '') +
+            '<a href="' + downloadUrl + '" download="toolbox.html" style="display:inline-block;margin-top:4px;margin-right:8px;padding:4px 12px;background:#ca8a04;color:#fff;border-radius:6px;text-decoration:none;font-size:11px;font-weight:600;">⬇ Download toolbox.html</a>' +
+            '<a href="' + releasePageUrl + '" target="_blank" rel="noopener" style="font-size:11px;color:#92400e;text-decoration:underline;">View release notes ↗</a>' +
+            '</div>';
+          resultArea.style.display = '';
+        }
+        if (statusArea) statusArea.textContent = '';
+      } else {
+        if (statusArea) statusArea.textContent = '✅ You are on the latest version (v' + TOOLBOX_VERSION + ').';
+        // Clear any stale update result from a previous check
+        if (resultArea) { resultArea.innerHTML = ''; resultArea.style.display = 'none'; }
+      }
+    })
+    .catch(function(fetchError) {
+      if (statusArea) statusArea.textContent = '⚠ Check failed — ' + (fetchError.message || 'network error');
+    })
+    .finally(function() {
+      if (refreshButton) refreshButton.disabled = false;
+    });
+}
+
+/**
+ * Builds the "Version & Updates" panel HTML for the Admin Hub.
+ * Provides a manual "Check for Updates" button that queries the public
+ * GitHub Releases API so users can confirm they are running the latest build.
+ *
+ * @returns {string} HTML string
+ */
+function adminHubBuildUpdatePanel() {
+  var panelHtml = '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;">';
+  panelHtml += '<div style="font-weight:700;font-size:15px;color:var(--text);margin-bottom:4px;">🔔 Version &amp; Updates</div>';
+  panelHtml += '<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">';
+  panelHtml += 'Running <strong>v' + TOOLBOX_VERSION + '</strong>. ';
+  panelHtml += 'Click the button below to check GitHub for the latest release.';
+  panelHtml += '</div>';
+  // Result area — hidden until a check is performed
+  panelHtml += '<div id="ah-update-result" style="display:none;margin-bottom:12px;"></div>';
+  panelHtml += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
+  panelHtml += '<button class="cr-btn cr-btn-primary cr-btn-sm" id="ah-update-btn" onclick="adminHubCheckForUpdates(\'ah-update-btn\')">🔍 Check for Updates</button>';
+  panelHtml += '<span id="ah-update-status" style="font-size:12px;color:var(--text-muted);"></span>';
+  panelHtml += '</div>';
+  panelHtml += '</div>';
+  return panelHtml;
+}
+
 function adminHubBuildDiagnosticsPanel() {
   var h = '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;">';
   h += '<div style="font-weight:700;font-size:15px;color:var(--text);margin-bottom:4px;">🔍 Connection Diagnostics</div>';
@@ -33772,6 +33878,7 @@ function adminHubBuildHTML() {
   h += adminHubBuildArtConfigPanel();
   // Single consolidated proxy section — Jira always visible, SNow+GitHub revealed on admin unlock
   h += adminHubBuildProxySetupSection(isAdminUnlocked);
+  h += adminHubBuildUpdatePanel();
   h += adminHubBuildDiagnosticsPanel();
   // Advanced administration — locked behind credentials
   if (isAdminUnlocked) {
