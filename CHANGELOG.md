@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`jira.configured` returned `false` when only a base URL was set** — `isServiceConfigured()`
+  in `loader.js` required both a URL and at least one credential, so the `configured` field in
+  `GET /api/proxy-status` was `false` even when the user had typed in a Jira URL but not yet
+  added a PAT or API token. Introduced `isServiceBaseUrlSet()` which checks the URL only
+  (no credential requirement), and updated the `proxy-status` handler to use it for the
+  `configured` and `baseUrl` response fields. `isServiceConfigured()` (requires both URL and
+  credential) is retained for the `ready` field and for the setup-wizard guard. Also fixed a
+  `TypeError: Cannot read properties of undefined (reading 'baseUrl')` crash in
+  `saveConfigToDisk()` when `configuration.confluence` was absent.
+
 - **Chrome proxy 502 with empty error message** — `proxyRequest()` in `httpClient.js` was
   calling `clientReq.pipe(outboundRequest)` for POST/PUT/PATCH/DELETE requests even though
   `express.json()` middleware had already consumed the request stream before the proxy router
