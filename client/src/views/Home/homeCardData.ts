@@ -1,0 +1,199 @@
+// homeCardData.ts — Static definitions for the Home view card catalog and section metadata.
+
+/** Section identifiers used to group cards on the Home view. */
+export type SectionKey = 'agile' | 'reports' | 'snow' | 'text' | 'admin' | 'docs';
+
+/** Static definition for one tool card surfaced on the Home view. */
+export interface AppCardDef {
+  id: string;
+  route: string;
+  icon: string;
+  title: string;
+  description: string;
+  tags: readonly string[];
+  sectionKey: SectionKey;
+}
+
+/** Static definition for one Home view section divider. */
+export interface SectionDef {
+  key: SectionKey;
+  label: string;
+  icon: string;
+  color: string;
+}
+
+/** Ordered section metadata used when rendering the Home view. */
+export const APP_SECTIONS: SectionDef[] = [
+  { key: 'agile', label: 'Agile & Delivery', icon: '🏃', color: '#8b5cf6' },
+  { key: 'reports', label: 'Reports', icon: '📈', color: '#10b981' },
+  { key: 'snow', label: 'SNow Hub', icon: '❄️', color: '#f59e0b' },
+  { key: 'text', label: 'Text Tools', icon: '🛠', color: '#8b949e' },
+  { key: 'admin', label: 'Administration', icon: '🛡️', color: '#ef4444' },
+  { key: 'docs', label: 'Documentation', icon: '📖', color: '#8b949e' },
+];
+
+/** Ordered list of all cards shown on the Home view. */
+export const APP_CARDS: AppCardDef[] = [
+  {
+    id: 'sprint-dashboard',
+    route: '/sprint-dashboard',
+    icon: '🏃',
+    title: 'Team Dashboard',
+    description:
+      'Live sprint/Kanban view — burndown, assignee breakdown, blockers, standup, metrics & story pointing.',
+    tags: ['Sprint', 'Kanban', 'Standup', 'DSU'],
+    sectionKey: 'agile',
+  },
+  {
+    id: 'art',
+    route: '/art',
+    icon: '🚂',
+    title: 'ART View',
+    description:
+      'Release Train Engineer dashboard — team health, predictability vs goals, and release radar.',
+    tags: ['ART', 'RTE', 'Release Radar'],
+    sectionKey: 'agile',
+  },
+  {
+    id: 'my-issues',
+    route: '/my-issues',
+    icon: '📊',
+    title: 'My Issues',
+    description:
+      'Jira issues, custom JQL, saved filters, boards — filterable, color-coded, with export.',
+    tags: ['Jira', 'My Work', 'Report'],
+    sectionKey: 'agile',
+  },
+  {
+    id: 'dev-workspace',
+    route: '/dev-workspace',
+    icon: '🏗',
+    title: 'Dev Workspace',
+    description:
+      'Time tracking with Jira work-log posting, git commit sync, and integration settings.',
+    tags: ['Jira', 'Time Tracking', 'Git', 'Automation'],
+    sectionKey: 'agile',
+  },
+  {
+    id: 'reports-hub',
+    route: '/reports-hub',
+    icon: '📈',
+    title: 'Reports Hub',
+    description:
+      'PI-level reporting across your Agile Release Train — feature progress, defect triage, risk board.',
+    tags: ['Jira', 'ART', 'Features', 'Defects', 'Risks'],
+    sectionKey: 'reports',
+  },
+  {
+    id: 'snow-hub',
+    route: '/snow-hub',
+    icon: '❄️',
+    title: 'SNow Hub',
+    description:
+      'ServiceNow tooling: generate Change Requests from Jira fix versions, or create Jira Defect+Story pairs from Problem Records.',
+    tags: ['ServiceNow', 'Jira', 'Change Request', 'PRB'],
+    sectionKey: 'snow',
+  },
+  {
+    id: 'text-tools',
+    route: '/text-tools',
+    icon: '🛠',
+    title: 'Text Tools',
+    description:
+      'Smart Formatter, JSON Formatter, Case Converter, URL Encoder/Decoder, Base64, and Element Extractor.',
+    tags: ['JSON', 'Markdown', 'Encode', 'Base64'],
+    sectionKey: 'text',
+  },
+  {
+    id: 'admin-hub',
+    route: '/admin-hub',
+    icon: '🛡️',
+    title: 'Admin Hub',
+    description:
+      'POC leadership tools — team oversight, reporting dashboards, and administrative configuration.',
+    tags: ['Admin', 'Leadership', 'Reports'],
+    sectionKey: 'admin',
+  },
+  {
+    id: 'code-walkthrough',
+    route: '/code-walkthrough',
+    icon: '📖',
+    title: 'Code Walkthrough',
+    description:
+      'Technical transparency report — architecture, security model, data flow, and API usage breakdown.',
+    tags: ['Security', 'Architecture', 'Audit'],
+    sectionKey: 'docs',
+  },
+];
+
+/** Persona-specific priority order for cards that move based on the user's role. */
+export const PERSONA_CARD_ORDERS: Record<string, string[]> = {
+  all: [
+    'sprint-dashboard',
+    'art',
+    'my-issues',
+    'dev-workspace',
+    'snow-hub',
+    'text-tools',
+    'code-walkthrough',
+  ],
+  dev: [
+    'dev-workspace',
+    'my-issues',
+    'sprint-dashboard',
+    'snow-hub',
+    'text-tools',
+    'art',
+    'code-walkthrough',
+  ],
+  qa: [
+    'my-issues',
+    'snow-hub',
+    'sprint-dashboard',
+    'dev-workspace',
+    'text-tools',
+    'art',
+    'code-walkthrough',
+  ],
+  sm: [
+    'sprint-dashboard',
+    'my-issues',
+    'snow-hub',
+    'art',
+    'dev-workspace',
+    'text-tools',
+    'code-walkthrough',
+  ],
+  po: [
+    'sprint-dashboard',
+    'my-issues',
+    'art',
+    'snow-hub',
+    'dev-workspace',
+    'text-tools',
+    'code-walkthrough',
+  ],
+  rte: [
+    'art',
+    'sprint-dashboard',
+    'my-issues',
+    'snow-hub',
+    'dev-workspace',
+    'text-tools',
+    'code-walkthrough',
+  ],
+};
+
+/** Human-friendly labels used for the Home view recent-links strip. */
+export const RECENT_VIEW_LABELS: Record<string, string> = {
+  'sprint-dashboard': '🏃 Team Dashboard',
+  'dsu-board': '🏃 Team Dashboard',
+  art: '🚂 ART View',
+  'my-issues': '📊 My Issues',
+  'dev-workspace': '🏗 Dev Workspace',
+  'snow-hub': '❄️ SNow Hub',
+  'text-tools': '🛠 Text Tools',
+  'reports-hub': '📈 Reports Hub',
+  'admin-hub': '🛡️ Admin Hub',
+  'code-walkthrough': '📖 Code Walkthrough',
+};

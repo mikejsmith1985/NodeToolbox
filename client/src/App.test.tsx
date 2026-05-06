@@ -1,5 +1,6 @@
 // App.test.tsx — Unit tests for the Phase 1 routed application shell.
 
+import type { ReactNode } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,7 +18,31 @@ vi.mock('./hooks/useRelayBridge.ts', () => ({
   useRelayBridge: useRelayBridgeMock,
 }));
 
+vi.mock('@dnd-kit/core', () => ({
+  DndContext: ({ children }: { children: ReactNode }) => <>{children}</>,
+  closestCenter: vi.fn(),
+  MouseSensor: class {},
+  TouchSensor: class {},
+  useSensor: vi.fn(),
+  useSensors: vi.fn(() => []),
+}));
+
+vi.mock('@dnd-kit/sortable', () => ({
+  SortableContext: ({ children }: { children: ReactNode }) => <>{children}</>,
+  useSortable: () => ({
+    attributes: {},
+    listeners: {},
+    setNodeRef: vi.fn(),
+    transform: null,
+    transition: null,
+    isDragging: false,
+  }),
+  rectSortingStrategy: vi.fn(),
+  arrayMove: (items: unknown[]) => items,
+}));
+
 import App from './App.tsx';
+import { useSettingsStore } from './store/settingsStore.ts';
 
 const DEFAULT_PATH = '/';
 const UNKNOWN_PATH = '/unknown';
@@ -39,10 +64,12 @@ function renderApp(initialPath: string): void {
 
 describe('App shell', () => {
   beforeEach(() => {
+    window.localStorage.clear();
     useProxyStatusMock.mockReset();
     useRelayBridgeMock.mockReset();
     useProxyStatusMock.mockImplementation(() => undefined);
     useRelayBridgeMock.mockImplementation(() => undefined);
+    useSettingsStore.setState({ homePersona: 'all', cardOrder: [], recentViews: [], theme: 'dark' });
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -66,11 +93,13 @@ describe('App shell', () => {
     expect(screen.getByLabelText('Connection status')).toBeInTheDocument();
   });
 
-  it('redirects unknown routes to the home placeholder view', async () => {
+  it('redirects unknown routes to the Home view', async () => {
     renderApp(UNKNOWN_PATH);
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Home' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: 'Your personal utility belt' }),
+      ).toBeInTheDocument();
     });
   });
 

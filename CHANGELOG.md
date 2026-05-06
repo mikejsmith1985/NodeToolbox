@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **React + TypeScript + Vite Home + Settings views (Phase 2)** — Added the first real migrated views in the SPA shell:
+  - `client/src/views/Home/` — Persona-aware Home view with static card catalog, recent-view chips, and drag-to-reorder cards powered by dnd-kit.
+  - `client/src/components/AppCard/` — Reusable Home card component with route navigation and co-located tests.
+  - `client/src/views/Settings/` — Settings view for Jira, ServiceNow, and Confluence URLs, theme switching, and proxy version checks.
+  - `client/src/App.tsx` — Home and Settings routes now render real views instead of placeholders, and the app shell keeps `data-theme` in sync with persisted settings.
+  - `client/src/store/settingsStore.ts` — Added `addRecentView()` with deduped, max-five recent navigation history.
+  - 90/90 Vitest tests passing across 27 test files, and `npm run build` succeeds.
 - **React + TypeScript + Vite SPA infrastructure (Phase 1)** — Full React infrastructure layer consumed by all future view phases:
   - `client/src/types/` — TypeScript interfaces for Jira (JiraIssue, JiraUser, JiraBoard, JiraSprint, JiraFilter), ServiceNow (ChangeRequest, SnowUser, SnowApproval, SnowIncident), relay bridge (RelayBridgeStatus, RelayChannel), and proxy config (ProxyConfig, ProxyStatusResponse, Theme).
   - `client/src/store/connectionStore.ts` — Zustand store tracking `isJiraReady`, `isSnowReady`, and relay bridge status for real-time connection indicators.
