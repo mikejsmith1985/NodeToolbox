@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NodeToolbox v0.0.16</title>
+  <title>NodeToolbox v0.3.1</title>
 
 <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -3554,7 +3554,11 @@ $listener.Start()
 ════════════════════════════════════════════════════════════════ -->
 <script>
 // ── Toolbox version & update config ──────────────────────────────────────────
-var TOOLBOX_VERSION = '0.3.0';
+var TOOLBOX_VERSION = '0.3.1';
+// Keep the browser tab title in sync with the running version at runtime.
+// The <title> tag is patched by the release script for new installs, but this
+// line ensures the tab is correct even when the browser has a cached HTML copy.
+document.title = 'NodeToolbox v' + TOOLBOX_VERSION;
 var MIN_PROXY_SERVER_VERSION = '0.0.1'; // bumped by release script — oldest proxy that works with this UI build
 var TOOLBOX_UPDATE_REPO = 'mikejsmith1985/NodeToolbox'; // public, used for version check
 var TOOLBOX_DOWNLOAD_URL = '';                         // set by release script → Confluence attachment URL
@@ -44322,14 +44326,7 @@ function tbxFetchDiagReport(onComplete) {
     .catch(function(err) { onComplete(buildFullReport(null), 'Server not reachable: ' + err.message); });
 }
 
-  // Try to fetch server diagnostics; fall back gracefully if server is down
-  fetch(proxyUrl + '/api/diagnostics', { signal: AbortSignal.timeout(5000) })
-    .then(function(r) { return r.json(); })
-    .then(function(serverData) { onComplete(buildFullReport(serverData), null); })
-    .catch(function(err) { onComplete(buildFullReport(null), 'Server not reachable: ' + err.message); });
-}
-
-// ── SNow Diagnostic Report ────────────────────────────────────────────────────
+// ── SNow Diagnostic Report────────────────────────────────────────────────────
 //
 // Generates a comprehensive, copy-paste-ready ServiceNow diagnostic report.
 // Three sections:
@@ -44633,6 +44630,7 @@ function snwDiagBuildFullReport(serverData, liveResults) {
   return lines.join('\n');
 }
 
+function tbxFetchProjectStatuses(projectKey) {
   if (!projectKey) return Promise.resolve([]);
   if (TBX_PROJECT_STATUSES_CACHE[projectKey]) {
     return Promise.resolve(TBX_PROJECT_STATUSES_CACHE[projectKey]);
