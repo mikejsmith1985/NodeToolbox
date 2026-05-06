@@ -1,0 +1,249 @@
+/* ReportsHubView.module.css — Styles for the Reports Hub director-level reporting view. */
+
+.reportsHubView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  height: 100%;
+  overflow: auto;
+}
+
+/* ── Page header ── */
+
+.pageHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.headerText {
+  flex: 1;
+}
+
+.pageTitle {
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-xs);
+}
+
+.pageSubtitle {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.headerActions {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.lastGeneratedLabel {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+/* ── KPI grid ── */
+
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.kpiCard {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.kpiLabel {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.kpiValue {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.kpiValueRed {
+  color: var(--color-error, #f87171);
+}
+
+.kpiValueAmber {
+  color: var(--color-warning, #fbbf24);
+}
+
+/* ── Tab bar ── */
+
+.tabList {
+  display: flex;
+  gap: var(--spacing-xs);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tabButton {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.tabButton:hover {
+  color: var(--color-text-primary);
+}
+
+.activeTab {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+/* ── Filter bar ── */
+
+.filterBar {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filterSelect {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+/* ── Table ── */
+
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.reportTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.reportTable th {
+  text-align: left;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--color-border);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.reportTable td {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.reportTable tr:hover td {
+  background: var(--color-surface);
+}
+
+.highRiskRow td {
+  border-left: 3px solid var(--color-error, #f87171);
+}
+
+/* ── Status badge ── */
+
+.statusBadge {
+  display: inline-block;
+  padding: 2px var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.statusDone {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+}
+
+.statusInProgress {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+}
+
+.statusTodo {
+  background: var(--color-border);
+  color: var(--color-text-muted);
+}
+
+/* ── Summary bar (defects) ── */
+
+.summaryBar {
+  display: flex;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.summaryBarItem {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+/* ── Empty state ── */
+
+.emptyState {
+  text-align: center;
+  padding: var(--spacing-xl) var(--spacing-md);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* ── Action buttons ── */
+
+.actionButton {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.actionButton:hover {
+  background: var(--color-border);
+}
+
+.primaryButton {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-background);
+}
+
+.primaryButton:hover {
+  opacity: 0.9;
+}

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Phase 6 — Text Tools (6-tab text utility: Markdown converter, Plain Text, Structured JSON, JSON Formatter, Case Converter, URL & Base64 encoder/decoder), Reports Hub (3-tab PI reporting dashboard: Features, Defects, Risks across ART teams with hero KPI grid), Admin Hub (proxy URL config, PI field mappings, feature flags, PIN-protected developer tools) — 264 Vitest tests passing across 52 test files, `npm run build` succeeds.
+
+### Added
 - Phase 5 — Dev Workspace (time tracking timers, GitHub activity sync, manual Jira poster, hook generator, repo monitor), ART View (multi-team PI planning, 7-tab health dashboard, impediments, predictability, SoS), Code Walkthrough (static architecture documentation with TOC sidebar, search, guided tour), DSU Board (8-section daily standup board with project key, stale filter, cards/table views)
 
 ### Added

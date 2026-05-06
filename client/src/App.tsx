@@ -20,6 +20,9 @@ import ArtView from './views/ArtView/ArtView.tsx';
 import DevWorkspaceView from './views/DevWorkspace/DevWorkspaceView.tsx';
 import CodeWalkthroughView from './views/CodeWalkthrough/CodeWalkthroughView.tsx';
 import DsuBoardView from './views/DsuBoard/DsuBoardView.tsx';
+import TextToolsView from './views/TextTools/TextToolsView.tsx';
+import ReportsHubView from './views/ReportsHub/ReportsHubView.tsx';
+import AdminHubView from './views/AdminHub/AdminHubView.tsx';
 import styles from './App.module.css';
 
 const APP_TITLE = 'NodeToolbox';
@@ -28,17 +31,6 @@ const SETTINGS_ROUTE = '/settings';
 const SNOW_HUB_ROUTE = '/snow-hub';
 const DEFAULT_ROUTE = HOME_ROUTE;
 const RELAY_SYSTEM: RelaySystem = 'snow';
-const PLACEHOLDER_MESSAGE =
-  'This view is being migrated. Use the legacy dashboard in the meantime.';
-const PLACEHOLDER_ROUTES = [
-  { path: '/text-tools', name: 'Text Tools' },
-  { path: '/reports-hub', name: 'Reports Hub' },
-  { path: '/admin-hub', name: 'Admin Hub' },
-] as const;
-
-interface PlaceholderViewProps {
-  name: string;
-}
 
 /** Root layout shell for the React migration, including live status hooks and route selection. */
 export default function App() {
@@ -69,26 +61,12 @@ export default function App() {
           <Route path="/dev-workspace" element={<DevWorkspaceView />} />
           <Route path="/dsu-board" element={<DsuBoardView />} />
           <Route path="/code-walkthrough" element={<CodeWalkthroughView />} />
-          {PLACEHOLDER_ROUTES.map((placeholderRoute) => (
-            <Route
-              key={placeholderRoute.path}
-              path={placeholderRoute.path}
-              element={<PlaceholderView name={placeholderRoute.name} />}
-            />
-          ))}
+          <Route path="/text-tools" element={<TextToolsView />} />
+          <Route path="/reports-hub" element={<ReportsHubView />} />
+          <Route path="/admin-hub" element={<AdminHubView />} />
           <Route path="*" element={<Navigate to={DEFAULT_ROUTE} replace />} />
         </Routes>
       </main>
-    </div>
-  );
-}
-
-/** Temporary placeholder rendered for routes that are migrated in later phases. */
-function PlaceholderView({ name }: PlaceholderViewProps) {
-  return (
-    <div className={styles.placeholderView}>
-      <h2>{name}</h2>
-      <p className={styles.placeholderMessage}>{PLACEHOLDER_MESSAGE}</p>
     </div>
   );
 }
