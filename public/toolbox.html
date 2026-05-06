@@ -44582,7 +44582,17 @@ function snwDiagBuildFullReport(serverData, liveResults) {
       lines.push('  Result           : ❌ ' + pingResult.error);
     } else {
       lines.push('  HTTP status      : ' + (pingResult.status || '?') + ' ' + (pingResult.ok ? '✅' : '⚠'));
-      lines.push('  SNow reachable   : ' + (pingResult.ok ? 'YES' : 'NO — check proxy URL and credentials'));
+      // Give specific guidance for 401 — generic "check credentials" misses the Okta/SSO case
+      // where Basic Auth is rejected entirely and the relay bookmarklet is the only working path.
+      if (pingResult.ok) {
+        lines.push('  SNow reachable   : YES');
+      } else if (pingResult.status === 401) {
+        lines.push('  SNow reachable   : NO — credentials rejected (HTTP 401)');
+        lines.push('  Action           : Re-click the SNow bookmarklet on an active ServiceNow tab');
+        lines.push('                     (Okta/SSO instances reject Basic Auth; the bookmarklet is required)');
+      } else {
+        lines.push('  SNow reachable   : NO — check proxy URL and credentials');
+      }
     }
 
     // Test 2: identity verification
@@ -44593,6 +44603,12 @@ function snwDiagBuildFullReport(serverData, liveResults) {
       lines.push('  Result           : ⏭ ' + identResult.reason);
     } else if (identResult.error) {
       lines.push('  Result           : ❌ ' + identResult.error);
+    } else if (!identResult.ok) {
+      // HTTP error (typically 401) — the real problem is auth, not a missing identity record.
+      // Reporting "No SNow user found" here would send the user on a wild-goose chase re-pinning
+      // their identity when the actual fix is re-connecting the relay bookmarklet.
+      lines.push('  Result           : ❌ HTTP ' + identResult.status + ' — auth failure (not a missing identity record)');
+      lines.push('  Action           : Re-click the SNow bookmarklet to restore the session');
     } else {
       var userRecords = (identResult.data && identResult.data.result) || [];
       if (userRecords.length) {
@@ -44627,11 +44643,19 @@ function snwDiagBuildFullReport(serverData, liveResults) {
       } else {
         lines.push('  Found            : 0 change requests ⚠');
         lines.push('  Possible causes  :');
-        lines.push('    1. Cached sys_id is the service account, not your personal account');
-        lines.push('       → Open RM Settings → My SNow Identity → search your username');
-        lines.push('    2. Your changes are in states not covered by the active filter');
-        lines.push('       → Open RM Settings → Display Preferences → add more state filters');
-        lines.push('    3. Your changes are assigned to a group, not to you personally');
+        if (!changesResult.ok && changesResult.status === 401) {
+          // Auth failure is the root cause — other hints (identity, filters) are irrelevant until
+          // the credentials issue is resolved. Guide the user to re-connect the relay first.
+          lines.push('    1. ⚠ Auth failure (HTTP 401) — credentials rejected by ServiceNow');
+          lines.push('       → Re-click the SNow bookmarklet on an active ServiceNow tab');
+          lines.push('       → Okta/SSO instances reject Basic Auth; the bookmarklet is required');
+        } else {
+          lines.push('    1. Cached sys_id is the service account, not your personal account');
+          lines.push('       → Open RM Settings → My SNow Identity → search your username');
+          lines.push('    2. Your changes are in states not covered by the active filter');
+          lines.push('       → Open RM Settings → Display Preferences → add more state filters');
+          lines.push('    3. Your changes are assigned to a group, not to you personally');
+        }
       }
     }
   }
