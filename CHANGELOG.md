@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **App cards unresponsive after SNow relay fix** — An orphaned code fragment (dangling `.push()` / `});` / `}` lines from old request-log rendering) was left in `buildFullReport` during the `tbxFetchDiagReport` rewrite. The stray `)` caused an `Unexpected token` JS syntax error that silently prevented all scripts in toolbox.html from loading, breaking every click handler including app card navigation.
+
+### Tests
+- **`toolboxHtml.test.js` — JS syntax guard**: New test parses every `<script>` block in toolbox.html with V8 at test time. Any syntax error that would break app card interactions (or any other JS) is now caught before claiming success.
+
+### Fixed
 - **SNow relay "connects then immediately disconnects"** — Three root causes found and fixed:
   1. **`snowReady = false` on SNow 401 (lines `rmCheckConn` and `rmLoadMyCHGs`)**: When ServiceNow returned HTTP 401 via the relay (expired session, SSO re-login needed), the catch handler was clearing `CRG.relay.snowReady`. A 401 from SNow means the *SNow session* is expired — the relay bridge itself is still functional. Clearing the flag meant every failed request also broke the relay routing, sending all subsequent requests back to the Basic Auth proxy (which also returns 401). Both catch handlers now leave `snowReady` intact and surface a clear "SNow session expired — re-login to ServiceNow" message instead.
   2. **`pagehide` deregisters on SNow SPA navigation**: ServiceNow's SPA framework fires `pagehide` during internal page transitions, causing the relay bookmarklet to immediately send a deregister beacon. Added a 1-second grace period before the deregister beacon fires. A `pageshow` listener cancels the timer if the page is restored from bfcache or the SPA bounces back within the grace window.
