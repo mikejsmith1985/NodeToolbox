@@ -3,10 +3,6 @@
 // The pkg-bundled .exe sets process.pkg to a truthy value at runtime.
 // These tests verify that server.js uses that flag correctly so the exe
 // works out-of-the-box when a user double-clicks it — no command-line flags needed.
-//
-// Static-asset path resolution is also verified: PUBLIC_DIRECTORY_PATH must be
-// derived from __dirname (which pkg remaps to the snapshot FS root) so that
-// toolbox.html is served correctly from inside the bundle.
 
 'use strict';
 
@@ -15,9 +11,7 @@ const path = require('path');
 
 const REPO_ROOT          = path.join(__dirname, '..', '..');
 const SERVER_JS_PATH     = path.join(REPO_ROOT, 'server.js');
-const STATIC_SERVER_PATH = path.join(REPO_ROOT, 'src', 'utils', 'staticFileServer.js');
 const SERVER_SOURCE      = fs.readFileSync(SERVER_JS_PATH, 'utf8');
-const STATIC_SOURCE      = fs.readFileSync(STATIC_SERVER_PATH, 'utf8');
 
 // ── server.js — exe auto-open behaviour ───────────────────────────────────────
 
@@ -51,19 +45,3 @@ describe('server.js — pkg exe auto-open', () => {
   });
 });
 
-// ── staticFileServer.js — pkg snapshot path compatibility ────────────────────
-
-describe('staticFileServer.js — pkg snapshot path compatibility', () => {
-  it('derives PUBLIC_DIRECTORY_PATH from __dirname so pkg remaps it correctly', () => {
-    // pkg replaces __dirname with the snapshot FS path at bundle time.
-    // Hard-coded absolute paths (e.g. process.cwd()) would point outside the
-    // bundle and cause a 404 for every request to GET /.
-    expect(STATIC_SOURCE).toMatch(/__dirname/);
-  });
-
-  it('does NOT use process.cwd() to locate public/ (breaks inside pkg bundle)', () => {
-    // process.cwd() returns the directory the user launched the exe from —
-    // not the bundle root — so public/toolbox.html would never be found.
-    expect(STATIC_SOURCE).not.toMatch(/process\.cwd\(\)/);
-  });
-});

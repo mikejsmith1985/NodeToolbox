@@ -18,7 +18,7 @@ const createApiRouter                       = require('./src/routes/api');
 const createSchedulerRouter                 = require('./src/routes/scheduler');
 const createSetupRouter                     = require('./src/routes/setup');
 const relayBridgeRouter                     = require('./src/routes/relayBridge');
-const { serveStaticFile }                   = require('./src/utils/staticFileServer');
+
 const { startSchedulerLoop }                = require('./src/services/repoMonitor');
 const { isPortInUse, resolvePortConflict }  = require('./src/utils/portManager');
 
@@ -46,8 +46,7 @@ const configuration = loadConfig();
 
 const app = express();
 
-// Compress all responses with gzip/deflate — dramatically reduces the 2.75MB
-// toolbox.html payload to ~300-400KB, improving both initial load and update downloads.
+// Compress all responses with gzip/deflate — reduces React bundle + API response sizes.
 // Must be registered before any route or middleware that sends responses.
 app.use(compression());
 
@@ -91,32 +90,49 @@ app.get('/', (req, res, next) => {
 
 // ── Static File Serving ───────────────────────────────────────────────────────
 //
-// Priority order:
-//   1. If client/dist/ has been built (npm run build:client), serve the
-//      React SPA — all non-API paths return index.html so React Router
-//      handles client-side navigation.
-//   2. Otherwise fall back to the legacy public/toolbox.html until Phase 7
-//      cutover when the React build becomes the permanent UI.
+// Serves the React SPA from client/dist/ — built by `npm run build:client`.
+// All non-API paths return index.html so React Router handles client-side
+// navigation. Run `npm run build:client` once before starting the server if
+// client/dist/ does not exist.
 
+const clientDistDir       = path.join(__dirname, 'client', 'dist');
 const clientDistIndexPath = path.join(__dirname, 'client', 'dist', 'index.html');
-const isReactBuildPresent = fs.existsSync(clientDistIndexPath);
 
-if (isReactBuildPresent) {
-  // Serve compiled React assets (JS chunks, CSS, icons, etc.)
-  app.use(express.static(path.join(__dirname, 'client', 'dist')));
+// Serve compiled React assets (JS chunks, CSS, icons, etc.)
+app.use(express.static(clientDistDir));
 
-  // SPA fallback — send index.html for any path React Router should handle.
-  // The API and proxy routes registered above will match before this catch-all,
-  // so backend endpoints are never accidentally swallowed by the React app.
-  app.get('*', (_req, res) => {
-    res.sendFile(clientDistIndexPath);
-  });
-} else {
-  // Legacy dashboard — serves public/toolbox.html until React cutover.
-  app.use(serveStaticFile());
-}
+// SPA fallback — send index.html for any path React Router should handle.
+// API and proxy routes registered above match before this catch-all, so
+// backend endpoints are never accidentally swallowed by the React app.
+// Returns a 503 build-required page if the client has not been built yet.
+app.get('*', (_req, res) => {
+  if (!fs.existsSync(clientDistIndexPath)) {
+    return res.status(503).send(buildClientNotBuiltPage());
+  }
+  res.sendFile(clientDistIndexPath);
+});
 
 // ── Start Server ──────────────────────────────────────────────────────────────
+
+/**
+ * Builds a minimal HTML error page shown when client/dist/ has not been built.
+ * Gives the operator actionable guidance rather than a generic 503.
+ *
+ * @returns {string} HTML string
+ */
+function buildClientNotBuiltPage() {
+  return [
+    '<!DOCTYPE html>',
+    '<html lang="en">',
+    '<head><meta charset="UTF-8"><title>NodeToolbox — Build Required</title>',
+    '<style>body{font-family:monospace;padding:2rem;background:#1e1e1e;color:#d4d4d4}</style></head>',
+    '<body>',
+    '<h2>⚠ React build not found</h2>',
+    '<p>Run <code>npm run build:client</code> to build the React UI, then restart the server.</p>',
+    '<p>Expected build output: <code>client/dist/index.html</code></p>',
+    '</body></html>',
+  ].join('\n');
+}
 
 const listenPort = configuration.port || DEFAULT_PORT;
 

@@ -47,7 +47,7 @@
   },
   "pkg": {
     "assets": [
-      "public/**/*"
+      "client/dist/**/*"
     ]
   },
   "jest": {

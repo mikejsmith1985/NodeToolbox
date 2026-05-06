@@ -84,18 +84,6 @@ $PackageData    = Get-Content $PackageJson -Raw | ConvertFrom-Json
 $AppVersion     = $PackageData.version
 $GitTag         = "v$AppVersion"
 
-# ── Sync TOOLBOX_VERSION in toolbox.html ─────────────────────────────────────
-# toolbox.html contains a hardcoded TOOLBOX_VERSION literal used for the version
-# badge and update-checker. Patch it to match package.json so the UI always
-# shows the correct version after a release. Uses ReadAllText / WriteAllText
-# (not Get-Content / Set-Content) to avoid CRLF mutation on the large file.
-$ToolboxHtmlPath = Join-Path $RepoRoot 'public\toolbox.html'
-$toolboxRawContent = [System.IO.File]::ReadAllText($ToolboxHtmlPath)
-$toolboxRawContent = $toolboxRawContent -replace "var TOOLBOX_VERSION = '[^']*'", "var TOOLBOX_VERSION = '$AppVersion'"
-# Also patch the <title> tag so the browser tab title is correct before JS executes.
-$toolboxRawContent = $toolboxRawContent -replace "<title>NodeToolbox v[^<]*</title>", "<title>NodeToolbox v$AppVersion</title>"
-[System.IO.File]::WriteAllText($ToolboxHtmlPath, $toolboxRawContent)
-Write-Host "       ✅ TOOLBOX_VERSION synced to $AppVersion in toolbox.html"
 $ZipFileName      = "nodetoolbox-v$AppVersion.zip"
 $ZipOutputPath    = Join-Path $DistDir $ZipFileName
 $ExeFileName      = "nodetoolbox-v$AppVersion.exe"
@@ -114,7 +102,7 @@ $IncludedPaths = @(
     (Join-Path $RepoRoot 'package-lock.json'),
     (Join-Path $RepoRoot 'README.md'),
     (Join-Path $RepoRoot '.env.example'),
-    (Join-Path $RepoRoot 'public'),
+    (Join-Path $RepoRoot 'client\dist'),
     (Join-Path $RepoRoot 'src'),
     (Join-Path $RepoRoot 'scripts'),
     $BatchLauncherPath,
@@ -133,7 +121,7 @@ if ($DryRun) {
     }
     Write-Host "  2. mkdir dist\           - create output directory"
     Write-Host "  3. Compress-Archive      - bundle slim zip into $ZipOutputPath"
-    Write-Host "  4. generate-dashboard   - compile toolbox.html into src/generated/dashboardHtmlContent.js"
+    Write-Host "  4. npm run build:client  - compile React SPA into client/dist/"
     Write-Host "  5. pkg                   - build single-file exe at $ExeOutputPath"
     Write-Host "  5b. Compress-Archive     - wrap exe into $ExeZipOutputPath (browser-safe download)"
     Write-Host "  6. gh release create     - publish GitHub Release $GitTag with zip and exe-zip"
@@ -217,19 +205,18 @@ Remove-Item $StagingDir -Recurse -Force
 $zipSizeKb = [math]::Round((Get-Item $ZipOutputPath).Length / 1KB)
 Write-Host "       ✅ $ZipOutputPath ($zipSizeKb KB)"
 
-# Step 4: Generate the dashboard HTML module before the pkg build.
-# scripts/generate-dashboard-module.js reads public/toolbox.html and writes it
-# as src/generated/dashboardHtmlContent.js. pkg compiles JS modules directly into
-# the snapshot so the HTML is always available via require() on any machine,
-# regardless of whether C:\...\public\toolbox.html exists on that machine's disk.
-Write-Host "  [4/6] Generating dashboard HTML module..."
-Push-Location $RepoRoot
+# Step 4: Build the React SPA before the pkg build.
+# The compiled output (client/dist/**) is bundled into the exe snapshot via the
+# "assets" array in package.json so the React app is available on every machine.
+Write-Host "  [4/6] Building React client..."
+Push-Location (Join-Path $RepoRoot 'client')
 try {
-    node scripts/generate-dashboard-module.js
-    if ($LASTEXITCODE -ne 0) { throw "generate-dashboard-module failed with exit code $LASTEXITCODE" }
+    npm run build
+    if ($LASTEXITCODE -ne 0) { throw "React client build failed with exit code $LASTEXITCODE" }
 } finally {
     Pop-Location
 }
+Write-Host "       ✅ React client built (client/dist/)"
 
 # Step 5: Build the single-file Windows exe using @yao-pkg/pkg.
 # Bundles the Node.js runtime + all app code + public assets into one .exe.
@@ -271,7 +258,7 @@ try {
     # Commit the version bump files if npm version changed them.
     # toolbox.html is included because the TOOLBOX_VERSION literal was patched above.
     if ($BumpType -ne '') {
-        git add package.json package-lock.json public/toolbox.html
+        git add package.json package-lock.json
         git commit -m "chore: bump version to $GitTag`n`nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
         git push origin HEAD
         if ($LASTEXITCODE -ne 0) { throw "git push of version bump failed with exit code $LASTEXITCODE" }
