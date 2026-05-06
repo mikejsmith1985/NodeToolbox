@@ -1,0 +1,273 @@
+/* DsuBoardView.module.css — Styles for the DSU Board 8-section layout. */
+
+.dsuBoard {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+.controlBar {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-1);
+  flex-wrap: wrap;
+}
+
+.projectKeyInput {
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+  width: 120px;
+}
+
+.staleDaysSelect {
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+}
+
+.viewModeToggle {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.viewModeBtn {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: none;
+  background: var(--color-surface-1);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+}
+
+.viewModeBtnActive {
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
+
+.refreshBtn {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-bg);
+  cursor: pointer;
+  font-size: var(--font-size-md);
+  margin-left: auto;
+}
+
+.filterBar {
+  display: flex;
+  gap: var(--spacing-xs);
+  align-items: center;
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: var(--color-surface-2);
+  border-bottom: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+
+.filterLabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.filterPill {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+}
+
+.filterPillActive {
+  background: var(--color-accent);
+  color: var(--color-bg);
+  border-color: var(--color-accent);
+}
+
+.sectionsContainer {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.boardSection {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface-1);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--font-size-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sectionHeader:hover {
+  background: var(--color-border);
+}
+
+.sectionIcon {
+  font-size: var(--font-size-lg);
+}
+
+.sectionLabel {
+  flex: 1;
+  font-weight: bold;
+}
+
+.sectionCount {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.collapseIndicator {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.sectionBody {
+  padding: var(--spacing-sm);
+}
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.issueCard {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.issueCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.issueKey {
+  font-weight: bold;
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+}
+
+.issueType {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.issueSummary {
+  font-size: var(--font-size-sm);
+  margin: 0;
+  color: var(--color-text-primary);
+}
+
+.issueMeta {
+  display: flex;
+  gap: var(--spacing-xs);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.statusBadge {
+  padding: 2px var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  font-weight: bold;
+}
+
+.statusTodo {
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+}
+
+.statusInProgress {
+  background: var(--color-warning);
+  color: var(--color-bg);
+}
+
+.statusDone {
+  background: var(--color-success);
+  color: var(--color-bg);
+}
+
+.assigneeName {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.issueTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.issueTable th,
+.issueTable td {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.issueTable th {
+  background: var(--color-surface-2);
+  font-weight: bold;
+}
+
+.loadingText {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin: 0;
+  padding: var(--spacing-sm);
+}
+
+.errorText {
+  font-size: var(--font-size-sm);
+  color: var(--color-danger);
+  margin: 0;
+  padding: var(--spacing-sm);
+}
+
+.emptyState {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin: 0;
+  padding: var(--spacing-sm);
+  text-align: center;
+}

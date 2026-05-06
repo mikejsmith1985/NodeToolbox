@@ -1,0 +1,396 @@
+/* DevWorkspaceView.module.css — Styles for the Dev Workspace tabbed layout. */
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+.tabBar {
+  display: flex;
+  gap: var(--spacing-xs);
+  border-bottom: 1px solid var(--color-border);
+  padding: 0 var(--spacing-md);
+  background: var(--color-surface-1);
+}
+
+.tabBtn {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tabBtn:hover {
+  color: var(--color-text-primary);
+}
+
+.tabBtnActive {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+.tabContent {
+  flex: 1;
+  overflow: auto;
+  padding: var(--spacing-md);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.issueSearchRow {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.issueSearchInput {
+  flex: 1;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+}
+
+.addIssueBtn {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-bg);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+}
+
+.addIssueBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.workLogSubTabs {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+.subTabBtn {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.subTabBtnActive {
+  background: var(--color-accent);
+  color: var(--color-bg);
+  border-color: var(--color-accent);
+}
+
+.timerGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.timerCard {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.timerCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.timerIssueKey {
+  font-weight: bold;
+  color: var(--color-accent);
+  font-size: var(--font-size-md);
+}
+
+.removeTimerBtn {
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  padding: 0;
+}
+
+.timerSummary {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.timerDisplay {
+  font-size: var(--font-size-lg);
+  font-weight: bold;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  padding: var(--spacing-sm) 0;
+}
+
+.timerControls {
+  display: flex;
+  justify-content: center;
+}
+
+.startBtn {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-success);
+  color: var(--color-bg);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+}
+
+.stopBtn {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-danger);
+  color: var(--color-bg);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+}
+
+.workLogList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.workLogEntry {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+  padding: var(--spacing-sm);
+  background: var(--color-surface-1);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.workLogSummary {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.workLogDuration {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-sm);
+}
+
+.workLogDate {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.syncPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.syncStatus {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.statusDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.statusDotActive {
+  background: var(--color-success);
+}
+
+.statusDotIdle {
+  background: var(--color-text-secondary);
+}
+
+.syncControls {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.primaryBtn {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-bg);
+  cursor: pointer;
+  font-size: var(--font-size-md);
+}
+
+.secondaryBtn {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: var(--font-size-md);
+}
+
+.clearBtn {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+}
+
+.lastSyncText {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.syncLogContainer {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.syncLogHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-surface-2);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+}
+
+.syncLog {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: var(--spacing-sm);
+  background: var(--color-surface-1);
+}
+
+.syncLogEntry {
+  font-size: var(--font-size-sm);
+  font-family: monospace;
+  padding: var(--spacing-xs) 0;
+  color: var(--color-text-secondary);
+}
+
+.manualPostPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.fieldLabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.textInput {
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+}
+
+.textArea {
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+  resize: vertical;
+}
+
+.selectInput {
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+}
+
+.manualPostActions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.postResult {
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.hookGeneratorPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.hookButtonList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.helpText {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.sectionTitle {
+  font-size: var(--font-size-lg);
+  margin: 0;
+}
+
+.emptyState {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  text-align: center;
+  padding: var(--spacing-lg);
+}
+
+.errorText {
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}

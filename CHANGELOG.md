@@ -8,7 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Phase 4 — My Issues view (JQL editor, source picker, persona filter, card/compact/table display modes, status zone dashboard) and Sprint Dashboard (6-tab view: Overview with burn-down chart, By Assignee swim lanes, Blockers wall, Defect radar, Standup board walk with 15-min timer, Settings)
+- Phase 5 — Dev Workspace (time tracking timers, GitHub activity sync, manual Jira poster, hook generator, repo monitor), ART View (multi-team PI planning, 7-tab health dashboard, impediments, predictability, SoS), Code Walkthrough (static architecture documentation with TOC sidebar, search, guided tour), DSU Board (8-section daily standup board with project key, stale filter, cards/table views)
+
+### Added
+- Phase 4 — My Issues view(JQL editor, source picker, persona filter, card/compact/table display modes, status zone dashboard) and Sprint Dashboard (6-tab view: Overview with burn-down chart, By Assignee swim lanes, Blockers wall, Defect radar, Standup board walk with 15-min timer, Settings)
 
 ### Added
 - Phase 3 — SNow Hub view with three tabs: Change Request Generator (5-step CRG wizard), PRB Generator (SNow PRB → Jira issue creation), Release Management (CHG loader, My Active Changes, activity log)
