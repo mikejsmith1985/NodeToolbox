@@ -92,6 +92,8 @@ $GitTag         = "v$AppVersion"
 $ToolboxHtmlPath = Join-Path $RepoRoot 'public\toolbox.html'
 $toolboxRawContent = [System.IO.File]::ReadAllText($ToolboxHtmlPath)
 $toolboxRawContent = $toolboxRawContent -replace "var TOOLBOX_VERSION = '[^']*'", "var TOOLBOX_VERSION = '$AppVersion'"
+# Also patch the <title> tag so the browser tab title is correct before JS executes.
+$toolboxRawContent = $toolboxRawContent -replace "<title>NodeToolbox v[^<]*</title>", "<title>NodeToolbox v$AppVersion</title>"
 [System.IO.File]::WriteAllText($ToolboxHtmlPath, $toolboxRawContent)
 Write-Host "       ✅ TOOLBOX_VERSION synced to $AppVersion in toolbox.html"
 $ZipFileName      = "nodetoolbox-v$AppVersion.zip"
