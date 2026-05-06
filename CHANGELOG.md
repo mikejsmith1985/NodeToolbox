@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Fixed
+- **Tool cards not opening in v0.3.0** — The `snwDiag*` function insertion accidentally dropped the `function tbxFetchProjectStatuses(projectKey) {` declaration, leaving the function body floating at script scope. This caused an `Unexpected token '}'` JS syntax error that silently prevented the entire page script from executing, breaking all card interactions.
+- **Browser tab title stuck on v0.0.16** — The `<title>` tag was never updated by the release script, so the tab always showed the old hardcoded version. Fixed in two layers: (1) `document.title` is now set from `TOOLBOX_VERSION` at startup so the tab is always correct at runtime regardless of caching, and (2) the release script now patches `<title>NodeToolbox vX.Y.Z</title>` alongside the `TOOLBOX_VERSION` JS constant. Two unit tests in `toolboxHtml.test.js` guard both requirements.
+
+
 - **SNow Diagnostics Report in Admin Hub** — New "❄️ ServiceNow Diagnostics" card in the Admin Hub Diagnostics panel. Clicking "❄️ Copy SNow Report" runs three diagnostic layers in parallel and copies a full plain-text report to the clipboard: (1) static snapshot of localStorage SNow identity keys, proxy URL, and RM display preferences; (2) server config from the new `GET /api/snow-diag` endpoint (proxy credentials masked, relay bridge status); (3) three live SNow API calls — a connectivity ping, an identity verification against the cached `sys_id`, and the exact My Changes query that Release Management executes internally. If the live My Changes query returns zero results the report lists the three most likely causes with corrective steps. Backend: `GET /api/snow-diag` added to `api.js`; `getBridgeStatus(sys)` exported from `relayBridge.js`.
 
 ### Fixed

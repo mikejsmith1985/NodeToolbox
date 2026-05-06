@@ -310,6 +310,37 @@ describe('toolbox.html — TOOLBOX_VERSION matches package.json', () => {
 
 });
 
+// ── Browser Tab Title ─────────────────────────────────────────────────────────
+//
+// The browser tab title must always show the current version. Two requirements:
+//   1. The <title> HTML tag is kept in sync by the release script so the tab
+//      title is correct even before JS executes.
+//   2. A startup call to document.title sets it from TOOLBOX_VERSION at runtime,
+//      so the tab stays accurate if the HTML is cached but the JS is fresh.
+
+describe('toolbox.html — browser tab title shows current version', () => {
+
+  const pkg = JSON.parse(
+    require('fs').readFileSync(
+      require('path').join(__dirname, '..', '..', 'package.json'),
+      'utf8'
+    )
+  );
+
+  it('<title> tag contains the current package.json version', () => {
+    // The release script must patch <title> just like it patches TOOLBOX_VERSION.
+    // If this fails, update local-release.ps1 to also replace the <title> tag.
+    expect(toolboxHtmlContent).toContain(`<title>NodeToolbox v${pkg.version}</title>`);
+  });
+
+  it('a startup block sets document.title from TOOLBOX_VERSION at runtime', () => {
+    // The assignment must be present so the tab reflects the live version even
+    // when the browser has a cached copy of the HTML with an older <title> tag.
+    expect(toolboxHtmlContent).toContain("document.title = 'NodeToolbox v' + TOOLBOX_VERSION");
+  });
+
+});
+
 // ── Proxy Auto-Detect on Startup ──────────────────────────────────────────────
 //
 // tbxAutoDetectProxy() must be called in a startup IIFE so the connection bar
