@@ -16,6 +16,10 @@ import MyIssuesView from './views/MyIssues/MyIssuesView.tsx';
 import SettingsView from './views/Settings/SettingsView.tsx';
 import SnowHubView from './views/SnowHub/SnowHubView.tsx';
 import SprintDashboardView from './views/SprintDashboard/SprintDashboardView.tsx';
+import ArtView from './views/ArtView/ArtView.tsx';
+import DevWorkspaceView from './views/DevWorkspace/DevWorkspaceView.tsx';
+import CodeWalkthroughView from './views/CodeWalkthrough/CodeWalkthroughView.tsx';
+import DsuBoardView from './views/DsuBoard/DsuBoardView.tsx';
 import styles from './App.module.css';
 
 const APP_TITLE = 'NodeToolbox';
@@ -27,13 +31,9 @@ const RELAY_SYSTEM: RelaySystem = 'snow';
 const PLACEHOLDER_MESSAGE =
   'This view is being migrated. Use the legacy dashboard in the meantime.';
 const PLACEHOLDER_ROUTES = [
-  { path: '/art', name: 'ART View' },
-  { path: '/dev-workspace', name: 'Dev Workspace' },
   { path: '/text-tools', name: 'Text Tools' },
-  { path: '/dsu-board', name: 'DSU Board' },
   { path: '/reports-hub', name: 'Reports Hub' },
   { path: '/admin-hub', name: 'Admin Hub' },
-  { path: '/code-walkthrough', name: 'Code Walkthrough' },
 ] as const;
 
 interface PlaceholderViewProps {
@@ -65,6 +65,10 @@ export default function App() {
           <Route path={SNOW_HUB_ROUTE} element={<SnowHubView />} />
           <Route path="/my-issues" element={<MyIssuesView />} />
           <Route path="/sprint-dashboard" element={<SprintDashboardView />} />
+          <Route path="/art" element={<ArtView />} />
+          <Route path="/dev-workspace" element={<DevWorkspaceView />} />
+          <Route path="/dsu-board" element={<DsuBoardView />} />
+          <Route path="/code-walkthrough" element={<CodeWalkthroughView />} />
           {PLACEHOLDER_ROUTES.map((placeholderRoute) => (
             <Route
               key={placeholderRoute.path}
