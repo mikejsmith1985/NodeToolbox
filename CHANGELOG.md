@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Phase 3 — SNow Hub view with three tabs: Change Request Generator (5-step CRG wizard), PRB Generator (SNow PRB → Jira issue creation), Release Management (CHG loader, My Active Changes, activity log)
 - **React + TypeScript + Vite Home + Settings views (Phase 2)** — Added the first real migrated views in the SPA shell:
   - `client/src/views/Home/` — Persona-aware Home view with static card catalog, recent-view chips, and drag-to-reorder cards powered by dnd-kit.
   - `client/src/components/AppCard/` — Reusable Home card component with route navigation and co-located tests.

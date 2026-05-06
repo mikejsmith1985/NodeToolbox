@@ -1,0 +1,37 @@
+/* CrgTab.module.css — Styles for the five-step Change Request Generator tab. */
+
+.tabPanel { display: flex; flex-direction: column; gap: var(--spacing-lg); }
+.tabHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--spacing-md); flex-wrap: wrap; }
+.tabTitle { margin: 0; color: var(--color-text-primary); font-size: var(--font-size-lg); }
+.tabSubtitle { margin: var(--spacing-xs) 0 0; color: var(--color-text-secondary); font-size: var(--font-size-md); }
+.summaryPill { margin: 0; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface-2); color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.stepIndicator { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); padding: 0; margin: 0; list-style: none; }
+.stepBadge { padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface-1); color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.activeStep { border-color: var(--color-accent); background: var(--color-surface-2); color: var(--color-accent); }
+.section { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-lg); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-1); }
+.stepHeading { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+.stepMeta { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.sectionTitle { margin: 0; color: var(--color-text-primary); font-size: var(--font-size-lg); }
+.fieldGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(var(--spacing-xl) * 8), 1fr)); gap: var(--spacing-md); }
+.editorGrid { display: grid; gap: var(--spacing-md); }
+.fieldGroup { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+.fieldLabel { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.input { width: 100%; box-sizing: border-box; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-text-primary); font-size: var(--font-size-md); }
+.input:focus, .textArea:focus { outline: none; border-color: var(--color-accent); }
+.textArea { width: 100%; min-height: calc(var(--spacing-xl) * 4); box-sizing: border-box; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-text-primary); font-size: var(--font-size-md); resize: vertical; }
+.buttonRow { display: flex; gap: var(--spacing-sm); flex-wrap: wrap; }
+.primaryButton, .secondaryButton, .linkButton { padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-sm); font-size: var(--font-size-md); cursor: pointer; }
+.primaryButton { border: 1px solid var(--color-accent); background: var(--color-accent); color: var(--color-text-primary); }
+.secondaryButton { border: 1px solid var(--color-border); background: var(--color-surface-2); color: var(--color-text-primary); }
+.linkButton { border: 1px solid transparent; background: transparent; color: var(--color-accent); }
+.loadingText { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.errorText { margin: 0; color: var(--color-danger); font-size: var(--font-size-sm); }
+.successText { margin: 0; color: var(--color-success); font-size: var(--font-size-sm); }
+.inlineCheckbox { display: inline-flex; align-items: center; gap: var(--spacing-sm); color: var(--color-text-primary); font-size: var(--font-size-md); }
+.issueTable { width: 100%; border-collapse: collapse; border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow: hidden; }
+.issueTable th, .issueTable td { padding: var(--spacing-sm) var(--spacing-md); border-bottom: 1px solid var(--color-border); text-align: left; color: var(--color-text-primary); font-size: var(--font-size-md); vertical-align: top; }
+.issueTable th { background: var(--color-surface-2); color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.summaryCard { display: grid; gap: var(--spacing-md); padding: var(--spacing-md); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-2); }
+.summaryTitle { margin: 0 0 var(--spacing-xs); color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.summaryText { margin: 0; color: var(--color-text-primary); font-size: var(--font-size-md); white-space: pre-wrap; }
+.environmentList { display: grid; gap: var(--spacing-xs); margin: 0; padding-left: var(--spacing-lg); color: var(--color-text-primary); font-size: var(--font-size-md); }
