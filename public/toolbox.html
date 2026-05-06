@@ -44364,9 +44364,6 @@ function tbxFetchDiagReport(onComplete) {
       lines.push('SERVER');
       lines.push('  (not reachable — is toolbox-server.js running on port 5555?)');
     }
-          lines.push('  ' + (entry.ts || '?') + '  ' + (entry.method || '?').padEnd(6) + ' ' + (entry.path || '').padEnd(60) + statusStr + flag);
-        });
-      }
     lines.push('');
     lines.push(sep);
     return lines.join('\n');
