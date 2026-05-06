@@ -313,6 +313,8 @@ function createApiRouter(configuration) {
   router.get('/api/snow-diag', (req, res) => {
     const snowConfig      = configuration.snow || {};
     const sessionStatus   = snowSession.getSessionStatus();
+    const snowBridgeDiag  = relayBridge.getBridgeDiag('snow');
+    const jiraBridgeDiag  = relayBridge.getBridgeDiag('jira');
 
     res.json({
       snow: {
@@ -323,8 +325,13 @@ function createApiRouter(configuration) {
         sessionExpiresAt: sessionStatus.isActive ? (sessionStatus.expiresAt || null) : null,
       },
       relay: {
-        snowActive: relayBridge.getBridgeStatus('snow'),
-        jiraActive: relayBridge.getBridgeStatus('jira'),
+        snowActive:              snowBridgeDiag.active,
+        jiraActive:              jiraBridgeDiag.active,
+        // Timestamps expose registration history so diagnostic reports can show
+        // exactly when the bookmarklet last connected, disconnected, and polled.
+        snowLastRegisteredAt:    snowBridgeDiag.lastRegisteredAt,
+        snowLastDeregisteredAt:  snowBridgeDiag.lastDeregisteredAt,
+        snowLastPolledAt:        snowBridgeDiag.lastPolledAt,
       },
     });
   });

@@ -186,6 +186,76 @@ describe('getBridgeStatus()', () => {
   });
 });
 
+// ── getBridgeDiag() exported helper ──────────────────────────────────────────
+// Used by /api/snow-diag to surface registration timestamps in diagnostic reports.
+
+describe('getBridgeDiag()', () => {
+  it('returns inactive state with null timestamps before any registration', () => {
+    const diag = relayBridgeRouter.getBridgeDiag('snow');
+    expect(diag.active).toBe(false);
+    expect(diag.lastRegisteredAt).toBeNull();
+    expect(diag.lastDeregisteredAt).toBeNull();
+    expect(diag.lastPolledAt).toBeNull();
+  });
+
+  it('returns active=true and a non-null lastRegisteredAt after registration', async () => {
+    const beforeReg = Date.now();
+    const testApp = buildTestApp();
+    await request(testApp).post('/api/relay-bridge/register?sys=snow').send({});
+    const diag = relayBridgeRouter.getBridgeDiag('snow');
+    expect(diag.active).toBe(true);
+    expect(diag.lastRegisteredAt).toBeGreaterThanOrEqual(beforeReg);
+    expect(diag.lastDeregisteredAt).toBeNull();
+  });
+
+  it('sets lastDeregisteredAt after deregistration', async () => {
+    const testApp = buildTestApp();
+    await request(testApp).post('/api/relay-bridge/register?sys=snow').send({});
+    const beforeDereg = Date.now();
+    await request(testApp).post('/api/relay-bridge/deregister?sys=snow').send({});
+    const diag = relayBridgeRouter.getBridgeDiag('snow');
+    expect(diag.active).toBe(false);
+    expect(diag.lastDeregisteredAt).toBeGreaterThanOrEqual(beforeDereg);
+  });
+
+  it('sets lastPolledAt after the bookmarklet polls', async () => {
+    const testApp = buildTestApp();
+    // Enqueue a request so poll returns immediately (avoids 28s hang)
+    await request(testApp)
+      .post('/api/relay-bridge/request')
+      .send({ sys: 'snow', id: 'diag-poll-test', method: 'GET', path: '/test' });
+    const beforePoll = Date.now();
+    await request(testApp).get('/api/relay-bridge/poll?sys=snow');
+    const diag = relayBridgeRouter.getBridgeDiag('snow');
+    expect(diag.lastPolledAt).toBeGreaterThanOrEqual(beforePoll);
+  });
+
+  it('returns safe defaults for an unknown sys', () => {
+    const diag = relayBridgeRouter.getBridgeDiag('unknown');
+    expect(diag.active).toBe(false);
+    expect(diag.lastRegisteredAt).toBeNull();
+  });
+});
+
+// ── Status endpoint includes timestamps ───────────────────────────────────────
+
+describe('GET /api/relay-bridge/status — timestamp fields', () => {
+  it('includes null timestamps before any registration', async () => {
+    const response = await request(buildTestApp()).get('/api/relay-bridge/status?sys=snow');
+    expect(response.body.lastRegisteredAt).toBeNull();
+    expect(response.body.lastDeregisteredAt).toBeNull();
+    expect(response.body.lastPolledAt).toBeNull();
+  });
+
+  it('includes a non-null lastRegisteredAt after registration', async () => {
+    const app = buildTestApp();
+    const before = Date.now();
+    await request(app).post('/api/relay-bridge/register?sys=snow').send({});
+    const response = await request(app).get('/api/relay-bridge/status?sys=snow');
+    expect(response.body.lastRegisteredAt).toBeGreaterThanOrEqual(before);
+  });
+});
+
 
 describe('relay bridge full round-trip (request → poll → result → collect)', () => {
   it('delivers a request to the bookmarklet and returns the result to the caller', async () => {

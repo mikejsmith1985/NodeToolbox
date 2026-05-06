@@ -4592,10 +4592,25 @@ function crRelayScriptBridge(serverOrigin) {
         'b.onclick=function(){b.remove();};' +
         'document.body.appendChild(b);' +
         'try{window.blur();}catch(e){}' +
-        // Deregister on page unload so NodeToolbox immediately sees the relay as gone
+        // Deregister on page unload — but use a 1s grace period before sending the
+        // beacon. ServiceNow's SPA fires pagehide during internal navigation, and some
+        // browsers fire it before bfcache entry. A pageshow within the grace window
+        // (bfcache restore or quick SPA bounce) cancels the deregister.
+        'var _drTimer=null;' +
         'window.addEventListener("pagehide",function(){' +
-          'window.__crg_bridge_active=false;' +
-          'try{navigator.sendBeacon(srv+"/api/relay-bridge/deregister?sys="+sys,"{}");}catch(e){}' +
+          '_drTimer=setTimeout(function(){' +
+            'window.__crg_bridge_active=false;' +
+            'try{navigator.sendBeacon(srv+"/api/relay-bridge/deregister?sys="+sys,"{}");}catch(e){}' +
+          '},1000);' +
+        '});' +
+        'window.addEventListener("pageshow",function(){' +
+          // Page was restored from bfcache or SPA bounced back — cancel deregister
+          'if(_drTimer){clearTimeout(_drTimer);_drTimer=null;}' +
+          // If the bridge was already marked inactive (timer already fired), re-register
+          'if(!window.__crg_bridge_active){' +
+            'window.__crg_bridge_active=true;' +
+            'try{fetch(srv+"/api/relay-bridge/register?sys="+sys,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});}catch(e){}' +
+          '}' +
         '});' +
         // Start the continuous polling loop
         '(function poll(){' +
@@ -28004,8 +28019,10 @@ function rmCheckConn() {
     .catch(function(e) {
       var msg = e.message || '';
       if (msg.indexOf('401') !== -1) {
-        CRG.relay.snowReady = false;
-        rmUpdateConnBar('error', 'Session expired');
+        // A 401 means the SNow session is expired — NOT that the relay bridge broke.
+        // Leave snowReady unchanged so the relay is still used on the next request.
+        // The user needs to re-login to ServiceNow, not re-click the bookmarklet.
+        rmUpdateConnBar('error', 'SNow session expired — re-login to ServiceNow');
       } else {
         rmUpdateConnBar('disconnected');
       }
@@ -28664,10 +28681,16 @@ function rmLoadMyCHGs() {
       .catch(function(e) {
         var errorMessage = e.message || 'Failed to load changes';
         if (errorMessage.indexOf('401') !== -1) {
-          CRG.relay.snowReady = false;
+          // A 401 means SNow session/credentials are invalid — NOT a relay failure.
+          // Keep snowReady intact so the relay path is still used on retry.
+          // The user should re-login to ServiceNow or update credentials, not reconnect the relay.
           el.innerHTML = '<div style="font-size:12px;color:#f59e0b;padding:8px 10px;background:rgba(245,158,11,.1);border-radius:6px;line-height:1.5;">' +
-            '⚠️ <strong>SNow credentials invalid or expired.</strong><br>Go to <strong>Toolbox Settings → ServiceNow Connection</strong> and re-enter the service account password.</div>';
-          rmUpdateConnBar('error', 'Credentials invalid or expired');
+            '⚠️ <strong>SNow session expired or credentials invalid.</strong><br>' +
+            (CRG.relay && CRG.relay.snowReady
+              ? 'Relay is connected but SNow rejected the request — re-login to ServiceNow, then click <strong>Refresh</strong>.'
+              : 'Go to <strong>Toolbox Settings → ServiceNow Connection</strong> and re-enter credentials, then reconnect the relay.') +
+            '</div>';
+          rmUpdateConnBar('error', 'SNow session expired');
         } else {
           el.innerHTML = '<div style="font-size:12px;color:#dc2626;padding:4px 0;">❌ ' + crEsc(errorMessage) + '</div>';
           rmUpdateConnBar('error', errorMessage.slice(0, 80));
@@ -44274,6 +44297,8 @@ function tbxFetchDiagReport(onComplete) {
     lines.push('BROWSER');
     lines.push('  Toolbox version : v' + toolboxVersion);
     lines.push('  Proxy URL       : ' + proxyUrl);
+    lines.push('  Relay bridge    : snow=' + (CRG && CRG.relay && CRG.relay.snowReady ? 'ACTIVE' : 'inactive') +
+      '  jira=' + (CRG && CRG.relay && CRG.relay.jiraReady ? 'ACTIVE' : 'inactive'));
     if (cachedStatus) {
       var jiraReady = (cachedStatus.jira && cachedStatus.jira.ready) ? 'YES' : 'NO';
       var snowReady = (cachedStatus.snow && cachedStatus.snow.ready) ? 'YES' : 'NO';
@@ -44286,7 +44311,16 @@ function tbxFetchDiagReport(onComplete) {
     return lines.join('\n');
   }
 
-  function buildFullReport(serverData) {
+  // Format an epoch ms timestamp as a human-readable relative string
+  function relativeTime(ts) {
+    if (!ts) return 'never';
+    var seconds = Math.round((Date.now() - ts) / 1000);
+    if (seconds < 5)  return 'just now';
+    if (seconds < 60) return seconds + 's ago';
+    return Math.round(seconds / 60) + 'm ago';
+  }
+
+  function buildFullReport(serverData, snowBridgeStatus) {
     var sep = '═'.repeat(55);
     var now = new Date().toISOString().replace('T', ' ').slice(0, 19);
     var lines = [];
@@ -44296,22 +44330,25 @@ function tbxFetchDiagReport(onComplete) {
     lines.push('');
     lines.push(buildBrowserSection());
 
+    // Relay bridge status from the server (includes registration history)
+    if (snowBridgeStatus) {
+      lines.push('');
+      lines.push('RELAY BRIDGE (server-side)');
+      lines.push('  SNow bridge     : ' + (snowBridgeStatus.active ? 'ACTIVE ✓' : 'inactive'));
+      lines.push('  Last registered : ' + relativeTime(snowBridgeStatus.lastRegisteredAt));
+      lines.push('  Last deregistered: ' + relativeTime(snowBridgeStatus.lastDeregisteredAt));
+      lines.push('  Last poll       : ' + relativeTime(snowBridgeStatus.lastPolledAt));
+    }
+
     if (serverData) {
       lines.push('');
-      lines.push('SERVER (v' + serverData.serverVersion + ')');
-      lines.push('  Python          : ' + serverData.pythonVersion);
-      lines.push('  Platform        : ' + serverData.platformInfo);
-      lines.push('  Config file     : ' + serverData.configFilePath);
-      lines.push('  Config exists   : ' + (serverData.configFileExists ? 'YES' : 'NO ⚠'));
+      lines.push('SERVER (v' + (serverData.version || '?') + ')');
+      lines.push('  SSL verify      : ' + (serverData.sslVerify ? 'YES' : 'NO'));
 
       var j = serverData.jira || {};
       lines.push('');
       lines.push('JIRA');
       lines.push('  URL             : ' + (j.baseUrl || '(not set)'));
-      lines.push('  Auth type       : ' + (j.authType || 'None'));
-      if (j.patMasked) {
-        lines.push('  PAT             : ' + j.patMasked + ' (' + j.patLength + ' chars)');
-      }
       lines.push('  Configured      : ' + (j.configured ? 'YES' : 'NO'));
       lines.push('  Has credentials : ' + (j.hasCredentials ? 'YES' : 'NO'));
 
@@ -44321,49 +44358,32 @@ function tbxFetchDiagReport(onComplete) {
       lines.push('  URL             : ' + (sn.baseUrl || '(not set)'));
       lines.push('  Configured      : ' + (sn.configured ? 'YES' : 'NO'));
       lines.push('  Has credentials : ' + (sn.hasCredentials ? 'YES' : 'NO'));
-
-      var proxies = serverData.systemProxy || {};
-      var proxyKeys = Object.keys(proxies);
-      lines.push('');
-      lines.push('SYSTEM PROXY (detected by server)');
-      if (proxyKeys.length === 0) {
-        lines.push('  (none — direct connection)');
-      } else {
-        proxyKeys.forEach(function(key) {
-          lines.push('  ' + key.padEnd(16) + ': ' + proxies[key]);
-        });
-      }
-
-      var recentRequests = serverData.recentRequests || [];
-      lines.push('');
-      lines.push('RECENT REQUESTS (last ' + recentRequests.length + ')');
-      if (recentRequests.length === 0) {
-        lines.push('  (none since server started)');
-      } else {
-        // Show most recent first
-        recentRequests.slice().reverse().forEach(function(entry) {
-          var statusStr = String(entry.status || '?');
-          // Flag errors visually so they stand out in the report
-          var flag = (statusStr === '400' || statusStr === '401' || statusStr === '403' || statusStr === '500') ? ' ⚠' : '';
-          lines.push('  ' + (entry.ts || '?') + '  ' + (entry.method || '?').padEnd(6) + ' ' + (entry.path || '').padEnd(60) + statusStr + flag);
-        });
-      }
+      lines.push('  Session mode    : ' + (sn.sessionMode ? 'YES' : 'NO'));
     } else {
       lines.push('');
       lines.push('SERVER');
-      lines.push('  (not reachable — is toolbox-server.py running?)');
+      lines.push('  (not reachable — is toolbox-server.js running on port 5555?)');
     }
-
+          lines.push('  ' + (entry.ts || '?') + '  ' + (entry.method || '?').padEnd(6) + ' ' + (entry.path || '').padEnd(60) + statusStr + flag);
+        });
+      }
     lines.push('');
     lines.push(sep);
     return lines.join('\n');
   }
 
-  // Try to fetch server diagnostics; fall back gracefully if server is down
-  fetch(proxyUrl + '/api/diagnostics', { signal: AbortSignal.timeout(5000) })
-    .then(function(r) { return r.json(); })
-    .then(function(serverData) { onComplete(buildFullReport(serverData), null); })
-    .catch(function(err) { onComplete(buildFullReport(null), 'Server not reachable: ' + err.message); });
+  // Fetch both proxy-status (real Node.js endpoint) and SNow relay bridge status in parallel.
+  // Fall back gracefully if either is unreachable.
+  Promise.all([
+    fetch(proxyUrl + '/api/proxy-status', { signal: AbortSignal.timeout(5000) })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .catch(function() { return null; }),
+    fetch(proxyUrl + '/api/relay-bridge/status?sys=snow', { signal: AbortSignal.timeout(5000) })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .catch(function() { return null; }),
+  ]).then(function(results) {
+    onComplete(buildFullReport(results[0], results[1]), null);
+  });
 }
 
 // ── SNow Diagnostic Report────────────────────────────────────────────────────
@@ -44598,6 +44618,9 @@ function snwDiagBuildFullReport(serverData, liveResults) {
   if (serverData && serverData.relay) {
     var relay = serverData.relay;
     lines.push('  Relay — SNow     : ' + (relay.snowActive ? 'YES ✅' : 'NO'));
+    if (relay.snowLastRegisteredAt)   lines.push('    last registered  : ' + new Date(relay.snowLastRegisteredAt).toISOString().replace('T',' ').slice(0,19));
+    if (relay.snowLastDeregisteredAt) lines.push('    last deregistered: ' + new Date(relay.snowLastDeregisteredAt).toISOString().replace('T',' ').slice(0,19));
+    if (relay.snowLastPolledAt)       lines.push('    last polled      : ' + new Date(relay.snowLastPolledAt).toISOString().replace('T',' ').slice(0,19));
     lines.push('  Relay — Jira     : ' + (relay.jiraActive ? 'YES ✅' : 'NO'));
   }
 
