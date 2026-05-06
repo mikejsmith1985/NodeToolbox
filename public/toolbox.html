@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NodeToolbox v0.3.1</title>
+  <title>NodeToolbox v0.3.2</title>
 
 <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -3554,7 +3554,7 @@ $listener.Start()
 ════════════════════════════════════════════════════════════════ -->
 <script>
 // ── Toolbox version & update config ──────────────────────────────────────────
-var TOOLBOX_VERSION = '0.3.1';
+var TOOLBOX_VERSION = '0.3.2';
 // Keep the browser tab title in sync with the running version at runtime.
 // The <title> tag is patched by the release script for new installs, but this
 // line ensures the tab is correct even when the browser has a cached HTML copy.
@@ -28525,11 +28525,16 @@ function rmLoadCHG() {
     '&sysparm_fields=sys_id,number,short_description,state,type,risk,' +
     'start_date,end_date,planned_start_date,planned_end_date,' +
     'assignment_group,assigned_to,close_notes,description')
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      var records = data.result;
-      if (!records || !records.length) throw new Error('No change request found: ' + num);
-      var rec = records[0];
+    .then(function(r) {
+      // A 401 response resolves with a JSON error body (no 'result' key), which
+      // would silently produce "No change request found" without this check.
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' — SNow credentials invalid or expired. Update them in Toolbox Settings → ServiceNow Connection.');
+      return r.json();
+    })
+    .then(function(snowApiResponse) {
+      var changeRecords = snowApiResponse.result;
+      if (!changeRecords || !changeRecords.length) throw new Error('No change request found: ' + num);
+      var rec = changeRecords[0];
       RM.chgSysId = (rec.sys_id && (rec.sys_id.value || rec.sys_id)) || '';
       RM.chgNumber = num;
       RM.chgRec    = rec;
@@ -28612,25 +28617,31 @@ function rmLoadMyCHGs() {
       '&sysparm_display_value=all&sysparm_limit=25' +
       '&sysparm_fields=' + encodeURIComponent('sys_id,number,short_description,state,start_date,end_date,planned_start_date,planned_end_date,type');
     crSnowFetch('/api/now/table/change_request?' + q)
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        var records = data.result || [];
-        rmRenderMyCHGs(records, identity);
-        rmLoadApprovalMonitor(records);
-        if (statusEl) statusEl.textContent = records.length ? records.length + ' active' : '';
+      .then(function(r) {
+        // A 401 response still resolves as JSON but has no 'result' key, so it
+        // would silently appear as "no changes found" without this check.
+        // Throw immediately so the .catch handler can surface the real problem.
+        if (!r.ok) throw new Error('401 SNow credentials invalid or expired — update them in Toolbox Settings → ServiceNow Connection.');
+        return r.json();
+      })
+      .then(function(snowApiResponse) {
+        var changeRecords = snowApiResponse.result || [];
+        rmRenderMyCHGs(changeRecords, identity);
+        rmLoadApprovalMonitor(changeRecords);
+        if (statusEl) statusEl.textContent = changeRecords.length ? changeRecords.length + ' active' : '';
         RM._lastLoaded = Date.now();
         rmUpdateConnBar('connected', identity, RM._lastLoaded);
       })
       .catch(function(e) {
-        var msg = e.message || 'Failed to load changes';
-        if (msg.indexOf('401') !== -1) {
+        var errorMessage = e.message || 'Failed to load changes';
+        if (errorMessage.indexOf('401') !== -1) {
           CRG.relay.snowReady = false;
           el.innerHTML = '<div style="font-size:12px;color:#f59e0b;padding:8px 10px;background:rgba(245,158,11,.1);border-radius:6px;line-height:1.5;">' +
-            '⚠️ <strong>SNow session expired.</strong><br>Click <strong>Reconnect</strong> above, then activate the 📎 Toolbox Relay bookmarklet in your SNow tab and refresh.</div>';
-          rmUpdateConnBar('error', 'Session expired');
+            '⚠️ <strong>SNow credentials invalid or expired.</strong><br>Go to <strong>Toolbox Settings → ServiceNow Connection</strong> and re-enter the service account password.</div>';
+          rmUpdateConnBar('error', 'Credentials invalid or expired');
         } else {
-          el.innerHTML = '<div style="font-size:12px;color:#dc2626;padding:4px 0;">❌ ' + crEsc(msg) + '</div>';
-          rmUpdateConnBar('error', msg.slice(0, 80));
+          el.innerHTML = '<div style="font-size:12px;color:#dc2626;padding:4px 0;">❌ ' + crEsc(errorMessage) + '</div>';
+          rmUpdateConnBar('error', errorMessage.slice(0, 80));
         }
         if (statusEl) statusEl.textContent = '';
       });
@@ -44473,15 +44484,15 @@ function snwDiagRunLiveTests() {
     : Promise.resolve({ skipped: true, reason: 'No sys_id cached — set identity in RM Settings first' });
 
   // Test 3: My Changes query — exactly what rmLoadMyCHGs() would execute
-  // Uses the same state filters that are active in RM display preferences
-  var rmStateCodes = ['1','2','-4'];  // Open, In Progress, Scheduled
+  // Uses the same state filters that are active in RM display preferences.
+  // Default active states match the out-of-box checked boxes: Scheduled (-2), Implement (-1), Review (0).
+  var rmDefaultStateCodes = ['-2', '-1', '0'];
+  var rmStateCodes = rmDefaultStateCodes;
   try {
     var rmPrefs = JSON.parse(localStorage.getItem('tbxRMDisplayPrefs') || '{}');
-    if (rmPrefs.states && rmPrefs.states.length) {
-      // Map human-readable state labels back to SNow state codes for the query
-      var stateCodeMap = { open: '1', in_progress: '2', scheduled: '-4', closed: '3', cancelled: '4' };
-      var mappedCodes = rmPrefs.states.map(function(s) { return stateCodeMap[s]; }).filter(Boolean);
-      if (mappedCodes.length) rmStateCodes = mappedCodes;
+    // defaultStateFilter stores actual SNow state codes (-5 through 0) — no mapping needed.
+    if (Array.isArray(rmPrefs.defaultStateFilter) && rmPrefs.defaultStateFilter.length) {
+      rmStateCodes = rmPrefs.defaultStateFilter;
     }
   } catch(ignoredPrefsError) {}
 
