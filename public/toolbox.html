@@ -5332,7 +5332,13 @@ function tbxProbeRelay(sys) {
       .then(function(r) { return r.json(); })
       .then(function(json) {
         var readyKey = sys === 'snow' ? 'snowReady' : sys === 'conf' ? 'confReady' : 'jiraReady';
-        if (!json.active && CRG.relay[readyKey]) {
+        if (json.active && !CRG.relay[readyKey]) {
+          // Bookmarklet registered since we last checked (e.g. user clicked it on an already-open
+          // tab without going through "Open SNow Tab" — crAutoPingBridge was never started).
+          CRG.relay[readyKey] = true;
+          tbxShowRelayStatus(sys, 'connected');
+          tbxUpdateConnBar();
+        } else if (!json.active && CRG.relay[readyKey]) {
           // Bookmarklet navigated away without sending the deregister beacon
           CRG.relay[readyKey] = false;
           tbxShowRelayStatus(sys, 'disconnected');
@@ -5358,15 +5364,18 @@ function tbxProbeRelay(sys) {
 }
 
 // Refresh "connected X ago" timestamps every 30 seconds; also refresh data-age badges.
-// In server mode, also probe bridge liveness so stale ready flags are cleared promptly
-// if the bookmarklet's sendBeacon deregister was dropped (e.g. immediate close/crash).
+// In server mode, probe all *configured* services — not just connected ones — so that
+// a manually-clicked bookmarklet (on an already-open tab) auto-activates within 30s
+// without requiring the user to click "Open SNow Tab" first.
 setInterval(function() {
   if (CRG.relay.jiraReady || CRG.relay.snowReady) tbxUpdateConnBar();
   tbxRenderDataAgeBadges();
   if (IS_NODETOOLBOX_SERVER) {
-    if (CRG.relay.snowReady) tbxProbeRelay('snow');
-    if (CRG.relay.jiraReady) tbxProbeRelay('jira');
-    if (CRG.relay.confReady) tbxProbeRelay('conf');
+    var _snowPollUrl = localStorage.getItem('tbxCRGenSnowUrl') || '';
+    var _jiraPollUrl = localStorage.getItem('tbxCRGenJiraUrl') || '';
+    if (_snowPollUrl) tbxProbeRelay('snow');
+    if (_jiraPollUrl) tbxProbeRelay('jira');
+    if (tbxGetConfUrl()) tbxProbeRelay('conf');
   }
 }, 30000);
 
@@ -48777,6 +48786,16 @@ function wtTourPrev() {
 (function() {
   if (typeof IS_NODETOOLBOX_SERVER !== 'undefined' && IS_NODETOOLBOX_SERVER) {
     tbxAutoDetectProxy();
+    // Also check whether any relay bridge is already active — handles the case
+    // where the server restarts but the bookmarklet tab is still open and
+    // re-registered before the page reloaded.
+    setTimeout(function() {
+      var snowUrl = localStorage.getItem('tbxCRGenSnowUrl') || '';
+      var jiraUrl = localStorage.getItem('tbxCRGenJiraUrl') || '';
+      if (snowUrl) tbxProbeRelay('snow');
+      if (jiraUrl) tbxProbeRelay('jira');
+      if (tbxGetConfUrl()) tbxProbeRelay('conf');
+    }, 2000); // small delay so proxy probe and DOM settle first
   }
 })();
 
