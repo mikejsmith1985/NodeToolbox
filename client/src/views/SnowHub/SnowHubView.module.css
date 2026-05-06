@@ -1,0 +1,10 @@
+/* SnowHubView.module.css — Styles for the top-level SNow Hub page and tab navigation. */
+
+.snowHubView { display: flex; flex-direction: column; gap: var(--spacing-lg); padding: var(--spacing-lg); max-width: calc(var(--spacing-xl) * 38); margin: 0 auto; }
+.pageHeader { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+.pageTitle { margin: 0; color: var(--color-text-primary); font-size: calc(var(--font-size-lg) + var(--spacing-sm)); }
+.pageSubtitle { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-md); }
+.tabList { display: flex; gap: var(--spacing-sm); flex-wrap: wrap; }
+.tabButton { padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface-1); color: var(--color-text-secondary); font-size: var(--font-size-md); cursor: pointer; }
+.activeTab { border-color: var(--color-accent); background: var(--color-surface-2); color: var(--color-accent); }
+.panelSurface { padding: var(--spacing-lg); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface-1); }

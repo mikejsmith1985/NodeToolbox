@@ -1,0 +1,38 @@
+/* ReleaseManagementTab.module.css — Styles for the Release Management tab layout, tables, and activity log. */
+
+.tabPanel { display: flex; flex-direction: column; gap: var(--spacing-lg); }
+.tabHeader { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+.tabTitle { margin: 0; color: var(--color-text-primary); font-size: var(--font-size-lg); }
+.tabSubtitle { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-md); }
+.section { border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-1); overflow: hidden; }
+.sectionHeader { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); padding: var(--spacing-md); border-bottom: 1px solid var(--color-border); flex-wrap: wrap; }
+.sectionTitle { margin: 0; color: var(--color-text-primary); font-size: var(--font-size-lg); }
+.sectionBody { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-md); }
+.fieldGroup { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+.fieldLabel { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.input { width: 100%; box-sizing: border-box; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-text-primary); font-size: var(--font-size-md); }
+.input:focus { outline: none; border-color: var(--color-accent); }
+.buttonRow { display: flex; gap: var(--spacing-sm); flex-wrap: wrap; }
+.primaryButton, .secondaryButton { padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-sm); font-size: var(--font-size-md); cursor: pointer; }
+.primaryButton { border: 1px solid var(--color-accent); background: var(--color-accent); color: var(--color-text-primary); }
+.secondaryButton { border: 1px solid var(--color-border); background: var(--color-surface-2); color: var(--color-text-primary); }
+.loadingText { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.errorText { margin: 0; color: var(--color-danger); font-size: var(--font-size-sm); }
+.mutedText { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-md); }
+.detailCard { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-md); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-2); }
+.detailGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(var(--spacing-xl) * 6), 1fr)); gap: var(--spacing-md); }
+.detailStack { display: grid; gap: var(--spacing-md); }
+.detailLabel { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.detailValue { margin: var(--spacing-xs) 0 0; color: var(--color-text-primary); font-size: var(--font-size-md); white-space: pre-wrap; }
+.dataTable { width: 100%; border-collapse: collapse; border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow: hidden; }
+.dataTable th, .dataTable td { padding: var(--spacing-sm) var(--spacing-md); border-bottom: 1px solid var(--color-border); text-align: left; color: var(--color-text-primary); font-size: var(--font-size-md); }
+.dataTable th { background: var(--color-surface-2); color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.logList { display: flex; flex-direction: column; gap: var(--spacing-sm); max-height: calc(var(--spacing-xl) * 8); margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.logItem { display: grid; grid-template-columns: auto auto 1fr; gap: var(--spacing-sm); align-items: center; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-2); }
+.logBadge { padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-lg); font-size: var(--font-size-sm); text-transform: uppercase; }
+.logTime { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.logMessage { color: var(--color-text-primary); font-size: var(--font-size-md); }
+.info { color: var(--color-accent); border: 1px solid var(--color-accent); }
+.success { color: var(--color-success); border: 1px solid var(--color-success); }
+.warning { color: var(--color-warning); border: 1px solid var(--color-warning); }
+.error { color: var(--color-danger); border: 1px solid var(--color-danger); }

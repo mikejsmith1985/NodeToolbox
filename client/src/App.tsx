@@ -13,11 +13,13 @@ import { useSettingsStore } from './store/settingsStore.ts';
 import type { RelaySystem } from './types/relay.ts';
 import HomeView from './views/Home/HomeView.tsx';
 import SettingsView from './views/Settings/SettingsView.tsx';
+import SnowHubView from './views/SnowHub/SnowHubView.tsx';
 import styles from './App.module.css';
 
 const APP_TITLE = 'NodeToolbox';
 const HOME_ROUTE = '/';
 const SETTINGS_ROUTE = '/settings';
+const SNOW_HUB_ROUTE = '/snow-hub';
 const DEFAULT_ROUTE = HOME_ROUTE;
 const RELAY_SYSTEM: RelaySystem = 'snow';
 const PLACEHOLDER_MESSAGE =
@@ -25,7 +27,6 @@ const PLACEHOLDER_MESSAGE =
 const PLACEHOLDER_ROUTES = [
   { path: '/art', name: 'ART View' },
   { path: '/my-issues', name: 'My Issues' },
-  { path: '/snow-hub', name: 'SNow Hub' },
   { path: '/dev-workspace', name: 'Dev Workspace' },
   { path: '/sprint-dashboard', name: 'Sprint Dashboard' },
   { path: '/text-tools', name: 'Text Tools' },
@@ -61,6 +62,7 @@ export default function App() {
         <Routes>
           <Route path={HOME_ROUTE} element={<HomeView />} />
           <Route path={SETTINGS_ROUTE} element={<SettingsView />} />
+          <Route path={SNOW_HUB_ROUTE} element={<SnowHubView />} />
           {PLACEHOLDER_ROUTES.map((placeholderRoute) => (
             <Route
               key={placeholderRoute.path}
