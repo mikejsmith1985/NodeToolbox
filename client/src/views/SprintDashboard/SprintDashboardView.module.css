@@ -1,0 +1,437 @@
+/* SprintDashboardView.module.css — Styles for the Sprint Dashboard view. */
+
+.sprintDashboardView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  height: 100%;
+}
+
+.pageHeader {
+  margin-bottom: var(--spacing-sm);
+}
+
+.pageTitle {
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-xs);
+}
+
+/* ── Tab bar ── */
+
+.tabList {
+  display: flex;
+  gap: var(--spacing-xs);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--spacing-md);
+}
+
+.tabButton {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tabButton:hover {
+  color: var(--color-text-primary);
+}
+
+.activeTab {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+/* ── Settings panel ── */
+
+.settingsPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  max-width: 400px;
+}
+
+.settingsSectionTitle {
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+  font-weight: 600;
+  margin: 0 0 var(--spacing-xs);
+}
+
+.settingsInput {
+  width: 100%;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+  padding: var(--spacing-sm);
+  box-sizing: border-box;
+}
+
+.loadButton {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-bg);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+}
+
+.loadButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.errorMessage {
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+.spinnerText {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* ── Overview tab ── */
+
+.sprintInfoCard {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.sprintName {
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-xs);
+}
+
+.sprintMeta {
+  display: flex;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  flex-wrap: wrap;
+}
+
+.flowStatsBar {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-md);
+}
+
+.flowStatChip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  min-width: 80px;
+}
+
+.flowStatCount {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.flowStatLabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.healthBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  margin-bottom: var(--spacing-md);
+}
+
+.healthOnTrack {
+  background: color-mix(in srgb, var(--color-success) 15%, transparent);
+  color: var(--color-success);
+}
+
+.healthWatch {
+  background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  color: var(--color-warning);
+}
+
+.healthAtRisk {
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  color: var(--color-danger);
+}
+
+.chartSection {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+}
+
+.chartTitle {
+  font-size: var(--font-size-md);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--spacing-md);
+}
+
+/* ── By Assignee tab ── */
+
+.assigneeLane {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.assigneeHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+}
+
+.assigneeName {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.assigneeCountBadge {
+  font-size: var(--font-size-sm);
+  padding: 2px var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+}
+
+.laneIssueGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.laneIssueRow {
+  display: grid;
+  grid-template-columns: 90px 1fr 120px;
+  gap: var(--spacing-sm);
+  align-items: center;
+  padding: var(--spacing-xs) 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+/* ── Blockers tab ── */
+
+.blockersSection {
+  margin-bottom: var(--spacing-lg);
+}
+
+.blockersSectionHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.blockersSectionTitle {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.countBadge {
+  font-size: var(--font-size-sm);
+  padding: 2px var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger);
+  color: #fff;
+  font-weight: 600;
+}
+
+.blockerCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
+.staleCard {
+  border-left-color: var(--color-warning);
+}
+
+.issueKeyLink {
+  font-family: monospace;
+  font-size: var(--font-size-sm);
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.issueKeyLink:hover {
+  text-decoration: underline;
+}
+
+.issueSummaryText {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.issueMetaText {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+/* ── Defects tab ── */
+
+.defectGroup {
+  margin-bottom: var(--spacing-lg);
+}
+
+.defectGroupHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.defectGroupTitle {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.defectCard {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: flex-start;
+  padding: var(--spacing-sm);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+}
+
+/* ── Standup tab ── */
+
+.standupLayout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.timerBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+}
+
+.timerDisplay {
+  font-size: 48px;
+  font-weight: 700;
+  font-family: monospace;
+  color: var(--color-text-primary);
+  letter-spacing: 4px;
+}
+
+.timerWarning {
+  color: var(--color-warning);
+}
+
+.timerDanger {
+  color: var(--color-danger);
+}
+
+.timerControls {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.timerButton {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+}
+
+.timerButton:hover {
+  border-color: var(--color-accent);
+}
+
+.boardWalk {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-md);
+}
+
+.boardColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.boardColumnTitle {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--spacing-xs);
+  text-align: center;
+}
+
+.boardIssueCard {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+
+.boardIssueCardFresh {
+  border-left-color: var(--color-success);
+}
+
+.boardIssueCardWarn {
+  border-left-color: var(--color-warning);
+}
+
+.boardIssueCardStale {
+  border-left-color: var(--color-danger);
+}
+
+.emptyColumnText {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: var(--spacing-md);
+}

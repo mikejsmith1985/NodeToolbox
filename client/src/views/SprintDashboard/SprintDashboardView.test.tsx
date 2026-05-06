@@ -1,0 +1,178 @@
+// SprintDashboardView.test.tsx — Unit tests for the Sprint Dashboard tabbed view component.
+
+import { render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import React from 'react';
+
+import type { JiraIssue, JiraSprint } from '../../types/jira.ts';
+import type { DashboardTab } from './hooks/useSprintData.ts';
+
+// Mock recharts so the LineChart renders without canvas/SVG issues in jsdom.
+vi.mock('recharts', () => ({
+  ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="responsive-container">{children}</div>
+  ),
+  LineChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="line-chart">{children}</div>
+  ),
+  Line: () => null,
+  XAxis: () => null,
+  YAxis: () => null,
+  Tooltip: () => null,
+  CartesianGrid: () => null,
+}));
+
+// Module-level helper functions kept for reference but data is inlined in vi.hoisted.
+// These are used to show intent of the fixture data shape.
+
+const { mockState, mockActions } = vi.hoisted(() => {
+  const initialSprintInfo: JiraSprint = {
+    id: 7,
+    name: 'Sprint 7',
+    state: 'active',
+    startDate: '2025-01-01T00:00:00.000Z',
+    endDate: '2025-01-14T00:00:00.000Z',
+  };
+
+  const buildInProgressIssue = (issueKey: string, summary: string, assigneeName: string): JiraIssue => ({
+    id: issueKey,
+    key: issueKey,
+    fields: {
+      summary,
+      status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+      priority: { name: 'High', iconUrl: 'priority.png' },
+      assignee: {
+        accountId: 'user-1',
+        displayName: assigneeName,
+        emailAddress: `${assigneeName.toLowerCase()}@example.com`,
+        avatarUrls: {},
+      },
+      reporter: null,
+      issuetype: { name: 'Story', iconUrl: 'story.png' },
+      created: '2025-01-01T00:00:00.000Z',
+      updated: '2025-01-02T00:00:00.000Z',
+      description: null,
+    },
+  });
+
+  const blockedIssue: JiraIssue = {
+    id: 'TBX-12',
+    key: 'TBX-12',
+    fields: {
+      summary: 'Blocked issue',
+      status: { name: 'Blocked', statusCategory: { key: 'indeterminate' } },
+      priority: { name: 'High', iconUrl: 'priority.png' },
+      assignee: null,
+      reporter: null,
+      issuetype: { name: 'Story', iconUrl: 'story.png' },
+      created: '2025-01-01T00:00:00.000Z',
+      updated: '2025-01-02T00:00:00.000Z',
+      description: null,
+    },
+  };
+
+  return {
+    mockState: {
+      projectKey: 'TBX',
+      activeTab: 'overview' as DashboardTab,
+      sprintInfo: initialSprintInfo as JiraSprint | null,
+      sprintIssues: [
+        buildInProgressIssue('TBX-10', 'Wire up the backend', 'Alice'),
+        buildInProgressIssue('TBX-11', 'Polish the UI', 'Bob'),
+        blockedIssue,
+      ],
+      isLoadingSprint: false,
+      loadError: null as string | null,
+      isTimerRunning: false,
+      timerSecondsRemaining: 900,
+    },
+    mockActions: {
+      setProjectKey: vi.fn(),
+      setActiveTab: vi.fn(),
+      loadSprint: vi.fn().mockResolvedValue(undefined),
+      resetTimer: vi.fn(),
+      tickTimer: vi.fn(),
+      startTimer: vi.fn(),
+      stopTimer: vi.fn(),
+    },
+  };
+});
+
+vi.mock('./hooks/useSprintData.ts', () => ({
+  useSprintData: () => ({ state: mockState, actions: mockActions }),
+}));
+
+import SprintDashboardView from './SprintDashboardView.tsx';
+
+describe('SprintDashboardView', () => {
+  beforeEach(() => {
+    mockState.activeTab = 'overview';
+    mockState.sprintInfo = {
+      id: 7,
+      name: 'Sprint 7',
+      state: 'active',
+      startDate: '2025-01-01T00:00:00.000Z',
+      endDate: '2025-01-14T00:00:00.000Z',
+    };
+    mockState.loadError = null;
+    mockState.isLoadingSprint = false;
+    vi.clearAllMocks();
+  });
+
+  it('renders the 6 tab buttons', () => {
+    render(<SprintDashboardView />);
+
+    expect(screen.getByRole('tab', { name: 'Overview' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'By Assignee' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Blockers' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Defects' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Standup' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Settings' })).toBeInTheDocument();
+  });
+
+  it('shows the Settings tab with project key input', () => {
+    mockState.activeTab = 'settings';
+    render(<SprintDashboardView />);
+
+    expect(screen.getByLabelText(/project key/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /load sprint/i })).toBeInTheDocument();
+  });
+
+  it('renders Overview tab with sprint info when sprint is loaded', () => {
+    mockState.activeTab = 'overview';
+    render(<SprintDashboardView />);
+
+    expect(screen.getByText('Sprint 7')).toBeInTheDocument();
+  });
+
+  it('renders By Assignee swim lanes when issues are present', () => {
+    mockState.activeTab = 'assignee';
+    render(<SprintDashboardView />);
+
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+    expect(screen.getByText('Bob')).toBeInTheDocument();
+  });
+
+  it('renders the Blockers section when blockers are present', () => {
+    mockState.activeTab = 'blockers';
+    render(<SprintDashboardView />);
+
+    // The Blockers tab has a section heading "Blocked"
+    expect(screen.getByRole('heading', { name: 'Blocked' })).toBeInTheDocument();
+  });
+
+  it('renders the Standup timer display', () => {
+    mockState.activeTab = 'standup';
+    render(<SprintDashboardView />);
+
+    // Timer should display 15:00 (900 seconds)
+    expect(screen.getByText('15:00')).toBeInTheDocument();
+  });
+
+  it('renders the burn-down chart when on Overview tab', () => {
+    mockState.activeTab = 'overview';
+    render(<SprintDashboardView />);
+
+    expect(screen.getByTestId('responsive-container')).toBeInTheDocument();
+  });
+});
