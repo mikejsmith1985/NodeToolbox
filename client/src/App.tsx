@@ -12,8 +12,10 @@ import { useRelayBridge } from './hooks/useRelayBridge.ts';
 import { useSettingsStore } from './store/settingsStore.ts';
 import type { RelaySystem } from './types/relay.ts';
 import HomeView from './views/Home/HomeView.tsx';
+import MyIssuesView from './views/MyIssues/MyIssuesView.tsx';
 import SettingsView from './views/Settings/SettingsView.tsx';
 import SnowHubView from './views/SnowHub/SnowHubView.tsx';
+import SprintDashboardView from './views/SprintDashboard/SprintDashboardView.tsx';
 import styles from './App.module.css';
 
 const APP_TITLE = 'NodeToolbox';
@@ -26,9 +28,7 @@ const PLACEHOLDER_MESSAGE =
   'This view is being migrated. Use the legacy dashboard in the meantime.';
 const PLACEHOLDER_ROUTES = [
   { path: '/art', name: 'ART View' },
-  { path: '/my-issues', name: 'My Issues' },
   { path: '/dev-workspace', name: 'Dev Workspace' },
-  { path: '/sprint-dashboard', name: 'Sprint Dashboard' },
   { path: '/text-tools', name: 'Text Tools' },
   { path: '/dsu-board', name: 'DSU Board' },
   { path: '/reports-hub', name: 'Reports Hub' },
@@ -63,6 +63,8 @@ export default function App() {
           <Route path={HOME_ROUTE} element={<HomeView />} />
           <Route path={SETTINGS_ROUTE} element={<SettingsView />} />
           <Route path={SNOW_HUB_ROUTE} element={<SnowHubView />} />
+          <Route path="/my-issues" element={<MyIssuesView />} />
+          <Route path="/sprint-dashboard" element={<SprintDashboardView />} />
           {PLACEHOLDER_ROUTES.map((placeholderRoute) => (
             <Route
               key={placeholderRoute.path}

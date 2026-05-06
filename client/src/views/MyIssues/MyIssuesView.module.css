@@ -1,0 +1,404 @@
+/* MyIssuesView.module.css — Styles for the My Issues view. */
+
+.myIssuesView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  height: 100%;
+}
+
+.pageHeader {
+  margin-bottom: var(--spacing-sm);
+}
+
+.pageTitle {
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-xs);
+}
+
+/* ── Tab bar ── */
+
+.tabList {
+  display: flex;
+  gap: var(--spacing-xs);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--spacing-md);
+}
+
+.tabButton {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tabButton:hover {
+  color: var(--color-text-primary);
+}
+
+.activeTab {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+/* ── Persona strip ── */
+
+.personaStrip,
+.sourceStrip {
+  display: flex;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+}
+
+.pillButton {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.pillButton:hover {
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+}
+
+.activePill {
+  background: var(--color-accent);
+  color: var(--color-bg);
+  border-color: var(--color-accent);
+}
+
+/* ── Source pane ── */
+
+.sourcePane {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.jqlTextarea {
+  width: 100%;
+  min-height: 64px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+  padding: var(--spacing-sm);
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.sourceSelect {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+.panePrimaryButton {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-bg);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.historyRow {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+/* ── Toolbar ── */
+
+.toolbar {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toolbarButton {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.toolbarButton:hover {
+  border-color: var(--color-accent);
+}
+
+.activeViewButton {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.toolbarSelect {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+.countLabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin-left: auto;
+}
+
+/* ── Status zone chips ── */
+
+.statusZoneDashboard {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.statusChip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  min-width: 80px;
+  transition: border-color 0.15s;
+}
+
+.statusChip:hover {
+  border-color: var(--color-accent);
+}
+
+.activeChip {
+  border-color: var(--color-accent);
+  background: var(--color-surface-2);
+}
+
+.chipCount {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.chipLabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+/* ── Issue list area ── */
+
+.issueList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  overflow-y: auto;
+}
+
+/* ── Card view ── */
+
+.issueCard {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.cardHeader {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.issueKeyLink {
+  font-family: monospace;
+  font-size: var(--font-size-sm);
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.issueKeyLink:hover {
+  text-decoration: underline;
+}
+
+.statusBadge {
+  font-size: var(--font-size-sm);
+  padding: 2px var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+}
+
+.issueSummary {
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.cardMeta {
+  display: flex;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  flex-wrap: wrap;
+}
+
+.agingWarn {
+  color: var(--color-warning);
+}
+
+.agingStale {
+  color: var(--color-danger);
+}
+
+/* ── Compact view ── */
+
+.compactList {
+  display: flex;
+  flex-direction: column;
+}
+
+.compactRow {
+  display: grid;
+  grid-template-columns: 100px 1fr 120px 120px 100px;
+  gap: var(--spacing-sm);
+  align-items: center;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.compactRow:hover {
+  background: var(--color-surface-2);
+}
+
+/* ── Table view ── */
+
+.issueTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.issueTable th {
+  text-align: left;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
+.issueTable td {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.issueTable tr:hover td {
+  background: var(--color-surface-2);
+}
+
+/* ── Settings tab ── */
+
+.settingsPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  max-width: 400px;
+}
+
+.settingsSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.settingsSectionTitle {
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+  font-weight: 600;
+  margin: 0;
+}
+
+.radioGroup {
+  display: flex;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.radioLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+/* ── Error and spinner ── */
+
+.errorMessage {
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+.boardResultsList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.boardResultItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.boardResultItem:hover {
+  border-color: var(--color-accent);
+}
+
+.selectedBoard {
+  border-color: var(--color-accent);
+}
