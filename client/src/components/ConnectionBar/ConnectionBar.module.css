@@ -1,0 +1,29 @@
+/* ConnectionBar.module.css — Minimal styles for the compact global connection status bar. */
+
+.connectionBar {
+  display: flex;
+  gap: 16px;
+  padding: 4px 16px;
+  font-size: 12px;
+  background: var(--color-surface-2);
+}
+
+.indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.ready .dot {
+  background: #22c55e;
+}
+
+.notReady .dot {
+  background: #6b7280;
+}

@@ -1,0 +1,65 @@
+// useProxyStatus.test.ts — Unit tests for the proxy-status polling hook.
+
+import { renderHook, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { ProxyStatusResponse } from '../types/config.ts';
+import { useConnectionStore } from '../store/connectionStore.ts';
+import { fetchProxyStatus } from '../services/proxyApi.ts';
+import { useProxyStatus } from './useProxyStatus.ts';
+
+vi.mock('../services/proxyApi.ts', () => ({
+  fetchProxyStatus: vi.fn(),
+}));
+
+const MOCK_PROXY_STATUS: ProxyStatusResponse = {
+  version: '1.0.0',
+  jiraConfigured: true,
+  snowConfigured: false,
+  confluenceConfigured: true,
+  schedulerEnabled: true,
+};
+
+describe('useProxyStatus', () => {
+  beforeEach(() => {
+    useConnectionStore.setState(useConnectionStore.getInitialState());
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it('calls fetchProxyStatus on mount and writes the result to the store', async () => {
+    vi.mocked(fetchProxyStatus).mockResolvedValue(MOCK_PROXY_STATUS);
+
+    renderHook(() => useProxyStatus());
+
+    await waitFor(() => {
+      expect(fetchProxyStatus).toHaveBeenCalledTimes(1);
+      expect(useConnectionStore.getState().proxyStatus).toEqual(MOCK_PROXY_STATUS);
+    });
+  });
+
+  it('clears the polling interval on unmount', () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchProxyStatus).mockResolvedValue(MOCK_PROXY_STATUS);
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval');
+
+    const { unmount } = renderHook(() => useProxyStatus());
+    unmount();
+
+    expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not throw when fetchProxyStatus rejects', async () => {
+    vi.mocked(fetchProxyStatus).mockRejectedValue(new Error('offline'));
+
+    expect(() => renderHook(() => useProxyStatus())).not.toThrow();
+
+    await waitFor(() => {
+      expect(fetchProxyStatus).toHaveBeenCalledTimes(1);
+      expect(useConnectionStore.getState().proxyStatus).toBeNull();
+    });
+  });
+});

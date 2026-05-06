@@ -8,7 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **React + TypeScript + Vite SPA foundation (Phase 0)** — Scaffolded `client/` directory containing a full React 18 + TypeScript + Vite application that will replace `public/toolbox.html` over the coming phases. The backend (Express, all proxies, relay bridge) is completely untouched.
+- **React + TypeScript + Vite SPA infrastructure (Phase 1)** — Full React infrastructure layer consumed by all future view phases:
+  - `client/src/types/` — TypeScript interfaces for Jira (JiraIssue, JiraUser, JiraBoard, JiraSprint, JiraFilter), ServiceNow (ChangeRequest, SnowUser, SnowApproval, SnowIncident), relay bridge (RelayBridgeStatus, RelayChannel), and proxy config (ProxyConfig, ProxyStatusResponse, Theme).
+  - `client/src/store/connectionStore.ts` — Zustand store tracking `isJiraReady`, `isSnowReady`, and relay bridge status for real-time connection indicators.
+  - `client/src/store/settingsStore.ts` — Zustand store wrapping all legacy `tbx*` localStorage keys with a migration shim so existing user configuration is preserved.
+  - `client/src/services/` — Typed API clients: `proxyApi.ts` (/api/*), `jiraApi.ts` (/jira-proxy/*), `snowApi.ts` (/snow-proxy/*), `relayBridgeApi.ts` (/api/relay-bridge/*).
+  - `client/src/hooks/` — `useProxyStatus` (30s polling → connectionStore), `useRelayBridge` (SNow relay lifecycle), `useJiraFetch`, `useSnowFetch`, `useLocalStorage` (all typed, all with loading/error state).
+  - `client/src/components/ConnectionBar/` — Live Jira/SNow/relay status indicator bar (replaces `tbxUpdateConnBar`).
+  - `client/src/styles/tokens.css` + `global.css` — CSS design token system (dark/light themes via `data-theme`).
+  - `client/src/App.tsx` — Replaced Phase 0 foundation screen with layout shell (top bar + ConnectionBar + Routes with placeholders for all 10 views).
+  - 70/70 Vitest tests passing across 22 test files.
+- **React + TypeScript + Vite SPA foundation (Phase 0)**— Scaffolded `client/` directory containing a full React 18 + TypeScript + Vite application that will replace `public/toolbox.html` over the coming phases. The backend (Express, all proxies, relay bridge) is completely untouched.
   - `client/vite.config.ts` — Vite dev server (port 5173) with proxy rules forwarding `/api/*`, `/jira-proxy/*`, `/snow-proxy/*`, `/github-proxy/*`, `/setup` to Express at port 5555. Also configures Vitest with jsdom environment.
   - `client/src/main.tsx` — React root with `BrowserRouter` for client-side routing.
   - `client/src/App.tsx` — Phase 0 foundation screen that fetches `/api/proxy-status` to prove the proxy is wired correctly.

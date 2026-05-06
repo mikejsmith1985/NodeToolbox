@@ -1,87 +1,82 @@
-// App.test.tsx — Unit tests for the Phase 0 foundation App component.
-//
-// Verifies that the React root mounts without errors and that the proxy status
-// fetch is correctly wired to the Express backend. These tests grow in Phase 1+
-// as the full layout shell and routes are added.
+// App.test.tsx — Unit tests for the Phase 1 routed application shell.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { useProxyStatusMock, useRelayBridgeMock } = vi.hoisted(() => ({
+  useProxyStatusMock: vi.fn(),
+  useRelayBridgeMock: vi.fn(),
+}));
+
+vi.mock('./hooks/useProxyStatus.ts', () => ({
+  useProxyStatus: useProxyStatusMock,
+}));
+
+vi.mock('./hooks/useRelayBridge.ts', () => ({
+  useRelayBridge: useRelayBridgeMock,
+}));
+
 import App from './App.tsx';
 
-// ── Fetch mock ────────────────────────────────────────────────────────────────
-
+const DEFAULT_PATH = '/';
+const UNKNOWN_PATH = '/unknown';
 const MOCK_PROXY_STATUS_RESPONSE = {
-  version: '0.3.5',
+  version: '0.4.0',
   jiraConfigured: true,
-  snowConfigured: false,
+  snowConfigured: true,
+  confluenceConfigured: true,
+  schedulerEnabled: true,
 };
 
-beforeEach(() => {
-  // Replace global fetch so tests never hit the real network.
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-    ok: true,
-    json: async () => MOCK_PROXY_STATUS_RESPONSE,
-  }));
-});
+function renderApp(initialPath: string): void {
+  render(
+    <MemoryRouter initialEntries={[initialPath]}>
+      <App />
+    </MemoryRouter>,
+  );
+}
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
-describe('App — Phase 0 foundation', () => {
-  it('renders the foundation heading', async () => {
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
+describe('App shell', () => {
+  beforeEach(() => {
+    useProxyStatusMock.mockReset();
+    useRelayBridgeMock.mockReset();
+    useProxyStatusMock.mockImplementation(() => undefined);
+    useRelayBridgeMock.mockImplementation(() => undefined);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => MOCK_PROXY_STATUS_RESPONSE,
+      }),
     );
+  });
 
-    expect(screen.getByText(/NodeToolbox React SPA/i)).toBeInTheDocument();
+  it('renders without crashing and mounts the global polling hooks', () => {
+    renderApp(DEFAULT_PATH);
 
-    // Drain the async fetch so React state updates are flushed before cleanup
+    expect(screen.getByText('NodeToolbox')).toBeInTheDocument();
+    expect(useProxyStatusMock).toHaveBeenCalledTimes(1);
+    expect(useRelayBridgeMock).toHaveBeenCalledWith('snow');
+  });
+
+  it('renders the ConnectionBar in the header', () => {
+    renderApp(DEFAULT_PATH);
+
+    expect(screen.getByLabelText('Connection status')).toBeInTheDocument();
+  });
+
+  it('redirects unknown routes to the home placeholder view', async () => {
+    renderApp(UNKNOWN_PATH);
+
     await waitFor(() => {
-      expect(screen.queryByText(/Connecting to/i)).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Home' })).toBeInTheDocument();
     });
   });
 
-  it('calls /api/proxy-status on mount', async () => {
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    );
+  it('shows the NodeToolbox title in the header', () => {
+    renderApp(DEFAULT_PATH);
 
-    expect(vi.mocked(fetch)).toHaveBeenCalledWith('/api/proxy-status');
-
-    // Drain the async fetch so React state updates are flushed before cleanup
-    await waitFor(() => {
-      expect(screen.queryByText(/Connecting to/i)).not.toBeInTheDocument();
-    });
-  });
-
-  it('displays the backend version once the fetch resolves', async () => {
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    );
-
-    // Wait for the async fetch to resolve and the component to re-render
-    await waitFor(() => {
-      expect(screen.getByText(/v0\.3\.5/)).toBeInTheDocument();
-    });
-  });
-
-  it('shows an error message when the backend is unreachable', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
-
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText(/Could not reach backend/i)).toBeInTheDocument();
-    });
+    expect(screen.getByText('NodeToolbox')).toBeInTheDocument();
   });
 });

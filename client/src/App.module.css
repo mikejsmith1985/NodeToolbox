@@ -1,0 +1,38 @@
+/* App.module.css — Layout styles for the Phase 1 React application shell. */
+
+.appShell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: var(--color-surface-1);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.appTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.mainContent {
+  flex: 1;
+  overflow: auto;
+}
+
+.placeholderView {
+  padding: 32px;
+  color: var(--color-text-primary);
+}
+
+.placeholderMessage {
+  color: var(--color-text-secondary);
+}
