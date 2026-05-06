@@ -11,6 +11,7 @@ const DEFAULT_SNOW_HUB_TAB = 'crg';
 const DEFAULT_TEXT_TOOLS_TAB = 'case';
 const EMPTY_STRING = '';
 const EMPTY_STRING_LIST: string[] = [];
+const MAX_RECENT_VIEW_COUNT = 5;
 
 const THEME_STORAGE_KEY = 'tbx-theme';
 const HOME_PERSONA_STORAGE_KEY = 'tbxHomePersona';
@@ -54,6 +55,7 @@ interface SettingsState {
   setMyIssuesBoardId: (boardId: string) => void;
   setMyIssuesJqlHistory: (jqlHistory: string[]) => void;
   setRecentViews: (recentViews: string[]) => void;
+  addRecentView: (viewId: string) => void;
 }
 
 function canUseLocalStorage(): boolean {
@@ -98,6 +100,13 @@ function readStoredStringArray(storageKey: string): string[] {
 function readStoredTheme(): Theme {
   const storedTheme = readStoredString(THEME_STORAGE_KEY, DARK_THEME);
   return storedTheme === LIGHT_THEME ? LIGHT_THEME : DARK_THEME;
+}
+
+function buildRecentViews(viewId: string, currentRecentViews: string[]): string[] {
+  const deduplicatedRecentViews = currentRecentViews.filter(
+    (recentViewId) => recentViewId !== viewId,
+  );
+  return [viewId, ...deduplicatedRecentViews].slice(0, MAX_RECENT_VIEW_COUNT);
 }
 
 function writeStoredString(storageKey: string, value: string): void {
@@ -203,4 +212,10 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
     writeStoredStringArray(RECENT_VIEWS_STORAGE_KEY, recentViews);
     setState({ recentViews });
   },
+  addRecentView: (viewId) =>
+    setState((currentState) => {
+      const recentViews = buildRecentViews(viewId, currentState.recentViews);
+      writeStoredStringArray(RECENT_VIEWS_STORAGE_KEY, recentViews);
+      return { recentViews };
+    }),
 }));

@@ -3,22 +3,27 @@
 // This component owns the global layout, mounts the shared polling hooks, and
 // routes placeholder views until later migration phases replace them.
 
+import { useEffect } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { ConnectionBar } from './components/ConnectionBar/index.ts';
 import { useProxyStatus } from './hooks/useProxyStatus.ts';
 import { useRelayBridge } from './hooks/useRelayBridge.ts';
+import { useSettingsStore } from './store/settingsStore.ts';
 import type { RelaySystem } from './types/relay.ts';
+import HomeView from './views/Home/HomeView.tsx';
+import SettingsView from './views/Settings/SettingsView.tsx';
 import styles from './App.module.css';
 
 const APP_TITLE = 'NodeToolbox';
-const DEFAULT_ROUTE = '/';
+const HOME_ROUTE = '/';
+const SETTINGS_ROUTE = '/settings';
+const DEFAULT_ROUTE = HOME_ROUTE;
 const RELAY_SYSTEM: RelaySystem = 'snow';
 const PLACEHOLDER_MESSAGE =
   'This view is being migrated. Use the legacy dashboard in the meantime.';
 const PLACEHOLDER_ROUTES = [
-  { path: '/', name: 'Home' },
-  { path: '/settings', name: 'Settings' },
+  { path: '/art', name: 'ART View' },
   { path: '/my-issues', name: 'My Issues' },
   { path: '/snow-hub', name: 'SNow Hub' },
   { path: '/dev-workspace', name: 'Dev Workspace' },
@@ -27,16 +32,23 @@ const PLACEHOLDER_ROUTES = [
   { path: '/dsu-board', name: 'DSU Board' },
   { path: '/reports-hub', name: 'Reports Hub' },
   { path: '/admin-hub', name: 'Admin Hub' },
+  { path: '/code-walkthrough', name: 'Code Walkthrough' },
 ] as const;
 
 interface PlaceholderViewProps {
   name: string;
 }
 
-/** Root layout shell for the Phase 1 React migration. */
+/** Root layout shell for the React migration, including live status hooks and route selection. */
 export default function App() {
   useProxyStatus();
   useRelayBridge(RELAY_SYSTEM);
+
+  const theme = useSettingsStore((state) => state.theme);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
 
   return (
     <div className={styles.appShell}>
@@ -47,6 +59,8 @@ export default function App() {
 
       <main className={styles.mainContent}>
         <Routes>
+          <Route path={HOME_ROUTE} element={<HomeView />} />
+          <Route path={SETTINGS_ROUTE} element={<SettingsView />} />
           {PLACEHOLDER_ROUTES.map((placeholderRoute) => (
             <Route
               key={placeholderRoute.path}

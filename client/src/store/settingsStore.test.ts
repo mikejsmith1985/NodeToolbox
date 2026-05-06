@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const THEME_STORAGE_KEY = 'tbx-theme';
 const HOME_PERSONA_STORAGE_KEY = 'tbxHomePersona';
 const CARD_ORDER_STORAGE_KEY = 'tbxCardOrder';
+const RECENT_VIEWS_STORAGE_KEY = 'tbxRecentViews';
 
 async function loadSettingsStoreModule() {
   vi.resetModules();
@@ -50,5 +51,27 @@ describe('useSettingsStore', () => {
 
     expect(useSettingsStore.getState().theme).toBe('light');
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
+  });
+
+  it('adds a recent view, keeps it unique, and limits the list to five items', async () => {
+    const { useSettingsStore } = await loadSettingsStoreModule();
+
+    useSettingsStore.setState({
+      recentViews: ['reports-hub', 'snow-hub', 'text-tools', 'admin-hub', 'code-walkthrough'],
+    });
+
+    useSettingsStore.getState().addRecentView('snow-hub');
+    useSettingsStore.getState().addRecentView('dev-workspace');
+
+    expect(useSettingsStore.getState().recentViews).toEqual([
+      'dev-workspace',
+      'snow-hub',
+      'reports-hub',
+      'text-tools',
+      'admin-hub',
+    ]);
+    expect(window.localStorage.getItem(RECENT_VIEWS_STORAGE_KEY)).toBe(
+      JSON.stringify(['dev-workspace', 'snow-hub', 'reports-hub', 'text-tools', 'admin-hub']),
+    );
   });
 });
