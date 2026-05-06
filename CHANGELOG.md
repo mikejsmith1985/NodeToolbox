@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Phase 7 — React SPA cutover: `public/toolbox.html` (49,000-line legacy monolith) permanently retired. `server.js` now unconditionally serves the React SPA from `client/dist/`. Five Playwright E2E smoke tests added (`test/e2e/react-spa.spec.js`). `scripts/local-release.ps1` updated to build the React client and bundle `client/dist/**` into the distributable exe and zip.
+
+### Removed
+- `public/toolbox.html` — replaced by the React SPA (`client/src/`)
+- `src/utils/staticFileServer.js` — legacy HTML file server utility, no longer needed
+- `scripts/generate-dashboard-module.js` — generated the pkg exe HTML snapshot module, replaced by React build step
+- `test/unit/toolboxHtml.test.js`, `test/unit/staticFileServer.test.js`, `test/unit/generate-dashboard-module.test.js`, `test/unit/pkg-snapshot.test.js` — tests for deleted legacy code
+
+### Added
 - Phase 6 — Text Tools (6-tab text utility: Markdown converter, Plain Text, Structured JSON, JSON Formatter, Case Converter, URL & Base64 encoder/decoder), Reports Hub (3-tab PI reporting dashboard: Features, Defects, Risks across ART teams with hero KPI grid), Admin Hub (proxy URL config, PI field mappings, feature flags, PIN-protected developer tools) — 264 Vitest tests passing across 52 test files, `npm run build` succeeds.
 
 ### Added

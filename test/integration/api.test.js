@@ -203,21 +203,6 @@ describe('GET /api/diagnostic', () => {
     expect(response.status).toBe(200);
   });
 
-  it('reports whether the dashboard HTML is cached (cachedHtmlLoaded)', async () => {
-    const response = await request(buildTestApp(configuration))
-      .get('/api/diagnostic');
-    // Field must exist and be a boolean — the exact value depends on environment
-    expect(typeof response.body.cachedHtmlLoaded).toBe('boolean');
-  });
-
-  it('reports which code path loaded the HTML (htmlLoadMethod)', async () => {
-    const response = await request(buildTestApp(configuration))
-      .get('/api/diagnostic');
-    // Allowed values: 'require', 'readFileSync', or null (not loaded)
-    const { htmlLoadMethod } = response.body;
-    expect(['require', 'readFileSync', null]).toContain(htmlLoadMethod);
-  });
-
   it('reports whether running inside a pkg snapshot (pkgSnapshot)', async () => {
     const response = await request(buildTestApp(configuration))
       .get('/api/diagnostic');

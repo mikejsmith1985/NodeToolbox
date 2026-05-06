@@ -10,7 +10,7 @@ const crypto     = require('crypto');
 const express    = require('express');
 const { saveConfigToDisk, isServiceConfigured, isServiceBaseUrlSet } = require('../config/loader');
 const snowSession = require('../services/snowSession');
-const { cachedDashboardHtml, cachedHtmlLoadMethod } = require('../utils/staticFileServer');
+
 const { prepareUpdate, spawnReplacementAndExit }   = require('../utils/updater');
 const relayBridge = require('./relayBridge');
 
@@ -213,10 +213,6 @@ function createApiRouter(configuration) {
 
   router.get('/api/diagnostic', (req, res) => {
     res.json({
-      // Whether toolbox.html was successfully pre-loaded at startup
-      cachedHtmlLoaded:  cachedDashboardHtml !== null,
-      // Which code path loaded it: 'require' (snapshot), 'readFileSync' (disk), or null
-      htmlLoadMethod:    cachedHtmlLoadMethod,
       // True when running inside a pkg-compiled .exe (vs node server.js)
       pkgSnapshot:       !!process.pkg,
       // Node.js runtime version — helps diagnose compatibility issues
