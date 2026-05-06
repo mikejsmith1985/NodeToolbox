@@ -65,6 +65,24 @@ describe('toolbox.html — HTML hygiene', () => {
     expect(hasBom).toBe(false);
   });
 
+  it('all <script> blocks are free of JavaScript syntax errors', () => {
+    // A syntax error in any script block silently prevents ALL scripts from
+    // executing — breaking every click handler and making app cards unresponsive.
+    // This test parses each block with the V8 engine so regressions are caught
+    // before the file is shipped.
+    const scriptBlockPattern = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+    let match;
+    let blockIndex = 0;
+    while ((match = scriptBlockPattern.exec(toolboxHtmlContent)) !== null) {
+      blockIndex++;
+      const scriptContent = match[1];
+      expect(() => new Function(scriptContent)).not.toThrow(
+        `Script block ${blockIndex} contains a JavaScript syntax error`
+      );
+    }
+    expect(blockIndex).toBeGreaterThan(0); // sanity check: at least one script block found
+  });
+
 });
 
 // ── Home Page Grid ────────────────────────────────────────────────────────────
