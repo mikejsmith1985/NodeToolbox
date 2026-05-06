@@ -7,6 +7,7 @@
 'use strict';
 
 const path        = require('path');
+const fs          = require('fs');
 const express     = require('express');
 const compression = require('compression');
 
@@ -88,8 +89,32 @@ app.get('/', (req, res, next) => {
   next();
 });
 
-// Static dashboard: GET / → serves public/toolbox.html
-app.use(serveStaticFile());
+// ── Static File Serving ───────────────────────────────────────────────────────
+//
+// Priority order:
+//   1. If client/dist/ has been built (npm run build:client), serve the
+//      React SPA — all non-API paths return index.html so React Router
+//      handles client-side navigation.
+//   2. Otherwise fall back to the legacy public/toolbox.html until Phase 7
+//      cutover when the React build becomes the permanent UI.
+
+const clientDistIndexPath = path.join(__dirname, 'client', 'dist', 'index.html');
+const isReactBuildPresent = fs.existsSync(clientDistIndexPath);
+
+if (isReactBuildPresent) {
+  // Serve compiled React assets (JS chunks, CSS, icons, etc.)
+  app.use(express.static(path.join(__dirname, 'client', 'dist')));
+
+  // SPA fallback — send index.html for any path React Router should handle.
+  // The API and proxy routes registered above will match before this catch-all,
+  // so backend endpoints are never accidentally swallowed by the React app.
+  app.get('*', (_req, res) => {
+    res.sendFile(clientDistIndexPath);
+  });
+} else {
+  // Legacy dashboard — serves public/toolbox.html until React cutover.
+  app.use(serveStaticFile());
+}
 
 // ── Start Server ──────────────────────────────────────────────────────────────
 
