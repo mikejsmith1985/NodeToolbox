@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `Launch Toolbox.bat`: removed unescaped parentheses from `echo` lines inside nested `if` blocks — cmd.exe's block parser was counting them as block delimiters, causing the BAT to exit with code 255 before reaching `node server.js`. The three affected lines were in the `if not exist "node_modules"` error-handling block.
+- `scripts/local-release.ps1`: React client build now runs before ZIP creation (was running after, so `client/dist/` was absent from the archive). `client\dist\` is now staged as `client/dist/` in the ZIP (was being flattened to `dist/`), matching the path `server.js` expects.
+- `Launch Toolbox.bat`: added auto-build step for React UI — if `client/dist/index.html` is missing but `client/package.json` exists (git-clone install), the launcher runs `npm install && npm run build` automatically before starting the server.
+- `test/integration/bat-launch.test.js`: replaced blocking `spawnSync` (60 s timeout) with async `spawn` so the server process stays alive while the test polls for readiness.
+- `test/integration/exe-real-world-flow.test.js`: removed legacy `public/toolbox.html` backup/restore logic; updated assertions for React SPA behaviour (503 "NodeToolbox — Build Required" instead of HTML file-not-found).
+
 ### Added
 - Phase 7 — React SPA cutover: `public/toolbox.html` (49,000-line legacy monolith) permanently retired. `server.js` now unconditionally serves the React SPA from `client/dist/`. Five Playwright E2E smoke tests added (`test/e2e/react-spa.spec.js`). `scripts/local-release.ps1` updated to build the React client and bundle `client/dist/**` into the distributable exe and zip.
 

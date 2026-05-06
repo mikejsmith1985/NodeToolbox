@@ -1,24 +1,21 @@
 // test/integration/exe-real-world-flow.test.js — End-to-end test that
 // simulates the EXACT experience of a user who has never seen the project.
 //
-// The test copies the .exe to a clean temp directory (no public/ folder,
-// no node_modules, no source tree) and temporarily renames public/toolbox.html
-// on the build machine to ensure the exe cannot fall back to reading from the
-// build machine's real disk. This confirms that toolbox.html is genuinely
-// served from the pkg snapshot (the JS module embedded at build time) and NOT
-// from the filesystem, which would be unavailable on any machine other than the
-// one that built the exe.
+// The test copies the .exe to a clean temp directory (no source tree, no
+// node_modules, no client/dist) and verifies the exe self-contains the React
+// SPA via its pkg snapshot. This confirms that client/dist/**/* was correctly
+// bundled at build time (via the "assets" array in package.json) so the app
+// works for users who only have the .exe file.
 //
 // Flow exercised:
 //   1. Start exe from isolated temp directory
 //   2. Server responds on port 5555
 //   3. GET / → 302 redirect to /setup (no config present yet)
 //   4. POST /api/setup with minimal Jira credentials
-//   5. GET / → 200 with the dashboard HTML from the snapshot
+//   5. GET / → 200 with the React SPA HTML from the pkg snapshot
 //
-// Before the fix (v0.0.10): Step 5 returns 404 "File Not Found" because
-// readFileSync falls through to the real disk path which doesn't exist.
-// After the fix: Step 5 returns 200 because the HTML is bundled as a JS module.
+// If no .exe exists in dist/ (e.g. CI without a pre-built binary), the suite
+// skips gracefully — only one placeholder test runs.
 
 'use strict';
 
@@ -29,8 +26,8 @@ const { spawnSync } = require('child_process');
 
 const PROJECT_ROOT      = path.join(__dirname, '..', '..');
 const DIST_DIR          = path.join(PROJECT_ROOT, 'dist');
-const PUBLIC_HTML_PATH  = path.join(PROJECT_ROOT, 'public', 'toolbox.html');
-const BACKUP_HTML_PATH  = PUBLIC_HTML_PATH + '.bak';
+// The legacy public/toolbox.html no longer exists — the app now serves the
+// React SPA from client/dist/ which is bundled into the exe via pkg assets.
 const TEMP_EXE_DIR      = path.join(require('os').tmpdir(), 'nodetoolbox-test-' + Date.now());
 
 // Config path matches loader.js: %APPDATA%\NodeToolbox\toolbox-proxy.json
@@ -155,7 +152,7 @@ function getPage(urlPath) {
 
 // ── Test Suite ────────────────────────────────────────────────────────────────
 
-describe('exe real-world flow — dashboard served from pkg snapshot (not real disk)', () => {
+describe('exe real-world flow — React SPA served from pkg snapshot (not real disk)', () => {
   let exeProcess = null;
 
   beforeAll(async () => {
@@ -165,7 +162,7 @@ describe('exe real-world flow — dashboard served from pkg snapshot (not real d
       return;
     }
 
-    // Create an isolated temp directory with ONLY the exe — no source tree, no public/.
+    // Create an isolated temp directory with ONLY the exe — no source tree, no client/dist/.
     fs.mkdirSync(TEMP_EXE_DIR, { recursive: true });
     const tempExePath = path.join(TEMP_EXE_DIR, path.basename(exePath));
     fs.copyFileSync(exePath, tempExePath);
@@ -176,13 +173,6 @@ describe('exe real-world flow — dashboard served from pkg snapshot (not real d
     if (fs.existsSync(CONFIG_FILE_PATH)) {
       fs.copyFileSync(CONFIG_FILE_PATH, BACKUP_CONFIG_PATH);
       fs.unlinkSync(CONFIG_FILE_PATH);
-    }
-
-    // Rename public/toolbox.html on the build machine so the exe cannot fall
-    // back to reading from the real disk (which would give a false pass on the
-    // build machine where the path C:\...\public\toolbox.html exists).
-    if (fs.existsSync(PUBLIC_HTML_PATH)) {
-      fs.renameSync(PUBLIC_HTML_PATH, BACKUP_HTML_PATH);
     }
 
     // Start the exe from the isolated temp directory.
@@ -208,10 +198,6 @@ describe('exe real-world flow — dashboard served from pkg snapshot (not real d
     if (fs.existsSync(BACKUP_CONFIG_PATH)) {
       try { fs.copyFileSync(BACKUP_CONFIG_PATH, CONFIG_FILE_PATH); } catch (_e) { /* best effort */ }
       try { fs.unlinkSync(BACKUP_CONFIG_PATH); } catch (_e) { /* best effort */ }
-    }
-    // Always restore the renamed HTML file, even if a test failed.
-    if (fs.existsSync(BACKUP_HTML_PATH)) {
-      fs.renameSync(BACKUP_HTML_PATH, PUBLIC_HTML_PATH);
     }
     // Clean up the temp directory.
     try { fs.rmSync(TEMP_EXE_DIR, { recursive: true, force: true }); } catch (_e) { /* best effort */ }
@@ -244,21 +230,23 @@ describe('exe real-world flow — dashboard served from pkg snapshot (not real d
     expect(setupResult.location).toBe('/');
   });
 
-  it('GET / after setup returns 200 with the dashboard HTML from the pkg snapshot', async () => {
+  it('GET / after setup returns 200 with the React SPA HTML from the pkg snapshot', async () => {
     if (!exeProcess) return;
     const dashboardResponse = await getPage('/');
-    // This is the critical assertion. Before the fix: 404 "File Not Found".
-    // After the fix: 200 with the full toolbox.html dashboard.
+    // This is the critical assertion: client/dist/**/* must be bundled in the exe
+    // via the pkg "assets" array in package.json. Without bundling, the server
+    // returns 503 "React build not found" instead of 200.
     expect(dashboardResponse.status).toBe(200);
     expect(dashboardResponse.contentType).toMatch(/text\/html/i);
     expect(dashboardResponse.body).toMatch(/<!DOCTYPE html>/i);
   });
 
-  it('dashboard does NOT show the "toolbox.html not found" error page', async () => {
+  it('dashboard does NOT show the "React build not found" error page', async () => {
     if (!exeProcess) return;
     const dashboardResponse = await getPage('/');
-    // The exact error page string from buildHtmlNotFoundPage() must NOT appear.
-    expect(dashboardResponse.body).not.toContain('toolbox.html not found');
-    expect(dashboardResponse.body).not.toContain('NodeToolbox — File Not Found');
+    // The 503 error page from buildClientNotBuiltPage() must NOT appear.
+    // Its presence would mean client/dist/ was not bundled into the exe snapshot.
+    expect(dashboardResponse.body).not.toContain('React build not found');
+    expect(dashboardResponse.body).not.toContain('NodeToolbox — Build Required');
   });
 });
