@@ -102,7 +102,6 @@ $IncludedPaths = @(
     (Join-Path $RepoRoot 'package-lock.json'),
     (Join-Path $RepoRoot 'README.md'),
     (Join-Path $RepoRoot '.env.example'),
-    (Join-Path $RepoRoot 'client\dist'),
     (Join-Path $RepoRoot 'src'),
     (Join-Path $RepoRoot 'scripts'),
     $BatchLauncherPath,
@@ -120,8 +119,8 @@ if ($DryRun) {
         Write-Host "  1b. npm version $BumpType    - bump version in package.json + package-lock.json"
     }
     Write-Host "  2. mkdir dist\           - create output directory"
-    Write-Host "  3. Compress-Archive      - bundle slim zip into $ZipOutputPath"
-    Write-Host "  4. npm run build:client  - compile React SPA into client/dist/"
+    Write-Host "  3. npm run build:client  - compile React SPA into client/dist/"
+    Write-Host "  4. Compress-Archive      - bundle slim zip into $ZipOutputPath"
     Write-Host "  5. pkg                   - build single-file exe at $ExeOutputPath"
     Write-Host "  5b. Compress-Archive     - wrap exe into $ExeZipOutputPath (browser-safe download)"
     Write-Host "  6. gh release create     - publish GitHub Release $GitTag with zip and exe-zip"
@@ -170,8 +169,21 @@ if (Test-Path $DistDir) {
 New-Item -ItemType Directory -Path $DistDir | Out-Null
 Write-Host "       ✅ dist\ ready"
 
-# Step 3: Build the slim zip — collect paths that actually exist
-Write-Host "  [3/6] Building zip: $ZipFileName..."
+# Step 3: Build the React SPA — must run before ZIP creation so client/dist/ exists.
+# The compiled output is bundled into both the zip (as client/dist/) and the exe
+# snapshot (via the "assets" array in package.json).
+Write-Host "  [3/6] Building React client..."
+Push-Location (Join-Path $RepoRoot 'client')
+try {
+    npm run build
+    if ($LASTEXITCODE -ne 0) { throw "React client build failed with exit code $LASTEXITCODE" }
+} finally {
+    Pop-Location
+}
+Write-Host "       ✅ React client built (client/dist/)"
+
+# Step 4: Build the slim zip — collect paths that actually exist
+Write-Host "  [4/6] Building zip: $ZipFileName..."
 
 # @() ensures these are always arrays even when Where-Object returns $null (strict mode safe)
 [array]$pathsToBundle = @($IncludedPaths | Where-Object { Test-Path $_ })
@@ -197,6 +209,15 @@ foreach ($sourcePath in $pathsToBundle) {
     }
 }
 
+# Copy the React build into client/dist/ preserving the directory hierarchy so
+# server.js finds it at path.join(__dirname, 'client', 'dist', 'index.html').
+# The staging loop above uses Split-Path -Leaf which would flatten client/dist
+# into a top-level dist/ — this dedicated step avoids that flattening.
+$clientDistSource  = Join-Path $RepoRoot 'client\dist'
+$clientDirInStaging = Join-Path $StagingDir 'client'
+New-Item -ItemType Directory -Path $clientDirInStaging -Force | Out-Null
+Copy-Item $clientDistSource (Join-Path $clientDirInStaging 'dist') -Recurse -Force
+
 Compress-Archive -Path (Join-Path $StagingDir '*') -DestinationPath $ZipOutputPath -Force
 
 # Clean up staging dir — only the final artifacts should remain in dist/
@@ -204,19 +225,6 @@ Remove-Item $StagingDir -Recurse -Force
 
 $zipSizeKb = [math]::Round((Get-Item $ZipOutputPath).Length / 1KB)
 Write-Host "       ✅ $ZipOutputPath ($zipSizeKb KB)"
-
-# Step 4: Build the React SPA before the pkg build.
-# The compiled output (client/dist/**) is bundled into the exe snapshot via the
-# "assets" array in package.json so the React app is available on every machine.
-Write-Host "  [4/6] Building React client..."
-Push-Location (Join-Path $RepoRoot 'client')
-try {
-    npm run build
-    if ($LASTEXITCODE -ne 0) { throw "React client build failed with exit code $LASTEXITCODE" }
-} finally {
-    Pop-Location
-}
-Write-Host "       ✅ React client built (client/dist/)"
 
 # Step 5: Build the single-file Windows exe using @yao-pkg/pkg.
 # Bundles the Node.js runtime + all app code + public assets into one .exe.

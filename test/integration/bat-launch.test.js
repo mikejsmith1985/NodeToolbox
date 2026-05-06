@@ -1,10 +1,14 @@
 // test/integration/bat-launch.test.js — Functional validation that Launch Toolbox.bat
-// actually starts the server and keeps it alive after the launcher exits.
+// actually starts the server and serves HTTP API requests correctly.
 //
-// This test executes the real bat file via cmd.exe (exactly as a user double-clicking
-// it would), then verifies the server responds on port 5555 AFTER the bat process has
-// exited. That "after the bat exits" check is specifically what catches the /b-flag
-// bug from v0.0.6 — with /b the server dies when the launcher window closes.
+// This test executes the real bat file via cmd.exe in the background (exactly as a
+// user double-clicking it would), then verifies the server responds on port 5555
+// while the bat process is running.
+//
+// The current bat design runs "node server.js" directly in the same cmd window
+// (no "start" detachment). The bat process blocks while the server is alive —
+// that is intentional, keeping errors visible in the console. The unit test
+// bat-launcher.test.js validates the structural absence of /b and start flags.
 //
 // No Jira, GitHub, or ServiceNow credentials are required. Cleanup uses
 // `taskkill /F /PID` (a native Windows cmd built-in) to avoid PowerShell
@@ -14,7 +18,7 @@
 
 const http              = require('http');
 const path              = require('path');
-const { spawnSync,
+const { spawn,
         execFileSync,
         execSync }      = require('child_process');
 
@@ -128,6 +132,11 @@ function httpGet(urlPath) {
 
 // ── Suite setup / teardown ────────────────────────────────────────────────────
 
+// ── Suite setup / teardown ────────────────────────────────────────────────────
+
+/** Reference to the cmd.exe child process that is running the bat file. */
+let batChildProcess = null;
+
 beforeAll(async () => {
   // Kill anything already holding port 5555 so we start clean
   const staleServerPid = findPidOnPort(SERVER_PORT);
@@ -136,34 +145,36 @@ beforeAll(async () => {
     await new Promise((resolve) => setTimeout(resolve, 800));
   }
 
-  // Execute Launch Toolbox.bat through cmd.exe — identical to a user double-clicking.
-  // spawnSync blocks until cmd.exe (the bat process) exits.
-  // The bat's `start "NodeToolbox Server" node server.js --open` spawns node in a
-  // NEW window that is NOT a child of this cmd.exe — it outlives the bat process.
-  // That is exactly the behaviour we are testing.
-  spawnSync('cmd.exe', ['/c', BAT_FILE_PATH], {
-    cwd:      REPO_ROOT,
-    encoding: 'utf8',
-    timeout:  60_000,   // npm ci can take up to 60s on first run
+  // Launch the bat file through cmd.exe in the background (spawn, not spawnSync)
+  // so the test runner is not blocked while node server.js is running.
+  // The bat runs "node server.js" directly — it stays running while the server
+  // is alive, which is the intended design (errors stay visible in the console).
+  batChildProcess = spawn('cmd.exe', ['/c', BAT_FILE_PATH], {
+    cwd:   REPO_ROOT,
+    stdio: 'ignore',
   });
 
-  // The bat has now exited. If the /b bug were present the server would be dead.
-  // Wait for the server that the bat spawned to become reachable.
+  // Wait until the server accepts connections — node starts within a few seconds.
   await waitForServerReady();
-}, SERVER_READY_MS + 65_000);
+}, SERVER_READY_MS + 10_000);
 
 afterAll(() => {
-  // Shut down the server the bat started using taskkill — no PowerShell needed
+  // Shut down the server by PID (found via netstat — no PowerShell needed)
   const serverPid = findPidOnPort(SERVER_PORT);
   forceKillPid(serverPid);
+
+  // Also terminate the bat/cmd process in case it is still waiting
+  if (batChildProcess && !batChildProcess.killed) {
+    try { batChildProcess.kill(); } catch { /* already gone */ }
+  }
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('Launch Toolbox.bat — real execution validation', () => {
-  it('server is alive on port 5555 AFTER the bat process has exited', async () => {
-    // The critical assertion: the server must outlive the launcher.
-    // With the old `start /b` bug the server died when cmd.exe closed.
+  it('server is alive and listening on port 5555', async () => {
+    // The server must be running when we check — confirms the bat file
+    // successfully launched node server.js and the server bound its port.
     const serverPid = findPidOnPort(SERVER_PORT);
     expect(serverPid).not.toBeNull();
     expect(serverPid).toBeGreaterThan(0);

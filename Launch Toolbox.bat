@@ -20,15 +20,15 @@ cd /d "%~dp0"
 :: "npm ci" uses package-lock.json for a fast, reproducible install.
 if not exist "node_modules" (
     echo.
-    echo  Installing dependencies (first run only -- this takes about 30 seconds)...
+    echo  Installing dependencies, first run only -- takes about 30 seconds...
     echo  If this hangs, check that npm can reach your registry.
     echo.
     npm ci --omit=dev
     if errorlevel 1 (
         echo.
         echo  ERROR: Dependency install failed. Common causes:
-        echo    - Node.js is not installed (get it at https://nodejs.org)
-        echo    - npm cannot reach the package registry (check corporate proxy / VPN)
+        echo    - Node.js is not installed, get it at https://nodejs.org
+        echo    - npm cannot reach the package registry, check corporate proxy / VPN
         echo    - Run "npm config set registry https://registry.npmjs.org" and retry
         echo.
         pause
@@ -36,6 +36,38 @@ if not exist "node_modules" (
     )
     echo  Done.
     echo.
+)
+
+:: Check that the React UI has been built. In ZIP distributions the build is
+:: included automatically. In git-clone installations the developer must run
+:: "npm run build:client" once before launching. If the source is present we
+:: attempt the build automatically; if not we show a clear error.
+if not exist "client\dist\index.html" (
+    if exist "client\package.json" (
+        echo.
+        echo  Building React UI - first run from source, takes about 60 seconds...
+        echo.
+        cd client
+        npm install
+        npm run build
+        if errorlevel 1 (
+            echo.
+            echo  ERROR: React build failed. Check the output above for details.
+            echo.
+            pause
+            exit /b 1
+        )
+        cd ..
+        echo  Done.
+        echo.
+    ) else (
+        echo.
+        echo  ERROR: React UI not found - client\dist\index.html is missing.
+        echo  This installation may be corrupted. Re-download NodeToolbox and try again.
+        echo.
+        pause
+        exit /b 1
+    )
 )
 
 :: Run the server directly in this window so errors are visible.
