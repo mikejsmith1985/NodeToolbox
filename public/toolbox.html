@@ -5338,6 +5338,8 @@ function tbxProbeRelay(sys) {
           CRG.relay[readyKey] = true;
           tbxShowRelayStatus(sys, 'connected');
           tbxUpdateConnBar();
+          // Auto-retry any SNow view that previously failed to load (e.g. was blocked on proxy 401).
+          if (sys === 'snow') tbxOnSnowRelayConnect();
         } else if (!json.active && CRG.relay[readyKey]) {
           // Bookmarklet navigated away without sending the deregister beacon
           CRG.relay[readyKey] = false;
@@ -5444,6 +5446,24 @@ function tbxOnRelayReconnect() {
     var warn = document.getElementById('mi-relay-warn');
     if (warn) warn.innerHTML = '<div style="padding:8px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:12px;color:#1e40af;display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
       '<span>🔌 Jira relay reconnected.</span><button class="cr-btn cr-btn-primary cr-btn-sm" style="font-size:11px;" onclick="miLoadIssues();this.closest(\'div\').parentElement.innerHTML=\'\';">↻ Refresh Issues</button></div>';
+  }
+}
+
+/**
+ * Called when the SNow relay bridge transitions from inactive → active.
+ * If the user is currently on the RM (Release Management) view and
+ * rmLoadMyCHGs has never successfully completed (RM._lastLoaded is null,
+ * which happens after a proxy 401 or on first open before relay was ready),
+ * auto-triggers a reload so the user doesn't have to manually click "Load".
+ * Leaves existing loaded data alone to avoid overwriting something the user
+ * is actively reading.
+ */
+function tbxOnSnowRelayConnect() {
+  var activeView = document.querySelector('.view.active');
+  if (!activeView) return;
+  var viewId = activeView.id.replace('view-', '');
+  if (viewId === 'rm' && typeof RM !== 'undefined' && !RM._lastLoaded) {
+    rmLoadMyCHGs();
   }
 }
 
