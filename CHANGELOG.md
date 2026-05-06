@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **React + TypeScript + Vite SPA foundation (Phase 0)** — Scaffolded `client/` directory containing a full React 18 + TypeScript + Vite application that will replace `public/toolbox.html` over the coming phases. The backend (Express, all proxies, relay bridge) is completely untouched.
+  - `client/vite.config.ts` — Vite dev server (port 5173) with proxy rules forwarding `/api/*`, `/jira-proxy/*`, `/snow-proxy/*`, `/github-proxy/*`, `/setup` to Express at port 5555. Also configures Vitest with jsdom environment.
+  - `client/src/main.tsx` — React root with `BrowserRouter` for client-side routing.
+  - `client/src/App.tsx` — Phase 0 foundation screen that fetches `/api/proxy-status` to prove the proxy is wired correctly.
+  - `client/src/test/setup.ts` + `App.test.tsx` — Vitest test suite (4 tests, all passing) using `@testing-library/react`.
+  - Dependencies added: `react-router-dom` v7, `zustand`, `@dnd-kit/core/sortable/utilities`, `vitest`, `@testing-library/react`.
+- **`npm run build:client`** — Root script that builds the React SPA via `cd client && npm run build`, outputting to `client/dist/`.
+- **`npm run test:client`** — Root script that runs Vitest tests for the React SPA.
+- **Production SPA serving in `server.js`** — If `client/dist/index.html` exists (i.e., after `npm run build:client`), Express now serves the React SPA and returns `index.html` for all non-API routes. Falls back to `public/toolbox.html` if no React build exists, so existing deployments are unaffected until Phase 7 cutover.
+
 ### Fixed
 - **App cards unresponsive after SNow relay fix** — An orphaned code fragment (dangling `.push()` / `});` / `}` lines from old request-log rendering) was left in `buildFullReport` during the `tbxFetchDiagReport` rewrite. The stray `)` caused an `Unexpected token` JS syntax error that silently prevented all scripts in toolbox.html from loading, breaking every click handler including app card navigation.
 
