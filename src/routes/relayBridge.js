@@ -49,7 +49,9 @@ const RESULT_TIMEOUT_MS = 30000;
  * Isolated per system so SNow and Jira can be relayed independently.
  *
  * @returns {{ isActive: boolean, pendingRequests: Array, pendingResults: object,
- *             pollWaiters: Array, resultWaiters: object }}
+ *             pollWaiters: Array, resultWaiters: object,
+ *             lastRegisteredAt: number|null, lastDeregisteredAt: number|null,
+ *             lastPolledAt: number|null }}
  */
 function createBridgeChannel() {
   return {
@@ -63,6 +65,10 @@ function createBridgeChannel() {
     pollWaiters: [],
     // Response objects held open by Toolbox's result long-poll, keyed by request id
     resultWaiters: {},
+    // Timestamps for diagnostic reporting — null until the event has occurred
+    lastRegisteredAt:    null,
+    lastDeregisteredAt:  null,
+    lastPolledAt:        null,
   };
 }
 
@@ -92,6 +98,7 @@ router.post('/register', (req, res) => {
 
   const channel = bridgeState[sys];
   channel.isActive = true;
+  channel.lastRegisteredAt = Date.now();
   // Flush stale queued items — they were meant for the previous bookmarklet session
   channel.pendingRequests = [];
   channel.pendingResults  = {};
@@ -111,6 +118,7 @@ router.post('/deregister', (req, res) => {
 
   if (channel) {
     channel.isActive = false;
+    channel.lastDeregisteredAt = Date.now();
     // Immediately release any bookmarklet long-polls — they will never get a request now
     channel.pollWaiters.forEach(waiter => {
       clearTimeout(waiter.timer);
@@ -132,8 +140,15 @@ router.post('/deregister', (req, res) => {
  */
 router.get('/status', (req, res) => {
   const sys = req.query.sys || 'snow';
-  const isActive = !!(bridgeState[sys] && bridgeState[sys].isActive);
-  res.json({ active: isActive, sys });
+  const channel = bridgeState[sys];
+  if (!channel) return res.json({ active: false, sys });
+  res.json({
+    active:              channel.isActive,
+    sys,
+    lastRegisteredAt:    channel.lastRegisteredAt,
+    lastDeregisteredAt:  channel.lastDeregisteredAt,
+    lastPolledAt:        channel.lastPolledAt,
+  });
 });
 
 // ── Request queuing ───────────────────────────────────────────────────────────
@@ -191,6 +206,9 @@ router.get('/poll', (req, res) => {
   const channel = bridgeState[sys];
 
   if (!channel) return res.json({ request: null });
+
+  // Track when the bookmarklet last checked in — used by diagnostic reports
+  channel.lastPolledAt = Date.now();
 
   // Serve immediately if a request is already queued
   if (channel.pendingRequests.length > 0) {
@@ -288,6 +306,25 @@ module.exports = router;
  */
 module.exports.getBridgeStatus = function getBridgeStatus(sys) {
   return !!(bridgeState[sys] && bridgeState[sys].isActive);
+};
+
+/**
+ * Returns a safe diagnostic snapshot for the given system — active state and
+ * registration timestamps but no queued request bodies or result data.
+ * Used by /api/snow-diag so the diagnostic report can show connection history.
+ *
+ * @param {string} sys - System identifier: 'snow', 'jira', or 'conf'
+ * @returns {{ active: boolean, lastRegisteredAt: number|null, lastDeregisteredAt: number|null, lastPolledAt: number|null }}
+ */
+module.exports.getBridgeDiag = function getBridgeDiag(sys) {
+  const channel = bridgeState[sys];
+  if (!channel) return { active: false, lastRegisteredAt: null, lastDeregisteredAt: null, lastPolledAt: null };
+  return {
+    active:              channel.isActive,
+    lastRegisteredAt:    channel.lastRegisteredAt,
+    lastDeregisteredAt:  channel.lastDeregisteredAt,
+    lastPolledAt:        channel.lastPolledAt,
+  };
 };
 
 // Exposed only for unit testing — resets all bridge channels to a clean state.
