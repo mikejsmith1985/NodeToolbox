@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **VBS launcher — stale old process served instead of new version**: When a previous NodeToolbox instance (e.g., v0.5.3) was still running on port 5555, the VBS launcher short-circuited: it detected the port as listening and opened the browser directly to the old broken server, skipping the launch of the new exe entirely. Fixed by removing the pre-launch short-circuit (`If IsPortListening Then ... Exit Sub`). The VBS now always launches the newest exe — `portManager.js` unconditionally kills any occupant and waits 1500ms for the OS to release the binding, after which the polling loop correctly opens the browser to the new process.
+- Also removed the stale "client/dist/ folder missing" bullet from the timeout diagnostic message — `client/dist/` is now bundled in the exe snapshot and shipped in the exe-zip, so it is never missing.
+
+### Fixed
 - **Exe distribution — React build not found (readFileSync-based static serving)**: `express.static` (used in v0.5.3) relies on `fs.createReadStream` internally, which does not work reliably with `@yao-pkg/pkg`'s snapshot virtual filesystem. Even with `client/dist/` bundled via `pkg.assets`, the React SPA was never served — the exe still showed "⚠ React build not found". Fixed by:
   - Adding `resolveAppBaseDir()` to `server.js`: probes the snapshot path (`__dirname`) via `fs.readFileSync` first; falls back to `path.dirname(process.execPath)` (real disk next to the exe) if the snapshot is inaccessible.
   - Adding a custom `readFileSync`-based static middleware for pkg exe mode — `fs.readFileSync` is guaranteed by `@yao-pkg/pkg` to work with snapshot virtual paths.
