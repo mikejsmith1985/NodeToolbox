@@ -94,9 +94,21 @@ app.get('/', (req, res, next) => {
 // All non-API paths return index.html so React Router handles client-side
 // navigation. Run `npm run build:client` once before starting the server if
 // client/dist/ does not exist.
+//
+// When running as a pkg-bundled .exe (process.pkg is truthy), express.static
+// and fs.existsSync do not work with pkg's virtual snapshot filesystem.
+// client/dist is therefore shipped ALONGSIDE the .exe in the exe ZIP rather
+// than bundled in the snapshot, and the base path is resolved from the real
+// directory on disk that contains the .exe (path.dirname(process.execPath)).
+// For all other contexts (dev: `node server.js`, or ZIP install), __dirname
+// is the correct base — it points to the directory containing server.js
+// where client/dist is also extracted.
+const APP_BASE_DIR = process.pkg
+  ? path.dirname(process.execPath)
+  : __dirname;
 
-const clientDistDir       = path.join(__dirname, 'client', 'dist');
-const clientDistIndexPath = path.join(__dirname, 'client', 'dist', 'index.html');
+const clientDistDir       = path.join(APP_BASE_DIR, 'client', 'dist');
+const clientDistIndexPath = path.join(APP_BASE_DIR, 'client', 'dist', 'index.html');
 
 // Serve compiled React assets (JS chunks, CSS, icons, etc.)
 app.use(express.static(clientDistDir));
