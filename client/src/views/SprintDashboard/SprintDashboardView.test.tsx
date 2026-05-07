@@ -175,4 +175,47 @@ describe('SprintDashboardView', () => {
 
     expect(screen.getByTestId('responsive-container')).toBeInTheDocument();
   });
+
+  it('renders the 4 new tab buttons (Metrics, Pipeline, Planning, Releases)', () => {
+    render(<SprintDashboardView />);
+
+    expect(screen.getByRole('tab', { name: 'Metrics' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Pipeline' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Planning' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Releases' })).toBeInTheDocument();
+  });
+
+  it('renders the Metrics tab with sprint completion statistics', () => {
+    mockState.activeTab = 'metrics';
+    render(<SprintDashboardView />);
+
+    expect(screen.getByRole('heading', { name: 'Sprint Metrics' })).toBeInTheDocument();
+    expect(screen.getByText(/Completion/i)).toBeInTheDocument();
+  });
+
+  it('renders the Pipeline tab with per-status kanban columns', () => {
+    mockState.activeTab = 'pipeline';
+    render(<SprintDashboardView />);
+
+    expect(screen.getByRole('heading', { name: 'Kanban Pipeline' })).toBeInTheDocument();
+    // Mock issues have "In Progress" and "Blocked" statuses — both appear as column headings.
+    expect(screen.getByRole('heading', { name: 'In Progress' })).toBeInTheDocument();
+  });
+
+  it('renders the Planning tab with unestimated issues section', () => {
+    mockState.activeTab = 'planning';
+    render(<SprintDashboardView />);
+
+    expect(screen.getByRole('heading', { name: 'Sprint Planning' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Unestimated Issues' })).toBeInTheDocument();
+  });
+
+  it('renders the Releases tab grouped by fix version', () => {
+    mockState.activeTab = 'releases';
+    render(<SprintDashboardView />);
+
+    expect(screen.getByRole('heading', { name: 'Release Readiness' })).toBeInTheDocument();
+    // All mock issues have no fixVersions, so they fall under "No Version".
+    expect(screen.getByText('No Version')).toBeInTheDocument();
+  });
 });
