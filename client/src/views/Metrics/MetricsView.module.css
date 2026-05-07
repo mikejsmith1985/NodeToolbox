@@ -1,0 +1,244 @@
+/* MetricsView.module.css — Styles for the standalone Jira Metrics dashboard. */
+
+.metricsView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  height: 100%;
+  overflow: auto;
+  padding: var(--spacing-md);
+  color: var(--color-text-primary);
+}
+
+.pageHeader {
+  margin-bottom: var(--spacing-xs);
+}
+
+.pageTitle {
+  margin: 0 0 var(--spacing-xs);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+}
+
+.pageSubtitle {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.controlsPanel {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(8rem, 12rem) minmax(7rem, 10rem) auto;
+  gap: var(--spacing-md);
+  align-items: end;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-surface);
+}
+
+.fieldLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.textInput {
+  min-height: 2.5rem;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.buttonPrimary {
+  min-height: 2.5rem;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-accent, #6366f1);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-accent, #6366f1);
+  color: #ffffff;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+}
+
+.buttonPrimary:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.errorMessage,
+.infoMessage {
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md, 8px);
+  font-size: var(--font-size-sm);
+}
+
+.errorMessage {
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--color-danger, #ef4444);
+}
+
+.infoMessage {
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--color-text-primary);
+}
+
+.emptyState {
+  padding: var(--spacing-xl, 2rem);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: var(--spacing-md);
+}
+
+.metricCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  min-height: 14rem;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-surface);
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.cardHeader h2,
+.cardHeader p {
+  margin: 0;
+}
+
+.cardHeader h2 {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md, 1rem);
+}
+
+.cardHeader p,
+.cardEmpty,
+.barRow small {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.targetBadge {
+  align-self: flex-start;
+  border-radius: var(--radius-pill, 999px);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: rgba(34, 197, 94, 0.14);
+  color: #16a34a;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.barList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.barRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.barLabel,
+.throughputItem {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.barTrack {
+  position: relative;
+  height: 0.75rem;
+  overflow: hidden;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-background);
+}
+
+.barFill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #6366f1, #22c55e);
+}
+
+.targetLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0.125rem;
+  background: #f59e0b;
+}
+
+.throughputList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.throughputItem {
+  align-items: center;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+}
+
+.throughputItem em {
+  color: var(--color-text-muted);
+  font-style: normal;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(6rem, 1fr));
+  gap: var(--spacing-sm);
+  margin: 0;
+}
+
+.statsGrid div {
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+}
+
+.statsGrid dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.statsGrid dd {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+
+@media (max-width: 860px) {
+  .controlsPanel,
+  .metricsGrid {
+    grid-template-columns: 1fr;
+  }
+}
