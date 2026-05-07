@@ -15,6 +15,23 @@ const SERVER_SOURCE      = fs.readFileSync(SERVER_JS_PATH, 'utf8');
 
 // ── server.js — exe auto-open behaviour ───────────────────────────────────────
 
+describe('server.js — static asset base path for pkg exe', () => {
+  it('uses process.execPath directory (not __dirname) as the asset base when process.pkg is set', () => {
+    // When bundled with pkg, __dirname is a virtual snapshot path that does not
+    // exist on disk. express.static and fs.existsSync do NOT work with virtual
+    // paths, so the server must use path.dirname(process.execPath) — the real
+    // directory on disk where the exe lives — when process.pkg is truthy.
+    // client/dist is then shipped ALONGSIDE the exe in the exe ZIP.
+    expect(SERVER_SOURCE).toMatch(/process\.pkg[\s\S]{0,200}process\.execPath/);
+  });
+
+  it('falls back to __dirname when NOT running as a pkg exe (dev or ZIP install)', () => {
+    // For node server.js (dev) and ZIP install, __dirname correctly points to
+    // the server.js location where client/dist lives as a subdirectory.
+    expect(SERVER_SOURCE).toMatch(/process\.pkg[\s\S]{0,200}__dirname/);
+  });
+});
+
 describe('server.js — pkg exe auto-open', () => {
   it('opens the browser automatically when process.pkg is truthy (exe double-click)', () => {
     // When running as a bundled .exe there is no --open argv flag.

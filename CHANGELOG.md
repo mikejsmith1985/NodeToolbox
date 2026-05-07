@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **EXE distribution — 503 "React build not found"**: `express.static` and `fs.existsSync` do not work with `@yao-pkg/pkg`'s virtual snapshot filesystem on Windows. `server.js` now uses `path.dirname(process.execPath)` (the real directory containing the `.exe`) as the asset base when `process.pkg` is truthy, instead of `__dirname` (the virtual snapshot path). `client/dist/` is now shipped alongside the `.exe` in the exe ZIP so it is extracted to the real filesystem on first use.
+- `scripts/local-release.ps1`: exe ZIP staging now includes `client/dist/` so users who extract the exe ZIP have the React SPA next to the executable.
+- `package.json`: removed `pkg.assets` (`client/dist/**/*`) — assets are no longer bundled into the pkg snapshot since they are shipped as external files in the exe ZIP.
+- `test/integration/exe-real-world-flow.test.js`: updated setup to copy `client/dist` alongside the exe, matching the new exe ZIP structure.
+- `test/unit/exe-launch.test.js`: added assertions that `server.js` resolves `process.execPath` (not `__dirname`) as the asset base when `process.pkg` is set.
 - `Launch Toolbox.bat`: removed unescaped parentheses from `echo` lines inside nested `if` blocks — cmd.exe's block parser was counting them as block delimiters, causing the BAT to exit with code 255 before reaching `node server.js`. The three affected lines were in the `if not exist "node_modules"` error-handling block.
 - `scripts/local-release.ps1`: React client build now runs before ZIP creation (was running after, so `client/dist/` was absent from the archive). `client\dist\` is now staged as `client/dist/` in the ZIP (was being flattened to `dist/`), matching the path `server.js` expects.
 - `Launch Toolbox.bat`: added auto-build step for React UI — if `client/dist/index.html` is missing but `client/package.json` exists (git-clone install), the launcher runs `npm install && npm run build` automatically before starting the server.
