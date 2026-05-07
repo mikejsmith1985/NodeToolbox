@@ -4,7 +4,7 @@
 // routes placeholder views until later migration phases replace them.
 
 import { useEffect } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Link, Navigate, Route, Routes } from 'react-router-dom';
 
 import { ConnectionBar } from './components/ConnectionBar/index.ts';
 import { useProxyStatus } from './hooks/useProxyStatus.ts';
@@ -46,7 +46,10 @@ export default function App() {
   return (
     <div className={styles.appShell}>
       <header className={styles.topBar}>
-        <span className={styles.appTitle}>{APP_TITLE}</span>
+        {/* Clicking the title always navigates back to the Home route */}
+        <Link className={styles.homeLink} to={HOME_ROUTE}>
+          {APP_TITLE}
+        </Link>
         <ConnectionBar />
       </header>
 

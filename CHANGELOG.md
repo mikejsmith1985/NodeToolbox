@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **SNow Hub tab label**: "CRG" corrected to "CHG" (Change Request) in `SnowHubView.tsx`. The internal key remains `crg` to avoid breaking any persisted UI state.
+- **No Home navigation**: The NodeToolbox title in the top bar is now a clickable `<Link>` that navigates back to the Home route (`/`) from any tool view.
+
+### Fixed
 - **EXE distribution — 503 "React build not found"**: `express.static` and `fs.existsSync` do not work with `@yao-pkg/pkg`'s virtual snapshot filesystem on Windows. `server.js` now uses `path.dirname(process.execPath)` (the real directory containing the `.exe`) as the asset base when `process.pkg` is truthy, instead of `__dirname` (the virtual snapshot path). `client/dist/` is now shipped alongside the `.exe` in the exe ZIP so it is extracted to the real filesystem on first use.
 - `scripts/local-release.ps1`: exe ZIP staging now includes `client/dist/` so users who extract the exe ZIP have the React SPA next to the executable.
 - `package.json`: removed `pkg.assets` (`client/dist/**/*`) — assets are no longer bundled into the pkg snapshot since they are shipped as external files in the exe ZIP.
