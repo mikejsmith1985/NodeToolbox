@@ -1,18 +1,18 @@
 // test/integration/exe-real-world-flow.test.js — End-to-end test that
-// simulates the EXACT experience of a user who has never seen the project.
+// simulates the EXACT experience of a user who has downloaded the exe ZIP.
 //
-// The test copies the .exe to a clean temp directory (no source tree, no
-// node_modules, no client/dist) and verifies the exe self-contains the React
-// SPA via its pkg snapshot. This confirms that client/dist/**/* was correctly
-// bundled at build time (via the "assets" array in package.json) so the app
-// works for users who only have the .exe file.
+// The exe ZIP ships two things: the .exe itself and a client/dist/ folder
+// containing the pre-built React SPA. The test copies both to a clean temp
+// directory and verifies the exe serves the React app correctly from disk
+// (not from a virtual pkg snapshot — express.static doesn't work with those).
 //
 // Flow exercised:
-//   1. Start exe from isolated temp directory
-//   2. Server responds on port 5555
-//   3. GET / → 302 redirect to /setup (no config present yet)
-//   4. POST /api/setup with minimal Jira credentials
-//   5. GET / → 200 with the React SPA HTML from the pkg snapshot
+//   1. Copy exe + client/dist to isolated temp directory
+//   2. Start exe from that directory
+//   3. Server responds on port 5555
+//   4. GET / → 302 redirect to /setup (no config present yet)
+//   5. POST /api/setup with minimal Jira credentials
+//   6. GET / → 200 with the React SPA HTML served from client/dist on disk
 //
 // If no .exe exists in dist/ (e.g. CI without a pre-built binary), the suite
 // skips gracefully — only one placeholder test runs.
@@ -152,7 +152,7 @@ function getPage(urlPath) {
 
 // ── Test Suite ────────────────────────────────────────────────────────────────
 
-describe('exe real-world flow — React SPA served from pkg snapshot (not real disk)', () => {
+describe('exe real-world flow — React SPA served from client/dist alongside the exe', () => {
   let exeProcess = null;
 
   beforeAll(async () => {
@@ -162,10 +162,19 @@ describe('exe real-world flow — React SPA served from pkg snapshot (not real d
       return;
     }
 
-    // Create an isolated temp directory with ONLY the exe — no source tree, no client/dist/.
+    // Copy exe and client/dist to the isolated temp directory — this matches
+    // the structure of the exe ZIP distributed to users.
     fs.mkdirSync(TEMP_EXE_DIR, { recursive: true });
     const tempExePath = path.join(TEMP_EXE_DIR, path.basename(exePath));
     fs.copyFileSync(exePath, tempExePath);
+
+    // Copy client/dist alongside the exe (required — server.js resolves assets
+    // relative to path.dirname(process.execPath) when running as a pkg bundle,
+    // because express.static doesn't work with pkg's virtual snapshot paths).
+    const clientDistSource = path.join(PROJECT_ROOT, 'client', 'dist');
+    if (fs.existsSync(clientDistSource)) {
+      fs.cpSync(clientDistSource, path.join(TEMP_EXE_DIR, 'client', 'dist'), { recursive: true });
+    }
 
     // Back up any existing config so the exe starts in "fresh install" state.
     // Without this, a previously saved config causes GET / to return 200 (dashboard)
@@ -230,12 +239,13 @@ describe('exe real-world flow — React SPA served from pkg snapshot (not real d
     expect(setupResult.location).toBe('/');
   });
 
-  it('GET / after setup returns 200 with the React SPA HTML from the pkg snapshot', async () => {
+  it('GET / after setup returns 200 with the React SPA HTML served from client/dist on disk', async () => {
     if (!exeProcess) return;
     const dashboardResponse = await getPage('/');
-    // This is the critical assertion: client/dist/**/* must be bundled in the exe
-    // via the pkg "assets" array in package.json. Without bundling, the server
-    // returns 503 "React build not found" instead of 200.
+    // server.js uses path.dirname(process.execPath) as the asset base dir when
+    // running as a pkg exe, so it reads client/dist from the same directory as
+    // the .exe — not from the virtual pkg snapshot. This avoids the express.static
+    // incompatibility with pkg virtual filesystem paths.
     expect(dashboardResponse.status).toBe(200);
     expect(dashboardResponse.contentType).toMatch(/text\/html/i);
     expect(dashboardResponse.body).toMatch(/<!DOCTYPE html>/i);
