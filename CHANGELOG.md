@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **ART View — Phase 6: 4 depth features** (issue #44):
+  - **Dependency Map tab**: inline SVG cross-team issue dependency graph; scans issue descriptions for Jira key references, renders team boxes with bezier arrows between referencing issues across teams.
+  - **Board Prep tab**: pre-PI Planning backlog review panel; loads issues from each team's board backlog, team filter dropdown, Export to CSV button.
+  - **PI Progress Header**: persistent header strip above the tab bar showing PI name, animated completion progress bar, done / in-progress / to-do pills derived live from all loaded sprint issues.
+  - **SoS Drawer**: enhanced Scrum of Scrums panel with a Pulse aggregate row (impediment count, completion %, teams at risk) and per-team expandable accordion sections showing assignee lists and impediments.
+  - `ArtTab` extended with `'dependencies' | 'boardprep'`; `ArtDataState` extended with `sosExpandedTeams`, `boardPrepIssues`, `isLoadingBoardPrep`, `boardPrepError`, `boardPrepTeamFilter`, `piProgressStats`.
+  - New exported types: `ArtBoardPrepIssue`, `PiProgressStats`.
+  - New hook actions: `toggleSosTeam`, `loadBoardPrep`, `setBoardPrepTeamFilter`.
+
 - **DSU Board — Phase 5: Issue Detail Overlay & Standup Notes** (issue #44):
   - **Issue Detail Overlay**: clicking any issue key opens a full-screen dialog with issue metadata, a status transition dropdown (fetched live from Jira), a Post Comment textarea, and a SNow root cause URL field. Closes on Escape key or backdrop click.
   - **Standup Notes Panel**: collapsible panel (open by default) with Yesterday / Today / Blockers text areas and an optional SNow URL field. Auto-saved to `localStorage` on each keystroke (debounced 500 ms). "Copy to Clipboard" button formats notes with emoji headers.
