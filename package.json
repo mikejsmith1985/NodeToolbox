@@ -45,7 +45,11 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "pkg": {},
+  "pkg": {
+    "assets": [
+      "client/dist/**/*"
+    ]
+  },
   "jest": {
     "testEnvironment": "node",
     "testMatch": [

@@ -95,17 +95,17 @@ app.get('/', (req, res, next) => {
 // navigation. Run `npm run build:client` once before starting the server if
 // client/dist/ does not exist.
 //
-// When running as a pkg-bundled .exe (process.pkg is truthy), express.static
-// and fs.existsSync do not work with pkg's virtual snapshot filesystem.
-// client/dist is therefore shipped ALONGSIDE the .exe in the exe ZIP rather
-// than bundled in the snapshot, and the base path is resolved from the real
-// directory on disk that contains the .exe (path.dirname(process.execPath)).
-// For all other contexts (dev: `node server.js`, or ZIP install), __dirname
-// is the correct base — it points to the directory containing server.js
-// where client/dist is also extracted.
-const APP_BASE_DIR = process.pkg
-  ? path.dirname(process.execPath)
-  : __dirname;
+// When running as a pkg-bundled .exe, client/dist/ is bundled inside the exe
+// snapshot via the "pkg.assets" array in package.json. The pkg runtime
+// intercepts fs/express.static calls so they resolve correctly against the
+// snapshot — __dirname points to the snapshot root just as it would point to
+// the project root during development. This makes the exe truly self-contained:
+// users do not need a separate client/ folder next to the exe.
+//
+// For ZIP distribution (node server.js / Launch Toolbox.bat), __dirname is
+// the real directory containing server.js, and client/dist/ is shipped inside
+// the zip as a regular subdirectory.
+const APP_BASE_DIR = __dirname;
 
 const clientDistDir       = path.join(APP_BASE_DIR, 'client', 'dist');
 const clientDistIndexPath = path.join(APP_BASE_DIR, 'client', 'dist', 'index.html');
