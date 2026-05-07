@@ -23,11 +23,14 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-const DOWNLOAD_ITEMS = [
-  { label: '⬇️ server.py' },
-  { label: '⬇️ server.js' },
-  { label: '⬇️ Silent Launcher (.vbs)' },
-  { label: '⬇️ Launcher (.bat)' },
+/**
+ * Launcher files available as one-click downloads from the Proxy & Server Setup section.
+ * The href points to the Express download route that serves the file from the
+ * distribution root on disk (handles both zip and exe distributions).
+ */
+const LAUNCHER_DOWNLOADS = [
+  { label: '⬇️ Silent Launcher (.vbs)', href: '/api/download/launcher-vbs', filename: 'Launch Toolbox Silent.vbs' },
+  { label: '⬇️ Launcher (.bat)',         href: '/api/download/launcher-bat', filename: 'Launch Toolbox.bat' },
 ] as const
 
 const ONBOARDING_STORAGE_KEYS = ['tbxOnboarded', 'tbxWizardDone'] as const
@@ -81,17 +84,19 @@ function ProxySection({
         <div className={styles.statusBannerMuted}>⚪ Proxy server not detected</div>
       )}
 
-      {/* Download buttons — disabled in React; legacy dashboard required */}
+      {/* Launcher download links — click to download the file to the user's machine */}
       <div className={styles.downloadButtonsRow}>
-        {DOWNLOAD_ITEMS.map((downloadItem) => (
-          <button key={downloadItem.label} className={styles.downloadButton} disabled>
-            {downloadItem.label}
-          </button>
+        {LAUNCHER_DOWNLOADS.map((launcher) => (
+          <a
+            key={launcher.label}
+            href={launcher.href}
+            download={launcher.filename}
+            className={styles.downloadButton}
+          >
+            {launcher.label}
+          </a>
         ))}
       </div>
-      <p className={styles.downloadTooltip}>
-        Download from the legacy dashboard while migration is finalised.
-      </p>
 
       {/* Terminal command code block */}
       <div className={styles.codeBlock}>

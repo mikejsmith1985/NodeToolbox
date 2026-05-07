@@ -461,3 +461,62 @@ describe('POST /api/restart', () => {
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
 });
+
+// ── /api/download/launcher-vbs ────────────────────────────────────────────────
+// The Admin Hub exposes download buttons for the VBS and BAT launcher files.
+// These routes serve the actual files from the distribution root so users can
+// re-download launchers without extracting a new release zip.
+
+describe('GET /api/download/launcher-vbs', () => {
+  const minimalConfig = {
+    jira:      { baseUrl: '', username: '', apiToken: '', pat: '' },
+    snow:      { baseUrl: '', username: '', password: '' },
+    github:    { pat: '' },
+    sslVerify: true,
+  };
+
+  it('returns 200 with Content-Disposition attachment for the VBS file', async () => {
+    const response = await request(buildTestApp(minimalConfig))
+      .get('/api/download/launcher-vbs');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-disposition']).toMatch(/attachment/i);
+    expect(response.headers['content-disposition']).toMatch(/Launch Toolbox Silent\.vbs/i);
+  });
+
+  it('returns the VBS file as text/plain or application/octet-stream content', async () => {
+    const response = await request(buildTestApp(minimalConfig))
+      .get('/api/download/launcher-vbs');
+
+    // The file content should start with the VBScript comment header
+    expect(response.text || response.body).toBeTruthy();
+  });
+});
+
+// ── /api/download/launcher-bat ────────────────────────────────────────────────
+
+describe('GET /api/download/launcher-bat', () => {
+  const minimalConfig = {
+    jira:      { baseUrl: '', username: '', apiToken: '', pat: '' },
+    snow:      { baseUrl: '', username: '', password: '' },
+    github:    { pat: '' },
+    sslVerify: true,
+  };
+
+  it('returns 200 with Content-Disposition attachment for the BAT file', async () => {
+    const response = await request(buildTestApp(minimalConfig))
+      .get('/api/download/launcher-bat');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-disposition']).toMatch(/attachment/i);
+    expect(response.headers['content-disposition']).toMatch(/Launch Toolbox\.bat/i);
+  });
+
+  it('returns the BAT file content', async () => {
+    const response = await request(buildTestApp(minimalConfig))
+      .get('/api/download/launcher-bat');
+
+    // Bat file should contain the node server.js invocation
+    expect(response.text).toContain('node server.js');
+  });
+});

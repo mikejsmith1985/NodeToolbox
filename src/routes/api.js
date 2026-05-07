@@ -6,6 +6,7 @@
 
 'use strict';
 
+const path       = require('path');
 const crypto     = require('crypto');
 const express    = require('express');
 const { saveConfigToDisk, isServiceConfigured, isServiceBaseUrlSet } = require('../config/loader');
@@ -112,6 +113,48 @@ function createApiRouter(configuration) {
       latestVersion:  APP_VERSION,
       hasUpdate:      false,
       releaseNotes:   'You are running the latest version.',
+    });
+  });
+
+  // ── GET /api/download/launcher-vbs ────────────────────────────────────────
+  // Serves the silent VBScript launcher so users can re-download it from the
+  // Admin Hub without extracting a new release zip.
+  //
+  // The file lives alongside server.js in the distribution root. When running
+  // as a pkg bundle (process.pkg truthy), that root is path.dirname(process.execPath)
+  // rather than the virtual snapshot __dirname.
+
+  router.get('/api/download/launcher-vbs', (req, res) => {
+    const distributionRoot = process.pkg
+      ? path.dirname(process.execPath)
+      : path.join(__dirname, '..', '..');
+    const vbsFilePath = path.join(distributionRoot, 'Launch Toolbox Silent.vbs');
+
+    res.download(vbsFilePath, 'Launch Toolbox Silent.vbs', (downloadError) => {
+      if (downloadError && !res.headersSent) {
+        res.status(404).json({
+          error: 'Launcher file not found. Make sure you are running from the full release folder.',
+        });
+      }
+    });
+  });
+
+  // ── GET /api/download/launcher-bat ────────────────────────────────────────
+  // Serves the batch launcher for users who prefer a visible console window.
+  // Only present in the zip distribution — not included in the exe zip.
+
+  router.get('/api/download/launcher-bat', (req, res) => {
+    const distributionRoot = process.pkg
+      ? path.dirname(process.execPath)
+      : path.join(__dirname, '..', '..');
+    const batFilePath = path.join(distributionRoot, 'Launch Toolbox.bat');
+
+    res.download(batFilePath, 'Launch Toolbox.bat', (downloadError) => {
+      if (downloadError && !res.headersSent) {
+        res.status(404).json({
+          error: 'Launcher file not found. Make sure you are running from the full release folder.',
+        });
+      }
     });
   });
 
