@@ -23,6 +23,8 @@ import DsuBoardView from './views/DsuBoard/DsuBoardView.tsx';
 import TextToolsView from './views/TextTools/TextToolsView.tsx';
 import ReportsHubView from './views/ReportsHub/ReportsHubView.tsx';
 import AdminHubView from './views/AdminHub/AdminHubView.tsx';
+import SprintPlanningView from './views/SprintPlanning/SprintPlanningView.tsx';
+import WorkLogView from './views/WorkLog/WorkLogView.tsx';
 import styles from './App.module.css';
 
 const APP_TITLE = 'NodeToolbox';
@@ -67,6 +69,8 @@ export default function App() {
           <Route path="/text-tools" element={<TextToolsView />} />
           <Route path="/reports-hub" element={<ReportsHubView />} />
           <Route path="/admin-hub" element={<AdminHubView />} />
+          <Route path="/sprint-planning" element={<SprintPlanningView />} />
+          <Route path="/work-log" element={<WorkLogView />} />
           <Route path="*" element={<Navigate to={DEFAULT_ROUTE} replace />} />
         </Routes>
       </main>

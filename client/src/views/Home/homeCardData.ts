@@ -115,6 +115,26 @@ export const APP_CARDS: AppCardDef[] = [
     sectionKey: 'admin',
   },
   {
+    id: 'sprint-planning',
+    route: '/sprint-planning',
+    icon: '📋',
+    title: 'Sprint Planning',
+    description:
+      'Pull a backlog, point stories inline, and persist all changes with one batch save through Jira.',
+    tags: ['Jira', 'Backlog', 'Story Points'],
+    sectionKey: 'agile',
+  },
+  {
+    id: 'work-log',
+    route: '/work-log',
+    icon: '⏱',
+    title: 'Work Log',
+    description:
+      'Track time per Jira issue with running stopwatches, then post the elapsed time as a worklog entry.',
+    tags: ['Jira', 'Time Tracking', 'Worklog'],
+    sectionKey: 'agile',
+  },
+  {
     id: 'code-walkthrough',
     route: '/code-walkthrough',
     icon: '📖',
@@ -130,8 +150,10 @@ export const APP_CARDS: AppCardDef[] = [
 export const PERSONA_CARD_ORDERS: Record<string, string[]> = {
   all: [
     'sprint-dashboard',
+    'sprint-planning',
     'art',
     'my-issues',
+    'work-log',
     'dev-workspace',
     'snow-hub',
     'text-tools',
@@ -139,8 +161,10 @@ export const PERSONA_CARD_ORDERS: Record<string, string[]> = {
   ],
   dev: [
     'dev-workspace',
+    'work-log',
     'my-issues',
     'sprint-dashboard',
+    'sprint-planning',
     'snow-hub',
     'text-tools',
     'art',
@@ -148,8 +172,10 @@ export const PERSONA_CARD_ORDERS: Record<string, string[]> = {
   ],
   qa: [
     'my-issues',
+    'work-log',
     'snow-hub',
     'sprint-dashboard',
+    'sprint-planning',
     'dev-workspace',
     'text-tools',
     'art',
@@ -157,28 +183,34 @@ export const PERSONA_CARD_ORDERS: Record<string, string[]> = {
   ],
   sm: [
     'sprint-dashboard',
+    'sprint-planning',
     'my-issues',
     'snow-hub',
     'art',
     'dev-workspace',
+    'work-log',
     'text-tools',
     'code-walkthrough',
   ],
   po: [
     'sprint-dashboard',
+    'sprint-planning',
     'my-issues',
     'art',
     'snow-hub',
     'dev-workspace',
+    'work-log',
     'text-tools',
     'code-walkthrough',
   ],
   rte: [
     'art',
     'sprint-dashboard',
+    'sprint-planning',
     'my-issues',
     'snow-hub',
     'dev-workspace',
+    'work-log',
     'text-tools',
     'code-walkthrough',
   ],
@@ -187,6 +219,8 @@ export const PERSONA_CARD_ORDERS: Record<string, string[]> = {
 /** Human-friendly labels used for the Home view recent-links strip. */
 export const RECENT_VIEW_LABELS: Record<string, string> = {
   'sprint-dashboard': '🏃 Team Dashboard',
+  'sprint-planning': '📋 Sprint Planning',
+  'work-log': '⏱ Work Log',
   'dsu-board': '🏃 Team Dashboard',
   art: '🚂 ART View',
   'my-issues': '📊 My Issues',
