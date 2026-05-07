@@ -8,7 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Dev Workspace — Phase 8: Hook script downloads** (issue #44):
+- **Admin Hub — Phase 7: 4 depth features** (issue #44):
+  - **Diagnostics panel**: collapsible section with "Run Diagnostics" button calling `GET /api/diagnostics`; displays JSON result in a pre-formatted block with a "Copy Report" to clipboard button; shows spinner while running and error message on failure.
+  - **Backup & Reset panel**: collapsible section with "Download Backup" (serialises all `toolbox-*` localStorage keys to a dated JSON file), "Restore Backup" (FileReader-based restore with validation), and "Reset All Settings" (confirm dialog + wipe + reload).
+  - **Hygiene Rules panel**: collapsible section with Stale Days, Unpointed Warning Days number inputs, and Flag Missing Assignees checkbox — each auto-saves to `localStorage` on change; provides central defaults for DSU Board stale thresholds.
+  - **Update Management panel**: collapsible section with "Check for Updates" calling `GET /api/version-check`; shows current/latest versions, "✅ Up to date" or "🆕 Update available" badge, and read-only release notes textarea.
+  - New server routes: `GET /api/diagnostics` and `GET /api/version-check` added to `src/routes/api.js`.
+  - New hook state and actions in `useAdminHubState`: `DiagnosticsResult`, `HygieneRules`, `UpdateCheckResult` interfaces; 10 new action callbacks.
+  - 21 new TDD tests (35 total passing).
+
+
   - Replace `console.log` placeholder with real Blob-based file downloads for Git hook scripts.
   - Added `HOOK_SCRIPT_CONTENTS` map with full bash scripts for `post-commit`, `pre-push`, and `commit-msg` hooks.
   - Added `downloadHookScript()` utility that creates a Blob and triggers a browser download via a temporary anchor element — no server request needed.
