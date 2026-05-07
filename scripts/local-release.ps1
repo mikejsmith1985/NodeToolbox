@@ -242,13 +242,24 @@ Write-Host "       ✅ $ExeOutputPath ($exeSizeKb KB)"
 
 # Wrap the exe in its own dedicated zip so users can download it without
 # browser security warnings that block direct .exe file downloads.
-# Also include the silent VBScript launcher so exe users can hide the terminal.
+# Also include the silent VBScript launcher and the pre-built React SPA
+# (client/dist/) alongside the exe. server.js uses path.dirname(process.execPath)
+# as the asset base when running as a pkg bundle — express.static does not work
+# with pkg's virtual snapshot filesystem, so client/dist must live on real disk
+# next to the exe rather than being embedded in the snapshot.
 $ExeZipStagingDir = Join-Path $DistDir 'exe-staging'
 New-Item -ItemType Directory -Path $ExeZipStagingDir | Out-Null
 Copy-Item $ExeOutputPath $ExeZipStagingDir -Force
 if (Test-Path $SilentLauncherPath) {
     Copy-Item $SilentLauncherPath $ExeZipStagingDir -Force
 }
+
+# Copy client/dist → exe-staging/client/dist so the React SPA is extracted
+# alongside the exe when users unzip.
+$clientDirInExeStaging = Join-Path $ExeZipStagingDir 'client'
+New-Item -ItemType Directory -Path $clientDirInExeStaging -Force | Out-Null
+Copy-Item (Join-Path $RepoRoot 'client\dist') (Join-Path $clientDirInExeStaging 'dist') -Recurse -Force
+
 Compress-Archive -Path (Join-Path $ExeZipStagingDir '*') -DestinationPath $ExeZipOutputPath -Force
 Remove-Item $ExeZipStagingDir -Recurse -Force
 $exeZipSizeKb = [math]::Round((Get-Item $ExeZipOutputPath).Length / 1KB)
