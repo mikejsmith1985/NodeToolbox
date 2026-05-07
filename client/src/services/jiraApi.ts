@@ -35,3 +35,20 @@ export async function jiraPost<ResponseBody>(
   assertSuccessfulResponse(response, `Jira POST ${path} failed`);
   return parseJsonResponse<ResponseBody>(response);
 }
+
+/**
+ * Makes an authenticated PUT request to the Jira REST API via proxy.
+ *
+ * Jira's PUT endpoints (e.g. issue updates) typically respond with 204 No Content,
+ * so this helper does not attempt to parse the response body — it simply asserts
+ * success and resolves to `void` once the request completes.
+ */
+export async function jiraPut(path: string, body: unknown): Promise<void> {
+  const response = await fetch(`${JIRA_PROXY_BASE}${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': JSON_CONTENT_TYPE },
+    body: JSON.stringify(body),
+  });
+
+  assertSuccessfulResponse(response, `Jira PUT ${path} failed`);
+}

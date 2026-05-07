@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (v0.5.7 — Toolbox parity slice 1)
+- **Sprint Planning view** (`/sprint-planning`): pull the open backlog for any Jira project, search/filter loaded issues, edit story points inline, and persist all pending edits with one batch save through the existing `/jira-proxy` route. Includes auto-detection between `customfield_10028` and `customfield_10016` for the story-points field, per-issue save error tracking, and a pending-changes counter.
+- **Work Log view** (`/work-log`): per-issue stopwatches that persist to `localStorage` (`tbxWorkLogState` — same key as legacy ToolBox so existing data is reused), Start/Pause/Remove timer controls, free-form duration parsing (`1h 30m`, `45m`, bare numbers as minutes), Today/History tabs, and a confirm dialog that POSTs the elapsed time to Jira's `/issue/{key}/worklog` endpoint with optional comment. History is capped at 200 entries to bound localStorage growth.
+- New `jiraPut(path, body)` helper in `client/src/services/jiraApi.ts` so views can perform PUT calls through the same `/jira-proxy` passthrough that already supports GET and POST.
+- Home cards for Sprint Planning (📋) and Work Log (⏱) added to the Agile & Delivery section, with persona-specific ordering (PO/SM see Sprint Planning prominently; Dev/QA see Work Log promoted near the top).
+
+### Notes for follow-up versions
+- Toolbox v0.24.10 → NodeToolbox parity is still ~80% remaining. The remaining missing/partial views are documented in the session plan and tracked for `v0.5.8+`: Mermaid editor, Story Pointing, Defect Management, Pipeline View, Hygiene panel, Standup Board (boardwalk + 15-min timer), DSU Daily, Release Monitor, Impact Analysis, Connection Wizard, PRB Setup Wizard overlay, Dev Panel (API inspector), AI Chat / Rovo, plus partial gaps inside My Issues, ART View, Sprint Dashboard, DSU Board, SNow Hub, and Admin Hub.
+
 ### Fixed
 - **React build not found on exe launch (root cause fix)**: The pkg `assets` configuration was silently failing to include `client/dist/**/*` in the executable snapshot. End-to-end testing in a clean temp directory containing ONLY the exe (no `client/dist/` on disk) reproduced the "⚠ React build not found" 503 page on `/admin-hub` even after v0.5.4 and v0.5.5 attempted fixes. Verified via diagnostic logging that pkg's snapshot virtual filesystem returned `ENOENT File '...client/dist/index.html' was not included into executable at compilation stage` despite multiple asset configurations (glob, explicit list, CLI `--assets` flag).
   - Solution: bake the entire React build into a JavaScript module (`src/embeddedClient.js`) at release time as base64-encoded `Buffer` literals. pkg always bundles JS source as bytecode, so the SPA now ships *inside* the executable independent of the asset virtualization layer.
