@@ -1,0 +1,283 @@
+/* ReleaseMonitorView.module.css — Styles for the standalone Jira Release Monitor view. */
+
+.releaseMonitorView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  height: 100%;
+  overflow: hidden;
+  padding: var(--spacing-md);
+}
+
+.pageHeader {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: space-between;
+}
+
+.pageTitle {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+  margin: 0 0 var(--spacing-xs);
+}
+
+.pageSubtitle {
+  color: var(--color-text-muted, var(--color-text-secondary));
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.controlsPanel {
+  align-items: flex-end;
+  background: var(--color-surface, var(--color-surface-1));
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+}
+
+.fieldLabel {
+  color: var(--color-text-muted, var(--color-text-secondary));
+  display: flex;
+  flex: 1 1 210px;
+  flex-direction: column;
+  font-size: var(--font-size-sm);
+  gap: 4px;
+}
+
+.controlInput {
+  background: var(--color-background, var(--color-bg));
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  min-height: 34px;
+  padding: 6px 10px;
+}
+
+.buttonRow {
+  display: flex;
+  flex: 1 1 260px;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  justify-content: flex-end;
+}
+
+.button {
+  background: var(--color-surface, var(--color-surface-1));
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  padding: 7px 12px;
+}
+
+.button:hover {
+  background: var(--color-surface-hover, var(--color-surface, var(--color-surface-1)));
+}
+
+.buttonPrimary {
+  composes: button;
+  background: var(--color-accent, #6366f1);
+  border-color: var(--color-accent, #6366f1);
+  color: #ffffff;
+}
+
+.button:disabled,
+.buttonPrimary:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.statsBar {
+  display: grid;
+  gap: var(--spacing-sm);
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+}
+
+.statTile {
+  background: var(--color-surface, var(--color-surface-1));
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: var(--spacing-sm);
+}
+
+.statTile strong {
+  color: var(--color-text-primary);
+  display: block;
+  font-size: var(--font-size-lg);
+}
+
+.statTile span {
+  color: var(--color-text-muted, var(--color-text-secondary));
+  font-size: var(--font-size-sm);
+}
+
+.statusReleased,
+.statusOverdue,
+.statusOnTrack,
+.statusUnknown {
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
+.statusReleased {
+  background: rgba(34, 197, 94, 0.14);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  color: #16a34a;
+}
+
+.statusOverdue {
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #dc2626;
+}
+
+.statusOnTrack {
+  background: rgba(59, 130, 246, 0.14);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #2563eb;
+}
+
+.statusUnknown {
+  background: rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  color: var(--color-text-muted, var(--color-text-secondary));
+}
+
+.errorMessage {
+  color: #ef4444;
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.emptyState {
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+  color: var(--color-text-muted, var(--color-text-secondary));
+  padding: 32px;
+  text-align: center;
+}
+
+.boardGrid {
+  display: grid;
+  flex: 1;
+  gap: var(--spacing-md);
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  overflow: auto;
+}
+
+.boardColumn {
+  background: var(--color-surface, var(--color-surface-1));
+  border: 1px solid var(--color-border);
+  border-top: 4px solid var(--column-accent);
+  border-radius: 10px;
+  min-width: 0;
+  padding: var(--spacing-sm);
+}
+
+.columnHeader {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-sm);
+}
+
+.columnHeader h2 {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md, 16px);
+  margin: 0;
+}
+
+.columnHeader span {
+  color: var(--color-text-muted, var(--color-text-secondary));
+  font-size: var(--font-size-sm);
+}
+
+.issueList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.issueCard {
+  background: var(--color-background, var(--color-bg));
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+}
+
+.issueHeader,
+.issueMeta,
+.riskRow {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.issueHeader {
+  justify-content: space-between;
+}
+
+.issueKey {
+  color: var(--color-text-primary);
+  font-family: var(--font-mono, 'Courier New', monospace);
+  font-weight: 700;
+}
+
+.issueSummary {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.issueMeta {
+  color: var(--color-text-muted, var(--color-text-secondary));
+  font-size: 12px;
+}
+
+.statusBadge,
+.blockerBadge,
+.overdueBadge {
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.statusBadge {
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.28);
+  color: var(--color-accent, #6366f1);
+}
+
+.blockerBadge,
+.overdueBadge {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  color: #dc2626;
+}
+
+@media (max-width: 900px) {
+  .boardGrid,
+  .statsBar {
+    grid-template-columns: 1fr;
+  }
+
+  .buttonRow {
+    justify-content: flex-start;
+  }
+}
+

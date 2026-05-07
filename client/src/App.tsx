@@ -34,6 +34,9 @@ import PipelineView from './views/PipelineView/PipelineView.tsx';
 import StandupBoardView from './views/StandupBoard/StandupBoardView.tsx';
 import MetricsView from './views/Metrics/MetricsView.tsx';
 import DsuDailyView from './views/DsuDaily/DsuDailyView.tsx';
+import DevPanelView from './views/DevPanel/DevPanelView.tsx';
+import ImpactAnalysisView from './views/ImpactAnalysis/ImpactAnalysisView.tsx';
+import ReleaseMonitorView from './views/ReleaseMonitor/ReleaseMonitorView.tsx';
 import styles from './App.module.css';
 
 const APP_TITLE = 'NodeToolbox';
@@ -89,6 +92,9 @@ export default function App() {
           <Route path="/standup" element={<StandupBoardView />} />
           <Route path="/metrics" element={<MetricsView />} />
           <Route path="/dsu-daily" element={<DsuDailyView />} />
+          <Route path="/dev-panel" element={<DevPanelView />} />
+          <Route path="/impact-analysis" element={<ImpactAnalysisView />} />
+          <Route path="/release-monitor" element={<ReleaseMonitorView />} />
           <Route path="*"element={<Navigate to={DEFAULT_ROUTE} replace />} />
         </Routes>
       </main>
