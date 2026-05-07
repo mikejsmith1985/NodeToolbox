@@ -72,3 +72,70 @@ describe('Launch Toolbox Silent.vbs — content correctness', () => {
     expect(vbsContent).toMatch(/DateLastModified/i);
   });
 });
+
+// ── Corporate-PC reliability (polling + diagnostic feedback) ──────────────────
+//
+// v0.5.2 enhancement: the VBS now polls for server readiness after launching
+// rather than fire-and-forget. This makes it safe for corporate PCs where:
+//   * The exe's built-in "start" browser-open is blocked by group policy
+//   * An EADDRINUSE error is swallowed by the hidden console window
+//   * Antivirus delays or blocks the exe silently
+// If the server doesn't become ready within the timeout, a diagnostic MsgBox
+// guides the user instead of leaving them with a blank screen.
+
+describe('Launch Toolbox Silent.vbs — corporate-PC reliability', () => {
+  let vbsContent;
+
+  beforeAll(() => {
+    vbsContent = fs.readFileSync(SILENT_LAUNCHER_PATH, 'utf-8');
+  });
+
+  it('defines a named constant for the server port instead of a magic number', () => {
+    // Named constants let admins see at a glance what port is expected —
+    // and make it easy to update if the port changes in future.
+    expect(vbsContent).toMatch(/SERVER_PORT\s*=\s*5555/i);
+  });
+
+  it('defines a named constant for the startup timeout in seconds', () => {
+    // The timeout determines how long the VBS waits before showing the diagnostic
+    // error.  A named constant makes the intent clear to anyone reading the file.
+    expect(vbsContent).toMatch(/SERVER_READY_TIMEOUT_SECONDS\s*=/i);
+  });
+
+  it('polls for server readiness using WScript.Sleep after launching', () => {
+    // WScript.Sleep pauses the VBS loop between port-check attempts.
+    // Without it the loop would spin at 100% CPU and return garbage results.
+    expect(vbsContent).toMatch(/WScript\.Sleep/i);
+  });
+
+  it('uses netstat to check whether the server port is listening', () => {
+    // netstat is available on every Windows machine without special permissions.
+    // It is more reliable than PowerShell or WinHttp which may be blocked by IT.
+    expect(vbsContent).toMatch(/netstat/i);
+  });
+
+  it('opens the browser from the VBS after confirming the server is ready', () => {
+    // Belt-and-suspenders: the exe also tries to open the browser, but the
+    // VBS must open it independently in case the exe's "start" command is blocked
+    // by corporate group policy.  The VBS uses cmd /c start to open the URL.
+    expect(vbsContent).toMatch(/http:\/\/localhost/i);
+  });
+
+  it('checks whether the server is already running before launching a new instance', () => {
+    // If the user clicks the VBS launcher twice, the second run should just open
+    // the browser rather than try to start a second instance.
+    expect(vbsContent).toMatch(/IsPortListening|isPortListening/);
+  });
+
+  it('shows a diagnostic timeout error if the server does not start in time', () => {
+    // Silent failures are the hardest to debug.  A MsgBox after the timeout
+    // tells the user exactly what to try next instead of leaving them stuck.
+    expect(vbsContent).toMatch(/did not start/i);
+  });
+
+  it('includes SmartScreen guidance in the timeout error message', () => {
+    // The most common corporate-PC cause of silent failure is SmartScreen
+    // blocking the unsigned exe.  The message must tell users how to allow it.
+    expect(vbsContent).toMatch(/SmartScreen/i);
+  });
+});
