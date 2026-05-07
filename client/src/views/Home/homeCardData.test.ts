@@ -7,8 +7,8 @@ import { APP_CARDS, APP_SECTIONS, PERSONA_CARD_ORDERS } from './homeCardData.ts'
 const EXPECTED_PERSONA_KEYS = ['all', 'dev', 'po', 'qa', 'rte', 'sm'];
 
 describe('homeCardData', () => {
-  it('contains all seventeen home cards', () => {
-    expect(APP_CARDS).toHaveLength(17);
+  it('contains all twenty home cards', () => {
+    expect(APP_CARDS).toHaveLength(20);
   });
 
   it('defines every required field for each card', () => {

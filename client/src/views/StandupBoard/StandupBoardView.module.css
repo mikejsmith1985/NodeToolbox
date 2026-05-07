@@ -1,0 +1,314 @@
+/* StandupBoardView.module.css — Styles for the standalone Jira Standup Board view. */
+
+.standupBoardView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  height: 100%;
+  overflow: auto;
+  padding: var(--spacing-md);
+  color: var(--color-text-primary);
+}
+
+.pageHeader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.pageTitle {
+  margin: 0 0 var(--spacing-xs);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+}
+
+.pageSubtitle {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.timerPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  min-width: 12rem;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-surface);
+}
+
+.timerDisplay,
+.timerDisplayWarn,
+.timerDisplayUrgent {
+  font-family: var(--font-mono, monospace);
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.timerDisplayWarn {
+  color: #d97706;
+}
+
+.timerDisplayUrgent {
+  color: #dc2626;
+}
+
+.timerControls {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+.controlsPanel {
+  display: grid;
+  grid-template-columns: minmax(18rem, 1fr) auto;
+  gap: var(--spacing-md);
+  align-items: end;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-surface);
+}
+
+.fieldLabel,
+.checkboxLabel {
+  display: flex;
+  gap: var(--spacing-xs);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.fieldLabel {
+  flex-direction: column;
+}
+
+.checkboxLabel {
+  align-items: center;
+  min-height: 2.5rem;
+}
+
+.jqlInput {
+  min-height: 5rem;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  resize: vertical;
+}
+
+.controlButtons {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.button,
+.buttonPrimary {
+  min-height: 2.25rem;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+}
+
+.buttonPrimary {
+  border-color: var(--color-accent, #6366f1);
+  background: var(--color-accent, #6366f1);
+  color: #ffffff;
+}
+
+.button:disabled,
+.buttonPrimary:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.flowStatsBar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(7rem, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.flowStat {
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-surface);
+}
+
+.flowStat strong {
+  display: block;
+  font-size: var(--font-size-lg);
+}
+
+.flowStat span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.errorMessage {
+  margin: 0;
+  color: var(--color-danger, #ef4444);
+  font-size: var(--font-size-sm);
+}
+
+.emptyState {
+  padding: var(--spacing-xl, 2rem);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.boardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: var(--spacing-md);
+  align-items: start;
+}
+
+.boardColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  min-height: 12rem;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-top: 0.25rem solid var(--column-accent, #6b7280);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-surface);
+}
+
+.columnHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.columnHeader h2 {
+  margin: 0;
+  font-size: var(--font-size-md, 1rem);
+}
+
+.columnCount {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.statusFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.statusFilter,
+.statusFilterActive {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill, 999px);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-background);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+}
+
+.statusFilterActive {
+  border-color: var(--column-accent, #6366f1);
+  color: var(--color-text-primary);
+}
+
+.issueList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.issueCard,
+.issueCardExpanded {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.issueCardExpanded {
+  box-shadow: 0 0 0 0.1875rem rgba(99, 102, 241, 0.16);
+}
+
+.cardHeader,
+.cardMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  align-items: center;
+}
+
+.issueKey {
+  color: var(--color-accent, #6366f1);
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+}
+
+.blockedIndicator {
+  color: #dc2626;
+}
+
+.issueSummary {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.35;
+}
+
+.ageBadgeOk,
+.ageBadgeWarn,
+.ageBadgeOld,
+.assigneeBadge,
+.statusBadge {
+  border-radius: var(--radius-pill, 999px);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+
+.ageBadgeOk {
+  background: rgba(34, 197, 94, 0.14);
+  color: #15803d;
+}
+
+.ageBadgeWarn {
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+}
+
+.ageBadgeOld {
+  background: rgba(239, 68, 68, 0.14);
+  color: #dc2626;
+}
+
+.assigneeBadge,
+.statusBadge {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 860px) {
+  .controlsPanel,
+  .flowStatsBar {
+    grid-template-columns: 1fr;
+  }
+}

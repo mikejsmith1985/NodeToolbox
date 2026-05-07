@@ -31,6 +31,9 @@ import PitchDeckView from './views/PitchDeck/PitchDeckView.tsx';
 import DefectManagementView from './views/DefectManagement/DefectManagementView.tsx';
 import HygieneView from './views/Hygiene/HygieneView.tsx';
 import PipelineView from './views/PipelineView/PipelineView.tsx';
+import StandupBoardView from './views/StandupBoard/StandupBoardView.tsx';
+import MetricsView from './views/Metrics/MetricsView.tsx';
+import DsuDailyView from './views/DsuDaily/DsuDailyView.tsx';
 import styles from './App.module.css';
 
 const APP_TITLE = 'NodeToolbox';
@@ -83,7 +86,10 @@ export default function App() {
           <Route path="/defects" element={<DefectManagementView />} />
           <Route path="/hygiene" element={<HygieneView />} />
           <Route path="/pipeline" element={<PipelineView />} />
-          <Route path="*" element={<Navigate to={DEFAULT_ROUTE} replace />} />
+          <Route path="/standup" element={<StandupBoardView />} />
+          <Route path="/metrics" element={<MetricsView />} />
+          <Route path="/dsu-daily" element={<DsuDailyView />} />
+          <Route path="*"element={<Navigate to={DEFAULT_ROUTE} replace />} />
         </Routes>
       </main>
     </div>
