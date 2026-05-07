@@ -23,6 +23,20 @@
   color: var(--color-text-primary);
 }
 
+/* Overrides browser anchor defaults so the title looks like a header element, not a blue link. */
+.homeLink {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  text-decoration: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.homeLink:hover {
+  opacity: 0.75;
+}
+
 .mainContent {
   flex: 1;
   overflow: auto;
