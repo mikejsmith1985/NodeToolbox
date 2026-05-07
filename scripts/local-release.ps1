@@ -242,15 +242,24 @@ Write-Host "       ✅ $ExeOutputPath ($exeSizeKb KB)"
 
 # Wrap the exe in its own dedicated zip so users can download it without
 # browser security warnings that block direct .exe file downloads.
-# Also include the silent VBScript launcher. The React SPA (client/dist/)
-# is now bundled INSIDE the exe via pkg.assets — the exe is self-contained
-# and users do not need a separate client/ folder next to it.
+# Include the silent VBScript launcher and client/dist/ alongside the exe.
+#
+# client/dist/ serves as a belt-and-suspenders fallback: the React SPA is
+# bundled inside the exe via pkg.assets (primary path), but server.js also
+# checks path.dirname(process.execPath) in case the snapshot is inaccessible.
+# Shipping client/dist/ in the exe-zip ensures it is always available on disk.
 $ExeZipStagingDir = Join-Path $DistDir 'exe-staging'
 New-Item -ItemType Directory -Path $ExeZipStagingDir | Out-Null
 Copy-Item $ExeOutputPath $ExeZipStagingDir -Force
 if (Test-Path $SilentLauncherPath) {
     Copy-Item $SilentLauncherPath $ExeZipStagingDir -Force
 }
+
+# Copy client/dist → exe-staging/client/dist so it is available on real disk
+# next to the exe after extraction (fallback if snapshot serving fails).
+$clientDirInExeStaging = Join-Path $ExeZipStagingDir 'client'
+New-Item -ItemType Directory -Path $clientDirInExeStaging -Force | Out-Null
+Copy-Item (Join-Path $RepoRoot 'client\dist') (Join-Path $clientDirInExeStaging 'dist') -Recurse -Force
 
 Compress-Archive -Path (Join-Path $ExeZipStagingDir '*') -DestinationPath $ExeZipOutputPath -Force
 Remove-Item $ExeZipStagingDir -Recurse -Force

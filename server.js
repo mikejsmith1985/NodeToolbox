@@ -92,36 +92,127 @@ app.get('/', (req, res, next) => {
 //
 // Serves the React SPA from client/dist/ — built by `npm run build:client`.
 // All non-API paths return index.html so React Router handles client-side
-// navigation. Run `npm run build:client` once before starting the server if
-// client/dist/ does not exist.
+// navigation.
 //
-// When running as a pkg-bundled .exe, client/dist/ is bundled inside the exe
-// snapshot via the "pkg.assets" array in package.json. The pkg runtime
-// intercepts fs/express.static calls so they resolve correctly against the
-// snapshot — __dirname points to the snapshot root just as it would point to
-// the project root during development. This makes the exe truly self-contained:
-// users do not need a separate client/ folder next to the exe.
+// Two-path resolution for the pkg-bundled .exe:
+//   1. Snapshot (__dirname): client/dist/ is bundled via pkg.assets in package.json.
+//      fs.readFileSync works with snapshot virtual paths and is used for serving.
+//   2. Real disk fallback (path.dirname(process.execPath)): if the snapshot
+//      path is inaccessible (e.g., pkg.assets not loaded), the server falls
+//      back to the client/dist/ folder shipped alongside the exe in the exe-zip.
+//
+// express.static uses fs.createReadStream under the hood, which does NOT work
+// reliably with @yao-pkg/pkg's snapshot virtual filesystem. A custom readFileSync-
+// based middleware is used instead when running as a bundled exe.
 //
 // For ZIP distribution (node server.js / Launch Toolbox.bat), __dirname is
-// the real directory containing server.js, and client/dist/ is shipped inside
-// the zip as a regular subdirectory.
-const APP_BASE_DIR = __dirname;
+// the real directory containing server.js and express.static is used normally.
 
+/**
+ * Resolves the base directory that contains client/dist/ for this distribution.
+ *
+ * In pkg exe mode: tries the snapshot virtual path (__dirname) first by reading
+ * index.html; falls back to the real disk directory next to the exe.
+ * In dev/ZIP mode: always __dirname (the real project directory).
+ *
+ * @returns {string} Absolute path to the directory containing client/dist/
+ */
+function resolveAppBaseDir() {
+  if (!process.pkg) {
+    // Dev (node server.js) or ZIP install — __dirname is the real project root.
+    return __dirname;
+  }
+
+  // Pkg exe mode: prefer the snapshot virtual path so the exe is self-contained.
+  // fs.readFileSync is used for the probe because it reliably accesses snapshot
+  // assets, unlike fs.existsSync which can return false for virtual paths in
+  // some @yao-pkg/pkg configurations.
+  const snapshotIndexPath = path.join(__dirname, 'client', 'dist', 'index.html');
+  try {
+    fs.readFileSync(snapshotIndexPath);
+    return __dirname; // Snapshot is accessible — use it
+  } catch {
+    // Snapshot not accessible; fall back to real disk next to the exe.
+    // client/dist/ is included in the exe-zip as a belt-and-suspenders backup.
+    return path.dirname(process.execPath);
+  }
+}
+
+const APP_BASE_DIR        = resolveAppBaseDir();
 const clientDistDir       = path.join(APP_BASE_DIR, 'client', 'dist');
 const clientDistIndexPath = path.join(APP_BASE_DIR, 'client', 'dist', 'index.html');
 
-// Serve compiled React assets (JS chunks, CSS, icons, etc.)
-app.use(express.static(clientDistDir));
+// Content-type map for React SPA asset extensions.
+// Used by the pkg-mode static middleware — express.static is not used in
+// pkg mode because its underlying stream-based file access does not work
+// reliably with the pkg snapshot virtual filesystem.
+const STATIC_CONTENT_TYPES = {
+  '.html':  'text/html; charset=utf-8',
+  '.js':    'application/javascript; charset=utf-8',
+  '.mjs':   'application/javascript; charset=utf-8',
+  '.css':   'text/css; charset=utf-8',
+  '.json':  'application/json',
+  '.svg':   'image/svg+xml',
+  '.png':   'image/png',
+  '.jpg':   'image/jpeg',
+  '.jpeg':  'image/jpeg',
+  '.ico':   'image/x-icon',
+  '.woff':  'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf':   'font/ttf',
+  '.eot':   'application/vnd.ms-fontobject',
+  '.map':   'application/json',
+};
+
+/**
+ * Returns the HTTP Content-Type header value for a given file path.
+ * Defaults to application/octet-stream for unknown extensions.
+ *
+ * @param {string} filePath - Absolute or relative file path with an extension
+ * @returns {string} Content-Type header value
+ */
+function getStaticContentType(filePath) {
+  const fileExtension = path.extname(filePath).toLowerCase();
+  return STATIC_CONTENT_TYPES[fileExtension] || 'application/octet-stream';
+}
+
+if (process.pkg) {
+  // Custom static middleware for pkg exe mode.
+  // Reads each file from the resolved base directory using fs.readFileSync,
+  // which works with both snapshot virtual paths and real disk paths.
+  // Calls next() for any path that does not resolve to a readable file,
+  // allowing React Router paths to fall through to the SPA catch-all below.
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    const requestedFilePath = path.join(clientDistDir, req.path);
+    try {
+      const fileContent = fs.readFileSync(requestedFilePath);
+      res.setHeader('Content-Type', getStaticContentType(req.path));
+      res.end(fileContent);
+    } catch {
+      next();
+    }
+  });
+} else {
+  // Standard express.static for dev (node server.js) and ZIP distributions.
+  app.use(express.static(clientDistDir));
+}
 
 // SPA fallback — send index.html for any path React Router should handle.
 // API and proxy routes registered above match before this catch-all, so
 // backend endpoints are never accidentally swallowed by the React app.
-// Returns a 503 build-required page if the client has not been built yet.
+//
+// Uses fs.readFileSync rather than fs.existsSync + res.sendFile because
+// fs.existsSync can return false for snapshot-virtual paths in @yao-pkg/pkg,
+// causing a false "React build not found" 503 even when the files are present.
 app.get('*', (_req, res) => {
-  if (!fs.existsSync(clientDistIndexPath)) {
-    return res.status(503).send(buildClientNotBuiltPage());
+  try {
+    const indexHtmlContent = fs.readFileSync(clientDistIndexPath);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end(indexHtmlContent);
+  } catch {
+    res.status(503).send(buildClientNotBuiltPage());
   }
-  res.sendFile(clientDistIndexPath);
 });
 
 // ── Start Server ──────────────────────────────────────────────────────────────

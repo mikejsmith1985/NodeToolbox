@@ -2,8 +2,8 @@
 //
 // The pkg-bundled .exe sets process.pkg to a truthy value at runtime.
 // These tests verify that server.js and package.json are configured so the
-// exe is truly self-contained — client/dist/ is bundled inside the snapshot,
-// not shipped as a separate folder alongside the exe.
+// React SPA is served correctly from both the pkg snapshot (self-contained mode)
+// and from real disk alongside the exe (fallback mode).
 
 'use strict';
 
@@ -19,10 +19,8 @@ const PACKAGE_JSON       = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'pack
 
 describe('package.json — pkg assets', () => {
   it('bundles client/dist/**/* inside the exe snapshot', () => {
-    // client/dist/ must be listed in pkg.assets so the React SPA is embedded
-    // inside the exe binary. Without this, the exe depends on client/dist/
-    // existing on real disk next to it — which fails on corporate PCs where
-    // antivirus or sandbox tools run the exe from a temp location.
+    // client/dist/ must be listed in pkg.assets so the React SPA can be
+    // accessed from the pkg virtual filesystem via fs.readFileSync.
     const pkgAssets = PACKAGE_JSON.pkg && PACKAGE_JSON.pkg.assets;
     expect(pkgAssets).toBeDefined();
     const assetsArray = Array.isArray(pkgAssets) ? pkgAssets : [pkgAssets];
@@ -33,24 +31,51 @@ describe('package.json — pkg assets', () => {
   });
 });
 
-// ── server.js — static asset base path ────────────────────────────────────────
+// ── server.js — static asset serving ─────────────────────────────────────────
 
-describe('server.js — static asset base path for pkg exe', () => {
-  it('uses __dirname as APP_BASE_DIR for all distributions including the pkg exe', () => {
-    // client/dist/ is now bundled inside the exe via pkg.assets, so __dirname
-    // (which points to the snapshot root in pkg mode) correctly finds the
-    // assets. This makes the exe truly self-contained — no separate client/
-    // folder needed. For dev (node server.js) and ZIP installs, __dirname
-    // continues to point to the real directory containing server.js.
-    expect(SERVER_SOURCE).toMatch(/APP_BASE_DIR\s*=\s*__dirname/);
+describe('server.js — pkg-compatible static asset serving', () => {
+  it('uses readFileSync to serve static files in pkg exe mode', () => {
+    // express.static uses fs.createReadStream internally, which does NOT work
+    // reliably with @yao-pkg/pkg's snapshot virtual filesystem.
+    // fs.readFileSync IS guaranteed to work with snapshot assets.
+    // The server must use a readFileSync-based static middleware when
+    // process.pkg is truthy so assets (JS, CSS, icons) are served correctly.
+    expect(SERVER_SOURCE).toMatch(/process\.pkg[\s\S]{0,400}readFileSync/);
   });
 
-  it('does NOT rely on process.execPath to locate client/dist/', () => {
-    // process.execPath was previously used to locate client/dist/ on real disk
-    // next to the exe. Now that client/dist/ is bundled in the snapshot,
-    // process.execPath is no longer needed for asset path resolution.
-    // This assertion confirms the old brittle pattern has been removed.
-    expect(SERVER_SOURCE).not.toMatch(/APP_BASE_DIR[\s\S]{0,80}process\.execPath/);
+  it('uses readFileSync for the SPA fallback index.html in pkg exe mode', () => {
+    // The SPA catch-all must use fs.readFileSync (not fs.existsSync + res.sendFile)
+    // so index.html is served correctly from the snapshot virtual filesystem.
+    // fs.existsSync can return false for snapshot paths in some pkg configurations.
+    expect(SERVER_SOURCE).toMatch(/readFileSync[\s\S]{0,200}index\.html|index\.html[\s\S]{0,200}readFileSync/);
+  });
+
+  it('does not rely on fs.existsSync to check for client/dist/index.html', () => {
+    // fs.existsSync can silently return false for snapshot-virtual paths in pkg,
+    // causing the 503 "React build not found" page to show even when client/dist
+    // IS bundled inside the exe. The server must not use existsSync as a gate.
+    expect(SERVER_SOURCE).not.toMatch(/fs\.existsSync\s*\(\s*clientDistIndexPath\s*\)/);
+  });
+});
+
+// ── server.js — APP_BASE_DIR resolution ───────────────────────────────────────
+
+describe('server.js — static asset base path for pkg exe', () => {
+  it('resolves APP_BASE_DIR using __dirname (snapshot root) for the primary path', () => {
+    // __dirname in the pkg snapshot points to the snapshot root, where
+    // client/dist/ is bundled via pkg.assets. For dev/ZIP distributions,
+    // __dirname is the real project directory on disk.
+    // The server uses a function to resolve APP_BASE_DIR; __dirname must appear
+    // in that resolution logic as the primary/snapshot path.
+    expect(SERVER_SOURCE).toMatch(/resolveAppBaseDir[\s\S]{0,400}__dirname/);
+  });
+
+  it('falls back to process.execPath directory for real-disk serving in pkg mode', () => {
+    // If the snapshot path is not accessible (e.g., pkg.assets misconfigured),
+    // the server falls back to path.dirname(process.execPath) — the real
+    // directory containing the exe — where client/dist/ is also shipped in
+    // the exe-zip as a belt-and-suspenders backup.
+    expect(SERVER_SOURCE).toMatch(/process\.execPath/);
   });
 });
 

@@ -8,10 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **Exe distribution — React build not found on corporate PCs (fix/bundle-client-dist-in-exe)**: `client/dist/` (the compiled React SPA) was shipped as a separate folder alongside the exe, relying on the user keeping the correct directory structure after extraction. On corporate PCs, antivirus or sandbox tools may run the exe from a temp/quarantine location that doesn't include the adjacent `client/` folder, producing a "⚠ React build not found" error page. Fixed by:
-  - Adding `"assets": ["client/dist/**/*"]` to the `"pkg"` configuration in `package.json` — the React SPA is now bundled inside the exe binary itself.
-  - Simplifying `APP_BASE_DIR` in `server.js` to always use `__dirname`; the pkg runtime intercepts fs/express.static calls so `__dirname` correctly resolves to the snapshot root in exe mode and to the real project directory in dev/ZIP mode.
-  - Removing the now-unnecessary `client/dist/` copy step from the exe-zip staging in `scripts/local-release.ps1` — the exe-zip now contains only the exe and the VBS launcher.
+- **Exe distribution — React build not found (readFileSync-based static serving)**: `express.static` (used in v0.5.3) relies on `fs.createReadStream` internally, which does not work reliably with `@yao-pkg/pkg`'s snapshot virtual filesystem. Even with `client/dist/` bundled via `pkg.assets`, the React SPA was never served — the exe still showed "⚠ React build not found". Fixed by:
+  - Adding `resolveAppBaseDir()` to `server.js`: probes the snapshot path (`__dirname`) via `fs.readFileSync` first; falls back to `path.dirname(process.execPath)` (real disk next to the exe) if the snapshot is inaccessible.
+  - Adding a custom `readFileSync`-based static middleware for pkg exe mode — `fs.readFileSync` is guaranteed by `@yao-pkg/pkg` to work with snapshot virtual paths.
+  - Replacing `fs.existsSync + res.sendFile` in the SPA catch-all with a `fs.readFileSync` try-catch, because `fs.existsSync` can falsely return `false` for snapshot paths.
+  - Re-adding `client/dist/` to the exe-zip in `scripts/local-release.ps1` as a belt-and-suspenders fallback alongside the exe.
 
 ### Fixed
 - **VBS launcher — silent failure on corporate PCs (fix/vbs-launcher-corporate-pc)**: `Launch Toolbox Silent.vbs` was fire-and-forget: if the exe was blocked by antivirus/SmartScreen, port 5555 was locked, or the exe's built-in browser-open command was blocked by group policy, nothing visible happened. Fixed by:
