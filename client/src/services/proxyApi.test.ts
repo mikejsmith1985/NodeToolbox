@@ -2,10 +2,12 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ProxyConfig, ProxyStatusResponse } from '../types/config.ts';
+import type { ConnectionProbeResult, ProxyConfig, ProxyStatusResponse } from '../types/config.ts';
 import {
   fetchProxyConfig,
   fetchProxyStatus,
+  probeJiraConnection,
+  probeSnowConnection,
   updateProxyConfig,
 } from './proxyApi.ts';
 
@@ -80,5 +82,57 @@ describe('proxyApi', () => {
     await expect(updateProxyConfig({ adminPin: '1357' })).rejects.toThrow(
       'proxy-config update failed: 400',
     );
+  });
+
+  describe('probeJiraConnection', () => {
+    it('returns ok=true when the Jira myself endpoint responds 200', async () => {
+      vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200 } as Response);
+
+      const probeResult: ConnectionProbeResult = await probeJiraConnection();
+
+      expect(probeResult.isOk).toBe(true);
+      expect(probeResult.statusCode).toBe(200);
+      expect(fetch).toHaveBeenCalledWith('/jira-proxy/rest/api/2/myself');
+    });
+
+    it('returns ok=false with the status code when Jira returns 401', async () => {
+      vi.mocked(fetch).mockResolvedValue({ ok: false, status: 401 } as Response);
+
+      const probeResult: ConnectionProbeResult = await probeJiraConnection();
+
+      expect(probeResult.isOk).toBe(false);
+      expect(probeResult.statusCode).toBe(401);
+      expect(probeResult.message).toContain('401');
+    });
+
+    it('returns ok=false with statusCode 0 when the fetch throws a network error', async () => {
+      vi.mocked(fetch).mockRejectedValue(new Error('Network failure'));
+
+      const probeResult: ConnectionProbeResult = await probeJiraConnection();
+
+      expect(probeResult.isOk).toBe(false);
+      expect(probeResult.statusCode).toBe(0);
+    });
+  });
+
+  describe('probeSnowConnection', () => {
+    it('returns ok=true when the SNow probe endpoint responds 200', async () => {
+      vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200 } as Response);
+
+      const probeResult: ConnectionProbeResult = await probeSnowConnection();
+
+      expect(probeResult.isOk).toBe(true);
+      expect(probeResult.statusCode).toBe(200);
+      expect(fetch).toHaveBeenCalledWith('/snow-proxy/api/now/table/sys_user?sysparm_limit=1');
+    });
+
+    it('returns ok=false with statusCode 0 on network error', async () => {
+      vi.mocked(fetch).mockRejectedValue(new Error('Network failure'));
+
+      const probeResult: ConnectionProbeResult = await probeSnowConnection();
+
+      expect(probeResult.isOk).toBe(false);
+      expect(probeResult.statusCode).toBe(0);
+    });
   });
 });

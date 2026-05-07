@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **SNow Hub tab label**: "CRG" corrected to "CHG" (Change Request) in `SnowHubView.tsx`. The internal key remains `crg` to avoid breaking any persisted UI state.
 - **No Home navigation**: The NodeToolbox title in the top bar is now a clickable `<Link>` that navigates back to the Home route (`/`) from any tool view.
+- **Jira "connected but not working"**: `ConnectionBar` now shows green only when a live API probe (`GET /jira-proxy/rest/api/2/myself`) returns 200 — not merely when credentials are present in the config file. Added `isJiraVerified` / `isSnowVerified` to `connectionStore` alongside the existing `isJiraReady` / `isSnowReady` config-presence flags.
+- **SNow 401 on Release Management tab**: `useReleaseManagement.loadMyActiveChanges` now checks `isSnowReady` before firing any SNow fetch. When SNow is not configured, an actionable error message is displayed instead of a silent 401.
+- `proxyApi.ts`: added `probeJiraConnection()` and `probeSnowConnection()` — live credential probes via the existing proxy routes that return `ConnectionProbeResult` rather than throwing.
+- `useProxyStatus.ts`: after every poll, runs Jira and SNow probes in parallel (via `Promise.allSettled`) when the respective service is configured, then writes the verified flags to the connection store.
 
 ### Fixed
 - **EXE distribution — 503 "React build not found"**: `express.static` and `fs.existsSync` do not work with `@yao-pkg/pkg`'s virtual snapshot filesystem on Windows. `server.js` now uses `path.dirname(process.execPath)` (the real directory containing the `.exe`) as the asset base when `process.pkg` is truthy, instead of `__dirname` (the virtual snapshot path). `client/dist/` is now shipped alongside the `.exe` in the exe ZIP so it is extracted to the real filesystem on first use.
