@@ -4,11 +4,13 @@
 // The Report tab lets users switch between four issue sources (mine / JQL / filter / board),
 // filter by persona, and view results in card, compact, or table layout.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { JiraIssue } from '../../types/jira.ts';
+import { snowFetch } from '../../services/snowApi.ts';
+import { useConnectionStore } from '../../store/connectionStore.ts';
 import { useMyIssuesState } from './hooks/useMyIssuesState.ts';
-import type { IssueSource, Persona, SortField, ViewMode } from './hooks/useMyIssuesState.ts';
+import type { IssueSource, JiraTransition, Persona, SortField, ViewMode } from './hooks/useMyIssuesState.ts';
 import styles from './MyIssuesView.module.css';
 
 // ── Named constants ──
@@ -54,7 +56,185 @@ const AGING_WARN_DAYS = 5;
 const AGING_STALE_DAYS = 10;
 const MS_PER_DAY = 86_400_000;
 
+/** Maximum number of description characters to show before truncating. */
+const DESCRIPTION_TRUNCATE_LENGTH = 300;
+
+/** Maximum number of SNow incident tickets to load per issue search. */
+const SNOW_SEARCH_LIMIT = 5;
+
+const SNOW_INCIDENT_PATH = '/api/now/table/incident';
+
 type MyIssuesTab = 'report' | 'settings';
+
+/** Represents a single ServiceNow incident ticket returned from the SNow proxy. */
+interface SnowTicket {
+  sys_id: string;
+  number: string;
+  short_description: string;
+}
+
+// ── Detail panel component ──
+
+interface DetailPanelProps {
+  issue: JiraIssue;
+  isTransitioning: boolean;
+  transitionError: string | null;
+  availableTransitions: JiraTransition[];
+  isLoadingTransitions: boolean;
+  isSnowReady: boolean;
+  onClose: () => void;
+  onLoadTransitions: (issueKey: string) => void;
+  onTransition: (issueKey: string, transitionId: string) => Promise<void>;
+}
+
+/**
+ * Slide-in detail panel showing full issue metadata, an optional status transition
+ * dropdown, and a ServiceNow cross-reference section when SNow is connected.
+ */
+function DetailPanel({
+  issue,
+  isTransitioning,
+  transitionError,
+  availableTransitions,
+  isLoadingTransitions,
+  isSnowReady,
+  onClose,
+  onLoadTransitions,
+  onTransition,
+}: DetailPanelProps) {
+  const [snowTickets, setSnowTickets] = useState<SnowTicket[]>([]);
+  const [isSnowLoading, setIsSnowLoading] = useState(false);
+  const [snowError, setSnowError] = useState<string | null>(null);
+
+  // Fetch transitions and SNow tickets whenever the selected issue changes.
+  useEffect(() => {
+    onLoadTransitions(issue.key);
+
+    if (isSnowReady) {
+      setIsSnowLoading(true);
+      setSnowTickets([]);
+      setSnowError(null);
+
+      const snowQuery = encodeURIComponent(`short_descriptionLIKE${issue.key}`);
+      const snowPath = `${SNOW_INCIDENT_PATH}?sysparm_query=${snowQuery}&sysparm_limit=${SNOW_SEARCH_LIMIT}`;
+
+      snowFetch<{ result: SnowTicket[] }>(snowPath)
+        .then((response) => {
+          setSnowTickets(response.result);
+          setIsSnowLoading(false);
+        })
+        .catch((fetchError: unknown) => {
+          const message = fetchError instanceof Error ? fetchError.message : 'Failed to search SNow';
+          setSnowError(message);
+          setIsSnowLoading(false);
+        });
+    }
+  }, [issue.key, isSnowReady, onLoadTransitions]);
+
+  const isDescriptionLong = (issue.fields.description?.length ?? 0) > DESCRIPTION_TRUNCATE_LENGTH;
+  const truncatedDescription = issue.fields.description
+    ? issue.fields.description.slice(0, DESCRIPTION_TRUNCATE_LENGTH)
+    : null;
+
+  return (
+    <aside aria-label="Issue detail panel" className={styles.detailPanel}>
+      <button
+        aria-label="Close detail panel"
+        className={styles.detailPanelClose}
+        onClick={onClose}
+        type="button"
+      >
+        ✕ Close
+      </button>
+
+      <span className={styles.detailPanelKey}>{issue.key}</span>
+      <p className={styles.detailPanelSummary}>{issue.fields.summary}</p>
+
+      <dl className={styles.detailMeta}>
+        <dt>Status</dt>
+        <dd>{issue.fields.status.name}</dd>
+        <dt>Priority</dt>
+        <dd>{issue.fields.priority?.name ?? '—'}</dd>
+        <dt>Assignee</dt>
+        <dd>{issue.fields.assignee?.displayName ?? 'Unassigned'}</dd>
+        <dt>Reporter</dt>
+        <dd>{issue.fields.reporter?.displayName ?? '—'}</dd>
+        <dt>Created</dt>
+        <dd>{issue.fields.created.slice(0, 10)}</dd>
+        <dt>Updated</dt>
+        <dd>{issue.fields.updated.slice(0, 10)}</dd>
+      </dl>
+
+      {truncatedDescription && (
+        <div className={styles.detailDescription}>
+          <p>
+            {truncatedDescription}
+            {isDescriptionLong ? '…' : ''}
+          </p>
+          {isDescriptionLong && (
+            <a href={`#${issue.key}-desc`} className={styles.issueKeyLink}>
+              ...more
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* Status transition dropdown */}
+      <div className={styles.detailTransitions}>
+        {isLoadingTransitions ? (
+          <span>Loading transitions…</span>
+        ) : availableTransitions.length > 0 ? (
+          <>
+            <label htmlFor="transition-select">Change status</label>
+            <select
+              disabled={isTransitioning}
+              id="transition-select"
+              onChange={(changeEvent) => {
+                void onTransition(issue.key, changeEvent.target.value);
+              }}
+              value=""
+            >
+              <option disabled value="">
+                Transition to…
+              </option>
+              {availableTransitions.map((transition) => (
+                <option key={transition.id} value={transition.id}>
+                  {transition.name}
+                </option>
+              ))}
+            </select>
+            {isTransitioning && <span>Transitioning…</span>}
+          </>
+        ) : null}
+        {transitionError && (
+          <p className={styles.errorMessage}>{transitionError}</p>
+        )}
+      </div>
+
+      {/* ServiceNow cross-reference section */}
+      {isSnowReady && (
+        <div className={styles.detailSnow}>
+          <h3>SNow Tickets</h3>
+          {isSnowLoading ? (
+            <span>Searching SNow…</span>
+          ) : snowError ? (
+            <p className={styles.errorMessage}>{snowError}</p>
+          ) : snowTickets.length > 0 ? (
+            <ul>
+              {snowTickets.map((ticket) => (
+                <li key={ticket.sys_id}>
+                  <strong>{ticket.number}</strong> — {ticket.short_description}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>No SNow tickets found</p>
+          )}
+        </div>
+      )}
+    </aside>
+  );
+}
 
 // ── Helper functions ──
 
@@ -148,10 +328,11 @@ function filterIssuesByStatusZone(
 
 interface IssueCardProps {
   issue: JiraIssue;
+  onIssueClick: (issue: JiraIssue) => void;
 }
 
 /** Renders a full card with key, summary, status, assignee, and aging indicator. */
-function renderIssueCard({ issue }: IssueCardProps) {
+function renderIssueCard({ issue, onIssueClick }: IssueCardProps) {
   const agingDays = calculateAgingDays(issue.fields.updated);
   const isAgedWarn = agingDays > AGING_WARN_DAYS && agingDays <= AGING_STALE_DAYS;
   const isAgedStale = agingDays > AGING_STALE_DAYS;
@@ -162,17 +343,25 @@ function renderIssueCard({ issue }: IssueCardProps) {
       ? styles.agingWarn
       : undefined;
 
+  function handleKeyDown(keyEvent: React.KeyboardEvent) {
+    if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+      onIssueClick(issue);
+    }
+  }
+
   return (
-    <div className={styles.issueCard} key={issue.key}>
+    <div
+      className={styles.issueCard}
+      key={issue.key}
+      onClick={() => onIssueClick(issue)}
+      onKeyDown={handleKeyDown}
+      role="button"
+      tabIndex={0}
+    >
       <div className={styles.cardHeader}>
-        <a
-          className={styles.issueKeyLink}
-          href={`#${issue.key}`}
-          rel="noopener noreferrer"
-          target="_blank"
-        >
+        <span className={styles.issueKeyLink}>
           {issue.key}
-        </a>
+        </span>
         <span className={styles.statusBadge}>{issue.fields.status.name}</span>
         {issue.fields.priority && (
           <span className={styles.statusBadge}>{issue.fields.priority.name}</span>
@@ -181,7 +370,6 @@ function renderIssueCard({ issue }: IssueCardProps) {
       <p className={styles.issueSummary}>{issue.fields.summary}</p>
       <div className={styles.cardMeta}>
         <span>{issue.fields.issuetype.name}</span>
-        {issue.fields.assignee && <span>{issue.fields.assignee.displayName}</span>}
         {agingDays > 0 && (
           <span className={agingClassName}>{agingDays}d ago</span>
         )}
@@ -191,12 +379,25 @@ function renderIssueCard({ issue }: IssueCardProps) {
 }
 
 /** Renders a single-line compact row for an issue. */
-function renderCompactRow(issue: JiraIssue) {
+function renderCompactRow(issue: JiraIssue, onIssueClick: (issue: JiraIssue) => void) {
+  function handleKeyDown(keyEvent: React.KeyboardEvent) {
+    if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+      onIssueClick(issue);
+    }
+  }
+
   return (
-    <div className={styles.compactRow} key={issue.key}>
-      <a className={styles.issueKeyLink} href={`#${issue.key}`}>
+    <div
+      className={styles.compactRow}
+      key={issue.key}
+      onClick={() => onIssueClick(issue)}
+      onKeyDown={handleKeyDown}
+      role="button"
+      tabIndex={0}
+    >
+      <span className={styles.issueKeyLink}>
         {issue.key}
-      </a>
+      </span>
       <span>{issue.fields.summary}</span>
       <span>{issue.fields.status.name}</span>
       <span>{issue.fields.assignee?.displayName ?? '—'}</span>
@@ -206,13 +407,25 @@ function renderCompactRow(issue: JiraIssue) {
 }
 
 /** Renders a full-width table row for an issue. */
-function renderTableRow(issue: JiraIssue) {
+function renderTableRow(issue: JiraIssue, onIssueClick: (issue: JiraIssue) => void) {
+  function handleKeyDown(keyEvent: React.KeyboardEvent) {
+    if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+      onIssueClick(issue);
+    }
+  }
+
   return (
-    <tr key={issue.key}>
+    <tr
+      key={issue.key}
+      onClick={() => onIssueClick(issue)}
+      onKeyDown={handleKeyDown}
+      role="button"
+      tabIndex={0}
+    >
       <td>
-        <a className={styles.issueKeyLink} href={`#${issue.key}`}>
+        <span className={styles.issueKeyLink}>
           {issue.key}
-        </a>
+        </span>
       </td>
       <td>{issue.fields.summary}</td>
       <td>{issue.fields.status.name}</td>
@@ -224,7 +437,7 @@ function renderTableRow(issue: JiraIssue) {
 }
 
 /** Renders the full issue list in the selected view mode. */
-function renderIssueList(issues: JiraIssue[], viewMode: ViewMode) {
+function renderIssueList(issues: JiraIssue[], viewMode: ViewMode, onIssueClick: (issue: JiraIssue) => void) {
   if (viewMode === 'compact') {
     return (
       <div className={styles.compactList}>
@@ -235,7 +448,7 @@ function renderIssueList(issues: JiraIssue[], viewMode: ViewMode) {
           <strong>Assignee</strong>
           <strong>Updated</strong>
         </div>
-        {issues.map(renderCompactRow)}
+        {issues.map((issue) => renderCompactRow(issue, onIssueClick))}
       </div>
     );
   }
@@ -253,7 +466,7 @@ function renderIssueList(issues: JiraIssue[], viewMode: ViewMode) {
             <th>Updated</th>
           </tr>
         </thead>
-        <tbody>{issues.map(renderTableRow)}</tbody>
+        <tbody>{issues.map((issue) => renderTableRow(issue, onIssueClick))}</tbody>
       </table>
     );
   }
@@ -261,7 +474,7 @@ function renderIssueList(issues: JiraIssue[], viewMode: ViewMode) {
   // Default: card view
   return (
     <div className={styles.issueList}>
-      {issues.map((issue) => renderIssueCard({ issue }))}
+      {issues.map((issue) => renderIssueCard({ issue, onIssueClick }))}
     </div>
   );
 }
@@ -432,6 +645,7 @@ function SourcePane({
  */
 export default function MyIssuesView() {
   const { state, actions } = useMyIssuesState();
+  const { isSnowReady } = useConnectionStore();
   const [activeTab, setActiveTab] = useState<MyIssuesTab>('report');
 
   const zoneCounts = calculateStatusZoneCounts(state.issues);
@@ -569,6 +783,37 @@ export default function MyIssuesView() {
             </select>
 
             <span className={styles.countLabel}>{state.issues.length} issues</span>
+
+            {/* Export menu */}
+            {state.issues.length > 0 && (
+              <div className={styles.exportMenuWrapper}>
+                <button
+                  className={styles.toolbarButton}
+                  onClick={() => actions.setExportMenuOpen(!state.isExportMenuOpen)}
+                  type="button"
+                >
+                  Export
+                </button>
+                {state.isExportMenuOpen && (
+                  <div className={styles.exportDropdown}>
+                    <button
+                      className={styles.exportDropdownItem}
+                      onClick={() => { actions.exportAsCsv(); }}
+                      type="button"
+                    >
+                      Copy as CSV
+                    </button>
+                    <button
+                      className={styles.exportDropdownItem}
+                      onClick={() => { actions.exportAsMarkdown(); }}
+                      type="button"
+                    >
+                      Copy as Markdown Table
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Error display */}
@@ -602,9 +847,24 @@ export default function MyIssuesView() {
             ) : filteredIssues.length === 0 ? (
               <p style={{ color: 'var(--color-text-secondary)' }}>No issues to display.</p>
             ) : (
-              renderIssueList(filteredIssues, state.viewMode)
+              renderIssueList(filteredIssues, state.viewMode, actions.openDetailPanel)
             )}
           </div>
+
+          {/* Detail panel — shown when an issue is selected */}
+          {state.isDetailPanelOpen && state.selectedIssue && (
+            <DetailPanel
+              availableTransitions={state.availableTransitions}
+              isLoadingTransitions={state.isLoadingTransitions}
+              isSnowReady={isSnowReady}
+              isTransitioning={state.isTransitioning}
+              issue={state.selectedIssue}
+              onClose={actions.closeDetailPanel}
+              onLoadTransitions={actions.loadTransitions}
+              onTransition={actions.transitionIssue}
+              transitionError={state.transitionError}
+            />
+          )}
         </section>
       )}
 
