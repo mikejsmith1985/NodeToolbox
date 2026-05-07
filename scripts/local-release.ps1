@@ -182,6 +182,21 @@ try {
 }
 Write-Host "       ✅ React client built (client/dist/)"
 
+# Step 3.5: Bake the React build into a JS module so pkg embeds it as bytecode.
+# This is required because @yao-pkg/pkg's `assets` snapshot virtual filesystem
+# silently fails to include client/dist/ in some environments. Embedding the
+# files as base64 Buffer literals in src/embeddedClient.js guarantees the SPA
+# ships inside the executable — pkg always bundles JS source as bytecode.
+Write-Host "  [3.5/6] Embedding React build for pkg..."
+Push-Location $RepoRoot
+try {
+    node scripts/generate-embedded-client.js
+    if ($LASTEXITCODE -ne 0) { throw "Embedded-client generation failed with exit code $LASTEXITCODE" }
+} finally {
+    Pop-Location
+}
+Write-Host "       ✅ Embedded client generated (src/embeddedClient.js)"
+
 # Step 4: Build the slim zip — collect paths that actually exist
 Write-Host "  [4/6] Building zip: $ZipFileName..."
 

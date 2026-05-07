@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **React build not found on exe launch (root cause fix)**: The pkg `assets` configuration was silently failing to include `client/dist/**/*` in the executable snapshot. End-to-end testing in a clean temp directory containing ONLY the exe (no `client/dist/` on disk) reproduced the "⚠ React build not found" 503 page on `/admin-hub` even after v0.5.4 and v0.5.5 attempted fixes. Verified via diagnostic logging that pkg's snapshot virtual filesystem returned `ENOENT File '...client/dist/index.html' was not included into executable at compilation stage` despite multiple asset configurations (glob, explicit list, CLI `--assets` flag).
+  - Solution: bake the entire React build into a JavaScript module (`src/embeddedClient.js`) at release time as base64-encoded `Buffer` literals. pkg always bundles JS source as bytecode, so the SPA now ships *inside* the executable independent of the asset virtualization layer.
+  - New script `scripts/generate-embedded-client.js` walks `client/dist/` and emits the embedded module.
+  - `scripts/local-release.ps1` runs the generator as new step `[3.5/6]`, after the React build and before pkg.
+  - `server.js` static middleware in pkg mode now serves directly from the in-memory embedded map; SPA catch-all returns `embeddedClientFiles['index.html']`.
+  - Verified end-to-end: copying ONLY the new exe to a clean temp directory (no `client/dist/` anywhere on disk) → `/admin-hub` returns React HTML with title "NodeToolbox", `/favicon.svg` serves with `image/svg+xml` content-type.
+
+### Fixed (earlier in this Unreleased cycle)
 - **VBS launcher — stale old process served instead of new version**: When a previous NodeToolbox instance (e.g., v0.5.3) was still running on port 5555, the VBS launcher short-circuited: it detected the port as listening and opened the browser directly to the old broken server, skipping the launch of the new exe entirely. Fixed by removing the pre-launch short-circuit (`If IsPortListening Then ... Exit Sub`). The VBS now always launches the newest exe — `portManager.js` unconditionally kills any occupant and waits 1500ms for the OS to release the binding, after which the polling loop correctly opens the browser to the new process.
 - Also removed the stale "client/dist/ folder missing" bullet from the timeout diagnostic message — `client/dist/` is now bundled in the exe snapshot and shipped in the exe-zip, so it is never missing.
 
