@@ -301,3 +301,28 @@ describe('Update Management section', () => {
     mockState.updateCheckResult = null;
   });
 });
+
+// ── Launcher download buttons ─────────────────────────────────────────────────
+// The Proxy & Server Setup section provides download links for the VBS and BAT
+// launchers so users can obtain them without re-extracting a release zip.
+
+describe('Launcher download links', () => {
+  it('renders an enabled Silent Launcher (.vbs) download link pointing to the correct API path', () => {
+    render(<AdminHubView />);
+    const vbsLink = screen.getByRole('link', { name: /silent launcher.*\.vbs/i });
+    expect(vbsLink).not.toHaveAttribute('disabled');
+    expect(vbsLink).toHaveAttribute('href', '/api/download/launcher-vbs');
+  });
+
+  it('renders an enabled Launcher (.bat) download link pointing to the correct API path', () => {
+    render(<AdminHubView />);
+    const batLink = screen.getByRole('link', { name: /launcher.*\.bat/i });
+    expect(batLink).not.toHaveAttribute('disabled');
+    expect(batLink).toHaveAttribute('href', '/api/download/launcher-bat');
+  });
+
+  it('does not show the "legacy dashboard" tooltip for download buttons', () => {
+    render(<AdminHubView />);
+    expect(screen.queryByText(/legacy dashboard/i)).not.toBeInTheDocument();
+  });
+});
