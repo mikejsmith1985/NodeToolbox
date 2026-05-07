@@ -3,11 +3,11 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { JiraFeatureIssue } from './hooks/useReportsHubState.ts';
+import type { JiraFeatureIssue, ReportsHubTab, SprintIssue, ThroughputEntry } from './hooks/useReportsHubState.ts';
 
 const { mockState, mockActions } = vi.hoisted(() => ({
   mockState: {
-    activeTab: 'features' as 'features' | 'defects' | 'risks',
+    activeTab: 'features' as ReportsHubTab,
     artTeams: [{ name: 'Team A', projectKey: 'TBX' }],
     piFilter: '',
     teamFilter: '',
@@ -21,6 +21,15 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     defectsError: null as string | null,
     risksError: null as string | null,
     lastGeneratedAt: null as string | null,
+    sprintIssues: [] as SprintIssue[],
+    isLoadingSprintData: false,
+    sprintDataError: null as string | null,
+    storyCount: 0,
+    isLoadingQuality: false,
+    qualityError: null as string | null,
+    throughputData: [] as ThroughputEntry[],
+    isLoadingThroughput: false,
+    throughputError: null as string | null,
   },
   mockActions: {
     setActiveTab: vi.fn(),
@@ -30,6 +39,9 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     loadFeatures: vi.fn().mockResolvedValue(undefined),
     loadDefects: vi.fn().mockResolvedValue(undefined),
     loadRisks: vi.fn().mockResolvedValue(undefined),
+    loadSprintData: vi.fn().mockResolvedValue(undefined),
+    loadQuality: vi.fn().mockResolvedValue(undefined),
+    loadThroughput: vi.fn().mockResolvedValue(undefined),
     copyReport: vi.fn(),
   },
 }));
@@ -46,6 +58,9 @@ describe('ReportsHubView', () => {
     mockState.features = [];
     mockState.defects = [];
     mockState.risks = [];
+    mockState.sprintIssues = [];
+    mockState.throughputData = [];
+    mockState.storyCount = 0;
     mockState.artTeams = [{ name: 'Team A', projectKey: 'TBX' }];
     vi.clearAllMocks();
   });
@@ -56,11 +71,17 @@ describe('ReportsHubView', () => {
     expect(screen.getByText(/art teams/i)).toBeInTheDocument();
   });
 
-  it('renders the 3 tab buttons', () => {
+  it('renders 9 tab buttons', () => {
     render(<ReportsHubView />);
     expect(screen.getByRole('tab', { name: /feature report/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /defect tracker/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /risk board/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /flow/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /impact/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /individual/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /quality/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /sprint health/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /throughput/i })).toBeInTheDocument();
   });
 
   it('shows the feature report table when features are loaded', () => {
@@ -74,6 +95,7 @@ describe('ReportsHubView', () => {
         fixVersions: ['PI 26.2'],
         assigneeName: 'Alice',
         piName: 'PI 26.2',
+        priority: null,
       },
     ];
     render(<ReportsHubView />);
@@ -92,6 +114,7 @@ describe('ReportsHubView', () => {
         fixVersions: [],
         assigneeName: null,
         piName: null,
+        priority: null,
       },
     ];
     render(<ReportsHubView />);
@@ -110,6 +133,7 @@ describe('ReportsHubView', () => {
         fixVersions: [],
         assigneeName: null,
         piName: null,
+        priority: null,
       },
     ];
     render(<ReportsHubView />);
@@ -120,5 +144,41 @@ describe('ReportsHubView', () => {
     mockState.artTeams = [];
     render(<ReportsHubView />);
     expect(screen.getByText(/no art teams configured/i)).toBeInTheDocument();
+  });
+
+  it('shows the flow tab WIP pipeline heading when flow tab is active', () => {
+    mockState.activeTab = 'flow';
+    render(<ReportsHubView />);
+    expect(screen.getByText(/wip pipeline/i)).toBeInTheDocument();
+  });
+
+  it('shows the impact tab heading when impact tab is active', () => {
+    mockState.activeTab = 'impact';
+    render(<ReportsHubView />);
+    expect(screen.getByText(/high priority/i)).toBeInTheDocument();
+  });
+
+  it('shows the individual tab heading when individual tab is active', () => {
+    mockState.activeTab = 'individual';
+    render(<ReportsHubView />);
+    expect(screen.getByText(/workload by person/i)).toBeInTheDocument();
+  });
+
+  it('shows the quality tab heading when quality tab is active', () => {
+    mockState.activeTab = 'quality';
+    render(<ReportsHubView />);
+    expect(screen.getByText(/defect metrics/i)).toBeInTheDocument();
+  });
+
+  it('shows the sprint health tab heading when sprintHealth tab is active', () => {
+    mockState.activeTab = 'sprintHealth';
+    render(<ReportsHubView />);
+    expect(screen.getByText(/team health/i)).toBeInTheDocument();
+  });
+
+  it('shows the throughput tab heading when throughput tab is active', () => {
+    mockState.activeTab = 'throughput';
+    render(<ReportsHubView />);
+    expect(screen.getByText(/throughput \(last/i)).toBeInTheDocument();
   });
 });

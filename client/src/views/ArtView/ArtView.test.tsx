@@ -3,6 +3,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArtTab, ArtPersona } from './hooks/useArtData.ts';
+import type { JiraIssue } from '../../types/jira.ts';
 
 const { mockState, mockActions } = vi.hoisted(() => ({
   mockState: {
@@ -13,7 +14,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
         id: 'team-1',
         name: 'Alpha Team',
         boardId: '42',
-        sprintIssues: [],
+        sprintIssues: [] as JiraIssue[],
         isLoading: false,
         loadError: null as string | null,
       },
