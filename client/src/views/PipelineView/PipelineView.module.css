@@ -1,0 +1,250 @@
+/* PipelineView.module.css — Styles for the standalone Pipeline View epic swimlanes. */
+
+.pipelineView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  height: 100%;
+  overflow: hidden;
+  padding: var(--spacing-md);
+}
+
+.pageHeader {
+  margin-bottom: var(--spacing-xs);
+}
+
+.pageTitle {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+  margin: 0 0 var(--spacing-xs);
+}
+
+.pageSubtitle {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.controlsPanel {
+  align-items: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+}
+
+.controlInput {
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  flex: 1 1 220px;
+  font-size: var(--font-size-sm);
+  min-width: 180px;
+  padding: 6px 10px;
+}
+
+.button {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  padding: 6px 12px;
+}
+
+.button:hover {
+  background: var(--color-surface-hover, var(--color-surface));
+}
+
+.buttonPrimary {
+  composes: button;
+  background: var(--color-accent, #6366f1);
+  border-color: var(--color-accent, #6366f1);
+  color: #ffffff;
+}
+
+.button:disabled,
+.buttonPrimary:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.statusFilters {
+  align-items: center;
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: 0;
+}
+
+.statusFilterLabel {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: inline-flex;
+  font-size: var(--font-size-sm);
+  gap: 4px;
+}
+
+.summaryBar {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.errorMessage {
+  color: #ef4444;
+  font-size: var(--font-size-sm);
+}
+
+.emptyState {
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+  color: var(--color-text-muted);
+  padding: 32px;
+  text-align: center;
+}
+
+.swimlanes {
+  display: grid;
+  flex: 1;
+  gap: var(--spacing-md);
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  overflow: auto;
+}
+
+.swimlane {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  min-width: 0;
+  padding: var(--spacing-sm);
+}
+
+.swimlaneTitle {
+  align-items: center;
+  color: var(--color-text-primary);
+  display: flex;
+  font-size: var(--font-size-md, 16px);
+  justify-content: space-between;
+  margin: 0 0 var(--spacing-sm);
+}
+
+.cardStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.epicCard {
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+}
+
+.epicHeader {
+  align-items: center;
+  display: flex;
+  gap: var(--spacing-sm);
+  justify-content: space-between;
+}
+
+.epicKey,
+.childKey {
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+}
+
+.statusBadge,
+.childStatus {
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.28);
+  border-radius: 999px;
+  color: var(--color-accent, #6366f1);
+  font-size: 11px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.epicSummary {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.metadataGrid {
+  display: grid;
+  gap: var(--spacing-sm);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.metadataGrid div {
+  min-width: 0;
+}
+
+.metadataGrid dt {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.metadataGrid dd {
+  color: var(--color-text-primary);
+  margin: 2px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progressTrack {
+  background: rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.progressFill {
+  background: #22c55e;
+  display: block;
+  height: 100%;
+}
+
+.childPanel {
+  background: rgba(148, 163, 184, 0.08);
+  border-radius: 8px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-sm);
+}
+
+.childList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+  margin: var(--spacing-sm) 0 0;
+  padding: 0;
+}
+
+.childItem {
+  align-items: center;
+  display: grid;
+  gap: var(--spacing-sm);
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+}
+
+@media (max-width: 900px) {
+  .swimlanes {
+    grid-template-columns: 1fr;
+  }
+}

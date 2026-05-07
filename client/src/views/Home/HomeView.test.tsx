@@ -53,7 +53,7 @@ describe('HomeView', () => {
     expect(screen.getByRole('heading', { name: 'Your personal utility belt' })).toBeInTheDocument();
   });
 
-  it('shows all fourteen app cards', () => {
+  it('shows all seventeen app cards', () => {
     renderHomeView();
 
     APP_CARDS.forEach((appCard) => {

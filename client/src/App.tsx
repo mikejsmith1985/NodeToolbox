@@ -28,6 +28,9 @@ import WorkLogView from './views/WorkLog/WorkLogView.tsx';
 import StoryPointingView from './views/StoryPointing/StoryPointingView.tsx';
 import MermaidEditorView from './views/MermaidEditor/MermaidEditorView.tsx';
 import PitchDeckView from './views/PitchDeck/PitchDeckView.tsx';
+import DefectManagementView from './views/DefectManagement/DefectManagementView.tsx';
+import HygieneView from './views/Hygiene/HygieneView.tsx';
+import PipelineView from './views/PipelineView/PipelineView.tsx';
 import styles from './App.module.css';
 
 const APP_TITLE = 'NodeToolbox';
@@ -77,6 +80,9 @@ export default function App() {
           <Route path="/pointing" element={<StoryPointingView />} />
           <Route path="/mermaid" element={<MermaidEditorView />} />
           <Route path="/pitch-deck" element={<PitchDeckView />} />
+          <Route path="/defects" element={<DefectManagementView />} />
+          <Route path="/hygiene" element={<HygieneView />} />
+          <Route path="/pipeline" element={<PipelineView />} />
           <Route path="*" element={<Navigate to={DEFAULT_ROUTE} replace />} />
         </Routes>
       </main>
