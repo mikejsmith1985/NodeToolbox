@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **VBS launcher — silent failure on corporate PCs (fix/vbs-launcher-corporate-pc)**: `Launch Toolbox Silent.vbs` was fire-and-forget: if the exe was blocked by antivirus/SmartScreen, port 5555 was locked, or the exe's built-in browser-open command was blocked by group policy, nothing visible happened. Fixed by:
+  - Adding a post-launch polling loop (up to 30 seconds, 1-second intervals) that uses `netstat` to check when port 5555 becomes ready — `netstat` works on all Windows machines without elevated permissions or PowerShell.
+  - Opening the browser directly from the VBS once the port is ready, as a belt-and-suspenders backup when the exe's `start` command is blocked.
+  - Short-circuiting to just open the browser if NodeToolbox is already running on port 5555 (prevents double-launch).
+  - Showing a diagnostic `MsgBox` after timeout that lists the most likely causes (SmartScreen, port conflict, missing `client/dist/`) and explains exactly how to diagnose via Command Prompt.
+  - Defining `SERVER_PORT`, `SERVER_READY_TIMEOUT_SECONDS`, and `POLL_INTERVAL_MS` as named constants instead of magic numbers.
+
+### Fixed
 - **Admin Hub — Launcher download buttons were disabled (fix #vbs-launcher)**: The "⬇️ Silent Launcher (.vbs)" and "⬇️ Launcher (.bat)" buttons in the Proxy & Server Setup section were rendered as disabled buttons with a "legacy dashboard" tooltip, making them non-functional. Fixed by:
   - Adding `GET /api/download/launcher-vbs` and `GET /api/download/launcher-bat` endpoints to `src/routes/api.js` that serve the distribution-root launcher files as file downloads.
   - Replacing the disabled `<button disabled>` elements with proper `<a href>` download links pointing to the new endpoints.
