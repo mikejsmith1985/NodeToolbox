@@ -25,6 +25,9 @@ import ReportsHubView from './views/ReportsHub/ReportsHubView.tsx';
 import AdminHubView from './views/AdminHub/AdminHubView.tsx';
 import SprintPlanningView from './views/SprintPlanning/SprintPlanningView.tsx';
 import WorkLogView from './views/WorkLog/WorkLogView.tsx';
+import StoryPointingView from './views/StoryPointing/StoryPointingView.tsx';
+import MermaidEditorView from './views/MermaidEditor/MermaidEditorView.tsx';
+import PitchDeckView from './views/PitchDeck/PitchDeckView.tsx';
 import styles from './App.module.css';
 
 const APP_TITLE = 'NodeToolbox';
@@ -71,6 +74,9 @@ export default function App() {
           <Route path="/admin-hub" element={<AdminHubView />} />
           <Route path="/sprint-planning" element={<SprintPlanningView />} />
           <Route path="/work-log" element={<WorkLogView />} />
+          <Route path="/pointing" element={<StoryPointingView />} />
+          <Route path="/mermaid" element={<MermaidEditorView />} />
+          <Route path="/pitch-deck" element={<PitchDeckView />} />
           <Route path="*" element={<Navigate to={DEFAULT_ROUTE} replace />} />
         </Routes>
       </main>
