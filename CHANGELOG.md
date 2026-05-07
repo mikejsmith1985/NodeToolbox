@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **My Issues — Phase 4: Issue detail panel, inline transitions, SNow cross-reference, export** (issue #44):
+  - **Issue Detail Panel**: click any issue card/row to open a slide-in `<aside>` overlay showing full metadata (key, summary, status, priority, assignee, reporter, created/updated dates) and a truncated description (≤300 chars).
+  - **Inline Status Update**: detail panel includes a `<select aria-label="Change status">` dropdown populated via `GET /api/jira/issue/:key/transitions`; selecting a transition posts to `POST /api/jira/issue/:key/transitions` and refreshes state.
+  - **SNow Cross-Reference**: when a ServiceNow connection is active (`isSnowReady`), the detail panel searches `/api/now/table/incident` for incidents matching the issue key and lists up to 5 results.
+  - **Export Menu**: toolbar gains an "Export" button that opens a dropdown with "Copy as CSV" and "Copy as Markdown Table" options; both write the full issue list to the clipboard.
+  - All issue cards, compact rows, and table rows are now keyboard-accessible clickable elements (`role="button"`, `tabIndex={0}`).
+  - New hook state fields: `selectedIssue`, `isDetailPanelOpen`, `isTransitioning`, `transitionError`, `availableTransitions`, `isLoadingTransitions`, `isExportMenuOpen`.
+  - New CSS classes: `.detailPanel`, `.detailPanelClose`, `.detailPanelKey`, `.detailPanelSummary`, `.exportMenuWrapper`, `.exportDropdown`, `.exportDropdownItem`.
+  - 28 new TDD tests (46 total passing: 22 hook + 24 view).
+
 - **Admin Hub — Phase 7: 4 depth features** (issue #44):
   - **Diagnostics panel**: collapsible section with "Run Diagnostics" button calling `GET /api/diagnostics`; displays JSON result in a pre-formatted block with a "Copy Report" to clipboard button; shows spinner while running and error message on failure.
   - **Backup & Reset panel**: collapsible section with "Download Backup" (serialises all `toolbox-*` localStorage keys to a dated JSON file), "Restore Backup" (FileReader-based restore with validation), and "Reset All Settings" (confirm dialog + wipe + reload).
