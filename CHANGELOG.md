@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (v0.5.9 — Toolbox parity slice 3)
+- **Defect Management view** (`/defects`): standalone defect tracker ported from `08-defect-management.js`. Project-key + extra-JQL inputs; filters for priority, status category, and unassigned-only; sorts by priority+age, age, or last update. Persists `{projectKey, extraJql, filter, sort}` to `localStorage` (`tbxDefectFilters`).
+- **Hygiene view** (`/hygiene`): standalone issue-health checker ported from `22-hygiene.js`. Runs five hygiene checks per active issue (missing story points, stale, no assignee, no acceptance criteria, old-in-sprint), shows summary tiles with click-to-filter behaviour, and a drillable list of flagged issues. Persists project key + active filter to `localStorage` (`tbxHygieneProjectKey`, `tbxHygieneFilter`).
+- **Pipeline View** (`/pipeline`): standalone epic pipeline visualization ported from `18-pipeline-view.js`. Lists every epic in a project grouped by status category, with lazy child fetch on expand, story-point rollups, and completion percentage. Falls back from `parent=` JQL to `"Epic Link"=` for older Jira deployments. Persists project + filter state to `localStorage` (`tbxPipelineFilters`).
+- Three new home cards (Defect Management 🐛, Hygiene 🧼, Pipeline View 🛤️) all in the Agile & Delivery section, with persona-aware ordering across all six personas (QA leads with defects+hygiene; SM/PO/RTE see pipeline near the top).
+
+### Notes for follow-up versions
+- Toolbox v0.24.10 → NodeToolbox parity continues. Remaining slices tracked for `v0.6.0+`: Standup Board (boardwalk + 15-min timer), Release Monitor, Dev Panel (API inspector), DSU Daily, Connection Wizard, AI Chat / Rovo, PRB Setup Wizard, Impact Analysis, Metrics-as-tab, plus partial gaps inside My Issues, ART View, Sprint Dashboard, DSU Board, SNow Hub, and Admin Hub. Several of these (DSU Daily, Connection Wizard, Rovo) need adaptation rather than direct ports because they're tightly coupled to the legacy PAT/Relay/SD_STATE plumbing that NodeToolbox replaces with server-side routing.
+
 ### Added (v0.5.8 — Toolbox parity slice 2)
 - **Story Pointing view** (`/pointing`): single-user planning poker — load Jira issues by JQL or comma-separated keys, vote with a Fibonacci deck (1, 2, 3, 5, 8, 13, 21, ?), reveal/reset, and optionally save the final estimate back to Jira through the `jiraPut` helper. State persists to `localStorage` (`tbxStoryPointingState`) so refresh never loses the deck. Multi-user/relay voting is intentionally deferred until NodeToolbox has shared real-time session infrastructure.
 - **Mermaid Editor view** (`/mermaid`): split-pane editor with live SVG preview, debounced 300 ms render, starter templates (flowchart, sequence, class, gantt, ER), Copy SVG to clipboard, and Download SVG file. Diagram source persists to `localStorage` (`tbxMermaidEditorState`). Adds `mermaid@11.14.0` as a runtime dependency.

@@ -1,0 +1,219 @@
+/* HygieneView.module.css — Styles for the standalone Jira issue health checker. */
+
+.hygieneView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  height: 100%;
+  overflow: auto;
+  padding: var(--spacing-md);
+  color: var(--color-text-primary);
+}
+
+.pageHeader {
+  margin-bottom: var(--spacing-xs);
+}
+
+.pageTitle {
+  margin: 0 0 var(--spacing-xs);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+}
+
+.pageSubtitle {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.controlsPanel {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(16rem, 1fr) auto;
+  gap: var(--spacing-md);
+  align-items: end;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-surface);
+}
+
+.fieldLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.textInput {
+  min-height: 2.5rem;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.buttonPrimary {
+  min-height: 2.5rem;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-accent, #6366f1);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-accent, #6366f1);
+  color: #ffffff;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+}
+
+.buttonPrimary:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.errorMessage {
+  margin: 0;
+  color: var(--color-danger, #ef4444);
+  font-size: var(--font-size-sm);
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.summaryTile,
+.summaryTileSelected {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  align-items: flex-start;
+  min-height: 4.5rem;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.summaryTile:hover,
+.summaryTileSelected {
+  border-color: var(--color-accent, #6366f1);
+  box-shadow: 0 0 0 0.1875rem rgba(99, 102, 241, 0.16);
+}
+
+.summaryTile span,
+.summaryTileSelected span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.emptyState {
+  padding: var(--spacing-xl, 2rem);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.findingsList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.findingRow {
+  display: grid;
+  grid-template-columns: minmax(18rem, 1fr) minmax(12rem, auto) minmax(12rem, auto);
+  gap: var(--spacing-md);
+  align-items: center;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-surface);
+}
+
+.issueMain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
+.issueKey {
+  color: var(--color-accent, #6366f1);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-sm);
+  text-decoration: none;
+}
+
+.issueKey:hover {
+  text-decoration: underline;
+}
+
+.issueSummary {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md, 1rem);
+  line-height: 1.35;
+}
+
+.flagList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.flagChipWarn,
+.flagChipError {
+  border-radius: var(--radius-pill, 999px);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.flagChipWarn {
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+}
+
+.flagChipError {
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.14);
+  color: #dc2626;
+}
+
+.issueMeta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(5rem, 1fr));
+  gap: var(--spacing-sm);
+  margin: 0;
+}
+
+.issueMeta div {
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+}
+
+.issueMeta dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.issueMeta dd {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--color-text-primary);
+}
+
+@media (max-width: 860px) {
+  .controlsPanel,
+  .findingRow {
+    grid-template-columns: 1fr;
+  }
+}

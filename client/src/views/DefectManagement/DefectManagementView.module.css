@@ -1,0 +1,206 @@
+/* DefectManagementView.module.css — Styles for the standalone Defect Management triage view. */
+
+.defectManagementView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  height: 100%;
+  overflow: hidden;
+}
+
+.pageHeader {
+  margin-bottom: var(--spacing-xs);
+}
+
+.pageTitle {
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-xs);
+}
+
+.pageSubtitle {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.controlsPanel,
+.filtersPanel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: var(--spacing-sm);
+}
+
+.controlInput {
+  flex: 1 1 220px;
+  min-width: 180px;
+  font-size: var(--font-size-sm);
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+  color: var(--color-text-primary);
+}
+
+.controlLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.controlSelect {
+  font-size: var(--font-size-sm);
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+  color: var(--color-text-primary);
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.button {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--color-surface-hover, var(--color-surface));
+}
+
+.buttonPrimary {
+  composes: button;
+  background: var(--color-accent, #6366f1);
+  border-color: var(--color-accent, #6366f1);
+  color: #ffffff;
+}
+
+.button:disabled,
+.buttonPrimary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.summaryBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.statusMessage {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.errorMessage {
+  font-size: var(--font-size-sm);
+  color: #ef4444;
+}
+
+.tableScroll {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.tableHeader {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-muted);
+  border-bottom: 2px solid var(--color-border);
+}
+
+.tableHeader th {
+  padding: 10px 8px;
+}
+
+.tableRow {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tableCell {
+  padding: 8px 8px;
+  vertical-align: middle;
+}
+
+.cellMonospace {
+  composes: tableCell;
+  font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+}
+
+.cellSummary {
+  composes: tableCell;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.issueLink {
+  color: var(--color-accent, #6366f1);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.issueLink:hover {
+  text-decoration: underline;
+}
+
+.priorityBadge,
+.unassignedBadge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.priorityBadge {
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--color-text-primary);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+}
+
+.unassignedBadge {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  font-weight: 600;
+}
+
+.emptyState {
+  text-align: center;
+  padding: 32px;
+  color: var(--color-text-muted);
+}
