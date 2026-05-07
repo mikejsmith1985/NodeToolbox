@@ -2,6 +2,7 @@
 //
 // Manages proxy URLs, ART field settings, feature flags, and admin PIN unlock
 // with session-persistent unlock state stored in sessionStorage.
+// Also provides Diagnostics, Backup/Reset, Hygiene Rules, and Update Management.
 
 import { useCallback, useRef, useState } from 'react'
 
@@ -20,6 +21,20 @@ const ADMIN_PIN = '1234'
 
 const SAVE_STATUS_SUCCESS = '✓ Saved'
 const SAVE_STATUS_CLEAR_DELAY_MS = 2000
+
+/** localStorage key prefix used by all Hygiene Rules settings. */
+const HYGIENE_STALE_DAYS_KEY = 'toolbox-hygiene-stale-days'
+const HYGIENE_UNPOINTED_WARNING_DAYS_KEY = 'toolbox-hygiene-unpointed-warning-days'
+const HYGIENE_FLAG_MISSING_ASSIGNEE_KEY = 'toolbox-hygiene-flag-missing-assignee'
+
+/** Prefix used to identify all Toolbox backup/settings keys in localStorage. */
+const TOOLBOX_BACKUP_PREFIX = 'toolbox-'
+
+/** Default number of days before a ticket is considered stale. */
+export const DEFAULT_STALE_DAYS = 5
+
+/** Default number of days before an unpointed ticket triggers a warning. */
+export const DEFAULT_UNPOINTED_WARNING_DAYS = 7
 
 // ── Type definitions ──
 
@@ -46,6 +61,32 @@ export interface FeatureFlags {
   isAiEnabled: boolean
 }
 
+/** Shape of the response from GET /api/diagnostics. */
+export interface DiagnosticsResult {
+  version: string
+  nodeVersion: string
+  uptime: number
+  timestamp: string
+}
+
+/**
+ * Threshold and flag settings that control how the DSU Board highlights hygiene issues.
+ * Each field auto-saves to localStorage on change.
+ */
+export interface HygieneRules {
+  staleDays: number
+  unpointedWarningDays: number
+  hasMissingAssigneeFlag: boolean
+}
+
+/** Shape of the response from GET /api/version-check. */
+export interface UpdateCheckResult {
+  currentVersion: string
+  latestVersion: string
+  hasUpdate: boolean
+  releaseNotes: string
+}
+
 /** All reactive state fields managed by this hook. */
 export interface AdminHubState {
   proxyUrls: ProxyUrlConfig
@@ -55,6 +96,22 @@ export interface AdminHubState {
   adminPinInput: string
   proxySaveStatus: string | null
   artSaveStatus: string | null
+  // ── Diagnostics ──
+  isDiagnosticsRunning: boolean
+  diagnosticsResult: DiagnosticsResult | null
+  diagnosticsError: string | null
+  isDiagnosticsSectionCollapsed: boolean
+  // ── Backup & Reset ──
+  isBackupRestoring: boolean
+  restoreError: string | null
+  isBackupSectionCollapsed: boolean
+  // ── Hygiene Rules ──
+  hygieneRules: HygieneRules
+  isHygieneSectionCollapsed: boolean
+  // ── Update Management ──
+  updateCheckResult: UpdateCheckResult | null
+  isCheckingUpdate: boolean
+  isUpdateSectionCollapsed: boolean
 }
 
 /** All action callbacks returned by this hook. */
@@ -67,6 +124,20 @@ export interface AdminHubActions {
   setAdminPinInput(value: string): void
   tryUnlock(): void
   lock(): void
+  // ── Diagnostics ──
+  runDiagnostics(): Promise<void>
+  setDiagnosticsSectionCollapsed(isCollapsed: boolean): void
+  // ── Backup & Reset ──
+  downloadBackup(): void
+  triggerRestoreBackup(file: File): void
+  resetAllSettings(): void
+  setBackupSectionCollapsed(isCollapsed: boolean): void
+  // ── Hygiene Rules ──
+  updateHygieneRule<K extends keyof HygieneRules>(key: K, value: HygieneRules[K]): void
+  setHygieneSectionCollapsed(isCollapsed: boolean): void
+  // ── Update Management ──
+  checkForUpdates(): Promise<void>
+  setUpdateSectionCollapsed(isCollapsed: boolean): void
 }
 
 // ── Helper: safe localStorage reads ──
@@ -139,6 +210,32 @@ function readIsAdminUnlocked(): boolean {
   }
 }
 
+/** Reads hygiene rule thresholds and flags from localStorage. */
+function buildInitialHygieneRules(): HygieneRules {
+  const rawStaleDays = parseInt(
+    readLocalString(HYGIENE_STALE_DAYS_KEY, String(DEFAULT_STALE_DAYS)),
+    10,
+  )
+  const rawUnpointedDays = parseInt(
+    readLocalString(HYGIENE_UNPOINTED_WARNING_DAYS_KEY, String(DEFAULT_UNPOINTED_WARNING_DAYS)),
+    10,
+  )
+  return {
+    staleDays: isNaN(rawStaleDays) ? DEFAULT_STALE_DAYS : rawStaleDays,
+    unpointedWarningDays: isNaN(rawUnpointedDays) ? DEFAULT_UNPOINTED_WARNING_DAYS : rawUnpointedDays,
+    // Default true — missing assignee is almost always a problem worth flagging.
+    hasMissingAssigneeFlag: readLocalString(HYGIENE_FLAG_MISSING_ASSIGNEE_KEY, '1') !== '0',
+  }
+}
+
+/** Maps a HygieneRules key to its localStorage storage key. */
+function resolveHygieneStorageKey(key: keyof HygieneRules): string | null {
+  if (key === 'staleDays') return HYGIENE_STALE_DAYS_KEY
+  if (key === 'unpointedWarningDays') return HYGIENE_UNPOINTED_WARNING_DAYS_KEY
+  if (key === 'hasMissingAssigneeFlag') return HYGIENE_FLAG_MISSING_ASSIGNEE_KEY
+  return null
+}
+
 // ── Hook ──
 
 /** Provides all reactive state and action callbacks for the Admin Hub view. */
@@ -150,6 +247,26 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
   const [adminPinInput, setAdminPinInput] = useState('')
   const [proxySaveStatus, setProxySaveStatus] = useState<string | null>(null)
   const [artSaveStatus, setArtSaveStatus] = useState<string | null>(null)
+
+  // ── Diagnostics state ──
+  const [isDiagnosticsRunning, setIsDiagnosticsRunning] = useState(false)
+  const [diagnosticsResult, setDiagnosticsResult] = useState<DiagnosticsResult | null>(null)
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null)
+  const [isDiagnosticsSectionCollapsed, setIsDiagnosticsSectionCollapsed] = useState(false)
+
+  // ── Backup & Reset state ──
+  const [isBackupRestoring, setIsBackupRestoring] = useState(false)
+  const [restoreError, setRestoreError] = useState<string | null>(null)
+  const [isBackupSectionCollapsed, setIsBackupSectionCollapsed] = useState(false)
+
+  // ── Hygiene Rules state ──
+  const [hygieneRules, setHygieneRules] = useState<HygieneRules>(buildInitialHygieneRules)
+  const [isHygieneSectionCollapsed, setIsHygieneSectionCollapsed] = useState(false)
+
+  // ── Update Management state ──
+  const [updateCheckResult, setUpdateCheckResult] = useState<UpdateCheckResult | null>(null)
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
+  const [isUpdateSectionCollapsed, setIsUpdateSectionCollapsed] = useState(false)
 
   // Refs give callbacks synchronous access to latest state values even within
   // the same React batched-update cycle (e.g. setX then readX in one act() call).
@@ -164,6 +281,18 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     adminPinInput,
     proxySaveStatus,
     artSaveStatus,
+    isDiagnosticsRunning,
+    diagnosticsResult,
+    diagnosticsError,
+    isDiagnosticsSectionCollapsed,
+    isBackupRestoring,
+    restoreError,
+    isBackupSectionCollapsed,
+    hygieneRules,
+    isHygieneSectionCollapsed,
+    updateCheckResult,
+    isCheckingUpdate,
+    isUpdateSectionCollapsed,
   }
 
   const setProxyUrl = useCallback(
@@ -259,6 +388,159 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     }
   }, [])
 
+  // ── Diagnostics actions ──
+
+  /** Fetches live diagnostic data from the server and stores the result in state. */
+  const runDiagnostics = useCallback(async () => {
+    setIsDiagnosticsRunning(true)
+    setDiagnosticsError(null)
+    try {
+      const response = await fetch('/api/diagnostics')
+      if (!response.ok) throw new Error(`Server returned ${response.status}`)
+      const data = (await response.json()) as DiagnosticsResult
+      setDiagnosticsResult(data)
+    } catch (fetchError) {
+      setDiagnosticsError(
+        fetchError instanceof Error ? fetchError.message : 'Unknown error',
+      )
+    } finally {
+      setIsDiagnosticsRunning(false)
+    }
+  }, [])
+
+  // ── Backup & Reset actions ──
+
+  /**
+   * Collects all localStorage keys starting with 'toolbox-' and triggers a
+   * JSON file download named toolbox-backup-YYYY-MM-DD.json.
+   */
+  const downloadBackup = useCallback(() => {
+    const backupData: Record<string, string> = {}
+    for (let storageIndex = 0; storageIndex < localStorage.length; storageIndex++) {
+      const storageKey = localStorage.key(storageIndex)
+      if (storageKey !== null && storageKey.startsWith(TOOLBOX_BACKUP_PREFIX)) {
+        backupData[storageKey] = localStorage.getItem(storageKey) ?? ''
+      }
+    }
+    const jsonString = JSON.stringify(backupData, null, 2)
+    const todayDate = new Date().toISOString().slice(0, 10)
+    const blob = new Blob([jsonString], { type: 'application/json' })
+    const downloadUrl = URL.createObjectURL(blob)
+    const anchorElement = document.createElement('a')
+    anchorElement.href = downloadUrl
+    anchorElement.download = `toolbox-backup-${todayDate}.json`
+    anchorElement.click()
+    URL.revokeObjectURL(downloadUrl)
+  }, [])
+
+  /**
+   * Reads the given File as text, parses it as JSON, and writes each
+   * 'toolbox-*' key back to localStorage before reloading the page.
+   */
+  const triggerRestoreBackup = useCallback((file: File) => {
+    setIsBackupRestoring(true)
+    setRestoreError(null)
+    const fileReader = new FileReader()
+    fileReader.onload = (loadEvent) => {
+      try {
+        const rawText = loadEvent.target?.result as string
+        const parsedData = JSON.parse(rawText) as unknown
+        if (
+          typeof parsedData !== 'object' ||
+          parsedData === null ||
+          Array.isArray(parsedData)
+        ) {
+          throw new Error('Backup file must contain a plain JSON object')
+        }
+        for (const [restoreKey, restoreValue] of Object.entries(
+          parsedData as Record<string, unknown>,
+        )) {
+          if (typeof restoreValue === 'string') {
+            localStorage.setItem(restoreKey, restoreValue)
+          }
+        }
+        window.location.reload()
+      } catch (parseError) {
+        setRestoreError(
+          parseError instanceof Error ? parseError.message : 'Invalid backup file',
+        )
+        setIsBackupRestoring(false)
+      }
+    }
+    fileReader.onerror = () => {
+      setRestoreError('Failed to read file')
+      setIsBackupRestoring(false)
+    }
+    fileReader.readAsText(file)
+  }, [])
+
+  /**
+   * Prompts the user for confirmation, then removes every 'toolbox-' key from
+   * localStorage and reloads the page to apply the reset.
+   */
+  const resetAllSettings = useCallback(() => {
+    const isUserConfirmed = window.confirm(
+      'Reset all toolbox settings? This cannot be undone.',
+    )
+    if (!isUserConfirmed) return
+    const keysToRemove: string[] = []
+    for (let storageIndex = 0; storageIndex < localStorage.length; storageIndex++) {
+      const storageKey = localStorage.key(storageIndex)
+      if (storageKey !== null && storageKey.startsWith(TOOLBOX_BACKUP_PREFIX)) {
+        keysToRemove.push(storageKey)
+      }
+    }
+    for (const keyToRemove of keysToRemove) {
+      localStorage.removeItem(keyToRemove)
+    }
+    window.location.reload()
+  }, [])
+
+  // ── Hygiene Rules actions ──
+
+  /**
+   * Updates a single hygiene rule in state and persists it to localStorage.
+   * Booleans are stored as '1'/'0'; numbers and strings are stored as-is.
+   */
+  const updateHygieneRule = useCallback(
+    <K extends keyof HygieneRules>(key: K, value: HygieneRules[K]) => {
+      setHygieneRules((currentRules) => {
+        const nextRules = { ...currentRules, [key]: value }
+        const storageKey = resolveHygieneStorageKey(key)
+        if (storageKey !== null) {
+          try {
+            // Store booleans as '1'/'0' to match the read convention.
+            const storageValue =
+              typeof value === 'boolean' ? (value ? '1' : '0') : String(value)
+            localStorage.setItem(storageKey, storageValue)
+          } catch {
+            // Non-fatal storage error.
+          }
+        }
+        return nextRules
+      })
+    },
+    [],
+  )
+
+  // ── Update Management actions ──
+
+  /** Calls the server version-check endpoint and stores the result in state. */
+  const checkForUpdates = useCallback(async () => {
+    setIsCheckingUpdate(true)
+    try {
+      const response = await fetch('/api/version-check')
+      if (!response.ok) throw new Error(`Server returned ${response.status}`)
+      const data = (await response.json()) as UpdateCheckResult
+      setUpdateCheckResult(data)
+    } catch (fetchError) {
+      // Log the failure — a future enhancement could surface this as a UI error.
+      console.error('Version check failed:', fetchError)
+    } finally {
+      setIsCheckingUpdate(false)
+    }
+  }, [])
+
   const actions: AdminHubActions = {
     setProxyUrl,
     saveProxyUrls,
@@ -273,6 +555,16 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     },
     tryUnlock,
     lock,
+    runDiagnostics,
+    setDiagnosticsSectionCollapsed: setIsDiagnosticsSectionCollapsed,
+    downloadBackup,
+    triggerRestoreBackup,
+    resetAllSettings,
+    setBackupSectionCollapsed: setIsBackupSectionCollapsed,
+    updateHygieneRule,
+    setHygieneSectionCollapsed: setIsHygieneSectionCollapsed,
+    checkForUpdates,
+    setUpdateSectionCollapsed: setIsUpdateSectionCollapsed,
   }
 
   return { state, actions }
