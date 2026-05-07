@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Dev Workspace — Phase 8: Hook script downloads** (issue #44):
+  - Replace `console.log` placeholder with real Blob-based file downloads for Git hook scripts.
+  - Added `HOOK_SCRIPT_CONTENTS` map with full bash scripts for `post-commit`, `pre-push`, and `commit-msg` hooks.
+  - Added `downloadHookScript()` utility that creates a Blob and triggers a browser download via a temporary anchor element — no server request needed.
+  - Each "Download" button in the Hook Generator panel now delivers the correct shell script file.
+
+### Added
 - **ART View — Phase 6: 4 depth features** (issue #44):
   - **Dependency Map tab**: inline SVG cross-team issue dependency graph; scans issue descriptions for Jira key references, renders team boxes with bezier arrows between referencing issues across teams.
   - **Board Prep tab**: pre-PI Planning backlog review panel; loads issues from each team's board backlog, team filter dropdown, Export to CSV button.

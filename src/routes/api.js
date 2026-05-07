@@ -89,6 +89,32 @@ function createApiRouter(configuration) {
   // Returns non-sensitive configuration for the Admin Hub UI.
   // Base URLs are returned; credentials are summarised as boolean flags.
 
+  // ── GET /api/diagnostics ──────────────────────────────────────────────────
+  // Returns live server diagnostics for the Admin Hub Diagnostics panel.
+  // Intentionally minimal — no service probes, just process metadata.
+
+  router.get('/api/diagnostics', (req, res) => {
+    res.json({
+      version:     APP_VERSION,
+      nodeVersion: process.version,
+      uptime:      Math.round(process.uptime()),
+      timestamp:   new Date().toISOString(),
+    });
+  });
+
+  // ── GET /api/version-check ────────────────────────────────────────────────
+  // Compares the running version against the latest available release.
+  // Currently reports no update — extend when a remote version feed is wired up.
+
+  router.get('/api/version-check', (req, res) => {
+    res.json({
+      currentVersion: APP_VERSION,
+      latestVersion:  APP_VERSION,
+      hasUpdate:      false,
+      releaseNotes:   'You are running the latest version.',
+    });
+  });
+
   router.get('/api/proxy-config', (req, res) => {
     const confluenceConfig = configuration.confluence || {};
     res.json({
