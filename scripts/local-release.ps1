@@ -121,8 +121,8 @@ if ($DryRun) {
     Write-Host "  2. mkdir dist\           - create output directory"
     Write-Host "  3. npm run build:client  - compile React SPA into client/dist/"
     Write-Host "  4. Compress-Archive      - bundle slim zip into $ZipOutputPath"
-    Write-Host "  5. pkg                   - build single-file exe at $ExeOutputPath"
-    Write-Host "  5b. Compress-Archive     - wrap exe into $ExeZipOutputPath (browser-safe download)"
+    Write-Host "  5. pkg                   - build self-contained exe at $ExeOutputPath (client/dist bundled inside)"
+    Write-Host "  5b. Compress-Archive     - wrap exe + VBS into $ExeZipOutputPath (browser-safe download)"
     Write-Host "  6. gh release create     - publish GitHub Release $GitTag with zip and exe-zip"
     Write-Host ""
     Write-Host "  Version:    $AppVersion"
@@ -242,23 +242,15 @@ Write-Host "       ✅ $ExeOutputPath ($exeSizeKb KB)"
 
 # Wrap the exe in its own dedicated zip so users can download it without
 # browser security warnings that block direct .exe file downloads.
-# Also include the silent VBScript launcher and the pre-built React SPA
-# (client/dist/) alongside the exe. server.js uses path.dirname(process.execPath)
-# as the asset base when running as a pkg bundle — express.static does not work
-# with pkg's virtual snapshot filesystem, so client/dist must live on real disk
-# next to the exe rather than being embedded in the snapshot.
+# Also include the silent VBScript launcher. The React SPA (client/dist/)
+# is now bundled INSIDE the exe via pkg.assets — the exe is self-contained
+# and users do not need a separate client/ folder next to it.
 $ExeZipStagingDir = Join-Path $DistDir 'exe-staging'
 New-Item -ItemType Directory -Path $ExeZipStagingDir | Out-Null
 Copy-Item $ExeOutputPath $ExeZipStagingDir -Force
 if (Test-Path $SilentLauncherPath) {
     Copy-Item $SilentLauncherPath $ExeZipStagingDir -Force
 }
-
-# Copy client/dist → exe-staging/client/dist so the React SPA is extracted
-# alongside the exe when users unzip.
-$clientDirInExeStaging = Join-Path $ExeZipStagingDir 'client'
-New-Item -ItemType Directory -Path $clientDirInExeStaging -Force | Out-Null
-Copy-Item (Join-Path $RepoRoot 'client\dist') (Join-Path $clientDirInExeStaging 'dist') -Recurse -Force
 
 Compress-Archive -Path (Join-Path $ExeZipStagingDir '*') -DestinationPath $ExeZipOutputPath -Force
 Remove-Item $ExeZipStagingDir -Recurse -Force

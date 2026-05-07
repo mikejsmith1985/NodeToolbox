@@ -1,8 +1,9 @@
 // test/unit/exe-launch.test.js — Validates exe-specific startup behaviour.
 //
 // The pkg-bundled .exe sets process.pkg to a truthy value at runtime.
-// These tests verify that server.js uses that flag correctly so the exe
-// works out-of-the-box when a user double-clicks it — no command-line flags needed.
+// These tests verify that server.js and package.json are configured so the
+// exe is truly self-contained — client/dist/ is bundled inside the snapshot,
+// not shipped as a separate folder alongside the exe.
 
 'use strict';
 
@@ -12,23 +13,44 @@ const path = require('path');
 const REPO_ROOT          = path.join(__dirname, '..', '..');
 const SERVER_JS_PATH     = path.join(REPO_ROOT, 'server.js');
 const SERVER_SOURCE      = fs.readFileSync(SERVER_JS_PATH, 'utf8');
+const PACKAGE_JSON       = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
 
-// ── server.js — exe auto-open behaviour ───────────────────────────────────────
+// ── package.json — pkg assets configuration ───────────────────────────────────
+
+describe('package.json — pkg assets', () => {
+  it('bundles client/dist/**/* inside the exe snapshot', () => {
+    // client/dist/ must be listed in pkg.assets so the React SPA is embedded
+    // inside the exe binary. Without this, the exe depends on client/dist/
+    // existing on real disk next to it — which fails on corporate PCs where
+    // antivirus or sandbox tools run the exe from a temp location.
+    const pkgAssets = PACKAGE_JSON.pkg && PACKAGE_JSON.pkg.assets;
+    expect(pkgAssets).toBeDefined();
+    const assetsArray = Array.isArray(pkgAssets) ? pkgAssets : [pkgAssets];
+    const hasClientDist = assetsArray.some(assetPattern =>
+      String(assetPattern).includes('client/dist')
+    );
+    expect(hasClientDist).toBe(true);
+  });
+});
+
+// ── server.js — static asset base path ────────────────────────────────────────
 
 describe('server.js — static asset base path for pkg exe', () => {
-  it('uses process.execPath directory (not __dirname) as the asset base when process.pkg is set', () => {
-    // When bundled with pkg, __dirname is a virtual snapshot path that does not
-    // exist on disk. express.static and fs.existsSync do NOT work with virtual
-    // paths, so the server must use path.dirname(process.execPath) — the real
-    // directory on disk where the exe lives — when process.pkg is truthy.
-    // client/dist is then shipped ALONGSIDE the exe in the exe ZIP.
-    expect(SERVER_SOURCE).toMatch(/process\.pkg[\s\S]{0,200}process\.execPath/);
+  it('uses __dirname as APP_BASE_DIR for all distributions including the pkg exe', () => {
+    // client/dist/ is now bundled inside the exe via pkg.assets, so __dirname
+    // (which points to the snapshot root in pkg mode) correctly finds the
+    // assets. This makes the exe truly self-contained — no separate client/
+    // folder needed. For dev (node server.js) and ZIP installs, __dirname
+    // continues to point to the real directory containing server.js.
+    expect(SERVER_SOURCE).toMatch(/APP_BASE_DIR\s*=\s*__dirname/);
   });
 
-  it('falls back to __dirname when NOT running as a pkg exe (dev or ZIP install)', () => {
-    // For node server.js (dev) and ZIP install, __dirname correctly points to
-    // the server.js location where client/dist lives as a subdirectory.
-    expect(SERVER_SOURCE).toMatch(/process\.pkg[\s\S]{0,200}__dirname/);
+  it('does NOT rely on process.execPath to locate client/dist/', () => {
+    // process.execPath was previously used to locate client/dist/ on real disk
+    // next to the exe. Now that client/dist/ is bundled in the snapshot,
+    // process.execPath is no longer needed for asset path resolution.
+    // This assertion confirms the old brittle pattern has been removed.
+    expect(SERVER_SOURCE).not.toMatch(/APP_BASE_DIR[\s\S]{0,80}process\.execPath/);
   });
 });
 
