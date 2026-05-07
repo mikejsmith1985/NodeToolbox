@@ -247,3 +247,18 @@
 .primaryButton:hover {
   opacity: 0.9;
 }
+
+/* ── Tab section heading ── */
+
+/* Section heading within a tab panel */
+.tabSectionHeading {
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-sm);
+}
+
+/* Warning text highlight */
+.warningText {
+  color: var(--color-danger, #f87171);
+  font-weight: 600;
+}

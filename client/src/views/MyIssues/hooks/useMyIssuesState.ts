@@ -122,6 +122,11 @@ interface JiraSprintListResponse {
   values: Array<{ id: number; name: string; state: string }>;
 }
 
+/** Shape of the Jira Agile API response for sprint issues. */
+interface JiraSprintIssuesResponse {
+  issues: JiraIssue[];
+}
+
 interface JiraTransitionsResponse {
   transitions: JiraTransition[];
 }
