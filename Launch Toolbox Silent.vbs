@@ -77,15 +77,15 @@ Sub Main()
         End If
     Next
 
-    ' ── Short-circuit if a server is already listening on the port ─────────────
-    ' Handles the case where the user double-clicks the launcher while
-    ' NodeToolbox is already running — skip the launch, just open the browser.
-    If IsPortListening(SERVER_PORT) Then
-        OpenDashboardInBrowser SERVER_PORT
-        Exit Sub
-    End If
-
     ' ── Launch the server process ───────────────────────────────────────────────
+    '
+    ' NOTE: We intentionally do NOT short-circuit here, even if port 5555 is
+    ' already listening. A stale process from an older NodeToolbox version may be
+    ' occupying the port and serving broken content (e.g. "React build not found").
+    ' Launching the new exe unconditionally lets portManager.js detect the conflict,
+    ' kill the old process, wait 1500ms for the OS to release the binding, and then
+    ' bind fresh on port 5555. The polling loop below will wait out that gap and
+    ' open the browser only once the NEW process is confirmed ready.
     If latestExePath <> "" Then
         ' Window style 0 = SW_HIDE — the exe starts with no console window.
         ' False = fire-and-forget; the VBS continues to the polling loop below.
@@ -154,8 +154,7 @@ Sub Main()
                "  " & Chr(149) & " Antivirus or Windows SmartScreen blocked the executable." & vbNewLine & _
                "    If you see a SmartScreen warning, click 'More info' " & Chr(8594) & " 'Run anyway'." & vbNewLine & _
                "  " & Chr(149) & " Port " & SERVER_PORT & " is in use and could not be freed." & vbNewLine & _
-               "  " & Chr(149) & " The client/dist/ folder is missing from:" & vbNewLine & _
-               "    " & scriptDirectory & vbNewLine & vbNewLine & _
+               "    Open Task Manager and end any 'nodetoolbox' processes, then try again." & vbNewLine & vbNewLine & _
                "To diagnose, open a Command Prompt in this folder and run:" & vbNewLine & _
                "  " & Chr(34) & exeDisplayPath & Chr(34) & vbNewLine & _
                "Then look for error messages in the console window.", _

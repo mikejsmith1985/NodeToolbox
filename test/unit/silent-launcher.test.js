@@ -121,10 +121,22 @@ describe('Launch Toolbox Silent.vbs — corporate-PC reliability', () => {
     expect(vbsContent).toMatch(/http:\/\/localhost/i);
   });
 
-  it('checks whether the server is already running before launching a new instance', () => {
-    // If the user clicks the VBS launcher twice, the second run should just open
-    // the browser rather than try to start a second instance.
+  it('uses IsPortListening in the polling loop to detect when the server is ready', () => {
+    // IsPortListening is still used — but only in the post-launch polling loop to
+    // confirm the new server is listening before opening the browser.
+    // It must NOT be used as a pre-launch gate that short-circuits to the browser,
+    // because a stale old-version process could be on the port and would serve
+    // broken content (e.g. "React build not found").
     expect(vbsContent).toMatch(/IsPortListening|isPortListening/);
+  });
+
+  it('does NOT short-circuit to the browser before launching the exe', () => {
+    // A pre-launch "If IsPortListening Then ... Exit Sub" block would skip
+    // launching the new exe when a stale old process is on port 5555, leaving the
+    // user permanently stuck on the buggy old version.  portManager.js always
+    // kills the occupant — the VBS must always launch the exe and let it do that.
+    // This regex matches "IsPortListening ... Exit Sub" within 4 lines of each other.
+    expect(vbsContent).not.toMatch(/IsPortListening[\s\S]{0,200}Exit Sub[\s\S]{0,50}latestExePath/);
   });
 
   it('shows a diagnostic timeout error if the server does not start in time', () => {
