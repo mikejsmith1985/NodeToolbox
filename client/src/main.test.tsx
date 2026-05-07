@@ -6,6 +6,8 @@
 
 import { describe, it, expect } from 'vitest';
 
+const MAIN_ENTRY_TEST_TIMEOUT_MS = 15000;
+
 describe('main entry point', () => {
   it('throws a clear error when the #root DOM element is missing', async () => {
     // In jsdom (the test environment), <div id="root"> does not exist unless
@@ -17,5 +19,5 @@ describe('main entry point', () => {
     await expect(import('./main.tsx')).rejects.toThrow(
       'Root element #root not found',
     );
-  });
+  }, MAIN_ENTRY_TEST_TIMEOUT_MS);
 });

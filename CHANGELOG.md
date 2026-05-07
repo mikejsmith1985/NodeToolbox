@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (v0.5.8 — Toolbox parity slice 2)
+- **Story Pointing view** (`/pointing`): single-user planning poker — load Jira issues by JQL or comma-separated keys, vote with a Fibonacci deck (1, 2, 3, 5, 8, 13, 21, ?), reveal/reset, and optionally save the final estimate back to Jira through the `jiraPut` helper. State persists to `localStorage` (`tbxStoryPointingState`) so refresh never loses the deck. Multi-user/relay voting is intentionally deferred until NodeToolbox has shared real-time session infrastructure.
+- **Mermaid Editor view** (`/mermaid`): split-pane editor with live SVG preview, debounced 300 ms render, starter templates (flowchart, sequence, class, gantt, ER), Copy SVG to clipboard, and Download SVG file. Diagram source persists to `localStorage` (`tbxMermaidEditorState`). Adds `mermaid@11.14.0` as a runtime dependency.
+- **Pitch Deck view** (`/pitch-deck`): six-slide executive presentation explaining the Toolbox business case, with prev/next buttons, thumbnail strip, slide indicator, and full keyboard navigation (←/→ to step, Home/End to jump). Current slide index persists to `localStorage` (`tbxPitchDeckIndex`).
+- Three new home cards (Story Pointing 🎲 in Agile & Delivery, Mermaid Editor 🧜 in Text Tools, Pitch Deck 🎯 in Documentation) with persona-aware ordering across all six personas.
+
+### Notes for follow-up versions
+- Toolbox v0.24.10 → NodeToolbox parity continues. Remaining slices tracked for `v0.5.9+`: Defect Management, Pipeline View, Hygiene panel, Standup Board (boardwalk + 15-min timer), DSU Daily, Release Monitor, Impact Analysis, Connection Wizard, PRB Setup Wizard overlay, Dev Panel (API inspector), AI Chat / Rovo, plus partial gaps inside My Issues, ART View, Sprint Dashboard, DSU Board, SNow Hub, and Admin Hub.
+
 ### Added (v0.5.7 — Toolbox parity slice 1)
 - **Sprint Planning view** (`/sprint-planning`): pull the open backlog for any Jira project, search/filter loaded issues, edit story points inline, and persist all pending edits with one batch save through the existing `/jira-proxy` route. Includes auto-detection between `customfield_10028` and `customfield_10016` for the story-points field, per-issue save error tracking, and a pending-changes counter.
 - **Work Log view** (`/work-log`): per-issue stopwatches that persist to `localStorage` (`tbxWorkLogState` — same key as legacy ToolBox so existing data is reused), Start/Pause/Remove timer controls, free-form duration parsing (`1h 30m`, `45m`, bare numbers as minutes), Today/History tabs, and a confirm dialog that POSTs the elapsed time to Jira's `/issue/{key}/worklog` endpoint with optional comment. History is capped at 200 entries to bound localStorage growth.
