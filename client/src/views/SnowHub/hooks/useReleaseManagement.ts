@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from 'react';
 
 import { snowFetch } from '../../../services/snowApi.ts';
+import { useConnectionStore } from '../../../store/connectionStore.ts';
 import type { ChangeRequest } from '../../../types/snow.ts';
 
 type ActivityLogLevel = 'info' | 'success' | 'warning' | 'error';
@@ -36,7 +37,10 @@ interface ReleaseManagementActions {
 const EMPTY_VALUE = '';
 const LOAD_CHANGE_FAILURE_MESSAGE = 'Failed to load change request';
 const LOAD_MY_CHANGES_FAILURE_MESSAGE = 'Failed to load active changes';
-const MY_ACTIVE_CHANGES_PATH = '/api/now/table/change_request?assigned_to=current_user&state=-2^ORstate=-1&sysparm_limit=20';
+const SNOW_NOT_CONFIGURED_MESSAGE =
+  'SNow is not configured or credentials are invalid. Configure SNow credentials in Admin Hub or activate the relay bridge.';
+const MY_ACTIVE_CHANGES_PATH =
+  '/api/now/table/change_request?assigned_to=current_user&state=-2^ORstate=-1&sysparm_limit=20';
 const CHANGE_NUMBER_REQUIRED_MESSAGE = 'Change number is required.';
 
 function createInitialReleaseManagementState(): ReleaseManagementState {
@@ -69,13 +73,19 @@ function extractLoadedChange(changeResponse: ChangeRequest | { result: ChangeReq
 }
 
 /**
- * Manages Release Management state so the tab can load a single change, list active work, and keep an operator-friendly activity log.
+ * Manages Release Management state so the tab can load a single change, list active work,
+ * and keep an operator-friendly activity log. All SNow fetches are guarded behind the
+ * connection store's isSnowReady flag to prevent 401 errors from firing blindly.
  */
 export function useReleaseManagement(): {
   state: ReleaseManagementState;
   actions: ReleaseManagementActions;
 } {
   const [state, setState] = useState<ReleaseManagementState>(() => createInitialReleaseManagementState());
+
+  // Read SNow readiness from the global connection store. Using a selector keeps
+  // this component from re-rendering on every unrelated store update.
+  const isSnowReady = useConnectionStore((connectionState) => connectionState.isSnowReady);
 
   const appendLogEntry = useCallback((message: string, level: ActivityLogLevel) => {
     const nextLogEntry = createLogEntry(message, level);
@@ -123,6 +133,17 @@ export function useReleaseManagement(): {
   }, [state.chgNumber]);
 
   const loadMyActiveChanges = useCallback(async () => {
+    // Guard: only fetch if SNow credentials are configured. Firing the request without
+    // credentials always results in a 401, which is confusing and produces an unhelpful error.
+    if (!isSnowReady) {
+      setState((previousState) => ({
+        ...previousState,
+        myChangesError: SNOW_NOT_CONFIGURED_MESSAGE,
+        isLoadingMyChanges: false,
+      }));
+      return;
+    }
+
     setState((previousState) => ({ ...previousState, isLoadingMyChanges: true, myChangesError: null }));
 
     try {
@@ -143,7 +164,7 @@ export function useReleaseManagement(): {
         activityLog: [createLogEntry(myChangesError, 'error'), ...previousState.activityLog],
       }));
     }
-  }, []);
+  }, [isSnowReady]);
 
   const clearLog = useCallback(() => {
     setState((previousState) => ({ ...previousState, activityLog: [] }));

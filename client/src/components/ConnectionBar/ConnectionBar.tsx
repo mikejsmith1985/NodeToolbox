@@ -21,17 +21,22 @@ function ConnectionIndicator({
   );
 }
 
-/** Displays global Jira, SNow, and relay bridge readiness for the app shell. */
+/**
+ * Displays global Jira, SNow, and relay bridge readiness for the app shell.
+ * Jira and SNow indicators go green only after a live API probe succeeds —
+ * not just when credentials are present in the config file.
+ */
 export function ConnectionBar() {
-  const isJiraReady = useConnectionStore((state) => state.isJiraReady);
-  const isSnowReady = useConnectionStore((state) => state.isSnowReady);
+  // Use verified flags so the indicator reflects actual reachability, not just config presence.
+  const isJiraVerified = useConnectionStore((state) => state.isJiraVerified);
+  const isSnowVerified = useConnectionStore((state) => state.isSnowVerified);
   const relayBridgeStatus = useConnectionStore((state) => state.relayBridgeStatus);
   const isRelayActive = relayBridgeStatus?.isConnected ?? false;
 
   return (
     <div className={styles.connectionBar} aria-label="Connection status">
-      <ConnectionIndicator label="Jira" isReady={isJiraReady} />
-      <ConnectionIndicator label="SNow" isReady={isSnowReady} />
+      <ConnectionIndicator label="Jira" isReady={isJiraVerified} />
+      <ConnectionIndicator label="SNow" isReady={isSnowVerified} />
       <ConnectionIndicator label="Relay" isReady={isRelayActive} />
     </div>
   );

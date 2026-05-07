@@ -1,9 +1,10 @@
 // useReleaseManagement.test.ts — Unit tests for the Release Management state hook.
 
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { snowFetch } from '../../../services/snowApi.ts';
+import { useConnectionStore } from '../../../store/connectionStore.ts';
 import { useReleaseManagement } from './useReleaseManagement.ts';
 
 vi.mock('../../../services/snowApi.ts', () => ({
@@ -23,6 +24,10 @@ const MOCK_CHANGE_REQUEST = {
 };
 
 describe('useReleaseManagement', () => {
+  beforeEach(() => {
+    useConnectionStore.setState(useConnectionStore.getInitialState());
+  });
+
   afterEach(() => {
     vi.clearAllMocks();
   });
@@ -94,5 +99,31 @@ describe('useReleaseManagement', () => {
     });
 
     expect(result.current.state.activityLog).toEqual([]);
+  });
+
+  it('does not call snowFetch when SNow is not ready and sets an actionable error', async () => {
+    // SNow is not configured — isSnowReady stays false (default store state)
+    const { result } = renderHook(() => useReleaseManagement());
+
+    await act(async () => {
+      await result.current.actions.loadMyActiveChanges();
+    });
+
+    expect(snowFetch).not.toHaveBeenCalled();
+    expect(result.current.state.myChangesError).toContain('SNow is not configured');
+  });
+
+  it('calls snowFetch when SNow is ready', async () => {
+    useConnectionStore.setState({ isSnowReady: true });
+    vi.mocked(snowFetch).mockResolvedValue({ result: [] });
+
+    const { result } = renderHook(() => useReleaseManagement());
+
+    await act(async () => {
+      await result.current.actions.loadMyActiveChanges();
+    });
+
+    expect(snowFetch).toHaveBeenCalledTimes(1);
+    expect(result.current.state.myChangesError).toBeNull();
   });
 });
