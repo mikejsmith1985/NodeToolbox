@@ -1,8 +1,9 @@
 // PrbTab.tsx — PRB-to-Jira issue generator tab for turning ServiceNow problems into paired Jira issues.
 
-import type { ChangeEvent } from 'react';
+import { useState, type ChangeEvent } from 'react';
 
 import { usePrbState } from '../hooks/usePrbState.ts';
+import PrbWizard from './PrbWizard.tsx';
 import styles from './PrbTab.module.css';
 
 const TAB_TITLE = 'PRB Generator';
@@ -11,6 +12,8 @@ const LOAD_SECTION_TITLE = 'Load PRB';
 const ISSUE_SECTION_TITLE = 'Create Jira Issues';
 const EMPTY_ASSIGNEE_LABEL = 'Unassigned';
 const SUCCESS_SECTION_TITLE = 'Created Jira Issues';
+
+type PrbMode = 'quick' | 'wizard';
 
 type PrbHookResult = ReturnType<typeof usePrbState>;
 type PrbStateData = PrbHookResult['state'];
@@ -96,6 +99,7 @@ function IssueCreationForm({ state, actions }: IssueFormProps) {
  */
 export default function PrbTab() {
   const { state, actions } = usePrbState();
+  const [mode, setMode] = useState<PrbMode>('quick');
 
   function handlePrbNumberChange(event: ChangeEvent<HTMLInputElement>): void {
     actions.setPrbNumber(event.target.value);
@@ -106,18 +110,42 @@ export default function PrbTab() {
       <header className={styles.tabHeader}>
         <h2 className={styles.tabTitle}>{TAB_TITLE}</h2>
         <p className={styles.tabSubtitle}>{TAB_SUBTITLE}</p>
-      </header>
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}><h3 className={styles.sectionTitle}>{LOAD_SECTION_TITLE}</h3></div>
-        <div className={styles.sectionBody}>
-          <label className={styles.fieldGroup}><span className={styles.fieldLabel}>PRB Number</span><input className={styles.input} onChange={handlePrbNumberChange} value={state.prbNumber} /></label>
-          <div className={styles.buttonRow}><button className={styles.primaryButton} onClick={() => void actions.fetchPrb()} type="button">Load PRB</button></div>
-          {state.isFetchingPrb ? <p className={styles.loadingText}>Loading PRB details...</p> : null}
-          {state.fetchError ? <p className={styles.errorText} role="alert">{state.fetchError}</p> : null}
-          <PrbDetailCard state={state} />
+        <div className={styles.buttonRow} role="tablist" aria-label="PRB mode">
+          <button
+            aria-pressed={mode === 'quick'}
+            className={mode === 'quick' ? styles.primaryButton : styles.secondaryButton}
+            onClick={() => setMode('quick')}
+            type="button"
+          >
+            Quick Create
+          </button>
+          <button
+            aria-pressed={mode === 'wizard'}
+            className={mode === 'wizard' ? styles.primaryButton : styles.secondaryButton}
+            onClick={() => setMode('wizard')}
+            type="button"
+          >
+            Wizard
+          </button>
         </div>
-      </section>
-      <IssueCreationForm actions={actions} state={state} />
+      </header>
+      {mode === 'wizard' ? (
+        <PrbWizard actions={actions} state={state} />
+      ) : (
+        <>
+          <section className={styles.section}>
+            <div className={styles.sectionHeader}><h3 className={styles.sectionTitle}>{LOAD_SECTION_TITLE}</h3></div>
+            <div className={styles.sectionBody}>
+              <label className={styles.fieldGroup}><span className={styles.fieldLabel}>PRB Number</span><input className={styles.input} onChange={handlePrbNumberChange} value={state.prbNumber} /></label>
+              <div className={styles.buttonRow}><button className={styles.primaryButton} onClick={() => void actions.fetchPrb()} type="button">Load PRB</button></div>
+              {state.isFetchingPrb ? <p className={styles.loadingText}>Loading PRB details...</p> : null}
+              {state.fetchError ? <p className={styles.errorText} role="alert">{state.fetchError}</p> : null}
+              <PrbDetailCard state={state} />
+            </div>
+          </section>
+          <IssueCreationForm actions={actions} state={state} />
+        </>
+      )}
     </div>
   );
 }

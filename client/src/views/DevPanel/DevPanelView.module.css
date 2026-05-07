@@ -1,0 +1,163 @@
+/* DevPanelView.module.css — Styles the standalone Dev Panel activity monitor and status table. */
+
+.devPanelView {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+  color: var(--color-text, #e5e7eb);
+}
+
+.pageHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+.pageSubtitle {
+  margin: 0.35rem 0 0;
+  color: var(--color-text-muted, #94a3b8);
+}
+
+.actionBar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.button,
+.buttonPrimary {
+  border: 1px solid var(--color-border, #334155);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.8rem;
+  font: inherit;
+  color: inherit;
+  background: var(--color-surface, #0f172a);
+  cursor: pointer;
+}
+
+.buttonPrimary {
+  border-color: var(--color-accent, #6366f1);
+  background: var(--color-accent, #6366f1);
+  color: #fff;
+}
+
+.button:disabled,
+.buttonPrimary:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.pauseBanner,
+.emptyState {
+  border: 1px solid var(--color-border, #334155);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  color: var(--color-text-muted, #94a3b8);
+  background: var(--color-surface, #0f172a);
+}
+
+.pauseBanner {
+  border-color: rgba(245, 158, 11, 0.55);
+  color: #f59e0b;
+}
+
+.statsBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.statPill {
+  min-width: 8rem;
+  border: 1px solid var(--color-border, #334155);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  background: var(--color-surface, #0f172a);
+}
+
+.statPill strong,
+.statPill span {
+  display: block;
+}
+
+.statPill strong {
+  font-size: 1.35rem;
+}
+
+.statPill span {
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.8rem;
+}
+
+.tableShell {
+  overflow: auto;
+  border: 1px solid var(--color-border, #334155);
+  border-radius: 0.75rem;
+  background: var(--color-surface, #0f172a);
+}
+
+.activityTable {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 48rem;
+}
+
+.activityTable th,
+.activityTable td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--color-border, #334155);
+  text-align: left;
+  vertical-align: top;
+}
+
+.activityTable th {
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.activityTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.methodBadge {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.urlCell,
+.errorCell {
+  word-break: break-word;
+}
+
+.statusSuccess {
+  border-left: 0.25rem solid #22c55e;
+}
+
+.statusClientError {
+  border-left: 0.25rem solid #f59e0b;
+}
+
+.statusServerError,
+.statusNetworkError {
+  border-left: 0.25rem solid #ef4444;
+}
+
+.statusNeutral {
+  border-left: 0.25rem solid #64748b;
+}

@@ -234,6 +234,36 @@ export const APP_CARDS: AppCardDef[] = [
     tags: ['Jira', 'Standup', 'DSU'],
     sectionKey: 'agile',
   },
+  {
+    id: 'dev-panel',
+    route: '/dev-panel',
+    icon: '🛰️',
+    title: 'Dev Panel',
+    description:
+      'Live API call log — observe Jira/ServiceNow requests, latencies, and errors in real time, then export as CSV.',
+    tags: ['Diagnostics', 'API', 'Logs'],
+    sectionKey: 'admin',
+  },
+  {
+    id: 'impact-analysis',
+    route: '/impact-analysis',
+    icon: '💥',
+    title: 'Impact Analysis',
+    description:
+      'Compute the blast radius of a Jira issue — child issues, links, fix versions, and impacted teams.',
+    tags: ['Jira', 'Risk', 'Dependencies'],
+    sectionKey: 'reports',
+  },
+  {
+    id: 'release-monitor',
+    route: '/release-monitor',
+    icon: '🚀',
+    title: 'Release Monitor',
+    description:
+      'Track in-flight releases — fix-version progress, open defects, and readiness signals at a glance.',
+    tags: ['Jira', 'Releases', 'Readiness'],
+    sectionKey: 'reports',
+  },
 ];
 
 /** Persona-specific priority order for cards that move based on the user's role. */
@@ -257,6 +287,9 @@ export const PERSONA_CARD_ORDERS: Record<string, string[]> = {
     'text-tools',
     'pitch-deck',
     'code-walkthrough',
+    'dev-panel',
+    'impact-analysis',
+    'release-monitor',
   ],
   dev: [
     'dev-workspace',
@@ -277,6 +310,9 @@ export const PERSONA_CARD_ORDERS: Record<string, string[]> = {
     'art',
     'pitch-deck',
     'code-walkthrough',
+    'dev-panel',
+    'impact-analysis',
+    'release-monitor',
   ],
   qa: [
     'my-issues',
@@ -297,6 +333,9 @@ export const PERSONA_CARD_ORDERS: Record<string, string[]> = {
     'art',
     'pitch-deck',
     'code-walkthrough',
+    'impact-analysis',
+    'release-monitor',
+    'dev-panel',
   ],
   sm: [
     'sprint-dashboard',
@@ -317,6 +356,9 @@ export const PERSONA_CARD_ORDERS: Record<string, string[]> = {
     'text-tools',
     'pitch-deck',
     'code-walkthrough',
+    'release-monitor',
+    'impact-analysis',
+    'dev-panel',
   ],
   po: [
     'sprint-dashboard',
@@ -337,6 +379,9 @@ export const PERSONA_CARD_ORDERS: Record<string, string[]> = {
     'mermaid',
     'text-tools',
     'code-walkthrough',
+    'release-monitor',
+    'impact-analysis',
+    'dev-panel',
   ],
   rte: [
     'art',
@@ -357,6 +402,9 @@ export const PERSONA_CARD_ORDERS: Record<string, string[]> = {
     'mermaid',
     'text-tools',
     'code-walkthrough',
+    'release-monitor',
+    'impact-analysis',
+    'dev-panel',
   ],
 };
 
@@ -383,4 +431,7 @@ export const RECENT_VIEW_LABELS: Record<string, string> = {
   standup: '🧍 Standup Board',
   metrics: '📐 Metrics',
   'dsu-daily': '🗒️ DSU Daily',
+  'dev-panel': '🛰️ Dev Panel',
+  'impact-analysis': '💥 Impact Analysis',
+  'release-monitor': '🚀 Release Monitor',
 };
