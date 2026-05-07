@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **DSU Board — Phase 5: Issue Detail Overlay & Standup Notes** (issue #44):
+  - **Issue Detail Overlay**: clicking any issue key opens a full-screen dialog with issue metadata, a status transition dropdown (fetched live from Jira), a Post Comment textarea, and a SNow root cause URL field. Closes on Escape key or backdrop click.
+  - **Standup Notes Panel**: collapsible panel (open by default) with Yesterday / Today / Blockers text areas and an optional SNow URL field. Auto-saved to `localStorage` on each keystroke (debounced 500 ms). "Copy to Clipboard" button formats notes with emoji headers.
+  - `StandupNotes` and `JiraTransition` interfaces exported from `useDsuBoardState`.
+  - Per-issue SNow root cause URLs persisted to `localStorage` under `toolbox-snow-root-causes`.
+
 - **Sprint Dashboard — Phase 3: 4 new tabs** (issue #44):
   - **Metrics tab**: Sprint completion %, total/done/in-progress/to-do counts, per-assignee velocity with story points.
   - **Pipeline tab**: Kanban-style column per status; lanes exceeding the bottleneck threshold (>3 issues) are highlighted with a warning indicator.

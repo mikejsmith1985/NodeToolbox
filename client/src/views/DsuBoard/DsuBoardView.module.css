@@ -271,3 +271,256 @@
   padding: var(--spacing-sm);
   text-align: center;
 }
+
+/* ── Issue key button (replaces plain span) ── */
+
+.issueKeyBtn {
+  font-weight: bold;
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline dotted;
+}
+
+.issueKeyBtn:hover {
+  text-decoration: underline;
+}
+
+/* ── Standup Notes Panel ── */
+
+.standupPanel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  margin: var(--spacing-xs) var(--spacing-sm) 0;
+}
+
+.standupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: var(--font-size-md);
+  font-weight: bold;
+  border-radius: var(--radius-md);
+}
+
+.standupHeader:hover {
+  background: var(--color-border);
+}
+
+.standupBody {
+  padding: var(--spacing-sm) var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.standupRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.standupLabel {
+  font-size: var(--font-size-sm);
+  font-weight: bold;
+  color: var(--color-text-secondary);
+}
+
+.standupTextarea {
+  resize: vertical;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+}
+
+.standupInput {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.copyBtn {
+  align-self: flex-start;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-bg);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+}
+
+.copyBtn:hover {
+  opacity: 0.9;
+}
+
+/* ── Issue Detail Overlay ── */
+
+.overlayBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--spacing-lg);
+  z-index: 1000;
+  overflow-y: auto;
+}
+
+.overlayPanel {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.overlayHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.overlayTitleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.overlayIssueKey {
+  font-weight: bold;
+  color: var(--color-accent);
+  font-size: var(--font-size-lg);
+}
+
+.overlayCloseBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-lg);
+  line-height: 1;
+  padding: 0 var(--spacing-xs);
+  flex-shrink: 0;
+}
+
+.overlayCloseBtn:hover {
+  color: var(--color-text-primary);
+}
+
+.overlaySummary {
+  font-size: var(--font-size-md);
+  font-weight: bold;
+  margin: 0;
+  color: var(--color-text-primary);
+}
+
+.overlayMeta {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.overlayMetaItem {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.overlayDescription {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  margin: 0;
+  padding: var(--spacing-sm);
+  background: var(--color-surface-2);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+}
+
+.overlaySection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--spacing-sm);
+}
+
+.overlayLabel {
+  font-size: var(--font-size-sm);
+  font-weight: bold;
+  color: var(--color-text-secondary);
+}
+
+.overlayTransitionRow {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.overlaySelect {
+  flex: 1;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.overlayTextarea {
+  resize: vertical;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+}
+
+.overlayInput {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.overlayActionBtn {
+  align-self: flex-start;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-bg);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+}
+
+.overlayActionBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
