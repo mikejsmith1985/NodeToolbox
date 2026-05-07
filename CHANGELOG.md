@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Admin Hub — Launcher download buttons were disabled (fix #vbs-launcher)**: The "⬇️ Silent Launcher (.vbs)" and "⬇️ Launcher (.bat)" buttons in the Proxy & Server Setup section were rendered as disabled buttons with a "legacy dashboard" tooltip, making them non-functional. Fixed by:
+  - Adding `GET /api/download/launcher-vbs` and `GET /api/download/launcher-bat` endpoints to `src/routes/api.js` that serve the distribution-root launcher files as file downloads.
+  - Replacing the disabled `<button disabled>` elements with proper `<a href>` download links pointing to the new endpoints.
+  - Removing the legacy `server.py` and `server.js` stubs from DOWNLOAD_ITEMS (not applicable to the Node.js version).
+  - Removing the "Download from the legacy dashboard" tooltip.
+
 ### Added
 - **My Issues — Phase 4: Issue detail panel, inline transitions, SNow cross-reference, export** (issue #44):
   - **Issue Detail Panel**: click any issue card/row to open a slide-in `<aside>` overlay showing full metadata (key, summary, status, priority, assignee, reporter, created/updated dates) and a truncated description (≤300 chars).
