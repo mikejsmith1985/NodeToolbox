@@ -5,7 +5,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 
-import { jiraGet } from '../../../services/jiraApi.ts';
+import { jiraGet, jiraPost } from '../../../services/jiraApi.ts';
 import type { JiraBoard, JiraFilter, JiraIssue } from '../../../types/jira.ts';
 
 // ── Source and display type unions ──
@@ -14,6 +14,16 @@ export type IssueSource = 'mine' | 'jql' | 'filter' | 'board';
 export type ViewMode = 'cards' | 'compact' | 'table';
 export type SortField = 'updated' | 'priority' | 'due' | 'created' | 'project';
 export type Persona = 'dev' | 'qa' | 'sm' | 'po';
+
+/**
+ * Represents a Jira workflow transition that can move an issue to a new status.
+ * The `to` field describes the target status after the transition is executed.
+ */
+export interface JiraTransition {
+  id: string;
+  name: string;
+  to: { name: string; statusCategory: { name: string } };
+}
 
 // ── Named API path constants ──
 
@@ -26,6 +36,8 @@ const MAX_JQL_HISTORY = 10;
 const BOARDS_PATH_PREFIX = '/rest/agile/1.0/board';
 const FAVOURITE_FILTERS_PATH = '/rest/api/2/filter/favourite';
 const SEARCH_PATH = '/rest/api/2/search';
+const TRANSITIONS_PATH_PREFIX = '/rest/api/2/issue';
+const TRANSITIONS_PATH_SUFFIX = '/transitions';
 
 const FETCH_FAILURE_MESSAGE = 'Failed to fetch issues';
 const EMPTY_FETCH_ERROR = null;
@@ -48,6 +60,20 @@ export interface MyIssuesState {
   selectedBoardId: number | null;
   savedFilters: JiraFilter[];
   selectedFilterId: string | null;
+  /** The issue whose detail panel is currently open, or null if closed. */
+  selectedIssue: JiraIssue | null;
+  /** Whether the slide-in detail panel overlay is visible. */
+  isDetailPanelOpen: boolean;
+  /** True while a status transition API call is in flight. */
+  isTransitioning: boolean;
+  /** Error message from the most recent failed transition, or null. */
+  transitionError: string | null;
+  /** Workflow transitions available for the selected issue. */
+  availableTransitions: JiraTransition[];
+  /** True while transitions are being fetched from Jira. */
+  isLoadingTransitions: boolean;
+  /** Whether the export dropdown menu is visible. */
+  isExportMenuOpen: boolean;
 }
 
 export interface MyIssuesActions {
@@ -65,6 +91,20 @@ export interface MyIssuesActions {
   loadSavedFilters(): Promise<void>;
   runSavedFilter(): Promise<void>;
   runBoardIssues(): Promise<void>;
+  /** Opens the detail panel for the given issue. */
+  openDetailPanel(issue: JiraIssue): void;
+  /** Closes the detail panel and clears the selected issue. */
+  closeDetailPanel(): void;
+  /** Fetches the available workflow transitions for the given issue. */
+  loadTransitions(issueKey: string): Promise<void>;
+  /** Executes a workflow transition and updates the issue status in state. */
+  transitionIssue(issueKey: string, transitionId: string): Promise<void>;
+  /** Opens or closes the export dropdown menu. */
+  setExportMenuOpen(isOpen: boolean): void;
+  /** Copies the issue list as a CSV string to the clipboard. */
+  exportAsCsv(): void;
+  /** Copies the issue list as a Markdown table to the clipboard. */
+  exportAsMarkdown(): void;
 }
 
 // ── API response shapes ──
@@ -82,8 +122,13 @@ interface JiraSprintListResponse {
   values: Array<{ id: number; name: string; state: string }>;
 }
 
+/** Shape of the Jira Agile API response for sprint issues. */
 interface JiraSprintIssuesResponse {
   issues: JiraIssue[];
+}
+
+interface JiraTransitionsResponse {
+  transitions: JiraTransition[];
 }
 
 // ── Helper functions ──
@@ -104,6 +149,13 @@ function createInitialMyIssuesState(): MyIssuesState {
     selectedBoardId: null,
     savedFilters: [],
     selectedFilterId: null,
+    selectedIssue: null,
+    isDetailPanelOpen: false,
+    isTransitioning: false,
+    transitionError: null,
+    availableTransitions: [],
+    isLoadingTransitions: false,
+    isExportMenuOpen: false,
   };
 }
 
@@ -124,6 +176,43 @@ function buildUpdatedJqlHistory(newQuery: string, currentHistory: string[]): str
 /** Extracts a human-readable error message from an unknown thrown value. */
 function extractErrorMessage(unknownError: unknown): string {
   return unknownError instanceof Error ? unknownError.message : FETCH_FAILURE_MESSAGE;
+}
+
+// Maps Jira status category names (from transitions) to the key format used in JiraIssue.
+const STATUS_CATEGORY_KEY_MAP: Record<string, string> = {
+  done: 'done',
+  'to do': 'new',
+  new: 'new',
+};
+
+/** Derives a status category key string from a human-readable category name. */
+function deriveStatusCategoryKey(categoryName: string): string {
+  return STATUS_CATEGORY_KEY_MAP[categoryName.toLowerCase()] ?? 'indeterminate';
+}
+
+/** Formats the current issue list as a CSV string (key, summary, status, priority, assignee). */
+function buildCsvExport(issues: JiraIssue[]): string {
+  const CSV_HEADER = 'key,summary,status,priority,assignee';
+  const rows = issues.map((issue) => {
+    // Escape double-quotes in summary to keep CSV valid
+    const escapedSummary = `"${issue.fields.summary.replace(/"/g, '""')}"`;
+    const priority = issue.fields.priority?.name ?? '';
+    const assignee = issue.fields.assignee?.displayName ?? '';
+    return `${issue.key},${escapedSummary},${issue.fields.status.name},${priority},${assignee}`;
+  });
+  return [CSV_HEADER, ...rows].join('\n');
+}
+
+/** Formats the current issue list as a Markdown table. */
+function buildMarkdownExport(issues: JiraIssue[]): string {
+  const MARKDOWN_HEADER = '| Key | Summary | Status | Priority | Assignee |';
+  const MARKDOWN_SEPARATOR = '| --- | --- | --- | --- | --- |';
+  const rows = issues.map((issue) => {
+    const priority = issue.fields.priority?.name ?? '—';
+    const assignee = issue.fields.assignee?.displayName ?? '—';
+    return `| ${issue.key} | ${issue.fields.summary} | ${issue.fields.status.name} | ${priority} | ${assignee} |`;
+  });
+  return [MARKDOWN_HEADER, MARKDOWN_SEPARATOR, ...rows].join('\n');
 }
 
 // ── Hook ──
@@ -342,6 +431,124 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
     }
   }, [state.selectedBoardId]);
 
+  // ── Detail panel actions ──
+
+  /** Sets the selected issue and opens the detail panel overlay. */
+  const openDetailPanel = useCallback((issue: JiraIssue) => {
+    setState((previousState) => ({
+      ...previousState,
+      selectedIssue: issue,
+      isDetailPanelOpen: true,
+      transitionError: null,
+      availableTransitions: [],
+    }));
+  }, []);
+
+  /** Closes the detail panel and clears the selected issue from state. */
+  const closeDetailPanel = useCallback(() => {
+    setState((previousState) => ({
+      ...previousState,
+      selectedIssue: null,
+      isDetailPanelOpen: false,
+      transitionError: null,
+    }));
+  }, []);
+
+  /** Fetches the available workflow transitions for the given issue key. */
+  const loadTransitions = useCallback(async (issueKey: string) => {
+    setState((previousState) => ({ ...previousState, isLoadingTransitions: true }));
+
+    try {
+      const response = await jiraGet<JiraTransitionsResponse>(
+        `${TRANSITIONS_PATH_PREFIX}/${issueKey}${TRANSITIONS_PATH_SUFFIX}`,
+      );
+
+      setState((previousState) => ({
+        ...previousState,
+        availableTransitions: response.transitions,
+        isLoadingTransitions: false,
+      }));
+    } catch {
+      // Silently clear the loading flag — transitions are non-critical
+      setState((previousState) => ({ ...previousState, isLoadingTransitions: false }));
+    }
+  }, []);
+
+  /**
+   * Executes a workflow transition via POST, then updates the issue's status
+   * in the issues array and the selectedIssue using data from availableTransitions.
+   */
+  const transitionIssue = useCallback(async (issueKey: string, transitionId: string) => {
+    setState((previousState) => ({
+      ...previousState,
+      isTransitioning: true,
+      transitionError: null,
+    }));
+
+    try {
+      await jiraPost<void>(
+        `${TRANSITIONS_PATH_PREFIX}/${issueKey}${TRANSITIONS_PATH_SUFFIX}`,
+        { transition: { id: transitionId } },
+      );
+
+      setState((previousState) => {
+        const matchedTransition = previousState.availableTransitions.find(
+          (transition) => transition.id === transitionId,
+        );
+
+        if (!matchedTransition || !previousState.selectedIssue) {
+          return { ...previousState, isTransitioning: false };
+        }
+
+        const newStatus = {
+          name: matchedTransition.to.name,
+          statusCategory: { key: deriveStatusCategoryKey(matchedTransition.to.statusCategory.name) },
+        };
+
+        const updatedIssue: JiraIssue = {
+          ...previousState.selectedIssue,
+          fields: { ...previousState.selectedIssue.fields, status: newStatus },
+        };
+
+        const updatedIssues = previousState.issues.map((issue) =>
+          issue.key === issueKey ? updatedIssue : issue,
+        );
+
+        return {
+          ...previousState,
+          isTransitioning: false,
+          selectedIssue: updatedIssue,
+          issues: updatedIssues,
+        };
+      });
+    } catch (unknownError) {
+      setState((previousState) => ({
+        ...previousState,
+        isTransitioning: false,
+        transitionError: extractErrorMessage(unknownError),
+      }));
+    }
+  }, []);
+
+  // ── Export actions ──
+
+  /** Opens or closes the export dropdown menu. */
+  const setExportMenuOpen = useCallback((isOpen: boolean) => {
+    setState((previousState) => ({ ...previousState, isExportMenuOpen: isOpen }));
+  }, []);
+
+  /** Copies the current issue list as CSV to the clipboard, then closes the menu. */
+  const exportAsCsv = useCallback(() => {
+    void navigator.clipboard.writeText(buildCsvExport(state.issues));
+    setState((previousState) => ({ ...previousState, isExportMenuOpen: false }));
+  }, [state.issues]);
+
+  /** Copies the current issue list as a Markdown table to the clipboard, then closes the menu. */
+  const exportAsMarkdown = useCallback(() => {
+    void navigator.clipboard.writeText(buildMarkdownExport(state.issues));
+    setState((previousState) => ({ ...previousState, isExportMenuOpen: false }));
+  }, [state.issues]);
+
   const actions = useMemo<MyIssuesActions>(
     () => ({
       setSource,
@@ -358,6 +565,13 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
       loadSavedFilters,
       runSavedFilter,
       runBoardIssues,
+      openDetailPanel,
+      closeDetailPanel,
+      loadTransitions,
+      transitionIssue,
+      setExportMenuOpen,
+      exportAsCsv,
+      exportAsMarkdown,
     }),
     [
       setSource,
@@ -374,6 +588,13 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
       loadSavedFilters,
       runSavedFilter,
       runBoardIssues,
+      openDetailPanel,
+      closeDetailPanel,
+      loadTransitions,
+      transitionIssue,
+      setExportMenuOpen,
+      exportAsCsv,
+      exportAsMarkdown,
     ],
   );
 

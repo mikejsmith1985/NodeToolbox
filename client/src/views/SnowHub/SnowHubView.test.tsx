@@ -143,7 +143,7 @@ describe('SnowHubView', () => {
   it('renders the three tab buttons', () => {
     render(<SnowHubView />);
 
-    expect(screen.getByRole('tab', { name: 'CRG' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'CHG' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'PRB Generator' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Release Management' })).toBeInTheDocument();
   });

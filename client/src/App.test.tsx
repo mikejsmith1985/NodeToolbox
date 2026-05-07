@@ -108,4 +108,12 @@ describe('App shell', () => {
 
     expect(screen.getByText('NodeToolbox')).toBeInTheDocument();
   });
+
+  it('makes the NodeToolbox title a link that navigates to the Home route', () => {
+    renderApp(DEFAULT_PATH);
+
+    const homeLinkElement = screen.getByRole('link', { name: 'NodeToolbox' });
+    expect(homeLinkElement).toBeInTheDocument();
+    expect(homeLinkElement).toHaveAttribute('href', '/');
+  });
 });

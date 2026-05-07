@@ -1,7 +1,7 @@
 // DevWorkspaceView.test.tsx — Unit tests for the Dev Workspace tabbed view component.
 
 import { render, screen, fireEvent } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockState, mockActions } = vi.hoisted(() => ({
   mockState: {
@@ -60,7 +60,12 @@ describe('DevWorkspaceView', () => {
   beforeEach(() => {
     mockState.activeTab = 'time';
     mockState.workLogTab = 'timers';
+    mockState.gitSyncSubTab = 'sync';
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('renders the 4 tab buttons', () => {
@@ -93,5 +98,22 @@ describe('DevWorkspaceView', () => {
     mockState.workLogTab = 'today';
     render(<DevWorkspaceView />);
     expect(screen.getByRole('tab', { name: /today/i })).toBeInTheDocument();
+  });
+
+  it('calls URL.createObjectURL when a hook download button is clicked', () => {
+    const createObjectURLMock = vi.fn().mockReturnValue('blob:mock-url');
+    const revokeObjectURLMock = vi.fn();
+    vi.stubGlobal('URL', { createObjectURL: createObjectURLMock, revokeObjectURL: revokeObjectURLMock });
+
+    mockState.activeTab = 'gitsync';
+    mockState.gitSyncSubTab = 'hooks';
+
+    render(<DevWorkspaceView />);
+
+    const downloadBtn = screen.getByRole('button', { name: /download post-commit hook/i });
+    fireEvent.click(downloadBtn);
+
+    expect(createObjectURLMock).toHaveBeenCalledTimes(1);
+    expect(createObjectURLMock).toHaveBeenCalledWith(expect.any(Blob));
   });
 });

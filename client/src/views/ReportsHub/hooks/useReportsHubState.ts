@@ -21,11 +21,19 @@ const REPORT_FIELDS =
 const LOAD_FEATURES_FAILURE = 'Failed to load features'
 const LOAD_DEFECTS_FAILURE = 'Failed to load defects'
 const LOAD_RISKS_FAILURE = 'Failed to load risks'
+const SPRINT_ISSUE_FIELDS = 'summary,status,assignee,priority,labels,updated,customfield_10020'
+const STORY_ISSUE_TYPE = 'Story'
+const SPRINT_MAX_RESULTS = 200
+const THROUGHPUT_MAX_RESULTS = 200
+const THROUGHPUT_MAX_SPRINTS = 4
+const LOAD_SPRINT_DATA_FAILURE = 'Failed to load sprint data'
+const LOAD_QUALITY_FAILURE = 'Failed to load quality data'
+const LOAD_THROUGHPUT_FAILURE = 'Failed to load throughput data'
 
 // ── Type definitions ──
 
-/** The three reporting tabs available in the Reports Hub. */
-export type ReportsHubTab = 'features' | 'defects' | 'risks'
+/** All nine reporting tabs available in the Reports Hub. */
+export type ReportsHubTab = 'features' | 'defects' | 'risks' | 'flow' | 'impact' | 'individual' | 'quality' | 'sprintHealth' | 'throughput'
 
 /** A single ART team configuration loaded from localStorage. */
 export interface ArtTeamConfig {
@@ -44,6 +52,53 @@ export interface JiraFeatureIssue {
   fixVersions: string[]
   assigneeName: string | null
   piName: string | null
+  priority: string | null
+}
+
+/** A normalised active-sprint Jira issue — shared data source for Flow, Impact, Individual, and Sprint Health tabs. */
+export interface SprintIssue {
+  key: string
+  summary: string
+  statusName: string
+  statusCategory: string  // 'new' | 'indeterminate' | 'done'
+  teamName: string
+  assigneeName: string | null
+  priority: string
+  isBlocked: boolean
+  updatedDate: string
+  sprintName: string | null  // extracted from customfield_10020 for throughput grouping
+}
+
+/** Per-assignee workload summary for the Individual tab. */
+export interface IndividualEntry {
+  assigneeName: string
+  totalCount: number
+  inProgressCount: number
+  doneCount: number
+  blockedCount: number
+}
+
+/** Aggregated quality metrics computed from defects + story count. */
+export interface QualityMetrics {
+  totalDefects: number
+  criticalDefectCount: number  // defects where priority is 'Highest' or 'Critical' and status != done
+  totalStories: number
+  defectDensity: number  // totalDefects / totalStories (0 when totalStories = 0)
+}
+
+/** Per-team sprint completion health entry for the Sprint Health tab. */
+export interface SprintHealthEntry {
+  teamName: string
+  committedCount: number
+  completedCount: number
+  healthScore: number  // 0–100 integer
+  isAtRisk: boolean   // healthScore < HEALTH_AT_RISK_THRESHOLD
+}
+
+/** Per-sprint resolved issue count for the Throughput tab. */
+export interface ThroughputEntry {
+  sprintName: string
+  resolvedCount: number
 }
 
 /** All reactive state fields managed by this hook. */
@@ -62,6 +117,15 @@ export interface ReportsHubState {
   defectsError: string | null
   risksError: string | null
   lastGeneratedAt: string | null
+  sprintIssues: SprintIssue[]
+  isLoadingSprintData: boolean
+  sprintDataError: string | null
+  storyCount: number
+  isLoadingQuality: boolean
+  qualityError: string | null
+  throughputData: ThroughputEntry[]
+  isLoadingThroughput: boolean
+  throughputError: string | null
 }
 
 /** All action callbacks returned by this hook. */
@@ -73,6 +137,9 @@ export interface ReportsHubActions {
   loadFeatures(): Promise<void>
   loadDefects(): Promise<void>
   loadRisks(): Promise<void>
+  loadSprintData(): Promise<void>
+  loadQuality(): Promise<void>
+  loadThroughput(): Promise<void>
   copyReport(): void
 }
 
@@ -92,6 +159,22 @@ interface JiraIssueListResponse {
       priority: { name: string } | null
       issuetype: { name: string } | null
       [PI_CUSTOM_FIELD]?: string | null
+    }
+  }>
+}
+
+/** API response for sprint issue searches (different field set from report issues). */
+interface JiraSprintIssueResponse {
+  issues: Array<{
+    key: string
+    fields: {
+      summary: string
+      status: { name: string; statusCategory: { name: string } }
+      assignee: { displayName: string } | null
+      priority: { name: string } | null
+      labels: string[]
+      updated: string
+      customfield_10020: Array<{ name: string; state: string }> | null
     }
   }>
 }
@@ -126,6 +209,7 @@ function mapJiraIssueToFeature(
     fixVersions: rawIssue.fields.fixVersions.map((fixVersion) => fixVersion.name),
     assigneeName: rawIssue.fields.assignee?.displayName ?? null,
     piName: (rawIssue.fields[PI_CUSTOM_FIELD] as string | null | undefined) ?? null,
+    priority: rawIssue.fields.priority?.name ?? null,
   }
 }
 
@@ -158,6 +242,95 @@ async function fetchIssuesAcrossTeams(
   return allTeamResults.flat()
 }
 
+// ── Helper: sprint issue helpers ──
+
+/** Extracts the most recent closed sprint name from the Jira sprint custom field array. */
+function extractClosedSprintName(sprintField: Array<{ name: string; state: string }> | null): string | null {
+  if (!sprintField || sprintField.length === 0) return null
+  const closedSprint = sprintField.find((sprint) => sprint.state === 'closed')
+  return closedSprint?.name ?? sprintField[0]?.name ?? null
+}
+
+/** Maps a raw Jira sprint issue to the normalised SprintIssue shape. */
+function mapJiraIssueToSprintIssue(
+  rawIssue: JiraSprintIssueResponse['issues'][number],
+  teamName: string,
+): SprintIssue {
+  const issuePriority = rawIssue.fields.priority?.name ?? 'None'
+  const issueLabels = rawIssue.fields.labels ?? []
+  // An issue is blocked if it has a blocking/impediment label OR its status name contains "block"
+  const isBlocked =
+    issueLabels.some((label) =>
+      label.toLowerCase().includes('block') || label.toLowerCase().includes('impediment'),
+    ) || rawIssue.fields.status.name.toLowerCase().includes('block')
+
+  return {
+    key: rawIssue.key,
+    summary: rawIssue.fields.summary,
+    statusName: rawIssue.fields.status.name,
+    statusCategory: rawIssue.fields.status.statusCategory.name,
+    teamName,
+    assigneeName: rawIssue.fields.assignee?.displayName ?? null,
+    priority: issuePriority,
+    isBlocked,
+    updatedDate: rawIssue.fields.updated,
+    sprintName: extractClosedSprintName(rawIssue.fields.customfield_10020),
+  }
+}
+
+/** JQL for active-sprint issues (used by Flow, Impact, Individual, and Sprint Health). */
+function buildSprintDataJql(projectKey: string): string {
+  return `project="${projectKey}" AND sprint in openSprints() AND issuetype != Epic ORDER BY status ASC`
+}
+
+/** JQL for resolved issues in closed sprints (used by Throughput). */
+function buildThroughputJql(projectKey: string): string {
+  return `project="${projectKey}" AND status = Done AND sprint in closedSprints() ORDER BY updated DESC`
+}
+
+/** Fetches active-sprint issues across all configured teams. */
+async function fetchSprintIssuesAcrossTeams(artTeams: ArtTeamConfig[]): Promise<SprintIssue[]> {
+  if (artTeams.length === 0) return []
+  const teamFetches = artTeams.map(async (teamConfig) => {
+    const jql = buildSprintDataJql(teamConfig.projectKey)
+    const response = await jiraGet<JiraSprintIssueResponse>(
+      `/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=${SPRINT_MAX_RESULTS}&fields=${SPRINT_ISSUE_FIELDS}`,
+    )
+    return response.issues.map((rawIssue) => mapJiraIssueToSprintIssue(rawIssue, teamConfig.name))
+  })
+  const allTeamResults = await Promise.all(teamFetches)
+  return allTeamResults.flat()
+}
+
+/** Fetches resolved issues from closed sprints across all teams (for Throughput tab). */
+async function fetchThroughputIssuesAcrossTeams(artTeams: ArtTeamConfig[]): Promise<SprintIssue[]> {
+  if (artTeams.length === 0) return []
+  const teamFetches = artTeams.map(async (teamConfig) => {
+    const jql = buildThroughputJql(teamConfig.projectKey)
+    const response = await jiraGet<JiraSprintIssueResponse>(
+      `/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=${THROUGHPUT_MAX_RESULTS}&fields=${SPRINT_ISSUE_FIELDS}`,
+    )
+    return response.issues.map((rawIssue) => mapJiraIssueToSprintIssue(rawIssue, teamConfig.name))
+  })
+  const allTeamResults = await Promise.all(teamFetches)
+  return allTeamResults.flat()
+}
+
+/** Aggregates resolved issues by sprint name, returning the most recent THROUGHPUT_MAX_SPRINTS entries. */
+function aggregateThroughputData(resolvedIssues: SprintIssue[]): ThroughputEntry[] {
+  const countBySprintName = new Map<string, number>()
+  for (const issue of resolvedIssues) {
+    const sprintName = issue.sprintName
+    if (sprintName !== null) {
+      countBySprintName.set(sprintName, (countBySprintName.get(sprintName) ?? 0) + 1)
+    }
+  }
+  return Array.from(countBySprintName.entries())
+    .map(([sprintName, resolvedCount]) => ({ sprintName, resolvedCount }))
+    .sort((a, b) => a.sprintName.localeCompare(b.sprintName))
+    .slice(-THROUGHPUT_MAX_SPRINTS)
+}
+
 // ── Hook ──
 
 /** Provides all reactive state and action callbacks for the Reports Hub view. */
@@ -176,6 +349,15 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
   const [defectsError, setDefectsError] = useState<string | null>(null)
   const [risksError, setRisksError] = useState<string | null>(null)
   const [lastGeneratedAt, setLastGeneratedAt] = useState<string | null>(null)
+  const [sprintIssues, setSprintIssues] = useState<SprintIssue[]>([])
+  const [isLoadingSprintData, setIsLoadingSprintData] = useState(false)
+  const [sprintDataError, setSprintDataError] = useState<string | null>(null)
+  const [storyCount, setStoryCount] = useState(0)
+  const [isLoadingQuality, setIsLoadingQuality] = useState(false)
+  const [qualityError, setQualityError] = useState<string | null>(null)
+  const [throughputData, setThroughputData] = useState<ThroughputEntry[]>([])
+  const [isLoadingThroughput, setIsLoadingThroughput] = useState(false)
+  const [throughputError, setThroughputError] = useState<string | null>(null)
 
   const currentArtTeams = artTeams.length > 0 ? artTeams : loadArtTeamsFromStorage()
 
@@ -194,6 +376,15 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
     defectsError,
     risksError,
     lastGeneratedAt,
+    sprintIssues,
+    isLoadingSprintData,
+    sprintDataError,
+    storyCount,
+    isLoadingQuality,
+    qualityError,
+    throughputData,
+    isLoadingThroughput,
+    throughputError,
   }
 
   async function loadFeatures(): Promise<void> {
@@ -252,9 +443,60 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
     }
   }
 
+  async function loadSprintData(): Promise<void> {
+    setIsLoadingSprintData(true)
+    setSprintDataError(null)
+    try {
+      const loadedSprintIssues = await fetchSprintIssuesAcrossTeams(currentArtTeams)
+      setSprintIssues(loadedSprintIssues)
+    } catch (fetchError) {
+      const errorMessage = fetchError instanceof Error ? fetchError.message : LOAD_SPRINT_DATA_FAILURE
+      setSprintDataError(errorMessage)
+    } finally {
+      setIsLoadingSprintData(false)
+    }
+  }
+
+  async function loadQuality(): Promise<void> {
+    setIsLoadingQuality(true)
+    setQualityError(null)
+    try {
+      // Fetch story count across all teams (numerator for defect-density ratio)
+      const storyResults = await fetchIssuesAcrossTeams(currentArtTeams, STORY_ISSUE_TYPE, 'created')
+      setStoryCount(storyResults.length)
+    } catch (fetchError) {
+      const errorMessage = fetchError instanceof Error ? fetchError.message : LOAD_QUALITY_FAILURE
+      setQualityError(errorMessage)
+    } finally {
+      setIsLoadingQuality(false)
+    }
+  }
+
+  async function loadThroughput(): Promise<void> {
+    setIsLoadingThroughput(true)
+    setThroughputError(null)
+    try {
+      const resolvedIssues = await fetchThroughputIssuesAcrossTeams(currentArtTeams)
+      const aggregatedThroughputData = aggregateThroughputData(resolvedIssues)
+      setThroughputData(aggregatedThroughputData)
+    } catch (fetchError) {
+      const errorMessage = fetchError instanceof Error ? fetchError.message : LOAD_THROUGHPUT_FAILURE
+      setThroughputError(errorMessage)
+    } finally {
+      setIsLoadingThroughput(false)
+    }
+  }
+
   async function loadAllReports(): Promise<void> {
     setLastGeneratedAt(new Date().toISOString())
-    await Promise.all([loadFeatures(), loadDefects(), loadRisks()])
+    await Promise.all([
+      loadFeatures(),
+      loadDefects(),
+      loadRisks(),
+      loadSprintData(),
+      loadQuality(),
+      loadThroughput(),
+    ])
   }
 
   function copyReport(): void {
@@ -281,6 +523,9 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
     loadFeatures,
     loadDefects,
     loadRisks,
+    loadSprintData,
+    loadQuality,
+    loadThroughput,
     copyReport,
   }
 

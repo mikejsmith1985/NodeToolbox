@@ -170,4 +170,44 @@ describe('useSprintData', () => {
 
     expect(result.current.state.isTimerRunning).toBe(false);
   });
+
+  it('accepts "metrics" as a valid activeTab value', () => {
+    const { result } = renderHook(() => useSprintData());
+
+    act(() => {
+      result.current.actions.setActiveTab('metrics');
+    });
+
+    expect(result.current.state.activeTab).toBe('metrics');
+  });
+
+  it('accepts "pipeline" as a valid activeTab value', () => {
+    const { result } = renderHook(() => useSprintData());
+
+    act(() => {
+      result.current.actions.setActiveTab('pipeline');
+    });
+
+    expect(result.current.state.activeTab).toBe('pipeline');
+  });
+
+  it('accepts "planning" as a valid activeTab value', () => {
+    const { result } = renderHook(() => useSprintData());
+
+    act(() => {
+      result.current.actions.setActiveTab('planning');
+    });
+
+    expect(result.current.state.activeTab).toBe('planning');
+  });
+
+  it('accepts "releases" as a valid activeTab value', () => {
+    const { result } = renderHook(() => useSprintData());
+
+    act(() => {
+      result.current.actions.setActiveTab('releases');
+    });
+
+    expect(result.current.state.activeTab).toBe('releases');
+  });
 });

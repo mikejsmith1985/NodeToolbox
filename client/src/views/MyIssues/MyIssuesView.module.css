@@ -402,3 +402,126 @@
 .selectedBoard {
   border-color: var(--color-accent);
 }
+
+/* ── Detail panel (slide-in overlay) ── */
+
+.detailPanel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 420px;
+  height: 100%;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.2);
+  overflow-y: auto;
+  padding: var(--spacing-lg);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.detailPanelClose {
+  align-self: flex-end;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+.detailPanelClose:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+
+.detailPanelKey {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-accent);
+  font-family: var(--font-mono, monospace);
+}
+
+.detailPanelSummary {
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+  font-weight: 600;
+  margin: 0;
+}
+
+.detailMeta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.detailMeta dt {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
+.detailMeta dd {
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.detailDescription {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.detailTransitions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.detailSnow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--spacing-sm);
+}
+
+/* ── Export menu ── */
+
+.exportMenuWrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.exportDropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 160px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+
+.exportDropdownItem {
+  background: none;
+  border: none;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  text-align: left;
+  width: 100%;
+}
+
+.exportDropdownItem:hover {
+  background: var(--color-surface-2);
+}
