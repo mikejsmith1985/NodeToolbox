@@ -1,7 +1,8 @@
 // DsuBoardView.tsx — Daily Standup board view with 8 sections, cards/table mode, and assignee filters.
 
+import { useEffect, useState } from 'react';
 import { useDsuBoardState } from './hooks/useDsuBoardState.ts';
-import type { DsuBoardSection, DsuViewMode } from './hooks/useDsuBoardState.ts';
+import type { DsuBoardSection, DsuViewMode, JiraTransition, StandupNotes } from './hooks/useDsuBoardState.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import styles from './DsuBoardView.module.css';
 
@@ -78,6 +79,14 @@ export default function DsuBoardView() {
         </div>
       )}
 
+      <StandupNotesPanel
+        notes={state.standupNotes}
+        isCollapsed={state.isStandupPanelCollapsed}
+        onUpdateNotes={actions.updateStandupNotes}
+        onToggleCollapse={actions.setStandupPanelCollapsed}
+        onCopyToClipboard={actions.copyStandupToClipboard}
+      />
+
       <div className={styles.sectionsContainer}>
         {state.sections.map((section) => (
           <BoardSection
@@ -86,9 +95,26 @@ export default function DsuBoardView() {
             viewMode={state.viewMode}
             activeFilters={state.activeFilters}
             onToggleCollapse={actions.toggleSectionCollapse}
+            onIssueKeyClick={actions.openDetailOverlay}
           />
         ))}
       </div>
+
+      {state.isDetailOverlayOpen && state.selectedIssue !== null && (
+        <IssueDetailOverlay
+          issue={state.selectedIssue}
+          availableTransitions={state.availableTransitions}
+          isLoadingTransitions={state.isLoadingTransitions}
+          isTransitioning={state.isTransitioning}
+          transitionError={state.transitionError}
+          snowRootCauseUrl={state.snowRootCauseUrls[state.selectedIssue.key] ?? ''}
+          onClose={actions.closeDetailOverlay}
+          onLoadTransitions={actions.loadTransitions}
+          onTransitionIssue={actions.transitionIssue}
+          onPostComment={actions.postComment}
+          onSetSnowRootCauseUrl={actions.setSnowRootCauseUrl}
+        />
+      )}
     </div>
   );
 }
@@ -118,10 +144,11 @@ interface BoardSectionProps {
   viewMode: DsuViewMode;
   activeFilters: string[];
   onToggleCollapse: (key: string) => void;
+  onIssueKeyClick: (issue: JiraIssue) => void;
 }
 
 /** Renders a single DSU board section with its issues in cards or table mode. */
-function BoardSection({ section, viewMode, activeFilters, onToggleCollapse }: BoardSectionProps) {
+function BoardSection({ section, viewMode, activeFilters, onToggleCollapse, onIssueKeyClick }: BoardSectionProps) {
   // Apply assignee filter if any filters are active
   const visibleIssues =
     activeFilters.length > 0
@@ -155,12 +182,12 @@ function BoardSection({ section, viewMode, activeFilters, onToggleCollapse }: Bo
           {!section.isLoading && viewMode === 'cards' && (
             <div className={styles.cardGrid}>
               {visibleIssues.map((issue) => (
-                <IssueCard key={issue.key} issue={issue} />
+                <IssueCard key={issue.key} issue={issue} onIssueKeyClick={onIssueKeyClick} />
               ))}
             </div>
           )}
           {!section.isLoading && viewMode === 'table' && visibleIssues.length > 0 && (
-            <IssueTable issues={visibleIssues} />
+            <IssueTable issues={visibleIssues} onIssueKeyClick={onIssueKeyClick} />
           )}
         </div>
       )}
@@ -170,14 +197,21 @@ function BoardSection({ section, viewMode, activeFilters, onToggleCollapse }: Bo
 
 interface IssueCardProps {
   issue: JiraIssue;
+  onIssueKeyClick: (issue: JiraIssue) => void;
 }
 
 /** Renders a single issue as a compact card. */
-function IssueCard({ issue }: IssueCardProps) {
+function IssueCard({ issue, onIssueKeyClick }: IssueCardProps) {
   return (
     <div className={styles.issueCard}>
       <div className={styles.issueCardHeader}>
-        <span className={styles.issueKey}>{issue.key}</span>
+        <button
+          className={styles.issueKeyBtn}
+          onClick={() => onIssueKeyClick(issue)}
+          aria-label={issue.key}
+        >
+          {issue.key}
+        </button>
         <span className={styles.issueType}>{issue.fields.issuetype.name}</span>
       </div>
       <p className={styles.issueSummary}>{issue.fields.summary}</p>
@@ -195,10 +229,11 @@ function IssueCard({ issue }: IssueCardProps) {
 
 interface IssueTableProps {
   issues: JiraIssue[];
+  onIssueKeyClick: (issue: JiraIssue) => void;
 }
 
 /** Renders issues in a compact table with key, summary, status, assignee, and updated date. */
-function IssueTable({ issues }: IssueTableProps) {
+function IssueTable({ issues, onIssueKeyClick }: IssueTableProps) {
   return (
     <table className={styles.issueTable}>
       <thead>
@@ -213,7 +248,15 @@ function IssueTable({ issues }: IssueTableProps) {
       <tbody>
         {issues.map((issue) => (
           <tr key={issue.key}>
-            <td className={styles.issueKey}>{issue.key}</td>
+            <td>
+              <button
+                className={styles.issueKeyBtn}
+                onClick={() => onIssueKeyClick(issue)}
+                aria-label={issue.key}
+              >
+                {issue.key}
+              </button>
+            </td>
             <td>{issue.fields.summary}</td>
             <td>{issue.fields.status.name}</td>
             <td>{issue.fields.assignee?.displayName ?? '—'}</td>
@@ -230,4 +273,268 @@ function getStatusClass(statusCategoryKey: string): string {
   if (statusCategoryKey === 'done') return styles.statusDone;
   if (statusCategoryKey === 'indeterminate') return styles.statusInProgress;
   return styles.statusTodo;
+}
+
+// ── Standup Notes Panel ──────────────────────────────────────────────────────
+
+interface StandupNotesPanelProps {
+  notes: StandupNotes;
+  isCollapsed: boolean;
+  onUpdateNotes: (notes: Partial<StandupNotes>) => void;
+  onToggleCollapse: (isCollapsed: boolean) => void;
+  onCopyToClipboard: () => void;
+}
+
+/**
+ * Collapsible panel for entering daily standup notes.
+ * Notes are auto-saved to localStorage (debounced in the hook).
+ */
+function StandupNotesPanel({
+  notes,
+  isCollapsed,
+  onUpdateNotes,
+  onToggleCollapse,
+  onCopyToClipboard,
+}: StandupNotesPanelProps) {
+  return (
+    <div className={styles.standupPanel}>
+      <button
+        className={styles.standupHeader}
+        onClick={() => onToggleCollapse(!isCollapsed)}
+        aria-expanded={!isCollapsed}
+      >
+        <span>
+          <span className={styles.sectionIcon}>📝</span>
+          <span>Standup Notes</span>
+        </span>
+        <span className={styles.collapseIndicator}>{isCollapsed ? '▶' : '▼'}</span>
+      </button>
+
+      {!isCollapsed && (
+        <div className={styles.standupBody}>
+          <div className={styles.standupRow}>
+            <label className={styles.standupLabel} htmlFor="standup-yesterday">Yesterday</label>
+            <textarea
+              id="standup-yesterday"
+              className={styles.standupTextarea}
+              value={notes.yesterday}
+              onChange={(event) => onUpdateNotes({ yesterday: event.target.value })}
+              placeholder="What did you complete yesterday?"
+              rows={2}
+            />
+          </div>
+          <div className={styles.standupRow}>
+            <label className={styles.standupLabel} htmlFor="standup-today">Today</label>
+            <textarea
+              id="standup-today"
+              className={styles.standupTextarea}
+              value={notes.today}
+              onChange={(event) => onUpdateNotes({ today: event.target.value })}
+              placeholder="What will you work on today?"
+              rows={2}
+            />
+          </div>
+          <div className={styles.standupRow}>
+            <label className={styles.standupLabel} htmlFor="standup-blockers">Blockers</label>
+            <textarea
+              id="standup-blockers"
+              className={styles.standupTextarea}
+              value={notes.blockers}
+              onChange={(event) => onUpdateNotes({ blockers: event.target.value })}
+              placeholder="Any blockers preventing progress?"
+              rows={2}
+            />
+          </div>
+          <div className={styles.standupRow}>
+            <label className={styles.standupLabel} htmlFor="standup-snow-url">SNow URL</label>
+            <input
+              id="standup-snow-url"
+              type="url"
+              className={styles.standupInput}
+              value={notes.snowUrl}
+              onChange={(event) => onUpdateNotes({ snowUrl: event.target.value })}
+              placeholder="Optional root cause ticket URL"
+            />
+          </div>
+          <button className={styles.copyBtn} onClick={onCopyToClipboard}>
+            📋 Copy to Clipboard
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Issue Detail Overlay ─────────────────────────────────────────────────────
+
+interface IssueDetailOverlayProps {
+  issue: JiraIssue;
+  availableTransitions: JiraTransition[];
+  isLoadingTransitions: boolean;
+  isTransitioning: boolean;
+  transitionError: string | null;
+  snowRootCauseUrl: string;
+  onClose: () => void;
+  onLoadTransitions: (issueKey: string) => Promise<void>;
+  onTransitionIssue: (issueKey: string, transitionId: string) => Promise<void>;
+  onPostComment: (issueKey: string, commentBody: string) => Promise<void>;
+  onSetSnowRootCauseUrl: (issueKey: string, url: string) => void;
+}
+
+/**
+ * Full-screen overlay showing issue detail, status transitions, a comment box,
+ * and a SNow root cause URL field. Closes on Escape key or close button.
+ */
+function IssueDetailOverlay({
+  issue,
+  availableTransitions,
+  isLoadingTransitions,
+  isTransitioning,
+  transitionError,
+  snowRootCauseUrl,
+  onClose,
+  onLoadTransitions,
+  onTransitionIssue,
+  onPostComment,
+  onSetSnowRootCauseUrl,
+}: IssueDetailOverlayProps) {
+  const [selectedTransitionId, setSelectedTransitionId] = useState('');
+  const [commentBody, setCommentBody] = useState('');
+  const [isPostingComment, setIsPostingComment] = useState(false);
+
+  // Load available transitions when the overlay mounts for this issue
+  useEffect(() => {
+    void onLoadTransitions(issue.key);
+  }, [issue.key, onLoadTransitions]);
+
+  // Allow closing the overlay with the Escape key
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => { document.removeEventListener('keydown', handleKeyDown); };
+  }, [onClose]);
+
+  const handleTransition = async () => {
+    if (!selectedTransitionId) return;
+    await onTransitionIssue(issue.key, selectedTransitionId);
+  };
+
+  const handlePostComment = async () => {
+    if (!commentBody.trim()) return;
+    setIsPostingComment(true);
+    await onPostComment(issue.key, commentBody);
+    setCommentBody('');
+    setIsPostingComment(false);
+  };
+
+  const descriptionPreview =
+    issue.fields.description
+      ? issue.fields.description.slice(0, 300) + (issue.fields.description.length > 300 ? '…' : '')
+      : '—';
+
+  return (
+    <div className={styles.overlayBackdrop} onClick={onClose}>
+      {/* Stop propagation so clicks inside the panel don't close the overlay */}
+      <div
+        className={styles.overlayPanel}
+        role="dialog"
+        aria-label="Issue detail"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className={styles.overlayHeader}>
+          <div className={styles.overlayTitleRow}>
+            <span className={styles.overlayIssueKey}>{issue.key}</span>
+            <span className={`${styles.statusBadge} ${getStatusClass(issue.fields.status.statusCategory.key)}`}>
+              {issue.fields.status.name}
+            </span>
+          </div>
+          <button className={styles.overlayCloseBtn} onClick={onClose} aria-label="Close overlay">✕</button>
+        </div>
+
+        <h2 className={styles.overlaySummary}>{issue.fields.summary}</h2>
+
+        <div className={styles.overlayMeta}>
+          {issue.fields.priority && (
+            <span className={styles.overlayMetaItem}>Priority: {issue.fields.priority.name}</span>
+          )}
+          {issue.fields.assignee && (
+            <span className={styles.overlayMetaItem}>Assignee: {issue.fields.assignee.displayName}</span>
+          )}
+          <span className={styles.overlayMetaItem}>Type: {issue.fields.issuetype.name}</span>
+        </div>
+
+        {issue.fields.description && (
+          <p className={styles.overlayDescription}>{descriptionPreview}</p>
+        )}
+
+        {/* Status transition */}
+        <div className={styles.overlaySection}>
+          <label className={styles.overlayLabel} htmlFor="overlay-transition">Change Status</label>
+          {isLoadingTransitions ? (
+            <p className={styles.loadingText}>Loading transitions…</p>
+          ) : (
+            <div className={styles.overlayTransitionRow}>
+              <select
+                id="overlay-transition"
+                className={styles.overlaySelect}
+                value={selectedTransitionId}
+                onChange={(event) => setSelectedTransitionId(event.target.value)}
+                disabled={isTransitioning}
+              >
+                <option value="">Select transition…</option>
+                {availableTransitions.map((transition) => (
+                  <option key={transition.id} value={transition.id}>
+                    {transition.name} → {transition.to.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                className={styles.overlayActionBtn}
+                onClick={() => void handleTransition()}
+                disabled={!selectedTransitionId || isTransitioning}
+              >
+                {isTransitioning ? 'Applying…' : 'Apply'}
+              </button>
+            </div>
+          )}
+          {transitionError && <p className={styles.errorText}>{transitionError}</p>}
+        </div>
+
+        {/* Post comment */}
+        <div className={styles.overlaySection}>
+          <label className={styles.overlayLabel} htmlFor="overlay-comment">Post Comment</label>
+          <textarea
+            id="overlay-comment"
+            className={styles.overlayTextarea}
+            value={commentBody}
+            onChange={(event) => setCommentBody(event.target.value)}
+            placeholder="Write a comment…"
+            rows={3}
+          />
+          <button
+            className={styles.overlayActionBtn}
+            onClick={() => void handlePostComment()}
+            disabled={!commentBody.trim() || isPostingComment}
+          >
+            {isPostingComment ? 'Posting…' : 'Post Comment'}
+          </button>
+        </div>
+
+        {/* SNow root cause URL */}
+        <div className={styles.overlaySection}>
+          <label className={styles.overlayLabel} htmlFor="overlay-snow-url">SNow Root Cause URL</label>
+          <input
+            id="overlay-snow-url"
+            type="url"
+            className={styles.overlayInput}
+            value={snowRootCauseUrl}
+            onChange={(event) => onSetSnowRootCauseUrl(issue.key, event.target.value)}
+            placeholder="https://servicenow.example.com/…"
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
