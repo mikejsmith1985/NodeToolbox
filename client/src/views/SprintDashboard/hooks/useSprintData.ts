@@ -13,7 +13,7 @@ import type { JiraIssue, JiraSprint } from '../../../types/jira.ts';
 const STANDUP_TIMER_SECONDS = 900; // 15 minutes
 const SPRINT_ISSUE_MAX_RESULTS = 200;
 const SPRINT_ISSUE_FIELDS =
-  'summary,status,priority,issuetype,assignee,reporter,created,updated,description';
+  'summary,status,priority,issuetype,assignee,reporter,created,updated,description,customfield_10016,fixVersions';
 const BOARDS_API_PATH = '/rest/agile/1.0/board';
 
 const LOAD_FAILURE_MESSAGE = 'Failed to load sprint';
@@ -26,7 +26,11 @@ export type DashboardTab =
   | 'blockers'
   | 'defects'
   | 'standup'
-  | 'settings';
+  | 'settings'
+  | 'metrics'
+  | 'pipeline'
+  | 'planning'
+  | 'releases';
 
 export interface SprintDataState {
   projectKey: string;

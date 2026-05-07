@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Sprint Dashboard — Phase 3: 4 new tabs** (issue #44):
+  - **Metrics tab**: Sprint completion %, total/done/in-progress/to-do counts, per-assignee velocity with story points.
+  - **Pipeline tab**: Kanban-style column per status; lanes exceeding the bottleneck threshold (>3 issues) are highlighted with a warning indicator.
+  - **Planning tab**: Unestimated issue list, story-point size distribution (0–1 / 2–3 / 5–8 / 13+ pts), backlog count.
+  - **Releases tab**: Issues grouped by fix version with per-version done/total/% complete; unversioned issues appear under "No Version".
+- Extended `JiraIssue` type with optional `customfield_10016` (story points) and `fixVersions` fields.
+- `SPRINT_ISSUE_FIELDS` now requests `customfield_10016,fixVersions` from the Jira sprint issues API.
+
 ### Fixed
 - **SNow Hub tab label**: "CRG" corrected to "CHG" (Change Request) in `SnowHubView.tsx`. The internal key remains `crg` to avoid breaking any persisted UI state.
 - **No Home navigation**: The NodeToolbox title in the top bar is now a clickable `<Link>` that navigates back to the Home route (`/`) from any tool view.

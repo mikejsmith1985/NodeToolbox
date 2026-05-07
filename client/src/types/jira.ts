@@ -22,6 +22,10 @@ export interface JiraIssue {
     created: string;
     updated: string;
     description: string | null;
+    /** Story-point estimate from the Jira custom field; null when unestimated. */
+    customfield_10016?: number | null;
+    /** Fix versions this issue is scheduled for; empty when not assigned to a release. */
+    fixVersions?: Array<{ name: string }>;
   };
 }
 
