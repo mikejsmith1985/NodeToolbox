@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **My Issues — Phase 4: Issue detail panel, inline transitions, SNow cross-reference, export** (issue #44):
+  - **Issue Detail Panel**: click any issue card/row to open a slide-in `<aside>` overlay showing full metadata (key, summary, status, priority, assignee, reporter, created/updated dates) and a truncated description (≤300 chars).
+  - **Inline Status Update**: detail panel includes a `<select aria-label="Change status">` dropdown populated via `GET /api/jira/issue/:key/transitions`; selecting a transition posts to `POST /api/jira/issue/:key/transitions` and refreshes state.
+  - **SNow Cross-Reference**: when a ServiceNow connection is active (`isSnowReady`), the detail panel searches `/api/now/table/incident` for incidents matching the issue key and lists up to 5 results.
+  - **Export Menu**: toolbar gains an "Export" button that opens a dropdown with "Copy as CSV" and "Copy as Markdown Table" options; both write the full issue list to the clipboard.
+  - All issue cards, compact rows, and table rows are now keyboard-accessible clickable elements (`role="button"`, `tabIndex={0}`).
+  - New hook state fields: `selectedIssue`, `isDetailPanelOpen`, `isTransitioning`, `transitionError`, `availableTransitions`, `isLoadingTransitions`, `isExportMenuOpen`.
+  - New CSS classes: `.detailPanel`, `.detailPanelClose`, `.detailPanelKey`, `.detailPanelSummary`, `.exportMenuWrapper`, `.exportDropdown`, `.exportDropdownItem`.
+  - 28 new TDD tests (46 total passing: 22 hook + 24 view).
+
+- **Admin Hub — Phase 7: 4 depth features** (issue #44):
+  - **Diagnostics panel**: collapsible section with "Run Diagnostics" button calling `GET /api/diagnostics`; displays JSON result in a pre-formatted block with a "Copy Report" to clipboard button; shows spinner while running and error message on failure.
+  - **Backup & Reset panel**: collapsible section with "Download Backup" (serialises all `toolbox-*` localStorage keys to a dated JSON file), "Restore Backup" (FileReader-based restore with validation), and "Reset All Settings" (confirm dialog + wipe + reload).
+  - **Hygiene Rules panel**: collapsible section with Stale Days, Unpointed Warning Days number inputs, and Flag Missing Assignees checkbox — each auto-saves to `localStorage` on change; provides central defaults for DSU Board stale thresholds.
+  - **Update Management panel**: collapsible section with "Check for Updates" calling `GET /api/version-check`; shows current/latest versions, "✅ Up to date" or "🆕 Update available" badge, and read-only release notes textarea.
+  - New server routes: `GET /api/diagnostics` and `GET /api/version-check` added to `src/routes/api.js`.
+  - New hook state and actions in `useAdminHubState`: `DiagnosticsResult`, `HygieneRules`, `UpdateCheckResult` interfaces; 10 new action callbacks.
+  - 21 new TDD tests (35 total passing).
+
+- **Dev Workspace — Phase 8: Hook script downloads** (issue #44):
+  - Replace `console.log` placeholder with real Blob-based file downloads for Git hook scripts.
+  - Added `HOOK_SCRIPT_CONTENTS` map with full bash scripts for `post-commit`, `pre-push`, and `commit-msg` hooks.
+  - Added `downloadHookScript()` utility that creates a Blob and triggers a browser download via a temporary anchor element — no server request needed.
+  - Each "Download" button in the Hook Generator panel now delivers the correct shell script file.
+  - 1 new TDD test (14 total passing).
+
+- **Reports Hub — Phase 2: 6 new report tabs** (issue #44):
+  - **Flow tab**: sprint issue throughput over time; issues done per day visualised as a bar chart.
+  - **Impact tab**: business impact summary; issues grouped by priority with done/in-progress/blocked breakdowns.
+  - **Individual tab**: per-assignee contribution table derived from sprint issues (issues assigned, done count, points).
+  - **Quality tab**: defect density panel; defect count vs story count ratio with configurable quality threshold indicator.
+  - **Sprint Health tab**: team health scorecard; completion %, at-risk teams (below `HEALTH_AT_RISK_THRESHOLD = 70%`), and blockers count.
+  - **Throughput tab**: closed-sprint resolved issue counts loaded via a separate `loadThroughput()` call.
+  - `ReportsHubTab` union extended to 9 values; `SprintIssue`, `IndividualEntry`, `QualityMetrics`, `SprintHealthEntry`, `ThroughputEntry` interfaces added.
+  - `loadSprintData()`, `loadQuality()`, `loadThroughput()` loaders added; `loadAllReports()` now runs all 6 loaders in parallel.
+  - 13 new TDD tests (33 total passing: 21 hook + 12 view).
+
+- **ART View — Phase 6: 4 depth features** (issue #44):
+  - **Dependency Map tab**: inline SVG cross-team issue dependency graph; scans issue descriptions for Jira key references, renders team boxes with bezier arrows between referencing issues across teams.
+  - **Board Prep tab**: pre-PI Planning backlog review panel; loads issues from each team's board backlog, team filter dropdown, Export to CSV button.
+  - **PI Progress Header**: persistent header strip above the tab bar showing PI name, animated completion progress bar, done / in-progress / to-do pills derived live from all loaded sprint issues.
+  - **SoS Drawer**: enhanced Scrum of Scrums panel with a Pulse aggregate row (impediment count, completion %, teams at risk) and per-team expandable accordion sections showing assignee lists and impediments.
+  - `ArtTab` extended with `'dependencies' | 'boardprep'`; `ArtDataState` extended with `sosExpandedTeams`, `boardPrepIssues`, `isLoadingBoardPrep`, `boardPrepError`, `boardPrepTeamFilter`, `piProgressStats`.
+  - New exported types: `ArtBoardPrepIssue`, `PiProgressStats`.
+  - New hook actions: `toggleSosTeam`, `loadBoardPrep`, `setBoardPrepTeamFilter`.
+
+- **DSU Board — Phase 5: Issue Detail Overlay & Standup Notes** (issue #44):
+  - **Issue Detail Overlay**: clicking any issue key opens a full-screen dialog with issue metadata, a status transition dropdown (fetched live from Jira), a Post Comment textarea, and a SNow root cause URL field. Closes on Escape key or backdrop click.
+  - **Standup Notes Panel**: collapsible panel (open by default) with Yesterday / Today / Blockers text areas and an optional SNow URL field. Auto-saved to `localStorage` on each keystroke (debounced 500 ms). "Copy to Clipboard" button formats notes with emoji headers.
+  - `StandupNotes` and `JiraTransition` interfaces exported from `useDsuBoardState`.
+  - Per-issue SNow root cause URLs persisted to `localStorage` under `toolbox-snow-root-causes`.
+
+- **Sprint Dashboard — Phase 3: 4 new tabs** (issue #44):
+  - **Metrics tab**: Sprint completion %, total/done/in-progress/to-do counts, per-assignee velocity with story points.
+  - **Pipeline tab**: Kanban-style column per status; lanes exceeding the bottleneck threshold (>3 issues) are highlighted with a warning indicator.
+  - **Planning tab**: Unestimated issue list, story-point size distribution (0–1 / 2–3 / 5–8 / 13+ pts), backlog count.
+  - **Releases tab**: Issues grouped by fix version with per-version done/total/% complete; unversioned issues appear under "No Version".
+- Extended `JiraIssue` type with optional `customfield_10016` (story points) and `fixVersions` fields.
+- `SPRINT_ISSUE_FIELDS` now requests `customfield_10016,fixVersions` from the Jira sprint issues API.
+
+### Fixed
+- **SNow Hub tab label**: "CRG" corrected to "CHG" (Change Request) in `SnowHubView.tsx`. The internal key remains `crg` to avoid breaking any persisted UI state.
+- **No Home navigation**: The NodeToolbox title in the top bar is now a clickable `<Link>` that navigates back to the Home route (`/`) from any tool view.
+- **Jira "connected but not working"**: `ConnectionBar` now shows green only when a live API probe (`GET /jira-proxy/rest/api/2/myself`) returns 200 — not merely when credentials are present in the config file. Added `isJiraVerified` / `isSnowVerified` to `connectionStore` alongside the existing `isJiraReady` / `isSnowReady` config-presence flags.
+- **SNow 401 on Release Management tab**: `useReleaseManagement.loadMyActiveChanges` now checks `isSnowReady` before firing any SNow fetch. When SNow is not configured, an actionable error message is displayed instead of a silent 401.
+- `proxyApi.ts`: added `probeJiraConnection()` and `probeSnowConnection()` — live credential probes via the existing proxy routes that return `ConnectionProbeResult` rather than throwing.
+- `useProxyStatus.ts`: after every poll, runs Jira and SNow probes in parallel (via `Promise.allSettled`) when the respective service is configured, then writes the verified flags to the connection store.
+
 ### Fixed
 - **EXE distribution — 503 "React build not found"**: `express.static` and `fs.existsSync` do not work with `@yao-pkg/pkg`'s virtual snapshot filesystem on Windows. `server.js` now uses `path.dirname(process.execPath)` (the real directory containing the `.exe`) as the asset base when `process.pkg` is truthy, instead of `__dirname` (the virtual snapshot path). `client/dist/` is now shipped alongside the `.exe` in the exe ZIP so it is extracted to the real filesystem on first use.
 - `scripts/local-release.ps1`: exe ZIP staging now includes `client/dist/` so users who extract the exe ZIP have the React SPA next to the executable.

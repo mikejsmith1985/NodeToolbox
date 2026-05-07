@@ -31,6 +31,8 @@ describe('useConnectionStore', () => {
 
     expect(initialState.isJiraReady).toBe(false);
     expect(initialState.isSnowReady).toBe(false);
+    expect(initialState.isJiraVerified).toBe(false);
+    expect(initialState.isSnowVerified).toBe(false);
     expect(initialState.proxyStatus).toBeNull();
     expect(initialState.relayBridgeStatus).toBeNull();
   });
@@ -42,14 +44,30 @@ describe('useConnectionStore', () => {
     expect(useConnectionStore.getState().proxyStatus).toEqual(MOCK_PROXY_STATUS);
   });
 
+  it('sets isJiraVerified when setJiraVerified is called', () => {
+    useConnectionStore.getState().setJiraVerified(true);
+
+    expect(useConnectionStore.getState().isJiraVerified).toBe(true);
+  });
+
+  it('sets isSnowVerified when setSnowVerified is called', () => {
+    useConnectionStore.getState().setSnowVerified(true);
+
+    expect(useConnectionStore.getState().isSnowVerified).toBe(true);
+  });
+
   it('clears all connection state back to defaults', () => {
     useConnectionStore.getState().setProxyStatus(MOCK_PROXY_STATUS);
     useConnectionStore.getState().setRelayBridgeStatus(MOCK_RELAY_STATUS);
+    useConnectionStore.getState().setJiraVerified(true);
+    useConnectionStore.getState().setSnowVerified(true);
 
     useConnectionStore.getState().clearConnectionState();
 
     expect(useConnectionStore.getState().isJiraReady).toBe(false);
     expect(useConnectionStore.getState().isSnowReady).toBe(false);
+    expect(useConnectionStore.getState().isJiraVerified).toBe(false);
+    expect(useConnectionStore.getState().isSnowVerified).toBe(false);
     expect(useConnectionStore.getState().proxyStatus).toBeNull();
     expect(useConnectionStore.getState().relayBridgeStatus).toBeNull();
   });

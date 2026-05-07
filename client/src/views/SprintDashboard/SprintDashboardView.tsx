@@ -1,8 +1,10 @@
-// SprintDashboardView.tsx — Sprint Dashboard view with 6 tabs for sprint health, team overview, and standup facilitation.
+// SprintDashboardView.tsx — Sprint Dashboard view with 10 tabs for sprint health, team overview, and standup facilitation.
 //
-// Provides six tabs: Overview (sprint info + burn-down chart), By Assignee (swim lanes),
+// Provides ten tabs: Overview (sprint info + burn-down chart), By Assignee (swim lanes),
 // Blockers (wall of blocked/stale issues), Defects (bug radar by priority),
-// Standup (board walk + 15-min timer), and Settings (project key configuration).
+// Standup (board walk + 15-min timer), Settings (project key configuration),
+// Metrics (velocity/burn stats), Pipeline (kanban WIP by status),
+// Planning (unestimated issues and size distribution), Releases (readiness by fix version).
 
 import { useEffect } from 'react';
 
@@ -32,6 +34,10 @@ const TAB_OPTIONS: { key: DashboardTab; label: string }[] = [
   { key: 'blockers', label: 'Blockers' },
   { key: 'defects', label: 'Defects' },
   { key: 'standup', label: 'Standup' },
+  { key: 'metrics', label: 'Metrics' },
+  { key: 'pipeline', label: 'Pipeline' },
+  { key: 'planning', label: 'Planning' },
+  { key: 'releases', label: 'Releases' },
   { key: 'settings', label: 'Settings' },
 ];
 
@@ -44,6 +50,17 @@ const TIMER_DANGER_SECONDS = 60;   // last 1 minute
 // Burn-down chart lines use these named identifiers in recharts data.
 const BURN_IDEAL_KEY = 'ideal';
 const BURN_REMAINING_KEY = 'remaining';
+
+/** Statuses with more issues than this threshold are flagged as pipeline bottlenecks. */
+const BOTTLENECK_THRESHOLD = 3;
+
+/** Label shown for issues that have no fix version assigned to any release. */
+const NO_VERSION_LABEL = 'No Version';
+
+// Story-point size distribution boundaries follow the Fibonacci planning scale.
+const STORY_POINTS_SMALL_UPPER = 1;   // 0–1 pts = Small
+const STORY_POINTS_MEDIUM_UPPER = 3;  // 2–3 pts = Medium
+const STORY_POINTS_LARGE_UPPER = 8;   // 5–8 pts = Large; 13+ = Extra Large
 
 // ── Helper functions ──
 
@@ -75,6 +92,107 @@ function groupIssuesByAssignee(issues: JiraIssue[]): Map<string, JiraIssue[]> {
   }
 
   return groupedIssues;
+}
+
+/** Groups issues by their status name, producing one bucket per unique status for the Pipeline view. */
+function groupIssuesByStatus(issues: JiraIssue[]): Map<string, JiraIssue[]> {
+  const groupedIssues = new Map<string, JiraIssue[]>();
+
+  for (const issue of issues) {
+    const statusName = issue.fields.status.name;
+    groupedIssues.set(statusName, [...(groupedIssues.get(statusName) ?? []), issue]);
+  }
+
+  return groupedIssues;
+}
+
+/**
+ * Groups issues by fix version name for the Releases view.
+ * Issues with no fixVersions fall under NO_VERSION_LABEL.
+ * An issue assigned to multiple versions appears in each version's bucket.
+ */
+function groupIssuesByFixVersion(issues: JiraIssue[]): Map<string, JiraIssue[]> {
+  const groupedIssues = new Map<string, JiraIssue[]>();
+
+  for (const issue of issues) {
+    const versionNames = issue.fields.fixVersions?.map((version) => version.name) ?? [];
+    const targetVersions = versionNames.length > 0 ? versionNames : [NO_VERSION_LABEL];
+
+    for (const versionName of targetVersions) {
+      groupedIssues.set(versionName, [...(groupedIssues.get(versionName) ?? []), issue]);
+    }
+  }
+
+  return groupedIssues;
+}
+
+/** Per-assignee velocity metrics derived from sprint issues. */
+interface AssigneeMetrics {
+  assigneeName: string;
+  totalCount: number;
+  doneCount: number;
+  inProgressCount: number;
+  toDoCount: number;
+  /** Sum of story points for the assignee's issues, or null when none are estimated. */
+  totalStoryPoints: number | null;
+}
+
+/** Derives velocity metrics for a single assignee from their slice of sprint issues. */
+function computeAssigneeMetrics(assigneeName: string, assigneeIssues: JiraIssue[]): AssigneeMetrics {
+  const doneCount = assigneeIssues.filter(
+    (issue) => issue.fields.status.statusCategory.key === 'done',
+  ).length;
+  const inProgressCount = assigneeIssues.filter(
+    (issue) => issue.fields.status.statusCategory.key === 'indeterminate',
+  ).length;
+  const toDoCount = assigneeIssues.filter(
+    (issue) => issue.fields.status.statusCategory.key === 'new',
+  ).length;
+  const hasAnyPoints = assigneeIssues.some((issue) => issue.fields.customfield_10016 != null);
+  const totalStoryPoints = hasAnyPoints
+    ? assigneeIssues.reduce((sum, issue) => sum + (issue.fields.customfield_10016 ?? 0), 0)
+    : null;
+
+  return { assigneeName, totalCount: assigneeIssues.length, doneCount, inProgressCount, toDoCount, totalStoryPoints };
+}
+
+/** Story-point size distribution counts across a set of issues. */
+interface SizeDistribution {
+  smallCount: number;
+  mediumCount: number;
+  largeCount: number;
+  extraLargeCount: number;
+  unestimatedCount: number;
+}
+
+/**
+ * Buckets issues into Fibonacci story-point size ranges.
+ * Issues with no customfield_10016 value are counted as unestimated.
+ */
+function calculateSizeDistribution(issues: JiraIssue[]): SizeDistribution {
+  let smallCount = 0;
+  let mediumCount = 0;
+  let largeCount = 0;
+  let extraLargeCount = 0;
+  let unestimatedCount = 0;
+
+  for (const issue of issues) {
+    const points = issue.fields.customfield_10016;
+
+    if (points == null) {
+      unestimatedCount++;
+    } else if (points <= STORY_POINTS_SMALL_UPPER) {
+      smallCount++;
+    } else if (points <= STORY_POINTS_MEDIUM_UPPER) {
+      mediumCount++;
+    } else if (points <= STORY_POINTS_LARGE_UPPER) {
+      largeCount++;
+    } else {
+      extraLargeCount++;
+    }
+  }
+
+  return { smallCount, mediumCount, largeCount, extraLargeCount, unestimatedCount };
 }
 
 /** Calculates flow counts (total / in-progress / in-review / blocked / done) for the stats bar. */
@@ -615,6 +733,209 @@ function SettingsTab({
   );
 }
 
+// ── Phase 3 tab components ──
+
+/**
+ * Renders the Metrics tab showing sprint completion percentage, issue status counts,
+ * and per-assignee velocity (issues done/in-progress/to-do and story points).
+ */
+function MetricsTab({ issues }: { issues: JiraIssue[] }) {
+  const totalCount = issues.length;
+  const doneCount = issues.filter((issue) => issue.fields.status.statusCategory.key === 'done').length;
+  const inProgressCount = issues.filter((issue) => issue.fields.status.statusCategory.key === 'indeterminate').length;
+  const toDoCount = issues.filter((issue) => issue.fields.status.statusCategory.key === 'new').length;
+  const completionPercentage = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100);
+
+  const assigneeGroups = groupIssuesByAssignee(issues);
+  const assigneeMetricsRows = Array.from(assigneeGroups.entries()).map(([name, assigneeIssues]) =>
+    computeAssigneeMetrics(name, assigneeIssues),
+  );
+
+  return (
+    <div>
+      <h2 className={styles.blockersSectionTitle}>Sprint Metrics</h2>
+      <div className={styles.flowStatsBar}>
+        {([
+          { label: 'Total', value: totalCount },
+          { label: 'Done', value: doneCount },
+          { label: 'In Progress', value: inProgressCount },
+          { label: 'To Do', value: toDoCount },
+          { label: 'Completion', value: `${completionPercentage}%` },
+        ] as const).map((chip) => (
+          <div className={styles.flowStatChip} key={chip.label}>
+            <span className={styles.flowStatCount}>{chip.value}</span>
+            <span className={styles.flowStatLabel}>{chip.label}</span>
+          </div>
+        ))}
+      </div>
+      <h3 className={styles.blockersSectionTitle}>Per-Assignee Breakdown</h3>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' }}>
+        <thead>
+          <tr>
+            <th style={{ textAlign: 'left', padding: '4px 8px' }}>Assignee</th>
+            <th style={{ textAlign: 'center', padding: '4px 8px' }}>Done</th>
+            <th style={{ textAlign: 'center', padding: '4px 8px' }}>In Progress</th>
+            <th style={{ textAlign: 'center', padding: '4px 8px' }}>To Do</th>
+            <th style={{ textAlign: 'center', padding: '4px 8px' }}>Story Points</th>
+          </tr>
+        </thead>
+        <tbody>
+          {assigneeMetricsRows.map((row) => (
+            <tr key={row.assigneeName}>
+              <td style={{ padding: '4px 8px' }}>{row.assigneeName}</td>
+              <td style={{ textAlign: 'center', padding: '4px 8px' }}>{row.doneCount}</td>
+              <td style={{ textAlign: 'center', padding: '4px 8px' }}>{row.inProgressCount}</td>
+              <td style={{ textAlign: 'center', padding: '4px 8px' }}>{row.toDoCount}</td>
+              <td style={{ textAlign: 'center', padding: '4px 8px' }}>{row.totalStoryPoints ?? '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * Renders the Pipeline tab as a kanban-style column-per-status layout.
+ * Status lanes with more than BOTTLENECK_THRESHOLD issues are highlighted as bottlenecks.
+ */
+function PipelineTab({ issues }: { issues: JiraIssue[] }) {
+  const statusGroups = groupIssuesByStatus(issues);
+  const sortedStatusEntries = Array.from(statusGroups.entries()).sort(([a], [b]) => a.localeCompare(b));
+
+  return (
+    <div>
+      <h2 className={styles.blockersSectionTitle}>Kanban Pipeline</h2>
+      <div style={{ display: 'flex', gap: 'var(--spacing-md)', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        {sortedStatusEntries.map(([statusName, statusIssues]) => {
+          const isBottleneck = statusIssues.length > BOTTLENECK_THRESHOLD;
+
+          return (
+            <div
+              className={styles.boardColumn}
+              key={statusName}
+              style={{ border: isBottleneck ? '2px solid var(--color-danger, #e53e3e)' : undefined }}
+            >
+              <h3 className={styles.boardColumnTitle}>
+                {statusName}
+                {isBottleneck && ' ⚠️'}
+              </h3>
+              <span className={styles.countBadge}>{statusIssues.length}</span>
+              <div style={{ maxHeight: '200px', overflowY: 'auto', marginTop: 'var(--spacing-xs)' }}>
+                {statusIssues.map((issue) => (
+                  <div key={issue.key} style={{ marginBottom: '4px' }}>
+                    <a className={styles.issueKeyLink} href={`#${issue.key}`}>{issue.key}</a>
+                    <span style={{ fontSize: 'var(--font-size-xs)', marginLeft: '6px' }}>
+                      {issue.fields.summary}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Renders the Planning tab showing unestimated issues, backlog size,
+ * and a story-point size distribution bar across the sprint.
+ */
+function PlanningTab({ issues }: { issues: JiraIssue[] }) {
+  const unestimatedIssues = issues.filter((issue) => issue.fields.customfield_10016 == null);
+  const backlogCount = issues.filter((issue) => issue.fields.status.statusCategory.key === 'new').length;
+  const sizeDistribution = calculateSizeDistribution(issues);
+
+  return (
+    <div>
+      <h2 className={styles.blockersSectionTitle}>Sprint Planning</h2>
+      <div className={styles.flowStatsBar}>
+        {([
+          { label: 'Backlog', value: backlogCount },
+          { label: 'Unestimated', value: unestimatedIssues.length },
+          { label: '0–1 pts', value: sizeDistribution.smallCount },
+          { label: '2–3 pts', value: sizeDistribution.mediumCount },
+          { label: '5–8 pts', value: sizeDistribution.largeCount },
+          { label: '13+ pts', value: sizeDistribution.extraLargeCount },
+        ] as const).map((chip) => (
+          <div className={styles.flowStatChip} key={chip.label}>
+            <span className={styles.flowStatCount}>{chip.value}</span>
+            <span className={styles.flowStatLabel}>{chip.label}</span>
+          </div>
+        ))}
+      </div>
+      <div className={styles.blockersSection}>
+        <div className={styles.blockersSectionHeader}>
+          <h3 className={styles.blockersSectionTitle}>Unestimated Issues</h3>
+          <span className={styles.countBadge}>{unestimatedIssues.length}</span>
+        </div>
+        {unestimatedIssues.length === 0 ? (
+          <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
+            All issues are estimated. 🎉
+          </p>
+        ) : (
+          unestimatedIssues.map((issue) => (
+            <div className={styles.blockerCard} key={issue.key}>
+              <a className={styles.issueKeyLink} href={`#${issue.key}`}>{issue.key}</a>
+              <span className={styles.issueSummaryText}>{issue.fields.summary}</span>
+              <span className={styles.issueMetaText}>
+                {issue.fields.assignee?.displayName ?? 'Unassigned'}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Renders the Releases tab showing issues grouped by fix version with per-version
+ * completion percentages to assess release readiness.
+ */
+function ReleasesTab({ issues }: { issues: JiraIssue[] }) {
+  const versionGroups = groupIssuesByFixVersion(issues);
+
+  // Sort alphabetically so the table is predictable; "No Version" sorts naturally to the end.
+  const sortedVersionEntries = Array.from(versionGroups.entries()).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+
+  return (
+    <div>
+      <h2 className={styles.blockersSectionTitle}>Release Readiness</h2>
+      {sortedVersionEntries.map(([versionName, versionIssues]) => {
+        const versionDoneCount = versionIssues.filter(
+          (issue) => issue.fields.status.statusCategory.key === 'done',
+        ).length;
+        const versionCompletionPercentage = versionIssues.length === 0
+          ? 0
+          : Math.round((versionDoneCount / versionIssues.length) * 100);
+
+        return (
+          <div className={styles.defectGroup} key={versionName}>
+            <div className={styles.defectGroupHeader}>
+              <h3 className={styles.defectGroupTitle}>{versionName}</h3>
+              <span className={styles.countBadge}>
+                {versionDoneCount}/{versionIssues.length} done · {versionCompletionPercentage}%
+              </span>
+            </div>
+            {versionIssues.map((issue) => (
+              <div className={styles.defectCard} key={issue.key}>
+                <a className={styles.issueKeyLink} href={`#${issue.key}`}>{issue.key}</a>
+                <span>{issue.fields.summary}</span>
+                <span className={styles.issueMetaText}>{issue.fields.status.name}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Main component ──
 
 /**
@@ -653,6 +974,22 @@ export default function SprintDashboardView() {
           timerSecondsRemaining={state.timerSecondsRemaining}
         />
       );
+    }
+
+    if (activeTab === 'metrics') {
+      return <MetricsTab issues={state.sprintIssues} />;
+    }
+
+    if (activeTab === 'pipeline') {
+      return <PipelineTab issues={state.sprintIssues} />;
+    }
+
+    if (activeTab === 'planning') {
+      return <PlanningTab issues={state.sprintIssues} />;
+    }
+
+    if (activeTab === 'releases') {
+      return <ReleasesTab issues={state.sprintIssues} />;
     }
 
     return (

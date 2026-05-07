@@ -1,9 +1,11 @@
 // proxyApi.ts — Typed client for Express /api endpoints used by the React SPA.
 
-import type { ProxyConfig, ProxyStatusResponse } from '../types/config.ts';
+import type { ConnectionProbeResult, ProxyConfig, ProxyStatusResponse } from '../types/config.ts';
 
 const PROXY_STATUS_ENDPOINT = '/api/proxy-status';
 const PROXY_CONFIG_ENDPOINT = '/api/proxy-config';
+const JIRA_PROBE_ENDPOINT = '/jira-proxy/rest/api/2/myself';
+const SNOW_PROBE_ENDPOINT = '/snow-proxy/api/now/table/sys_user?sysparm_limit=1';
 const JSON_CONTENT_TYPE = 'application/json';
 
 function assertSuccessfulResponse(response: Response, messagePrefix: string): void {
@@ -41,4 +43,52 @@ export async function updateProxyConfig(config: Partial<ProxyConfig>): Promise<v
   });
 
   assertSuccessfulResponse(response, 'proxy-config update failed');
+}
+
+/**
+ * Performs a live probe to Jira's /myself endpoint to verify credentials actually work.
+ * Returns a ConnectionProbeResult rather than throwing so callers can handle
+ * auth failures gracefully without crashing the polling loop.
+ */
+export async function probeJiraConnection(): Promise<ConnectionProbeResult> {
+  try {
+    const response = await fetch(JIRA_PROBE_ENDPOINT);
+    return {
+      isOk: response.ok,
+      statusCode: response.status,
+      message: response.ok
+        ? 'Jira connection verified.'
+        : `Jira returned HTTP ${response.status} — check your credentials in Admin Hub.`,
+    };
+  } catch {
+    return {
+      isOk: false,
+      statusCode: 0,
+      message: 'Jira is unreachable — check the proxy base URL in Admin Hub.',
+    };
+  }
+}
+
+/**
+ * Performs a live probe to the SNow sys_user table to verify credentials actually work.
+ * Returns a ConnectionProbeResult rather than throwing so callers can handle
+ * auth failures gracefully without crashing the polling loop.
+ */
+export async function probeSnowConnection(): Promise<ConnectionProbeResult> {
+  try {
+    const response = await fetch(SNOW_PROBE_ENDPOINT);
+    return {
+      isOk: response.ok,
+      statusCode: response.status,
+      message: response.ok
+        ? 'SNow connection verified.'
+        : `SNow returned HTTP ${response.status} — check your credentials or activate the relay bridge.`,
+    };
+  } catch {
+    return {
+      isOk: false,
+      statusCode: 0,
+      message: 'SNow is unreachable — check the proxy base URL or activate the relay bridge.',
+    };
+  }
 }

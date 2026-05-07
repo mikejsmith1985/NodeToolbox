@@ -2,12 +2,18 @@
 //
 // Four always-visible sections: Proxy & Server Setup, ART Settings, Admin Access (PIN unlock),
 // and (when unlocked) Advanced Feature Controls + Developer Utilities.
+// Four collapsible sections: Diagnostics, Backup & Reset, Hygiene Rules, Update Management.
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { useConnectionStore } from '../../store/connectionStore'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
-import type { ArtSettingsConfig } from './hooks/useAdminHubState.ts'
+import type {
+  ArtSettingsConfig,
+  DiagnosticsResult,
+  HygieneRules,
+  UpdateCheckResult,
+} from './hooks/useAdminHubState.ts'
 import styles from './AdminHubView.module.css'
 
 // ── Named constants ──
@@ -431,6 +437,362 @@ function AdminAccessSection({
 
 // ── Root component ──
 
+// ── Diagnostics section ──
+
+interface DiagnosticsSectionProps {
+  isDiagnosticsRunning: boolean
+  diagnosticsResult: DiagnosticsResult | null
+  diagnosticsError: string | null
+  isDiagnosticsSectionCollapsed: boolean
+  onRunDiagnostics(): void
+  onSetCollapsed(isCollapsed: boolean): void
+}
+
+/**
+ * Diagnostics section — runs a server-side health check and displays the JSON
+ * result. Useful for confirming version, uptime, and Node.js environment.
+ */
+function DiagnosticsSection({
+  isDiagnosticsRunning,
+  diagnosticsResult,
+  diagnosticsError,
+  isDiagnosticsSectionCollapsed,
+  onRunDiagnostics,
+  onSetCollapsed,
+}: DiagnosticsSectionProps) {
+  const [copyReportLabel, setCopyReportLabel] = useState('📋 Copy Report')
+
+  function handleCopyReport() {
+    if (diagnosticsResult === null) return
+    const reportText = JSON.stringify(diagnosticsResult, null, 2)
+    navigator.clipboard.writeText(reportText).then(() => {
+      setCopyReportLabel('✓ Copied')
+      setTimeout(() => setCopyReportLabel('📋 Copy Report'), 1500)
+    })
+  }
+
+  return (
+    <section className={styles.sectionCard}>
+      <div className={styles.collapsibleHeader}>
+        <h2 className={styles.sectionTitle}>🩺 Diagnostics</h2>
+        <button
+          className={styles.actionButton}
+          onClick={() => onSetCollapsed(!isDiagnosticsSectionCollapsed)}
+          aria-label={isDiagnosticsSectionCollapsed ? 'Expand Diagnostics' : 'Collapse Diagnostics'}
+        >
+          {isDiagnosticsSectionCollapsed ? '▶' : '▼'}
+        </button>
+      </div>
+
+      {!isDiagnosticsSectionCollapsed && (
+        <>
+          <div className={styles.devUtilitiesRow}>
+            <button
+              className={styles.actionButton}
+              onClick={onRunDiagnostics}
+              disabled={isDiagnosticsRunning}
+            >
+              {isDiagnosticsRunning ? '⏳ Running…' : '🔍 Run Diagnostics'}
+            </button>
+            {diagnosticsResult !== null && (
+              <button className={styles.actionButton} onClick={handleCopyReport}>
+                {copyReportLabel}
+              </button>
+            )}
+          </div>
+
+          {diagnosticsError !== null && (
+            <p className={styles.sectionErrorText}>{diagnosticsError}</p>
+          )}
+
+          {diagnosticsResult !== null && (
+            <pre className={styles.diagnosticsResultPre}>
+              {JSON.stringify(diagnosticsResult, null, 2)}
+            </pre>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+// ── Backup & Reset section ──
+
+interface BackupSectionProps {
+  isBackupRestoring: boolean
+  restoreError: string | null
+  isBackupSectionCollapsed: boolean
+  onDownloadBackup(): void
+  onTriggerRestoreBackup(file: File): void
+  onResetAllSettings(): void
+  onSetCollapsed(isCollapsed: boolean): void
+}
+
+/**
+ * Backup & Reset section — download a JSON snapshot of all toolbox localStorage
+ * keys, restore from a previously downloaded file, or wipe all settings.
+ */
+function BackupSection({
+  isBackupRestoring,
+  restoreError,
+  isBackupSectionCollapsed,
+  onDownloadBackup,
+  onTriggerRestoreBackup,
+  onResetAllSettings,
+  onSetCollapsed,
+}: BackupSectionProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  function handleRestoreClick() {
+    fileInputRef.current?.click()
+  }
+
+  function handleFileChange(changeEvent: React.ChangeEvent<HTMLInputElement>) {
+    const selectedFile = changeEvent.target.files?.[0]
+    if (selectedFile) {
+      onTriggerRestoreBackup(selectedFile)
+    }
+    // Reset the input so the same file can be re-selected if restore fails.
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  return (
+    <section className={styles.sectionCard}>
+      <div className={styles.collapsibleHeader}>
+        <h2 className={styles.sectionTitle}>💾 Backup &amp; Reset</h2>
+        <button
+          className={styles.actionButton}
+          onClick={() => onSetCollapsed(!isBackupSectionCollapsed)}
+          aria-label={
+            isBackupSectionCollapsed ? 'Expand Backup section' : 'Collapse Backup section'
+          }
+        >
+          {isBackupSectionCollapsed ? '▶' : '▼'}
+        </button>
+      </div>
+
+      {!isBackupSectionCollapsed && (
+        <>
+          <div className={styles.devUtilitiesRow}>
+            <button className={styles.actionButton} onClick={onDownloadBackup}>
+              ⬇ Download Backup
+            </button>
+            {/* Hidden file input — triggered by the button below for accessibility */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              className={styles.fileInputHidden}
+              onChange={handleFileChange}
+              aria-hidden="true"
+            />
+            <button
+              className={styles.actionButton}
+              onClick={handleRestoreClick}
+              disabled={isBackupRestoring}
+            >
+              ⬆ Restore Backup
+            </button>
+            <button className={styles.actionButton} onClick={onResetAllSettings}>
+              🗑 Reset All Settings
+            </button>
+          </div>
+
+          {isBackupRestoring && (
+            <p className={styles.confirmationText}>⏳ Restoring…</p>
+          )}
+          {restoreError !== null && (
+            <p className={styles.sectionErrorText}>{restoreError}</p>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+// ── Hygiene Rules section ──
+
+interface HygieneRulesSectionProps {
+  hygieneRules: HygieneRules
+  isHygieneSectionCollapsed: boolean
+  onUpdateHygieneRule: <K extends keyof HygieneRules>(key: K, value: HygieneRules[K]) => void
+  onSetCollapsed(isCollapsed: boolean): void
+}
+
+/**
+ * Hygiene Rules section — configures the stale-ticket thresholds and flags that
+ * the DSU Board uses to highlight hygiene issues across the PI.
+ */
+function HygieneRulesSection({
+  hygieneRules,
+  isHygieneSectionCollapsed,
+  onUpdateHygieneRule,
+  onSetCollapsed,
+}: HygieneRulesSectionProps) {
+  return (
+    <section className={styles.sectionCard}>
+      <div className={styles.collapsibleHeader}>
+        <h2 className={styles.sectionTitle}>🧹 Hygiene Rules</h2>
+        <button
+          className={styles.actionButton}
+          onClick={() => onSetCollapsed(!isHygieneSectionCollapsed)}
+          aria-label={
+            isHygieneSectionCollapsed ? 'Expand Hygiene Rules' : 'Collapse Hygiene Rules'
+          }
+        >
+          {isHygieneSectionCollapsed ? '▶' : '▼'}
+        </button>
+      </div>
+
+      {!isHygieneSectionCollapsed && (
+        <>
+          <div className={styles.fieldRow}>
+            <label className={styles.fieldLabel} htmlFor="hygiene-stale-days">
+              Stale Days
+            </label>
+            <input
+              id="hygiene-stale-days"
+              type="number"
+              min="1"
+              max="60"
+              className={styles.narrowNumberInput}
+              value={hygieneRules.staleDays}
+              onChange={(changeEvent) =>
+                onUpdateHygieneRule('staleDays', Number(changeEvent.target.value))
+              }
+            />
+          </div>
+
+          <div className={styles.fieldRow}>
+            <label className={styles.fieldLabel} htmlFor="hygiene-unpointed-warning-days">
+              Unpointed Warning Days
+            </label>
+            <input
+              id="hygiene-unpointed-warning-days"
+              type="number"
+              min="1"
+              max="60"
+              className={styles.narrowNumberInput}
+              value={hygieneRules.unpointedWarningDays}
+              onChange={(changeEvent) =>
+                onUpdateHygieneRule('unpointedWarningDays', Number(changeEvent.target.value))
+              }
+            />
+          </div>
+
+          <div className={styles.flagRow}>
+            <input
+              id="hygiene-flag-missing-assignee"
+              type="checkbox"
+              checked={hygieneRules.hasMissingAssigneeFlag}
+              onChange={(changeEvent) =>
+                onUpdateHygieneRule('hasMissingAssigneeFlag', changeEvent.target.checked)
+              }
+              aria-label="Flag Missing Assignees"
+            />
+            <label htmlFor="hygiene-flag-missing-assignee" className={styles.fieldLabel}>
+              Flag Missing Assignees
+            </label>
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
+// ── Update Management section ──
+
+interface UpdateManagementSectionProps {
+  updateCheckResult: UpdateCheckResult | null
+  isCheckingUpdate: boolean
+  isUpdateSectionCollapsed: boolean
+  onCheckForUpdates(): void
+  onSetCollapsed(isCollapsed: boolean): void
+}
+
+/**
+ * Update Management section — checks the server for the latest version and
+ * displays release notes so the operator knows when to upgrade.
+ */
+function UpdateManagementSection({
+  updateCheckResult,
+  isCheckingUpdate,
+  isUpdateSectionCollapsed,
+  onCheckForUpdates,
+  onSetCollapsed,
+}: UpdateManagementSectionProps) {
+  return (
+    <section className={styles.sectionCard}>
+      <div className={styles.collapsibleHeader}>
+        <h2 className={styles.sectionTitle}>🚀 Update Management</h2>
+        <button
+          className={styles.actionButton}
+          onClick={() => onSetCollapsed(!isUpdateSectionCollapsed)}
+          aria-label={
+            isUpdateSectionCollapsed
+              ? 'Expand Update Management'
+              : 'Collapse Update Management'
+          }
+        >
+          {isUpdateSectionCollapsed ? '▶' : '▼'}
+        </button>
+      </div>
+
+      {!isUpdateSectionCollapsed && (
+        <>
+          <div className={styles.devUtilitiesRow}>
+            <button
+              className={styles.actionButton}
+              onClick={onCheckForUpdates}
+              disabled={isCheckingUpdate}
+            >
+              {isCheckingUpdate ? '⏳ Checking…' : '🔍 Check for Updates'}
+            </button>
+          </div>
+
+          {updateCheckResult !== null && (
+            <>
+              <div className={styles.updateVersionRow}>
+                <span className={styles.fieldLabel}>
+                  Current: <strong>v{updateCheckResult.currentVersion}</strong>
+                </span>
+                <span className={styles.fieldLabel}>
+                  Latest: <strong>v{updateCheckResult.latestVersion}</strong>
+                </span>
+              </div>
+
+              {updateCheckResult.hasUpdate ? (
+                <p className={styles.updateStatusAvailable}>
+                  🆕 Update available: v{updateCheckResult.latestVersion}
+                </p>
+              ) : (
+                <p className={styles.updateStatusSuccess}>✅ Up to date</p>
+              )}
+
+              {updateCheckResult.releaseNotes !== '' && (
+                <div className={styles.fieldRow}>
+                  <label className={styles.fieldLabel} htmlFor="release-notes">
+                    Release Notes
+                  </label>
+                  <textarea
+                    id="release-notes"
+                    className={styles.releaseNotesTextarea}
+                    readOnly
+                    value={updateCheckResult.releaseNotes}
+                    rows={4}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+// ── Root component ──
+
 /** Admin Hub — configuration and developer tools for NodeToolbox administrators. */
 export default function AdminHubView() {
   const { state, actions } = useAdminHubState()
@@ -468,6 +830,40 @@ export default function AdminHubView() {
         onTryUnlock={actions.tryUnlock}
         onLock={actions.lock}
         onToggleFeatureFlag={actions.toggleFeatureFlag}
+      />
+
+      <DiagnosticsSection
+        isDiagnosticsRunning={state.isDiagnosticsRunning}
+        diagnosticsResult={state.diagnosticsResult}
+        diagnosticsError={state.diagnosticsError}
+        isDiagnosticsSectionCollapsed={state.isDiagnosticsSectionCollapsed}
+        onRunDiagnostics={actions.runDiagnostics}
+        onSetCollapsed={actions.setDiagnosticsSectionCollapsed}
+      />
+
+      <BackupSection
+        isBackupRestoring={state.isBackupRestoring}
+        restoreError={state.restoreError}
+        isBackupSectionCollapsed={state.isBackupSectionCollapsed}
+        onDownloadBackup={actions.downloadBackup}
+        onTriggerRestoreBackup={actions.triggerRestoreBackup}
+        onResetAllSettings={actions.resetAllSettings}
+        onSetCollapsed={actions.setBackupSectionCollapsed}
+      />
+
+      <HygieneRulesSection
+        hygieneRules={state.hygieneRules}
+        isHygieneSectionCollapsed={state.isHygieneSectionCollapsed}
+        onUpdateHygieneRule={actions.updateHygieneRule}
+        onSetCollapsed={actions.setHygieneSectionCollapsed}
+      />
+
+      <UpdateManagementSection
+        updateCheckResult={state.updateCheckResult}
+        isCheckingUpdate={state.isCheckingUpdate}
+        isUpdateSectionCollapsed={state.isUpdateSectionCollapsed}
+        onCheckForUpdates={actions.checkForUpdates}
+        onSetCollapsed={actions.setUpdateSectionCollapsed}
       />
     </div>
   )

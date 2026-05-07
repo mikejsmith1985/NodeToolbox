@@ -240,3 +240,190 @@
   font-size: var(--font-size-md);
   color: var(--color-text-primary);
 }
+
+/* ── PI Progress Header ── */
+
+.piProgressHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface-1);
+  border-bottom: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+
+.piProgressName {
+  font-weight: bold;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  min-width: 120px;
+}
+
+.piProgressBarTrack {
+  flex: 1;
+  min-width: 100px;
+  max-width: 300px;
+  height: 8px;
+  background: var(--color-surface-2);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+.piProgressBarFill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.piProgressPercent {
+  font-size: var(--font-size-sm);
+  font-weight: bold;
+  color: var(--color-accent);
+  min-width: 40px;
+}
+
+.piProgressPill {
+  padding: 2px var(--spacing-sm);
+  border-radius: 999px;
+  font-size: var(--font-size-sm);
+}
+
+.piProgressPillDone {
+  background: #d4edda;
+  color: #155724;
+}
+
+.piProgressPillInProgress {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.piProgressPillToDo {
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+}
+
+/* ── Dependency Map ── */
+
+.depMapSvg {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.depIssueDetail {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+}
+
+/* ── Board Prep ── */
+
+.boardPrepControls {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.secondaryBtn {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: var(--font-size-md);
+}
+
+/* ── SoS Drawer ── */
+
+.sosPulse {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  flex-wrap: wrap;
+}
+
+.sosPulseTitle {
+  font-size: var(--font-size-md);
+  font-weight: bold;
+}
+
+.sosPulseStat {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.sosPulseRisk {
+  font-size: var(--font-size-sm);
+  color: var(--color-danger);
+  font-weight: bold;
+}
+
+.sosAccordion {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.sosAccordionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface-1);
+  border: none;
+  cursor: pointer;
+  font-size: var(--font-size-md);
+  font-weight: bold;
+  color: var(--color-text-primary);
+  text-align: left;
+}
+
+.sosAccordionHeader:hover {
+  background: var(--color-surface-2);
+}
+
+.sosAccordionChevron {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.sosAccordionBody {
+  padding: var(--spacing-md);
+  background: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.sosStat {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.sosAssignees {
+  font-size: var(--font-size-sm);
+}
+
+.sosImpediments {
+  font-size: var(--font-size-sm);
+}
+
+.sosImpedimentList {
+  margin: var(--spacing-xs) 0 0;
+  padding-left: var(--spacing-md);
+}
+

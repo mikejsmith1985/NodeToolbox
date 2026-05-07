@@ -1,4 +1,4 @@
-// SnowHubView.tsx — Top-level SNow Hub page with tabs for CRG, PRB generation, and release management.
+// SnowHubView.tsx — Top-level SNow Hub page with tabs for CHG generation, PRB conversion, and release management.
 
 import { useState } from 'react';
 
@@ -10,7 +10,7 @@ import styles from './SnowHubView.module.css';
 const VIEW_TITLE = 'SNow Hub';
 const VIEW_SUBTITLE = 'Manage change generation, PRB conversion, and release coordination from one ServiceNow-focused workspace.';
 const TAB_OPTIONS = [
-  { key: 'crg', label: 'CRG' },
+  { key: 'crg', label: 'CHG' },
   { key: 'prb', label: 'PRB Generator' },
   { key: 'release', label: 'Release Management' },
 ] as const;

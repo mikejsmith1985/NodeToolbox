@@ -24,5 +24,18 @@ export interface ProxyStatusResponse {
   schedulerEnabled: boolean;
 }
 
+/**
+ * Result of a live connection probe — distinguishes a service being configured
+ * (URL + credentials present) from a service that actually responds successfully.
+ */
+export interface ConnectionProbeResult {
+  /** True when the remote service returned a successful HTTP response. */
+  isOk: boolean;
+  /** The HTTP status code, or 0 if the request never completed (network error). */
+  statusCode: number;
+  /** Human-readable summary suitable for display in an error message. */
+  message: string;
+}
+
 /** Supported application themes stored in browser settings. */
 export type Theme = 'dark' | 'light';

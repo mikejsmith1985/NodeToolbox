@@ -14,6 +14,81 @@ const HOOK_GENERATOR_SCRIPTS = [
   { name: 'commit-msg hook', filename: 'commit-msg' },
 ] as const;
 
+/** Script contents for each downloadable Git hook. Keyed by filename. */
+const HOOK_SCRIPT_CONTENTS: Record<string, string> = {
+  'post-commit': `#!/bin/sh
+# post-commit — Logs the latest commit message to stdout after each commit.
+# Install: copy to .git/hooks/post-commit and chmod +x
+
+COMMIT_MSG=$(git log -1 --pretty=%B)
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+echo "✅ Committed on $BRANCH: $COMMIT_MSG"
+
+# Extract Jira issue key from branch name (e.g. feature/PROJ-123-my-feature)
+ISSUE_KEY=$(echo "$BRANCH" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+if [ -n "$ISSUE_KEY" ]; then
+  echo "🔗 Linked Jira issue: $ISSUE_KEY"
+fi
+`,
+  'pre-push': `#!/bin/sh
+# pre-push — Validates that the branch name contains a Jira issue key before pushing.
+# Install: copy to .git/hooks/pre-push and chmod +x
+
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+ISSUE_KEY=$(echo "$BRANCH" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+
+if [ -z "$ISSUE_KEY" ]; then
+  echo "⚠️  Warning: Branch '$BRANCH' does not contain a Jira issue key."
+  echo "   Rename your branch to include a key (e.g. feature/PROJ-123-description)."
+  # Remove 'exit 1' below to make this a warning instead of a blocker
+  # exit 1
+fi
+
+exit 0
+`,
+  'commit-msg': `#!/bin/sh
+# commit-msg — Prepends the Jira issue key (from branch name) to commit messages.
+# Install: copy to .git/hooks/commit-msg and chmod +x
+
+COMMIT_MSG_FILE="$1"
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+ISSUE_KEY=$(echo "$BRANCH" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+
+if [ -z "$ISSUE_KEY" ]; then
+  exit 0
+fi
+
+CURRENT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Only prepend if the key isn't already in the message
+if ! echo "$CURRENT_MSG" | grep -q "$ISSUE_KEY"; then
+  echo "$ISSUE_KEY $CURRENT_MSG" > "$COMMIT_MSG_FILE"
+fi
+
+exit 0
+`,
+};
+
+/**
+ * Triggers a browser file download for the given hook script content.
+ * Uses Blob and a temporary anchor element — no server request needed.
+ *
+ * @param filename - The Git hook filename (e.g. 'post-commit')
+ * @param content  - The shell script text content to download
+ */
+function downloadHookScript(filename: string, content: string): void {
+  const blob = new Blob([content], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
 /** Formats a total seconds count into HH:MM:SS display string. */
 function formatElapsedTime(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / SECONDS_PER_HOUR);
@@ -325,8 +400,7 @@ function GitSyncPanel({ state, actions }: PanelProps) {
                 key={hookScript.filename}
                 className={styles.secondaryBtn}
                 onClick={() => {
-                  // Placeholder: would trigger download of the hook script
-                  console.log(`Downloading ${hookScript.filename}`);
+                  downloadHookScript(hookScript.filename, HOOK_SCRIPT_CONTENTS[hookScript.filename] ?? '');
                 }}
               >
                 ⬇ Download {hookScript.name}
