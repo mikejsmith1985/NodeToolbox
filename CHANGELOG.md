@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (v0.6.2 — ART View deep parity)
+- **Blueprint Tab** (`BlueprintTab`): PI→Feature→Story hierarchy viewer with 4 view modes (flat, grouped-by-feature, grouped-by-team, kanban), search filter, collapse/expand all, conic-gradient health ring per feature, and off-train story detection.
+- **Dependencies Table** (`DependenciesTab`): replaces the SVG dependency map with a filterable table of cross-team issue links. Supports team and link-type filters. Fully table-based for accessibility.
+- **SoS Narrative fields**: deepened the Stand-of-Stands panel with 5 editable narrative fields (Yesterday / Today / Blockers / Risks / Dependencies), auto-generated from live sprint data, with localStorage persistence (keyed by team + date) and a revert-to-auto action.
+- **Monthly Report Tab**: full implementation replacing the stub — month selector, editable metric cards (velocity, quality, delivery confidence, highlights, next priorities), Copy All, and Export HTML. Data persisted in localStorage keyed by team + YYYY-MM.
+- **Advanced ART Settings**: extended the Settings panel with PI Field ID, Story Points Field ID, Feature-Link Field ID, and Stale Days threshold inputs. Persisted under the legacy `tbxARTSettings` localStorage key for compatibility.
+- Removed SVG dependency map code entirely (`CrossTeamDependency`, `buildIssueTeamIndexMap`, `detectCrossTeamDependencies`, all `DEP_*` constants, `JIRA_KEY_PATTERN`, `TEAM_PASTEL_COLORS`).
+
 ### Added (v0.6.2 — My Issues deep parity)
 - **Persona Intel Strip** (`PersonaIntelStrip`): clickable zone chips per persona (Dev/QA/SM/PO) derived from issue state. Chips delegate zone filtering to `onZoneClick` so the intel strip integrates with the existing status-zone dashboard.
 - **Swimlane Card View** (`SwimlaneCardView`): replaces the flat card list in `cards` mode with five collapsible swimlanes (Needs Attention 🔴 / In Progress 🔵 / In Review 🟣 / To Do ⚫ / Done ✅). `done` lane collapsed by default matching legacy behaviour. Cards show issue key, summary, priority, type, and aging label.

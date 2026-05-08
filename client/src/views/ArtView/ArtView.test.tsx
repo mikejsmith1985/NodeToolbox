@@ -138,63 +138,18 @@ describe('ArtView', () => {
     mockState.selectedPiName = 'PI-2025-Q1';
   });
 
-  // ── Feature 1: Dependency Map Tab ──
+  // ── Feature 1: Dependency Tab (table-based, no SVG) ──
 
-  it('shows the Dependencies tab panel with empty state when no teams have issues', () => {
+  it('shows the Dependencies tab panel with a Load Dependencies button', () => {
     mockState.activeTab = 'dependencies';
     render(<ArtView />);
-    expect(screen.getByText(/no cross-team dependencies detected/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /load dependencies/i })).toBeInTheDocument();
   });
 
-  it('shows cross-team dependency SVG when issues reference other teams', () => {
+  it('does not render an SVG in the Dependencies tab — it is table-based', () => {
     mockState.activeTab = 'dependencies';
-    mockState.teams = [
-      {
-        id: 'team-1',
-        name: 'Alpha Team',
-        boardId: '42',
-        sprintIssues: [
-          {
-            id: 'ALPHA-1', key: 'ALPHA-1',
-            fields: {
-              summary: 'Feature work',
-              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
-              priority: null, assignee: null, reporter: null,
-              issuetype: { name: 'Story', iconUrl: '' },
-              created: '', updated: '',
-              description: 'This depends on BETA-5 to complete',
-            },
-          },
-        ],
-        isLoading: false,
-        loadError: null,
-      },
-      {
-        id: 'team-2',
-        name: 'Beta Team',
-        boardId: '43',
-        sprintIssues: [
-          {
-            id: 'BETA-5', key: 'BETA-5',
-            fields: {
-              summary: 'Backend service',
-              status: { name: 'To Do', statusCategory: { key: 'new' } },
-              priority: null, assignee: null, reporter: null,
-              issuetype: { name: 'Story', iconUrl: '' },
-              created: '', updated: '',
-              description: null,
-            },
-          },
-        ],
-        isLoading: false,
-        loadError: null,
-      },
-    ];
     render(<ArtView />);
-    // SVG should be rendered when cross-team deps are found
-    const svgElement = document.querySelector('svg');
-    expect(svgElement).toBeTruthy();
-    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', sprintIssues: [], isLoading: false, loadError: null }];
+    expect(document.querySelector('svg')).not.toBeInTheDocument();
   });
 
   // ── Feature 2: Board Prep Tab ──
@@ -285,10 +240,92 @@ describe('ArtView', () => {
     ];
     render(<ArtView />);
     // When expanded, impediments (issues with 'block' in summary) should appear
-    expect(screen.getByText(/blocked by something/i)).toBeInTheDocument();
+    // getAllByText used because the auto-generated narrative textarea may also contain this text
+    expect(screen.getAllByText(/blocked by something/i).length).toBeGreaterThanOrEqual(1);
     // Assignee list should appear
     expect(screen.getByText(/jane doe/i)).toBeInTheDocument();
     mockState.sosExpandedTeams = [];
     mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  // ── Feature: Blueprint Tab ──
+
+  it('renders a Blueprint tab button', () => {
+    render(<ArtView />);
+    expect(screen.getByRole('tab', { name: /blueprint/i })).toBeInTheDocument();
+  });
+
+  it('shows no-PI warning when Blueprint tab is active and no PI is set', () => {
+    mockState.activeTab = 'blueprint';
+    mockState.selectedPiName = '';
+    render(<ArtView />);
+    // Check for the specific message shown only by BlueprintTab (the PI header shows "No PI selected" too)
+    expect(screen.getByText(/choose a pi name/i)).toBeInTheDocument();
+    mockState.selectedPiName = 'PI-2025-Q1';
+  });
+
+  it('shows the Load Blueprint button when a PI is selected', () => {
+    mockState.activeTab = 'blueprint';
+    mockState.selectedPiName = 'PI-2025-Q1';
+    render(<ArtView />);
+    expect(screen.getByRole('button', { name: /load blueprint/i })).toBeInTheDocument();
+  });
+
+  // ── Feature: SoS Narrative Fields ──
+
+  it('shows SoS narrative textarea fields when a team accordion is expanded', () => {
+    mockState.activeTab = 'sos';
+    mockState.sosExpandedTeams = ['team-1'];
+    render(<ArtView />);
+    // All 5 narrative sections should have textareas
+    expect(screen.getAllByRole('textbox').length).toBeGreaterThanOrEqual(5);
+    mockState.sosExpandedTeams = [];
+  });
+
+  // ── Feature: Monthly Report ──
+
+  it('shows the Monthly Report tab with a month selector', () => {
+    mockState.activeTab = 'monthly';
+    render(<ArtView />);
+    expect(screen.getByRole('combobox', { name: /select month/i })).toBeInTheDocument();
+  });
+
+  it('shows Copy All and Export HTML buttons in Monthly Report tab', () => {
+    mockState.activeTab = 'monthly';
+    render(<ArtView />);
+    expect(screen.getByRole('button', { name: /copy all/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /export html/i })).toBeInTheDocument();
+  });
+
+  // ── Feature: Advanced ART Settings ──
+
+  it('shows PI Field ID input in Settings tab', () => {
+    mockState.activeTab = 'settings';
+    render(<ArtView />);
+    expect(screen.getByRole('textbox', { name: /pi field id/i })).toBeInTheDocument();
+  });
+
+  it('shows Story Points Field ID input in Settings tab', () => {
+    mockState.activeTab = 'settings';
+    render(<ArtView />);
+    expect(screen.getByRole('textbox', { name: /story points field id/i })).toBeInTheDocument();
+  });
+
+  it('shows Feature-Link Field ID input in Settings tab', () => {
+    mockState.activeTab = 'settings';
+    render(<ArtView />);
+    expect(screen.getByRole('textbox', { name: /feature-link field id/i })).toBeInTheDocument();
+  });
+
+  it('shows Stale Days Threshold input in Settings tab', () => {
+    mockState.activeTab = 'settings';
+    render(<ArtView />);
+    expect(screen.getByRole('spinbutton', { name: /stale days threshold/i })).toBeInTheDocument();
+  });
+
+  it('shows Project Key input in Settings add-team form', () => {
+    mockState.activeTab = 'settings';
+    render(<ArtView />);
+    expect(screen.getByPlaceholderText(/project key/i)).toBeInTheDocument();
   });
 });
