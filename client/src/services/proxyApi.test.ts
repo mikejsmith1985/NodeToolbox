@@ -13,10 +13,11 @@ import {
 
 const MOCK_PROXY_STATUS: ProxyStatusResponse = {
   version: '1.0.0',
-  jiraConfigured: true,
-  snowConfigured: false,
-  confluenceConfigured: true,
-  schedulerEnabled: true,
+  sslVerify: true,
+  jira: { configured: true, hasCredentials: true, ready: true, baseUrl: 'https://jira.example.com' },
+  snow: { configured: false, hasCredentials: false, ready: false, sessionMode: false, sessionExpiresAt: null, baseUrl: null },
+  github: { configured: false, hasCredentials: false, ready: false },
+  confluence: { configured: true, hasCredentials: true, ready: true, baseUrl: 'https://confluence.example.com' },
 };
 
 const MOCK_PROXY_CONFIG: ProxyConfig = {
