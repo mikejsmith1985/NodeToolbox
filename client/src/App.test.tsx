@@ -80,10 +80,11 @@ const DEFAULT_PATH = '/';
 const UNKNOWN_PATH = '/unknown';
 const MOCK_PROXY_STATUS_RESPONSE = {
   version: '0.4.0',
-  jiraConfigured: true,
-  snowConfigured: true,
-  confluenceConfigured: true,
-  schedulerEnabled: true,
+  sslVerify: true,
+  jira: { configured: true, hasCredentials: true, ready: true, baseUrl: 'https://jira.example.com' },
+  snow: { configured: true, hasCredentials: true, ready: true, sessionMode: false, sessionExpiresAt: null, baseUrl: 'https://snow.example.com' },
+  github: { configured: false, hasCredentials: false, ready: false },
+  confluence: { configured: true, hasCredentials: true, ready: true, baseUrl: 'https://confluence.example.com' },
 };
 
 function renderApp(initialPath: string): void {

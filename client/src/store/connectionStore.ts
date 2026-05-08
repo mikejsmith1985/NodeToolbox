@@ -38,8 +38,8 @@ export const useConnectionStore = create<ConnectionState>((setState) => ({
   setProxyStatus: (status) =>
     setState({
       proxyStatus: status,
-      isJiraReady: status.jiraConfigured,
-      isSnowReady: status.snowConfigured,
+      isJiraReady: status.jira.ready,
+      isSnowReady: status.snow.ready,
     }),
   setRelayBridgeStatus: (status) =>
     setState({

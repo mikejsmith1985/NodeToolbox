@@ -26,10 +26,11 @@ const MOCK_PROXY_CONFIG = {
 
 const MOCK_PROXY_STATUS = {
   version: '1.2.3',
-  jiraConfigured: true,
-  snowConfigured: true,
-  confluenceConfigured: true,
-  schedulerEnabled: true,
+  sslVerify: true,
+  jira: { configured: true, hasCredentials: true, ready: true, baseUrl: 'https://jira.example.com' },
+  snow: { configured: true, hasCredentials: true, ready: true, sessionMode: false, sessionExpiresAt: null, baseUrl: 'https://snow.example.com' },
+  github: { configured: false, hasCredentials: false, ready: false },
+  confluence: { configured: true, hasCredentials: true, ready: true, baseUrl: 'https://confluence.example.com' },
 };
 
 describe('SettingsView', () => {
