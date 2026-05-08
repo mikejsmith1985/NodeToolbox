@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (v0.6.9 — Home layout polish)
+- Header: "NodeToolbox" title and "⌂ Home" button are now grouped flush-left; `ConnectionBar` stays right.
+- Home screen: heading and sub-heading are centered; persona filter, recents, and card grid remain left-aligned.
+
 ### Removed (v0.6.8 — Mermaid removal)
 - Removed `mermaid` npm dependency (was ~2260 modules) — **vite build time drops from ~10 min → ~12 sec**.
 - Deleted the `MermaidEditor` view entirely (`MermaidEditorView.tsx`, `useMermaidEditorState.ts`, CSS, and all tests).
