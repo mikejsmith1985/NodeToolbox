@@ -32,12 +32,12 @@ describe('useTextToolsState', () => {
     expect(result.current.state.activeTab).toBe('json');
   });
 
-  it('accepts the embedded Mermaid tab value', () => {
+  it('setActiveTab accepts the extractor tab value', () => {
     const { result } = renderHook(() => useTextToolsState());
     act(() => {
-      result.current.actions.setActiveTab('mermaid');
+      result.current.actions.setActiveTab('extractor');
     });
-    expect(result.current.state.activeTab).toBe('mermaid');
+    expect(result.current.state.activeTab).toBe('extractor');
   });
 
   it('setSmartFormatterInput updates smartFormatterInput', () => {

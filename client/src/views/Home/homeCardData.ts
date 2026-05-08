@@ -185,7 +185,6 @@ export const RECENT_VIEW_LABELS: Record<string, string> = {
   'sprint-planning': '📋 Sprint Planning',
   'work-log': '⏱ Work Log',
   pointing: '🎲 Story Pointing',
-  mermaid: '🧜 Mermaid Editor',
   'pitch-deck': '🎯 Pitch Deck',
   defects: '🐛 Defect Management',
   hygiene: '🧼 Hygiene',
