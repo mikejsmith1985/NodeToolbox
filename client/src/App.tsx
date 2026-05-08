@@ -59,15 +59,17 @@ export default function App() {
     <ToastProvider>
       <div className={styles.appShell}>
         <header className={styles.topBar}>
-          {/* Clicking the title always navigates back to the Home route */}
-          <Link className={styles.homeLink} to={HOME_ROUTE}>
-            {APP_TITLE}
-          </Link>
-          {!isOnHomePage && (
-            <Link className={styles.homeButton} to={HOME_ROUTE}>
-              ⌂ Home
+          {/* Left side: app title + contextual Home button grouped together */}
+          <div className={styles.topBarLeft}>
+            <Link className={styles.homeLink} to={HOME_ROUTE}>
+              {APP_TITLE}
             </Link>
-          )}
+            {!isOnHomePage && (
+              <Link className={styles.homeButton} to={HOME_ROUTE}>
+                ⌂ Home
+              </Link>
+            )}
+          </div>
           <ConnectionBar />
         </header>
 

@@ -1,8 +1,8 @@
 /* HomeView.module.css — Styles for the persona-aware Home view layout. */
 
 .homeView { padding: 24px; max-width: 1200px; margin: 0 auto; }
-.heading { font-size: 24px; font-weight: 800; color: var(--color-text-primary); margin: 0 0 4px; }
-.subheading { font-size: 14px; color: var(--color-text-secondary); margin: 0 0 20px; }
+.heading { font-size: 24px; font-weight: 800; color: var(--color-text-primary); margin: 0 0 4px; text-align: center; }
+.subheading { font-size: 14px; color: var(--color-text-secondary); margin: 0 0 20px; text-align: center; }
 .personaStrip { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
 .personaBtn { padding: 5px 14px; border-radius: 100px; border: 1px solid var(--color-border); background: var(--color-surface-1); color: var(--color-text-secondary); font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
 .personaBtn:hover { border-color: var(--color-accent); color: var(--color-accent); }

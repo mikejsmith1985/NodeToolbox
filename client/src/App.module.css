@@ -17,6 +17,13 @@
   border-bottom: 1px solid var(--color-border);
 }
 
+/* Groups the app title and contextual Home button on the left side of the header. */
+.topBarLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .appTitle {
   font-size: 14px;
   font-weight: 600;
