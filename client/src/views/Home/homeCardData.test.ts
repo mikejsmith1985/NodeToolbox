@@ -7,8 +7,8 @@ import { APP_CARDS, APP_SECTIONS, PERSONA_CARD_ORDERS } from './homeCardData.ts'
 const EXPECTED_PERSONA_KEYS = ['all', 'dev', 'po', 'qa', 'rte', 'sm'];
 
 describe('homeCardData', () => {
-  it('contains all twenty-three home cards', () => {
-    expect(APP_CARDS).toHaveLength(23);
+  it('contains only the eight Phase 1 home cards', () => {
+    expect(APP_CARDS).toHaveLength(8);
   });
 
   it('defines every required field for each card', () => {
@@ -44,5 +44,9 @@ describe('homeCardData', () => {
         expect(validCardIds.has(cardId)).toBe(true);
       });
     });
+  });
+
+  it('removes the legacy reports section after card consolidation', () => {
+    expect(APP_SECTIONS.map((sectionDef) => sectionDef.key)).not.toContain('reports');
   });
 });

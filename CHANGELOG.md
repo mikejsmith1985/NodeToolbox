@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (v0.6.3 — Home card consolidation phase 1)
+- Reduced the Home view from 23 cards to the original 8-card layout by keeping sprint-dashboard, art, my-issues, dev-workspace, snow-hub, text-tools, code-walkthrough, and admin-hub.
+- Folded Story Pointing into Sprint Dashboard, Mermaid into Text Tools, Hygiene into My Issues, and Dev Panel into a new Admin Hub tab while preserving the legacy standalone routes as redirects.
+- Removed the unused Home reports section while keeping legacy recent-view labels so old bookmarks and recent links continue to resolve cleanly.
+
 ### Added (v0.6.2 — Deep parity across 8 views)
 
 #### Sprint Dashboard

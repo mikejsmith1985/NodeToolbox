@@ -47,6 +47,11 @@
   border-bottom-color: var(--color-accent);
 }
 
+/* Wrapper that strips top-level page padding when a standalone view is embedded as a tab */
+.embeddedTabContent {
+  padding: 0;
+}
+
 /* ── Settings panel ── */
 
 .settingsPanel {

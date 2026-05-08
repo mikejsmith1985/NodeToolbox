@@ -125,6 +125,10 @@ vi.mock('./hooks/useDashboardConfig.ts', () => ({
   useDashboardConfig: () => ({ config: mockConfig, actions: mockConfigActions }),
 }));
 
+vi.mock('../StoryPointing/StoryPointingView.tsx', () => ({
+  default: () => <div>Mock Story Pointing</div>,
+}));
+
 import SprintDashboardView from './SprintDashboardView.tsx';
 
 describe('SprintDashboardView', () => {
@@ -145,7 +149,7 @@ describe('SprintDashboardView', () => {
     vi.clearAllMocks();
   });
 
-  it('renders the 6 tab buttons', () => {
+  it('renders the core tab buttons', () => {
     render(<SprintDashboardView />);
 
     expect(screen.getByRole('tab', { name: 'Overview' })).toBeInTheDocument();
@@ -202,12 +206,13 @@ describe('SprintDashboardView', () => {
     expect(screen.getByTestId('responsive-container')).toBeInTheDocument();
   });
 
-  it('renders the 4 new tab buttons (Metrics, Pipeline, Planning, Releases)', () => {
+  it('renders the extended tab buttons including Pointing', () => {
     render(<SprintDashboardView />);
 
     expect(screen.getByRole('tab', { name: 'Metrics' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Pipeline' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Planning' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Pointing' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Releases' })).toBeInTheDocument();
   });
 
@@ -234,6 +239,13 @@ describe('SprintDashboardView', () => {
 
     expect(screen.getByRole('heading', { name: 'Sprint Planning' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Unestimated Issues' })).toBeInTheDocument();
+  });
+
+  it('renders the Pointing tab with the embedded story-pointing view', () => {
+    mockState.activeTab = 'pointing';
+    render(<SprintDashboardView />);
+
+    expect(screen.getByText('Mock Story Pointing')).toBeInTheDocument();
   });
 
   it('renders the Releases tab grouped by fix version', () => {

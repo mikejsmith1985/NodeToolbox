@@ -105,6 +105,16 @@ describe('useSprintData', () => {
     expect(result.current.state.activeTab).toBe('blockers');
   });
 
+  it('supports the embedded story pointing tab', () => {
+    const { result } = renderHook(() => useSprintData());
+
+    act(() => {
+      result.current.actions.setActiveTab('pointing');
+    });
+
+    expect(result.current.state.activeTab).toBe('pointing');
+  });
+
   // ── Scrum board loading ──
 
   it('loads sprint and issues after loadSprint resolves for a scrum board', async () => {

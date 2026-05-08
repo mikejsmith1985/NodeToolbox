@@ -11,7 +11,8 @@ const { mockState, mockActions } = vi.hoisted(() => ({
       | 'case'
       | 'url'
       | 'base64'
-      | 'extractor',
+      | 'extractor'
+      | 'mermaid',
     smartFormatterInput: '',
     smartFormatterMode: 'markdown' as 'markdown' | 'plain' | 'structured',
     jsonInput: '',
@@ -56,6 +57,10 @@ vi.mock('./utils/textTransformUtils.ts', () => ({
   transformBase64: vi.fn(() => ({ output: '', errorMessage: null })),
 }));
 
+vi.mock('../MermaidEditor/MermaidEditorView.tsx', () => ({
+  default: () => <div>Mock Mermaid Editor</div>,
+}));
+
 import TextToolsView from './TextToolsView.tsx';
 
 describe('TextToolsView', () => {
@@ -64,7 +69,7 @@ describe('TextToolsView', () => {
     vi.clearAllMocks();
   });
 
-  it('renders all 6 tab buttons', () => {
+  it('renders all 7 tab buttons', () => {
     render(<TextToolsView />);
     expect(screen.getByRole('tab', { name: /smart formatter/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /json/i })).toBeInTheDocument();
@@ -72,6 +77,7 @@ describe('TextToolsView', () => {
     expect(screen.getByRole('tab', { name: /url/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /base64/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /extractor/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /mermaid/i })).toBeInTheDocument();
   });
 
   it('shows the Smart Formatter panel when that tab is active', () => {
@@ -102,5 +108,11 @@ describe('TextToolsView', () => {
     mockState.activeTab = 'base64';
     render(<TextToolsView />);
     expect(screen.getByLabelText(/base64 input/i)).toBeInTheDocument();
+  });
+
+  it('renders the embedded Mermaid editor tab', () => {
+    mockState.activeTab = 'mermaid';
+    render(<TextToolsView />);
+    expect(screen.getByText('Mock Mermaid Editor')).toBeInTheDocument();
   });
 });

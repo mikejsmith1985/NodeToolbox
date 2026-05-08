@@ -1,10 +1,10 @@
-// SprintDashboardView.tsx — Sprint Dashboard view with 10 tabs for sprint health, team overview, and standup facilitation.
+// SprintDashboardView.tsx — Sprint Dashboard view with 11 tabs for sprint health, delivery tracking, and story pointing.
 //
-// Provides ten tabs: Overview (sprint info + burn-down chart), By Assignee (swim lanes),
+// Provides eleven tabs: Overview (sprint info + burn-down chart), By Assignee (swim lanes),
 // Blockers (wall of blocked/stale issues), Defects (bug radar by priority),
 // Standup (board walk + 15-min timer), Settings (project key + board picker + advanced config),
-// Metrics (velocity/burn stats), Pipeline (kanban WIP by status),
-// Planning (unestimated issues and size distribution), Releases (readiness by fix version).
+// Metrics (velocity/burn stats), Pipeline (kanban WIP by status), Planning (unestimated work),
+// Pointing (embedded planning poker), and Releases (readiness by fix version).
 
 import { useEffect, useState } from 'react';
 
@@ -19,6 +19,7 @@ import {
 } from 'recharts';
 
 import type { JiraIssue } from '../../types/jira.ts';
+import StoryPointingView from '../StoryPointing/StoryPointingView.tsx';
 import BoardPicker from './BoardPicker.tsx';
 import MoveToSprintButton from './MoveToSprintButton.tsx';
 import type { DashboardConfig } from './hooks/useDashboardConfig.ts';
@@ -41,6 +42,7 @@ const TAB_OPTIONS: { key: DashboardTab; label: string }[] = [
   { key: 'metrics', label: 'Metrics' },
   { key: 'pipeline', label: 'Pipeline' },
   { key: 'planning', label: 'Planning' },
+  { key: 'pointing', label: 'Pointing' },
   { key: 'releases', label: 'Releases' },
   { key: 'settings', label: 'Settings' },
 ];
@@ -1286,6 +1288,14 @@ export default function SprintDashboardView() {
 
     if (activeTab === 'planning') {
       return <PlanningTab issues={state.sprintIssues} />;
+    }
+
+    if (activeTab === 'pointing') {
+      return (
+        <div className={styles.embeddedTabContent}>
+          <StoryPointingView />
+        </div>
+      );
     }
 
     if (activeTab === 'releases') {

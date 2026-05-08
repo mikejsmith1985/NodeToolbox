@@ -1,16 +1,16 @@
-// AdminHubView.tsx — Configuration centre for proxy URLs, ART field mappings, and feature flags.
+// AdminHubView.tsx — Tabbed administration centre for configuration, controls, and embedded diagnostics.
 //
-// Four always-visible sections: Proxy & Server Setup, ART Settings, Admin Access (PIN unlock),
-// and (when unlocked) Advanced Feature Controls + Developer Utilities.
-// Four collapsible sections: Diagnostics, Backup & Reset, Hygiene Rules, Update Management.
-// Five new sections added for v0.6.2 parity: Enterprise Standards, Credential Management,
-// Tool Visibility, Client Diagnostics, and TBX Backup/Restore (last three behind advanced lock).
+// The Config tab keeps the existing proxy, ART, access-control, hygiene, update, and backup sections.
+// The Dev Panel tab embeds the live API diagnostics view so leadership and support workflows stay in one hub.
 
 import { useRef, useState } from 'react'
 
 import { useConnectionStore } from '../../store/connectionStore'
+import DevPanelView from '../DevPanel/DevPanelView.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
 import type {
+  AdminHubActions,
+  AdminHubState,
   ArtSettingsConfig,
   DiagnosticsResult,
   HygieneRules,
@@ -29,6 +29,13 @@ const VIEW_TITLE = '⚙️ Admin Hub'
 const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, and developer tools.'
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
+
+type AdminHubTab = 'main' | 'dev-panel'
+
+const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
+  { key: 'main', label: '⚙️ Config' },
+  { key: 'dev-panel', label: '🛰️ Dev Panel' },
+]
 
 /**
  * Launcher files available as one-click downloads from the Proxy & Server Setup section.
@@ -805,36 +812,15 @@ function UpdateManagementSection({
 
 // ── Root component ──
 
-/** Admin Hub — configuration and developer tools for NodeToolbox administrators. */
-export default function AdminHubView() {
-  const { state, actions } = useAdminHubState()
+interface AdminHubMainContentProps {
+  state: AdminHubState
+  actions: AdminHubActions
+}
 
+/** Renders the existing Admin Hub configuration surface inside the Config tab. */
+function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
   return (
-    <div className={styles.adminHubView}>
-      <header>
-        <h1 className={styles.pageTitle}>{VIEW_TITLE}</h1>
-        <p className={styles.pageSubtitle}>{VIEW_SUBTITLE}</p>
-        <div className={styles.headerActions}>
-          {state.isAdvancedUnlocked ? (
-            <button
-              className={styles.advancedLockButton}
-              onClick={actions.advancedLock}
-              aria-label="Lock advanced sections"
-            >
-              🔓 Lock Advanced
-            </button>
-          ) : (
-            <button
-              className={styles.advancedLockButton}
-              onClick={actions.tryAdvancedUnlock}
-              aria-label="Unlock advanced sections"
-            >
-              🔒 Advanced
-            </button>
-          )}
-        </div>
-      </header>
-
+    <>
       <ProxySection
         jiraProxyUrl={state.proxyUrls.jiraProxyUrl}
         snowProxyUrl={state.proxyUrls.snowProxyUrl}
@@ -863,7 +849,6 @@ export default function AdminHubView() {
         onToggleFeatureFlag={actions.toggleFeatureFlag}
       />
 
-      {/* Always-visible new sections */}
       <EnterpriseStandardsPanel />
       <CredentialManagementSection />
 
@@ -901,7 +886,6 @@ export default function AdminHubView() {
         onSetCollapsed={actions.setUpdateSectionCollapsed}
       />
 
-      {/* Advanced-lock-gated sections */}
       {state.isAdvancedUnlocked ? (
         <>
           <ToolVisibilitySection />
@@ -912,6 +896,72 @@ export default function AdminHubView() {
         <p className={styles.lockedSectionsPlaceholder}>
           🔒 Unlock Advanced to access Tool Visibility, Client Diagnostics, and Backup/Restore.
         </p>
+      )}
+    </>
+  )
+}
+
+/** Admin Hub — configuration and developer tools for NodeToolbox administrators. */
+export default function AdminHubView() {
+  const { state, actions } = useAdminHubState()
+  const [activeAdminTab, setActiveAdminTab] = useState<AdminHubTab>('main')
+
+  return (
+    <div className={styles.adminHubView}>
+      <header>
+        <h1 className={styles.pageTitle}>{VIEW_TITLE}</h1>
+        <p className={styles.pageSubtitle}>{VIEW_SUBTITLE}</p>
+        <div className={styles.headerActions}>
+          {state.isAdvancedUnlocked ? (
+            <button
+              className={styles.advancedLockButton}
+              onClick={actions.advancedLock}
+              aria-label="Lock advanced sections"
+            >
+              🔓 Lock Advanced
+            </button>
+          ) : (
+            <button
+              className={styles.advancedLockButton}
+              onClick={actions.tryAdvancedUnlock}
+              aria-label="Unlock advanced sections"
+            >
+              🔒 Advanced
+            </button>
+          )}
+        </div>
+      </header>
+
+      <div aria-label="Admin Hub tabs" className={styles.tabList} role="tablist">
+        {ADMIN_HUB_TAB_OPTIONS.map((tabOption) => {
+          const isActiveTab = tabOption.key === activeAdminTab
+          return (
+            <button
+              aria-controls={`${tabOption.key}-panel`}
+              aria-selected={isActiveTab}
+              className={`${styles.tabButton} ${isActiveTab ? styles.activeTab : ''}`}
+              id={`${tabOption.key}-tab`}
+              key={tabOption.key}
+              onClick={() => setActiveAdminTab(tabOption.key)}
+              role="tab"
+              type="button"
+            >
+              {tabOption.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {activeAdminTab === 'main' && (
+        <section id="main-panel" role="tabpanel" aria-labelledby="main-tab">
+          <AdminHubMainContent actions={actions} state={state} />
+        </section>
+      )}
+
+      {activeAdminTab === 'dev-panel' && (
+        <section id="dev-panel-panel" role="tabpanel" aria-labelledby="dev-panel-tab">
+          <DevPanelView />
+        </section>
       )}
     </div>
   )
