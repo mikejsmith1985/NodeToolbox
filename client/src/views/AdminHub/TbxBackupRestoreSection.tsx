@@ -4,8 +4,10 @@
 // This section handles all keys that start with 'tbx', matching the NodeToolbox
 // naming convention used by the settings store and new features.
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 
+import ConfirmDialog from '../../components/ConfirmDialog/index.tsx';
+import { useToast } from '../../components/Toast/ToastProvider.tsx';
 import styles from './AdminHubView.module.css';
 
 // ── Constants ──
@@ -56,7 +58,9 @@ function triggerJsonDownload(filename: string, jsonString: string): void {
 
 /** Backup / Restore Settings section — export, import, or reset all tbx* localStorage data. */
 export default function TbxBackupRestoreSection() {
+  const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
 
   function handleExportSettings() {
     const exportData = collectTbxLocalStorageData();
@@ -76,7 +80,7 @@ export default function TbxBackupRestoreSection() {
         const parsedData = JSON.parse(rawText) as unknown;
 
         if (typeof parsedData !== 'object' || parsedData === null || Array.isArray(parsedData)) {
-          alert('Import failed: backup file must be a plain JSON object.');
+          showToast('Import failed: backup file must be a plain JSON object.', 'error');
           return;
         }
 
@@ -91,12 +95,12 @@ export default function TbxBackupRestoreSection() {
 
         window.location.reload();
       } catch {
-        alert('Import failed: invalid or corrupted backup file.');
+        showToast('Import failed: invalid or corrupted backup file.', 'error');
       }
     };
 
     fileReader.onerror = () => {
-      alert('Import failed: could not read the selected file.');
+      showToast('Import failed: could not read the selected file.', 'error');
     };
 
     fileReader.readAsText(selectedFile);
@@ -104,12 +108,8 @@ export default function TbxBackupRestoreSection() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
-  function handleResetAllData() {
-    const isUserConfirmed = window.confirm(
-      'Clear all NodeToolbox data? This removes all tbx* localStorage keys and cannot be undone.',
-    );
-    if (!isUserConfirmed) return;
-
+  function handleConfirmResetAllData() {
+    setIsResetDialogOpen(false);
     removeTbxLocalStorageData();
     window.location.reload();
   }
@@ -145,11 +145,21 @@ export default function TbxBackupRestoreSection() {
 
         <button
           className={`${styles.actionButton} ${styles.dangerButton}`}
-          onClick={handleResetAllData}
+          onClick={() => setIsResetDialogOpen(true)}
         >
           🗑 Reset All Data
         </button>
       </div>
+
+      {isResetDialogOpen && (
+        <ConfirmDialog
+          confirmLabel="Reset All Data"
+          isDangerous
+          message="Clear all NodeToolbox data? This removes all tbx* localStorage keys and cannot be undone."
+          onCancel={() => setIsResetDialogOpen(false)}
+          onConfirm={handleConfirmResetAllData}
+        />
+      )}
     </section>
   );
 }

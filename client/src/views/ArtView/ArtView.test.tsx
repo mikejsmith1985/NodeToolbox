@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArtTab, ArtPersona } from './hooks/useArtData.ts';
 import type { JiraIssue } from '../../types/jira.ts';
+import { ToastProvider } from '../../components/Toast/ToastProvider.tsx';
 
 const { mockJiraGet } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
@@ -18,6 +19,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
         id: 'team-1',
         name: 'Alpha Team',
         boardId: '42',
+        projectKey: '',
         sprintIssues: [] as JiraIssue[],
         isLoading: false,
         loadError: null as string | null,
@@ -64,6 +66,14 @@ vi.mock('../../services/jiraApi.ts', () => ({
 
 import ArtView from './ArtView.tsx';
 
+function renderArtView() {
+  return render(
+    <ToastProvider>
+      <ArtView />
+    </ToastProvider>,
+  );
+}
+
 describe('ArtView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -84,7 +94,7 @@ describe('ArtView', () => {
   // ── Original 7-tab tests (must still pass) ──
 
   it('renders the original 7 tab buttons', () => {
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('tab', { name: /overview/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /impediments/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /predictability/i })).toBeInTheDocument();
@@ -95,13 +105,13 @@ describe('ArtView', () => {
   });
 
   it('renders the 2 new tab buttons: Dependencies and Board Prep', () => {
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('tab', { name: /dependencies/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /board prep/i })).toBeInTheDocument();
   });
 
   it('shows the persona strip with SM/PO/Dev/QA options', () => {
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('button', { name: /^sm$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^po$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^dev$/i })).toBeInTheDocument();
@@ -109,27 +119,67 @@ describe('ArtView', () => {
   });
 
   it('shows the Overview tab with Load All Teams button', () => {
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('button', { name: /load all teams/i })).toBeInTheDocument();
   });
 
+  it('renders a project key filter input above the overview team list', () => {
+    renderArtView();
+
+    expect(screen.getByRole('searchbox', { name: '' })).toHaveAttribute('placeholder', 'Filter by project key…');
+  });
+
   it('renders a team card for each team in state', () => {
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByText('Alpha Team')).toBeInTheDocument();
+  });
+
+  it('filters overview team cards by project key text', () => {
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+      {
+        id: 'team-2',
+        name: 'Beta Team',
+        boardId: '99',
+        projectKey: 'BETA',
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+
+    renderArtView();
+    fireEvent.change(screen.getByPlaceholderText(/filter by project key/i), {
+      target: { value: 'beta' },
+    });
+
+    expect(screen.getByText('Beta Team')).toBeInTheDocument();
+    expect(screen.queryByText('Alpha Team')).not.toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
   });
 
   it('shows the Settings tab with add-team form', () => {
     mockState.activeTab = 'settings';
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByPlaceholderText(/team name/i)).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /board/i })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /project/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /add team/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save teams/i })).toBeInTheDocument();
+    mockState.activeTab = 'overview';
   });
 
   it('shows the Impediments tab', () => {
     mockState.activeTab = 'impediments';
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('tab', { name: /impediments/i })).toBeInTheDocument();
   });
 
@@ -140,6 +190,7 @@ describe('ArtView', () => {
         id: 'team-1',
         name: 'Alpha Team',
         boardId: '42',
+        projectKey: '',
         sprintIssues: [
           {
             id: 'ALPHA-7',
@@ -161,27 +212,27 @@ describe('ArtView', () => {
         loadError: null,
       },
     ];
-    render(<ArtView />);
+    renderArtView();
 
     expect(screen.getByRole('button', { name: /expand details for alpha-7/i })).toBeInTheDocument();
 
-    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
   });
 
   // ── Feature 3: PI Progress Header ──
 
   it('renders the PI progress header above the tab bar with PI name', () => {
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByText('PI-2025-Q1')).toBeInTheDocument();
   });
 
   it('renders PI progress header completion percentage', () => {
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByText(/40%/i)).toBeInTheDocument();
   });
 
   it('renders done, in-progress, and to-do pills in PI header', () => {
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByText(/4 done/i)).toBeInTheDocument();
     expect(screen.getByText(/3 in progress/i)).toBeInTheDocument();
     expect(screen.getByText(/3 to do/i)).toBeInTheDocument();
@@ -189,7 +240,7 @@ describe('ArtView', () => {
 
   it('shows "No PI selected" placeholder when selectedPiName is empty', () => {
     mockState.selectedPiName = '';
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByText(/no pi selected/i)).toBeInTheDocument();
     mockState.selectedPiName = 'PI-2025-Q1';
   });
@@ -198,13 +249,13 @@ describe('ArtView', () => {
 
   it('shows the Dependencies tab panel with a Load Dependencies button', () => {
     mockState.activeTab = 'dependencies';
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('button', { name: /load dependencies/i })).toBeInTheDocument();
   });
 
   it('does not render an SVG in the Dependencies tab — it is table-based', () => {
     mockState.activeTab = 'dependencies';
-    render(<ArtView />);
+    renderArtView();
     expect(document.querySelector('svg')).not.toBeInTheDocument();
   });
 
@@ -212,13 +263,13 @@ describe('ArtView', () => {
 
   it('shows the Board Prep tab panel with a Load Board Prep button', () => {
     mockState.activeTab = 'boardprep';
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('button', { name: /load board prep/i })).toBeInTheDocument();
   });
 
   it('shows the Board Prep PI name input field', () => {
     mockState.activeTab = 'boardprep';
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByDisplayValue('PI-2025-Q1')).toBeInTheDocument();
   });
 
@@ -227,7 +278,7 @@ describe('ArtView', () => {
     mockState.boardPrepIssues = [
       { teamName: 'Alpha Team', key: 'ALPHA-1', summary: 'Ready story', estimate: 3, priority: 'Medium' },
     ];
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('columnheader', { name: /team/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /key/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /summary/i })).toBeInTheDocument();
@@ -241,7 +292,7 @@ describe('ArtView', () => {
     mockState.boardPrepIssues = [
       { teamName: 'Alpha Team', key: 'ALPHA-1', summary: 'Ready story', estimate: null, priority: null },
     ];
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('button', { name: /export to csv/i })).toBeInTheDocument();
     mockState.boardPrepIssues = [];
   });
@@ -250,19 +301,19 @@ describe('ArtView', () => {
 
   it('shows the SoS Pulse section when on SoS tab', () => {
     mockState.activeTab = 'sos';
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByText(/pulse/i)).toBeInTheDocument();
   });
 
   it('shows per-team accordion buttons in SoS tab', () => {
     mockState.activeTab = 'sos';
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('button', { name: /alpha team/i })).toBeInTheDocument();
   });
 
   it('calls toggleSosTeam when a team accordion header is clicked', () => {
     mockState.activeTab = 'sos';
-    render(<ArtView />);
+    renderArtView();
     fireEvent.click(screen.getByRole('button', { name: /alpha team/i }));
     expect(mockActions.toggleSosTeam).toHaveBeenCalledWith('team-1');
   });
@@ -275,6 +326,7 @@ describe('ArtView', () => {
         id: 'team-1',
         name: 'Alpha Team',
         boardId: '42',
+        projectKey: '',
         sprintIssues: [
           {
             id: 'ALPHA-1', key: 'ALPHA-1',
@@ -294,27 +346,27 @@ describe('ArtView', () => {
         loadError: null,
       },
     ];
-    render(<ArtView />);
+    renderArtView();
     // When expanded, impediments (issues with 'block' in summary) should appear
     // getAllByText used because the auto-generated narrative textarea may also contain this text
     expect(screen.getAllByText(/blocked by something/i).length).toBeGreaterThanOrEqual(1);
     // Assignee list should appear
     expect(screen.getByText(/jane doe/i)).toBeInTheDocument();
     mockState.sosExpandedTeams = [];
-    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
   });
 
   // ── Feature: Blueprint Tab ──
 
   it('renders a Blueprint tab button', () => {
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('tab', { name: /blueprint/i })).toBeInTheDocument();
   });
 
   it('shows no-PI warning when Blueprint tab is active and no PI is set', () => {
     mockState.activeTab = 'blueprint';
     mockState.selectedPiName = '';
-    render(<ArtView />);
+    renderArtView();
     // Check for the specific message shown only by BlueprintTab (the PI header shows "No PI selected" too)
     expect(screen.getByText(/choose a pi name/i)).toBeInTheDocument();
     mockState.selectedPiName = 'PI-2025-Q1';
@@ -323,7 +375,7 @@ describe('ArtView', () => {
   it('shows the Load Blueprint button when a PI is selected', () => {
     mockState.activeTab = 'blueprint';
     mockState.selectedPiName = 'PI-2025-Q1';
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('button', { name: /load blueprint/i })).toBeInTheDocument();
   });
 
@@ -332,7 +384,7 @@ describe('ArtView', () => {
   it('shows SoS narrative textarea fields when a team accordion is expanded', () => {
     mockState.activeTab = 'sos';
     mockState.sosExpandedTeams = ['team-1'];
-    render(<ArtView />);
+    renderArtView();
     // All 5 narrative sections should have textareas
     expect(screen.getAllByRole('textbox').length).toBeGreaterThanOrEqual(5);
     mockState.sosExpandedTeams = [];
@@ -342,13 +394,13 @@ describe('ArtView', () => {
 
   it('shows the Monthly Report tab with a month selector', () => {
     mockState.activeTab = 'monthly';
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('combobox', { name: /select month/i })).toBeInTheDocument();
   });
 
   it('shows Copy All and Export HTML buttons in Monthly Report tab', () => {
     mockState.activeTab = 'monthly';
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('button', { name: /copy all/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /export html/i })).toBeInTheDocument();
   });
@@ -357,31 +409,33 @@ describe('ArtView', () => {
 
   it('shows PI Field picker in Settings tab', () => {
     mockState.activeTab = 'settings';
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('combobox', { name: /pi field/i })).toBeInTheDocument();
   });
 
   it('shows Story Points Field picker in Settings tab', () => {
     mockState.activeTab = 'settings';
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('combobox', { name: /story points field/i })).toBeInTheDocument();
   });
 
   it('shows Feature Link Field picker in Settings tab', () => {
     mockState.activeTab = 'settings';
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('combobox', { name: /feature link field/i })).toBeInTheDocument();
   });
 
   it('shows Stale Days Threshold input in Settings tab', () => {
     mockState.activeTab = 'settings';
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('spinbutton', { name: /stale days threshold/i })).toBeInTheDocument();
   });
 
   it('shows Project picker in Settings add-team form', () => {
     mockState.activeTab = 'settings';
-    render(<ArtView />);
+    renderArtView();
     expect(screen.getByRole('combobox', { name: /project/i })).toBeInTheDocument();
   });
 });
+
+

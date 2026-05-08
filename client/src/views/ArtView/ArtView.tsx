@@ -3,6 +3,7 @@
 import { Fragment, useState } from 'react';
 
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
+import { useToast } from '../../components/Toast/ToastProvider.tsx';
 import JiraBoardPicker from '../../components/JiraBoardPicker/index.tsx';
 import JiraFieldPicker from '../../components/JiraFieldPicker/index.tsx';
 import JiraProjectPicker from '../../components/JiraProjectPicker/index.tsx';
@@ -39,6 +40,13 @@ const ART_TAB_DEFINITIONS: { key: ArtTab; label: string }[] = [
 /** Main ART View with 10 tabs for tracking multi-team PI health across the Agile Release Train. */
 export default function ArtView() {
   const { state, actions } = useArtData();
+  const [teamProjectKeyFilter, setTeamProjectKeyFilter] = useState('');
+
+  const filteredTeams = teamProjectKeyFilter
+    ? state.teams.filter((team) =>
+        (team.projectKey ?? '').toLowerCase().includes(teamProjectKeyFilter.toLowerCase()),
+      )
+    : state.teams;
 
   function handleIssueUpdated() {
     void actions.loadAllTeams();
@@ -77,14 +85,21 @@ export default function ArtView() {
       <div className={styles.tabContent}>
         {state.activeTab === 'overview' && (
           <OverviewPanel
-            teams={state.teams}
+            teamProjectKeyFilter={teamProjectKeyFilter}
+            teams={filteredTeams}
             isLoadingAllTeams={state.isLoadingAllTeams}
             onLoadAllTeams={actions.loadAllTeams}
             onLoadTeam={actions.loadTeam}
+            onTeamProjectKeyFilterChange={setTeamProjectKeyFilter}
           />
         )}
         {state.activeTab === 'impediments' && (
-          <ImpedimentsPanel onIssueUpdated={handleIssueUpdated} teams={state.teams} />
+          <ImpedimentsPanel
+            onIssueUpdated={handleIssueUpdated}
+            teamProjectKeyFilter={teamProjectKeyFilter}
+            teams={filteredTeams}
+            onTeamProjectKeyFilterChange={setTeamProjectKeyFilter}
+          />
         )}
         {state.activeTab === 'predictability' && (
           <PredictabilityPanel teams={state.teams} />
@@ -126,6 +141,7 @@ export default function ArtView() {
             teams={state.teams}
             onAddTeam={actions.addTeam}
             onRemoveTeam={actions.removeTeam}
+            onSaveTeams={actions.saveTeams}
           />
         )}
       </div>
@@ -163,13 +179,22 @@ function PiProgressHeader({ piName, stats }: PiProgressHeaderProps) {
 
 interface OverviewPanelProps {
   teams: ArtTeam[];
+  teamProjectKeyFilter: string;
   isLoadingAllTeams: boolean;
   onLoadAllTeams: () => Promise<void>;
   onLoadTeam: (teamId: string) => Promise<void>;
+  onTeamProjectKeyFilterChange: (value: string) => void;
 }
 
 /** Renders the Overview tab with team health cards and the Load All Teams control. */
-function OverviewPanel({ teams, isLoadingAllTeams, onLoadAllTeams, onLoadTeam }: OverviewPanelProps) {
+function OverviewPanel({
+  teams,
+  teamProjectKeyFilter,
+  isLoadingAllTeams,
+  onLoadAllTeams,
+  onLoadTeam,
+  onTeamProjectKeyFilterChange,
+}: OverviewPanelProps) {
   return (
     <div className={styles.panel}>
       <div className={styles.overviewControls}>
@@ -180,6 +205,15 @@ function OverviewPanel({ teams, isLoadingAllTeams, onLoadAllTeams, onLoadTeam }:
         >
           {isLoadingAllTeams ? 'Loading…' : 'Load All Teams'}
         </button>
+      </div>
+      <div className={styles.teamFilterRow}>
+        <input
+          className={styles.teamFilterInput}
+          onChange={(event) => onTeamProjectKeyFilterChange(event.target.value)}
+          placeholder="Filter by project key…"
+          type="search"
+          value={teamProjectKeyFilter}
+        />
       </div>
       <div className={styles.teamGrid}>
         {teams.length === 0 && (
@@ -223,11 +257,18 @@ interface TeamsPanelProps {
 }
 
 interface ImpedimentsPanelProps extends TeamsPanelProps {
+  teamProjectKeyFilter: string;
   onIssueUpdated: () => void;
+  onTeamProjectKeyFilterChange: (value: string) => void;
 }
 
 /** Renders the Impediments tab showing blocked issues across all teams. */
-function ImpedimentsPanel({ teams, onIssueUpdated }: ImpedimentsPanelProps) {
+function ImpedimentsPanel({
+  teams,
+  teamProjectKeyFilter,
+  onIssueUpdated,
+  onTeamProjectKeyFilterChange,
+}: ImpedimentsPanelProps) {
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
   const blockedIssues = teams.flatMap((team) =>
     team.sprintIssues
@@ -242,6 +283,15 @@ function ImpedimentsPanel({ teams, onIssueUpdated }: ImpedimentsPanelProps) {
   return (
     <div className={styles.panel}>
       <h3 className={styles.sectionTitle}>Impediments</h3>
+      <div className={styles.teamFilterRow}>
+        <input
+          className={styles.teamFilterInput}
+          onChange={(event) => onTeamProjectKeyFilterChange(event.target.value)}
+          placeholder="Filter by project key…"
+          type="search"
+          value={teamProjectKeyFilter}
+        />
+      </div>
       {blockedIssues.length === 0 && (
         <p className={styles.emptyState}>No blocked issues found across all teams.</p>
       )}
@@ -1026,6 +1076,7 @@ interface SettingsPanelProps {
   teams: ArtTeam[];
   onAddTeam: (name: string, boardId: string, projectKey?: string) => void;
   onRemoveTeam: (teamId: string) => void;
+  onSaveTeams: () => void;
 }
 
 /** Shape of the ART advanced settings object stored under 'tbxARTSettings' in localStorage. */
@@ -1054,7 +1105,8 @@ function writeArtAdvancedSettings(settings: ArtAdvancedSettings): void {
 const DEFAULT_STALE_DAYS_SETTING = 5;
 
 /** Renders the Settings tab for managing ART team roster, board IDs, and advanced field configuration. */
-function SettingsPanel({ teams, onAddTeam, onRemoveTeam }: SettingsPanelProps) {
+function SettingsPanel({ teams, onAddTeam, onRemoveTeam, onSaveTeams }: SettingsPanelProps) {
+  const { showToast } = useToast();
   const [newTeamName, setNewTeamName] = useState('');
   const [newBoardId, setNewBoardId] = useState('');
   const [newProjectKey, setNewProjectKey] = useState('');
@@ -1073,6 +1125,11 @@ function SettingsPanel({ teams, onAddTeam, onRemoveTeam }: SettingsPanelProps) {
     setNewTeamName('');
     setNewBoardId('');
     setNewProjectKey('');
+  }
+
+  function handleSaveTeams() {
+    onSaveTeams();
+    showToast('Teams saved ✓', 'success');
   }
 
   /** Persists a single settings field change to localStorage. */
@@ -1132,6 +1189,12 @@ function SettingsPanel({ teams, onAddTeam, onRemoveTeam }: SettingsPanelProps) {
         />
         <button className={styles.primaryBtn} onClick={handleAddTeam}>
           Add Team
+        </button>
+      </div>
+
+      <div className={styles.settingsButtonRow}>
+        <button className={styles.secondaryBtn} onClick={handleSaveTeams} type="button">
+          Save Teams
         </button>
       </div>
 

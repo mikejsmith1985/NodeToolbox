@@ -4,6 +4,8 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ToastProvider } from '../../components/Toast/ToastProvider.tsx';
+
 const { mockState, mockActions } = vi.hoisted(() => ({
   mockState: {
     proxyUrls: {
@@ -28,6 +30,10 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     adminPinInput: '',
     proxySaveStatus: null as string | null,
     artSaveStatus: null as string | null,
+    isAdvancedUnlockDialogOpen: false,
+    advancedUnlockPromptMessage: '',
+    advancedUnlockError: null as string | null,
+    isResetAllSettingsConfirmOpen: false,
     // ── Diagnostics ──
     isDiagnosticsRunning: false,
     diagnosticsResult: null as null | {
@@ -68,6 +74,12 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     setAdminPinInput: vi.fn(),
     tryUnlock: vi.fn(),
     lock: vi.fn(),
+    tryAdvancedUnlock: vi.fn(),
+    closeAdvancedUnlockDialog: vi.fn(),
+    submitAdvancedUnlock: vi.fn(),
+    clearAdvancedUnlockError: vi.fn(),
+    openResetAllSettingsDialog: vi.fn(),
+    closeResetAllSettingsDialog: vi.fn(),
     // ── Diagnostics ──
     runDiagnostics: vi.fn(),
     setDiagnosticsSectionCollapsed: vi.fn(),
@@ -83,7 +95,6 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     checkForUpdates: vi.fn(),
     setUpdateSectionCollapsed: vi.fn(),
     // ── Advanced unlock ──
-    tryAdvancedUnlock: vi.fn(),
     advancedLock: vi.fn(),
   },
 }));
@@ -119,6 +130,14 @@ vi.mock('../DevPanel/DevPanelView.tsx', () => ({
 
 import AdminHubView from './AdminHubView.tsx';
 
+function renderAdminHubView() {
+  return render(
+    <ToastProvider>
+      <AdminHubView />
+    </ToastProvider>,
+  );
+}
+
 describe('AdminHubView', () => {
   beforeEach(() => {
     mockState.isAdminUnlocked = false;
@@ -128,50 +147,50 @@ describe('AdminHubView', () => {
   });
 
   it('renders the Config and Dev Panel tab buttons', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('tab', { name: /config/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /dev panel/i })).toBeInTheDocument();
   });
 
   it('renders the Proxy & Server Setup section', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByText(/proxy & server setup/i)).toBeInTheDocument();
   });
 
   it('renders the ART Settings section', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByText(/art settings/i)).toBeInTheDocument();
   });
 
   it('renders the Admin Access section with PIN input when locked', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByText(/admin access/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/enter pin/i)).toBeInTheDocument();
   });
 
   it('shows the unlocked admin panel when isAdminUnlocked is true', () => {
     mockState.isAdminUnlocked = true;
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByText(/admin access is active/i)).toBeInTheDocument();
   });
 
   it('shows the Advanced Feature Controls toggles when unlocked', () => {
     mockState.isAdminUnlocked = true;
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByText(/advanced feature controls/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/snow integration/i)).toBeInTheDocument();
   });
 
   it('shows the Developer Utilities when unlocked', () => {
     mockState.isAdminUnlocked = true;
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByText(/developer utilities/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /reset onboarding/i })).toBeInTheDocument();
   });
 
   it('renders the embedded Dev Panel when the tab is selected', async () => {
     const user = userEvent.setup();
-    render(<AdminHubView />);
+    renderAdminHubView();
 
     await user.click(screen.getByRole('tab', { name: /dev panel/i }));
 
@@ -184,17 +203,17 @@ describe('AdminHubView', () => {
 
 describe('Diagnostics section', () => {
   it('renders the Diagnostics section heading', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('heading', { name: /diagnostics/i })).toBeInTheDocument();
   });
 
   it('renders the Run Diagnostics button', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('button', { name: /run diagnostics/i })).toBeInTheDocument();
   });
 
   it('does not render the Copy Report button when diagnosticsResult is null', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.queryByRole('button', { name: /copy report/i })).not.toBeInTheDocument();
   });
 
@@ -205,7 +224,7 @@ describe('Diagnostics section', () => {
       uptime: 300,
       timestamp: '2024-01-01T00:00:00.000Z',
     };
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByText(/2\.3\.0/)).toBeInTheDocument();
     mockState.diagnosticsResult = null;
   });
@@ -217,14 +236,14 @@ describe('Diagnostics section', () => {
       uptime: 300,
       timestamp: '2024-01-01T00:00:00.000Z',
     };
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('button', { name: /copy report/i })).toBeInTheDocument();
     mockState.diagnosticsResult = null;
   });
 
   it('renders the error message when diagnosticsError is set', () => {
     mockState.diagnosticsError = 'Connection refused';
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByText(/connection refused/i)).toBeInTheDocument();
     mockState.diagnosticsError = null;
   });
@@ -234,28 +253,28 @@ describe('Diagnostics section', () => {
 
 describe('Backup & Reset section', () => {
   it('renders the Backup & Reset section heading', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByText(/backup.*reset/i)).toBeInTheDocument();
   });
 
   it('renders the Download Backup button', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('button', { name: /download backup/i })).toBeInTheDocument();
   });
 
   it('renders the Restore Backup button', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('button', { name: /restore backup/i })).toBeInTheDocument();
   });
 
   it('renders the Reset All Settings button', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('button', { name: /reset all settings/i })).toBeInTheDocument();
   });
 
   it('renders the restore error when restoreError is set', () => {
     mockState.restoreError = 'Invalid backup file';
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByText(/invalid backup file/i)).toBeInTheDocument();
     mockState.restoreError = null;
   });
@@ -265,27 +284,27 @@ describe('Backup & Reset section', () => {
 
 describe('Hygiene Rules section', () => {
   it('renders the Hygiene Rules section heading', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('heading', { name: /hygiene rules/i })).toBeInTheDocument();
   });
 
   it('renders the Stale Days input', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByLabelText(/stale days/i)).toBeInTheDocument();
   });
 
   it('renders the Unpointed Warning Days input', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByLabelText(/unpointed warning days/i)).toBeInTheDocument();
   });
 
   it('renders the Flag Missing Assignees checkbox', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByLabelText(/flag missing assignees/i)).toBeInTheDocument();
   });
 
   it('shows the correct stale days value from state', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     const staleDaysInput = screen.getByLabelText(/stale days/i) as HTMLInputElement;
     expect(staleDaysInput.value).toBe('5');
   });
@@ -295,12 +314,12 @@ describe('Hygiene Rules section', () => {
 
 describe('Update Management section', () => {
   it('renders the Update Management section heading', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByText(/update management/i)).toBeInTheDocument();
   });
 
   it('renders the Check for Updates button', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('button', { name: /check for updates/i })).toBeInTheDocument();
   });
 
@@ -311,7 +330,7 @@ describe('Update Management section', () => {
       hasUpdate: false,
       releaseNotes: 'You are running the latest version.',
     };
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByText(/up to date/i)).toBeInTheDocument();
     mockState.updateCheckResult = null;
   });
@@ -323,7 +342,7 @@ describe('Update Management section', () => {
       hasUpdate: true,
       releaseNotes: 'New features added.',
     };
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByText(/update available/i)).toBeInTheDocument();
     mockState.updateCheckResult = null;
   });
@@ -335,7 +354,7 @@ describe('Update Management section', () => {
       hasUpdate: false,
       releaseNotes: 'You are running the latest version.',
     };
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('textbox', { name: /release notes/i })).toBeInTheDocument();
     mockState.updateCheckResult = null;
   });
@@ -347,21 +366,21 @@ describe('Update Management section', () => {
 
 describe('Launcher download links', () => {
   it('renders an enabled Silent Launcher (.vbs) download link pointing to the correct API path', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     const vbsLink = screen.getByRole('link', { name: /silent launcher.*\.vbs/i });
     expect(vbsLink).not.toHaveAttribute('disabled');
     expect(vbsLink).toHaveAttribute('href', '/api/download/launcher-vbs');
   });
 
   it('renders an enabled Launcher (.bat) download link pointing to the correct API path', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     const batLink = screen.getByRole('link', { name: /launcher.*\.bat/i });
     expect(batLink).not.toHaveAttribute('disabled');
     expect(batLink).toHaveAttribute('href', '/api/download/launcher-bat');
   });
 
   it('does not show the "legacy dashboard" tooltip for download buttons', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.queryByText(/legacy dashboard/i)).not.toBeInTheDocument();
   });
 });
@@ -370,18 +389,18 @@ describe('Launcher download links', () => {
 
 describe('Advanced lock button', () => {
   it('renders the lock button when isAdvancedUnlocked is false', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('button', { name: /unlock advanced sections/i })).toBeInTheDocument();
   });
 
   it('renders the lock button label "🔒 Advanced" when locked', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByText(/🔒 Advanced/)).toBeInTheDocument();
   });
 
   it('renders the "Lock Advanced" button when isAdvancedUnlocked is true', () => {
     mockState.isAdvancedUnlocked = true;
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('button', { name: /lock advanced sections/i })).toBeInTheDocument();
     mockState.isAdvancedUnlocked = false;
   });
@@ -389,7 +408,7 @@ describe('Advanced lock button', () => {
   it('calls tryAdvancedUnlock when the lock button is clicked', async () => {
     const { userEvent } = await import('@testing-library/user-event');
     const user = userEvent.setup();
-    render(<AdminHubView />);
+    renderAdminHubView();
     await user.click(screen.getByRole('button', { name: /unlock advanced sections/i }));
     expect(mockActions.tryAdvancedUnlock).toHaveBeenCalledOnce();
   });
@@ -398,7 +417,7 @@ describe('Advanced lock button', () => {
     const { userEvent } = await import('@testing-library/user-event');
     const user = userEvent.setup();
     mockState.isAdvancedUnlocked = true;
-    render(<AdminHubView />);
+    renderAdminHubView();
     await user.click(screen.getByRole('button', { name: /lock advanced sections/i }));
     expect(mockActions.advancedLock).toHaveBeenCalledOnce();
     mockState.isAdvancedUnlocked = false;
@@ -409,14 +428,14 @@ describe('Advanced lock button', () => {
 
 describe('Enterprise Standards Panel', () => {
   it('renders the Enterprise Standards section heading', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('heading', { name: /enterprise standards/i })).toBeInTheDocument();
   });
 });
 
 describe('Credential Management Section', () => {
   it('renders the Credential Management section heading', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('heading', { name: /credential management/i })).toBeInTheDocument();
   });
 });
@@ -425,33 +444,33 @@ describe('Credential Management Section', () => {
 
 describe('Advanced-gated sections', () => {
   it('shows the locked placeholder when isAdvancedUnlocked is false', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByText(/unlock advanced/i)).toBeInTheDocument();
   });
 
   it('renders Tool Visibility section when isAdvancedUnlocked is true', () => {
     mockState.isAdvancedUnlocked = true;
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('heading', { name: /tool visibility/i })).toBeInTheDocument();
     mockState.isAdvancedUnlocked = false;
   });
 
   it('renders Client Diagnostics panel when isAdvancedUnlocked is true', () => {
     mockState.isAdvancedUnlocked = true;
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('heading', { name: /client diagnostics/i })).toBeInTheDocument();
     mockState.isAdvancedUnlocked = false;
   });
 
   it('renders TBX Backup/Restore section when isAdvancedUnlocked is true', () => {
     mockState.isAdvancedUnlocked = true;
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.getByRole('heading', { name: /backup.*restore/i })).toBeInTheDocument();
     mockState.isAdvancedUnlocked = false;
   });
 
   it('does not render the three advanced sections when locked', () => {
-    render(<AdminHubView />);
+    renderAdminHubView();
     expect(screen.queryByRole('heading', { name: /tool visibility/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /client diagnostics/i })).not.toBeInTheDocument();
   });

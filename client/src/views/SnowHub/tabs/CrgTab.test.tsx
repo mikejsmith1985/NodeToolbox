@@ -92,12 +92,22 @@ describe('CrgTab', () => {
     expect(screen.getByRole('button', { name: 'Fetch Issues' })).toBeInTheDocument();
   });
 
+  it('renders a fix version dropdown when fix versions are available', () => {
+    mockState.availableFixVersions = ['1.2.3', '1.2.4'] as never[];
+    render(<CrgTab />);
+
+    expect(screen.getByRole('combobox', { name: 'Fix Version' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '1.2.3' })).toBeInTheDocument();
+    mockState.availableFixVersions = [];
+  });
+
   it('shows an error message when fetchError is set', () => {
     mockState.fetchError = 'Project key and fix version are required.';
 
     render(<CrgTab />);
 
     expect(screen.getByRole('alert')).toHaveTextContent('Project key and fix version are required.');
+    mockState.fetchError = null;
   });
 
   it('shows the step 2 issue list after fetchIssues resolves', async () => {

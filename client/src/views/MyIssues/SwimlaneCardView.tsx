@@ -5,6 +5,7 @@
 // Cards in "Needs Attention" show badge chips explaining why they need attention.
 // Cards show aging labels when they haven't been updated recently.
 
+import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import {
   AGING_STALE_THRESHOLD_DAYS,
   AGING_WARN_THRESHOLD_DAYS,
@@ -33,6 +34,7 @@ type SwimlaneKey = (typeof SWIMLANE_DEFS)[number]['key'];
 
 export interface SwimlaneCardViewProps {
   issues: ExtendedJiraIssue[];
+  expandedIssueKey: string | null;
   isBulkModeActive: boolean;
   /** Map of issue key → true for selected issues. */
   bulkSelectedKeys: Record<string, boolean>;
@@ -41,6 +43,7 @@ export interface SwimlaneCardViewProps {
   /** Map of quick-filter id → true for active quick filters (used to derive board JQL). */
   activeQuickFilterIds: Record<number, boolean>;
   onIssueClick: (issue: ExtendedJiraIssue) => void;
+  onIssueUpdated: () => void;
   onToggleBulkKey: (issueKey: string) => void;
   onToggleSwimlane: (laneKey: string) => void;
 }
@@ -83,6 +86,7 @@ function AttentionBadges({ reasons }: AttentionBadgesProps) {
 interface IssueCardProps {
   issue: ExtendedJiraIssue;
   isBulkModeActive: boolean;
+  isExpanded: boolean;
   isSelected: boolean;
   onIssueClick: (issue: ExtendedJiraIssue) => void;
   onToggleBulkKey: (issueKey: string) => void;
@@ -92,6 +96,7 @@ interface IssueCardProps {
 function IssueCard({
   issue,
   isBulkModeActive,
+  isExpanded,
   isSelected,
   onIssueClick,
   onToggleBulkKey,
@@ -159,6 +164,7 @@ function IssueCard({
         {agingDays > 0 && !agingClassName && (
           <span className={styles.agingLabel}>{agingDays}d ago</span>
         )}
+        <span className={styles.expandHint}>{isExpanded ? '▲ Less' : '▼ Details'}</span>
       </div>
     </div>
   );
@@ -169,10 +175,12 @@ interface SwimlaneProps {
   emoji: string;
   label: string;
   issues: ExtendedJiraIssue[];
+  expandedIssueKey: string | null;
   isCollapsed: boolean;
   isBulkModeActive: boolean;
   bulkSelectedKeys: Record<string, boolean>;
   onIssueClick: (issue: ExtendedJiraIssue) => void;
+  onIssueUpdated: () => void;
   onToggleBulkKey: (issueKey: string) => void;
   onToggle: (laneKey: string) => void;
 }
@@ -183,10 +191,12 @@ function Swimlane({
   emoji,
   label,
   issues,
+  expandedIssueKey,
   isCollapsed,
   isBulkModeActive,
   bulkSelectedKeys,
   onIssueClick,
+  onIssueUpdated,
   onToggleBulkKey,
   onToggle,
 }: SwimlaneProps) {
@@ -210,16 +220,27 @@ function Swimlane({
 
       {!isCollapsed && (
         <div className={styles.swimlaneBody}>
-          {issues.map((issue) => (
-            <IssueCard
-              isBulkModeActive={isBulkModeActive}
-              isSelected={!!bulkSelectedKeys[issue.key]}
-              issue={issue}
-              key={issue.key}
-              onIssueClick={onIssueClick}
-              onToggleBulkKey={onToggleBulkKey}
-            />
-          ))}
+          {issues.map((issue) => {
+            const isExpanded = expandedIssueKey === issue.key;
+
+            return (
+              <div className={styles.issueCardWrapper} key={issue.key}>
+                <IssueCard
+                  isBulkModeActive={isBulkModeActive}
+                  isExpanded={isExpanded}
+                  isSelected={!!bulkSelectedKeys[issue.key]}
+                  issue={issue}
+                  onIssueClick={onIssueClick}
+                  onToggleBulkKey={onToggleBulkKey}
+                />
+                {isExpanded && (
+                  <div className={styles.issueDetailCell}>
+                    <IssueDetailPanel isEmbedded issue={issue} onIssueUpdated={onIssueUpdated} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -235,10 +256,12 @@ function Swimlane({
  */
 export default function SwimlaneCardView({
   issues,
+  expandedIssueKey,
   isBulkModeActive,
   bulkSelectedKeys,
   collapsedSwimlanes,
   onIssueClick,
+  onIssueUpdated,
   onToggleBulkKey,
   onToggleSwimlane,
 }: SwimlaneCardViewProps) {
@@ -274,6 +297,7 @@ export default function SwimlaneCardView({
           <Swimlane
             bulkSelectedKeys={bulkSelectedKeys}
             emoji={lane.emoji}
+            expandedIssueKey={expandedIssueKey}
             isBulkModeActive={isBulkModeActive}
             isCollapsed={!!collapsedSwimlanes[lane.key]}
             issues={laneIssues}
@@ -281,6 +305,7 @@ export default function SwimlaneCardView({
             label={lane.label}
             laneKey={lane.key}
             onIssueClick={onIssueClick}
+            onIssueUpdated={onIssueUpdated}
             onToggle={onToggleSwimlane}
             onToggleBulkKey={onToggleBulkKey}
           />

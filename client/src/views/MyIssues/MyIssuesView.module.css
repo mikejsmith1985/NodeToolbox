@@ -289,6 +289,23 @@
   flex-direction: column;
 }
 
+.issueCardWrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.issueKeyCell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.expandHint {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
 .compactRow {
   display: grid;
   grid-template-columns: 100px 1fr 120px 120px 100px;
@@ -328,6 +345,11 @@
 
 .issueTable tr:hover td {
   background: var(--color-surface-2);
+}
+
+.issueDetailCell {
+  padding: 0;
+  background: var(--color-surface-1);
 }
 
 /* ── Settings tab ── */

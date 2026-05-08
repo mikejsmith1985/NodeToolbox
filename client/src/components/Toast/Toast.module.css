@@ -1,0 +1,55 @@
+/* Toast.module.css — Styles for in-app toast notification banners. */
+
+.toastContainer {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #fff;
+  max-width: 360px;
+  animation: slideIn 0.2s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.success {
+  background: var(--color-success, #22c55e);
+  color: #fff;
+}
+
+.error {
+  background: var(--color-error, #f85149);
+  color: #fff;
+}
+
+.warning {
+  background: var(--color-warning, #f0883e);
+  color: #fff;
+}
+
+.info {
+  background: var(--color-accent, #238636);
+  color: #fff;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

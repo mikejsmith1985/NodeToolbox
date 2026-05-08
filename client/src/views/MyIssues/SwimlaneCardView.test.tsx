@@ -7,6 +7,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ExtendedJiraIssue } from './myIssuesExtendedTypes.ts';
 import SwimlaneCardView from './SwimlaneCardView.tsx';
 
+vi.mock('../../components/IssueDetailPanel/index.tsx', () => ({
+  default: ({ issue }: { issue: ExtendedJiraIssue }) => <div>Detail panel for {issue.key}</div>,
+}));
+
 function createIssue(
   key: string,
   statusName: string,
@@ -45,9 +49,11 @@ describe('SwimlaneCardView', () => {
         activeQuickFilterIds={{}}
         bulkSelectedKeys={{}}
         collapsedSwimlanes={{}}
+        expandedIssueKey={null}
         isBulkModeActive={false}
         issues={MOCK_ISSUES}
         onIssueClick={vi.fn()}
+        onIssueUpdated={vi.fn()}
         onToggleBulkKey={vi.fn()}
         onToggleSwimlane={vi.fn()}
       />,
@@ -66,9 +72,11 @@ describe('SwimlaneCardView', () => {
         activeQuickFilterIds={{}}
         bulkSelectedKeys={{}}
         collapsedSwimlanes={{}}
+        expandedIssueKey={null}
         isBulkModeActive={false}
         issues={MOCK_ISSUES}
         onIssueClick={vi.fn()}
+        onIssueUpdated={vi.fn()}
         onToggleBulkKey={vi.fn()}
         onToggleSwimlane={vi.fn()}
       />,
@@ -84,9 +92,11 @@ describe('SwimlaneCardView', () => {
         activeQuickFilterIds={{}}
         bulkSelectedKeys={{}}
         collapsedSwimlanes={{}}
+        expandedIssueKey={null}
         isBulkModeActive={false}
         issues={[createIssue('TBX-1', 'Blocked', 'indeterminate')]}
         onIssueClick={vi.fn()}
+        onIssueUpdated={vi.fn()}
         onToggleBulkKey={vi.fn()}
         onToggleSwimlane={vi.fn()}
       />,
@@ -104,9 +114,11 @@ describe('SwimlaneCardView', () => {
         activeQuickFilterIds={{}}
         bulkSelectedKeys={{}}
         collapsedSwimlanes={{}}
+        expandedIssueKey={null}
         isBulkModeActive={false}
         issues={[createIssue('TBX-2', 'In Progress', 'indeterminate')]}
         onIssueClick={handleIssueClick}
+        onIssueUpdated={vi.fn()}
         onToggleBulkKey={vi.fn()}
         onToggleSwimlane={vi.fn()}
       />,
@@ -128,9 +140,11 @@ describe('SwimlaneCardView', () => {
         activeQuickFilterIds={{}}
         bulkSelectedKeys={{}}
         collapsedSwimlanes={{}}
+        expandedIssueKey={null}
         isBulkModeActive={false}
         issues={MOCK_ISSUES}
         onIssueClick={vi.fn()}
+        onIssueUpdated={vi.fn()}
         onToggleBulkKey={vi.fn()}
         onToggleSwimlane={handleToggle}
       />,
@@ -147,9 +161,11 @@ describe('SwimlaneCardView', () => {
         activeQuickFilterIds={{}}
         bulkSelectedKeys={{}}
         collapsedSwimlanes={{ attn: true }}
+        expandedIssueKey={null}
         isBulkModeActive={false}
         issues={[createIssue('TBX-1', 'Blocked', 'indeterminate')]}
         onIssueClick={vi.fn()}
+        onIssueUpdated={vi.fn()}
         onToggleBulkKey={vi.fn()}
         onToggleSwimlane={vi.fn()}
       />,
@@ -165,9 +181,11 @@ describe('SwimlaneCardView', () => {
         activeQuickFilterIds={{}}
         bulkSelectedKeys={{}}
         collapsedSwimlanes={{}}
+        expandedIssueKey={null}
         isBulkModeActive={true}
         issues={[createIssue('TBX-2', 'In Progress', 'indeterminate')]}
         onIssueClick={vi.fn()}
+        onIssueUpdated={vi.fn()}
         onToggleBulkKey={vi.fn()}
         onToggleSwimlane={vi.fn()}
       />,
@@ -185,9 +203,11 @@ describe('SwimlaneCardView', () => {
         activeQuickFilterIds={{}}
         bulkSelectedKeys={{}}
         collapsedSwimlanes={{}}
+        expandedIssueKey={null}
         isBulkModeActive={true}
         issues={[createIssue('TBX-2', 'In Progress', 'indeterminate')]}
         onIssueClick={vi.fn()}
+        onIssueUpdated={vi.fn()}
         onToggleBulkKey={handleToggleBulk}
         onToggleSwimlane={vi.fn()}
       />,
@@ -208,9 +228,11 @@ describe('SwimlaneCardView', () => {
         activeQuickFilterIds={{}}
         bulkSelectedKeys={{}}
         collapsedSwimlanes={{}}
+        expandedIssueKey={null}
         isBulkModeActive={false}
         issues={[staleIssue]}
         onIssueClick={vi.fn()}
+        onIssueUpdated={vi.fn()}
         onToggleBulkKey={vi.fn()}
         onToggleSwimlane={vi.fn()}
       />,
@@ -225,14 +247,35 @@ describe('SwimlaneCardView', () => {
         activeQuickFilterIds={{}}
         bulkSelectedKeys={{}}
         collapsedSwimlanes={{}}
+        expandedIssueKey={null}
         isBulkModeActive={false}
         issues={[]}
         onIssueClick={vi.fn()}
+        onIssueUpdated={vi.fn()}
         onToggleBulkKey={vi.fn()}
         onToggleSwimlane={vi.fn()}
       />,
     );
 
     expect(screen.getByText(/no issues/i)).toBeInTheDocument();
+  });
+
+  it('renders inline detail content for the expanded card', () => {
+    render(
+      <SwimlaneCardView
+        activeQuickFilterIds={{}}
+        bulkSelectedKeys={{}}
+        collapsedSwimlanes={{}}
+        expandedIssueKey="TBX-2"
+        isBulkModeActive={false}
+        issues={[createIssue('TBX-2', 'In Progress', 'indeterminate')]}
+        onIssueClick={vi.fn()}
+        onIssueUpdated={vi.fn()}
+        onToggleBulkKey={vi.fn()}
+        onToggleSwimlane={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Detail panel for TBX-2')).toBeInTheDocument();
   });
 });

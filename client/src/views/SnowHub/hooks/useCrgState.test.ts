@@ -38,6 +38,10 @@ describe('useCrgState', () => {
     vi.clearAllMocks();
   });
 
+  function mockVersionFetch() {
+    vi.mocked(jiraGet).mockResolvedValue([] as never);
+  }
+
   it('starts on step 1 with an empty project key', () => {
     const { result } = renderHook(() => useCrgState());
 
@@ -46,6 +50,7 @@ describe('useCrgState', () => {
   });
 
   it('uppercases the project key when it is updated', () => {
+    mockVersionFetch();
     const { result } = renderHook(() => useCrgState());
 
     act(() => {
@@ -53,6 +58,24 @@ describe('useCrgState', () => {
     });
 
     expect(result.current.state.projectKey).toBe('TOOL');
+  });
+
+  it('fetches unreleased fix versions when the project key changes', async () => {
+    vi.mocked(jiraGet)
+      .mockResolvedValueOnce([
+        { id: '1', name: '1.2.3', released: false },
+        { id: '2', name: '1.2.2', released: true },
+      ] as never);
+
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setProjectKey('abc');
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.availableFixVersions).toEqual(['1.2.3']);
+    });
   });
 
   it('adds and removes an issue key when selection is toggled', () => {
@@ -72,7 +95,9 @@ describe('useCrgState', () => {
   });
 
   it('selects every fetched issue when selectAllIssues(true) is used', async () => {
-    vi.mocked(jiraGet).mockResolvedValue({ issues: MOCK_JIRA_ISSUES });
+    vi.mocked(jiraGet)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce({ issues: MOCK_JIRA_ISSUES } as never);
     const { result } = renderHook(() => useCrgState());
 
     act(() => {
@@ -95,7 +120,9 @@ describe('useCrgState', () => {
   });
 
   it('clears every selected issue when selectAllIssues(false) is used', async () => {
-    vi.mocked(jiraGet).mockResolvedValue({ issues: MOCK_JIRA_ISSUES });
+    vi.mocked(jiraGet)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce({ issues: MOCK_JIRA_ISSUES } as never);
     const { result } = renderHook(() => useCrgState());
 
     act(() => {
@@ -115,7 +142,9 @@ describe('useCrgState', () => {
   });
 
   it('generates release documentation that includes issue keys and advances to step 3', async () => {
-    vi.mocked(jiraGet).mockResolvedValue({ issues: MOCK_JIRA_ISSUES });
+    vi.mocked(jiraGet)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce({ issues: MOCK_JIRA_ISSUES } as never);
     const { result } = renderHook(() => useCrgState());
 
     act(() => {
@@ -161,7 +190,9 @@ describe('useCrgState', () => {
   });
 
   it('resets the workflow back to the initial state', async () => {
-    vi.mocked(jiraGet).mockResolvedValue({ issues: MOCK_JIRA_ISSUES });
+    vi.mocked(jiraGet)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce({ issues: MOCK_JIRA_ISSUES } as never);
     const { result } = renderHook(() => useCrgState());
 
     act(() => {

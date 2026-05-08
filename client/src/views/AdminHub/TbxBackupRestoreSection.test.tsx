@@ -3,12 +3,20 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ToastProvider } from '../../components/Toast/ToastProvider.tsx';
 import TbxBackupRestoreSection from './TbxBackupRestoreSection';
+
+function renderTbxBackupRestoreSection() {
+  return render(
+    <ToastProvider>
+      <TbxBackupRestoreSection />
+    </ToastProvider>,
+  );
+}
 
 describe('TbxBackupRestoreSection', () => {
   beforeEach(() => {
     localStorage.clear();
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
     // Suppress URL.createObjectURL not available in jsdom.
     vi.stubGlobal('URL', {
       createObjectURL: vi.fn().mockReturnValue('blob:mock'),
@@ -22,39 +30,40 @@ describe('TbxBackupRestoreSection', () => {
   });
 
   it('renders the Backup / Restore Settings heading', () => {
-    render(<TbxBackupRestoreSection />);
+    renderTbxBackupRestoreSection();
     expect(
       screen.getByRole('heading', { name: /backup.*restore settings/i }),
     ).toBeInTheDocument();
   });
 
   it('renders the Export Settings button', () => {
-    render(<TbxBackupRestoreSection />);
+    renderTbxBackupRestoreSection();
     expect(screen.getByRole('button', { name: /export settings/i })).toBeInTheDocument();
   });
 
   it('renders the Import Settings button', () => {
-    render(<TbxBackupRestoreSection />);
+    renderTbxBackupRestoreSection();
     expect(screen.getByRole('button', { name: /import settings/i })).toBeInTheDocument();
   });
 
   it('renders the Reset All Data button', () => {
-    render(<TbxBackupRestoreSection />);
+    renderTbxBackupRestoreSection();
     expect(screen.getByRole('button', { name: /reset all data/i })).toBeInTheDocument();
   });
 
   it('does not clear localStorage if the user cancels the Reset All Data confirmation', () => {
     localStorage.setItem('tbxSomeSetting', 'value');
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
-    render(<TbxBackupRestoreSection />);
+    renderTbxBackupRestoreSection();
+
     fireEvent.click(screen.getByRole('button', { name: /reset all data/i }));
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+
     expect(localStorage.getItem('tbxSomeSetting')).toBe('value');
   });
 
   it('clears tbx* localStorage keys when Reset All Data is confirmed', () => {
     localStorage.setItem('tbxSomeSetting', 'value');
     localStorage.setItem('otherKey', 'other');
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     // Use Object.defineProperty to stub location.reload in jsdom.
     const reloadMock = vi.fn();
     Object.defineProperty(window, 'location', {
@@ -62,8 +71,9 @@ describe('TbxBackupRestoreSection', () => {
       writable: true,
       configurable: true,
     });
-    render(<TbxBackupRestoreSection />);
+    renderTbxBackupRestoreSection();
     fireEvent.click(screen.getByRole('button', { name: /reset all data/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^reset all data$/i }));
     expect(localStorage.getItem('tbxSomeSetting')).toBeNull();
     // Non-tbx keys must not be removed.
     expect(localStorage.getItem('otherKey')).toBe('other');
@@ -79,8 +89,9 @@ describe('TbxBackupRestoreSection', () => {
       }
       return element;
     });
-    render(<TbxBackupRestoreSection />);
+    renderTbxBackupRestoreSection();
     fireEvent.click(screen.getByRole('button', { name: /export settings/i }));
     expect(clickSpy).toHaveBeenCalled();
   });
 });
+

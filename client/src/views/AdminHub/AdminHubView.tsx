@@ -3,8 +3,11 @@
 // The Config tab keeps the existing proxy, ART, access-control, hygiene, update, and backup sections.
 // The Dev Panel tab embeds the live API diagnostics view so leadership and support workflows stay in one hub.
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
+import ConfirmDialog from '../../components/ConfirmDialog/index.tsx'
+import PromptDialog from '../../components/PromptDialog/index.tsx'
+import { useToast } from '../../components/Toast/ToastProvider.tsx'
 import { useConnectionStore } from '../../store/connectionStore'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
@@ -543,7 +546,7 @@ interface BackupSectionProps {
   isBackupSectionCollapsed: boolean
   onDownloadBackup(): void
   onTriggerRestoreBackup(file: File): void
-  onResetAllSettings(): void
+  onOpenResetAllSettingsDialog(): void
   onSetCollapsed(isCollapsed: boolean): void
 }
 
@@ -557,7 +560,7 @@ function BackupSection({
   isBackupSectionCollapsed,
   onDownloadBackup,
   onTriggerRestoreBackup,
-  onResetAllSettings,
+  onOpenResetAllSettingsDialog,
   onSetCollapsed,
 }: BackupSectionProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -612,7 +615,7 @@ function BackupSection({
             >
               ⬆ Restore Backup
             </button>
-            <button className={styles.actionButton} onClick={onResetAllSettings}>
+            <button className={styles.actionButton} onClick={onOpenResetAllSettingsDialog}>
               🗑 Reset All Settings
             </button>
           </div>
@@ -867,7 +870,7 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
         isBackupSectionCollapsed={state.isBackupSectionCollapsed}
         onDownloadBackup={actions.downloadBackup}
         onTriggerRestoreBackup={actions.triggerRestoreBackup}
-        onResetAllSettings={actions.resetAllSettings}
+        onOpenResetAllSettingsDialog={actions.openResetAllSettingsDialog}
         onSetCollapsed={actions.setBackupSectionCollapsed}
       />
 
@@ -904,7 +907,17 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
 /** Admin Hub — configuration and developer tools for NodeToolbox administrators. */
 export default function AdminHubView() {
   const { state, actions } = useAdminHubState()
+  const { showToast } = useToast()
   const [activeAdminTab, setActiveAdminTab] = useState<AdminHubTab>('main')
+
+  useEffect(() => {
+    if (state.advancedUnlockError === null) {
+      return
+    }
+
+    showToast(state.advancedUnlockError, 'error')
+    actions.clearAdvancedUnlockError()
+  }, [actions, showToast, state.advancedUnlockError])
 
   return (
     <div className={styles.adminHubView}>
@@ -931,6 +944,28 @@ export default function AdminHubView() {
           )}
         </div>
       </header>
+
+      {state.isAdvancedUnlockDialogOpen && (
+        <PromptDialog
+          inputLabel="Admin passphrase"
+          isPassword
+          message={state.advancedUnlockPromptMessage}
+          onCancel={actions.closeAdvancedUnlockDialog}
+          onConfirm={actions.submitAdvancedUnlock}
+          placeholder="Enter passphrase"
+        />
+      )}
+
+      {state.isResetAllSettingsConfirmOpen && (
+        <ConfirmDialog
+          cancelLabel="Cancel"
+          confirmLabel="Reset Settings"
+          isDangerous
+          message="Reset all toolbox settings? This cannot be undone."
+          onCancel={actions.closeResetAllSettingsDialog}
+          onConfirm={actions.resetAllSettings}
+        />
+      )}
 
       <div aria-label="Admin Hub tabs" className={styles.tabList} role="tablist">
         {ADMIN_HUB_TAB_OPTIONS.map((tabOption) => {

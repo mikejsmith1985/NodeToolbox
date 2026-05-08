@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (v0.6.4 — Issue #45 follow-up fixes)
+- Replaced Admin Hub browser-native prompts, confirms, and alerts with shared in-app prompt, confirm, and toast components so advanced unlock, reset flows, and backup/restore errors stay inside the app UI.
+- Added a visible global Home button outside the landing page so users can return to the dashboard from any tool screen.
+- Fixed Snow Hub CRG fix-version loading so unreleased Jira versions populate a dropdown with text-input fallback when metadata is unavailable.
+- Added ART team persistence plus project-key filtering so saved teams survive reloads and overview or impediment views can be narrowed by project.
+- Reworked My Issues detail expansion to open inline within cards, compact rows, and table rows instead of relying on the old side panel interaction.
+
 ### Changed (v0.6.3 — Jira inline issue actions phase 3)
 - Added a shared inline `IssueDetailPanel` with status transitions, comment posting, and story-point editing, then wired expandable issue rows into Sprint Dashboard, ART impediments, and My Issues detail workflows for closer parity with the original HTML app.
 
