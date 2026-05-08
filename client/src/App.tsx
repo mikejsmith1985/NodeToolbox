@@ -4,9 +4,10 @@
 // routes placeholder views until later migration phases replace them.
 
 import { useEffect } from 'react';
-import { Link, Navigate, Route, Routes } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { ConnectionBar } from './components/ConnectionBar/index.ts';
+import { ToastProvider } from './components/Toast/ToastProvider.tsx';
 import { useProxyStatus } from './hooks/useProxyStatus.ts';
 import { useRelayBridge } from './hooks/useRelayBridge.ts';
 import { useSettingsStore } from './store/settingsStore.ts';
@@ -46,24 +47,32 @@ export default function App() {
   useProxyStatus();
   useRelayBridge(RELAY_SYSTEM);
 
+  const location = useLocation();
   const theme = useSettingsStore((state) => state.theme);
+  const isOnHomePage = location.pathname === HOME_ROUTE;
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
   return (
-    <div className={styles.appShell}>
-      <header className={styles.topBar}>
-        {/* Clicking the title always navigates back to the Home route */}
-        <Link className={styles.homeLink} to={HOME_ROUTE}>
-          {APP_TITLE}
-        </Link>
-        <ConnectionBar />
-      </header>
+    <ToastProvider>
+      <div className={styles.appShell}>
+        <header className={styles.topBar}>
+          {/* Clicking the title always navigates back to the Home route */}
+          <Link className={styles.homeLink} to={HOME_ROUTE}>
+            {APP_TITLE}
+          </Link>
+          {!isOnHomePage && (
+            <Link className={styles.homeButton} to={HOME_ROUTE}>
+              ⌂ Home
+            </Link>
+          )}
+          <ConnectionBar />
+        </header>
 
-      <main className={styles.mainContent}>
-        <Routes>
+        <main className={styles.mainContent}>
+          <Routes>
           <Route path={HOME_ROUTE} element={<HomeView />} />
           <Route path={SETTINGS_ROUTE} element={<SettingsView />} />
           <Route path={SNOW_HUB_ROUTE} element={<SnowHubView />} />
@@ -90,9 +99,10 @@ export default function App() {
           <Route path="/hygiene" element={<Navigate to={MY_ISSUES_ROUTE} replace />} />
           <Route path="/impact-analysis" element={<Navigate to={REPORTS_HUB_ROUTE} replace />} />
           <Route path="/dev-panel" element={<Navigate to={ADMIN_HUB_ROUTE} replace />} />
-          <Route path="*" element={<Navigate to={DEFAULT_ROUTE} replace />} />
-        </Routes>
-      </main>
-    </div>
+            <Route path="*" element={<Navigate to={DEFAULT_ROUTE} replace />} />
+          </Routes>
+        </main>
+      </div>
+    </ToastProvider>
   );
 }

@@ -4,8 +4,9 @@
 // and Settings (defaults). The Report tab lets users switch between four issue sources
 // (mine / JQL / filter / board), filter by persona, and view results in card, compact, or table layout.
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 
+import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import { jiraPost, jiraPut } from '../../services/jiraApi.ts';
 import { snowFetch } from '../../services/snowApi.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
@@ -396,6 +397,8 @@ function DetailPanel({
   );
 }
 
+void DetailPanel;
+
 // ── Helper functions ──
 
 /** Calculates the number of days since a date string from Jira. */
@@ -538,66 +541,100 @@ function renderIssueCard({ issue, onIssueClick }: IssueCardProps) {
   );
 }
 
-/** Renders a single-line compact row for an issue. */
-function renderCompactRow(issue: JiraIssue, onIssueClick: (issue: JiraIssue) => void) {
+void renderIssueCard;
+
+interface InlineIssueExpansionProps {
+  expandedIssueKey: string | null;
+  onIssueUpdated: () => void;
+  onToggleIssueExpand: (issueKey: string) => void;
+}
+
+/** Renders a single-line compact row for an issue with inline detail expansion. */
+function renderCompactRow(issue: JiraIssue, inlineIssueExpansion: InlineIssueExpansionProps) {
+  const isExpanded = inlineIssueExpansion.expandedIssueKey === issue.key;
+
   function handleKeyDown(keyEvent: React.KeyboardEvent) {
     if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
-      onIssueClick(issue);
+      inlineIssueExpansion.onToggleIssueExpand(issue.key);
     }
   }
 
   return (
-    <div
-      className={styles.compactRow}
-      key={issue.key}
-      onClick={() => onIssueClick(issue)}
-      onKeyDown={handleKeyDown}
-      role="button"
-      tabIndex={0}
-    >
-      <span className={styles.issueKeyLink}>
-        {issue.key}
-      </span>
-      <span>{issue.fields.summary}</span>
-      <span>{issue.fields.status.name}</span>
-      <span>{issue.fields.assignee?.displayName ?? '—'}</span>
-      <span>{issue.fields.updated.slice(0, 10)}</span>
+    <div className={styles.issueCardWrapper} key={issue.key}>
+      <div
+        aria-expanded={isExpanded}
+        className={styles.compactRow}
+        onClick={() => inlineIssueExpansion.onToggleIssueExpand(issue.key)}
+        onKeyDown={handleKeyDown}
+        role="button"
+        tabIndex={0}
+      >
+        <span className={styles.issueKeyCell}>
+          <span className={styles.issueKeyLink}>{issue.key}</span>
+          <span className={styles.expandHint}>{isExpanded ? '▲ Less' : '▼ Details'}</span>
+        </span>
+        <span>{issue.fields.summary}</span>
+        <span>{issue.fields.status.name}</span>
+        <span>{issue.fields.assignee?.displayName ?? '—'}</span>
+        <span>{issue.fields.updated.slice(0, 10)}</span>
+      </div>
+      {isExpanded && (
+        <div className={styles.issueDetailCell}>
+          <IssueDetailPanel isEmbedded issue={issue} onIssueUpdated={inlineIssueExpansion.onIssueUpdated} />
+        </div>
+      )}
     </div>
   );
 }
 
-/** Renders a full-width table row for an issue. */
-function renderTableRow(issue: JiraIssue, onIssueClick: (issue: JiraIssue) => void) {
+/** Renders a full-width table row for an issue with inline detail expansion. */
+function renderTableRow(issue: JiraIssue, inlineIssueExpansion: InlineIssueExpansionProps) {
+  const isExpanded = inlineIssueExpansion.expandedIssueKey === issue.key;
+
   function handleKeyDown(keyEvent: React.KeyboardEvent) {
     if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
-      onIssueClick(issue);
+      inlineIssueExpansion.onToggleIssueExpand(issue.key);
     }
   }
 
   return (
-    <tr
-      key={issue.key}
-      onClick={() => onIssueClick(issue)}
-      onKeyDown={handleKeyDown}
-      role="button"
-      tabIndex={0}
-    >
-      <td>
-        <span className={styles.issueKeyLink}>
-          {issue.key}
-        </span>
-      </td>
-      <td>{issue.fields.summary}</td>
-      <td>{issue.fields.status.name}</td>
-      <td>{issue.fields.priority?.name ?? '—'}</td>
-      <td>{issue.fields.assignee?.displayName ?? '—'}</td>
-      <td>{issue.fields.updated.slice(0, 10)}</td>
-    </tr>
+    <Fragment key={issue.key}>
+      <tr
+        aria-expanded={isExpanded}
+        onClick={() => inlineIssueExpansion.onToggleIssueExpand(issue.key)}
+        onKeyDown={handleKeyDown}
+        role="button"
+        tabIndex={0}
+      >
+        <td>
+          <div className={styles.issueKeyCell}>
+            <span className={styles.issueKeyLink}>{issue.key}</span>
+            <span className={styles.expandHint}>{isExpanded ? '▲ Less' : '▼ Details'}</span>
+          </div>
+        </td>
+        <td>{issue.fields.summary}</td>
+        <td>{issue.fields.status.name}</td>
+        <td>{issue.fields.priority?.name ?? '—'}</td>
+        <td>{issue.fields.assignee?.displayName ?? '—'}</td>
+        <td>{issue.fields.updated.slice(0, 10)}</td>
+      </tr>
+      {isExpanded && (
+        <tr>
+          <td className={styles.issueDetailCell} colSpan={6}>
+            <IssueDetailPanel isEmbedded issue={issue} onIssueUpdated={inlineIssueExpansion.onIssueUpdated} />
+          </td>
+        </tr>
+      )}
+    </Fragment>
   );
 }
 
 /** Renders the full issue list in the selected view mode. */
-function renderIssueList(issues: JiraIssue[], viewMode: ViewMode, onIssueClick: (issue: JiraIssue) => void) {
+function renderIssueList(
+  issues: JiraIssue[],
+  viewMode: ViewMode,
+  inlineIssueExpansion: InlineIssueExpansionProps,
+) {
   if (viewMode === 'compact') {
     return (
       <div className={styles.compactList}>
@@ -608,7 +645,7 @@ function renderIssueList(issues: JiraIssue[], viewMode: ViewMode, onIssueClick: 
           <strong>Assignee</strong>
           <strong>Updated</strong>
         </div>
-        {issues.map((issue) => renderCompactRow(issue, onIssueClick))}
+        {issues.map((issue) => renderCompactRow(issue, inlineIssueExpansion))}
       </div>
     );
   }
@@ -626,17 +663,12 @@ function renderIssueList(issues: JiraIssue[], viewMode: ViewMode, onIssueClick: 
             <th>Updated</th>
           </tr>
         </thead>
-        <tbody>{issues.map((issue) => renderTableRow(issue, onIssueClick))}</tbody>
+        <tbody>{issues.map((issue) => renderTableRow(issue, inlineIssueExpansion))}</tbody>
       </table>
     );
   }
 
-  // Default: card view
-  return (
-    <div className={styles.issueList}>
-      {issues.map((issue) => renderIssueCard({ issue, onIssueClick }))}
-    </div>
-  );
+  return null;
 }
 
 /** Renders the source-specific configuration pane (JQL, filter, or board). */
@@ -806,7 +838,9 @@ function SourcePane({
 export default function MyIssuesView() {
   const { state, actions } = useMyIssuesState();
   const { isSnowReady } = useConnectionStore();
+  void isSnowReady;
   const [activeTab, setActiveTab] = useState<MyIssuesTab>('report');
+  const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
 
   const zoneCounts = calculateStatusZoneCounts(state.issues);
   const filteredIssues = filterIssuesByStatusZone(state.issues, state.activeStatusZone);
@@ -819,6 +853,37 @@ export default function MyIssuesView() {
 
   // Collect bulk-selected issue keys for display in the panel
   const bulkSelectedKeysList = Object.keys(state.bulkSelectedKeys);
+
+  useEffect(() => {
+    if (!state.issues.some((issue) => issue.key === expandedIssueKey)) {
+      setExpandedIssueKey(null);
+    }
+  }, [expandedIssueKey, state.issues]);
+
+  function handleToggleIssueExpand(issueKey: string) {
+    setExpandedIssueKey((previousIssueKey) =>
+      previousIssueKey === issueKey ? null : issueKey,
+    );
+  }
+
+  function handleIssueUpdated() {
+    if (state.source === 'mine') {
+      void actions.fetchMyIssues();
+      return;
+    }
+
+    if (state.source === 'jql') {
+      void actions.runJqlQuery();
+      return;
+    }
+
+    if (state.source === 'filter') {
+      void actions.runSavedFilter();
+      return;
+    }
+
+    void actions.runBoardIssues();
+  }
 
   const STATUS_ZONE_CHIPS = [
     { key: 'attention', label: 'Attention', count: zoneCounts.attentionCount },
@@ -1070,14 +1135,20 @@ export default function MyIssuesView() {
                 activeQuickFilterIds={state.activeQuickFilterIds}
                 bulkSelectedKeys={state.bulkSelectedKeys}
                 collapsedSwimlanes={state.collapsedSwimlanes}
+                expandedIssueKey={expandedIssueKey}
                 isBulkModeActive={state.isBulkModeActive}
                 issues={extendedFilteredIssues}
-                onIssueClick={actions.openDetailPanel}
+                onIssueClick={(issue) => handleToggleIssueExpand(issue.key)}
+                onIssueUpdated={handleIssueUpdated}
                 onToggleBulkKey={actions.toggleBulkKey}
                 onToggleSwimlane={actions.toggleSwimlaneCollapsed}
               />
             ) : (
-              renderIssueList(filteredIssues, state.viewMode, actions.openDetailPanel)
+              renderIssueList(filteredIssues, state.viewMode, {
+                expandedIssueKey,
+                onIssueUpdated: handleIssueUpdated,
+                onToggleIssueExpand: handleToggleIssueExpand,
+              })
             )}
           </div>
 
@@ -1093,20 +1164,7 @@ export default function MyIssuesView() {
             />
           )}
 
-          {/* Detail panel — shown when an issue is selected */}
-          {state.isDetailPanelOpen && state.selectedIssue && (
-            <DetailPanel
-              availableTransitions={state.availableTransitions}
-              isLoadingTransitions={state.isLoadingTransitions}
-              isSnowReady={isSnowReady}
-              isTransitioning={state.isTransitioning}
-              issue={state.selectedIssue}
-              onClose={actions.closeDetailPanel}
-              onLoadTransitions={actions.loadTransitions}
-              onTransition={actions.transitionIssue}
-              transitionError={state.transitionError}
-            />
-          )}
+          {/* Inline expansion has replaced the slide-in sidebar for default issue review. */}
         </section>
       )}
 

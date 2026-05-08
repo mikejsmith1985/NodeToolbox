@@ -6,6 +6,7 @@
 
 import { useState } from 'react';
 
+import ConfirmDialog from '../../components/ConfirmDialog/index.tsx';
 import styles from './AdminHubView.module.css';
 
 // ── Types ──
@@ -202,6 +203,7 @@ function AddRuleForm({ formValues, onChangeField, onSubmit, onCancel }: AddRuleF
 export default function EnterpriseStandardsPanel() {
   const [rules, setRules] = useState<EnterpriseRule[]>(loadRulesFromStorage);
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [addFormValues, setAddFormValues] = useState<AddRuleFormValues>(EMPTY_ADD_FORM);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
@@ -263,11 +265,8 @@ export default function EnterpriseStandardsPanel() {
     setAddFormValues(EMPTY_ADD_FORM);
   }
 
-  function handleResetToDefaults() {
-    const isConfirmed = window.confirm(
-      'Reset all enterprise standards rules to factory defaults? Custom rules will be removed.',
-    );
-    if (!isConfirmed) return;
+  function handleConfirmResetToDefaults() {
+    setIsResetDialogOpen(false);
     setRules(DEFAULT_ENTERPRISE_RULES);
     saveRulesToStorage(DEFAULT_ENTERPRISE_RULES);
     showSaveStatus(SAVE_STATUS_RESET);
@@ -323,12 +322,22 @@ export default function EnterpriseStandardsPanel() {
         </button>
         <button
           className={`${styles.actionButton} ${styles.dangerButton}`}
-          onClick={handleResetToDefaults}
+          onClick={() => setIsResetDialogOpen(true)}
         >
           ↺ Reset to Defaults
         </button>
         {saveStatus !== null && <span className={styles.saveStatus}>{saveStatus}</span>}
       </div>
+
+      {isResetDialogOpen && (
+        <ConfirmDialog
+          confirmLabel="Reset to Defaults"
+          isDangerous
+          message="Reset all enterprise standards rules to factory defaults? Custom rules will be removed."
+          onCancel={() => setIsResetDialogOpen(false)}
+          onConfirm={handleConfirmResetToDefaults}
+        />
+      )}
     </section>
   );
 }

@@ -85,7 +85,7 @@ function FetchIssuesStep({ state, actions }: CrgStepProps) {
     actions.setProjectKey(event.target.value);
   }
 
-  function handleFixVersionChange(event: ChangeEvent<HTMLInputElement>): void {
+  function handleFixVersionChange(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>): void {
     actions.setFixVersion(event.target.value);
   }
 
@@ -99,7 +99,23 @@ function FetchIssuesStep({ state, actions }: CrgStepProps) {
         </label>
         <label className={styles.fieldGroup}>
           <span className={styles.fieldLabel}>Fix Version</span>
-          <input className={styles.input} onChange={handleFixVersionChange} value={state.fixVersion} />
+          {state.availableFixVersions.length > 0 ? (
+            <select className={styles.input} onChange={handleFixVersionChange} value={state.fixVersion}>
+              <option value="">Select fix version…</option>
+              {state.availableFixVersions.map((version) => (
+                <option key={version} value={version}>
+                  {version}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className={styles.input}
+              onChange={handleFixVersionChange}
+              placeholder="e.g. 1.2.3"
+              value={state.fixVersion}
+            />
+          )}
         </label>
       </div>
       <div className={styles.buttonRow}>

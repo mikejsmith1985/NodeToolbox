@@ -73,6 +73,16 @@
   padding-top: var(--spacing-sm);
 }
 
+.issueCardWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.issueDetailCell {
+  padding: 0;
+}
+
 /* ── Issue card ── */
 
 .issueCard {
@@ -162,6 +172,12 @@
   align-items: center;
   flex-wrap: wrap;
   gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.expandHint {
+  margin-left: auto;
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
 }

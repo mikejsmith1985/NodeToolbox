@@ -1,6 +1,6 @@
 // MyIssuesView.test.tsx — Unit tests for the My Issues tabbed view component.
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -22,6 +22,7 @@ vi.mock('../../store/connectionStore.ts', () => ({
 }));
 
 vi.mock('../../services/jiraApi.ts', () => ({
+  jiraGet: vi.fn().mockResolvedValue({ transitions: [] }),
   jiraPost: mockJiraPost,
   jiraPut: mockJiraPut,
 }));
@@ -131,6 +132,17 @@ vi.mock('./hooks/useMyIssuesState.ts', () => ({
 
 vi.mock('../Hygiene/HygieneView.tsx', () => ({
   default: () => <div>Mock Hygiene View</div>,
+}));
+
+vi.mock('../../components/IssueDetailPanel/index.tsx', () => ({
+  default: ({ issue, onIssueUpdated }: { issue: JiraIssue; onIssueUpdated?: () => void }) => (
+    <div>
+      <div>Detail panel for {issue.key}</div>
+      <button onClick={() => onIssueUpdated?.()} type="button">
+        Refresh {issue.key}
+      </button>
+    </div>
+  ),
 }));
 
 import MyIssuesView from './MyIssuesView.tsx';
@@ -247,150 +259,73 @@ describe('MyIssuesView', () => {
   });
 });
 
-// ── Phase 4: Detail Panel tests ──
+// ── Phase 4: Inline detail expansion tests ──
 
-describe('MyIssuesView — detail panel', () => {
+describe('MyIssuesView — inline detail expansion', () => {
   beforeEach(() => {
     mockState.viewMode = 'cards';
+    mockState.source = 'mine';
     mockState.isDetailPanelOpen = false;
     mockState.selectedIssue = null;
-    mockUseConnectionStore.mockReturnValue({ isSnowReady: false });
-    mockSnowFetch.mockResolvedValue({ result: [] });
     vi.clearAllMocks();
-    mockUseConnectionStore.mockReturnValue({ isSnowReady: false });
-    mockSnowFetch.mockResolvedValue({ result: [] });
-    mockActions.loadTransitions.mockResolvedValue(undefined);
   });
 
-  it('clicking an issue card calls openDetailPanel with that issue', async () => {
+  it('clicking an issue card expands inline issue details', async () => {
     const user = userEvent.setup();
     mockState.issues = [createMockIssue('TBX-1', 'Build the feature')];
     render(<MyIssuesView />);
 
     await user.click(screen.getByText('Build the feature'));
 
-    expect(mockActions.openDetailPanel).toHaveBeenCalledWith(
-      expect.objectContaining({ key: 'TBX-1' }),
-    );
+    expect(screen.getByText('Detail panel for TBX-1')).toBeInTheDocument();
   });
 
-  it('renders the detail panel overlay when isDetailPanelOpen is true', () => {
-    mockState.isDetailPanelOpen = true;
-    mockState.selectedIssue = createMockIssue('TBX-1', 'Build the feature');
-    render(<MyIssuesView />);
-
-    expect(screen.getByRole('complementary')).toBeInTheDocument();
-  });
-
-  it('detail panel shows the issue key and summary', () => {
-    mockState.isDetailPanelOpen = true;
-    mockState.selectedIssue = createMockIssue('TBX-1', 'Build the feature');
-    render(<MyIssuesView />);
-
-    // Both appear in the list and in the panel; getAllByText asserts at least one
-    expect(screen.getAllByText('TBX-1').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Build the feature').length).toBeGreaterThan(0);
-  });
-
-  it('detail panel shows status, assignee, and dates', () => {
-    mockState.isDetailPanelOpen = true;
-    mockState.selectedIssue = createMockIssue('TBX-1', 'Build the feature');
-    render(<MyIssuesView />);
-
-    expect(screen.getAllByText('In Progress').length).toBeGreaterThan(0);
-    expect(screen.getByText('Alice Dev')).toBeInTheDocument();
-    expect(screen.getByText('2025-01-01')).toBeInTheDocument();
-  });
-
-  it('close button in the detail panel calls closeDetailPanel', async () => {
+  it('clicking the same issue again collapses the inline details', async () => {
     const user = userEvent.setup();
-    mockState.isDetailPanelOpen = true;
-    mockState.selectedIssue = createMockIssue('TBX-1', 'Build the feature');
+    mockState.issues = [createMockIssue('TBX-1', 'Build the feature')];
     render(<MyIssuesView />);
 
-    await user.click(screen.getByRole('button', { name: /close detail panel/i }));
+    await user.click(screen.getByText('Build the feature'));
+    expect(screen.getByText('Detail panel for TBX-1')).toBeInTheDocument();
 
-    expect(mockActions.closeDetailPanel).toHaveBeenCalled();
+    await user.click(screen.getByText('Build the feature'));
+    expect(screen.queryByText('Detail panel for TBX-1')).not.toBeInTheDocument();
   });
 
-  it('detail panel calls loadTransitions when it opens', async () => {
-    mockState.isDetailPanelOpen = true;
-    mockState.selectedIssue = createMockIssue('TBX-1', 'Build the feature');
+  it('renders inline detail expansion in compact mode', async () => {
+    const user = userEvent.setup();
+    mockState.viewMode = 'compact';
+    mockState.issues = [createMockIssue('TBX-1', 'Build the feature')];
     render(<MyIssuesView />);
 
-    await waitFor(() => {
-      expect(mockActions.loadTransitions).toHaveBeenCalledWith('TBX-1');
-    });
+    await user.click(screen.getByText('TBX-1'));
+
+    expect(screen.getByText('Detail panel for TBX-1')).toBeInTheDocument();
   });
 
-  it('detail panel shows transition dropdown when transitions are available', () => {
-    mockState.isDetailPanelOpen = true;
-    mockState.selectedIssue = createMockIssue('TBX-1', 'Build the feature');
-    mockState.availableTransitions = [
-      { id: '21', name: 'In Review', to: { name: 'In Review', statusCategory: { name: 'In Progress' } } },
-    ];
+  it('refreshes my issues after an inline detail update', async () => {
+    const user = userEvent.setup();
+    mockState.source = 'mine';
+    mockState.issues = [createMockIssue('TBX-1', 'Build the feature')];
     render(<MyIssuesView />);
 
-    expect(screen.getByRole('combobox', { name: /change status/i })).toBeInTheDocument();
+    await user.click(screen.getByText('Build the feature'));
+    await user.click(screen.getByRole('button', { name: 'Refresh TBX-1' }));
+
+    expect(mockActions.fetchMyIssues).toHaveBeenCalled();
   });
 
-  it('detail panel shows transition error when transitionError is set', () => {
-    mockState.isDetailPanelOpen = true;
-    mockState.selectedIssue = createMockIssue('TBX-1', 'Build the feature');
-    mockState.transitionError = 'Transition failed: 400';
+  it('refreshes the active board results after an inline detail update', async () => {
+    const user = userEvent.setup();
+    mockState.source = 'board';
+    mockState.selectedBoardId = 42;
+    mockState.issues = [createMockIssue('TBX-1', 'Build the feature')];
     render(<MyIssuesView />);
 
-    expect(screen.getByText('Transition failed: 400')).toBeInTheDocument();
-  });
+    await user.click(screen.getByText('Build the feature'));
+    await user.click(screen.getByRole('button', { name: 'Refresh TBX-1' }));
 
-  it('detail panel shows the single-issue comment textarea', () => {
-    mockState.isDetailPanelOpen = true;
-    mockState.selectedIssue = createMockIssue('TBX-1', 'Build the feature');
-    render(<MyIssuesView />);
-
-    expect(screen.getByLabelText(/add comment/i)).toBeInTheDocument();
-  });
-});
-
-// ── Phase 4: SNow cross-reference tests ──
-
-describe('MyIssuesView — SNow cross-reference', () => {
-  beforeEach(() => {
-    mockState.isDetailPanelOpen = true;
-    mockState.selectedIssue = createMockIssue('TBX-1', 'Build the feature');
-    mockActions.loadTransitions.mockResolvedValue(undefined);
-    vi.clearAllMocks();
-    mockActions.loadTransitions.mockResolvedValue(undefined);
-  });
-
-  it('does not show SNow section when isSnowReady is false', () => {
-    mockUseConnectionStore.mockReturnValue({ isSnowReady: false });
-    render(<MyIssuesView />);
-
-    expect(screen.queryByText(/snow tickets/i)).not.toBeInTheDocument();
-  });
-
-  it('shows "No SNow tickets found" when SNow returns empty results', async () => {
-    mockUseConnectionStore.mockReturnValue({ isSnowReady: true });
-    mockSnowFetch.mockResolvedValue({ result: [] });
-    render(<MyIssuesView />);
-
-    await waitFor(() => {
-      expect(screen.getByText(/no snow tickets found/i)).toBeInTheDocument();
-    });
-  });
-
-  it('shows SNow ticket number and description when results are found', async () => {
-    mockUseConnectionStore.mockReturnValue({ isSnowReady: true });
-    mockSnowFetch.mockResolvedValue({
-      result: [{ sys_id: 'abc1', number: 'INC0012345', short_description: 'Related to TBX-1' }],
-    });
-    render(<MyIssuesView />);
-
-    await waitFor(() => {
-      expect(screen.getByText('INC0012345')).toBeInTheDocument();
-      expect(screen.getByText(/related to tbx-1/i)).toBeInTheDocument();
-    });
+    expect(mockActions.runBoardIssues).toHaveBeenCalled();
   });
 });
 

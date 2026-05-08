@@ -1,7 +1,7 @@
 // useArtData.test.ts — Unit tests for the ART View data hook.
 
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockJiraGet } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
@@ -39,7 +39,14 @@ const MOCK_DONE_ISSUE = {
 };
 
 describe('useArtData', () => {
-  afterEach(() => { vi.clearAllMocks(); });
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
 
   it('initialises with empty teams and overview tab', () => {
     const { result } = renderHook(() => useArtData());
@@ -59,6 +66,19 @@ describe('useArtData', () => {
     expect(result.current.state.persona).toBe('po');
   });
 
+  it('loads stored teams from localStorage on initial render', () => {
+    localStorage.setItem(
+      'nodetoolbox-art-teams',
+      JSON.stringify([{ id: 'team-1', name: 'Stored Team', boardId: '42', projectKey: 'ALPHA' }]),
+    );
+
+    const { result } = renderHook(() => useArtData());
+
+    expect(result.current.state.teams).toHaveLength(1);
+    expect(result.current.state.teams[0].name).toBe('Stored Team');
+    expect(result.current.state.teams[0].projectKey).toBe('ALPHA');
+  });
+
   it('adds a team when addTeam is called', () => {
     const { result } = renderHook(() => useArtData());
     act(() => { result.current.actions.addTeam('Alpha Team', '42'); });
@@ -73,6 +93,28 @@ describe('useArtData', () => {
     const teamId = result.current.state.teams[0].id;
     act(() => { result.current.actions.removeTeam(teamId); });
     expect(result.current.state.teams).toHaveLength(0);
+  });
+
+  it('persists teams to localStorage when the roster changes', () => {
+    const { result } = renderHook(() => useArtData());
+
+    act(() => {
+      result.current.actions.addTeam('Alpha Team', '42', 'ALPHA');
+    });
+
+    expect(localStorage.getItem('nodetoolbox-art-teams')).toContain('Alpha Team');
+    expect(localStorage.getItem('nodetoolbox-art-teams')).toContain('ALPHA');
+  });
+
+  it('saveTeams writes the current roster to localStorage on demand', () => {
+    const { result } = renderHook(() => useArtData());
+
+    act(() => {
+      result.current.actions.addTeam('Alpha Team', '42', 'ALPHA');
+      result.current.actions.saveTeams();
+    });
+
+    expect(localStorage.getItem('nodetoolbox-art-teams')).toContain('Alpha Team');
   });
 
   it('loads sprint issues for a team when loadTeam resolves', async () => {

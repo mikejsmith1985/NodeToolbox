@@ -1,6 +1,6 @@
 // useCrgState — State management for the five-step Change Request Generator workflow.
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
@@ -131,6 +131,44 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
   const setFixVersion = useCallback((fixVersion: string) => {
     setState((previousState) => ({ ...previousState, fixVersion }));
   }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!state.projectKey) {
+      setState((previousState) => ({ ...previousState, availableFixVersions: [] }));
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    void jiraGet<{ id: string; name: string; released: boolean }[]>(
+      `/rest/api/2/project/${state.projectKey}/versions`,
+    )
+      .then((versions) => {
+        if (isCancelled) {
+          return;
+        }
+
+        setState((previousState) => ({
+          ...previousState,
+          availableFixVersions: versions
+            .filter((version) => !version.released)
+            .map((version) => version.name),
+        }));
+      })
+      .catch(() => {
+        if (isCancelled) {
+          return;
+        }
+
+        setState((previousState) => ({ ...previousState, availableFixVersions: [] }));
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [state.projectKey]);
 
   const fetchIssues = useCallback(async () => {
     if (!state.projectKey || !state.fixVersion) {

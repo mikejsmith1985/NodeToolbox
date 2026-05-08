@@ -1,6 +1,6 @@
 // useArtData.ts — State management hook for the ART (Agile Release Train) View.
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 
@@ -11,6 +11,7 @@ const BOARD_PREP_FIELDS = 'summary,status,priority,customfield_10016';
 const BOARD_PREP_MAX_RESULTS = 100;
 const STATUS_CATEGORY_DONE = 'done';
 const STATUS_CATEGORY_IN_PROGRESS = 'indeterminate';
+const ART_TEAMS_STORAGE_KEY = 'nodetoolbox-art-teams';
 
 export type ArtPersona = 'sm' | 'po' | 'dev' | 'qa';
 export type ArtTab =
@@ -80,6 +81,7 @@ export interface ArtDataActions {
   setSelectedPiName: (name: string) => void;
   addTeam: (name: string, boardId: string, projectKey?: string) => void;
   removeTeam: (teamId: string) => void;
+  saveTeams: () => void;
   loadTeam: (teamId: string) => Promise<void>;
   loadAllTeams: () => Promise<void>;
   /** Expand or collapse a team's SoS accordion section. */
@@ -87,6 +89,63 @@ export interface ArtDataActions {
   /** Fetch backlog-ready issues for all teams' boards (issues not yet in a sprint). */
   loadBoardPrep: () => Promise<void>;
   setBoardPrepTeamFilter: (teamName: string) => void;
+}
+
+/** Returns a team record safe to persist without volatile loading or issue data. */
+function buildStoredTeamRecord(team: ArtTeam): ArtTeam {
+  return {
+    id: team.id,
+    name: team.name,
+    boardId: team.boardId,
+    projectKey: team.projectKey,
+    sprintIssues: [],
+    isLoading: false,
+    loadError: null,
+  };
+}
+
+/** Loads stored team configuration from localStorage, ignoring malformed payloads. */
+function loadStoredTeams(): ArtTeam[] {
+  try {
+    const storedTeams = localStorage.getItem(ART_TEAMS_STORAGE_KEY);
+    if (!storedTeams) {
+      return [];
+    }
+
+    const parsedTeams = JSON.parse(storedTeams) as unknown;
+    if (!Array.isArray(parsedTeams)) {
+      return [];
+    }
+
+    return parsedTeams
+      .filter((team): team is Partial<ArtTeam> => typeof team === 'object' && team !== null)
+      .map((team) => ({
+        id: String(team.id ?? ''),
+        name: String(team.name ?? ''),
+        boardId: String(team.boardId ?? ''),
+        projectKey: typeof team.projectKey === 'string' && team.projectKey.trim() !== ''
+          ? team.projectKey
+          : undefined,
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      }))
+      .filter((team) => team.id !== '' && team.name !== '' && team.boardId !== '');
+  } catch {
+    return [];
+  }
+}
+
+/** Persists only the stable team roster fields needed to rebuild the ART settings screen. */
+function persistTeams(teams: ArtTeam[]): void {
+  try {
+    localStorage.setItem(
+      ART_TEAMS_STORAGE_KEY,
+      JSON.stringify(teams.map((team) => buildStoredTeamRecord(team))),
+    );
+  } catch {
+    // Storage failures are non-fatal because the current in-memory roster remains usable.
+  }
 }
 
 /** Determines whether a Jira issue counts as done based on status category or name. */
@@ -122,7 +181,7 @@ function computePiProgressStats(teams: ArtTeam[]): PiProgressStats {
 export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
   const [activeTab, setActiveTabState] = useState<ArtTab>('overview');
   const [persona, setPersonaState] = useState<ArtPersona>('sm');
-  const [teams, setTeams] = useState<ArtTeam[]>([]);
+  const [teams, setTeams] = useState<ArtTeam[]>(loadStoredTeams);
   // teamsRef keeps an always-current reference so loadTeam can read boardId without stale closures
   const teamsRef = useRef<ArtTeam[]>([]);
   teamsRef.current = teams;
@@ -133,6 +192,10 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
   const [isLoadingBoardPrep, setIsLoadingBoardPrep] = useState(false);
   const [boardPrepError, setBoardPrepError] = useState<string | null>(null);
   const [boardPrepTeamFilter, setBoardPrepTeamFilterState] = useState('all');
+
+  useEffect(() => {
+    persistTeams(teams);
+  }, [teams]);
 
   // Derive PI progress stats from live team data without a separate state variable
   const piProgressStats = useMemo(() => computePiProgressStats(teams), [teams]);
@@ -166,6 +229,10 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
 
   const removeTeam = useCallback((teamId: string) => {
     setTeams((previous) => previous.filter((team) => team.id !== teamId));
+  }, []);
+
+  const saveTeams = useCallback(() => {
+    persistTeams(teamsRef.current);
   }, []);
 
   const loadTeam = useCallback(async (teamId: string) => {
@@ -289,6 +356,7 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
       setSelectedPiName,
       addTeam,
       removeTeam,
+      saveTeams,
       loadTeam,
       loadAllTeams,
       toggleSosTeam,

@@ -30,6 +30,9 @@ const ADVANCED_PASSPHRASE_STORAGE_KEY = 'tbxAdminPassphrase'
 
 const SAVE_STATUS_SUCCESS = '✓ Saved'
 const SAVE_STATUS_CLEAR_DELAY_MS = 2000
+const ADVANCED_UNLOCK_INCORRECT_PASSPHRASE_MESSAGE = 'Incorrect passphrase.'
+const ADVANCED_UNLOCK_EXISTING_PROMPT_MESSAGE = 'Enter the admin passphrase to unlock advanced settings:'
+const ADVANCED_UNLOCK_NEW_PROMPT_MESSAGE = 'Enter the admin passphrase to unlock advanced settings:'
 
 /** localStorage key prefix used by all Hygiene Rules settings. */
 const HYGIENE_STALE_DAYS_KEY = 'toolbox-hygiene-stale-days'
@@ -105,6 +108,10 @@ export interface AdminHubState {
   adminPinInput: string
   proxySaveStatus: string | null
   artSaveStatus: string | null
+  isAdvancedUnlockDialogOpen: boolean
+  advancedUnlockPromptMessage: string
+  advancedUnlockError: string | null
+  isResetAllSettingsConfirmOpen: boolean
   // ── Diagnostics ──
   isDiagnosticsRunning: boolean
   diagnosticsResult: DiagnosticsResult | null
@@ -135,6 +142,12 @@ export interface AdminHubActions {
   setAdminPinInput(value: string): void
   tryUnlock(): void
   lock(): void
+  tryAdvancedUnlock(): void
+  closeAdvancedUnlockDialog(): void
+  submitAdvancedUnlock(passphrase: string): void
+  clearAdvancedUnlockError(): void
+  openResetAllSettingsDialog(): void
+  closeResetAllSettingsDialog(): void
   // ── Diagnostics ──
   runDiagnostics(): Promise<void>
   setDiagnosticsSectionCollapsed(isCollapsed: boolean): void
@@ -150,7 +163,6 @@ export interface AdminHubActions {
   checkForUpdates(): Promise<void>
   setUpdateSectionCollapsed(isCollapsed: boolean): void
   // ── Advanced unlock ──
-  tryAdvancedUnlock(): void
   advancedLock(): void
 }
 
@@ -271,6 +283,10 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
   const [adminPinInput, setAdminPinInput] = useState('')
   const [proxySaveStatus, setProxySaveStatus] = useState<string | null>(null)
   const [artSaveStatus, setArtSaveStatus] = useState<string | null>(null)
+  const [isAdvancedUnlockDialogOpen, setIsAdvancedUnlockDialogOpen] = useState(false)
+  const [advancedUnlockPromptMessage, setAdvancedUnlockPromptMessage] = useState('')
+  const [advancedUnlockError, setAdvancedUnlockError] = useState<string | null>(null)
+  const [isResetAllSettingsConfirmOpen, setIsResetAllSettingsConfirmOpen] = useState(false)
 
   // ── Diagnostics state ──
   const [isDiagnosticsRunning, setIsDiagnosticsRunning] = useState(false)
@@ -305,6 +321,10 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     adminPinInput,
     proxySaveStatus,
     artSaveStatus,
+    isAdvancedUnlockDialogOpen,
+    advancedUnlockPromptMessage,
+    advancedUnlockError,
+    isResetAllSettingsConfirmOpen,
     isDiagnosticsRunning,
     diagnosticsResult,
     diagnosticsError,
@@ -503,11 +523,16 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
    * Prompts the user for confirmation, then removes every 'toolbox-' key from
    * localStorage and reloads the page to apply the reset.
    */
+  const openResetAllSettingsDialog = useCallback(() => {
+    setIsResetAllSettingsConfirmOpen(true)
+  }, [])
+
+  const closeResetAllSettingsDialog = useCallback(() => {
+    setIsResetAllSettingsConfirmOpen(false)
+  }, [])
+
   const resetAllSettings = useCallback(() => {
-    const isUserConfirmed = window.confirm(
-      'Reset all toolbox settings? This cannot be undone.',
-    )
-    if (!isUserConfirmed) return
+    setIsResetAllSettingsConfirmOpen(false)
     const keysToRemove: string[] = []
     for (let storageIndex = 0; storageIndex < localStorage.length; storageIndex++) {
       const storageKey = localStorage.key(storageIndex)
@@ -572,26 +597,41 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
    */
   const tryAdvancedUnlock = useCallback(() => {
     const storedPassphrase = localStorage.getItem(ADVANCED_PASSPHRASE_STORAGE_KEY)
-    const userInput = window.prompt(
-      storedPassphrase
-        ? 'Enter the admin passphrase to unlock advanced settings:'
-        : 'Set an admin passphrase (or leave blank to unlock without one):',
+    setAdvancedUnlockPromptMessage(
+      storedPassphrase ? ADVANCED_UNLOCK_EXISTING_PROMPT_MESSAGE : ADVANCED_UNLOCK_NEW_PROMPT_MESSAGE,
     )
-    // User cancelled the prompt — do not unlock.
-    if (userInput === null) return
+    setAdvancedUnlockError(null)
+    setIsAdvancedUnlockDialogOpen(true)
+  }, [])
 
-    if (storedPassphrase === null || userInput === storedPassphrase) {
+  const closeAdvancedUnlockDialog = useCallback(() => {
+    setIsAdvancedUnlockDialogOpen(false)
+  }, [])
+
+  const submitAdvancedUnlock = useCallback((passphrase: string) => {
+    const storedPassphrase = localStorage.getItem(ADVANCED_PASSPHRASE_STORAGE_KEY)
+
+    if (storedPassphrase === null || passphrase === storedPassphrase) {
       sessionStorage.setItem(ADVANCED_UNLOCK_SESSION_KEY, '1')
       setIsAdvancedUnlocked(true)
-    } else {
-      alert('Incorrect passphrase.')
+      setIsAdvancedUnlockDialogOpen(false)
+      setAdvancedUnlockError(null)
+      return
     }
+
+    setAdvancedUnlockError(ADVANCED_UNLOCK_INCORRECT_PASSPHRASE_MESSAGE)
+  }, [])
+
+  const clearAdvancedUnlockError = useCallback(() => {
+    setAdvancedUnlockError(null)
   }, [])
 
   /** Clears the advanced unlock session state. */
   const advancedLock = useCallback(() => {
     sessionStorage.removeItem(ADVANCED_UNLOCK_SESSION_KEY)
     setIsAdvancedUnlocked(false)
+    setIsAdvancedUnlockDialogOpen(false)
+    setAdvancedUnlockError(null)
   }, [])
 
   const actions: AdminHubActions = {
@@ -608,17 +648,22 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     },
     tryUnlock,
     lock,
+    tryAdvancedUnlock,
+    closeAdvancedUnlockDialog,
+    submitAdvancedUnlock,
+    clearAdvancedUnlockError,
     runDiagnostics,
     setDiagnosticsSectionCollapsed: setIsDiagnosticsSectionCollapsed,
     downloadBackup,
     triggerRestoreBackup,
+    openResetAllSettingsDialog,
+    closeResetAllSettingsDialog,
     resetAllSettings,
     setBackupSectionCollapsed: setIsBackupSectionCollapsed,
     updateHygieneRule,
     setHygieneSectionCollapsed: setIsHygieneSectionCollapsed,
     checkForUpdates,
     setUpdateSectionCollapsed: setIsUpdateSectionCollapsed,
-    tryAdvancedUnlock,
     advancedLock,
   }
 

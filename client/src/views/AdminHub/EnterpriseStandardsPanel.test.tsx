@@ -8,7 +8,6 @@ import EnterpriseStandardsPanel from './EnterpriseStandardsPanel';
 describe('EnterpriseStandardsPanel', () => {
   beforeEach(() => {
     localStorage.clear();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -98,6 +97,7 @@ describe('EnterpriseStandardsPanel', () => {
 
     // Now reset.
     fireEvent.click(screen.getByRole('button', { name: /reset to defaults/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^reset to defaults$/i }));
     expect(screen.queryByText('Custom Temp Rule')).not.toBeInTheDocument();
   });
 
