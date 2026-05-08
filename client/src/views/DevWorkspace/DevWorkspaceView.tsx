@@ -1,10 +1,12 @@
 // DevWorkspaceView.tsx — Tabbed Dev Workspace view for time tracking, Git sync, and monitoring.
 
 import { useEffect } from 'react';
+
+import JiraProjectPicker from '../../components/JiraProjectPicker/index.tsx';
+import type { DevWorkspaceTab, WorkLogTab, GitSyncSubTab } from './hooks/useDevWorkspaceState.ts';
+import { useDevWorkspaceState } from './hooks/useDevWorkspaceState.ts';
 import { useDevWorkspaceSettings } from './hooks/useDevWorkspaceSettings.ts';
 import { useGitHubPollingEngine } from './hooks/useGitHubPollingEngine.ts';
-import { useDevWorkspaceState } from './hooks/useDevWorkspaceState.ts';
-import type { DevWorkspaceTab, WorkLogTab, GitSyncSubTab } from './hooks/useDevWorkspaceState.ts';
 import styles from './DevWorkspaceView.module.css';
 
 const TICK_INTERVAL_MS = 1000;
@@ -662,13 +664,12 @@ function WorkspaceSettingsPanel() {
           placeholder="e.g. https://your-org.atlassian.net"
           onChange={(event) => updateSettings({ jiraBaseUrl: event.target.value })}
         />
-        <label className={styles.fieldLabel}>Default Project Key</label>
-        <input
-          type="text"
-          className={styles.textInput}
-          value={settings.jiraProjectKey}
-          placeholder="e.g. TBX"
-          onChange={(event) => updateSettings({ jiraProjectKey: event.target.value })}
+        <JiraProjectPicker
+          id="dw-jira-project"
+          label="Jira Project"
+          onChange={(key) => updateSettings({ jiraProjectKey: key })}
+          placeholder="Select a Jira project"
+          value={settings.jiraProjectKey ?? ''}
         />
       </div>
 

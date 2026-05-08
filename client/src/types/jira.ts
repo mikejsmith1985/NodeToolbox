@@ -53,3 +53,17 @@ export interface JiraFilter {
   jql: string;
   isFavorite: boolean;
 }
+
+/** Jira field metadata returned by /rest/api/2/field. */
+export interface JiraField {
+  id: string;
+  name: string;
+  schema?: { type: string };
+}
+
+/** Jira project metadata returned by /rest/api/2/project. */
+export interface JiraProject {
+  id: string;
+  key: string;
+  name: string;
+}

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (v0.6.3 — Jira picker parity phase 2)
+- Replaced Jira field, board, and project ID text inputs in Sprint Dashboard, ART View, and Dev Workspace settings with API-backed dropdown pickers that still fall back to manual entry when Jira metadata cannot be loaded.
+
 ### Changed (v0.6.3 — Home card consolidation phase 1)
 - Reduced the Home view from 23 cards to the original 8-card layout by keeping sprint-dashboard, art, my-issues, dev-workspace, snow-hub, text-tools, code-walkthrough, and admin-hub.
 - Folded Story Pointing into Sprint Dashboard, Mermaid into Text Tools, Hygiene into My Issues, and Dev Panel into a new Admin Hub tab while preserving the legacy standalone routes as redirects.

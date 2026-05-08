@@ -18,6 +18,7 @@ import {
   YAxis,
 } from 'recharts';
 
+import JiraFieldPicker from '../../components/JiraFieldPicker/index.tsx';
 import type { JiraIssue } from '../../types/jira.ts';
 import StoryPointingView from '../StoryPointing/StoryPointingView.tsx';
 import BoardPicker from './BoardPicker.tsx';
@@ -933,16 +934,18 @@ function AdvancedConfigFields({
         onChange={(value) => onConfigChange({ kanbanPeriodDays: value })}
         value={config.kanbanPeriodDays}
       />
-      <ConfigTextField
+      <JiraFieldPicker
         id="sd-cfg-sp-field"
-        label="Custom story-points field ID"
-        onChange={(value) => onConfigChange({ customStoryPointsFieldId: value })}
+        label="Story Points Field"
+        onChange={(fieldId) => onConfigChange({ customStoryPointsFieldId: fieldId })}
+        placeholder="Story Points field"
         value={config.customStoryPointsFieldId}
       />
-      <ConfigTextField
+      <JiraFieldPicker
         id="sd-cfg-epic-field"
-        label="Custom epic-link field ID"
-        onChange={(value) => onConfigChange({ customEpicLinkFieldId: value })}
+        label="Epic Link Field"
+        onChange={(fieldId) => onConfigChange({ customEpicLinkFieldId: fieldId })}
+        placeholder="Epic Link field"
         value={config.customEpicLinkFieldId}
       />
     </div>

@@ -1,0 +1,44 @@
+/* JiraPicker.module.css — Shared styles for all Jira API-backed picker components. */
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs, 4px);
+}
+
+.label {
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-secondary, #8b949e);
+  font-weight: 500;
+}
+
+.select {
+  width: 100%;
+  padding: var(--spacing-xs, 4px) var(--spacing-sm, 8px);
+  background: var(--color-input-bg, #161b22);
+  border: 1px solid var(--color-border, #30363d);
+  border-radius: 4px;
+  color: var(--color-text-primary, #e6edf3);
+  font-size: var(--font-size-sm, 0.875rem);
+  cursor: pointer;
+}
+
+.select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fallbackInput {
+  width: 100%;
+  padding: var(--spacing-xs, 4px) var(--spacing-sm, 8px);
+  background: var(--color-input-bg, #161b22);
+  border: 1px solid var(--color-border-warning, #f59e0b);
+  border-radius: 4px;
+  color: var(--color-text-primary, #e6edf3);
+  font-size: var(--font-size-sm, 0.875rem);
+}
+
+.errorHint {
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #656d76);
+}

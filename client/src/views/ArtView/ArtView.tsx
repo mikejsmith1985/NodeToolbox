@@ -1,10 +1,14 @@
 // ArtView.tsx — Tabbed ART (Agile Release Train) view for multi-team PI planning and health dashboards.
 
 import { useState } from 'react';
-import { useArtData } from './hooks/useArtData.ts';
-import type { ArtTab, ArtPersona, ArtTeam, ArtBoardPrepIssue, PiProgressStats } from './hooks/useArtData.ts';
+
+import JiraBoardPicker from '../../components/JiraBoardPicker/index.tsx';
+import JiraFieldPicker from '../../components/JiraFieldPicker/index.tsx';
+import JiraProjectPicker from '../../components/JiraProjectPicker/index.tsx';
 import BlueprintTab from './BlueprintTab.tsx';
 import DependenciesTab from './DependenciesTab.tsx';
+import type { ArtTab, ArtPersona, ArtTeam, ArtBoardPrepIssue, PiProgressStats } from './hooks/useArtData.ts';
+import { useArtData } from './hooks/useArtData.ts';
 import styles from './ArtView.module.css';
 
 // ── Constants ──
@@ -1006,8 +1010,6 @@ function writeArtAdvancedSettings(settings: ArtAdvancedSettings): void {
   localStorage.setItem('tbxARTSettings', JSON.stringify(settings));
 }
 
-const DEFAULT_PI_FIELD_ID = 'customfield_10301';
-const DEFAULT_FEATURE_LINK_FIELD = 'customfield_10108';
 const DEFAULT_STALE_DAYS_SETTING = 5;
 
 /** Renders the Settings tab for managing ART team roster, board IDs, and advanced field configuration. */
@@ -1072,19 +1074,20 @@ function SettingsPanel({ teams, onAddTeam, onRemoveTeam }: SettingsPanelProps) {
           value={newTeamName}
           onChange={(event) => setNewTeamName(event.target.value)}
         />
-        <input
-          type="text"
-          className={styles.textInput}
-          placeholder="Board ID"
+        <JiraBoardPicker
+          id="art-board-picker"
+          label="Board"
+          onChange={setNewBoardId}
+          placeholder="Select a board"
+          projectKey={newProjectKey || undefined}
           value={newBoardId}
-          onChange={(event) => setNewBoardId(event.target.value)}
         />
-        <input
-          type="text"
-          className={styles.textInput}
-          placeholder="Project Key (e.g. ALPHA)"
+        <JiraProjectPicker
+          id="art-project-picker"
+          label="Project"
+          onChange={setNewProjectKey}
+          placeholder="Select a project"
           value={newProjectKey}
-          onChange={(event) => setNewProjectKey(event.target.value)}
         />
         <button className={styles.primaryBtn} onClick={handleAddTeam}>
           Add Team
@@ -1118,38 +1121,32 @@ function SettingsPanel({ teams, onAddTeam, onRemoveTeam }: SettingsPanelProps) {
         </p>
 
         <div className={styles.settingsFieldRow}>
-          <label className={styles.settingsFieldLabel}>PI Field ID</label>
-          <input
-            type="text"
-            className={styles.textInput}
-            placeholder={DEFAULT_PI_FIELD_ID}
+          <JiraFieldPicker
+            id="art-pi-field"
+            label="PI Field"
+            onChange={handlePiFieldChange}
+            placeholder="PI allocation field"
             value={piFieldId}
-            onChange={(event) => handlePiFieldChange(event.target.value)}
-            aria-label="PI Field ID"
           />
         </div>
 
         <div className={styles.settingsFieldRow}>
-          <label className={styles.settingsFieldLabel}>Story Points Field ID</label>
-          <input
-            type="text"
-            className={styles.textInput}
-            placeholder="e.g. customfield_10016"
+          <JiraFieldPicker
+            id="art-sp-field"
+            label="Story Points Field"
+            onChange={handleSpFieldChange}
+            placeholder="Story points field"
             value={spFieldId}
-            onChange={(event) => handleSpFieldChange(event.target.value)}
-            aria-label="Story Points Field ID"
           />
         </div>
 
         <div className={styles.settingsFieldRow}>
-          <label className={styles.settingsFieldLabel}>Feature-Link Field ID</label>
-          <input
-            type="text"
-            className={styles.textInput}
-            placeholder={DEFAULT_FEATURE_LINK_FIELD}
+          <JiraFieldPicker
+            id="art-feature-link-field"
+            label="Feature Link Field"
+            onChange={handleFeatureLinkFieldChange}
+            placeholder="Feature link field"
             value={featureLinkField}
-            onChange={(event) => handleFeatureLinkFieldChange(event.target.value)}
-            aria-label="Feature-Link Field ID"
           />
         </div>
 

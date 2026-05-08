@@ -7,6 +7,10 @@ import React from 'react';
 import type { JiraIssue, JiraSprint } from '../../types/jira.ts';
 import type { DashboardTab } from './hooks/useSprintData.ts';
 
+const { mockJiraGet } = vi.hoisted(() => ({
+  mockJiraGet: vi.fn(),
+}));
+
 // Mock recharts so the LineChart renders without canvas/SVG issues in jsdom.
 vi.mock('recharts', () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
@@ -129,11 +133,23 @@ vi.mock('../StoryPointing/StoryPointingView.tsx', () => ({
   default: () => <div>Mock Story Pointing</div>,
 }));
 
+vi.mock('../../services/jiraApi.ts', () => ({
+  jiraGet: mockJiraGet,
+}));
+
 import SprintDashboardView from './SprintDashboardView.tsx';
 
 describe('SprintDashboardView', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     mockState.activeTab = 'overview';
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/field') {
+        return Promise.resolve([]);
+      }
+
+      return Promise.resolve({ values: [] });
+    });
     mockState.sprintInfo = {
       id: 7,
       name: 'Sprint 7',
@@ -146,7 +162,6 @@ describe('SprintDashboardView', () => {
     mockState.availableBoards = [];
     mockState.boardId = null;
     mockState.availableSprints = null;
-    vi.clearAllMocks();
   });
 
   it('renders the core tab buttons', () => {
@@ -280,6 +295,8 @@ describe('SprintDashboardView', () => {
     expect(screen.getByLabelText(/story point scale/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/sprint window/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/kanban period/i)).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /story points field/i })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /epic link field/i })).toBeInTheDocument();
   });
 
   it('renders Move to Sprint buttons in the Assignee tab', () => {
