@@ -11,6 +11,11 @@ import { snowFetch } from '../../services/snowApi.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
 import { useMyIssuesState } from './hooks/useMyIssuesState.ts';
 import type { IssueSource, JiraTransition, Persona, SortField, ViewMode } from './hooks/useMyIssuesState.ts';
+import type { ExtendedJiraIssue } from './myIssuesExtendedTypes.ts';
+import PersonaIntelStrip from './PersonaIntelStrip.tsx';
+import SwimlaneCardView from './SwimlaneCardView.tsx';
+import BulkCommentPanel from './BulkCommentPanel.tsx';
+import BoardPillAndFilters from './BoardPillAndFilters.tsx';
 import styles from './MyIssuesView.module.css';
 
 // ── Named constants ──
@@ -650,6 +655,15 @@ export default function MyIssuesView() {
 
   const zoneCounts = calculateStatusZoneCounts(state.issues);
   const filteredIssues = filterIssuesByStatusZone(state.issues, state.activeStatusZone);
+  const extendedFilteredIssues = filteredIssues as ExtendedJiraIssue[];
+
+  // Derive the selected board name for the board pill
+  const selectedBoardName = state.selectedBoardId
+    ? (state.availableBoards.find((board) => board.id === state.selectedBoardId)?.name ?? null)
+    : null;
+
+  // Collect bulk-selected issue keys for display in the panel
+  const bulkSelectedKeysList = Object.keys(state.bulkSelectedKeys);
 
   const STATUS_ZONE_CHIPS = [
     { key: 'attention', label: 'Attention', count: zoneCounts.attentionCount },
@@ -732,13 +746,29 @@ export default function MyIssuesView() {
                 onHistorySelect={actions.setJqlQuery}
                 onJqlChange={actions.setJqlQuery}
                 onLoadFilters={actions.loadSavedFilters}
-                onRunBoard={actions.runBoardIssues}
+                onRunBoard={() => {
+                  void actions.runBoardIssues();
+                  void actions.loadBoardQuickFilters();
+                }}
                 onRunFilter={actions.runSavedFilter}
                 onRunJql={actions.runJqlQuery}
                 savedFilters={state.savedFilters}
                 selectedBoardId={state.selectedBoardId}
                 selectedFilterId={state.selectedFilterId}
                 source={state.source}
+              />
+            </div>
+          )}
+
+          {/* Board pill + quick filter chips (shown when a board is selected) */}
+          {state.source === 'board' && selectedBoardName && (
+            <div style={{ marginTop: 'var(--spacing-sm)' }}>
+              <BoardPillAndFilters
+                activeQuickFilterIds={state.activeQuickFilterIds}
+                boardName={selectedBoardName}
+                boardQuickFilters={state.boardQuickFilters}
+                onClearBoard={actions.clearSelectedBoard}
+                onToggleQuickFilter={actions.toggleQuickFilter}
               />
             </div>
           )}
@@ -784,6 +814,17 @@ export default function MyIssuesView() {
 
             <span className={styles.countLabel}>{state.issues.length} issues</span>
 
+            {/* Bulk mode toggle — lets user select multiple issues for batch commenting */}
+            {filteredIssues.length > 0 && (
+              <button
+                className={`${styles.toolbarButton} ${state.isBulkModeActive ? styles.activeViewButton : ''}`}
+                onClick={actions.toggleBulkMode}
+                type="button"
+              >
+                {state.isBulkModeActive ? `Bulk (${bulkSelectedKeysList.length})` : 'Bulk'}
+              </button>
+            )}
+
             {/* Export menu */}
             {state.issues.length > 0 && (
               <div className={styles.exportMenuWrapper}>
@@ -809,6 +850,20 @@ export default function MyIssuesView() {
                       type="button"
                     >
                       Copy as Markdown Table
+                    </button>
+                    <button
+                      className={styles.exportDropdownItem}
+                      onClick={() => { actions.exportAsTsv(); }}
+                      type="button"
+                    >
+                      Copy as TSV
+                    </button>
+                    <button
+                      className={styles.exportDropdownItem}
+                      onClick={() => { actions.exportAsXlsx(); }}
+                      type="button"
+                    >
+                      Download as Excel (.xlsx)
                     </button>
                   </div>
                 )}
@@ -840,16 +895,49 @@ export default function MyIssuesView() {
             ))}
           </div>
 
+          {/* Persona intel strip — zone chips specific to the active persona */}
+          {state.issues.length > 0 && (
+            <div style={{ marginTop: 'var(--spacing-sm)' }}>
+              <PersonaIntelStrip
+                activeStatusZone={state.activeStatusZone}
+                issues={state.issues as ExtendedJiraIssue[]}
+                onZoneClick={actions.setActiveStatusZone}
+                persona={state.persona}
+              />
+            </div>
+          )}
+
           {/* Issues list */}
           <div style={{ marginTop: 'var(--spacing-md)' }}>
             {state.isFetching ? (
               <p>Loading issues…</p>
-            ) : filteredIssues.length === 0 ? (
-              <p style={{ color: 'var(--color-text-secondary)' }}>No issues to display.</p>
+            ) : state.viewMode === 'cards' ? (
+              <SwimlaneCardView
+                activeQuickFilterIds={state.activeQuickFilterIds}
+                bulkSelectedKeys={state.bulkSelectedKeys}
+                collapsedSwimlanes={state.collapsedSwimlanes}
+                isBulkModeActive={state.isBulkModeActive}
+                issues={extendedFilteredIssues}
+                onIssueClick={actions.openDetailPanel}
+                onToggleBulkKey={actions.toggleBulkKey}
+                onToggleSwimlane={actions.toggleSwimlaneCollapsed}
+              />
             ) : (
               renderIssueList(filteredIssues, state.viewMode, actions.openDetailPanel)
             )}
           </div>
+
+          {/* Bulk comment panel — sticky footer shown during bulk mode */}
+          {state.isBulkModeActive && (
+            <BulkCommentPanel
+              bulkCommentError={state.bulkCommentError}
+              isBulkPostingComment={state.isBulkPostingComment}
+              onCancelBulk={actions.toggleBulkMode}
+              onPostBulkComment={actions.postBulkComment}
+              selectedCount={bulkSelectedKeysList.length}
+              selectedKeys={bulkSelectedKeysList}
+            />
+          )}
 
           {/* Detail panel — shown when an issue is selected */}
           {state.isDetailPanelOpen && state.selectedIssue && (

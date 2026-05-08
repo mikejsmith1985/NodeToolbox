@@ -73,6 +73,14 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     availableTransitions: [] as JiraTransition[],
     isLoadingTransitions: false,
     isExportMenuOpen: false,
+    // Phase 5+ state fields
+    isBulkModeActive: false,
+    bulkSelectedKeys: {} as Record<string, boolean>,
+    isBulkPostingComment: false,
+    bulkCommentError: null as string | null,
+    boardQuickFilters: [],
+    activeQuickFilterIds: {} as Record<number, boolean>,
+    collapsedSwimlanes: { done: true } as Record<string, boolean>,
   },
   mockActions: {
     setSource: vi.fn(),
@@ -97,6 +105,16 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     setExportMenuOpen: vi.fn(),
     exportAsCsv: vi.fn(),
     exportAsMarkdown: vi.fn(),
+    // Phase 5+ actions
+    exportAsXlsx: vi.fn(),
+    exportAsTsv: vi.fn(),
+    toggleBulkMode: vi.fn(),
+    toggleBulkKey: vi.fn(),
+    postBulkComment: vi.fn().mockResolvedValue(undefined),
+    loadBoardQuickFilters: vi.fn().mockResolvedValue(undefined),
+    toggleQuickFilter: vi.fn(),
+    clearSelectedBoard: vi.fn(),
+    toggleSwimlaneCollapsed: vi.fn(),
   },
 }));
 
@@ -123,6 +141,14 @@ describe('MyIssuesView', () => {
     mockState.availableTransitions = [];
     mockState.isLoadingTransitions = false;
     mockState.isTransitioning = false;
+    // Reset phase 5+ state
+    mockState.isBulkModeActive = false;
+    mockState.bulkSelectedKeys = {};
+    mockState.isBulkPostingComment = false;
+    mockState.bulkCommentError = null;
+    mockState.boardQuickFilters = [];
+    mockState.activeQuickFilterIds = {};
+    mockState.collapsedSwimlanes = { done: true };
     // Default connection store: SNow not ready
     mockUseConnectionStore.mockReturnValue({ isSnowReady: false });
     mockSnowFetch.mockResolvedValue({ result: [] });

@@ -1,0 +1,194 @@
+/* SwimlaneCardView.module.css — Styles for the swimlane card grouping layout. */
+
+/* ── Empty state ── */
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xl, 48px) 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
+}
+
+/* ── Swimlane container ── */
+
+.swimlaneList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.swimlane {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Swimlane header ── */
+
+.swimlaneHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  transition: background 0.15s;
+}
+
+.swimlaneHeader:hover {
+  background: var(--color-surface-2);
+}
+
+.swimlaneCount {
+  color: var(--color-text-secondary);
+  font-weight: 400;
+  margin-left: 2px;
+}
+
+.swimlaneChevron {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  transition: transform 0.15s;
+}
+
+.swimlaneChevronCollapsed {
+  transform: rotate(-90deg);
+}
+
+/* ── Swimlane body ── */
+
+.swimlaneBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+}
+
+/* ── Issue card ── */
+
+.issueCard {
+  position: relative;
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.issueCard:hover {
+  border-color: var(--color-accent);
+}
+
+.bulkSelectedCard {
+  border-color: var(--color-accent);
+  background: var(--color-surface-2);
+}
+
+/* ── Card sections ── */
+
+.cardTop {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+}
+
+.cardKey {
+  font-family: monospace;
+  font-size: var(--font-size-sm);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.statusBadge {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+}
+
+.priorityBadge {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+}
+
+.cardSummary {
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+/* ── Attention reasons row ── */
+
+.attentionReasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.attentionBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  border: 1px solid var(--color-danger);
+  color: var(--color-danger);
+  font-size: 11px;
+}
+
+/* ── Card meta row ── */
+
+.cardMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.agingLabel {
+  font-size: 11px;
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+}
+
+.agingWarn {
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+}
+
+.agingStale {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+}
+
+/* ── Bulk checkbox ── */
+
+.bulkCheckbox {
+  position: absolute;
+  top: var(--spacing-sm);
+  left: var(--spacing-sm);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}

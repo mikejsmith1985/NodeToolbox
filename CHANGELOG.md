@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (v0.6.2 — My Issues deep parity)
+- **Persona Intel Strip** (`PersonaIntelStrip`): clickable zone chips per persona (Dev/QA/SM/PO) derived from issue state. Chips delegate zone filtering to `onZoneClick` so the intel strip integrates with the existing status-zone dashboard.
+- **Swimlane Card View** (`SwimlaneCardView`): replaces the flat card list in `cards` mode with five collapsible swimlanes (Needs Attention 🔴 / In Progress 🔵 / In Review 🟣 / To Do ⚫ / Done ✅). `done` lane collapsed by default matching legacy behaviour. Cards show issue key, summary, priority, type, and aging label.
+- **Needs Attention badges + aging labels**: blocked/critical/past-due reasons rendered as inline badge chips on swimlane cards. Aging label turns amber at >5 days, red at >10 days.
+- **xlsx + TSV export**: two new export options in the Export dropdown — "Download as Excel (.xlsx)" (SheetJS, lazy-imported) and "Copy as TSV" (tab-delimited clipboard copy). Columns: Key, Summary, Status, Priority, Assignee, Updated.
+- **Bulk select + bulk comment**: toolbar "Bulk" button enters bulk mode (cards show checkboxes). Sticky `BulkCommentPanel` footer lets the user post one comment to all selected issues in parallel via Jira `/comment` API. Error message shown per failure; exits bulk mode on success.
+- **Board quick filters** (`BoardPillAndFilters`): after loading board issues, a dismissible board-name pill and quick-filter chip row appear below the SourcePane. Chips toggle active state and their JQL is loaded from `/rest/agile/1.0/board/{id}/quickfilter`.
+- New state fields: `isBulkModeActive`, `bulkSelectedKeys`, `isBulkPostingComment`, `bulkCommentError`, `boardQuickFilters`, `activeQuickFilterIds`, `collapsedSwimlanes`.
+- New actions: `toggleBulkMode`, `toggleBulkKey`, `postBulkComment`, `loadBoardQuickFilters`, `toggleQuickFilter`, `clearSelectedBoard`, `toggleSwimlaneCollapsed`, `exportAsXlsx`, `exportAsTsv`.
+
 ### Added (v0.6.1 — Toolbox parity completion)
 - **Dev Panel view** (`/dev-panel`): live API call inspector ported from legacy `26-dev-panel.js`. Subscribes to a new `toolbox:api` window event so every Jira/ServiceNow request emitted by `jiraApi.ts` is logged with method, URL, status code, duration, and any error message. Pause/resume capture, clear log, and CSV export. Capped at 500 entries to bound memory.
 - **Impact Analysis view** (`/impact-analysis`): blast-radius calculator ported from legacy `15-impact-analysis.js`. Enter a Jira issue key, fetch its child issues + linked issues + fix versions + impacted teams (assignee+component union), and render a one-screen summary with severity-coded counts. Pure functions in `utils/blastRadius.ts` keep the math testable.
