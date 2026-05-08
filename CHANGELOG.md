@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed (v0.6.8 — Mermaid removal)
+- Removed `mermaid` npm dependency (was ~2260 modules) — **vite build time drops from ~10 min → ~12 sec**.
+- Deleted the `MermaidEditor` view entirely (`MermaidEditorView.tsx`, `useMermaidEditorState.ts`, CSS, and all tests).
+- Removed the "🧜 Mermaid" tab from the Text Tools view.
+
 ### Added (v0.6.7 — Server process controls)
 - **Admin Hub → Proxy & Server Setup**: Added "🔄 Restart Server" and "⛔ Kill Port 5555" buttons.
   - "Restart Server" calls `/api/restart` — spawns a fresh process and exits the current one.

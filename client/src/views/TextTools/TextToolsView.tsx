@@ -1,12 +1,10 @@
-// TextToolsView.tsx — Multi-tab text utility view with 7 transformation and diagram tools.
+// TextToolsView.tsx — Multi-tab text utility view with 6 transformation tools.
 //
 // Tabs: Smart Formatter (HTML→Markdown), JSON Formatter, Case Converter,
-// URL Encoder/Decoder, Base64 Encoder/Decoder, Element Extractor bookmarklet,
-// and Mermaid diagram editing.
+// URL Encoder/Decoder, Base64 Encoder/Decoder, and Element Extractor bookmarklet.
 
 import { useState } from 'react'
 
-import MermaidEditorView from '../MermaidEditor/MermaidEditorView.tsx'
 import {
   buildCaseVariants,
   convertToMarkdown,
@@ -37,7 +35,6 @@ const TAB_OPTIONS: { key: TextToolsTab; label: string }[] = [
   { key: 'url', label: '🔗 URL' },
   { key: 'base64', label: '64 Base64' },
   { key: 'extractor', label: '🔍 Extractor' },
-  { key: 'mermaid', label: '🧜 Mermaid' },
 ]
 
 const SMART_FORMATTER_MODES: { key: SmartFormatterMode; label: string }[] = [
@@ -585,8 +582,6 @@ export default function TextToolsView() {
         )
       case 'extractor':
         return <ElementExtractorPanel />
-      case 'mermaid':
-        return <MermaidEditorView />
       default:
         return null
     }
