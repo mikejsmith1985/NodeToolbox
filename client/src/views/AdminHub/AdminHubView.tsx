@@ -3,7 +3,7 @@
 // The Config tab keeps the existing proxy, ART, access-control, hygiene, update, and backup sections.
 // The Dev Panel tab embeds the live API diagnostics view so leadership and support workflows stay in one hub.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 
 import ConfirmDialog from '../../components/ConfirmDialog/index.tsx'
 import PromptDialog from '../../components/PromptDialog/index.tsx'
@@ -65,9 +65,12 @@ interface ProxySectionProps {
   onSave(): void
 }
 
+// How long to show the server control confirmation message before clearing it.
+const SERVER_CONTROL_MESSAGE_CLEAR_MS = 5000
+
 /**
- * Proxy & Server Setup section — shows connection status, download buttons,
- * terminal command, and editable proxy URL fields.
+ * Proxy & Server Setup section — shows connection status, server process controls,
+ * download buttons, terminal command, and editable proxy URL fields.
  */
 function ProxySection({
   jiraProxyUrl,
@@ -82,6 +85,8 @@ function ProxySection({
   const isProxyRunning = proxyStatus !== null
 
   const [copyButtonLabel, setCopyButtonLabel] = useState('Copy')
+  const [isServerControlPending, setIsServerControlPending] = useState(false)
+  const [serverControlMessage, setServerControlMessage] = useState<string | null>(null)
 
   function handleCopyTerminalCommand() {
     navigator.clipboard.writeText(TERMINAL_COMMAND).then(() => {
@@ -89,6 +94,42 @@ function ProxySection({
       setTimeout(() => setCopyButtonLabel('Copy'), 1500)
     })
   }
+
+  /** Sends a POST to /api/restart. The server spawns a fresh process then exits. */
+  const handleRestartServer = useCallback(async () => {
+    setIsServerControlPending(true)
+    setServerControlMessage(null)
+    try {
+      await fetch('/api/restart', { method: 'POST' })
+      setServerControlMessage('✅ Server is restarting — the page will reload shortly.')
+    } catch {
+      // Network error is expected if the server exits before the response arrives.
+      setServerControlMessage('✅ Server is restarting — reload the page in a moment.')
+    } finally {
+      setIsServerControlPending(false)
+      setTimeout(() => setServerControlMessage(null), SERVER_CONTROL_MESSAGE_CLEAR_MS)
+    }
+  }, [])
+
+  /**
+   * Sends a POST to /api/shutdown. The server exits cleanly.
+   * The launch process automatically kills any occupant of port 5555 on next startup,
+   * so relaunching the exe is all that is needed to recover.
+   */
+  const handleKillPort = useCallback(async () => {
+    setIsServerControlPending(true)
+    setServerControlMessage(null)
+    try {
+      await fetch('/api/shutdown', { method: 'POST' })
+      setServerControlMessage('✅ Server stopped — relaunch the exe to start again.')
+    } catch {
+      // Network error here means the server shut down before replying — that's fine.
+      setServerControlMessage('✅ Server stopped — relaunch the exe to start again.')
+    } finally {
+      setIsServerControlPending(false)
+      setTimeout(() => setServerControlMessage(null), SERVER_CONTROL_MESSAGE_CLEAR_MS)
+    }
+  }, [])
 
   return (
     <section className={styles.sectionCard}>
@@ -100,6 +141,34 @@ function ProxySection({
       ) : (
         <div className={styles.statusBannerMuted}>⚪ Proxy server not detected</div>
       )}
+
+      {/* ── Server process controls ── */}
+      {/* Restart clears stale state; Kill Port 5555 stops the process entirely so   */}
+      {/* the user can relaunch fresh. On next launch, portManager automatically     */}
+      {/* kills any occupant of port 5555 before binding, so a clean restart always  */}
+      {/* works even if a previous process got stuck.                                */}
+      <div className={styles.serverControlsRow}>
+        <button
+          className={styles.actionButton}
+          onClick={() => void handleRestartServer()}
+          disabled={isServerControlPending}
+          aria-label="Restart server"
+        >
+          🔄 Restart Server
+        </button>
+        <button
+          className={`${styles.actionButton} ${styles.dangerButton}`}
+          onClick={() => void handleKillPort()}
+          disabled={isServerControlPending}
+          aria-label="Kill Port 5555"
+          title="Stops the server process. Relaunch the exe to start again."
+        >
+          ⛔ Kill Port 5555
+        </button>
+        {serverControlMessage !== null && (
+          <span className={styles.serverControlMessage}>{serverControlMessage}</span>
+        )}
+      </div>
 
       {/* Launcher download links — click to download the file to the user's machine */}
       <div className={styles.downloadButtonsRow}>

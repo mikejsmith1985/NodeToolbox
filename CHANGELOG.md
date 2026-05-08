@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (v0.6.7 — Server process controls)
+- **Admin Hub → Proxy & Server Setup**: Added "🔄 Restart Server" and "⛔ Kill Port 5555" buttons.
+  - "Restart Server" calls `/api/restart` — spawns a fresh process and exits the current one.
+  - "Kill Port 5555" calls `/api/shutdown` — stops the server entirely; relaunch the exe to recover.
+  - On every launch, `portManager` already automatically kills any occupant of port 5555 before binding, so relaunching the exe always results in a clean single instance.
+  - Confirmation messages appear inline after each action.
+
 ### Fixed (v0.6.6 — Connection bar always red bug)
 - Root-cause fix: `ProxyStatusResponse` TypeScript type was entirely wrong — it had flat fields (`jiraConfigured`, `snowConfigured`) but the server actually returns a nested structure (`{ jira: { ready, configured, ... }, snow: { ... } }`). This meant `isJiraReady` was always `false` regardless of actual connectivity, keeping every indicator permanently red.
 - Updated `ProxyStatusResponse` to the correct nested shape with `ProxyServiceStatus` and `ProxySnowStatus` sub-interfaces.

@@ -98,6 +98,18 @@
 
 /* ── Download buttons row ── */
 
+.serverControlsRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.serverControlMessage {
+  font-size: var(--font-size-sm);
+  color: #34d399;
+}
+
 .downloadButtonsRow {
   display: flex;
   gap: var(--spacing-sm);
