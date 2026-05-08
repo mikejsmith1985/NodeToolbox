@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useArtData } from './hooks/useArtData.ts';
 import type { ArtTab, ArtPersona, ArtTeam, ArtBoardPrepIssue, PiProgressStats } from './hooks/useArtData.ts';
+import BlueprintTab from './BlueprintTab.tsx';
+import DependenciesTab from './DependenciesTab.tsx';
 import styles from './ArtView.module.css';
 
 // ── Constants ──
@@ -19,6 +21,7 @@ const ART_TAB_DEFINITIONS: { key: ArtTab; label: string }[] = [
   { key: 'impediments', label: 'Impediments' },
   { key: 'predictability', label: 'Predictability' },
   { key: 'releases', label: 'Releases' },
+  { key: 'blueprint', label: 'Blueprint' },
   { key: 'dependencies', label: 'Dependencies' },
   { key: 'boardprep', label: 'Board Prep' },
   { key: 'sos', label: 'SoS' },
@@ -26,25 +29,9 @@ const ART_TAB_DEFINITIONS: { key: ArtTab; label: string }[] = [
   { key: 'settings', label: 'Settings' },
 ];
 
-/** Pastel color palette assigned per-team in the dependency map SVG. */
-const TEAM_PASTEL_COLORS = ['#b3d9ff', '#b3ffcc', '#ffd9b3', '#ffb3cc', '#d9b3ff', '#b3ffff', '#ffff99'];
-
-// SVG layout constants for the dependency map
-const DEP_TEAM_BOX_WIDTH = 150;
-const DEP_TEAM_BOX_HEIGHT = 40;
-const DEP_TEAM_SPACING = 200;
-const DEP_ISSUE_HEIGHT = 30;
-const DEP_ISSUE_GAP = 4;
-const DEP_TEAM_Y = 20;
-const DEP_ISSUES_START_Y = DEP_TEAM_Y + DEP_TEAM_BOX_HEIGHT + 10;
-const DEP_SVG_SIDE_PADDING = 20;
-
-/** Pattern for detecting Jira issue keys (e.g. "TBX-123") in free text. */
-const JIRA_KEY_PATTERN = /[A-Z]+-\d+/g;
-
 // ── Main ArtView component ──
 
-/** Main ART View with 9 tabs for tracking multi-team PI health across the Agile Release Train. */
+/** Main ART View with 10 tabs for tracking multi-team PI health across the Agile Release Train. */
 export default function ArtView() {
   const { state, actions } = useArtData();
 
@@ -96,8 +83,11 @@ export default function ArtView() {
         {state.activeTab === 'releases' && (
           <ReleasesPanel teams={state.teams} />
         )}
+        {state.activeTab === 'blueprint' && (
+          <BlueprintTab teams={state.teams} selectedPiName={state.selectedPiName} />
+        )}
         {state.activeTab === 'dependencies' && (
-          <DependencyMapPanel teams={state.teams} />
+          <DependenciesTab teams={state.teams} />
         )}
         {state.activeTab === 'boardprep' && (
           <BoardPrepPanel
@@ -293,168 +283,6 @@ function ReleasesPanel({ teams }: TeamsPanelProps) {
   );
 }
 
-// ── Feature 1: Dependency Map ──
-
-interface CrossTeamDependency {
-  sourceKey: string;
-  targetKey: string;
-  sourceTeamIndex: number;
-  targetTeamIndex: number;
-  sourceIssueIndex: number;
-  targetIssueIndex: number;
-}
-
-/**
- * Builds a map of issue key → team index for fast cross-team reference lookup.
- * Only includes keys from teams that actually have loaded sprint issues.
- */
-function buildIssueTeamIndexMap(teams: ArtTeam[]): Map<string, { teamIndex: number; issueIndex: number }> {
-  const issueMap = new Map<string, { teamIndex: number; issueIndex: number }>();
-  teams.forEach((team, teamIndex) => {
-    team.sprintIssues.forEach((issue, issueIndex) => {
-      issueMap.set(issue.key, { teamIndex, issueIndex });
-    });
-  });
-  return issueMap;
-}
-
-/**
- * Scans all issues across teams for references to issues belonging to OTHER teams.
- * Returns a list of detected cross-team dependency pairs.
- */
-function detectCrossTeamDependencies(teams: ArtTeam[]): CrossTeamDependency[] {
-  const issueMap = buildIssueTeamIndexMap(teams);
-  const dependencies: CrossTeamDependency[] = [];
-
-  teams.forEach((team, sourceTeamIndex) => {
-    team.sprintIssues.forEach((issue, sourceIssueIndex) => {
-      if (!issue.fields.description) return;
-      const mentionedKeys = issue.fields.description.match(JIRA_KEY_PATTERN) ?? [];
-      for (const mentionedKey of mentionedKeys) {
-        const target = issueMap.get(mentionedKey);
-        // Only record if the referenced issue belongs to a DIFFERENT team
-        if (target && target.teamIndex !== sourceTeamIndex) {
-          dependencies.push({
-            sourceKey: issue.key,
-            targetKey: mentionedKey,
-            sourceTeamIndex,
-            targetTeamIndex: target.teamIndex,
-            sourceIssueIndex,
-            targetIssueIndex: target.issueIndex,
-          });
-        }
-      }
-    });
-  });
-
-  return dependencies;
-}
-
-/** Computes the centre-x of a team's column in the SVG dependency map. */
-function getTeamCentreX(teamIndex: number): number {
-  return DEP_SVG_SIDE_PADDING + teamIndex * DEP_TEAM_SPACING + DEP_TEAM_BOX_WIDTH / 2;
-}
-
-/** Computes the y-midpoint of a specific issue rectangle within its team column. */
-function getIssueY(issueIndex: number): number {
-  return DEP_ISSUES_START_Y + issueIndex * (DEP_ISSUE_HEIGHT + DEP_ISSUE_GAP) + DEP_ISSUE_HEIGHT / 2;
-}
-
-/** Renders the Dependency Map tab with an inline SVG visualisation of cross-team issue references. */
-function DependencyMapPanel({ teams }: TeamsPanelProps) {
-  const [selectedIssueKey, setSelectedIssueKey] = useState<string | null>(null);
-  const dependencies = detectCrossTeamDependencies(teams);
-  const hasDependencies = dependencies.length > 0;
-  const hasTeamsWithIssues = teams.some((team) => team.sprintIssues.length > 0);
-
-  if (!hasTeamsWithIssues || !hasDependencies) {
-    return (
-      <div className={styles.panel}>
-        <h3 className={styles.sectionTitle}>Dependency Map</h3>
-        <p className={styles.emptyState}>No cross-team dependencies detected</p>
-      </div>
-    );
-  }
-
-  const svgWidth = DEP_SVG_SIDE_PADDING * 2 + teams.length * DEP_TEAM_SPACING;
-  const maxIssueCount = Math.max(...teams.map((t) => t.sprintIssues.length), 0);
-  const svgHeight = DEP_ISSUES_START_Y + maxIssueCount * (DEP_ISSUE_HEIGHT + DEP_ISSUE_GAP) + 20;
-
-  const selectedIssue = selectedIssueKey
-    ? teams.flatMap((t) => t.sprintIssues).find((i) => i.key === selectedIssueKey)
-    : null;
-
-  return (
-    <div className={styles.panel}>
-      <h3 className={styles.sectionTitle}>Dependency Map</h3>
-      <svg
-        width={svgWidth}
-        height={svgHeight}
-        className={styles.depMapSvg}
-        aria-label="Cross-team dependency map"
-      >
-        <defs>
-          {/* Arrowhead marker for dependency arrows */}
-          <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-            <polygon points="0 0, 8 3, 0 6" fill="#888" />
-          </marker>
-        </defs>
-
-        {/* Team column headers */}
-        {teams.map((team, teamIndex) => {
-          const teamX = DEP_SVG_SIDE_PADDING + teamIndex * DEP_TEAM_SPACING;
-          const teamColor = TEAM_PASTEL_COLORS[teamIndex % TEAM_PASTEL_COLORS.length];
-          return (
-            <g key={team.id}>
-              <rect x={teamX} y={DEP_TEAM_Y} width={DEP_TEAM_BOX_WIDTH} height={DEP_TEAM_BOX_HEIGHT}
-                fill={teamColor} stroke="#666" strokeWidth="1" rx="4" />
-              <text x={teamX + DEP_TEAM_BOX_WIDTH / 2} y={DEP_TEAM_Y + 24}
-                textAnchor="middle" fontSize="12" fontWeight="bold" fill="#333">
-                {team.name}
-              </text>
-              {/* Issue rectangles under the team box */}
-              {team.sprintIssues.map((issue, issueIndex) => {
-                const issueY = DEP_ISSUES_START_Y + issueIndex * (DEP_ISSUE_HEIGHT + DEP_ISSUE_GAP);
-                const isSelected = selectedIssueKey === issue.key;
-                return (
-                  <g key={issue.key} style={{ cursor: 'pointer' }} onClick={() => setSelectedIssueKey(isSelected ? null : issue.key)}>
-                    <rect x={teamX} y={issueY} width={DEP_TEAM_BOX_WIDTH} height={DEP_ISSUE_HEIGHT}
-                      fill={isSelected ? '#ffd700' : '#f5f5f5'} stroke="#aaa" strokeWidth="1" rx="2" />
-                    <text x={teamX + 6} y={issueY + 18} fontSize="10" fill="#333">{issue.key}</text>
-                  </g>
-                );
-              })}
-            </g>
-          );
-        })}
-
-        {/* Dependency arrows between issues */}
-        {dependencies.map((dep, depIndex) => {
-          const x1 = getTeamCentreX(dep.sourceTeamIndex);
-          const y1 = getIssueY(dep.sourceIssueIndex);
-          const x2 = getTeamCentreX(dep.targetTeamIndex);
-          const y2 = getIssueY(dep.targetIssueIndex);
-          const midX = (x1 + x2) / 2;
-          return (
-            <path key={depIndex}
-              d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`}
-              fill="none" stroke="#888" strokeWidth="1.5"
-              markerEnd="url(#arrowhead)"
-              opacity="0.7"
-            />
-          );
-        })}
-      </svg>
-
-      {selectedIssue && (
-        <div className={styles.depIssueDetail}>
-          <strong>{selectedIssue.key}</strong>: {selectedIssue.fields.summary}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Feature 2: Board Prep ──
 
 interface BoardPrepPanelProps {
@@ -603,7 +431,177 @@ function computeSosPulse(teams: ArtTeam[]): { impedimentCount: number; completio
   return { impedimentCount, completionPercent, teamsAtRisk };
 }
 
-/** Renders the enhanced SoS tab with a Pulse summary and per-team accordion sections. */
+/** localStorage key for a team's SoS narrative for a given date. */
+function buildSosNarrativeStorageKey(teamId: string, dateString: string): string {
+  return `tbxSosNarrative_${teamId}_${dateString}`;
+}
+
+/** Returns today's date as YYYY-MM-DD. */
+function getTodayDateString(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** The 5 SoS narrative field names aligned with the legacy Toolbox app. */
+type SosNarrativeField = 'yesterday' | 'today' | 'blockers' | 'risks' | 'dependencies';
+
+interface SosNarrativeData {
+  yesterday: string;
+  today: string;
+  blockers: string;
+  risks: string;
+  dependencies: string;
+  /** ISO timestamp of when the narrative was last manually edited, per field. */
+  editedAt: Partial<Record<SosNarrativeField, string>>;
+}
+
+/** Auto-generates SoS narrative text from live sprint issue data. */
+function autoGenerateSosNarrative(team: ArtTeam, staleDaysThreshold: number): Omit<SosNarrativeData, 'editedAt'> {
+  const now = Date.now();
+  const msPerDay = 86_400_000;
+
+  const doneIssues = team.sprintIssues.filter(
+    (issue) =>
+      issue.fields.status.statusCategory?.key === 'done' ||
+      issue.fields.status.name.toLowerCase() === 'done',
+  );
+  const inProgressIssues = team.sprintIssues.filter(
+    (issue) =>
+      issue.fields.status.statusCategory?.key === 'indeterminate' ||
+      issue.fields.status.name.toLowerCase().includes('progress'),
+  );
+  const blockedIssues = team.sprintIssues.filter((issue) =>
+    issue.fields.status.name.toLowerCase().includes('block') ||
+    issue.fields.summary.toLowerCase().includes('block'),
+  );
+  const staleIssues = inProgressIssues.filter((issue) => {
+    const updatedMs = new Date(issue.fields.updated).getTime();
+    return (now - updatedMs) / msPerDay > staleDaysThreshold;
+  });
+
+  const formatIssueList = (issues: typeof team.sprintIssues) =>
+    issues.length === 0
+      ? 'None'
+      : issues.map((issue) => `${issue.key}: ${issue.fields.summary}`).join('\n');
+
+  return {
+    yesterday: formatIssueList(doneIssues),
+    today: formatIssueList(inProgressIssues),
+    blockers: formatIssueList(blockedIssues),
+    risks: staleIssues.length === 0 ? 'None' : `Stale (>${staleDaysThreshold}d): ${formatIssueList(staleIssues)}`,
+    dependencies: 'None detected — load Dependencies tab for cross-team link analysis.',
+  };
+}
+
+/** Reads the stored SoS narrative for a team + date, or returns null if not stored. */
+function readStoredSosNarrative(teamId: string, dateString: string): SosNarrativeData | null {
+  try {
+    const stored = localStorage.getItem(buildSosNarrativeStorageKey(teamId, dateString));
+    if (!stored) return null;
+    return JSON.parse(stored) as SosNarrativeData;
+  } catch {
+    return null;
+  }
+}
+
+/** Saves the SoS narrative for a team + date to localStorage. */
+function storeSosNarrative(teamId: string, dateString: string, data: SosNarrativeData): void {
+  localStorage.setItem(buildSosNarrativeStorageKey(teamId, dateString), JSON.stringify(data));
+}
+
+const SOS_NARRATIVE_FIELD_LABELS: Record<SosNarrativeField, string> = {
+  yesterday: 'Yesterday',
+  today: 'Today',
+  blockers: 'Blockers',
+  risks: 'Risks',
+  dependencies: 'Dependencies',
+};
+
+const SOS_NARRATIVE_FIELDS: SosNarrativeField[] = ['yesterday', 'today', 'blockers', 'risks', 'dependencies'];
+const DEFAULT_STALE_DAYS = 5;
+
+interface SosTeamNarrativeProps {
+  team: ArtTeam;
+}
+
+/** Renders the 5 narrative textarea fields for a single team's SoS accordion section. */
+function SosTeamNarrative({ team }: SosTeamNarrativeProps) {
+  const todayString = getTodayDateString();
+  const storedNarrative = readStoredSosNarrative(team.id, todayString);
+
+  // Load settings for stale-day threshold
+  let staleDays = DEFAULT_STALE_DAYS;
+  try {
+    const settings = JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as { staleDays?: number };
+    if (typeof settings.staleDays === 'number') staleDays = settings.staleDays;
+  } catch {
+    // Use default
+  }
+
+  const autoNarrative = autoGenerateSosNarrative(team, staleDays);
+  const [narrativeData, setNarrativeData] = useState<SosNarrativeData>(
+    storedNarrative ?? { ...autoNarrative, editedAt: {} },
+  );
+
+  function handleFieldChange(fieldName: SosNarrativeField, newValue: string) {
+    const updatedData: SosNarrativeData = {
+      ...narrativeData,
+      [fieldName]: newValue,
+      editedAt: { ...narrativeData.editedAt, [fieldName]: new Date().toISOString() },
+    };
+    setNarrativeData(updatedData);
+    storeSosNarrative(team.id, todayString, updatedData);
+  }
+
+  function handleRevertField(fieldName: SosNarrativeField) {
+    const updatedEditedAt = { ...narrativeData.editedAt };
+    delete updatedEditedAt[fieldName];
+    const updatedData: SosNarrativeData = {
+      ...narrativeData,
+      [fieldName]: autoNarrative[fieldName],
+      editedAt: updatedEditedAt,
+    };
+    setNarrativeData(updatedData);
+    storeSosNarrative(team.id, todayString, updatedData);
+  }
+
+  return (
+    <div className={styles.sosNarrativeSection}>
+      {SOS_NARRATIVE_FIELDS.map((fieldName) => {
+        const isManuallyEdited = Boolean(narrativeData.editedAt[fieldName]);
+        const editedTimestamp = narrativeData.editedAt[fieldName];
+        return (
+          <div key={fieldName} className={styles.sosNarrativeField}>
+            <div className={styles.sosNarrativeFieldHeader}>
+              <label className={styles.sosNarrativeLabel}>{SOS_NARRATIVE_FIELD_LABELS[fieldName]}</label>
+              {isManuallyEdited && (
+                <>
+                  <span className={styles.sosNarrativeTimestamp}>
+                    Edited {new Date(editedTimestamp!).toLocaleTimeString()}
+                  </span>
+                  <button
+                    className={styles.sosNarrativeRevertBtn}
+                    onClick={() => handleRevertField(fieldName)}
+                  >
+                    Revert to auto
+                  </button>
+                </>
+              )}
+            </div>
+            <textarea
+              className={styles.sosNarrativeTextarea}
+              value={narrativeData[fieldName]}
+              onChange={(event) => handleFieldChange(fieldName, event.target.value)}
+              rows={3}
+              aria-label={`${SOS_NARRATIVE_FIELD_LABELS[fieldName]} narrative for ${team.name}`}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Renders the enhanced SoS tab with a Pulse summary and per-team accordion sections with narrative fields. */
 function SosPanel({ teams, sosExpandedTeams, onToggleSosTeam }: SosPanelProps) {
   const pulse = computeSosPulse(teams);
 
@@ -629,7 +627,7 @@ function SosPanel({ teams, sosExpandedTeams, onToggleSosTeam }: SosPanelProps) {
         <p className={styles.emptyState}>No teams loaded. Load teams from the Overview tab.</p>
       )}
 
-      {/* Per-team accordion sections */}
+      {/* Per-team accordion sections with narrative fields */}
       {teams.map((team) => {
         const isExpanded = sosExpandedTeams.includes(team.id);
         const teamImpediments = team.sprintIssues.filter((issue) =>
@@ -678,6 +676,9 @@ function SosPanel({ teams, sosExpandedTeams, onToggleSosTeam }: SosPanelProps) {
                 {teamImpediments.length === 0 && (
                   <p className={styles.emptyState}>No impediments for this team.</p>
                 )}
+
+                {/* Editable SoS narrative fields — auto-generated, manually overridable */}
+                <SosTeamNarrative team={team} />
               </div>
             )}
           </div>
@@ -687,34 +688,377 @@ function SosPanel({ teams, sosExpandedTeams, onToggleSosTeam }: SosPanelProps) {
   );
 }
 
-/** Renders the Monthly Report tab with aggregated PI metrics. */
+// ── Feature 5: Monthly Report Panel ──
+
+/** Pillar categories used by the SAFe portfolio for classifying features. */
+type MonthlyReportPillar = '' | 'Growth' | 'Affordability' | 'Operating Model';
+
+/** Editable fields that form a single team's monthly report card. */
+interface MonthlyReportCard {
+  teamId: string;
+  teamName: string;
+  accomplished: string;
+  outcomes: string;
+  risks: string;
+  stakeholders: string;
+  pillar: MonthlyReportPillar;
+}
+
+/** Generates a list of the last 12 month labels in 'YYYY-MM' format for the month selector. */
+function generateMonthOptions(): { value: string; label: string }[] {
+  const options: { value: string; label: string }[] = [];
+  const now = new Date();
+  for (let monthOffset = 0; monthOffset < 12; monthOffset++) {
+    const date = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
+    const yearNumber = date.getFullYear();
+    const monthNumber = date.getMonth() + 1;
+    const value = `${yearNumber}-${String(monthNumber).padStart(2, '0')}`;
+    const label = date.toLocaleString('default', { month: 'long', year: 'numeric' });
+    options.push({ value, label });
+  }
+  return options;
+}
+
+/** Builds the localStorage key for storing a monthly report card. */
+function buildMonthlyReportStorageKey(teamId: string, yearMonth: string): string {
+  return `tbxMonthlyReport_${teamId}_${yearMonth}`;
+}
+
+/** Loads a stored monthly report card or returns an empty default. */
+function loadMonthlyReportCard(team: ArtTeam, yearMonth: string): MonthlyReportCard {
+  try {
+    const stored = localStorage.getItem(buildMonthlyReportStorageKey(team.id, yearMonth));
+    if (stored) return JSON.parse(stored) as MonthlyReportCard;
+  } catch {
+    // Fall through to default
+  }
+  return {
+    teamId: team.id,
+    teamName: team.name,
+    accomplished: '',
+    outcomes: '',
+    risks: '',
+    stakeholders: '',
+    pillar: '',
+  };
+}
+
+/** Saves a monthly report card to localStorage. */
+function saveMonthlyReportCard(teamId: string, yearMonth: string, card: MonthlyReportCard): void {
+  localStorage.setItem(buildMonthlyReportStorageKey(teamId, yearMonth), JSON.stringify(card));
+}
+
+/** Formats all visible cards as plain text for copying to clipboard. */
+function formatCardsAsText(cards: MonthlyReportCard[], yearMonth: string): string {
+  const lines: string[] = [`Monthly Report — ${yearMonth}`, ''];
+  for (const card of cards) {
+    lines.push(`=== ${card.teamName} ===`);
+    if (card.pillar) lines.push(`Pillar: ${card.pillar}`);
+    if (card.accomplished) lines.push(`Accomplished:\n${card.accomplished}`);
+    if (card.outcomes) lines.push(`Outcomes:\n${card.outcomes}`);
+    if (card.risks) lines.push(`Risks:\n${card.risks}`);
+    if (card.stakeholders) lines.push(`Stakeholders: ${card.stakeholders}`);
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+/** Formats all visible cards as a self-contained HTML document for download. */
+function formatCardsAsHtml(cards: MonthlyReportCard[], yearMonth: string): string {
+  const cardHtml = cards
+    .map(
+      (card) => `
+        <section class="card">
+          <h2>${card.teamName}</h2>
+          ${card.pillar ? `<p><strong>Pillar:</strong> ${card.pillar}</p>` : ''}
+          ${card.accomplished ? `<h3>Accomplished</h3><pre>${card.accomplished}</pre>` : ''}
+          ${card.outcomes ? `<h3>Outcomes</h3><pre>${card.outcomes}</pre>` : ''}
+          ${card.risks ? `<h3>Risks</h3><pre>${card.risks}</pre>` : ''}
+          ${card.stakeholders ? `<p><strong>Stakeholders:</strong> ${card.stakeholders}</p>` : ''}
+        </section>`,
+    )
+    .join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Monthly Report ${yearMonth}</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    .card { border: 1px solid #ccc; padding: 1rem; margin-bottom: 1.5rem; border-radius: 6px; }
+    h2 { background: #0052cc; color: #fff; margin: -1rem -1rem 1rem; padding: 0.5rem 1rem; border-radius: 4px 4px 0 0; }
+    pre { white-space: pre-wrap; background: #f8f8f8; padding: 0.5rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Monthly Report — ${yearMonth}</h1>
+  ${cardHtml}
+</body>
+</html>`;
+}
+
+/** Triggers a download of a text file with the given content. */
+function downloadTextFile(content: string, filename: string, mimeType: string): void {
+  const blob = new Blob([content], { type: `${mimeType};charset=utf-8;` });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+const PILLAR_OPTIONS: MonthlyReportPillar[] = ['', 'Growth', 'Affordability', 'Operating Model'];
+
+interface MonthlyReportCardEditorProps {
+  card: MonthlyReportCard;
+  onChange: (updatedCard: MonthlyReportCard) => void;
+}
+
+/** Renders a single editable monthly report card for one team. */
+function MonthlyReportCardEditor({ card, onChange }: MonthlyReportCardEditorProps) {
+  function handleFieldChange(fieldName: keyof MonthlyReportCard, value: string) {
+    onChange({ ...card, [fieldName]: value });
+  }
+
+  return (
+    <div className={styles.monthlyCard}>
+      <div className={styles.monthlyCardHeader}>
+        <span className={styles.monthlyCardTeamName}>{card.teamName}</span>
+        <select
+          className={styles.monthlyPillarSelect}
+          value={card.pillar}
+          onChange={(event) => handleFieldChange('pillar', event.target.value)}
+          aria-label={`Pillar for ${card.teamName}`}
+        >
+          {PILLAR_OPTIONS.map((pillar) => (
+            <option key={pillar} value={pillar}>{pillar || '— Select pillar —'}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className={styles.monthlyFieldRow}>
+        <label className={styles.monthlyFieldLabel}>Accomplished</label>
+        <textarea
+          className={styles.monthlyTextarea}
+          value={card.accomplished}
+          onChange={(event) => handleFieldChange('accomplished', event.target.value)}
+          rows={3}
+          placeholder="What did the team accomplish this month?"
+        />
+      </div>
+
+      <div className={styles.monthlyFieldRow}>
+        <label className={styles.monthlyFieldLabel}>Outcomes</label>
+        <textarea
+          className={styles.monthlyTextarea}
+          value={card.outcomes}
+          onChange={(event) => handleFieldChange('outcomes', event.target.value)}
+          rows={2}
+          placeholder="Business outcomes delivered or progressed"
+        />
+      </div>
+
+      <div className={styles.monthlyFieldRow}>
+        <label className={styles.monthlyFieldLabel}>Risks</label>
+        <textarea
+          className={styles.monthlyTextarea}
+          value={card.risks}
+          onChange={(event) => handleFieldChange('risks', event.target.value)}
+          rows={2}
+          placeholder="Current risks or impediments"
+        />
+      </div>
+
+      <div className={styles.monthlyFieldRow}>
+        <label className={styles.monthlyFieldLabel}>Stakeholders</label>
+        <input
+          type="text"
+          className={styles.monthlyTextInput}
+          value={card.stakeholders}
+          onChange={(event) => handleFieldChange('stakeholders', event.target.value)}
+          placeholder="Key stakeholders or reviewers"
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Renders the Monthly Report tab with per-team editable report cards, month selector, and export actions. */
 function MonthlyReportPanel({ teams }: TeamsPanelProps) {
-  const totalIssues = teams.reduce((sum, team) => sum + team.sprintIssues.length, 0);
+  const monthOptions = generateMonthOptions();
+  const [selectedYearMonth, setSelectedYearMonth] = useState(monthOptions[0].value);
+  const [teamFilter, setTeamFilter] = useState('all');
+
+  // Load cards for all teams for the current month, initialising from localStorage
+  const [cards, setCards] = useState<MonthlyReportCard[]>(() =>
+    teams.map((team) => loadMonthlyReportCard(team, monthOptions[0].value)),
+  );
+
+  function handleMonthChange(newYearMonth: string) {
+    setSelectedYearMonth(newYearMonth);
+    setCards(teams.map((team) => loadMonthlyReportCard(team, newYearMonth)));
+  }
+
+  function handleCardChange(updatedCard: MonthlyReportCard) {
+    setCards((previous) =>
+      previous.map((card) => (card.teamId === updatedCard.teamId ? updatedCard : card)),
+    );
+    saveMonthlyReportCard(updatedCard.teamId, selectedYearMonth, updatedCard);
+  }
+
+  const visibleCards = teamFilter === 'all' ? cards : cards.filter((card) => card.teamId === teamFilter);
+
+  function handleCopyAll() {
+    const text = formatCardsAsText(visibleCards, selectedYearMonth);
+    navigator.clipboard.writeText(text).catch(() => {
+      // Fallback: create a temporary textarea for older browsers
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    });
+  }
+
+  function handleExportHtml() {
+    const html = formatCardsAsHtml(visibleCards, selectedYearMonth);
+    downloadTextFile(html, `monthly-report-${selectedYearMonth}.html`, 'text/html');
+  }
 
   return (
     <div className={styles.panel}>
       <h3 className={styles.sectionTitle}>Monthly Report</h3>
-      <p className={styles.metricSummary}>Total issues across all teams: {totalIssues}</p>
+
+      <div className={styles.monthlyToolbar}>
+        <select
+          className={styles.textInput}
+          value={selectedYearMonth}
+          onChange={(event) => handleMonthChange(event.target.value)}
+          aria-label="Select month"
+        >
+          {monthOptions.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+
+        <select
+          className={styles.textInput}
+          value={teamFilter}
+          onChange={(event) => setTeamFilter(event.target.value)}
+          aria-label="Filter by team"
+        >
+          <option value="all">All Teams</option>
+          {teams.map((team) => (
+            <option key={team.id} value={team.id}>{team.name}</option>
+          ))}
+        </select>
+
+        <button className={styles.secondaryBtn} onClick={handleCopyAll}>
+          Copy All
+        </button>
+        <button className={styles.secondaryBtn} onClick={handleExportHtml}>
+          Export HTML
+        </button>
+      </div>
+
+      {teams.length === 0 && (
+        <p className={styles.emptyState}>No teams configured. Add teams in the Settings tab.</p>
+      )}
+
+      <div className={styles.monthlyCardList}>
+        {visibleCards.map((card) => (
+          <MonthlyReportCardEditor key={card.teamId} card={card} onChange={handleCardChange} />
+        ))}
+      </div>
     </div>
   );
 }
 
 interface SettingsPanelProps {
   teams: ArtTeam[];
-  onAddTeam: (name: string, boardId: string) => void;
+  onAddTeam: (name: string, boardId: string, projectKey?: string) => void;
   onRemoveTeam: (teamId: string) => void;
 }
 
-/** Renders the Settings tab for managing ART team roster and board IDs. */
+/** Shape of the ART advanced settings object stored under 'tbxARTSettings' in localStorage. */
+interface ArtAdvancedSettings {
+  piFieldId?: string;
+  spFieldId?: string;
+  isSpAutoDetect?: boolean;
+  featureLinkField?: string;
+  staleDays?: number;
+}
+
+/** Reads ART advanced settings from localStorage or returns an empty object. */
+function readArtAdvancedSettings(): ArtAdvancedSettings {
+  try {
+    return JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as ArtAdvancedSettings;
+  } catch {
+    return {};
+  }
+}
+
+/** Writes ART advanced settings to localStorage. */
+function writeArtAdvancedSettings(settings: ArtAdvancedSettings): void {
+  localStorage.setItem('tbxARTSettings', JSON.stringify(settings));
+}
+
+const DEFAULT_PI_FIELD_ID = 'customfield_10301';
+const DEFAULT_FEATURE_LINK_FIELD = 'customfield_10108';
+const DEFAULT_STALE_DAYS_SETTING = 5;
+
+/** Renders the Settings tab for managing ART team roster, board IDs, and advanced field configuration. */
 function SettingsPanel({ teams, onAddTeam, onRemoveTeam }: SettingsPanelProps) {
   const [newTeamName, setNewTeamName] = useState('');
   const [newBoardId, setNewBoardId] = useState('');
+  const [newProjectKey, setNewProjectKey] = useState('');
+
+  const storedSettings = readArtAdvancedSettings();
+  const [piFieldId, setPiFieldId] = useState(storedSettings.piFieldId ?? '');
+  const [spFieldId, setSpFieldId] = useState(storedSettings.spFieldId ?? '');
+  const [featureLinkField, setFeatureLinkField] = useState(storedSettings.featureLinkField ?? '');
+  const [staleDaysInput, setStaleDaysInput] = useState(
+    String(storedSettings.staleDays ?? DEFAULT_STALE_DAYS_SETTING),
+  );
 
   function handleAddTeam() {
     if (!newTeamName.trim() || !newBoardId.trim()) return;
-    onAddTeam(newTeamName.trim(), newBoardId.trim());
+    onAddTeam(newTeamName.trim(), newBoardId.trim(), newProjectKey.trim() || undefined);
     setNewTeamName('');
     setNewBoardId('');
+    setNewProjectKey('');
+  }
+
+  /** Persists a single settings field change to localStorage. */
+  function saveSettingField(fieldName: keyof ArtAdvancedSettings, value: string | number | boolean) {
+    const current = readArtAdvancedSettings();
+    writeArtAdvancedSettings({ ...current, [fieldName]: value });
+  }
+
+  function handlePiFieldChange(value: string) {
+    setPiFieldId(value);
+    saveSettingField('piFieldId', value);
+  }
+
+  function handleSpFieldChange(value: string) {
+    setSpFieldId(value);
+    saveSettingField('spFieldId', value);
+  }
+
+  function handleFeatureLinkFieldChange(value: string) {
+    setFeatureLinkField(value);
+    saveSettingField('featureLinkField', value);
+  }
+
+  function handleStaleDaysChange(value: string) {
+    setStaleDaysInput(value);
+    const parsedDays = parseInt(value, 10);
+    if (!isNaN(parsedDays) && parsedDays > 0) {
+      saveSettingField('staleDays', parsedDays);
+    }
   }
 
   return (
@@ -735,6 +1079,13 @@ function SettingsPanel({ teams, onAddTeam, onRemoveTeam }: SettingsPanelProps) {
           value={newBoardId}
           onChange={(event) => setNewBoardId(event.target.value)}
         />
+        <input
+          type="text"
+          className={styles.textInput}
+          placeholder="Project Key (e.g. ALPHA)"
+          value={newProjectKey}
+          onChange={(event) => setNewProjectKey(event.target.value)}
+        />
         <button className={styles.primaryBtn} onClick={handleAddTeam}>
           Add Team
         </button>
@@ -748,11 +1099,73 @@ function SettingsPanel({ teams, onAddTeam, onRemoveTeam }: SettingsPanelProps) {
           <div key={team.id} className={styles.teamListRow}>
             <span className={styles.teamName}>{team.name}</span>
             <span className={styles.boardId}>Board {team.boardId}</span>
+            {team.projectKey && (
+              <span className={styles.projectKeyBadge}>{team.projectKey}</span>
+            )}
             <button className={styles.removeBtn} onClick={() => onRemoveTeam(team.id)}>
               Remove
             </button>
           </div>
         ))}
+      </div>
+
+      {/* Advanced ART Settings — saved to localStorage under 'tbxARTSettings' */}
+      <div className={styles.settingsSection}>
+        <h4 className={styles.settingsSectionTitle}>Advanced ART Settings</h4>
+        <p className={styles.settingsSectionHint}>
+          These field IDs are used by Blueprint, Dependencies, and the SoS stale-issue detector.
+          Changes take effect immediately and are saved to your browser.
+        </p>
+
+        <div className={styles.settingsFieldRow}>
+          <label className={styles.settingsFieldLabel}>PI Field ID</label>
+          <input
+            type="text"
+            className={styles.textInput}
+            placeholder={DEFAULT_PI_FIELD_ID}
+            value={piFieldId}
+            onChange={(event) => handlePiFieldChange(event.target.value)}
+            aria-label="PI Field ID"
+          />
+        </div>
+
+        <div className={styles.settingsFieldRow}>
+          <label className={styles.settingsFieldLabel}>Story Points Field ID</label>
+          <input
+            type="text"
+            className={styles.textInput}
+            placeholder="e.g. customfield_10016"
+            value={spFieldId}
+            onChange={(event) => handleSpFieldChange(event.target.value)}
+            aria-label="Story Points Field ID"
+          />
+        </div>
+
+        <div className={styles.settingsFieldRow}>
+          <label className={styles.settingsFieldLabel}>Feature-Link Field ID</label>
+          <input
+            type="text"
+            className={styles.textInput}
+            placeholder={DEFAULT_FEATURE_LINK_FIELD}
+            value={featureLinkField}
+            onChange={(event) => handleFeatureLinkFieldChange(event.target.value)}
+            aria-label="Feature-Link Field ID"
+          />
+        </div>
+
+        <div className={styles.settingsFieldRow}>
+          <label className={styles.settingsFieldLabel}>Stale Days Threshold</label>
+          <input
+            type="number"
+            className={styles.textInput}
+            placeholder={String(DEFAULT_STALE_DAYS_SETTING)}
+            value={staleDaysInput}
+            min={1}
+            max={90}
+            onChange={(event) => handleStaleDaysChange(event.target.value)}
+            aria-label="Stale Days Threshold"
+          />
+        </div>
       </div>
     </div>
   );

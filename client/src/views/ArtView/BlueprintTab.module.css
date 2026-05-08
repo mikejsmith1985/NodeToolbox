@@ -1,0 +1,271 @@
+/* BlueprintTab.module.css — Styles for the Blueprint hierarchy tab. */
+
+.blueprintTab {
+  padding: 0;
+}
+
+/* ── Toolbar ── */
+
+.blueprintToolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+  flex-wrap: wrap;
+}
+
+.loadBtn {
+  padding: 0.375rem 0.875rem;
+  background: #0052cc;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.loadBtn:disabled {
+  background: #aaa;
+  cursor: not-allowed;
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 160px;
+  max-width: 280px;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 0.875rem;
+}
+
+/* ── View mode switcher ── */
+
+.blueprintViewModeStrip {
+  display: flex;
+  gap: 2px;
+}
+
+.viewModeBtn {
+  padding: 0.3rem 0.625rem;
+  background: #fff;
+  border: 1px solid #ced4da;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #495057;
+}
+
+.viewModeBtn:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.viewModeBtn:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.viewModeBtnActive {
+  background: #0052cc;
+  color: #fff;
+  border-color: #0052cc;
+}
+
+/* ── Feature list ── */
+
+.blueprintFeatureList {
+  padding: 0.5rem 1rem;
+}
+
+.blueprintFeatureBlock {
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+  background: #fff;
+}
+
+.blueprintFeatureRow {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  background: #f8f9fa;
+  border-radius: 6px 6px 0 0;
+  flex-wrap: wrap;
+}
+
+/* ── Health ring (conic-gradient circle) ── */
+
+.healthRing {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.healthRingLabel {
+  font-size: 0.65rem;
+  font-weight: bold;
+  color: #333;
+  background: #fff;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1;
+}
+
+/* ── Feature metadata ── */
+
+.featureKey {
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: #0052cc;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.featureSummary {
+  flex: 1;
+  font-size: 0.875rem;
+  color: #212529;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.featureStatus {
+  font-size: 0.75rem;
+  color: #6c757d;
+  white-space: nowrap;
+}
+
+.storyCount {
+  font-size: 0.75rem;
+  color: #6c757d;
+  white-space: nowrap;
+}
+
+/* ── Chevron toggle button ── */
+
+.blueprintChevron {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.7rem;
+  color: #6c757d;
+  padding: 0.2rem;
+  flex-shrink: 0;
+}
+
+/* ── Badges ── */
+
+.externalBadge {
+  background: #6c757d;
+  color: #fff;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.375rem;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.offTrainBadge {
+  background: #fd7e14;
+  color: #fff;
+  font-size: 0.65rem;
+  padding: 0.1rem 0.3rem;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+/* ── Story list ── */
+
+.blueprintStoryList {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0.5rem 0.5rem 2.5rem;
+  border-top: 1px solid #dee2e6;
+}
+
+.blueprintStoryRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.25rem;
+  border-bottom: 1px solid #f0f0f0;
+  flex-wrap: wrap;
+}
+
+.blueprintStoryRow:last-child {
+  border-bottom: none;
+}
+
+.storyKey {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: #0052cc;
+  white-space: nowrap;
+}
+
+.storySummary {
+  flex: 1;
+  font-size: 0.8rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storyStatus {
+  font-size: 0.7rem;
+  color: #6c757d;
+  white-space: nowrap;
+}
+
+.storyAssignee {
+  font-size: 0.7rem;
+  color: #6c757d;
+  white-space: nowrap;
+}
+
+/* ── State messages ── */
+
+.emptyState {
+  padding: 2rem 1rem;
+  color: #6c757d;
+  text-align: center;
+  font-style: italic;
+}
+
+.loadingText {
+  padding: 1rem;
+  color: #6c757d;
+  text-align: center;
+}
+
+.errorText {
+  padding: 0.5rem 1rem;
+  color: #dc3545;
+  background: #fff5f5;
+  border: 1px solid #f8d7da;
+  border-radius: 4px;
+  margin: 0.5rem 1rem;
+}
+
+.warningText {
+  padding: 1rem;
+  color: #856404;
+  background: #fff3cd;
+  border: 1px solid #ffecb5;
+  border-radius: 4px;
+  margin: 1rem;
+}

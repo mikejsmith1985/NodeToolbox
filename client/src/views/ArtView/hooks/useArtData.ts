@@ -18,6 +18,7 @@ export type ArtTab =
   | 'impediments'
   | 'predictability'
   | 'releases'
+  | 'blueprint'
   | 'dependencies'
   | 'boardprep'
   | 'sos'
@@ -29,6 +30,8 @@ export interface ArtTeam {
   id: string;
   name: string;
   boardId: string;
+  /** Optional Jira project key (e.g. "ALPHA") used for Blueprint off-train detection. */
+  projectKey?: string;
   sprintIssues: JiraIssue[];
   isLoading: boolean;
   loadError: string | null;
@@ -75,7 +78,7 @@ export interface ArtDataActions {
   setActiveTab: (tab: ArtTab) => void;
   setPersona: (persona: ArtPersona) => void;
   setSelectedPiName: (name: string) => void;
-  addTeam: (name: string, boardId: string) => void;
+  addTeam: (name: string, boardId: string, projectKey?: string) => void;
   removeTeam: (teamId: string) => void;
   loadTeam: (teamId: string) => Promise<void>;
   loadAllTeams: () => Promise<void>;
@@ -146,13 +149,14 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
     setSelectedPiNameState(name);
   }, []);
 
-  const addTeam = useCallback((name: string, boardId: string) => {
+  const addTeam = useCallback((name: string, boardId: string, projectKey?: string) => {
     // Use timestamp + random suffix for a unique ID without crypto.randomUUID
     const newTeamId = Date.now().toString(36) + Math.random().toString(36).slice(2);
     const newTeam: ArtTeam = {
       id: newTeamId,
       name,
       boardId,
+      projectKey: projectKey?.trim() || undefined,
       sprintIssues: [],
       isLoading: false,
       loadError: null,
