@@ -6,12 +6,13 @@
 
 import { useEffect, useState } from 'react';
 
-import type { JiraIssue } from '../../types/jira.ts';
-import HygieneView from '../Hygiene/HygieneView.tsx';
+import { jiraPost, jiraPut } from '../../services/jiraApi.ts';
 import { snowFetch } from '../../services/snowApi.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
+import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
+import HygieneView from '../Hygiene/HygieneView.tsx';
 import { useMyIssuesState } from './hooks/useMyIssuesState.ts';
-import type { IssueSource, JiraTransition, Persona, SortField, ViewMode } from './hooks/useMyIssuesState.ts';
+import type { IssueSource, Persona, SortField, ViewMode } from './hooks/useMyIssuesState.ts';
 import type { ExtendedJiraIssue } from './myIssuesExtendedTypes.ts';
 import PersonaIntelStrip from './PersonaIntelStrip.tsx';
 import SwimlaneCardView from './SwimlaneCardView.tsx';
@@ -69,6 +70,11 @@ const DESCRIPTION_TRUNCATE_LENGTH = 300;
 const SNOW_SEARCH_LIMIT = 5;
 
 const SNOW_INCIDENT_PATH = '/api/now/table/incident';
+const SUCCESS_MESSAGE_TIMEOUT_MS = 3_000;
+const COMMENT_POST_ERROR_MESSAGE = 'Failed to post comment';
+const STORY_POINTS_SAVE_ERROR_MESSAGE = 'Failed to save story points';
+const COMMENT_SUCCESS_LABEL = '✓ Posted';
+const STORY_POINTS_SUCCESS_LABEL = '✓ Saved';
 
 type MyIssuesTab = 'report' | 'hygiene' | 'settings';
 
@@ -117,31 +123,127 @@ function DetailPanel({
   const [snowTickets, setSnowTickets] = useState<SnowTicket[]>([]);
   const [isSnowLoading, setIsSnowLoading] = useState(false);
   const [snowError, setSnowError] = useState<string | null>(null);
+  const [singleCommentText, setSingleCommentText] = useState('');
+  const [isPostingComment, setIsPostingComment] = useState(false);
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const [commentSuccess, setCommentSuccess] = useState(false);
+  const [storyPointsInput, setStoryPointsInput] = useState(String(issue.fields.customfield_10016 ?? ''));
+  const [isSavingPoints, setIsSavingPoints] = useState(false);
+  const [pointsSaveError, setPointsSaveError] = useState<string | null>(null);
+  const [pointsSaveSuccess, setPointsSaveSuccess] = useState(false);
 
   // Fetch transitions and SNow tickets whenever the selected issue changes.
   useEffect(() => {
     onLoadTransitions(issue.key);
+    setSingleCommentText('');
+    setCommentError(null);
+    setCommentSuccess(false);
+    setStoryPointsInput(String(issue.fields.customfield_10016 ?? ''));
+    setPointsSaveError(null);
+    setPointsSaveSuccess(false);
+    setSnowTickets([]);
+    setSnowError(null);
 
-    if (isSnowReady) {
-      setIsSnowLoading(true);
-      setSnowTickets([]);
-      setSnowError(null);
-
-      const snowQuery = encodeURIComponent(`short_descriptionLIKE${issue.key}`);
-      const snowPath = `${SNOW_INCIDENT_PATH}?sysparm_query=${snowQuery}&sysparm_limit=${SNOW_SEARCH_LIMIT}`;
-
-      snowFetch<{ result: SnowTicket[] }>(snowPath)
-        .then((response) => {
-          setSnowTickets(response.result);
-          setIsSnowLoading(false);
-        })
-        .catch((fetchError: unknown) => {
-          const message = fetchError instanceof Error ? fetchError.message : 'Failed to search SNow';
-          setSnowError(message);
-          setIsSnowLoading(false);
-        });
+    if (!isSnowReady) {
+      setIsSnowLoading(false);
+      return;
     }
-  }, [issue.key, isSnowReady, onLoadTransitions]);
+
+    let isMounted = true;
+    setIsSnowLoading(true);
+
+    const snowQuery = encodeURIComponent(`short_descriptionLIKE${issue.key}`);
+    const snowPath = `${SNOW_INCIDENT_PATH}?sysparm_query=${snowQuery}&sysparm_limit=${SNOW_SEARCH_LIMIT}`;
+
+    snowFetch<{ result: SnowTicket[] }>(snowPath)
+      .then((response) => {
+        if (!isMounted) {
+          return;
+        }
+        setSnowTickets(response.result);
+        setIsSnowLoading(false);
+      })
+      .catch((fetchError: unknown) => {
+        if (!isMounted) {
+          return;
+        }
+        const message = fetchError instanceof Error ? fetchError.message : 'Failed to search SNow';
+        setSnowError(message);
+        setIsSnowLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [issue.fields.customfield_10016, issue.key, isSnowReady, onLoadTransitions]);
+
+  useEffect(() => {
+    if (!commentSuccess) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setCommentSuccess(false);
+    }, SUCCESS_MESSAGE_TIMEOUT_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [commentSuccess]);
+
+  useEffect(() => {
+    if (!pointsSaveSuccess) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setPointsSaveSuccess(false);
+    }, SUCCESS_MESSAGE_TIMEOUT_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [pointsSaveSuccess]);
+
+  async function handlePostComment() {
+    if (!singleCommentText.trim()) {
+      return;
+    }
+
+    setIsPostingComment(true);
+    setCommentError(null);
+    try {
+      await jiraPost(`/rest/api/2/issue/${issue.key}/comment`, { body: singleCommentText });
+      setSingleCommentText('');
+      setCommentSuccess(true);
+    } catch (error) {
+      setCommentError(error instanceof Error ? error.message : COMMENT_POST_ERROR_MESSAGE);
+    } finally {
+      setIsPostingComment(false);
+    }
+  }
+
+  const hasValidStoryPointsInput = storyPointsInput.trim() !== '' && !Number.isNaN(Number(storyPointsInput));
+
+  async function handleSaveStoryPoints() {
+    if (!hasValidStoryPointsInput) {
+      return;
+    }
+
+    setIsSavingPoints(true);
+    setPointsSaveError(null);
+
+    try {
+      await jiraPut(`/rest/api/2/issue/${issue.key}`, {
+        fields: { customfield_10016: Number(storyPointsInput) },
+      });
+      setPointsSaveSuccess(true);
+    } catch (error) {
+      setPointsSaveError(error instanceof Error ? error.message : STORY_POINTS_SAVE_ERROR_MESSAGE);
+    } finally {
+      setIsSavingPoints(false);
+    }
+  }
 
   const isDescriptionLong = (issue.fields.description?.length ?? 0) > DESCRIPTION_TRUNCATE_LENGTH;
   const truncatedDescription = issue.fields.description
@@ -221,6 +323,52 @@ function DetailPanel({
         {transitionError && (
           <p className={styles.errorMessage}>{transitionError}</p>
         )}
+      </div>
+
+      <div className={styles.detailActionSection}>
+        <label htmlFor="single-issue-comment">Add Comment</label>
+        <textarea
+          className={styles.detailTextarea}
+          id="single-issue-comment"
+          onChange={(changeEvent) => setSingleCommentText(changeEvent.target.value)}
+          rows={3}
+          value={singleCommentText}
+        />
+        <div className={styles.detailActionRow}>
+          <button
+            className={styles.detailActionButton}
+            disabled={!singleCommentText.trim() || isPostingComment}
+            onClick={() => void handlePostComment()}
+            type="button"
+          >
+            {isPostingComment ? 'Posting…' : 'Post Comment'}
+          </button>
+          {commentSuccess && <span className={styles.successMessage}>{COMMENT_SUCCESS_LABEL}</span>}
+        </div>
+        {commentError && <p className={styles.errorMessage}>{commentError}</p>}
+      </div>
+
+      <div className={styles.detailActionSection}>
+        <label htmlFor="story-points-input">Story Points</label>
+        <div className={styles.detailActionRow}>
+          <input
+            className={styles.detailPointsInput}
+            id="story-points-input"
+            onChange={(changeEvent) => setStoryPointsInput(changeEvent.target.value)}
+            type="number"
+            value={storyPointsInput}
+          />
+          <button
+            className={styles.detailActionButton}
+            disabled={isSavingPoints || !hasValidStoryPointsInput}
+            onClick={() => void handleSaveStoryPoints()}
+            type="button"
+          >
+            {isSavingPoints ? 'Saving…' : 'Save'}
+          </button>
+          {pointsSaveSuccess && <span className={styles.successMessage}>{STORY_POINTS_SUCCESS_LABEL}</span>}
+        </div>
+        {pointsSaveError && <p className={styles.errorMessage}>{pointsSaveError}</p>}
       </div>
 
       {/* ServiceNow cross-reference section */}

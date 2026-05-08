@@ -6,7 +6,7 @@
 import { useCallback, useMemo, useState } from 'react';
 
 import { jiraGet, jiraPost } from '../../../services/jiraApi.ts';
-import type { JiraBoard, JiraFilter, JiraIssue } from '../../../types/jira.ts';
+import type { JiraBoard, JiraFilter, JiraIssue, JiraTransition } from '../../../types/jira.ts';
 import type { JiraBoardQuickFilter } from '../myIssuesExtendedTypes.ts';
 
 // ── Source and display type unions ──
@@ -15,16 +15,6 @@ export type IssueSource = 'mine' | 'jql' | 'filter' | 'board';
 export type ViewMode = 'cards' | 'compact' | 'table';
 export type SortField = 'updated' | 'priority' | 'due' | 'created' | 'project';
 export type Persona = 'dev' | 'qa' | 'sm' | 'po';
-
-/**
- * Represents a Jira workflow transition that can move an issue to a new status.
- * The `to` field describes the target status after the transition is executed.
- */
-export interface JiraTransition {
-  id: string;
-  name: string;
-  to: { name: string; statusCategory: { name: string } };
-}
 
 // ── Named API path constants ──
 

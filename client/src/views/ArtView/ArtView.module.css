@@ -191,6 +191,32 @@
   font-weight: bold;
 }
 
+.issueKeyCell {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.expandToggleButton {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary, #8b949e);
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 0.75rem;
+  border-radius: 3px;
+}
+
+.expandToggleButton:hover {
+  background: var(--color-surface-hover, rgba(255,255,255,0.05));
+}
+
+.issueDetailCell {
+  padding: 0;
+  background: var(--color-surface-1);
+}
+
 .addTeamForm {
   display: flex;
   gap: var(--spacing-sm);

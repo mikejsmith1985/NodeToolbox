@@ -1,7 +1,8 @@
 // ArtView.tsx — Tabbed ART (Agile Release Train) view for multi-team PI planning and health dashboards.
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 
+import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import JiraBoardPicker from '../../components/JiraBoardPicker/index.tsx';
 import JiraFieldPicker from '../../components/JiraFieldPicker/index.tsx';
 import JiraProjectPicker from '../../components/JiraProjectPicker/index.tsx';
@@ -38,6 +39,10 @@ const ART_TAB_DEFINITIONS: { key: ArtTab; label: string }[] = [
 /** Main ART View with 10 tabs for tracking multi-team PI health across the Agile Release Train. */
 export default function ArtView() {
   const { state, actions } = useArtData();
+
+  function handleIssueUpdated() {
+    void actions.loadAllTeams();
+  }
 
   return (
     <div className={styles.artView}>
@@ -79,7 +84,7 @@ export default function ArtView() {
           />
         )}
         {state.activeTab === 'impediments' && (
-          <ImpedimentsPanel teams={state.teams} />
+          <ImpedimentsPanel onIssueUpdated={handleIssueUpdated} teams={state.teams} />
         )}
         {state.activeTab === 'predictability' && (
           <PredictabilityPanel teams={state.teams} />
@@ -217,13 +222,22 @@ interface TeamsPanelProps {
   teams: ArtTeam[];
 }
 
+interface ImpedimentsPanelProps extends TeamsPanelProps {
+  onIssueUpdated: () => void;
+}
+
 /** Renders the Impediments tab showing blocked issues across all teams. */
-function ImpedimentsPanel({ teams }: TeamsPanelProps) {
+function ImpedimentsPanel({ teams, onIssueUpdated }: ImpedimentsPanelProps) {
+  const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
   const blockedIssues = teams.flatMap((team) =>
     team.sprintIssues
       .filter((issue) => issue.fields.status.name.toLowerCase().includes('block'))
       .map((issue) => ({ ...issue, teamName: team.name })),
   );
+
+  function toggleExpandedIssue(issueKey: string) {
+    setExpandedIssueKey((previousIssueKey) => previousIssueKey === issueKey ? null : issueKey);
+  }
 
   return (
     <div className={styles.panel}>
@@ -241,14 +255,41 @@ function ImpedimentsPanel({ teams }: TeamsPanelProps) {
           </tr>
         </thead>
         <tbody>
-          {blockedIssues.map((issue) => (
-            <tr key={issue.key}>
-              <td>{issue.key}</td>
-              <td>{issue.fields.summary}</td>
-              <td>{issue.teamName}</td>
-              <td>{issue.fields.assignee?.displayName ?? '—'}</td>
-            </tr>
-          ))}
+          {blockedIssues.map((issue) => {
+            const isExpanded = expandedIssueKey === issue.key;
+            const expandButtonLabel = `${isExpanded ? 'Collapse' : 'Expand'} details for ${issue.key}`;
+
+            return (
+              <Fragment key={issue.key}>
+                <tr>
+                  <td>
+                    <div className={styles.issueKeyCell}>
+                      <span>{issue.key}</span>
+                      <button
+                        aria-expanded={isExpanded}
+                        aria-label={expandButtonLabel}
+                        className={styles.expandToggleButton}
+                        onClick={() => toggleExpandedIssue(issue.key)}
+                        type="button"
+                      >
+                        {isExpanded ? '▲' : '▼'}
+                      </button>
+                    </div>
+                  </td>
+                  <td>{issue.fields.summary}</td>
+                  <td>{issue.teamName}</td>
+                  <td>{issue.fields.assignee?.displayName ?? '—'}</td>
+                </tr>
+                {isExpanded && (
+                  <tr>
+                    <td className={styles.issueDetailCell} colSpan={4}>
+                      <IssueDetailPanel isEmbedded issue={issue} onIssueUpdated={onIssueUpdated} />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>

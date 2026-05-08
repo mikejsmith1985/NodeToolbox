@@ -236,7 +236,7 @@
 
 .laneIssueRow {
   display: grid;
-  grid-template-columns: 90px 1fr 120px;
+  grid-template-columns: 90px 1fr 120px auto auto;
   gap: var(--spacing-sm);
   align-items: center;
   padding: var(--spacing-xs) 0;
@@ -272,6 +272,32 @@
   background: var(--color-danger);
   color: #fff;
   font-weight: 600;
+}
+
+.issueCardWrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.issueCardHeaderRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.expandToggleButton {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary, #8b949e);
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 0.75rem;
+  border-radius: 3px;
+}
+
+.expandToggleButton:hover {
+  background: var(--color-surface-hover, rgba(255,255,255,0.05));
 }
 
 .blockerCard {
@@ -463,11 +489,11 @@
   padding-left: calc(var(--spacing-xs) - 3px);
 }
 
-/* ── Issue card grid with 4 columns (key / summary / status / action) ── */
+/* ── Issue card grid with 5 columns (key / summary / status / action / expand) ── */
 
 .laneIssueRow {
   display: grid;
-  grid-template-columns: 90px 1fr 120px auto;
+  grid-template-columns: 90px 1fr 120px auto auto;
   gap: var(--spacing-sm);
   align-items: center;
   padding: var(--spacing-xs) 0;

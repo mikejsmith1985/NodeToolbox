@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (v0.6.3 — Jira inline issue actions phase 3)
+- Added a shared inline `IssueDetailPanel` with status transitions, comment posting, and story-point editing, then wired expandable issue rows into Sprint Dashboard, ART impediments, and My Issues detail workflows for closer parity with the original HTML app.
+
 ### Changed (v0.6.3 — Jira picker parity phase 2)
 - Replaced Jira field, board, and project ID text inputs in Sprint Dashboard, ART View, and Dev Workspace settings with API-backed dropdown pickers that still fall back to manual entry when Jira metadata cannot be loaded.
 

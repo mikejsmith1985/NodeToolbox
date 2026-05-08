@@ -58,6 +58,8 @@ vi.mock('./hooks/useArtData.ts', () => ({
 
 vi.mock('../../services/jiraApi.ts', () => ({
   jiraGet: mockJiraGet,
+  jiraPost: vi.fn(),
+  jiraPut: vi.fn(),
 }));
 
 import ArtView from './ArtView.tsx';
@@ -129,6 +131,41 @@ describe('ArtView', () => {
     mockState.activeTab = 'impediments';
     render(<ArtView />);
     expect(screen.getByRole('tab', { name: /impediments/i })).toBeInTheDocument();
+  });
+
+  it('renders expand buttons on impediment rows', () => {
+    mockState.activeTab = 'impediments';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        sprintIssues: [
+          {
+            id: 'ALPHA-7',
+            key: 'ALPHA-7',
+            fields: {
+              summary: 'Blocked release task',
+              status: { name: 'Blocked', statusCategory: { key: 'indeterminate' } },
+              priority: null,
+              assignee: null,
+              reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z',
+              updated: '2025-01-02T00:00:00.000Z',
+              description: 'Waiting on another team.',
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    render(<ArtView />);
+
+    expect(screen.getByRole('button', { name: /expand details for alpha-7/i })).toBeInTheDocument();
+
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', sprintIssues: [], isLoading: false, loadError: null }];
   });
 
   // ── Feature 3: PI Progress Header ──
