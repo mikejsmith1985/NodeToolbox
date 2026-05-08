@@ -4,19 +4,26 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { JiraIssue } from '../../types/jira.ts';
+import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
 
-import type { IssueSource, JiraTransition, Persona, SortField, ViewMode } from './hooks/useMyIssuesState.ts';
+import type { IssueSource, Persona, SortField, ViewMode } from './hooks/useMyIssuesState.ts';
 
 // ── Hoisted mocks ──
 
-const { mockUseConnectionStore, mockSnowFetch } = vi.hoisted(() => ({
+const { mockUseConnectionStore, mockSnowFetch, mockJiraPost, mockJiraPut } = vi.hoisted(() => ({
   mockUseConnectionStore: vi.fn(),
   mockSnowFetch: vi.fn(),
+  mockJiraPost: vi.fn(),
+  mockJiraPut: vi.fn(),
 }));
 
 vi.mock('../../store/connectionStore.ts', () => ({
   useConnectionStore: mockUseConnectionStore,
+}));
+
+vi.mock('../../services/jiraApi.ts', () => ({
+  jiraPost: mockJiraPost,
+  jiraPut: mockJiraPut,
 }));
 
 vi.mock('../../services/snowApi.ts', () => ({
@@ -156,10 +163,14 @@ describe('MyIssuesView', () => {
     // Default connection store: SNow not ready
     mockUseConnectionStore.mockReturnValue({ isSnowReady: false });
     mockSnowFetch.mockResolvedValue({ result: [] });
+    mockJiraPost.mockResolvedValue({});
+    mockJiraPut.mockResolvedValue(undefined);
     vi.clearAllMocks();
     // Re-apply connection store default after clearAllMocks
     mockUseConnectionStore.mockReturnValue({ isSnowReady: false });
     mockSnowFetch.mockResolvedValue({ result: [] });
+    mockJiraPost.mockResolvedValue({});
+    mockJiraPut.mockResolvedValue(undefined);
   });
 
   it('renders the Report, Hygiene, and Settings tab buttons', () => {
@@ -330,6 +341,14 @@ describe('MyIssuesView — detail panel', () => {
     render(<MyIssuesView />);
 
     expect(screen.getByText('Transition failed: 400')).toBeInTheDocument();
+  });
+
+  it('detail panel shows the single-issue comment textarea', () => {
+    mockState.isDetailPanelOpen = true;
+    mockState.selectedIssue = createMockIssue('TBX-1', 'Build the feature');
+    render(<MyIssuesView />);
+
+    expect(screen.getByLabelText(/add comment/i)).toBeInTheDocument();
   });
 });
 

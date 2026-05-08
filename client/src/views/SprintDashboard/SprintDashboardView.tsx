@@ -18,6 +18,7 @@ import {
   YAxis,
 } from 'recharts';
 
+import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import JiraFieldPicker from '../../components/JiraFieldPicker/index.tsx';
 import type { JiraIssue } from '../../types/jira.ts';
 import StoryPointingView from '../StoryPointing/StoryPointingView.tsx';
@@ -52,6 +53,11 @@ const BLOCKED_STATUSES = ['blocked', 'impeded', 'on hold'];
 const MS_PER_DAY = 86_400_000;
 const TIMER_WARNING_SECONDS = 300; // last 5 minutes
 const TIMER_DANGER_SECONDS = 60;   // last 1 minute
+const EXPAND_TOGGLE_COLLAPSED_ICON = '▼';
+const EXPAND_TOGGLE_EXPANDED_ICON = '▲';
+const BLOCKED_SECTION_KEY = 'blocked';
+const STALE_SECTION_KEY = 'stale';
+const IN_PROGRESS_SECTION_KEY = 'all-in-progress';
 
 // Burn-down chart lines use these named identifiers in recharts data.
 const BURN_IDEAL_KEY = 'ideal';
@@ -272,6 +278,7 @@ function IssueCardWithMove({
   staleDaysThreshold,
   onFetchSprints,
   onMoveToSprint,
+  onIssueUpdated,
 }: {
   issue: JiraIssue;
   currentSprintId: number | null;
@@ -280,27 +287,44 @@ function IssueCardWithMove({
   staleDaysThreshold: number;
   onFetchSprints: () => void;
   onMoveToSprint: (issueKey: string, targetSprintId: number) => Promise<void>;
+  onIssueUpdated: () => void;
 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const isStale = isStaleIssue(issue, staleDaysThreshold);
   const rowClassName = isStale
     ? `${styles.laneIssueRow} ${styles.staleIssueRow}`
     : styles.laneIssueRow;
+  const expandButtonLabel = `${isExpanded ? 'Collapse' : 'Expand'} details for ${issue.key}`;
 
   return (
-    <div className={rowClassName} key={issue.key}>
-      <a className={styles.issueKeyLink} href={`#${issue.key}`}>
-        {issue.key}
-      </a>
-      <span>{issue.fields.summary}</span>
-      <span>{issue.fields.status.name}</span>
-      <MoveToSprintButton
-        availableSprints={availableSprints ?? []}
-        currentSprintId={currentSprintId}
-        isLoadingAvailableSprints={isLoadingAvailableSprints}
-        issueKey={issue.key}
-        onFetchSprints={onFetchSprints}
-        onMoveToSprint={onMoveToSprint}
-      />
+    <div className={styles.issueCardWrapper} key={issue.key}>
+      <div className={rowClassName}>
+        <a className={styles.issueKeyLink} href={`#${issue.key}`}>
+          {issue.key}
+        </a>
+        <span>{issue.fields.summary}</span>
+        <span>{issue.fields.status.name}</span>
+        <MoveToSprintButton
+          availableSprints={availableSprints ?? []}
+          currentSprintId={currentSprintId}
+          isLoadingAvailableSprints={isLoadingAvailableSprints}
+          issueKey={issue.key}
+          onFetchSprints={onFetchSprints}
+          onMoveToSprint={onMoveToSprint}
+        />
+        <button
+          aria-expanded={isExpanded}
+          aria-label={expandButtonLabel}
+          className={styles.expandToggleButton}
+          onClick={() => setIsExpanded((previousIsExpanded) => !previousIsExpanded)}
+          type="button"
+        >
+          {isExpanded ? EXPAND_TOGGLE_EXPANDED_ICON : EXPAND_TOGGLE_COLLAPSED_ICON}
+        </button>
+      </div>
+      {isExpanded && (
+        <IssueDetailPanel isEmbedded issue={issue} onIssueUpdated={onIssueUpdated} />
+      )}
     </div>
   );
 }
@@ -431,6 +455,7 @@ function OverviewTab({
   configState,
   onFetchSprints,
   onMoveToSprint,
+  onIssueUpdated,
 }: {
   issues: JiraIssue[];
   sprintInfo: ReturnType<typeof useSprintData>['state']['sprintInfo'];
@@ -438,6 +463,7 @@ function OverviewTab({
   configState: DashboardConfig;
   onFetchSprints: () => void;
   onMoveToSprint: (issueKey: string, targetSprintId: number) => Promise<void>;
+  onIssueUpdated: () => void;
 }) {
   return (
     <div>
@@ -469,6 +495,7 @@ function OverviewTab({
                 issue={issue}
                 key={issue.key}
                 onFetchSprints={onFetchSprints}
+                onIssueUpdated={onIssueUpdated}
                 onMoveToSprint={onMoveToSprint}
                 staleDaysThreshold={configState.staleDaysThreshold}
               />
@@ -487,12 +514,14 @@ function AssigneeTab({
   configState,
   onFetchSprints,
   onMoveToSprint,
+  onIssueUpdated,
 }: {
   issues: JiraIssue[];
   sprintState: ReturnType<typeof useSprintData>['state'];
   configState: DashboardConfig;
   onFetchSprints: () => void;
   onMoveToSprint: (issueKey: string, targetSprintId: number) => Promise<void>;
+  onIssueUpdated: () => void;
 }) {
   const groupedIssues = groupIssuesByAssignee(issues);
 
@@ -526,6 +555,7 @@ function AssigneeTab({
                   issue={issue}
                   key={issue.key}
                   onFetchSprints={onFetchSprints}
+                  onIssueUpdated={onIssueUpdated}
                   onMoveToSprint={onMoveToSprint}
                   staleDaysThreshold={configState.staleDaysThreshold}
                 />
@@ -539,7 +569,16 @@ function AssigneeTab({
 }
 
 /** Renders the Blockers tab: Blocked issues, Stale in-progress, All in-progress. */
-function BlockersTab({ issues, staleDaysThreshold }: { issues: JiraIssue[]; staleDaysThreshold: number }) {
+function BlockersTab({
+  issues,
+  staleDaysThreshold,
+  onIssueUpdated,
+}: {
+  issues: JiraIssue[];
+  staleDaysThreshold: number;
+  onIssueUpdated: () => void;
+}) {
+  const [expandedIssueIdentifier, setExpandedIssueIdentifier] = useState<string | null>(null);
   const blockedIssues = issues.filter(isBlockedIssue);
   const staleIssues = issues.filter(
     (issue) => !isBlockedIssue(issue) && isStaleIssue(issue, staleDaysThreshold),
@@ -549,6 +588,51 @@ function BlockersTab({ issues, staleDaysThreshold }: { issues: JiraIssue[]; stal
       issue.fields.status.statusCategory.key === 'indeterminate' && !isBlockedIssue(issue),
   );
 
+  function createExpandedIssueIdentifier(sectionKey: string, issueKey: string) {
+    return `${sectionKey}:${issueKey}`;
+  }
+
+  function toggleExpandedIssue(sectionKey: string, issueKey: string) {
+    const nextExpandedIssueIdentifier = createExpandedIssueIdentifier(sectionKey, issueKey);
+    setExpandedIssueIdentifier((previousIssueIdentifier) =>
+      previousIssueIdentifier === nextExpandedIssueIdentifier ? null : nextExpandedIssueIdentifier,
+    );
+  }
+
+  function renderBlockerCard(issue: JiraIssue, cardClassName: string, sectionKey: string) {
+    const issueIdentifier = createExpandedIssueIdentifier(sectionKey, issue.key);
+    const isExpanded = expandedIssueIdentifier === issueIdentifier;
+    const expandButtonLabel = `${isExpanded ? 'Collapse' : 'Expand'} details for ${issue.key}`;
+
+    return (
+      <div className={styles.issueCardWrapper} key={issue.key}>
+        <div className={cardClassName}>
+          <div className={styles.issueCardHeaderRow}>
+            <a className={styles.issueKeyLink} href={`#${issue.key}`}>
+              {issue.key}
+            </a>
+            <button
+              aria-expanded={isExpanded}
+              aria-label={expandButtonLabel}
+              className={styles.expandToggleButton}
+              onClick={() => toggleExpandedIssue(sectionKey, issue.key)}
+              type="button"
+            >
+              {isExpanded ? EXPAND_TOGGLE_EXPANDED_ICON : EXPAND_TOGGLE_COLLAPSED_ICON}
+            </button>
+          </div>
+          <span className={styles.issueSummaryText}>{issue.fields.summary}</span>
+          <span className={styles.issueMetaText}>
+            {issue.fields.assignee?.displayName ?? 'Unassigned'} · {calculateAgingDays(issue.fields.updated)}d ago
+          </span>
+        </div>
+        {isExpanded && (
+          <IssueDetailPanel isEmbedded issue={issue} onIssueUpdated={onIssueUpdated} />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className={styles.blockersSection}>
@@ -556,18 +640,7 @@ function BlockersTab({ issues, staleDaysThreshold }: { issues: JiraIssue[]; stal
           <h3 className={styles.blockersSectionTitle}>Blocked</h3>
           <span className={styles.countBadge}>{blockedIssues.length}</span>
         </div>
-        {blockedIssues.map((issue) => (
-          <div className={styles.blockerCard} key={issue.key}>
-            <a className={styles.issueKeyLink} href={`#${issue.key}`}>
-              {issue.key}
-            </a>
-            <span className={styles.issueSummaryText}>{issue.fields.summary}</span>
-            <span className={styles.issueMetaText}>
-              {issue.fields.assignee?.displayName ?? 'Unassigned'} ·{' '}
-              {calculateAgingDays(issue.fields.updated)}d ago
-            </span>
-          </div>
-        ))}
+        {blockedIssues.map((issue) => renderBlockerCard(issue, styles.blockerCard, BLOCKED_SECTION_KEY))}
         {blockedIssues.length === 0 && (
           <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
             No blocked issues. 🎉
@@ -582,18 +655,7 @@ function BlockersTab({ issues, staleDaysThreshold }: { issues: JiraIssue[]; stal
           </h3>
           <span className={styles.countBadge}>{staleIssues.length}</span>
         </div>
-        {staleIssues.map((issue) => (
-          <div className={`${styles.blockerCard} ${styles.staleCard}`} key={issue.key}>
-            <a className={styles.issueKeyLink} href={`#${issue.key}`}>
-              {issue.key}
-            </a>
-            <span className={styles.issueSummaryText}>{issue.fields.summary}</span>
-            <span className={styles.issueMetaText}>
-              {issue.fields.assignee?.displayName ?? 'Unassigned'} ·{' '}
-              {calculateAgingDays(issue.fields.updated)}d ago
-            </span>
-          </div>
-        ))}
+        {staleIssues.map((issue) => renderBlockerCard(issue, `${styles.blockerCard} ${styles.staleCard}`, STALE_SECTION_KEY))}
       </div>
 
       <div className={styles.blockersSection}>
@@ -601,25 +663,15 @@ function BlockersTab({ issues, staleDaysThreshold }: { issues: JiraIssue[]; stal
           <h3 className={styles.blockersSectionTitle}>All In Progress</h3>
           <span className={styles.countBadge}>{allInProgressIssues.length}</span>
         </div>
-        {allInProgressIssues.map((issue) => (
-          <div className={styles.blockerCard} key={issue.key}>
-            <a className={styles.issueKeyLink} href={`#${issue.key}`}>
-              {issue.key}
-            </a>
-            <span className={styles.issueSummaryText}>{issue.fields.summary}</span>
-            <span className={styles.issueMetaText}>
-              {issue.fields.assignee?.displayName ?? 'Unassigned'} ·{' '}
-              {calculateAgingDays(issue.fields.updated)}d ago
-            </span>
-          </div>
-        ))}
+        {allInProgressIssues.map((issue) => renderBlockerCard(issue, styles.blockerCard, IN_PROGRESS_SECTION_KEY))}
       </div>
     </div>
   );
 }
 
 /** Renders the Defects tab: bug issues grouped by priority. */
-function DefectsTab({ issues }: { issues: JiraIssue[] }) {
+function DefectsTab({ issues, onIssueUpdated }: { issues: JiraIssue[]; onIssueUpdated: () => void }) {
+  const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
   const bugIssues = issues.filter((issue) => issue.fields.issuetype.name === 'Bug');
 
   const PRIORITY_ORDER = ['Critical', 'High', 'Medium', 'Low', 'None'];
@@ -628,6 +680,10 @@ function DefectsTab({ issues }: { issues: JiraIssue[] }) {
     priorityName,
     defects: bugIssues.filter((bug) => (bug.fields.priority?.name ?? 'None') === priorityName),
   })).filter((priorityGroup) => priorityGroup.defects.length > 0);
+
+  function toggleExpandedIssue(issueKey: string) {
+    setExpandedIssueKey((previousIssueKey) => previousIssueKey === issueKey ? null : issueKey);
+  }
 
   if (bugIssues.length === 0) {
     return (
@@ -643,17 +699,36 @@ function DefectsTab({ issues }: { issues: JiraIssue[] }) {
             <h3 className={styles.defectGroupTitle}>{priorityName}</h3>
             <span className={styles.countBadge}>{defects.length}</span>
           </div>
-          {defects.map((defect) => (
-            <div className={styles.defectCard} key={defect.key}>
-              <a className={styles.issueKeyLink} href={`#${defect.key}`}>
-                {defect.key}
-              </a>
-              <span>{defect.fields.summary}</span>
-              <span className={styles.issueMetaText}>
-                {defect.fields.assignee?.displayName ?? 'Unassigned'}
-              </span>
-            </div>
-          ))}
+          {defects.map((defect) => {
+            const isExpanded = expandedIssueKey === defect.key;
+            const expandButtonLabel = `${isExpanded ? 'Collapse' : 'Expand'} details for ${defect.key}`;
+
+            return (
+              <div className={styles.issueCardWrapper} key={defect.key}>
+                <div className={styles.defectCard}>
+                  <a className={styles.issueKeyLink} href={`#${defect.key}`}>
+                    {defect.key}
+                  </a>
+                  <span>{defect.fields.summary}</span>
+                  <span className={styles.issueMetaText}>
+                    {defect.fields.assignee?.displayName ?? 'Unassigned'}
+                  </span>
+                  <button
+                    aria-expanded={isExpanded}
+                    aria-label={expandButtonLabel}
+                    className={styles.expandToggleButton}
+                    onClick={() => toggleExpandedIssue(defect.key)}
+                    type="button"
+                  >
+                    {isExpanded ? EXPAND_TOGGLE_EXPANDED_ICON : EXPAND_TOGGLE_COLLAPSED_ICON}
+                  </button>
+                </div>
+                {isExpanded && (
+                  <IssueDetailPanel isEmbedded issue={defect} onIssueUpdated={onIssueUpdated} />
+                )}
+              </div>
+            );
+          })}
         </div>
       ))}
     </div>
@@ -1232,6 +1307,10 @@ export default function SprintDashboardView() {
   // Local state for the board picker search field — not persisted, just UI.
   const [boardSearchQuery, setBoardSearchQuery] = useState('');
 
+  function handleIssueUpdated() {
+    void actions.loadSprint();
+  }
+
   function renderActiveTabPanel(activeTab: DashboardTab) {
     if (activeTab === 'overview') {
       return (
@@ -1239,6 +1318,7 @@ export default function SprintDashboardView() {
           configState={config}
           issues={state.sprintIssues}
           onFetchSprints={actions.loadAvailableSprints}
+          onIssueUpdated={handleIssueUpdated}
           onMoveToSprint={actions.moveIssueToSprint}
           sprintInfo={state.sprintInfo}
           sprintState={state}
@@ -1252,6 +1332,7 @@ export default function SprintDashboardView() {
           configState={config}
           issues={state.sprintIssues}
           onFetchSprints={actions.loadAvailableSprints}
+          onIssueUpdated={handleIssueUpdated}
           onMoveToSprint={actions.moveIssueToSprint}
           sprintState={state}
         />
@@ -1259,11 +1340,17 @@ export default function SprintDashboardView() {
     }
 
     if (activeTab === 'blockers') {
-      return <BlockersTab issues={state.sprintIssues} staleDaysThreshold={config.staleDaysThreshold} />;
+      return (
+        <BlockersTab
+          issues={state.sprintIssues}
+          onIssueUpdated={handleIssueUpdated}
+          staleDaysThreshold={config.staleDaysThreshold}
+        />
+      );
     }
 
     if (activeTab === 'defects') {
-      return <DefectsTab issues={state.sprintIssues} />;
+      return <DefectsTab issues={state.sprintIssues} onIssueUpdated={handleIssueUpdated} />;
     }
 
     if (activeTab === 'standup') {

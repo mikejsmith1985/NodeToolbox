@@ -8,6 +8,13 @@ export interface JiraUser {
   avatarUrls: Record<string, string>;
 }
 
+/** Jira workflow transition metadata returned by /rest/api/2/issue/{key}/transitions. */
+export interface JiraTransition {
+  id: string;
+  name: string;
+  to: { name: string; statusCategory: { name: string } };
+}
+
 /** Jira issue payload returned by the backend proxy. */
 export interface JiraIssue {
   id: string;

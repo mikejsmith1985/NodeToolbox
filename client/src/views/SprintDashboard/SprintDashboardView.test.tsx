@@ -135,6 +135,8 @@ vi.mock('../StoryPointing/StoryPointingView.tsx', () => ({
 
 vi.mock('../../services/jiraApi.ts', () => ({
   jiraGet: mockJiraGet,
+  jiraPost: vi.fn(),
+  jiraPut: vi.fn(),
 }));
 
 import SprintDashboardView from './SprintDashboardView.tsx';
@@ -306,6 +308,13 @@ describe('SprintDashboardView', () => {
     // Each issue card should have a "Move to sprint" button.
     const moveButtons = screen.getAllByRole('button', { name: /move to sprint/i });
     expect(moveButtons.length).toBeGreaterThan(0);
+  });
+
+  it('renders expand buttons on issue cards', () => {
+    mockState.activeTab = 'assignee';
+    render(<SprintDashboardView />);
+
+    expect(screen.getByRole('button', { name: /expand details for tbx-10/i })).toBeInTheDocument();
   });
 
   it('uses the configured stale days threshold in the Blockers tab heading', () => {
