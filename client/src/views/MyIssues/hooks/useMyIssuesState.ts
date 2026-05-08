@@ -7,6 +7,7 @@ import { useCallback, useMemo, useState } from 'react';
 
 import { jiraGet, jiraPost } from '../../../services/jiraApi.ts';
 import type { JiraBoard, JiraFilter, JiraIssue } from '../../../types/jira.ts';
+import type { JiraBoardQuickFilter } from '../myIssuesExtendedTypes.ts';
 
 // ── Source and display type unions ──
 
@@ -38,9 +39,13 @@ const FAVOURITE_FILTERS_PATH = '/rest/api/2/filter/favourite';
 const SEARCH_PATH = '/rest/api/2/search';
 const TRANSITIONS_PATH_PREFIX = '/rest/api/2/issue';
 const TRANSITIONS_PATH_SUFFIX = '/transitions';
+const COMMENT_PATH_SUFFIX = '/comment';
 
 const FETCH_FAILURE_MESSAGE = 'Failed to fetch issues';
 const EMPTY_FETCH_ERROR = null;
+
+/** Minimum column widths in characters used by the xlsx export. */
+const XLSX_MIN_COL_WIDTH = 10;
 
 // ── State and actions interfaces ──
 
@@ -74,6 +79,20 @@ export interface MyIssuesState {
   isLoadingTransitions: boolean;
   /** Whether the export dropdown menu is visible. */
   isExportMenuOpen: boolean;
+  /** True when bulk comment mode is active (issue cards show checkboxes). */
+  isBulkModeActive: boolean;
+  /** Map of Jira issue key → true for issues currently selected for bulk commenting. */
+  bulkSelectedKeys: Record<string, boolean>;
+  /** True while bulk comment POST requests are in flight. */
+  isBulkPostingComment: boolean;
+  /** Error message from the most recent failed bulk comment POST, or null. */
+  bulkCommentError: string | null;
+  /** Quick filters available for the selected board. Empty until loaded. */
+  boardQuickFilters: JiraBoardQuickFilter[];
+  /** Map of quick filter id → true for filters that are currently active. */
+  activeQuickFilterIds: Record<number, boolean>;
+  /** Map of swimlane zone key → true when that lane is collapsed. */
+  collapsedSwimlanes: Record<string, boolean>;
 }
 
 export interface MyIssuesActions {
@@ -105,6 +124,24 @@ export interface MyIssuesActions {
   exportAsCsv(): void;
   /** Copies the issue list as a Markdown table to the clipboard. */
   exportAsMarkdown(): void;
+  /** Downloads the current issue list as an xlsx file. */
+  exportAsXlsx(): void;
+  /** Copies the issue list as TSV to the clipboard. */
+  exportAsTsv(): void;
+  /** Enters or exits bulk-select mode; clears selection when exiting. */
+  toggleBulkMode(): void;
+  /** Toggles whether a specific issue key is included in the bulk selection. */
+  toggleBulkKey(issueKey: string): void;
+  /** Posts a comment to all bulk-selected issues. */
+  postBulkComment(commentText: string): Promise<void>;
+  /** Loads quick filters for the currently selected board. */
+  loadBoardQuickFilters(): Promise<void>;
+  /** Toggles a board quick filter on or off. */
+  toggleQuickFilter(filterId: number): void;
+  /** Clears the selected board and resets quick filter state. */
+  clearSelectedBoard(): void;
+  /** Collapses or expands the swimlane with the given zone key. */
+  toggleSwimlaneCollapsed(zoneKey: string): void;
 }
 
 // ── API response shapes ──
@@ -129,6 +166,11 @@ interface JiraSprintIssuesResponse {
 
 interface JiraTransitionsResponse {
   transitions: JiraTransition[];
+}
+
+/** Shape of the Jira Agile API response for board quick filters. */
+interface JiraBoardQuickFilterResponse {
+  values: JiraBoardQuickFilter[];
 }
 
 // ── Helper functions ──
@@ -156,6 +198,14 @@ function createInitialMyIssuesState(): MyIssuesState {
     availableTransitions: [],
     isLoadingTransitions: false,
     isExportMenuOpen: false,
+    isBulkModeActive: false,
+    bulkSelectedKeys: {},
+    isBulkPostingComment: false,
+    bulkCommentError: null,
+    boardQuickFilters: [],
+    activeQuickFilterIds: {},
+    // The "done" lane is collapsed by default to match legacy MI.collapsed behaviour
+    collapsedSwimlanes: { done: true },
   };
 }
 
@@ -213,6 +263,85 @@ function buildMarkdownExport(issues: JiraIssue[]): string {
     return `| ${issue.key} | ${issue.fields.summary} | ${issue.fields.status.name} | ${priority} | ${assignee} |`;
   });
   return [MARKDOWN_HEADER, MARKDOWN_SEPARATOR, ...rows].join('\n');
+}
+
+/** Sanitizes a cell value for TSV by removing tabs and newlines. */
+function sanitizeTsvCell(rawValue: string): string {
+  return rawValue.replace(/[\t\n\r]/g, ' ');
+}
+
+/** Formats the current issue list as a tab-delimited string for clipboard paste. */
+function buildTsvExport(issues: JiraIssue[]): string {
+  const TSV_HEADER = 'Key\tSummary\tStatus\tPriority\tAssignee';
+  const rows = issues.map((issue) => {
+    const priority = sanitizeTsvCell(issue.fields.priority?.name ?? '');
+    const assignee = sanitizeTsvCell(issue.fields.assignee?.displayName ?? '');
+    const summary = sanitizeTsvCell(issue.fields.summary);
+    const status = sanitizeTsvCell(issue.fields.status.name);
+    return `${issue.key}\t${summary}\t${status}\t${priority}\t${assignee}`;
+  });
+  return [TSV_HEADER, ...rows].join('\n');
+}
+
+/**
+ * Derives the optimal column width by measuring the longest cell value (capped at 60),
+ * ensuring the header label itself is always visible.
+ */
+function deriveXlsxColumnWidth(headerLabel: string, cellValues: string[]): number {
+  const longestCell = cellValues.reduce(
+    (maxLength, cellValue) => Math.max(maxLength, cellValue.length),
+    headerLabel.length,
+  );
+  return Math.max(XLSX_MIN_COL_WIDTH, Math.min(60, longestCell + 2));
+}
+
+/**
+ * Downloads the issue list as an xlsx workbook. Uses SheetJS (xlsx@0.18.x) —
+ * the workbook is built from an array-of-arrays rather than JSON to preserve
+ * column order and allow custom column widths.
+ */
+async function downloadIssuesAsXlsx(issues: JiraIssue[]): Promise<void> {
+  // Lazy-import to avoid bloating the initial bundle
+  const XLSX = await import('xlsx');
+
+  const HEADER_ROW = ['Key', 'Summary', 'Status', 'Priority', 'Assignee', 'Updated'];
+
+  const dataRows = issues.map((issue) => [
+    issue.key,
+    issue.fields.summary,
+    issue.fields.status.name,
+    issue.fields.priority?.name ?? '',
+    issue.fields.assignee?.displayName ?? '',
+    issue.fields.updated,
+  ]);
+
+  const allRows = [HEADER_ROW, ...dataRows];
+  const worksheet = XLSX.utils.aoa_to_sheet(allRows);
+
+  // Set auto-column widths
+  worksheet['!cols'] = HEADER_ROW.map((headerLabel, columnIndex) => ({
+    wch: deriveXlsxColumnWidth(
+      headerLabel,
+      dataRows.map((dataRow) => String(dataRow[columnIndex] ?? '')),
+    ),
+  }));
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Issues');
+
+  const xlsxBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
+  const xlsxBlob = new Blob([xlsxBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+
+  const downloadUrl = URL.createObjectURL(xlsxBlob);
+  const anchorElement = document.createElement('a');
+  anchorElement.href = downloadUrl;
+  anchorElement.download = 'issues.xlsx';
+  document.body.appendChild(anchorElement);
+  anchorElement.click();
+  document.body.removeChild(anchorElement);
+  URL.revokeObjectURL(downloadUrl);
 }
 
 // ── Hook ──
@@ -549,6 +678,140 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
     setState((previousState) => ({ ...previousState, isExportMenuOpen: false }));
   }, [state.issues]);
 
+  /** Downloads the current issue list as an xlsx workbook. */
+  const exportAsXlsx = useCallback(() => {
+    void downloadIssuesAsXlsx(state.issues);
+    setState((previousState) => ({ ...previousState, isExportMenuOpen: false }));
+  }, [state.issues]);
+
+  /** Copies the current issue list as tab-separated values to the clipboard. */
+  const exportAsTsv = useCallback(() => {
+    void navigator.clipboard.writeText(buildTsvExport(state.issues));
+    setState((previousState) => ({ ...previousState, isExportMenuOpen: false }));
+  }, [state.issues]);
+
+  // ── Bulk comment actions ──
+
+  /** Enters bulk mode (showing checkboxes on cards) or exits and clears selection. */
+  const toggleBulkMode = useCallback(() => {
+    setState((previousState) => ({
+      ...previousState,
+      isBulkModeActive: !previousState.isBulkModeActive,
+      bulkSelectedKeys: {},
+      bulkCommentError: null,
+    }));
+  }, []);
+
+  /** Adds or removes an issue key from the bulk selection. */
+  const toggleBulkKey = useCallback((issueKey: string) => {
+    setState((previousState) => {
+      const isCurrentlySelected = !!previousState.bulkSelectedKeys[issueKey];
+      if (isCurrentlySelected) {
+        const { [issueKey]: _removed, ...remainingKeys } = previousState.bulkSelectedKeys;
+        return { ...previousState, bulkSelectedKeys: remainingKeys };
+      }
+      return {
+        ...previousState,
+        bulkSelectedKeys: { ...previousState.bulkSelectedKeys, [issueKey]: true },
+      };
+    });
+  }, []);
+
+  /**
+   * Posts the given comment body to every bulk-selected issue in parallel.
+   * Exits bulk mode and clears selection on success.
+   */
+  const postBulkComment = useCallback(async (commentText: string) => {
+    setState((previousState) => ({
+      ...previousState,
+      isBulkPostingComment: true,
+      bulkCommentError: null,
+    }));
+
+    try {
+      const selectedKeys = Object.keys(state.bulkSelectedKeys);
+      await Promise.all(
+        selectedKeys.map((issueKey) =>
+          jiraPost<void>(
+            `${TRANSITIONS_PATH_PREFIX}/${issueKey}${COMMENT_PATH_SUFFIX}`,
+            { body: commentText },
+          ),
+        ),
+      );
+
+      setState((previousState) => ({
+        ...previousState,
+        isBulkPostingComment: false,
+        isBulkModeActive: false,
+        bulkSelectedKeys: {},
+      }));
+    } catch (unknownError) {
+      setState((previousState) => ({
+        ...previousState,
+        isBulkPostingComment: false,
+        bulkCommentError: extractErrorMessage(unknownError),
+      }));
+    }
+  }, [state.bulkSelectedKeys]);
+
+  // ── Board quick filter actions ──
+
+  /** Fetches quick filters for the currently selected board from the Jira Agile API. */
+  const loadBoardQuickFilters = useCallback(async () => {
+    if (!state.selectedBoardId) return;
+
+    try {
+      const response = await jiraGet<JiraBoardQuickFilterResponse>(
+        `${BOARDS_PATH_PREFIX}/${state.selectedBoardId}/quickfilter`,
+      );
+
+      setState((previousState) => ({
+        ...previousState,
+        boardQuickFilters: response.values,
+      }));
+    } catch {
+      // Quick filters are non-critical — silently ignore fetch errors
+    }
+  }, [state.selectedBoardId]);
+
+  /** Activates or deactivates a board quick filter by its numeric id. */
+  const toggleQuickFilter = useCallback((filterId: number) => {
+    setState((previousState) => {
+      const isCurrentlyActive = !!previousState.activeQuickFilterIds[filterId];
+      if (isCurrentlyActive) {
+        const { [filterId]: _removed, ...remainingIds } = previousState.activeQuickFilterIds;
+        return { ...previousState, activeQuickFilterIds: remainingIds };
+      }
+      return {
+        ...previousState,
+        activeQuickFilterIds: { ...previousState.activeQuickFilterIds, [filterId]: true },
+      };
+    });
+  }, []);
+
+  /** Resets the selected board and all associated quick filter state. */
+  const clearSelectedBoard = useCallback(() => {
+    setState((previousState) => ({
+      ...previousState,
+      selectedBoardId: null,
+      boardQuickFilters: [],
+      activeQuickFilterIds: {},
+    }));
+  }, []);
+
+  // ── Swimlane collapse actions ──
+
+  /** Collapses an expanded swimlane or expands a collapsed one. */
+  const toggleSwimlaneCollapsed = useCallback((zoneKey: string) => {
+    setState((previousState) => ({
+      ...previousState,
+      collapsedSwimlanes: {
+        ...previousState.collapsedSwimlanes,
+        [zoneKey]: !previousState.collapsedSwimlanes[zoneKey],
+      },
+    }));
+  }, []);
+
   const actions = useMemo<MyIssuesActions>(
     () => ({
       setSource,
@@ -572,6 +835,15 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
       setExportMenuOpen,
       exportAsCsv,
       exportAsMarkdown,
+      exportAsXlsx,
+      exportAsTsv,
+      toggleBulkMode,
+      toggleBulkKey,
+      postBulkComment,
+      loadBoardQuickFilters,
+      toggleQuickFilter,
+      clearSelectedBoard,
+      toggleSwimlaneCollapsed,
     }),
     [
       setSource,
@@ -595,6 +867,15 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
       setExportMenuOpen,
       exportAsCsv,
       exportAsMarkdown,
+      exportAsXlsx,
+      exportAsTsv,
+      toggleBulkMode,
+      toggleBulkKey,
+      postBulkComment,
+      loadBoardQuickFilters,
+      toggleQuickFilter,
+      clearSelectedBoard,
+      toggleSwimlaneCollapsed,
     ],
   );
 
