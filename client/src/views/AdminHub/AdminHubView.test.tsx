@@ -2,7 +2,7 @@
 
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ToastProvider } from '../../components/Toast/ToastProvider.tsx';
 
@@ -144,6 +144,13 @@ describe('AdminHubView', () => {
     mockState.isAdvancedUnlocked = false;
     mockState.adminPinInput = '';
     vi.clearAllMocks();
+
+    // Mock global fetch so the server control buttons don't make real network calls.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('renders the Config and Dev Panel tab buttons', () => {
@@ -155,6 +162,30 @@ describe('AdminHubView', () => {
   it('renders the Proxy & Server Setup section', () => {
     renderAdminHubView();
     expect(screen.getByText(/proxy & server setup/i)).toBeInTheDocument();
+  });
+
+  it('renders the Restart Server button', () => {
+    renderAdminHubView();
+    expect(screen.getByRole('button', { name: /restart server/i })).toBeInTheDocument();
+  });
+
+  it('renders the Kill Port 5555 button', () => {
+    renderAdminHubView();
+    expect(screen.getByRole('button', { name: /kill port 5555/i })).toBeInTheDocument();
+  });
+
+  it('calls /api/restart when Restart Server is clicked', async () => {
+    const user = userEvent.setup();
+    renderAdminHubView();
+    await user.click(screen.getByRole('button', { name: /restart server/i }));
+    expect(fetch).toHaveBeenCalledWith('/api/restart', { method: 'POST' });
+  });
+
+  it('calls /api/shutdown when Kill Port 5555 is clicked', async () => {
+    const user = userEvent.setup();
+    renderAdminHubView();
+    await user.click(screen.getByRole('button', { name: /kill port 5555/i }));
+    expect(fetch).toHaveBeenCalledWith('/api/shutdown', { method: 'POST' });
   });
 
   it('renders the ART Settings section', () => {
