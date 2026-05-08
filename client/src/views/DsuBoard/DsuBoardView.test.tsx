@@ -11,7 +11,28 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     sections: [
       { key: 'new', icon: '🆕', label: 'New Since Last Business Day', help: 'Created since 5 PM on the last business day', issues: [], isLoading: false, loadError: null as string | null, isCollapsed: false },
       { key: 'stale', icon: '⚠️', label: 'Stale Issues', help: 'Open issues not updated in N or more days', issues: [], isLoading: false, loadError: null as string | null, isCollapsed: false },
-      { key: 'release', icon: '🚀', label: 'Current Release', help: 'Issues targeting the current fix version', issues: [], isLoading: false, loadError: null as string | null, isCollapsed: false },
+      {
+        key: 'release', icon: '🚀', label: 'Current Release', help: 'Issues targeting the current fix version',
+        issues: [
+          {
+            id: 'TBX-2', key: 'TBX-2',
+            fields: {
+              summary: 'Investigate INC123 before release',
+              status: { name: 'To Do', statusCategory: { key: 'new' } },
+              priority: { name: 'Medium', iconUrl: '' },
+              assignee: { accountId: 'u2', displayName: 'Bob', emailAddress: 'bob@example.com', avatarUrls: {} },
+              reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z',
+              updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              fixVersions: [{ name: 'Release 24.1' }],
+              customfield_10301: 'PI-1',
+            },
+          },
+        ],
+        isLoading: false, loadError: null as string | null, isCollapsed: false,
+      },
       { key: 'incidents', icon: '🔥', label: 'PRBs & Incidents', help: 'Issues with INC or PRB in the summary', issues: [], isLoading: false, loadError: null as string | null, isCollapsed: false },
       {
         key: 'open', icon: '📋', label: 'Open Issues', help: 'All issues in To Do or In Progress',
@@ -28,6 +49,8 @@ const { mockState, mockActions } = vi.hoisted(() => ({
               created: '2025-01-01T00:00:00.000Z',
               updated: '2025-01-02T00:00:00.000Z',
               description: null,
+              fixVersions: [{ name: 'Release 24.1' }],
+              customfield_10301: { value: 'PI-2' },
             },
           },
         ],
@@ -38,6 +61,13 @@ const { mockState, mockActions } = vi.hoisted(() => ({
       { key: 'roster-snow', icon: '🌨️', label: 'Team SNow Tickets', help: 'Active SNow items for roster members', issues: [], isLoading: false, loadError: null as string | null, isCollapsed: true },
     ],
     activeFilters: [] as string[],
+    multiCriteriaFilters: {
+      issueTypes: [] as string[],
+      priorities: [] as string[],
+      statuses: [] as string[],
+      fixVersion: '',
+      piValue: '',
+    },
     snowUrl: '',
     selectedIssue: null as null | {
       id: string; key: string;
@@ -59,6 +89,10 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     standupNotes: { yesterday: '', today: '', blockers: '', snowUrl: '' },
     isStandupPanelCollapsed: false,
     snowRootCauseUrls: {} as Record<string, string>,
+    availableVersions: ['Release 24.1', 'Release 24.2'],
+    autoReleaseName: 'Release 24.1' as string | null,
+    selectedReleaseName: null as string | null,
+    sectionSnowLinks: {} as Record<string, Record<string, Array<{ label: string; url: string | null }>>>,
   },
   mockActions: {
     setProjectKey: vi.fn(),
@@ -66,6 +100,14 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     setViewMode: vi.fn(),
     toggleSectionCollapse: vi.fn(),
     toggleFilter: vi.fn(),
+    toggleIssueTypeFilter: vi.fn(),
+    togglePriorityFilter: vi.fn(),
+    toggleStatusFilter: vi.fn(),
+    setFixVersionFilter: vi.fn(),
+    setPiFilter: vi.fn(),
+    clearAllFilters: vi.fn(),
+    setSelectedRelease: vi.fn(),
+    autoFillStandupNotes: vi.fn(),
     setSnowUrl: vi.fn(),
     loadBoard: vi.fn().mockResolvedValue(undefined),
     openDetailOverlay: vi.fn(),
@@ -90,8 +132,18 @@ describe('DsuBoardView', () => {
   beforeEach(() => {
     mockState.viewMode = 'cards';
     mockState.activeFilters = [];
+    mockState.multiCriteriaFilters = {
+      issueTypes: [],
+      priorities: [],
+      statuses: [],
+      fixVersion: '',
+      piValue: '',
+    };
     mockState.isDetailOverlayOpen = false;
     mockState.selectedIssue = null;
+    mockState.autoReleaseName = 'Release 24.1';
+    mockState.selectedReleaseName = null;
+    mockState.sectionSnowLinks = {};
     vi.clearAllMocks();
   });
 
@@ -137,6 +189,15 @@ describe('DsuBoardView', () => {
     expect(screen.getAllByText('Alice').length).toBeGreaterThan(0);
   });
 
+  it('renders the multi-criteria filter bar when sections contain multiple issue types and priorities', () => {
+    render(<DsuBoardView />);
+    expect(screen.getByText('Issue type:')).toBeInTheDocument();
+    expect(screen.getByText('Priority:')).toBeInTheDocument();
+    expect(screen.getByText('Status:')).toBeInTheDocument();
+    expect(screen.getByText('Fix version:')).toBeInTheDocument();
+    expect(screen.getByText('PI:')).toBeInTheDocument();
+  });
+
   it('renders the Standup Notes panel by default', () => {
     render(<DsuBoardView />);
     expect(screen.getByText('Standup Notes')).toBeInTheDocument();
@@ -145,12 +206,18 @@ describe('DsuBoardView', () => {
     expect(screen.getByLabelText('Blockers')).toBeInTheDocument();
   });
 
-  it('renders a Copy to Clipboard button in the standup notes panel', () => {
+  it('renders Copy to Clipboard and Auto-fill buttons in the standup notes panel', () => {
     render(<DsuBoardView />);
     expect(screen.getByRole('button', { name: /copy to clipboard/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /auto-fill/i })).toBeInTheDocument();
   });
 
-  it('renders the issue detail overlay when isDetailOverlayOpen is true', () => {
+  it('shows the release version badge when the release section has an auto-detected version', () => {
+    render(<DsuBoardView />);
+    expect(screen.getByText('Auto: Release 24.1')).toBeInTheDocument();
+  });
+
+  it('shows the issue detail overlay when isDetailOverlayOpen is true', () => {
     mockState.isDetailOverlayOpen = true;
     mockState.selectedIssue = {
       id: 'TBX-1', key: 'TBX-1',
@@ -171,11 +238,28 @@ describe('DsuBoardView', () => {
     expect(screen.getAllByText('TBX-1').length).toBeGreaterThan(0);
   });
 
+  it('shows a SNow badge on issue cards when section snow links exist for the issue', () => {
+    mockState.sectionSnowLinks = {
+      release: {
+        'TBX-2': [{ label: 'INC123', url: 'https://snow.example.com/incident.do?number=INC123' }],
+      },
+    };
+
+    render(<DsuBoardView />);
+
+    expect(screen.getByText('INC123')).toBeInTheDocument();
+  });
+
+  it('shows the Clear all button when a multi-criteria filter is active', () => {
+    mockState.multiCriteriaFilters.issueTypes = ['Bug'];
+    render(<DsuBoardView />);
+    expect(screen.getByRole('button', { name: /clear all/i })).toBeInTheDocument();
+  });
+
   it('clicking an issue key button calls openDetailOverlay with the correct issue', async () => {
     const { userEvent } = await import('@testing-library/user-event');
     const user = userEvent.setup();
     render(<DsuBoardView />);
-    // The issue key is rendered as a button in the card
     const issueKeyButton = screen.getByRole('button', { name: 'TBX-1' });
     await user.click(issueKeyButton);
     expect(mockActions.openDetailOverlay).toHaveBeenCalledWith(

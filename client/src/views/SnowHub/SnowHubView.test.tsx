@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockCrgState, mockCrgActions, mockPrbState, mockPrbActions, mockReleaseState, mockReleaseActions } = vi.hoisted(() => ({
+const { mockCrgState, mockCrgActions, mockPrbState, mockPrbActions, mockReleaseState, mockReleaseActions, mockSyncEngineState, mockSyncEngineActions } = vi.hoisted(() => ({
   mockCrgState: {
     currentStep: 1,
     projectKey: '',
@@ -103,6 +103,33 @@ const { mockCrgState, mockCrgActions, mockPrbState, mockPrbActions, mockReleaseS
     clearLog: vi.fn(),
     clearLoadedChg: vi.fn(),
   },
+  mockSyncEngineState: {
+    isRunning: false,
+    logEntries: [],
+    settings: {
+      jqlTemplate: 'issuetype = Problem AND status changed AFTER -{interval}h',
+      intervalMin: 15,
+      workNotePrefix: '[Jira Sync]',
+      shouldSyncComments: true,
+      lastCheckTime: null as string | null,
+    },
+    statusMap: {} as Record<string, string>,
+    jiraStatuses: [] as string[],
+    isFetchingStatuses: false,
+    nextRunAt: null as number | null,
+    trackedIssueCount: 0,
+  },
+  mockSyncEngineActions: {
+    startSync: vi.fn(),
+    stopSync: vi.fn(),
+    runNow: vi.fn().mockResolvedValue(undefined),
+    clearLog: vi.fn(),
+    updateSettings: vi.fn(),
+    saveSettings: vi.fn(),
+    fetchJiraStatuses: vi.fn().mockResolvedValue(undefined),
+    saveStatusMappings: vi.fn(),
+    exportPs1: vi.fn(),
+  },
 }));
 
 vi.mock('./hooks/useCrgState.ts', () => ({
@@ -115,6 +142,18 @@ vi.mock('./hooks/usePrbState.ts', () => ({
 
 vi.mock('./hooks/useReleaseManagement.ts', () => ({
   useReleaseManagement: () => ({ state: mockReleaseState, actions: mockReleaseActions }),
+}));
+
+vi.mock('./hooks/useSnowSyncEngine.ts', () => ({
+  useSnowSyncEngine: () => ({ state: mockSyncEngineState, actions: mockSyncEngineActions }),
+  SNOW_PROBLEM_STATES: {
+    '101': 'New',
+    '102': 'Assess',
+    '103': 'Root Cause Analysis',
+    '104': 'Fix in Progress',
+    '106': 'Resolved',
+    '107': 'Closed',
+  },
 }));
 
 import SnowHubView from './SnowHubView.tsx';
@@ -132,6 +171,9 @@ describe('SnowHubView', () => {
     Object.values(mockCrgActions).forEach((mockAction) => mockAction.mockReset());
     Object.values(mockPrbActions).forEach((mockAction) => mockAction.mockReset());
     Object.values(mockReleaseActions).forEach((mockAction) => mockAction.mockReset());
+    Object.values(mockSyncEngineActions).forEach((mockAction) => mockAction.mockReset());
+    mockSyncEngineActions.runNow.mockResolvedValue(undefined);
+    mockSyncEngineActions.fetchJiraStatuses.mockResolvedValue(undefined);
   });
 
   it('renders the SNow Hub heading', () => {
@@ -140,12 +182,13 @@ describe('SnowHubView', () => {
     expect(screen.getByRole('heading', { name: 'SNow Hub' })).toBeInTheDocument();
   });
 
-  it('renders the three tab buttons', () => {
+  it('renders the four tab buttons', () => {
     render(<SnowHubView />);
 
     expect(screen.getByRole('tab', { name: 'CHG' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'PRB Generator' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Release Management' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Sync Monitor' })).toBeInTheDocument();
   });
 
   it('shows the CRG tab content by default', () => {
@@ -173,5 +216,14 @@ describe('SnowHubView', () => {
 
     expect(screen.getByLabelText('CHG Number')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Load Change' })).toBeInTheDocument();
+  });
+
+  it('switches to the Sync Monitor tab', async () => {
+    const user = userEvent.setup();
+    render(<SnowHubView />);
+
+    await user.click(screen.getByRole('tab', { name: 'Sync Monitor' }));
+
+    expect(screen.getByRole('heading', { name: 'PRB Sync Monitor' })).toBeInTheDocument();
   });
 });

@@ -1,6 +1,8 @@
 // DevWorkspaceView.tsx — Tabbed Dev Workspace view for time tracking, Git sync, and monitoring.
 
 import { useEffect } from 'react';
+import { useDevWorkspaceSettings } from './hooks/useDevWorkspaceSettings.ts';
+import { useGitHubPollingEngine } from './hooks/useGitHubPollingEngine.ts';
 import { useDevWorkspaceState } from './hooks/useDevWorkspaceState.ts';
 import type { DevWorkspaceTab, WorkLogTab, GitSyncSubTab } from './hooks/useDevWorkspaceState.ts';
 import styles from './DevWorkspaceView.module.css';
@@ -71,6 +73,64 @@ exit 0
 };
 
 /**
+ * Generates the PowerShell post-commit hook content baked with workspace settings.
+ * Extracts a Jira key from the commit message and posts a comment via the proxy API.
+ */
+function buildPowerShellPostCommitScript(jiraBaseUrl: string, keyPattern: string): string {
+  return `# post-commit.ps1 — Posts a Jira comment on every commit that contains a project key.
+# Install: call from .git/hooks/post-commit via: powershell -File "path/to/post-commit.ps1"
+
+$commitMsg = git log -1 --pretty=%B
+$branch = git rev-parse --abbrev-ref HEAD
+$keyRegex = "${keyPattern}"
+$match = [regex]::Match($commitMsg, $keyRegex)
+
+if (-not $match.Success) {
+  Write-Host "No Jira key found in commit message — skipping post."
+  exit 0
+}
+
+$issueKey = $match.Value
+$jiraBase = "${jiraBaseUrl}"
+$body = @{ body = "Git commit on branch $branch — $commitMsg" } | ConvertTo-Json
+
+Invoke-RestMethod -Method POST -Uri "$jiraBase/rest/api/2/issue/$issueKey/comment" \`
+  -ContentType "application/json" -Body $body
+
+Write-Host "Posted comment to Jira issue $issueKey"
+`
+}
+
+/**
+ * Generates the PowerShell post-merge hook content baked with workspace settings.
+ * Extracts a Jira key from the last merge commit message and posts a worklog entry.
+ */
+function buildPowerShellPostMergeScript(jiraBaseUrl: string, keyPattern: string): string {
+  return `# post-merge.ps1 — Posts a Jira worklog entry on every merge that contains a project key.
+# Install: call from .git/hooks/post-merge via: powershell -File "path/to/post-merge.ps1"
+
+$commitMsg = git log -1 --pretty=%B
+$branch = git rev-parse --abbrev-ref HEAD
+$keyRegex = "${keyPattern}"
+$match = [regex]::Match($commitMsg, $keyRegex)
+
+if (-not $match.Success) {
+  Write-Host "No Jira key found in merge commit — skipping worklog."
+  exit 0
+}
+
+$issueKey = $match.Value
+$jiraBase = "${jiraBaseUrl}"
+$body = @{ timeSpent = "1m"; comment = "Merged into $branch" } | ConvertTo-Json
+
+Invoke-RestMethod -Method POST -Uri "$jiraBase/rest/api/2/issue/$issueKey/worklog" \`
+  -ContentType "application/json" -Body $body
+
+Write-Host "Logged worklog on Jira issue $issueKey"
+`
+}
+
+/**
  * Triggers a browser file download for the given hook script content.
  * Uses Blob and a temporary anchor element — no server request needed.
  *
@@ -87,6 +147,21 @@ function downloadHookScript(filename: string, content: string): void {
   anchor.click();
   document.body.removeChild(anchor);
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Extracts all unique Jira issue keys from the input text using the provided regex pattern.
+ * Returns an empty array when the pattern is invalid or no keys are found.
+ */
+function extractJiraKeysFromText(inputText: string, keyPattern: string): string[] {
+  if (!inputText.trim() || !keyPattern.trim()) return []
+  try {
+    const regex = new RegExp(keyPattern, 'g')
+    const matches = inputText.match(regex) ?? []
+    return [...new Set(matches)]
+  } catch {
+    return []
+  }
 }
 
 /** Formats a total seconds count into HH:MM:SS display string. */
@@ -314,8 +389,27 @@ function TimeTrackingPanel({ state, actions }: PanelProps) {
   );
 }
 
-/** Renders the Git Sync tab with GitHub sync, manual Jira post, and hook generator sub-tabs. */
+/** Renders the Git Sync tab with GitHub sync (polling engine), manual Jira post, and hook generator sub-tabs. */
 function GitSyncPanel({ state, actions }: PanelProps) {
+  const { settings } = useDevWorkspaceSettings()
+
+  const pollingEngine = useGitHubPollingEngine({
+    githubPat: settings.githubPat,
+    repoFullName: settings.repoFullName,
+    jiraProjectKey: settings.jiraProjectKey,
+    intervalMinutes: settings.syncIntervalMinutes,
+    maxCommits: settings.maxCommitsPerSync,
+    keyPattern: settings.commitKeyPattern,
+    commitTemplate: settings.commitMessageTemplate,
+    strategy: settings.postingStrategy,
+  })
+
+  // Preview which Jira keys the manual post input would match
+  const extractedPreviewKeys = extractJiraKeysFromText(
+    state.manualPostInput,
+    settings.commitKeyPattern,
+  )
+
   return (
     <div className={styles.panel}>
       <div className={styles.workLogSubTabs} role="tablist">
@@ -328,18 +422,39 @@ function GitSyncPanel({ state, actions }: PanelProps) {
         <div className={styles.syncPanel}>
           <div className={styles.syncStatus}>
             <span
-              className={`${styles.statusDot} ${state.isSyncRunning ? styles.statusDotActive : styles.statusDotIdle}`}
-              aria-label={state.isSyncRunning ? 'Running' : 'Stopped'}
+              className={`${styles.statusDot} ${pollingEngine.isRunning ? styles.statusDotActive : styles.statusDotIdle}`}
+              aria-label={pollingEngine.isRunning ? 'Running' : 'Stopped'}
             />
-            <span>{state.isSyncRunning ? 'Sync Running' : 'Sync Stopped'}</span>
+            <span>{pollingEngine.isRunning ? 'Sync Running' : 'Sync Stopped'}</span>
+            {pollingEngine.isRunning && pollingEngine.nextRunInSeconds > 0 && (
+              <span className={styles.countdownDisplay}>
+                Next sync in {pollingEngine.nextRunInSeconds}s
+              </span>
+            )}
           </div>
           <div className={styles.syncControls}>
-            <button className={styles.primaryBtn} onClick={actions.toggleSync}>
-              {state.isSyncRunning ? '⏹ Stop Sync' : '▶ Start Sync'}
+            <button
+              className={styles.primaryBtn}
+              onClick={() => {
+                if (pollingEngine.isRunning) { pollingEngine.stopPolling() }
+                else { pollingEngine.startPolling() }
+              }}
+            >
+              {pollingEngine.isRunning ? '⏹ Stop Sync' : '▶ Start Sync'}
+            </button>
+            <button
+              className={styles.secondaryBtn}
+              onClick={() => { void pollingEngine.syncNow() }}
+              disabled={!settings.repoFullName}
+            >
+              Sync Now
             </button>
           </div>
-          {state.lastSyncAt && (
-            <p className={styles.lastSyncText}>Last sync: {state.lastSyncAt}</p>
+          {pollingEngine.lastRunAt !== null && (
+            <p className={styles.lastSyncText}>Last sync: {new Date(pollingEngine.lastRunAt).toLocaleTimeString()}</p>
+          )}
+          {!settings.repoFullName && (
+            <p className={styles.helpText}>Configure the repository in Settings to enable sync.</p>
           )}
           <div className={styles.syncLogContainer}>
             <div className={styles.syncLogHeader}>
@@ -366,6 +481,23 @@ function GitSyncPanel({ state, actions }: PanelProps) {
             onChange={(event) => actions.setManualPostInput(event.target.value)}
             placeholder="e.g. TBX-42 or any text containing a Jira key"
           />
+          {/* Key extraction preview using settings.commitKeyPattern */}
+          {state.manualPostInput.trim().length > 0 && (
+            <div className={styles.keyPillSection}>
+              {extractedPreviewKeys.length > 0 ? (
+                <>
+                  <span className={styles.fieldLabel}>Will post to:</span>
+                  <div className={styles.keyPillList}>
+                    {extractedPreviewKeys.map((jiraKey) => (
+                      <span key={jiraKey} className={styles.keyPill}>{jiraKey}</span>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <span className={styles.helpText}>No Jira keys found in input.</span>
+              )}
+            </div>
+          )}
           <label className={styles.fieldLabel}>Comment</label>
           <textarea
             className={styles.textArea}
@@ -378,9 +510,9 @@ function GitSyncPanel({ state, actions }: PanelProps) {
             <button
               className={styles.primaryBtn}
               onClick={() => actions.postManualComment()}
-              disabled={state.isManualPosting}
+              disabled={state.isManualPosting || extractedPreviewKeys.length === 0}
             >
-              {state.isManualPosting ? 'Posting…' : 'Post to Jira'}
+              {state.isManualPosting ? 'Posting…' : `Post to All${extractedPreviewKeys.length > 0 ? ` (${extractedPreviewKeys.length})` : ''}`}
             </button>
             <button className={styles.secondaryBtn} onClick={actions.resetManualPost}>Reset</button>
           </div>
@@ -406,6 +538,45 @@ function GitSyncPanel({ state, actions }: PanelProps) {
                 ⬇ Download {hookScript.name}
               </button>
             ))}
+          </div>
+
+          {/* PowerShell hooks — baked with settings.jiraBaseUrl and settings.commitKeyPattern */}
+          <div className={styles.psHooksSection}>
+            <h4 className={styles.sectionSubTitle}>PowerShell Hooks (Windows)</h4>
+            <p className={styles.helpText}>
+              These scripts are pre-configured with your Jira base URL and key pattern.
+              {!settings.jiraBaseUrl && (
+                <strong> Set your Jira base URL in Settings first.</strong>
+              )}
+            </p>
+            <div className={styles.hookButtonList}>
+              <button
+                className={styles.secondaryBtn}
+                disabled={!settings.jiraBaseUrl}
+                onClick={() => {
+                  const scriptContent = buildPowerShellPostCommitScript(
+                    settings.jiraBaseUrl,
+                    settings.commitKeyPattern,
+                  )
+                  downloadHookScript('post-commit.ps1', scriptContent)
+                }}
+              >
+                ⬇ Download post-commit.ps1
+              </button>
+              <button
+                className={styles.secondaryBtn}
+                disabled={!settings.jiraBaseUrl}
+                onClick={() => {
+                  const scriptContent = buildPowerShellPostMergeScript(
+                    settings.jiraBaseUrl,
+                    settings.commitKeyPattern,
+                  )
+                  downloadHookScript('post-merge.ps1', scriptContent)
+                }}
+              >
+                ⬇ Download post-merge.ps1
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -442,30 +613,143 @@ function RepoMonitorPanel({ state, actions }: PanelProps) {
   );
 }
 
-/** Renders the Settings tab for Dev Workspace configuration. */
+/** Renders the Settings tab for Dev Workspace configuration — full settings surface. */
 function WorkspaceSettingsPanel() {
-  const localProjectKey = localStorage.getItem('tbxDevWsProjectKey') ?? '';
+  const { settings, isPatVisible, updateSettings, clearGithubPat, togglePatVisibility } =
+    useDevWorkspaceSettings()
 
   return (
     <div className={styles.panel}>
       <h3 className={styles.sectionTitle}>Workspace Settings</h3>
-      <label className={styles.fieldLabel}>Default Project Key</label>
-      <input
-        type="text"
-        className={styles.textInput}
-        defaultValue={localProjectKey}
-        placeholder="e.g. TBX"
-        onChange={(event) => {
-          localStorage.setItem('tbxDevWsProjectKey', event.target.value);
-        }}
-      />
-      <label className={styles.fieldLabel}>Sync Interval</label>
-      <select className={styles.selectInput}>
-        <option value="5">Every 5 minutes</option>
-        <option value="10">Every 10 minutes</option>
-        <option value="15">Every 15 minutes</option>
-        <option value="30">Every 30 minutes</option>
-      </select>
+
+      {/* GitHub PAT — password field with show/hide and clear buttons */}
+      <div className={styles.settingsSection}>
+        <h4 className={styles.sectionSubTitle}>GitHub Integration</h4>
+        <label className={styles.fieldLabel}>GitHub Personal Access Token</label>
+        <div className={styles.patInputRow}>
+          <input
+            type={isPatVisible ? 'text' : 'password'}
+            className={styles.textInput}
+            value={settings.githubPat}
+            placeholder="ghp_…"
+            onChange={(event) => updateSettings({ githubPat: event.target.value })}
+          />
+          <button className={styles.patVisibilityBtn} onClick={togglePatVisibility}>
+            {isPatVisible ? '🙈 Hide' : '👁 Show'}
+          </button>
+          <button className={styles.patClearBtn} onClick={clearGithubPat} disabled={!settings.githubPat}>
+            ✕ Clear
+          </button>
+        </div>
+        <label className={styles.fieldLabel}>Repository (owner/repo)</label>
+        <input
+          type="text"
+          className={styles.textInput}
+          value={settings.repoFullName}
+          placeholder="e.g. acme-corp/my-project"
+          onChange={(event) => updateSettings({ repoFullName: event.target.value })}
+        />
+      </div>
+
+      {/* Jira settings */}
+      <div className={styles.settingsSection}>
+        <h4 className={styles.sectionSubTitle}>Jira Integration</h4>
+        <label className={styles.fieldLabel}>Jira Base URL</label>
+        <input
+          type="text"
+          className={styles.textInput}
+          value={settings.jiraBaseUrl}
+          placeholder="e.g. https://your-org.atlassian.net"
+          onChange={(event) => updateSettings({ jiraBaseUrl: event.target.value })}
+        />
+        <label className={styles.fieldLabel}>Default Project Key</label>
+        <input
+          type="text"
+          className={styles.textInput}
+          value={settings.jiraProjectKey}
+          placeholder="e.g. TBX"
+          onChange={(event) => updateSettings({ jiraProjectKey: event.target.value })}
+        />
+      </div>
+
+      {/* Sync settings */}
+      <div className={styles.settingsSection}>
+        <h4 className={styles.sectionSubTitle}>Sync Settings</h4>
+        <label className={styles.fieldLabel}>Sync Interval</label>
+        <select
+          className={styles.selectInput}
+          value={settings.syncIntervalMinutes}
+          onChange={(event) => updateSettings({ syncIntervalMinutes: Number(event.target.value) })}
+        >
+          <option value={5}>Every 5 minutes</option>
+          <option value={10}>Every 10 minutes</option>
+          <option value={15}>Every 15 minutes</option>
+          <option value={30}>Every 30 minutes</option>
+          <option value={60}>Every hour</option>
+        </select>
+        <label className={styles.fieldLabel}>Max Commits per Sync</label>
+        <input
+          type="number"
+          className={styles.textInput}
+          value={settings.maxCommitsPerSync}
+          min={1}
+          max={100}
+          onChange={(event) => updateSettings({ maxCommitsPerSync: Number(event.target.value) })}
+        />
+        <label className={styles.fieldLabel}>Commit Key Pattern (regex)</label>
+        <input
+          type="text"
+          className={styles.textInput}
+          value={settings.commitKeyPattern}
+          placeholder="e.g. [A-Z]+-\d+"
+          onChange={(event) => updateSettings({ commitKeyPattern: event.target.value })}
+        />
+        <label className={styles.fieldLabel}>Branch Prefixes to Strip (comma-separated)</label>
+        <input
+          type="text"
+          className={styles.textInput}
+          value={settings.branchPrefixesToStrip}
+          placeholder="e.g. feature/,bugfix/,fix/"
+          onChange={(event) => updateSettings({ branchPrefixesToStrip: event.target.value })}
+        />
+      </div>
+
+      {/* Posting strategy */}
+      <div className={styles.settingsSection}>
+        <h4 className={styles.sectionSubTitle}>Posting Strategy</h4>
+        <div className={styles.radioGroup}>
+          <label className={styles.radioLabel}>
+            <input
+              type="radio"
+              name="postingStrategy"
+              value="comment"
+              checked={settings.postingStrategy === 'comment'}
+              onChange={() => updateSettings({ postingStrategy: 'comment' })}
+            />
+            Post as Comment
+          </label>
+          <label className={styles.radioLabel}>
+            <input
+              type="radio"
+              name="postingStrategy"
+              value="worklog"
+              checked={settings.postingStrategy === 'worklog'}
+              onChange={() => updateSettings({ postingStrategy: 'worklog' })}
+            />
+            Post as Worklog
+          </label>
+        </div>
+        <label className={styles.fieldLabel}>Commit Message Template</label>
+        <textarea
+          className={styles.textArea}
+          value={settings.commitMessageTemplate}
+          rows={4}
+          onChange={(event) => updateSettings({ commitMessageTemplate: event.target.value })}
+        />
+        <p className={styles.helpText}>
+          Variables: <code>&#123;key&#125;</code>, <code>&#123;summary&#125;</code>, <code>&#123;branch&#125;</code>
+        </p>
+      </div>
     </div>
-  );
+  )
 }

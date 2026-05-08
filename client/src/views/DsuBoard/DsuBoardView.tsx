@@ -1,27 +1,67 @@
-// DsuBoardView.tsx — Daily Standup board view with 8 sections, cards/table mode, and assignee filters.
+// DsuBoardView.tsx — Daily Standup board view with 8 sections, rich filters, and issue detail tools.
 
-import { useEffect, useState } from 'react';
-import { useDsuBoardState } from './hooks/useDsuBoardState.ts';
-import type { DsuBoardSection, DsuViewMode, JiraTransition, StandupNotes } from './hooks/useDsuBoardState.ts';
+import { useEffect, useMemo, useState } from 'react';
 import type { JiraIssue } from '../../types/jira.ts';
 import styles from './DsuBoardView.module.css';
+import { useDsuBoardState } from './hooks/useDsuBoardState.ts';
+import type {
+  DsuBoardSection,
+  DsuViewMode,
+  JiraTransition,
+  StandupNotes,
+} from './hooks/useDsuBoardState.ts';
+import {
+  applyMultiCriteriaFilters,
+  buildFilterOptions,
+  hasActiveMultiCriteriaFilters,
+  type DsuFilterOptions,
+  type DsuMultiCriteriaFilters,
+} from './hooks/useDsuFilters.ts';
+import type { SnowLink, SnowLinksMap } from './hooks/useDsuSnowEnrichment.ts';
 
 const STALE_DAY_OPTIONS = [3, 5, 7, 10, 14] as const;
+const MAX_OVERLAY_LINK_COUNT = 5;
+const MAX_OVERLAY_COMMENT_COUNT = 3;
+
+interface DsuIssueLink {
+  type: { inward: string; outward: string; name: string };
+  inwardIssue?: { key: string; fields: { summary: string; status: { name: string } } };
+  outwardIssue?: { key: string; fields: { summary: string; status: { name: string } } };
+}
+
+interface DsuIssueComment {
+  id: string;
+  author: { displayName: string };
+  body: string;
+  created: string;
+}
+
+type DsuIssueFields = JiraIssue['fields'] & {
+  labels?: string[];
+  customfield_10028?: number | null;
+  customfield_10301?: { value?: string; name?: string } | string | null;
+  issuelinks?: DsuIssueLink[];
+  comment?: { comments: DsuIssueComment[]; total: number };
+};
 
 /** Main DSU Board view rendering 8 board sections with project controls and filter bar. */
 export default function DsuBoardView() {
   const { state, actions } = useDsuBoardState();
-
-  // Collect unique assignee names from all sections for the filter bar
-  const allAssignees = Array.from(
-    new Set(
-      state.sections.flatMap((section) =>
-        section.issues
-          .map((issue) => issue.fields.assignee?.displayName)
-          .filter((name): name is string => Boolean(name)),
-      ),
-    ),
+  const allIssues = useMemo(
+    () => state.sections.flatMap((section) => section.issues),
+    [state.sections],
   );
+  const filterOptions = useMemo(() => buildFilterOptions(allIssues), [allIssues]);
+  const hasAnyActiveFilters =
+    state.activeFilters.length > 0 || hasActiveMultiCriteriaFilters(state.multiCriteriaFilters);
+  const shouldRenderFilterBar =
+    hasAnyActiveFilters ||
+    filterOptions.issueTypes.length > 0 ||
+    filterOptions.priorities.length > 0 ||
+    filterOptions.statuses.length > 1 ||
+    filterOptions.fixVersions.length > 0 ||
+    filterOptions.piValues.length > 0 ||
+    filterOptions.assignees.length > 0;
 
   return (
     <div className={styles.dsuBoard}>
@@ -53,30 +93,19 @@ export default function DsuBoardView() {
         </button>
       </div>
 
-      {(allAssignees.length > 0 || state.activeFilters.length > 0) && (
-        <div className={styles.filterBar}>
-          <span className={styles.filterLabel}>Filter by assignee:</span>
-          {allAssignees.map((assigneeName) => (
-            <button
-              key={assigneeName}
-              className={`${styles.filterPill} ${state.activeFilters.includes(assigneeName) ? styles.filterPillActive : ''}`}
-              onClick={() => actions.toggleFilter(assigneeName)}
-            >
-              {assigneeName}
-            </button>
-          ))}
-          {state.activeFilters.map((filterName) =>
-            allAssignees.includes(filterName) ? null : (
-              <button
-                key={filterName}
-                className={`${styles.filterPill} ${styles.filterPillActive}`}
-                onClick={() => actions.toggleFilter(filterName)}
-              >
-                {filterName} ✕
-              </button>
-            ),
-          )}
-        </div>
+      {shouldRenderFilterBar && (
+        <MultiCriteriaFilterBar
+          filterOptions={filterOptions}
+          multiCriteriaFilters={state.multiCriteriaFilters}
+          activeAssigneeFilters={state.activeFilters}
+          onToggleIssueType={actions.toggleIssueTypeFilter}
+          onTogglePriority={actions.togglePriorityFilter}
+          onToggleStatus={actions.toggleStatusFilter}
+          onToggleAssignee={actions.toggleFilter}
+          onSetFixVersion={actions.setFixVersionFilter}
+          onSetPiValue={actions.setPiFilter}
+          onClearAll={actions.clearAllFilters}
+        />
       )}
 
       <StandupNotesPanel
@@ -85,6 +114,7 @@ export default function DsuBoardView() {
         onUpdateNotes={actions.updateStandupNotes}
         onToggleCollapse={actions.setStandupPanelCollapsed}
         onCopyToClipboard={actions.copyStandupToClipboard}
+        onAutoFill={actions.autoFillStandupNotes}
       />
 
       <div className={styles.sectionsContainer}>
@@ -94,6 +124,18 @@ export default function DsuBoardView() {
             section={section}
             viewMode={state.viewMode}
             activeFilters={state.activeFilters}
+            multiCriteriaFilters={state.multiCriteriaFilters}
+            snowLinks={state.sectionSnowLinks[section.key] ?? {}}
+            releaseInfo={
+              section.key === 'release'
+                ? {
+                    availableVersions: state.availableVersions,
+                    autoReleaseName: state.autoReleaseName,
+                    selectedReleaseName: state.selectedReleaseName,
+                    onSetSelectedRelease: actions.setSelectedRelease,
+                  }
+                : undefined
+            }
             onToggleCollapse={actions.toggleSectionCollapse}
             onIssueKeyClick={actions.openDetailOverlay}
           />
@@ -126,7 +168,6 @@ interface ViewModeButtonProps {
   onSelect: (mode: DsuViewMode) => void;
 }
 
-/** Renders a view mode toggle button (Cards or Table). */
 function ViewModeButton({ label, modeKey, activeMode, onSelect }: ViewModeButtonProps) {
   const isActive = activeMode === modeKey;
   return (
@@ -139,38 +180,242 @@ function ViewModeButton({ label, modeKey, activeMode, onSelect }: ViewModeButton
   );
 }
 
+interface FilterPillGroupProps {
+  label: string;
+  options: string[];
+  activeValues: string[];
+  onToggle: (value: string) => void;
+}
+
+function FilterPillGroup({ label, options, activeValues, onToggle }: FilterPillGroupProps) {
+  if (options.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className={styles.filterGroup}>
+      <span className={styles.filterLabel}>{label}</span>
+      {options.map((optionValue) => (
+        <button
+          key={optionValue}
+          className={`${styles.filterPill} ${activeValues.includes(optionValue) ? styles.filterPillActive : ''}`}
+          onClick={() => onToggle(optionValue)}
+        >
+          {optionValue}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+interface FilterDropdownProps {
+  label: string;
+  options: string[];
+  value: string;
+  emptyLabel: string;
+  onChange: (value: string) => void;
+}
+
+function FilterDropdown({ label, options, value, emptyLabel, onChange }: FilterDropdownProps) {
+  if (options.length === 0 && !value) {
+    return null;
+  }
+
+  return (
+    <div className={styles.filterGroup}>
+      <label className={styles.filterLabel}>
+        {label}
+        <select
+          className={styles.filterDropdown}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        >
+          <option value="">{emptyLabel}</option>
+          {options.map((optionValue) => (
+            <option key={optionValue} value={optionValue}>
+              {optionValue}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+}
+
+interface MultiCriteriaFilterBarProps {
+  filterOptions: DsuFilterOptions;
+  multiCriteriaFilters: DsuMultiCriteriaFilters;
+  activeAssigneeFilters: string[];
+  onToggleIssueType: (issueTypeName: string) => void;
+  onTogglePriority: (priorityName: string) => void;
+  onToggleStatus: (statusName: string) => void;
+  onToggleAssignee: (assigneeName: string) => void;
+  onSetFixVersion: (fixVersion: string) => void;
+  onSetPiValue: (piValue: string) => void;
+  onClearAll: () => void;
+}
+
+function MultiCriteriaFilterBar({
+  filterOptions,
+  multiCriteriaFilters,
+  activeAssigneeFilters,
+  onToggleIssueType,
+  onTogglePriority,
+  onToggleStatus,
+  onToggleAssignee,
+  onSetFixVersion,
+  onSetPiValue,
+  onClearAll,
+}: MultiCriteriaFilterBarProps) {
+  const missingAssigneeFilters = activeAssigneeFilters.filter(
+    (assigneeName) => !filterOptions.assignees.includes(assigneeName),
+  );
+  const hasAnyActiveFilters =
+    activeAssigneeFilters.length > 0 || hasActiveMultiCriteriaFilters(multiCriteriaFilters);
+
+  return (
+    <div className={styles.filterBar}>
+      <FilterPillGroup
+        label="Issue type:"
+        options={filterOptions.issueTypes}
+        activeValues={multiCriteriaFilters.issueTypes}
+        onToggle={onToggleIssueType}
+      />
+      <FilterPillGroup
+        label="Priority:"
+        options={filterOptions.priorities}
+        activeValues={multiCriteriaFilters.priorities}
+        onToggle={onTogglePriority}
+      />
+      {filterOptions.statuses.length > 1 && (
+        <FilterPillGroup
+          label="Status:"
+          options={filterOptions.statuses}
+          activeValues={multiCriteriaFilters.statuses}
+          onToggle={onToggleStatus}
+        />
+      )}
+      <FilterDropdown
+        label="Fix version:"
+        options={filterOptions.fixVersions}
+        value={multiCriteriaFilters.fixVersion}
+        emptyLabel="All fix versions"
+        onChange={onSetFixVersion}
+      />
+      <FilterDropdown
+        label="PI:"
+        options={filterOptions.piValues}
+        value={multiCriteriaFilters.piValue}
+        emptyLabel="All PIs"
+        onChange={onSetPiValue}
+      />
+      <FilterPillGroup
+        label="Assignee:"
+        options={filterOptions.assignees}
+        activeValues={activeAssigneeFilters}
+        onToggle={onToggleAssignee}
+      />
+      {missingAssigneeFilters.map((assigneeName) => (
+        <button
+          key={assigneeName}
+          className={`${styles.filterPill} ${styles.filterPillActive}`}
+          onClick={() => onToggleAssignee(assigneeName)}
+        >
+          {assigneeName} ✕
+        </button>
+      ))}
+      {hasAnyActiveFilters && (
+        <button className={styles.clearFiltersBtn} onClick={onClearAll}>
+          Clear all
+        </button>
+      )}
+    </div>
+  );
+}
+
+interface ReleaseInfo {
+  availableVersions: string[];
+  autoReleaseName: string | null;
+  selectedReleaseName: string | null;
+  onSetSelectedRelease: (name: string | null) => void;
+}
+
 interface BoardSectionProps {
   section: DsuBoardSection;
   viewMode: DsuViewMode;
   activeFilters: string[];
+  multiCriteriaFilters: DsuMultiCriteriaFilters;
+  snowLinks: SnowLinksMap;
+  releaseInfo?: ReleaseInfo;
   onToggleCollapse: (key: string) => void;
   onIssueKeyClick: (issue: JiraIssue) => void;
 }
 
-/** Renders a single DSU board section with its issues in cards or table mode. */
-function BoardSection({ section, viewMode, activeFilters, onToggleCollapse, onIssueKeyClick }: BoardSectionProps) {
-  // Apply assignee filter if any filters are active
-  const visibleIssues =
-    activeFilters.length > 0
-      ? section.issues.filter(
-          (issue) =>
-            issue.fields.assignee !== null &&
-            activeFilters.includes(issue.fields.assignee.displayName),
-        )
-      : section.issues;
+function createReleaseBadgeText(releaseInfo: ReleaseInfo): string {
+  if (releaseInfo.selectedReleaseName) {
+    return `Release: ${releaseInfo.selectedReleaseName}`;
+  }
+
+  if (releaseInfo.autoReleaseName) {
+    return `Auto: ${releaseInfo.autoReleaseName}`;
+  }
+
+  return 'Release: Unreleased';
+}
+
+function BoardSection({
+  section,
+  viewMode,
+  activeFilters,
+  multiCriteriaFilters,
+  snowLinks,
+  releaseInfo,
+  onToggleCollapse,
+  onIssueKeyClick,
+}: BoardSectionProps) {
+  const visibleIssues = applyMultiCriteriaFilters(section.issues, multiCriteriaFilters, activeFilters);
+  const releaseBadgeText = releaseInfo ? createReleaseBadgeText(releaseInfo) : null;
 
   return (
     <div className={styles.boardSection}>
-      <button
-        className={styles.sectionHeader}
-        onClick={() => onToggleCollapse(section.key)}
-        aria-expanded={!section.isCollapsed}
-      >
-        <span className={styles.sectionIcon}>{section.icon}</span>
-        <span className={styles.sectionLabel}>{section.label}</span>
-        <span className={styles.sectionCount}>({visibleIssues.length})</span>
-        <span className={styles.collapseIndicator}>{section.isCollapsed ? '▶' : '▼'}</span>
-      </button>
+      <div className={styles.sectionHeaderRow}>
+        <button
+          className={styles.sectionHeader}
+          onClick={() => onToggleCollapse(section.key)}
+          aria-expanded={!section.isCollapsed}
+        >
+          <span className={styles.sectionIcon}>{section.icon}</span>
+          <span className={styles.sectionLabel}>{section.label}</span>
+          <span className={styles.sectionCount}>({visibleIssues.length})</span>
+          <span className={styles.collapseIndicator}>{section.isCollapsed ? '▶' : '▼'}</span>
+        </button>
+        {section.key === 'release' && releaseInfo && (
+          <div className={styles.releaseControls} onClick={(event) => event.stopPropagation()}>
+            <span className={styles.releaseBadge}>{releaseBadgeText}</span>
+            {releaseInfo.availableVersions.length > 0 && (
+              <select
+                className={styles.releaseSelect}
+                value={releaseInfo.selectedReleaseName ?? ''}
+                onChange={(event) =>
+                  releaseInfo.onSetSelectedRelease(event.target.value || null)
+                }
+                aria-label="Release version"
+              >
+                <option value="">
+                  {releaseInfo.autoReleaseName
+                    ? `Auto (${releaseInfo.autoReleaseName})`
+                    : 'Auto-detect release'}
+                </option>
+                {releaseInfo.availableVersions.map((versionName) => (
+                  <option key={versionName} value={versionName}>
+                    {versionName}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
+      </div>
 
       {!section.isCollapsed && (
         <div className={styles.sectionBody}>
@@ -182,7 +427,12 @@ function BoardSection({ section, viewMode, activeFilters, onToggleCollapse, onIs
           {!section.isLoading && viewMode === 'cards' && (
             <div className={styles.cardGrid}>
               {visibleIssues.map((issue) => (
-                <IssueCard key={issue.key} issue={issue} onIssueKeyClick={onIssueKeyClick} />
+                <IssueCard
+                  key={issue.key}
+                  issue={issue}
+                  snowLinks={snowLinks[issue.key] ?? []}
+                  onIssueKeyClick={onIssueKeyClick}
+                />
               ))}
             </div>
           )}
@@ -197,11 +447,11 @@ function BoardSection({ section, viewMode, activeFilters, onToggleCollapse, onIs
 
 interface IssueCardProps {
   issue: JiraIssue;
+  snowLinks: SnowLink[];
   onIssueKeyClick: (issue: JiraIssue) => void;
 }
 
-/** Renders a single issue as a compact card. */
-function IssueCard({ issue, onIssueKeyClick }: IssueCardProps) {
+function IssueCard({ issue, snowLinks, onIssueKeyClick }: IssueCardProps) {
   return (
     <div className={styles.issueCard}>
       <div className={styles.issueCardHeader}>
@@ -223,6 +473,27 @@ function IssueCard({ issue, onIssueKeyClick }: IssueCardProps) {
           <span className={styles.assigneeName}>{issue.fields.assignee.displayName}</span>
         )}
       </div>
+      {snowLinks.length > 0 && (
+        <div className={styles.snowBadges}>
+          {snowLinks.map((snowLink) =>
+            snowLink.url ? (
+              <a
+                key={snowLink.label}
+                className={styles.snowBadgeLink}
+                href={snowLink.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {snowLink.label}
+              </a>
+            ) : (
+              <span key={snowLink.label} className={styles.snowBadge}>
+                {snowLink.label}
+              </span>
+            ),
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -232,7 +503,6 @@ interface IssueTableProps {
   onIssueKeyClick: (issue: JiraIssue) => void;
 }
 
-/** Renders issues in a compact table with key, summary, status, assignee, and updated date. */
 function IssueTable({ issues, onIssueKeyClick }: IssueTableProps) {
   return (
     <table className={styles.issueTable}>
@@ -268,14 +538,11 @@ function IssueTable({ issues, onIssueKeyClick }: IssueTableProps) {
   );
 }
 
-/** Maps a Jira status category key to a CSS module class name. */
 function getStatusClass(statusCategoryKey: string): string {
   if (statusCategoryKey === 'done') return styles.statusDone;
   if (statusCategoryKey === 'indeterminate') return styles.statusInProgress;
   return styles.statusTodo;
 }
-
-// ── Standup Notes Panel ──────────────────────────────────────────────────────
 
 interface StandupNotesPanelProps {
   notes: StandupNotes;
@@ -283,18 +550,16 @@ interface StandupNotesPanelProps {
   onUpdateNotes: (notes: Partial<StandupNotes>) => void;
   onToggleCollapse: (isCollapsed: boolean) => void;
   onCopyToClipboard: () => void;
+  onAutoFill: () => void;
 }
 
-/**
- * Collapsible panel for entering daily standup notes.
- * Notes are auto-saved to localStorage (debounced in the hook).
- */
 function StandupNotesPanel({
   notes,
   isCollapsed,
   onUpdateNotes,
   onToggleCollapse,
   onCopyToClipboard,
+  onAutoFill,
 }: StandupNotesPanelProps) {
   return (
     <div className={styles.standupPanel}>
@@ -356,16 +621,19 @@ function StandupNotesPanel({
               placeholder="Optional root cause ticket URL"
             />
           </div>
-          <button className={styles.copyBtn} onClick={onCopyToClipboard}>
-            📋 Copy to Clipboard
-          </button>
+          <div className={styles.standupActions}>
+            <button className={styles.copyBtn} onClick={onCopyToClipboard}>
+              📋 Copy to Clipboard
+            </button>
+            <button className={styles.autoFillBtn} onClick={onAutoFill}>
+              ✨ Auto-fill
+            </button>
+          </div>
         </div>
       )}
     </div>
   );
 }
-
-// ── Issue Detail Overlay ─────────────────────────────────────────────────────
 
 interface IssueDetailOverlayProps {
   issue: JiraIssue;
@@ -381,10 +649,30 @@ interface IssueDetailOverlayProps {
   onSetSnowRootCauseUrl: (issueKey: string, url: string) => void;
 }
 
-/**
- * Full-screen overlay showing issue detail, status transitions, a comment box,
- * and a SNow root cause URL field. Closes on Escape key or close button.
- */
+function getExtendedIssueFields(issue: JiraIssue): DsuIssueFields {
+  return issue.fields as DsuIssueFields;
+}
+
+function getStoryPoints(issueFields: DsuIssueFields): number | null {
+  return issueFields.customfield_10016 ?? issueFields.customfield_10028 ?? null;
+}
+
+function createIssueLinkDescription(issueLink: DsuIssueLink): string {
+  if (issueLink.outwardIssue) {
+    return `${issueLink.type.outward}: ${issueLink.outwardIssue.key} - ${issueLink.outwardIssue.fields.summary} (${issueLink.outwardIssue.fields.status.name})`;
+  }
+
+  if (issueLink.inwardIssue) {
+    return `${issueLink.type.inward}: ${issueLink.inwardIssue.key} - ${issueLink.inwardIssue.fields.summary} (${issueLink.inwardIssue.fields.status.name})`;
+  }
+
+  return issueLink.type.name;
+}
+
+function createCommentPreview(issueComment: DsuIssueComment): string {
+  return `${issueComment.author.displayName}: ${issueComment.body} (${issueComment.created.slice(0, 10)})`;
+}
+
 function IssueDetailOverlay({
   issue,
   availableTransitions,
@@ -401,13 +689,19 @@ function IssueDetailOverlay({
   const [selectedTransitionId, setSelectedTransitionId] = useState('');
   const [commentBody, setCommentBody] = useState('');
   const [isPostingComment, setIsPostingComment] = useState(false);
+  const issueFields = getExtendedIssueFields(issue);
+  const storyPoints = getStoryPoints(issueFields);
+  const issueLinks = (issueFields.issuelinks ?? []).slice(0, MAX_OVERLAY_LINK_COUNT);
+  const recentComments = (issueFields.comment?.comments ?? []).slice(-MAX_OVERLAY_COMMENT_COUNT);
+  const descriptionPreview =
+    issue.fields.description
+      ? issue.fields.description.slice(0, 300) + (issue.fields.description.length > 300 ? '…' : '')
+      : '—';
 
-  // Load available transitions when the overlay mounts for this issue
   useEffect(() => {
     void onLoadTransitions(issue.key);
   }, [issue.key, onLoadTransitions]);
 
-  // Allow closing the overlay with the Escape key
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -417,26 +711,29 @@ function IssueDetailOverlay({
   }, [onClose]);
 
   const handleTransition = async () => {
-    if (!selectedTransitionId) return;
+    if (!selectedTransitionId) {
+      return;
+    }
+
     await onTransitionIssue(issue.key, selectedTransitionId);
   };
 
   const handlePostComment = async () => {
-    if (!commentBody.trim()) return;
-    setIsPostingComment(true);
-    await onPostComment(issue.key, commentBody);
-    setCommentBody('');
-    setIsPostingComment(false);
-  };
+    if (!commentBody.trim()) {
+      return;
+    }
 
-  const descriptionPreview =
-    issue.fields.description
-      ? issue.fields.description.slice(0, 300) + (issue.fields.description.length > 300 ? '…' : '')
-      : '—';
+    setIsPostingComment(true);
+    try {
+      await onPostComment(issue.key, commentBody);
+      setCommentBody('');
+    } finally {
+      setIsPostingComment(false);
+    }
+  };
 
   return (
     <div className={styles.overlayBackdrop} onClick={onClose}>
-      {/* Stop propagation so clicks inside the panel don't close the overlay */}
       <div
         className={styles.overlayPanel}
         role="dialog"
@@ -465,11 +762,48 @@ function IssueDetailOverlay({
           <span className={styles.overlayMetaItem}>Type: {issue.fields.issuetype.name}</span>
         </div>
 
+        {issueFields.labels && issueFields.labels.length > 0 && (
+          <div className={styles.overlayLabels}>
+            <span className={styles.overlayLabel}>Labels</span>
+            <span>{issueFields.labels.join(', ')}</span>
+          </div>
+        )}
+
+        {storyPoints !== null && (
+          <div className={styles.overlayStoryPoints}>
+            <span className={styles.overlayLabel}>Story points</span>
+            <span>{storyPoints}</span>
+          </div>
+        )}
+
         {issue.fields.description && (
           <p className={styles.overlayDescription}>{descriptionPreview}</p>
         )}
 
-        {/* Status transition */}
+        {issueLinks.length > 0 && (
+          <div className={styles.overlayLinks}>
+            <span className={styles.overlayLabel}>Issue links</span>
+            <ul className={styles.overlayLinkList}>
+              {issueLinks.map((issueLink, issueLinkIndex) => (
+                <li key={`${issue.key}-link-${issueLinkIndex}`} className={styles.overlayLinkItem}>
+                  {createIssueLinkDescription(issueLink)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {recentComments.length > 0 && (
+          <div className={styles.overlayComments}>
+            <span className={styles.overlayLabel}>Recent comments</span>
+            {recentComments.map((issueComment) => (
+              <div key={issueComment.id} className={styles.overlayComment}>
+                {createCommentPreview(issueComment)}
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className={styles.overlaySection}>
           <label className={styles.overlayLabel} htmlFor="overlay-transition">Change Status</label>
           {isLoadingTransitions ? (
@@ -502,7 +836,6 @@ function IssueDetailOverlay({
           {transitionError && <p className={styles.errorText}>{transitionError}</p>}
         </div>
 
-        {/* Post comment */}
         <div className={styles.overlaySection}>
           <label className={styles.overlayLabel} htmlFor="overlay-comment">Post Comment</label>
           <textarea
@@ -522,7 +855,6 @@ function IssueDetailOverlay({
           </button>
         </div>
 
-        {/* SNow root cause URL */}
         <div className={styles.overlaySection}>
           <label className={styles.overlayLabel} htmlFor="overlay-snow-url">SNow Root Cause URL</label>
           <input

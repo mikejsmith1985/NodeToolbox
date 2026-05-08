@@ -22,10 +22,7 @@ vi.mock('recharts', () => ({
   CartesianGrid: () => null,
 }));
 
-// Module-level helper functions kept for reference but data is inlined in vi.hoisted.
-// These are used to show intent of the fixture data shape.
-
-const { mockState, mockActions } = vi.hoisted(() => {
+const { mockState, mockActions, mockConfig, mockConfigActions } = vi.hoisted(() => {
   const initialSprintInfo: JiraSprint = {
     id: 7,
     name: 'Sprint 7',
@@ -85,6 +82,11 @@ const { mockState, mockActions } = vi.hoisted(() => {
       loadError: null as string | null,
       isTimerRunning: false,
       timerSecondsRemaining: 900,
+      boardId: null as number | null,
+      boardType: null as 'scrum' | 'kanban' | null,
+      availableBoards: [] as Array<{ id: number; name: string; type: 'scrum' | 'kanban'; projectKey: string }>,
+      availableSprints: null as JiraSprint[] | null,
+      isLoadingAvailableSprints: false,
     },
     mockActions: {
       setProjectKey: vi.fn(),
@@ -94,12 +96,33 @@ const { mockState, mockActions } = vi.hoisted(() => {
       tickTimer: vi.fn(),
       startTimer: vi.fn(),
       stopTimer: vi.fn(),
+      selectBoard: vi.fn().mockResolvedValue(undefined),
+      loadAvailableSprints: vi.fn().mockResolvedValue(undefined),
+      moveIssueToSprint: vi.fn().mockResolvedValue(undefined),
+    },
+    mockConfig: {
+      staleDaysThreshold: 5,
+      storyPointScale: '1,2,3,5,8,13,21',
+      sprintWindow: 3,
+      cycleTimeStartField: '',
+      cycleTimeDoneField: '',
+      kanbanPeriodDays: 14,
+      customStoryPointsFieldId: 'story_points',
+      customEpicLinkFieldId: 'epic_link',
+    },
+    mockConfigActions: {
+      updateConfig: vi.fn(),
+      resetConfig: vi.fn(),
     },
   };
 });
 
 vi.mock('./hooks/useSprintData.ts', () => ({
   useSprintData: () => ({ state: mockState, actions: mockActions }),
+}));
+
+vi.mock('./hooks/useDashboardConfig.ts', () => ({
+  useDashboardConfig: () => ({ config: mockConfig, actions: mockConfigActions }),
 }));
 
 import SprintDashboardView from './SprintDashboardView.tsx';
@@ -116,6 +139,9 @@ describe('SprintDashboardView', () => {
     };
     mockState.loadError = null;
     mockState.isLoadingSprint = false;
+    mockState.availableBoards = [];
+    mockState.boardId = null;
+    mockState.availableSprints = null;
     vi.clearAllMocks();
   });
 
@@ -217,5 +243,48 @@ describe('SprintDashboardView', () => {
     expect(screen.getByRole('heading', { name: 'Release Readiness' })).toBeInTheDocument();
     // All mock issues have no fixVersions, so they fall under "No Version".
     expect(screen.getByText('No Version')).toBeInTheDocument();
+  });
+
+  // ── New feature tests ──
+
+  it('shows the BoardPicker when availableBoards are populated in Settings', () => {
+    mockState.activeTab = 'settings';
+    mockState.availableBoards = [
+      { id: 1, name: 'Team Alpha Board', type: 'scrum', projectKey: 'TBX' },
+      { id: 2, name: 'Team Beta Board', type: 'kanban', projectKey: 'TBX' },
+    ];
+    render(<SprintDashboardView />);
+
+    expect(screen.getByPlaceholderText(/search boards/i)).toBeInTheDocument();
+    expect(screen.getByText('Team Alpha Board')).toBeInTheDocument();
+    expect(screen.getByText('Team Beta Board')).toBeInTheDocument();
+  });
+
+  it('shows the advanced config fields in Settings tab', () => {
+    mockState.activeTab = 'settings';
+    render(<SprintDashboardView />);
+
+    expect(screen.getByLabelText(/stale threshold/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/story point scale/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/sprint window/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/kanban period/i)).toBeInTheDocument();
+  });
+
+  it('renders Move to Sprint buttons in the Assignee tab', () => {
+    mockState.activeTab = 'assignee';
+    render(<SprintDashboardView />);
+
+    // Each issue card should have a "Move to sprint" button.
+    const moveButtons = screen.getAllByRole('button', { name: /move to sprint/i });
+    expect(moveButtons.length).toBeGreaterThan(0);
+  });
+
+  it('uses the configured stale days threshold in the Blockers tab heading', () => {
+    mockState.activeTab = 'blockers';
+    mockConfig.staleDaysThreshold = 7;
+    render(<SprintDashboardView />);
+
+    expect(screen.getByText(/stale.*7\+ days/i)).toBeInTheDocument();
+    mockConfig.staleDaysThreshold = 5; // reset
   });
 });

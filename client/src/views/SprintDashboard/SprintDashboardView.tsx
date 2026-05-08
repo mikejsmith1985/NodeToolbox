@@ -2,11 +2,11 @@
 //
 // Provides ten tabs: Overview (sprint info + burn-down chart), By Assignee (swim lanes),
 // Blockers (wall of blocked/stale issues), Defects (bug radar by priority),
-// Standup (board walk + 15-min timer), Settings (project key configuration),
+// Standup (board walk + 15-min timer), Settings (project key + board picker + advanced config),
 // Metrics (velocity/burn stats), Pipeline (kanban WIP by status),
 // Planning (unestimated issues and size distribution), Releases (readiness by fix version).
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   CartesianGrid,
@@ -19,6 +19,10 @@ import {
 } from 'recharts';
 
 import type { JiraIssue } from '../../types/jira.ts';
+import BoardPicker from './BoardPicker.tsx';
+import MoveToSprintButton from './MoveToSprintButton.tsx';
+import type { DashboardConfig } from './hooks/useDashboardConfig.ts';
+import { useDashboardConfig } from './hooks/useDashboardConfig.ts';
 import { useSprintData } from './hooks/useSprintData.ts';
 import type { DashboardTab } from './hooks/useSprintData.ts';
 import styles from './SprintDashboardView.module.css';
@@ -42,7 +46,6 @@ const TAB_OPTIONS: { key: DashboardTab; label: string }[] = [
 ];
 
 const BLOCKED_STATUSES = ['blocked', 'impeded', 'on hold'];
-const STALE_THRESHOLD_DAYS = 5;
 const MS_PER_DAY = 86_400_000;
 const TIMER_WARNING_SECONDS = 300; // last 5 minutes
 const TIMER_DANGER_SECONDS = 60;   // last 1 minute
@@ -75,10 +78,13 @@ function isBlockedIssue(issue: JiraIssue): boolean {
   return BLOCKED_STATUSES.some((blockedStatus) => lowerStatusName.includes(blockedStatus));
 }
 
-/** Returns true when the issue has been in progress for more than STALE_THRESHOLD_DAYS days. */
-function isStaleIssue(issue: JiraIssue): boolean {
+/**
+ * Returns true when the issue has been in progress for more than `staleDaysThreshold` days.
+ * The threshold comes from user-configurable settings (default 5) rather than a hardcoded value.
+ */
+function isStaleIssue(issue: JiraIssue, staleDaysThreshold: number): boolean {
   const isInProgress = issue.fields.status.statusCategory.key === 'indeterminate';
-  return isInProgress && calculateAgingDays(issue.fields.updated) >= STALE_THRESHOLD_DAYS;
+  return isInProgress && calculateAgingDays(issue.fields.updated) >= staleDaysThreshold;
 }
 
 /** Groups issues by assignee display name, with unassigned issues bucketed under "Unassigned". */
@@ -249,6 +255,53 @@ function formatTimerDisplay(totalSeconds: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+// ── Issue card with move-to-sprint action ──
+
+/**
+ * A single issue row that includes a MoveToSprintButton.
+ * Used in both Overview and Assignee tabs to give team members a quick way to shuffle work.
+ */
+function IssueCardWithMove({
+  issue,
+  currentSprintId,
+  availableSprints,
+  isLoadingAvailableSprints,
+  staleDaysThreshold,
+  onFetchSprints,
+  onMoveToSprint,
+}: {
+  issue: JiraIssue;
+  currentSprintId: number | null;
+  availableSprints: ReturnType<typeof useSprintData>['state']['availableSprints'];
+  isLoadingAvailableSprints: boolean;
+  staleDaysThreshold: number;
+  onFetchSprints: () => void;
+  onMoveToSprint: (issueKey: string, targetSprintId: number) => Promise<void>;
+}) {
+  const isStale = isStaleIssue(issue, staleDaysThreshold);
+  const rowClassName = isStale
+    ? `${styles.laneIssueRow} ${styles.staleIssueRow}`
+    : styles.laneIssueRow;
+
+  return (
+    <div className={rowClassName} key={issue.key}>
+      <a className={styles.issueKeyLink} href={`#${issue.key}`}>
+        {issue.key}
+      </a>
+      <span>{issue.fields.summary}</span>
+      <span>{issue.fields.status.name}</span>
+      <MoveToSprintButton
+        availableSprints={availableSprints ?? []}
+        currentSprintId={currentSprintId}
+        isLoadingAvailableSprints={isLoadingAvailableSprints}
+        issueKey={issue.key}
+        onFetchSprints={onFetchSprints}
+        onMoveToSprint={onMoveToSprint}
+      />
+    </div>
+  );
+}
+
 // ── Sub-renderers ──
 
 /** Renders the sprint info card with name, state, and dates. */
@@ -367,28 +420,77 @@ function BurnDownChart({
   );
 }
 
-/** Renders the Overview tab with sprint info, flow stats, health badge, and burn-down chart. */
-function OverviewTab({ issues, sprintInfo }: { issues: JiraIssue[]; sprintInfo: ReturnType<typeof useSprintData>['state']['sprintInfo'] }) {
-  if (!sprintInfo) {
-    return (
-      <p style={{ color: 'var(--color-text-secondary)' }}>
-        No sprint loaded. Go to Settings and enter a project key.
-      </p>
-    );
-  }
-
+/** Renders the Overview tab: sprint info card, health badge, flow stats, burn-down, and full issue list. */
+function OverviewTab({
+  issues,
+  sprintInfo,
+  sprintState,
+  configState,
+  onFetchSprints,
+  onMoveToSprint,
+}: {
+  issues: JiraIssue[];
+  sprintInfo: ReturnType<typeof useSprintData>['state']['sprintInfo'];
+  sprintState: ReturnType<typeof useSprintData>['state'];
+  configState: DashboardConfig;
+  onFetchSprints: () => void;
+  onMoveToSprint: (issueKey: string, targetSprintId: number) => Promise<void>;
+}) {
   return (
     <div>
-      <SprintInfoCard sprintInfo={sprintInfo} />
-      <HealthBadge issues={issues} />
-      <FlowStatsBar issues={issues} />
-      <BurnDownChart issues={issues} sprintInfo={sprintInfo} />
+      {sprintInfo ? (
+        <>
+          <SprintInfoCard sprintInfo={sprintInfo} />
+          <HealthBadge issues={issues} />
+          <FlowStatsBar issues={issues} />
+          <BurnDownChart issues={issues} sprintInfo={sprintInfo} />
+        </>
+      ) : (
+        <p style={{ color: 'var(--color-text-secondary)' }}>
+          No sprint loaded. Go to Settings and enter a project key.
+        </p>
+      )}
+
+      {issues.length > 0 && (
+        <div className={styles.blockersSection}>
+          <div className={styles.blockersSectionHeader}>
+            <h3 className={styles.blockersSectionTitle}>All Issues</h3>
+            <span className={styles.countBadge}>{issues.length}</span>
+          </div>
+          <div className={styles.laneIssueGrid}>
+            {issues.map((issue) => (
+              <IssueCardWithMove
+                availableSprints={sprintState.availableSprints}
+                currentSprintId={sprintState.sprintInfo?.id ?? null}
+                isLoadingAvailableSprints={sprintState.isLoadingAvailableSprints}
+                issue={issue}
+                key={issue.key}
+                onFetchSprints={onFetchSprints}
+                onMoveToSprint={onMoveToSprint}
+                staleDaysThreshold={configState.staleDaysThreshold}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 /** Renders the By Assignee tab with swim lanes grouping issues per team member. */
-function AssigneeTab({ issues }: { issues: JiraIssue[] }) {
+function AssigneeTab({
+  issues,
+  sprintState,
+  configState,
+  onFetchSprints,
+  onMoveToSprint,
+}: {
+  issues: JiraIssue[];
+  sprintState: ReturnType<typeof useSprintData>['state'];
+  configState: DashboardConfig;
+  onFetchSprints: () => void;
+  onMoveToSprint: (issueKey: string, targetSprintId: number) => Promise<void>;
+}) {
   const groupedIssues = groupIssuesByAssignee(issues);
 
   return (
@@ -414,13 +516,16 @@ function AssigneeTab({ issues }: { issues: JiraIssue[] }) {
             </div>
             <div className={styles.laneIssueGrid}>
               {assigneeIssues.map((issue) => (
-                <div className={styles.laneIssueRow} key={issue.key}>
-                  <a className={styles.issueKeyLink} href={`#${issue.key}`}>
-                    {issue.key}
-                  </a>
-                  <span>{issue.fields.summary}</span>
-                  <span>{issue.fields.status.name}</span>
-                </div>
+                <IssueCardWithMove
+                  availableSprints={sprintState.availableSprints}
+                  currentSprintId={sprintState.sprintInfo?.id ?? null}
+                  isLoadingAvailableSprints={sprintState.isLoadingAvailableSprints}
+                  issue={issue}
+                  key={issue.key}
+                  onFetchSprints={onFetchSprints}
+                  onMoveToSprint={onMoveToSprint}
+                  staleDaysThreshold={configState.staleDaysThreshold}
+                />
               ))}
             </div>
           </div>
@@ -431,9 +536,11 @@ function AssigneeTab({ issues }: { issues: JiraIssue[] }) {
 }
 
 /** Renders the Blockers tab: Blocked issues, Stale in-progress, All in-progress. */
-function BlockersTab({ issues }: { issues: JiraIssue[] }) {
+function BlockersTab({ issues, staleDaysThreshold }: { issues: JiraIssue[]; staleDaysThreshold: number }) {
   const blockedIssues = issues.filter(isBlockedIssue);
-  const staleIssues = issues.filter((issue) => !isBlockedIssue(issue) && isStaleIssue(issue));
+  const staleIssues = issues.filter(
+    (issue) => !isBlockedIssue(issue) && isStaleIssue(issue, staleDaysThreshold),
+  );
   const allInProgressIssues = issues.filter(
     (issue) =>
       issue.fields.status.statusCategory.key === 'indeterminate' && !isBlockedIssue(issue),
@@ -468,7 +575,7 @@ function BlockersTab({ issues }: { issues: JiraIssue[] }) {
       <div className={styles.blockersSection}>
         <div className={styles.blockersSectionHeader}>
           <h3 className={styles.blockersSectionTitle}>
-            Stale (In Progress {STALE_THRESHOLD_DAYS}+ days)
+            Stale (In Progress {staleDaysThreshold}+ days)
           </h3>
           <span className={styles.countBadge}>{staleIssues.length}</span>
         </div>
@@ -555,6 +662,7 @@ function StandupTab({
   issues,
   timerSecondsRemaining,
   isTimerRunning,
+  staleDaysThreshold,
   onStart,
   onStop,
   onReset,
@@ -563,6 +671,7 @@ function StandupTab({
   issues: JiraIssue[];
   timerSecondsRemaining: number;
   isTimerRunning: boolean;
+  staleDaysThreshold: number;
   onStart: () => void;
   onStop: () => void;
   onReset: () => void;
@@ -653,8 +762,8 @@ function StandupTab({
               ) : (
                 columnIssues.map((issue) => {
                   const agingDays = calculateAgingDays(issue.fields.updated);
-                  const isAgedWarn = agingDays > 3 && agingDays <= STALE_THRESHOLD_DAYS;
-                  const isAgedStale = agingDays > STALE_THRESHOLD_DAYS;
+                  const isAgedWarn = agingDays > 3 && agingDays <= staleDaysThreshold;
+                  const isAgedStale = agingDays > staleDaysThreshold;
 
                   const cardClassName = isAgedStale
                     ? `${styles.boardIssueCard} ${styles.boardIssueCardStale}`
@@ -682,20 +791,41 @@ function StandupTab({
   );
 }
 
-/** Renders the Settings tab for entering the project key and loading the sprint. */
+// ── Settings tab (project key + board picker + advanced config) ──
+
+interface SettingsTabProps {
+  projectKey: string;
+  isLoadingSprint: boolean;
+  loadError: string | null;
+  boardId: number | null;
+  availableBoards: ReturnType<typeof useSprintData>['state']['availableBoards'];
+  boardSearchQuery: string;
+  config: DashboardConfig;
+  onProjectKeyChange: (key: string) => void;
+  onLoadSprint: () => void;
+  onBoardSearchChange: (query: string) => void;
+  onSelectBoard: (boardId: number) => Promise<void>;
+  onConfigChange: (partial: Partial<DashboardConfig>) => void;
+}
+
+/**
+ * Renders the Settings tab: project key, board picker, and all eight advanced config fields.
+ * All changes persist to localStorage immediately so they survive page reloads.
+ */
 function SettingsTab({
   projectKey,
   isLoadingSprint,
   loadError,
+  boardId,
+  availableBoards,
+  boardSearchQuery,
+  config,
   onProjectKeyChange,
   onLoadSprint,
-}: {
-  projectKey: string;
-  isLoadingSprint: boolean;
-  loadError: string | null;
-  onProjectKeyChange: (key: string) => void;
-  onLoadSprint: () => void;
-}) {
+  onBoardSearchChange,
+  onSelectBoard,
+  onConfigChange,
+}: SettingsTabProps) {
   return (
     <div className={styles.settingsPanel}>
       <div>
@@ -729,6 +859,153 @@ function SettingsTab({
         {isLoadingSprint ? 'Loading…' : 'Load Sprint'}
       </button>
       {loadError && <p className={styles.errorMessage}>{loadError}</p>}
+
+      {availableBoards.length > 0 && (
+        <BoardPicker
+          boards={availableBoards}
+          isLoading={isLoadingSprint}
+          onSearchChange={onBoardSearchChange}
+          onSelectBoard={onSelectBoard}
+          searchQuery={boardSearchQuery}
+          selectedBoardId={boardId}
+        />
+      )}
+
+      <div className={styles.settingsDivider} />
+
+      <div>
+        <h2 className={styles.settingsSectionTitle}>Advanced Settings</h2>
+      </div>
+
+      <AdvancedConfigFields config={config} onConfigChange={onConfigChange} />
+    </div>
+  );
+}
+
+/**
+ * Renders the eight advanced config fields as labelled inputs.
+ * Extracted into its own component so SettingsTab stays under 40 lines.
+ */
+function AdvancedConfigFields({
+  config,
+  onConfigChange,
+}: {
+  config: DashboardConfig;
+  onConfigChange: (partial: Partial<DashboardConfig>) => void;
+}) {
+  return (
+    <div className={styles.advancedConfigGrid}>
+      <ConfigNumberField
+        id="sd-cfg-stale-days"
+        label="Stale threshold (days)"
+        onChange={(value) => onConfigChange({ staleDaysThreshold: value })}
+        value={config.staleDaysThreshold}
+      />
+      <ConfigTextField
+        id="sd-cfg-pointing-scale"
+        label="Story point scale (comma-separated)"
+        onChange={(value) => onConfigChange({ storyPointScale: value })}
+        value={config.storyPointScale}
+      />
+      <ConfigNumberField
+        id="sd-cfg-sprint-window"
+        label="Sprint window (past sprints for velocity)"
+        onChange={(value) => onConfigChange({ sprintWindow: value })}
+        value={config.sprintWindow}
+      />
+      <ConfigTextField
+        id="sd-cfg-ct-start"
+        label="Cycle-time start status (e.g. In Progress)"
+        onChange={(value) => onConfigChange({ cycleTimeStartField: value })}
+        value={config.cycleTimeStartField}
+      />
+      <ConfigTextField
+        id="sd-cfg-ct-done"
+        label="Cycle-time done status (e.g. Done)"
+        onChange={(value) => onConfigChange({ cycleTimeDoneField: value })}
+        value={config.cycleTimeDoneField}
+      />
+      <ConfigNumberField
+        id="sd-cfg-kanban-period"
+        label="Kanban period (days)"
+        onChange={(value) => onConfigChange({ kanbanPeriodDays: value })}
+        value={config.kanbanPeriodDays}
+      />
+      <ConfigTextField
+        id="sd-cfg-sp-field"
+        label="Custom story-points field ID"
+        onChange={(value) => onConfigChange({ customStoryPointsFieldId: value })}
+        value={config.customStoryPointsFieldId}
+      />
+      <ConfigTextField
+        id="sd-cfg-epic-field"
+        label="Custom epic-link field ID"
+        onChange={(value) => onConfigChange({ customEpicLinkFieldId: value })}
+        value={config.customEpicLinkFieldId}
+      />
+    </div>
+  );
+}
+
+/** Reusable labelled text input for a config field. */
+function ConfigTextField({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label
+        htmlFor={id}
+        style={{ display: 'block', marginBottom: 'var(--spacing-xs)', fontSize: 'var(--font-size-sm)' }}
+      >
+        {label}
+      </label>
+      <input
+        className={styles.settingsInput}
+        id={id}
+        onChange={(evt) => onChange(evt.target.value)}
+        type="text"
+        value={value}
+      />
+    </div>
+  );
+}
+
+/** Reusable labelled number input for a config field. */
+function ConfigNumberField({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div>
+      <label
+        htmlFor={id}
+        style={{ display: 'block', marginBottom: 'var(--spacing-xs)', fontSize: 'var(--font-size-sm)' }}
+      >
+        {label}
+      </label>
+      <input
+        className={styles.settingsInput}
+        id={id}
+        min={1}
+        onChange={(evt) => onChange(Number(evt.target.value) || 1)}
+        type="number"
+        value={value}
+      />
     </div>
   );
 }
@@ -941,21 +1218,43 @@ function ReleasesTab({ issues }: { issues: JiraIssue[] }) {
 /**
  * Renders the Sprint Dashboard view so teams can monitor sprint health,
  * review assignments, identify blockers, and run standup in one workspace.
+ * Supports both scrum (active sprint) and kanban (board issues) boards.
  */
 export default function SprintDashboardView() {
   const { state, actions } = useSprintData();
+  const { config, actions: configActions } = useDashboardConfig();
+
+  // Local state for the board picker search field — not persisted, just UI.
+  const [boardSearchQuery, setBoardSearchQuery] = useState('');
 
   function renderActiveTabPanel(activeTab: DashboardTab) {
     if (activeTab === 'overview') {
-      return <OverviewTab issues={state.sprintIssues} sprintInfo={state.sprintInfo} />;
+      return (
+        <OverviewTab
+          configState={config}
+          issues={state.sprintIssues}
+          onFetchSprints={actions.loadAvailableSprints}
+          onMoveToSprint={actions.moveIssueToSprint}
+          sprintInfo={state.sprintInfo}
+          sprintState={state}
+        />
+      );
     }
 
     if (activeTab === 'assignee') {
-      return <AssigneeTab issues={state.sprintIssues} />;
+      return (
+        <AssigneeTab
+          configState={config}
+          issues={state.sprintIssues}
+          onFetchSprints={actions.loadAvailableSprints}
+          onMoveToSprint={actions.moveIssueToSprint}
+          sprintState={state}
+        />
+      );
     }
 
     if (activeTab === 'blockers') {
-      return <BlockersTab issues={state.sprintIssues} />;
+      return <BlockersTab issues={state.sprintIssues} staleDaysThreshold={config.staleDaysThreshold} />;
     }
 
     if (activeTab === 'defects') {
@@ -971,6 +1270,7 @@ export default function SprintDashboardView() {
           onStart={actions.startTimer}
           onStop={actions.stopTimer}
           onTick={actions.tickTimer}
+          staleDaysThreshold={config.staleDaysThreshold}
           timerSecondsRemaining={state.timerSecondsRemaining}
         />
       );
@@ -994,10 +1294,17 @@ export default function SprintDashboardView() {
 
     return (
       <SettingsTab
+        availableBoards={state.availableBoards}
+        boardId={state.boardId}
+        boardSearchQuery={boardSearchQuery}
+        config={config}
         isLoadingSprint={state.isLoadingSprint}
         loadError={state.loadError}
+        onBoardSearchChange={setBoardSearchQuery}
+        onConfigChange={configActions.updateConfig}
         onLoadSprint={actions.loadSprint}
         onProjectKeyChange={actions.setProjectKey}
+        onSelectBoard={actions.selectBoard}
         projectKey={state.projectKey}
       />
     );

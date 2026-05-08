@@ -1,0 +1,75 @@
+/* MoveToSprintButton.module.css — Styles for the inline move-to-sprint dropdown on issue cards. */
+
+.moveWrapper {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  position: relative;
+}
+
+.triggerButton {
+  padding: 2px var(--spacing-xs);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs, 11px);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.triggerButton:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.dropdown {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs);
+  min-width: 160px;
+  z-index: 10;
+}
+
+.sprintOptionButton {
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.sprintOptionButton:hover {
+  background: var(--color-surface-2);
+}
+
+.sprintOptionButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.stateBadge {
+  font-size: var(--font-size-xs, 11px);
+  color: var(--color-text-secondary);
+  margin-left: var(--spacing-xs);
+}
+
+.feedbackText {
+  font-size: var(--font-size-xs, 11px);
+  color: var(--color-text-secondary);
+}
+
+.errorText {
+  color: var(--color-danger);
+  font-size: var(--font-size-xs, 11px);
+}

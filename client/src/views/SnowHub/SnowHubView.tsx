@@ -5,6 +5,7 @@ import { useState } from 'react';
 import CrgTab from './tabs/CrgTab.tsx';
 import PrbTab from './tabs/PrbTab.tsx';
 import ReleaseManagementTab from './tabs/ReleaseManagementTab.tsx';
+import SyncMonitorTab from './tabs/SyncMonitorTab.tsx';
 import styles from './SnowHubView.module.css';
 
 const VIEW_TITLE = 'SNow Hub';
@@ -13,6 +14,7 @@ const TAB_OPTIONS = [
   { key: 'crg', label: 'CHG' },
   { key: 'prb', label: 'PRB Generator' },
   { key: 'release', label: 'Release Management' },
+  { key: 'sync', label: 'Sync Monitor' },
 ] as const;
 
 type SnowHubTabKey = (typeof TAB_OPTIONS)[number]['key'];
@@ -25,6 +27,10 @@ function renderActiveTabPanel(activeTab: SnowHubTabKey) {
 
   if (activeTab === 'prb') {
     return <PrbTab />;
+  }
+
+  if (activeTab === 'sync') {
+    return <SyncMonitorTab />;
   }
 
   return <ReleaseManagementTab />;

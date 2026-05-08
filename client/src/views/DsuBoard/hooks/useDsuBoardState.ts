@@ -3,41 +3,50 @@
 import { useCallback, useRef, useState } from 'react';
 import { jiraGet, jiraPost } from '../../../services/jiraApi.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
+import {
+  DEFAULT_MULTI_CRITERIA_FILTERS,
+  type DsuMultiCriteriaFilters,
+} from './useDsuFilters.ts';
+import {
+  enrichIssuesWithSnowLinks,
+  type SnowLinksMap,
+} from './useDsuSnowEnrichment.ts';
 
 const DEFAULT_STALE_DAYS = 5;
-
-/** Number of milliseconds to wait before flushing standup notes to localStorage. */
 const DEBOUNCE_DELAY_MS = 500;
-
-/** localStorage key used to persist standup notes between sessions. */
-const STANDUP_NOTES_STORAGE_KEY = 'toolbox-standup-notes';
-
-/** localStorage key used to persist per-issue SNow root cause URLs. */
+const AUTO_FILL_MAX_ISSUES = 5;
+const RECENT_UPDATE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const STANDUP_NOTES_STORAGE_KEY = 'tbxDsuStandupNotes';
+const SELECTED_RELEASE_STORAGE_KEY = 'tbxDSUSelectedRelease';
 const SNOW_ROOT_CAUSES_STORAGE_KEY = 'toolbox-snow-root-causes';
+const JIRA_SEARCH_FIELDS = 'summary,status,priority,assignee,issuetype,created,updated,duedate,fixVersions,issuelinks,labels,customfield_10016,customfield_10028,customfield_10014,customfield_10301,comment';
+const JIRA_SEARCH_MAX_RESULTS = 100;
 
 /** Text content for the three standup note areas plus an optional SNow URL. */
 export interface StandupNotes {
-  /** What was completed since the last standup. */
   yesterday: string;
-  /** What will be worked on today. */
   today: string;
-  /** Any blockers preventing forward progress. */
   blockers: string;
-  /** Optional SNow root cause ticket URL for the whole standup. */
   snowUrl: string;
 }
 
-/**
- * A Jira workflow transition that can move an issue to a new status.
- * Returned by `GET /jira-proxy/rest/api/2/issue/{key}/transitions`.
- */
+/** A Jira workflow transition that can move an issue to a new status. */
 export interface JiraTransition {
   id: string;
   name: string;
   to: { name: string };
 }
 
-/** Default empty standup notes used when nothing is persisted in localStorage. */
+interface JiraProjectVersion {
+  name: string;
+  released?: boolean;
+}
+
+interface DsuStoredStandupState {
+  notes: StandupNotes;
+  isStandupPanelCollapsed: boolean;
+}
+
 const DEFAULT_STANDUP_NOTES: StandupNotes = {
   yesterday: '',
   today: '',
@@ -45,7 +54,6 @@ const DEFAULT_STANDUP_NOTES: StandupNotes = {
   snowUrl: '',
 };
 
-/** Defines the fixed set of DSU board sections and their metadata. */
 const DSU_SECTION_DEFINITIONS = [
   { key: 'new', icon: '🆕', label: 'New Since Last Business Day', help: 'Created since 5 PM on the last business day' },
   { key: 'stale', icon: '⚠️', label: 'Stale Issues', help: 'Open issues not updated in N or more days' },
@@ -80,24 +88,20 @@ export interface DsuBoardState {
   viewMode: DsuViewMode;
   sections: DsuBoardSection[];
   activeFilters: string[];
+  multiCriteriaFilters: DsuMultiCriteriaFilters;
   snowUrl: string;
-  /** The issue currently open in the detail overlay, or null when closed. */
+  availableVersions: string[];
+  autoReleaseName: string | null;
+  selectedReleaseName: string | null;
+  sectionSnowLinks: Record<string, SnowLinksMap>;
   selectedIssue: JiraIssue | null;
-  /** Whether the issue detail overlay is visible. */
   isDetailOverlayOpen: boolean;
-  /** Workflow transitions available for the selected issue. */
   availableTransitions: JiraTransition[];
-  /** True while transitions are being fetched from Jira. */
   isLoadingTransitions: boolean;
-  /** True while a status transition is being applied. */
   isTransitioning: boolean;
-  /** Error message from the last failed transition or load, or null. */
   transitionError: string | null;
-  /** The three daily standup text areas, persisted to localStorage. */
   standupNotes: StandupNotes;
-  /** Whether the standup notes panel is collapsed. */
   isStandupPanelCollapsed: boolean;
-  /** Per-issue SNow root cause URLs, keyed by Jira issue key. */
   snowRootCauseUrls: Record<string, string>;
 }
 
@@ -108,66 +112,152 @@ export interface DsuBoardActions {
   setViewMode: (mode: DsuViewMode) => void;
   toggleSectionCollapse: (sectionKey: string) => void;
   toggleFilter: (assigneeName: string) => void;
+  toggleIssueTypeFilter: (issueTypeName: string) => void;
+  togglePriorityFilter: (priorityName: string) => void;
+  toggleStatusFilter: (statusName: string) => void;
+  setFixVersionFilter: (fixVersion: string) => void;
+  setPiFilter: (piValue: string) => void;
+  clearAllFilters: () => void;
   setSnowUrl: (url: string) => void;
   loadBoard: () => Promise<void>;
-  /** Opens the detail overlay for the given issue. */
   openDetailOverlay: (issue: JiraIssue) => void;
-  /** Closes the detail overlay and clears selected issue state. */
   closeDetailOverlay: () => void;
-  /** Fetches available workflow transitions for a Jira issue. */
   loadTransitions: (issueKey: string) => Promise<void>;
-  /** Posts a workflow transition to move an issue to a new status. */
   transitionIssue: (issueKey: string, transitionId: string) => Promise<void>;
-  /** Posts a comment to a Jira issue. */
   postComment: (issueKey: string, commentBody: string) => Promise<void>;
-  /** Updates one or more standup note fields; debounces the localStorage write. */
   updateStandupNotes: (notes: Partial<StandupNotes>) => void;
-  /** Sets whether the standup notes panel is collapsed. */
   setStandupPanelCollapsed: (isCollapsed: boolean) => void;
-  /** Copies formatted standup notes to the clipboard. */
   copyStandupToClipboard: () => void;
-  /** Saves a SNow root cause URL for a specific issue key. */
   setSnowRootCauseUrl: (issueKey: string, url: string) => void;
+  setSelectedRelease: (versionName: string | null) => void;
+  autoFillStandupNotes: () => void;
+}
+
+function createDefaultSections(): DsuBoardSection[] {
+  return DSU_SECTION_DEFINITIONS.map((definition) => ({
+    ...definition,
+    issues: [],
+    isLoading: false,
+    loadError: null,
+    isCollapsed: false,
+  }));
+}
+
+function createDefaultStoredStandupState(): DsuStoredStandupState {
+  return { notes: DEFAULT_STANDUP_NOTES, isStandupPanelCollapsed: false };
+}
+
+function readStoredStandupState(): DsuStoredStandupState {
+  const savedJson = localStorage.getItem(STANDUP_NOTES_STORAGE_KEY);
+  if (!savedJson) {
+    return createDefaultStoredStandupState();
+  }
+
+  try {
+    const parsedValue = JSON.parse(savedJson) as Partial<DsuStoredStandupState> & Partial<StandupNotes>;
+    if ('notes' in parsedValue) {
+      return {
+        notes: { ...DEFAULT_STANDUP_NOTES, ...(parsedValue.notes ?? {}) },
+        isStandupPanelCollapsed: Boolean(parsedValue.isStandupPanelCollapsed),
+      };
+    }
+
+    return {
+      notes: { ...DEFAULT_STANDUP_NOTES, ...parsedValue },
+      isStandupPanelCollapsed: false,
+    };
+  } catch {
+    return createDefaultStoredStandupState();
+  }
+}
+
+function persistStandupState(storedStandupState: DsuStoredStandupState): void {
+  localStorage.setItem(STANDUP_NOTES_STORAGE_KEY, JSON.stringify(storedStandupState));
+}
+
+function readSelectedReleaseName(): string | null {
+  return localStorage.getItem(SELECTED_RELEASE_STORAGE_KEY);
+}
+
+function persistSelectedReleaseName(selectedReleaseName: string | null): void {
+  if (selectedReleaseName === null) {
+    localStorage.removeItem(SELECTED_RELEASE_STORAGE_KEY);
+    return;
+  }
+
+  localStorage.setItem(SELECTED_RELEASE_STORAGE_KEY, selectedReleaseName);
+}
+
+function toggleStringValue(values: string[], value: string): string[] {
+  return values.includes(value)
+    ? values.filter((currentValue) => currentValue !== value)
+    : [...values, value];
+}
+
+function buildSearchPath(jql: string): string {
+  return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${JIRA_SEARCH_FIELDS}&maxResults=${JIRA_SEARCH_MAX_RESULTS}`;
+}
+
+function extractUnreleasedVersionNames(projectVersions: JiraProjectVersion[]): string[] {
+  return projectVersions
+    .filter((projectVersion) => projectVersion.released !== true)
+    .map((projectVersion) => projectVersion.name);
+}
+
+function createUniqueIssueList(sections: DsuBoardSection[]): JiraIssue[] {
+  const issuesByKey = new Map<string, JiraIssue>();
+  for (const boardSection of sections) {
+    for (const issue of boardSection.issues) {
+      if (!issuesByKey.has(issue.key)) {
+        issuesByKey.set(issue.key, issue);
+      }
+    }
+  }
+  return Array.from(issuesByKey.values());
+}
+
+function wasUpdatedRecently(updatedTimestamp: string, currentTimestamp: number): boolean {
+  return currentTimestamp - new Date(updatedTimestamp).getTime() <= RECENT_UPDATE_WINDOW_MS;
+}
+
+function formatStandupIssueList(issues: JiraIssue[]): string {
+  return issues
+    .slice(0, AUTO_FILL_MAX_ISSUES)
+    .map((issue) => `${issue.key} (${issue.fields.summary})`)
+    .join(', ');
 }
 
 /** Builds the JQL query for each DSU section based on project key and configuration. */
-function buildSectionJql(sectionKey: SectionKey, projectKey: string, staleDays: number): string | null {
+function buildSectionJql(
+  sectionKey: SectionKey,
+  projectKey: string,
+  staleDays: number,
+  activeReleaseName: string | null,
+): string | null {
   const projectFilter = `project = "${projectKey}"`;
-  const openStatuses = `status in ("To Do", "In Progress", "Open")`;
+  const openStatuses = 'status in ("To Do", "In Progress", "Open")';
 
   switch (sectionKey) {
-    case 'new': {
-      // Issues created since the last business day at 5 PM
+    case 'new':
       return `${projectFilter} AND created >= "-1d" ORDER BY created DESC`;
-    }
-    case 'stale': {
-      // Issues open but not updated for N days
+    case 'stale':
       return `${projectFilter} AND ${openStatuses} AND updated <= "-${staleDays}d" ORDER BY updated ASC`;
-    }
-    case 'release': {
-      // Issues with a fixVersion matching the most recent active release
-      return `${projectFilter} AND fixVersion in unreleasedVersions() ORDER BY priority DESC`;
-    }
-    case 'incidents': {
-      // Issues that look like incidents/PRBs based on summary keywords
+    case 'release':
+      return activeReleaseName
+        ? `${projectFilter} AND fixVersion = "${activeReleaseName}" ORDER BY priority DESC`
+        : `${projectFilter} AND fixVersion in unreleasedVersions() ORDER BY priority DESC`;
+    case 'incidents':
       return `${projectFilter} AND ${openStatuses} AND summary ~ "INC OR PRB" ORDER BY created DESC`;
-    }
-    case 'open': {
+    case 'open':
       return `${projectFilter} AND ${openStatuses} ORDER BY updated DESC`;
-    }
-    case 'watching': {
+    case 'watching':
       return `${projectFilter} AND ${openStatuses} AND watcher = currentUser() ORDER BY updated DESC`;
-    }
-    case 'roster-jira': {
+    case 'roster-jira':
       return `${projectFilter} AND ${openStatuses} ORDER BY assignee ASC`;
-    }
-    case 'roster-snow': {
-      // SNow tickets are loaded via a separate mechanism — skip Jira fetch
+    case 'roster-snow':
       return null;
-    }
-    default: {
+    default:
       return null;
-    }
   }
 }
 
@@ -176,41 +266,52 @@ export function useDsuBoardState(): { state: DsuBoardState; actions: DsuBoardAct
   const [projectKey, setProjectKeyState] = useState('');
   const [staleDays, setStaleDaysState] = useState(DEFAULT_STALE_DAYS);
   const [viewMode, setViewModeState] = useState<DsuViewMode>('cards');
-  const [sections, setSections] = useState<DsuBoardSection[]>(
-    DSU_SECTION_DEFINITIONS.map((definition) => ({
-      ...definition,
-      issues: [],
-      isLoading: false,
-      loadError: null,
-      isCollapsed: false,
-    })),
-  );
+  const [sections, setSections] = useState<DsuBoardSection[]>(createDefaultSections);
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
-  const [snowUrl, setSnowUrlState] = useState('');
-
-  // ── Detail overlay state ──
+  const [multiCriteriaFilters, setMultiCriteriaFilters] = useState<DsuMultiCriteriaFilters>({
+    ...DEFAULT_MULTI_CRITERIA_FILTERS,
+  });
+  const [availableVersions, setAvailableVersionsState] = useState<string[]>([]);
+  const [autoReleaseName, setAutoReleaseNameState] = useState<string | null>(null);
+  const [selectedReleaseName, setSelectedReleaseNameState] = useState<string | null>(readSelectedReleaseName);
+  const [sectionSnowLinks, setSectionSnowLinksState] = useState<Record<string, SnowLinksMap>>({});
   const [selectedIssue, setSelectedIssueState] = useState<JiraIssue | null>(null);
   const [isDetailOverlayOpen, setIsDetailOverlayOpen] = useState(false);
   const [availableTransitions, setAvailableTransitions] = useState<JiraTransition[]>([]);
   const [isLoadingTransitions, setIsLoadingTransitions] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [transitionError, setTransitionError] = useState<string | null>(null);
-
-  // ── Standup notes state (loaded from localStorage on first render) ──
-  const [standupNotes, setStandupNotes] = useState<StandupNotes>(() => {
-    const savedJson = localStorage.getItem(STANDUP_NOTES_STORAGE_KEY);
-    return savedJson
-      ? { ...DEFAULT_STANDUP_NOTES, ...(JSON.parse(savedJson) as Partial<StandupNotes>) }
-      : DEFAULT_STANDUP_NOTES;
-  });
-  const [isStandupPanelCollapsed, setIsStandupPanelCollapsedState] = useState(false);
+  const [storedStandupState, setStoredStandupState] = useState<DsuStoredStandupState>(readStoredStandupState);
   const [snowRootCauseUrls, setSnowRootCauseUrlsState] = useState<Record<string, string>>(() => {
     const savedJson = localStorage.getItem(SNOW_ROOT_CAUSES_STORAGE_KEY);
     return savedJson ? (JSON.parse(savedJson) as Record<string, string>) : {};
   });
 
-  /** Timer ref for debouncing standup notes localStorage writes. */
   const standupNotesDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const standupNotes = storedStandupState.notes;
+  const isStandupPanelCollapsed = storedStandupState.isStandupPanelCollapsed;
+  const snowUrl = standupNotes.snowUrl;
+
+  const updateSectionState = useCallback(
+    (sectionKey: string, updateSection: (section: DsuBoardSection) => DsuBoardSection) => {
+      setSections((currentSections) =>
+        currentSections.map((boardSection) =>
+          boardSection.key === sectionKey ? updateSection(boardSection) : boardSection,
+        ),
+      );
+    },
+    [],
+  );
+
+  const scheduleStandupPersistence = useCallback((nextStoredStandupState: DsuStoredStandupState) => {
+    if (standupNotesDebounceTimer.current !== null) {
+      clearTimeout(standupNotesDebounceTimer.current);
+    }
+
+    standupNotesDebounceTimer.current = setTimeout(() => {
+      persistStandupState(nextStoredStandupState);
+    }, DEBOUNCE_DELAY_MS);
+  }, []);
 
   const setProjectKey = useCallback((key: string) => {
     setProjectKeyState(key);
@@ -224,31 +325,53 @@ export function useDsuBoardState(): { state: DsuBoardState; actions: DsuBoardAct
     setViewModeState(mode);
   }, []);
 
-  const toggleSectionCollapse = useCallback((sectionKey: string) => {
-    setSections((previous) =>
-      previous.map((section) =>
-        section.key === sectionKey
-          ? { ...section, isCollapsed: !section.isCollapsed }
-          : section,
-      ),
-    );
-  }, []);
+  const toggleSectionCollapse = useCallback(
+    (sectionKey: string) => {
+      updateSectionState(sectionKey, (boardSection) => ({
+        ...boardSection,
+        isCollapsed: !boardSection.isCollapsed,
+      }));
+    },
+    [updateSectionState],
+  );
 
   const toggleFilter = useCallback((assigneeName: string) => {
-    setActiveFilters((previous) => {
-      const isAlreadyActive = previous.includes(assigneeName);
-      if (isAlreadyActive) {
-        return previous.filter((filter) => filter !== assigneeName);
-      }
-      return [...previous, assigneeName];
-    });
+    setActiveFilters((currentFilters) => toggleStringValue(currentFilters, assigneeName));
   }, []);
 
-  const setSnowUrl = useCallback((url: string) => {
-    setSnowUrlState(url);
+  const toggleIssueTypeFilter = useCallback((issueTypeName: string) => {
+    setMultiCriteriaFilters((currentFilters) => ({
+      ...currentFilters,
+      issueTypes: toggleStringValue(currentFilters.issueTypes, issueTypeName),
+    }));
   }, []);
 
-  // ── Detail overlay actions ──
+  const togglePriorityFilter = useCallback((priorityName: string) => {
+    setMultiCriteriaFilters((currentFilters) => ({
+      ...currentFilters,
+      priorities: toggleStringValue(currentFilters.priorities, priorityName),
+    }));
+  }, []);
+
+  const toggleStatusFilter = useCallback((statusName: string) => {
+    setMultiCriteriaFilters((currentFilters) => ({
+      ...currentFilters,
+      statuses: toggleStringValue(currentFilters.statuses, statusName),
+    }));
+  }, []);
+
+  const setFixVersionFilter = useCallback((fixVersion: string) => {
+    setMultiCriteriaFilters((currentFilters) => ({ ...currentFilters, fixVersion }));
+  }, []);
+
+  const setPiFilter = useCallback((piValue: string) => {
+    setMultiCriteriaFilters((currentFilters) => ({ ...currentFilters, piValue }));
+  }, []);
+
+  const clearAllFilters = useCallback(() => {
+    setActiveFilters([]);
+    setMultiCriteriaFilters({ ...DEFAULT_MULTI_CRITERIA_FILTERS });
+  }, []);
 
   const openDetailOverlay = useCallback((issue: JiraIssue) => {
     setSelectedIssueState(issue);
@@ -303,27 +426,34 @@ export function useDsuBoardState(): { state: DsuBoardState; actions: DsuBoardAct
     await jiraPost<unknown>(`/rest/api/2/issue/${issueKey}/comment`, { body: commentBody });
   }, []);
 
-  // ── Standup notes actions ──
+  /** Updates one or more standup note fields and debounces persistence. */
+  const updateStandupNotes = useCallback(
+    (partialNotes: Partial<StandupNotes>) => {
+      setStoredStandupState((currentStoredStandupState) => {
+        const nextStoredStandupState = {
+          ...currentStoredStandupState,
+          notes: { ...currentStoredStandupState.notes, ...partialNotes },
+        };
+        scheduleStandupPersistence(nextStoredStandupState);
+        return nextStoredStandupState;
+      });
+    },
+    [scheduleStandupPersistence],
+  );
 
-  /** Updates standup note fields and debounces the localStorage write. */
-  const updateStandupNotes = useCallback((partialNotes: Partial<StandupNotes>) => {
-    setStandupNotes((previousNotes) => {
-      const updatedNotes = { ...previousNotes, ...partialNotes };
-
-      // Debounce: cancel any pending write and schedule a new one
-      if (standupNotesDebounceTimer.current !== null) {
-        clearTimeout(standupNotesDebounceTimer.current);
-      }
-      standupNotesDebounceTimer.current = setTimeout(() => {
-        localStorage.setItem(STANDUP_NOTES_STORAGE_KEY, JSON.stringify(updatedNotes));
-      }, DEBOUNCE_DELAY_MS);
-
-      return updatedNotes;
-    });
-  }, []);
+  const setSnowUrl = useCallback((url: string) => {
+    updateStandupNotes({ snowUrl: url });
+  }, [updateStandupNotes]);
 
   const setStandupPanelCollapsed = useCallback((isCollapsed: boolean) => {
-    setIsStandupPanelCollapsedState(isCollapsed);
+    setStoredStandupState((currentStoredStandupState) => {
+      const nextStoredStandupState = {
+        ...currentStoredStandupState,
+        isStandupPanelCollapsed: isCollapsed,
+      };
+      persistStandupState(nextStoredStandupState);
+      return nextStoredStandupState;
+    });
   }, []);
 
   /** Formats the three standup areas and writes them to the system clipboard. */
@@ -333,6 +463,7 @@ export function useDsuBoardState(): { state: DsuBoardState; actions: DsuBoardAct
       `▶️ Today: ${standupNotes.today}`,
       `🚫 Blockers: ${standupNotes.blockers}`,
     ].join('\n');
+
     if (navigator.clipboard) {
       void navigator.clipboard.writeText(clipboardText);
     }
@@ -340,55 +471,154 @@ export function useDsuBoardState(): { state: DsuBoardState; actions: DsuBoardAct
 
   /** Saves a SNow root cause URL for the given issue key to state and localStorage. */
   const setSnowRootCauseUrl = useCallback((issueKey: string, url: string) => {
-    setSnowRootCauseUrlsState((previousUrls) => {
-      const updatedUrls = { ...previousUrls, [issueKey]: url };
-      localStorage.setItem(SNOW_ROOT_CAUSES_STORAGE_KEY, JSON.stringify(updatedUrls));
-      return updatedUrls;
+    setSnowRootCauseUrlsState((currentUrls) => {
+      const nextUrls = { ...currentUrls, [issueKey]: url };
+      localStorage.setItem(SNOW_ROOT_CAUSES_STORAGE_KEY, JSON.stringify(nextUrls));
+      return nextUrls;
     });
   }, []);
 
-  const loadBoard = useCallback(async () => {
-    // Mark all Jira sections as loading (SNow section is skipped)
-    setSections((previous) =>
-      previous.map((section) =>
-        section.key === 'roster-snow'
-          ? { ...section, issues: [], loadError: null }
-          : { ...section, isLoading: true, loadError: null },
-      ),
-    );
+  const fetchSectionIssues = useCallback(
+    async (sectionKey: SectionKey, activeReleaseName: string | null): Promise<JiraIssue[]> => {
+      const jql = buildSectionJql(sectionKey, projectKey, staleDays, activeReleaseName);
+      if (jql === null) {
+        return [];
+      }
 
-    // Build and fire parallel fetches for all Jira-backed sections
-    const fetchPromises = DSU_SECTION_DEFINITIONS.map(async (definition) => {
-      const jql = buildSectionJql(definition.key as SectionKey, projectKey, staleDays);
+      const response = await jiraGet<{ issues: JiraIssue[] }>(buildSearchPath(jql));
+      return response.issues;
+    },
+    [projectKey, staleDays],
+  );
 
-      // SNow section does not query Jira
-      if (jql === null) return;
+  const fetchReleaseSectionIssues = useCallback(
+    async (releaseName: string | null) => {
+      updateSectionState('release', (boardSection) => ({
+        ...boardSection,
+        isLoading: true,
+        loadError: null,
+        issues: [],
+      }));
+      setSectionSnowLinksState((currentSnowLinks) => ({ ...currentSnowLinks, release: {} }));
 
       try {
-        const response = await jiraGet<{ issues: JiraIssue[] }>(
-          `/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=50`,
-        );
-        setSections((current) =>
-          current.map((section) =>
-            section.key === definition.key
-              ? { ...section, isLoading: false, issues: response.issues, loadError: null }
-              : section,
-          ),
-        );
+        const issues = await fetchSectionIssues('release', releaseName);
+        updateSectionState('release', (boardSection) => ({
+          ...boardSection,
+          isLoading: false,
+          issues,
+          loadError: null,
+        }));
+        const snowLinks = await enrichIssuesWithSnowLinks(issues, snowUrl);
+        setSectionSnowLinksState((currentSnowLinks) => ({ ...currentSnowLinks, release: snowLinks }));
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to load section';
-        setSections((current) =>
-          current.map((section) =>
-            section.key === definition.key
-              ? { ...section, isLoading: false, loadError: errorMessage }
-              : section,
-          ),
-        );
+        updateSectionState('release', (boardSection) => ({
+          ...boardSection,
+          isLoading: false,
+          loadError: errorMessage,
+          issues: [],
+        }));
       }
-    });
+    },
+    [fetchSectionIssues, snowUrl, updateSectionState],
+  );
 
-    await Promise.all(fetchPromises);
-  }, [projectKey, staleDays]);
+  const setSelectedRelease = useCallback(
+    (versionName: string | null) => {
+      setSelectedReleaseNameState(versionName);
+      persistSelectedReleaseName(versionName);
+      void fetchReleaseSectionIssues(versionName ?? autoReleaseName);
+    },
+    [autoReleaseName, fetchReleaseSectionIssues],
+  );
+
+  const autoFillStandupNotes = useCallback(() => {
+    const currentTimestamp = Date.now();
+    const uniqueIssues = createUniqueIssueList(sections);
+    const completedIssues = uniqueIssues.filter(
+      (issue) =>
+        issue.fields.status.statusCategory.key === 'done' &&
+        wasUpdatedRecently(issue.fields.updated, currentTimestamp),
+    );
+    const activeIssues = uniqueIssues.filter(
+      (issue) => issue.fields.status.statusCategory.key === 'indeterminate',
+    );
+
+    updateStandupNotes({
+      yesterday: formatStandupIssueList(completedIssues),
+      today: formatStandupIssueList(activeIssues),
+    });
+  }, [sections, updateStandupNotes]);
+
+  const loadBoard = useCallback(async () => {
+    setSections((currentSections) =>
+      currentSections.map((boardSection) =>
+        boardSection.key === 'roster-snow'
+          ? { ...boardSection, issues: [], loadError: null, isLoading: false }
+          : { ...boardSection, isLoading: true, loadError: null, issues: [] },
+      ),
+    );
+    setSectionSnowLinksState({});
+
+    let activeReleaseName = selectedReleaseName;
+
+    try {
+      const projectVersions = await jiraGet<JiraProjectVersion[]>(
+        `/rest/api/2/project/${projectKey}/versions`,
+      );
+      const unreleasedVersionNames = extractUnreleasedVersionNames(projectVersions);
+      const autoDetectedReleaseName = unreleasedVersionNames[0] ?? null;
+      const hasValidSelectedRelease =
+        selectedReleaseName !== null && unreleasedVersionNames.includes(selectedReleaseName);
+      const validatedSelectedReleaseName = hasValidSelectedRelease ? selectedReleaseName : null;
+
+      activeReleaseName = validatedSelectedReleaseName ?? autoDetectedReleaseName;
+      setAvailableVersionsState(unreleasedVersionNames);
+      setAutoReleaseNameState(autoDetectedReleaseName);
+      setSelectedReleaseNameState(validatedSelectedReleaseName);
+      persistSelectedReleaseName(validatedSelectedReleaseName);
+    } catch {
+      setAvailableVersionsState([]);
+      setAutoReleaseNameState(null);
+    }
+
+    await Promise.all(
+      DSU_SECTION_DEFINITIONS.map(async (definition) => {
+        if (definition.key === 'roster-snow') {
+          return;
+        }
+
+        if (definition.key === 'release') {
+          await fetchReleaseSectionIssues(activeReleaseName);
+          return;
+        }
+
+        try {
+          const issues = await fetchSectionIssues(definition.key as SectionKey, activeReleaseName);
+          updateSectionState(definition.key, (boardSection) => ({
+            ...boardSection,
+            isLoading: false,
+            issues,
+            loadError: null,
+          }));
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to load section';
+          updateSectionState(definition.key, (boardSection) => ({
+            ...boardSection,
+            isLoading: false,
+            loadError: errorMessage,
+          }));
+        }
+      }),
+    );
+  }, [
+    fetchReleaseSectionIssues,
+    fetchSectionIssues,
+    projectKey,
+    selectedReleaseName,
+    updateSectionState,
+  ]);
 
   return {
     state: {
@@ -397,7 +627,12 @@ export function useDsuBoardState(): { state: DsuBoardState; actions: DsuBoardAct
       viewMode,
       sections,
       activeFilters,
+      multiCriteriaFilters,
       snowUrl,
+      availableVersions,
+      autoReleaseName,
+      selectedReleaseName,
+      sectionSnowLinks,
       selectedIssue,
       isDetailOverlayOpen,
       availableTransitions,
@@ -414,6 +649,12 @@ export function useDsuBoardState(): { state: DsuBoardState; actions: DsuBoardAct
       setViewMode,
       toggleSectionCollapse,
       toggleFilter,
+      toggleIssueTypeFilter,
+      togglePriorityFilter,
+      toggleStatusFilter,
+      setFixVersionFilter,
+      setPiFilter,
+      clearAllFilters,
       setSnowUrl,
       loadBoard,
       openDetailOverlay,
@@ -425,6 +666,8 @@ export function useDsuBoardState(): { state: DsuBoardState; actions: DsuBoardAct
       setStandupPanelCollapsed,
       copyStandupToClipboard,
       setSnowRootCauseUrl,
+      setSelectedRelease,
+      autoFillStandupNotes,
     },
   };
 }

@@ -368,3 +368,188 @@
   resize: vertical;
   box-sizing: border-box;
 }
+
+/* ── Advanced lock button (header) ── */
+
+.headerActions {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+}
+
+.advancedLockButton {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.advancedLockButton:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-accent);
+}
+
+/* ── Locked sections placeholder ── */
+
+.lockedSectionsPlaceholder {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: var(--spacing-md);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+/* ── Enterprise Standards rules table ── */
+
+.rulesTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.rulesTableHeader {
+  display: grid;
+  grid-template-columns: 1fr 2fr auto auto;
+  gap: var(--spacing-sm);
+  padding-bottom: var(--spacing-xs);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.ruleRow {
+  display: grid;
+  grid-template-columns: 1fr 2fr auto auto;
+  gap: var(--spacing-sm);
+  align-items: center;
+  padding: var(--spacing-xs) 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+}
+
+.ruleName {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.ruleDescription {
+  color: var(--color-text-muted);
+}
+
+.ruleToggleCell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ruleActionsCell {
+  display: flex;
+  gap: var(--spacing-xs);
+  justify-content: flex-end;
+}
+
+.addRuleForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+/* ── Danger button (destructive actions) ── */
+
+.dangerButton {
+  background: transparent;
+  color: #f87171;
+  border-color: #f87171;
+}
+
+.dangerButton:hover {
+  background: #f87171;
+  color: #fff;
+}
+
+/* ── Credential Management section ── */
+
+.credentialUrl {
+  font-size: var(--font-size-sm);
+  color: var(--color-accent);
+  word-break: break-all;
+}
+
+.credentialUrlEmpty {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.maskedPat {
+  font-family: monospace;
+  letter-spacing: 0.1em;
+  color: var(--color-text-muted);
+}
+
+/* ── Tool Visibility grid ── */
+
+.toolVisibilityGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.toolVisibilityItem {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  cursor: pointer;
+  padding: var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.toolVisibilityItem:hover {
+  background: var(--color-surface);
+}
+
+.toolVisibilityIcon {
+  font-size: 1.1rem;
+}
+
+.toolVisibilityLabel {
+  flex: 1;
+}
+
+/* ── Client Diagnostics grid ── */
+
+.diagnosticsGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.diagnosticsRow {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: var(--spacing-sm);
+  align-items: start;
+  font-size: var(--font-size-sm);
+}
+
+.diagnosticsLabel {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.diagnosticsValue {
+  color: var(--color-text-primary);
+  word-break: break-all;
+}

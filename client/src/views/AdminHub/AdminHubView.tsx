@@ -3,6 +3,8 @@
 // Four always-visible sections: Proxy & Server Setup, ART Settings, Admin Access (PIN unlock),
 // and (when unlocked) Advanced Feature Controls + Developer Utilities.
 // Four collapsible sections: Diagnostics, Backup & Reset, Hygiene Rules, Update Management.
+// Five new sections added for v0.6.2 parity: Enterprise Standards, Credential Management,
+// Tool Visibility, Client Diagnostics, and TBX Backup/Restore (last three behind advanced lock).
 
 import { useRef, useState } from 'react'
 
@@ -14,6 +16,11 @@ import type {
   HygieneRules,
   UpdateCheckResult,
 } from './hooks/useAdminHubState.ts'
+import ClientDiagnosticsPanel from './ClientDiagnosticsPanel'
+import CredentialManagementSection from './CredentialManagementSection'
+import EnterpriseStandardsPanel from './EnterpriseStandardsPanel'
+import TbxBackupRestoreSection from './TbxBackupRestoreSection'
+import ToolVisibilitySection from './ToolVisibilitySection'
 import styles from './AdminHubView.module.css'
 
 // ── Named constants ──
@@ -807,6 +814,25 @@ export default function AdminHubView() {
       <header>
         <h1 className={styles.pageTitle}>{VIEW_TITLE}</h1>
         <p className={styles.pageSubtitle}>{VIEW_SUBTITLE}</p>
+        <div className={styles.headerActions}>
+          {state.isAdvancedUnlocked ? (
+            <button
+              className={styles.advancedLockButton}
+              onClick={actions.advancedLock}
+              aria-label="Lock advanced sections"
+            >
+              🔓 Lock Advanced
+            </button>
+          ) : (
+            <button
+              className={styles.advancedLockButton}
+              onClick={actions.tryAdvancedUnlock}
+              aria-label="Unlock advanced sections"
+            >
+              🔒 Advanced
+            </button>
+          )}
+        </div>
       </header>
 
       <ProxySection
@@ -836,6 +862,10 @@ export default function AdminHubView() {
         onLock={actions.lock}
         onToggleFeatureFlag={actions.toggleFeatureFlag}
       />
+
+      {/* Always-visible new sections */}
+      <EnterpriseStandardsPanel />
+      <CredentialManagementSection />
 
       <DiagnosticsSection
         isDiagnosticsRunning={state.isDiagnosticsRunning}
@@ -870,6 +900,19 @@ export default function AdminHubView() {
         onCheckForUpdates={actions.checkForUpdates}
         onSetCollapsed={actions.setUpdateSectionCollapsed}
       />
+
+      {/* Advanced-lock-gated sections */}
+      {state.isAdvancedUnlocked ? (
+        <>
+          <ToolVisibilitySection />
+          <ClientDiagnosticsPanel />
+          <TbxBackupRestoreSection />
+        </>
+      ) : (
+        <p className={styles.lockedSectionsPlaceholder}>
+          🔒 Unlock Advanced to access Tool Visibility, Client Diagnostics, and Backup/Restore.
+        </p>
+      )}
     </div>
   )
 }

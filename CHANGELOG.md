@@ -7,24 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added (v0.6.2 — ART View deep parity)
+### Added (v0.6.2 — Deep parity across 8 views)
+
+#### Sprint Dashboard
+- **Kanban board support + board picker**: detects Kanban boards (no active sprint), loads issues directly, board selector dropdown with auto-pick and localStorage save/restore (`tbxSprintDashboardBoardId`).
+- **Move-issue-to-sprint**: per-card "Move to Sprint" action loads active/future sprints and calls Jira agile API; inline success/error feedback.
+- **Advanced settings**: stale-days threshold, story-point scale, sprint window, cycle-time start/done fields, Kanban period, custom story-points and epic-link field IDs — all persisted under `tbxSprintDashboardConfig`.
+- **Stale highlighting**: all tabs now use the configurable stale-days threshold instead of a hardcoded value.
+
+#### My Issues
+- **Persona Intel Strip** (`PersonaIntelStrip`): clickable zone chips per persona (Dev/QA/SM/PO) derived from issue state. Chips delegate zone filtering to `onZoneClick` so the intel strip integrates with the existing status-zone dashboard.
+- **Swimlane Card View** (`SwimlaneCardView`): replaces the flat card list in `cards` mode with five collapsible swimlanes (Needs Attention 🔴 / In Progress 🔵 / In Review 🟣 / To Do ⚫ / Done ✅). `done` lane collapsed by default matching legacy behaviour.
+- **Needs Attention badges + aging labels**: blocked/critical/past-due reasons rendered as inline badge chips. Aging label turns amber at >5 days, red at >10 days.
+- **xlsx + TSV export**: "Download as Excel (.xlsx)" (SheetJS, lazy-imported) and "Copy as TSV" export options.
+- **Bulk select + bulk comment**: toolbar "Bulk" button; sticky `BulkCommentPanel` posts one comment to all selected issues in parallel.
+- **Board quick filters** (`BoardPillAndFilters`): dismissible board-name pill + quick-filter chip row after board load.
+
+#### ART View
+- **Blueprint Tab** (`BlueprintTab`): PI→Feature→Story hierarchy viewer with 4 view modes, search filter, collapse/expand all, health ring per feature, off-train story detection.
+- **Dependencies Table** (`DependenciesTab`): filterable table of cross-team issue links by team and link type.
+- **SoS Narrative fields**: 5 editable narrative fields (Yesterday/Today/Blockers/Risks/Dependencies) with auto-generate from live data, localStorage persistence keyed by team + date, revert-to-auto.
+- **Monthly Report Tab**: month selector, editable metric cards, Copy All, Export HTML; persisted by team + YYYY-MM.
+- **Advanced ART Settings**: PI Field ID, Story Points Field ID, Feature-Link Field ID, Stale Days threshold.
+
+#### DSU Board
+- **Multi-criteria filters**: issue type, priority, fix version, PI, and status pills (AND logic).
+- **Release override / auto-detect**: auto-detects current unreleased fix version; user can override via dropdown.
+- **Standup Notes Panel**: Yesterday/Today/Blockers textareas with auto-fill from Jira activity, copy-to-clipboard, and collapsed-state persistence (`tbxDsuStandupNotes`).
+- **Issue Detail Overlay**: full issue detail modal with workflow transitions (load + apply), per-issue comment posting, and per-issue SNow root-cause URL field.
+- **SNow release enrichment**: scans issue summaries and remote links for INC/PRB patterns; shows SNow badge on matching cards.
+
+#### SNow Hub — PRB Sync Monitor tab (new tab)
+- **Sync engine** (`useSnowSyncEngine`): configurable Jira→SNow polling (1/5/15/30 min interval), localStorage-backed per-issue state, status-change pushes, comment mirroring to SNow work_notes.
+- **Settings panel**: JQL template, poll interval, work-note prefix, sync-comments toggle.
+- **Status mapping editor**: fetch Jira statuses, map each to a SNow problem state, persist to `tbxPrbSyncMappings`.
+- **Run status bar**: Running/Stopped badge, Start/Stop button, last-check time, live countdown, tracked-issue count.
+- **Activity log**: colour-coded (info/status/comment/error), 200-entry cap, Clear button.
+- **Manual Sync Now** and **Export PS1** (generates standalone PowerShell sync script).
+
+#### Admin Hub
+- **Enterprise Standards Rules panel**: view/edit/add custom hygiene rules, reset to defaults (`tbxEnterpriseStandards`).
+- **Credential Management section**: GitHub PAT masked input with show/hide/clear; Jira + SNow settings links.
+- **Admin lock/unlock gate**: `🔒 Advanced` button gates feature flags, diagnostics, and backup sections.
+- **Tool Visibility section** (admin-gated): per-card enable/disable toggles for all 23 home cards, Show All / Hide All.
+- **Client Diagnostics panel** (admin-gated): browser UA, localStorage usage estimate, active settings, link to Dev Panel.
+- **Backup / Restore** (admin-gated): export all `tbx*` localStorage keys as JSON, import from file, Reset All Data with confirmation.
+
+#### Reports Hub
+- **Explainer cards**: collapsible "About this report" card per tab with use-case description; collapsed state persisted per tab (`tbxReportsHubHelp`).
+- **Throughput benchmark row**: 6-sprint rolling average reference line, legend, and per-sprint delta column (green/red).
+- **Copy Report button**: formats current tab data as plain-text bullet list and copies to clipboard.
+- **Last-generated timestamp**: shown below each tab header; persisted per tab (`tbxReportsLastGenerated`).
+
+#### Dev Workspace
+- **Full settings surface**: GitHub PAT, sync interval, max commits, commit key pattern, message template, posting strategy (comment vs worklog), branch-prefix stripping — all persisted under `tbxDevWorkspaceConfig`.
+- **Real polling engine** (`useGitHubPollingEngine`): start/stop, live countdown, syncNow, proxy→direct→mock fallback chain.
+- **Multi-key post preview**: extracted Jira key pills ("Will post to: [ABC-123]") with Post to All.
+- **PowerShell hook generator**: post-commit.ps1 + post-merge.ps1 downloads with settings baked in.
+
+### Test coverage
+- v0.6.1 baseline: 92 files / 745 tests
+- v0.6.2: **115 files / 1,017 tests** (+23 files, +272 tests)
+
+
 - **Blueprint Tab** (`BlueprintTab`): PI→Feature→Story hierarchy viewer with 4 view modes (flat, grouped-by-feature, grouped-by-team, kanban), search filter, collapse/expand all, conic-gradient health ring per feature, and off-train story detection.
 - **Dependencies Table** (`DependenciesTab`): replaces the SVG dependency map with a filterable table of cross-team issue links. Supports team and link-type filters. Fully table-based for accessibility.
 - **SoS Narrative fields**: deepened the Stand-of-Stands panel with 5 editable narrative fields (Yesterday / Today / Blockers / Risks / Dependencies), auto-generated from live sprint data, with localStorage persistence (keyed by team + date) and a revert-to-auto action.
 - **Monthly Report Tab**: full implementation replacing the stub — month selector, editable metric cards (velocity, quality, delivery confidence, highlights, next priorities), Copy All, and Export HTML. Data persisted in localStorage keyed by team + YYYY-MM.
-- **Advanced ART Settings**: extended the Settings panel with PI Field ID, Story Points Field ID, Feature-Link Field ID, and Stale Days threshold inputs. Persisted under the legacy `tbxARTSettings` localStorage key for compatibility.
-- Removed SVG dependency map code entirely (`CrossTeamDependency`, `buildIssueTeamIndexMap`, `detectCrossTeamDependencies`, all `DEP_*` constants, `JIRA_KEY_PATTERN`, `TEAM_PASTEL_COLORS`).
-
-### Added (v0.6.2 — My Issues deep parity)
-- **Persona Intel Strip** (`PersonaIntelStrip`): clickable zone chips per persona (Dev/QA/SM/PO) derived from issue state. Chips delegate zone filtering to `onZoneClick` so the intel strip integrates with the existing status-zone dashboard.
-- **Swimlane Card View** (`SwimlaneCardView`): replaces the flat card list in `cards` mode with five collapsible swimlanes (Needs Attention 🔴 / In Progress 🔵 / In Review 🟣 / To Do ⚫ / Done ✅). `done` lane collapsed by default matching legacy behaviour. Cards show issue key, summary, priority, type, and aging label.
-- **Needs Attention badges + aging labels**: blocked/critical/past-due reasons rendered as inline badge chips on swimlane cards. Aging label turns amber at >5 days, red at >10 days.
-- **xlsx + TSV export**: two new export options in the Export dropdown — "Download as Excel (.xlsx)" (SheetJS, lazy-imported) and "Copy as TSV" (tab-delimited clipboard copy). Columns: Key, Summary, Status, Priority, Assignee, Updated.
-- **Bulk select + bulk comment**: toolbar "Bulk" button enters bulk mode (cards show checkboxes). Sticky `BulkCommentPanel` footer lets the user post one comment to all selected issues in parallel via Jira `/comment` API. Error message shown per failure; exits bulk mode on success.
-- **Board quick filters** (`BoardPillAndFilters`): after loading board issues, a dismissible board-name pill and quick-filter chip row appear below the SourcePane. Chips toggle active state and their JQL is loaded from `/rest/agile/1.0/board/{id}/quickfilter`.
-- New state fields: `isBulkModeActive`, `bulkSelectedKeys`, `isBulkPostingComment`, `bulkCommentError`, `boardQuickFilters`, `activeQuickFilterIds`, `collapsedSwimlanes`.
-- New actions: `toggleBulkMode`, `toggleBulkKey`, `postBulkComment`, `loadBoardQuickFilters`, `toggleQuickFilter`, `clearSelectedBoard`, `toggleSwimlaneCollapsed`, `exportAsXlsx`, `exportAsTsv`.
-
 ### Added (v0.6.1 — Toolbox parity completion)
 - **Dev Panel view** (`/dev-panel`): live API call inspector ported from legacy `26-dev-panel.js`. Subscribes to a new `toolbox:api` window event so every Jira/ServiceNow request emitted by `jiraApi.ts` is logged with method, URL, status code, duration, and any error message. Pause/resume capture, clear log, and CSV export. Capped at 500 entries to bound memory.
 - **Impact Analysis view** (`/impact-analysis`): blast-radius calculator ported from legacy `15-impact-analysis.js`. Enter a Jira issue key, fetch its child issues + linked issues + fix versions + impacted teams (assignee+component union), and render a one-screen summary with severity-coded counts. Pure functions in `utils/blastRadius.ts` keep the math testable.
