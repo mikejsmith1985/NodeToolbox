@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `ProxyStatusResponse` to the correct nested shape with `ProxyServiceStatus` and `ProxySnowStatus` sub-interfaces.
 - Updated `connectionStore.setProxyStatus` to read `status.jira.ready` and `status.snow.ready`.
 - Updated `useProxyStatus` to probe Jira/SNow based on `status.jira.configured` and `status.snow.configured`.
-- Updated all tests to use the correct nested mock shape.
+- Updated all tests (including `proxyApi.test.ts`) to use the correct nested mock shape.
 
 ### Fixed (v0.6.5 — UX polish)
 - Made whole issue cards clickable to toggle the inline detail panel in Sprint Dashboard (overview, assignee, blockers, stale), ART View impediments, and My Issues — the caret icon remains as a visual affordance hint.
