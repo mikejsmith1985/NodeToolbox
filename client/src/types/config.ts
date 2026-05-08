@@ -15,13 +15,32 @@ export interface CredentialState {
   isConfluenceConfigured: boolean;
 }
 
-/** Response shape for GET /api/proxy-status. */
+/** Response shape for GET /api/proxy-status. Matches the server's actual JSON output. */
+export interface ProxyServiceStatus {
+  /** True when a base URL is set for this service in the config file. */
+  configured: boolean;
+  /** True when both a base URL and at least one credential are present. */
+  hasCredentials: boolean;
+  /** True when the service is fully configured and credentials are present (Jira/SNow/GitHub/Confluence). */
+  ready: boolean;
+  /** The service base URL if configured, or null. */
+  baseUrl?: string | null;
+}
+
+export interface ProxySnowStatus extends ProxyServiceStatus {
+  /** True when a SNow OAuth session (rather than basic auth) is active. */
+  sessionMode: boolean;
+  /** ISO timestamp when the current SNow session expires, or null. */
+  sessionExpiresAt: string | null;
+}
+
 export interface ProxyStatusResponse {
   version: string;
-  jiraConfigured: boolean;
-  snowConfigured: boolean;
-  confluenceConfigured: boolean;
-  schedulerEnabled: boolean;
+  sslVerify: boolean;
+  jira: ProxyServiceStatus;
+  snow: ProxySnowStatus;
+  github: ProxyServiceStatus;
+  confluence: ProxyServiceStatus;
 }
 
 /**

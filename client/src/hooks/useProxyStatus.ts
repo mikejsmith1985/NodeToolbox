@@ -32,7 +32,7 @@ export function useProxyStatus(): void {
         // We probe independently so a failing Jira probe doesn't block the SNow probe.
         const probePromises: Promise<void>[] = [];
 
-        if (status.jiraConfigured) {
+        if (status.jira.configured) {
           probePromises.push(
             probeJiraConnection().then((result) => {
               if (!isCancelled) setJiraVerified(result.isOk);
@@ -40,7 +40,7 @@ export function useProxyStatus(): void {
           );
         }
 
-        if (status.snowConfigured) {
+        if (status.snow.configured) {
           probePromises.push(
             probeSnowConnection().then((result) => {
               if (!isCancelled) setSnowVerified(result.isOk);

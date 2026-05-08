@@ -36,20 +36,21 @@ describe('config types', () => {
     expect(credentialState).toHaveProperty('isConfluenceConfigured');
   });
 
-  it('accepts a proxy-status response literal with the expected keys', () => {
+  it('accepts a proxy-status response literal with the expected nested service keys', () => {
     const proxyStatusResponse: ProxyStatusResponse = {
       version: '1.2.3',
-      jiraConfigured: true,
-      snowConfigured: true,
-      confluenceConfigured: false,
-      schedulerEnabled: true,
+      sslVerify: true,
+      jira: { configured: true, hasCredentials: true, ready: true, baseUrl: 'https://jira.example.com' },
+      snow: { configured: true, hasCredentials: true, ready: true, sessionMode: false, sessionExpiresAt: null, baseUrl: null },
+      github: { configured: false, hasCredentials: false, ready: false },
+      confluence: { configured: false, hasCredentials: false, ready: false },
     };
 
     expect(proxyStatusResponse).toHaveProperty('version');
-    expect(proxyStatusResponse).toHaveProperty('jiraConfigured');
-    expect(proxyStatusResponse).toHaveProperty('snowConfigured');
-    expect(proxyStatusResponse).toHaveProperty('confluenceConfigured');
-    expect(proxyStatusResponse).toHaveProperty('schedulerEnabled');
+    expect(proxyStatusResponse.jira).toHaveProperty('ready');
+    expect(proxyStatusResponse.snow).toHaveProperty('ready');
+    expect(proxyStatusResponse.github).toHaveProperty('configured');
+    expect(proxyStatusResponse.confluence).toHaveProperty('configured');
   });
 
   it('accepts supported theme literals', () => {

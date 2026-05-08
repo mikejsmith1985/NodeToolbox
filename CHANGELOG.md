@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (v0.6.6 — Connection bar always red bug)
+- Root-cause fix: `ProxyStatusResponse` TypeScript type was entirely wrong — it had flat fields (`jiraConfigured`, `snowConfigured`) but the server actually returns a nested structure (`{ jira: { ready, configured, ... }, snow: { ... } }`). This meant `isJiraReady` was always `false` regardless of actual connectivity, keeping every indicator permanently red.
+- Updated `ProxyStatusResponse` to the correct nested shape with `ProxyServiceStatus` and `ProxySnowStatus` sub-interfaces.
+- Updated `connectionStore.setProxyStatus` to read `status.jira.ready` and `status.snow.ready`.
+- Updated `useProxyStatus` to probe Jira/SNow based on `status.jira.configured` and `status.snow.configured`.
+- Updated all tests to use the correct nested mock shape.
+
 ### Fixed (v0.6.5 — UX polish)
 - Made whole issue cards clickable to toggle the inline detail panel in Sprint Dashboard (overview, assignee, blockers, stale), ART View impediments, and My Issues — the caret icon remains as a visual affordance hint.
 - Connection status bar now shows a **green** dot when a service is configured, and a **red** dot when it is not — replacing the ambiguous gray that made all services look identical regardless of connectivity.
