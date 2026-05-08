@@ -5,6 +5,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArtTab, ArtPersona } from './hooks/useArtData.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 
+const { mockJiraGet } = vi.hoisted(() => ({
+  mockJiraGet: vi.fn(),
+}));
+
 const { mockState, mockActions } = vi.hoisted(() => ({
   mockState: {
     activeTab: 'overview' as ArtTab,
@@ -52,13 +56,27 @@ vi.mock('./hooks/useArtData.ts', () => ({
   useArtData: () => ({ state: mockState, actions: mockActions }),
 }));
 
+vi.mock('../../services/jiraApi.ts', () => ({
+  jiraGet: mockJiraGet,
+}));
+
 import ArtView from './ArtView.tsx';
 
 describe('ArtView', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     mockState.activeTab = 'overview';
     mockState.sosExpandedTeams = [];
-    vi.clearAllMocks();
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/field') {
+        return Promise.resolve([]);
+      }
+      if (path === '/rest/api/2/project') {
+        return Promise.resolve([]);
+      }
+
+      return Promise.resolve({ values: [] });
+    });
   });
 
   // ── Original 7-tab tests (must still pass) ──
@@ -102,7 +120,8 @@ describe('ArtView', () => {
     mockState.activeTab = 'settings';
     render(<ArtView />);
     expect(screen.getByPlaceholderText(/team name/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/board id/i)).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /board/i })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /project/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /add team/i })).toBeInTheDocument();
   });
 
@@ -299,22 +318,22 @@ describe('ArtView', () => {
 
   // ── Feature: Advanced ART Settings ──
 
-  it('shows PI Field ID input in Settings tab', () => {
+  it('shows PI Field picker in Settings tab', () => {
     mockState.activeTab = 'settings';
     render(<ArtView />);
-    expect(screen.getByRole('textbox', { name: /pi field id/i })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /pi field/i })).toBeInTheDocument();
   });
 
-  it('shows Story Points Field ID input in Settings tab', () => {
+  it('shows Story Points Field picker in Settings tab', () => {
     mockState.activeTab = 'settings';
     render(<ArtView />);
-    expect(screen.getByRole('textbox', { name: /story points field id/i })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /story points field/i })).toBeInTheDocument();
   });
 
-  it('shows Feature-Link Field ID input in Settings tab', () => {
+  it('shows Feature Link Field picker in Settings tab', () => {
     mockState.activeTab = 'settings';
     render(<ArtView />);
-    expect(screen.getByRole('textbox', { name: /feature-link field id/i })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /feature link field/i })).toBeInTheDocument();
   });
 
   it('shows Stale Days Threshold input in Settings tab', () => {
@@ -323,9 +342,9 @@ describe('ArtView', () => {
     expect(screen.getByRole('spinbutton', { name: /stale days threshold/i })).toBeInTheDocument();
   });
 
-  it('shows Project Key input in Settings add-team form', () => {
+  it('shows Project picker in Settings add-team form', () => {
     mockState.activeTab = 'settings';
     render(<ArtView />);
-    expect(screen.getByPlaceholderText(/project key/i)).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /project/i })).toBeInTheDocument();
   });
 });
