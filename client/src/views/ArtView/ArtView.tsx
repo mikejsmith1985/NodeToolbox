@@ -311,19 +311,28 @@ function ImpedimentsPanel({
 
             return (
               <Fragment key={issue.key}>
-                <tr>
+                {/* Whole row toggles the detail panel; caret is a visual affordance hint. */}
+                <tr
+                  aria-expanded={isExpanded}
+                  aria-label={expandButtonLabel}
+                  onClick={() => toggleExpandedIssue(issue.key)}
+                  onKeyDown={(keyEvent) => {
+                    if (keyEvent.key === 'Enter' || keyEvent.key === ' ')
+                      toggleExpandedIssue(issue.key);
+                  }}
+                  role="button"
+                  style={{ cursor: 'pointer', userSelect: 'none' }}
+                  tabIndex={0}
+                >
                   <td>
                     <div className={styles.issueKeyCell}>
                       <span>{issue.key}</span>
-                      <button
-                        aria-expanded={isExpanded}
-                        aria-label={expandButtonLabel}
+                      <span
+                        aria-hidden="true"
                         className={styles.expandToggleButton}
-                        onClick={() => toggleExpandedIssue(issue.key)}
-                        type="button"
                       >
                         {isExpanded ? '▲' : '▼'}
-                      </button>
+                      </span>
                     </div>
                   </td>
                   <td>{issue.fields.summary}</td>

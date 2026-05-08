@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (v0.6.5 — UX polish)
+- Made whole issue cards clickable to toggle the inline detail panel in Sprint Dashboard (overview, assignee, blockers, stale), ART View impediments, and My Issues — the caret icon remains as a visual affordance hint.
+- Connection status bar now shows a **green** dot when a service is configured, and a **red** dot when it is not — replacing the ambiguous gray that made all services look identical regardless of connectivity.
+
 ### Fixed (v0.6.4 — Issue #45 follow-up fixes)
 - Replaced Admin Hub browser-native prompts, confirms, and alerts with shared in-app prompt, confirm, and toast components so advanced unlock, reset flows, and backup/restore errors stay inside the app UI.
 - Added a visible global Home button outside the landing page so users can return to the dashboard from any tool screen.

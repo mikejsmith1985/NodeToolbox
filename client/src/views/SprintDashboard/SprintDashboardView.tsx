@@ -294,33 +294,55 @@ function IssueCardWithMove({
   const rowClassName = isStale
     ? `${styles.laneIssueRow} ${styles.staleIssueRow}`
     : styles.laneIssueRow;
-  const expandButtonLabel = `${isExpanded ? 'Collapse' : 'Expand'} details for ${issue.key}`;
+
+  function handleRowClick() {
+    setIsExpanded((previousIsExpanded) => !previousIsExpanded);
+  }
+
+  function stopRowToggle(clickEvent: React.MouseEvent) {
+    // Prevent interactive children (link, move button) from also toggling the row.
+    clickEvent.stopPropagation();
+  }
 
   return (
     <div className={styles.issueCardWrapper} key={issue.key}>
-      <div className={rowClassName}>
-        <a className={styles.issueKeyLink} href={`#${issue.key}`}>
+      {/* Whole row is clickable — caret stays as a visual affordance hint. */}
+      <div
+        aria-expanded={isExpanded}
+        aria-label={`${isExpanded ? 'Collapse' : 'Expand'} details for ${issue.key}`}
+        className={`${rowClassName} ${styles.clickableRow}`}
+        onClick={handleRowClick}
+        onKeyDown={(keyEvent) => {
+          if (keyEvent.key === 'Enter' || keyEvent.key === ' ') handleRowClick();
+        }}
+        role="button"
+        tabIndex={0}
+      >
+        <a
+          className={styles.issueKeyLink}
+          href={`#${issue.key}`}
+          onClick={stopRowToggle}
+        >
           {issue.key}
         </a>
         <span>{issue.fields.summary}</span>
         <span>{issue.fields.status.name}</span>
-        <MoveToSprintButton
-          availableSprints={availableSprints ?? []}
-          currentSprintId={currentSprintId}
-          isLoadingAvailableSprints={isLoadingAvailableSprints}
-          issueKey={issue.key}
-          onFetchSprints={onFetchSprints}
-          onMoveToSprint={onMoveToSprint}
-        />
-        <button
-          aria-expanded={isExpanded}
-          aria-label={expandButtonLabel}
+        <span onClick={stopRowToggle}>
+          <MoveToSprintButton
+            availableSprints={availableSprints ?? []}
+            currentSprintId={currentSprintId}
+            isLoadingAvailableSprints={isLoadingAvailableSprints}
+            issueKey={issue.key}
+            onFetchSprints={onFetchSprints}
+            onMoveToSprint={onMoveToSprint}
+          />
+        </span>
+        <span
+          aria-hidden="true"
           className={styles.expandToggleButton}
-          onClick={() => setIsExpanded((previousIsExpanded) => !previousIsExpanded)}
-          type="button"
         >
           {isExpanded ? EXPAND_TOGGLE_EXPANDED_ICON : EXPAND_TOGGLE_COLLAPSED_ICON}
-        </button>
+        </span>
       </div>
       {isExpanded && (
         <IssueDetailPanel isEmbedded issue={issue} onIssueUpdated={onIssueUpdated} />
@@ -604,22 +626,35 @@ function BlockersTab({
     const isExpanded = expandedIssueIdentifier === issueIdentifier;
     const expandButtonLabel = `${isExpanded ? 'Collapse' : 'Expand'} details for ${issue.key}`;
 
+    function handleCardClick() {
+      toggleExpandedIssue(sectionKey, issue.key);
+    }
+
     return (
       <div className={styles.issueCardWrapper} key={issue.key}>
-        <div className={cardClassName}>
+        {/* Whole card is clickable — caret stays as a visual affordance hint. */}
+        <div
+          aria-expanded={isExpanded}
+          aria-label={expandButtonLabel}
+          className={`${cardClassName} ${styles.clickableRow}`}
+          onClick={handleCardClick}
+          onKeyDown={(keyEvent) => {
+            if (keyEvent.key === 'Enter' || keyEvent.key === ' ') handleCardClick();
+          }}
+          role="button"
+          tabIndex={0}
+        >
           <div className={styles.issueCardHeaderRow}>
-            <a className={styles.issueKeyLink} href={`#${issue.key}`}>
+            <a
+              className={styles.issueKeyLink}
+              href={`#${issue.key}`}
+              onClick={(clickEvent) => clickEvent.stopPropagation()}
+            >
               {issue.key}
             </a>
-            <button
-              aria-expanded={isExpanded}
-              aria-label={expandButtonLabel}
-              className={styles.expandToggleButton}
-              onClick={() => toggleExpandedIssue(sectionKey, issue.key)}
-              type="button"
-            >
+            <span aria-hidden="true" className={styles.expandToggleButton}>
               {isExpanded ? EXPAND_TOGGLE_EXPANDED_ICON : EXPAND_TOGGLE_COLLAPSED_ICON}
-            </button>
+            </span>
           </div>
           <span className={styles.issueSummaryText}>{issue.fields.summary}</span>
           <span className={styles.issueMetaText}>

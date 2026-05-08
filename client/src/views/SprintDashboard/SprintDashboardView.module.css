@@ -279,6 +279,16 @@
   flex-direction: column;
 }
 
+/* Applied to any issue row or card whose entire surface toggles the detail panel. */
+.clickableRow {
+  cursor: pointer;
+  user-select: none;
+}
+
+.clickableRow:hover {
+  background: var(--color-surface-hover, rgba(255, 255, 255, 0.03));
+}
+
 .issueCardHeaderRow {
   display: flex;
   justify-content: space-between;
