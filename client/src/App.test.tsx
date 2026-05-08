@@ -41,6 +41,38 @@ vi.mock('@dnd-kit/sortable', () => ({
   arrayMove: (items: unknown[]) => items,
 }));
 
+vi.mock('./views/SprintDashboard/SprintDashboardView.tsx', () => ({
+  default: () => <h1>Sprint Dashboard Mock</h1>,
+}));
+
+vi.mock('./views/DevWorkspace/DevWorkspaceView.tsx', () => ({
+  default: () => <h1>Dev Workspace Mock</h1>,
+}));
+
+vi.mock('./views/TextTools/TextToolsView.tsx', () => ({
+  default: () => <h1>Text Tools Mock</h1>,
+}));
+
+vi.mock('./views/CodeWalkthrough/CodeWalkthroughView.tsx', () => ({
+  default: () => <h1>Code Walkthrough Mock</h1>,
+}));
+
+vi.mock('./views/MyIssues/MyIssuesView.tsx', () => ({
+  default: () => <h1>My Issues Mock</h1>,
+}));
+
+vi.mock('./views/ReportsHub/ReportsHubView.tsx', () => ({
+  default: () => <h1>Reports Hub Mock</h1>,
+}));
+
+vi.mock('./views/AdminHub/AdminHubView.tsx', () => ({
+  default: () => <h1>Admin Hub Mock</h1>,
+}));
+
+vi.mock('./views/DsuBoard/DsuBoardView.tsx', () => ({
+  default: () => <h1>DSU Board Mock</h1>,
+}));
+
 import App from './App.tsx';
 import { useSettingsStore } from './store/settingsStore.ts';
 
@@ -61,6 +93,23 @@ function renderApp(initialPath: string): void {
     </MemoryRouter>,
   );
 }
+
+const REDIRECT_ROUTE_EXPECTATIONS = [
+  { legacyPath: '/sprint-planning', headingName: 'Sprint Dashboard Mock' },
+  { legacyPath: '/pointing', headingName: 'Sprint Dashboard Mock' },
+  { legacyPath: '/standup', headingName: 'Sprint Dashboard Mock' },
+  { legacyPath: '/dsu-daily', headingName: 'Sprint Dashboard Mock' },
+  { legacyPath: '/metrics', headingName: 'Sprint Dashboard Mock' },
+  { legacyPath: '/pipeline', headingName: 'Sprint Dashboard Mock' },
+  { legacyPath: '/defects', headingName: 'Sprint Dashboard Mock' },
+  { legacyPath: '/release-monitor', headingName: 'Sprint Dashboard Mock' },
+  { legacyPath: '/work-log', headingName: 'Dev Workspace Mock' },
+  { legacyPath: '/mermaid', headingName: 'Text Tools Mock' },
+  { legacyPath: '/pitch-deck', headingName: 'Code Walkthrough Mock' },
+  { legacyPath: '/hygiene', headingName: 'My Issues Mock' },
+  { legacyPath: '/impact-analysis', headingName: 'Reports Hub Mock' },
+  { legacyPath: '/dev-panel', headingName: 'Admin Hub Mock' },
+] as const;
 
 describe('App shell', () => {
   beforeEach(() => {
@@ -115,5 +164,32 @@ describe('App shell', () => {
     const homeLinkElement = screen.getByRole('link', { name: 'NodeToolbox' });
     expect(homeLinkElement).toBeInTheDocument();
     expect(homeLinkElement).toHaveAttribute('href', '/');
+  });
+
+  it.each(REDIRECT_ROUTE_EXPECTATIONS)(
+    'redirects $legacyPath to the consolidated parent view',
+    async ({ legacyPath, headingName }) => {
+      renderApp(legacyPath);
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: headingName })).toBeInTheDocument();
+      });
+    },
+  );
+
+  it('keeps the reports hub route accessible', async () => {
+    renderApp('/reports-hub');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Reports Hub Mock' })).toBeInTheDocument();
+    });
+  });
+
+  it('keeps the dsu-board route accessible', async () => {
+    renderApp('/dsu-board');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'DSU Board Mock' })).toBeInTheDocument();
+    });
   });
 });

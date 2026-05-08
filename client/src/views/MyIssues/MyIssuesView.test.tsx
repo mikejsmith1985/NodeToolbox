@@ -122,6 +122,10 @@ vi.mock('./hooks/useMyIssuesState.ts', () => ({
   useMyIssuesState: () => ({ state: mockState, actions: mockActions }),
 }));
 
+vi.mock('../Hygiene/HygieneView.tsx', () => ({
+  default: () => <div>Mock Hygiene View</div>,
+}));
+
 import MyIssuesView from './MyIssuesView.tsx';
 
 describe('MyIssuesView', () => {
@@ -158,10 +162,11 @@ describe('MyIssuesView', () => {
     mockSnowFetch.mockResolvedValue({ result: [] });
   });
 
-  it('renders the Report and Settings tab buttons', () => {
+  it('renders the Report, Hygiene, and Settings tab buttons', () => {
     render(<MyIssuesView />);
 
     expect(screen.getByRole('tab', { name: 'Report' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Hygiene' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Settings' })).toBeInTheDocument();
   });
 
@@ -210,6 +215,15 @@ describe('MyIssuesView', () => {
 
     expect(screen.getByText('TBX-1')).toBeInTheDocument();
     expect(screen.getByText('TBX-2')).toBeInTheDocument();
+  });
+
+  it('switches to the embedded Hygiene tab content when Hygiene is clicked', async () => {
+    const user = userEvent.setup();
+    render(<MyIssuesView />);
+
+    await user.click(screen.getByRole('tab', { name: 'Hygiene' }));
+
+    expect(screen.getByText('Mock Hygiene View')).toBeInTheDocument();
   });
 
   it('switches to Settings tab content when Settings is clicked', async () => {

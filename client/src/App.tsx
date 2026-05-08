@@ -11,38 +11,33 @@ import { useProxyStatus } from './hooks/useProxyStatus.ts';
 import { useRelayBridge } from './hooks/useRelayBridge.ts';
 import { useSettingsStore } from './store/settingsStore.ts';
 import type { RelaySystem } from './types/relay.ts';
+import ArtView from './views/ArtView/ArtView.tsx';
+import AdminHubView from './views/AdminHub/AdminHubView.tsx';
+import CodeWalkthroughView from './views/CodeWalkthrough/CodeWalkthroughView.tsx';
+import DevWorkspaceView from './views/DevWorkspace/DevWorkspaceView.tsx';
+import DsuBoardView from './views/DsuBoard/DsuBoardView.tsx';
 import HomeView from './views/Home/HomeView.tsx';
 import MyIssuesView from './views/MyIssues/MyIssuesView.tsx';
+import ReportsHubView from './views/ReportsHub/ReportsHubView.tsx';
 import SettingsView from './views/Settings/SettingsView.tsx';
 import SnowHubView from './views/SnowHub/SnowHubView.tsx';
 import SprintDashboardView from './views/SprintDashboard/SprintDashboardView.tsx';
-import ArtView from './views/ArtView/ArtView.tsx';
-import DevWorkspaceView from './views/DevWorkspace/DevWorkspaceView.tsx';
-import CodeWalkthroughView from './views/CodeWalkthrough/CodeWalkthroughView.tsx';
-import DsuBoardView from './views/DsuBoard/DsuBoardView.tsx';
 import TextToolsView from './views/TextTools/TextToolsView.tsx';
-import ReportsHubView from './views/ReportsHub/ReportsHubView.tsx';
-import AdminHubView from './views/AdminHub/AdminHubView.tsx';
-import SprintPlanningView from './views/SprintPlanning/SprintPlanningView.tsx';
-import WorkLogView from './views/WorkLog/WorkLogView.tsx';
-import StoryPointingView from './views/StoryPointing/StoryPointingView.tsx';
-import MermaidEditorView from './views/MermaidEditor/MermaidEditorView.tsx';
-import PitchDeckView from './views/PitchDeck/PitchDeckView.tsx';
-import DefectManagementView from './views/DefectManagement/DefectManagementView.tsx';
-import HygieneView from './views/Hygiene/HygieneView.tsx';
-import PipelineView from './views/PipelineView/PipelineView.tsx';
-import StandupBoardView from './views/StandupBoard/StandupBoardView.tsx';
-import MetricsView from './views/Metrics/MetricsView.tsx';
-import DsuDailyView from './views/DsuDaily/DsuDailyView.tsx';
-import DevPanelView from './views/DevPanel/DevPanelView.tsx';
-import ImpactAnalysisView from './views/ImpactAnalysis/ImpactAnalysisView.tsx';
-import ReleaseMonitorView from './views/ReleaseMonitor/ReleaseMonitorView.tsx';
 import styles from './App.module.css';
 
 const APP_TITLE = 'NodeToolbox';
 const HOME_ROUTE = '/';
 const SETTINGS_ROUTE = '/settings';
 const SNOW_HUB_ROUTE = '/snow-hub';
+const MY_ISSUES_ROUTE = '/my-issues';
+const SPRINT_DASHBOARD_ROUTE = '/sprint-dashboard';
+const ART_ROUTE = '/art';
+const DEV_WORKSPACE_ROUTE = '/dev-workspace';
+const DSU_BOARD_ROUTE = '/dsu-board';
+const CODE_WALKTHROUGH_ROUTE = '/code-walkthrough';
+const TEXT_TOOLS_ROUTE = '/text-tools';
+const REPORTS_HUB_ROUTE = '/reports-hub';
+const ADMIN_HUB_ROUTE = '/admin-hub';
 const DEFAULT_ROUTE = HOME_ROUTE;
 const RELAY_SYSTEM: RelaySystem = 'snow';
 
@@ -72,30 +67,30 @@ export default function App() {
           <Route path={HOME_ROUTE} element={<HomeView />} />
           <Route path={SETTINGS_ROUTE} element={<SettingsView />} />
           <Route path={SNOW_HUB_ROUTE} element={<SnowHubView />} />
-          <Route path="/my-issues" element={<MyIssuesView />} />
-          <Route path="/sprint-dashboard" element={<SprintDashboardView />} />
-          <Route path="/art" element={<ArtView />} />
-          <Route path="/dev-workspace" element={<DevWorkspaceView />} />
-          <Route path="/dsu-board" element={<DsuBoardView />} />
-          <Route path="/code-walkthrough" element={<CodeWalkthroughView />} />
-          <Route path="/text-tools" element={<TextToolsView />} />
-          <Route path="/reports-hub" element={<ReportsHubView />} />
-          <Route path="/admin-hub" element={<AdminHubView />} />
-          <Route path="/sprint-planning" element={<SprintPlanningView />} />
-          <Route path="/work-log" element={<WorkLogView />} />
-          <Route path="/pointing" element={<StoryPointingView />} />
-          <Route path="/mermaid" element={<MermaidEditorView />} />
-          <Route path="/pitch-deck" element={<PitchDeckView />} />
-          <Route path="/defects" element={<DefectManagementView />} />
-          <Route path="/hygiene" element={<HygieneView />} />
-          <Route path="/pipeline" element={<PipelineView />} />
-          <Route path="/standup" element={<StandupBoardView />} />
-          <Route path="/metrics" element={<MetricsView />} />
-          <Route path="/dsu-daily" element={<DsuDailyView />} />
-          <Route path="/dev-panel" element={<DevPanelView />} />
-          <Route path="/impact-analysis" element={<ImpactAnalysisView />} />
-          <Route path="/release-monitor" element={<ReleaseMonitorView />} />
-          <Route path="*"element={<Navigate to={DEFAULT_ROUTE} replace />} />
+          <Route path={MY_ISSUES_ROUTE} element={<MyIssuesView />} />
+          <Route path={SPRINT_DASHBOARD_ROUTE} element={<SprintDashboardView />} />
+          <Route path={ART_ROUTE} element={<ArtView />} />
+          <Route path={DEV_WORKSPACE_ROUTE} element={<DevWorkspaceView />} />
+          <Route path={DSU_BOARD_ROUTE} element={<DsuBoardView />} />
+          <Route path={CODE_WALKTHROUGH_ROUTE} element={<CodeWalkthroughView />} />
+          <Route path={TEXT_TOOLS_ROUTE} element={<TextToolsView />} />
+          <Route path={REPORTS_HUB_ROUTE} element={<ReportsHubView />} />
+          <Route path={ADMIN_HUB_ROUTE} element={<AdminHubView />} />
+          <Route path="/sprint-planning" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
+          <Route path="/pointing" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
+          <Route path="/standup" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
+          <Route path="/dsu-daily" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
+          <Route path="/metrics" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
+          <Route path="/pipeline" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
+          <Route path="/defects" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
+          <Route path="/release-monitor" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
+          <Route path="/work-log" element={<Navigate to={DEV_WORKSPACE_ROUTE} replace />} />
+          <Route path="/mermaid" element={<Navigate to={TEXT_TOOLS_ROUTE} replace />} />
+          <Route path="/pitch-deck" element={<Navigate to={CODE_WALKTHROUGH_ROUTE} replace />} />
+          <Route path="/hygiene" element={<Navigate to={MY_ISSUES_ROUTE} replace />} />
+          <Route path="/impact-analysis" element={<Navigate to={REPORTS_HUB_ROUTE} replace />} />
+          <Route path="/dev-panel" element={<Navigate to={ADMIN_HUB_ROUTE} replace />} />
+          <Route path="*" element={<Navigate to={DEFAULT_ROUTE} replace />} />
         </Routes>
       </main>
     </div>

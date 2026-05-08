@@ -1,6 +1,7 @@
 // AdminHubView.test.tsx — Unit tests for the Admin Hub view component.
 
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockState, mockActions } = vi.hoisted(() => ({
@@ -112,6 +113,10 @@ vi.mock('../../store/settingsStore', () => ({
     }),
 }));
 
+vi.mock('../DevPanel/DevPanelView.tsx', () => ({
+  default: () => <div>Mock Dev Panel</div>,
+}));
+
 import AdminHubView from './AdminHubView.tsx';
 
 describe('AdminHubView', () => {
@@ -120,6 +125,12 @@ describe('AdminHubView', () => {
     mockState.isAdvancedUnlocked = false;
     mockState.adminPinInput = '';
     vi.clearAllMocks();
+  });
+
+  it('renders the Config and Dev Panel tab buttons', () => {
+    render(<AdminHubView />);
+    expect(screen.getByRole('tab', { name: /config/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /dev panel/i })).toBeInTheDocument();
   });
 
   it('renders the Proxy & Server Setup section', () => {
@@ -156,6 +167,16 @@ describe('AdminHubView', () => {
     render(<AdminHubView />);
     expect(screen.getByText(/developer utilities/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /reset onboarding/i })).toBeInTheDocument();
+  });
+
+  it('renders the embedded Dev Panel when the tab is selected', async () => {
+    const user = userEvent.setup();
+    render(<AdminHubView />);
+
+    await user.click(screen.getByRole('tab', { name: /dev panel/i }));
+
+    expect(screen.getByText('Mock Dev Panel')).toBeInTheDocument();
+    expect(screen.queryByText(/proxy & server setup/i)).not.toBeInTheDocument();
   });
 });
 

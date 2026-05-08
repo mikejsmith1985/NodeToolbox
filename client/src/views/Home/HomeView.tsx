@@ -27,7 +27,6 @@ import type { AppCardDef, SectionKey } from './homeCardData.ts';
 const HOME_HEADING = 'Your personal utility belt';
 const HOME_SUBHEADING = 'Choose the tools that match your day and drag cards into your preferred order.';
 const PERSONA_ALL = 'all';
-const REPORTS_CARD_ID = 'reports-hub';
 const ADMIN_CARD_ID = 'admin-hub';
 const ACTIVE_OPACITY = 0.5;
 const DEFAULT_OPACITY = 1;
@@ -41,11 +40,13 @@ const PERSONA_OPTIONS = [
 ] as const;
 const APP_CARD_BY_ID = new Map(APP_CARDS.map((cardDef) => [cardDef.id, cardDef]));
 const FIXED_SECTION_CARD_IDS: Partial<Record<SectionKey, string>> = {
-  reports: REPORTS_CARD_ID,
   admin: ADMIN_CARD_ID,
 };
 const LEGACY_RECENT_VIEW_CARD_IDS: Record<string, string> = {
   'dsu-board': 'sprint-dashboard',
+};
+const LEGACY_RECENT_VIEW_ROUTES: Record<string, string> = {
+  'dsu-board': '/sprint-dashboard',
 };
 
 interface SortableCardProps {
@@ -197,11 +198,12 @@ function getRecentViewLinks(recentViewIds: readonly string[]): RecentViewLinkDef
     const appCard = resolveRecentViewCard(recentViewId);
     const recentViewLabel = RECENT_VIEW_LABELS[recentViewId];
 
-    if (!appCard || !recentViewLabel) {
+    if (!recentViewLabel) {
       return [];
     }
 
-    return [{ id: recentViewId, label: recentViewLabel, route: appCard.route }];
+    const route = appCard?.route ?? LEGACY_RECENT_VIEW_ROUTES[recentViewId] ?? `/${recentViewId}`;
+    return [{ id: recentViewId, label: recentViewLabel, route }];
   });
 }
 
@@ -225,7 +227,7 @@ function getPersonaCards(homePersona: string): AppCardDef[] {
   });
   const cardsBySection = groupCardsBySection(orderedPersonaCards);
 
-  // Reports and Admin stay anchored to their original sections even when personas reprioritize the rest.
+  // Admin stays anchored to its original section even when personas reprioritize the rest.
   return APP_SECTIONS.flatMap((sectionDef) => {
     const fixedSectionCardId = FIXED_SECTION_CARD_IDS[sectionDef.key];
     if (fixedSectionCardId) {

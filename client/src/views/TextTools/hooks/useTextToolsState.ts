@@ -24,6 +24,7 @@ export type TextToolsTab =
   | 'url'
   | 'base64'
   | 'extractor'
+  | 'mermaid'
 
 /** All transient state fields managed by this hook. */
 export interface TextToolsState {
@@ -68,6 +69,7 @@ const VALID_TAB_VALUES: readonly TextToolsTab[] = [
   'url',
   'base64',
   'extractor',
+  'mermaid',
 ]
 
 const DEFAULT_TAB: TextToolsTab = 'case'

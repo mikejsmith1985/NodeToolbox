@@ -1,12 +1,13 @@
-// MyIssuesView.tsx — My Issues view with source picker, persona filter, and multi-mode display.
+// MyIssuesView.tsx — My Issues view with report, hygiene, and settings workflows in one place.
 //
-// Provides two top-level tabs: Report (issue browsing) and Settings (defaults).
-// The Report tab lets users switch between four issue sources (mine / JQL / filter / board),
-// filter by persona, and view results in card, compact, or table layout.
+// Provides three top-level tabs: Report (issue browsing), Hygiene (issue-health checks),
+// and Settings (defaults). The Report tab lets users switch between four issue sources
+// (mine / JQL / filter / board), filter by persona, and view results in card, compact, or table layout.
 
 import { useEffect, useState } from 'react';
 
 import type { JiraIssue } from '../../types/jira.ts';
+import HygieneView from '../Hygiene/HygieneView.tsx';
 import { snowFetch } from '../../services/snowApi.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
 import { useMyIssuesState } from './hooks/useMyIssuesState.ts';
@@ -69,7 +70,13 @@ const SNOW_SEARCH_LIMIT = 5;
 
 const SNOW_INCIDENT_PATH = '/api/now/table/incident';
 
-type MyIssuesTab = 'report' | 'settings';
+type MyIssuesTab = 'report' | 'hygiene' | 'settings';
+
+const MY_ISSUES_TABS: { key: MyIssuesTab; label: string }[] = [
+  { key: 'report', label: 'Report' },
+  { key: 'hygiene', label: 'Hygiene' },
+  { key: 'settings', label: 'Settings' },
+];
 
 /** Represents a single ServiceNow incident ticket returned from the SNow proxy. */
 interface SnowTicket {
@@ -682,21 +689,20 @@ export default function MyIssuesView() {
 
       {/* Top-level Report / Settings tabs */}
       <div aria-label="My Issues tabs" className={styles.tabList} role="tablist">
-        {(['report', 'settings'] as MyIssuesTab[]).map((tabKey) => {
-          const isActiveTab = tabKey === activeTab;
-          const tabLabel = tabKey === 'report' ? 'Report' : 'Settings';
+        {MY_ISSUES_TABS.map((tabOption) => {
+          const isActiveTab = tabOption.key === activeTab;
           return (
             <button
-              aria-controls={`${tabKey}-panel`}
+              aria-controls={`${tabOption.key}-panel`}
               aria-selected={isActiveTab}
               className={`${styles.tabButton} ${isActiveTab ? styles.activeTab : ''}`}
-              id={`${tabKey}-tab`}
-              key={tabKey}
-              onClick={() => setActiveTab(tabKey)}
+              id={`${tabOption.key}-tab`}
+              key={tabOption.key}
+              onClick={() => setActiveTab(tabOption.key)}
               role="tab"
               type="button"
             >
-              {tabLabel}
+              {tabOption.label}
             </button>
           );
         })}
@@ -953,6 +959,13 @@ export default function MyIssuesView() {
               transitionError={state.transitionError}
             />
           )}
+        </section>
+      )}
+
+      {/* ── Hygiene tab ── */}
+      {activeTab === 'hygiene' && (
+        <section id="hygiene-panel" role="tabpanel" aria-labelledby="hygiene-tab">
+          <HygieneView />
         </section>
       )}
 
