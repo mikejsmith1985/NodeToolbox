@@ -24,15 +24,15 @@ describe('ConnectionBar', () => {
     expect(screen.getByText('Relay')).toBeInTheDocument();
   });
 
-  it('shows the Jira indicator as ready when the Jira connection is verified', () => {
-    useConnectionStore.setState({ isJiraVerified: true });
+  it('shows the Jira indicator as ready when Jira is configured in the backend', () => {
+    useConnectionStore.setState({ isJiraReady: true });
 
     render(<ConnectionBar />);
 
     expect(screen.getByText('Jira')).toHaveClass(styles.ready);
   });
 
-  it('shows the Jira indicator as not ready when the Jira connection is not verified', () => {
+  it('shows the Jira indicator as not ready when Jira is not configured', () => {
     render(<ConnectionBar />);
 
     expect(screen.getByText('Jira')).toHaveClass(styles.notReady);

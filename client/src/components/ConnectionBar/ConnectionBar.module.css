@@ -25,5 +25,6 @@
 }
 
 .notReady .dot {
-  background: #6b7280;
+  /* Red so users immediately know a service isn't configured — not the ambiguous gray. */
+  background: #ef4444;
 }
