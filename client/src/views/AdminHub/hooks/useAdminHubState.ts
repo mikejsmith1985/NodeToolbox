@@ -3,6 +3,10 @@
 // Manages proxy URLs, ART field settings, feature flags, and admin PIN unlock
 // with session-persistent unlock state stored in sessionStorage.
 // Also provides Diagnostics, Backup/Reset, Hygiene Rules, and Update Management.
+//
+// Advanced unlock (isAdvancedUnlocked) is a separate gate for the Feature Flags,
+// Client Diagnostics, and Backup/Restore sections. It uses a passphrase stored in
+// localStorage (tbxAdminPassphrase). When no passphrase is stored, any input unlocks.
 
 import { useCallback, useRef, useState } from 'react'
 
@@ -18,6 +22,11 @@ const FEATURE_AI_KEY = 'tbxFeatureAIVisible'
 const ADMIN_UNLOCK_SESSION_KEY = 'tbxAdminUnlocked'
 /** The hardcoded admin PIN. In production, replace with server-side validation. */
 const ADMIN_PIN = '1234'
+
+/** sessionStorage key for the advanced section gate (Feature Flags, Diagnostics, Backup). */
+const ADVANCED_UNLOCK_SESSION_KEY = 'tbxAdvancedUnlocked'
+/** localStorage key where an optional admin passphrase is stored for the advanced gate. */
+const ADVANCED_PASSPHRASE_STORAGE_KEY = 'tbxAdminPassphrase'
 
 const SAVE_STATUS_SUCCESS = '✓ Saved'
 const SAVE_STATUS_CLEAR_DELAY_MS = 2000
@@ -112,6 +121,8 @@ export interface AdminHubState {
   updateCheckResult: UpdateCheckResult | null
   isCheckingUpdate: boolean
   isUpdateSectionCollapsed: boolean
+  // ── Advanced unlock (Feature Flags, Client Diagnostics, Backup/Restore) ──
+  isAdvancedUnlocked: boolean
 }
 
 /** All action callbacks returned by this hook. */
@@ -138,6 +149,9 @@ export interface AdminHubActions {
   // ── Update Management ──
   checkForUpdates(): Promise<void>
   setUpdateSectionCollapsed(isCollapsed: boolean): void
+  // ── Advanced unlock ──
+  tryAdvancedUnlock(): void
+  advancedLock(): void
 }
 
 // ── Helper: safe localStorage reads ──
@@ -210,6 +224,15 @@ function readIsAdminUnlocked(): boolean {
   }
 }
 
+/** Returns true if the advanced gate session is currently unlocked. */
+function readIsAdvancedUnlocked(): boolean {
+  try {
+    return sessionStorage.getItem(ADVANCED_UNLOCK_SESSION_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 /** Reads hygiene rule thresholds and flags from localStorage. */
 function buildInitialHygieneRules(): HygieneRules {
   const rawStaleDays = parseInt(
@@ -244,6 +267,7 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
   const [artSettings, setArtSettings] = useState<ArtSettingsConfig>(buildInitialArtSettings)
   const [featureFlags, setFeatureFlags] = useState<FeatureFlags>(buildInitialFeatureFlags)
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(readIsAdminUnlocked)
+  const [isAdvancedUnlocked, setIsAdvancedUnlocked] = useState<boolean>(readIsAdvancedUnlocked)
   const [adminPinInput, setAdminPinInput] = useState('')
   const [proxySaveStatus, setProxySaveStatus] = useState<string | null>(null)
   const [artSaveStatus, setArtSaveStatus] = useState<string | null>(null)
@@ -293,6 +317,7 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     updateCheckResult,
     isCheckingUpdate,
     isUpdateSectionCollapsed,
+    isAdvancedUnlocked,
   }
 
   const setProxyUrl = useCallback(
@@ -541,6 +566,34 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     }
   }, [])
 
+  /**
+   * Prompts the user for the admin passphrase to unlock the advanced sections.
+   * If no passphrase is stored in localStorage, any non-null response unlocks.
+   */
+  const tryAdvancedUnlock = useCallback(() => {
+    const storedPassphrase = localStorage.getItem(ADVANCED_PASSPHRASE_STORAGE_KEY)
+    const userInput = window.prompt(
+      storedPassphrase
+        ? 'Enter the admin passphrase to unlock advanced settings:'
+        : 'Set an admin passphrase (or leave blank to unlock without one):',
+    )
+    // User cancelled the prompt — do not unlock.
+    if (userInput === null) return
+
+    if (storedPassphrase === null || userInput === storedPassphrase) {
+      sessionStorage.setItem(ADVANCED_UNLOCK_SESSION_KEY, '1')
+      setIsAdvancedUnlocked(true)
+    } else {
+      alert('Incorrect passphrase.')
+    }
+  }, [])
+
+  /** Clears the advanced unlock session state. */
+  const advancedLock = useCallback(() => {
+    sessionStorage.removeItem(ADVANCED_UNLOCK_SESSION_KEY)
+    setIsAdvancedUnlocked(false)
+  }, [])
+
   const actions: AdminHubActions = {
     setProxyUrl,
     saveProxyUrls,
@@ -565,6 +618,8 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     setHygieneSectionCollapsed: setIsHygieneSectionCollapsed,
     checkForUpdates,
     setUpdateSectionCollapsed: setIsUpdateSectionCollapsed,
+    tryAdvancedUnlock,
+    advancedLock,
   }
 
   return { state, actions }

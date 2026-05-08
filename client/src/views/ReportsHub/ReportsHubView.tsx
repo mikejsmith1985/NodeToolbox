@@ -2,9 +2,22 @@
 //
 // Nine tabs: Feature Report, Defect Tracker, Risk Board, Flow, Impact, Individual, Quality,
 // Sprint Health, and Throughput. Hero KPI grid provides at-a-glance counts. All data
-// loaded via useReportsHubState.
+// loaded via useReportsHubState. Each tab also includes an "About this report" explainer
+// card, a per-tab copy-to-clipboard button, and a "Last generated" relative timestamp.
 
-import type { IndividualEntry, JiraFeatureIssue, QualityMetrics, ReportsHubTab, SprintHealthEntry, SprintIssue, ThroughputEntry } from './hooks/useReportsHubState.ts'
+import { useCallback, useEffect, useState } from 'react'
+
+import type {
+  IndividualEntry,
+  JiraFeatureIssue,
+  QualityMetrics,
+  ReportsHubTab,
+  SprintHealthEntry,
+  SprintIssue,
+  ThroughputEntry,
+} from './hooks/useReportsHubState.ts'
+import { formatRelativeTime, useLastGenerated } from './hooks/useLastGenerated.ts'
+import { useReportExplainer } from './hooks/useReportExplainer.ts'
 import { useReportsHubState } from './hooks/useReportsHubState.ts'
 import styles from './ReportsHubView.module.css'
 
@@ -37,6 +50,68 @@ const HIGH_PRIORITY_VALUES = new Set(['Highest', 'High', 'Critical'])
 // Defects with these priorities are counted as critical in the Quality tab
 const CRITICAL_PRIORITY_VALUES = new Set(['Highest', 'Critical'])
 
+// Rolling window for throughput benchmark: last N sprints are averaged to produce the baseline
+const BENCHMARK_WINDOW_SPRINTS = 6
+const COPY_FEEDBACK_DURATION_MS = 2000
+
+// Per-tab explainer bullet texts sourced from legacy rhReportPitch() in 20-reports-hub.js
+const TAB_DESCRIPTIONS: Record<ReportsHubTab, string[]> = {
+  features: [
+    'All Features and Epics across the ART — PI, status, due dates, and dependencies in one view.',
+    'Replaces manual PI board updates and deck-building for stakeholder reviews.',
+    'Dependency chains and risk flags surfaced inline — no Jira board-hopping required.',
+    'Use for: PI execution reviews, cross-team dependency calls, stakeholder briefings.',
+  ],
+  defects: [
+    'Full inventory of open bugs across all ART teams — breakdown by team, priority, and status.',
+    'Identifies which teams carry the most quality debt and where critical blockers live.',
+    'Drill down to specific defects blocking a release or PI boundary.',
+    'Use for: triage ownership, pre-release audits, quality trend conversations.',
+  ],
+  risks: [
+    'Every open risk-type issue and "risk"-labeled item across all ART teams in one place.',
+    'Critical risks flagged immediately — a clean board means your ART is operating safely.',
+    'Risk tracking is a core RTE responsibility in SAFe PI execution — this automates it.',
+    'Use for: ART sync, Scrum of Scrums, executive risk briefings.',
+  ],
+  flow: [
+    'Two metrics in one: Flow (what actually closed) and Aging (what\'s stuck in-progress).',
+    'Flow = issues completed in the last 30 days. Aging = current WIP sorted by age.',
+    'WIP that never closes is invisible in sprint metrics — Aging surfaces it early.',
+    'Use for: impediment identification, ART sync, PI retrospectives.',
+  ],
+  impact: [
+    'Tracks team throughput vs targets and delivery quality trends over rolling time periods.',
+    'Connects completed Jira work to business outcomes and cross-team benchmarks.',
+    'Data sourced from the Impact Dashboard cache — refresh there first if numbers appear stale.',
+    'Use for: Quarterly Business Reviews, PI retrospectives, executive delivery briefings.',
+  ],
+  individual: [
+    'All open work for a specific person: Features, Epics, Stories, Bugs, and Tasks in one view.',
+    'Automatically flags over-commitment — Features and Stories and Bugs in flight simultaneously.',
+    'Enter any Jira display name or account ID to pull anyone\'s current workload instantly.',
+    'Use for: 1:1 prep, sprint review, capacity rebalancing decisions.',
+  ],
+  quality: [
+    'Open defect count by priority (Critical → Low) for every ART team — aggregated in one view.',
+    '⚠️ Any Critical defect is a stop-ship concern; surfaced immediately at the top.',
+    'Aggregate quality visibility is impossible in native Jira without switching boards.',
+    'Use for: release gating, sprint reviews, executive risk briefings.',
+  ],
+  sprintHealth: [
+    'Real-time pulse: how far through their sprint goal is each team right now?',
+    '🔴 <30% done | 🟡 30–50% | 🟢 >50% — health triaged in seconds.',
+    'Identify at-risk teams before the sprint ends — not after the retrospective.',
+    'Use for: Scrum of Scrums prep, mid-sprint steering, escalation decisions.',
+  ],
+  throughput: [
+    'Compares completed issues across all ART teams for the last 6+ months — in one table.',
+    'Native Jira locks throughput reports to a single board; Toolbox aggregates all boards.',
+    'Spot teams accelerating, plateauing, or declining before it becomes a PI-level conversation.',
+    'Use for: PI capacity planning, velocity benchmarking, quarterly exec reporting.',
+  ],
+}
+
 // ── Helper: status badge ──
 
 /** Returns the appropriate CSS class for a Jira status category. */
@@ -58,6 +133,98 @@ function StatusBadge({ statusName, statusCategory }: StatusBadgeProps) {
     <span className={`${styles.statusBadge} ${badgeClass}`}>
       {statusName}
     </span>
+  )
+}
+
+// ── About Report Card ──
+
+interface AboutReportCardProps {
+  tabKey: ReportsHubTab
+  isCollapsed: boolean
+  onToggle(): void
+}
+
+/** Collapsible explainer card shown above each tab's content. Explains what the report shows. */
+function AboutReportCard({ tabKey, isCollapsed, onToggle }: AboutReportCardProps) {
+  const descriptions = TAB_DESCRIPTIONS[tabKey]
+  const chevronSymbol = isCollapsed ? '▶' : '▼'
+
+  return (
+    <div className={styles.explainerCard}>
+      <button
+        className={styles.explainerToggle}
+        onClick={onToggle}
+        aria-expanded={!isCollapsed}
+        aria-label="Toggle about this report"
+      >
+        <span className={styles.explainerChevron}>{chevronSymbol}</span>
+        About this report
+      </button>
+      {!isCollapsed && (
+        <ul className={styles.explainerContent}>
+          {descriptions.map((bulletText) => (
+            <li key={bulletText}>{bulletText}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// ── Copy Report Button ──
+
+interface CopyReportButtonProps {
+  textToCopy: string
+}
+
+/** Button that writes the given text to the clipboard and briefly shows a "Copied!" confirmation. */
+function CopyReportButton({ textToCopy }: CopyReportButtonProps) {
+  const [isCopied, setIsCopied] = useState(false)
+
+  const handleCopyClick = useCallback((): void => {
+    void navigator.clipboard.writeText(textToCopy).then(() => {
+      setIsCopied(true)
+      setTimeout(() => { setIsCopied(false) }, COPY_FEEDBACK_DURATION_MS)
+    })
+  }, [textToCopy])
+
+  return (
+    <button className={styles.actionButton} onClick={handleCopyClick}>
+      {isCopied ? '✓ Copied!' : '📋 Copy Report'}
+    </button>
+  )
+}
+
+// ── Tab Preamble ──
+
+interface TabPreambleProps {
+  tabKey: ReportsHubTab
+  isCollapsed: boolean
+  onToggleExplainer(): void
+  lastGeneratedAt: string | null
+  reportText: string
+}
+
+/** Wraps every tab with an "About" card, last-generated timestamp, and a copy button. */
+function TabPreamble({
+  tabKey,
+  isCollapsed,
+  onToggleExplainer,
+  lastGeneratedAt,
+  reportText,
+}: TabPreambleProps) {
+  return (
+    <div className={styles.tabPreamble}>
+      <div className={styles.preambleActions}>
+        {lastGeneratedAt !== null && (
+          <span className={styles.lastGeneratedText}>
+            Last generated: {formatRelativeTime(lastGeneratedAt)}
+          </span>
+        )}
+        <CopyReportButton textToCopy={reportText} />
+      </div>
+      <AboutReportCard tabKey={tabKey} isCollapsed={isCollapsed} onToggle={onToggleExplainer} />
+    </div>
   )
 }
 
@@ -664,7 +831,24 @@ interface ThroughputTabProps {
   error: string | null
 }
 
-/** Throughput tab — rolling resolved-issue counts per sprint for velocity tracking. */
+/** Computes the rolling average resolved count over the last N sprints. */
+function computeThroughputBenchmark(entries: ThroughputEntry[]): number {
+  if (entries.length === 0) return 0
+  const windowEntries = entries.slice(-BENCHMARK_WINDOW_SPRINTS)
+  const windowTotal = windowEntries.reduce((sum, entry) => sum + entry.resolvedCount, 0)
+  return Math.round(windowTotal / windowEntries.length)
+}
+
+/** Returns the CSS class and symbol for a throughput delta vs the benchmark. */
+function resolveDeltaDisplay(resolvedCount: number, benchmarkAvg: number): { label: string; className: string } {
+  if (benchmarkAvg === 0) return { label: '—', className: '' }
+  const delta = resolvedCount - benchmarkAvg
+  if (delta > 0) return { label: `+${delta}`, className: styles.deltaPositive }
+  if (delta < 0) return { label: `${delta}`, className: styles.deltaNegative }
+  return { label: '±0', className: '' }
+}
+
+/** Throughput tab — rolling resolved-issue counts per sprint with 6-sprint benchmark. */
 function ThroughputTab({ throughputData, isLoading, error }: ThroughputTabProps) {
   if (isLoading) return <p className={styles.emptyState}>Loading throughput data…</p>
   if (error !== null) return <p className={styles.emptyState}>{error}</p>
@@ -672,6 +856,7 @@ function ThroughputTab({ throughputData, isLoading, error }: ThroughputTabProps)
   const totalResolved = throughputData.reduce((sum, entry) => sum + entry.resolvedCount, 0)
   const avgThroughput =
     throughputData.length > 0 ? Math.round(totalResolved / throughputData.length) : 0
+  const benchmarkAvg = computeThroughputBenchmark(throughputData)
 
   return (
     <div>
@@ -679,6 +864,11 @@ function ThroughputTab({ throughputData, isLoading, error }: ThroughputTabProps)
       <div className={styles.summaryBar}>
         <span className={styles.summaryBarItem}>Total Resolved: {totalResolved}</span>
         <span className={styles.summaryBarItem}>Avg / Sprint: {avgThroughput}</span>
+        {throughputData.length >= BENCHMARK_WINDOW_SPRINTS && (
+          <span className={styles.summaryBarItem}>
+            {BENCHMARK_WINDOW_SPRINTS}-Sprint Benchmark: {benchmarkAvg}
+          </span>
+        )}
       </div>
       <div className={styles.tableWrapper}>
         <table className={styles.reportTable}>
@@ -686,15 +876,29 @@ function ThroughputTab({ throughputData, isLoading, error }: ThroughputTabProps)
             <tr>
               <th>Sprint</th>
               <th>Resolved</th>
+              {throughputData.length >= BENCHMARK_WINDOW_SPRINTS && <th>vs Benchmark</th>}
             </tr>
           </thead>
           <tbody>
-            {throughputData.map((entry) => (
-              <tr key={entry.sprintName}>
-                <td>{entry.sprintName}</td>
-                <td>{entry.resolvedCount}</td>
+            {throughputData.map((entry) => {
+              const { label: deltaLabel, className: deltaClass } = resolveDeltaDisplay(entry.resolvedCount, benchmarkAvg)
+              return (
+                <tr key={entry.sprintName}>
+                  <td>{entry.sprintName}</td>
+                  <td>{entry.resolvedCount}</td>
+                  {throughputData.length >= BENCHMARK_WINDOW_SPRINTS && (
+                    <td className={deltaClass}>{deltaLabel}</td>
+                  )}
+                </tr>
+              )
+            })}
+            {throughputData.length >= BENCHMARK_WINDOW_SPRINTS && (
+              <tr className={styles.benchmarkRow}>
+                <td>Benchmark ({BENCHMARK_WINDOW_SPRINTS}-sprint avg)</td>
+                <td>{benchmarkAvg}</td>
+                <td>—</td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
         {throughputData.length === 0 && (
@@ -705,13 +909,53 @@ function ThroughputTab({ throughputData, isLoading, error }: ThroughputTabProps)
   )
 }
 
+/** Builds a plain-text copy of the active tab's data for clipboard export. */
+function buildTabReportText(tabKey: ReportsHubTab, state: ReturnType<typeof useReportsHubState>['state']): string {
+  const timestamp = new Date().toLocaleString()
+  const lines: string[] = [`Reports Hub — ${tabKey} — ${timestamp}`]
+  if (tabKey === 'features') {
+    lines.push('', 'Features:')
+    for (const feature of state.features) {
+      lines.push(`  ${feature.key}  ${feature.summary}  [${feature.statusName}]`)
+    }
+  } else if (tabKey === 'defects') {
+    lines.push('', 'Defects:')
+    for (const defect of state.defects) {
+      lines.push(`  ${defect.key}  ${defect.summary}  [${defect.statusName}]`)
+    }
+  } else if (tabKey === 'risks') {
+    lines.push('', 'Risks:')
+    for (const risk of state.risks) {
+      lines.push(`  ${risk.key}  ${risk.summary}  [${risk.statusName}]`)
+    }
+  } else if (tabKey === 'throughput') {
+    lines.push('', 'Throughput:')
+    for (const entry of state.throughputData) {
+      lines.push(`  ${entry.sprintName}: ${entry.resolvedCount} resolved`)
+    }
+  }
+  return lines.join('\n')
+}
+
 // ── Root component ──
 
 /** Reports Hub — director-level PI reporting dashboard across all ART teams. */
 export default function ReportsHubView() {
   const { state, actions } = useReportsHubState()
+  const { isTabExplainerCollapsed, toggleTabExplainer } = useReportExplainer()
+  const { markGenerated, getTabTimestamp } = useLastGenerated()
 
   const hasNoArtTeams = state.artTeams.length === 0
+
+  // Record the last-generated timestamp whenever data is refreshed
+  useEffect(() => {
+    if (state.lastGeneratedAt !== null) {
+      markGenerated(state.activeTab)
+    }
+  }, [state.lastGeneratedAt]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const activeTabTimestamp = getTabTimestamp(state.activeTab)
+  const activeTabReportText = buildTabReportText(state.activeTab, state)
 
   function renderActiveTab() {
     switch (state.activeTab) {
@@ -804,9 +1048,6 @@ export default function ReportsHubView() {
           >
             🔄 Refresh
           </button>
-          <button className={styles.actionButton} onClick={actions.copyReport}>
-            📋 Copy Report
-          </button>
         </div>
       </header>
 
@@ -854,6 +1095,15 @@ export default function ReportsHubView() {
           </button>
         ))}
       </div>
+
+      {/* Tab preamble (explainer card + timestamp + copy button) */}
+      <TabPreamble
+        tabKey={state.activeTab}
+        isCollapsed={isTabExplainerCollapsed(state.activeTab)}
+        onToggleExplainer={() => { toggleTabExplainer(state.activeTab) }}
+        lastGeneratedAt={activeTabTimestamp}
+        reportText={activeTabReportText}
+      />
 
       {/* Tab content — show empty state if no teams configured on features tab */}
       {hasNoArtTeams && state.activeTab === 'features' ? (

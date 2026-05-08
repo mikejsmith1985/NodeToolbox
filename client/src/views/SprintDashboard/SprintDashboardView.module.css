@@ -435,3 +435,38 @@
   text-align: center;
   padding: var(--spacing-md);
 }
+
+/* ── Advanced settings grid ── */
+
+.settingsDivider {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: var(--spacing-sm) 0;
+}
+
+.advancedConfigGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+/* ── Stale issue row (used in Overview / Assignee issue lists) ── */
+
+.staleIssueRow {
+  background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+  border-left: 3px solid var(--color-warning);
+  padding-left: calc(var(--spacing-xs) - 3px);
+}
+
+/* ── Issue card grid with 4 columns (key / summary / status / action) ── */
+
+.laneIssueRow {
+  display: grid;
+  grid-template-columns: 90px 1fr 120px auto;
+  gap: var(--spacing-sm);
+  align-items: center;
+  padding: var(--spacing-xs) 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
