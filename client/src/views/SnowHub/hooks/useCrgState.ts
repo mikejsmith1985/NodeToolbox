@@ -152,9 +152,9 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
 
         setState((previousState) => ({
           ...previousState,
-          availableFixVersions: versions
-            .filter((version) => !version.released)
-            .map((version) => version.name),
+          // Include all versions (released and unreleased) — users may need to
+          // create change requests against already-released versions (e.g. hotfixes).
+          availableFixVersions: versions.map((version) => version.name),
         }));
       })
       .catch(() => {

@@ -1,4 +1,4 @@
-// DevPanelView.test.tsx — Verifies the standalone Dev Panel renders live Jira API activity.
+// DevPanelView.test.tsx — Verifies the Dev Panel renders Jira API activity and Server Logs tabs.
 
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -19,14 +19,18 @@ function renderDevPanelView() {
 }
 
 beforeEach(() => {
-  vi.restoreAllMocks();
+  // Default fetch mock returns an empty server log to avoid unhandled promise rejections.
+  vi.spyOn(global, 'fetch').mockResolvedValue({
+    ok: true,
+    json: async () => [],
+  } as Response)
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('DevPanelView', () => {
+describe('DevPanelView — Jira API tab', () => {
   it('shows an empty state when no API calls have been recorded', () => {
     renderDevPanelView();
 
@@ -119,5 +123,54 @@ describe('DevPanelView', () => {
     dispatchApiEvent({ method: 'DELETE', url: '/rest/api/3/issue/TBX-2', status: 204, durationMs: 8 });
 
     expect(screen.getByText(/^\d{2}:\d{2}:\d{2}$/)).toBeInTheDocument();
+  });
+});
+
+describe('DevPanelView — Server Logs tab', () => {
+  it('switches to the Server Logs tab when that button is clicked', async () => {
+    const user = userEvent.setup();
+    renderDevPanelView();
+
+    await user.click(screen.getByRole('tab', { name: /Server Logs/i }));
+
+    expect(screen.getByRole('tabpanel', { name: /Server Logs/i })).toBeInTheDocument();
+  });
+
+  it('shows an empty state when the server returns no log entries', async () => {
+    const user = userEvent.setup();
+    renderDevPanelView();
+
+    await user.click(screen.getByRole('tab', { name: /Server Logs/i }));
+
+    // Wait for the loading state to resolve.
+    expect(await screen.findByText(/No server log entries captured yet/i)).toBeInTheDocument();
+  });
+
+  it('renders server log entries in the table after fetch resolves', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => [
+        { id: 1, timestamp: new Date().toISOString(), level: 'info', message: 'Server started OK' },
+      ],
+    } as Response)
+
+    const user = userEvent.setup();
+    renderDevPanelView();
+
+    await user.click(screen.getByRole('tab', { name: /Server Logs/i }));
+
+    expect(await screen.findByText('Server started OK')).toBeInTheDocument();
+    expect(screen.getByText('INFO')).toBeInTheDocument();
+  });
+
+  it('shows an error banner when the log fetch fails', async () => {
+    vi.spyOn(global, 'fetch').mockRejectedValue(new Error('Server unreachable'))
+
+    const user = userEvent.setup();
+    renderDevPanelView();
+
+    await user.click(screen.getByRole('tab', { name: /Server Logs/i }));
+
+    expect(await screen.findByText(/Could not fetch server logs/i)).toBeInTheDocument();
   });
 });

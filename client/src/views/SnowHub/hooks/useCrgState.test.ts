@@ -60,7 +60,7 @@ describe('useCrgState', () => {
     expect(result.current.state.projectKey).toBe('TOOL');
   });
 
-  it('fetches unreleased fix versions when the project key changes', async () => {
+  it('fetches all fix versions (released and unreleased) when the project key changes', async () => {
     vi.mocked(jiraGet)
       .mockResolvedValueOnce([
         { id: '1', name: '1.2.3', released: false },
@@ -74,7 +74,9 @@ describe('useCrgState', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.state.availableFixVersions).toEqual(['1.2.3']);
+      // Both unreleased and released versions should appear — users may patch
+      // already-released versions in a hotfix / change request.
+      expect(result.current.state.availableFixVersions).toEqual(['1.2.3', '1.2.2']);
     });
   });
 
