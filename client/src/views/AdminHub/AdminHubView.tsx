@@ -19,6 +19,7 @@ import type {
   HygieneRules,
   UpdateCheckResult,
 } from './hooks/useAdminHubState.ts'
+import type { ConnectivityConfigResult, ConnectionProbeResult } from '../../types/config.ts'
 import ClientDiagnosticsPanel from './ClientDiagnosticsPanel'
 import CredentialManagementSection from './CredentialManagementSection'
 import EnterpriseStandardsPanel from './EnterpriseStandardsPanel'
@@ -385,9 +386,12 @@ function ArtSettingsSection({
 
 interface AdminAccessSectionProps {
   isAdminUnlocked: boolean
+  adminUsername: string
   adminPinInput: string
+  adminUnlockError: string | null
   isSnowIntegrationEnabled: boolean
   isAiEnabled: boolean
+  onUsernameChange(value: string): void
   onPinInputChange(value: string): void
   onTryUnlock(): void
   onLock(): void
@@ -408,12 +412,15 @@ function clearAllConnectionData(): void {
   }
 }
 
-/** Admin Access section — PIN entry gate + unlock sections when authenticated. */
+/** Admin Access section — username+password entry gate + unlock sections when authenticated. */
 function AdminAccessSection({
   isAdminUnlocked,
+  adminUsername,
   adminPinInput,
+  adminUnlockError,
   isSnowIntegrationEnabled,
   isAiEnabled,
+  onUsernameChange,
   onPinInputChange,
   onTryUnlock,
   onLock,
@@ -497,11 +504,27 @@ function AdminAccessSection({
           )}
         </>
       ) : (
-        /* Locked state */
+        /* Locked state — username + password form connecting to POST /api/admin-verify */
         <>
           <p className={styles.adminDescription}>
-            Enter admin PIN to access advanced controls.
+            Enter admin credentials to access advanced controls.
+            Default credentials: <strong>admin / toolbox</strong>
           </p>
+          <div className={styles.pinRow}>
+            <input
+              id="admin-username-input"
+              type="text"
+              className={styles.pinInput}
+              value={adminUsername}
+              onChange={(changeEvent) => onUsernameChange(changeEvent.target.value)}
+              placeholder="Username"
+              maxLength={64}
+              onKeyDown={(keyboardEvent) => {
+                if (keyboardEvent.key === 'Enter') onTryUnlock()
+              }}
+              aria-label="Admin Username"
+            />
+          </div>
           <div className={styles.pinRow}>
             <input
               id="admin-pin-input"
@@ -509,17 +532,22 @@ function AdminAccessSection({
               className={styles.pinInput}
               value={adminPinInput}
               onChange={(changeEvent) => onPinInputChange(changeEvent.target.value)}
-              placeholder="Enter PIN"
-              maxLength={8}
+              placeholder="Password"
+              maxLength={64}
               onKeyDown={(keyboardEvent) => {
                 if (keyboardEvent.key === 'Enter') onTryUnlock()
               }}
-              aria-label="Admin PIN"
+              aria-label="Admin Password"
             />
             <button className={styles.actionButton} onClick={onTryUnlock}>
               Unlock
             </button>
           </div>
+          {adminUnlockError !== null && (
+            <p className={styles.sectionErrorText} role="alert">
+              {adminUnlockError}
+            </p>
+          )}
         </>
       )}
     </section>
@@ -882,6 +910,333 @@ function UpdateManagementSection({
   )
 }
 
+// ── Service Connectivity section ──
+
+interface ServiceConnectivitySectionProps {
+  connectivityConfig: ConnectivityConfigResult | null
+  isConnectivityConfigLoading: boolean
+  connectivityConfigError: string | null
+  connectivitySaveStatus: string | null
+  snowTestResult: ConnectionProbeResult | null
+  isSnowTesting: boolean
+  githubTestResult: ConnectionProbeResult | null
+  isGitHubTesting: boolean
+  isAdminUnlocked: boolean
+  onLoad(): void
+  onSaveSnow(snow: { baseUrl: string; username: string; password: string }): void
+  onSaveGitHub(github: { baseUrl: string; pat: string }): void
+  onTestSnow(): void
+  onTestGitHub(): void
+}
+
+/**
+ * Service Connectivity section — edits the server-side Snow and GitHub config
+ * stored in toolbox-proxy.json. Requires admin unlock to prevent accidental changes.
+ * Password and PAT fields show a masked placeholder when credentials are already stored;
+ * leave blank to keep the existing value, type a new value to replace it.
+ */
+function ServiceConnectivitySection({
+  connectivityConfig,
+  isConnectivityConfigLoading,
+  connectivityConfigError,
+  connectivitySaveStatus,
+  snowTestResult,
+  isSnowTesting,
+  githubTestResult,
+  isGitHubTesting,
+  isAdminUnlocked,
+  onLoad,
+  onSaveSnow,
+  onSaveGitHub,
+  onTestSnow,
+  onTestGitHub,
+}: ServiceConnectivitySectionProps) {
+  const CREDENTIAL_PLACEHOLDER = '••••••••'
+
+  const [snowBaseUrl, setSnowBaseUrl] = useState(connectivityConfig?.snow.baseUrl ?? '')
+  const [snowUsername, setSnowUsername] = useState('')
+  const [snowPassword, setSnowPassword] = useState('')
+  const [githubBaseUrl, setGithubBaseUrl] = useState(connectivityConfig?.github.baseUrl ?? '')
+  const [githubPat, setGithubPat] = useState('')
+
+  // Sync local URL fields when the server config loads for the first time.
+  useEffect(() => {
+    if (connectivityConfig !== null) {
+      setSnowBaseUrl(connectivityConfig.snow.baseUrl)
+      setGithubBaseUrl(connectivityConfig.github.baseUrl)
+    }
+  }, [connectivityConfig])
+
+  // Load config from server when admin unlocks (lazy load on first open).
+  useEffect(() => {
+    if (isAdminUnlocked && connectivityConfig === null && !isConnectivityConfigLoading) {
+      onLoad()
+    }
+  }, [isAdminUnlocked, connectivityConfig, isConnectivityConfigLoading, onLoad])
+
+  /** Submits the Snow config form and clears credential inputs after save. */
+  function handleSaveSnow() {
+    onSaveSnow({ baseUrl: snowBaseUrl, username: snowUsername, password: snowPassword })
+    // Clear credential inputs after save so the user sees the placeholder again.
+    setSnowUsername('')
+    setSnowPassword('')
+  }
+
+  /** Submits the GitHub config form and clears the PAT input after save. */
+  function handleSaveGitHub() {
+    onSaveGitHub({ baseUrl: githubBaseUrl, pat: githubPat })
+    setGithubPat('')
+  }
+
+  return (
+    <section className={styles.sectionCard}>
+      <h2 className={styles.sectionTitle}>🔌 Service Connectivity</h2>
+      <p className={styles.adminDescription}>
+        Server-side credentials stored in <code>toolbox-proxy.json</code> (AppData).
+        Leave password/token blank to keep the current value.
+      </p>
+
+      {!isAdminUnlocked && (
+        <p className={styles.adminDescription}>🔒 Unlock Admin Access to edit service credentials.</p>
+      )}
+
+      {isAdminUnlocked && (
+        <>
+          {isConnectivityConfigLoading && <p className={styles.adminDescription}>⏳ Loading…</p>}
+          {connectivityConfigError !== null && (
+            <p className={styles.sectionErrorText}>{connectivityConfigError}</p>
+          )}
+
+          {/* ── ServiceNow ── */}
+          <h3 className={styles.sectionTitle}>ServiceNow</h3>
+          {connectivityConfig !== null && (
+            <p className={styles.adminDescription}>
+              {connectivityConfig.snow.hasCredentials
+                ? `✅ Credentials stored (user: ${connectivityConfig.snow.usernameMasked})`
+                : '⚠️ No credentials configured'}
+            </p>
+          )}
+          <div className={styles.fieldRow}>
+            <label className={styles.fieldLabel} htmlFor="snow-instance-url">Instance URL</label>
+            <input
+              id="snow-instance-url"
+              type="url"
+              className={styles.textInput}
+              value={snowBaseUrl}
+              onChange={(e) => setSnowBaseUrl(e.target.value)}
+              placeholder="https://your-instance.service-now.com"
+            />
+          </div>
+          <div className={styles.fieldRow}>
+            <label className={styles.fieldLabel} htmlFor="snow-username">Username</label>
+            <input
+              id="snow-username"
+              type="text"
+              className={styles.textInput}
+              value={snowUsername}
+              onChange={(e) => setSnowUsername(e.target.value)}
+              placeholder={connectivityConfig?.snow.usernameMasked || 'service account username'}
+              autoComplete="off"
+            />
+          </div>
+          <div className={styles.fieldRow}>
+            <label className={styles.fieldLabel} htmlFor="snow-password">Password</label>
+            <input
+              id="snow-password"
+              type="password"
+              className={styles.textInput}
+              value={snowPassword}
+              onChange={(e) => setSnowPassword(e.target.value)}
+              placeholder={connectivityConfig?.snow.hasCredentials ? CREDENTIAL_PLACEHOLDER : 'password'}
+              autoComplete="new-password"
+            />
+          </div>
+          <div className={styles.inputRow}>
+            <button className={`${styles.actionButton} ${styles.saveButton}`} onClick={handleSaveSnow}>
+              💾 Save SNow Config
+            </button>
+            <button
+              className={styles.actionButton}
+              onClick={onTestSnow}
+              disabled={isSnowTesting}
+            >
+              {isSnowTesting ? '⏳ Testing…' : '🔍 Test Connection'}
+            </button>
+          </div>
+          {snowTestResult !== null && (
+            <p className={snowTestResult.isOk ? styles.confirmationText : styles.sectionErrorText}>
+              {snowTestResult.isOk ? `✅ ${snowTestResult.message}` : `❌ ${snowTestResult.message} (HTTP ${snowTestResult.statusCode})`}
+            </p>
+          )}
+          {connectivitySaveStatus !== null && (
+            <p className={styles.confirmationText}>{connectivitySaveStatus}</p>
+          )}
+
+          <hr className={styles.sectionDivider} />
+
+          {/* ── GitHub ── */}
+          <h3 className={styles.sectionTitle}>GitHub</h3>
+          {connectivityConfig !== null && (
+            <p className={styles.adminDescription}>
+              {connectivityConfig.github.hasPat
+                ? '✅ Personal Access Token stored'
+                : '⚠️ No PAT configured — GitHub features disabled'}
+            </p>
+          )}
+          <div className={styles.fieldRow}>
+            <label className={styles.fieldLabel} htmlFor="github-base-url">API Base URL</label>
+            <input
+              id="github-base-url"
+              type="url"
+              className={styles.textInput}
+              value={githubBaseUrl}
+              onChange={(e) => setGithubBaseUrl(e.target.value)}
+              placeholder="https://api.github.com"
+            />
+          </div>
+          <div className={styles.fieldRow}>
+            <label className={styles.fieldLabel} htmlFor="github-pat">Personal Access Token</label>
+            <input
+              id="github-pat"
+              type="password"
+              className={styles.textInput}
+              value={githubPat}
+              onChange={(e) => setGithubPat(e.target.value)}
+              placeholder={connectivityConfig?.github.hasPat ? CREDENTIAL_PLACEHOLDER : 'ghp_…'}
+              autoComplete="new-password"
+            />
+          </div>
+          <div className={styles.inputRow}>
+            <button className={`${styles.actionButton} ${styles.saveButton}`} onClick={handleSaveGitHub}>
+              💾 Save GitHub Config
+            </button>
+            <button
+              className={styles.actionButton}
+              onClick={onTestGitHub}
+              disabled={isGitHubTesting}
+            >
+              {isGitHubTesting ? '⏳ Testing…' : '🔍 Test Connection'}
+            </button>
+          </div>
+          {githubTestResult !== null && (
+            <p className={githubTestResult.isOk ? styles.confirmationText : styles.sectionErrorText}>
+              {githubTestResult.isOk ? `✅ ${githubTestResult.message}` : `❌ ${githubTestResult.message} (HTTP ${githubTestResult.statusCode})`}
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+// ── Relay Activation section ──
+
+/**
+ * The SNow relay bookmarklet JS (minified).
+ * When activated on a ServiceNow page, it registers with the NodeToolbox server
+ * at localhost:5555, polls for pending API requests, executes them using the
+ * browser's authenticated SNow session, and returns the results.
+ * The `credentials: 'include'` flag passes Okta session cookies automatically.
+ */
+const SNOW_RELAY_BOOKMARKLET_CODE = [
+  "javascript:(function(){",
+  "const S='http://localhost:5555';",
+  "const Y='snow';",
+  "let run=true;",
+  "function reg(){return fetch(S+'/api/relay-bridge/register?sys='+Y,{method:'POST'});}",
+  "async function loop(){",
+  "await reg();",
+  "console.log('[NodeToolbox] SNow relay active');",
+  "while(run){",
+  "try{",
+  "const r=await fetch(S+'/api/relay-bridge/poll?sys='+Y);",
+  "const d=await r.json();",
+  "if(d&&d.request){",
+  "const q=d.request;",
+  "try{",
+  "const u=window.location.origin+q.path;",
+  "const h={'Content-Type':'application/json'};",
+  "if(q.authHeader)h['Authorization']=q.authHeader;",
+  "const a=await fetch(u,{method:q.method||'GET',headers:h,body:q.body?JSON.stringify(q.body):undefined,credentials:'include'});",
+  "const b=await a.text();",
+  "await fetch(S+'/api/relay-bridge/result',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:q.id,sys:Y,ok:a.ok,status:a.status,data:b,error:null})});",
+  "}catch(e){",
+  "await fetch(S+'/api/relay-bridge/result',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:q.id,sys:Y,ok:false,status:0,data:null,error:e.message})});",
+  "}}}catch(e){await new Promise(r=>setTimeout(r,2000));}}",
+  "}",
+  "window.addEventListener('beforeunload',function(){",
+  "run=false;",
+  "navigator.sendBeacon(S+'/api/relay-bridge/deregister?sys='+Y);",
+  "});",
+  "loop();",
+  "})();",
+].join('')
+
+/** Relay Activation section — bookmarklet generator for the SNow relay bridge. */
+function RelayActivationSection() {
+  const [isCopied, setIsCopied] = useState(false)
+  const relayBridgeStatus = useConnectionStore((storeState) => storeState.relayBridgeStatus)
+  const isRelayActive = relayBridgeStatus?.isConnected ?? false
+
+  function handleCopyBookmarklet() {
+    navigator.clipboard.writeText(SNOW_RELAY_BOOKMARKLET_CODE).then(() => {
+      setIsCopied(true)
+      setTimeout(() => setIsCopied(false), 2000)
+    })
+  }
+
+  return (
+    <section className={styles.sectionCard}>
+      <h2 className={styles.sectionTitle}>🔗 Relay Activation</h2>
+
+      <div className={styles.adminAccessUnlocked}>
+        <span className={isRelayActive ? styles.adminUnlockedLabel : styles.adminDescription}>
+          {isRelayActive ? '🟢 SNow Relay: active' : '🔴 SNow Relay: inactive'}
+        </span>
+      </div>
+
+      <p className={styles.adminDescription}>
+        SNow uses Okta authentication, which blocks direct API calls from NodeToolbox.
+        The relay bookmarklet runs inside your authenticated SNow browser tab and
+        forwards API calls on behalf of the server.
+      </p>
+
+      <h3 className={styles.sectionTitle}>How to activate</h3>
+      <ol className={styles.relayInstructions}>
+        <li>Drag the button below to your browser bookmarks bar.</li>
+        <li>Open any ServiceNow page while logged in.</li>
+        <li>Click the <strong>NodeToolbox SNow Relay</strong> bookmark.</li>
+        <li>The relay indicator above will turn green automatically.</li>
+      </ol>
+
+      <div className={styles.devUtilitiesRow}>
+        {/* Drag this link to the bookmarks bar — do not click it as a regular link. */}
+        {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
+        <a
+          href={SNOW_RELAY_BOOKMARKLET_CODE}
+          className={`${styles.actionButton} ${styles.bookmarkletLink}`}
+          draggable
+          title="Drag this to your bookmarks bar to install the relay"
+          onClick={(clickEvent) => {
+            // Prevent navigation — this link exists only to be dragged to the toolbar.
+            clickEvent.preventDefault()
+          }}
+        >
+          🔖 NodeToolbox SNow Relay
+        </a>
+        <button className={styles.actionButton} onClick={handleCopyBookmarklet}>
+          {isCopied ? '✓ Copied' : '📋 Copy Code'}
+        </button>
+      </div>
+
+      <p className={styles.adminDescription}>
+        ⚠ Bookmark bar must be visible (Ctrl+Shift+B in Chrome/Edge).
+        The relay resets when you close the SNow tab or restart the server.
+      </p>
+    </section>
+  )
+}
+
 // ── Root component ──
 
 interface AdminHubMainContentProps {
@@ -903,6 +1258,23 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
         onSave={actions.saveProxyUrls}
       />
 
+      <ServiceConnectivitySection
+        connectivityConfig={state.connectivityConfig}
+        isConnectivityConfigLoading={state.isConnectivityConfigLoading}
+        connectivityConfigError={state.connectivityConfigError}
+        connectivitySaveStatus={state.connectivitySaveStatus}
+        snowTestResult={state.snowTestResult}
+        isSnowTesting={state.isSnowTesting}
+        githubTestResult={state.githubTestResult}
+        isGitHubTesting={state.isGitHubTesting}
+        isAdminUnlocked={state.isAdminUnlocked}
+        onLoad={() => void actions.loadConnectivityConfig()}
+        onSaveSnow={(snow) => void actions.saveSnowConfig(snow)}
+        onSaveGitHub={(github) => void actions.saveGitHubConfig(github)}
+        onTestSnow={() => void actions.testSnowConfig()}
+        onTestGitHub={() => void actions.testGitHubConfig()}
+      />
+
       <ArtSettingsSection
         artSettings={state.artSettings}
         artSaveStatus={state.artSaveStatus}
@@ -912,14 +1284,19 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
 
       <AdminAccessSection
         isAdminUnlocked={state.isAdminUnlocked}
+        adminUsername={state.adminUsername}
         adminPinInput={state.adminPinInput}
+        adminUnlockError={state.adminUnlockError}
         isSnowIntegrationEnabled={state.featureFlags.isSnowIntegrationEnabled}
         isAiEnabled={state.featureFlags.isAiEnabled}
+        onUsernameChange={actions.setAdminUsername}
         onPinInputChange={actions.setAdminPinInput}
         onTryUnlock={actions.tryUnlock}
         onLock={actions.lock}
         onToggleFeatureFlag={actions.toggleFeatureFlag}
       />
+
+      <RelayActivationSection />
 
       <EnterpriseStandardsPanel />
       <CredentialManagementSection />

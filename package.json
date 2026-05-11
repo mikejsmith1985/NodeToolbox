@@ -1,6 +1,6 @@
 {
   "name": "node-toolbox",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Enterprise proxy server for Jira, GitHub, and ServiceNow — Express-based, zero terminal configuration",
   "keywords": [
     "toolbox",
@@ -53,7 +53,8 @@
   "jest": {
     "testEnvironment": "node",
     "testMatch": [
-      "**/test/**/*.test.js"
+      "**/test/**/*.test.js",
+      "**/src/**/*.test.js"
     ],
     "collectCoverageFrom": [
       "src/**/*.js",
