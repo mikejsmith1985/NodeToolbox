@@ -152,7 +152,7 @@ Sub Main()
         MsgBox "NodeToolbox did not start within " & SERVER_READY_TIMEOUT_SECONDS & " seconds." & vbNewLine & vbNewLine & _
                "Possible causes:" & vbNewLine & _
                "  " & Chr(149) & " Antivirus or Windows SmartScreen blocked the executable." & vbNewLine & _
-               "    If you see a SmartScreen warning, click 'More info' " & Chr(8594) & " 'Run anyway'." & vbNewLine & _
+               "    If you see a SmartScreen warning, click 'More info' " & ChrW(8594) & " 'Run anyway'." & vbNewLine & _
                "  " & Chr(149) & " Port " & SERVER_PORT & " is in use and could not be freed." & vbNewLine & _
                "    Open Task Manager and end any 'nodetoolbox' processes, then try again." & vbNewLine & vbNewLine & _
                "To diagnose, open a Command Prompt in this folder and run:" & vbNewLine & _

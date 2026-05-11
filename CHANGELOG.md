@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (v0.7.1 — VBS launch fix)
+- `Launch Toolbox Silent.vbs`: replaced `Chr(8594)` with `ChrW(8594)` — VBScript's `Chr()` only accepts 0–255; the Unicode right-arrow (→, codepoint 8594) caused a `800A0005` runtime error that prevented the timeout-diagnostic dialog from rendering, crashing the launcher on startup.
+
 ### Fixed (v0.6.9 — Home layout polish)
 - Header: "NodeToolbox" title and "⌂ Home" button are now grouped flush-left; `ConnectionBar` stays right.
 - Home screen: heading and sub-heading are centered; persona filter, recents, and card grid remain left-aligned.
