@@ -21,6 +21,7 @@ const relayBridgeRouter                     = require('./src/routes/relayBridge'
 
 const { startSchedulerLoop }                = require('./src/services/repoMonitor');
 const { isPortInUse, resolvePortConflict }  = require('./src/utils/portManager');
+const { installConsoleInterceptor }         = require('./src/utils/logBuffer');
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,11 @@ const APP_VERSION = require('./package.json').version;
  * starts cleanly and redirects the user to the setup wizard.
  */
 createConfigTemplate();
+
+// Intercept console output so the Dev Panel's Server Logs tab can show
+// server-side activity without requiring a separate WebSocket or log file.
+// Must be installed before loadConfig() so early startup messages are captured.
+installConsoleInterceptor();
 
 /** Live configuration loaded from toolbox-proxy.json + environment variables */
 const configuration = loadConfig();

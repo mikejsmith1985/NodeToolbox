@@ -14,6 +14,7 @@ const snowSession = require('../services/snowSession');
 
 const { prepareUpdate, spawnReplacementAndExit }   = require('../utils/updater');
 const relayBridge = require('./relayBridge');
+const logBuffer   = require('../utils/logBuffer');
 
 /** Application version read once at startup — avoids repeated disk I/O per request */
 const APP_VERSION = require('../../package.json').version;
@@ -92,28 +93,272 @@ function createApiRouter(configuration) {
 
   // ── GET /api/diagnostics ──────────────────────────────────────────────────
   // Returns live server diagnostics for the Admin Hub Diagnostics panel.
-  // Intentionally minimal — no service probes, just process metadata.
+  // Includes runtime metadata, sanitised Snow/GitHub config state, relay status,
+  // and session info — no raw credentials are ever included.
 
   router.get('/api/diagnostics', (req, res) => {
+    const snowConfig     = configuration.snow   || {};
+    const githubConfig   = configuration.github || {};
+    const sessionStatus  = snowSession.getSessionStatus();
+    const snowBridgeDiag = relayBridge.getBridgeDiag('snow');
+    const jiraBridgeDiag = relayBridge.getBridgeDiag('jira');
+
     res.json({
       version:     APP_VERSION,
       nodeVersion: process.version,
       uptime:      Math.round(process.uptime()),
       timestamp:   new Date().toISOString(),
+      // isPkgExe distinguishes the compiled .exe from `node server.js` —
+      // useful for diagnosing path resolution issues on corporate machines.
+      isPkgExe:    !!process.pkg,
+      platform:    process.platform,
+      snow: {
+        baseUrl:          snowConfig.baseUrl || null,
+        hasCredentials:   !!(snowConfig.username && snowConfig.password),
+        usernameMasked:   maskCredentialUsername(snowConfig.username || ''),
+        sessionActive:    !!sessionStatus.isActive,
+        sessionExpiresAt: sessionStatus.isActive ? (sessionStatus.expiresAt || null) : null,
+      },
+      relay: {
+        snowActive:           snowBridgeDiag.active,
+        jiraActive:           jiraBridgeDiag.active,
+        snowLastRegisteredAt: snowBridgeDiag.lastRegisteredAt,
+        snowLastPolledAt:     snowBridgeDiag.lastPolledAt,
+      },
+      github: {
+        baseUrl: githubConfig.baseUrl || null,
+        hasPat:  !!(githubConfig.pat),
+      },
     });
   });
 
+  // ── GET /api/config/connectivity ──────────────────────────────────────────
+  // Returns sanitised Snow and GitHub configuration for the Admin Hub
+  // connectivity form. Never returns raw credentials — only presence flags
+  // and a masked username so the user can confirm which account is active.
+
+  router.get('/api/config/connectivity', (req, res) => {
+    const snowConfig   = configuration.snow   || {};
+    const githubConfig = configuration.github || {};
+
+    res.json({
+      snow: {
+        baseUrl:        snowConfig.baseUrl || '',
+        hasCredentials: !!(snowConfig.username && snowConfig.password),
+        usernameMasked: maskCredentialUsername(snowConfig.username || ''),
+      },
+      github: {
+        baseUrl: githubConfig.baseUrl || '',
+        hasPat:  !!(githubConfig.pat),
+      },
+    });
+  });
+
+  // ── POST /api/config/connectivity ─────────────────────────────────────────
+  // Saves Snow and GitHub config fields to toolbox-proxy.json.
+  // Credential fields (password, pat) are only overwritten when the submitted
+  // value is non-empty — this prevents the masked placeholder from erasing
+  // saved credentials when the user re-submits the form without re-entering them.
+
+  router.post('/api/config/connectivity', (req, res) => {
+    const body       = req.body || {};
+    const snowUpdate = body.snow   || {};
+    const ghUpdate   = body.github || {};
+
+    // Apply Snow fields — always accept baseUrl, but skip credential fields
+    // when the submitted value is blank (the form shows masked placeholders).
+    if (snowUpdate.baseUrl !== undefined) {
+      configuration.snow.baseUrl = (snowUpdate.baseUrl || '').trim();
+    }
+    if (snowUpdate.username && snowUpdate.username.trim()) {
+      configuration.snow.username = snowUpdate.username.trim();
+    }
+    if (snowUpdate.password && snowUpdate.password.trim()) {
+      configuration.snow.password = snowUpdate.password.trim();
+    }
+
+    // Apply GitHub fields.
+    if (ghUpdate.baseUrl !== undefined) {
+      configuration.github.baseUrl = (ghUpdate.baseUrl || '').trim();
+    }
+    if (ghUpdate.pat && ghUpdate.pat.trim()) {
+      configuration.github.pat = ghUpdate.pat.trim();
+    }
+
+    saveConfigToDisk(configuration);
+
+    res.json({
+      ok: true,
+      snow: {
+        baseUrl:        configuration.snow.baseUrl || '',
+        hasCredentials: !!(configuration.snow.username && configuration.snow.password),
+        usernameMasked: maskCredentialUsername(configuration.snow.username || ''),
+      },
+      github: {
+        baseUrl: configuration.github.baseUrl || '',
+        hasPat:  !!(configuration.github.pat),
+      },
+    });
+  });
+
+  // ── POST /api/config/connectivity/test ────────────────────────────────────
+  // Probes the configured Snow or GitHub endpoint and returns live reachability
+  // status. Used by the Admin Hub "Test" buttons so the user can verify their
+  // settings before saving. Expects { system: 'snow' | 'github' } in the body.
+
+  router.post('/api/config/connectivity/test', async (req, res) => {
+    const body   = req.body || {};
+    // Normalise to lowercase so 'Snow', 'SNOW', 'snow' all work.
+    const system = (body.system || '').toLowerCase();
+
+    if (system === 'snow') {
+      const snowConfig = configuration.snow || {};
+      if (!snowConfig.baseUrl) {
+        return res.json({ ok: false, statusCode: 0, message: 'No ServiceNow base URL configured.' });
+      }
+      try {
+        const testUrl = snowConfig.baseUrl.replace(/\/$/, '') + '/api/now/table/sys_user?sysparm_limit=1';
+        const proxyResponse = await fetch(testUrl, {
+          method: 'GET',
+          headers: {
+            // Basic Auth header — credentials are never logged or forwarded outside this request.
+            'Authorization': 'Basic ' + Buffer.from(
+              (snowConfig.username || '') + ':' + (snowConfig.password || '')
+            ).toString('base64'),
+            'Content-Type': 'application/json',
+            'Accept':       'application/json',
+          },
+        });
+        res.json({
+          ok:         proxyResponse.ok,
+          statusCode: proxyResponse.status,
+          message:    proxyResponse.ok ? 'Connected successfully.' : 'Received HTTP ' + proxyResponse.status,
+        });
+      } catch (testError) {
+        res.json({ ok: false, statusCode: 0, message: 'Connection failed: ' + testError.message });
+      }
+
+    } else if (system === 'github') {
+      const githubConfig = configuration.github || {};
+      if (!githubConfig.pat) {
+        return res.json({ ok: false, statusCode: 0, message: 'No GitHub PAT configured.' });
+      }
+      try {
+        const githubBaseUrl = (githubConfig.baseUrl || 'https://api.github.com').replace(/\/$/, '');
+        const proxyResponse = await fetch(githubBaseUrl + '/user', {
+          method: 'GET',
+          headers: {
+            'Authorization': 'token ' + githubConfig.pat,
+            'User-Agent':    'NodeToolbox',
+            'Accept':        'application/vnd.github.v3+json',
+          },
+        });
+        res.json({
+          ok:         proxyResponse.ok,
+          statusCode: proxyResponse.status,
+          message:    proxyResponse.ok ? 'Connected successfully.' : 'Received HTTP ' + proxyResponse.status,
+        });
+      } catch (testError) {
+        res.json({ ok: false, statusCode: 0, message: 'Connection failed: ' + testError.message });
+      }
+
+    } else {
+      res.status(400).json({ ok: false, message: 'system must be "snow" or "github"' });
+    }
+  });
+
   // ── GET /api/version-check ────────────────────────────────────────────────
-  // Compares the running version against the latest available release.
-  // Currently reports no update — extend when a remote version feed is wired up.
+  // Compares the running version against the latest GitHub release.
+  // Fetches https://api.github.com/repos/mikejsmith1985/NodeToolbox/releases/latest
+  // and compares tag_name to APP_VERSION. Fails gracefully on network error.
 
   router.get('/api/version-check', (req, res) => {
-    res.json({
-      currentVersion: APP_VERSION,
-      latestVersion:  APP_VERSION,
-      hasUpdate:      false,
-      releaseNotes:   'You are running the latest version.',
+    const https = require('https');
+    const GITHUB_RELEASES_URL = 'https://api.github.com/repos/mikejsmith1985/NodeToolbox/releases/latest';
+
+    /** Compares two semver strings — returns true when versionA > versionB. */
+    function isSemverGreaterThan(versionA, versionB) {
+      const partsA = versionA.split('.').map(Number);
+      const partsB = versionB.split('.').map(Number);
+      for (let partIndex = 0; partIndex < 3; partIndex++) {
+        const partA = partsA[partIndex] || 0;
+        const partB = partsB[partIndex] || 0;
+        if (partA > partB) return true;
+        if (partA < partB) return false;
+      }
+      return false;
+    }
+
+    const githubRequest = https.get(
+      GITHUB_RELEASES_URL,
+      {
+        headers: {
+          'User-Agent': 'NodeToolbox/' + APP_VERSION,
+          'Accept':     'application/vnd.github.v3+json',
+        },
+      },
+      (githubResponse) => {
+        let responseBody = '';
+        githubResponse.on('data', (chunk) => { responseBody += chunk; });
+        githubResponse.on('end', () => {
+          try {
+            const releaseData = JSON.parse(responseBody);
+            // tag_name is typically 'v0.7.0' — strip the leading 'v' for comparison.
+            const latestVersion = (releaseData.tag_name || APP_VERSION).replace(/^v/, '');
+            const hasUpdate = isSemverGreaterThan(latestVersion, APP_VERSION);
+            res.json({
+              currentVersion: APP_VERSION,
+              latestVersion,
+              hasUpdate,
+              releaseNotes: releaseData.body || '',
+            });
+          } catch {
+            res.json({
+              currentVersion: APP_VERSION,
+              latestVersion:  APP_VERSION,
+              hasUpdate:      false,
+              releaseNotes:   'Could not parse GitHub release data.',
+            });
+          }
+        });
+      },
+    );
+
+    githubRequest.on('error', () => {
+      res.json({
+        currentVersion: APP_VERSION,
+        latestVersion:  APP_VERSION,
+        hasUpdate:      false,
+        releaseNotes:   'Could not reach GitHub to check for updates.',
+      });
     });
+
+    // Abort after 8 seconds so the UI does not hang on slow networks.
+    githubRequest.setTimeout(8000, () => {
+      githubRequest.destroy();
+      res.json({
+        currentVersion: APP_VERSION,
+        latestVersion:  APP_VERSION,
+        hasUpdate:      false,
+        releaseNotes:   'Version check timed out.',
+      });
+    });
+  });
+
+  // ── GET /api/logs ─────────────────────────────────────────────────────────
+  // Returns all buffered server-side log entries for the Dev Panel Server Logs tab.
+  // Entries are captured by the logBuffer console interceptor installed at startup.
+
+  router.get('/api/logs', (req, res) => {
+    res.json({ entries: logBuffer.getAllEntries() });
+  });
+
+  // ── POST /api/logs/clear ───────────────────────────────────────────────────
+  // Clears all buffered server log entries — triggered by the Dev Panel clear button.
+
+  router.post('/api/logs/clear', (req, res) => {
+    logBuffer.clearEntries();
+    res.json({ ok: true });
   });
 
   // ── GET /api/download/launcher-vbs ────────────────────────────────────────
@@ -236,10 +481,20 @@ function createApiRouter(configuration) {
 
     const storedHash = (configuration.admin && configuration.admin.credentialHash) || '';
 
-    if (!storedHash || inputHash !== storedHash) {
-      // Log failed attempts to help diagnose lockouts (no rate-limiting needed: local server only)
-      console.warn('  ⚠ Admin Hub: failed unlock attempt for user "' + username + '"');
-      return res.status(401).json({ error: 'Unauthorized', message: 'Incorrect credentials.' });
+    if (storedHash) {
+      // Stored credentials configured — validate against the SHA-256 hash.
+      if (inputHash !== storedHash) {
+        console.warn('  ⚠ Admin Hub: failed unlock attempt for user "' + username + '"');
+        return res.status(401).json({ error: 'Unauthorized', message: 'Incorrect credentials.' });
+      }
+    } else {
+      // No admin credentials configured yet — accept the default credentials so
+      // first-time users can unlock without setting up toolbox-proxy.json first.
+      const defaultHash = crypto.createHash('sha256').update('admin:toolbox').digest('hex');
+      if (inputHash !== defaultHash) {
+        console.warn('  ⚠ Admin Hub: failed unlock attempt (no credentials configured)');
+        return res.status(401).json({ error: 'Unauthorized', message: 'Incorrect credentials.' });
+      }
     }
 
     console.log('  🔓 Admin Hub unlocked by user "' + username + '"');
