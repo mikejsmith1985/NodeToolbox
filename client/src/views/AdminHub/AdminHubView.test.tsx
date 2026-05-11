@@ -28,6 +28,8 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     isAdminUnlocked: false,
     isAdvancedUnlocked: false,
     adminPinInput: '',
+    adminUsername: '',
+    adminUnlockError: null as string | null,
     proxySaveStatus: null as string | null,
     artSaveStatus: null as string | null,
     isAdvancedUnlockDialogOpen: false,
@@ -64,6 +66,18 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     },
     isCheckingUpdate: false,
     isUpdateSectionCollapsed: false,
+    // ── Service Connectivity ──
+    connectivityConfig: null as null | {
+      snow: { baseUrl: string; hasCredentials: boolean; usernameMasked: string }
+      github: { baseUrl: string; hasPat: boolean }
+    },
+    isConnectivityConfigLoading: false,
+    connectivityConfigError: null as string | null,
+    connectivitySaveStatus: null as string | null,
+    snowTestResult: null as null | { isOk: boolean; statusCode: number; message: string },
+    isSnowTesting: false,
+    githubTestResult: null as null | { isOk: boolean; statusCode: number; message: string },
+    isGitHubTesting: false,
   },
   mockActions: {
     setProxyUrl: vi.fn(),
@@ -72,6 +86,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     saveArtSettings: vi.fn(),
     toggleFeatureFlag: vi.fn(),
     setAdminPinInput: vi.fn(),
+    setAdminUsername: vi.fn(),
     tryUnlock: vi.fn(),
     lock: vi.fn(),
     tryAdvancedUnlock: vi.fn(),
@@ -96,6 +111,12 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     setUpdateSectionCollapsed: vi.fn(),
     // ── Advanced unlock ──
     advancedLock: vi.fn(),
+    // ── Service Connectivity ──
+    loadConnectivityConfig: vi.fn(),
+    saveSnowConfig: vi.fn(),
+    saveGitHubConfig: vi.fn(),
+    testSnowConfig: vi.fn(),
+    testGitHubConfig: vi.fn(),
   },
 }));
 
@@ -107,8 +128,8 @@ const { mockProxyStatus } = vi.hoisted(() => ({ mockProxyStatus: null as null | 
 
 vi.mock('../../store/connectionStore', () => ({
   useConnectionStore: (
-    selector: (storeState: { proxyStatus: typeof mockProxyStatus }) => unknown,
-  ) => selector({ proxyStatus: mockProxyStatus }),
+    selector: (storeState: { proxyStatus: typeof mockProxyStatus; relayBridgeStatus: null }) => unknown,
+  ) => selector({ proxyStatus: mockProxyStatus, relayBridgeStatus: null }),
 }));
 
 vi.mock('../../store/settingsStore', () => ({
@@ -143,6 +164,8 @@ describe('AdminHubView', () => {
     mockState.isAdminUnlocked = false;
     mockState.isAdvancedUnlocked = false;
     mockState.adminPinInput = '';
+    mockState.adminUsername = '';
+    mockState.adminUnlockError = null;
     vi.clearAllMocks();
 
     // Mock global fetch so the server control buttons don't make real network calls.
@@ -193,10 +216,11 @@ describe('AdminHubView', () => {
     expect(screen.getByText(/art settings/i)).toBeInTheDocument();
   });
 
-  it('renders the Admin Access section with PIN input when locked', () => {
+  it('renders the Admin Access section with username/password inputs when locked', () => {
     renderAdminHubView();
-    expect(screen.getByText(/admin access/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/enter pin/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /admin access/i })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/username/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/password/i)).toBeInTheDocument();
   });
 
   it('shows the unlocked admin panel when isAdminUnlocked is true', () => {
@@ -504,6 +528,61 @@ describe('Advanced-gated sections', () => {
     renderAdminHubView();
     expect(screen.queryByRole('heading', { name: /tool visibility/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /client diagnostics/i })).not.toBeInTheDocument();
+  });
+});
+
+// ── Service Connectivity section tests ──
+
+describe('Service Connectivity section', () => {
+  it('renders the Service Connectivity section heading', () => {
+    renderAdminHubView();
+    expect(screen.getByRole('heading', { name: /service connectivity/i })).toBeInTheDocument();
+  });
+
+  it('shows a lock message when admin is not unlocked', () => {
+    mockState.isAdminUnlocked = false;
+    renderAdminHubView();
+    expect(screen.getByText(/unlock admin access to edit service credentials/i)).toBeInTheDocument();
+  });
+
+  it('does not show the Snow fields when admin is not unlocked', () => {
+    mockState.isAdminUnlocked = false;
+    renderAdminHubView();
+    expect(screen.queryByLabelText(/instance url/i)).not.toBeInTheDocument();
+  });
+
+  it('renders the ServiceNow and GitHub sub-headings when admin is unlocked', () => {
+    mockState.isAdminUnlocked = true;
+    renderAdminHubView();
+    expect(screen.getByRole('heading', { name: /servicenow/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /github/i })).toBeInTheDocument();
+    mockState.isAdminUnlocked = false;
+  });
+
+  it('renders Save SNow Config and Save GitHub Config buttons when admin is unlocked', () => {
+    mockState.isAdminUnlocked = true;
+    renderAdminHubView();
+    expect(screen.getByRole('button', { name: /save snow config/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save github config/i })).toBeInTheDocument();
+    mockState.isAdminUnlocked = false;
+  });
+
+  it('shows the loading indicator while config is being fetched', () => {
+    mockState.isAdminUnlocked = true;
+    mockState.isConnectivityConfigLoading = true;
+    renderAdminHubView();
+    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    mockState.isAdminUnlocked = false;
+    mockState.isConnectivityConfigLoading = false;
+  });
+
+  it('shows a connectivity config error message when one is set', () => {
+    mockState.isAdminUnlocked = true;
+    mockState.connectivityConfigError = 'Failed to load connectivity config: HTTP 500';
+    renderAdminHubView();
+    expect(screen.getByText(/failed to load connectivity config/i)).toBeInTheDocument();
+    mockState.isAdminUnlocked = false;
+    mockState.connectivityConfigError = null;
   });
 });
 

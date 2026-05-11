@@ -58,3 +58,37 @@ export interface ConnectionProbeResult {
 
 /** Supported application themes stored in browser settings. */
 export type Theme = 'dark' | 'light';
+
+/** Sanitized connectivity configuration returned by GET /api/config/connectivity. */
+export interface ConnectivityConfigResult {
+  snow: {
+    /** The ServiceNow instance base URL (e.g. https://acme.service-now.com). */
+    baseUrl: string;
+    /** True when both username and password are stored in server config. */
+    hasCredentials: boolean;
+    /** Masked username for display — e.g. "svc_****x". */
+    usernameMasked: string;
+  };
+  github: {
+    /** The GitHub API base URL. */
+    baseUrl: string;
+    /** True when a PAT is stored in server config. */
+    hasPat: boolean;
+  };
+}
+
+/** Fields accepted by POST /api/config/connectivity. */
+export interface ConnectivityConfigUpdate {
+  snow?: {
+    baseUrl?: string;
+    /** Only sent when the user types a new value — empty string = do not update. */
+    username?: string;
+    /** Only sent when the user types a new value — empty string = do not update. */
+    password?: string;
+  };
+  github?: {
+    baseUrl?: string;
+    /** Only sent when the user types a new value — empty string = do not update. */
+    pat?: string;
+  };
+}

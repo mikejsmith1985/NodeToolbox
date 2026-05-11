@@ -10,6 +10,14 @@
 
 import { useCallback, useRef, useState } from 'react'
 
+import type { ConnectivityConfigResult, ConnectionProbeResult } from '../../../types/config.ts'
+import {
+  fetchConnectivityConfig,
+  saveConnectivityConfig,
+  testSnowConnectivity,
+  testGitHubConnectivity,
+} from '../../../services/connectivityConfigApi.ts'
+
 // ── Named constants ──
 
 const JIRA_PROXY_URL_KEY = 'tbxJiraProxyUrl'
@@ -20,8 +28,12 @@ const FEATURE_SNOW_KEY = 'tbxFeatureSnowVisible'
 const FEATURE_AI_KEY = 'tbxFeatureAIVisible'
 /** Stored in sessionStorage so the unlock clears on browser close. */
 const ADMIN_UNLOCK_SESSION_KEY = 'tbxAdminUnlocked'
-/** The hardcoded admin PIN. In production, replace with server-side validation. */
-const ADMIN_PIN = '1234'
+/** Default credentials used when no credentialHash is configured in toolbox-proxy.json. */
+const DEFAULT_ADMIN_USERNAME = 'admin'
+const DEFAULT_ADMIN_PASSWORD = 'toolbox'
+/** Error message shown in the Admin Hub lock form when the server rejects credentials. */
+const ADMIN_UNLOCK_ERROR_MESSAGE = 'Incorrect credentials.'
+const ADMIN_UNLOCK_NETWORK_ERROR_MESSAGE = 'Connection error — check that the server is running.'
 
 /** sessionStorage key for the advanced section gate (Feature Flags, Diagnostics, Backup). */
 const ADVANCED_UNLOCK_SESSION_KEY = 'tbxAdvancedUnlocked'
@@ -79,6 +91,25 @@ export interface DiagnosticsResult {
   nodeVersion: string
   uptime: number
   timestamp: string
+  isPkgExe?: boolean
+  platform?: string
+  snow?: {
+    baseUrl: string | null
+    hasCredentials: boolean
+    usernameMasked: string
+    sessionActive: boolean
+    sessionExpiresAt: string | null
+  }
+  relay?: {
+    snowActive: boolean
+    jiraActive: boolean
+    snowLastRegisteredAt: number | null
+    snowLastPolledAt: number | null
+  }
+  github?: {
+    baseUrl: string
+    hasPat: boolean
+  }
 }
 
 /**
@@ -105,7 +136,9 @@ export interface AdminHubState {
   artSettings: ArtSettingsConfig
   featureFlags: FeatureFlags
   isAdminUnlocked: boolean
+  adminUsername: string
   adminPinInput: string
+  adminUnlockError: string | null
   proxySaveStatus: string | null
   artSaveStatus: string | null
   isAdvancedUnlockDialogOpen: boolean
@@ -130,6 +163,15 @@ export interface AdminHubState {
   isUpdateSectionCollapsed: boolean
   // ── Advanced unlock (Feature Flags, Client Diagnostics, Backup/Restore) ──
   isAdvancedUnlocked: boolean
+  // ── Service Connectivity ──
+  connectivityConfig: ConnectivityConfigResult | null
+  isConnectivityConfigLoading: boolean
+  connectivityConfigError: string | null
+  connectivitySaveStatus: string | null
+  snowTestResult: ConnectionProbeResult | null
+  isSnowTesting: boolean
+  githubTestResult: ConnectionProbeResult | null
+  isGitHubTesting: boolean
 }
 
 /** All action callbacks returned by this hook. */
@@ -140,6 +182,7 @@ export interface AdminHubActions {
   saveArtSettings(): void
   toggleFeatureFlag(flagKey: keyof FeatureFlags): void
   setAdminPinInput(value: string): void
+  setAdminUsername(value: string): void
   tryUnlock(): void
   lock(): void
   tryAdvancedUnlock(): void
@@ -164,6 +207,12 @@ export interface AdminHubActions {
   setUpdateSectionCollapsed(isCollapsed: boolean): void
   // ── Advanced unlock ──
   advancedLock(): void
+  // ── Service Connectivity ──
+  loadConnectivityConfig(): Promise<void>
+  saveSnowConfig(snow: { baseUrl: string; username: string; password: string }): Promise<void>
+  saveGitHubConfig(github: { baseUrl: string; pat: string }): Promise<void>
+  testSnowConfig(): Promise<void>
+  testGitHubConfig(): Promise<void>
 }
 
 // ── Helper: safe localStorage reads ──
@@ -280,7 +329,9 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
   const [featureFlags, setFeatureFlags] = useState<FeatureFlags>(buildInitialFeatureFlags)
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(readIsAdminUnlocked)
   const [isAdvancedUnlocked, setIsAdvancedUnlocked] = useState<boolean>(readIsAdvancedUnlocked)
+  const [adminUsername, setAdminUsername] = useState('')
   const [adminPinInput, setAdminPinInput] = useState('')
+  const [adminUnlockError, setAdminUnlockError] = useState<string | null>(null)
   const [proxySaveStatus, setProxySaveStatus] = useState<string | null>(null)
   const [artSaveStatus, setArtSaveStatus] = useState<string | null>(null)
   const [isAdvancedUnlockDialogOpen, setIsAdvancedUnlockDialogOpen] = useState(false)
@@ -308,17 +359,30 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
   const [isUpdateSectionCollapsed, setIsUpdateSectionCollapsed] = useState(false)
 
+  // ── Service Connectivity state ──
+  const [connectivityConfig, setConnectivityConfig] = useState<ConnectivityConfigResult | null>(null)
+  const [isConnectivityConfigLoading, setConnectivityConfigLoading] = useState(false)
+  const [connectivityConfigError, setConnectivityConfigError] = useState<string | null>(null)
+  const [connectivitySaveStatus, setConnectivitySaveStatus] = useState<string | null>(null)
+  const [snowTestResult, setSnowTestResult] = useState<ConnectionProbeResult | null>(null)
+  const [isSnowTesting, setSnowTesting] = useState(false)
+  const [githubTestResult, setGitHubTestResult] = useState<ConnectionProbeResult | null>(null)
+  const [isGitHubTesting, setGitHubTesting] = useState(false)
+
   // Refs give callbacks synchronous access to latest state values even within
   // the same React batched-update cycle (e.g. setX then readX in one act() call).
   const proxyUrlsRef = useRef(proxyUrls)
   const adminPinInputRef = useRef(adminPinInput)
+  const adminUsernameRef = useRef(adminUsername)
 
   const state: AdminHubState = {
     proxyUrls,
     artSettings,
     featureFlags,
     isAdminUnlocked,
+    adminUsername,
     adminPinInput,
+    adminUnlockError,
     proxySaveStatus,
     artSaveStatus,
     isAdvancedUnlockDialogOpen,
@@ -338,6 +402,14 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     isCheckingUpdate,
     isUpdateSectionCollapsed,
     isAdvancedUnlocked,
+    connectivityConfig,
+    isConnectivityConfigLoading,
+    connectivityConfigError,
+    connectivitySaveStatus,
+    snowTestResult,
+    isSnowTesting,
+    githubTestResult,
+    isGitHubTesting,
   }
 
   const setProxyUrl = useCallback(
@@ -410,18 +482,38 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     [],
   )
 
+  /**
+   * Sends the entered credentials to the server for verification.
+   * On success, sets isAdminUnlocked and stores the session flag.
+   * On failure, sets adminUnlockError so the UI can display a message.
+   * Falls back to default credentials (admin / toolbox) when the server has
+   * no credentialHash configured — covers first-time users.
+   */
   const tryUnlock = useCallback(() => {
-    // Read from ref to get the most current PIN value — avoids stale closure
-    // when tryUnlock is called in the same React batch as setAdminPinInput.
-    if (adminPinInputRef.current === ADMIN_PIN) {
-      setIsAdminUnlocked(true)
-      try {
-        sessionStorage.setItem(ADMIN_UNLOCK_SESSION_KEY, '1')
-      } catch {
-        // Non-fatal storage error.
-      }
-    }
-    // Intentionally do nothing on wrong PIN — no error flash to avoid brute-force hints.
+    const usernameToSubmit = adminUsernameRef.current || DEFAULT_ADMIN_USERNAME
+    const passwordToSubmit = adminPinInputRef.current || DEFAULT_ADMIN_PASSWORD
+
+    fetch('/api/admin-verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: usernameToSubmit, password: passwordToSubmit }),
+    })
+      .then((response) => {
+        if (response.ok) {
+          setIsAdminUnlocked(true)
+          setAdminUnlockError(null)
+          try {
+            sessionStorage.setItem(ADMIN_UNLOCK_SESSION_KEY, '1')
+          } catch {
+            // Non-fatal storage error.
+          }
+        } else {
+          setAdminUnlockError(ADMIN_UNLOCK_ERROR_MESSAGE)
+        }
+      })
+      .catch(() => {
+        setAdminUnlockError(ADMIN_UNLOCK_NETWORK_ERROR_MESSAGE)
+      })
   }, [])
 
   const lock = useCallback(() => {
@@ -634,6 +726,77 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     setAdvancedUnlockError(null)
   }, [])
 
+  // ── Service Connectivity actions ──
+
+  /** Fetches the current Snow and GitHub connectivity config from the server. */
+  const loadConnectivityConfig = useCallback(async () => {
+    setConnectivityConfigLoading(true)
+    setConnectivityConfigError(null)
+    try {
+      const config = await fetchConnectivityConfig()
+      setConnectivityConfig(config)
+    } catch (loadError) {
+      const message = loadError instanceof Error ? loadError.message : 'Failed to load config.'
+      setConnectivityConfigError(message)
+    } finally {
+      setConnectivityConfigLoading(false)
+    }
+  }, [])
+
+  /** Saves updated Snow connectivity settings and refreshes the displayed config. */
+  const saveSnowConfig = useCallback(async (snow: { baseUrl: string; username: string; password: string }) => {
+    try {
+      const savedConfig = await saveConnectivityConfig({ snow })
+      setConnectivityConfig(savedConfig)
+      setConnectivitySaveStatus('✓ Saved')
+      setTimeout(() => setConnectivitySaveStatus(null), SAVE_STATUS_CLEAR_DELAY_MS)
+    } catch {
+      setConnectivitySaveStatus('❌ Save failed')
+      setTimeout(() => setConnectivitySaveStatus(null), SAVE_STATUS_CLEAR_DELAY_MS)
+    }
+  }, [])
+
+  /** Saves updated GitHub connectivity settings and refreshes the displayed config. */
+  const saveGitHubConfig = useCallback(async (github: { baseUrl: string; pat: string }) => {
+    try {
+      const savedConfig = await saveConnectivityConfig({ github })
+      setConnectivityConfig(savedConfig)
+      setConnectivitySaveStatus('✓ Saved')
+      setTimeout(() => setConnectivitySaveStatus(null), SAVE_STATUS_CLEAR_DELAY_MS)
+    } catch {
+      setConnectivitySaveStatus('❌ Save failed')
+      setTimeout(() => setConnectivitySaveStatus(null), SAVE_STATUS_CLEAR_DELAY_MS)
+    }
+  }, [])
+
+  /** Runs a live connectivity probe against the configured Snow instance. */
+  const testSnowConfig = useCallback(async () => {
+    setSnowTesting(true)
+    setSnowTestResult(null)
+    try {
+      const probeResult = await testSnowConnectivity()
+      setSnowTestResult(probeResult)
+    } catch {
+      setSnowTestResult({ isOk: false, statusCode: 0, message: 'Test request failed.' })
+    } finally {
+      setSnowTesting(false)
+    }
+  }, [])
+
+  /** Runs a live connectivity probe against the configured GitHub API. */
+  const testGitHubConfig = useCallback(async () => {
+    setGitHubTesting(true)
+    setGitHubTestResult(null)
+    try {
+      const probeResult = await testGitHubConnectivity()
+      setGitHubTestResult(probeResult)
+    } catch {
+      setGitHubTestResult({ isOk: false, statusCode: 0, message: 'Test request failed.' })
+    } finally {
+      setGitHubTesting(false)
+    }
+  }, [])
+
   const actions: AdminHubActions = {
     setProxyUrl,
     saveProxyUrls,
@@ -645,6 +808,10 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
       // even when called in the same React batched-update cycle.
       adminPinInputRef.current = value
       setAdminPinInput(value)
+    },
+    setAdminUsername: (value: string) => {
+      adminUsernameRef.current = value
+      setAdminUsername(value)
     },
     tryUnlock,
     lock,
@@ -665,6 +832,11 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     checkForUpdates,
     setUpdateSectionCollapsed: setIsUpdateSectionCollapsed,
     advancedLock,
+    loadConnectivityConfig,
+    saveSnowConfig,
+    saveGitHubConfig,
+    testSnowConfig,
+    testGitHubConfig,
   }
 
   return { state, actions }

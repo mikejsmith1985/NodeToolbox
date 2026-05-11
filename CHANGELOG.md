@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed (v0.6.9 — Home layout polish)
+### Added (v0.7.2 — Relay Connect panel, Snow/GitHub config UI, expanded diagnostics)
+- **ConnectionBar — Relay "Connect" button**: Each indicator (Relay, Snow, Jira) is now a clickable button. Clicking the Relay indicator opens an inline setup panel with a draggable bookmarklet link and step-by-step instructions. Clicking an already-open panel closes it; clicking outside dismisses it.
+- **Admin Hub — Service Connectivity section**: New section (unlocked by admin access) with forms to set Snow `baseUrl`, `username`, and `password`, and GitHub `baseUrl` and Personal Access Token. Credentials are saved server-side to `toolbox-proxy.json` (AppData). Includes "Test Connection" buttons for live probes against each service.
+- **Diagnostics — expanded payload**: `GET /api/diagnostics` now returns `isPkgExe`, `platform`, `snow` (baseUrl, credential presence, masked username, session state), `relay` (active systems, last registered/polled timestamps), and `github` (baseUrl, PAT presence).
+- **API — connectivity config endpoints**: `GET /api/config/connectivity` returns sanitised Snow/GitHub config for the UI; `POST /api/config/connectivity` saves updated config; `POST /api/config/connectivity/test` probes Snow or GitHub and returns `{ ok, statusCode, message }`.
+
+### Fixed (v0.7.0 — Admin/SNow/DevPanel)
+- **SNow Connection Bar**: Indicator now turns green only when a live API probe succeeds (`isSnowVerified`) or the relay is active — no longer falsely green when only credentials are saved (`isSnowReady`).
+- **Version Check**: "Check for Updates" now hits the GitHub Releases API; compares semantic versions and shows a banner when a newer release is available.
+- **Admin Unlock**: Removed the hardcoded client-side PIN (`1234`). Admin unlock now POSTs username + password to `/api/admin-verify` for server-side validation. Default credentials: `admin` / `toolbox` when none are configured.
+- **Relay Activation**: New "Relay Activation" section in Admin Hub generates a draggable bookmarklet. Drag it to the bookmarks bar, click it on a SNow page, and NodeToolbox can make authenticated SNow API calls via the relay.
+- **Dev Panel — Server Logs tab**: Added a second tab alongside "Jira API" that polls `GET /api/logs` every 3 seconds and shows server-side console output (captured via a ring buffer on startup).
+- **SNow Hub — Fix Versions**: CRG fix-version dropdown now includes released versions in addition to unreleased ones; users may need to patch already-released versions.
+
+### Added (v0.6.9 — Home layout polish)
 - Header: "NodeToolbox" title and "⌂ Home" button are now grouped flush-left; `ConnectionBar` stays right.
 - Home screen: heading and sub-heading are centered; persona filter, recents, and card grid remain left-aligned.
 
