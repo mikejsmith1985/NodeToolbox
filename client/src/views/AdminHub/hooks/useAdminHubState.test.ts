@@ -234,3 +234,67 @@ describe('connectivity config', () => {
     expect(result.current.state.isGitHubTesting).toBe(false);
   });
 });
+
+// ── Update check tests ──
+
+describe('checkForUpdates', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('checkForUpdates sets updateCheckResult on success and clears error', async () => {
+    const mockResult = {
+      currentVersion: '0.7.2',
+      latestVersion: '0.7.2',
+      hasUpdate: false,
+      releaseNotes: '',
+    };
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResult,
+    } as Response);
+
+    const { result } = renderHook(() => useAdminHubState());
+
+    await act(async () => {
+      await result.current.actions.checkForUpdates();
+    });
+
+    expect(result.current.state.updateCheckResult).toEqual(mockResult);
+    expect(result.current.state.updateCheckError).toBeNull();
+    expect(result.current.state.isCheckingUpdate).toBe(false);
+  });
+
+  it('checkForUpdates sets updateCheckError when the fetch fails', async () => {
+    vi.spyOn(global, 'fetch').mockRejectedValueOnce(new Error('Network error'));
+
+    const { result } = renderHook(() => useAdminHubState());
+
+    await act(async () => {
+      await result.current.actions.checkForUpdates();
+    });
+
+    expect(result.current.state.updateCheckError).toBe(
+      'Could not check for updates: Network error',
+    );
+    expect(result.current.state.updateCheckResult).toBeNull();
+    expect(result.current.state.isCheckingUpdate).toBe(false);
+  });
+
+  it('checkForUpdates sets updateCheckError when the server returns non-200', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      json: async () => ({}),
+    } as Response);
+
+    const { result } = renderHook(() => useAdminHubState());
+
+    await act(async () => {
+      await result.current.actions.checkForUpdates();
+    });
+
+    expect(result.current.state.updateCheckError).toContain('503');
+    expect(result.current.state.isCheckingUpdate).toBe(false);
+  });
+});

@@ -159,6 +159,7 @@ export interface AdminHubState {
   isHygieneSectionCollapsed: boolean
   // ── Update Management ──
   updateCheckResult: UpdateCheckResult | null
+  updateCheckError: string | null
   isCheckingUpdate: boolean
   isUpdateSectionCollapsed: boolean
   // ── Advanced unlock (Feature Flags, Client Diagnostics, Backup/Restore) ──
@@ -356,6 +357,7 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
 
   // ── Update Management state ──
   const [updateCheckResult, setUpdateCheckResult] = useState<UpdateCheckResult | null>(null)
+  const [updateCheckError, setUpdateCheckError] = useState<string | null>(null)
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
   const [isUpdateSectionCollapsed, setIsUpdateSectionCollapsed] = useState(false)
 
@@ -399,6 +401,7 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     hygieneRules,
     isHygieneSectionCollapsed,
     updateCheckResult,
+    updateCheckError,
     isCheckingUpdate,
     isUpdateSectionCollapsed,
     isAdvancedUnlocked,
@@ -670,14 +673,16 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
   /** Calls the server version-check endpoint and stores the result in state. */
   const checkForUpdates = useCallback(async () => {
     setIsCheckingUpdate(true)
+    setUpdateCheckError(null)
     try {
       const response = await fetch('/api/version-check')
       if (!response.ok) throw new Error(`Server returned ${response.status}`)
       const data = (await response.json()) as UpdateCheckResult
       setUpdateCheckResult(data)
     } catch (fetchError) {
-      // Log the failure — a future enhancement could surface this as a UI error.
-      console.error('Version check failed:', fetchError)
+      const errorMessage =
+        fetchError instanceof Error ? fetchError.message : 'Unknown error'
+      setUpdateCheckError(`Could not check for updates: ${errorMessage}`)
     } finally {
       setIsCheckingUpdate(false)
     }

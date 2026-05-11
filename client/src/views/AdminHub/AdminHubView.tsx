@@ -823,6 +823,7 @@ function HygieneRulesSection({
 
 interface UpdateManagementSectionProps {
   updateCheckResult: UpdateCheckResult | null
+  updateCheckError: string | null
   isCheckingUpdate: boolean
   isUpdateSectionCollapsed: boolean
   onCheckForUpdates(): void
@@ -835,6 +836,7 @@ interface UpdateManagementSectionProps {
  */
 function UpdateManagementSection({
   updateCheckResult,
+  updateCheckError,
   isCheckingUpdate,
   isUpdateSectionCollapsed,
   onCheckForUpdates,
@@ -868,6 +870,12 @@ function UpdateManagementSection({
               {isCheckingUpdate ? '⏳ Checking…' : '🔍 Check for Updates'}
             </button>
           </div>
+
+          {updateCheckError !== null && (
+            <p className={styles.updateStatusError} role="alert">
+              ⚠️ {updateCheckError}
+            </p>
+          )}
 
           {updateCheckResult !== null && (
             <>
@@ -1329,6 +1337,7 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
 
       <UpdateManagementSection
         updateCheckResult={state.updateCheckResult}
+        updateCheckError={state.updateCheckError}
         isCheckingUpdate={state.isCheckingUpdate}
         isUpdateSectionCollapsed={state.isUpdateSectionCollapsed}
         onCheckForUpdates={actions.checkForUpdates}

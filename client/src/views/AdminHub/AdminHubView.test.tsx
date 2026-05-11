@@ -64,6 +64,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
       hasUpdate: boolean
       releaseNotes: string
     },
+    updateCheckError: null as string | null,
     isCheckingUpdate: false,
     isUpdateSectionCollapsed: false,
     // ── Service Connectivity ──
