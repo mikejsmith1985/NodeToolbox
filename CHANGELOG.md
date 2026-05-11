@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (v0.7.3 — Check for Updates)
+- **Admin Hub — Check for Updates**: Fixed silent failure where network/server errors made the button appear to do nothing. Errors are now displayed below the button with a clear message. Added missing CSS classes (`updateVersionRow`, `updateStatusAvailable`, `updateStatusSuccess`, `updateStatusError`, `releaseNotesTextarea`) so the result area renders correctly.
+
 ### Added (v0.7.2 — Relay Connect panel, Snow/GitHub config UI, expanded diagnostics)
 - **ConnectionBar — Relay `Connect` button**: Each indicator (Relay, Snow, Jira) is now a clickable button. Clicking the Relay indicator opens an inline setup panel with a draggable bookmarklet link and step-by-step instructions. Clicking an already-open panel closes it; clicking outside dismisses it.
 - **Admin Hub — Service Connectivity section**: New section (unlocked by admin access) with forms to set Snow `baseUrl`, `username`, and `password`, and GitHub `baseUrl` and Personal Access Token. Credentials are saved server-side to `toolbox-proxy.json` (AppData). Includes `Test Connection` buttons for live probes against each service.

@@ -620,3 +620,47 @@
 .bookmarkletLink:active {
   cursor: grabbing;
 }
+
+/* ── Update Management section ── */
+
+/* Two-column row showing current vs latest version side-by-side. */
+.updateVersionRow {
+  display: flex;
+  gap: var(--spacing-lg);
+  margin: var(--spacing-sm) 0 var(--spacing-xs);
+  font-size: var(--font-size-sm);
+}
+
+/* Shown when a newer version is available — calls attention with accent colour. */
+.updateStatusAvailable {
+  color: var(--color-accent);
+  font-weight: 500;
+  margin: var(--spacing-xs) 0;
+}
+
+/* Shown when the running version is already the latest. */
+.updateStatusSuccess {
+  color: var(--color-text-secondary);
+  margin: var(--spacing-xs) 0;
+}
+
+/* Shown when the version-check request fails — needs to be noticeable. */
+.updateStatusError {
+  color: #e57373;
+  margin: var(--spacing-xs) 0;
+  font-size: var(--font-size-sm);
+}
+
+/* Read-only textarea that displays the GitHub release notes. */
+.releaseNotesTextarea {
+  width: 100%;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: var(--spacing-sm);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  resize: vertical;
+  box-sizing: border-box;
+}
