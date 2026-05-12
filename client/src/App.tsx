@@ -4,7 +4,7 @@
 // routes placeholder views until later migration phases replace them.
 
 import { useEffect } from 'react';
-import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, Navigate, Route, Routes } from 'react-router-dom';
 
 import { ConnectionBar } from './components/ConnectionBar/index.ts';
 import { ToastProvider } from './components/Toast/ToastProvider.tsx';
@@ -47,9 +47,7 @@ export default function App() {
   useProxyStatus();
   useRelayBridge(RELAY_SYSTEM);
 
-  const location = useLocation();
   const theme = useSettingsStore((state) => state.theme);
-  const isOnHomePage = location.pathname === HOME_ROUTE;
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -59,16 +57,11 @@ export default function App() {
     <ToastProvider>
       <div className={styles.appShell}>
         <header className={styles.topBar}>
-          {/* Left side: app title + contextual Home button grouped together */}
+          {/* Left side: app title links back to home — single, standard UX pattern */}
           <div className={styles.topBarLeft}>
             <Link className={styles.homeLink} to={HOME_ROUTE}>
               {APP_TITLE}
             </Link>
-            {!isOnHomePage && (
-              <Link className={styles.homeButton} to={HOME_ROUTE}>
-                ⌂ Home
-              </Link>
-            )}
           </div>
           <ConnectionBar />
         </header>

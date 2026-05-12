@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added (My Issues — Jira ↔ ServiceNow dual-system view)
+### Fixed (UX — removed redundant Home button)
+- **Top bar — duplicate Home navigation removed**: The "⌂ Home" button that appeared next to the "NodeToolbox" title was redundant — clicking the app title already navigates home (standard UX pattern). The separate button has been removed to de-clutter the header.
+
+
 - **ServiceNow issues in My Issues**: The My Issues tool now fetches all SNow work items assigned to the current user — incidents, problems, service-catalog tasks, and change requests — via the SNow relay. A "Fetch SNow Issues" button appears in the toolbar when the source is set to "My Issues".
 - **Auto-detected Jira ↔ SNow links**: The app detects bidirectional links between Jira Defects/Stories and SNow Problems using existing field conventions (`customfield_11203` on Jira, trailing Jira key in SNow `problem_statement`). No new fields or configuration required.
 - **Health badge on linked pairs**: Linked Jira↔SNow pairs are displayed as collapsible paired cards above the regular issue list. Each pair shows a color-coded health badge — 🟢 green (all mapped fields match), 🟡 yellow (partial mismatch), 🔴 red (no fields match).
