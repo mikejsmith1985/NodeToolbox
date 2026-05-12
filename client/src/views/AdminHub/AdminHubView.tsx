@@ -1223,6 +1223,114 @@ function RelayActivationSection() {
   )
 }
 
+// ── Feature request section ──
+
+/** The GitHub repository URL used to build the new-issue link. */
+const GITHUB_REPO_URL = 'https://github.com/mikejsmith1985/NodeToolbox'
+
+/**
+ * Feature Request section — lets the user draft a title and optional description,
+ * then opens a pre-filled GitHub new-issue page in their browser.
+ *
+ * Since NodeToolbox runs locally on each machine there is no central collection
+ * server.  Opening a browser tab is the simplest zero-infrastructure mechanism
+ * that still gets the request into the public issue tracker.
+ */
+function FeatureRequestSection() {
+  const [requestTitle, setRequestTitle] = useState('')
+  const [requestDescription, setRequestDescription] = useState('')
+  const [hasSentToGitHub, setHasSentToGitHub] = useState(false)
+
+  /** Builds a pre-filled GitHub new-issue URL and opens it in a new browser tab. */
+  function handleOpenGitHubIssue() {
+    if (requestTitle.trim() === '') return
+
+    const encodedTitle = encodeURIComponent(requestTitle.trim())
+
+    // Provide a sensible default body so the issue template looks professional
+    // even when the user leaves the description blank.
+    const bodyText = requestDescription.trim() !== ''
+      ? requestDescription.trim()
+      : '_No additional details provided._'
+
+    const encodedBody = encodeURIComponent(
+      `## Feature Request\n\n${bodyText}\n\n---\n_Submitted from NodeToolbox AdminHub_`
+    )
+
+    const issueUrl =
+      `${GITHUB_REPO_URL}/issues/new?labels=enhancement&title=${encodedTitle}&body=${encodedBody}`
+
+    // noopener prevents the new tab from accessing window.opener, which is a
+    // security best-practice for links that open external sites.
+    window.open(issueUrl, '_blank', 'noopener,noreferrer')
+
+    setRequestTitle('')
+    setRequestDescription('')
+    setHasSentToGitHub(true)
+
+    // Clear the confirmation message after 5 seconds.
+    setTimeout(() => setHasSentToGitHub(false), 5000)
+  }
+
+  return (
+    <section className={styles.sectionCard}>
+      <h2 className={styles.sectionTitle}>💡 Request a Feature</h2>
+
+      <p className={styles.adminDescription}>
+        Have an idea for NodeToolbox? Fill in a title and hit the button — your browser will
+        open a pre-filled GitHub issue. Review and submit it there to log your request.
+      </p>
+
+      <div className={styles.fieldRow}>
+        <label className={styles.fieldLabel} htmlFor="feature-request-title">
+          Feature title
+        </label>
+        <input
+          id="feature-request-title"
+          type="text"
+          className={styles.textInput}
+          value={requestTitle}
+          onChange={(e) => setRequestTitle(e.target.value)}
+          placeholder="e.g. Add dark-mode toggle to settings"
+          maxLength={200}
+        />
+      </div>
+
+      <div className={styles.fieldRow}>
+        <label className={styles.fieldLabel} htmlFor="feature-request-description">
+          Description{' '}
+          <span className={styles.optionalLabel}>(optional)</span>
+        </label>
+        <textarea
+          id="feature-request-description"
+          className={styles.featureRequestTextarea}
+          value={requestDescription}
+          onChange={(e) => setRequestDescription(e.target.value)}
+          placeholder="Describe what you'd like and why it would be useful…"
+          rows={4}
+          maxLength={2000}
+        />
+      </div>
+
+      <div className={styles.inputRow}>
+        <button
+          className={`${styles.actionButton} ${styles.saveButton}`}
+          onClick={handleOpenGitHubIssue}
+          disabled={requestTitle.trim() === ''}
+        >
+          🚀 Open GitHub Issue
+        </button>
+
+        {hasSentToGitHub && (
+          <span className={styles.confirmationText}>
+            ✅ Browser tab opened — complete the issue there to submit!
+          </span>
+        )}
+      </div>
+    </section>
+  )
+}
+
 // ── Root component ──
 
 interface AdminHubMainContentProps {
@@ -1324,6 +1432,8 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
         onInstallUpdate={actions.installUpdate}
         onSetCollapsed={actions.setUpdateSectionCollapsed}
       />
+
+      <FeatureRequestSection />
 
       {state.isAdvancedUnlocked ? (
         <>
