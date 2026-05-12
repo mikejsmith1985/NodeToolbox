@@ -666,6 +666,8 @@ describe('Feature Request section', () => {
   beforeEach(() => {
     // Spy on window.open so we can assert it was called without opening a real tab.
     vi.spyOn(window, 'open').mockImplementation(() => null);
+    // Spy on navigator.clipboard.writeText so the copy path doesn't touch real clipboard.
+    vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -689,27 +691,28 @@ describe('Feature Request section', () => {
 
   it('renders the Open GitHub Issue button', () => {
     renderAdminHubView();
-    expect(
-      screen.getByRole('button', { name: /open github issue/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /open github issue/i })).toBeInTheDocument();
   });
 
-  it('disables the submit button when the title is empty', () => {
+  it('renders the Copy Request button', () => {
     renderAdminHubView();
-    expect(
-      screen.getByRole('button', { name: /open github issue/i }),
-    ).toBeDisabled();
+    expect(screen.getByRole('button', { name: /copy request/i })).toBeInTheDocument();
   });
 
-  it('enables the submit button when the title has content', async () => {
+  it('disables both buttons when the title is empty', () => {
+    renderAdminHubView();
+    expect(screen.getByRole('button', { name: /open github issue/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /copy request/i })).toBeDisabled();
+  });
+
+  it('enables both buttons when the title has content', async () => {
     const user = userEvent.setup();
     renderAdminHubView();
 
     await user.type(screen.getByLabelText(/feature title/i), 'Add dark mode');
 
-    expect(
-      screen.getByRole('button', { name: /open github issue/i }),
-    ).toBeEnabled();
+    expect(screen.getByRole('button', { name: /open github issue/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /copy request/i })).toBeEnabled();
   });
 
   it('opens a pre-filled GitHub new-issue URL when submitted', async () => {
@@ -741,7 +744,7 @@ describe('Feature Request section', () => {
     );
   });
 
-  it('clears the form fields after submission', async () => {
+  it('clears the form fields after GitHub submission', async () => {
     const user = userEvent.setup();
     renderAdminHubView();
 
@@ -752,7 +755,7 @@ describe('Feature Request section', () => {
     expect(titleInput.value).toBe('');
   });
 
-  it('shows a confirmation message after submission', async () => {
+  it('shows a browser-tab confirmation message after GitHub submission', async () => {
     const user = userEvent.setup();
     renderAdminHubView();
 
@@ -760,5 +763,38 @@ describe('Feature Request section', () => {
     await user.click(screen.getByRole('button', { name: /open github issue/i }));
 
     expect(screen.getByText(/browser tab opened/i)).toBeInTheDocument();
+  });
+
+  it('calls clipboard.writeText with the request text when Copy Request is clicked', async () => {
+    const user = userEvent.setup();
+    renderAdminHubView();
+
+    await user.type(screen.getByLabelText(/feature title/i), 'My clipboard feature');
+    await user.click(screen.getByRole('button', { name: /copy request/i }));
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledOnce();
+    const copiedText = (navigator.clipboard.writeText as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(copiedText).toContain('My clipboard feature');
+    expect(copiedText).toContain('Feature Request:');
+  });
+
+  it('does not call window.open when Copy Request is clicked', async () => {
+    const user = userEvent.setup();
+    renderAdminHubView();
+
+    await user.type(screen.getByLabelText(/feature title/i), 'My feature');
+    await user.click(screen.getByRole('button', { name: /copy request/i }));
+
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
+  it('shows a "Copied!" confirmation message after Copy Request is clicked', async () => {
+    const user = userEvent.setup();
+    renderAdminHubView();
+
+    await user.type(screen.getByLabelText(/feature title/i), 'My feature');
+    await user.click(screen.getByRole('button', { name: /copy request/i }));
+
+    expect(screen.getByText(/copied!/i)).toBeInTheDocument();
   });
 });

@@ -1230,20 +1230,39 @@ const GITHUB_REPO_URL = 'https://github.com/mikejsmith1985/NodeToolbox'
 
 /**
  * Feature Request section — lets the user draft a title and optional description,
- * then opens a pre-filled GitHub new-issue page in their browser.
+ * then either open a pre-filled GitHub new-issue page or copy the request as plain
+ * text for users who don't have a GitHub account.
  *
  * Since NodeToolbox runs locally on each machine there is no central collection
- * server.  Opening a browser tab is the simplest zero-infrastructure mechanism
- * that still gets the request into the public issue tracker.
+ * server.  Both submission paths are purely client-side.
  */
 function FeatureRequestSection() {
   const [requestTitle, setRequestTitle] = useState('')
   const [requestDescription, setRequestDescription] = useState('')
   const [hasSentToGitHub, setHasSentToGitHub] = useState(false)
+  const [hasCopiedToClipboard, setHasCopiedToClipboard] = useState(false)
+
+  // A single derived flag keeps all the button disabled checks consistent.
+  const isFormEmpty = requestTitle.trim() === ''
+
+  /** Returns the request formatted as plain text, suitable for email or chat. */
+  function buildPlainTextRequest(): string {
+    const descriptionText = requestDescription.trim() !== ''
+      ? requestDescription.trim()
+      : 'No additional details provided.'
+
+    return [
+      `Feature Request: ${requestTitle.trim()}`,
+      '',
+      descriptionText,
+      '',
+      '-- Submitted from NodeToolbox AdminHub',
+    ].join('\n')
+  }
 
   /** Builds a pre-filled GitHub new-issue URL and opens it in a new browser tab. */
   function handleOpenGitHubIssue() {
-    if (requestTitle.trim() === '') return
+    if (isFormEmpty) return
 
     const encodedTitle = encodeURIComponent(requestTitle.trim())
 
@@ -1267,18 +1286,43 @@ function FeatureRequestSection() {
     setRequestTitle('')
     setRequestDescription('')
     setHasSentToGitHub(true)
+    setHasCopiedToClipboard(false)
 
     // Clear the confirmation message after 5 seconds.
     setTimeout(() => setHasSentToGitHub(false), 5000)
   }
+
+  /**
+   * Copies the formatted request as plain text to the clipboard.
+   * This path requires no GitHub account — the user can paste the text
+   * into an email, Teams message, Slack, or anything that reaches the maintainer.
+   */
+  async function handleCopyToClipboard() {
+    if (isFormEmpty) return
+
+    await navigator.clipboard.writeText(buildPlainTextRequest())
+
+    setHasCopiedToClipboard(true)
+    setHasSentToGitHub(false)
+
+    setTimeout(() => setHasCopiedToClipboard(false), 5000)
+  }
+
+  // Only one confirmation message shows at a time; GitHub open takes priority.
+  const confirmationMessage = hasSentToGitHub
+    ? '✅ Browser tab opened — complete the issue there to submit!'
+    : hasCopiedToClipboard
+      ? '✅ Copied! Paste into an email, Teams message, or wherever reaches your admin.'
+      : null
 
   return (
     <section className={styles.sectionCard}>
       <h2 className={styles.sectionTitle}>💡 Request a Feature</h2>
 
       <p className={styles.adminDescription}>
-        Have an idea for NodeToolbox? Fill in a title and hit the button — your browser will
-        open a pre-filled GitHub issue. Review and submit it there to log your request.
+        Have an idea for NodeToolbox? Fill in a title below. If you have a GitHub account,
+        open a GitHub issue directly. No account? Copy the request as plain text and send
+        it via email or Teams.
       </p>
 
       <div className={styles.fieldRow}>
@@ -1313,18 +1357,28 @@ function FeatureRequestSection() {
       </div>
 
       <div className={styles.inputRow}>
+        {/* Primary path — opens a pre-filled GitHub issue in the browser */}
         <button
           className={`${styles.actionButton} ${styles.saveButton}`}
           onClick={handleOpenGitHubIssue}
-          disabled={requestTitle.trim() === ''}
+          disabled={isFormEmpty}
+          title="Requires a GitHub account"
         >
           🚀 Open GitHub Issue
         </button>
 
-        {hasSentToGitHub && (
-          <span className={styles.confirmationText}>
-            ✅ Browser tab opened — complete the issue there to submit!
-          </span>
+        {/* Fallback path — copies formatted text for email / Teams / Slack */}
+        <button
+          className={styles.actionButton}
+          onClick={() => void handleCopyToClipboard()}
+          disabled={isFormEmpty}
+          title="No GitHub account? Copy the request and send it via email or Teams"
+        >
+          📋 Copy Request
+        </button>
+
+        {confirmationMessage !== null && (
+          <span className={styles.confirmationText}>{confirmationMessage}</span>
         )}
       </div>
     </section>
