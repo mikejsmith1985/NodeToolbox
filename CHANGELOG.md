@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (Home — removed role/persona filter buttons)
+- **Home view — Dev, QA, SM, PO, RTE buttons removed**: The persona filter strip provided no real value; it only reordered cards without unlocking role-specific workflows, data, or views. The Home view now always shows all cards in sectioned layout. Saved drag order is preserved. `homePersona`/`setHomePersona` have been removed from the settings store and from localStorage.
+
+### Changed (UI — futuristic table + badge overhaul)
+- **My Issues — color-coded status badges**: Status column now renders pill-shaped badges with zone-appropriate colors — blocked (red glow), in-progress (purple glow), in-review (cyan glow), done (green), todo (gray).
+- **My Issues — color-coded priority badges**: Priority column renders colored pills — Highest/Critical (red), High (orange), Medium (amber), Low (indigo), Lowest (slate).
+- **My Issues — sticky glass table header**: The table header is now `position: sticky` with `backdrop-filter: blur(8px)` and an accent-blue bottom border line.
+- **My Issues — row hover glow**: Table rows highlight with a subtle blue glow and a left accent border bar on hover.
+- **My Issues — status zone chips**: Each chip has a zone-colored top border (red/purple/cyan/gray/green) and matching box-shadow glow on hover/active.
+- **Issue key links**: Monospace key links (`PROJ-123`) now render in cyan with a text-shadow glow on hover.
+- **AppCard — hover glow**: Home view tool cards now have a blue glow + lift shadow on hover.
+- **Topbar — gradient accent line**: The top bar border-bottom is now a blue-to-purple gradient accent instead of a flat line.
+- **Tokens — added glow vars**: `--color-cyan`, `--color-purple`, `--glow-accent`, `--glow-success`, `--glow-warning`, `--glow-danger`, `--glow-purple`, `--glow-cyan` added to `:root`.
+
+### Fixed (v0.7.8 — Relay bookmarklet install on React 19)
+- **Relay bookmarklet — drag-to-bookmarks works again**: React 19 blocks `javascript:` URLs passed through JSX `href` props, which produced the browser error `React has blocked a javascript: URL as a security precaution` and prevented the SNow relay bookmarklet from installing. The relay setup links now assign the bookmarklet URL directly to the DOM anchor after render, preserving drag-to-bookmarks installation without triggering React's sanitizer.
+
+### Fixed (v0.7.6 — Repair Chrome-safe ServiceNow relay)
+- **Relay — fixed the Chrome bridge instead of relying on broken tab messaging**: ServiceNow is still opened in the original named `__crg_snow` tab, but the bookmarklet now registers, polls, and returns results through the local HTTP bridge at `http://127.0.0.1:5555/api/relay-bridge/*`, avoiding Chrome/Edge COOP breakage.
+- **Relay bridge — added CORS/private-network headers**: `/api/relay-bridge/*` now explicitly allows ServiceNow bookmarklets to call the local NodeToolbox bridge, including `Access-Control-Allow-Private-Network: true` for Chrome/Edge private-network preflight checks.
+- **Relay — ServiceNow `g_ck` support restored**: The bookmarklet again extracts ServiceNow's `g_ck` token (`window.g_ck`, `NOW.GlideConfig.g_ck`, or `glide_user_activity`) and sends it as `X-UserToken`, matching the working HTML ToolBox implementation.
+- **Relay — proxy no longer masks disconnected state**: Normal SNow app calls no longer silently fall back to `/snow-proxy/*` when the relay is inactive. Direct proxy remains available only for explicit diagnostics/admin probes via `forceDirectProxy`.
+- **ConnectionBar — SNow status now means relay-connected**: SNow turns green only after the bookmarklet handshake succeeds, not after a server-side proxy probe.
+- **Relay setup — removed Copy Code dead-end**: The relay UI now only exposes the draggable bookmarklet. Clicking it inside NodeToolbox shows a clear instruction to drag it to the bookmarks bar first instead of silently doing nothing.
+- **Relay bookmarklet — bridge failures are visible**: If the bookmarklet cannot reach the local NodeToolbox bridge, ServiceNow now shows a red failure badge and an alert instead of silently doing nothing.
+- **Relay bridge — disconnects fail fast**: If the ServiceNow tab closes or navigates away while NodeToolbox is waiting for a relay result, the request now fails immediately with a recovery message instead of hanging until the 30-second timeout.
+
+### Fixed (v0.7.5 — Relay connect flow, single-tab launch, update install)
+- **Relay — Open ServiceNow button**: A `🔗 Open ServiceNow` button now appears in the Relay panel when a SNow base URL is configured and the relay is not yet active. Click it to open the SNow page, activate the bookmarklet, and the relay indicator turns green.
+- **Relay — bookmarklet activation feedback**: The bookmarklet now shows a green confirmation banner on the SNow page after successful registration ("✅ NodeToolbox relay active — keep this tab open") and automatically focuses back to the NodeToolbox tab via `window.open('', 'nodetoolbox')`. The `window.name` is set to `'nodetoolbox'` in the React app so the browser can locate the tab by name.
+- **Relay — registration error surfaced**: Bookmarklet now shows a user-visible `alert()` and logs a `console.error` if NodeToolbox is not reachable on port 5555 (previously the error was silent in AdminHub's copy of the bookmarklet).
+- **Launch — double browser tab fixed**: The VBS launcher now passes `--no-open` to the exe, preventing both processes from opening the browser simultaneously. The VBS is the sole browser-opener (after its port-ready poll confirms the server is up); the exe only opens the browser when launched directly (without VBS).
+- **Update Management — Install Update button**: Admin Hub now shows a `🔄 Install Update` button when an update is available. Clicking it POSTs to `/api/update`, waits up to 60 seconds for the server to restart, then reloads the page to run the new version. Progress ("⏳ Installing and restarting…") and error states are displayed inline.
+
+### Fixed (v0.7.4 — Relay bridge actually works now)
+- **Root cause fix — SNow API calls now route through relay**: `snowFetch` was hardcoded to always use the server-side proxy (`/snow-proxy/*`), ignoring the relay bridge entirely. SNow API calls now check `connectionStore.relayBridgeStatus.isConnected` and route through the relay bridge bookmarklet when active. `forceDirectProxy: true` can override this for callers that need direct access.
+- **Status type mismatch fixed**: The server `/api/relay-bridge/status` endpoint returned `{ active, sys }` but the React client's `RelayBridgeStatus` type expected `{ isConnected, system }`. The runtime object never had `isConnected`, so the relay indicator was permanently red even when the bookmarklet was running. Server now returns the correct shape: `{ isConnected, system, lastPingAt (ISO string), version }`.
+- **Relay polling reduced from 30 s → 3 s**: Indicator now turns green within 3 seconds of bookmarklet activation instead of up to 30 seconds.
+- **Bookmarklet registration failure is now visible**: If the bookmarklet can't reach NodeToolbox on port 5555, it now logs a `console.error` and shows an alert, rather than silently doing nothing.
+
 ### Fixed (v0.7.3 — Check for Updates)
 - **Admin Hub — Check for Updates**: Fixed silent failure where network/server errors made the button appear to do nothing. Errors are now displayed below the button with a clear message. Added missing CSS classes (`updateVersionRow`, `updateStatusAvailable`, `updateStatusSuccess`, `updateStatusError`, `releaseNotesTextarea`) so the result area renders correctly.
 
