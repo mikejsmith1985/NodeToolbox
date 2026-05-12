@@ -10,7 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed (Home — removed role/persona filter buttons)
 - **Home view — Dev, QA, SM, PO, RTE buttons removed**: The persona filter strip provided no real value; it only reordered cards without unlocking role-specific workflows, data, or views. The Home view now always shows all cards in sectioned layout. Saved drag order is preserved. `homePersona`/`setHomePersona` have been removed from the settings store and from localStorage.
 
-### Changed (UI — futuristic table + badge overhaul)
+### Fixed (update install — missing version in request body)
+- **Auto-update — 400 error fixed**: The "Install Update" button was POSTing to `/api/update` with no body, triggering `{"error":"version is required"}`. The request now sends `{ version: latestVersion }` as JSON so the server can download the correct release.
+
+
 - **My Issues — color-coded status badges**: Status column now renders pill-shaped badges with zone-appropriate colors — blocked (red glow), in-progress (purple glow), in-review (cyan glow), done (green), todo (gray).
 - **My Issues — color-coded priority badges**: Priority column renders colored pills — Highest/Critical (red), High (orange), Medium (amber), Low (indigo), Lowest (slate).
 - **My Issues — sticky glass table header**: The table header is now `position: sticky` with `backdrop-filter: blur(8px)` and an accent-blue bottom border line.

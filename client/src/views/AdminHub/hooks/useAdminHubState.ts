@@ -161,6 +161,8 @@ export interface AdminHubState {
   updateCheckResult: UpdateCheckResult | null
   updateCheckError: string | null
   isCheckingUpdate: boolean
+  isInstallingUpdate: boolean
+  updateInstallError: string | null
   isUpdateSectionCollapsed: boolean
   // ── Advanced unlock (Feature Flags, Client Diagnostics, Backup/Restore) ──
   isAdvancedUnlocked: boolean
@@ -205,6 +207,7 @@ export interface AdminHubActions {
   setHygieneSectionCollapsed(isCollapsed: boolean): void
   // ── Update Management ──
   checkForUpdates(): Promise<void>
+  installUpdate(): Promise<void>
   setUpdateSectionCollapsed(isCollapsed: boolean): void
   // ── Advanced unlock ──
   advancedLock(): void
@@ -321,6 +324,29 @@ function resolveHygieneStorageKey(key: keyof HygieneRules): string | null {
   return null
 }
 
+/**
+ * Polls /api/proxy-status until the server responds successfully after an update restart.
+ * Waits an initial 3 seconds for the server to begin its graceful shutdown before polling.
+ * Throws if the server does not respond within maxWaitMs milliseconds.
+ */
+async function pollUntilServerRestarts(maxWaitMs = 60_000): Promise<void> {
+  // Give the server a moment to begin its graceful shutdown before we start polling.
+  await new Promise<void>((resolve) => setTimeout(resolve, 3000))
+  const pollStartTime = Date.now()
+  while (Date.now() - pollStartTime < maxWaitMs) {
+    try {
+      const statusResponse = await fetch('/api/proxy-status', {
+        signal: AbortSignal.timeout(2000),
+      })
+      if (statusResponse.ok) return
+    } catch {
+      // Expected while the server is restarting — keep polling.
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 1000))
+  }
+  throw new Error('Server did not restart within 60 seconds')
+}
+
 // ── Hook ──
 
 /** Provides all reactive state and action callbacks for the Admin Hub view. */
@@ -359,6 +385,8 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
   const [updateCheckResult, setUpdateCheckResult] = useState<UpdateCheckResult | null>(null)
   const [updateCheckError, setUpdateCheckError] = useState<string | null>(null)
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
+  const [isInstallingUpdate, setIsInstallingUpdate] = useState(false)
+  const [updateInstallError, setUpdateInstallError] = useState<string | null>(null)
   const [isUpdateSectionCollapsed, setIsUpdateSectionCollapsed] = useState(false)
 
   // ── Service Connectivity state ──
@@ -403,6 +431,8 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     updateCheckResult,
     updateCheckError,
     isCheckingUpdate,
+    isInstallingUpdate,
+    updateInstallError,
     isUpdateSectionCollapsed,
     isAdvancedUnlocked,
     connectivityConfig,
@@ -689,6 +719,36 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
   }, [])
 
   /**
+   * Triggers the server-side update process and waits for the server to restart.
+   * After the server comes back online, the page reloads to run the new version.
+   */
+  const installUpdate = useCallback(async () => {
+    if (updateCheckResult === null || !updateCheckResult.hasUpdate) return
+    setIsInstallingUpdate(true)
+    setUpdateInstallError(null)
+    try {
+      const updateResponse = await fetch('/api/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: updateCheckResult.latestVersion }),
+      })
+      if (!updateResponse.ok) {
+        const errorText = await updateResponse.text()
+        throw new Error(`Server returned ${updateResponse.status}: ${errorText}`)
+      }
+      // The server shuts down during the update — poll until it comes back.
+      await pollUntilServerRestarts()
+      window.location.reload()
+    } catch (installError) {
+      const errorMessage = installError instanceof Error ? installError.message : 'Unknown error'
+      setUpdateInstallError(
+        `Update failed: ${errorMessage}. Please restart NodeToolbox manually.`,
+      )
+      setIsInstallingUpdate(false)
+    }
+  }, [updateCheckResult])
+
+  /**
    * Prompts the user for the admin passphrase to unlock the advanced sections.
    * If no passphrase is stored in localStorage, any non-null response unlocks.
    */
@@ -835,6 +895,7 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     updateHygieneRule,
     setHygieneSectionCollapsed: setIsHygieneSectionCollapsed,
     checkForUpdates,
+    installUpdate,
     setUpdateSectionCollapsed: setIsUpdateSectionCollapsed,
     advancedLock,
     loadConnectivityConfig,
