@@ -660,3 +660,105 @@ describe('Service Connectivity section', () => {
   });
 });
 
+// ── Feature Request section tests ──
+
+describe('Feature Request section', () => {
+  beforeEach(() => {
+    // Spy on window.open so we can assert it was called without opening a real tab.
+    vi.spyOn(window, 'open').mockImplementation(() => null);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('renders the Feature Request section heading', () => {
+    renderAdminHubView();
+    expect(screen.getByRole('heading', { name: /request a feature/i })).toBeInTheDocument();
+  });
+
+  it('renders the feature title input', () => {
+    renderAdminHubView();
+    expect(screen.getByLabelText(/feature title/i)).toBeInTheDocument();
+  });
+
+  it('renders the description textarea', () => {
+    renderAdminHubView();
+    expect(screen.getByLabelText(/description/i)).toBeInTheDocument();
+  });
+
+  it('renders the Open GitHub Issue button', () => {
+    renderAdminHubView();
+    expect(
+      screen.getByRole('button', { name: /open github issue/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('disables the submit button when the title is empty', () => {
+    renderAdminHubView();
+    expect(
+      screen.getByRole('button', { name: /open github issue/i }),
+    ).toBeDisabled();
+  });
+
+  it('enables the submit button when the title has content', async () => {
+    const user = userEvent.setup();
+    renderAdminHubView();
+
+    await user.type(screen.getByLabelText(/feature title/i), 'Add dark mode');
+
+    expect(
+      screen.getByRole('button', { name: /open github issue/i }),
+    ).toBeEnabled();
+  });
+
+  it('opens a pre-filled GitHub new-issue URL when submitted', async () => {
+    const user = userEvent.setup();
+    renderAdminHubView();
+
+    await user.type(screen.getByLabelText(/feature title/i), 'My feature idea');
+    await user.click(screen.getByRole('button', { name: /open github issue/i }));
+
+    expect(window.open).toHaveBeenCalledOnce();
+
+    const calledUrl = (window.open as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toContain('github.com/mikejsmith1985/NodeToolbox/issues/new');
+    expect(calledUrl).toContain('labels=enhancement');
+    expect(calledUrl).toContain(encodeURIComponent('My feature idea'));
+  });
+
+  it('opens with noopener security flag', async () => {
+    const user = userEvent.setup();
+    renderAdminHubView();
+
+    await user.type(screen.getByLabelText(/feature title/i), 'My feature');
+    await user.click(screen.getByRole('button', { name: /open github issue/i }));
+
+    expect(window.open).toHaveBeenCalledWith(
+      expect.stringContaining('github.com'),
+      '_blank',
+      'noopener,noreferrer',
+    );
+  });
+
+  it('clears the form fields after submission', async () => {
+    const user = userEvent.setup();
+    renderAdminHubView();
+
+    const titleInput = screen.getByLabelText(/feature title/i) as HTMLInputElement;
+    await user.type(titleInput, 'My feature');
+    await user.click(screen.getByRole('button', { name: /open github issue/i }));
+
+    expect(titleInput.value).toBe('');
+  });
+
+  it('shows a confirmation message after submission', async () => {
+    const user = userEvent.setup();
+    renderAdminHubView();
+
+    await user.type(screen.getByLabelText(/feature title/i), 'My feature');
+    await user.click(screen.getByRole('button', { name: /open github issue/i }));
+
+    expect(screen.getByText(/browser tab opened/i)).toBeInTheDocument();
+  });
+});

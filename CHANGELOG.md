@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Feature Request in AdminHub**: A new "💡 Request a Feature" section at the bottom of the AdminHub Config tab lets users draft a title and optional description, then open a pre-filled GitHub issue directly in their browser. No server-side infrastructure is needed — the app builds a GitHub new-issue URL with the `enhancement` label and template body, and `window.open()` handles the rest.
+
 ### Fixed (UX — removed redundant Home button)
 - **Top bar — duplicate Home navigation removed**: The "⌂ Home" button that appeared next to the "NodeToolbox" title was redundant — clicking the app title already navigates home (standard UX pattern). The separate button has been removed to de-clutter the header.
 
