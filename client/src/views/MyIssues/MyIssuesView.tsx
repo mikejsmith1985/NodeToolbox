@@ -2,20 +2,28 @@
 //
 // Provides three top-level tabs: Report (issue browsing), Hygiene (issue-health checks),
 // and Settings (defaults). The Report tab lets users switch between four issue sources
-// (mine / JQL / filter / board), filter by persona, and view results in card, compact, or table layout.
+// (mine / JQL / filter / board) and view results in card, compact, or table layout.
+//
+// This view also surfaces ServiceNow issues assigned to the current user alongside Jira
+// issues, and highlights linked Jira Defect/Story ↔ SNow Problem pairs with a health badge.
 
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import { jiraPost, jiraPut } from '../../services/jiraApi.ts';
 import { snowFetch } from '../../services/snowApi.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
+import { useSettingsStore } from '../../store/settingsStore.ts';
 import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
+import { detectLinkedPairs, collectLinkedSnowSysIds } from '../../utils/issueLinkCalculator.ts';
 import HygieneView from '../Hygiene/HygieneView.tsx';
+import { LinkedIssuePair } from './LinkedIssuePair.tsx';
+import { SnowIssueRow } from './SnowIssueRow.tsx';
+import { StatusMappingEditor } from './StatusMappingEditor.tsx';
 import { useMyIssuesState } from './hooks/useMyIssuesState.ts';
-import type { IssueSource, Persona, SortField, ViewMode } from './hooks/useMyIssuesState.ts';
+import { useSnowIssues } from './hooks/useSnowIssues.ts';
+import type { IssueSource, SortField, ViewMode } from './hooks/useMyIssuesState.ts';
 import type { ExtendedJiraIssue } from './myIssuesExtendedTypes.ts';
-import PersonaIntelStrip from './PersonaIntelStrip.tsx';
 import SwimlaneCardView from './SwimlaneCardView.tsx';
 import BulkCommentPanel from './BulkCommentPanel.tsx';
 import BoardPillAndFilters from './BoardPillAndFilters.tsx';
@@ -25,13 +33,6 @@ import styles from './MyIssuesView.module.css';
 
 const VIEW_TITLE = 'My Issues';
 const VIEW_SUBTITLE = 'Track and manage your Jira issues from a single workspace.';
-
-const PERSONA_OPTIONS: { key: Persona; label: string }[] = [
-  { key: 'dev', label: 'Dev' },
-  { key: 'qa', label: 'QA' },
-  { key: 'sm', label: 'SM' },
-  { key: 'po', label: 'PO' },
-];
 
 const SOURCE_OPTIONS: { key: IssueSource; label: string }[] = [
   { key: 'mine', label: 'My Issues' },
@@ -876,6 +877,9 @@ function SourcePane({
 /**
  * Renders the My Issues view so users can fetch, filter, and browse their Jira issues
  * in card, compact, or table format from a single configurable workspace.
+ *
+ * Also fetches ServiceNow issues and highlights linked Jira↔SNow Problem pairs
+ * with a health badge showing whether statuses are in sync.
  */
 export default function MyIssuesView() {
   const { state, actions } = useMyIssuesState();
@@ -883,6 +887,33 @@ export default function MyIssuesView() {
   void isSnowReady;
   const [activeTab, setActiveTab] = useState<MyIssuesTab>('report');
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
+  const [isSnowSectionCollapsed, setIsSnowSectionCollapsed] = useState(false);
+
+  // SNow issues hook — fetches all 4 record types assigned to the current user.
+  const { snowIssues, isLoadingSnowIssues, snowFetchError, fetchSnowIssues } = useSnowIssues();
+
+  // Status mappings from the settings store — used for health calculation.
+  const { statusMappings } = useSettingsStore();
+
+  // Compute linked Jira↔SNow Problem pairs whenever either issue list changes.
+  // This is a pure calculation with no side effects — safe in useMemo.
+  const linkedPairs = useMemo(
+    () => detectLinkedPairs(state.issues, snowIssues, statusMappings),
+    [state.issues, snowIssues, statusMappings],
+  );
+
+  // Collect sys_ids of SNow Problems already in a linked pair so we don't
+  // render them a second time in the standalone SNow section.
+  const linkedSnowSysIds = useMemo(
+    () => collectLinkedSnowSysIds(linkedPairs),
+    [linkedPairs],
+  );
+
+  // Unlinked SNow issues are everything that didn't match a Jira issue.
+  const unlinkedSnowIssues = useMemo(
+    () => snowIssues.filter((snowIssue) => !linkedSnowSysIds.has(snowIssue.sys_id)),
+    [snowIssues, linkedSnowSysIds],
+  );
 
   const zoneCounts = calculateStatusZoneCounts(state.issues);
   const filteredIssues = filterIssuesByStatusZone(state.issues, state.activeStatusZone);
@@ -966,20 +997,6 @@ export default function MyIssuesView() {
       {/* ── Report tab ── */}
       {activeTab === 'report' && (
         <section id="report-panel" role="tabpanel" aria-labelledby="report-tab">
-          {/* Persona strip */}
-          <div className={styles.personaStrip}>
-            {PERSONA_OPTIONS.map((personaOption) => (
-              <button
-                className={`${styles.pillButton} ${state.persona === personaOption.key ? styles.activePill : ''}`}
-                key={personaOption.key}
-                onClick={() => actions.setPersona(personaOption.key)}
-                type="button"
-              >
-                {personaOption.label}
-              </button>
-            ))}
-          </div>
-
           {/* Source strip */}
           <div className={styles.sourceStrip} style={{ marginTop: 'var(--spacing-sm)' }}>
             {SOURCE_OPTIONS.map((sourceOption) => (
@@ -1037,13 +1054,25 @@ export default function MyIssuesView() {
           {/* Toolbar */}
           <div className={styles.toolbar} style={{ marginTop: 'var(--spacing-sm)' }}>
             {state.source === 'mine' && (
-              <button
-                className={styles.toolbarButton}
-                onClick={actions.fetchMyIssues}
-                type="button"
-              >
-                Fetch Issues
-              </button>
+              <>
+                <button
+                  className={styles.toolbarButton}
+                  onClick={actions.fetchMyIssues}
+                  type="button"
+                >
+                  Fetch Issues
+                </button>
+                {/* SNow fetch button — only meaningful when the relay is ready */}
+                <button
+                  className={styles.toolbarButton}
+                  disabled={isLoadingSnowIssues}
+                  onClick={() => { void fetchSnowIssues(); }}
+                  type="button"
+                  title="Fetch ServiceNow issues assigned to you"
+                >
+                  {isLoadingSnowIssues ? 'Fetching SNow…' : 'Fetch SNow Issues'}
+                </button>
+              </>
             )}
 
             {/* View mode toggle */}
@@ -1136,6 +1165,9 @@ export default function MyIssuesView() {
           {state.fetchError && (
             <p className={styles.errorMessage}>{state.fetchError}</p>
           )}
+          {snowFetchError && (
+            <p className={styles.errorMessage}>SNow: {snowFetchError}</p>
+          )}
 
           {/* Status zone dashboard chips */}
           <div className={styles.statusZoneDashboard} style={{ marginTop: 'var(--spacing-sm)' }}>
@@ -1157,19 +1189,19 @@ export default function MyIssuesView() {
             ))}
           </div>
 
-          {/* Persona intel strip — zone chips specific to the active persona */}
-          {state.issues.length > 0 && (
-            <div style={{ marginTop: 'var(--spacing-sm)' }}>
-              <PersonaIntelStrip
-                activeStatusZone={state.activeStatusZone}
-                issues={state.issues as ExtendedJiraIssue[]}
-                onZoneClick={actions.setActiveStatusZone}
-                persona={state.persona}
-              />
+          {/* ── Linked Jira↔SNow pairs (shown above the regular Jira list) ── */}
+          {linkedPairs.length > 0 && (
+            <div className={styles.linkedPairsSection} style={{ marginTop: 'var(--spacing-md)' }}>
+              <h3 className={styles.snowSectionTitle}>
+                🔗 Linked Jira ↔ SNow ({linkedPairs.length})
+              </h3>
+              {linkedPairs.map((linkedPair) => (
+                <LinkedIssuePair key={linkedPair.pairId} pair={linkedPair} />
+              ))}
             </div>
           )}
 
-          {/* Issues list */}
+          {/* ── Jira issues list ── */}
           <div style={{ marginTop: 'var(--spacing-md)' }}>
             {state.isFetching ? (
               <p>Loading issues…</p>
@@ -1194,6 +1226,30 @@ export default function MyIssuesView() {
               })
             )}
           </div>
+
+          {/* ── Unlinked ServiceNow issues section ── */}
+          {unlinkedSnowIssues.length > 0 && (
+            <div className={styles.snowSection} style={{ marginTop: 'var(--spacing-lg)' }}>
+              <button
+                className={styles.snowSectionToggle}
+                onClick={() => setIsSnowSectionCollapsed((previouslyCollapsed) => !previouslyCollapsed)}
+                type="button"
+                aria-expanded={!isSnowSectionCollapsed}
+              >
+                <span>{isSnowSectionCollapsed ? '▶' : '▼'}</span>
+                <h3 className={styles.snowSectionTitle}>
+                  ServiceNow Issues ({unlinkedSnowIssues.length})
+                </h3>
+              </button>
+              {!isSnowSectionCollapsed && (
+                <div className={styles.snowIssueList}>
+                  {unlinkedSnowIssues.map((snowIssue) => (
+                    <SnowIssueRow key={snowIssue.sys_id} issue={snowIssue} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Bulk comment panel — sticky footer shown during bulk mode */}
           {state.isBulkModeActive && (
@@ -1223,24 +1279,6 @@ export default function MyIssuesView() {
         <section id="settings-panel" role="tabpanel" aria-labelledby="settings-tab">
           <div className={styles.settingsPanel}>
             <div className={styles.settingsSection}>
-              <h2 className={styles.settingsSectionTitle}>Default persona</h2>
-              <div className={styles.radioGroup}>
-                {PERSONA_OPTIONS.map((personaOption) => (
-                  <label className={styles.radioLabel} key={personaOption.key}>
-                    <input
-                      checked={state.persona === personaOption.key}
-                      name="default-persona"
-                      onChange={() => actions.setPersona(personaOption.key)}
-                      type="radio"
-                      value={personaOption.key}
-                    />
-                    {personaOption.label}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className={styles.settingsSection}>
               <h2 className={styles.settingsSectionTitle}>Default view mode</h2>
               <div className={styles.radioGroup}>
                 {VIEW_MODE_OPTIONS.map((viewModeOption) => (
@@ -1256,6 +1294,11 @@ export default function MyIssuesView() {
                   </label>
                 ))}
               </div>
+            </div>
+
+            {/* Status mapping configuration for Jira↔SNow health checks */}
+            <div className={styles.settingsSection}>
+              <StatusMappingEditor />
             </div>
           </div>
         </section>

@@ -92,15 +92,17 @@ describe('server.js — pkg exe auto-open', () => {
     expect(SERVER_SOURCE).toMatch(/process\.argv.*--open|--open.*process\.argv/s);
   });
 
-  it('combines pkg and --open checks in the same browser-open condition', () => {
+  it('allows the VBS launcher to suppress exe auto-open with --no-open', () => {
     // Both triggers must control the same openBrowserToDashboard() call so
     // there is a single code path that either the bat (--open) or the exe
-    // (process.pkg) can activate.
+    // (process.pkg) can activate. The VBS path passes --no-open so only the
+    // launcher opens the browser after its port-ready poll.
     const openBrowserBlock = SERVER_SOURCE.match(
-      /if\s*\([^)]*--open[^)]*\)[\s\S]{0,300}openBrowserToDashboard/
+      /const\s+shouldOpenBrowser\s*=[\s\S]{0,300}if\s*\(shouldOpenBrowser\)[\s\S]{0,120}openBrowserToDashboard/
     );
     expect(openBrowserBlock).not.toBeNull();
     const conditionText = openBrowserBlock[0];
     expect(conditionText).toMatch(/process\.pkg/);
+    expect(conditionText).toMatch(/--no-open/);
   });
 });

@@ -89,7 +89,9 @@ Sub Main()
     If latestExePath <> "" Then
         ' Window style 0 = SW_HIDE — the exe starts with no console window.
         ' False = fire-and-forget; the VBS continues to the polling loop below.
-        objShell.Run Chr(34) & latestExePath & Chr(34), 0, False
+        ' --no-open tells the exe to skip its own browser-open so the VBS
+        ' exclusively controls when the browser opens (after the port-ready poll).
+        objShell.Run Chr(34) & latestExePath & Chr(34) & " --no-open", 0, False
 
     Else
         ' ── Zip distribution: run the bat launcher silently ────────────────────
@@ -135,9 +137,9 @@ Sub Main()
     Next
 
     If serverBecameReady Then
-        ' Belt-and-suspenders: open the browser from the VBS as a backup in case
-        ' the exe's openBrowserToDashboard() was blocked.  Two browser tabs to the
-        ' same URL is a harmless side-effect when both succeed.
+        ' The VBS is the single point of browser-open when launching via the exe.
+        ' The exe is started with --no-open so it does not race the VBS to open
+        ' the browser — this prevents two tabs from appearing on every launch.
         OpenDashboardInBrowser SERVER_PORT
     Else
         ' The server did not respond within the timeout window.

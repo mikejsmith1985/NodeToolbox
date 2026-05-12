@@ -276,9 +276,16 @@ async function launchServer() {
     startSchedulerLoop(configuration);
 
     // Open the dashboard automatically when:
-    //   --open  : passed explicitly by Launch Toolbox.bat
-    //   process.pkg : the server is running as the bundled .exe (double-click)
-    if (process.argv.includes('--open') || !!process.pkg) {
+    //   --open      : passed explicitly by Launch Toolbox.bat (zip distribution)
+    //   process.pkg : bundled exe; but only when NOT launched by the VBS launcher.
+    //                 The VBS passes --no-open so it can open the browser itself
+    //                 after polling confirms the port is ready — preventing the
+    //                 double-tab that occurs when both the exe and the VBS open
+    //                 the browser at the same time.
+    const shouldOpenBrowser =
+      process.argv.includes('--open') ||
+      (!!process.pkg && !process.argv.includes('--no-open'));
+    if (shouldOpenBrowser) {
       openBrowserToDashboard(listenPort);
     }
   });

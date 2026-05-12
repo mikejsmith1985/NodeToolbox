@@ -3,10 +3,10 @@
 import { create } from 'zustand';
 
 import type { Theme } from '../types/config.ts';
+import type { StatusMapping } from '../types/issueLinking.ts';
 
 const DARK_THEME: Theme = 'dark';
 const LIGHT_THEME: Theme = 'light';
-const DEFAULT_HOME_PERSONA = 'all';
 const DEFAULT_SNOW_HUB_TAB = 'crg';
 const DEFAULT_TEXT_TOOLS_TAB = 'case';
 const EMPTY_STRING = '';
@@ -14,7 +14,6 @@ const EMPTY_STRING_LIST: string[] = [];
 const MAX_RECENT_VIEW_COUNT = 5;
 
 const THEME_STORAGE_KEY = 'tbx-theme';
-const HOME_PERSONA_STORAGE_KEY = 'tbxHomePersona';
 const CARD_ORDER_STORAGE_KEY = 'tbxCardOrder';
 const CHANGE_REQUEST_GENERATOR_JIRA_URL_STORAGE_KEY = 'tbxCRGenJiraUrl';
 const CHANGE_REQUEST_GENERATOR_SNOW_URL_STORAGE_KEY = 'tbxCRGenSnowUrl';
@@ -26,10 +25,10 @@ const MY_ISSUES_JQL_STORAGE_KEY = 'tbxMIJql';
 const MY_ISSUES_BOARD_ID_STORAGE_KEY = 'tbxMIBoardId';
 const MY_ISSUES_JQL_HISTORY_STORAGE_KEY = 'tbxMIJqlHistory';
 const RECENT_VIEWS_STORAGE_KEY = 'tbxRecentViews';
+const STATUS_MAPPINGS_STORAGE_KEY = 'tbxStatusMappings';
 
 interface SettingsState {
   theme: Theme;
-  homePersona: string;
   cardOrder: string[];
   changeRequestGeneratorJiraUrl: string;
   changeRequestGeneratorSnowUrl: string;
@@ -41,9 +40,14 @@ interface SettingsState {
   myIssuesBoardId: string;
   myIssuesJqlHistory: string[];
   recentViews: string[];
+  /**
+   * User-configured Jira status → SNow state equivalence mappings for the
+   * My Issues health-check feature. Persisted so they survive app updates.
+   * The system-defined "To Do → New" mapping is always applied in addition.
+   */
+  statusMappings: StatusMapping[];
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
-  setHomePersona: (homePersona: string) => void;
   setCardOrder: (cardOrder: string[]) => void;
   setChangeRequestGeneratorJiraUrl: (url: string) => void;
   setChangeRequestGeneratorSnowUrl: (url: string) => void;
@@ -56,6 +60,8 @@ interface SettingsState {
   setMyIssuesJqlHistory: (jqlHistory: string[]) => void;
   setRecentViews: (recentViews: string[]) => void;
   addRecentView: (viewId: string) => void;
+  /** Replaces the full list of user-configured status mappings (system mapping preserved separately). */
+  setStatusMappings: (mappings: StatusMapping[]) => void;
 }
 
 function canUseLocalStorage(): boolean {
@@ -109,6 +115,39 @@ function buildRecentViews(viewId: string, currentRecentViews: string[]): string[
   return [viewId, ...deduplicatedRecentViews].slice(0, MAX_RECENT_VIEW_COUNT);
 }
 
+/**
+ * Reads and validates the stored status mappings array from localStorage.
+ * Returns an empty array on parse failure so the store starts in a safe state.
+ */
+function readStoredStatusMappings(): StatusMapping[] {
+  if (!canUseLocalStorage()) {
+    return [];
+  }
+
+  try {
+    const rawStoredValue = window.localStorage.getItem(STATUS_MAPPINGS_STORAGE_KEY);
+    if (rawStoredValue === null) {
+      return [];
+    }
+
+    const parsedValue: unknown = JSON.parse(rawStoredValue);
+    if (!Array.isArray(parsedValue)) {
+      return [];
+    }
+
+    // Validate each entry has the required shape before trusting stored data.
+    return parsedValue.filter(
+      (entry): entry is StatusMapping =>
+        typeof entry === 'object' &&
+        entry !== null &&
+        typeof (entry as StatusMapping).jiraStatus === 'string' &&
+        typeof (entry as StatusMapping).snowStatus === 'string',
+    );
+  } catch {
+    return [];
+  }
+}
+
 function writeStoredString(storageKey: string, value: string): void {
   if (!canUseLocalStorage()) {
     return;
@@ -136,7 +175,6 @@ function writeStoredStringArray(storageKey: string, value: string[]): void {
 /** Zustand store for React SPA settings backed by legacy localStorage keys. */
 export const useSettingsStore = create<SettingsState>((setState) => ({
   theme: readStoredTheme(),
-  homePersona: readStoredString(HOME_PERSONA_STORAGE_KEY, DEFAULT_HOME_PERSONA),
   cardOrder: readStoredStringArray(CARD_ORDER_STORAGE_KEY),
   changeRequestGeneratorJiraUrl: readStoredString(
     CHANGE_REQUEST_GENERATOR_JIRA_URL_STORAGE_KEY,
@@ -164,10 +202,6 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
       writeStoredString(THEME_STORAGE_KEY, nextTheme);
       return { theme: nextTheme };
     }),
-  setHomePersona: (homePersona) => {
-    writeStoredString(HOME_PERSONA_STORAGE_KEY, homePersona);
-    setState({ homePersona });
-  },
   setCardOrder: (cardOrder) => {
     writeStoredStringArray(CARD_ORDER_STORAGE_KEY, cardOrder);
     setState({ cardOrder });
@@ -218,4 +252,15 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
       writeStoredStringArray(RECENT_VIEWS_STORAGE_KEY, recentViews);
       return { recentViews };
     }),
+  statusMappings: readStoredStatusMappings(),
+  setStatusMappings: (mappings) => {
+    // Only persist user-defined mappings; system-defined ones are always re-applied at runtime.
+    const userDefinedMappings = mappings.filter((mapping) => !mapping.isSystemDefined);
+    try {
+      window.localStorage.setItem(STATUS_MAPPINGS_STORAGE_KEY, JSON.stringify(userDefinedMappings));
+    } catch {
+      // Storage access can be blocked in some browser modes, so the in-memory state remains authoritative.
+    }
+    setState({ statusMappings: mappings });
+  },
 }));

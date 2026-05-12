@@ -225,11 +225,12 @@ describe('exe real-world flow — React SPA served from client/dist alongside th
     expect([200, 302]).toContain(initialResponse.status);
   });
 
-  it('GET / redirects to /setup when no config is present', async () => {
+  it('GET / serves the React SPA even when no config is present', async () => {
     if (!exeProcess) return;
     const response = await getPage('/');
-    // First launch: no config → must redirect to setup wizard
-    expect(response.status).toBe(302);
+    // The React migration serves the SPA at /; setup/config prompts are handled client-side.
+    expect(response.status).toBe(200);
+    expect(response.contentType).toMatch(/text\/html/i);
   });
 
   it('POST /api/setup with valid credentials returns 302 redirect to /', async () => {

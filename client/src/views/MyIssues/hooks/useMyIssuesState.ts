@@ -1,7 +1,7 @@
 // useMyIssuesState.ts — State management hook for the My Issues view.
 //
 // Handles issue fetching from multiple sources (mine, JQL, saved filters, boards),
-// view mode switching, persona filtering, and JQL history management.
+// view mode switching, and JQL history management.
 
 import { useCallback, useMemo, useState } from 'react';
 
@@ -14,7 +14,6 @@ import type { JiraBoardQuickFilter } from '../myIssuesExtendedTypes.ts';
 export type IssueSource = 'mine' | 'jql' | 'filter' | 'board';
 export type ViewMode = 'cards' | 'compact' | 'table';
 export type SortField = 'updated' | 'priority' | 'due' | 'created' | 'project';
-export type Persona = 'dev' | 'qa' | 'sm' | 'po';
 
 // ── Named API path constants ──
 
@@ -43,7 +42,6 @@ export interface MyIssuesState {
   source: IssueSource;
   viewMode: ViewMode;
   sortBy: SortField;
-  persona: Persona;
   jqlQuery: string;
   /** Last MAX_JQL_HISTORY unique JQL queries, newest first. */
   jqlHistory: string[];
@@ -89,7 +87,6 @@ export interface MyIssuesActions {
   setSource(source: IssueSource): void;
   setViewMode(viewMode: ViewMode): void;
   setSortBy(sortBy: SortField): void;
-  setPersona(persona: Persona): void;
   setJqlQuery(query: string): void;
   setActiveStatusZone(zone: string | null): void;
   setSelectedBoardId(boardId: number | null): void;
@@ -170,7 +167,6 @@ function createInitialMyIssuesState(): MyIssuesState {
     source: 'mine',
     viewMode: 'cards',
     sortBy: 'updated',
-    persona: 'dev',
     jqlQuery: '',
     jqlHistory: [],
     activeStatusZone: null,
@@ -357,11 +353,7 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
     setState((previousState) => ({ ...previousState, sortBy }));
   }, []);
 
-  const setPersona = useCallback((persona: Persona) => {
-    setState((previousState) => ({ ...previousState, persona }));
-  }, []);
-
-  const setJqlQuery = useCallback((jqlQuery: string) => {
+  const setJqlQuery= useCallback((jqlQuery: string) => {
     setState((previousState) => ({ ...previousState, jqlQuery }));
   }, []);
 
@@ -807,7 +799,6 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
       setSource,
       setViewMode,
       setSortBy,
-      setPersona,
       setJqlQuery,
       setActiveStatusZone,
       setSelectedBoardId,
@@ -839,7 +830,6 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
       setSource,
       setViewMode,
       setSortBy,
-      setPersona,
       setJqlQuery,
       setActiveStatusZone,
       setSelectedBoardId,

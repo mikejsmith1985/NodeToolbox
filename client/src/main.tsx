@@ -15,6 +15,10 @@ if (!rootElement) {
   throw new Error('Root element #root not found — check index.html');
 }
 
+// Match the original ToolBox relay contract: the bookmarklet finds the app by
+// calling window.open('', 'toolbox') after activation.
+window.name = 'toolbox';
+
 createRoot(rootElement).render(
   <StrictMode>
     <BrowserRouter>

@@ -1,4 +1,4 @@
-// HomeView.tsx — Application home page with persona-aware, sortable tool cards.
+// HomeView.tsx — Application home page with sortable tool cards and recent-views strip.
 
 import type { CSSProperties, HTMLAttributes } from 'react';
 import { useMemo } from 'react';
@@ -19,29 +19,15 @@ import styles from './HomeView.module.css';
 import {
   APP_CARDS,
   APP_SECTIONS,
-  PERSONA_CARD_ORDERS,
   RECENT_VIEW_LABELS,
 } from './homeCardData.ts';
 import type { AppCardDef, SectionKey } from './homeCardData.ts';
 
 const HOME_HEADING = 'Your personal utility belt';
 const HOME_SUBHEADING = 'Choose the tools that match your day and drag cards into your preferred order.';
-const PERSONA_ALL = 'all';
-const ADMIN_CARD_ID = 'admin-hub';
 const ACTIVE_OPACITY = 0.5;
 const DEFAULT_OPACITY = 1;
-const PERSONA_OPTIONS = [
-  { id: 'all', label: 'All', icon: '🧰' },
-  { id: 'dev', label: 'Dev', icon: '👨‍💻' },
-  { id: 'qa', label: 'QA', icon: '🧪' },
-  { id: 'sm', label: 'SM', icon: '🧭' },
-  { id: 'po', label: 'PO', icon: '📌' },
-  { id: 'rte', label: 'RTE', icon: '🚂' },
-] as const;
 const APP_CARD_BY_ID = new Map(APP_CARDS.map((cardDef) => [cardDef.id, cardDef]));
-const FIXED_SECTION_CARD_IDS: Partial<Record<SectionKey, string>> = {
-  admin: ADMIN_CARD_ID,
-};
 const LEGACY_RECENT_VIEW_CARD_IDS: Record<string, string> = {
   'dsu-board': 'sprint-dashboard',
 };
@@ -58,11 +44,6 @@ interface RecentViewLinkDef {
   id: string;
   label: string;
   route: string;
-}
-
-interface PersonaFilterStripProps {
-  activePersona: string;
-  handlePersonaSelection: (personaId: string) => void;
 }
 
 interface RecentViewSectionProps {
@@ -100,30 +81,6 @@ function SortableCard({ cardDef, handleCardSelection }: SortableCardProps) {
         route={cardDef.route}
         dragHandleProps={dragHandleProps}
       />
-    </div>
-  );
-}
-
-function PersonaFilterStrip({ activePersona, handlePersonaSelection }: PersonaFilterStripProps) {
-  return (
-    <div className={styles.personaStrip}>
-      {PERSONA_OPTIONS.map((personaOption) => {
-        const isActivePersona = activePersona === personaOption.id;
-        const buttonClassName = isActivePersona
-          ? `${styles.personaBtn} ${styles.active}`
-          : styles.personaBtn;
-
-        return (
-          <button
-            key={personaOption.id}
-            className={buttonClassName}
-            onClick={() => handlePersonaSelection(personaOption.id)}
-            type="button"
-          >
-            {personaOption.icon} {personaOption.label}
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -207,38 +164,6 @@ function getRecentViewLinks(recentViewIds: readonly string[]): RecentViewLinkDef
   });
 }
 
-function groupCardsBySection(cardDefs: readonly AppCardDef[]): Map<SectionKey, AppCardDef[]> {
-  return cardDefs.reduce((cardsBySection, cardDef) => {
-    const existingSectionCards = cardsBySection.get(cardDef.sectionKey) ?? [];
-    cardsBySection.set(cardDef.sectionKey, [...existingSectionCards, cardDef]);
-    return cardsBySection;
-  }, new Map<SectionKey, AppCardDef[]>());
-}
-
-function getPersonaCards(homePersona: string): AppCardDef[] {
-  if (homePersona === PERSONA_ALL) {
-    return [...APP_CARDS];
-  }
-
-  const personaCardOrder = PERSONA_CARD_ORDERS[homePersona] ?? PERSONA_CARD_ORDERS[PERSONA_ALL];
-  const orderedPersonaCards = personaCardOrder.flatMap((cardId) => {
-    const appCard = APP_CARD_BY_ID.get(cardId);
-    return appCard ? [appCard] : [];
-  });
-  const cardsBySection = groupCardsBySection(orderedPersonaCards);
-
-  // Admin stays anchored to its original section even when personas reprioritize the rest.
-  return APP_SECTIONS.flatMap((sectionDef) => {
-    const fixedSectionCardId = FIXED_SECTION_CARD_IDS[sectionDef.key];
-    if (fixedSectionCardId) {
-      const fixedSectionCard = APP_CARD_BY_ID.get(fixedSectionCardId);
-      return fixedSectionCard ? [fixedSectionCard] : [];
-    }
-
-    return cardsBySection.get(sectionDef.key) ?? [];
-  });
-}
-
 function applySavedCardOrder(cardDefs: AppCardDef[], savedCardIds: readonly string[]): AppCardDef[] {
   if (savedCardIds.length === 0) {
     return cardDefs;
@@ -259,17 +184,15 @@ function applySavedCardOrder(cardDefs: AppCardDef[], savedCardIds: readonly stri
   return [...savedCards, ...missingCards];
 }
 
-/** Renders the Home view card grid with persona filters, recents, and drag ordering. */
+/** Renders the Home view card grid with recents and drag-to-reorder. */
 export default function HomeView() {
-  const homePersona = useSettingsStore((state) => state.homePersona);
   const cardOrder = useSettingsStore((state) => state.cardOrder);
   const recentViews = useSettingsStore((state) => state.recentViews);
-  const setHomePersona = useSettingsStore((state) => state.setHomePersona);
   const setCardOrder = useSettingsStore((state) => state.setCardOrder);
   const addRecentView = useSettingsStore((state) => state.addRecentView);
   const sortedCards = useMemo(
-    () => applySavedCardOrder(getPersonaCards(homePersona), cardOrder),
-    [cardOrder, homePersona],
+    () => applySavedCardOrder([...APP_CARDS], cardOrder),
+    [cardOrder],
   );
 
   function handleDragEnd(dragEvent: DragEndEvent): void {
@@ -294,23 +217,10 @@ export default function HomeView() {
     <div className={styles.homeView}>
       <h1 className={styles.heading}>{HOME_HEADING}</h1>
       <p className={styles.subheading}>{HOME_SUBHEADING}</p>
-      <PersonaFilterStrip activePersona={homePersona} handlePersonaSelection={setHomePersona} />
       <RecentViewSection recentViewIds={recentViews} handleCardSelection={addRecentView} />
       <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={sortedCards.map((cardDef) => cardDef.id)} strategy={rectSortingStrategy}>
-          {homePersona === PERSONA_ALL ? (
-            <SectionedHomeGrid sortedCards={sortedCards} handleCardSelection={addRecentView} />
-          ) : (
-            <div className={styles.flatGrid}>
-              {sortedCards.map((cardDef) => (
-                <SortableCard
-                  key={cardDef.id}
-                  cardDef={cardDef}
-                  handleCardSelection={addRecentView}
-                />
-              ))}
-            </div>
-          )}
+          <SectionedHomeGrid sortedCards={sortedCards} handleCardSelection={addRecentView} />
         </SortableContext>
       </DndContext>
     </div>
