@@ -188,24 +188,57 @@
   padding: var(--spacing-sm) var(--spacing-md);
   background: var(--color-surface-1);
   border: 1px solid var(--color-border);
+  border-top: 2px solid var(--color-border);
   border-radius: var(--radius-md);
   cursor: pointer;
   min-width: 80px;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 
-.statusChip:hover {
-  border-color: var(--color-accent);
-}
+/* Zone-specific accent borders */
+.statusChip[data-zone='attention'] { border-top-color: rgba(248, 81, 73, 0.7); }
+.statusChip[data-zone='inprogress'] { border-top-color: rgba(139, 92, 246, 0.7); }
+.statusChip[data-zone='inreview'] { border-top-color: rgba(6, 182, 212, 0.7); }
+.statusChip[data-zone='todo'] { border-top-color: rgba(107, 114, 128, 0.6); }
+.statusChip[data-zone='done'] { border-top-color: rgba(34, 197, 94, 0.7); }
 
+.statusChip:hover,
 .activeChip {
-  border-color: var(--color-accent);
   background: var(--color-surface-2);
+}
+
+.statusChip[data-zone='attention']:hover,
+.activeChip[data-zone='attention'] {
+  border-color: rgba(248, 81, 73, 0.6);
+  box-shadow: 0 0 14px rgba(248, 81, 73, 0.18);
+}
+
+.statusChip[data-zone='inprogress']:hover,
+.activeChip[data-zone='inprogress'] {
+  border-color: rgba(139, 92, 246, 0.6);
+  box-shadow: var(--glow-purple);
+}
+
+.statusChip[data-zone='inreview']:hover,
+.activeChip[data-zone='inreview'] {
+  border-color: rgba(6, 182, 212, 0.6);
+  box-shadow: var(--glow-cyan);
+}
+
+.statusChip[data-zone='todo']:hover,
+.activeChip[data-zone='todo'] {
+  border-color: rgba(107, 114, 128, 0.5);
+}
+
+.statusChip[data-zone='done']:hover,
+.activeChip[data-zone='done'] {
+  border-color: rgba(34, 197, 94, 0.5);
+  box-shadow: var(--glow-success);
 }
 
 .chipCount {
   font-size: var(--font-size-lg);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-text-primary);
 }
 
@@ -233,31 +266,134 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.issueCard:hover {
+  border-color: rgba(88, 166, 255, 0.4);
+  box-shadow: 0 0 16px rgba(88, 166, 255, 0.08), 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .cardHeader {
   display: flex;
   gap: var(--spacing-sm);
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .issueKeyLink {
   font-family: monospace;
   font-size: var(--font-size-sm);
-  color: var(--color-accent);
+  color: var(--color-cyan);
   text-decoration: none;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  transition: color 0.12s, text-shadow 0.12s;
 }
 
 .issueKeyLink:hover {
-  text-decoration: underline;
+  color: #67e8f9;
+  text-shadow: 0 0 10px rgba(6, 182, 212, 0.7);
 }
 
+/* ── Status badge base + variants ── */
+
 .statusBadge {
-  font-size: var(--font-size-sm);
-  padding: 2px var(--spacing-xs);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-2);
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 100px;
+  letter-spacing: 0.3px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.statusTodo {
+  background: rgba(107, 114, 128, 0.15);
+  color: #9ca3af;
+  border-color: rgba(107, 114, 128, 0.3);
+}
+
+.statusInProgress {
+  background: rgba(139, 92, 246, 0.15);
+  color: #c4b5fd;
+  border-color: rgba(139, 92, 246, 0.45);
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.2);
+}
+
+.statusInReview {
+  background: rgba(6, 182, 212, 0.12);
+  color: #67e8f9;
+  border-color: rgba(6, 182, 212, 0.4);
+  box-shadow: 0 0 8px rgba(6, 182, 212, 0.18);
+}
+
+.statusDone {
+  background: rgba(34, 197, 94, 0.12);
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.statusBlocked {
+  background: rgba(248, 81, 73, 0.12);
+  color: #fca5a5;
+  border-color: rgba(248, 81, 73, 0.4);
+  box-shadow: 0 0 8px rgba(248, 81, 73, 0.2);
+}
+
+.statusDefault {
+  background: rgba(139, 148, 158, 0.12);
   color: var(--color-text-secondary);
+  border-color: var(--color-border);
+}
+
+/* ── Priority badge base + variants ── */
+
+.priorityBadge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 100px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.priorityHighest {
+  background: rgba(248, 81, 73, 0.12);
+  color: #fca5a5;
+  border-color: rgba(248, 81, 73, 0.35);
+}
+
+.priorityHigh {
+  background: rgba(249, 115, 22, 0.12);
+  color: #fdba74;
+  border-color: rgba(249, 115, 22, 0.35);
+}
+
+.priorityMedium {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fcd34d;
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.priorityLow {
+  background: rgba(99, 102, 241, 0.1);
+  color: #a5b4fc;
+  border-color: rgba(99, 102, 241, 0.25);
+}
+
+.priorityLowest {
+  background: rgba(107, 114, 128, 0.1);
+  color: #6b7280;
+  border-color: rgba(107, 114, 128, 0.2);
+}
+
+.priorityDefault {
+  background: rgba(139, 148, 158, 0.12);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
 }
 
 .issueSummary {
@@ -312,13 +448,15 @@
   gap: var(--spacing-sm);
   align-items: center;
   padding: var(--spacing-xs) var(--spacing-sm);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid rgba(48, 54, 61, 0.7);
   font-size: var(--font-size-sm);
   color: var(--color-text-primary);
+  transition: background 0.12s;
+  cursor: pointer;
 }
 
 .compactRow:hover {
-  background: var(--color-surface-2);
+  background: rgba(88, 166, 255, 0.05);
 }
 
 /* ── Table view ── */
@@ -329,22 +467,44 @@
   font-size: var(--font-size-sm);
 }
 
+.issueTable thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
 .issueTable th {
   text-align: left;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-bottom: 1px solid var(--color-border);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: rgba(13, 17, 23, 0.94);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(88, 166, 255, 0.25);
   color: var(--color-text-secondary);
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
 }
 
 .issueTable td {
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-bottom: 1px solid var(--color-border);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid rgba(48, 54, 61, 0.6);
   color: var(--color-text-primary);
+  vertical-align: middle;
 }
 
-.issueTable tr:hover td {
-  background: var(--color-surface-2);
+.issueTable tbody tr {
+  transition: background 0.12s;
+  cursor: pointer;
+}
+
+.issueTable tbody tr:hover td {
+  background: rgba(88, 166, 255, 0.05);
+}
+
+.issueTable tbody tr:hover td:first-child {
+  border-left: 2px solid rgba(88, 166, 255, 0.6);
+  padding-left: calc(var(--spacing-md) - 2px);
 }
 
 .issueDetailCell {

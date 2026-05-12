@@ -419,6 +419,28 @@ function isInReviewIssue(issue: JiraIssue): boolean {
   return IN_REVIEW_STATUSES.some((reviewStatus) => lowerStatusName === reviewStatus);
 }
 
+/** Returns the CSS module class name that color-codes a status badge by its Jira status. */
+function resolveStatusBadgeClassName(statusName: string, statusCategoryKey: string): string {
+  const lowerStatus = statusName.toLowerCase();
+  if (ATTENTION_STATUSES.some((s) => lowerStatus.includes(s))) return styles.statusBlocked;
+  if (IN_REVIEW_STATUSES.some((s) => lowerStatus === s)) return styles.statusInReview;
+  if (statusCategoryKey === IN_PROGRESS_STATUS_CATEGORY) return styles.statusInProgress;
+  if (statusCategoryKey === DONE_STATUS_CATEGORY) return styles.statusDone;
+  if (statusCategoryKey === TODO_STATUS_CATEGORY) return styles.statusTodo;
+  return styles.statusDefault;
+}
+
+/** Returns the CSS module class name that color-codes a priority badge by its Jira priority name. */
+function resolvePriorityBadgeClassName(priorityName: string): string {
+  const lowerPriority = priorityName.toLowerCase();
+  if (lowerPriority === 'highest' || lowerPriority === 'critical') return styles.priorityHighest;
+  if (lowerPriority === 'high') return styles.priorityHigh;
+  if (lowerPriority === 'medium') return styles.priorityMedium;
+  if (lowerPriority === 'low') return styles.priorityLow;
+  if (lowerPriority === 'lowest') return styles.priorityLowest;
+  return styles.priorityDefault;
+}
+
 /** Groups issues into the five status zones for the dashboard chips. */
 function calculateStatusZoneCounts(issues: JiraIssue[]) {
   let attentionCount = 0;
@@ -525,9 +547,13 @@ function renderIssueCard({ issue, onIssueClick }: IssueCardProps) {
         <span className={styles.issueKeyLink}>
           {issue.key}
         </span>
-        <span className={styles.statusBadge}>{issue.fields.status.name}</span>
+        <span className={`${styles.statusBadge} ${resolveStatusBadgeClassName(issue.fields.status.name, issue.fields.status.statusCategory.key)}`}>
+          {issue.fields.status.name}
+        </span>
         {issue.fields.priority && (
-          <span className={styles.statusBadge}>{issue.fields.priority.name}</span>
+          <span className={`${styles.priorityBadge} ${resolvePriorityBadgeClassName(issue.fields.priority.name)}`}>
+            {issue.fields.priority.name}
+          </span>
         )}
       </div>
       <p className={styles.issueSummary}>{issue.fields.summary}</p>
@@ -574,7 +600,11 @@ function renderCompactRow(issue: JiraIssue, inlineIssueExpansion: InlineIssueExp
           <span className={styles.expandHint}>{isExpanded ? '▲ Less' : '▼ Details'}</span>
         </span>
         <span>{issue.fields.summary}</span>
-        <span>{issue.fields.status.name}</span>
+        <span>
+          <span className={`${styles.statusBadge} ${resolveStatusBadgeClassName(issue.fields.status.name, issue.fields.status.statusCategory.key)}`}>
+            {issue.fields.status.name}
+          </span>
+        </span>
         <span>{issue.fields.assignee?.displayName ?? '—'}</span>
         <span>{issue.fields.updated.slice(0, 10)}</span>
       </div>
@@ -613,8 +643,20 @@ function renderTableRow(issue: JiraIssue, inlineIssueExpansion: InlineIssueExpan
           </div>
         </td>
         <td>{issue.fields.summary}</td>
-        <td>{issue.fields.status.name}</td>
-        <td>{issue.fields.priority?.name ?? '—'}</td>
+        <td>
+          <span className={`${styles.statusBadge} ${resolveStatusBadgeClassName(issue.fields.status.name, issue.fields.status.statusCategory.key)}`}>
+            {issue.fields.status.name}
+          </span>
+        </td>
+        <td>
+          {issue.fields.priority ? (
+            <span className={`${styles.priorityBadge} ${resolvePriorityBadgeClassName(issue.fields.priority.name)}`}>
+              {issue.fields.priority.name}
+            </span>
+          ) : (
+            <span className={styles.priorityBadge}>—</span>
+          )}
+        </td>
         <td>{issue.fields.assignee?.displayName ?? '—'}</td>
         <td>{issue.fields.updated.slice(0, 10)}</td>
       </tr>
@@ -1100,6 +1142,7 @@ export default function MyIssuesView() {
             {STATUS_ZONE_CHIPS.map((chip) => (
               <button
                 className={`${styles.statusChip} ${state.activeStatusZone === chip.key ? styles.activeChip : ''}`}
+                data-zone={chip.key}
                 key={chip.key}
                 onClick={() =>
                   actions.setActiveStatusZone(
