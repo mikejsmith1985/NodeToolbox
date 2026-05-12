@@ -51,12 +51,11 @@ describe('useMyIssuesState', () => {
     vi.clearAllMocks();
   });
 
-  it('initialises with source=mine, viewMode=cards, persona=dev', () => {
+  it('initialises with source=mine and viewMode=cards', () => {
     const { result } = renderHook(() => useMyIssuesState());
 
     expect(result.current.state.source).toBe('mine');
     expect(result.current.state.viewMode).toBe('cards');
-    expect(result.current.state.persona).toBe('dev');
   });
 
   it('sets source when setSource is called', () => {
@@ -77,16 +76,6 @@ describe('useMyIssuesState', () => {
     });
 
     expect(result.current.state.viewMode).toBe('table');
-  });
-
-  it('sets persona when setPersona is called', () => {
-    const { result } = renderHook(() => useMyIssuesState());
-
-    act(() => {
-      result.current.actions.setPersona('qa');
-    });
-
-    expect(result.current.state.persona).toBe('qa');
   });
 
   it('sets activeStatusZone when setActiveStatusZone is called', () => {

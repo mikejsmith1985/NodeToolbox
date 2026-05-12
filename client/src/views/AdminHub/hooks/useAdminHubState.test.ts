@@ -298,3 +298,58 @@ describe('checkForUpdates', () => {
     expect(result.current.state.isCheckingUpdate).toBe(false);
   });
 });
+
+// ── installUpdate tests ──
+
+describe('installUpdate', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('does nothing when no update is available', async () => {
+    const { result } = renderHook(() => useAdminHubState());
+
+    await act(async () => {
+      await result.current.actions.installUpdate();
+    });
+
+    // updateCheckResult is null so the action should exit immediately.
+    expect(result.current.state.isInstallingUpdate).toBe(false);
+  });
+
+  it('sets isInstallingUpdate to false and updateInstallError when /api/update returns non-200', async () => {
+    // Set up fetch to: (1) return a valid version-check result, then (2) return a 500 for /api/update.
+    vi.spyOn(global, 'fetch')
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          currentVersion: '1.0.0',
+          latestVersion: '1.1.0',
+          hasUpdate: true,
+          releaseNotes: '',
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        text: async () => 'Internal Server Error',
+      } as Response);
+
+    const { result } = renderHook(() => useAdminHubState());
+
+    // First, run checkForUpdates to populate updateCheckResult with hasUpdate:true.
+    await act(async () => {
+      await result.current.actions.checkForUpdates();
+    });
+
+    expect(result.current.state.updateCheckResult?.hasUpdate).toBe(true);
+
+    // Now trigger the install — the second mock call returns 500.
+    await act(async () => {
+      await result.current.actions.installUpdate();
+    });
+
+    expect(result.current.state.isInstallingUpdate).toBe(false);
+    expect(result.current.state.updateInstallError).toContain('500');
+  });
+});

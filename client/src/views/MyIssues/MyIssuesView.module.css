@@ -47,9 +47,8 @@
   border-bottom-color: var(--color-accent);
 }
 
-/* ── Persona strip ── */
+/* ── Source strip ── */
 
-.personaStrip,
 .sourceStrip {
   display: flex;
   gap: var(--spacing-xs);
@@ -518,7 +517,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-lg);
-  max-width: 400px;
+  max-width: 640px;
 }
 
 .settingsSection {
@@ -766,3 +765,47 @@
 .exportDropdownItem:hover {
   background: var(--color-surface-2);
 }
+
+/* ── SNow section (unlinked ServiceNow issues) ── */
+
+.snowSection {
+  border: 1px solid rgba(0, 210, 255, 0.2);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  background: rgba(0, 210, 255, 0.03);
+}
+
+.snowSectionToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.snowSectionTitle {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.snowIssueList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
+}
+
+/* ── Linked Jira↔SNow pairs section ── */
+
+.linkedPairsSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+

@@ -13,7 +13,6 @@ const STATUS_CATEGORY_DONE = 'done';
 const STATUS_CATEGORY_IN_PROGRESS = 'indeterminate';
 const ART_TEAMS_STORAGE_KEY = 'nodetoolbox-art-teams';
 
-export type ArtPersona = 'sm' | 'po' | 'dev' | 'qa';
 export type ArtTab =
   | 'overview'
   | 'impediments'
@@ -59,7 +58,6 @@ export interface PiProgressStats {
 
 export interface ArtDataState {
   activeTab: ArtTab;
-  persona: ArtPersona;
   teams: ArtTeam[];
   selectedPiName: string;
   isLoadingAllTeams: boolean;
@@ -77,7 +75,6 @@ export interface ArtDataState {
 
 export interface ArtDataActions {
   setActiveTab: (tab: ArtTab) => void;
-  setPersona: (persona: ArtPersona) => void;
   setSelectedPiName: (name: string) => void;
   addTeam: (name: string, boardId: string, projectKey?: string) => void;
   removeTeam: (teamId: string) => void;
@@ -180,7 +177,6 @@ function computePiProgressStats(teams: ArtTeam[]): PiProgressStats {
 /** Hook providing all state and actions for the ART multi-team PI planning view. */
 export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
   const [activeTab, setActiveTabState] = useState<ArtTab>('overview');
-  const [persona, setPersonaState] = useState<ArtPersona>('sm');
   const [teams, setTeams] = useState<ArtTeam[]>(loadStoredTeams);
   // teamsRef keeps an always-current reference so loadTeam can read boardId without stale closures
   const teamsRef = useRef<ArtTeam[]>([]);
@@ -204,11 +200,7 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
     setActiveTabState(tab);
   }, []);
 
-  const setPersona = useCallback((newPersona: ArtPersona) => {
-    setPersonaState(newPersona);
-  }, []);
-
-  const setSelectedPiName = useCallback((name: string) => {
+  const setSelectedPiName= useCallback((name: string) => {
     setSelectedPiNameState(name);
   }, []);
 
@@ -339,7 +331,6 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
   return {
     state: {
       activeTab,
-      persona,
       teams,
       selectedPiName,
       isLoadingAllTeams,
@@ -352,7 +343,6 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
     },
     actions: {
       setActiveTab,
-      setPersona,
       setSelectedPiName,
       addTeam,
       removeTeam,

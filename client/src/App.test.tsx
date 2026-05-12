@@ -119,7 +119,7 @@ describe('App shell', () => {
     useRelayBridgeMock.mockReset();
     useProxyStatusMock.mockImplementation(() => undefined);
     useRelayBridgeMock.mockImplementation(() => undefined);
-    useSettingsStore.setState({ homePersona: 'all', cardOrder: [], recentViews: [], theme: 'dark' });
+    useSettingsStore.setState({ cardOrder: [], recentViews: [], theme: 'dark' });
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({

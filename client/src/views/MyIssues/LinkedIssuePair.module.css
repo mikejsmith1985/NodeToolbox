@@ -1,0 +1,168 @@
+/* LinkedIssuePair.module.css — Styles for a linked Jira↔SNow Problem pair card. */
+
+/* ── Outer wrapper ── */
+
+.pairWrapper {
+  border-left: 3px solid var(--color-border);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  margin-bottom: var(--spacing-xs);
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+
+/* Health-state left-border glow colors */
+.pairWrapper[data-health="green"]  { border-color: #34d399; }
+.pairWrapper[data-health="yellow"] { border-color: #fbbf24; }
+.pairWrapper[data-health="red"]    { border-color: #f87171; }
+
+/* ── Jira row (clickable header of the pair) ── */
+
+.jiraRow {
+  display: grid;
+  grid-template-columns: 32px 100px 1fr 130px 100px auto;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface-1);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.jiraRow:hover {
+  background: var(--color-surface-2);
+}
+
+/* ── Health badge in the rightmost Jira row column ── */
+
+.healthBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+.healthGreen  {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.3);
+}
+.healthYellow {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.3);
+}
+.healthRed    {
+  background: rgba(248, 113, 113, 0.15);
+  color: #f87171;
+  box-shadow: 0 0 8px rgba(248, 113, 113, 0.3);
+}
+
+/* ── Collapse/expand chevron ── */
+
+.chevron {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  transition: transform 0.2s ease;
+  display: inline-block;
+  margin-right: 4px;
+}
+.chevronOpen { transform: rotate(90deg); }
+
+/* ── Jira row data cells ── */
+
+.issueTypeIcon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.jiraKey {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-sm);
+  color: var(--color-accent);
+  white-space: nowrap;
+}
+
+.summary {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.priorityBadge {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ── SNow detail panel (expanded view) ── */
+
+.snowPanel {
+  background: var(--color-surface-2);
+  border-top: 1px solid var(--color-border);
+  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-sm) calc(var(--spacing-md) + 32px + var(--spacing-sm));
+  display: grid;
+  grid-template-columns: 110px 1fr 130px 100px;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.snowLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-cyan);
+  white-space: nowrap;
+}
+
+.snowNumber {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.snowSummary {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.snowStateBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(0, 229, 255, 0.12);
+  color: var(--color-cyan);
+  white-space: nowrap;
+}
+
+.matchSummary {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  padding-top: var(--spacing-xs);
+  grid-column: 1 / -1;
+}

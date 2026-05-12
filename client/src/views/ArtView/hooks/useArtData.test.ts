@@ -60,12 +60,6 @@ describe('useArtData', () => {
     expect(result.current.state.activeTab).toBe('impediments');
   });
 
-  it('sets persona when setPersona is called', () => {
-    const { result } = renderHook(() => useArtData());
-    act(() => { result.current.actions.setPersona('po'); });
-    expect(result.current.state.persona).toBe('po');
-  });
-
   it('loads stored teams from localStorage on initial render', () => {
     localStorage.setItem(
       'nodetoolbox-art-teams',

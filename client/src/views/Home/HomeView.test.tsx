@@ -1,8 +1,7 @@
-// HomeView.test.tsx — Unit tests for the persona-aware Home view.
+// HomeView.test.tsx — Unit tests for the sortable Home view.
 
 import type { ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -44,7 +43,7 @@ function renderHomeView() {
 describe('HomeView', () => {
   beforeEach(() => {
     window.localStorage.clear();
-    useSettingsStore.setState({ homePersona: 'all', cardOrder: [], recentViews: [] });
+    useSettingsStore.setState({ cardOrder: [], recentViews: [] });
   });
 
   it('renders the main heading', () => {
@@ -59,19 +58,6 @@ describe('HomeView', () => {
     APP_CARDS.forEach((appCard) => {
       expect(screen.getByRole('heading', { name: appCard.title })).toBeInTheDocument();
     });
-  });
-
-  it('reorders cards when the Dev persona is selected', async () => {
-    const user = userEvent.setup();
-    renderHomeView();
-
-    await user.click(screen.getByRole('button', { name: /dev/i }));
-
-    const cardTitles = screen.getAllByRole('heading', { level: 3 }).map((headingElement) => {
-      return headingElement.textContent;
-    });
-
-    expect(cardTitles[0]).toBe('Dev Workspace');
   });
 
   it('hides the recent views section when there are no recent views', () => {

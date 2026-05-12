@@ -17,6 +17,7 @@ const MOCK_RELAY_STATUS: RelayBridgeStatus = {
   isConnected: true,
   lastPingAt: '2025-01-01T00:00:00.000Z',
   version: '1.0.0',
+  hasSessionToken: true,
 };
 
 describe('useRelayBridge', () => {

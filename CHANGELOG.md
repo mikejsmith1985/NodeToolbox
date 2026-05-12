@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (My Issues — Jira ↔ ServiceNow dual-system view)
+- **ServiceNow issues in My Issues**: The My Issues tool now fetches all SNow work items assigned to the current user — incidents, problems, service-catalog tasks, and change requests — via the SNow relay. A "Fetch SNow Issues" button appears in the toolbar when the source is set to "My Issues".
+- **Auto-detected Jira ↔ SNow links**: The app detects bidirectional links between Jira Defects/Stories and SNow Problems using existing field conventions (`customfield_11203` on Jira, trailing Jira key in SNow `problem_statement`). No new fields or configuration required.
+- **Health badge on linked pairs**: Linked Jira↔SNow pairs are displayed as collapsible paired cards above the regular issue list. Each pair shows a color-coded health badge — 🟢 green (all mapped fields match), 🟡 yellow (partial mismatch), 🔴 red (no fields match).
+- **Status mapping configuration**: A new "Jira → ServiceNow Status Mapping" editor in the My Issues Settings tab lets users define which Jira status names correspond to which SNow state labels. The system mapping (`To Do → New`) is always active. All user-configured mappings persist in `localStorage` and survive app updates — no reconfiguration needed after an update.
+- **Unlinked SNow issues section**: SNow issues that are not part of a Jira link appear in a collapsible "ServiceNow Issues" section below the main issue list, so nothing is hidden from the user.
+
 ### Changed (Home — removed role/persona filter buttons)
 - **Home view — Dev, QA, SM, PO, RTE buttons removed**: The persona filter strip provided no real value; it only reordered cards without unlocking role-specific workflows, data, or views. The Home view now always shows all cards in sectioned layout. Saved drag order is preserved. `homePersona`/`setHomePersona` have been removed from the settings store and from localStorage.
 

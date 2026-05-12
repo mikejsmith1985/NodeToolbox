@@ -1,0 +1,94 @@
+/* SnowIssueRow.module.css — Styles for a single ServiceNow issue row in the My Issues table. */
+
+.snowRow {
+  display: grid;
+  /* Mirrors the Jira table column layout: type icon | key | summary | status | priority | date */
+  grid-template-columns: 32px 120px 1fr 130px 100px 120px;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-cyan);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+  cursor: default;
+}
+
+.snowRow:hover {
+  background: rgba(0, 229, 255, 0.04);
+  box-shadow: inset 0 0 12px rgba(0, 229, 255, 0.06);
+}
+
+/* Small SNow logo / icon in the first column */
+.typeIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(0, 229, 255, 0.15);
+  color: var(--color-cyan);
+  flex-shrink: 0;
+}
+
+.recordNumber {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.summary {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Status badge ── */
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.statusNew       { background: rgba(124, 58, 237, 0.18); color: #a78bfa; }
+.statusProgress  { background: rgba(0, 229, 255, 0.18);  color: var(--color-cyan); }
+.statusOnHold    { background: rgba(251, 191, 36, 0.18); color: #fbbf24; }
+.statusResolved  { background: rgba(52, 211, 153, 0.18); color: #34d399; }
+.statusClosed    { background: rgba(107, 114, 128, 0.18); color: #9ca3af; }
+.statusDefault   { background: rgba(107, 114, 128, 0.12); color: var(--color-text-secondary); }
+
+/* ── Priority badge ── */
+
+.priorityBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.priorityCritical { color: #f87171; }
+.priorityHigh     { color: #fb923c; }
+.priorityModerate { color: #fbbf24; }
+.priorityLow      { color: #34d399; }
+.priorityDefault  { color: var(--color-text-secondary); }
+
+.openedDate {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}

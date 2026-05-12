@@ -66,6 +66,8 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     },
     updateCheckError: null as string | null,
     isCheckingUpdate: false,
+    isInstallingUpdate: false,
+    updateInstallError: null as string | null,
     isUpdateSectionCollapsed: false,
     // ── Service Connectivity ──
     connectivityConfig: null as null | {
@@ -109,6 +111,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     setHygieneSectionCollapsed: vi.fn(),
     // ── Update Management ──
     checkForUpdates: vi.fn(),
+    installUpdate: vi.fn(),
     setUpdateSectionCollapsed: vi.fn(),
     // ── Advanced unlock ──
     advancedLock: vi.fn(),
@@ -171,6 +174,7 @@ describe('AdminHubView', () => {
 
     // Mock global fetch so the server control buttons don't make real network calls.
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) }));
+    vi.spyOn(window, 'alert').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -252,6 +256,30 @@ describe('AdminHubView', () => {
 
     expect(screen.getByText('Mock Dev Panel')).toBeInTheDocument();
     expect(screen.queryByText(/proxy & server setup/i)).not.toBeInTheDocument();
+  });
+
+  it('renders relay setup without a Copy Code button', () => {
+    renderAdminHubView();
+
+    expect(screen.getByRole('heading', { name: /relay activation/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /copy code/i })).not.toBeInTheDocument();
+  });
+
+  it('explains that the relay bookmarklet must be dragged when clicked in Admin Hub', async () => {
+    const user = userEvent.setup();
+    renderAdminHubView();
+
+    await user.click(screen.getByRole('link', { name: /NodeToolbox SNow Relay/i }));
+
+    expect(window.alert).toHaveBeenCalledWith(expect.stringMatching(/Drag "NodeToolbox SNow Relay"/));
+  });
+
+  it('keeps the real bookmarklet URL available for browser drag-to-bookmarks install', () => {
+    renderAdminHubView();
+
+    const bookmarkletLink = screen.getByRole('link', { name: /NodeToolbox SNow Relay/i });
+
+    expect(bookmarkletLink.getAttribute('href')).toMatch(/^javascript:\(function\(\)\{/);
   });
 });
 
@@ -413,6 +441,51 @@ describe('Update Management section', () => {
     renderAdminHubView();
     expect(screen.getByRole('textbox', { name: /release notes/i })).toBeInTheDocument();
     mockState.updateCheckResult = null;
+  });
+
+  it('renders the Install Update button when an update is available', () => {
+    mockState.updateCheckResult = {
+      currentVersion: '2.2.0',
+      latestVersion: '2.3.0',
+      hasUpdate: true,
+      releaseNotes: 'New features.',
+    };
+    renderAdminHubView();
+    expect(screen.getByRole('button', { name: /install update/i })).toBeInTheDocument();
+    mockState.updateCheckResult = null;
+  });
+
+  it('does not render the Install Update button when up to date', () => {
+    mockState.updateCheckResult = {
+      currentVersion: '2.3.0',
+      latestVersion: '2.3.0',
+      hasUpdate: false,
+      releaseNotes: '',
+    };
+    renderAdminHubView();
+    expect(screen.queryByRole('button', { name: /install update/i })).not.toBeInTheDocument();
+    mockState.updateCheckResult = null;
+  });
+
+  it('shows installing progress message when isInstallingUpdate is true', () => {
+    mockState.updateCheckResult = {
+      currentVersion: '2.2.0',
+      latestVersion: '2.3.0',
+      hasUpdate: true,
+      releaseNotes: '',
+    };
+    mockState.isInstallingUpdate = true;
+    renderAdminHubView();
+    expect(screen.getByText(/installing and restarting/i)).toBeInTheDocument();
+    mockState.updateCheckResult = null;
+    mockState.isInstallingUpdate = false;
+  });
+
+  it('shows install error message when updateInstallError is set', () => {
+    mockState.updateInstallError = 'Server did not restart within 60 seconds';
+    renderAdminHubView();
+    expect(screen.getByText(/server did not restart/i)).toBeInTheDocument();
+    mockState.updateInstallError = null;
   });
 });
 

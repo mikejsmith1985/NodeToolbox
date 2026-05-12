@@ -2,7 +2,7 @@
 
 import { render, screen, fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ArtTab, ArtPersona } from './hooks/useArtData.ts';
+import type { ArtTab } from './hooks/useArtData.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import { ToastProvider } from '../../components/Toast/ToastProvider.tsx';
 
@@ -13,7 +13,6 @@ const { mockJiraGet } = vi.hoisted(() => ({
 const { mockState, mockActions } = vi.hoisted(() => ({
   mockState: {
     activeTab: 'overview' as ArtTab,
-    persona: 'sm' as ArtPersona,
     teams: [
       {
         id: 'team-1',
@@ -42,7 +41,6 @@ const { mockState, mockActions } = vi.hoisted(() => ({
   },
   mockActions: {
     setActiveTab: vi.fn(),
-    setPersona: vi.fn(),
     setSelectedPiName: vi.fn(),
     addTeam: vi.fn(),
     removeTeam: vi.fn(),
@@ -108,14 +106,6 @@ describe('ArtView', () => {
     renderArtView();
     expect(screen.getByRole('tab', { name: /dependencies/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /board prep/i })).toBeInTheDocument();
-  });
-
-  it('shows the persona strip with SM/PO/Dev/QA options', () => {
-    renderArtView();
-    expect(screen.getByRole('button', { name: /^sm$/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^po$/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^dev$/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^qa$/i })).toBeInTheDocument();
   });
 
   it('shows the Overview tab with Load All Teams button', () => {

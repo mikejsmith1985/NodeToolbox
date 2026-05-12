@@ -1,32 +1,124 @@
-// snowApi.test.ts — Unit tests for the ServiceNow proxy client.
+// snowApi.test.ts — Unit tests for the ServiceNow proxy/relay client.
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { useConnectionStore } from '../store/connectionStore.ts';
 import { snowFetch } from './snowApi.ts';
+
+vi.mock('./relayBridgeApi.ts', () => ({
+  postRelayRequest: vi.fn(),
+  waitForRelayResult: vi.fn(),
+}));
+
+import { postRelayRequest, waitForRelayResult } from './relayBridgeApi.ts';
 
 const SNOW_PATH = '/api/now/table/change_request';
 const SNOW_RESPONSE = { result: [] };
 
+function resetConnectionStore(): void {
+  useConnectionStore.setState(useConnectionStore.getInitialState());
+}
+
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn());
+  vi.stubGlobal('crypto', { randomUUID: () => 'test-uuid-relay-001' });
+  resetConnectionStore();
 });
 
-describe('snowApi', () => {
-  it('builds the ServiceNow proxy URL and returns parsed JSON', async () => {
+afterEach(() => {
+  // clearAllMocks clears call history on module mock vi.fn() instances (which
+  // restoreAllMocks skips because they aren't spies). This prevents call counts
+  // from one test leaking into the next.
+  vi.clearAllMocks();
+});
+
+// ── Relay-required path (relay inactive) ─────────────────────────────────────
+
+describe('snowApi — relay inactive', () => {
+  it('does not silently fall back to the server-side proxy', async () => {
+    await expect(snowFetch<typeof SNOW_RESPONSE>(SNOW_PATH)).rejects.toThrow(
+      'SNow relay not connected',
+    );
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(postRelayRequest).not.toHaveBeenCalled();
+  });
+});
+
+// ── Relay routing path (relay active) ────────────────────────────────────────
+
+describe('snowApi — relay routing (relay active)', () => {
+  beforeEach(() => {
+    // Activate relay bridge so snowFetch routes through it
+    useConnectionStore.setState({
+      relayBridgeStatus: {
+        system: 'snow',
+        isConnected: true,
+        lastPingAt: null,
+        version: null,
+      },
+    });
+  });
+
+  it('routes through the relay bridge when relay is active', async () => {
+    vi.mocked(postRelayRequest).mockResolvedValue(undefined);
+    vi.mocked(waitForRelayResult).mockResolvedValue({
+      id: 'test-uuid-relay-001',
+      ok: true,
+      status: 200,
+      data: SNOW_RESPONSE,
+      error: null,
+    });
+
+    const result = await snowFetch<typeof SNOW_RESPONSE>(SNOW_PATH);
+
+    expect(postRelayRequest).toHaveBeenCalledWith({
+      sys: 'snow',
+      id: 'test-uuid-relay-001',
+      method: 'GET',
+      path: SNOW_PATH,
+      body: null,
+      authHeader: null,
+    });
+    expect(waitForRelayResult).toHaveBeenCalledWith('test-uuid-relay-001', 'snow');
+    // fetch (/snow-proxy) must NOT be called — relay path bypasses it
+    expect(fetch).not.toHaveBeenCalled();
+    expect(result).toEqual(SNOW_RESPONSE);
+  });
+
+  it('falls back to direct proxy when forceDirectProxy is true', async () => {
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue(SNOW_RESPONSE),
     } as unknown as Response);
 
-    await expect(snowFetch<typeof SNOW_RESPONSE>(SNOW_PATH)).resolves.toEqual(SNOW_RESPONSE);
+    await snowFetch(SNOW_PATH, { forceDirectProxy: true });
+
     expect(fetch).toHaveBeenCalledWith(`/snow-proxy${SNOW_PATH}`, {});
+    expect(postRelayRequest).not.toHaveBeenCalled();
   });
 
-  it('throws on an error response', async () => {
-    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 502 } as Response);
+  it('throws with a relay-specific message when the relay returns a non-ok result', async () => {
+    vi.mocked(postRelayRequest).mockResolvedValue(undefined);
+    vi.mocked(waitForRelayResult).mockResolvedValue({
+      id: 'test-uuid-relay-001',
+      ok: false,
+      status: 403,
+      data: null,
+      error: 'Forbidden',
+    });
 
     await expect(snowFetch(SNOW_PATH)).rejects.toThrow(
-      'SNow fetch /api/now/table/change_request failed: 502',
+      'SNow relay fetch /api/now/table/change_request failed: 403 — Forbidden',
     );
+  });
+
+  it('throws a timeout error when the relay bridge does not respond in time', async () => {
+    vi.mocked(postRelayRequest).mockResolvedValue(undefined);
+    vi.mocked(waitForRelayResult).mockRejectedValue(
+      new Error('Relay bridge timed out (30 seconds). Is the bookmarklet still active on the ServiceNow page?'),
+    );
+
+    await expect(snowFetch(SNOW_PATH)).rejects.toThrow('Relay bridge timed out');
   });
 });

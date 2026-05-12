@@ -14,9 +14,9 @@
 //   4. The bookmarklet POSTs the result to /api/relay-bridge/result.
 //   5. NodeToolbox front-end long-polls /api/relay-bridge/result/:id for the response.
 //
-// Chrome always treats http://localhost as a secure context regardless of the calling
-// page's protocol, so bookmarklets on HTTPS SNow/Jira pages can freely fetch
-// http://localhost:5555 without mixed-content or CORS restrictions.
+// Chrome treats localhost-style loopback addresses as safe browser targets, but
+// corporate Edge can still require explicit CORS/private-network approval for
+// HTTPS ServiceNow pages calling the local HTTP bridge.
 //
 // All state is in-process memory and resets on server restart — this is intentional.
 // Bridge sessions are ephemeral (bookmarklet must be re-clicked each server start).
@@ -42,6 +42,9 @@ const POLL_TIMEOUT_MS = 28000;
  */
 const RESULT_TIMEOUT_MS = 30000;
 
+/** Message returned when the active browser relay is gone before a response arrives. */
+const RELAY_DISCONNECTED_ERROR = 'Relay bridge disconnected. Reopen ServiceNow and click the relay bookmarklet again.';
+
 // ── Bridge state ──────────────────────────────────────────────────────────────
 
 /**
@@ -51,7 +54,7 @@ const RESULT_TIMEOUT_MS = 30000;
  * @returns {{ isActive: boolean, pendingRequests: Array, pendingResults: object,
  *             pollWaiters: Array, resultWaiters: object,
  *             lastRegisteredAt: number|null, lastDeregisteredAt: number|null,
- *             lastPolledAt: number|null }}
+ *             lastPolledAt: number|null, hasSessionToken: boolean }}
  */
 function createBridgeChannel() {
   return {
@@ -69,6 +72,8 @@ function createBridgeChannel() {
     lastRegisteredAt:    null,
     lastDeregisteredAt:  null,
     lastPolledAt:        null,
+    // True when the SNow bookmarklet found g_ck and can send X-UserToken
+    hasSessionToken:     false,
   };
 }
 
@@ -81,6 +86,46 @@ const bridgeState = SUPPORTED_SYSTEMS.reduce(function(acc, sys) {
 // ── Router ────────────────────────────────────────────────────────────────────
 
 const router = express.Router();
+
+// ── Cross-origin access for bookmarklets ─────────────────────────────────────
+
+/**
+ * Allows the ServiceNow page to call the local relay bridge from a bookmarklet.
+ * Corporate Chrome/Edge treats https://*.service-now.com -> http://127.0.0.1 as
+ * cross-origin/private-network traffic, so the bridge must explicitly allow it.
+ */
+function applyRelayCorsHeaders(req, res, next) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With');
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  res.setHeader('Access-Control-Max-Age', '86400');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
+  return next();
+}
+
+router.use(applyRelayCorsHeaders);
+
+/**
+ * Releases NodeToolbox requests that are waiting for a bookmarklet result.
+ * When the browser tab goes away, those requests can never complete, so failing
+ * fast gives the user a useful recovery message instead of a silent 30s freeze.
+ *
+ * @param {object} channel - Relay channel that owns the waiting responses.
+ * @param {string} disconnectErrorMessage - User-facing reason for the failure.
+ */
+function failPendingResultWaiters(channel, disconnectErrorMessage) {
+  Object.keys(channel.resultWaiters).forEach(requestId => {
+    const resultWaiter = channel.resultWaiters[requestId];
+    clearTimeout(resultWaiter.timer);
+    resultWaiter.res.status(503).json({ error: disconnectErrorMessage });
+    delete channel.resultWaiters[requestId];
+  });
+}
 
 // ── Registration ─────────────────────────────────────────────────────────────
 
@@ -97,13 +142,15 @@ router.post('/register', (req, res) => {
   }
 
   const channel = bridgeState[sys];
+  failPendingResultWaiters(channel, RELAY_DISCONNECTED_ERROR);
   channel.isActive = true;
   channel.lastRegisteredAt = Date.now();
+  channel.hasSessionToken = req.query.gck === '1' || req.body?.hasSessionToken === true;
   // Flush stale queued items — they were meant for the previous bookmarklet session
   channel.pendingRequests = [];
   channel.pendingResults  = {};
 
-  res.json({ ok: true, sys });
+  res.json({ ok: true, sys, hasSessionToken: channel.hasSessionToken });
 });
 
 /**
@@ -125,6 +172,7 @@ router.post('/deregister', (req, res) => {
       waiter.res.json({ request: null });
     });
     channel.pollWaiters = [];
+    failPendingResultWaiters(channel, RELAY_DISCONNECTED_ERROR);
   }
 
   res.json({ ok: true });
@@ -134,20 +182,27 @@ router.post('/deregister', (req, res) => {
 
 /**
  * NodeToolbox front-end polls this to detect when the bookmarklet has registered.
- * Also used by the 30-second keep-alive check to detect if the bookmarklet navigated away.
+ * Returns the shape expected by the React client's RelayBridgeStatus type:
+ *   { isConnected, system, lastPingAt (ISO string), version }
  *
  * GET /api/relay-bridge/status?sys=snow
  */
 router.get('/status', (req, res) => {
   const sys = req.query.sys || 'snow';
   const channel = bridgeState[sys];
-  if (!channel) return res.json({ active: false, sys });
+  if (!channel) {
+    return res.json({ isConnected: false, system: sys, lastPingAt: null, version: null });
+  }
   res.json({
-    active:              channel.isActive,
-    sys,
-    lastRegisteredAt:    channel.lastRegisteredAt,
-    lastDeregisteredAt:  channel.lastDeregisteredAt,
-    lastPolledAt:        channel.lastPolledAt,
+    isConnected: channel.isActive,
+    system:      sys,
+    hasSessionToken: channel.hasSessionToken,
+    // lastPolledAt is a millisecond timestamp — convert to ISO string for the client.
+    // null until the bookmarklet has completed at least one long-poll cycle.
+    lastPingAt:  channel.lastPolledAt !== null
+      ? new Date(channel.lastPolledAt).toISOString()
+      : null,
+    version:     null,
   });
 });
 
@@ -314,16 +369,25 @@ module.exports.getBridgeStatus = function getBridgeStatus(sys) {
  * Used by /api/snow-diag so the diagnostic report can show connection history.
  *
  * @param {string} sys - System identifier: 'snow', 'jira', or 'conf'
- * @returns {{ active: boolean, lastRegisteredAt: number|null, lastDeregisteredAt: number|null, lastPolledAt: number|null }}
+ * @returns {{ active: boolean, lastRegisteredAt: number|null, lastDeregisteredAt: number|null, lastPolledAt: number|null, hasSessionToken: boolean }}
  */
 module.exports.getBridgeDiag = function getBridgeDiag(sys) {
   const channel = bridgeState[sys];
-  if (!channel) return { active: false, lastRegisteredAt: null, lastDeregisteredAt: null, lastPolledAt: null };
+  if (!channel) {
+    return {
+      active: false,
+      lastRegisteredAt: null,
+      lastDeregisteredAt: null,
+      lastPolledAt: null,
+      hasSessionToken: false,
+    };
+  }
   return {
     active:              channel.isActive,
     lastRegisteredAt:    channel.lastRegisteredAt,
     lastDeregisteredAt:  channel.lastDeregisteredAt,
     lastPolledAt:        channel.lastPolledAt,
+    hasSessionToken:     channel.hasSessionToken,
   };
 };
 

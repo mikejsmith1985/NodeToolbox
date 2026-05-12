@@ -33,6 +33,13 @@ export interface JiraIssue {
     customfield_10016?: number | null;
     /** Fix versions this issue is scheduled for; empty when not assigned to a release. */
     fixVersions?: Array<{ name: string }>;
+    /**
+     * Linked ServiceNow record reference.
+     * Populated on Defect and Story issue types when the issue has been associated
+     * with a SNow Problem via the Jira↔SNow cross-system linking workflow.
+     * The value is a SNow record identifier or URL (e.g. "PRB0001234").
+     */
+    customfield_11203?: string | null;
   };
 }
 

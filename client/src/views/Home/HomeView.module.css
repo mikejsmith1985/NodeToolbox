@@ -1,12 +1,8 @@
-/* HomeView.module.css — Styles for the persona-aware Home view layout. */
+/* HomeView.module.css — Styles for the Home view layout. */
 
 .homeView { padding: 24px; max-width: 1200px; margin: 0 auto; }
 .heading { font-size: 24px; font-weight: 800; color: var(--color-text-primary); margin: 0 0 4px; text-align: center; }
 .subheading { font-size: 14px; color: var(--color-text-secondary); margin: 0 0 20px; text-align: center; }
-.personaStrip { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
-.personaBtn { padding: 5px 14px; border-radius: 100px; border: 1px solid var(--color-border); background: var(--color-surface-1); color: var(--color-text-secondary); font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
-.personaBtn:hover { border-color: var(--color-accent); color: var(--color-accent); }
-.active { background: var(--color-accent); border-color: var(--color-accent); color: #fff; font-weight: 600; }
 .recentSection { margin-bottom: 24px; }
 .recentLabel { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--color-text-secondary); margin-bottom: 8px; }
 .recentChips { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -16,4 +12,3 @@
 .sectionLabel { font-size: 12px; font-weight: 700; white-space: nowrap; }
 .sectionLine { flex: 1; height: 1px; background: var(--color-border); }
 .cardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-bottom: 24px; }
-.flatGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }

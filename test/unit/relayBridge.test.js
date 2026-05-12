@@ -30,26 +30,38 @@ describe('GET /api/relay-bridge/status', () => {
   it('reports inactive before any bookmarklet has registered', async () => {
     const response = await request(buildTestApp()).get('/api/relay-bridge/status?sys=snow');
     expect(response.status).toBe(200);
-    expect(response.body.active).toBe(false);
-    expect(response.body.sys).toBe('snow');
+    expect(response.body.isConnected).toBe(false);
+    expect(response.body.system).toBe('snow');
   });
 
   it('reports active after the bookmarklet registers', async () => {
     const app = buildTestApp();
     await request(app).post('/api/relay-bridge/register?sys=snow').send({});
     const response = await request(app).get('/api/relay-bridge/status?sys=snow');
-    expect(response.body.active).toBe(true);
+    expect(response.body.isConnected).toBe(true);
   });
 
-  it('defaults sys to snow when no query param is provided', async () => {
+  it('defaults system to snow when no query param is provided', async () => {
     const response = await request(buildTestApp()).get('/api/relay-bridge/status');
-    expect(response.body.sys).toBe('snow');
+    expect(response.body.system).toBe('snow');
   });
 });
 
 // ── Register / deregister ─────────────────────────────────────────────────────
 
 describe('POST /api/relay-bridge/register', () => {
+  it('allows ServiceNow bookmarklets to call the bridge from a cross-origin page', async () => {
+    const response = await request(buildTestApp())
+      .options('/api/relay-bridge/register?sys=snow')
+      .set('Origin', 'https://example.service-now.com')
+      .set('Access-Control-Request-Method', 'POST')
+      .set('Access-Control-Request-Headers', 'content-type');
+
+    expect(response.status).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe('*');
+    expect(response.headers['access-control-allow-private-network']).toBe('true');
+  });
+
   it('returns ok:true and the sys identifier', async () => {
     const response = await request(buildTestApp())
       .post('/api/relay-bridge/register?sys=jira')
@@ -73,7 +85,25 @@ describe('POST /api/relay-bridge/deregister', () => {
     await request(app).post('/api/relay-bridge/register?sys=snow').send({});
     await request(app).post('/api/relay-bridge/deregister?sys=snow').send({});
     const statusResponse = await request(app).get('/api/relay-bridge/status?sys=snow');
-    expect(statusResponse.body.active).toBe(false);
+    expect(statusResponse.body.isConnected).toBe(false);
+  });
+
+  it('fails in-flight result waits immediately when the bookmarklet disconnects', async () => {
+    const app = buildTestApp();
+    const requestId = 'disconnect-result-' + Date.now();
+    await request(app).post('/api/relay-bridge/register?sys=snow').send({});
+
+    const pendingResultResponse = request(app)
+      .get('/api/relay-bridge/result/' + requestId + '?sys=snow')
+      .timeout({ response: 1000, deadline: 1500 })
+      .then(response => response);
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+    await request(app).post('/api/relay-bridge/deregister?sys=snow').send({});
+
+    const disconnectResponse = await pendingResultResponse;
+    expect(disconnectResponse.status).toBe(503);
+    expect(disconnectResponse.body.error).toContain('disconnected');
   });
 });
 
@@ -237,22 +267,28 @@ describe('getBridgeDiag()', () => {
   });
 });
 
-// ── Status endpoint includes timestamps ───────────────────────────────────────
+// ── Status endpoint — lastPingAt field ────────────────────────────────────────
 
-describe('GET /api/relay-bridge/status — timestamp fields', () => {
-  it('includes null timestamps before any registration', async () => {
-    const response = await request(buildTestApp()).get('/api/relay-bridge/status?sys=snow');
-    expect(response.body.lastRegisteredAt).toBeNull();
-    expect(response.body.lastDeregisteredAt).toBeNull();
-    expect(response.body.lastPolledAt).toBeNull();
-  });
-
-  it('includes a non-null lastRegisteredAt after registration', async () => {
+describe('GET /api/relay-bridge/status — lastPingAt field', () => {
+  it('returns null lastPingAt before the bookmarklet has polled', async () => {
+    // Register but do not poll — lastPingAt is only set after the bookmarklet polls
     const app = buildTestApp();
-    const before = Date.now();
     await request(app).post('/api/relay-bridge/register?sys=snow').send({});
     const response = await request(app).get('/api/relay-bridge/status?sys=snow');
-    expect(response.body.lastRegisteredAt).toBeGreaterThanOrEqual(before);
+    expect(response.body.lastPingAt).toBeNull();
+  });
+
+  it('returns an ISO 8601 lastPingAt after the bookmarklet polls', async () => {
+    const app = buildTestApp();
+    // Enqueue a request so the poll returns immediately (avoids the 28s long-poll hang)
+    await request(app)
+      .post('/api/relay-bridge/request')
+      .send({ sys: 'snow', id: 'ping-test', method: 'GET', path: '/api/now/table/sys_user' });
+    await request(app).get('/api/relay-bridge/poll?sys=snow');
+    const response = await request(app).get('/api/relay-bridge/status?sys=snow');
+    // lastPingAt should be a valid ISO date string
+    expect(response.body.lastPingAt).not.toBeNull();
+    expect(new Date(response.body.lastPingAt).toISOString()).toBe(response.body.lastPingAt);
   });
 });
 

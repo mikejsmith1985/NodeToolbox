@@ -3,11 +3,13 @@
 // The Config tab keeps the existing proxy, ART, access-control, hygiene, update, and backup sections.
 // The Dev Panel tab embeds the live API diagnostics view so leadership and support workflows stay in one hub.
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, type MouseEvent as ReactMouseEvent } from 'react'
 
+import { BookmarkletInstallLink } from '../../components/BookmarkletInstallLink/index.tsx'
 import ConfirmDialog from '../../components/ConfirmDialog/index.tsx'
 import PromptDialog from '../../components/PromptDialog/index.tsx'
 import { useToast } from '../../components/Toast/ToastProvider.tsx'
+import { SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts'
 import { useConnectionStore } from '../../store/connectionStore'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
@@ -825,23 +827,33 @@ interface UpdateManagementSectionProps {
   updateCheckResult: UpdateCheckResult | null
   updateCheckError: string | null
   isCheckingUpdate: boolean
+  isInstallingUpdate: boolean
+  updateInstallError: string | null
   isUpdateSectionCollapsed: boolean
   onCheckForUpdates(): void
+  onInstallUpdate(): void
   onSetCollapsed(isCollapsed: boolean): void
 }
 
 /**
  * Update Management section — checks the server for the latest version and
  * displays release notes so the operator knows when to upgrade.
+ * When an update is available, shows an Install button that triggers the
+ * server-side update process and waits for the new version to restart.
  */
 function UpdateManagementSection({
   updateCheckResult,
   updateCheckError,
   isCheckingUpdate,
+  isInstallingUpdate,
+  updateInstallError,
   isUpdateSectionCollapsed,
   onCheckForUpdates,
+  onInstallUpdate,
   onSetCollapsed,
 }: UpdateManagementSectionProps) {
+  const hasAvailableUpdate = updateCheckResult?.hasUpdate === true;
+
   return (
     <section className={styles.sectionCard}>
       <div className={styles.collapsibleHeader}>
@@ -865,15 +877,31 @@ function UpdateManagementSection({
             <button
               className={styles.actionButton}
               onClick={onCheckForUpdates}
-              disabled={isCheckingUpdate}
+              disabled={isCheckingUpdate || isInstallingUpdate}
             >
               {isCheckingUpdate ? '⏳ Checking…' : '🔍 Check for Updates'}
             </button>
+
+            {hasAvailableUpdate && (
+              <button
+                className={`${styles.actionButton} ${styles.saveButton}`}
+                onClick={onInstallUpdate}
+                disabled={isInstallingUpdate}
+              >
+                {isInstallingUpdate ? '⏳ Installing and restarting…' : '🔄 Install Update'}
+              </button>
+            )}
           </div>
 
           {updateCheckError !== null && (
             <p className={styles.updateStatusError} role="alert">
               ⚠️ {updateCheckError}
+            </p>
+          )}
+
+          {updateInstallError !== null && (
+            <p className={styles.updateStatusError} role="alert">
+              ⚠️ {updateInstallError}
             </p>
           )}
 
@@ -888,7 +916,7 @@ function UpdateManagementSection({
                 </span>
               </div>
 
-              {updateCheckResult.hasUpdate ? (
+              {hasAvailableUpdate ? (
                 <p className={styles.updateStatusAvailable}>
                   🆕 Update available: v{updateCheckResult.latestVersion}
                 </p>
@@ -1139,58 +1167,17 @@ function ServiceConnectivitySection({
 
 // ── Relay Activation section ──
 
-/**
- * The SNow relay bookmarklet JS (minified).
- * When activated on a ServiceNow page, it registers with the NodeToolbox server
- * at localhost:5555, polls for pending API requests, executes them using the
- * browser's authenticated SNow session, and returns the results.
- * The `credentials: 'include'` flag passes Okta session cookies automatically.
- */
-const SNOW_RELAY_BOOKMARKLET_CODE = [
-  "javascript:(function(){",
-  "const S='http://localhost:5555';",
-  "const Y='snow';",
-  "let run=true;",
-  "function reg(){return fetch(S+'/api/relay-bridge/register?sys='+Y,{method:'POST'});}",
-  "async function loop(){",
-  "await reg();",
-  "console.log('[NodeToolbox] SNow relay active');",
-  "while(run){",
-  "try{",
-  "const r=await fetch(S+'/api/relay-bridge/poll?sys='+Y);",
-  "const d=await r.json();",
-  "if(d&&d.request){",
-  "const q=d.request;",
-  "try{",
-  "const u=window.location.origin+q.path;",
-  "const h={'Content-Type':'application/json'};",
-  "if(q.authHeader)h['Authorization']=q.authHeader;",
-  "const a=await fetch(u,{method:q.method||'GET',headers:h,body:q.body?JSON.stringify(q.body):undefined,credentials:'include'});",
-  "const b=await a.text();",
-  "await fetch(S+'/api/relay-bridge/result',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:q.id,sys:Y,ok:a.ok,status:a.status,data:b,error:null})});",
-  "}catch(e){",
-  "await fetch(S+'/api/relay-bridge/result',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:q.id,sys:Y,ok:false,status:0,data:null,error:e.message})});",
-  "}}}catch(e){await new Promise(r=>setTimeout(r,2000));}}",
-  "}",
-  "window.addEventListener('beforeunload',function(){",
-  "run=false;",
-  "navigator.sendBeacon(S+'/api/relay-bridge/deregister?sys='+Y);",
-  "});",
-  "loop();",
-  "})();",
-].join('')
-
 /** Relay Activation section — bookmarklet generator for the SNow relay bridge. */
 function RelayActivationSection() {
-  const [isCopied, setIsCopied] = useState(false)
   const relayBridgeStatus = useConnectionStore((storeState) => storeState.relayBridgeStatus)
   const isRelayActive = relayBridgeStatus?.isConnected ?? false
 
-  function handleCopyBookmarklet() {
-    navigator.clipboard.writeText(SNOW_RELAY_BOOKMARKLET_CODE).then(() => {
-      setIsCopied(true)
-      setTimeout(() => setIsCopied(false), 2000)
-    })
+  function handleBookmarkletClick(clickEvent: ReactMouseEvent<HTMLAnchorElement>) {
+    clickEvent.preventDefault()
+    window.alert(
+      'Drag "NodeToolbox SNow Relay" to your browser bookmarks bar first. ' +
+      'After ServiceNow opens, click that bookmark from the ServiceNow tab.',
+    )
   }
 
   return (
@@ -1206,7 +1193,7 @@ function RelayActivationSection() {
       <p className={styles.adminDescription}>
         SNow uses Okta authentication, which blocks direct API calls from NodeToolbox.
         The relay bookmarklet runs inside your authenticated SNow browser tab and
-        forwards API calls on behalf of the server.
+        forwards API calls through that tab, matching the original ToolBox flow.
       </p>
 
       <h3 className={styles.sectionTitle}>How to activate</h3>
@@ -1218,27 +1205,18 @@ function RelayActivationSection() {
       </ol>
 
       <div className={styles.devUtilitiesRow}>
-        {/* Drag this link to the bookmarks bar — do not click it as a regular link. */}
-        {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
-        <a
-          href={SNOW_RELAY_BOOKMARKLET_CODE}
+        <BookmarkletInstallLink
+          bookmarkletCode={SNOW_RELAY_BOOKMARKLET_CODE}
           className={`${styles.actionButton} ${styles.bookmarkletLink}`}
-          draggable
           title="Drag this to your bookmarks bar to install the relay"
-          onClick={(clickEvent) => {
-            // Prevent navigation — this link exists only to be dragged to the toolbar.
-            clickEvent.preventDefault()
-          }}
+          onClick={handleBookmarkletClick}
         >
-          🔖 NodeToolbox SNow Relay
-        </a>
-        <button className={styles.actionButton} onClick={handleCopyBookmarklet}>
-          {isCopied ? '✓ Copied' : '📋 Copy Code'}
-        </button>
+          🔖 Drag to bookmarks: NodeToolbox SNow Relay
+        </BookmarkletInstallLink>
       </div>
 
       <p className={styles.adminDescription}>
-        ⚠ Bookmark bar must be visible (Ctrl+Shift+B in Chrome/Edge).
+        ⚠ Bookmark bar must be visible (Ctrl+Shift+B in Chrome/Edge). Do not click the bookmarklet here.
         The relay resets when you close the SNow tab or restart the server.
       </p>
     </section>
@@ -1339,8 +1317,11 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
         updateCheckResult={state.updateCheckResult}
         updateCheckError={state.updateCheckError}
         isCheckingUpdate={state.isCheckingUpdate}
+        isInstallingUpdate={state.isInstallingUpdate}
+        updateInstallError={state.updateInstallError}
         isUpdateSectionCollapsed={state.isUpdateSectionCollapsed}
         onCheckForUpdates={actions.checkForUpdates}
+        onInstallUpdate={actions.installUpdate}
         onSetCollapsed={actions.setUpdateSectionCollapsed}
       />
 

@@ -9,18 +9,11 @@ import JiraFieldPicker from '../../components/JiraFieldPicker/index.tsx';
 import JiraProjectPicker from '../../components/JiraProjectPicker/index.tsx';
 import BlueprintTab from './BlueprintTab.tsx';
 import DependenciesTab from './DependenciesTab.tsx';
-import type { ArtTab, ArtPersona, ArtTeam, ArtBoardPrepIssue, PiProgressStats } from './hooks/useArtData.ts';
+import type { ArtTab, ArtTeam, ArtBoardPrepIssue, PiProgressStats } from './hooks/useArtData.ts';
 import { useArtData } from './hooks/useArtData.ts';
 import styles from './ArtView.module.css';
 
 // ── Constants ──
-
-const PERSONA_OPTIONS: { key: ArtPersona; label: string }[] = [
-  { key: 'sm', label: 'SM' },
-  { key: 'po', label: 'PO' },
-  { key: 'dev', label: 'Dev' },
-  { key: 'qa', label: 'QA' },
-];
 
 const ART_TAB_DEFINITIONS: { key: ArtTab; label: string }[] = [
   { key: 'overview', label: 'Overview' },
@@ -54,18 +47,6 @@ export default function ArtView() {
 
   return (
     <div className={styles.artView}>
-      <div className={styles.personaStrip}>
-        {PERSONA_OPTIONS.map((option) => (
-          <button
-            key={option.key}
-            className={`${styles.personaBtn} ${state.persona === option.key ? styles.personaBtnActive : ''}`}
-            onClick={() => actions.setPersona(option.key)}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-
       <PiProgressHeader piName={state.selectedPiName} stats={state.piProgressStats} />
 
       <div className={styles.tabBar} role="tablist">

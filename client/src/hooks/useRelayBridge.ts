@@ -6,11 +6,13 @@ import { fetchRelayStatus } from '../services/relayBridgeApi.ts';
 import { useConnectionStore } from '../store/connectionStore.ts';
 import type { RelaySystem } from '../types/relay.ts';
 
-const PROBE_INTERVAL_MS = 30_000;
+// 3-second interval keeps the relay indicator responsive without flooding the server.
+// The status endpoint is in-process memory, so frequent polling is cheap.
+const PROBE_INTERVAL_MS = 3_000;
 
 /**
- * Probes the relay bridge for the given system on mount and every 30 seconds.
- * Updates the shared connection store when the relay status changes.
+ * Probes the HTTP relay bridge for the given system on mount and every 3 seconds.
+ * Updates the shared connection store when the bookmarklet registers or disconnects.
  */
 export function useRelayBridge(system: RelaySystem): void {
   const setRelayBridgeStatus = useConnectionStore((state) => state.setRelayBridgeStatus);

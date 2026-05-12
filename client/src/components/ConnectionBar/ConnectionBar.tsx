@@ -4,8 +4,10 @@
 // details and — for the relay — the bookmarklet activation workflow so users never
 // have to navigate away to Admin Hub just to set up the relay bridge.
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
 
+import { BookmarkletInstallLink } from '../BookmarkletInstallLink/index.tsx';
+import { openSnowRelay, SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
 import styles from './ConnectionBar.module.css';
 
@@ -14,45 +16,6 @@ import styles from './ConnectionBar.module.css';
 type ActivePanel = 'jira' | 'snow' | 'relay' | null;
 
 // ── Constants ──
-
-/**
- * The SNow relay bookmarklet code.
- * Drag the rendered link to the browser bookmarks bar, then click it on any
- * authenticated ServiceNow page to activate the relay bridge.
- */
-const SNOW_RELAY_BOOKMARKLET_CODE = [
-  "javascript:(function(){",
-  "const S='http://localhost:5555';",
-  "const Y='snow';",
-  "let run=true;",
-  "function reg(){return fetch(S+'/api/relay-bridge/register?sys='+Y,{method:'POST'});}",
-  "async function loop(){",
-  "await reg();",
-  "console.log('[NodeToolbox] SNow relay active');",
-  "while(run){",
-  "try{",
-  "const r=await fetch(S+'/api/relay-bridge/poll?sys='+Y);",
-  "const d=await r.json();",
-  "if(d&&d.request){",
-  "const q=d.request;",
-  "try{",
-  "const u=window.location.origin+q.path;",
-  "const h={'Content-Type':'application/json'};",
-  "if(q.authHeader)h['Authorization']=q.authHeader;",
-  "const a=await fetch(u,{method:q.method||'GET',headers:h,body:q.body?JSON.stringify(q.body):undefined,credentials:'include'});",
-  "const b=await a.text();",
-  "await fetch(S+'/api/relay-bridge/result',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:q.id,sys:Y,ok:a.ok,status:a.status,data:b,error:null})});",
-  "}catch(e){",
-  "await fetch(S+'/api/relay-bridge/result',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:q.id,sys:Y,ok:false,status:0,data:null,error:e.message})});",
-  "}}}catch(e){await new Promise(r=>setTimeout(r,2000));}}",
-  "}",
-  "window.addEventListener('beforeunload',function(){",
-  "run=false;",
-  "navigator.sendBeacon(S+'/api/relay-bridge/deregister?sys='+Y);",
-  "});",
-  "loop();",
-  "})();",
-].join('');
 
 // ── Sub-components ──
 
@@ -95,17 +58,28 @@ function ConnectionIndicatorButton({
 interface RelayPanelProps {
   isRelayActive: boolean;
   lastPingAt: string | null;
+  /** The ServiceNow instance base URL from proxy config — used for the "Open ServiceNow" button. */
+  snowBaseUrl: string | null;
 }
 
 /** Inline panel for the Relay indicator — shows relay status and bookmarklet activation. */
-function RelayPanel({ isRelayActive, lastPingAt }: RelayPanelProps) {
-  const [isCopied, setIsCopied] = useState(false);
+function RelayPanel({ isRelayActive, lastPingAt, snowBaseUrl }: RelayPanelProps) {
+  /** Opens the ServiceNow instance in a new tab so the user can activate the relay bookmarklet. */
+  function handleOpenSnowPage() {
+    if (snowBaseUrl !== null && snowBaseUrl !== '') {
+      const didOpenRelayTab = openSnowRelay(snowBaseUrl);
+      if (!didOpenRelayTab) {
+        window.alert('NodeToolbox could not open ServiceNow. Allow popups for this site, then try again.');
+      }
+    }
+  }
 
-  function handleCopyBookmarklet() {
-    navigator.clipboard.writeText(SNOW_RELAY_BOOKMARKLET_CODE).then(() => {
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000);
-    });
+  function handleBookmarkletClick(clickEvent: ReactMouseEvent<HTMLAnchorElement>) {
+    clickEvent.preventDefault();
+    window.alert(
+      'Drag "NodeToolbox SNow Relay" to your browser bookmarks bar first. ' +
+      'After ServiceNow opens, click that bookmark from the ServiceNow tab.',
+    );
   }
 
   const lastPingText = lastPingAt !== null
@@ -124,32 +98,35 @@ function RelayPanel({ isRelayActive, lastPingAt }: RelayPanelProps) {
         <>
           <p className={styles.panelLabel}>To activate:</p>
           <ol className={styles.panelSteps}>
-            <li>Drag the bookmark button below to your browser toolbar</li>
-            <li>Open any ServiceNow page while logged in</li>
-            <li>Click <strong>NodeToolbox SNow Relay</strong> in your toolbar</li>
-            <li>This indicator will turn green automatically</li>
+            <li>
+              {snowBaseUrl !== null && snowBaseUrl !== ''
+                ? <>Click <strong>Open ServiceNow</strong> below, or navigate to any SNow page while logged in</>
+                : 'Navigate to any ServiceNow page while logged in'}
+            </li>
+            <li>Click <strong>NodeToolbox SNow Relay</strong> in your bookmarks bar</li>
+            <li>The relay will activate and return focus to this tab automatically</li>
           </ol>
         </>
       )}
 
       <div className={styles.panelActions}>
-        {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
-        <a
-          href={SNOW_RELAY_BOOKMARKLET_CODE}
+        {!isRelayActive && snowBaseUrl !== null && snowBaseUrl !== '' && (
+          <button className={styles.panelButton} onClick={handleOpenSnowPage}>
+            🔗 Open ServiceNow
+          </button>
+        )}
+        <BookmarkletInstallLink
+          bookmarkletCode={SNOW_RELAY_BOOKMARKLET_CODE}
           className={styles.bookmarkletLink}
-          draggable
-          title="Drag to bookmarks bar"
-          onClick={(e) => e.preventDefault()}
+          title="Drag this to your bookmarks bar"
+          onClick={handleBookmarkletClick}
         >
-          🔖 NodeToolbox SNow Relay
-        </a>
-        <button className={styles.panelButton} onClick={handleCopyBookmarklet}>
-          {isCopied ? '✓ Copied' : '📋 Copy Code'}
-        </button>
+          🔖 Drag to bookmarks: NodeToolbox SNow Relay
+        </BookmarkletInstallLink>
       </div>
 
       <p className={styles.panelHint}>
-        ⚠️ Bookmark bar must be visible (Ctrl+Shift+B). Relay resets on tab close or server restart.
+        ⚠️ Do not click the bookmarklet here. Drag it to the bookmarks bar, then click it from the ServiceNow tab.
       </p>
     </div>
   );
@@ -164,8 +141,8 @@ interface SnowPanelProps {
 /** Inline panel for the SNow indicator — shows connection method and config hint. */
 function SnowPanel({ isSnowActive, isRelayActive, isSnowVerified }: SnowPanelProps) {
   function getConnectionMethodText(): string {
-    if (isSnowVerified) return 'Direct API probe succeeded';
-    if (isRelayActive) return 'Connected via relay bridge (Okta session)';
+    if (isRelayActive) return 'Connected via relay bookmarklet (Okta browser session)';
+    if (isSnowVerified) return 'Proxy probe succeeded, but app traffic still requires relay';
     return 'Not connected';
   }
 
@@ -213,8 +190,10 @@ export function ConnectionBar() {
   const isSnowVerified = useConnectionStore((state) => state.isSnowVerified);
   const relayBridgeStatus = useConnectionStore((state) => state.relayBridgeStatus);
   const isRelayActive = relayBridgeStatus?.isConnected ?? false;
-  // SNow is reachable either via direct verified connection or via an active relay bookmarklet.
-  const isSnowActive = isSnowVerified || isRelayActive;
+  // The original ToolBox app treated ServiceNow as connected only after the relay pong.
+  const isSnowActive = isRelayActive;
+  // The SNow base URL comes from proxy config — used to provide a direct "Open" button.
+  const snowBaseUrl = useConnectionStore((state) => state.proxyStatus?.snow?.baseUrl ?? null);
 
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -266,7 +245,7 @@ export function ConnectionBar() {
       {activePanel !== null && (
         <div className={styles.connectPanel} role="region" aria-label="Connection details">
           {activePanel === 'relay' && (
-            <RelayPanel isRelayActive={isRelayActive} lastPingAt={lastPingAt} />
+            <RelayPanel isRelayActive={isRelayActive} lastPingAt={lastPingAt} snowBaseUrl={snowBaseUrl} />
           )}
           {activePanel === 'snow' && (
             <SnowPanel

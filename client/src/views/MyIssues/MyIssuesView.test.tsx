@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
 
-import type { IssueSource, Persona, SortField, ViewMode } from './hooks/useMyIssuesState.ts';
+import type { IssueSource, SortField, ViewMode } from './hooks/useMyIssuesState.ts';
 
 // ── Hoisted mocks ──
 
@@ -59,7 +59,6 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     source: 'mine' as IssueSource,
     viewMode: 'cards' as ViewMode,
     sortBy: 'updated' as SortField,
-    persona: 'dev' as Persona,
     jqlQuery: '',
     jqlHistory: [] as string[],
     activeStatusZone: null as string | null,
@@ -94,7 +93,6 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     setSource: vi.fn(),
     setViewMode: vi.fn(),
     setSortBy: vi.fn(),
-    setPersona: vi.fn(),
     setJqlQuery: vi.fn(),
     setActiveStatusZone: vi.fn(),
     setSelectedBoardId: vi.fn(),
@@ -193,15 +191,6 @@ describe('MyIssuesView', () => {
     expect(screen.getByRole('tab', { name: 'Settings' })).toBeInTheDocument();
   });
 
-  it('shows the persona strip with Dev/QA/SM/PO buttons', () => {
-    render(<MyIssuesView />);
-
-    expect(screen.getByRole('button', { name: 'Dev' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'QA' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'SM' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'PO' })).toBeInTheDocument();
-  });
-
   it('shows the source strip with My Issues/JQL/Saved Filter/Board buttons', () => {
     render(<MyIssuesView />);
 
@@ -255,7 +244,7 @@ describe('MyIssuesView', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Settings' }));
 
-    expect(screen.getByText(/default persona/i)).toBeInTheDocument();
+    expect(screen.getByText(/default view mode/i)).toBeInTheDocument();
   });
 });
 
