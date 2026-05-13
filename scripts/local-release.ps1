@@ -247,7 +247,9 @@ Write-Host "       ✅ $ZipOutputPath ($zipSizeKb KB)"
 Write-Host "  [5/6] Building exe: $ExeFileName..."
 Push-Location $RepoRoot
 try {
-    npx pkg server.js --targets node20-win-x64 --output $ExeOutputPath --silent
+    # Note: --silent is intentionally omitted so build errors are visible in
+    # the release log. pkg output goes to stderr and is captured on failure.
+    npx pkg server.js --targets node20-win-x64 --output $ExeOutputPath
     if ($LASTEXITCODE -ne 0) { throw "pkg build failed with exit code $LASTEXITCODE" }
 } finally {
     Pop-Location

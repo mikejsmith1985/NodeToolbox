@@ -685,11 +685,16 @@ function createApiRouter(configuration) {
 
   // ── POST /api/update ────────────────────────────────────────────────────
   // Downloads a specific release version from GitHub, extracts it to a staging
-  // directory, then spawns the new process and exits the current one.
+  // directory, spawns the replacement process, and exits the current one.
   // Expects { version: "0.2.10" } in the request body.
-  // Responds before the download begins because the process exits mid-download
-  // from the browser's perspective — polling /api/version detects when the
-  // replacement is ready.
+  //
+  // IMPORTANT: The response is sent AFTER the download and extraction complete,
+  // not before. This prevents a race condition where the client's
+  // pollUntilServerRestarts() polls too early, finds the old server still alive
+  // (mid-download), and incorrectly declares the update successful. By the time
+  // the client receives { ok: true, restarting: true }, the server has already
+  // staged the new binary and is about to spawn + exit — so the first poll that
+  // finds the server down means the handoff is genuinely in progress.
 
   router.post('/api/update', async (req, res) => {
     const requestedVersion = (req.body && req.body.version) ? String(req.body.version).trim() : '';
@@ -703,19 +708,21 @@ function createApiRouter(configuration) {
       return res.json({ alreadyLatest: true });
     }
 
-    // Respond immediately so the browser knows the update is in progress.
-    // The server process will exit once the download + extraction completes.
-    res.json({ ok: true, restarting: true });
-
     try {
       console.log(`  ⬇ Update requested: v${APP_VERSION} → v${requestedVersion}`);
       const { newExecPath, newExecArgs } = await prepareUpdate(requestedVersion);
       console.log(`  ✅ Update staged — spawning v${requestedVersion} and exiting.`);
-      spawnReplacementAndExit(newExecPath, newExecArgs);
+
+      // Respond now that the download is complete and the replacement is ready.
+      // Give the response 300 ms to flush through Express and reach the browser
+      // before process.exit(0) tears down the socket.
+      res.json({ ok: true, restarting: true });
+      setTimeout(() => spawnReplacementAndExit(newExecPath, newExecArgs), 300);
     } catch (updateError) {
-      // The response has already been sent, so log the failure server-side.
-      // The browser will notice the server went away and show the restart polling UI.
+      // Surface the failure to the client so the UI can display a real error
+      // message instead of silently reloading to the same version.
       console.error('  ❌ Update failed:', updateError.message);
+      res.status(500).json({ ok: false, error: updateError.message });
     }
   });
 
