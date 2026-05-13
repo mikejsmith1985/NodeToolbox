@@ -7,7 +7,6 @@ import {
   testSnowConnectivity,
   testGitHubConnectivity,
   testConfluenceConnectivity,
-  testRovoConnectivity,
 } from './connectivityConfigApi.ts';
 
 const MOCK_CONNECTIVITY_RESULT = {
@@ -113,30 +112,5 @@ describe('testConfluenceConnectivity', () => {
     await testConfluenceConnectivity();
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
     expect(requestBody.system).toBe('confluence');
-  });
-});
-
-describe('testRovoConnectivity', () => {
-  it('returns probe result with isOk mapped from server ok field', async () => {
-    mockFetchOnce(MOCK_SERVER_PROBE_OK);
-    const result = await testRovoConnectivity();
-    expect(result.isOk).toBe(true);
-    expect(result.statusCode).toBe(200);
-  });
-
-  it('maps server ok=true for HTTP 400 (Rovo MCP reachability probe)', async () => {
-    mockFetchOnce({ ok: true, statusCode: 400, message: 'GET probe rejected — server is live.' });
-    const result = await testRovoConnectivity();
-    expect(result.isOk).toBe(true);
-    expect(result.statusCode).toBe(400);
-  });
-
-  it('posts system=rovo to the test endpoint', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
-      ok: true, status: 200, json: () => Promise.resolve(MOCK_SERVER_PROBE_OK),
-    } as Response);
-    await testRovoConnectivity();
-    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
-    expect(requestBody.system).toBe('rovo');
   });
 });

@@ -50,3 +50,9 @@
 .passphraseInput:focus { outline: none; border-color: var(--color-accent); }
 .passphraseError { margin: 0; color: var(--color-danger); font-size: var(--font-size-sm); }
 .passphraseActions { display: flex; gap: var(--spacing-sm); }
+
+/* ── Rovo prompt copy modal ── */
+.promptModal { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-lg); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-1); width: min(640px, 90vw); max-height: 80vh; }
+.promptInstructions { margin: 0; font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+.promptTextArea { box-sizing: border-box; width: 100%; flex: 1; min-height: 260px; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-text-primary); font-size: var(--font-size-sm); font-family: monospace; resize: vertical; }
+.promptActions { display: flex; gap: var(--spacing-sm); justify-content: flex-end; }

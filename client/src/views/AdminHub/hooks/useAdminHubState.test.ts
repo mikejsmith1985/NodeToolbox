@@ -137,7 +137,6 @@ vi.mock('../../../services/connectivityConfigApi.ts', () => ({
   testSnowConnectivity: vi.fn(),
   testGitHubConnectivity: vi.fn(),
   testConfluenceConnectivity: vi.fn(),
-  testRovoConnectivity: vi.fn(),
 }));
 
 import {
@@ -146,7 +145,6 @@ import {
   testSnowConnectivity,
   testGitHubConnectivity,
   testConfluenceConnectivity,
-  testRovoConnectivity,
 } from '../../../services/connectivityConfigApi.ts';
 
 const MOCK_CONNECTIVITY_CONFIG = {
@@ -277,30 +275,6 @@ describe('connectivity config', () => {
 
     expect(result.current.state.confluenceTestResult?.isOk).toBe(false);
     expect(result.current.state.confluenceTestResult?.message).toBe('Test request failed.');
-  });
-
-  it('testRovoConfig sets rovoTestResult on success', async () => {
-    vi.mocked(testRovoConnectivity).mockResolvedValueOnce({ isOk: true, statusCode: 200, message: 'Rovo MCP reachable.' });
-    const { result } = renderHook(() => useAdminHubState());
-
-    await act(async () => {
-      await result.current.actions.testRovoConfig();
-    });
-
-    expect(result.current.state.rovoTestResult?.isOk).toBe(true);
-    expect(result.current.state.isRovoTesting).toBe(false);
-  });
-
-  it('testRovoConfig sets a failure result on fetch error', async () => {
-    vi.mocked(testRovoConnectivity).mockRejectedValueOnce(new Error('Network failure'));
-    const { result } = renderHook(() => useAdminHubState());
-
-    await act(async () => {
-      await result.current.actions.testRovoConfig();
-    });
-
-    expect(result.current.state.rovoTestResult?.isOk).toBe(false);
-    expect(result.current.state.rovoTestResult?.message).toBe('Test request failed.');
   });
 });
 

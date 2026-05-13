@@ -84,8 +84,6 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     isGitHubTesting:      false,
     confluenceTestResult: null as null | { isOk: boolean; statusCode: number; message: string },
     isConfluenceTesting:  false,
-    rovoTestResult:       null as null | { isOk: boolean; statusCode: number; message: string },
-    isRovoTesting:        false,
   },
   mockActions: {
     setProxyUrl: vi.fn(),
@@ -128,7 +126,6 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     testSnowConfig: vi.fn(),
     testGitHubConfig: vi.fn(),
     testConfluenceConfig: vi.fn(),
-    testRovoConfig: vi.fn(),
   },
 }));
 
