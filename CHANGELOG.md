@@ -14,7 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Feature Request in AdminHub**: A new "💡 Request a Feature" section at the bottom of the AdminHub Config tab.Users with a GitHub account can open a pre-filled issue directly (`🚀 Open GitHub Issue`). Users without one can click **📋 Copy Request** to copy the formatted request as plain text and send it via email, Teams, or any other channel.
 
-### Fixed (UX — removed redundant Home button)
+### Fixed
+
+- **Update Manager — silent failure on slow connections**: The `POST /api/update` route previously responded with `{ ok: true, restarting: true }` *before* starting the download. On any connection where the 21 MB exe-zip took more than 3 seconds to download, the client's `pollUntilServerRestarts()` would poll the still-alive old server, get a 200 OK, and reload the page — silently showing the same version with no error. The server now waits for the download and extraction to complete, *then* responds and spawns the replacement process after a 300 ms flush window. Download errors are now surfaced to the client as HTTP 500 with an error message instead of being silently swallowed.
+
 - **Top bar — duplicate Home navigation removed**: The "⌂ Home" button that appeared next to the "NodeToolbox" title was redundant — clicking the app title already navigates home (standard UX pattern). The separate button has been removed to de-clutter the header.
 
 
