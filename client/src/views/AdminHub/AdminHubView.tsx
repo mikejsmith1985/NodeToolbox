@@ -1518,6 +1518,27 @@ interface AdminHubMainContentProps {
 function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
   return (
     <>
+      {/*
+       * AdminAccessSection is intentionally rendered FIRST so the unlock form
+       * is always visible at the top of the page. Sections below (Proxy,
+       * ServiceConnectivity) rely on isAdminUnlocked — if AdminAccess were
+       * placed after them the user would see a locked message with no obvious
+       * way to unlock it without scrolling past the locked content.
+       */}
+      <AdminAccessSection
+        isAdminUnlocked={state.isAdminUnlocked}
+        adminUsername={state.adminUsername}
+        adminPinInput={state.adminPinInput}
+        adminUnlockError={state.adminUnlockError}
+        isSnowIntegrationEnabled={state.featureFlags.isSnowIntegrationEnabled}
+        isAiEnabled={state.featureFlags.isAiEnabled}
+        onUsernameChange={actions.setAdminUsername}
+        onPinInputChange={actions.setAdminPinInput}
+        onTryUnlock={actions.tryUnlock}
+        onLock={actions.lock}
+        onToggleFeatureFlag={actions.toggleFeatureFlag}
+      />
+
       <ProxySection
         jiraProxyUrl={state.proxyUrls.jiraProxyUrl}
         snowProxyUrl={state.proxyUrls.snowProxyUrl}
@@ -1557,20 +1578,6 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
         artSaveStatus={state.artSaveStatus}
         onSetArtField={actions.setArtField}
         onSave={actions.saveArtSettings}
-      />
-
-      <AdminAccessSection
-        isAdminUnlocked={state.isAdminUnlocked}
-        adminUsername={state.adminUsername}
-        adminPinInput={state.adminPinInput}
-        adminUnlockError={state.adminUnlockError}
-        isSnowIntegrationEnabled={state.featureFlags.isSnowIntegrationEnabled}
-        isAiEnabled={state.featureFlags.isAiEnabled}
-        onUsernameChange={actions.setAdminUsername}
-        onPinInputChange={actions.setAdminPinInput}
-        onTryUnlock={actions.tryUnlock}
-        onLock={actions.lock}
-        onToggleFeatureFlag={actions.toggleFeatureFlag}
       />
 
       <RelayActivationSection />
