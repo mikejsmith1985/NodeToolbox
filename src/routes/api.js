@@ -611,6 +611,76 @@ function createApiRouter(configuration) {
     res.json({ success: true });
   });
 
+  // ── POST /api/rovo/generate ───────────────────────────────────────────────
+  // Sends CHG issue context to the Atlassian Rovo AI and returns the four
+  // generated CHG content fields. Uses the configured Confluence credentials
+  // (same Atlassian Cloud account). Not surfaced in any documentation.
+
+  router.post('/api/rovo/generate', async (req, res) => {
+    const confluenceConfig = configuration.confluence || {};
+
+    if (!confluenceConfig.username || !confluenceConfig.apiToken) {
+      return res.status(502).json({
+        error:   'Atlassian credentials not configured',
+        message: 'Configure Confluence credentials in the Admin Hub to enable AI assistance.',
+      });
+    }
+
+    const body      = req.body || {};
+    const issueList = (body.issueList || '').trim();
+
+    if (!issueList) {
+      return res.status(400).json({ error: 'issueList is required' });
+    }
+
+    const prompt    = buildRovoChgPrompt(issueList, body);
+    const authValue = 'Basic ' + Buffer.from(
+      confluenceConfig.username + ':' + confluenceConfig.apiToken
+    ).toString('base64');
+
+    try {
+      const rovoResponse = await fetch('https://api.atlassian.com/rovo/v1/chat', {
+        method:  'POST',
+        headers: {
+          'Authorization': authValue,
+          'Content-Type':  'application/json',
+          'Accept':        'application/json',
+        },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+
+      if (!rovoResponse.ok) {
+        const errorText = await rovoResponse.text().catch(() => '');
+        return res.status(502).json({
+          error:   'Rovo API error',
+          message: `Rovo returned HTTP ${rovoResponse.status}` +
+                   (errorText ? ': ' + errorText.slice(0, 200) : ''),
+        });
+      }
+
+      const rovoData = await rovoResponse.json();
+
+      // Accept OpenAI-style (choices[0].message.content) and Rovo-native response shapes.
+      const aiText = (rovoData && rovoData.choices && rovoData.choices[0] && rovoData.choices[0].message && rovoData.choices[0].message.content)
+        || (rovoData && rovoData.message && rovoData.message.content)
+        || (rovoData && rovoData.content)
+        || '';
+
+      if (!aiText) {
+        return res.status(502).json({ error: 'Rovo AI returned an empty response' });
+      }
+
+      res.json(parseRovoChgFields(aiText));
+    } catch (networkError) {
+      res.status(502).json({
+        error:   'Network error',
+        message: 'Could not reach Atlassian Rovo API: ' + networkError.message,
+      });
+    }
+  });
+
   // ── /api/snow-session ─────────────────────────────────────────────────────
   // Manages the SNow in-memory session token forwarded from the browser relay
   // after Okta authentication.
@@ -855,6 +925,68 @@ function mergeConfluenceConfig(configuration, incomingConfluence) {
   if (incomingConfluence.baseUrl  !== undefined) configuration.confluence.baseUrl  = incomingConfluence.baseUrl;
   if (incomingConfluence.username !== undefined) configuration.confluence.username = incomingConfluence.username;
   if (incomingConfluence.apiToken !== undefined) configuration.confluence.apiToken = incomingConfluence.apiToken;
+}
+
+// ── Rovo AI helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Builds the structured prompt sent to Rovo for CHG content generation.
+ * The explicit section markers give the AI clear boundaries to fill in,
+ * making the response reliably parseable by parseRovoChgFields.
+ *
+ * @param {string} issueList      - Newline-separated "[KEY] Summary" lines
+ * @param {object} currentFields  - Existing CHG field values to improve upon
+ * @returns {string} Complete prompt string
+ */
+function buildRovoChgPrompt(issueList, currentFields) {
+  const existingContent = [
+    currentFields.shortDescription && ('Current Short Description: ' + currentFields.shortDescription),
+    currentFields.description      && ('Current Description: ' + currentFields.description),
+    currentFields.justification    && ('Current Justification: ' + currentFields.justification),
+    currentFields.riskImpact       && ('Current Risk & Impact: ' + currentFields.riskImpact),
+  ].filter(Boolean).join('\n');
+
+  return [
+    'You are assisting with a ServiceNow Change Request for a planned software release.',
+    '',
+    'Jira issues included in this release:',
+    issueList,
+    '',
+    existingContent ? 'Existing content to refine:\n' + existingContent + '\n' : '',
+    'Generate the following four CHG fields. Respond ONLY in this exact format with no extra commentary:',
+    '',
+    'SHORT_DESCRIPTION: [one-line summary under 100 characters]',
+    'DESCRIPTION: [multi-line description of what is being deployed and why]',
+    'JUSTIFICATION: [business justification for this change]',
+    'RISK_AND_IMPACT: [risk assessment and business impact analysis]',
+  ].join('\n');
+}
+
+/**
+ * Parses the Rovo AI response text into the four CHG field values.
+ * Looks for section markers and extracts the content between them.
+ * Falls back to an empty string for any section that cannot be found.
+ *
+ * @param {string} aiText - Raw text returned by Rovo
+ * @returns {{ shortDescription: string, description: string, justification: string, riskImpact: string }}
+ */
+function parseRovoChgFields(aiText) {
+  function extractSection(text, startMarker, endMarker) {
+    const startIndex = text.indexOf(startMarker);
+    if (startIndex === -1) return '';
+
+    const valueStart = startIndex + startMarker.length;
+    const endIndex   = endMarker ? text.indexOf(endMarker, valueStart) : text.length;
+
+    return text.slice(valueStart, endIndex !== -1 ? endIndex : text.length).trim();
+  }
+
+  return {
+    shortDescription: extractSection(aiText, 'SHORT_DESCRIPTION:', 'DESCRIPTION:'),
+    description:      extractSection(aiText, 'DESCRIPTION:',       'JUSTIFICATION:'),
+    justification:    extractSection(aiText, 'JUSTIFICATION:',     'RISK_AND_IMPACT:'),
+    riskImpact:       extractSection(aiText, 'RISK_AND_IMPACT:',   null),
+  };
 }
 
 // ── Exports ───────────────────────────────────────────────────────────────────

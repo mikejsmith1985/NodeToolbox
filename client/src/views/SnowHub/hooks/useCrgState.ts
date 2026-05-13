@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
+import { snowFetch } from '../../../services/snowApi.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 
 type CrgStep = 1 | 2 | 3 | 4 | 5;
@@ -53,6 +54,8 @@ interface CrgActions {
   updateEnvironment: (environmentKey: EnvironmentKey, update: Partial<EnvironmentConfig>) => void;
   goToStep: (step: CrgStep) => void;
   reset: () => void;
+  /** POSTs the generated CHG fields to ServiceNow and stores the resulting CHG number. */
+  createChg: () => Promise<void>;
 }
 
 const EMPTY_VALUE = '';
@@ -318,6 +321,47 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     setState(createInitialCrgState());
   }, []);
 
+  /**
+   * Creates a ServiceNow Change Request using the generated CHG content.
+   * Uses the browser relay (bookmarklet must be active on the SNow tab).
+   * Sets isSubmitting while the request is in-flight, then stores the CHG
+   * number in submitResult on success or an error message on failure.
+   */
+  const createChg = useCallback(async () => {
+    setState((previousState) => ({ ...previousState, isSubmitting: true, submitResult: null }));
+
+    try {
+      const responseData = await snowFetch<{ result: { number: string } }>(
+        '/api/now/table/change_request',
+        {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            short_description:    state.generatedShortDescription,
+            description:          state.generatedDescription,
+            justification:        state.generatedJustification,
+            risk_impact_analysis: state.generatedRiskImpact,
+          }),
+        },
+      );
+
+      const changeNumber = responseData.result.number;
+      setState((previousState) => ({
+        ...previousState,
+        isSubmitting: false,
+        submitResult: `${changeNumber} created`,
+        currentStep:  4 as CrgStep,
+      }));
+    } catch (unknownError) {
+      const errorMessage = unknownError instanceof Error ? unknownError.message : 'CHG creation failed';
+      setState((previousState) => ({
+        ...previousState,
+        isSubmitting: false,
+        submitResult: 'Error: ' + errorMessage,
+      }));
+    }
+  }, [state.generatedShortDescription, state.generatedDescription, state.generatedJustification, state.generatedRiskImpact]);
+
   const actions = useMemo<CrgActions>(() => {
     return {
       setFetchMode,
@@ -332,8 +376,9 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       updateEnvironment,
       goToStep,
       reset,
+      createChg,
     };
-  }, [fetchIssues, generateDocs, goToStep, reset, selectAllIssues, setCustomJql, setFetchMode, setFixVersion, setProjectKey, toggleIssueSelection, updateEnvironment, updateGeneratedField]);
+  }, [fetchIssues, generateDocs, goToStep, reset, selectAllIssues, setCustomJql, setFetchMode, setFixVersion, setProjectKey, toggleIssueSelection, updateEnvironment, updateGeneratedField, createChg]);
 
   return { state, actions };
 }

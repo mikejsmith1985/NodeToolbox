@@ -4,10 +4,15 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
+import { snowFetch } from '../../../services/snowApi.ts';
 import { useCrgState } from './useCrgState.ts';
 
 vi.mock('../../../services/jiraApi.ts', () => ({
   jiraGet: vi.fn(),
+}));
+
+vi.mock('../../../services/snowApi.ts', () => ({
+  snowFetch: vi.fn(),
 }));
 
 function createMockJiraIssue(issueKey: string, summary: string) {
@@ -307,5 +312,66 @@ describe('useCrgState', () => {
     // Short description should reference "custom JQL query" rather than a project/version string.
     expect(result.current.state.generatedShortDescription).toContain('custom JQL query');
     expect(result.current.state.generatedDescription).toContain('ABC-101');
+  });
+
+  describe('createChg', () => {
+    afterEach(() => {
+      vi.clearAllMocks();
+    });
+
+    /** Helper that advances the hook to step 3 (Preview Docs) with generated fields ready. */
+    async function advanceToPreviewStep() {
+      vi.mocked(jiraGet)
+        .mockResolvedValueOnce([] as never)
+        .mockResolvedValueOnce({ issues: [createMockJiraIssue('TOOL-1', 'Fix bug')] } as never);
+
+      const hookResult = renderHook(() => useCrgState());
+
+      act(() => {
+        hookResult.result.current.actions.setProjectKey('tool');
+        hookResult.result.current.actions.setFixVersion('1.0.0');
+      });
+
+      await act(async () => {
+        await hookResult.result.current.actions.fetchIssues();
+      });
+
+      act(() => {
+        hookResult.result.current.actions.generateDocs();
+      });
+
+      return hookResult;
+    }
+
+    it('POSTs the generated fields to the SNow table endpoint and records the CHG number', async () => {
+      vi.mocked(snowFetch).mockResolvedValue({ result: { number: 'CHG0001234' } } as never);
+
+      const { result } = await advanceToPreviewStep();
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      expect(vi.mocked(snowFetch)).toHaveBeenCalledWith(
+        '/api/now/table/change_request',
+        expect.objectContaining({ method: 'POST' }),
+      );
+
+      expect(result.current.state.submitResult).toBe('CHG0001234 created');
+      expect(result.current.state.isSubmitting).toBe(false);
+    });
+
+    it('sets submitResult to an error string when snowFetch throws', async () => {
+      vi.mocked(snowFetch).mockRejectedValue(new Error('SNow relay not connected') as never);
+
+      const { result } = await advanceToPreviewStep();
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      expect(result.current.state.submitResult).toContain('SNow relay not connected');
+      expect(result.current.state.isSubmitting).toBe(false);
+    });
   });
 });

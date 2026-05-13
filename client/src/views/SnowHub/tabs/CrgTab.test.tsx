@@ -50,6 +50,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     updateEnvironment: vi.fn(),
     goToStep: vi.fn(),
     reset: vi.fn(),
+    createChg: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -88,6 +89,7 @@ describe('CrgTab', () => {
     resetMockState();
     Object.values(mockActions).forEach((mockAction) => mockAction.mockReset());
     mockActions.fetchIssues.mockResolvedValue(undefined);
+    mockActions.createChg.mockResolvedValue(undefined);
   });
 
   it('renders step 1 with the project key input and fetch button', () => {
@@ -219,5 +221,45 @@ describe('CrgTab', () => {
     render(<CrgTab />);
 
     expect(screen.getByRole('alert')).toHaveTextContent('A JQL query is required.');
+  });
+
+  it('renders the Create CHG button on step 5 (Results)', () => {
+    mockState.currentStep = 5;
+    mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
+
+    render(<CrgTab />);
+
+    expect(screen.getByRole('button', { name: 'Create CHG' })).toBeInTheDocument();
+  });
+
+  it('calls createChg when the Create CHG button is clicked on step 5', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 5;
+    mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
+
+    render(<CrgTab />);
+
+    await user.click(screen.getByRole('button', { name: 'Create CHG' }));
+
+    expect(mockActions.createChg).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables the Create CHG button when isSubmitting is true', () => {
+    mockState.currentStep = 5;
+    mockState.isSubmitting = true;
+    mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
+
+    render(<CrgTab />);
+
+    expect(screen.getByRole('button', { name: 'Creating CHG…' })).toBeDisabled();
+  });
+
+  it('disables the Create CHG button when there is no generated content', () => {
+    mockState.currentStep = 5;
+    // All generated fields empty (default mock state)
+
+    render(<CrgTab />);
+
+    expect(screen.getByRole('button', { name: 'Create CHG' })).toBeDisabled();
   });
 });

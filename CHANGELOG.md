@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **CRG — Create CHG action**: The Results step now includes a **Create CHG** button that submits the generated content directly to ServiceNow (requires SNow relay to be active). Also added internal content enhancement capability for the Preview Docs step.
+
+### Added
 - **Confluence + Rovo connectivity tests in Admin Hub**: The Service Connectivity section now has a full **Confluence** subsection (Base URL, Atlassian email, Cloud API token, save + Test Connection button) and a **Rovo** subsection with a dedicated "🤖 Test Rovo" button. The Confluence probe hits `/wiki/rest/api/user/current`; the Rovo probe checks reachability of the Atlassian MCP server (`mcp.atlassian.com`). A note in the UI clarifies that Confluence Cloud uses Basic Auth with an Atlassian Cloud API token — not the same as a Jira on-prem PAT.
 - **Connection Bar redesign — per-app nodes**: The connection bar now shows four app-specific indicators: **Jira**, **SNow**, **Confluence**, and **GitHub**. The standalone "Relay" node is removed — relay activation UX (bookmarklet install + Open ServiceNow) is now inline in the SNow panel. Confluence and GitHub indicators automatically reflect readiness from the proxy-status health check (credentials configured = ready). Clicking any node opens an inline details panel; clicking an app's node also provides an "Open [App]" shortcut button when a base URL is configured.
 
