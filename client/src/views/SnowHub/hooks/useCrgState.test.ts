@@ -314,13 +314,173 @@ describe('useCrgState', () => {
     expect(result.current.state.generatedDescription).toContain('ABC-101');
   });
 
+  // ── Basic Info and Planning field setters ──
+
+  it('updates chgBasicInfo when setChgBasicInfo is called with a partial update', () => {
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setChgBasicInfo({ category: 'Software', changeType: 'Normal' });
+    });
+
+    expect(result.current.state.chgBasicInfo.category).toBe('Software');
+    expect(result.current.state.chgBasicInfo.changeType).toBe('Normal');
+    // Unaffected fields should retain their defaults.
+    expect(result.current.state.chgBasicInfo.environment).toBe('');
+  });
+
+  it('updates chgBasicInfo reference fields (e.g. assignmentGroup) via setChgBasicInfo', () => {
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setChgBasicInfo({
+        assignmentGroup: { sysId: 'abc123', displayName: 'Platform Team' },
+      });
+    });
+
+    expect(result.current.state.chgBasicInfo.assignmentGroup.sysId).toBe('abc123');
+    expect(result.current.state.chgBasicInfo.assignmentGroup.displayName).toBe('Platform Team');
+  });
+
+  it('updates chgPlanningAssessment when setChgPlanningAssessment is called', () => {
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setChgPlanningAssessment({ impact: '2 - Medium', hasBeenTested: 'Yes' });
+    });
+
+    expect(result.current.state.chgPlanningAssessment.impact).toBe('2 - Medium');
+    expect(result.current.state.chgPlanningAssessment.hasBeenTested).toBe('Yes');
+  });
+
+  it('updates chgPlanningContent when setChgPlanningContent is called', () => {
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setChgPlanningContent({ implementationPlan: 'Run deploy script' });
+    });
+
+    expect(result.current.state.chgPlanningContent.implementationPlan).toBe('Run deploy script');
+    expect(result.current.state.chgPlanningContent.backoutPlan).toBe('');
+  });
+
+  it('stores the CHG number input via setCloneChgNumber', () => {
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setCloneChgNumber('CHG0001234');
+    });
+
+    expect(result.current.state.cloneChgNumber).toBe('CHG0001234');
+  });
+
+  describe('cloneFromChg', () => {
+    it('pre-populates all fields from a SNow CHG record', async () => {
+      // SNow returns fields as { value, display_value } objects when sysparm_display_value=all is set.
+      vi.mocked(snowFetch).mockResolvedValueOnce({
+        result: [
+          {
+            short_description:    { value: 'Deploy v2', display_value: 'Deploy v2' },
+            description:          { value: 'Release notes here', display_value: 'Release notes here' },
+            justification:        { value: 'Scheduled release', display_value: 'Scheduled release' },
+            risk_impact_analysis: { value: 'Low risk', display_value: 'Low risk' },
+            category:             { value: 'software', display_value: 'Software' },
+            type:                 { value: 'normal', display_value: 'Normal' },
+            u_environment:        { value: 'prod', display_value: 'Production' },
+            assignment_group:     { value: 'grp-001', display_value: 'Platform Team' },
+            assigned_to:          { value: 'usr-002', display_value: 'Jane Smith' },
+            requested_by:         { value: '', display_value: '' },
+            cmdb_ci:              { value: '', display_value: '' },
+            change_manager:       { value: '', display_value: '' },
+            u_tester:             { value: '', display_value: '' },
+            u_service_manager:    { value: '', display_value: '' },
+            u_expedited:          { value: 'false', display_value: 'false' },
+            impact:               { value: '2', display_value: '2 - Medium' },
+            implementation_plan:  { value: 'Run script', display_value: 'Run script' },
+            backout_plan:         { value: 'Rollback DB', display_value: 'Rollback DB' },
+            test_plan:            { value: 'Smoke test', display_value: 'Smoke test' },
+            u_availability_impact: { value: 'No', display_value: 'No' },
+            u_change_tested:       { value: 'Yes', display_value: 'Yes' },
+            u_impacted_persons_aware:  { value: 'Yes', display_value: 'Yes' },
+            u_performed_previously:    { value: 'No', display_value: 'No' },
+            u_success_probability:     { value: '90-99%', display_value: '90-99%' },
+            u_can_be_backed_out:       { value: 'Yes', display_value: 'Yes' },
+          },
+        ],
+      } as never);
+
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.setCloneChgNumber('CHG0001234');
+      });
+
+      await act(async () => {
+        await result.current.actions.cloneFromChg();
+      });
+
+      expect(result.current.state.isCloning).toBe(false);
+      expect(result.current.state.cloneError).toBeNull();
+      expect(result.current.state.generatedShortDescription).toBe('Deploy v2');
+      expect(result.current.state.chgBasicInfo.category).toBe('Software');
+      expect(result.current.state.chgBasicInfo.changeType).toBe('Normal');
+      expect(result.current.state.chgBasicInfo.assignmentGroup).toEqual({ sysId: 'grp-001', displayName: 'Platform Team' });
+      expect(result.current.state.chgBasicInfo.assignedTo).toEqual({ sysId: 'usr-002', displayName: 'Jane Smith' });
+      expect(result.current.state.chgPlanningAssessment.impact).toBe('2 - Medium');
+      expect(result.current.state.chgPlanningContent.implementationPlan).toBe('Run script');
+    });
+
+    it('sets cloneError when the CHG number is not found', async () => {
+      vi.mocked(snowFetch).mockResolvedValueOnce({ result: [] } as never);
+
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.setCloneChgNumber('CHG9999999');
+      });
+
+      await act(async () => {
+        await result.current.actions.cloneFromChg();
+      });
+
+      expect(result.current.state.cloneError).toContain('CHG9999999');
+      expect(result.current.state.isCloning).toBe(false);
+    });
+
+    it('sets cloneError when snowFetch throws', async () => {
+      vi.mocked(snowFetch).mockRejectedValueOnce(new Error('Relay not connected') as never);
+
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.setCloneChgNumber('CHG0001234');
+      });
+
+      await act(async () => {
+        await result.current.actions.cloneFromChg();
+      });
+
+      expect(result.current.state.cloneError).toContain('Relay not connected');
+    });
+
+    it('does nothing when cloneChgNumber is empty', async () => {
+      const { result } = renderHook(() => useCrgState());
+
+      await act(async () => {
+        await result.current.actions.cloneFromChg();
+      });
+
+      expect(vi.mocked(snowFetch)).not.toHaveBeenCalled();
+    });
+  });
+
   describe('createChg', () => {
     afterEach(() => {
       vi.clearAllMocks();
     });
 
-    /** Helper that advances the hook to step 3 (Preview Docs) with generated fields ready. */
-    async function advanceToPreviewStep() {
+    /** Helper that advances the hook to step 3 (Change Details) with generated fields ready. */
+    async function advanceToChangeDetailsStep() {
       vi.mocked(jiraGet)
         .mockResolvedValueOnce([] as never)
         .mockResolvedValueOnce({ issues: [createMockJiraIssue('TOOL-1', 'Fix bug')] } as never);
@@ -346,7 +506,7 @@ describe('useCrgState', () => {
     it('POSTs the generated fields to the SNow table endpoint and records the CHG number', async () => {
       vi.mocked(snowFetch).mockResolvedValue({ result: { number: 'CHG0001234' } } as never);
 
-      const { result } = await advanceToPreviewStep();
+      const { result } = await advanceToChangeDetailsStep();
 
       await act(async () => {
         await result.current.actions.createChg();
@@ -361,10 +521,40 @@ describe('useCrgState', () => {
       expect(result.current.state.isSubmitting).toBe(false);
     });
 
+    it('includes basic info and planning fields in the POST body when they are set', async () => {
+      vi.mocked(snowFetch).mockResolvedValue({ result: { number: 'CHG0005678' } } as never);
+
+      const { result } = await advanceToChangeDetailsStep();
+
+      act(() => {
+        result.current.actions.setChgBasicInfo({
+          category:        'Software',
+          changeType:      'Normal',
+          assignmentGroup: { sysId: 'grp-001', displayName: 'Platform Team' },
+        });
+        result.current.actions.setChgPlanningAssessment({ impact: '2 - Medium' });
+        result.current.actions.setChgPlanningContent({ implementationPlan: 'Deploy via script' });
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      const bodyString = JSON.parse(
+        (vi.mocked(snowFetch).mock.calls[0][1] as RequestInit).body as string,
+      ) as Record<string, unknown>;
+
+      expect(bodyString.category).toBe('Software');
+      expect(bodyString.type).toBe('Normal');
+      expect(bodyString.assignment_group).toBe('grp-001');
+      expect(bodyString.impact).toBe('2 - Medium');
+      expect(bodyString.implementation_plan).toBe('Deploy via script');
+    });
+
     it('sets submitResult to an error string when snowFetch throws', async () => {
       vi.mocked(snowFetch).mockRejectedValue(new Error('SNow relay not connected') as never);
 
-      const { result } = await advanceToPreviewStep();
+      const { result } = await advanceToChangeDetailsStep();
 
       await act(async () => {
         await result.current.actions.createChg();
