@@ -138,8 +138,9 @@ function createApiRouter(configuration) {
   // and a masked username so the user can confirm which account is active.
 
   router.get('/api/config/connectivity', (req, res) => {
-    const snowConfig   = configuration.snow   || {};
-    const githubConfig = configuration.github || {};
+    const snowConfig      = configuration.snow      || {};
+    const githubConfig    = configuration.github    || {};
+    const confluenceConfig = configuration.confluence || {};
 
     res.json({
       snow: {
@@ -151,19 +152,24 @@ function createApiRouter(configuration) {
         baseUrl: githubConfig.baseUrl || '',
         hasPat:  !!(githubConfig.pat),
       },
+      confluence: {
+        baseUrl:        confluenceConfig.baseUrl || '',
+        hasCredentials: !!(confluenceConfig.username && confluenceConfig.apiToken),
+        usernameMasked: maskCredentialUsername(confluenceConfig.username || ''),
+      },
     });
   });
 
   // ── POST /api/config/connectivity ─────────────────────────────────────────
-  // Saves Snow and GitHub config fields to toolbox-proxy.json.
-  // Credential fields (password, pat) are only overwritten when the submitted
-  // value is non-empty — this prevents the masked placeholder from erasing
-  // saved credentials when the user re-submits the form without re-entering them.
+  // Saves Snow, GitHub, and Confluence config fields to toolbox-proxy.json.
+  // Credential fields (password, pat, apiToken) are only overwritten when the
+  // submitted value is non-empty — masked placeholders won't erase saved credentials.
 
   router.post('/api/config/connectivity', (req, res) => {
-    const body       = req.body || {};
-    const snowUpdate = body.snow   || {};
-    const ghUpdate   = body.github || {};
+    const body             = req.body || {};
+    const snowUpdate       = body.snow       || {};
+    const ghUpdate         = body.github     || {};
+    const confluenceUpdate = body.confluence || {};
 
     // Apply Snow fields — always accept baseUrl, but skip credential fields
     // when the submitted value is blank (the form shows masked placeholders).
@@ -185,8 +191,21 @@ function createApiRouter(configuration) {
       configuration.github.pat = ghUpdate.pat.trim();
     }
 
+    // Apply Confluence fields — same pattern as Snow/GitHub.
+    configuration.confluence = configuration.confluence || {};
+    if (confluenceUpdate.baseUrl !== undefined) {
+      configuration.confluence.baseUrl = (confluenceUpdate.baseUrl || '').trim();
+    }
+    if (confluenceUpdate.username && confluenceUpdate.username.trim()) {
+      configuration.confluence.username = confluenceUpdate.username.trim();
+    }
+    if (confluenceUpdate.apiToken && confluenceUpdate.apiToken.trim()) {
+      configuration.confluence.apiToken = confluenceUpdate.apiToken.trim();
+    }
+
     saveConfigToDisk(configuration);
 
+    const savedConfluenceConfig = configuration.confluence || {};
     res.json({
       ok: true,
       snow: {
@@ -197,6 +216,11 @@ function createApiRouter(configuration) {
       github: {
         baseUrl: configuration.github.baseUrl || '',
         hasPat:  !!(configuration.github.pat),
+      },
+      confluence: {
+        baseUrl:        savedConfluenceConfig.baseUrl || '',
+        hasCredentials: !!(savedConfluenceConfig.username && savedConfluenceConfig.apiToken),
+        usernameMasked: maskCredentialUsername(savedConfluenceConfig.username || ''),
       },
     });
   });
@@ -262,8 +286,81 @@ function createApiRouter(configuration) {
         res.json({ ok: false, statusCode: 0, message: 'Connection failed: ' + testError.message });
       }
 
+    } else if (system === 'confluence') {
+      const confluenceConfig = configuration.confluence || {};
+      if (!confluenceConfig.baseUrl) {
+        return res.json({ ok: false, statusCode: 0, message: 'No Confluence base URL configured.' });
+      }
+      try {
+        // Probe the current-user endpoint — cheap and reliably returns 200 or 401.
+        const testUrl = confluenceConfig.baseUrl.replace(/\/$/, '') + '/wiki/rest/api/user/current';
+        const probeResponse = await fetch(testUrl, {
+          method: 'GET',
+          headers: {
+            // Confluence Cloud uses Basic Auth with Atlassian email + Cloud API token.
+            'Authorization': 'Basic ' + Buffer.from(
+              (confluenceConfig.username || '') + ':' + (confluenceConfig.apiToken || '')
+            ).toString('base64'),
+            'Accept': 'application/json',
+          },
+        });
+        res.json({
+          ok:         probeResponse.ok,
+          statusCode: probeResponse.status,
+          message:    probeResponse.ok ? 'Connected successfully.' : `Received HTTP ${probeResponse.status}`,
+        });
+      } catch (testError) {
+        res.json({ ok: false, statusCode: 0, message: 'Connection failed: ' + testError.message });
+      }
+
+    } else if (system === 'rovo') {
+      // Rovo uses the same Atlassian Cloud credentials as Confluence.
+      const confluenceConfig = configuration.confluence || {};
+      if (!confluenceConfig.username || !confluenceConfig.apiToken) {
+        return res.json({
+          ok:         false,
+          statusCode: 0,
+          message:    'Confluence credentials are required to test Rovo (they share the same Atlassian account).',
+        });
+      }
+      // Probe the Atlassian Rovo MCP server. Any HTTP response indicates the server is
+      // network-reachable. A 401 means reachable but credentials need verification.
+      const rovoMcpUrl = 'https://mcp.atlassian.com/v1/mcp';
+      try {
+        const probeResponse = await fetch(rovoMcpUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': 'Basic ' + Buffer.from(
+              confluenceConfig.username + ':' + confluenceConfig.apiToken
+            ).toString('base64'),
+            'Accept': 'application/json',
+          },
+        });
+        // Treat any HTTP response as "reachable" — even auth errors confirm the server is up.
+        const isServerReachable = [200, 401, 403, 404, 405, 415].includes(probeResponse.status);
+        let message;
+        if (probeResponse.ok) {
+          message = 'Rovo MCP server reachable and responding.';
+        } else if (probeResponse.status === 401) {
+          message = 'Rovo MCP server reachable — credentials not accepted. Verify your Atlassian API token.';
+        } else if (probeResponse.status === 403) {
+          message = `Rovo MCP server reachable — access denied (HTTP 403). Your plan may not include Rovo.`;
+        } else if (probeResponse.status === 405) {
+          message = 'Rovo MCP server reachable (HTTP 405 — server is live, use POST for MCP protocol).';
+        } else {
+          message = `Rovo MCP server responded with HTTP ${probeResponse.status}.`;
+        }
+        res.json({ ok: isServerReachable, statusCode: probeResponse.status, message });
+      } catch (rovoError) {
+        res.json({
+          ok:         false,
+          statusCode: 0,
+          message:    'Cannot reach Rovo MCP server (may be blocked by firewall): ' + rovoError.message,
+        });
+      }
+
     } else {
-      res.status(400).json({ ok: false, message: 'system must be "snow" or "github"' });
+      res.status(400).json({ ok: false, message: 'system must be "snow", "github", "confluence", or "rovo"' });
     }
   });
 

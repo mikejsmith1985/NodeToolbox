@@ -1,5 +1,5 @@
 // connectivityConfigApi.ts — Typed client for the /api/config/connectivity endpoints.
-// Fetches, saves, and tests Snow and GitHub server-side connectivity configuration.
+// Fetches, saves, and tests Snow, GitHub, Confluence, and Rovo server-side connectivity configuration.
 
 import type { ConnectivityConfigResult, ConnectivityConfigUpdate, ConnectionProbeResult } from '../types/config.ts';
 
@@ -13,14 +13,14 @@ function assertOkResponse(response: Response, errorPrefix: string): void {
   }
 }
 
-/** Fetches the current sanitized Snow and GitHub connectivity config from the server. */
+/** Fetches the current sanitized Snow, GitHub, and Confluence connectivity config from the server. */
 export async function fetchConnectivityConfig(): Promise<ConnectivityConfigResult> {
   const response = await fetch(CONNECTIVITY_BASE);
   assertOkResponse(response, 'Failed to load connectivity config');
   return response.json() as Promise<ConnectivityConfigResult>;
 }
 
-/** Saves updated Snow and/or GitHub config fields to the server (persisted to toolbox-proxy.json). */
+/** Saves updated Snow, GitHub, and/or Confluence config fields to the server (persisted to toolbox-proxy.json). */
 export async function saveConnectivityConfig(
   update: ConnectivityConfigUpdate,
 ): Promise<ConnectivityConfigResult> {
@@ -49,6 +49,29 @@ export async function testGitHubConnectivity(): Promise<ConnectionProbeResult> {
     method: 'POST',
     headers: { 'Content-Type': JSON_CONTENT_TYPE },
     body: JSON.stringify({ system: 'github' }),
+  });
+  return response.json() as Promise<ConnectionProbeResult>;
+}
+
+/** Tests Confluence connectivity using currently stored Atlassian credentials. */
+export async function testConfluenceConnectivity(): Promise<ConnectionProbeResult> {
+  const response = await fetch(`${CONNECTIVITY_BASE}/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': JSON_CONTENT_TYPE },
+    body: JSON.stringify({ system: 'confluence' }),
+  });
+  return response.json() as Promise<ConnectionProbeResult>;
+}
+
+/**
+ * Tests whether the Atlassian Rovo MCP server is network-accessible using the stored
+ * Confluence credentials (same Atlassian account). Any HTTP response indicates reachability.
+ */
+export async function testRovoConnectivity(): Promise<ConnectionProbeResult> {
+  const response = await fetch(`${CONNECTIVITY_BASE}/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': JSON_CONTENT_TYPE },
+    body: JSON.stringify({ system: 'rovo' }),
   });
   return response.json() as Promise<ConnectionProbeResult>;
 }

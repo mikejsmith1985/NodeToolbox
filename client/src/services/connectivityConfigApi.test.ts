@@ -6,11 +6,14 @@ import {
   saveConnectivityConfig,
   testSnowConnectivity,
   testGitHubConnectivity,
+  testConfluenceConnectivity,
+  testRovoConnectivity,
 } from './connectivityConfigApi.ts';
 
 const MOCK_CONNECTIVITY_RESULT = {
-  snow: { baseUrl: 'https://acme.service-now.com', hasCredentials: true, usernameMasked: 'svc_****x' },
-  github: { baseUrl: 'https://api.github.com', hasPat: true },
+  snow:       { baseUrl: 'https://acme.service-now.com', hasCredentials: true, usernameMasked: 'svc_****x' },
+  github:     { baseUrl: 'https://api.github.com', hasPat: true },
+  confluence: { baseUrl: 'https://acme.atlassian.net', hasCredentials: true, usernameMasked: 'yo****m' },
 };
 
 const MOCK_PROBE_OK: import('../types/config.ts').ConnectionProbeResult = {
@@ -38,6 +41,7 @@ describe('fetchConnectivityConfig', () => {
     const result = await fetchConnectivityConfig();
     expect(result.snow.baseUrl).toBe('https://acme.service-now.com');
     expect(result.github.hasPat).toBe(true);
+    expect(result.confluence.hasCredentials).toBe(true);
   });
 
   it('throws when server returns non-ok response', async () => {
@@ -72,5 +76,39 @@ describe('testGitHubConnectivity', () => {
     mockFetchOnce(MOCK_PROBE_OK);
     const result = await testGitHubConnectivity();
     expect(result.isOk).toBe(true);
+  });
+});
+
+describe('testConfluenceConnectivity', () => {
+  it('returns probe result', async () => {
+    mockFetchOnce(MOCK_PROBE_OK);
+    const result = await testConfluenceConnectivity();
+    expect(result.isOk).toBe(true);
+  });
+
+  it('posts system=confluence to the test endpoint', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true, status: 200, json: () => Promise.resolve(MOCK_PROBE_OK),
+    } as Response);
+    await testConfluenceConnectivity();
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
+    expect(requestBody.system).toBe('confluence');
+  });
+});
+
+describe('testRovoConnectivity', () => {
+  it('returns probe result', async () => {
+    mockFetchOnce(MOCK_PROBE_OK);
+    const result = await testRovoConnectivity();
+    expect(result.isOk).toBe(true);
+  });
+
+  it('posts system=rovo to the test endpoint', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true, status: 200, json: () => Promise.resolve(MOCK_PROBE_OK),
+    } as Response);
+    await testRovoConnectivity();
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
+    expect(requestBody.system).toBe('rovo');
   });
 });

@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Confluence + Rovo connectivity tests in Admin Hub**: The Service Connectivity section now has a full **Confluence** subsection (Base URL, Atlassian email, Cloud API token, save + Test Connection button) and a **Rovo** subsection with a dedicated "🤖 Test Rovo" button. The Confluence probe hits `/wiki/rest/api/user/current`; the Rovo probe checks reachability of the Atlassian MCP server (`mcp.atlassian.com`). A note in the UI clarifies that Confluence Cloud uses Basic Auth with an Atlassian Cloud API token — not the same as a Jira on-prem PAT.
+
 - **CRG — Custom JQL fetch mode**: The Change Request Generator's "Fetch Issues" step now supports a **Custom JQL** mode alongside the existing "By Project & Version" flow. A radio group lets users switch between the two modes; selecting Custom JQL reveals a textarea where any valid Jira Query Language expression can be entered. The generated documentation (short description, justification) adapts its label when JQL mode is active.
 
 - **Feature Request in AdminHub**: A new "💡 Request a Feature" section at the bottom of the AdminHub Config tab.Users with a GitHub account can open a pre-filled issue directly (`🚀 Open GitHub Issue`). Users without one can click **📋 Copy Request** to copy the formatted request as plain text and send it via email, Teams, or any other channel.

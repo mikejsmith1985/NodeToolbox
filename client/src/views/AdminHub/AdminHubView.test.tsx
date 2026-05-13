@@ -71,16 +71,21 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     isUpdateSectionCollapsed: false,
     // ── Service Connectivity ──
     connectivityConfig: null as null | {
-      snow: { baseUrl: string; hasCredentials: boolean; usernameMasked: string }
-      github: { baseUrl: string; hasPat: boolean }
+      snow:       { baseUrl: string; hasCredentials: boolean; usernameMasked: string }
+      github:     { baseUrl: string; hasPat: boolean }
+      confluence: { baseUrl: string; hasCredentials: boolean; usernameMasked: string }
     },
     isConnectivityConfigLoading: false,
     connectivityConfigError: null as string | null,
     connectivitySaveStatus: null as string | null,
-    snowTestResult: null as null | { isOk: boolean; statusCode: number; message: string },
-    isSnowTesting: false,
-    githubTestResult: null as null | { isOk: boolean; statusCode: number; message: string },
-    isGitHubTesting: false,
+    snowTestResult:       null as null | { isOk: boolean; statusCode: number; message: string },
+    isSnowTesting:        false,
+    githubTestResult:     null as null | { isOk: boolean; statusCode: number; message: string },
+    isGitHubTesting:      false,
+    confluenceTestResult: null as null | { isOk: boolean; statusCode: number; message: string },
+    isConfluenceTesting:  false,
+    rovoTestResult:       null as null | { isOk: boolean; statusCode: number; message: string },
+    isRovoTesting:        false,
   },
   mockActions: {
     setProxyUrl: vi.fn(),
@@ -119,8 +124,11 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     loadConnectivityConfig: vi.fn(),
     saveSnowConfig: vi.fn(),
     saveGitHubConfig: vi.fn(),
+    saveConfluenceConfig: vi.fn(),
     testSnowConfig: vi.fn(),
     testGitHubConfig: vi.fn(),
+    testConfluenceConfig: vi.fn(),
+    testRovoConfig: vi.fn(),
   },
 }));
 

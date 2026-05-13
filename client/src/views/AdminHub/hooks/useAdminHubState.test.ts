@@ -136,6 +136,8 @@ vi.mock('../../../services/connectivityConfigApi.ts', () => ({
   saveConnectivityConfig: vi.fn(),
   testSnowConnectivity: vi.fn(),
   testGitHubConnectivity: vi.fn(),
+  testConfluenceConnectivity: vi.fn(),
+  testRovoConnectivity: vi.fn(),
 }));
 
 import {
@@ -143,11 +145,14 @@ import {
   saveConnectivityConfig,
   testSnowConnectivity,
   testGitHubConnectivity,
+  testConfluenceConnectivity,
+  testRovoConnectivity,
 } from '../../../services/connectivityConfigApi.ts';
 
 const MOCK_CONNECTIVITY_CONFIG = {
-  snow: { baseUrl: 'https://acme.service-now.com', hasCredentials: true, usernameMasked: 'svc_****x' },
-  github: { baseUrl: 'https://api.github.com', hasPat: true },
+  snow:       { baseUrl: 'https://acme.service-now.com', hasCredentials: true, usernameMasked: 'svc_****x' },
+  github:     { baseUrl: 'https://api.github.com', hasPat: true },
+  confluence: { baseUrl: 'https://acme.atlassian.net', hasCredentials: true, usernameMasked: 'yo****m' },
 };
 
 describe('connectivity config', () => {
@@ -232,6 +237,70 @@ describe('connectivity config', () => {
 
     expect(result.current.state.githubTestResult?.isOk).toBe(true);
     expect(result.current.state.isGitHubTesting).toBe(false);
+  });
+
+  it('saveConfluenceConfig calls saveConnectivityConfig and updates state', async () => {
+    vi.mocked(saveConnectivityConfig).mockResolvedValueOnce(MOCK_CONNECTIVITY_CONFIG);
+    const { result } = renderHook(() => useAdminHubState());
+
+    await act(async () => {
+      await result.current.actions.saveConfluenceConfig({
+        baseUrl:   'https://acme.atlassian.net',
+        username:  'user@example.com',
+        apiToken:  'tok_abc123',
+      });
+    });
+
+    expect(result.current.state.connectivityConfig).toEqual(MOCK_CONNECTIVITY_CONFIG);
+    expect(result.current.state.connectivitySaveStatus).toBe('✓ Saved');
+  });
+
+  it('testConfluenceConfig sets confluenceTestResult on success', async () => {
+    vi.mocked(testConfluenceConnectivity).mockResolvedValueOnce({ isOk: true, statusCode: 200, message: 'OK' });
+    const { result } = renderHook(() => useAdminHubState());
+
+    await act(async () => {
+      await result.current.actions.testConfluenceConfig();
+    });
+
+    expect(result.current.state.confluenceTestResult?.isOk).toBe(true);
+    expect(result.current.state.isConfluenceTesting).toBe(false);
+  });
+
+  it('testConfluenceConfig sets a failure result on fetch error', async () => {
+    vi.mocked(testConfluenceConnectivity).mockRejectedValueOnce(new Error('Timeout'));
+    const { result } = renderHook(() => useAdminHubState());
+
+    await act(async () => {
+      await result.current.actions.testConfluenceConfig();
+    });
+
+    expect(result.current.state.confluenceTestResult?.isOk).toBe(false);
+    expect(result.current.state.confluenceTestResult?.message).toBe('Test request failed.');
+  });
+
+  it('testRovoConfig sets rovoTestResult on success', async () => {
+    vi.mocked(testRovoConnectivity).mockResolvedValueOnce({ isOk: true, statusCode: 200, message: 'Rovo MCP reachable.' });
+    const { result } = renderHook(() => useAdminHubState());
+
+    await act(async () => {
+      await result.current.actions.testRovoConfig();
+    });
+
+    expect(result.current.state.rovoTestResult?.isOk).toBe(true);
+    expect(result.current.state.isRovoTesting).toBe(false);
+  });
+
+  it('testRovoConfig sets a failure result on fetch error', async () => {
+    vi.mocked(testRovoConnectivity).mockRejectedValueOnce(new Error('Network failure'));
+    const { result } = renderHook(() => useAdminHubState());
+
+    await act(async () => {
+      await result.current.actions.testRovoConfig();
+    });
+
+    expect(result.current.state.rovoTestResult?.isOk).toBe(false);
+    expect(result.current.state.rovoTestResult?.message).toBe('Test request failed.');
   });
 });
 
