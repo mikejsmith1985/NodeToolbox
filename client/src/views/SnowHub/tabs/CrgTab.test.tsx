@@ -18,8 +18,10 @@ const MOCK_ISSUES = [
 const { mockState, mockActions } = vi.hoisted(() => ({
   mockState: {
     currentStep: 1,
+    fetchMode: 'project' as 'project' | 'jql',
     projectKey: '',
     fixVersion: '',
+    customJql: '',
     availableFixVersions: [],
     fetchedIssues: [],
     selectedIssueKeys: new Set<string>(),
@@ -36,8 +38,10 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     submitResult: null as string | null,
   },
   mockActions: {
+    setFetchMode: vi.fn(),
     setProjectKey: vi.fn(),
     setFixVersion: vi.fn(),
+    setCustomJql: vi.fn(),
     fetchIssues: vi.fn().mockResolvedValue(undefined),
     toggleIssueSelection: vi.fn(),
     selectAllIssues: vi.fn(),
@@ -58,8 +62,10 @@ import CrgTab from './CrgTab.tsx';
 function resetMockState(): void {
   Object.assign(mockState, {
     currentStep: 1,
+    fetchMode: 'project',
     projectKey: '',
     fixVersion: '',
+    customJql: '',
     availableFixVersions: [],
     fetchedIssues: [],
     selectedIssueKeys: new Set<string>(),
@@ -160,5 +166,58 @@ describe('CrgTab', () => {
     expect(screen.getByText('REL')).toBeInTheDocument();
     expect(screen.getByText('PRD')).toBeInTheDocument();
     expect(screen.getByText('PFIX')).toBeInTheDocument();
+  });
+
+  it('renders fetch mode radio buttons on step 1', () => {
+    render(<CrgTab />);
+
+    expect(screen.getByRole('radio', { name: 'By Project & Version' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Custom JQL' })).toBeInTheDocument();
+  });
+
+  it('shows project key and fix version fields when fetch mode is project', () => {
+    mockState.fetchMode = 'project';
+    render(<CrgTab />);
+
+    expect(screen.getByLabelText('Project Key')).toBeInTheDocument();
+    expect(screen.getByLabelText('Fix Version')).toBeInTheDocument();
+    expect(screen.queryByLabelText('JQL Query')).not.toBeInTheDocument();
+  });
+
+  it('shows the JQL textarea and hides project fields when fetch mode is jql', () => {
+    mockState.fetchMode = 'jql';
+    render(<CrgTab />);
+
+    expect(screen.getByLabelText('JQL Query')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Project Key')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Fix Version')).not.toBeInTheDocument();
+  });
+
+  it('calls setFetchMode with jql when the Custom JQL radio is selected', async () => {
+    const user = userEvent.setup();
+    render(<CrgTab />);
+
+    await user.click(screen.getByRole('radio', { name: 'Custom JQL' }));
+
+    expect(mockActions.setFetchMode).toHaveBeenCalledWith('jql');
+  });
+
+  it('calls setCustomJql when the JQL textarea value changes', async () => {
+    const user = userEvent.setup();
+    mockState.fetchMode = 'jql';
+    render(<CrgTab />);
+
+    await user.type(screen.getByLabelText('JQL Query'), 'project = TEST');
+
+    expect(mockActions.setCustomJql).toHaveBeenCalled();
+  });
+
+  it('shows a JQL required error when fetchError is set in jql mode', () => {
+    mockState.fetchMode = 'jql';
+    mockState.fetchError = 'A JQL query is required.';
+
+    render(<CrgTab />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('A JQL query is required.');
   });
 });
