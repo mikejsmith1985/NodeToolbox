@@ -34,6 +34,8 @@ describe('useConnectionStore', () => {
     expect(initialState.isSnowReady).toBe(false);
     expect(initialState.isJiraVerified).toBe(false);
     expect(initialState.isSnowVerified).toBe(false);
+    expect(initialState.isConfluenceReady).toBe(false);
+    expect(initialState.isGitHubReady).toBe(false);
     expect(initialState.proxyStatus).toBeNull();
     expect(initialState.relayBridgeStatus).toBeNull();
   });
@@ -43,6 +45,13 @@ describe('useConnectionStore', () => {
 
     expect(useConnectionStore.getState().isJiraReady).toBe(true);
     expect(useConnectionStore.getState().proxyStatus).toEqual(MOCK_PROXY_STATUS);
+  });
+
+  it('sets confluence and github readiness from proxy status', () => {
+    useConnectionStore.getState().setProxyStatus(MOCK_PROXY_STATUS);
+
+    expect(useConnectionStore.getState().isConfluenceReady).toBe(true);
+    expect(useConnectionStore.getState().isGitHubReady).toBe(false);
   });
 
   it('sets isJiraVerified when setJiraVerified is called', () => {
@@ -69,6 +78,8 @@ describe('useConnectionStore', () => {
     expect(useConnectionStore.getState().isSnowReady).toBe(false);
     expect(useConnectionStore.getState().isJiraVerified).toBe(false);
     expect(useConnectionStore.getState().isSnowVerified).toBe(false);
+    expect(useConnectionStore.getState().isConfluenceReady).toBe(false);
+    expect(useConnectionStore.getState().isGitHubReady).toBe(false);
     expect(useConnectionStore.getState().proxyStatus).toBeNull();
     expect(useConnectionStore.getState().relayBridgeStatus).toBeNull();
   });
