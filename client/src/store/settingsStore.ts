@@ -15,6 +15,8 @@ const MAX_RECENT_VIEW_COUNT = 5;
 
 const THEME_STORAGE_KEY = 'tbx-theme';
 const CARD_ORDER_STORAGE_KEY = 'tbxCardOrder';
+/** Shared key so Admin Hub and Dev Workspace always read/write the same PAT. */
+const GITHUB_PAT_STORAGE_KEY = 'tbxGithubPat';
 const CHANGE_REQUEST_GENERATOR_JIRA_URL_STORAGE_KEY = 'tbxCRGenJiraUrl';
 const CHANGE_REQUEST_GENERATOR_SNOW_URL_STORAGE_KEY = 'tbxCRGenSnowUrl';
 const CONFLUENCE_URL_STORAGE_KEY = 'tbxConfUrl';
@@ -41,6 +43,11 @@ interface SettingsState {
   myIssuesJqlHistory: string[];
   recentViews: string[];
   /**
+   * GitHub Personal Access Token shared between Admin Hub and Dev Workspace.
+   * Persisted under the legacy `tbxGithubPat` key so existing saved tokens are preserved.
+   */
+  githubPat: string;
+  /**
    * User-configured Jira status → SNow state equivalence mappings for the
    * My Issues health-check feature. Persisted so they survive app updates.
    * The system-defined "To Do → New" mapping is always applied in addition.
@@ -60,6 +67,10 @@ interface SettingsState {
   setMyIssuesJqlHistory: (jqlHistory: string[]) => void;
   setRecentViews: (recentViews: string[]) => void;
   addRecentView: (viewId: string) => void;
+  /** Saves the GitHub PAT to localStorage and updates all subscribers. */
+  setGithubPat: (token: string) => void;
+  /** Clears the stored GitHub PAT from localStorage and all subscribers. */
+  clearGithubPat: () => void;
   /** Replaces the full list of user-configured status mappings (system mapping preserved separately). */
   setStatusMappings: (mappings: StatusMapping[]) => void;
 }
@@ -192,6 +203,7 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
   myIssuesBoardId: readStoredString(MY_ISSUES_BOARD_ID_STORAGE_KEY, EMPTY_STRING),
   myIssuesJqlHistory: readStoredStringArray(MY_ISSUES_JQL_HISTORY_STORAGE_KEY),
   recentViews: readStoredStringArray(RECENT_VIEWS_STORAGE_KEY),
+  githubPat: readStoredString(GITHUB_PAT_STORAGE_KEY, EMPTY_STRING),
   setTheme: (theme) => {
     writeStoredString(THEME_STORAGE_KEY, theme);
     setState({ theme });
@@ -252,6 +264,14 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
       writeStoredStringArray(RECENT_VIEWS_STORAGE_KEY, recentViews);
       return { recentViews };
     }),
+  setGithubPat: (token) => {
+    writeStoredString(GITHUB_PAT_STORAGE_KEY, token);
+    setState({ githubPat: token });
+  },
+  clearGithubPat: () => {
+    writeStoredString(GITHUB_PAT_STORAGE_KEY, EMPTY_STRING);
+    setState({ githubPat: EMPTY_STRING });
+  },
   statusMappings: readStoredStatusMappings(),
   setStatusMappings: (mappings) => {
     // Only persist user-defined mappings; system-defined ones are always re-applied at runtime.

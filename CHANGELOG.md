@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Repo Monitor engine**: The Dev Workspace Repo Monitor tab is now fully wired. It loads enterprise standards rules from Admin Hub, fetches open Jira issues for the configured project, runs hygiene checks (`Missing Assignee`, `Unpointed Story`, `Stale Ticket`), and appends timestamped ✓ pass / ✗ fail log entries per rule. "Check Now" runs a one-off scan; "Start Monitor" polls on the workspace sync interval.
+
+### Fixed
+- **GitHub PAT unified across Admin Hub and Dev Workspace**: The PAT was previously stored in two separate localStorage keys (`tbxGithubPat` in Admin Hub, `tbxDevWorkspaceConfig.githubPat` in Dev Workspace) so saving in one place left the other stale. Both are now backed by a single `githubPat` field in the shared Zustand `settingsStore` (key `tbxGithubPat`). Saving or clearing the token in either Admin Hub or Dev Workspace Settings is immediately reflected in both panels.
+
+- **Repo Monitor log was shared with Git Sync**: The monitor panel previously read from `state.syncLog` which is owned by the Git Sync panel, so Git Sync output polluted the monitor view and "Check Now" had no handler. The Repo Monitor now maintains its own log state via `useRepoMonitorEngine`.
+
 - **Confluence + Rovo connectivity tests in Admin Hub**: The Service Connectivity section now has a full **Confluence** subsection (Base URL, Atlassian email, Cloud API token, save + Test Connection button) and a **Rovo** subsection with a dedicated "🤖 Test Rovo" button. The Confluence probe hits `/wiki/rest/api/user/current`; the Rovo probe checks reachability of the Atlassian MCP server (`mcp.atlassian.com`). A note in the UI clarifies that Confluence Cloud uses Basic Auth with an Atlassian Cloud API token — not the same as a Jira on-prem PAT.
 - **Connection Bar redesign — per-app nodes**: The connection bar now shows four app-specific indicators: **Jira**, **SNow**, **Confluence**, and **GitHub**. The standalone "Relay" node is removed — relay activation UX (bookmarklet install + Open ServiceNow) is now inline in the SNow panel. Confluence and GitHub indicators automatically reflect readiness from the proxy-status health check (credentials configured = ready). Clicking any node opens an inline details panel; clicking an app's node also provides an "Open [App]" shortcut button when a base URL is configured.
 

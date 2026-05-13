@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const THEME_STORAGE_KEY = 'tbx-theme';
 const CARD_ORDER_STORAGE_KEY = 'tbxCardOrder';
 const RECENT_VIEWS_STORAGE_KEY = 'tbxRecentViews';
+const GITHUB_PAT_STORAGE_KEY = 'tbxGithubPat';
 
 async function loadSettingsStoreModule() {
   vi.resetModules();
@@ -67,5 +68,33 @@ describe('useSettingsStore', () => {
     expect(window.localStorage.getItem(RECENT_VIEWS_STORAGE_KEY)).toBe(
       JSON.stringify(['dev-workspace', 'snow-hub', 'reports-hub', 'text-tools', 'admin-hub']),
     );
+  });
+
+  describe('githubPat', () => {
+    it('initialises githubPat from localStorage on module load', async () => {
+      window.localStorage.setItem(GITHUB_PAT_STORAGE_KEY, 'ghp_existingToken');
+      const { useSettingsStore } = await loadSettingsStoreModule();
+      expect(useSettingsStore.getState().githubPat).toBe('ghp_existingToken');
+    });
+
+    it('setGithubPat writes token to localStorage and updates all store subscribers', async () => {
+      const { useSettingsStore } = await loadSettingsStoreModule();
+      useSettingsStore.getState().setGithubPat('ghp_newToken123');
+      expect(useSettingsStore.getState().githubPat).toBe('ghp_newToken123');
+      expect(window.localStorage.getItem(GITHUB_PAT_STORAGE_KEY)).toBe('ghp_newToken123');
+    });
+
+    it('clearGithubPat removes token from localStorage and resets state to empty string', async () => {
+      window.localStorage.setItem(GITHUB_PAT_STORAGE_KEY, 'ghp_tokenToDelete');
+      const { useSettingsStore } = await loadSettingsStoreModule();
+      useSettingsStore.getState().clearGithubPat();
+      expect(useSettingsStore.getState().githubPat).toBe('');
+      expect(window.localStorage.getItem(GITHUB_PAT_STORAGE_KEY)).toBe('');
+    });
+
+    it('defaults githubPat to empty string when localStorage is empty', async () => {
+      const { useSettingsStore } = await loadSettingsStoreModule();
+      expect(useSettingsStore.getState().githubPat).toBe('');
+    });
   });
 });

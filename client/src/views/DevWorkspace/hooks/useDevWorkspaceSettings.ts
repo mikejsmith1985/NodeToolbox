@@ -1,8 +1,11 @@
-// useDevWorkspaceSettings.ts — Manages the full Dev Workspace integration configuration.
+// useDevWorkspaceSettings.ts — Manages the Dev Workspace integration configuration.
 //
 // Every field persists to localStorage under `tbxDevWorkspaceConfig` and survives page reloads.
-// Covers GitHub PAT, polling interval, commit key extraction, Jira posting strategy, and
-// branch prefix stripping — matching the full settings surface from the legacy ToolBox app.
+// Covers polling interval, commit key extraction, Jira posting strategy, and branch prefix
+// stripping — matching the full settings surface from the legacy ToolBox app.
+//
+// NOTE: The GitHub PAT is NOT stored here. It is managed by the shared settingsStore
+// (key: `tbxGithubPat`) so that Admin Hub and Dev Workspace always reflect the same value.
 
 import { useCallback, useState } from 'react'
 
@@ -22,7 +25,6 @@ export type PostingStrategy = 'comment' | 'worklog'
 
 /** Full configuration shape for Dev Workspace persisted settings. */
 export interface DevWorkspaceSettings {
-  githubPat: string
   repoFullName: string
   jiraProjectKey: string
   jiraBaseUrl: string
@@ -38,7 +40,6 @@ export interface DevWorkspaceSettings {
 
 function buildDefaultSettings(): DevWorkspaceSettings {
   return {
-    githubPat: '',
     repoFullName: '',
     jiraProjectKey: '',
     jiraBaseUrl: '',
@@ -58,7 +59,6 @@ function loadSettingsFromStorage(): DevWorkspaceSettings {
     const parsed = JSON.parse(raw) as Partial<DevWorkspaceSettings>
     const defaults = buildDefaultSettings()
     return {
-      githubPat: parsed.githubPat ?? defaults.githubPat,
       repoFullName: parsed.repoFullName ?? defaults.repoFullName,
       jiraProjectKey: parsed.jiraProjectKey ?? defaults.jiraProjectKey,
       jiraBaseUrl: parsed.jiraBaseUrl ?? defaults.jiraBaseUrl,
@@ -81,12 +81,13 @@ function persistSettings(settings: DevWorkspaceSettings): void {
 // ── Hook ──
 
 /**
- * Hook that manages the full Dev Workspace settings surface.
+ * Hook that manages the Dev Workspace settings surface (excluding GitHub PAT).
  * All fields persist to localStorage key `tbxDevWorkspaceConfig`.
+ * The GitHub PAT is managed by the shared settingsStore (`tbxGithubPat`) so both
+ * Admin Hub and Dev Workspace always show the same token.
  */
 export function useDevWorkspaceSettings() {
   const [settings, setSettings] = useState<DevWorkspaceSettings>(loadSettingsFromStorage)
-  const [isPatVisible, setIsPatVisible] = useState(false)
 
   /** Applies a partial settings update and immediately persists the merged result. */
   const updateSettings = useCallback((partial: Partial<DevWorkspaceSettings>): void => {
@@ -97,15 +98,5 @@ export function useDevWorkspaceSettings() {
     })
   }, [])
 
-  /** Removes the stored GitHub PAT from both state and localStorage. */
-  const clearGithubPat = useCallback((): void => {
-    updateSettings({ githubPat: '' })
-  }, [updateSettings])
-
-  /** Toggles whether the GitHub PAT input field shows the raw value or masked dots. */
-  const togglePatVisibility = useCallback((): void => {
-    setIsPatVisible((previous) => !previous)
-  }, [])
-
-  return { settings, isPatVisible, updateSettings, clearGithubPat, togglePatVisibility }
+  return { settings, updateSettings }
 }

@@ -1,12 +1,14 @@
 // DevWorkspaceView.tsx — Tabbed Dev Workspace view for time tracking, Git sync, and monitoring.
 
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 
 import JiraProjectPicker from '../../components/JiraProjectPicker/index.tsx';
+import { useSettingsStore } from '../../store/settingsStore.ts';
 import type { DevWorkspaceTab, WorkLogTab, GitSyncSubTab } from './hooks/useDevWorkspaceState.ts';
 import { useDevWorkspaceState } from './hooks/useDevWorkspaceState.ts';
 import { useDevWorkspaceSettings } from './hooks/useDevWorkspaceSettings.ts';
 import { useGitHubPollingEngine } from './hooks/useGitHubPollingEngine.ts';
+import { useRepoMonitorEngine } from './hooks/useRepoMonitorEngine.ts';
 import styles from './DevWorkspaceView.module.css';
 
 const TICK_INTERVAL_MS = 1000;
@@ -208,7 +210,7 @@ export default function DevWorkspaceView() {
       <div className={styles.tabContent}>
         {state.activeTab === 'time' && <TimeTrackingPanel state={state} actions={actions} />}
         {state.activeTab === 'gitsync' && <GitSyncPanel state={state} actions={actions} />}
-        {state.activeTab === 'monitor' && <RepoMonitorPanel state={state} actions={actions} />}
+        {state.activeTab === 'monitor' && <RepoMonitorPanel />}
         {state.activeTab === 'settings' && <WorkspaceSettingsPanel />}
       </div>
     </div>
@@ -394,9 +396,10 @@ function TimeTrackingPanel({ state, actions }: PanelProps) {
 /** Renders the Git Sync tab with GitHub sync (polling engine), manual Jira post, and hook generator sub-tabs. */
 function GitSyncPanel({ state, actions }: PanelProps) {
   const { settings } = useDevWorkspaceSettings()
+  const githubPat = useSettingsStore((storeState) => storeState.githubPat)
 
   const pollingEngine = useGitHubPollingEngine({
-    githubPat: settings.githubPat,
+    githubPat,
     repoFullName: settings.repoFullName,
     jiraProjectKey: settings.jiraProjectKey,
     intervalMinutes: settings.syncIntervalMinutes,
@@ -586,30 +589,85 @@ function GitSyncPanel({ state, actions }: PanelProps) {
   );
 }
 
-/** Renders the Repo Monitor tab for tracking repository activity. */
-function RepoMonitorPanel({ state, actions }: PanelProps) {
+/** Renders the Repo Monitor tab — runs enterprise standards checks against the Jira project. */
+function RepoMonitorPanel() {
+  const { settings } = useDevWorkspaceSettings()
+
+  const engine = useRepoMonitorEngine({ jiraProjectKey: settings.jiraProjectKey })
+
   return (
     <div className={styles.panel}>
+      {/* Active enterprise rules summary */}
+      {engine.enabledRules.length > 0 ? (
+        <div>
+          <p className={styles.fieldLabel}>Active enterprise rules:</p>
+          <div className={styles.monitorRuleList}>
+            {engine.enabledRules.map((rule) => (
+              <span key={rule.id} className={styles.monitorRulePill}>
+                ✓ {rule.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className={styles.helpText}>
+          No enterprise rules are enabled. Visit <strong>Admin Hub → Enterprise Standards</strong> to configure them.
+        </p>
+      )}
+
+      {/* Status indicator */}
       <div className={styles.syncStatus}>
         <span
-          className={`${styles.statusDot} ${state.isSyncRunning ? styles.statusDotActive : styles.statusDotIdle}`}
-          aria-label={state.isSyncRunning ? 'Monitoring' : 'Stopped'}
+          className={`${styles.statusDot} ${engine.isRunning ? styles.statusDotActive : styles.statusDotIdle}`}
+          aria-label={engine.isRunning ? 'Monitoring' : 'Stopped'}
         />
-        <span>{state.isSyncRunning ? 'Monitor Active' : 'Monitor Stopped'}</span>
+        <span>{engine.isRunning ? 'Monitor Active' : 'Monitor Stopped'}</span>
       </div>
+
+      {/* Controls */}
       <div className={styles.syncControls}>
-        <button className={styles.primaryBtn} onClick={actions.toggleSync}>
-          {state.isSyncRunning ? '⏹ Stop Monitor' : '▶ Start Monitor'}
+        <button
+          className={styles.primaryBtn}
+          onClick={() => {
+            if (engine.isRunning) { engine.stopMonitor() }
+            else { engine.startMonitor(settings.syncIntervalMinutes) }
+          }}
+        >
+          {engine.isRunning ? '⏹ Stop Monitor' : '▶ Start Monitor'}
         </button>
-        <button className={styles.secondaryBtn}>Check Now</button>
+        <button
+          className={styles.secondaryBtn}
+          onClick={() => { void engine.checkNow() }}
+          disabled={engine.isChecking}
+        >
+          {engine.isChecking ? 'Checking…' : 'Check Now'}
+        </button>
       </div>
-      <div className={styles.syncLog}>
-        {state.syncLog.length === 0 && (
-          <span className={styles.emptyState}>No monitor log entries.</span>
-        )}
-        {state.syncLog.map((entry, index) => (
-          <div key={index} className={styles.syncLogEntry}>{entry}</div>
-        ))}
+
+      {/* Monitor log */}
+      <div className={styles.syncLogContainer}>
+        <div className={styles.syncLogHeader}>
+          <span>Monitor Log</span>
+          <button className={styles.clearBtn} onClick={engine.clearMonitorLog}>Clear Log</button>
+        </div>
+        <div className={styles.syncLog}>
+          {engine.monitorLog.length === 0 && (
+            <span className={styles.emptyState}>No monitor log entries yet. Press &quot;Check Now&quot; to run.</span>
+          )}
+          {engine.monitorLog.map((entry, index) => (
+            <div
+              key={index}
+              className={`${styles.syncLogEntry} ${
+                entry.level === 'pass' ? styles.syncLogEntryPass
+                : entry.level === 'fail' ? styles.syncLogEntryFail
+                : entry.level === 'error' ? styles.syncLogEntryError
+                : ''
+              }`}
+            >
+              [{entry.timestamp}] {entry.message}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -617,14 +675,17 @@ function RepoMonitorPanel({ state, actions }: PanelProps) {
 
 /** Renders the Settings tab for Dev Workspace configuration — full settings surface. */
 function WorkspaceSettingsPanel() {
-  const { settings, isPatVisible, updateSettings, clearGithubPat, togglePatVisibility } =
-    useDevWorkspaceSettings()
+  const { settings, updateSettings } = useDevWorkspaceSettings()
+  const githubPat = useSettingsStore((storeState) => storeState.githubPat)
+  const setGithubPat = useSettingsStore((storeState) => storeState.setGithubPat)
+  const clearGithubPat = useSettingsStore((storeState) => storeState.clearGithubPat)
+  const [isPatVisible, setIsPatVisible] = useState(false)
 
   return (
     <div className={styles.panel}>
       <h3 className={styles.sectionTitle}>Workspace Settings</h3>
 
-      {/* GitHub PAT — password field with show/hide and clear buttons */}
+      {/* GitHub PAT — synced with Admin Hub via the shared settingsStore */}
       <div className={styles.settingsSection}>
         <h4 className={styles.sectionSubTitle}>GitHub Integration</h4>
         <label className={styles.fieldLabel}>GitHub Personal Access Token</label>
@@ -632,14 +693,14 @@ function WorkspaceSettingsPanel() {
           <input
             type={isPatVisible ? 'text' : 'password'}
             className={styles.textInput}
-            value={settings.githubPat}
+            value={githubPat}
             placeholder="ghp_…"
-            onChange={(event) => updateSettings({ githubPat: event.target.value })}
+            onChange={(event) => setGithubPat(event.target.value)}
           />
-          <button className={styles.patVisibilityBtn} onClick={togglePatVisibility}>
+          <button className={styles.patVisibilityBtn} onClick={() => setIsPatVisible((prev) => !prev)}>
             {isPatVisible ? '🙈 Hide' : '👁 Show'}
           </button>
-          <button className={styles.patClearBtn} onClick={clearGithubPat} disabled={!settings.githubPat}>
+          <button className={styles.patClearBtn} onClick={clearGithubPat} disabled={!githubPat}>
             ✕ Clear
           </button>
         </div>
