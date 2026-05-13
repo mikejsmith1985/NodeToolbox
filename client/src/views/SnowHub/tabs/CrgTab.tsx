@@ -36,6 +36,7 @@ type CrgStateData = CrgHookResult['state'];
 type CrgActionSet = CrgHookResult['actions'];
 type GeneratedFieldName = Parameters<CrgActionSet['updateGeneratedField']>[0];
 type EnvironmentKey = Parameters<CrgActionSet['updateEnvironment']>[0];
+type FetchMode = CrgStateData['fetchMode'];
 
 interface StepIndicatorProps {
   currentStep: CrgStateData['currentStep'];
@@ -89,35 +90,83 @@ function FetchIssuesStep({ state, actions }: CrgStepProps) {
     actions.setFixVersion(event.target.value);
   }
 
+  function handleCustomJqlChange(event: ChangeEvent<HTMLTextAreaElement>): void {
+    actions.setCustomJql(event.target.value);
+  }
+
+  function handleFetchModeChange(event: ChangeEvent<HTMLInputElement>): void {
+    actions.setFetchMode(event.target.value as FetchMode);
+  }
+
+  const isProjectMode = state.fetchMode === 'project';
+
   return (
     <section className={styles.section}>
       <StepHeading currentStep={state.currentStep} />
-      <div className={styles.fieldGrid}>
-        <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>Project Key</span>
-          <input className={styles.input} onChange={handleProjectKeyChange} value={state.projectKey} />
+
+      {/* Fetch mode selector — choose between structured project+version lookup or a free-form JQL query */}
+      <div aria-label="Fetch mode" className={styles.fetchModeSelector} role="radiogroup">
+        <label className={styles.inlineCheckbox}>
+          <input
+            checked={isProjectMode}
+            name="fetchMode"
+            onChange={handleFetchModeChange}
+            type="radio"
+            value="project"
+          />
+          <span>By Project &amp; Version</span>
         </label>
-        <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>Fix Version</span>
-          {state.availableFixVersions.length > 0 ? (
-            <select className={styles.input} onChange={handleFixVersionChange} value={state.fixVersion}>
-              <option value="">Select fix version…</option>
-              {state.availableFixVersions.map((version) => (
-                <option key={version} value={version}>
-                  {version}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              className={styles.input}
-              onChange={handleFixVersionChange}
-              placeholder="e.g. 1.2.3"
-              value={state.fixVersion}
-            />
-          )}
+        <label className={styles.inlineCheckbox}>
+          <input
+            checked={!isProjectMode}
+            name="fetchMode"
+            onChange={handleFetchModeChange}
+            type="radio"
+            value="jql"
+          />
+          <span>Custom JQL</span>
         </label>
       </div>
+
+      {isProjectMode ? (
+        <div className={styles.fieldGrid}>
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>Project Key</span>
+            <input className={styles.input} onChange={handleProjectKeyChange} value={state.projectKey} />
+          </label>
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>Fix Version</span>
+            {state.availableFixVersions.length > 0 ? (
+              <select className={styles.input} onChange={handleFixVersionChange} value={state.fixVersion}>
+                <option value="">Select fix version…</option>
+                {state.availableFixVersions.map((version) => (
+                  <option key={version} value={version}>
+                    {version}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                className={styles.input}
+                onChange={handleFixVersionChange}
+                placeholder="e.g. 1.2.3"
+                value={state.fixVersion}
+              />
+            )}
+          </label>
+        </div>
+      ) : (
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>JQL Query</span>
+          <textarea
+            className={styles.textArea}
+            onChange={handleCustomJqlChange}
+            placeholder='e.g. project = "TOOL" AND status = Done AND sprint in openSprints()'
+            value={state.customJql}
+          />
+        </label>
+      )}
+
       <div className={styles.buttonRow}>
         <button className={styles.primaryButton} onClick={() => void actions.fetchIssues()} type="button">
           Fetch Issues

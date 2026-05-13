@@ -7,8 +7,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { mockCrgState, mockCrgActions, mockPrbState, mockPrbActions, mockReleaseState, mockReleaseActions, mockSyncEngineState, mockSyncEngineActions } = vi.hoisted(() => ({
   mockCrgState: {
     currentStep: 1,
+    fetchMode: 'project' as 'project' | 'jql',
     projectKey: '',
     fixVersion: '',
+    customJql: '',
     availableFixVersions: [],
     fetchedIssues: [],
     selectedIssueKeys: new Set<string>(),
@@ -25,8 +27,10 @@ const { mockCrgState, mockCrgActions, mockPrbState, mockPrbActions, mockReleaseS
     submitResult: null as string | null,
   },
   mockCrgActions: {
+    setFetchMode: vi.fn(),
     setProjectKey: vi.fn(),
     setFixVersion: vi.fn(),
+    setCustomJql: vi.fn(),
     fetchIssues: vi.fn().mockResolvedValue(undefined),
     toggleIssueSelection: vi.fn(),
     selectAllIssues: vi.fn(),

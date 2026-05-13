@@ -217,4 +217,95 @@ describe('useCrgState', () => {
       expect(result.current.state.selectedIssueKeys.size).toBe(0);
     });
   });
+
+  it('switches to jql mode when setFetchMode is called with jql', () => {
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setFetchMode('jql');
+    });
+
+    expect(result.current.state.fetchMode).toBe('jql');
+  });
+
+  it('clears the fetch error when the mode is switched', () => {
+    const { result } = renderHook(() => useCrgState());
+
+    // Trigger an error in project mode, then switch modes.
+    act(() => {
+      result.current.actions.setFetchMode('project');
+    });
+
+    act(() => {
+      result.current.actions.setFetchMode('jql');
+    });
+
+    expect(result.current.state.fetchError).toBeNull();
+  });
+
+  it('updates the custom JQL string when setCustomJql is called', () => {
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setCustomJql('project = TOOL AND status = Done');
+    });
+
+    expect(result.current.state.customJql).toBe('project = TOOL AND status = Done');
+  });
+
+  it('shows the jql required error when fetchIssues is called in jql mode with an empty query', async () => {
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setFetchMode('jql');
+    });
+
+    await act(async () => {
+      await result.current.actions.fetchIssues();
+    });
+
+    expect(result.current.state.fetchError).toBe('A JQL query is required.');
+  });
+
+  it('fetches issues using the raw JQL path when in jql mode', async () => {
+    vi.mocked(jiraGet).mockResolvedValueOnce({ issues: MOCK_JIRA_ISSUES } as never);
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setFetchMode('jql');
+      result.current.actions.setCustomJql('project = TOOL AND status = Done');
+    });
+
+    await act(async () => {
+      await result.current.actions.fetchIssues();
+    });
+
+    // The JQL search path should encode the raw query, NOT a project+fixVersion combination.
+    const calledPath = vi.mocked(jiraGet).mock.calls[0][0] as string;
+    expect(calledPath).toContain(encodeURIComponent('project = TOOL AND status = Done'));
+    expect(result.current.state.fetchedIssues).toHaveLength(2);
+    expect(result.current.state.currentStep).toBe(2);
+  });
+
+  it('generates docs with a custom JQL label in jql mode', async () => {
+    vi.mocked(jiraGet).mockResolvedValueOnce({ issues: MOCK_JIRA_ISSUES } as never);
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setFetchMode('jql');
+      result.current.actions.setCustomJql('project = TOOL');
+    });
+
+    await act(async () => {
+      await result.current.actions.fetchIssues();
+    });
+
+    act(() => {
+      result.current.actions.generateDocs();
+    });
+
+    // Short description should reference "custom JQL query" rather than a project/version string.
+    expect(result.current.state.generatedShortDescription).toContain('custom JQL query');
+    expect(result.current.state.generatedDescription).toContain('ABC-101');
+  });
 });

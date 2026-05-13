@@ -6,6 +6,8 @@ import { jiraGet } from '../../../services/jiraApi.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 
 type CrgStep = 1 | 2 | 3 | 4 | 5;
+// How the user wants to pull issues in Step 1: by project key + fix version, or a raw JQL query.
+type FetchMode = 'project' | 'jql';
 type GeneratedFieldKey = 'shortDescription' | 'description' | 'justification' | 'riskImpact';
 type EnvironmentKey = 'rel' | 'prd' | 'pfix';
 
@@ -17,8 +19,11 @@ interface EnvironmentConfig {
 
 interface CrgState {
   currentStep: CrgStep;
+  fetchMode: FetchMode;
   projectKey: string;
   fixVersion: string;
+  /** Raw JQL entered by the user when fetchMode is 'jql'. */
+  customJql: string;
   availableFixVersions: string[];
   fetchedIssues: JiraIssue[];
   selectedIssueKeys: Set<string>;
@@ -36,8 +41,10 @@ interface CrgState {
 }
 
 interface CrgActions {
+  setFetchMode: (fetchMode: FetchMode) => void;
   setProjectKey: (projectKey: string) => void;
   setFixVersion: (fixVersion: string) => void;
+  setCustomJql: (customJql: string) => void;
   fetchIssues: () => Promise<void>;
   toggleIssueSelection: (issueKey: string) => void;
   selectAllIssues: (shouldSelectAllIssues: boolean) => void;
@@ -51,6 +58,7 @@ interface CrgActions {
 const EMPTY_VALUE = '';
 const EMPTY_FETCH_ERROR = null;
 const REQUIRED_FIELDS_MESSAGE = 'Project key and fix version are required.';
+const REQUIRED_JQL_MESSAGE = 'A JQL query is required.';
 const FETCH_FAILURE_MESSAGE = 'Failed to fetch issues';
 const DEFAULT_MAX_RESULTS = 100;
 const ISSUE_FIELD_LIST = 'summary,status,priority,issuetype,assignee';
@@ -66,8 +74,10 @@ function createDefaultEnvironmentConfig(): EnvironmentConfig {
 function createInitialCrgState(): CrgState {
   return {
     currentStep: 1,
+    fetchMode: 'project',
     projectKey: EMPTY_VALUE,
     fixVersion: EMPTY_VALUE,
+    customJql: EMPTY_VALUE,
     availableFixVersions: [],
     fetchedIssues: [],
     selectedIssueKeys: new Set<string>(),
@@ -85,9 +95,17 @@ function createInitialCrgState(): CrgState {
   };
 }
 
-function buildSearchPath(projectKey: string, fixVersion: string): string {
+function buildProjectSearchPath(projectKey: string, fixVersion: string): string {
   const jql = `project = "${projectKey}" AND fixVersion = "${fixVersion}" ORDER BY priority ASC`;
   const encodedJql = encodeURIComponent(jql);
+  return `/rest/api/2/search?jql=${encodedJql}&maxResults=${DEFAULT_MAX_RESULTS}&fields=${ISSUE_FIELD_LIST}`;
+}
+
+/**
+ * Builds the Jira search API path for a raw JQL query string provided by the user.
+ */
+function buildJqlSearchPath(customJql: string): string {
+  const encodedJql = encodeURIComponent(customJql);
   return `/rest/api/2/search?jql=${encodedJql}&maxResults=${DEFAULT_MAX_RESULTS}&fields=${ISSUE_FIELD_LIST}`;
 }
 
@@ -95,6 +113,19 @@ function buildIssueList(selectedIssues: JiraIssue[]): string {
   return selectedIssues
     .map((jiraIssue) => `- [${jiraIssue.key}] ${jiraIssue.fields.summary}`)
     .join('\n');
+}
+
+/**
+ * Returns a human-readable release label used in generated doc fields.
+ * In project mode this is "PROJECT VERSION"; in JQL mode it describes the query result count
+ * since there is no canonical version string to reference.
+ */
+function buildReleaseLabel(fetchMode: FetchMode, projectKey: string, fixVersion: string, issueCount: number): string {
+  if (fetchMode === 'jql') {
+    return `custom JQL query (${issueCount} issue(s))`;
+  }
+
+  return `${projectKey} ${fixVersion}`;
 }
 
 function getGeneratedStateKey(fieldName: GeneratedFieldKey) {
@@ -124,12 +155,21 @@ function getEnvironmentStateKey(environmentKey: EnvironmentKey) {
 export function useCrgState(): { state: CrgState; actions: CrgActions } {
   const [state, setState] = useState<CrgState>(() => createInitialCrgState());
 
+  const setFetchMode = useCallback((fetchMode: FetchMode) => {
+    // Switching modes clears any previous fetch error so the user starts fresh with the new input method.
+    setState((previousState) => ({ ...previousState, fetchMode, fetchError: EMPTY_FETCH_ERROR }));
+  }, []);
+
   const setProjectKey = useCallback((projectKey: string) => {
     setState((previousState) => ({ ...previousState, projectKey: projectKey.toUpperCase() }));
   }, []);
 
   const setFixVersion = useCallback((fixVersion: string) => {
     setState((previousState) => ({ ...previousState, fixVersion }));
+  }, []);
+
+  const setCustomJql = useCallback((customJql: string) => {
+    setState((previousState) => ({ ...previousState, customJql }));
   }, []);
 
   useEffect(() => {
@@ -171,15 +211,23 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
   }, [state.projectKey]);
 
   const fetchIssues = useCallback(async () => {
-    if (!state.projectKey || !state.fixVersion) {
+    // Validate required inputs based on which fetch mode is active.
+    if (state.fetchMode === 'project' && (!state.projectKey || !state.fixVersion)) {
       setState((previousState) => ({ ...previousState, fetchError: REQUIRED_FIELDS_MESSAGE }));
+      return;
+    }
+
+    if (state.fetchMode === 'jql' && !state.customJql.trim()) {
+      setState((previousState) => ({ ...previousState, fetchError: REQUIRED_JQL_MESSAGE }));
       return;
     }
 
     setState((previousState) => ({ ...previousState, isFetchingIssues: true, fetchError: EMPTY_FETCH_ERROR }));
 
     try {
-      const searchPath = buildSearchPath(state.projectKey, state.fixVersion);
+      const searchPath = state.fetchMode === 'jql'
+        ? buildJqlSearchPath(state.customJql)
+        : buildProjectSearchPath(state.projectKey, state.fixVersion);
       const searchResponse = await jiraGet<{ issues: JiraIssue[] }>(searchPath);
       const selectedIssueKeys = new Set(searchResponse.issues.map((jiraIssue) => jiraIssue.key));
       setState((previousState) => ({
@@ -197,7 +245,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
         fetchError,
       }));
     }
-  }, [state.fixVersion, state.projectKey]);
+  }, [state.customJql, state.fetchMode, state.fixVersion, state.projectKey]);
 
   const toggleIssueSelection = useCallback((issueKey: string) => {
     setState((previousState) => {
@@ -228,12 +276,18 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
         return previousState.selectedIssueKeys.has(jiraIssue.key);
       });
       const issueList = buildIssueList(selectedIssues);
+      const releaseLabel = buildReleaseLabel(
+        previousState.fetchMode,
+        previousState.projectKey,
+        previousState.fixVersion,
+        selectedIssues.length,
+      );
 
       return {
         ...previousState,
-        generatedShortDescription: `Deploy ${previousState.projectKey} ${previousState.fixVersion}`,
+        generatedShortDescription: `Deploy ${releaseLabel}`,
         generatedDescription: `The following Jira issues are included in this release:\n\n${issueList}`,
-        generatedJustification: `Planned release of ${previousState.projectKey} ${previousState.fixVersion} containing ${selectedIssues.length} issue(s).`,
+        generatedJustification: `Planned release of ${releaseLabel} containing ${selectedIssues.length} issue(s).`,
         generatedRiskImpact: `Standard deployment risk. ${selectedIssues.length} issue(s) included. Follow standard runbook.`,
         currentStep: 3,
       };
@@ -266,8 +320,10 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
 
   const actions = useMemo<CrgActions>(() => {
     return {
+      setFetchMode,
       setProjectKey,
       setFixVersion,
+      setCustomJql,
       fetchIssues,
       toggleIssueSelection,
       selectAllIssues,
@@ -277,7 +333,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       goToStep,
       reset,
     };
-  }, [fetchIssues, generateDocs, goToStep, reset, selectAllIssues, setFixVersion, setProjectKey, toggleIssueSelection, updateEnvironment, updateGeneratedField]);
+  }, [fetchIssues, generateDocs, goToStep, reset, selectAllIssues, setCustomJql, setFetchMode, setFixVersion, setProjectKey, toggleIssueSelection, updateEnvironment, updateGeneratedField]);
 
   return { state, actions };
 }
