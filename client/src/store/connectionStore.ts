@@ -8,10 +8,10 @@ import type { RelayBridgeStatus } from '../types/relay.ts';
 const DEFAULT_CONNECTION_STATE = {
   isJiraReady: false,
   isSnowReady: false,
-  // Verified flags are set only after a live API probe succeeds — distinct from
-  // "ready" which only checks that credentials are present in the config file.
   isJiraVerified: false,
   isSnowVerified: false,
+  isConfluenceReady: false,
+  isGitHubReady: false,
   proxyStatus: null,
   relayBridgeStatus: null,
 } as const;
@@ -23,6 +23,10 @@ interface ConnectionState {
   isJiraVerified: boolean;
   /** True only after a live probe to /snow-proxy/api/now/table/sys_user returned 200. */
   isSnowVerified: boolean;
+  /** True when Confluence base URL and credentials are configured. */
+  isConfluenceReady: boolean;
+  /** True when a GitHub PAT is configured. */
+  isGitHubReady: boolean;
   proxyStatus: ProxyStatusResponse | null;
   relayBridgeStatus: RelayBridgeStatus | null;
   setProxyStatus: (status: ProxyStatusResponse) => void;
@@ -40,6 +44,8 @@ export const useConnectionStore = create<ConnectionState>((setState) => ({
       proxyStatus: status,
       isJiraReady: status.jira.ready,
       isSnowReady: status.snow.ready,
+      isConfluenceReady: status.confluence.ready,
+      isGitHubReady: status.github.ready,
     }),
   setRelayBridgeStatus: (status) =>
     setState({

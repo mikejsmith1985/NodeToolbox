@@ -304,11 +304,20 @@ function createApiRouter(configuration) {
             'Accept': 'application/json',
           },
         });
-        res.json({
-          ok:         probeResponse.ok,
-          statusCode: probeResponse.status,
-          message:    probeResponse.ok ? 'Connected successfully.' : `Received HTTP ${probeResponse.status}`,
-        });
+        let confluenceMessage;
+        if (probeResponse.ok) {
+          confluenceMessage = 'Connected successfully.';
+        } else if (probeResponse.status === 401) {
+          confluenceMessage = 'Authentication failed (HTTP 401) — check your Atlassian email address and Cloud API token.';
+        } else if (probeResponse.status === 403) {
+          confluenceMessage = 'Access denied (HTTP 403) — verify your Atlassian email and Cloud API token. ' +
+            'Confluence Cloud requires an Atlassian Cloud API token from id.atlassian.com, not a Jira on-prem PAT.';
+        } else if (probeResponse.status === 404) {
+          confluenceMessage = 'Not found (HTTP 404) — check your Confluence base URL. It should end with your site name, e.g. https://yoursite.atlassian.net/';
+        } else {
+          confluenceMessage = `Request failed with HTTP ${probeResponse.status}.`;
+        }
+        res.json({ ok: probeResponse.ok, statusCode: probeResponse.status, message: confluenceMessage });
       } catch (testError) {
         res.json({ ok: false, statusCode: 0, message: 'Connection failed: ' + testError.message });
       }
@@ -337,7 +346,7 @@ function createApiRouter(configuration) {
           },
         });
         // Treat any HTTP response as "reachable" — even auth errors confirm the server is up.
-        const isServerReachable = [200, 401, 403, 404, 405, 415].includes(probeResponse.status);
+        const isServerReachable = [200, 400, 401, 403, 404, 405, 415].includes(probeResponse.status);
         let message;
         if (probeResponse.ok) {
           message = 'Rovo MCP server reachable and responding.';
@@ -347,6 +356,10 @@ function createApiRouter(configuration) {
           message = `Rovo MCP server reachable — access denied (HTTP 403). Your plan may not include Rovo.`;
         } else if (probeResponse.status === 405) {
           message = 'Rovo MCP server reachable (HTTP 405 — server is live, use POST for MCP protocol).';
+        } else if (probeResponse.status === 400) {
+          message = 'Rovo MCP endpoint is reachable — HTTP 400 confirms the server is live ' +
+            '(GET probes are rejected; the MCP protocol requires POST with a specific body, ' +
+            'which is normal behaviour for this endpoint).';
         } else {
           message = `Rovo MCP server responded with HTTP ${probeResponse.status}.`;
         }
