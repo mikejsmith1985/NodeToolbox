@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SNow Hub CRG — 6-step Change Request wizard**: The CRG wizard expands from 5 steps to 6 with a new **Change Details** step (step 3) between "Review Issues" and "Planning & Content". Change Details includes:
+  - Clone from existing CHG: enter a CHG number and click "Load CHG" to pre-fill all fields from an existing ticket
+  - Basic CHG info: Category, Change Type, Environment, and Is Expedited dropdowns
+  - SNow reference lookups via a new `SnowLookupField` component: Requested By, Config Item, Assignment Group, Assigned To, Change Manager, Tester, and Service Manager (all with debounced typeahead search against SNow tables)
+- **`SnowLookupField` component**: Debounced typeahead that queries any ServiceNow reference table (`sys_user`, `sys_user_group`, `cmdb_ci`) and resolves the selected record's `sys_id` internally — displays a checkmark badge once a record is resolved
+- **CRG Planning step expanded**: Step 4 now includes Implementation Plan, Backout Plan, and Test Plan textareas alongside the existing assessment dropdowns and generated field editors
+- **`createChg` full CHG submission**: The Review & Create step (step 6) now posts all basic info, planning assessment, and planning content fields to SNow when creating a Change Request
+
 ### Changed
 - **SNow Hub CRG — Enhance with AI now generates a copy-paste prompt**: The hidden Rovo AI feature (activated via Ctrl+Alt+Z) no longer calls a server API. Clicking "✦ Enhance with AI" now opens a modal with the generated prompt pre-populated — copy it, paste it into Rovo, and use the output to fill in the four CHG fields manually.
 

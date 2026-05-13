@@ -15,6 +15,42 @@ const MOCK_ISSUES = [
   },
 ];
 
+// Mock SnowLookupField so tests don't try to call snowFetch for typeahead searches.
+vi.mock('../components/SnowLookupField.tsx', () => ({
+  SnowLookupField: ({ label }: { label: string }) => (
+    <div data-testid={`lookup-${label.replace(/\s+/g, '-').toLowerCase()}`}>{label}</div>
+  ),
+}));
+
+const EMPTY_SNOW_REFERENCE = { sysId: '', displayName: '' };
+const DEFAULT_BASIC_INFO = {
+  category: '',
+  changeType: '',
+  environment: '',
+  requestedBy:     { ...EMPTY_SNOW_REFERENCE },
+  configItem:      { ...EMPTY_SNOW_REFERENCE },
+  assignmentGroup: { ...EMPTY_SNOW_REFERENCE },
+  assignedTo:      { ...EMPTY_SNOW_REFERENCE },
+  changeManager:   { ...EMPTY_SNOW_REFERENCE },
+  tester:          { ...EMPTY_SNOW_REFERENCE },
+  serviceManager:  { ...EMPTY_SNOW_REFERENCE },
+  isExpedited: false,
+};
+const DEFAULT_PLANNING_ASSESSMENT = {
+  impact: '',
+  systemAvailabilityImplication: '',
+  hasBeenTested: '',
+  impactedPersonsAware: '',
+  hasBeenPerformedPreviously: '',
+  successProbability: '',
+  canBeBackedOut: '',
+};
+const DEFAULT_PLANNING_CONTENT = {
+  implementationPlan: '',
+  backoutPlan: '',
+  testPlan: '',
+};
+
 const { mockState, mockActions } = vi.hoisted(() => ({
   mockState: {
     currentStep: 1,
@@ -31,6 +67,27 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     generatedDescription: '',
     generatedJustification: '',
     generatedRiskImpact: '',
+    cloneChgNumber: '',
+    isCloning: false,
+    cloneError: null as string | null,
+    chgBasicInfo: {
+      category: '', changeType: '', environment: '',
+      requestedBy:     { sysId: '', displayName: '' },
+      configItem:      { sysId: '', displayName: '' },
+      assignmentGroup: { sysId: '', displayName: '' },
+      assignedTo:      { sysId: '', displayName: '' },
+      changeManager:   { sysId: '', displayName: '' },
+      tester:          { sysId: '', displayName: '' },
+      serviceManager:  { sysId: '', displayName: '' },
+      isExpedited: false,
+    },
+    chgPlanningAssessment: {
+      impact: '', systemAvailabilityImplication: '', hasBeenTested: '',
+      impactedPersonsAware: '', hasBeenPerformedPreviously: '', successProbability: '', canBeBackedOut: '',
+    },
+    chgPlanningContent: {
+      implementationPlan: '', backoutPlan: '', testPlan: '',
+    },
     relEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
     prdEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
     pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
@@ -47,6 +104,11 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     selectAllIssues: vi.fn(),
     generateDocs: vi.fn(),
     updateGeneratedField: vi.fn(),
+    setChgBasicInfo: vi.fn(),
+    setChgPlanningAssessment: vi.fn(),
+    setChgPlanningContent: vi.fn(),
+    setCloneChgNumber: vi.fn(),
+    cloneFromChg: vi.fn().mockResolvedValue(undefined),
     updateEnvironment: vi.fn(),
     goToStep: vi.fn(),
     reset: vi.fn(),
@@ -76,6 +138,12 @@ function resetMockState(): void {
     generatedDescription: '',
     generatedJustification: '',
     generatedRiskImpact: '',
+    cloneChgNumber: '',
+    isCloning: false,
+    cloneError: null,
+    chgBasicInfo: { ...DEFAULT_BASIC_INFO },
+    chgPlanningAssessment: { ...DEFAULT_PLANNING_ASSESSMENT },
+    chgPlanningContent: { ...DEFAULT_PLANNING_CONTENT },
     relEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
     prdEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
     pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
@@ -89,6 +157,7 @@ describe('CrgTab', () => {
     resetMockState();
     Object.values(mockActions).forEach((mockAction) => mockAction.mockReset());
     mockActions.fetchIssues.mockResolvedValue(undefined);
+    mockActions.cloneFromChg.mockResolvedValue(undefined);
     mockActions.createChg.mockResolvedValue(undefined);
   });
 
@@ -142,9 +211,9 @@ describe('CrgTab', () => {
     expect(screen.getByText('Fix the release blocker')).toBeInTheDocument();
   });
 
-  it('renders step 3 with editable textareas', () => {
+  it('renders step 4 (Planning) with editable textareas for the four generated CHG fields', () => {
     Object.assign(mockState, {
-      currentStep: 3,
+      currentStep: 4,
       generatedShortDescription: 'Deploy ABC 1.0.0',
       generatedDescription: 'Release notes',
       generatedJustification: 'Required for release readiness',
@@ -159,8 +228,8 @@ describe('CrgTab', () => {
     expect(screen.getByLabelText('Risk & Impact')).toBeInTheDocument();
   });
 
-  it('renders the environments table on step 4', () => {
-    mockState.currentStep = 4;
+  it('renders the environments table on step 5', () => {
+    mockState.currentStep = 5;
 
     render(<CrgTab />);
 
@@ -223,8 +292,8 @@ describe('CrgTab', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('A JQL query is required.');
   });
 
-  it('renders the Create CHG button on step 5 (Results)', () => {
-    mockState.currentStep = 5;
+  it('renders the Create CHG button on step 6 (Review & Create)', () => {
+    mockState.currentStep = 6;
     mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
 
     render(<CrgTab />);
@@ -232,9 +301,9 @@ describe('CrgTab', () => {
     expect(screen.getByRole('button', { name: 'Create CHG' })).toBeInTheDocument();
   });
 
-  it('calls createChg when the Create CHG button is clicked on step 5', async () => {
+  it('calls createChg when the Create CHG button is clicked on step 6', async () => {
     const user = userEvent.setup();
-    mockState.currentStep = 5;
+    mockState.currentStep = 6;
     mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
 
     render(<CrgTab />);
@@ -245,7 +314,7 @@ describe('CrgTab', () => {
   });
 
   it('disables the Create CHG button when isSubmitting is true', () => {
-    mockState.currentStep = 5;
+    mockState.currentStep = 6;
     mockState.isSubmitting = true;
     mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
 
@@ -255,7 +324,7 @@ describe('CrgTab', () => {
   });
 
   it('disables the Create CHG button when there is no generated content', () => {
-    mockState.currentStep = 5;
+    mockState.currentStep = 6;
     // All generated fields empty (default mock state)
 
     render(<CrgTab />);
@@ -265,7 +334,7 @@ describe('CrgTab', () => {
 
   it('shows the passphrase modal when Ctrl+Alt+Z is pressed', async () => {
     const user = userEvent.setup();
-    mockState.currentStep = 3;
+    mockState.currentStep = 4;
     render(<CrgTab />);
 
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
@@ -275,7 +344,7 @@ describe('CrgTab', () => {
 
   it('closes the passphrase modal when Cancel is clicked', async () => {
     const user = userEvent.setup();
-    mockState.currentStep = 3;
+    mockState.currentStep = 4;
     render(<CrgTab />);
 
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
@@ -284,9 +353,9 @@ describe('CrgTab', () => {
     expect(screen.queryByPlaceholderText('Enter passphrase')).not.toBeInTheDocument();
   });
 
-  it('unlocks Rovo and shows the Enhance button after correct passphrase on step 3', async () => {
+  it('unlocks Rovo and shows the Enhance button after correct passphrase on step 4', async () => {
     const user = userEvent.setup();
-    mockState.currentStep = 3;
+    mockState.currentStep = 4;
     render(<CrgTab />);
 
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
@@ -298,7 +367,7 @@ describe('CrgTab', () => {
 
   it('shows the prompt modal with a textarea when Enhance with AI is clicked', async () => {
     const user = userEvent.setup();
-    mockState.currentStep = 3;
+    mockState.currentStep = 4;
     render(<CrgTab />);
 
     // Unlock
@@ -316,7 +385,7 @@ describe('CrgTab', () => {
 
   it('closes the prompt modal when Close is clicked', async () => {
     const user = userEvent.setup();
-    mockState.currentStep = 3;
+    mockState.currentStep = 4;
     render(<CrgTab />);
 
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
@@ -328,5 +397,40 @@ describe('CrgTab', () => {
     await user.click(await screen.findByRole('button', { name: 'Close' }));
 
     expect(screen.queryByText(/Copy this prompt and paste it into Rovo/)).not.toBeInTheDocument();
+  });
+
+  // ── Step 3: Change Details ──
+
+  it('renders the clone-from-CHG input and Load CHG button on step 3', () => {
+    mockState.currentStep = 3;
+    render(<CrgTab />);
+
+    expect(screen.getByRole('textbox', { name: 'Existing CHG number' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Load CHG' })).toBeInTheDocument();
+  });
+
+  it('shows the Category dropdown on step 3', () => {
+    mockState.currentStep = 3;
+    render(<CrgTab />);
+
+    expect(screen.getByRole('combobox', { name: 'Category' })).toBeInTheDocument();
+  });
+
+  it('renders SnowLookupField stubs for reference fields on step 3', () => {
+    mockState.currentStep = 3;
+    render(<CrgTab />);
+
+    expect(screen.getByTestId('lookup-requested-by')).toBeInTheDocument();
+    expect(screen.getByTestId('lookup-assignment-group')).toBeInTheDocument();
+    expect(screen.getByTestId('lookup-assigned-to')).toBeInTheDocument();
+  });
+
+  it('renders implementation, backout, and test plan textareas on step 4', () => {
+    mockState.currentStep = 4;
+    render(<CrgTab />);
+
+    expect(screen.getByLabelText('Implementation Plan')).toBeInTheDocument();
+    expect(screen.getByLabelText('Backout Plan')).toBeInTheDocument();
+    expect(screen.getByLabelText('Test Plan')).toBeInTheDocument();
   });
 });

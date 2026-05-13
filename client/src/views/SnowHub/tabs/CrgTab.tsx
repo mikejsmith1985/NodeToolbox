@@ -1,27 +1,54 @@
-// CrgTab.tsx — Five-step Change Request Generator tab for building SNow release content from Jira issues.
+// CrgTab.tsx — Six-step Change Request Generator for building comprehensive SNow CHG records from Jira issues.
+// Steps: 1-Fetch Issues → 2-Review Issues → 3-Change Details → 4-Planning & Content → 5-Environments → 6-Review & Create
 
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import type { ChgBasicInfo, ChgPlanningAssessment, ChgPlanningContent } from '../hooks/useCrgState.ts';
 import { useCrgState } from '../hooks/useCrgState.ts';
 import { useRovoAssist } from '../hooks/useRovoAssist.ts';
+import { SnowLookupField } from '../components/SnowLookupField.tsx';
 import styles from './CrgTab.module.css';
 
 const TAB_TITLE = 'Change Request Generator';
-const TAB_SUBTITLE = 'Guide a release from Jira issue lookup through final ServiceNow-ready content.';
+const TAB_SUBTITLE = 'Guide a release from Jira issue lookup through a complete ServiceNow Change Request.';
 const STEP_DEFINITIONS = [
   { step: 1, label: 'Fetch Issues' },
   { step: 2, label: 'Review Issues' },
-  { step: 3, label: 'Preview Docs' },
-  { step: 4, label: 'Environments' },
-  { step: 5, label: 'Results' },
+  { step: 3, label: 'Change Details' },
+  { step: 4, label: 'Planning' },
+  { step: 5, label: 'Environments' },
+  { step: 6, label: 'Review & Create' },
 ] as const;
+
+// ── Hardcoded SNow dropdown option lists ──
+// These mirror the choice field values used in a standard SNow Change Request form.
+const CATEGORY_OPTIONS   = ['', 'Software', 'Hardware', 'Network', 'Infrastructure', 'Database', 'Security', 'Other'];
+const CHANGE_TYPE_OPTIONS = ['', 'Normal', 'Standard', 'Emergency'];
+const ENVIRONMENT_OPTIONS = ['', 'Production', 'Production Fix', 'Development', 'Test/QA', 'Staging', 'Disaster Recovery'];
+const IMPACT_OPTIONS      = ['', '1 - High', '2 - Medium', '3 - Low'];
+const AVAILABILITY_OPTIONS = ['', 'Interruption', 'Degradation', 'No Impact'];
+const YES_NO_OPTIONS       = ['', 'Yes', 'No'];
+const BACKED_OUT_OPTIONS   = ['', 'Yes', 'No', 'Partially'];
+const SUCCESS_PROB_OPTIONS = ['', '100%', '90-99%', '70-89%', '50-69%', 'Less than 50%'];
 const GENERATED_FIELD_DEFINITIONS = [
   { key: 'shortDescription', label: 'Short Description', valueKey: 'generatedShortDescription' },
   { key: 'description', label: 'Description', valueKey: 'generatedDescription' },
   { key: 'justification', label: 'Justification', valueKey: 'generatedJustification' },
   { key: 'riskImpact', label: 'Risk & Impact', valueKey: 'generatedRiskImpact' },
 ] as const;
+
+// Assessment dropdown row definitions — label + field key + option list for each Planning assessment.
+const PLANNING_ASSESSMENT_ROWS = [
+  { label: 'Impact',                         fieldKey: 'impact',                        options: IMPACT_OPTIONS },
+  { label: 'System Availability Implication', fieldKey: 'systemAvailabilityImplication', options: AVAILABILITY_OPTIONS },
+  { label: 'Has Been Tested',                fieldKey: 'hasBeenTested',                 options: YES_NO_OPTIONS },
+  { label: 'Impacted Persons Aware',         fieldKey: 'impactedPersonsAware',          options: YES_NO_OPTIONS },
+  { label: 'Performed Previously',           fieldKey: 'hasBeenPerformedPreviously',    options: YES_NO_OPTIONS },
+  { label: 'Success Probability',            fieldKey: 'successProbability',            options: SUCCESS_PROB_OPTIONS },
+  { label: 'Can Be Backed Out',              fieldKey: 'canBeBackedOut',                options: BACKED_OUT_OPTIONS },
+] as const;
+
 const ENVIRONMENT_ROW_DEFINITIONS = [
   { key: 'rel', label: 'REL', stateKey: 'relEnvironment', canToggle: false },
   { key: 'prd', label: 'PRD', stateKey: 'prdEnvironment', canToggle: false },
@@ -48,8 +75,8 @@ interface CrgStepProps {
   actions: CrgActionSet;
 }
 
-/** Additional props passed to PreviewDocsStep when Rovo assist is active. */
-interface PreviewDocsStepExtras {
+/** Additional props passed to PlanningStep when Rovo assist is active. */
+interface PlanningStepExtras {
   isRovoUnlocked: boolean;
   onEnhanceWithRovo: () => void;
 }
@@ -237,15 +264,227 @@ function ReviewIssuesStep({ state, actions }: CrgStepProps) {
   );
 }
 
-function PreviewDocsStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo }: CrgStepProps & PreviewDocsStepExtras) {
-  function handleGeneratedFieldChange(fieldName: GeneratedFieldName, event: ChangeEvent<HTMLTextAreaElement>): void {
-    actions.updateGeneratedField(fieldName, event.target.value);
+function ChangeDetailsStep({ state, actions }: CrgStepProps) {
+  function handleBasicInfoChange<K extends keyof ChgBasicInfo>(
+    fieldKey: K,
+    value: ChgBasicInfo[K],
+  ): void {
+    actions.setChgBasicInfo({ [fieldKey]: value } as Partial<ChgBasicInfo>);
   }
+
+  function handleCloneNumberChange(event: ChangeEvent<HTMLInputElement>): void {
+    actions.setCloneChgNumber(event.target.value.toUpperCase());
+  }
+
+  const { chgBasicInfo: basicInfo } = state;
+  const isCloneInputDisabled = state.isCloning;
 
   return (
     <section className={styles.section}>
       <StepHeading currentStep={state.currentStep} />
+
+      {/* Clone-from-CHG panel — pre-fill all fields by looking up an existing change record */}
+      <div className={styles.clonePanel}>
+        <h4 className={styles.panelSectionTitle}>Clone from existing CHG (optional)</h4>
+        <p className={styles.panelHint}>
+          Enter a CHG number to pre-populate all fields below from a previous change.
+        </p>
+        <div className={styles.cloneInputRow}>
+          <input
+            aria-label="Existing CHG number"
+            className={styles.input}
+            disabled={isCloneInputDisabled}
+            onChange={handleCloneNumberChange}
+            placeholder="e.g. CHG0001234"
+            value={state.cloneChgNumber}
+          />
+          <button
+            className={styles.secondaryButton}
+            disabled={isCloneInputDisabled || !state.cloneChgNumber}
+            onClick={() => void actions.cloneFromChg()}
+            type="button"
+          >
+            {state.isCloning ? 'Loading…' : 'Load CHG'}
+          </button>
+        </div>
+        {state.cloneError ? <p className={styles.errorText} role="alert">{state.cloneError}</p> : null}
+      </div>
+
+      {/* Basic Change Info — mirrors the top section of the SNow Change Request form */}
+      <div className={styles.detailsGrid}>
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>Category</span>
+          <select
+            className={styles.input}
+            onChange={(event) => handleBasicInfoChange('category', event.target.value)}
+            value={basicInfo.category}
+          >
+            {CATEGORY_OPTIONS.map((option) => (
+              <option key={option} value={option}>{option || 'Select…'}</option>
+            ))}
+          </select>
+        </label>
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>Change Type</span>
+          <select
+            className={styles.input}
+            onChange={(event) => handleBasicInfoChange('changeType', event.target.value)}
+            value={basicInfo.changeType}
+          >
+            {CHANGE_TYPE_OPTIONS.map((option) => (
+              <option key={option} value={option}>{option || 'Select…'}</option>
+            ))}
+          </select>
+        </label>
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>Environment</span>
+          <select
+            className={styles.input}
+            onChange={(event) => handleBasicInfoChange('environment', event.target.value)}
+            value={basicInfo.environment}
+          >
+            {ENVIRONMENT_OPTIONS.map((option) => (
+              <option key={option} value={option}>{option || 'Select…'}</option>
+            ))}
+          </select>
+        </label>
+
+        <SnowLookupField
+          label="Requested By"
+          tableName="sys_user"
+          value={basicInfo.requestedBy}
+          onChange={(ref) => handleBasicInfoChange('requestedBy', ref)}
+        />
+        <SnowLookupField
+          label="Config Item"
+          tableName="cmdb_ci"
+          value={basicInfo.configItem}
+          onChange={(ref) => handleBasicInfoChange('configItem', ref)}
+        />
+        <SnowLookupField
+          label="Assignment Group"
+          tableName="sys_user_group"
+          value={basicInfo.assignmentGroup}
+          onChange={(ref) => handleBasicInfoChange('assignmentGroup', ref)}
+        />
+        <SnowLookupField
+          label="Assigned To"
+          tableName="sys_user"
+          value={basicInfo.assignedTo}
+          onChange={(ref) => handleBasicInfoChange('assignedTo', ref)}
+        />
+        <SnowLookupField
+          label="Change Manager"
+          tableName="sys_user"
+          value={basicInfo.changeManager}
+          onChange={(ref) => handleBasicInfoChange('changeManager', ref)}
+        />
+        <SnowLookupField
+          label="Tester"
+          tableName="sys_user"
+          value={basicInfo.tester}
+          onChange={(ref) => handleBasicInfoChange('tester', ref)}
+        />
+        <SnowLookupField
+          label="Service Manager"
+          tableName="sys_user"
+          value={basicInfo.serviceManager}
+          onChange={(ref) => handleBasicInfoChange('serviceManager', ref)}
+        />
+      </div>
+
+      <label className={`${styles.fieldGroup} ${styles.inlineCheckbox}`}>
+        <input
+          checked={basicInfo.isExpedited}
+          onChange={(event) => handleBasicInfoChange('isExpedited', event.target.checked)}
+          type="checkbox"
+        />
+        <span>Expedited Change</span>
+      </label>
+
+      <div className={styles.buttonRow}>
+        <button className={styles.linkButton} onClick={() => actions.goToStep(2)} type="button">
+          Back
+        </button>
+        <button className={styles.primaryButton} onClick={() => actions.goToStep(4)} type="button">
+          Next: Planning
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function PlanningStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo }: CrgStepProps & PlanningStepExtras) {
+  function handleGeneratedFieldChange(fieldName: GeneratedFieldName, event: ChangeEvent<HTMLTextAreaElement>): void {
+    actions.updateGeneratedField(fieldName, event.target.value);
+  }
+
+  function handleAssessmentChange(
+    fieldKey: keyof ChgPlanningAssessment,
+    event: ChangeEvent<HTMLSelectElement>,
+  ): void {
+    actions.setChgPlanningAssessment({ [fieldKey]: event.target.value } as Partial<ChgPlanningAssessment>);
+  }
+
+  function handlePlanningContentChange(
+    fieldKey: keyof ChgPlanningContent,
+    event: ChangeEvent<HTMLTextAreaElement>,
+  ): void {
+    actions.setChgPlanningContent({ [fieldKey]: event.target.value } as Partial<ChgPlanningContent>);
+  }
+
+  const { chgPlanningAssessment: assessment, chgPlanningContent: planContent } = state;
+
+  return (
+    <section className={styles.section}>
+      <StepHeading currentStep={state.currentStep} />
+
+      {/* Planning assessment dropdowns — seven risk/readiness evaluations required by SNow */}
+      <div className={styles.assessmentGrid}>
+        {PLANNING_ASSESSMENT_ROWS.map((row) => (
+          <label className={styles.fieldGroup} key={row.fieldKey}>
+            <span className={styles.fieldLabel}>{row.label}</span>
+            <select
+              className={styles.input}
+              onChange={(event) => handleAssessmentChange(row.fieldKey, event)}
+              value={assessment[row.fieldKey]}
+            >
+              {row.options.map((option) => (
+                <option key={option} value={option}>{option || 'Select…'}</option>
+              ))}
+            </select>
+          </label>
+        ))}
+      </div>
+
+      {/* Long-form planning text areas — standard SNow change_request fields */}
       <div className={styles.editorGrid}>
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>Implementation Plan</span>
+          <textarea
+            className={styles.textArea}
+            onChange={(event) => handlePlanningContentChange('implementationPlan', event)}
+            value={planContent.implementationPlan}
+          />
+        </label>
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>Backout Plan</span>
+          <textarea
+            className={styles.textArea}
+            onChange={(event) => handlePlanningContentChange('backoutPlan', event)}
+            value={planContent.backoutPlan}
+          />
+        </label>
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>Test Plan</span>
+          <textarea
+            className={styles.textArea}
+            onChange={(event) => handlePlanningContentChange('testPlan', event)}
+            value={planContent.testPlan}
+          />
+        </label>
+
+        {/* Generated Jira-sourced content — editable before final submission */}
         {GENERATED_FIELD_DEFINITIONS.map((fieldDefinition) => (
           <label className={styles.fieldGroup} key={fieldDefinition.key}>
             <span className={styles.fieldLabel}>{fieldDefinition.label}</span>
@@ -257,6 +496,7 @@ function PreviewDocsStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo }: 
           </label>
         ))}
       </div>
+
       {isRovoUnlocked ? (
         <div className={styles.rovoRow}>
           <button
@@ -269,11 +509,12 @@ function PreviewDocsStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo }: 
           </button>
         </div>
       ) : null}
+
       <div className={styles.buttonRow}>
-        <button className={styles.linkButton} onClick={() => actions.goToStep(2)} type="button">
+        <button className={styles.linkButton} onClick={() => actions.goToStep(3)} type="button">
           Back
         </button>
-        <button className={styles.primaryButton} onClick={() => actions.goToStep(4)} type="button">
+        <button className={styles.primaryButton} onClick={() => actions.goToStep(5)} type="button">
           Next: Environments
         </button>
       </div>
@@ -350,10 +591,10 @@ function EnvironmentStep({ state, actions }: CrgStepProps) {
         </tbody>
       </table>
       <div className={styles.buttonRow}>
-        <button className={styles.linkButton} onClick={() => actions.goToStep(3)} type="button">
+        <button className={styles.linkButton} onClick={() => actions.goToStep(4)} type="button">
           Back
         </button>
-        <button className={styles.primaryButton} onClick={() => actions.goToStep(5)} type="button">
+        <button className={styles.primaryButton} onClick={() => actions.goToStep(6)} type="button">
           Preview Results
         </button>
       </div>
@@ -449,7 +690,7 @@ function ResultsStep({ state, actions }: CrgStepProps) {
 function renderCurrentStepPanel(
   state: CrgStateData,
   actions: CrgActionSet,
-  previewExtras: PreviewDocsStepExtras,
+  planningExtras: PlanningStepExtras,
 ) {
   if (state.currentStep === 1) {
     return <FetchIssuesStep actions={actions} state={state} />;
@@ -460,10 +701,14 @@ function renderCurrentStepPanel(
   }
 
   if (state.currentStep === 3) {
-    return <PreviewDocsStep actions={actions} state={state} {...previewExtras} />;
+    return <ChangeDetailsStep actions={actions} state={state} />;
   }
 
   if (state.currentStep === 4) {
+    return <PlanningStep actions={actions} state={state} {...planningExtras} />;
+  }
+
+  if (state.currentStep === 5) {
     return <EnvironmentStep actions={actions} state={state} />;
   }
 
@@ -471,7 +716,8 @@ function renderCurrentStepPanel(
 }
 
 /**
- * Renders the Change Request Generator so release managers can turn Jira release scope into a five-step ServiceNow-ready package.
+ * Renders the Change Request Generator so release managers can turn Jira release scope into a
+ * comprehensive six-step ServiceNow Change Request with all required fields.
  * A hidden AI assist mode is available via keyboard shortcut for enhanced content generation.
  */
 export default function CrgTab() {
@@ -549,7 +795,7 @@ export default function CrgTab() {
     setRovoPrompt(promptText);
   }, [state, buildPrompt]);
 
-  const previewExtras: PreviewDocsStepExtras = {
+  const planningExtras: PlanningStepExtras = {
     isRovoUnlocked:    isUnlocked,
     onEnhanceWithRovo: handleEnhanceWithRovo,
   };
@@ -564,7 +810,7 @@ export default function CrgTab() {
         <p className={styles.summaryPill}>{issueCountSummary}</p>
       </header>
       <StepIndicator currentStep={state.currentStep} />
-      {renderCurrentStepPanel(state, actions, previewExtras)}
+      {renderCurrentStepPanel(state, actions, planningExtras)}
 
       {/* Hidden passphrase modal — only visible after Ctrl+Alt+Z, never in documentation */}
       {isPassphraseModalVisible ? (
