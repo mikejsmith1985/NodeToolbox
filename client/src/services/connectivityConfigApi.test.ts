@@ -16,8 +16,10 @@ const MOCK_CONNECTIVITY_RESULT = {
   confluence: { baseUrl: 'https://acme.atlassian.net', hasCredentials: true, usernameMasked: 'yo****m' },
 };
 
-const MOCK_PROBE_OK: import('../types/config.ts').ConnectionProbeResult = {
-  isOk: true,
+// The server returns `ok` (not `isOk`). The API layer maps ok → isOk.
+// This mock intentionally mirrors the real server's JSON shape, not the TypeScript interface.
+const MOCK_SERVER_PROBE_OK = {
+  ok: true,
   statusCode: 200,
   message: 'Connected successfully.',
 };
@@ -64,31 +66,49 @@ describe('saveConnectivityConfig', () => {
 });
 
 describe('testSnowConnectivity', () => {
-  it('returns probe result', async () => {
-    mockFetchOnce(MOCK_PROBE_OK);
+  it('returns probe result with isOk mapped from server ok field', async () => {
+    mockFetchOnce(MOCK_SERVER_PROBE_OK);
     const result = await testSnowConnectivity();
     expect(result.isOk).toBe(true);
+    expect(result.statusCode).toBe(200);
+    expect(result.message).toBe('Connected successfully.');
+  });
+
+  it('maps server ok=false to isOk=false', async () => {
+    mockFetchOnce({ ok: false, statusCode: 401, message: 'Unauthorized.' });
+    const result = await testSnowConnectivity();
+    expect(result.isOk).toBe(false);
+    expect(result.statusCode).toBe(401);
   });
 });
 
 describe('testGitHubConnectivity', () => {
-  it('returns probe result', async () => {
-    mockFetchOnce(MOCK_PROBE_OK);
+  it('returns probe result with isOk mapped from server ok field', async () => {
+    mockFetchOnce(MOCK_SERVER_PROBE_OK);
     const result = await testGitHubConnectivity();
     expect(result.isOk).toBe(true);
+    expect(result.statusCode).toBe(200);
   });
 });
 
 describe('testConfluenceConnectivity', () => {
-  it('returns probe result', async () => {
-    mockFetchOnce(MOCK_PROBE_OK);
+  it('returns probe result with isOk mapped from server ok field', async () => {
+    mockFetchOnce(MOCK_SERVER_PROBE_OK);
     const result = await testConfluenceConnectivity();
     expect(result.isOk).toBe(true);
+    expect(result.statusCode).toBe(200);
+  });
+
+  it('maps server ok=false to isOk=false (e.g. 403 wrong credentials)', async () => {
+    mockFetchOnce({ ok: false, statusCode: 403, message: 'Check your Atlassian Cloud API token.' });
+    const result = await testConfluenceConnectivity();
+    expect(result.isOk).toBe(false);
+    expect(result.statusCode).toBe(403);
   });
 
   it('posts system=confluence to the test endpoint', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
-      ok: true, status: 200, json: () => Promise.resolve(MOCK_PROBE_OK),
+      ok: true, status: 200, json: () => Promise.resolve(MOCK_SERVER_PROBE_OK),
     } as Response);
     await testConfluenceConnectivity();
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
@@ -97,15 +117,23 @@ describe('testConfluenceConnectivity', () => {
 });
 
 describe('testRovoConnectivity', () => {
-  it('returns probe result', async () => {
-    mockFetchOnce(MOCK_PROBE_OK);
+  it('returns probe result with isOk mapped from server ok field', async () => {
+    mockFetchOnce(MOCK_SERVER_PROBE_OK);
     const result = await testRovoConnectivity();
     expect(result.isOk).toBe(true);
+    expect(result.statusCode).toBe(200);
+  });
+
+  it('maps server ok=true for HTTP 400 (Rovo MCP reachability probe)', async () => {
+    mockFetchOnce({ ok: true, statusCode: 400, message: 'GET probe rejected — server is live.' });
+    const result = await testRovoConnectivity();
+    expect(result.isOk).toBe(true);
+    expect(result.statusCode).toBe(400);
   });
 
   it('posts system=rovo to the test endpoint', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
-      ok: true, status: 200, json: () => Promise.resolve(MOCK_PROBE_OK),
+      ok: true, status: 200, json: () => Promise.resolve(MOCK_SERVER_PROBE_OK),
     } as Response);
     await testRovoConnectivity();
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);

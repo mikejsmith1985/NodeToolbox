@@ -33,6 +33,16 @@ export async function saveConnectivityConfig(
   return response.json() as Promise<ConnectivityConfigResult>;
 }
 
+/**
+ * Parses a raw probe response from the server and maps the `ok` field to `isOk`.
+ * The server returns `{ ok, statusCode, message }` but our TypeScript interface
+ * uses `isOk` — a direct `as` cast would silently leave `isOk` as undefined.
+ */
+async function parseProbeResponse(response: Response): Promise<ConnectionProbeResult> {
+  const data = await response.json() as { ok: boolean; statusCode: number; message: string };
+  return { isOk: data.ok, statusCode: data.statusCode, message: data.message };
+}
+
 /** Tests Snow connectivity using currently stored server credentials. */
 export async function testSnowConnectivity(): Promise<ConnectionProbeResult> {
   const response = await fetch(`${CONNECTIVITY_BASE}/test`, {
@@ -40,7 +50,7 @@ export async function testSnowConnectivity(): Promise<ConnectionProbeResult> {
     headers: { 'Content-Type': JSON_CONTENT_TYPE },
     body: JSON.stringify({ system: 'snow' }),
   });
-  return response.json() as Promise<ConnectionProbeResult>;
+  return parseProbeResponse(response);
 }
 
 /** Tests GitHub connectivity using currently stored server PAT. */
@@ -50,7 +60,7 @@ export async function testGitHubConnectivity(): Promise<ConnectionProbeResult> {
     headers: { 'Content-Type': JSON_CONTENT_TYPE },
     body: JSON.stringify({ system: 'github' }),
   });
-  return response.json() as Promise<ConnectionProbeResult>;
+  return parseProbeResponse(response);
 }
 
 /** Tests Confluence connectivity using currently stored Atlassian credentials. */
@@ -60,7 +70,7 @@ export async function testConfluenceConnectivity(): Promise<ConnectionProbeResul
     headers: { 'Content-Type': JSON_CONTENT_TYPE },
     body: JSON.stringify({ system: 'confluence' }),
   });
-  return response.json() as Promise<ConnectionProbeResult>;
+  return parseProbeResponse(response);
 }
 
 /**
@@ -73,5 +83,5 @@ export async function testRovoConnectivity(): Promise<ConnectionProbeResult> {
     headers: { 'Content-Type': JSON_CONTENT_TYPE },
     body: JSON.stringify({ system: 'rovo' }),
   });
-  return response.json() as Promise<ConnectionProbeResult>;
+  return parseProbeResponse(response);
 }
