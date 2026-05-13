@@ -2,7 +2,8 @@
 //
 // Shows the Jira base URL and ServiceNow instance URL from the settings store (read-only,
 // with links to the Settings view for editing). Provides a masked input for storing a
-// GitHub Personal Access Token in localStorage.
+// GitHub Personal Access Token. The PAT is managed through the shared settingsStore so
+// that changes here are immediately visible in Dev Workspace → Settings, and vice versa.
 
 import { useState } from 'react';
 
@@ -11,37 +12,7 @@ import styles from './AdminHubView.module.css';
 
 // ── Constants ──
 
-const GITHUB_PAT_STORAGE_KEY = 'tbxGithubPat';
 const SAVE_STATUS_CLEAR_MS = 2000;
-
-// ── Helpers ──
-
-/** Reads the GitHub PAT from localStorage, returning empty string on failure. */
-function readStoredGithubPat(): string {
-  try {
-    return localStorage.getItem(GITHUB_PAT_STORAGE_KEY) ?? '';
-  } catch {
-    return '';
-  }
-}
-
-/** Writes the GitHub PAT to localStorage. */
-function writeGithubPat(token: string): void {
-  try {
-    localStorage.setItem(GITHUB_PAT_STORAGE_KEY, token);
-  } catch {
-    // Non-fatal: in-memory state remains authoritative.
-  }
-}
-
-/** Removes the GitHub PAT from localStorage. */
-function deleteGithubPat(): void {
-  try {
-    localStorage.removeItem(GITHUB_PAT_STORAGE_KEY);
-  } catch {
-    // Non-fatal.
-  }
-}
 
 // ── Sub-components ──
 
@@ -174,8 +145,12 @@ export default function CredentialManagementSection() {
   const snowInstanceUrl = useSettingsStore(
     (storeState) => storeState.changeRequestGeneratorSnowUrl,
   );
+  // PAT is managed through the shared settingsStore so that saving here is immediately
+  // reflected in Dev Workspace → Settings, and any PAT saved there is visible here too.
+  const storedPat = useSettingsStore((storeState) => storeState.githubPat);
+  const setGithubPat = useSettingsStore((storeState) => storeState.setGithubPat);
+  const clearGithubPatFromStore = useSettingsStore((storeState) => storeState.clearGithubPat);
 
-  const [storedPat, setStoredPat] = useState<string>(readStoredGithubPat);
   const [isPatVisible, setIsPatVisible] = useState(false);
   const [patInput, setPatInput] = useState('');
   const [isEditingPat, setIsEditingPat] = useState(false);
@@ -189,16 +164,14 @@ export default function CredentialManagementSection() {
   function handleSavePat() {
     const trimmedToken = patInput.trim();
     if (trimmedToken === '') return;
-    writeGithubPat(trimmedToken);
-    setStoredPat(trimmedToken);
+    setGithubPat(trimmedToken);
     setPatInput('');
     setIsEditingPat(false);
     showSaveStatus('✓ PAT saved');
   }
 
   function handleClearPat() {
-    deleteGithubPat();
-    setStoredPat('');
+    clearGithubPatFromStore();
     setIsPatVisible(false);
     showSaveStatus('✓ PAT cleared');
   }
