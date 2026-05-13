@@ -1,9 +1,10 @@
 // CrgTab.tsx — Five-step Change Request Generator tab for building SNow release content from Jira issues.
 
-import type { ChangeEvent } from 'react';
-import { useMemo } from 'react';
+import type { ChangeEvent, KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useCrgState } from '../hooks/useCrgState.ts';
+import { useRovoAssist } from '../hooks/useRovoAssist.ts';
 import styles from './CrgTab.module.css';
 
 const TAB_TITLE = 'Change Request Generator';
@@ -45,6 +46,14 @@ interface StepIndicatorProps {
 interface CrgStepProps {
   state: CrgStateData;
   actions: CrgActionSet;
+}
+
+/** Additional props passed to PreviewDocsStep when Rovo assist is active. */
+interface PreviewDocsStepExtras {
+  isRovoUnlocked: boolean;
+  isRovoGenerating: boolean;
+  rovoError: string | null;
+  onEnhanceWithRovo: () => void;
 }
 
 interface StepHeadingProps {
@@ -230,7 +239,7 @@ function ReviewIssuesStep({ state, actions }: CrgStepProps) {
   );
 }
 
-function PreviewDocsStep({ state, actions }: CrgStepProps) {
+function PreviewDocsStep({ state, actions, isRovoUnlocked, isRovoGenerating, rovoError, onEnhanceWithRovo }: CrgStepProps & PreviewDocsStepExtras) {
   function handleGeneratedFieldChange(fieldName: GeneratedFieldName, event: ChangeEvent<HTMLTextAreaElement>): void {
     actions.updateGeneratedField(fieldName, event.target.value);
   }
@@ -250,6 +259,20 @@ function PreviewDocsStep({ state, actions }: CrgStepProps) {
           </label>
         ))}
       </div>
+      {isRovoUnlocked ? (
+        <div className={styles.rovoRow}>
+          {rovoError ? <span className={styles.rovoError}>{rovoError}</span> : null}
+          <button
+            className={styles.rovoButton}
+            disabled={isRovoGenerating}
+            onClick={onEnhanceWithRovo}
+            title="Enhance content with AI assistance"
+            type="button"
+          >
+            {isRovoGenerating ? 'Enhancing…' : '✦ Enhance with AI'}
+          </button>
+        </div>
+      ) : null}
       <div className={styles.buttonRow}>
         <button className={styles.linkButton} onClick={() => actions.goToStep(2)} type="button">
           Back
@@ -411,6 +434,14 @@ function ResultsStep({ state, actions }: CrgStepProps) {
       {state.submitResult ? <p className={styles.successText}>{state.submitResult}</p> : null}
       {state.isSubmitting ? <p className={styles.loadingText}>Submitting change request...</p> : null}
       <div className={styles.buttonRow}>
+        <button
+          className={styles.primaryButton}
+          disabled={state.isSubmitting || !hasGeneratedContent}
+          onClick={() => void actions.createChg()}
+          type="button"
+        >
+          {state.isSubmitting ? 'Creating CHG…' : 'Create CHG'}
+        </button>
         <button className={styles.secondaryButton} onClick={() => actions.reset()} type="button">
           Start Over
         </button>
@@ -419,7 +450,11 @@ function ResultsStep({ state, actions }: CrgStepProps) {
   );
 }
 
-function renderCurrentStepPanel(state: CrgStateData, actions: CrgActionSet) {
+function renderCurrentStepPanel(
+  state: CrgStateData,
+  actions: CrgActionSet,
+  previewExtras: PreviewDocsStepExtras,
+) {
   if (state.currentStep === 1) {
     return <FetchIssuesStep actions={actions} state={state} />;
   }
@@ -429,7 +464,7 @@ function renderCurrentStepPanel(state: CrgStateData, actions: CrgActionSet) {
   }
 
   if (state.currentStep === 3) {
-    return <PreviewDocsStep actions={actions} state={state} />;
+    return <PreviewDocsStep actions={actions} state={state} {...previewExtras} />;
   }
 
   if (state.currentStep === 4) {
@@ -441,10 +476,92 @@ function renderCurrentStepPanel(state: CrgStateData, actions: CrgActionSet) {
 
 /**
  * Renders the Change Request Generator so release managers can turn Jira release scope into a five-step ServiceNow-ready package.
+ * A hidden AI assist mode is available via keyboard shortcut for enhanced content generation.
  */
 export default function CrgTab() {
   const { state, actions } = useCrgState();
+  const { isUnlocked, isGenerating, generationError, verifyPassphrase, generateChgFields } = useRovoAssist();
+
+  // Modal visibility and passphrase input state for the hidden activation flow.
+  const [isPassphraseModalVisible, setIsPassphraseModalVisible] = useState(false);
+  const [passphraseInput, setPassphraseInput] = useState('');
+  const [passphraseError, setPassphraseError] = useState<string | null>(null);
+  const passphraseInputRef = useRef<HTMLInputElement>(null);
+
   const issueCountSummary = useMemo(() => `${state.fetchedIssues.length} issue(s) loaded`, [state.fetchedIssues.length]);
+
+  // Listen for the hidden activation key combination: Ctrl+Alt+Z.
+  // Only shows the modal when Rovo is not already unlocked.
+  useEffect(() => {
+    function handleGlobalKeyDown(keyboardEvent: globalThis.KeyboardEvent): void {
+      if (keyboardEvent.ctrlKey && keyboardEvent.altKey && keyboardEvent.key === 'z' && !isUnlocked) {
+        keyboardEvent.preventDefault();
+        setIsPassphraseModalVisible(true);
+        setPassphraseInput('');
+        setPassphraseError(null);
+      }
+    }
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [isUnlocked]);
+
+  // Auto-focus the passphrase input each time the modal becomes visible.
+  useEffect(() => {
+    if (isPassphraseModalVisible) {
+      passphraseInputRef.current?.focus();
+    }
+  }, [isPassphraseModalVisible]);
+
+  const handlePassphraseSubmit = useCallback(async () => {
+    const isAccepted = await verifyPassphrase(passphraseInput);
+
+    if (isAccepted) {
+      setIsPassphraseModalVisible(false);
+      setPassphraseInput('');
+    } else {
+      setPassphraseError('Incorrect passphrase');
+    }
+  }, [passphraseInput, verifyPassphrase]);
+
+  const handlePassphraseKeyDown = useCallback((keyboardEvent: KeyboardEvent<HTMLInputElement>) => {
+    if (keyboardEvent.key === 'Enter') {
+      void handlePassphraseSubmit();
+    } else if (keyboardEvent.key === 'Escape') {
+      setIsPassphraseModalVisible(false);
+    }
+  }, [handlePassphraseSubmit]);
+
+  const handleEnhanceWithRovo = useCallback(async () => {
+    const selectedIssues = state.fetchedIssues.filter((issue) =>
+      state.selectedIssueKeys.has(issue.key),
+    );
+
+    const currentFields = {
+      shortDescription: state.generatedShortDescription,
+      description:      state.generatedDescription,
+      justification:    state.generatedJustification,
+      riskImpact:       state.generatedRiskImpact,
+    };
+
+    const generatedFields = await generateChgFields(selectedIssues, currentFields);
+
+    if (generatedFields) {
+      actions.updateGeneratedField('shortDescription', generatedFields.shortDescription);
+      actions.updateGeneratedField('description',      generatedFields.description);
+      actions.updateGeneratedField('justification',    generatedFields.justification);
+      actions.updateGeneratedField('riskImpact',       generatedFields.riskImpact);
+    }
+  }, [state, actions, generateChgFields]);
+
+  const previewExtras: PreviewDocsStepExtras = {
+    isRovoUnlocked:    isUnlocked,
+    isRovoGenerating:  isGenerating,
+    rovoError:         generationError,
+    onEnhanceWithRovo: () => void handleEnhanceWithRovo(),
+  };
 
   return (
     <div className={styles.tabPanel}>
@@ -456,7 +573,41 @@ export default function CrgTab() {
         <p className={styles.summaryPill}>{issueCountSummary}</p>
       </header>
       <StepIndicator currentStep={state.currentStep} />
-      {renderCurrentStepPanel(state, actions)}
+      {renderCurrentStepPanel(state, actions, previewExtras)}
+
+      {/* Hidden passphrase modal — only visible after Ctrl+Alt+Z, never in documentation */}
+      {isPassphraseModalVisible ? (
+        <div className={styles.passphraseOverlay}>
+          <div className={styles.passphraseModal}>
+            <input
+              className={styles.passphraseInput}
+              onChange={(event) => setPassphraseInput(event.target.value)}
+              onKeyDown={handlePassphraseKeyDown}
+              placeholder="Enter passphrase"
+              ref={passphraseInputRef}
+              type="password"
+              value={passphraseInput}
+            />
+            {passphraseError ? <p className={styles.passphraseError}>{passphraseError}</p> : null}
+            <div className={styles.passphraseActions}>
+              <button
+                className={styles.primaryButton}
+                onClick={() => void handlePassphraseSubmit()}
+                type="button"
+              >
+                Unlock
+              </button>
+              <button
+                className={styles.linkButton}
+                onClick={() => setIsPassphraseModalVisible(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
