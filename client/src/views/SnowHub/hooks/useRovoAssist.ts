@@ -1,4 +1,4 @@
-// useRovoAssist.ts — Hidden AI-assisted content generation for CHG field population.
+// useRovoAssist.ts — Hidden AI-prompt generator for CHG field population.
 // Activated through a keyboard shortcut and a passphrase gate.
 // No external documentation — internal capability only.
 
@@ -11,7 +11,7 @@ import type { JiraIssue } from '../../../types/jira.ts';
 // To reproduce: node -e "const c=require('crypto');console.log(c.createHash('sha256').update('<passphrase>').digest('hex'))"
 const ACTIVATION_DIGEST = '1ee58081238835ff0f8120a9c2fe8dbf480a124fb090ad9b78842f4d585ea713';
 
-/** The four CHG text fields that Rovo AI can populate. */
+/** The four CHG text fields that the generated prompt targets. */
 export interface RovoGeneratedFields {
   shortDescription: string;
   description: string;
@@ -21,15 +21,13 @@ export interface RovoGeneratedFields {
 
 export interface UseRovoAssistResult {
   isUnlocked: boolean;
-  isGenerating: boolean;
-  generationError: string | null;
   /** Hashes the passphrase and compares it to the stored digest. Sets isUnlocked on success. */
   verifyPassphrase: (passphrase: string) => Promise<boolean>;
-  /** Sends selected issues and existing field content to the server-side Rovo endpoint. */
-  generateChgFields: (
+  /** Builds a prompt string the user can paste into Rovo to generate all four CHG fields. */
+  buildPrompt: (
     selectedIssues: JiraIssue[],
     currentFields: RovoGeneratedFields,
-  ) => Promise<RovoGeneratedFields | null>;
+  ) => string;
 }
 
 /**
@@ -46,7 +44,7 @@ async function computeSha256Hex(input: string): Promise<string> {
 
 /**
  * Formats the selected issues into a compact "[KEY] Summary" list
- * that the server sends to the Rovo API as part of the generation prompt.
+ * suitable for inclusion in an AI prompt.
  */
 function buildIssueListText(selectedIssues: JiraIssue[]): string {
   if (selectedIssues.length === 0) {
@@ -58,15 +56,44 @@ function buildIssueListText(selectedIssues: JiraIssue[]): string {
 }
 
 /**
- * Provides passphrase-gated AI assistance for populating CHG content fields.
- * The caller must successfully verify the passphrase before generation is available.
+ * Builds the complete prompt text to paste into Rovo.
+ * Any currently-populated CHG fields are included so Rovo can refine them.
+ */
+function buildRovoPromptText(selectedIssues: JiraIssue[], currentFields: RovoGeneratedFields): string {
+  const issueListText = buildIssueListText(selectedIssues);
+
+  // Only include existing content if at least one field is non-empty.
+  const existingContent = [
+    currentFields.shortDescription && `Current Short Description: ${currentFields.shortDescription}`,
+    currentFields.description      && `Current Description: ${currentFields.description}`,
+    currentFields.justification    && `Current Justification: ${currentFields.justification}`,
+    currentFields.riskImpact       && `Current Risk & Impact: ${currentFields.riskImpact}`,
+  ].filter(Boolean).join('\n');
+
+  return [
+    'You are assisting with a ServiceNow Change Request for a planned software release.',
+    '',
+    'Jira issues included in this release:',
+    issueListText,
+    '',
+    existingContent ? `Existing content to refine:\n${existingContent}\n` : '',
+    'Generate the following four CHG fields. Respond ONLY in this exact format with no extra commentary:',
+    '',
+    'SHORT_DESCRIPTION: [one-line summary under 100 characters]',
+    'DESCRIPTION: [multi-line description of what is being deployed and why]',
+    'JUSTIFICATION: [business justification for this change]',
+    'RISK_AND_IMPACT: [risk assessment and business impact analysis]',
+  ].join('\n');
+}
+
+/**
+ * Provides passphrase-gated prompt generation for populating CHG content fields.
+ * Generates a prompt string the user pastes directly into Rovo — no API calls made.
  *
- * @returns Unlock state, generation state, and action functions.
+ * @returns Unlock state and action functions.
  */
 export function useRovoAssist(): UseRovoAssistResult {
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generationError, setGenerationError] = useState<string | null>(null);
 
   const verifyPassphrase = useCallback(async (passphrase: string): Promise<boolean> => {
     const inputDigest = await computeSha256Hex(passphrase);
@@ -79,43 +106,12 @@ export function useRovoAssist(): UseRovoAssistResult {
     return isPassphraseCorrect;
   }, []);
 
-  const generateChgFields = useCallback(async (
+  const buildPrompt = useCallback((
     selectedIssues: JiraIssue[],
     currentFields: RovoGeneratedFields,
-  ): Promise<RovoGeneratedFields | null> => {
-    setIsGenerating(true);
-    setGenerationError(null);
-
-    try {
-      const issueListText = buildIssueListText(selectedIssues);
-
-      const response = await fetch('/api/rovo/generate', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          issueList:        issueListText,
-          shortDescription: currentFields.shortDescription,
-          description:      currentFields.description,
-          justification:    currentFields.justification,
-          riskImpact:       currentFields.riskImpact,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorPayload = await response.json().catch(() => ({ message: 'Unknown server error' }));
-        const errorMessage = (errorPayload as { message?: string }).message ?? `Server returned ${response.status}`;
-        throw new Error(errorMessage);
-      }
-
-      return await response.json() as RovoGeneratedFields;
-    } catch (unknownError) {
-      const errorMessage = unknownError instanceof Error ? unknownError.message : 'Generation failed';
-      setGenerationError(errorMessage);
-      return null;
-    } finally {
-      setIsGenerating(false);
-    }
+  ): string => {
+    return buildRovoPromptText(selectedIssues, currentFields);
   }, []);
 
-  return { isUnlocked, isGenerating, generationError, verifyPassphrase, generateChgFields };
+  return { isUnlocked, verifyPassphrase, buildPrompt };
 }

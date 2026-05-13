@@ -959,8 +959,6 @@ interface ServiceConnectivitySectionProps {
   isGitHubTesting: boolean
   confluenceTestResult: ConnectionProbeResult | null
   isConfluenceTesting: boolean
-  rovoTestResult: ConnectionProbeResult | null
-  isRovoTesting: boolean
   isAdminUnlocked: boolean
   onLoad(): void
   onSaveSnow(snow: { baseUrl: string; username: string; password: string }): void
@@ -969,7 +967,6 @@ interface ServiceConnectivitySectionProps {
   onTestSnow(): void
   onTestGitHub(): void
   onTestConfluence(): void
-  onTestRovo(): void
 }
 
 /**
@@ -989,8 +986,6 @@ function ServiceConnectivitySection({
   isGitHubTesting,
   confluenceTestResult,
   isConfluenceTesting,
-  rovoTestResult,
-  isRovoTesting,
   isAdminUnlocked,
   onLoad,
   onSaveSnow,
@@ -999,7 +994,6 @@ function ServiceConnectivitySection({
   onTestSnow,
   onTestGitHub,
   onTestConfluence,
-  onTestRovo,
 }: ServiceConnectivitySectionProps) {
   const CREDENTIAL_PLACEHOLDER = '••••••••'
 
@@ -1253,32 +1247,6 @@ function ServiceConnectivitySection({
               {confluenceTestResult.isOk
                 ? `✅ ${confluenceTestResult.message}`
                 : `❌ ${confluenceTestResult.message} (HTTP ${confluenceTestResult.statusCode})`}
-            </p>
-          )}
-
-          <hr className={styles.sectionDivider} />
-
-          {/* ── Rovo ── */}
-          <h3 className={styles.sectionTitle}>Rovo (Atlassian AI)</h3>
-          <p className={styles.adminDescription}>
-            Rovo is Atlassian&apos;s AI assistant, accessible via the Rovo MCP server at{' '}
-            <code>mcp.atlassian.com</code>. It uses the same Atlassian credentials as Confluence.
-            This test checks whether the Rovo MCP endpoint is network-reachable from this server.
-          </p>
-          <div className={styles.inputRow}>
-            <button
-              className={styles.actionButton}
-              onClick={onTestRovo}
-              disabled={isRovoTesting}
-            >
-              {isRovoTesting ? '⏳ Testing…' : '🤖 Test Rovo'}
-            </button>
-          </div>
-          {rovoTestResult !== null && (
-            <p className={rovoTestResult.isOk ? styles.confirmationText : styles.sectionErrorText}>
-              {rovoTestResult.isOk
-                ? `✅ ${rovoTestResult.message}`
-                : `❌ ${rovoTestResult.message}${rovoTestResult.statusCode > 0 ? ` (HTTP ${rovoTestResult.statusCode})` : ''}`}
             </p>
           )}
         </>
@@ -1560,8 +1528,6 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
         isGitHubTesting={state.isGitHubTesting}
         confluenceTestResult={state.confluenceTestResult}
         isConfluenceTesting={state.isConfluenceTesting}
-        rovoTestResult={state.rovoTestResult}
-        isRovoTesting={state.isRovoTesting}
         isAdminUnlocked={state.isAdminUnlocked}
         onLoad={() => void actions.loadConnectivityConfig()}
         onSaveSnow={(snow) => void actions.saveSnowConfig(snow)}
@@ -1570,7 +1536,6 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
         onTestSnow={() => void actions.testSnowConfig()}
         onTestGitHub={() => void actions.testGitHubConfig()}
         onTestConfluence={() => void actions.testConfluenceConfig()}
-        onTestRovo={() => void actions.testRovoConfig()}
       />
 
       <ArtSettingsSection

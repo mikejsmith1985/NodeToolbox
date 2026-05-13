@@ -17,7 +17,6 @@ import {
   testSnowConnectivity,
   testGitHubConnectivity,
   testConfluenceConnectivity,
-  testRovoConnectivity,
 } from '../../../services/connectivityConfigApi.ts'
 
 // ── Named constants ──
@@ -179,8 +178,6 @@ export interface AdminHubState {
   isGitHubTesting: boolean
   confluenceTestResult: ConnectionProbeResult | null
   isConfluenceTesting: boolean
-  rovoTestResult: ConnectionProbeResult | null
-  isRovoTesting: boolean
 }
 
 /** All action callbacks returned by this hook. */
@@ -225,7 +222,6 @@ export interface AdminHubActions {
   testSnowConfig(): Promise<void>
   testGitHubConfig(): Promise<void>
   testConfluenceConfig(): Promise<void>
-  testRovoConfig(): Promise<void>
 }
 
 // ── Helper: safe localStorage reads ──
@@ -409,8 +405,6 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
   const [isGitHubTesting, setGitHubTesting] = useState(false)
   const [confluenceTestResult, setConfluenceTestResult] = useState<ConnectionProbeResult | null>(null)
   const [isConfluenceTesting, setConfluenceTesting] = useState(false)
-  const [rovoTestResult, setRovoTestResult] = useState<ConnectionProbeResult | null>(null)
-  const [isRovoTesting, setRovoTesting] = useState(false)
 
   // Refs give callbacks synchronous access to latest state values even within
   // the same React batched-update cycle (e.g. setX then readX in one act() call).
@@ -458,8 +452,6 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     isGitHubTesting,
     confluenceTestResult,
     isConfluenceTesting,
-    rovoTestResult,
-    isRovoTesting,
   }
 
   const setProxyUrl = useCallback(
@@ -915,20 +907,6 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     }
   }, [])
 
-  /** Probes the Atlassian Rovo MCP server to verify network accessibility. */
-  const testRovoConfig = useCallback(async () => {
-    setRovoTesting(true)
-    setRovoTestResult(null)
-    try {
-      const probeResult = await testRovoConnectivity()
-      setRovoTestResult(probeResult)
-    } catch {
-      setRovoTestResult({ isOk: false, statusCode: 0, message: 'Test request failed.' })
-    } finally {
-      setRovoTesting(false)
-    }
-  }, [])
-
   const actions: AdminHubActions = {
     setProxyUrl,
     saveProxyUrls,
@@ -972,7 +950,6 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     testSnowConfig,
     testGitHubConfig,
     testConfluenceConfig,
-    testRovoConfig,
   }
 
   return { state, actions }

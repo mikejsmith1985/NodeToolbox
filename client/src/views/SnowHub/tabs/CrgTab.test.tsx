@@ -262,4 +262,71 @@ describe('CrgTab', () => {
 
     expect(screen.getByRole('button', { name: 'Create CHG' })).toBeDisabled();
   });
+
+  it('shows the passphrase modal when Ctrl+Alt+Z is pressed', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 3;
+    render(<CrgTab />);
+
+    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
+
+    expect(screen.getByPlaceholderText('Enter passphrase')).toBeInTheDocument();
+  });
+
+  it('closes the passphrase modal when Cancel is clicked', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 3;
+    render(<CrgTab />);
+
+    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByPlaceholderText('Enter passphrase')).not.toBeInTheDocument();
+  });
+
+  it('unlocks Rovo and shows the Enhance button after correct passphrase on step 3', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 3;
+    render(<CrgTab />);
+
+    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
+    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+
+    expect(await screen.findByRole('button', { name: '✦ Enhance with AI' })).toBeInTheDocument();
+  });
+
+  it('shows the prompt modal with a textarea when Enhance with AI is clicked', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 3;
+    render(<CrgTab />);
+
+    // Unlock
+    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
+    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+
+    // Click enhance
+    await user.click(await screen.findByRole('button', { name: '✦ Enhance with AI' }));
+
+    // Prompt modal should appear
+    expect(await screen.findByText(/Copy this prompt and paste it into Rovo/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '📋 Copy to Clipboard' })).toBeInTheDocument();
+  });
+
+  it('closes the prompt modal when Close is clicked', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 3;
+    render(<CrgTab />);
+
+    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
+    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    await user.click(await screen.findByRole('button', { name: '✦ Enhance with AI' }));
+
+    // Close prompt modal
+    await user.click(await screen.findByRole('button', { name: 'Close' }));
+
+    expect(screen.queryByText(/Copy this prompt and paste it into Rovo/)).not.toBeInTheDocument();
+  });
 });

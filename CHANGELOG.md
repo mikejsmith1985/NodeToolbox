@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **SNow Hub CRG — Enhance with AI now generates a copy-paste prompt**: The hidden Rovo AI feature (activated via Ctrl+Alt+Z) no longer calls a server API. Clicking "✦ Enhance with AI" now opens a modal with the generated prompt pre-populated — copy it, paste it into Rovo, and use the output to fill in the four CHG fields manually.
+
+### Removed
+- **Admin Hub — Rovo connectivity test removed**: The "🤖 Test Rovo" button and the Atlassian Rovo section have been removed from the Service Connectivity settings. (Atlassian has no public Rovo REST API for programmatic testing.)
+
 ### Added
 - **CRG — Create CHG action**: The Results step now includes a **Create CHG** button that submits the generated content directly to ServiceNow (requires SNow relay to be active). Also added internal content enhancement capability for the Preview Docs step.
 

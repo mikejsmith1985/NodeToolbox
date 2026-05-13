@@ -51,8 +51,6 @@ interface CrgStepProps {
 /** Additional props passed to PreviewDocsStep when Rovo assist is active. */
 interface PreviewDocsStepExtras {
   isRovoUnlocked: boolean;
-  isRovoGenerating: boolean;
-  rovoError: string | null;
   onEnhanceWithRovo: () => void;
 }
 
@@ -239,7 +237,7 @@ function ReviewIssuesStep({ state, actions }: CrgStepProps) {
   );
 }
 
-function PreviewDocsStep({ state, actions, isRovoUnlocked, isRovoGenerating, rovoError, onEnhanceWithRovo }: CrgStepProps & PreviewDocsStepExtras) {
+function PreviewDocsStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo }: CrgStepProps & PreviewDocsStepExtras) {
   function handleGeneratedFieldChange(fieldName: GeneratedFieldName, event: ChangeEvent<HTMLTextAreaElement>): void {
     actions.updateGeneratedField(fieldName, event.target.value);
   }
@@ -261,15 +259,13 @@ function PreviewDocsStep({ state, actions, isRovoUnlocked, isRovoGenerating, rov
       </div>
       {isRovoUnlocked ? (
         <div className={styles.rovoRow}>
-          {rovoError ? <span className={styles.rovoError}>{rovoError}</span> : null}
           <button
             className={styles.rovoButton}
-            disabled={isRovoGenerating}
             onClick={onEnhanceWithRovo}
-            title="Enhance content with AI assistance"
+            title="Generate a prompt to enhance content with Rovo AI"
             type="button"
           >
-            {isRovoGenerating ? 'Enhancing…' : '✦ Enhance with AI'}
+            ✦ Enhance with AI
           </button>
         </div>
       ) : null}
@@ -480,13 +476,16 @@ function renderCurrentStepPanel(
  */
 export default function CrgTab() {
   const { state, actions } = useCrgState();
-  const { isUnlocked, isGenerating, generationError, verifyPassphrase, generateChgFields } = useRovoAssist();
+  const { isUnlocked, verifyPassphrase, buildPrompt } = useRovoAssist();
 
   // Modal visibility and passphrase input state for the hidden activation flow.
   const [isPassphraseModalVisible, setIsPassphraseModalVisible] = useState(false);
   const [passphraseInput, setPassphraseInput] = useState('');
   const [passphraseError, setPassphraseError] = useState<string | null>(null);
   const passphraseInputRef = useRef<HTMLInputElement>(null);
+
+  // Prompt modal state — holds the generated prompt text the user pastes into Rovo.
+  const [rovoPrompt, setRovoPrompt] = useState<string | null>(null);
 
   const issueCountSummary = useMemo(() => `${state.fetchedIssues.length} issue(s) loaded`, [state.fetchedIssues.length]);
 
@@ -534,7 +533,7 @@ export default function CrgTab() {
     }
   }, [handlePassphraseSubmit]);
 
-  const handleEnhanceWithRovo = useCallback(async () => {
+  const handleEnhanceWithRovo = useCallback(() => {
     const selectedIssues = state.fetchedIssues.filter((issue) =>
       state.selectedIssueKeys.has(issue.key),
     );
@@ -546,21 +545,13 @@ export default function CrgTab() {
       riskImpact:       state.generatedRiskImpact,
     };
 
-    const generatedFields = await generateChgFields(selectedIssues, currentFields);
-
-    if (generatedFields) {
-      actions.updateGeneratedField('shortDescription', generatedFields.shortDescription);
-      actions.updateGeneratedField('description',      generatedFields.description);
-      actions.updateGeneratedField('justification',    generatedFields.justification);
-      actions.updateGeneratedField('riskImpact',       generatedFields.riskImpact);
-    }
-  }, [state, actions, generateChgFields]);
+    const promptText = buildPrompt(selectedIssues, currentFields);
+    setRovoPrompt(promptText);
+  }, [state, buildPrompt]);
 
   const previewExtras: PreviewDocsStepExtras = {
     isRovoUnlocked:    isUnlocked,
-    isRovoGenerating:  isGenerating,
-    rovoError:         generationError,
-    onEnhanceWithRovo: () => void handleEnhanceWithRovo(),
+    onEnhanceWithRovo: handleEnhanceWithRovo,
   };
 
   return (
@@ -603,6 +594,38 @@ export default function CrgTab() {
                 type="button"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Prompt modal — shows the generated Rovo prompt for copy/paste */}
+      {rovoPrompt !== null ? (
+        <div className={styles.passphraseOverlay}>
+          <div className={styles.promptModal}>
+            <p className={styles.promptInstructions}>
+              Copy this prompt and paste it into Rovo to generate the four CHG field values.
+            </p>
+            <textarea
+              className={styles.promptTextArea}
+              readOnly
+              value={rovoPrompt}
+            />
+            <div className={styles.promptActions}>
+              <button
+                className={styles.rovoButton}
+                onClick={() => void navigator.clipboard.writeText(rovoPrompt)}
+                type="button"
+              >
+                📋 Copy to Clipboard
+              </button>
+              <button
+                className={styles.linkButton}
+                onClick={() => setRovoPrompt(null)}
+                type="button"
+              >
+                Close
               </button>
             </div>
           </div>

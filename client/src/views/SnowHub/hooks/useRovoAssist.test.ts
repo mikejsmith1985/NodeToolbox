@@ -1,7 +1,7 @@
-// useRovoAssist.test.ts — Unit tests for the Rovo AI assist hook.
+// useRovoAssist.test.ts — Unit tests for the Rovo AI prompt generator hook.
 
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import type { JiraIssue } from '../../../types/jira.ts';
 import { useRovoAssist } from './useRovoAssist.ts';
@@ -32,16 +32,10 @@ const EMPTY_CURRENT_FIELDS = {
 };
 
 describe('useRovoAssist', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('starts in a locked, idle state with no error', () => {
+  it('starts in a locked state', () => {
     const { result } = renderHook(() => useRovoAssist());
 
     expect(result.current.isUnlocked).toBe(false);
-    expect(result.current.isGenerating).toBe(false);
-    expect(result.current.generationError).toBeNull();
   });
 
   it('unlocks and returns true when the correct passphrase is provided', async () => {
@@ -80,100 +74,61 @@ describe('useRovoAssist', () => {
     expect(result.current.isUnlocked).toBe(false);
   });
 
-  it('calls POST /api/rovo/generate with issue data and returns generated fields', async () => {
-    const mockGeneratedFields = {
-      shortDescription: 'AI: Deploy TOOL 1.0.0',
-      description:      'AI: Issues included in this release',
-      justification:    'AI: Planned release required by business',
-      riskImpact:       'AI: Standard deployment risk',
-    };
-
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok:   true,
-      json: () => Promise.resolve(mockGeneratedFields),
-    }));
-
+  it('buildPrompt returns a non-empty string containing the expected AI instruction', () => {
     const { result } = renderHook(() => useRovoAssist());
     const selectedIssues = [createMockJiraIssue('TOOL-1', 'Fix critical bug')];
 
-    let generatedFields: typeof mockGeneratedFields | null = null;
-    await act(async () => {
-      generatedFields = await result.current.generateChgFields(selectedIssues, EMPTY_CURRENT_FIELDS);
-    });
+    const prompt = result.current.buildPrompt(selectedIssues, EMPTY_CURRENT_FIELDS);
 
-    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      '/api/rovo/generate',
-      expect.objectContaining({ method: 'POST' }),
-    );
-    expect(generatedFields).toEqual(mockGeneratedFields);
-    expect(result.current.isGenerating).toBe(false);
+    expect(typeof prompt).toBe('string');
+    expect(prompt.length).toBeGreaterThan(0);
+    expect(prompt).toContain('ServiceNow Change Request');
+    expect(prompt).toContain('SHORT_DESCRIPTION:');
+    expect(prompt).toContain('DESCRIPTION:');
+    expect(prompt).toContain('JUSTIFICATION:');
+    expect(prompt).toContain('RISK_AND_IMPACT:');
   });
 
-  it('includes the issue key and summary in the request body', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok:   true,
-      json: () => Promise.resolve(EMPTY_CURRENT_FIELDS),
-    }));
-
+  it('buildPrompt includes the issue key and summary in the output', () => {
     const { result } = renderHook(() => useRovoAssist());
     const selectedIssues = [createMockJiraIssue('TOOL-42', 'Fix the release blocker')];
 
-    await act(async () => {
-      await result.current.generateChgFields(selectedIssues, EMPTY_CURRENT_FIELDS);
-    });
+    const prompt = result.current.buildPrompt(selectedIssues, EMPTY_CURRENT_FIELDS);
 
-    const [, requestInit] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
-    const requestBody = JSON.parse(requestInit.body as string) as { issueList: string };
-    expect(requestBody.issueList).toContain('TOOL-42');
-    expect(requestBody.issueList).toContain('Fix the release blocker');
+    expect(prompt).toContain('TOOL-42');
+    expect(prompt).toContain('Fix the release blocker');
   });
 
-  it('falls back to "(no issues selected)" in the request body when no issues are passed', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok:   true,
-      json: () => Promise.resolve(EMPTY_CURRENT_FIELDS),
-    }));
-
+  it('buildPrompt includes "(no issues selected)" when the issue list is empty', () => {
     const { result } = renderHook(() => useRovoAssist());
 
-    await act(async () => {
-      await result.current.generateChgFields([], EMPTY_CURRENT_FIELDS);
-    });
+    const prompt = result.current.buildPrompt([], EMPTY_CURRENT_FIELDS);
 
-    const [, requestInit] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
-    const requestBody = JSON.parse(requestInit.body as string) as { issueList: string };
-    expect(requestBody.issueList).toBe('(no issues selected)');
+    expect(prompt).toContain('(no issues selected)');
   });
 
-  it('sets generationError and returns null when the server responds with an error', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok:     false,
-      status: 502,
-      json:   () => Promise.resolve({ message: 'Atlassian credentials not configured' }),
-    }));
-
+  it('buildPrompt includes existing field values when they are non-empty', () => {
     const { result } = renderHook(() => useRovoAssist());
+    const existingFields = {
+      shortDescription: 'Deploy TOOL 2.0.0',
+      description:      'Deploys the new version',
+      justification:    'Planned release',
+      riskImpact:       'Low risk',
+    };
 
-    let generatedFields: unknown = 'not-null';
-    await act(async () => {
-      generatedFields = await result.current.generateChgFields([], EMPTY_CURRENT_FIELDS);
-    });
+    const prompt = result.current.buildPrompt([], existingFields);
 
-    expect(generatedFields).toBeNull();
-    expect(result.current.generationError).toBe('Atlassian credentials not configured');
-    expect(result.current.isGenerating).toBe(false);
+    expect(prompt).toContain('Deploy TOOL 2.0.0');
+    expect(prompt).toContain('Deploys the new version');
+    expect(prompt).toContain('Planned release');
+    expect(prompt).toContain('Low risk');
   });
 
-  it('sets generationError and returns null when fetch throws a network error', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network unavailable')));
-
+  it('buildPrompt omits the "Existing content" section when all fields are empty', () => {
     const { result } = renderHook(() => useRovoAssist());
 
-    await act(async () => {
-      await result.current.generateChgFields([], EMPTY_CURRENT_FIELDS);
-    });
+    const prompt = result.current.buildPrompt([], EMPTY_CURRENT_FIELDS);
 
-    expect(result.current.generationError).toBe('Network unavailable');
-    expect(result.current.isGenerating).toBe(false);
+    expect(prompt).not.toContain('Existing content to refine');
   });
 });

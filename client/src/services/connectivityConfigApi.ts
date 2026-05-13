@@ -1,5 +1,5 @@
 // connectivityConfigApi.ts — Typed client for the /api/config/connectivity endpoints.
-// Fetches, saves, and tests Snow, GitHub, Confluence, and Rovo server-side connectivity configuration.
+// Fetches, saves, and tests Snow, GitHub, and Confluence server-side connectivity configuration.
 
 import type { ConnectivityConfigResult, ConnectivityConfigUpdate, ConnectionProbeResult } from '../types/config.ts';
 
@@ -69,19 +69,6 @@ export async function testConfluenceConnectivity(): Promise<ConnectionProbeResul
     method: 'POST',
     headers: { 'Content-Type': JSON_CONTENT_TYPE },
     body: JSON.stringify({ system: 'confluence' }),
-  });
-  return parseProbeResponse(response);
-}
-
-/**
- * Tests whether the Atlassian Rovo MCP server is network-accessible using the stored
- * Confluence credentials (same Atlassian account). Any HTTP response indicates reachability.
- */
-export async function testRovoConnectivity(): Promise<ConnectionProbeResult> {
-  const response = await fetch(`${CONNECTIVITY_BASE}/test`, {
-    method: 'POST',
-    headers: { 'Content-Type': JSON_CONTENT_TYPE },
-    body: JSON.stringify({ system: 'rovo' }),
   });
   return parseProbeResponse(response);
 }
