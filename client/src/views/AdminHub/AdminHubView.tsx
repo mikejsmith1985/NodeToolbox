@@ -957,12 +957,19 @@ interface ServiceConnectivitySectionProps {
   isSnowTesting: boolean
   githubTestResult: ConnectionProbeResult | null
   isGitHubTesting: boolean
+  confluenceTestResult: ConnectionProbeResult | null
+  isConfluenceTesting: boolean
+  rovoTestResult: ConnectionProbeResult | null
+  isRovoTesting: boolean
   isAdminUnlocked: boolean
   onLoad(): void
   onSaveSnow(snow: { baseUrl: string; username: string; password: string }): void
   onSaveGitHub(github: { baseUrl: string; pat: string }): void
+  onSaveConfluence(confluence: { baseUrl: string; username: string; apiToken: string }): void
   onTestSnow(): void
   onTestGitHub(): void
+  onTestConfluence(): void
+  onTestRovo(): void
 }
 
 /**
@@ -980,12 +987,19 @@ function ServiceConnectivitySection({
   isSnowTesting,
   githubTestResult,
   isGitHubTesting,
+  confluenceTestResult,
+  isConfluenceTesting,
+  rovoTestResult,
+  isRovoTesting,
   isAdminUnlocked,
   onLoad,
   onSaveSnow,
   onSaveGitHub,
+  onSaveConfluence,
   onTestSnow,
   onTestGitHub,
+  onTestConfluence,
+  onTestRovo,
 }: ServiceConnectivitySectionProps) {
   const CREDENTIAL_PLACEHOLDER = '••••••••'
 
@@ -994,12 +1008,16 @@ function ServiceConnectivitySection({
   const [snowPassword, setSnowPassword] = useState('')
   const [githubBaseUrl, setGithubBaseUrl] = useState(connectivityConfig?.github.baseUrl ?? '')
   const [githubPat, setGithubPat] = useState('')
+  const [confluenceBaseUrl, setConfluenceBaseUrl] = useState(connectivityConfig?.confluence.baseUrl ?? '')
+  const [confluenceUsername, setConfluenceUsername] = useState('')
+  const [confluenceApiToken, setConfluenceApiToken] = useState('')
 
   // Sync local URL fields when the server config loads for the first time.
   useEffect(() => {
     if (connectivityConfig !== null) {
       setSnowBaseUrl(connectivityConfig.snow.baseUrl)
       setGithubBaseUrl(connectivityConfig.github.baseUrl)
+      setConfluenceBaseUrl(connectivityConfig.confluence.baseUrl)
     }
   }, [connectivityConfig])
 
@@ -1022,6 +1040,13 @@ function ServiceConnectivitySection({
   function handleSaveGitHub() {
     onSaveGitHub({ baseUrl: githubBaseUrl, pat: githubPat })
     setGithubPat('')
+  }
+
+  /** Submits the Confluence config form and clears credential inputs after save. */
+  function handleSaveConfluence() {
+    onSaveConfluence({ baseUrl: confluenceBaseUrl, username: confluenceUsername, apiToken: confluenceApiToken })
+    setConfluenceUsername('')
+    setConfluenceApiToken('')
   }
 
   return (
@@ -1157,6 +1182,103 @@ function ServiceConnectivitySection({
           {githubTestResult !== null && (
             <p className={githubTestResult.isOk ? styles.confirmationText : styles.sectionErrorText}>
               {githubTestResult.isOk ? `✅ ${githubTestResult.message}` : `❌ ${githubTestResult.message} (HTTP ${githubTestResult.statusCode})`}
+            </p>
+          )}
+
+          <hr className={styles.sectionDivider} />
+
+          {/* ── Confluence ── */}
+          <h3 className={styles.sectionTitle}>Confluence</h3>
+          {connectivityConfig !== null && (
+            <p className={styles.adminDescription}>
+              {connectivityConfig.confluence.hasCredentials
+                ? `✅ Credentials stored (user: ${connectivityConfig.confluence.usernameMasked})`
+                : '⚠️ No credentials configured — Confluence features disabled'}
+            </p>
+          )}
+          <p className={styles.adminDescription}>
+            Confluence Cloud uses <strong>Basic Auth</strong> with your Atlassian email and a
+            Cloud API token — <em>not</em> the same as a Jira on-prem PAT. Generate one at{' '}
+            <code>id.atlassian.com → Security → API tokens</code>.
+          </p>
+          <div className={styles.fieldRow}>
+            <label className={styles.fieldLabel} htmlFor="confluence-base-url">Base URL</label>
+            <input
+              id="confluence-base-url"
+              type="url"
+              className={styles.textInput}
+              value={confluenceBaseUrl}
+              onChange={(e) => setConfluenceBaseUrl(e.target.value)}
+              placeholder="https://yoursite.atlassian.net"
+            />
+          </div>
+          <div className={styles.fieldRow}>
+            <label className={styles.fieldLabel} htmlFor="confluence-username">Atlassian Email</label>
+            <input
+              id="confluence-username"
+              type="text"
+              className={styles.textInput}
+              value={confluenceUsername}
+              onChange={(e) => setConfluenceUsername(e.target.value)}
+              placeholder={connectivityConfig?.confluence.usernameMasked || 'you@example.com'}
+              autoComplete="off"
+            />
+          </div>
+          <div className={styles.fieldRow}>
+            <label className={styles.fieldLabel} htmlFor="confluence-api-token">Cloud API Token</label>
+            <input
+              id="confluence-api-token"
+              type="password"
+              className={styles.textInput}
+              value={confluenceApiToken}
+              onChange={(e) => setConfluenceApiToken(e.target.value)}
+              placeholder={connectivityConfig?.confluence.hasCredentials ? CREDENTIAL_PLACEHOLDER : 'Atlassian API token'}
+              autoComplete="new-password"
+            />
+          </div>
+          <div className={styles.inputRow}>
+            <button className={`${styles.actionButton} ${styles.saveButton}`} onClick={handleSaveConfluence}>
+              💾 Save Confluence Config
+            </button>
+            <button
+              className={styles.actionButton}
+              onClick={onTestConfluence}
+              disabled={isConfluenceTesting}
+            >
+              {isConfluenceTesting ? '⏳ Testing…' : '🔍 Test Connection'}
+            </button>
+          </div>
+          {confluenceTestResult !== null && (
+            <p className={confluenceTestResult.isOk ? styles.confirmationText : styles.sectionErrorText}>
+              {confluenceTestResult.isOk
+                ? `✅ ${confluenceTestResult.message}`
+                : `❌ ${confluenceTestResult.message} (HTTP ${confluenceTestResult.statusCode})`}
+            </p>
+          )}
+
+          <hr className={styles.sectionDivider} />
+
+          {/* ── Rovo ── */}
+          <h3 className={styles.sectionTitle}>Rovo (Atlassian AI)</h3>
+          <p className={styles.adminDescription}>
+            Rovo is Atlassian&apos;s AI assistant, accessible via the Rovo MCP server at{' '}
+            <code>mcp.atlassian.com</code>. It uses the same Atlassian credentials as Confluence.
+            This test checks whether the Rovo MCP endpoint is network-reachable from this server.
+          </p>
+          <div className={styles.inputRow}>
+            <button
+              className={styles.actionButton}
+              onClick={onTestRovo}
+              disabled={isRovoTesting}
+            >
+              {isRovoTesting ? '⏳ Testing…' : '🤖 Test Rovo'}
+            </button>
+          </div>
+          {rovoTestResult !== null && (
+            <p className={rovoTestResult.isOk ? styles.confirmationText : styles.sectionErrorText}>
+              {rovoTestResult.isOk
+                ? `✅ ${rovoTestResult.message}`
+                : `❌ ${rovoTestResult.message}${rovoTestResult.statusCode > 0 ? ` (HTTP ${rovoTestResult.statusCode})` : ''}`}
             </p>
           )}
         </>
@@ -1415,12 +1537,19 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
         isSnowTesting={state.isSnowTesting}
         githubTestResult={state.githubTestResult}
         isGitHubTesting={state.isGitHubTesting}
+        confluenceTestResult={state.confluenceTestResult}
+        isConfluenceTesting={state.isConfluenceTesting}
+        rovoTestResult={state.rovoTestResult}
+        isRovoTesting={state.isRovoTesting}
         isAdminUnlocked={state.isAdminUnlocked}
         onLoad={() => void actions.loadConnectivityConfig()}
         onSaveSnow={(snow) => void actions.saveSnowConfig(snow)}
         onSaveGitHub={(github) => void actions.saveGitHubConfig(github)}
+        onSaveConfluence={(confluence) => void actions.saveConfluenceConfig(confluence)}
         onTestSnow={() => void actions.testSnowConfig()}
         onTestGitHub={() => void actions.testGitHubConfig()}
+        onTestConfluence={() => void actions.testConfluenceConfig()}
+        onTestRovo={() => void actions.testRovoConfig()}
       />
 
       <ArtSettingsSection

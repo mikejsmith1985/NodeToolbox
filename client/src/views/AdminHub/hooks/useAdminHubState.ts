@@ -16,6 +16,8 @@ import {
   saveConnectivityConfig,
   testSnowConnectivity,
   testGitHubConnectivity,
+  testConfluenceConnectivity,
+  testRovoConnectivity,
 } from '../../../services/connectivityConfigApi.ts'
 
 // ── Named constants ──
@@ -175,6 +177,10 @@ export interface AdminHubState {
   isSnowTesting: boolean
   githubTestResult: ConnectionProbeResult | null
   isGitHubTesting: boolean
+  confluenceTestResult: ConnectionProbeResult | null
+  isConfluenceTesting: boolean
+  rovoTestResult: ConnectionProbeResult | null
+  isRovoTesting: boolean
 }
 
 /** All action callbacks returned by this hook. */
@@ -215,8 +221,11 @@ export interface AdminHubActions {
   loadConnectivityConfig(): Promise<void>
   saveSnowConfig(snow: { baseUrl: string; username: string; password: string }): Promise<void>
   saveGitHubConfig(github: { baseUrl: string; pat: string }): Promise<void>
+  saveConfluenceConfig(confluence: { baseUrl: string; username: string; apiToken: string }): Promise<void>
   testSnowConfig(): Promise<void>
   testGitHubConfig(): Promise<void>
+  testConfluenceConfig(): Promise<void>
+  testRovoConfig(): Promise<void>
 }
 
 // ── Helper: safe localStorage reads ──
@@ -398,6 +407,10 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
   const [isSnowTesting, setSnowTesting] = useState(false)
   const [githubTestResult, setGitHubTestResult] = useState<ConnectionProbeResult | null>(null)
   const [isGitHubTesting, setGitHubTesting] = useState(false)
+  const [confluenceTestResult, setConfluenceTestResult] = useState<ConnectionProbeResult | null>(null)
+  const [isConfluenceTesting, setConfluenceTesting] = useState(false)
+  const [rovoTestResult, setRovoTestResult] = useState<ConnectionProbeResult | null>(null)
+  const [isRovoTesting, setRovoTesting] = useState(false)
 
   // Refs give callbacks synchronous access to latest state values even within
   // the same React batched-update cycle (e.g. setX then readX in one act() call).
@@ -443,6 +456,10 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     isSnowTesting,
     githubTestResult,
     isGitHubTesting,
+    confluenceTestResult,
+    isConfluenceTesting,
+    rovoTestResult,
+    isRovoTesting,
   }
 
   const setProxyUrl = useCallback(
@@ -862,6 +879,56 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     }
   }, [])
 
+  /** Saves Confluence credentials to the server and refreshes the displayed config. */
+  const saveConfluenceConfig = useCallback(async (
+    confluence: { baseUrl: string; username: string; apiToken: string },
+  ) => {
+    try {
+      const update: import('../../../types/config.ts').ConnectivityConfigUpdate = {
+        confluence: {
+          ...(confluence.baseUrl                  && { baseUrl:   confluence.baseUrl.trim()   }),
+          ...(confluence.username.trim()           && { username:  confluence.username.trim()  }),
+          ...(confluence.apiToken.trim()           && { apiToken:  confluence.apiToken.trim()  }),
+        },
+      }
+      const savedConfig = await saveConnectivityConfig(update)
+      setConnectivityConfig(savedConfig)
+      setConnectivitySaveStatus('✓ Saved')
+      setTimeout(() => setConnectivitySaveStatus(null), SAVE_STATUS_CLEAR_DELAY_MS)
+    } catch {
+      setConnectivitySaveStatus('❌ Save failed')
+      setTimeout(() => setConnectivitySaveStatus(null), SAVE_STATUS_CLEAR_DELAY_MS)
+    }
+  }, [])
+
+  /** Runs a live connectivity probe against the configured Confluence Cloud instance. */
+  const testConfluenceConfig = useCallback(async () => {
+    setConfluenceTesting(true)
+    setConfluenceTestResult(null)
+    try {
+      const probeResult = await testConfluenceConnectivity()
+      setConfluenceTestResult(probeResult)
+    } catch {
+      setConfluenceTestResult({ isOk: false, statusCode: 0, message: 'Test request failed.' })
+    } finally {
+      setConfluenceTesting(false)
+    }
+  }, [])
+
+  /** Probes the Atlassian Rovo MCP server to verify network accessibility. */
+  const testRovoConfig = useCallback(async () => {
+    setRovoTesting(true)
+    setRovoTestResult(null)
+    try {
+      const probeResult = await testRovoConnectivity()
+      setRovoTestResult(probeResult)
+    } catch {
+      setRovoTestResult({ isOk: false, statusCode: 0, message: 'Test request failed.' })
+    } finally {
+      setRovoTesting(false)
+    }
+  }, [])
+
   const actions: AdminHubActions = {
     setProxyUrl,
     saveProxyUrls,
@@ -901,8 +968,11 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     loadConnectivityConfig,
     saveSnowConfig,
     saveGitHubConfig,
+    saveConfluenceConfig,
     testSnowConfig,
     testGitHubConfig,
+    testConfluenceConfig,
+    testRovoConfig,
   }
 
   return { state, actions }

@@ -75,6 +75,14 @@ export interface ConnectivityConfigResult {
     /** True when a PAT is stored in server config. */
     hasPat: boolean;
   };
+  confluence: {
+    /** The Confluence Cloud base URL (e.g. https://yoursite.atlassian.net). */
+    baseUrl: string;
+    /** True when both Atlassian email and API token are stored in server config. */
+    hasCredentials: boolean;
+    /** Masked email for display — e.g. "you@****m". */
+    usernameMasked: string;
+  };
 }
 
 /** Fields accepted by POST /api/config/connectivity. */
@@ -90,5 +98,12 @@ export interface ConnectivityConfigUpdate {
     baseUrl?: string;
     /** Only sent when the user types a new value — empty string = do not update. */
     pat?: string;
+  };
+  confluence?: {
+    baseUrl?: string;
+    /** Atlassian account email — only sent when the user types a new value. */
+    username?: string;
+    /** Atlassian Cloud API token — only sent when the user types a new value. */
+    apiToken?: string;
   };
 }
