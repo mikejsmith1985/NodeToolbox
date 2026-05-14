@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
+import type { CtaskTemplate } from './useCrgState.ts';
 import { useCrgState } from './useCrgState.ts';
 
 vi.mock('../../../services/jiraApi.ts', () => ({
@@ -38,6 +39,22 @@ const MOCK_JIRA_ISSUES = [
   createMockJiraIssue('ABC-102', 'Finish smoke tests'),
 ];
 
+function createMockCtaskTemplate(overrides: Partial<CtaskTemplate> = {}): CtaskTemplate {
+  return {
+    id:               'ctask-template-001',
+    name:             'Deployment Validation',
+    createdAt:        '2026-01-01T00:00:00.000Z',
+    shortDescription: 'Validate production deployment',
+    description:      'Confirm smoke tests pass after deployment.',
+    assignmentGroup:  { sysId: 'grp-001', displayName: 'Platform Team' },
+    assignedTo:       { sysId: 'usr-001', displayName: 'Jane Smith' },
+    plannedStartDate: '2026-01-01T10:00',
+    plannedEndDate:   '2026-01-01T11:00',
+    closeNotes:       'Validation complete.',
+    ...overrides,
+  };
+}
+
 describe('useCrgState', () => {
   afterEach(() => {
     vi.clearAllMocks();
@@ -57,6 +74,7 @@ describe('useCrgState', () => {
     expect(result.current.state.relEnvironment.isEnabled).toBe(false);
     expect(result.current.state.prdEnvironment.isEnabled).toBe(false);
     expect(result.current.state.pfixEnvironment.isEnabled).toBe(false);
+    expect(result.current.state.changeTasks).toEqual([]);
   });
 
   it('uppercases the project key when it is updated', () => {
@@ -553,6 +571,55 @@ describe('useCrgState', () => {
       expect(result.current.state.isSubmitting).toBe(false);
     });
 
+    it('creates selected CTASKs after the CHG is created', async () => {
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: { number: 'CHG0001234', sys_id: 'chg-sys-001' } } as never)
+        .mockResolvedValueOnce({ result: { number: 'CTASK0001001' } } as never);
+
+      const { result } = await advanceToChangeDetailsStep();
+
+      act(() => {
+        result.current.actions.addChangeTask(createMockCtaskTemplate());
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      expect(vi.mocked(snowFetch)).toHaveBeenNthCalledWith(
+        2,
+        '/api/now/table/change_task',
+        expect.objectContaining({ method: 'POST' }),
+      );
+
+      const ctaskBody = JSON.parse(
+        (vi.mocked(snowFetch).mock.calls[1][1] as RequestInit).body as string,
+      ) as Record<string, unknown>;
+      expect(ctaskBody.change_request).toBe('chg-sys-001');
+      expect(ctaskBody.short_description).toBe('Validate production deployment');
+      expect(ctaskBody.assignment_group).toBe('grp-001');
+      expect(result.current.state.submitResult).toBe('CHG0001234 created with 1 CTASK');
+    });
+
+    it('reports partial success when CHG creation succeeds but CTASK creation fails', async () => {
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: { number: 'CHG0001234', sys_id: 'chg-sys-001' } } as never)
+        .mockRejectedValueOnce(new Error('CTASK denied') as never);
+
+      const { result } = await advanceToChangeDetailsStep();
+
+      act(() => {
+        result.current.actions.addChangeTask(createMockCtaskTemplate());
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      expect(result.current.state.submitResult).toBe('CHG0001234 created, but 1 CTASK did not fully complete. Check ServiceNow before retrying: CTASK denied');
+      expect(result.current.state.isSubmitting).toBe(false);
+    });
+
     it('clears the persisted draft after successful CHG creation so future visits start fresh', async () => {
       const STORAGE_KEY = 'ntbx-crg-state';
       vi.mocked(snowFetch).mockResolvedValue({ result: { number: 'CHG0001234' } } as never);
@@ -611,6 +678,48 @@ describe('useCrgState', () => {
 
       expect(result.current.state.submitResult).toContain('SNow relay not connected');
       expect(result.current.state.isSubmitting).toBe(false);
+    });
+  });
+
+  describe('change tasks', () => {
+    it('adds and removes selected CTASK templates from the current change', () => {
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.addChangeTask(createMockCtaskTemplate());
+      });
+
+      const selectedTaskId = result.current.state.changeTasks[0].id;
+      expect(result.current.state.changeTasks[0].shortDescription).toBe('Validate production deployment');
+
+      act(() => {
+        result.current.actions.removeChangeTask(selectedTaskId);
+      });
+
+      expect(result.current.state.changeTasks).toHaveLength(0);
+    });
+
+    it('appends selected CTASKs to an existing CHG by number', async () => {
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: [{ sys_id: 'chg-sys-001' }] } as never)
+        .mockResolvedValueOnce({ result: { number: 'CTASK0001001' } } as never);
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.addChangeTask(createMockCtaskTemplate());
+      });
+
+      await act(async () => {
+        await result.current.actions.appendTasksToExistingChg('chg0001234');
+      });
+
+      expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('/api/now/table/change_request?');
+      expect(vi.mocked(snowFetch)).toHaveBeenNthCalledWith(
+        2,
+        '/api/now/table/change_task',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(result.current.state.submitResult).toBe('1 CTASK appended to CHG0001234');
     });
   });
 

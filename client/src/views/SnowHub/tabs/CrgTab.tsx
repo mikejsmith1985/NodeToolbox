@@ -4,8 +4,9 @@
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { ChgBasicInfo, ChgPlanningAssessment, ChgPlanningContent, CrgTemplate } from '../hooks/useCrgState.ts';
+import type { ChgBasicInfo, ChgPlanningAssessment, ChgPlanningContent, CrgTemplate, CtaskTemplate } from '../hooks/useCrgState.ts';
 import { useCrgState } from '../hooks/useCrgState.ts';
+import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
 import { useRovoAssist } from '../hooks/useRovoAssist.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
@@ -53,6 +54,32 @@ const CONSOLIDATED_RESULT_LABEL = 'Consolidated Result';
 const STEP_TITLE_PREFIX = 'Step';
 const DEFAULT_RESULT_MESSAGE = 'Generated content will appear here after you complete the wizard.';
 const EMPTY_ENVIRONMENT_DATES = 'Not scheduled';
+
+type CtaskTemplateData = Omit<CtaskTemplate, 'id' | 'name' | 'createdAt'>;
+
+function createEmptyCtaskTemplateData(): CtaskTemplateData {
+  return {
+    shortDescription: '',
+    description:      '',
+    assignmentGroup:  { sysId: '', displayName: '' },
+    assignedTo:       { sysId: '', displayName: '' },
+    plannedStartDate: '',
+    plannedEndDate:   '',
+    closeNotes:       '',
+  };
+}
+
+function buildCtaskTemplateData(template: CtaskTemplate): CtaskTemplateData {
+  return {
+    shortDescription: template.shortDescription,
+    description:      template.description,
+    assignmentGroup:  template.assignmentGroup,
+    assignedTo:       template.assignedTo,
+    plannedStartDate: template.plannedStartDate,
+    plannedEndDate:   template.plannedEndDate,
+    closeNotes:       template.closeNotes,
+  };
+}
 
 /**
  * Returns a plain-English action hint for well-known SNow relay fetch error patterns.
@@ -200,6 +227,13 @@ interface ChangeDetailsExtras {
   templates: CrgTemplate[];
   saveTemplate: (name: string, data: Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>) => string;
   updateTemplate: (templateId: string, data: Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>) => void;
+  deleteTemplate: (templateId: string) => void;
+}
+
+interface CtaskTemplateExtras {
+  templates: CtaskTemplate[];
+  saveTemplate: (name: string, data: CtaskTemplateData) => string;
+  updateTemplate: (templateId: string, data: CtaskTemplateData) => void;
   deleteTemplate: (templateId: string) => void;
 }
 
@@ -1043,7 +1077,127 @@ function buildConsolidatedResult(state: CrgStateData): string {
   ].join('\n');
 }
 
-function ResultsStep({ state, actions }: CrgStepProps) {
+function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTemplate, deleteTemplate }: CrgStepProps & CtaskTemplateExtras) {
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  const [isEditorVisible, setIsEditorVisible] = useState<boolean>(false);
+  const [templateName, setTemplateName] = useState<string>('');
+  const [ctaskDraft, setCtaskDraft] = useState<CtaskTemplateData>(() => createEmptyCtaskTemplateData());
+  const [appendChgNumber, setAppendChgNumber] = useState<string>('');
+  const selectedTemplate = templates.find((template) => template.id === selectedTemplateId);
+
+  useEffect(() => {
+    if (!selectedTemplate) return;
+    setTemplateName(selectedTemplate.name);
+    setCtaskDraft(buildCtaskTemplateData(selectedTemplate));
+  }, [selectedTemplate]);
+
+  function handleStringFieldChange(fieldName: keyof Pick<CtaskTemplateData, 'shortDescription' | 'description' | 'plannedStartDate' | 'plannedEndDate' | 'closeNotes'>, value: string): void {
+    setCtaskDraft((previousDraft) => ({ ...previousDraft, [fieldName]: value }));
+  }
+
+  function handleSaveTemplate(): void {
+    saveTemplate(templateName, ctaskDraft);
+    setTemplateName('');
+    setCtaskDraft(createEmptyCtaskTemplateData());
+    setIsEditorVisible(false);
+  }
+
+  function handleUpdateTemplate(): void {
+    if (selectedTemplateId) updateTemplate(selectedTemplateId, ctaskDraft);
+  }
+
+  function handleAppendTasks(): void {
+    void actions.appendTasksToExistingChg(appendChgNumber.trim().toUpperCase());
+  }
+
+  return (
+    <div className={styles.clonePanel}>
+      <h4 className={styles.panelSectionTitle}>CTASK Templates</h4>
+      <p className={styles.panelHint}>Add reusable Change Tasks to this CHG, or append the selected CTASKs to an existing CHG.</p>
+      <div className={styles.cloneInputRow}>
+        <select
+          aria-label="Select CTASK template"
+          className={styles.input}
+          onChange={(event) => setSelectedTemplateId(event.target.value)}
+          value={selectedTemplateId}
+        >
+          <option value="">Select a CTASK template…</option>
+          {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+        </select>
+        <button className={styles.secondaryButton} disabled={!selectedTemplate} onClick={() => selectedTemplate && actions.addChangeTask(selectedTemplate)} type="button">
+          Add CTASK to Change
+        </button>
+        <button className={styles.secondaryButton} disabled={!selectedTemplateId} onClick={handleUpdateTemplate} type="button">
+          Update selected
+        </button>
+        <button className={styles.linkButton} disabled={!selectedTemplateId} onClick={() => deleteTemplate(selectedTemplateId)} type="button">
+          Delete
+        </button>
+      </div>
+
+      <button className={styles.linkButton} onClick={() => setIsEditorVisible((wasVisible) => !wasVisible)} type="button">
+        + Create CTASK template
+      </button>
+      {isEditorVisible ? (
+        <div className={styles.ctaskEditorGrid}>
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>CTASK template name</span>
+            <input aria-label="CTASK template name" className={styles.input} onChange={(event) => setTemplateName(event.target.value)} value={templateName} />
+          </label>
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>CTASK short description</span>
+            <input aria-label="CTASK short description" className={styles.input} onChange={(event) => handleStringFieldChange('shortDescription', event.target.value)} value={ctaskDraft.shortDescription} />
+          </label>
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>CTASK description</span>
+            <textarea className={styles.textArea} onChange={(event) => handleStringFieldChange('description', event.target.value)} value={ctaskDraft.description} />
+          </label>
+          <SnowLookupField label="CTASK Assignment Group" tableName="sys_user_group" value={ctaskDraft.assignmentGroup} onChange={(assignmentGroup) => setCtaskDraft((previousDraft) => ({ ...previousDraft, assignmentGroup }))} />
+          <SnowLookupField label="CTASK Assigned To" tableName="sys_user" value={ctaskDraft.assignedTo} onChange={(assignedTo) => setCtaskDraft((previousDraft) => ({ ...previousDraft, assignedTo }))} />
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>CTASK planned start</span>
+            <input className={styles.input} onChange={(event) => handleStringFieldChange('plannedStartDate', event.target.value)} type="datetime-local" value={ctaskDraft.plannedStartDate} />
+          </label>
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>CTASK planned end</span>
+            <input className={styles.input} onChange={(event) => handleStringFieldChange('plannedEndDate', event.target.value)} type="datetime-local" value={ctaskDraft.plannedEndDate} />
+          </label>
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>CTASK close notes</span>
+            <textarea className={styles.textArea} onChange={(event) => handleStringFieldChange('closeNotes', event.target.value)} value={ctaskDraft.closeNotes} />
+          </label>
+          <button className={styles.primaryButton} onClick={handleSaveTemplate} type="button">Save CTASK Template</button>
+        </div>
+      ) : null}
+
+      <div className={styles.ctaskList}>
+        {state.changeTasks.length === 0 ? (
+          <p className={styles.panelHint}>No CTASKs selected for this change.</p>
+        ) : state.changeTasks.map((task) => (
+          <div className={styles.ctaskCard} key={task.id}>
+            <strong>{task.shortDescription || task.name}</strong>
+            <span>{task.assignmentGroup.displayName || 'No assignment group selected'}</span>
+            <button className={styles.linkButton} onClick={() => actions.removeChangeTask(task.id)} type="button" aria-label={`Remove CTASK ${task.shortDescription || task.name}`}>
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className={styles.cloneInputRow}>
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>Existing CHG for CTASK append</span>
+          <input aria-label="Existing CHG for CTASK append" className={styles.input} onChange={(event) => setAppendChgNumber(event.target.value.toUpperCase())} placeholder="CHG0001234" value={appendChgNumber} />
+        </label>
+        <button className={styles.secondaryButton} disabled={state.changeTasks.length === 0 || state.isSubmitting} onClick={handleAppendTasks} type="button">
+          Append CTASKs to Existing CHG
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ResultsStep({ state, actions, ...ctaskTemplateExtras }: CrgStepProps & CtaskTemplateExtras) {
   const consolidatedResult = buildConsolidatedResult(state);
   const hasGeneratedContent = Boolean(state.generatedShortDescription || state.generatedDescription || state.generatedJustification || state.generatedRiskImpact);
 
@@ -1074,6 +1228,7 @@ function ResultsStep({ state, actions }: CrgStepProps) {
           </ul>
         </div>
       </div>
+      <CtaskTemplatePanel actions={actions} state={state} {...ctaskTemplateExtras} />
       <label className={styles.fieldGroup}>
         <span className={styles.fieldLabel}>{CONSOLIDATED_RESULT_LABEL}</span>
         <textarea className={styles.textArea} readOnly value={hasGeneratedContent ? consolidatedResult : DEFAULT_RESULT_MESSAGE} />
@@ -1103,6 +1258,7 @@ function renderCurrentStepPanel(
   planningExtras: PlanningStepExtras,
   changeDetailsExtras: ChangeDetailsExtras,
   environmentExtras: EnvironmentStepExtras,
+  ctaskTemplateExtras: CtaskTemplateExtras,
 ) {
   if (state.currentStep === 1) {
     return <FetchIssuesStep actions={actions} state={state} />;
@@ -1124,7 +1280,7 @@ function renderCurrentStepPanel(
     return <EnvironmentStep actions={actions} state={state} {...environmentExtras} />;
   }
 
-  return <ResultsStep actions={actions} state={state} />;
+  return <ResultsStep actions={actions} state={state} {...ctaskTemplateExtras} />;
 }
 
 /**
@@ -1136,6 +1292,7 @@ export default function CrgTab() {
   const { state, actions } = useCrgState();
   const { isUnlocked, verifyPassphrase, buildPrompt } = useRovoAssist();
   const { templates, saveTemplate, updateTemplate, deleteTemplate } = useCrgTemplates();
+  const ctaskTemplates = useCtaskTemplates();
   const {
     choiceOptions,
     isLoadingChoices,
@@ -1298,6 +1455,13 @@ export default function CrgTab() {
     deleteTemplate,
   };
 
+  const ctaskTemplateExtras: CtaskTemplateExtras = {
+    templates:      ctaskTemplates.templates,
+    saveTemplate:   ctaskTemplates.saveTemplate,
+    updateTemplate: ctaskTemplates.updateTemplate,
+    deleteTemplate: ctaskTemplates.deleteTemplate,
+  };
+
   return (
     <div className={styles.tabPanel}>
       <header className={styles.tabHeader}>
@@ -1308,7 +1472,7 @@ export default function CrgTab() {
         <p className={styles.summaryPill}>{issueCountSummary}</p>
       </header>
       <StepIndicator currentStep={state.currentStep} />
-      {renderCurrentStepPanel(state, actions, planningExtras, changeDetailsExtras, environmentExtras)}
+      {renderCurrentStepPanel(state, actions, planningExtras, changeDetailsExtras, environmentExtras, ctaskTemplateExtras)}
 
       {/* Hidden passphrase modal — only visible after Ctrl+Alt+Z, never in documentation */}
       {isPassphraseModalVisible ? (

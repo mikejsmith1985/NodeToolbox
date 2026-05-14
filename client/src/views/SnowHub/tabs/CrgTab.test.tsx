@@ -50,8 +50,28 @@ const DEFAULT_PLANNING_CONTENT = {
   backoutPlan: '',
   testPlan: '',
 };
+const DEFAULT_CTASK_TEMPLATE = {
+  id:               'ctask-template-001',
+  name:             'Deployment Validation',
+  createdAt:        '2026-01-01T00:00:00.000Z',
+  shortDescription: 'Validate production deployment',
+  description:      'Confirm smoke tests pass after deployment.',
+  assignmentGroup:  { sysId: 'grp-001', displayName: 'Platform Team' },
+  assignedTo:       { sysId: 'usr-001', displayName: 'Jane Smith' },
+  plannedStartDate: '2026-01-01T10:00',
+  plannedEndDate:   '2026-01-01T11:00',
+  closeNotes:       'Validation complete.',
+};
 
-const { mockState, mockActions, mockSnowChoiceConfig, mockTemplates, mockTemplateActions } = vi.hoisted(() => ({
+const {
+  mockState,
+  mockActions,
+  mockSnowChoiceConfig,
+  mockTemplates,
+  mockTemplateActions,
+  mockCtaskTemplates,
+  mockCtaskTemplateActions,
+} = vi.hoisted(() => ({
   mockState: {
     currentStep: 1,
     fetchMode: 'project' as 'project' | 'jql',
@@ -91,6 +111,7 @@ const { mockState, mockActions, mockSnowChoiceConfig, mockTemplates, mockTemplat
     relEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
     prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
     pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
+    changeTasks: [] as unknown[],
     isSubmitting: false,
     submitResult: null as string | null,
   },
@@ -111,6 +132,9 @@ const { mockState, mockActions, mockSnowChoiceConfig, mockTemplates, mockTemplat
     cloneFromChg: vi.fn().mockResolvedValue(undefined),
     applyTemplate: vi.fn(),
     updateEnvironment: vi.fn(),
+    addChangeTask: vi.fn(),
+    removeChangeTask: vi.fn(),
+    appendTasksToExistingChg: vi.fn().mockResolvedValue(undefined),
     goToStep: vi.fn(),
     reset: vi.fn(),
     createChg: vi.fn().mockResolvedValue(undefined),
@@ -129,6 +153,12 @@ const { mockState, mockActions, mockSnowChoiceConfig, mockTemplates, mockTemplat
     updateTemplate: vi.fn(),
     deleteTemplate: vi.fn(),
   },
+  mockCtaskTemplates: [] as unknown[],
+  mockCtaskTemplateActions: {
+    saveTemplate: vi.fn(),
+    updateTemplate: vi.fn(),
+    deleteTemplate: vi.fn(),
+  },
 }));
 
 vi.mock('../hooks/useCrgState.ts', () => ({
@@ -142,6 +172,15 @@ vi.mock('../hooks/useCrgTemplates.ts', () => ({
     saveTemplate:   mockTemplateActions.saveTemplate,
     updateTemplate: mockTemplateActions.updateTemplate,
     deleteTemplate: mockTemplateActions.deleteTemplate,
+  }),
+}));
+
+vi.mock('../hooks/useCtaskTemplates.ts', () => ({
+  useCtaskTemplates: () => ({
+    templates:      mockCtaskTemplates,
+    saveTemplate:   mockCtaskTemplateActions.saveTemplate,
+    updateTemplate: mockCtaskTemplateActions.updateTemplate,
+    deleteTemplate: mockCtaskTemplateActions.deleteTemplate,
   }),
 }));
 
@@ -198,6 +237,7 @@ function resetMockState(): void {
     relEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
     prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
     pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
+    changeTasks: [],
     isSubmitting: false,
     submitResult: null,
   });
@@ -217,7 +257,9 @@ describe('CrgTab', () => {
     mockSnowChoiceConfig.hasRelaySessionToken = true;
     mockSnowChoiceConfig.hasChoiceOptions = true;
     mockTemplates.splice(0, mockTemplates.length);
+    mockCtaskTemplates.splice(0, mockCtaskTemplates.length);
     Object.values(mockTemplateActions).forEach((mockAction) => mockAction.mockReset());
+    Object.values(mockCtaskTemplateActions).forEach((mockAction) => mockAction.mockReset());
   });
 
   it('renders step 1 with the project key input and fetch button', () => {
@@ -412,6 +454,66 @@ describe('CrgTab', () => {
     render(<CrgTab />);
 
     expect(screen.getByRole('button', { name: 'Create CHG' })).toBeDisabled();
+  });
+
+  it('adds a selected CTASK template to the change on step 6', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
+    mockCtaskTemplates.push(DEFAULT_CTASK_TEMPLATE);
+
+    render(<CrgTab />);
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Select CTASK template' }), 'ctask-template-001');
+    await user.click(screen.getByRole('button', { name: 'Add CTASK to Change' }));
+
+    expect(mockActions.addChangeTask).toHaveBeenCalledWith(DEFAULT_CTASK_TEMPLATE);
+  });
+
+  it('saves the current CTASK editor values as a reusable template', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
+
+    render(<CrgTab />);
+
+    await user.click(screen.getByRole('button', { name: '+ Create CTASK template' }));
+    await user.type(screen.getByRole('textbox', { name: 'CTASK template name' }), 'Smoke Test');
+    await user.type(screen.getByRole('textbox', { name: 'CTASK short description' }), 'Run smoke tests');
+    await user.click(screen.getByRole('button', { name: 'Save CTASK Template' }));
+
+    expect(mockCtaskTemplateActions.saveTemplate).toHaveBeenCalledWith(
+      'Smoke Test',
+      expect.objectContaining({ shortDescription: 'Run smoke tests' }),
+    );
+  });
+
+  it('removes a selected CTASK from the pending change task list', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
+    mockState.changeTasks = [DEFAULT_CTASK_TEMPLATE];
+
+    render(<CrgTab />);
+
+    expect(screen.getByText('Validate production deployment')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Remove CTASK Validate production deployment' }));
+
+    expect(mockActions.removeChangeTask).toHaveBeenCalledWith('ctask-template-001');
+  });
+
+  it('appends selected CTASKs to an existing CHG from step 6', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
+    mockState.changeTasks = [DEFAULT_CTASK_TEMPLATE];
+
+    render(<CrgTab />);
+
+    await user.type(screen.getByRole('textbox', { name: 'Existing CHG for CTASK append' }), 'chg0001234');
+    await user.click(screen.getByRole('button', { name: 'Append CTASKs to Existing CHG' }));
+
+    expect(mockActions.appendTasksToExistingChg).toHaveBeenCalledWith('CHG0001234');
   });
 
   it('shows the passphrase modal when Ctrl+Alt+Z is pressed', async () => {

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **CRG — CTASK templates and append flow**: The Review & Create step now supports reusable CTASK templates, selecting CTASKs to create with the new CHG, and appending selected CTASKs to an existing CHG by number.
 - **CRG — templates can now be updated in place and include environment schedules**: Saved templates now have an **Update selected** action and preserve Step 5 REL/PRD/PFIX scheduling alongside Change Details and Planning fields.
 
 ### Fixed

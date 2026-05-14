@@ -77,6 +77,7 @@ const REQUIRED_JQL_MESSAGE = 'A JQL query is required.';
 const FETCH_FAILURE_MESSAGE = 'Failed to fetch issues';
 const DEFAULT_MAX_RESULTS = 100;
 const ISSUE_FIELD_LIST = 'summary,status,priority,issuetype,assignee';
+const CTASK_DEFAULT_SHORT_DESCRIPTION = 'Change task';
 
 // localStorage key used to persist CRG wizard progress across relay reconnects and page navigations.
 const CRG_STATE_STORAGE_KEY = 'ntbx-crg-state';
@@ -157,6 +158,23 @@ export interface CrgTemplate {
 }
 
 /**
+ * Reusable ServiceNow Change Task template.
+ * These templates become CTASK records linked to a CHG during creation or append flows.
+ */
+export interface CtaskTemplate {
+  id: string;
+  name: string;
+  createdAt: string;
+  shortDescription: string;
+  description: string;
+  assignmentGroup: SnowReference;
+  assignedTo: SnowReference;
+  plannedStartDate: string;
+  plannedEndDate: string;
+  closeNotes: string;
+}
+
+/**
  * Shape stored in localStorage — identical to CrgState minus transient/computed fields.
  * `selectedIssueKeys` is stored as a plain array because Set is not JSON-serialisable.
  */
@@ -199,6 +217,8 @@ interface CrgState {
   relEnvironment: EnvironmentConfig;
   prdEnvironment: EnvironmentConfig;
   pfixEnvironment: EnvironmentConfig;
+  /** CTASKs selected from templates and queued for CHG creation or append. */
+  changeTasks: CtaskTemplate[];
   isSubmitting: boolean;
   submitResult: string | null;
 }
@@ -221,6 +241,9 @@ interface CrgActions {
   cloneFromChg: () => Promise<void>;
   /** Applies a saved template's field values to the current form state. */
   applyTemplate: (template: CrgTemplate) => void;
+  addChangeTask: (template: CtaskTemplate) => void;
+  removeChangeTask: (taskId: string) => void;
+  appendTasksToExistingChg: (chgNumber: string) => Promise<void>;
   updateEnvironment: (environmentKey: EnvironmentKey, update: Partial<EnvironmentConfig>) => void;
   goToStep: (step: CrgStep) => void;
   reset: () => void;
@@ -257,6 +280,7 @@ function createDefaultCrgState(): CrgState {
     relEnvironment: createDefaultEnvironmentConfig(),
     prdEnvironment: createDefaultEnvironmentConfig(),
     pfixEnvironment: createDefaultEnvironmentConfig(),
+    changeTasks: [],
     isSubmitting: false,
     submitResult: null,
   };
@@ -351,6 +375,63 @@ function extractSnowReference(field: unknown): SnowReference {
   const displayName = String(snowField.display_value ?? EMPTY_VALUE);
   if (!sysId && !displayName) return { ...EMPTY_SNOW_REFERENCE };
   return { sysId, displayName };
+}
+
+function extractReferenceSysId(field: unknown): string {
+  if (typeof field === 'string') return field;
+  if (field && typeof field === 'object') {
+    const snowField = field as Record<string, unknown>;
+    return String(snowField.value ?? EMPTY_VALUE);
+  }
+  return EMPTY_VALUE;
+}
+
+function buildChangeTaskPayload(changeSysId: string, template: CtaskTemplate): Record<string, unknown> {
+  const ctaskPayload: Record<string, unknown> = {
+    change_request:     changeSysId,
+    short_description:  template.shortDescription || template.name || CTASK_DEFAULT_SHORT_DESCRIPTION,
+  };
+
+  if (template.description) ctaskPayload.description = template.description;
+  if (template.assignmentGroup.sysId) ctaskPayload.assignment_group = template.assignmentGroup.sysId;
+  if (template.assignedTo.sysId) ctaskPayload.assigned_to = template.assignedTo.sysId;
+  if (template.plannedStartDate) ctaskPayload.planned_start_date = template.plannedStartDate;
+  if (template.plannedEndDate) ctaskPayload.planned_end_date = template.plannedEndDate;
+  if (template.closeNotes) ctaskPayload.close_notes = template.closeNotes;
+
+  return ctaskPayload;
+}
+
+async function createChangeTasks(changeSysId: string, templates: CtaskTemplate[]): Promise<number> {
+  for (const template of templates) {
+    await snowFetch(
+      '/api/now/table/change_task',
+      {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(buildChangeTaskPayload(changeSysId, template)),
+      },
+    );
+  }
+
+  return templates.length;
+}
+
+async function fetchChangeSysIdByNumber(changeNumber: string): Promise<string> {
+  const normalizedChangeNumber = changeNumber.trim().toUpperCase();
+  const encodedQuery = encodeURIComponent(`number=${normalizedChangeNumber}`);
+  const responseData = await snowFetch<{ result: Array<{ sys_id: unknown }> }>(
+    `/api/now/table/change_request?sysparm_query=${encodedQuery}&sysparm_fields=sys_id&sysparm_limit=1`,
+  );
+  const changeSysId = extractReferenceSysId(responseData.result[0]?.sys_id);
+  if (!changeSysId) {
+    throw new Error(`${normalizedChangeNumber} was not found in ServiceNow.`);
+  }
+  return changeSysId;
+}
+
+function formatCtaskCount(count: number): string {
+  return count === 1 ? '1 CTASK' : `${count} CTASKs`;
 }
 
 function buildProjectSearchPath(projectKey: string, fixVersion: string): string {
@@ -452,6 +533,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       relEnvironment:            state.relEnvironment,
       prdEnvironment:            state.prdEnvironment,
       pfixEnvironment:           state.pfixEnvironment,
+      changeTasks:               state.changeTasks,
     };
 
     try {
@@ -709,6 +791,55 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     }));
   }, []);
 
+  const addChangeTask = useCallback((template: CtaskTemplate) => {
+    const queuedTask: CtaskTemplate = {
+      ...template,
+      id: crypto.randomUUID(),
+    };
+
+    setState((previousState) => ({
+      ...previousState,
+      changeTasks: [...previousState.changeTasks, queuedTask],
+    }));
+  }, []);
+
+  const removeChangeTask = useCallback((taskId: string) => {
+    setState((previousState) => ({
+      ...previousState,
+      changeTasks: previousState.changeTasks.filter((task) => task.id !== taskId),
+    }));
+  }, []);
+
+  const appendTasksToExistingChg = useCallback(async (chgNumber: string) => {
+    const normalizedChangeNumber = chgNumber.trim().toUpperCase();
+    if (!normalizedChangeNumber) {
+      setState((previousState) => ({ ...previousState, submitResult: 'Error: Enter a CHG number before appending CTASKs.' }));
+      return;
+    }
+    if (state.changeTasks.length === 0) {
+      setState((previousState) => ({ ...previousState, submitResult: 'Error: Add at least one CTASK before appending.' }));
+      return;
+    }
+
+    setState((previousState) => ({ ...previousState, isSubmitting: true, submitResult: null }));
+    try {
+      const changeSysId = await fetchChangeSysIdByNumber(normalizedChangeNumber);
+      await createChangeTasks(changeSysId, state.changeTasks);
+      setState((previousState) => ({
+        ...previousState,
+        isSubmitting: false,
+        submitResult: `${formatCtaskCount(state.changeTasks.length)} appended to ${normalizedChangeNumber}`,
+      }));
+    } catch (unknownError) {
+      const errorMessage = unknownError instanceof Error ? unknownError.message : 'CTASK append failed';
+      setState((previousState) => ({
+        ...previousState,
+        isSubmitting: false,
+        submitResult: 'Error: ' + errorMessage,
+      }));
+    }
+  }, [state.changeTasks]);
+
   const updateEnvironment = useCallback((environmentKey: EnvironmentKey, update: Partial<EnvironmentConfig>) => {
     const environmentStateKey = getEnvironmentStateKey(environmentKey);
     setState((previousState) => ({
@@ -776,7 +907,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     if (state.chgPlanningContent.testPlan)           chgPayload.test_plan           = state.chgPlanningContent.testPlan;
 
     try {
-      const responseData = await snowFetch<{ result: { number: string } }>(
+      const responseData = await snowFetch<{ result: { number: string; sys_id?: unknown } }>(
         '/api/now/table/change_request',
         {
           method:  'POST',
@@ -786,13 +917,33 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       );
 
       const changeNumber = responseData.result.number;
+      if (state.changeTasks.length > 0) {
+        const changeSysId = extractReferenceSysId(responseData.result.sys_id) || await fetchChangeSysIdByNumber(changeNumber);
+        try {
+          await createChangeTasks(changeSysId, state.changeTasks);
+        } catch (unknownError) {
+          const errorMessage = unknownError instanceof Error ? unknownError.message : 'CTASK creation failed';
+          const taskLabel = formatCtaskCount(state.changeTasks.length);
+          setState((previousState) => ({
+            ...previousState,
+            isSubmitting: false,
+            currentStep:  6,
+            submitResult: `${changeNumber} created, but ${taskLabel} did not fully complete. Check ServiceNow before retrying: ${errorMessage}`,
+          }));
+          return;
+        }
+      }
+
+      const creationSummary = state.changeTasks.length > 0
+        ? `${changeNumber} created with ${formatCtaskCount(state.changeTasks.length)}`
+        : `${changeNumber} created`;
       // Clear persisted progress after a successful submission — the next change starts fresh.
       justResetRef.current = true;
       try { localStorage.removeItem(CRG_STATE_STORAGE_KEY); } catch { /* non-fatal */ }
       setState(() => ({
         ...createDefaultCrgState(),
         isSubmitting: false,
-        submitResult: `${changeNumber} created`,
+        submitResult: creationSummary,
         currentStep:  6 as CrgStep,
       }));
     } catch (unknownError) {
@@ -806,7 +957,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
   }, [
     state.generatedShortDescription, state.generatedDescription,
     state.generatedJustification, state.generatedRiskImpact,
-    state.chgBasicInfo, state.chgPlanningAssessment, state.chgPlanningContent,
+    state.chgBasicInfo, state.chgPlanningAssessment, state.chgPlanningContent, state.changeTasks,
   ]);
 
   const actions = useMemo<CrgActions>(() => {
@@ -826,6 +977,9 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       setCloneChgNumber,
       cloneFromChg,
       applyTemplate,
+      addChangeTask,
+      removeChangeTask,
+      appendTasksToExistingChg,
       updateEnvironment,
       goToStep,
       reset,
@@ -835,7 +989,8 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     setFetchMode, setProjectKey, setFixVersion, setCustomJql, fetchIssues,
     toggleIssueSelection, selectAllIssues, generateDocs, updateGeneratedField,
     setChgBasicInfo, setChgPlanningAssessment, setChgPlanningContent,
-    setCloneChgNumber, cloneFromChg, applyTemplate, updateEnvironment, goToStep, reset, createChg,
+    setCloneChgNumber, cloneFromChg, applyTemplate, addChangeTask, removeChangeTask,
+    appendTasksToExistingChg, updateEnvironment, goToStep, reset, createChg,
   ]);
 
   return { state, actions };
