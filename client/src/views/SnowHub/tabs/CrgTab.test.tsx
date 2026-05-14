@@ -109,6 +109,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     setChgPlanningContent: vi.fn(),
     setCloneChgNumber: vi.fn(),
     cloneFromChg: vi.fn().mockResolvedValue(undefined),
+    applyTemplate: vi.fn(),
     updateEnvironment: vi.fn(),
     goToStep: vi.fn(),
     reset: vi.fn(),
@@ -118,6 +119,35 @@ const { mockState, mockActions } = vi.hoisted(() => ({
 
 vi.mock('../hooks/useCrgState.ts', () => ({
   useCrgState: () => ({ state: mockState, actions: mockActions }),
+}));
+
+// Mock the templates hook — no templates by default; tests can override via the mock.
+vi.mock('../hooks/useCrgTemplates.ts', () => ({
+  useCrgTemplates: () => ({
+    templates:      [],
+    saveTemplate:   vi.fn(),
+    deleteTemplate: vi.fn(),
+  }),
+}));
+
+// Mock the choice options hook — returns minimal fallback maps so dropdown rendering works.
+vi.mock('../hooks/useSnowChoiceOptions.ts', () => ({
+  useSnowChoiceOptions: () => ({
+    choiceOptions: {
+      category:                [{ value: '', label: '' }, { value: 'Software', label: 'Software' }],
+      type:                    [{ value: '', label: '' }, { value: 'Normal', label: 'Normal' }],
+      u_environment:           [{ value: '', label: '' }, { value: 'Production', label: 'Production' }],
+      impact:                  [{ value: '', label: '' }, { value: '3 - Low', label: '3 - Low' }],
+      u_availability_impact:   [{ value: '', label: '' }, { value: 'No Impact', label: 'No Impact' }],
+      u_change_tested:         [{ value: '', label: '' }, { value: 'Yes', label: 'Yes' }],
+      u_impacted_persons_aware:[{ value: '', label: '' }, { value: 'Yes', label: 'Yes' }],
+      u_performed_previously:  [{ value: '', label: '' }, { value: 'Yes', label: 'Yes' }],
+      u_success_probability:   [{ value: '', label: '' }, { value: '100%', label: '100%' }],
+      u_can_be_backed_out:     [{ value: '', label: '' }, { value: 'Yes', label: 'Yes' }],
+    },
+    isLoadingChoices:   false,
+    areChoicesFromSnow: false,
+  }),
 }));
 
 import CrgTab from './CrgTab.tsx';
@@ -407,6 +437,32 @@ describe('CrgTab', () => {
 
     expect(screen.getByRole('textbox', { name: 'Existing CHG number' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Load CHG' })).toBeInTheDocument();
+  });
+
+  it('shows "No templates saved yet" message on step 3 when there are no saved templates', () => {
+    mockState.currentStep = 3;
+    render(<CrgTab />);
+
+    expect(screen.getByText('No templates saved yet.')).toBeInTheDocument();
+  });
+
+  it('shows the "Save as template" link on step 3', () => {
+    mockState.currentStep = 3;
+    render(<CrgTab />);
+
+    expect(screen.getByRole('button', { name: '+ Save current fields as template' })).toBeInTheDocument();
+  });
+
+  it('reveals the template name input when "Save as template" is clicked', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 3;
+    render(<CrgTab />);
+
+    await user.click(screen.getByRole('button', { name: '+ Save current fields as template' }));
+
+    expect(screen.getByRole('textbox', { name: 'Template name' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
   });
 
   it('shows the Category dropdown on step 3', () => {
