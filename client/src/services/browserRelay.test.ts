@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useConnectionStore } from '../store/connectionStore.ts';
 import {
   openSnowRelay,
+  RELAY_RETURN_ROUTE_KEY,
   resetBrowserRelayForTests,
   SNOW_RELAY_BOOKMARKLET_CODE,
 } from './browserRelay.ts';
@@ -12,6 +13,7 @@ import {
 describe('browserRelay', () => {
   beforeEach(() => {
     window.sessionStorage.clear();
+    window.localStorage.clear();
     useConnectionStore.setState(useConnectionStore.getInitialState());
     resetBrowserRelayForTests();
   });
@@ -53,5 +55,23 @@ describe('browserRelay', () => {
     vi.spyOn(window, 'open').mockReturnValue(null);
 
     expect(openSnowRelay('https://snow.example.com')).toBe(false);
+  });
+
+  it('stores the current pathname in localStorage so the app can restore it after the relay reload', () => {
+    vi.spyOn(window, 'open').mockReturnValue({ closed: false } as Window);
+
+    // jsdom sets window.location.pathname to '/' by default
+    openSnowRelay('https://snow.example.com');
+
+    expect(localStorage.getItem(RELAY_RETURN_ROUTE_KEY)).toBe('/');
+  });
+
+  it('does not store a return route when the URL is empty', () => {
+    vi.spyOn(window, 'open').mockReturnValue(null);
+
+    openSnowRelay('');
+
+    // openSnowRelay returns early for empty URLs — no route should be stored
+    expect(localStorage.getItem(RELAY_RETURN_ROUTE_KEY)).toBeNull();
   });
 });

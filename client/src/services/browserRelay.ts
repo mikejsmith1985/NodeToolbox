@@ -12,6 +12,13 @@ const SNOW_RELAY_WINDOW_NAME = '__crg_snow';
 const RELAY_OPENED_STORAGE_KEY = 'tbxRelayOpened';
 
 /**
+ * localStorage key used to survive the relay activation page reload.
+ * When the bookmarklet runs it navigates this window to the NodeToolbox root,
+ * so openSnowRelay stores the current path here and App.tsx reads it on remount.
+ */
+export const RELAY_RETURN_ROUTE_KEY = 'ntbx-relay-return-route';
+
+/**
  * Bookmarklet users drag into their browser toolbar, then click on an authenticated
  * ServiceNow page. It registers with the local bridge, polls for queued requests,
  * executes them on the ServiceNow origin, and posts results back to NodeToolbox.
@@ -40,12 +47,20 @@ export const SNOW_RELAY_BOOKMARKLET_CODE = [
 /**
  * Opens ServiceNow in the same named relay tab used by the original ToolBox flow.
  * The bookmarklet click in that tab completes registration with the local bridge.
+ *
+ * Stores the current pathname in localStorage before opening, so the app can
+ * navigate back to the exact page the user was on after the relay activation
+ * reloads this window to the NodeToolbox root.
  */
 export function openSnowRelay(snowBaseUrl: string): boolean {
   const normalizedSnowBaseUrl = snowBaseUrl.trim();
   if (normalizedSnowBaseUrl === '') {
     return false;
   }
+
+  // Persist current route so App.tsx can restore it after the bookmarklet navigates
+  // this window back to the NodeToolbox root URL.
+  localStorage.setItem(RELAY_RETURN_ROUTE_KEY, window.location.pathname);
 
   window.sessionStorage.setItem(RELAY_OPENED_STORAGE_KEY, '1');
   markSnowRelayDisconnected();
