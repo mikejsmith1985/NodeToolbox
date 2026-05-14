@@ -24,6 +24,10 @@ interface SnowTableResponse {
   result: SnowTableRecord[];
 }
 
+interface SnowSingleRecordResponse {
+  result: SnowTableRecord;
+}
+
 interface SnowLookupFieldProps {
   label: string;
   /** The SNow table to query (sys_user, sys_user_group, cmdb_ci). */
@@ -68,11 +72,55 @@ export function SnowLookupField({
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const onChangeRef = useRef(onChange);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   // Keep the input text in sync if a parent clones a CHG and fills the value externally.
   useEffect(() => {
-    setInputText(value.displayName);
-  }, [value.displayName]);
+    let isCancelled = false;
+
+    if (value.displayName) {
+      setInputText(value.displayName);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    if (!value.sysId) {
+      setInputText('');
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    async function resolveDisplayNameBySysId(): Promise<void> {
+      try {
+        const encodedSysId = encodeURIComponent(value.sysId);
+        const path = `/api/now/table/${tableName}/${encodedSysId}?sysparm_fields=sys_id,name&sysparm_display_value=all`;
+        const response = await snowFetch(path) as SnowSingleRecordResponse;
+        const resolvedReference = {
+          sysId:       extractSysId(response.result.sys_id),
+          displayName: extractDisplayName(response.result.name),
+        };
+
+        if (!isCancelled && resolvedReference.displayName) {
+          setInputText(resolvedReference.displayName);
+          onChangeRef.current(resolvedReference);
+        }
+      } catch {
+        if (!isCancelled) setInputText(value.sysId);
+      }
+    }
+
+    void resolveDisplayNameBySysId();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [tableName, value.displayName, value.sysId]);
 
   // Close the dropdown when the user clicks outside this component.
   useEffect(() => {

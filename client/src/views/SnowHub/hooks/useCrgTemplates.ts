@@ -1,7 +1,6 @@
 // useCrgTemplates — Manages named CHG field templates stored in localStorage.
-// Templates let users save and reapply a common set of Change Request dropdown
-// selections (basic info, planning assessment, planning text) without re-entering
-// the same values for every recurring release.
+// Templates let users save, update, and reapply a common set of Change Request
+// selections without re-entering the same values for every recurring release.
 
 import { useCallback, useEffect, useState } from 'react';
 
@@ -12,6 +11,8 @@ const TEMPLATES_STORAGE_KEY = 'ntbx-crg-templates';
 
 // Maximum templates allowed to prevent unbounded localStorage growth.
 const MAX_TEMPLATES = 20;
+
+type CrgTemplateData = Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>;
 
 /**
  * Reads all saved templates from localStorage.
@@ -46,7 +47,9 @@ interface UseCrgTemplatesResult {
    * Returns the ID of the newly created template so the caller can
    * immediately apply it or highlight it in the UI.
    */
-  saveTemplate: (name: string, templateData: Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>) => string;
+  saveTemplate: (name: string, templateData: CrgTemplateData) => string;
+  /** Replaces the stored values in an existing template while keeping its name and identity. */
+  updateTemplate: (templateId: string, templateData: CrgTemplateData) => void;
   /** Permanently deletes the template with the given ID. */
   deleteTemplate: (templateId: string) => void;
 }
@@ -64,7 +67,7 @@ export function useCrgTemplates(): UseCrgTemplatesResult {
   }, [templates]);
 
   const saveTemplate = useCallback(
-    (name: string, templateData: Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>): string => {
+    (name: string, templateData: CrgTemplateData): string => {
       const newTemplate: CrgTemplate = {
         id:        crypto.randomUUID(),
         name:      name.trim() || 'Unnamed Template',
@@ -86,11 +89,27 @@ export function useCrgTemplates(): UseCrgTemplatesResult {
     [],
   );
 
+  const updateTemplate = useCallback((templateId: string, templateData: CrgTemplateData) => {
+    setTemplates((previousTemplates) =>
+      previousTemplates.map((template) =>
+        template.id === templateId
+          ? {
+            ...template,
+            ...templateData,
+            id:        template.id,
+            name:      template.name,
+            createdAt: template.createdAt,
+          }
+          : template,
+      ),
+    );
+  }, []);
+
   const deleteTemplate = useCallback((templateId: string) => {
     setTemplates((previousTemplates) =>
       previousTemplates.filter((template) => template.id !== templateId),
     );
   }, []);
 
-  return { templates, saveTemplate, deleteTemplate };
+  return { templates, saveTemplate, updateTemplate, deleteTemplate };
 }

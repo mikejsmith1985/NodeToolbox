@@ -20,10 +20,19 @@ function buildResolvedReference() {
 
 function makeSuggestionResponse(records: Array<{ sys_id: string; name: string }>) {
   return {
-    result: records.map((r) => ({
-      sys_id: r.sys_id,
-      name:   r.name,
+    result: records.map((record) => ({
+      sys_id: record.sys_id,
+      name:   record.name,
     })),
+  };
+}
+
+function makeSingleRecordResponse(record: { sys_id: string; name: string }) {
+  return {
+    result: {
+      sys_id: record.sys_id,
+      name:   record.name,
+    },
   };
 }
 
@@ -63,6 +72,27 @@ describe('SnowLookupField', () => {
 
     const input = screen.getByLabelText('Assigned To') as HTMLInputElement;
     expect(input.value).toBe('Jane Smith');
+  });
+
+  it('resolves a cloned sys_id-only reference to a display name', async () => {
+    const handleChange = vi.fn();
+    vi.mocked(snowFetch).mockResolvedValueOnce(
+      makeSingleRecordResponse({ sys_id: 'usr-001', name: 'Jane Smith' }) as never,
+    );
+
+    render(
+      <SnowLookupField
+        label="Change Manager"
+        tableName="sys_user"
+        value={{ sysId: 'usr-001', displayName: '' }}
+        onChange={handleChange}
+      />,
+    );
+
+    await act(async () => { await Promise.resolve(); });
+
+    expect(screen.getByLabelText('Change Manager')).toHaveValue('Jane Smith');
+    expect(handleChange).toHaveBeenCalledWith({ sysId: 'usr-001', displayName: 'Jane Smith' });
   });
 
   it('shows the checkmark badge when the reference is resolved (sysId is populated)', () => {

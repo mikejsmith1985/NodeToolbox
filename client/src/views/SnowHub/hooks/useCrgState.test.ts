@@ -54,6 +54,9 @@ describe('useCrgState', () => {
 
     expect(result.current.state.currentStep).toBe(1);
     expect(result.current.state.projectKey).toBe('');
+    expect(result.current.state.relEnvironment.isEnabled).toBe(false);
+    expect(result.current.state.prdEnvironment.isEnabled).toBe(false);
+    expect(result.current.state.pfixEnvironment.isEnabled).toBe(false);
   });
 
   it('uppercases the project key when it is updated', () => {
@@ -394,7 +397,7 @@ describe('useCrgState', () => {
             assigned_to:          { value: 'usr-002', display_value: 'Jane Smith' },
             requested_by:         { value: '', display_value: '' },
             cmdb_ci:              { value: '', display_value: '' },
-            change_manager:       { value: '', display_value: '' },
+            change_manager:       { value: 'mgr-001', display_value: 'Riley Manager' },
             u_tester:             { value: '', display_value: '' },
             u_service_manager:    { value: '', display_value: '' },
             u_expedited:          { value: 'false', display_value: 'false' },
@@ -429,8 +432,34 @@ describe('useCrgState', () => {
       expect(result.current.state.chgBasicInfo.changeType).toBe('normal');
       expect(result.current.state.chgBasicInfo.assignmentGroup).toEqual({ sysId: 'grp-001', displayName: 'Platform Team' });
       expect(result.current.state.chgBasicInfo.assignedTo).toEqual({ sysId: 'usr-002', displayName: 'Jane Smith' });
+      expect(result.current.state.chgBasicInfo.changeManager).toEqual({ sysId: 'mgr-001', displayName: 'Riley Manager' });
       expect(result.current.state.chgPlanningAssessment.impact).toBe('2');
       expect(result.current.state.chgPlanningContent.implementationPlan).toBe('Run script');
+    });
+
+    it('shows cloned display-only reference values even when SNow omits the sys_id', async () => {
+      vi.mocked(snowFetch).mockResolvedValueOnce({
+        result: [
+          {
+            change_manager: { value: '', display_value: 'Display Only Manager' },
+          },
+        ],
+      } as never);
+
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.setCloneChgNumber('CHG0001234');
+      });
+
+      await act(async () => {
+        await result.current.actions.cloneFromChg();
+      });
+
+      expect(result.current.state.chgBasicInfo.changeManager).toEqual({
+        sysId: '',
+        displayName: 'Display Only Manager',
+      });
     });
 
     it('sets cloneError when the CHG number is not found', async () => {
@@ -586,7 +615,7 @@ describe('useCrgState', () => {
   });
 
   describe('applyTemplate', () => {
-    it('fills chgBasicInfo, chgPlanningAssessment, and chgPlanningContent from the template', () => {
+    it('fills CHG fields and environment schedules from the template', () => {
       const { result } = renderHook(() => useCrgState());
 
       const template = {
@@ -612,6 +641,9 @@ describe('useCrgState', () => {
         chgPlanningContent: {
           implementationPlan: 'Run pipeline.', backoutPlan: 'Revert tag.', testPlan: 'Smoke tests.',
         },
+        relEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00' },
+        prdEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00' },
+        pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
       };
 
       act(() => {
@@ -622,6 +654,26 @@ describe('useCrgState', () => {
       expect(result.current.state.chgBasicInfo.assignmentGroup.displayName).toBe('Platform');
       expect(result.current.state.chgPlanningAssessment.impact).toBe('3 - Low');
       expect(result.current.state.chgPlanningContent.implementationPlan).toBe('Run pipeline.');
+      expect(result.current.state.relEnvironment.isEnabled).toBe(true);
+      expect(result.current.state.prdEnvironment.plannedStartDate).toBe('2026-01-02T10:00');
+    });
+
+    it('preserves current environment schedules when applying a legacy template', () => {
+      const { result } = renderHook(() => useCrgState());
+      const originalRelEnvironment = result.current.state.relEnvironment;
+
+      act(() => {
+        result.current.actions.applyTemplate({
+          id: 'tpl-legacy',
+          name: 'Legacy Template',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          chgBasicInfo:          result.current.state.chgBasicInfo,
+          chgPlanningAssessment: result.current.state.chgPlanningAssessment,
+          chgPlanningContent:    result.current.state.chgPlanningContent,
+        });
+      });
+
+      expect(result.current.state.relEnvironment).toEqual(originalRelEnvironment);
     });
   });
 
