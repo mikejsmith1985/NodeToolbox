@@ -23,6 +23,7 @@ import JiraFieldPicker from '../../components/JiraFieldPicker/index.tsx';
 import type { JiraIssue } from '../../types/jira.ts';
 import StoryPointingView from '../StoryPointing/StoryPointingView.tsx';
 import BoardPicker from './BoardPicker.tsx';
+import CapacityTab from './CapacityTab.tsx';
 import MoveToSprintButton from './MoveToSprintButton.tsx';
 import type { DashboardConfig } from './hooks/useDashboardConfig.ts';
 import { useDashboardConfig } from './hooks/useDashboardConfig.ts';
@@ -46,6 +47,7 @@ const TAB_OPTIONS: { key: DashboardTab; label: string }[] = [
   { key: 'planning', label: 'Planning' },
   { key: 'pointing', label: 'Pointing' },
   { key: 'releases', label: 'Releases' },
+  { key: 'capacity', label: 'Capacity' },
   { key: 'settings', label: 'Settings' },
 ];
 
@@ -1425,6 +1427,10 @@ export default function SprintDashboardView() {
 
     if (activeTab === 'releases') {
       return <ReleasesTab issues={state.sprintIssues} />;
+    }
+
+    if (activeTab === 'capacity') {
+      return <CapacityTab />;
     }
 
     return (
