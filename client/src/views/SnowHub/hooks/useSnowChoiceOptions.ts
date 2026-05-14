@@ -18,7 +18,7 @@ export type SnowChoiceOptionMap = Record<string, SnowChoiceOption[]>;
 
 const CHANGE_REQUEST_TABLE_NAME = 'change_request';
 const NEW_CHANGE_REQUEST_SYS_ID = '-1';
-const DEFAULT_SNOW_FORM_VIEW = 'default';
+const SNOW_FORM_VIEW_NAMES = ['default', 'normal'] as const;
 const MAX_SYS_CHOICE_RECORDS = 200;
 
 // All change_request choice fields we want to resolve from the same form metadata SNow uses.
@@ -51,10 +51,10 @@ interface SysChoiceResponse {
  * Builds the UI Form API path for a new change_request record. This endpoint mirrors the
  * native SNow form and is accessible to normal interactive users more often than sys_choice.
  */
-function buildUiFormPath(): string {
+function buildUiFormPath(formViewName: (typeof SNOW_FORM_VIEW_NAMES)[number]): string {
   const encodedTableName = encodeURIComponent(CHANGE_REQUEST_TABLE_NAME);
   const encodedNewRecordSysId = encodeURIComponent(NEW_CHANGE_REQUEST_SYS_ID);
-  const encodedFormView = encodeURIComponent(DEFAULT_SNOW_FORM_VIEW);
+  const encodedFormView = encodeURIComponent(formViewName);
   return `/api/now/ui/form/${encodedTableName}/${encodedNewRecordSysId}?sysparm_view=${encodedFormView}`;
 }
 
@@ -254,7 +254,12 @@ async function fetchChoiceOptionsFromServiceNow(): Promise<SnowChoiceOptionMap> 
   const fetchErrors: string[] = [];
   let mergedChoiceOptions: SnowChoiceOptionMap = {};
 
-  for (const metadataPath of [buildUiFormPath(), buildUiMetaPath()]) {
+  const metadataPaths = [
+    ...SNOW_FORM_VIEW_NAMES.map((formViewName) => buildUiFormPath(formViewName)),
+    buildUiMetaPath(),
+  ];
+
+  for (const metadataPath of metadataPaths) {
     try {
       const metadataResponse = await snowFetch<unknown>(metadataPath);
       const metadataChoiceOptions = extractChoicesFromUiForm(metadataResponse);

@@ -51,7 +51,7 @@ const DEFAULT_PLANNING_CONTENT = {
   testPlan: '',
 };
 
-const { mockState, mockActions, mockSnowChoiceConfig } = vi.hoisted(() => ({
+const { mockState, mockActions, mockSnowChoiceConfig, mockTemplates, mockTemplateActions } = vi.hoisted(() => ({
   mockState: {
     currentStep: 1,
     fetchMode: 'project' as 'project' | 'jql',
@@ -88,8 +88,8 @@ const { mockState, mockActions, mockSnowChoiceConfig } = vi.hoisted(() => ({
     chgPlanningContent: {
       implementationPlan: '', backoutPlan: '', testPlan: '',
     },
-    relEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
-    prdEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
+    relEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
+    prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
     pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
     isSubmitting: false,
     submitResult: null as string | null,
@@ -121,6 +121,13 @@ const { mockState, mockActions, mockSnowChoiceConfig } = vi.hoisted(() => ({
     isLoadingChoices: false,
     isRelayConnected: true,
     hasRelaySessionToken: true,
+    hasChoiceOptions: true,
+  },
+  mockTemplates: [] as unknown[],
+  mockTemplateActions: {
+    saveTemplate: vi.fn(),
+    updateTemplate: vi.fn(),
+    deleteTemplate: vi.fn(),
   },
 }));
 
@@ -131,9 +138,10 @@ vi.mock('../hooks/useCrgState.ts', () => ({
 // Mock the templates hook — no templates by default; tests can override via the mock.
 vi.mock('../hooks/useCrgTemplates.ts', () => ({
   useCrgTemplates: () => ({
-    templates:      [],
-    saveTemplate:   vi.fn(),
-    deleteTemplate: vi.fn(),
+    templates:      mockTemplates,
+    saveTemplate:   mockTemplateActions.saveTemplate,
+    updateTemplate: mockTemplateActions.updateTemplate,
+    deleteTemplate: mockTemplateActions.deleteTemplate,
   }),
 }));
 
@@ -141,10 +149,10 @@ vi.mock('../hooks/useCrgTemplates.ts', () => ({
 // default). Tests can set mockSnowChoiceConfig.isFetchFailed=true to simulate relay unavailability.
 vi.mock('../hooks/useSnowChoiceOptions.ts', () => ({
   useSnowChoiceOptions: () => ({
-    choiceOptions: mockSnowChoiceConfig.isFetchFailed ? {} : {
+    choiceOptions: mockSnowChoiceConfig.isFetchFailed || !mockSnowChoiceConfig.hasChoiceOptions ? {} : {
       category:                [{ value: '', label: '' }, { value: 'software', label: 'Software' }],
       type:                    [{ value: '', label: '' }, { value: 'normal', label: 'Normal' }],
-      u_environment:           [{ value: '', label: '' }, { value: 'prod', label: 'Production' }],
+      u_environment:           [{ value: '', label: '' }, { value: 'prod', label: 'Production' }, { value: 'pfix', label: 'Production Fix' }],
       impact:                  [{ value: '', label: '' }, { value: '3', label: '3 - Low' }],
       u_availability_impact:   [{ value: '', label: '' }, { value: 'no_impact', label: 'No Impact' }],
       u_change_tested:         [{ value: '', label: '' }, { value: 'yes', label: 'Yes' }],
@@ -187,8 +195,8 @@ function resetMockState(): void {
     chgBasicInfo: { ...DEFAULT_BASIC_INFO },
     chgPlanningAssessment: { ...DEFAULT_PLANNING_ASSESSMENT },
     chgPlanningContent: { ...DEFAULT_PLANNING_CONTENT },
-    relEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
-    prdEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
+    relEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
+    prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
     pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
     isSubmitting: false,
     submitResult: null,
@@ -207,6 +215,9 @@ describe('CrgTab', () => {
     mockSnowChoiceConfig.isLoadingChoices = false;
     mockSnowChoiceConfig.isRelayConnected = true;
     mockSnowChoiceConfig.hasRelaySessionToken = true;
+    mockSnowChoiceConfig.hasChoiceOptions = true;
+    mockTemplates.splice(0, mockTemplates.length);
+    Object.values(mockTemplateActions).forEach((mockAction) => mockAction.mockReset());
   });
 
   it('renders step 1 with the project key input and fetch button', () => {
@@ -281,10 +292,33 @@ describe('CrgTab', () => {
 
     render(<CrgTab />);
 
+    expect(screen.getByRole('combobox', { name: 'ServiceNow Environment' })).toBeInTheDocument();
     expect(screen.getByRole('table', { name: 'Environment schedule table' })).toBeInTheDocument();
     expect(screen.getByText('REL')).toBeInTheDocument();
     expect(screen.getByText('PRD')).toBeInTheDocument();
     expect(screen.getByText('PFIX')).toBeInTheDocument();
+  });
+
+  it('allows all environment rows to be selected or unselected on step 5', () => {
+    mockState.currentStep = 5;
+
+    render(<CrgTab />);
+
+    expect(screen.getByRole('checkbox', { name: 'REL enabled' })).not.toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'PRD enabled' })).not.toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'PFIX enabled' })).not.toBeDisabled();
+  });
+
+  it('maps selected PRD environment to the live SNow environment choice on step 5', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 5;
+
+    render(<CrgTab />);
+
+    await user.click(screen.getByRole('checkbox', { name: 'PRD enabled' }));
+
+    expect(mockActions.updateEnvironment).toHaveBeenCalledWith('prd', { isEnabled: true });
+    expect(mockActions.setChgBasicInfo).toHaveBeenCalledWith({ environment: 'prod' });
   });
 
   it('renders fetch mode radio buttons on step 1', () => {
@@ -483,11 +517,67 @@ describe('CrgTab', () => {
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
   });
 
+  it('saves current change details and environment schedules as a template', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 3;
+    mockState.chgBasicInfo = { ...mockState.chgBasicInfo, category: 'software', environment: 'prod' };
+    mockState.relEnvironment = { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00' };
+
+    render(<CrgTab />);
+
+    await user.click(screen.getByRole('button', { name: '+ Save current fields as template' }));
+    await user.type(screen.getByRole('textbox', { name: 'Template name' }), 'Release Defaults');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(mockTemplateActions.saveTemplate).toHaveBeenCalledWith(
+      'Release Defaults',
+      expect.objectContaining({
+        chgBasicInfo:   expect.objectContaining({ category: 'software', environment: 'prod' }),
+        relEnvironment: expect.objectContaining({ isEnabled: true, plannedStartDate: '2026-01-01T10:00' }),
+      }),
+    );
+  });
+
+  it('updates the selected saved template from the current form state', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 3;
+    mockState.chgBasicInfo = { ...mockState.chgBasicInfo, category: 'software', environment: 'prod' };
+    mockState.prdEnvironment = { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00' };
+    mockTemplates.push({
+      id: 'tpl-001',
+      name: 'Release Defaults',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      chgBasicInfo: DEFAULT_BASIC_INFO,
+      chgPlanningAssessment: DEFAULT_PLANNING_ASSESSMENT,
+      chgPlanningContent: DEFAULT_PLANNING_CONTENT,
+    });
+
+    render(<CrgTab />);
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Select template' }), 'tpl-001');
+    await user.click(screen.getByRole('button', { name: 'Update selected' }));
+
+    expect(mockTemplateActions.updateTemplate).toHaveBeenCalledWith(
+      'tpl-001',
+      expect.objectContaining({
+        chgBasicInfo:   expect.objectContaining({ category: 'software', environment: 'prod' }),
+        prdEnvironment: expect.objectContaining({ isEnabled: true, plannedStartDate: '2026-01-02T10:00' }),
+      }),
+    );
+  });
+
   it('shows the Category dropdown on step 3', () => {
     mockState.currentStep = 3;
     render(<CrgTab />);
 
     expect(screen.getByRole('combobox', { name: 'Category' })).toBeInTheDocument();
+  });
+
+  it('does not show the ServiceNow Environment mapping on step 3', () => {
+    mockState.currentStep = 3;
+    render(<CrgTab />);
+
+    expect(screen.queryByRole('combobox', { name: 'ServiceNow Environment' })).not.toBeInTheDocument();
   });
 
   it('normalizes legacy display labels to SNow internal choice values after choices load', async () => {
@@ -555,6 +645,16 @@ describe('CrgTab', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent(/SNow relay not connected/);
     expect(screen.getByRole('combobox', { name: 'Category' })).toBeDisabled();
+  });
+
+  it('shows an explicit no-options message instead of an empty dropdown menu', () => {
+    mockSnowChoiceConfig.hasChoiceOptions = false;
+    mockState.currentStep = 4;
+
+    render(<CrgTab />);
+
+    expect(screen.getAllByRole('option', { name: 'No live SNow options returned' }).length).toBeGreaterThan(0);
+    expect(screen.getByRole('combobox', { name: 'Impact' })).toBeDisabled();
   });
 
   it('shows a "fetch failed" warning with Retry button on step 4 when isFetchFailed and relay connected', () => {

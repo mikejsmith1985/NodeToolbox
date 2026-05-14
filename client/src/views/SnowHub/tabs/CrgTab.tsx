@@ -45,9 +45,9 @@ const PLANNING_ASSESSMENT_ROWS = [
 ] as const;
 
 const ENVIRONMENT_ROW_DEFINITIONS = [
-  { key: 'rel', label: 'REL', stateKey: 'relEnvironment', canToggle: false },
-  { key: 'prd', label: 'PRD', stateKey: 'prdEnvironment', canToggle: false },
-  { key: 'pfix', label: 'PFIX', stateKey: 'pfixEnvironment', canToggle: true },
+  { key: 'rel', label: 'REL', stateKey: 'relEnvironment' },
+  { key: 'prd', label: 'PRD', stateKey: 'prdEnvironment' },
+  { key: 'pfix', label: 'PFIX', stateKey: 'pfixEnvironment' },
 ] as const;
 const CONSOLIDATED_RESULT_LABEL = 'Consolidated Result';
 const STEP_TITLE_PREFIX = 'Step';
@@ -86,12 +86,52 @@ function resolveStoredChoiceValue(currentValue: string, options: { value: string
   return labelMatch?.value ?? currentValue;
 }
 
+function hasSelectableChoiceOptions(options: { value: string; label: string }[]): boolean {
+  return options.some((option) => option.value !== '');
+}
+
+function buildRenderedChoiceOptions(
+  options: { value: string; label: string }[],
+  currentValue: string,
+): { value: string; label: string }[] {
+  const hasCurrentValue = currentValue !== '' && options.every((option) => option.value !== currentValue);
+  return hasCurrentValue
+    ? [{ value: currentValue, label: currentValue }, ...options.filter((option) => option.value !== '')]
+    : options;
+}
+
 type CrgHookResult = ReturnType<typeof useCrgState>;
 type CrgStateData = CrgHookResult['state'];
 type CrgActionSet = CrgHookResult['actions'];
 type GeneratedFieldName = Parameters<CrgActionSet['updateGeneratedField']>[0];
 type EnvironmentKey = Parameters<CrgActionSet['updateEnvironment']>[0];
 type FetchMode = CrgStateData['fetchMode'];
+type EnvironmentSelectionState = Record<EnvironmentKey, boolean>;
+
+function resolveSuggestedEnvironmentValue(
+  options: { value: string; label: string }[],
+  selections: EnvironmentSelectionState,
+): string | null {
+  const selectedEnvironmentPriority: EnvironmentKey[] = ['pfix', 'prd', 'rel'];
+  const selectedEnvironmentKey = selectedEnvironmentPriority.find((environmentKey) => selections[environmentKey]);
+  if (!selectedEnvironmentKey) return '';
+
+  const matchingChoice = options.find((option) => {
+    const normalizedChoiceText = `${option.value} ${option.label}`.toLowerCase();
+    const isFixOption = normalizedChoiceText.includes('fix') || normalizedChoiceText.includes('pfix');
+    const isProductionOption = normalizedChoiceText.includes('prd') || normalizedChoiceText.includes('prod');
+
+    if (selectedEnvironmentKey === 'pfix') {
+      return normalizedChoiceText.includes('pfix') || (isProductionOption && isFixOption);
+    }
+    if (selectedEnvironmentKey === 'prd') {
+      return isProductionOption && !isFixOption;
+    }
+    return normalizedChoiceText.includes('rel') || normalizedChoiceText.includes('release');
+  });
+
+  return matchingChoice?.value ?? null;
+}
 
 interface StepIndicatorProps {
   currentStep: CrgStateData['currentStep'];
@@ -125,6 +165,19 @@ interface PlanningStepExtras {
   fetchErrorMessage: string | null;
 }
 
+interface EnvironmentStepExtras {
+  /** Dynamic choice options fetched from SNow form metadata for the final u_environment mapping. */
+  choiceOptions: SnowChoiceOptionMap;
+  /** True while SNow choice metadata is still loading. */
+  isLoadingChoices: boolean;
+  /** True when the live metadata fetch failed. */
+  isFetchFailed: boolean;
+  /** True when the relay bridge is connected. */
+  isRelayConnected: boolean;
+  /** True when the relay has detected SNow's g_ck session token. */
+  hasRelaySessionToken: boolean;
+}
+
 /** Additional props for the Change Details step — templates and dynamic choice options. */
 interface ChangeDetailsExtras {
   /** Dynamic choice options fetched from SNow form metadata for basic info dropdowns. */
@@ -146,6 +199,7 @@ interface ChangeDetailsExtras {
   fetchErrorMessage: string | null;
   templates: CrgTemplate[];
   saveTemplate: (name: string, data: Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>) => string;
+  updateTemplate: (templateId: string, data: Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>) => void;
   deleteTemplate: (templateId: string) => void;
 }
 
@@ -344,6 +398,7 @@ function ChangeDetailsStep({
   fetchErrorMessage,
   templates,
   saveTemplate,
+  updateTemplate,
   deleteTemplate,
 }: CrgStepProps & ChangeDetailsExtras) {
   // Local state for the template picker and save-as-template flow.
@@ -374,24 +429,36 @@ function ChangeDetailsStep({
     setSelectedTemplateId('');
   }
 
-  function handleSaveTemplate(): void {
-    saveTemplate(newTemplateName, {
+  function buildCurrentTemplateData(): Omit<CrgTemplate, 'id' | 'name' | 'createdAt'> {
+    return {
       chgBasicInfo:          state.chgBasicInfo,
       chgPlanningAssessment: state.chgPlanningAssessment,
       chgPlanningContent:    state.chgPlanningContent,
-    });
+      relEnvironment:        state.relEnvironment,
+      prdEnvironment:        state.prdEnvironment,
+      pfixEnvironment:       state.pfixEnvironment,
+    };
+  }
+
+  function handleSaveTemplate(): void {
+    saveTemplate(newTemplateName, buildCurrentTemplateData());
     setNewTemplateName('');
     setIsSavePromptVisible(false);
+  }
+
+  function handleUpdateTemplate(): void {
+    if (selectedTemplateId) {
+      updateTemplate(selectedTemplateId, buildCurrentTemplateData());
+    }
   }
 
   const { chgBasicInfo: basicInfo } = state;
   const isCloneInputDisabled = state.isCloning;
 
-  // Resolve dynamic choice options for the three basic-info dropdowns.
+  // Resolve dynamic choice options for the basic-info dropdowns.
   // These are empty until the SNow relay is connected and live form metadata loads.
   const categoryOptions    = choiceOptions['category']      ?? [];
   const changeTypeOptions  = choiceOptions['type']          ?? [];
-  const environmentOptions = choiceOptions['u_environment'] ?? [];
   const canLoadChoiceOptions = isRelayConnected && hasRelaySessionToken;
 
   /**
@@ -399,7 +466,7 @@ function ChangeDetailsStep({
    * a "waiting for relay" message when not yet connected, or a "load failed" indicator when
    * the SNow fetch errored — prevents any hardcoded guesses from appearing.
    */
-  function renderDropdownOptions(options: { value: string; label: string }[]) {
+  function renderDropdownOptions(options: { value: string; label: string }[], currentValue: string) {
     if (isLoadingChoices) {
       return <option disabled value="">Loading options…</option>;
     }
@@ -412,7 +479,13 @@ function ChangeDetailsStep({
     if (isFetchFailed) {
       return <option disabled value="">Load failed — click Retry above</option>;
     }
-    return options.map((option) => (
+
+    const renderedOptions = buildRenderedChoiceOptions(options, currentValue);
+    if (!hasSelectableChoiceOptions(renderedOptions)) {
+      return <option disabled value="">No live SNow options returned</option>;
+    }
+
+    return renderedOptions.map((option) => (
       <option key={`${option.value}-${option.label}`} value={option.value}>{option.label || 'Select…'}</option>
     ));
   }
@@ -467,6 +540,14 @@ function ChangeDetailsStep({
               type="button"
             >
               Apply
+            </button>
+            <button
+              className={styles.secondaryButton}
+              disabled={!selectedTemplateId}
+              onClick={handleUpdateTemplate}
+              type="button"
+            >
+              Update selected
             </button>
             <button
               className={styles.linkButton}
@@ -548,7 +629,7 @@ function ChangeDetailsStep({
             onChange={(event) => handleBasicInfoChange('category', event.target.value)}
             value={basicInfo.category}
           >
-            {renderDropdownOptions(categoryOptions)}
+            {renderDropdownOptions(categoryOptions, basicInfo.category)}
           </select>
         </label>
         <label className={styles.fieldGroup}>
@@ -559,18 +640,7 @@ function ChangeDetailsStep({
             onChange={(event) => handleBasicInfoChange('changeType', event.target.value)}
             value={basicInfo.changeType}
           >
-            {renderDropdownOptions(changeTypeOptions)}
-          </select>
-        </label>
-        <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>Environment</span>
-          <select
-            className={styles.input}
-            disabled={isFetchFailed || !canLoadChoiceOptions || isLoadingChoices}
-            onChange={(event) => handleBasicInfoChange('environment', event.target.value)}
-            value={basicInfo.environment}
-          >
-            {renderDropdownOptions(environmentOptions)}
+            {renderDropdownOptions(changeTypeOptions, basicInfo.changeType)}
           </select>
         </label>
 
@@ -704,14 +774,17 @@ function PlanningStep({
       <div className={styles.assessmentGrid}>
         {PLANNING_ASSESSMENT_ROWS.map((row) => {
           const rowOptions = choiceOptions[row.snowFieldName] ?? [];
+          const currentAssessmentValue = assessment[row.fieldKey];
+          const renderedRowOptions = buildRenderedChoiceOptions(rowOptions, currentAssessmentValue);
+          const hasRowOptions = hasSelectableChoiceOptions(renderedRowOptions);
           return (
             <label className={styles.fieldGroup} key={row.fieldKey}>
               <span className={styles.fieldLabel}>{row.label}</span>
               <select
                 className={styles.input}
-                disabled={isFetchFailed || !canLoadChoiceOptions || isLoadingChoices}
+                disabled={isFetchFailed || !canLoadChoiceOptions || isLoadingChoices || !hasRowOptions}
                 onChange={(event) => handleAssessmentChange(row.fieldKey, event)}
-                value={assessment[row.fieldKey]}
+                value={currentAssessmentValue}
               >
                 {isLoadingChoices ? (
                   <option disabled value="">Loading options…</option>
@@ -721,8 +794,10 @@ function PlanningStep({
                   <option disabled value="">Waiting for SNow session token…</option>
                 ) : isFetchFailed ? (
                   <option disabled value="">Load failed — click Retry above</option>
+                ) : !hasRowOptions ? (
+                  <option disabled value="">No live SNow options returned</option>
                 ) : (
-                  rowOptions.map((option) => (
+                  renderedRowOptions.map((option) => (
                     <option key={`${option.value}-${option.label}`} value={option.value}>{option.label || 'Select…'}</option>
                   ))
                 )}
@@ -797,9 +872,31 @@ function PlanningStep({
   );
 }
 
-function EnvironmentStep({ state, actions }: CrgStepProps) {
+function EnvironmentStep({
+  state,
+  actions,
+  choiceOptions,
+  isLoadingChoices,
+  isFetchFailed,
+  isRelayConnected,
+  hasRelaySessionToken,
+}: CrgStepProps & EnvironmentStepExtras) {
+  const environmentOptions = choiceOptions['u_environment'] ?? [];
+  const canLoadChoiceOptions = isRelayConnected && hasRelaySessionToken;
+
   function handleEnvironmentToggle(environmentKey: EnvironmentKey, event: ChangeEvent<HTMLInputElement>): void {
+    const nextSelections: EnvironmentSelectionState = {
+      rel:  state.relEnvironment.isEnabled,
+      prd:  state.prdEnvironment.isEnabled,
+      pfix: state.pfixEnvironment.isEnabled,
+    };
+    nextSelections[environmentKey] = event.target.checked;
+    const suggestedEnvironmentValue = resolveSuggestedEnvironmentValue(environmentOptions, nextSelections);
+
     actions.updateEnvironment(environmentKey, { isEnabled: event.target.checked });
+    if (suggestedEnvironmentValue !== null && suggestedEnvironmentValue !== state.chgBasicInfo.environment) {
+      actions.setChgBasicInfo({ environment: suggestedEnvironmentValue });
+    }
   }
 
   function handleEnvironmentDateChange(
@@ -814,9 +911,47 @@ function EnvironmentStep({ state, actions }: CrgStepProps) {
     actions.updateEnvironment(environmentKey, environmentUpdate);
   }
 
+  function renderEnvironmentMappingOptions() {
+    if (isLoadingChoices) return <option disabled value="">Loading options…</option>;
+    if (!isRelayConnected) return <option disabled value="">Connect SNow relay to load options</option>;
+    if (!hasRelaySessionToken) return <option disabled value="">Waiting for SNow session token…</option>;
+    if (isFetchFailed) return <option disabled value="">Load failed — return to Planning and retry</option>;
+
+    const renderedOptions = buildRenderedChoiceOptions(environmentOptions, state.chgBasicInfo.environment);
+    if (!hasSelectableChoiceOptions(renderedOptions)) {
+      return <option disabled value="">No live SNow environment options returned</option>;
+    }
+
+    return renderedOptions.map((option) => (
+      <option key={`${option.value}-${option.label}`} value={option.value}>{option.label || 'Select…'}</option>
+    ));
+  }
+
   return (
     <section className={styles.section}>
       <StepHeading currentStep={state.currentStep} />
+      <div className={styles.environmentMappingPanel}>
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>ServiceNow Environment</span>
+          <select
+            aria-label="ServiceNow Environment"
+            className={styles.input}
+            disabled={
+              isFetchFailed ||
+              !canLoadChoiceOptions ||
+              isLoadingChoices ||
+              (!state.chgBasicInfo.environment && !hasSelectableChoiceOptions(environmentOptions))
+            }
+            onChange={(event) => actions.setChgBasicInfo({ environment: event.target.value })}
+            value={state.chgBasicInfo.environment}
+          >
+            {renderEnvironmentMappingOptions()}
+          </select>
+        </label>
+        <p className={styles.panelHint}>
+          This maps the selected deployment environments below to the single SNow Environment field sent on create.
+        </p>
+      </div>
       <table aria-label="Environment schedule table" className={styles.issueTable}>
         <thead>
           <tr>
@@ -836,8 +971,8 @@ function EnvironmentStep({ state, actions }: CrgStepProps) {
                 <td>{environmentRow.label}</td>
                 <td>
                   <input
+                    aria-label={`${environmentRow.label} enabled`}
                     checked={environmentState.isEnabled}
-                    disabled={!environmentRow.canToggle}
                     onChange={(event) => handleEnvironmentToggle(environmentRow.key, event)}
                     type="checkbox"
                   />
@@ -967,6 +1102,7 @@ function renderCurrentStepPanel(
   actions: CrgActionSet,
   planningExtras: PlanningStepExtras,
   changeDetailsExtras: ChangeDetailsExtras,
+  environmentExtras: EnvironmentStepExtras,
 ) {
   if (state.currentStep === 1) {
     return <FetchIssuesStep actions={actions} state={state} />;
@@ -985,7 +1121,7 @@ function renderCurrentStepPanel(
   }
 
   if (state.currentStep === 5) {
-    return <EnvironmentStep actions={actions} state={state} />;
+    return <EnvironmentStep actions={actions} state={state} {...environmentExtras} />;
   }
 
   return <ResultsStep actions={actions} state={state} />;
@@ -999,7 +1135,7 @@ function renderCurrentStepPanel(
 export default function CrgTab() {
   const { state, actions } = useCrgState();
   const { isUnlocked, verifyPassphrase, buildPrompt } = useRovoAssist();
-  const { templates, saveTemplate, deleteTemplate } = useCrgTemplates();
+  const { templates, saveTemplate, updateTemplate, deleteTemplate } = useCrgTemplates();
   const {
     choiceOptions,
     isLoadingChoices,
@@ -1140,6 +1276,14 @@ export default function CrgTab() {
     fetchErrorMessage,
   };
 
+  const environmentExtras: EnvironmentStepExtras = {
+    choiceOptions,
+    isLoadingChoices,
+    isFetchFailed,
+    isRelayConnected,
+    hasRelaySessionToken,
+  };
+
   const changeDetailsExtras: ChangeDetailsExtras = {
     choiceOptions,
     isLoadingChoices,
@@ -1150,6 +1294,7 @@ export default function CrgTab() {
     fetchErrorMessage,
     templates,
     saveTemplate,
+    updateTemplate,
     deleteTemplate,
   };
 
@@ -1163,7 +1308,7 @@ export default function CrgTab() {
         <p className={styles.summaryPill}>{issueCountSummary}</p>
       </header>
       <StepIndicator currentStep={state.currentStep} />
-      {renderCurrentStepPanel(state, actions, planningExtras, changeDetailsExtras)}
+      {renderCurrentStepPanel(state, actions, planningExtras, changeDetailsExtras, environmentExtras)}
 
       {/* Hidden passphrase modal — only visible after Ctrl+Alt+Z, never in documentation */}
       {isPassphraseModalVisible ? (

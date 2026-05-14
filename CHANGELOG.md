@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **CRG — templates can now be updated in place and include environment schedules**: Saved templates now have an **Update selected** action and preserve Step 5 REL/PRD/PFIX scheduling alongside Change Details and Planning fields.
+
 ### Fixed
+- **CRG — cloned reference fields and environment mapping are now resilient**: Cloned Change Manager/reference values render even when ServiceNow returns display-only or sys_id-only data, Step 5 environment checkboxes are all editable, and selecting REL/PRD/PFIX maps to the live ServiceNow Environment choice when a matching option exists.
+- **CRG — live dropdowns now show explicit empty-state feedback**: Planning and Change Details dropdowns no longer open as blank menus when ServiceNow metadata omits a field; they show a clear “No live SNow options returned” placeholder instead.
 - **SNow relay — active status now waits for a live bookmarklet poll and session-token readiness**: The relay no longer treats a one-time bookmarklet registration as proof that ServiceNow API calls are ready. The bookmarklet refreshes token readiness when `g_ck` becomes available, the UI warns when the relay is connected but the token is not ready, and SNow write calls are blocked until the token is present.
 - **CRG — dropdown loading waits for ServiceNow token readiness and merges metadata sources**: Change Request dropdowns now wait for the relay's `g_ck` signal before fetching choices and merge UI Form, UI Meta, and final `sys_choice` results so Step 4 planning fields are not skipped when Step 3 fields load first.
 - **CRG — relay resume and successful CHG creation no longer restore stale wizard state**: Relay return routes now expire and ignore old plain-text values, and a successful CHG submission clears the persisted draft so the next SNow Hub visit starts fresh.

@@ -90,7 +90,7 @@ describe('useSnowChoiceOptions', () => {
     const { result } = renderHook(() => useSnowChoiceOptions());
 
     await waitFor(() => expect(result.current.areChoicesFromSnow).toBe(true));
-    expect(vi.mocked(snowFetch)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(snowFetch)).toHaveBeenCalledTimes(4);
     expect(result.current.isRelayConnected).toBe(true);
     expect(result.current.hasRelaySessionToken).toBe(true);
   });
@@ -124,7 +124,7 @@ describe('useSnowChoiceOptions', () => {
     await act(async () => { rerender(); });
 
     await waitFor(() => expect(result.current.areChoicesFromSnow).toBe(true));
-    expect(vi.mocked(snowFetch)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(snowFetch)).toHaveBeenCalledTimes(4);
   });
 
   it('auto-retries when relay transitions from disconnected to connected', async () => {
@@ -148,7 +148,7 @@ describe('useSnowChoiceOptions', () => {
     await act(async () => { rerender(); });
 
     await waitFor(() => expect(result.current.areChoicesFromSnow).toBe(true));
-    expect(vi.mocked(snowFetch)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(snowFetch)).toHaveBeenCalledTimes(4);
   });
 
   it('populates choiceOptions with live SNow choices after a successful fetch', async () => {
@@ -241,7 +241,7 @@ describe('useSnowChoiceOptions', () => {
     await waitFor(() => expect(result.current.areChoicesFromSnow).toBe(true));
     expect(result.current.isFetchFailed).toBe(false);
     expect(result.current.fetchErrorMessage).toBeNull();
-    expect(vi.mocked(snowFetch)).toHaveBeenCalledTimes(6);
+    expect(vi.mocked(snowFetch)).toHaveBeenCalledTimes(8);
   });
 
   it('calls snowFetch with the SNow UI Form API before any fallback', async () => {
@@ -296,6 +296,7 @@ describe('useSnowChoiceOptions', () => {
     setRelayConnected(true);
     vi.mocked(snowFetch)
       .mockResolvedValueOnce({ result: { fields: {} } } as never)
+      .mockResolvedValueOnce({ result: { fields: {} } } as never)
       .mockResolvedValueOnce({ result: { columns: {
         impact: { choices: [{ value: '1', label: 'High' }] },
       } } } as never);
@@ -304,7 +305,7 @@ describe('useSnowChoiceOptions', () => {
 
     await waitFor(() => expect(result.current.areChoicesFromSnow).toBe(true));
 
-    const uiMetaPath = vi.mocked(snowFetch).mock.calls[1][0] as string;
+    const uiMetaPath = vi.mocked(snowFetch).mock.calls[2][0] as string;
     expect(uiMetaPath).toContain('/api/now/ui/meta/change_request');
     expect(result.current.choiceOptions.impact[1]).toEqual({ value: '1', label: 'High' });
   });
@@ -314,6 +315,7 @@ describe('useSnowChoiceOptions', () => {
     setRelayConnected(true);
     vi.mocked(snowFetch)
       .mockRejectedValueOnce(new Error('SNow relay fetch /api/now/ui/form/change_request/-1 failed: 403') as never)
+      .mockResolvedValueOnce({ result: { columns: {} } } as never)
       .mockResolvedValueOnce({ result: { columns: {
         category: { choices: [{ value: 'software', label: 'Software' }] },
       } } } as never);
@@ -322,7 +324,7 @@ describe('useSnowChoiceOptions', () => {
 
     await waitFor(() => expect(result.current.areChoicesFromSnow).toBe(true));
 
-    expect(vi.mocked(snowFetch)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(snowFetch)).toHaveBeenCalledTimes(4);
     expect(result.current.choiceOptions.category[1]).toEqual({ value: 'software', label: 'Software' });
   });
 
@@ -332,6 +334,7 @@ describe('useSnowChoiceOptions', () => {
     vi.mocked(snowFetch)
       .mockResolvedValueOnce({ result: { fields: {} } } as never)
       .mockResolvedValueOnce({ result: { columns: {} } } as never)
+      .mockResolvedValueOnce({ result: { columns: {} } } as never)
       .mockResolvedValueOnce(makeSysChoiceResponse([
         { element: 'impact', value: '1', label: 'High' },
       ]) as never);
@@ -340,7 +343,7 @@ describe('useSnowChoiceOptions', () => {
 
     await waitFor(() => expect(result.current.areChoicesFromSnow).toBe(true));
 
-    const sysChoicePath = vi.mocked(snowFetch).mock.calls[2][0] as string;
+    const sysChoicePath = vi.mocked(snowFetch).mock.calls[3][0] as string;
     expect(sysChoicePath).toContain('/api/now/table/sys_choice');
   });
 

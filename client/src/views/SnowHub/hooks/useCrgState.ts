@@ -35,7 +35,7 @@ export interface SnowReference {
 export interface ChgBasicInfo {
   category: string;           // SNow field: category   (e.g. software/hardware)
   changeType: string;         // SNow field: type        (normal/standard/emergency)
-  environment: string;        // SNow field: u_environment (instance-specific choice field)
+  environment: string;        // SNow field: u_environment, mapped on the Environments step.
   requestedBy: SnowReference; // SNow field: requested_by
   configItem: SnowReference;  // SNow field: cmdb_ci
   assignmentGroup: SnowReference; // SNow field: assignment_group
@@ -150,6 +150,10 @@ export interface CrgTemplate {
   chgBasicInfo: ChgBasicInfo;
   chgPlanningAssessment: ChgPlanningAssessment;
   chgPlanningContent: ChgPlanningContent;
+  /** Optional for backward compatibility with templates saved before environment scheduling was added. */
+  relEnvironment?: EnvironmentConfig;
+  prdEnvironment?: EnvironmentConfig;
+  pfixEnvironment?: EnvironmentConfig;
 }
 
 /**
@@ -250,8 +254,8 @@ function createDefaultCrgState(): CrgState {
     generatedRiskImpact: EMPTY_VALUE,
     chgPlanningAssessment: createDefaultChgPlanningAssessment(),
     chgPlanningContent: createDefaultChgPlanningContent(),
-    relEnvironment: { ...createDefaultEnvironmentConfig(), isEnabled: true },
-    prdEnvironment: { ...createDefaultEnvironmentConfig(), isEnabled: true },
+    relEnvironment: createDefaultEnvironmentConfig(),
+    prdEnvironment: createDefaultEnvironmentConfig(),
     pfixEnvironment: createDefaultEnvironmentConfig(),
     isSubmitting: false,
     submitResult: null,
@@ -338,11 +342,14 @@ function extractChoiceValue(field: unknown): string {
  * when sysparm_display_value=all is included in the request.
  */
 function extractSnowReference(field: unknown): SnowReference {
+  if (typeof field === 'string') {
+    return { sysId: EMPTY_VALUE, displayName: field };
+  }
   if (!field || typeof field !== 'object') return { ...EMPTY_SNOW_REFERENCE };
   const snowField = field as Record<string, unknown>;
   const sysId = String(snowField.value ?? EMPTY_VALUE);
   const displayName = String(snowField.display_value ?? EMPTY_VALUE);
-  if (!sysId) return { ...EMPTY_SNOW_REFERENCE };
+  if (!sysId && !displayName) return { ...EMPTY_SNOW_REFERENCE };
   return { sysId, displayName };
 }
 
@@ -696,6 +703,9 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       chgBasicInfo:          { ...template.chgBasicInfo },
       chgPlanningAssessment: { ...template.chgPlanningAssessment },
       chgPlanningContent:    { ...template.chgPlanningContent },
+      relEnvironment:        template.relEnvironment ? { ...template.relEnvironment } : previousState.relEnvironment,
+      prdEnvironment:        template.prdEnvironment ? { ...template.prdEnvironment } : previousState.prdEnvironment,
+      pfixEnvironment:       template.pfixEnvironment ? { ...template.pfixEnvironment } : previousState.pfixEnvironment,
     }));
   }, []);
 

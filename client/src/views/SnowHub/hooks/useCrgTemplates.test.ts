@@ -35,7 +35,21 @@ function makeMinimalTemplate(overrides: Partial<CrgTemplate> = {}): CrgTemplate 
     chgPlanningContent: {
       implementationPlan: 'Deploy via pipeline.', backoutPlan: 'Revert tag.', testPlan: 'Smoke test.',
     },
+    relEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00' },
+    prdEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00' },
+    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
     ...overrides,
+  };
+}
+
+function makeTemplateData(template: CrgTemplate): Omit<CrgTemplate, 'id' | 'name' | 'createdAt'> {
+  return {
+    chgBasicInfo:          template.chgBasicInfo,
+    chgPlanningAssessment: template.chgPlanningAssessment,
+    chgPlanningContent:    template.chgPlanningContent,
+    relEnvironment:        template.relEnvironment,
+    prdEnvironment:        template.prdEnvironment,
+    pfixEnvironment:       template.pfixEnvironment,
   };
 }
 
@@ -59,15 +73,12 @@ describe('useCrgTemplates', () => {
     const template = makeMinimalTemplate();
 
     act(() => {
-      result.current.saveTemplate('Release Template', {
-        chgBasicInfo:          template.chgBasicInfo,
-        chgPlanningAssessment: template.chgPlanningAssessment,
-        chgPlanningContent:    template.chgPlanningContent,
-      });
+      result.current.saveTemplate('Release Template', makeTemplateData(template));
     });
 
     expect(result.current.templates).toHaveLength(1);
     expect(result.current.templates[0].name).toBe('Release Template');
+    expect(result.current.templates[0].prdEnvironment?.isEnabled).toBe(true);
   });
 
   it('persists templates to localStorage after saving', () => {
@@ -75,16 +86,45 @@ describe('useCrgTemplates', () => {
     const template = makeMinimalTemplate();
 
     act(() => {
-      result.current.saveTemplate('Persisted Template', {
-        chgBasicInfo:          template.chgBasicInfo,
-        chgPlanningAssessment: template.chgPlanningAssessment,
-        chgPlanningContent:    template.chgPlanningContent,
-      });
+      result.current.saveTemplate('Persisted Template', makeTemplateData(template));
     });
 
     const stored = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) ?? '[]') as CrgTemplate[];
     expect(stored).toHaveLength(1);
     expect(stored[0].name).toBe('Persisted Template');
+    expect(stored[0].relEnvironment?.plannedStartDate).toBe('2026-01-01T10:00');
+  });
+
+  it('updates an existing template while preserving its identity', () => {
+    const existingTemplate = makeMinimalTemplate({ id: 'tpl-update', name: 'Release Template' });
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([existingTemplate]));
+
+    const { result } = renderHook(() => useCrgTemplates());
+    const updatedTemplate = makeMinimalTemplate({
+      chgBasicInfo: {
+        ...existingTemplate.chgBasicInfo,
+        category:    'Hardware',
+        environment: 'pfix',
+      },
+      pfixEnvironment: { isEnabled: true, plannedStartDate: '2026-01-03T10:00', plannedEndDate: '2026-01-03T11:00' },
+    });
+
+    const unsafeTemplateUpdate = {
+      ...makeTemplateData(updatedTemplate),
+      id:        'tpl-hijack',
+      name:      'Changed Name',
+      createdAt: '2026-02-01T00:00:00.000Z',
+    };
+
+    act(() => {
+      result.current.updateTemplate('tpl-update', unsafeTemplateUpdate);
+    });
+
+    expect(result.current.templates[0].id).toBe('tpl-update');
+    expect(result.current.templates[0].name).toBe('Release Template');
+    expect(result.current.templates[0].createdAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(result.current.templates[0].chgBasicInfo.category).toBe('Hardware');
+    expect(result.current.templates[0].pfixEnvironment?.isEnabled).toBe(true);
   });
 
   it('loads saved templates from localStorage on mount', () => {
@@ -123,18 +163,10 @@ describe('useCrgTemplates', () => {
     const template = makeMinimalTemplate();
 
     act(() => {
-      result.current.saveTemplate('First', {
-        chgBasicInfo:          template.chgBasicInfo,
-        chgPlanningAssessment: template.chgPlanningAssessment,
-        chgPlanningContent:    template.chgPlanningContent,
-      });
+      result.current.saveTemplate('First', makeTemplateData(template));
     });
     act(() => {
-      result.current.saveTemplate('Second', {
-        chgBasicInfo:          template.chgBasicInfo,
-        chgPlanningAssessment: template.chgPlanningAssessment,
-        chgPlanningContent:    template.chgPlanningContent,
-      });
+      result.current.saveTemplate('Second', makeTemplateData(template));
     });
 
     expect(result.current.templates[0].name).toBe('Second');
@@ -146,11 +178,7 @@ describe('useCrgTemplates', () => {
     const template = makeMinimalTemplate();
 
     act(() => {
-      result.current.saveTemplate('   ', {
-        chgBasicInfo:          template.chgBasicInfo,
-        chgPlanningAssessment: template.chgPlanningAssessment,
-        chgPlanningContent:    template.chgPlanningContent,
-      });
+      result.current.saveTemplate('   ', makeTemplateData(template));
     });
 
     expect(result.current.templates[0].name).toBe('Unnamed Template');
