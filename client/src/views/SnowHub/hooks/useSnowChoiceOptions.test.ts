@@ -19,20 +19,20 @@ describe('useSnowChoiceOptions', () => {
     vi.clearAllMocks();
   });
 
-  it('returns hardcoded fallback options immediately before the SNow fetch resolves', () => {
-    // Never-resolving promise simulates in-flight request.
+  it('returns empty choiceOptions and isLoadingChoices true while the fetch is in flight', () => {
+    // Never-resolving promise simulates an in-flight request.
     vi.mocked(snowFetch).mockReturnValue(new Promise(() => {}));
 
     const { result } = renderHook(() => useSnowChoiceOptions());
 
-    // Fallback options should be present immediately.
-    expect(result.current.choiceOptions['category']).toBeDefined();
-    expect(result.current.choiceOptions['impact']).toBeDefined();
+    // No hardcoded values — options are only valid when they come from SNow.
+    expect(result.current.choiceOptions).toEqual({});
     expect(result.current.isLoadingChoices).toBe(true);
     expect(result.current.areChoicesFromSnow).toBe(false);
+    expect(result.current.isFetchFailed).toBe(false);
   });
 
-  it('replaces fallback options with live SNow choices after a successful fetch', async () => {
+  it('populates choiceOptions with live SNow choices after a successful fetch', async () => {
     vi.mocked(snowFetch).mockResolvedValueOnce(
       makeSysChoiceResponse([
         { element: 'impact', value: '1', label: 'High' },
@@ -52,9 +52,10 @@ describe('useSnowChoiceOptions', () => {
     expect(impactOptions).toHaveLength(4);
     expect(impactOptions[1]).toEqual({ value: '1', label: 'High' });
     expect(result.current.isLoadingChoices).toBe(false);
+    expect(result.current.isFetchFailed).toBe(false);
   });
 
-  it('keeps hardcoded fallbacks and sets isLoadingChoices false when snowFetch rejects', async () => {
+  it('sets isFetchFailed true and leaves choiceOptions empty when snowFetch rejects', async () => {
     vi.mocked(snowFetch).mockRejectedValueOnce(new Error('Relay not connected') as never);
 
     const { result } = renderHook(() => useSnowChoiceOptions());
@@ -63,9 +64,10 @@ describe('useSnowChoiceOptions', () => {
       expect(result.current.isLoadingChoices).toBe(false);
     });
 
-    // Fallbacks still present, not flagged as SNow data.
+    // No fallback values — the UI must show a "connect SNow" warning instead.
+    expect(result.current.isFetchFailed).toBe(true);
     expect(result.current.areChoicesFromSnow).toBe(false);
-    expect(result.current.choiceOptions['category']).toBeDefined();
+    expect(result.current.choiceOptions).toEqual({});
   });
 
   it('calls snowFetch with a sys_choice query targeting change_request fields', async () => {
@@ -82,8 +84,8 @@ describe('useSnowChoiceOptions', () => {
     expect(calledPath).toContain('name%3Dchange_request');
   });
 
-  it('merges live choices on top of fallbacks so unresolved fields keep their defaults', async () => {
-    // Only return choices for 'impact' — other fields should retain fallback options.
+  it('only includes the choices returned by SNow — no values are injected for unreturned fields', async () => {
+    // Only return choices for 'impact' — other fields should have no entries.
     vi.mocked(snowFetch).mockResolvedValueOnce(
       makeSysChoiceResponse([
         { element: 'impact', value: '1', label: 'High' },
@@ -94,9 +96,8 @@ describe('useSnowChoiceOptions', () => {
 
     await waitFor(() => expect(result.current.areChoicesFromSnow).toBe(true));
 
-    // Fallback for category still present.
-    const categoryOptions = result.current.choiceOptions['category'];
-    expect(categoryOptions.some((opt) => opt.label === 'Software')).toBe(true);
+    // 'category' was not returned — it must be absent, not filled with guessed values.
+    expect(result.current.choiceOptions['category']).toBeUndefined();
   });
 
   it('fires the SNow fetch only once on mount (no effect on re-render)', async () => {

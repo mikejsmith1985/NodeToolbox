@@ -51,7 +51,7 @@ const DEFAULT_PLANNING_CONTENT = {
   testPlan: '',
 };
 
-const { mockState, mockActions } = vi.hoisted(() => ({
+const { mockState, mockActions, mockSnowChoiceConfig } = vi.hoisted(() => ({
   mockState: {
     currentStep: 1,
     fetchMode: 'project' as 'project' | 'jql',
@@ -115,6 +115,11 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     reset: vi.fn(),
     createChg: vi.fn().mockResolvedValue(undefined),
   },
+  /** Mutable config read by the useSnowChoiceOptions mock — set per-test to simulate failure. */
+  mockSnowChoiceConfig: {
+    isFetchFailed: false,
+    isLoadingChoices: false,
+  },
 }));
 
 vi.mock('../hooks/useCrgState.ts', () => ({
@@ -130,10 +135,11 @@ vi.mock('../hooks/useCrgTemplates.ts', () => ({
   }),
 }));
 
-// Mock the choice options hook — returns minimal fallback maps so dropdown rendering works.
+// Mock the choice options hook — returns minimal option maps from live SNow (isFetchFailed=false by
+// default). Tests can set mockSnowChoiceConfig.isFetchFailed=true to simulate relay unavailability.
 vi.mock('../hooks/useSnowChoiceOptions.ts', () => ({
   useSnowChoiceOptions: () => ({
-    choiceOptions: {
+    choiceOptions: mockSnowChoiceConfig.isFetchFailed ? {} : {
       category:                [{ value: '', label: '' }, { value: 'Software', label: 'Software' }],
       type:                    [{ value: '', label: '' }, { value: 'Normal', label: 'Normal' }],
       u_environment:           [{ value: '', label: '' }, { value: 'Production', label: 'Production' }],
@@ -145,8 +151,9 @@ vi.mock('../hooks/useSnowChoiceOptions.ts', () => ({
       u_success_probability:   [{ value: '', label: '' }, { value: '100%', label: '100%' }],
       u_can_be_backed_out:     [{ value: '', label: '' }, { value: 'Yes', label: 'Yes' }],
     },
-    isLoadingChoices:   false,
-    areChoicesFromSnow: false,
+    isLoadingChoices:   mockSnowChoiceConfig.isLoadingChoices,
+    areChoicesFromSnow: !mockSnowChoiceConfig.isFetchFailed && !mockSnowChoiceConfig.isLoadingChoices,
+    isFetchFailed:      mockSnowChoiceConfig.isFetchFailed,
   }),
 }));
 
@@ -189,6 +196,9 @@ describe('CrgTab', () => {
     mockActions.fetchIssues.mockResolvedValue(undefined);
     mockActions.cloneFromChg.mockResolvedValue(undefined);
     mockActions.createChg.mockResolvedValue(undefined);
+    // Reset the choice options config so tests don't bleed state into each other.
+    mockSnowChoiceConfig.isFetchFailed = false;
+    mockSnowChoiceConfig.isLoadingChoices = false;
   });
 
   it('renders step 1 with the project key input and fetch button', () => {
@@ -488,5 +498,27 @@ describe('CrgTab', () => {
     expect(screen.getByLabelText('Implementation Plan')).toBeInTheDocument();
     expect(screen.getByLabelText('Backout Plan')).toBeInTheDocument();
     expect(screen.getByLabelText('Test Plan')).toBeInTheDocument();
+  });
+
+  it('shows a SNow relay warning and disables dropdowns on step 3 when the choice fetch failed', () => {
+    mockSnowChoiceConfig.isFetchFailed = true;
+    mockState.currentStep = 3;
+    render(<CrgTab />);
+
+    // Warning banner must be present so the user knows they need to connect SNow.
+    expect(screen.getByRole('alert')).toHaveTextContent(/SNow relay is not connected/);
+    // Dropdowns must be disabled — submitting without valid options would create a broken CHG.
+    expect(screen.getByRole('combobox', { name: 'Category' })).toBeDisabled();
+  });
+
+  it('shows a SNow relay warning and disables dropdowns on step 4 when the choice fetch failed', () => {
+    mockSnowChoiceConfig.isFetchFailed = true;
+    mockState.currentStep = 4;
+    render(<CrgTab />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/SNow relay is not connected/);
+    // All planning assessment dropdowns must be disabled.
+    const impactDropdown = screen.getByRole('combobox', { name: 'Impact' });
+    expect(impactDropdown).toBeDisabled();
   });
 });

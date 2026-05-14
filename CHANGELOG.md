@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **CRG — Named templates**: Save, apply, and delete named presets of step 3 Change Details fields (Basic Info + Planning Assessment + Planning Content). Templates are stored in localStorage and appear in a template picker panel at the top of the Change Details step.
-- **CRG — Dynamic SNow choice options**: Planning assessment dropdowns (Impact, Availability Impact, etc.) and Change Details dropdowns now fetch live choice options from the SNow `sys_choice` table in a single batch request. Falls back to hardcoded options silently if the relay is not connected.
+- **CRG — Dynamic SNow choice options**: Planning assessment dropdowns (Impact, Availability Impact, etc.) and Change Details dropdowns now fetch live choice options from the SNow `sys_choice` table in a single batch request. When the SNow relay is unavailable the dropdowns are disabled and an amber warning banner is shown — no hardcoded fallback values are used, preventing invalid data from being submitted to ServiceNow.
 
 ### Changed
 - **CRG — Fix version dropdown now shows only unreleased versions**: Released versions are excluded from the fix version selector, since a Change Request should target an upcoming release, not one already shipped.
