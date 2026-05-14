@@ -78,6 +78,12 @@ interface UseSnowChoiceOptionsResult {
   areChoicesFromSnow: boolean;
   /** True if the fetch failed for a reason other than the relay being disconnected. */
   isFetchFailed: boolean;
+  /**
+   * The human-readable error message from the last failed fetch attempt.
+   * null when no failure has occurred or when a new fetch is in progress.
+   * Surfaced in the UI so users know whether the issue is auth (401), timeout, etc.
+   */
+  fetchErrorMessage: string | null;
   /** True when the relay bridge is connected — drives whether the fetch is attempted. */
   isRelayConnected: boolean;
   /** Manually re-triggers the sys_choice fetch (e.g. after a transient SNow error). */
@@ -94,10 +100,13 @@ interface UseSnowChoiceOptionsResult {
  */
 export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
   // Start with an empty map — no defaults — so the UI never shows guessed values.
-  const [choiceOptions, setChoiceOptions] = useState<SnowChoiceOptionMap>({});
+  const [choiceOptions, setChoiceOptions]           = useState<SnowChoiceOptionMap>({});
   const [isLoadingChoices, setIsLoadingChoices]     = useState<boolean>(false);
   const [areChoicesFromSnow, setAreChoicesFromSnow] = useState<boolean>(false);
   const [isFetchFailed, setIsFetchFailed]           = useState<boolean>(false);
+  // The human-readable reason the last fetch failed (e.g. "401", "30s timeout").
+  // Cleared at the start of every new attempt so stale messages don't linger.
+  const [fetchErrorMessage, setFetchErrorMessage]   = useState<string | null>(null);
   // Bumped by retryFetch() to force a re-fetch even when isRelayConnected hasn't changed.
   const [fetchTrigger, setFetchTrigger] = useState(0);
 
@@ -118,6 +127,10 @@ export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
     let isCancelled = false;
 
     async function fetchChoiceOptions() {
+      // Clear any previous failure state immediately so the UI shows "Loading…" rather than
+      // displaying the old error banner while the new request is still in flight.
+      setIsFetchFailed(false);
+      setFetchErrorMessage(null);
       setIsLoadingChoices(true);
       try {
         const path = buildSysChoicePath(CHANGE_REQUEST_CHOICE_FIELDS);
@@ -127,10 +140,14 @@ export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
         setChoiceOptions(groupChoicesByField(response.result ?? []));
         setAreChoicesFromSnow(true);
         setIsFetchFailed(false);
-      } catch {
-        // Relay connected but SNow returned an error (expired session, network issue, etc.).
-        // Leave choiceOptions empty and surface the warning so the user can retry.
-        if (!isCancelled) setIsFetchFailed(true);
+      } catch (fetchError) {
+        // Relay connected but SNow returned an error (expired session, timeout, etc.).
+        // Capture the message so the user sees "401" or "timed out" rather than a generic banner.
+        if (!isCancelled) {
+          const errorText = fetchError instanceof Error ? fetchError.message : String(fetchError);
+          setIsFetchFailed(true);
+          setFetchErrorMessage(errorText);
+        }
       } finally {
         if (!isCancelled) setIsLoadingChoices(false);
       }
@@ -147,9 +164,18 @@ export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
    */
   const retryFetch = useCallback(() => {
     setIsFetchFailed(false);
+    setFetchErrorMessage(null);
     setAreChoicesFromSnow(false);
     setFetchTrigger((previousTrigger) => previousTrigger + 1);
   }, []);
 
-  return { choiceOptions, isLoadingChoices, areChoicesFromSnow, isFetchFailed, isRelayConnected, retryFetch };
+  return {
+    choiceOptions,
+    isLoadingChoices,
+    areChoicesFromSnow,
+    isFetchFailed,
+    fetchErrorMessage,
+    isRelayConnected,
+    retryFetch,
+  };
 }
