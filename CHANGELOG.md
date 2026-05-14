@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **SNow Hub — PRB lookup now queries by number instead of treating PRB numbers as sys_ids**: The PRB Generator previously called `/api/now/table/problem/PRBxxxxxxx`, which ServiceNow treats as a sys_id lookup and returns 404. PRB loading now uses `sysparm_query=number=PRBxxxxxxx`, normalizes the Table API response, and maps display values into the UI.
+- **CRG — dropdown choices no longer depend on direct `sys_choice` table access**: Change Request dropdowns now try SNow UI metadata endpoints first (`/api/now/ui/form/change_request/-1`, then `/api/now/ui/meta/change_request`) so choices come from the same metadata as the live Change form. Direct `sys_choice` access remains only as a final fallback when UI metadata returns no choices, avoiding 403 failures on locked-down instances.
 - **CRG — 401 session-expiry now shows actionable recovery guidance**: When the SNow relay is active but the `sys_choice` fetch returns HTTP 401, the warning banner now includes a plain-English hint: *"Your ServiceNow session has expired. Go to your SNow tab, log back in, then click Retry."* Similar hints are shown for 403 (permission error) and timeout failures. Unrecognized errors still display the raw message for diagnostics.
 
 ### Fixed

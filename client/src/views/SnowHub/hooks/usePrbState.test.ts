@@ -25,6 +25,20 @@ const MOCK_PROBLEM_RECORD = {
   assignedTo: null,
 };
 
+const MOCK_SERVICE_NOW_PROBLEM_RESPONSE = {
+  result: [
+    {
+      sys_id:            'problem-1',
+      number:            'PRB0001234',
+      short_description: 'Checkout flow fails under load',
+      description:       'Users are unable to complete checkout during peak traffic.',
+      state:             'Open',
+      severity:          '2 - High',
+      assigned_to:       '',
+    },
+  ],
+};
+
 describe('usePrbState', () => {
   afterEach(() => {
     vi.clearAllMocks();
@@ -48,7 +62,7 @@ describe('usePrbState', () => {
   });
 
   it('stores PRB details and clears the error after a successful fetch', async () => {
-    vi.mocked(snowFetch).mockResolvedValue(MOCK_PROBLEM_RECORD);
+    vi.mocked(snowFetch).mockResolvedValue(MOCK_SERVICE_NOW_PROBLEM_RESPONSE);
     const { result } = renderHook(() => usePrbState());
 
     act(() => {
@@ -64,6 +78,24 @@ describe('usePrbState', () => {
       expect(result.current.state.fetchError).toBeNull();
       expect(result.current.state.defectSummaryTemplate).toContain('PRB0001234');
     });
+  });
+
+  it('loads a PRB by number query instead of using the PRB number as a sys_id path segment', async () => {
+    vi.mocked(snowFetch).mockResolvedValue(MOCK_SERVICE_NOW_PROBLEM_RESPONSE);
+    const { result } = renderHook(() => usePrbState());
+
+    act(() => {
+      result.current.actions.setPrbNumber('prb0001234');
+    });
+
+    await act(async () => {
+      await result.current.actions.fetchPrb();
+    });
+
+    const calledPath = vi.mocked(snowFetch).mock.calls[0][0] as string;
+    expect(calledPath).toContain('/api/now/table/problem?');
+    expect(calledPath).toContain('sysparm_query=number%3DPRB0001234');
+    expect(calledPath).not.toContain('/api/now/table/problem/PRB0001234');
   });
 
   it('stores a fetch error when the ServiceNow request fails', async () => {
@@ -84,7 +116,7 @@ describe('usePrbState', () => {
   });
 
   it('resets the PRB state back to its initial values', async () => {
-    vi.mocked(snowFetch).mockResolvedValue(MOCK_PROBLEM_RECORD);
+    vi.mocked(snowFetch).mockResolvedValue(MOCK_SERVICE_NOW_PROBLEM_RESPONSE);
     vi.mocked(jiraPost).mockResolvedValue({ key: 'ABC-123' });
     const { result } = renderHook(() => usePrbState());
 

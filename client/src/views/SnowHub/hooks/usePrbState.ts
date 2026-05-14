@@ -16,6 +16,13 @@ interface SnowPrbRecord {
   assignedTo: SnowUser | null;
 }
 
+type ServiceNowFieldValue = string | { value?: unknown; display_value?: unknown };
+type ServiceNowProblemRecord = Record<string, ServiceNowFieldValue | undefined>;
+
+interface ServiceNowProblemQueryResponse {
+  result: ServiceNowProblemRecord[];
+}
+
 interface PrbState {
   prbNumber: string;
   prbData: SnowPrbRecord | null;
@@ -40,13 +47,16 @@ interface PrbActions {
 }
 
 const EMPTY_VALUE = '';
-const PRB_LOOKUP_PATH_PREFIX = '/api/now/table/problem/';
+const PROBLEM_TABLE_PATH = '/api/now/table/problem';
+const PROBLEM_LOOKUP_FIELDS = 'sys_id,number,short_description,description,state,severity,assigned_to';
+const SINGLE_RECORD_LIMIT = 1;
 const JIRA_ISSUE_CREATE_PATH = '/rest/api/2/issue';
 const PRB_REQUIRED_MESSAGE = 'PRB number is required.';
 const PROJECT_REQUIRED_MESSAGE = 'Jira project key is required before creating issues.';
 const PRB_REQUIRED_FOR_CREATION_MESSAGE = 'Load a PRB before creating Jira issues.';
 const PRB_FETCH_FAILURE_MESSAGE = 'Failed to fetch PRB details';
 const ISSUE_CREATE_FAILURE_MESSAGE = 'Failed to create Jira issues';
+const PRB_NOT_FOUND_PREFIX = 'No PRB found with number:';
 
 function createInitialPrbState(): PrbState {
   return {
@@ -87,8 +97,44 @@ function buildIssuePayload(
   };
 }
 
-function extractProblemRecord(problemResponse: SnowPrbRecord | { result: SnowPrbRecord }): SnowPrbRecord {
-  return 'result' in problemResponse ? problemResponse.result : problemResponse;
+function buildProblemLookupPath(prbNumber: string): string {
+  const encodedQuery = encodeURIComponent(`number=${prbNumber}`);
+  return `${PROBLEM_TABLE_PATH}?sysparm_query=${encodedQuery}&sysparm_limit=${SINGLE_RECORD_LIMIT}&sysparm_fields=${PROBLEM_LOOKUP_FIELDS}&sysparm_display_value=all`;
+}
+
+function extractServiceNowFieldValue(fieldValue: ServiceNowFieldValue | undefined): string {
+  if (fieldValue === undefined) {
+    return EMPTY_VALUE;
+  }
+  if (typeof fieldValue === 'string') {
+    return fieldValue;
+  }
+  return String(fieldValue.display_value ?? fieldValue.value ?? EMPTY_VALUE);
+}
+
+function extractServiceNowReference(fieldValue: ServiceNowFieldValue | undefined): SnowUser | null {
+  if (fieldValue === undefined || typeof fieldValue === 'string') {
+    return null;
+  }
+
+  const sysId = String(fieldValue.value ?? EMPTY_VALUE);
+  const name = String(fieldValue.display_value ?? EMPTY_VALUE);
+  if (!sysId && !name) {
+    return null;
+  }
+  return { sysId, name, email: EMPTY_VALUE };
+}
+
+function mapProblemRecord(problemRecord: ServiceNowProblemRecord): SnowPrbRecord {
+  return {
+    sysId:            extractServiceNowFieldValue(problemRecord.sys_id),
+    number:           extractServiceNowFieldValue(problemRecord.number),
+    shortDescription: extractServiceNowFieldValue(problemRecord.short_description),
+    description:      extractServiceNowFieldValue(problemRecord.description),
+    state:            extractServiceNowFieldValue(problemRecord.state),
+    severity:         extractServiceNowFieldValue(problemRecord.severity),
+    assignedTo:       extractServiceNowReference(problemRecord.assigned_to),
+  };
 }
 
 /**
@@ -110,10 +156,17 @@ export function usePrbState(): { state: PrbState; actions: PrbActions } {
     setState((previousState) => ({ ...previousState, isFetchingPrb: true, fetchError: null }));
 
     try {
-      const problemResponse = await snowFetch<SnowPrbRecord | { result: SnowPrbRecord }>(
-        `${PRB_LOOKUP_PATH_PREFIX}${state.prbNumber}`,
+      const normalizedPrbNumber = state.prbNumber.trim().toUpperCase();
+      const problemResponse = await snowFetch<ServiceNowProblemQueryResponse>(
+        buildProblemLookupPath(normalizedPrbNumber),
       );
-      const problemRecord = extractProblemRecord(problemResponse);
+
+      const rawProblemRecord = problemResponse.result[0];
+      if (!rawProblemRecord) {
+        throw new Error(`${PRB_NOT_FOUND_PREFIX} ${normalizedPrbNumber}`);
+      }
+
+      const problemRecord = mapProblemRecord(rawProblemRecord);
       setState((previousState) => ({
         ...previousState,
         prbData: problemRecord,

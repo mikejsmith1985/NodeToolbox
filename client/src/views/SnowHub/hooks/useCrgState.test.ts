@@ -425,11 +425,11 @@ describe('useCrgState', () => {
       expect(result.current.state.isCloning).toBe(false);
       expect(result.current.state.cloneError).toBeNull();
       expect(result.current.state.generatedShortDescription).toBe('Deploy v2');
-      expect(result.current.state.chgBasicInfo.category).toBe('Software');
-      expect(result.current.state.chgBasicInfo.changeType).toBe('Normal');
+      expect(result.current.state.chgBasicInfo.category).toBe('software');
+      expect(result.current.state.chgBasicInfo.changeType).toBe('normal');
       expect(result.current.state.chgBasicInfo.assignmentGroup).toEqual({ sysId: 'grp-001', displayName: 'Platform Team' });
       expect(result.current.state.chgBasicInfo.assignedTo).toEqual({ sysId: 'usr-002', displayName: 'Jane Smith' });
-      expect(result.current.state.chgPlanningAssessment.impact).toBe('2 - Medium');
+      expect(result.current.state.chgPlanningAssessment.impact).toBe('2');
       expect(result.current.state.chgPlanningContent.implementationPlan).toBe('Run script');
     });
 
@@ -531,11 +531,11 @@ describe('useCrgState', () => {
 
       act(() => {
         result.current.actions.setChgBasicInfo({
-          category:        'Software',
-          changeType:      'Normal',
+          category:        'software',
+          changeType:      'normal',
           assignmentGroup: { sysId: 'grp-001', displayName: 'Platform Team' },
         });
-        result.current.actions.setChgPlanningAssessment({ impact: '2 - Medium' });
+        result.current.actions.setChgPlanningAssessment({ impact: '2' });
         result.current.actions.setChgPlanningContent({ implementationPlan: 'Deploy via script' });
       });
 
@@ -547,10 +547,10 @@ describe('useCrgState', () => {
         (vi.mocked(snowFetch).mock.calls[0][1] as RequestInit).body as string,
       ) as Record<string, unknown>;
 
-      expect(bodyString.category).toBe('Software');
-      expect(bodyString.type).toBe('Normal');
+      expect(bodyString.category).toBe('software');
+      expect(bodyString.type).toBe('normal');
       expect(bodyString.assignment_group).toBe('grp-001');
-      expect(bodyString.impact).toBe('2 - Medium');
+      expect(bodyString.impact).toBe('2');
       expect(bodyString.implementation_plan).toBe('Deploy via script');
     });
 

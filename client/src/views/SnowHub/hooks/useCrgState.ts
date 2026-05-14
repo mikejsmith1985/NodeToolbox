@@ -318,6 +318,21 @@ function extractStringValue(field: unknown): string {
 }
 
 /**
+ * Extracts the stored SNow value for choice fields. Choice dropdowns submit the internal
+ * value (not the display label), so cloned CHGs must populate state with the same value.
+ */
+function extractChoiceValue(field: unknown): string {
+  if (!field) return EMPTY_VALUE;
+  if (typeof field === 'string') return field;
+  if (typeof field === 'object' && field !== null) {
+    const snowField = field as Record<string, unknown>;
+    if ('value' in snowField) return String(snowField.value ?? EMPTY_VALUE);
+    if ('display_value' in snowField) return String(snowField.display_value ?? EMPTY_VALUE);
+  }
+  return EMPTY_VALUE;
+}
+
+/**
  * Extracts a SnowReference (sys_id + display name) from a SNow reference field.
  * SNow returns { value: sys_id, display_value: displayName } for reference fields
  * when sysparm_display_value=all is included in the request.
@@ -630,9 +645,9 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
         generatedJustification:    extractStringValue(chg.justification),
         generatedRiskImpact:       extractStringValue(chg.risk_impact_analysis),
         chgBasicInfo: {
-          category:        extractStringValue(chg.category),
-          changeType:      extractStringValue(chg.type),
-          environment:     extractStringValue(chg.u_environment),
+          category:        extractChoiceValue(chg.category),
+          changeType:      extractChoiceValue(chg.type),
+          environment:     extractChoiceValue(chg.u_environment),
           requestedBy:     extractSnowReference(chg.requested_by),
           configItem:      extractSnowReference(chg.cmdb_ci),
           assignmentGroup: extractSnowReference(chg.assignment_group),
@@ -643,13 +658,13 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
           isExpedited:     extractStringValue(chg.u_expedited) === 'true',
         },
         chgPlanningAssessment: {
-          impact:                        extractStringValue(chg.impact),
-          systemAvailabilityImplication: extractStringValue(chg.u_availability_impact),
-          hasBeenTested:                 extractStringValue(chg.u_change_tested),
-          impactedPersonsAware:          extractStringValue(chg.u_impacted_persons_aware),
-          hasBeenPerformedPreviously:    extractStringValue(chg.u_performed_previously),
-          successProbability:            extractStringValue(chg.u_success_probability),
-          canBeBackedOut:                extractStringValue(chg.u_can_be_backed_out),
+          impact:                        extractChoiceValue(chg.impact),
+          systemAvailabilityImplication: extractChoiceValue(chg.u_availability_impact),
+          hasBeenTested:                 extractChoiceValue(chg.u_change_tested),
+          impactedPersonsAware:          extractChoiceValue(chg.u_impacted_persons_aware),
+          hasBeenPerformedPreviously:    extractChoiceValue(chg.u_performed_previously),
+          successProbability:            extractChoiceValue(chg.u_success_probability),
+          canBeBackedOut:                extractChoiceValue(chg.u_can_be_backed_out),
         },
         chgPlanningContent: {
           implementationPlan: extractStringValue(chg.implementation_plan),
