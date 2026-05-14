@@ -76,12 +76,20 @@ interface PlanningStepExtras {
   onEnhanceWithRovo: () => void;
   /** Dynamic choice options fetched from SNow sys_choice for planning dropdowns. */
   choiceOptions: SnowChoiceOptionMap;
+  /** True while the sys_choice fetch is still in flight. */
+  isLoadingChoices: boolean;
+  /** True when the sys_choice fetch failed — options are unavailable and user must connect SNow. */
+  isFetchFailed: boolean;
 }
 
 /** Additional props for the Change Details step — templates and dynamic choice options. */
 interface ChangeDetailsExtras {
   /** Dynamic choice options fetched from SNow sys_choice for basic info dropdowns. */
   choiceOptions: SnowChoiceOptionMap;
+  /** True while the sys_choice fetch is still in flight. */
+  isLoadingChoices: boolean;
+  /** True when the sys_choice fetch failed — options are unavailable and user must connect SNow. */
+  isFetchFailed: boolean;
   templates: CrgTemplate[];
   saveTemplate: (name: string, data: Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>) => string;
   deleteTemplate: (templateId: string) => void;
@@ -270,7 +278,7 @@ function ReviewIssuesStep({ state, actions }: CrgStepProps) {
   );
 }
 
-function ChangeDetailsStep({ state, actions, choiceOptions, templates, saveTemplate, deleteTemplate }: CrgStepProps & ChangeDetailsExtras) {
+function ChangeDetailsStep({ state, actions, choiceOptions, isLoadingChoices, isFetchFailed, templates, saveTemplate, deleteTemplate }: CrgStepProps & ChangeDetailsExtras) {
   // Local state for the template picker and save-as-template flow.
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [isSavePromptVisible, setIsSavePromptVisible] = useState<boolean>(false);
@@ -312,15 +320,39 @@ function ChangeDetailsStep({ state, actions, choiceOptions, templates, saveTempl
   const { chgBasicInfo: basicInfo } = state;
   const isCloneInputDisabled = state.isCloning;
 
-  // Resolve dynamic choice options for the three basic-info dropdowns, falling back to empty lists
-  // (useSnowChoiceOptions guarantees the map always has at least the hardcoded fallback values).
+  // Resolve dynamic choice options for the three basic-info dropdowns.
+  // These are empty until the SNow relay is connected and the sys_choice fetch succeeds.
   const categoryOptions    = choiceOptions['category']      ?? [];
   const changeTypeOptions  = choiceOptions['type']          ?? [];
   const environmentOptions = choiceOptions['u_environment'] ?? [];
 
+  /**
+   * Renders the options for a single dropdown. Shows a loading placeholder while in-flight
+   * or a "connect SNow" message when the fetch failed — prevents any hardcoded guesses.
+   */
+  function renderDropdownOptions(options: { value: string; label: string }[]) {
+    if (isLoadingChoices) {
+      return <option disabled value="">Loading options…</option>;
+    }
+    if (isFetchFailed) {
+      return <option disabled value="">Connect SNow relay to load options</option>;
+    }
+    return options.map((option) => (
+      <option key={option.label} value={option.label}>{option.label || 'Select…'}</option>
+    ));
+  }
+
   return (
     <section className={styles.section}>
       <StepHeading currentStep={state.currentStep} />
+
+      {/* Shown when the sys_choice fetch failed — warn the user that dropdowns need SNow. */}
+      {isFetchFailed ? (
+        <p className={styles.choiceUnavailableWarning} role="alert">
+          ⚠ SNow relay is not connected — dropdown options could not be loaded.
+          Activate the relay in the connection bar, then reload this page.
+        </p>
+      ) : null}
 
       {/* Saved Templates panel — apply a previously saved set of field values in one click */}
       <div className={styles.clonePanel}>
@@ -422,36 +454,33 @@ function ChangeDetailsStep({ state, actions, choiceOptions, templates, saveTempl
           <span className={styles.fieldLabel}>Category</span>
           <select
             className={styles.input}
+            disabled={isFetchFailed || isLoadingChoices}
             onChange={(event) => handleBasicInfoChange('category', event.target.value)}
             value={basicInfo.category}
           >
-            {categoryOptions.map((option) => (
-              <option key={option.label} value={option.label}>{option.label || 'Select…'}</option>
-            ))}
+            {renderDropdownOptions(categoryOptions)}
           </select>
         </label>
         <label className={styles.fieldGroup}>
           <span className={styles.fieldLabel}>Change Type</span>
           <select
             className={styles.input}
+            disabled={isFetchFailed || isLoadingChoices}
             onChange={(event) => handleBasicInfoChange('changeType', event.target.value)}
             value={basicInfo.changeType}
           >
-            {changeTypeOptions.map((option) => (
-              <option key={option.label} value={option.label}>{option.label || 'Select…'}</option>
-            ))}
+            {renderDropdownOptions(changeTypeOptions)}
           </select>
         </label>
         <label className={styles.fieldGroup}>
           <span className={styles.fieldLabel}>Environment</span>
           <select
             className={styles.input}
+            disabled={isFetchFailed || isLoadingChoices}
             onChange={(event) => handleBasicInfoChange('environment', event.target.value)}
             value={basicInfo.environment}
           >
-            {environmentOptions.map((option) => (
-              <option key={option.label} value={option.label}>{option.label || 'Select…'}</option>
-            ))}
+            {renderDropdownOptions(environmentOptions)}
           </select>
         </label>
 
@@ -520,7 +549,7 @@ function ChangeDetailsStep({ state, actions, choiceOptions, templates, saveTempl
   );
 }
 
-function PlanningStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo, choiceOptions }: CrgStepProps & PlanningStepExtras) {
+function PlanningStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo, choiceOptions, isLoadingChoices, isFetchFailed }: CrgStepProps & PlanningStepExtras) {
   function handleGeneratedFieldChange(fieldName: GeneratedFieldName, event: ChangeEvent<HTMLTextAreaElement>): void {
     actions.updateGeneratedField(fieldName, event.target.value);
   }
@@ -545,22 +574,36 @@ function PlanningStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo, choic
     <section className={styles.section}>
       <StepHeading currentStep={state.currentStep} />
 
+      {/* Shown when the sys_choice fetch failed — warn the user that dropdowns need SNow. */}
+      {isFetchFailed ? (
+        <p className={styles.choiceUnavailableWarning} role="alert">
+          ⚠ SNow relay is not connected — dropdown options could not be loaded.
+          Activate the relay in the connection bar, then reload this page.
+        </p>
+      ) : null}
+
       {/* Planning assessment dropdowns — seven risk/readiness evaluations resolved from live SNow choices */}
       <div className={styles.assessmentGrid}>
         {PLANNING_ASSESSMENT_ROWS.map((row) => {
-          // Resolve live options from SNow; hook guarantees at least the hardcoded fallback.
           const rowOptions = choiceOptions[row.snowFieldName] ?? [];
           return (
             <label className={styles.fieldGroup} key={row.fieldKey}>
               <span className={styles.fieldLabel}>{row.label}</span>
               <select
                 className={styles.input}
+                disabled={isFetchFailed || isLoadingChoices}
                 onChange={(event) => handleAssessmentChange(row.fieldKey, event)}
                 value={assessment[row.fieldKey]}
               >
-                {rowOptions.map((option) => (
-                  <option key={option.label} value={option.label}>{option.label || 'Select…'}</option>
-                ))}
+                {isLoadingChoices ? (
+                  <option disabled value="">Loading options…</option>
+                ) : isFetchFailed ? (
+                  <option disabled value="">Connect SNow relay to load options</option>
+                ) : (
+                  rowOptions.map((option) => (
+                    <option key={option.label} value={option.label}>{option.label || 'Select…'}</option>
+                  ))
+                )}
               </select>
             </label>
           );
@@ -835,7 +878,7 @@ export default function CrgTab() {
   const { state, actions } = useCrgState();
   const { isUnlocked, verifyPassphrase, buildPrompt } = useRovoAssist();
   const { templates, saveTemplate, deleteTemplate } = useCrgTemplates();
-  const { choiceOptions } = useSnowChoiceOptions();
+  const { choiceOptions, isLoadingChoices, isFetchFailed } = useSnowChoiceOptions();
 
   // Modal visibility and passphrase input state for the hidden activation flow.
   const [isPassphraseModalVisible, setIsPassphraseModalVisible] = useState(false);
@@ -912,10 +955,14 @@ export default function CrgTab() {
     isRovoUnlocked:    isUnlocked,
     onEnhanceWithRovo: handleEnhanceWithRovo,
     choiceOptions,
+    isLoadingChoices,
+    isFetchFailed,
   };
 
   const changeDetailsExtras: ChangeDetailsExtras = {
     choiceOptions,
+    isLoadingChoices,
+    isFetchFailed,
     templates,
     saveTemplate,
     deleteTemplate,

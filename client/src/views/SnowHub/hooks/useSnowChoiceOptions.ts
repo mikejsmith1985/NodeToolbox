@@ -1,6 +1,6 @@
 // useSnowChoiceOptions — Fetches planning dropdown choices from the SNow sys_choice table.
-// Falls back to hardcoded options when the relay is unavailable or the request fails.
-// This ensures the dropdowns always match the options a user would see in ServiceNow itself.
+// When the relay is unavailable the options map is left empty and isFetchFailed is set true
+// so the UI can show a clear "connect SNow" warning instead of guessing at valid values.
 
 import { useEffect, useState } from 'react';
 
@@ -28,80 +28,6 @@ const CHANGE_REQUEST_CHOICE_FIELDS = [
   'u_success_probability',
   'u_can_be_backed_out',
 ] as const;
-
-type ChangeRequestChoiceField = (typeof CHANGE_REQUEST_CHOICE_FIELDS)[number];
-
-// ── Hardcoded fallbacks used when the SNow relay is unavailable ──
-// These represent typical enterprise SNow option sets and are shown until
-// the live options load, or permanently if the relay/sys_choice fetch fails.
-const FALLBACK_OPTIONS: Record<ChangeRequestChoiceField, SnowChoiceOption[]> = {
-  category: [
-    { value: '',               label: '' },
-    { value: 'Software',       label: 'Software' },
-    { value: 'Hardware',       label: 'Hardware' },
-    { value: 'Network',        label: 'Network' },
-    { value: 'Infrastructure', label: 'Infrastructure' },
-    { value: 'Database',       label: 'Database' },
-    { value: 'Security',       label: 'Security' },
-    { value: 'Other',          label: 'Other' },
-  ],
-  type: [
-    { value: '',          label: '' },
-    { value: 'Normal',    label: 'Normal' },
-    { value: 'Standard',  label: 'Standard' },
-    { value: 'Emergency', label: 'Emergency' },
-  ],
-  u_environment: [
-    { value: '',                   label: '' },
-    { value: 'Production',         label: 'Production' },
-    { value: 'Production Fix',     label: 'Production Fix' },
-    { value: 'Development',        label: 'Development' },
-    { value: 'Test/QA',            label: 'Test/QA' },
-    { value: 'Staging',            label: 'Staging' },
-    { value: 'Disaster Recovery',  label: 'Disaster Recovery' },
-  ],
-  impact: [
-    { value: '',           label: '' },
-    { value: '1 - High',   label: '1 - High' },
-    { value: '2 - Medium', label: '2 - Medium' },
-    { value: '3 - Low',    label: '3 - Low' },
-  ],
-  u_availability_impact: [
-    { value: '',             label: '' },
-    { value: 'Interruption', label: 'Interruption' },
-    { value: 'Degradation',  label: 'Degradation' },
-    { value: 'No Impact',    label: 'No Impact' },
-  ],
-  u_change_tested: [
-    { value: '',    label: '' },
-    { value: 'Yes', label: 'Yes' },
-    { value: 'No',  label: 'No' },
-  ],
-  u_impacted_persons_aware: [
-    { value: '',    label: '' },
-    { value: 'Yes', label: 'Yes' },
-    { value: 'No',  label: 'No' },
-  ],
-  u_performed_previously: [
-    { value: '',    label: '' },
-    { value: 'Yes', label: 'Yes' },
-    { value: 'No',  label: 'No' },
-  ],
-  u_success_probability: [
-    { value: '',               label: '' },
-    { value: '100%',           label: '100%' },
-    { value: '90-99%',         label: '90-99%' },
-    { value: '70-89%',         label: '70-89%' },
-    { value: '50-69%',         label: '50-69%' },
-    { value: 'Less than 50%',  label: 'Less than 50%' },
-  ],
-  u_can_be_backed_out: [
-    { value: '',          label: '' },
-    { value: 'Yes',       label: 'Yes' },
-    { value: 'No',        label: 'No' },
-    { value: 'Partially', label: 'Partially' },
-  ],
-};
 
 interface SysChoiceRecord {
   element: string;
@@ -143,26 +69,27 @@ function groupChoicesByField(records: SysChoiceRecord[]): SnowChoiceOptionMap {
 }
 
 interface UseSnowChoiceOptionsResult {
-  /** Options per field name — guaranteed to have at least the hardcoded fallbacks. */
+  /** Options per field name — populated only after a successful SNow fetch. Empty when unavailable. */
   choiceOptions: SnowChoiceOptionMap;
   /** True while the sys_choice fetch is in flight. */
   isLoadingChoices: boolean;
-  /** True if the live fetch succeeded (options are from SNow, not hardcoded). */
+  /** True if the live fetch succeeded (options are from SNow). */
   areChoicesFromSnow: boolean;
+  /** True if the fetch failed — caller should show a "SNow relay required" warning to the user. */
+  isFetchFailed: boolean;
 }
 
 /**
- * Fetches all change_request dropdown choices from the SNow sys_choice table in one
- * API call, then replaces the hardcoded fallback options with the live SNow values.
- * If the relay is unavailable or the request fails, the hardcoded fallbacks remain.
+ * Fetches all change_request dropdown choices from the SNow sys_choice table in one API call.
+ * Returns empty option maps when the relay is unavailable — callers should surface a warning
+ * rather than letting users select potentially invalid hardcoded values.
  */
 export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
-  const [choiceOptions, setChoiceOptions] = useState<SnowChoiceOptionMap>(
-    // Start with hardcoded fallbacks so the dropdowns are usable immediately.
-    () => ({ ...FALLBACK_OPTIONS }),
-  );
+  // Start with an empty map — no defaults — so the UI never shows guessed values.
+  const [choiceOptions, setChoiceOptions] = useState<SnowChoiceOptionMap>({});
   const [isLoadingChoices, setIsLoadingChoices]   = useState<boolean>(false);
   const [areChoicesFromSnow, setAreChoicesFromSnow] = useState<boolean>(false);
+  const [isFetchFailed, setIsFetchFailed]           = useState<boolean>(false);
 
   useEffect(() => {
     let isCancelled = false;
@@ -174,15 +101,13 @@ export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
         const response = await snowFetch<SysChoiceResponse>(path);
         if (isCancelled) return;
 
-        const liveOptions = groupChoicesByField(response.result ?? []);
-
-        // Merge live options over the fallbacks — fields with no live data keep
-        // their fallback options so the UI never shows an empty dropdown.
-        setChoiceOptions((previous) => ({ ...previous, ...liveOptions }));
+        setChoiceOptions(groupChoicesByField(response.result ?? []));
         setAreChoicesFromSnow(true);
+        setIsFetchFailed(false);
       } catch {
-        // Relay not connected, session expired, or SNow returned an error —
-        // silently stay with hardcoded fallbacks.
+        // Relay not connected, session expired, or SNow returned an error.
+        // Leave choiceOptions empty and signal to the UI that connection is needed.
+        if (!isCancelled) setIsFetchFailed(true);
       } finally {
         if (!isCancelled) setIsLoadingChoices(false);
       }
@@ -193,5 +118,5 @@ export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
     return () => { isCancelled = true; };
   }, []);
 
-  return { choiceOptions, isLoadingChoices, areChoicesFromSnow };
+  return { choiceOptions, isLoadingChoices, areChoicesFromSnow, isFetchFailed };
 }
