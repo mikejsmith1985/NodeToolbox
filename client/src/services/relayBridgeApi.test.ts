@@ -40,14 +40,14 @@ describe('relayBridgeApi', () => {
     await expect(fetchRelayStatus('snow')).rejects.toThrow('Relay status check failed: 503');
   });
 
-  it('registerRelay posts the expected JSON payload', async () => {
+  it('registerRelay sends the target system as a query parameter', async () => {
     vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200 } as Response);
 
     await expect(registerRelay('snow')).resolves.toBeUndefined();
-    expect(fetch).toHaveBeenCalledWith('/api/relay-bridge/register', {
+    expect(fetch).toHaveBeenCalledWith('/api/relay-bridge/register?sys=snow', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sys: 'snow' }),
+      body: JSON.stringify({}),
     });
   });
 

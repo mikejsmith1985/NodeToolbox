@@ -114,6 +114,8 @@ interface PlanningStepExtras {
   isFetchFailed: boolean;
   /** True when the SNow relay bridge is connected (drives whether dropdowns can load). */
   isRelayConnected: boolean;
+  /** True when the relay has detected SNow's g_ck session token. */
+  hasRelaySessionToken: boolean;
   /** Manually re-triggers the sys_choice fetch after a transient error. */
   retryFetch: () => void;
   /**
@@ -133,6 +135,8 @@ interface ChangeDetailsExtras {
   isFetchFailed: boolean;
   /** True when the SNow relay bridge is connected (drives whether dropdowns can load). */
   isRelayConnected: boolean;
+  /** True when the relay has detected SNow's g_ck session token. */
+  hasRelaySessionToken: boolean;
   /** Manually re-triggers the sys_choice fetch after a transient error. */
   retryFetch: () => void;
   /**
@@ -328,7 +332,20 @@ function ReviewIssuesStep({ state, actions }: CrgStepProps) {
   );
 }
 
-function ChangeDetailsStep({ state, actions, choiceOptions, isLoadingChoices, isFetchFailed, isRelayConnected, retryFetch, fetchErrorMessage, templates, saveTemplate, deleteTemplate }: CrgStepProps & ChangeDetailsExtras) {
+function ChangeDetailsStep({
+  state,
+  actions,
+  choiceOptions,
+  isLoadingChoices,
+  isFetchFailed,
+  isRelayConnected,
+  hasRelaySessionToken,
+  retryFetch,
+  fetchErrorMessage,
+  templates,
+  saveTemplate,
+  deleteTemplate,
+}: CrgStepProps & ChangeDetailsExtras) {
   // Local state for the template picker and save-as-template flow.
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [isSavePromptVisible, setIsSavePromptVisible] = useState<boolean>(false);
@@ -375,6 +392,7 @@ function ChangeDetailsStep({ state, actions, choiceOptions, isLoadingChoices, is
   const categoryOptions    = choiceOptions['category']      ?? [];
   const changeTypeOptions  = choiceOptions['type']          ?? [];
   const environmentOptions = choiceOptions['u_environment'] ?? [];
+  const canLoadChoiceOptions = isRelayConnected && hasRelaySessionToken;
 
   /**
    * Renders the options for a single dropdown. Shows a loading placeholder while in-flight,
@@ -387,6 +405,9 @@ function ChangeDetailsStep({ state, actions, choiceOptions, isLoadingChoices, is
     }
     if (!isRelayConnected) {
       return <option disabled value="">Connect SNow relay to load options</option>;
+    }
+    if (!hasRelaySessionToken) {
+      return <option disabled value="">Waiting for SNow session token…</option>;
     }
     if (isFetchFailed) {
       return <option disabled value="">Load failed — click Retry above</option>;
@@ -404,6 +425,11 @@ function ChangeDetailsStep({ state, actions, choiceOptions, isLoadingChoices, is
       {!isRelayConnected && !isFetchFailed ? (
         <p className={styles.choiceUnavailableWarning} role="alert">
           ⚠ SNow relay not connected — dropdown options will load automatically once connected.
+        </p>
+      ) : isRelayConnected && !hasRelaySessionToken && !isFetchFailed ? (
+        <p className={styles.choiceUnavailableWarning} role="alert">
+          ⚠ SNow relay is connected, but ServiceNow has not exposed the session token yet. Wait for the SNow page
+          to fully load, then click the latest NodeToolbox SNow Relay bookmarklet again.
         </p>
       ) : isFetchFailed ? (
         <p className={styles.choiceUnavailableWarning} role="alert">
@@ -516,9 +542,9 @@ function ChangeDetailsStep({ state, actions, choiceOptions, isLoadingChoices, is
       <div className={styles.detailsGrid}>
         <label className={styles.fieldGroup}>
           <span className={styles.fieldLabel}>Category</span>
-          <select
-            className={styles.input}
-            disabled={isFetchFailed || !isRelayConnected || isLoadingChoices}
+            <select
+              className={styles.input}
+              disabled={isFetchFailed || !canLoadChoiceOptions || isLoadingChoices}
             onChange={(event) => handleBasicInfoChange('category', event.target.value)}
             value={basicInfo.category}
           >
@@ -529,7 +555,7 @@ function ChangeDetailsStep({ state, actions, choiceOptions, isLoadingChoices, is
           <span className={styles.fieldLabel}>Change Type</span>
           <select
             className={styles.input}
-            disabled={isFetchFailed || !isRelayConnected || isLoadingChoices}
+            disabled={isFetchFailed || !canLoadChoiceOptions || isLoadingChoices}
             onChange={(event) => handleBasicInfoChange('changeType', event.target.value)}
             value={basicInfo.changeType}
           >
@@ -540,7 +566,7 @@ function ChangeDetailsStep({ state, actions, choiceOptions, isLoadingChoices, is
           <span className={styles.fieldLabel}>Environment</span>
           <select
             className={styles.input}
-            disabled={isFetchFailed || !isRelayConnected || isLoadingChoices}
+            disabled={isFetchFailed || !canLoadChoiceOptions || isLoadingChoices}
             onChange={(event) => handleBasicInfoChange('environment', event.target.value)}
             value={basicInfo.environment}
           >
@@ -613,7 +639,19 @@ function ChangeDetailsStep({ state, actions, choiceOptions, isLoadingChoices, is
   );
 }
 
-function PlanningStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo, choiceOptions, isLoadingChoices, isFetchFailed, isRelayConnected, retryFetch, fetchErrorMessage }: CrgStepProps & PlanningStepExtras) {
+function PlanningStep({
+  state,
+  actions,
+  isRovoUnlocked,
+  onEnhanceWithRovo,
+  choiceOptions,
+  isLoadingChoices,
+  isFetchFailed,
+  isRelayConnected,
+  hasRelaySessionToken,
+  retryFetch,
+  fetchErrorMessage,
+}: CrgStepProps & PlanningStepExtras) {
   function handleGeneratedFieldChange(fieldName: GeneratedFieldName, event: ChangeEvent<HTMLTextAreaElement>): void {
     actions.updateGeneratedField(fieldName, event.target.value);
   }
@@ -633,6 +671,7 @@ function PlanningStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo, choic
   }
 
   const { chgPlanningAssessment: assessment, chgPlanningContent: planContent } = state;
+  const canLoadChoiceOptions = isRelayConnected && hasRelaySessionToken;
 
   return (
     <section className={styles.section}>
@@ -642,6 +681,11 @@ function PlanningStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo, choic
       {!isRelayConnected && !isFetchFailed ? (
         <p className={styles.choiceUnavailableWarning} role="alert">
           ⚠ SNow relay not connected — dropdown options will load automatically once connected.
+        </p>
+      ) : isRelayConnected && !hasRelaySessionToken && !isFetchFailed ? (
+        <p className={styles.choiceUnavailableWarning} role="alert">
+          ⚠ SNow relay is connected, but ServiceNow has not exposed the session token yet. Wait for the SNow page
+          to fully load, then click the latest NodeToolbox SNow Relay bookmarklet again.
         </p>
       ) : isFetchFailed ? (
         <p className={styles.choiceUnavailableWarning} role="alert">
@@ -665,7 +709,7 @@ function PlanningStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo, choic
               <span className={styles.fieldLabel}>{row.label}</span>
               <select
                 className={styles.input}
-                disabled={isFetchFailed || !isRelayConnected || isLoadingChoices}
+                disabled={isFetchFailed || !canLoadChoiceOptions || isLoadingChoices}
                 onChange={(event) => handleAssessmentChange(row.fieldKey, event)}
                 value={assessment[row.fieldKey]}
               >
@@ -673,6 +717,8 @@ function PlanningStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo, choic
                   <option disabled value="">Loading options…</option>
                 ) : !isRelayConnected ? (
                   <option disabled value="">Connect SNow relay to load options</option>
+                ) : !hasRelaySessionToken ? (
+                  <option disabled value="">Waiting for SNow session token…</option>
                 ) : isFetchFailed ? (
                   <option disabled value="">Load failed — click Retry above</option>
                 ) : (
@@ -954,7 +1000,15 @@ export default function CrgTab() {
   const { state, actions } = useCrgState();
   const { isUnlocked, verifyPassphrase, buildPrompt } = useRovoAssist();
   const { templates, saveTemplate, deleteTemplate } = useCrgTemplates();
-  const { choiceOptions, isLoadingChoices, isFetchFailed, isRelayConnected, retryFetch, fetchErrorMessage } = useSnowChoiceOptions();
+  const {
+    choiceOptions,
+    isLoadingChoices,
+    isFetchFailed,
+    isRelayConnected,
+    hasRelaySessionToken,
+    retryFetch,
+    fetchErrorMessage,
+  } = useSnowChoiceOptions();
 
   // Modal visibility and passphrase input state for the hidden activation flow.
   const [isPassphraseModalVisible, setIsPassphraseModalVisible] = useState(false);
@@ -1081,6 +1135,7 @@ export default function CrgTab() {
     isLoadingChoices,
     isFetchFailed,
     isRelayConnected,
+    hasRelaySessionToken,
     retryFetch,
     fetchErrorMessage,
   };
@@ -1090,6 +1145,7 @@ export default function CrgTab() {
     isLoadingChoices,
     isFetchFailed,
     isRelayConnected,
+    hasRelaySessionToken,
     retryFetch,
     fetchErrorMessage,
     templates,

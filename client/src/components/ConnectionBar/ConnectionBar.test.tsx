@@ -106,6 +106,23 @@ describe('ConnectionBar', () => {
     expect(screen.getByText('SNow')).toHaveClass(styles.ready);
   });
 
+  it('warns when the SNow relay is active before the g_ck token is ready', () => {
+    useConnectionStore.setState({
+      relayBridgeStatus: {
+        isConnected: true,
+        lastPingAt: null,
+        system: 'snow',
+        version: null,
+        hasSessionToken: false,
+      },
+    });
+
+    render(<ConnectionBar />);
+    fireEvent.click(screen.getByText('SNow'));
+
+    expect(screen.getByText(/session token is not ready/i)).toBeInTheDocument();
+  });
+
   it('opens the SNow panel when the SNow indicator is clicked', () => {
     render(<ConnectionBar />);
 
@@ -172,7 +189,7 @@ describe('ConnectionBar', () => {
 
   it('does not show Open ServiceNow button when relay is already active', () => {
     useConnectionStore.setState({
-      relayBridgeStatus: { isConnected: true, lastPingAt: null, system: 'snow', version: null },
+      relayBridgeStatus: { isConnected: true, lastPingAt: null, system: 'snow', version: null, hasSessionToken: true },
       proxyStatus: buildProxyStatusWithSnowUrl('https://snow.example.com'),
     });
 

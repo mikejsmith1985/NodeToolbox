@@ -34,9 +34,20 @@ describe('GET /api/relay-bridge/status', () => {
     expect(response.body.system).toBe('snow');
   });
 
-  it('reports active after the bookmarklet registers', async () => {
+  it('does not report connected until the bookmarklet has started polling', async () => {
     const app = buildTestApp();
     await request(app).post('/api/relay-bridge/register?sys=snow').send({});
+    const response = await request(app).get('/api/relay-bridge/status?sys=snow');
+    expect(response.body.isConnected).toBe(false);
+  });
+
+  it('reports connected after the bookmarklet registers and polls', async () => {
+    const app = buildTestApp();
+    await request(app).post('/api/relay-bridge/register?sys=snow').send({});
+    await request(app)
+      .post('/api/relay-bridge/request')
+      .send({ sys: 'snow', id: 'status-ready', method: 'GET', path: '/api/now/table/sys_user' });
+    await request(app).get('/api/relay-bridge/poll?sys=snow');
     const response = await request(app).get('/api/relay-bridge/status?sys=snow');
     expect(response.body.isConnected).toBe(true);
   });
@@ -75,6 +86,31 @@ describe('POST /api/relay-bridge/register', () => {
     const response = await request(buildTestApp())
       .post('/api/relay-bridge/register?sys=unknown')
       .send({});
+    expect(response.status).toBe(400);
+  });
+});
+
+describe('POST /api/relay-bridge/session-token', () => {
+  it('updates hasSessionToken without requiring a fresh registration', async () => {
+    const testApp = buildTestApp();
+    await request(testApp).post('/api/relay-bridge/register?sys=snow&gck=0').send({});
+
+    const beforeTokenResponse = await request(testApp).get('/api/relay-bridge/status?sys=snow');
+    expect(beforeTokenResponse.body.hasSessionToken).toBe(false);
+
+    const tokenResponse = await request(testApp).post('/api/relay-bridge/session-token?sys=snow&gck=1').send({});
+    expect(tokenResponse.status).toBe(200);
+    expect(tokenResponse.body.hasSessionToken).toBe(true);
+
+    const afterTokenResponse = await request(testApp).get('/api/relay-bridge/status?sys=snow');
+    expect(afterTokenResponse.body.hasSessionToken).toBe(true);
+  });
+
+  it('rejects an unknown sys value with HTTP 400', async () => {
+    const response = await request(buildTestApp())
+      .post('/api/relay-bridge/session-token?sys=unknown&gck=1')
+      .send({});
+
     expect(response.status).toBe(400);
   });
 });
@@ -194,15 +230,23 @@ describe('getBridgeStatus()', () => {
     expect(relayBridgeRouter.getBridgeStatus('unknown-system')).toBe(false);
   });
 
-  it('returns true after the snow bookmarklet registers', async () => {
+  it('returns true after the snow bookmarklet registers and polls', async () => {
     const testApp = buildTestApp();
     await request(testApp).post('/api/relay-bridge/register?sys=snow').send({});
+    await request(testApp)
+      .post('/api/relay-bridge/request')
+      .send({ sys: 'snow', id: 'bridge-status-ready', method: 'GET', path: '/test' });
+    await request(testApp).get('/api/relay-bridge/poll?sys=snow');
     expect(relayBridgeRouter.getBridgeStatus('snow')).toBe(true);
   });
 
   it('returns false again after the snow bookmarklet deregisters', async () => {
     const testApp = buildTestApp();
     await request(testApp).post('/api/relay-bridge/register?sys=snow').send({});
+    await request(testApp)
+      .post('/api/relay-bridge/request')
+      .send({ sys: 'snow', id: 'bridge-status-deregister', method: 'GET', path: '/test' });
+    await request(testApp).get('/api/relay-bridge/poll?sys=snow');
     await request(testApp).post('/api/relay-bridge/deregister?sys=snow').send({});
     expect(relayBridgeRouter.getBridgeStatus('snow')).toBe(false);
   });
@@ -210,6 +254,10 @@ describe('getBridgeStatus()', () => {
   it('tracks snow and jira channels independently', async () => {
     const testApp = buildTestApp();
     await request(testApp).post('/api/relay-bridge/register?sys=snow').send({});
+    await request(testApp)
+      .post('/api/relay-bridge/request')
+      .send({ sys: 'snow', id: 'bridge-status-independent', method: 'GET', path: '/test' });
+    await request(testApp).get('/api/relay-bridge/poll?sys=snow');
     // Registering snow must not affect jira
     expect(relayBridgeRouter.getBridgeStatus('snow')).toBe(true);
     expect(relayBridgeRouter.getBridgeStatus('jira')).toBe(false);

@@ -524,6 +524,23 @@ describe('useCrgState', () => {
       expect(result.current.state.isSubmitting).toBe(false);
     });
 
+    it('clears the persisted draft after successful CHG creation so future visits start fresh', async () => {
+      const STORAGE_KEY = 'ntbx-crg-state';
+      vi.mocked(snowFetch).mockResolvedValue({ result: { number: 'CHG0001234' } } as never);
+
+      const { result } = await advanceToChangeDetailsStep();
+
+      await act(async () => {
+        await waitFor(() => expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull());
+        await result.current.actions.createChg();
+      });
+
+      expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+      const { result: freshHook } = renderHook(() => useCrgState());
+      expect(freshHook.current.state.currentStep).toBe(1);
+      expect(freshHook.current.state.projectKey).toBe('');
+    });
+
     it('includes basic info and planning fields in the POST body when they are set', async () => {
       vi.mocked(snowFetch).mockResolvedValue({ result: { number: 'CHG0005678' } } as never);
 

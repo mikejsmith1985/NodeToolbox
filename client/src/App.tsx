@@ -10,7 +10,7 @@ import { ConnectionBar } from './components/ConnectionBar/index.ts';
 import { ToastProvider } from './components/Toast/ToastProvider.tsx';
 import { useProxyStatus } from './hooks/useProxyStatus.ts';
 import { useRelayBridge } from './hooks/useRelayBridge.ts';
-import { RELAY_RETURN_ROUTE_KEY } from './services/browserRelay.ts';
+import { parseRelayReturnRoute, RELAY_RETURN_ROUTE_KEY } from './services/browserRelay.ts';
 import { useSettingsStore } from './store/settingsStore.ts';
 import type { RelaySystem } from './types/relay.ts';
 import ArtView from './views/ArtView/ArtView.tsx';
@@ -54,10 +54,12 @@ export default function App() {
   // back to wherever they were (e.g. /snow-hub) so their CRG wizard data is still there.
   // openSnowRelay() saves the pathname before opening the relay tab.
   useEffect(() => {
-    const returnRoute = localStorage.getItem(RELAY_RETURN_ROUTE_KEY);
+    const returnRoute = parseRelayReturnRoute(localStorage.getItem(RELAY_RETURN_ROUTE_KEY));
     if (returnRoute && returnRoute !== '/') {
       localStorage.removeItem(RELAY_RETURN_ROUTE_KEY);
       navigate(returnRoute, { replace: true });
+    } else {
+      localStorage.removeItem(RELAY_RETURN_ROUTE_KEY);
     }
   }, [navigate]);
 

@@ -34,10 +34,10 @@ export async function fetchRelayStatus(system: RelaySystem): Promise<RelayBridge
 
 /** Registers this React client as a relay consumer for the given system. */
 export async function registerRelay(system: RelaySystem): Promise<void> {
-  const response = await fetch(`${RELAY_BASE}/register`, {
+  const response = await fetch(`${RELAY_BASE}/register?sys=${system}`, {
     method: 'POST',
     headers: { 'Content-Type': JSON_CONTENT_TYPE },
-    body: JSON.stringify({ sys: system }),
+    body: JSON.stringify({}),
   });
 
   assertSuccessfulResponse(response, 'Relay registration failed');

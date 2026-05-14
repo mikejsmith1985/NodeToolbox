@@ -125,6 +125,16 @@
   color: var(--color-text-muted, rgba(255,255,255,0.5));
 }
 
+.panelWarning {
+  margin: 0;
+  padding: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--color-warning-text, #fbbf24);
+  font-size: 12px;
+}
+
 /* Bookmarklet drag link styled as a button */
 .bookmarkletLink {
   display: inline-flex;

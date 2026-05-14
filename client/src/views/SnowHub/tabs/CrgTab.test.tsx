@@ -120,6 +120,7 @@ const { mockState, mockActions, mockSnowChoiceConfig } = vi.hoisted(() => ({
     isFetchFailed: false,
     isLoadingChoices: false,
     isRelayConnected: true,
+    hasRelaySessionToken: true,
   },
 }));
 
@@ -157,6 +158,7 @@ vi.mock('../hooks/useSnowChoiceOptions.ts', () => ({
     isFetchFailed:      mockSnowChoiceConfig.isFetchFailed,
     fetchErrorMessage:  mockSnowChoiceConfig.isFetchFailed ? 'SNow relay fetch failed: 401' : null,
     isRelayConnected:   mockSnowChoiceConfig.isRelayConnected,
+    hasRelaySessionToken: mockSnowChoiceConfig.hasRelaySessionToken,
     retryFetch:         vi.fn(),
   }),
 }));
@@ -204,6 +206,7 @@ describe('CrgTab', () => {
     mockSnowChoiceConfig.isFetchFailed = false;
     mockSnowChoiceConfig.isLoadingChoices = false;
     mockSnowChoiceConfig.isRelayConnected = true;
+    mockSnowChoiceConfig.hasRelaySessionToken = true;
   });
 
   it('renders step 1 with the project key input and fetch button', () => {
