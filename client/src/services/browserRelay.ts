@@ -12,9 +12,11 @@ const SNOW_RELAY_WINDOW_NAME = '__crg_snow';
 const RELAY_OPENED_STORAGE_KEY = 'tbxRelayOpened';
 
 /**
- * localStorage key used to survive the relay activation page reload.
- * When the bookmarklet runs it navigates this window to the NodeToolbox root,
- * so openSnowRelay stores the current path here and App.tsx reads it on remount.
+ * localStorage key used as a safety-net restore point for the relay activation flow.
+ * In normal operation the bookmarklet uses window.open("","toolbox") which focuses the
+ * NodeToolbox window WITHOUT navigating it — no reload occurs and this key is never read.
+ * The key is kept so that if an older bookmarklet (with the URL-navigation pattern) is
+ * still in a user's bookmark bar, App.tsx can still redirect them back to the correct route.
  */
 export const RELAY_RETURN_ROUTE_KEY = 'ntbx-relay-return-route';
 
@@ -40,7 +42,13 @@ export const SNOW_RELAY_BOOKMARKLET_CODE = [
   'async function executeRelayRequest(relayRequest){try{var requestHeaders={"Content-Type":"application/json","Accept":"application/json","X-Requested-With":"XMLHttpRequest"};if(gck)requestHeaders["X-UserToken"]=gck;if(relayRequest.authHeader)requestHeaders["Authorization"]=relayRequest.authHeader;var requestController=new AbortController();var timeoutId=setTimeout(function(){requestController.abort();},25000);var requestOptions={method:relayRequest.method||"GET",credentials:relayRequest.authHeader?"omit":"include",headers:requestHeaders,signal:requestController.signal};if(relayRequest.body!=null)requestOptions.body=JSON.stringify(relayRequest.body);var targetUrl=location.origin+relayRequest.path;var serviceNowResponse=await fetch(targetUrl,requestOptions);clearTimeout(timeoutId);var responseText=await serviceNowResponse.text();await postRelayResult({id:relayRequest.id,sys:sys,ok:serviceNowResponse.ok,status:serviceNowResponse.status,data:responseText,error:null});}catch(requestError){await postRelayResult({id:relayRequest.id,sys:sys,ok:false,status:0,data:null,error:requestError.message});}}',
   'async function pollRelayLoop(){while(isRunning){try{var pollResponse=await fetch(relayServer+"/api/relay-bridge/poll?sys="+sys,{method:"GET",mode:"cors",cache:"no-store"});var pollPayload=await pollResponse.json();if(pollPayload&&pollPayload.request){await executeRelayRequest(pollPayload.request);}}catch(pollError){showRelayStatus("NodeToolbox relay polling failed - "+pollError.message,"#991b1b");await new Promise(function(resolve){setTimeout(resolve,2000);});}}}',
   'window.addEventListener("pagehide",function(){isRunning=false;try{navigator.sendBeacon(relayServer+"/api/relay-bridge/deregister?sys="+sys);}catch(beaconError){}});',
-  '(async function(){try{var registerResponse=await fetch(relayServer+"/api/relay-bridge/register?sys="+sys+"&gck="+(gck?"1":"0"),{method:"POST",mode:"cors",cache:"no-store"});if(!registerResponse.ok){throw new Error("HTTP "+registerResponse.status);}var label=gck?"\\u2713 g_ck found":"\\u26a0 no g_ck";showRelayStatus("\\uD83D\\uDD0C Relay Active \\u2014 "+label+" \\u2014 NodeToolbox Connected",gck?"#238636":"#b08800");try{window.open(relayServer,"toolbox");}catch(focusError){}pollRelayLoop();}catch(registerError){showRelayStatus("NodeToolbox relay failed - cannot reach local bridge: "+registerError.message,"#991b1b");alert("\\u274c NodeToolbox Relay\\n\\nCould not reach NodeToolbox at "+relayServer+".\\n\\nMake sure NodeToolbox is running, then click the bookmark again.\\n\\nDetails: "+registerError.message);}})();',
+  // Focus the NodeToolbox window by name WITHOUT navigating it.
+  // window.open("", "toolbox") finds the existing window and brings it to the foreground;
+  // passing an empty URL means the browser does not navigate the tab, so the React app
+  // keeps running exactly where it was — no reload, no state loss, no blank dropdown delay.
+  // Previously this passed relayServer as the URL which caused Chrome to navigate NodeToolbox
+  // to the root URL, reloading the entire React app and wiping all in-progress form data.
+  '(async function(){try{var registerResponse=await fetch(relayServer+"/api/relay-bridge/register?sys="+sys+"&gck="+(gck?"1":"0"),{method:"POST",mode:"cors",cache:"no-store"});if(!registerResponse.ok){throw new Error("HTTP "+registerResponse.status);}var label=gck?"\\u2713 g_ck found":"\\u26a0 no g_ck";showRelayStatus("\\uD83D\\uDD0C Relay Active \\u2014 "+label+" \\u2014 NodeToolbox Connected",gck?"#238636":"#b08800");try{window.open("","toolbox");}catch(focusError){}pollRelayLoop();}catch(registerError){showRelayStatus("NodeToolbox relay failed - cannot reach local bridge: "+registerError.message,"#991b1b");alert("\\u274c NodeToolbox Relay\\n\\nCould not reach NodeToolbox at "+relayServer+".\\n\\nMake sure NodeToolbox is running, then click the bookmark again.\\n\\nDetails: "+registerError.message);}})();',
   '})()',
 ].join('');
 
@@ -48,9 +56,10 @@ export const SNOW_RELAY_BOOKMARKLET_CODE = [
  * Opens ServiceNow in the same named relay tab used by the original ToolBox flow.
  * The bookmarklet click in that tab completes registration with the local bridge.
  *
- * Stores the current pathname in localStorage before opening, so the app can
- * navigate back to the exact page the user was on after the relay activation
- * reloads this window to the NodeToolbox root.
+ * Stores the current pathname in localStorage as a safety net for edge cases where
+ * an older bookmarklet (which called window.open with a URL) triggers a page reload.
+ * The current bookmarklet uses window.open("","toolbox") to focus without reloading,
+ * so this key is normally never consumed by App.tsx.
  */
 export function openSnowRelay(snowBaseUrl: string): boolean {
   const normalizedSnowBaseUrl = snowBaseUrl.trim();
@@ -58,8 +67,10 @@ export function openSnowRelay(snowBaseUrl: string): boolean {
     return false;
   }
 
-  // Persist current route so App.tsx can restore it after the bookmarklet navigates
-  // this window back to the NodeToolbox root URL.
+  // Store the current route as a safety net for older bookmarklet versions that
+  // navigate this window via window.open(url, "toolbox"). The current bookmarklet
+  // uses window.open("", "toolbox") which focuses without reloading, so this key
+  // is normally never consumed.
   localStorage.setItem(RELAY_RETURN_ROUTE_KEY, window.location.pathname);
 
   window.sessionStorage.setItem(RELAY_OPENED_STORAGE_KEY, '1');
