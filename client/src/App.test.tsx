@@ -73,7 +73,12 @@ vi.mock('./views/DsuBoard/DsuBoardView.tsx', () => ({
   default: () => <h1>DSU Board Mock</h1>,
 }));
 
+vi.mock('./views/SnowHub/SnowHubView.tsx', () => ({
+  default: () => <h1>SNow Hub Mock</h1>,
+}));
+
 import App from './App.tsx';
+import { RELAY_RETURN_ROUTE_KEY } from './services/browserRelay.ts';
 import { useSettingsStore } from './store/settingsStore.ts';
 
 const DEFAULT_PATH = '/';
@@ -192,5 +197,20 @@ describe('App shell', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'DSU Board Mock' })).toBeInTheDocument();
     });
+  });
+
+  it('restores the pre-relay route after the bookmarklet reloads the window to root', async () => {
+    // Simulate what openSnowRelay() writes before the bookmarklet triggers a page reload
+    localStorage.setItem(RELAY_RETURN_ROUTE_KEY, '/snow-hub');
+
+    renderApp(DEFAULT_PATH);
+
+    // App should navigate away from '/' to the stored return route
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'SNow Hub Mock' })).toBeInTheDocument();
+    });
+
+    // Key must be cleared so subsequent loads don't redirect again
+    expect(localStorage.getItem(RELAY_RETURN_ROUTE_KEY)).toBeNull();
   });
 });

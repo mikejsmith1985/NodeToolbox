@@ -4,12 +4,13 @@
 // routes placeholder views until later migration phases replace them.
 
 import { useEffect } from 'react';
-import { Link, Navigate, Route, Routes } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 
 import { ConnectionBar } from './components/ConnectionBar/index.ts';
 import { ToastProvider } from './components/Toast/ToastProvider.tsx';
 import { useProxyStatus } from './hooks/useProxyStatus.ts';
 import { useRelayBridge } from './hooks/useRelayBridge.ts';
+import { RELAY_RETURN_ROUTE_KEY } from './services/browserRelay.ts';
 import { useSettingsStore } from './store/settingsStore.ts';
 import type { RelaySystem } from './types/relay.ts';
 import ArtView from './views/ArtView/ArtView.tsx';
@@ -44,8 +45,21 @@ const RELAY_SYSTEM: RelaySystem = 'snow';
 
 /** Root layout shell for the React migration, including live status hooks and route selection. */
 export default function App() {
+  const navigate = useNavigate();
+
   useProxyStatus();
   useRelayBridge(RELAY_SYSTEM);
+
+  // After the SNow bookmarklet reloads this window to the root URL, navigate the user
+  // back to wherever they were (e.g. /snow-hub) so their CRG wizard data is still there.
+  // openSnowRelay() saves the pathname before opening the relay tab.
+  useEffect(() => {
+    const returnRoute = localStorage.getItem(RELAY_RETURN_ROUTE_KEY);
+    if (returnRoute && returnRoute !== '/') {
+      localStorage.removeItem(RELAY_RETURN_ROUTE_KEY);
+      navigate(returnRoute, { replace: true });
+    }
+  }, [navigate]);
 
   const theme = useSettingsStore((state) => state.theme);
 
