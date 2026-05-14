@@ -33,7 +33,7 @@ const GENERATED_FIELD_DEFINITIONS = [
 
 // ── Planning assessment row schema ──
 // Each row maps a form field (fieldKey in ChgPlanningAssessment) to its SNow choice field name.
-// Options are resolved at runtime from useSnowChoiceOptions so they match the live SNow instance.
+// Options are resolved at runtime from SNow form metadata so they match the live SNow instance.
 const PLANNING_ASSESSMENT_ROWS = [
   { label: 'Impact',                          fieldKey: 'impact',                        snowFieldName: 'impact' },
   { label: 'System Availability Implication',  fieldKey: 'systemAvailabilityImplication', snowFieldName: 'u_availability_impact' },
@@ -64,12 +64,26 @@ function resolveSnowFetchErrorHint(errorMessage: string): string | null {
     return 'Your ServiceNow session has expired. Go to your SNow tab, log back in, then click Retry.';
   }
   if (errorMessage.includes('403')) {
-    return 'Access denied by ServiceNow. Check that your account has permission to read sys_choice, then click Retry.';
+    return 'ServiceNow denied access to the live form metadata. Confirm you can open a new Change Request in SNow, then click Retry.';
   }
   if (errorMessage.includes('timed out') || errorMessage.includes('timeout')) {
     return 'The request to SNow timed out. Check that the relay bookmarklet tab is open and connected, then click Retry.';
   }
   return null;
+}
+
+function resolveStoredChoiceValue(currentValue: string, options: { value: string; label: string }[]): string {
+  if (!currentValue) {
+    return currentValue;
+  }
+
+  const valueMatch = options.find((option) => option.value === currentValue);
+  if (valueMatch) {
+    return currentValue;
+  }
+
+  const labelMatch = options.find((option) => option.label === currentValue);
+  return labelMatch?.value ?? currentValue;
 }
 
 type CrgHookResult = ReturnType<typeof useCrgState>;
@@ -92,11 +106,11 @@ interface CrgStepProps {
 interface PlanningStepExtras {
   isRovoUnlocked: boolean;
   onEnhanceWithRovo: () => void;
-  /** Dynamic choice options fetched from SNow sys_choice for planning dropdowns. */
+  /** Dynamic choice options fetched from SNow form metadata for planning dropdowns. */
   choiceOptions: SnowChoiceOptionMap;
   /** True while the sys_choice fetch is still in flight. */
   isLoadingChoices: boolean;
-  /** True when the sys_choice fetch failed — options are unavailable and user must connect SNow. */
+  /** True when the SNow metadata fetch failed — options are unavailable and user must connect SNow. */
   isFetchFailed: boolean;
   /** True when the SNow relay bridge is connected (drives whether dropdowns can load). */
   isRelayConnected: boolean;
@@ -111,11 +125,11 @@ interface PlanningStepExtras {
 
 /** Additional props for the Change Details step — templates and dynamic choice options. */
 interface ChangeDetailsExtras {
-  /** Dynamic choice options fetched from SNow sys_choice for basic info dropdowns. */
+  /** Dynamic choice options fetched from SNow form metadata for basic info dropdowns. */
   choiceOptions: SnowChoiceOptionMap;
   /** True while the sys_choice fetch is still in flight. */
   isLoadingChoices: boolean;
-  /** True when the sys_choice fetch failed — options are unavailable and user must connect SNow. */
+  /** True when the SNow metadata fetch failed — options are unavailable and user must connect SNow. */
   isFetchFailed: boolean;
   /** True when the SNow relay bridge is connected (drives whether dropdowns can load). */
   isRelayConnected: boolean;
@@ -357,7 +371,7 @@ function ChangeDetailsStep({ state, actions, choiceOptions, isLoadingChoices, is
   const isCloneInputDisabled = state.isCloning;
 
   // Resolve dynamic choice options for the three basic-info dropdowns.
-  // These are empty until the SNow relay is connected and the sys_choice fetch succeeds.
+  // These are empty until the SNow relay is connected and live form metadata loads.
   const categoryOptions    = choiceOptions['category']      ?? [];
   const changeTypeOptions  = choiceOptions['type']          ?? [];
   const environmentOptions = choiceOptions['u_environment'] ?? [];
@@ -378,7 +392,7 @@ function ChangeDetailsStep({ state, actions, choiceOptions, isLoadingChoices, is
       return <option disabled value="">Load failed — click Retry above</option>;
     }
     return options.map((option) => (
-      <option key={option.label} value={option.label}>{option.label || 'Select…'}</option>
+      <option key={`${option.value}-${option.label}`} value={option.value}>{option.label || 'Select…'}</option>
     ));
   }
 
@@ -663,7 +677,7 @@ function PlanningStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo, choic
                   <option disabled value="">Load failed — click Retry above</option>
                 ) : (
                   rowOptions.map((option) => (
-                    <option key={option.label} value={option.label}>{option.label || 'Select…'}</option>
+                    <option key={`${option.value}-${option.label}`} value={option.value}>{option.label || 'Select…'}</option>
                   ))
                 )}
               </select>
@@ -952,6 +966,53 @@ export default function CrgTab() {
   const [rovoPrompt, setRovoPrompt] = useState<string | null>(null);
 
   const issueCountSummary = useMemo(() => `${state.fetchedIssues.length} issue(s) loaded`, [state.fetchedIssues.length]);
+
+  useEffect(() => {
+    const categoryOptions = choiceOptions['category'] ?? [];
+    const changeTypeOptions = choiceOptions['type'] ?? [];
+    const environmentOptions = choiceOptions['u_environment'] ?? [];
+    const normalizedBasicInfo: Partial<ChgBasicInfo> = {};
+
+    const normalizedCategory = resolveStoredChoiceValue(state.chgBasicInfo.category, categoryOptions);
+    const normalizedChangeType = resolveStoredChoiceValue(state.chgBasicInfo.changeType, changeTypeOptions);
+    const normalizedEnvironment = resolveStoredChoiceValue(state.chgBasicInfo.environment, environmentOptions);
+
+    if (normalizedCategory !== state.chgBasicInfo.category) normalizedBasicInfo.category = normalizedCategory;
+    if (normalizedChangeType !== state.chgBasicInfo.changeType) normalizedBasicInfo.changeType = normalizedChangeType;
+    if (normalizedEnvironment !== state.chgBasicInfo.environment) normalizedBasicInfo.environment = normalizedEnvironment;
+
+    if (Object.keys(normalizedBasicInfo).length > 0) {
+      actions.setChgBasicInfo(normalizedBasicInfo);
+    }
+
+    const normalizedPlanningAssessment: Partial<ChgPlanningAssessment> = {};
+    for (const row of PLANNING_ASSESSMENT_ROWS) {
+      const rowOptions = choiceOptions[row.snowFieldName] ?? [];
+      const currentValue = state.chgPlanningAssessment[row.fieldKey];
+      const normalizedValue = resolveStoredChoiceValue(currentValue, rowOptions);
+      if (normalizedValue !== currentValue) {
+        normalizedPlanningAssessment[row.fieldKey] = normalizedValue;
+      }
+    }
+
+    if (Object.keys(normalizedPlanningAssessment).length > 0) {
+      actions.setChgPlanningAssessment(normalizedPlanningAssessment);
+    }
+  }, [
+    actions,
+    choiceOptions,
+    state.chgBasicInfo.category,
+    state.chgBasicInfo.changeType,
+    state.chgBasicInfo.environment,
+    state.chgPlanningAssessment,
+    state.chgPlanningAssessment.impact,
+    state.chgPlanningAssessment.systemAvailabilityImplication,
+    state.chgPlanningAssessment.hasBeenTested,
+    state.chgPlanningAssessment.impactedPersonsAware,
+    state.chgPlanningAssessment.hasBeenPerformedPreviously,
+    state.chgPlanningAssessment.successProbability,
+    state.chgPlanningAssessment.canBeBackedOut,
+  ]);
 
   // Listen for the hidden activation key combination: Ctrl+Alt+Z.
   // Only shows the modal when Rovo is not already unlocked.

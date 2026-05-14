@@ -141,16 +141,16 @@ vi.mock('../hooks/useCrgTemplates.ts', () => ({
 vi.mock('../hooks/useSnowChoiceOptions.ts', () => ({
   useSnowChoiceOptions: () => ({
     choiceOptions: mockSnowChoiceConfig.isFetchFailed ? {} : {
-      category:                [{ value: '', label: '' }, { value: 'Software', label: 'Software' }],
-      type:                    [{ value: '', label: '' }, { value: 'Normal', label: 'Normal' }],
-      u_environment:           [{ value: '', label: '' }, { value: 'Production', label: 'Production' }],
-      impact:                  [{ value: '', label: '' }, { value: '3 - Low', label: '3 - Low' }],
-      u_availability_impact:   [{ value: '', label: '' }, { value: 'No Impact', label: 'No Impact' }],
-      u_change_tested:         [{ value: '', label: '' }, { value: 'Yes', label: 'Yes' }],
-      u_impacted_persons_aware:[{ value: '', label: '' }, { value: 'Yes', label: 'Yes' }],
-      u_performed_previously:  [{ value: '', label: '' }, { value: 'Yes', label: 'Yes' }],
-      u_success_probability:   [{ value: '', label: '' }, { value: '100%', label: '100%' }],
-      u_can_be_backed_out:     [{ value: '', label: '' }, { value: 'Yes', label: 'Yes' }],
+      category:                [{ value: '', label: '' }, { value: 'software', label: 'Software' }],
+      type:                    [{ value: '', label: '' }, { value: 'normal', label: 'Normal' }],
+      u_environment:           [{ value: '', label: '' }, { value: 'prod', label: 'Production' }],
+      impact:                  [{ value: '', label: '' }, { value: '3', label: '3 - Low' }],
+      u_availability_impact:   [{ value: '', label: '' }, { value: 'no_impact', label: 'No Impact' }],
+      u_change_tested:         [{ value: '', label: '' }, { value: 'yes', label: 'Yes' }],
+      u_impacted_persons_aware:[{ value: '', label: '' }, { value: 'yes', label: 'Yes' }],
+      u_performed_previously:  [{ value: '', label: '' }, { value: 'yes', label: 'Yes' }],
+      u_success_probability:   [{ value: '', label: '' }, { value: '100', label: '100%' }],
+      u_can_be_backed_out:     [{ value: '', label: '' }, { value: 'yes', label: 'Yes' }],
     },
     isLoadingChoices:   mockSnowChoiceConfig.isLoadingChoices,
     areChoicesFromSnow: !mockSnowChoiceConfig.isFetchFailed && !mockSnowChoiceConfig.isLoadingChoices,
@@ -485,6 +485,31 @@ describe('CrgTab', () => {
     render(<CrgTab />);
 
     expect(screen.getByRole('combobox', { name: 'Category' })).toBeInTheDocument();
+  });
+
+  it('normalizes legacy display labels to SNow internal choice values after choices load', async () => {
+    mockState.currentStep = 3;
+    mockState.chgBasicInfo = {
+      ...mockState.chgBasicInfo,
+      category:    'Software',
+      changeType:  'Normal',
+      environment: 'Production',
+    };
+    mockState.chgPlanningAssessment = {
+      ...mockState.chgPlanningAssessment,
+      impact: '3 - Low',
+    };
+
+    render(<CrgTab />);
+
+    await waitFor(() => {
+      expect(mockActions.setChgBasicInfo).toHaveBeenCalledWith({
+        category:    'software',
+        changeType:  'normal',
+        environment: 'prod',
+      });
+    });
+    expect(mockActions.setChgPlanningAssessment).toHaveBeenCalledWith({ impact: '3' });
   });
 
   it('renders SnowLookupField stubs for reference fields on step 3', () => {
