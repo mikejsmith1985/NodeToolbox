@@ -4,9 +4,12 @@
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { ChgBasicInfo, ChgPlanningAssessment, ChgPlanningContent } from '../hooks/useCrgState.ts';
+import type { ChgBasicInfo, ChgPlanningAssessment, ChgPlanningContent, CrgTemplate } from '../hooks/useCrgState.ts';
 import { useCrgState } from '../hooks/useCrgState.ts';
+import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
 import { useRovoAssist } from '../hooks/useRovoAssist.ts';
+import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
+import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 import { SnowLookupField } from '../components/SnowLookupField.tsx';
 import styles from './CrgTab.module.css';
 
@@ -21,16 +24,6 @@ const STEP_DEFINITIONS = [
   { step: 6, label: 'Review & Create' },
 ] as const;
 
-// ── Hardcoded SNow dropdown option lists ──
-// These mirror the choice field values used in a standard SNow Change Request form.
-const CATEGORY_OPTIONS   = ['', 'Software', 'Hardware', 'Network', 'Infrastructure', 'Database', 'Security', 'Other'];
-const CHANGE_TYPE_OPTIONS = ['', 'Normal', 'Standard', 'Emergency'];
-const ENVIRONMENT_OPTIONS = ['', 'Production', 'Production Fix', 'Development', 'Test/QA', 'Staging', 'Disaster Recovery'];
-const IMPACT_OPTIONS      = ['', '1 - High', '2 - Medium', '3 - Low'];
-const AVAILABILITY_OPTIONS = ['', 'Interruption', 'Degradation', 'No Impact'];
-const YES_NO_OPTIONS       = ['', 'Yes', 'No'];
-const BACKED_OUT_OPTIONS   = ['', 'Yes', 'No', 'Partially'];
-const SUCCESS_PROB_OPTIONS = ['', '100%', '90-99%', '70-89%', '50-69%', 'Less than 50%'];
 const GENERATED_FIELD_DEFINITIONS = [
   { key: 'shortDescription', label: 'Short Description', valueKey: 'generatedShortDescription' },
   { key: 'description', label: 'Description', valueKey: 'generatedDescription' },
@@ -38,15 +31,17 @@ const GENERATED_FIELD_DEFINITIONS = [
   { key: 'riskImpact', label: 'Risk & Impact', valueKey: 'generatedRiskImpact' },
 ] as const;
 
-// Assessment dropdown row definitions — label + field key + option list for each Planning assessment.
+// ── Planning assessment row schema ──
+// Each row maps a form field (fieldKey in ChgPlanningAssessment) to its SNow choice field name.
+// Options are resolved at runtime from useSnowChoiceOptions so they match the live SNow instance.
 const PLANNING_ASSESSMENT_ROWS = [
-  { label: 'Impact',                         fieldKey: 'impact',                        options: IMPACT_OPTIONS },
-  { label: 'System Availability Implication', fieldKey: 'systemAvailabilityImplication', options: AVAILABILITY_OPTIONS },
-  { label: 'Has Been Tested',                fieldKey: 'hasBeenTested',                 options: YES_NO_OPTIONS },
-  { label: 'Impacted Persons Aware',         fieldKey: 'impactedPersonsAware',          options: YES_NO_OPTIONS },
-  { label: 'Performed Previously',           fieldKey: 'hasBeenPerformedPreviously',    options: YES_NO_OPTIONS },
-  { label: 'Success Probability',            fieldKey: 'successProbability',            options: SUCCESS_PROB_OPTIONS },
-  { label: 'Can Be Backed Out',              fieldKey: 'canBeBackedOut',                options: BACKED_OUT_OPTIONS },
+  { label: 'Impact',                          fieldKey: 'impact',                        snowFieldName: 'impact' },
+  { label: 'System Availability Implication',  fieldKey: 'systemAvailabilityImplication', snowFieldName: 'u_availability_impact' },
+  { label: 'Has Been Tested',                 fieldKey: 'hasBeenTested',                 snowFieldName: 'u_change_tested' },
+  { label: 'Impacted Persons Aware',          fieldKey: 'impactedPersonsAware',          snowFieldName: 'u_impacted_persons_aware' },
+  { label: 'Performed Previously',            fieldKey: 'hasBeenPerformedPreviously',    snowFieldName: 'u_performed_previously' },
+  { label: 'Success Probability',             fieldKey: 'successProbability',            snowFieldName: 'u_success_probability' },
+  { label: 'Can Be Backed Out',               fieldKey: 'canBeBackedOut',                snowFieldName: 'u_can_be_backed_out' },
 ] as const;
 
 const ENVIRONMENT_ROW_DEFINITIONS = [
@@ -79,6 +74,17 @@ interface CrgStepProps {
 interface PlanningStepExtras {
   isRovoUnlocked: boolean;
   onEnhanceWithRovo: () => void;
+  /** Dynamic choice options fetched from SNow sys_choice for planning dropdowns. */
+  choiceOptions: SnowChoiceOptionMap;
+}
+
+/** Additional props for the Change Details step — templates and dynamic choice options. */
+interface ChangeDetailsExtras {
+  /** Dynamic choice options fetched from SNow sys_choice for basic info dropdowns. */
+  choiceOptions: SnowChoiceOptionMap;
+  templates: CrgTemplate[];
+  saveTemplate: (name: string, data: Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>) => string;
+  deleteTemplate: (templateId: string) => void;
 }
 
 interface StepHeadingProps {
@@ -264,7 +270,12 @@ function ReviewIssuesStep({ state, actions }: CrgStepProps) {
   );
 }
 
-function ChangeDetailsStep({ state, actions }: CrgStepProps) {
+function ChangeDetailsStep({ state, actions, choiceOptions, templates, saveTemplate, deleteTemplate }: CrgStepProps & ChangeDetailsExtras) {
+  // Local state for the template picker and save-as-template flow.
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  const [isSavePromptVisible, setIsSavePromptVisible] = useState<boolean>(false);
+  const [newTemplateName, setNewTemplateName]         = useState<string>('');
+
   function handleBasicInfoChange<K extends keyof ChgBasicInfo>(
     fieldKey: K,
     value: ChgBasicInfo[K],
@@ -276,12 +287,107 @@ function ChangeDetailsStep({ state, actions }: CrgStepProps) {
     actions.setCloneChgNumber(event.target.value.toUpperCase());
   }
 
+  function handleApplyTemplate(): void {
+    const chosenTemplate = templates.find((template) => template.id === selectedTemplateId);
+    if (chosenTemplate) {
+      actions.applyTemplate(chosenTemplate);
+    }
+  }
+
+  function handleDeleteTemplate(): void {
+    deleteTemplate(selectedTemplateId);
+    setSelectedTemplateId('');
+  }
+
+  function handleSaveTemplate(): void {
+    saveTemplate(newTemplateName, {
+      chgBasicInfo:          state.chgBasicInfo,
+      chgPlanningAssessment: state.chgPlanningAssessment,
+      chgPlanningContent:    state.chgPlanningContent,
+    });
+    setNewTemplateName('');
+    setIsSavePromptVisible(false);
+  }
+
   const { chgBasicInfo: basicInfo } = state;
   const isCloneInputDisabled = state.isCloning;
+
+  // Resolve dynamic choice options for the three basic-info dropdowns, falling back to empty lists
+  // (useSnowChoiceOptions guarantees the map always has at least the hardcoded fallback values).
+  const categoryOptions    = choiceOptions['category']      ?? [];
+  const changeTypeOptions  = choiceOptions['type']          ?? [];
+  const environmentOptions = choiceOptions['u_environment'] ?? [];
 
   return (
     <section className={styles.section}>
       <StepHeading currentStep={state.currentStep} />
+
+      {/* Saved Templates panel — apply a previously saved set of field values in one click */}
+      <div className={styles.clonePanel}>
+        <h4 className={styles.panelSectionTitle}>Saved Templates</h4>
+        {templates.length > 0 ? (
+          <div className={styles.cloneInputRow}>
+            <select
+              aria-label="Select template"
+              className={styles.input}
+              onChange={(event) => setSelectedTemplateId(event.target.value)}
+              value={selectedTemplateId}
+            >
+              <option value="">Select a template…</option>
+              {templates.map((template) => (
+                <option key={template.id} value={template.id}>{template.name}</option>
+              ))}
+            </select>
+            <button
+              className={styles.secondaryButton}
+              disabled={!selectedTemplateId}
+              onClick={handleApplyTemplate}
+              type="button"
+            >
+              Apply
+            </button>
+            <button
+              className={styles.linkButton}
+              disabled={!selectedTemplateId}
+              onClick={handleDeleteTemplate}
+              type="button"
+            >
+              Delete
+            </button>
+          </div>
+        ) : (
+          <p className={styles.panelHint}>No templates saved yet.</p>
+        )}
+
+        {/* Inline save-as-template flow — shows a name input on demand */}
+        {isSavePromptVisible ? (
+          <div className={styles.cloneInputRow}>
+            <input
+              aria-label="Template name"
+              className={styles.input}
+              onChange={(event) => setNewTemplateName(event.target.value)}
+              placeholder="Template name…"
+              value={newTemplateName}
+            />
+            <button className={styles.secondaryButton} onClick={handleSaveTemplate} type="button">
+              Save
+            </button>
+            <button className={styles.linkButton} onClick={() => setIsSavePromptVisible(false)} type="button">
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div>
+            <button
+              className={styles.linkButton}
+              onClick={() => { setIsSavePromptVisible(true); setNewTemplateName(''); }}
+              type="button"
+            >
+              + Save current fields as template
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Clone-from-CHG panel — pre-fill all fields by looking up an existing change record */}
       <div className={styles.clonePanel}>
@@ -319,8 +425,8 @@ function ChangeDetailsStep({ state, actions }: CrgStepProps) {
             onChange={(event) => handleBasicInfoChange('category', event.target.value)}
             value={basicInfo.category}
           >
-            {CATEGORY_OPTIONS.map((option) => (
-              <option key={option} value={option}>{option || 'Select…'}</option>
+            {categoryOptions.map((option) => (
+              <option key={option.label} value={option.label}>{option.label || 'Select…'}</option>
             ))}
           </select>
         </label>
@@ -331,8 +437,8 @@ function ChangeDetailsStep({ state, actions }: CrgStepProps) {
             onChange={(event) => handleBasicInfoChange('changeType', event.target.value)}
             value={basicInfo.changeType}
           >
-            {CHANGE_TYPE_OPTIONS.map((option) => (
-              <option key={option} value={option}>{option || 'Select…'}</option>
+            {changeTypeOptions.map((option) => (
+              <option key={option.label} value={option.label}>{option.label || 'Select…'}</option>
             ))}
           </select>
         </label>
@@ -343,8 +449,8 @@ function ChangeDetailsStep({ state, actions }: CrgStepProps) {
             onChange={(event) => handleBasicInfoChange('environment', event.target.value)}
             value={basicInfo.environment}
           >
-            {ENVIRONMENT_OPTIONS.map((option) => (
-              <option key={option} value={option}>{option || 'Select…'}</option>
+            {environmentOptions.map((option) => (
+              <option key={option.label} value={option.label}>{option.label || 'Select…'}</option>
             ))}
           </select>
         </label>
@@ -414,7 +520,7 @@ function ChangeDetailsStep({ state, actions }: CrgStepProps) {
   );
 }
 
-function PlanningStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo }: CrgStepProps & PlanningStepExtras) {
+function PlanningStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo, choiceOptions }: CrgStepProps & PlanningStepExtras) {
   function handleGeneratedFieldChange(fieldName: GeneratedFieldName, event: ChangeEvent<HTMLTextAreaElement>): void {
     actions.updateGeneratedField(fieldName, event.target.value);
   }
@@ -439,22 +545,26 @@ function PlanningStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo }: Crg
     <section className={styles.section}>
       <StepHeading currentStep={state.currentStep} />
 
-      {/* Planning assessment dropdowns — seven risk/readiness evaluations required by SNow */}
+      {/* Planning assessment dropdowns — seven risk/readiness evaluations resolved from live SNow choices */}
       <div className={styles.assessmentGrid}>
-        {PLANNING_ASSESSMENT_ROWS.map((row) => (
-          <label className={styles.fieldGroup} key={row.fieldKey}>
-            <span className={styles.fieldLabel}>{row.label}</span>
-            <select
-              className={styles.input}
-              onChange={(event) => handleAssessmentChange(row.fieldKey, event)}
-              value={assessment[row.fieldKey]}
-            >
-              {row.options.map((option) => (
-                <option key={option} value={option}>{option || 'Select…'}</option>
-              ))}
-            </select>
-          </label>
-        ))}
+        {PLANNING_ASSESSMENT_ROWS.map((row) => {
+          // Resolve live options from SNow; hook guarantees at least the hardcoded fallback.
+          const rowOptions = choiceOptions[row.snowFieldName] ?? [];
+          return (
+            <label className={styles.fieldGroup} key={row.fieldKey}>
+              <span className={styles.fieldLabel}>{row.label}</span>
+              <select
+                className={styles.input}
+                onChange={(event) => handleAssessmentChange(row.fieldKey, event)}
+                value={assessment[row.fieldKey]}
+              >
+                {rowOptions.map((option) => (
+                  <option key={option.label} value={option.label}>{option.label || 'Select…'}</option>
+                ))}
+              </select>
+            </label>
+          );
+        })}
       </div>
 
       {/* Long-form planning text areas — standard SNow change_request fields */}
@@ -691,6 +801,7 @@ function renderCurrentStepPanel(
   state: CrgStateData,
   actions: CrgActionSet,
   planningExtras: PlanningStepExtras,
+  changeDetailsExtras: ChangeDetailsExtras,
 ) {
   if (state.currentStep === 1) {
     return <FetchIssuesStep actions={actions} state={state} />;
@@ -701,7 +812,7 @@ function renderCurrentStepPanel(
   }
 
   if (state.currentStep === 3) {
-    return <ChangeDetailsStep actions={actions} state={state} />;
+    return <ChangeDetailsStep actions={actions} state={state} {...changeDetailsExtras} />;
   }
 
   if (state.currentStep === 4) {
@@ -723,6 +834,8 @@ function renderCurrentStepPanel(
 export default function CrgTab() {
   const { state, actions } = useCrgState();
   const { isUnlocked, verifyPassphrase, buildPrompt } = useRovoAssist();
+  const { templates, saveTemplate, deleteTemplate } = useCrgTemplates();
+  const { choiceOptions } = useSnowChoiceOptions();
 
   // Modal visibility and passphrase input state for the hidden activation flow.
   const [isPassphraseModalVisible, setIsPassphraseModalVisible] = useState(false);
@@ -798,6 +911,14 @@ export default function CrgTab() {
   const planningExtras: PlanningStepExtras = {
     isRovoUnlocked:    isUnlocked,
     onEnhanceWithRovo: handleEnhanceWithRovo,
+    choiceOptions,
+  };
+
+  const changeDetailsExtras: ChangeDetailsExtras = {
+    choiceOptions,
+    templates,
+    saveTemplate,
+    deleteTemplate,
   };
 
   return (
@@ -810,7 +931,7 @@ export default function CrgTab() {
         <p className={styles.summaryPill}>{issueCountSummary}</p>
       </header>
       <StepIndicator currentStep={state.currentStep} />
-      {renderCurrentStepPanel(state, actions, planningExtras)}
+      {renderCurrentStepPanel(state, actions, planningExtras, changeDetailsExtras)}
 
       {/* Hidden passphrase modal — only visible after Ctrl+Alt+Z, never in documentation */}
       {isPassphraseModalVisible ? (

@@ -65,7 +65,7 @@ describe('useCrgState', () => {
     expect(result.current.state.projectKey).toBe('TOOL');
   });
 
-  it('fetches all fix versions (released and unreleased) when the project key changes', async () => {
+  it('fetches only unreleased fix versions when the project key changes', async () => {
     vi.mocked(jiraGet)
       .mockResolvedValueOnce([
         { id: '1', name: '1.2.3', released: false },
@@ -79,9 +79,10 @@ describe('useCrgState', () => {
     });
 
     await waitFor(() => {
-      // Both unreleased and released versions should appear — users may patch
-      // already-released versions in a hotfix / change request.
-      expect(result.current.state.availableFixVersions).toEqual(['1.2.3', '1.2.2']);
+      // Only the unreleased version should appear — released versions are already shipped
+      // and should not be targeted by a new Change Request.
+      expect(result.current.state.availableFixVersions).toEqual(['1.2.3']);
+      expect(result.current.state.availableFixVersions).not.toContain('1.2.2');
     });
   });
 
@@ -562,6 +563,46 @@ describe('useCrgState', () => {
 
       expect(result.current.state.submitResult).toContain('SNow relay not connected');
       expect(result.current.state.isSubmitting).toBe(false);
+    });
+  });
+
+  describe('applyTemplate', () => {
+    it('fills chgBasicInfo, chgPlanningAssessment, and chgPlanningContent from the template', () => {
+      const { result } = renderHook(() => useCrgState());
+
+      const template = {
+        id: 'tpl-1',
+        name: 'Standard Release',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        chgBasicInfo: {
+          category: 'Software', changeType: 'Normal', environment: 'Production',
+          requestedBy:     { sysId: 'u-001', displayName: 'Alice' },
+          configItem:      { sysId: '', displayName: '' },
+          assignmentGroup: { sysId: 'grp-1', displayName: 'Platform' },
+          assignedTo:      { sysId: '', displayName: '' },
+          changeManager:   { sysId: '', displayName: '' },
+          tester:          { sysId: '', displayName: '' },
+          serviceManager:  { sysId: '', displayName: '' },
+          isExpedited:     false,
+        },
+        chgPlanningAssessment: {
+          impact: '3 - Low', systemAvailabilityImplication: 'No Impact',
+          hasBeenTested: 'Yes', impactedPersonsAware: 'Yes',
+          hasBeenPerformedPreviously: 'Yes', successProbability: '100%', canBeBackedOut: 'Yes',
+        },
+        chgPlanningContent: {
+          implementationPlan: 'Run pipeline.', backoutPlan: 'Revert tag.', testPlan: 'Smoke tests.',
+        },
+      };
+
+      act(() => {
+        result.current.actions.applyTemplate(template);
+      });
+
+      expect(result.current.state.chgBasicInfo.category).toBe('Software');
+      expect(result.current.state.chgBasicInfo.assignmentGroup.displayName).toBe('Platform');
+      expect(result.current.state.chgPlanningAssessment.impact).toBe('3 - Low');
+      expect(result.current.state.chgPlanningContent.implementationPlan).toBe('Run pipeline.');
     });
   });
 });

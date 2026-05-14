@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **CRG — Named templates**: Save, apply, and delete named presets of step 3 Change Details fields (Basic Info + Planning Assessment + Planning Content). Templates are stored in localStorage and appear in a template picker panel at the top of the Change Details step.
+- **CRG — Dynamic SNow choice options**: Planning assessment dropdowns (Impact, Availability Impact, etc.) and Change Details dropdowns now fetch live choice options from the SNow `sys_choice` table in a single batch request. Falls back to hardcoded options silently if the relay is not connected.
+
+### Changed
+- **CRG — Fix version dropdown now shows only unreleased versions**: Released versions are excluded from the fix version selector, since a Change Request should target an upcoming release, not one already shipped.
+- **CRG — Clone CHG 401 error now shows session-expiry guidance**: When a CHG clone attempt returns HTTP 401, the error message now advises the user to check their SNow session and re-activate the relay.
+
+### Added
 - **SNow Hub CRG — 6-step Change Request wizard**: The CRG wizard expands from 5 steps to 6 with a new **Change Details** step (step 3) between "Review Issues" and "Planning & Content". Change Details includes:
   - Clone from existing CHG: enter a CHG number and click "Load CHG" to pre-fill all fields from an existing ticket
   - Basic CHG info: Category, Change Type, Environment, and Is Expedited dropdowns

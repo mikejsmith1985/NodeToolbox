@@ -135,6 +135,20 @@ function createDefaultChgPlanningContent(): ChgPlanningContent {
   };
 }
 
+/**
+ * A saved set of CHG field values that can be applied with a single click.
+ * Stores all dropdown selections and planning content so repeat changes
+ * (e.g. the same team's recurring release) don't need to be re-entered each time.
+ */
+export interface CrgTemplate {
+  id: string;
+  name: string;
+  createdAt: string;
+  chgBasicInfo: ChgBasicInfo;
+  chgPlanningAssessment: ChgPlanningAssessment;
+  chgPlanningContent: ChgPlanningContent;
+}
+
 interface CrgState {
   currentStep: CrgStep;
   fetchMode: FetchMode;
@@ -186,6 +200,8 @@ interface CrgActions {
   setCloneChgNumber: (chgNumber: string) => void;
   /** Fetches a SNow CHG by number and pre-populates all form fields with its values. */
   cloneFromChg: () => Promise<void>;
+  /** Applies a saved template's field values to the current form state. */
+  applyTemplate: (template: CrgTemplate) => void;
   updateEnvironment: (environmentKey: EnvironmentKey, update: Partial<EnvironmentConfig>) => void;
   goToStep: (step: CrgStep) => void;
   reset: () => void;
@@ -350,9 +366,11 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
         if (isCancelled) return;
         setState((previousState) => ({
           ...previousState,
-          // Include all versions (released and unreleased) — users may need to
-          // create change requests against already-released versions (e.g. hotfixes).
-          availableFixVersions: versions.map((version) => version.name),
+          // Only unreleased versions are relevant for a Change Request — a release
+          // that has already shipped should not be deployed again via a new CHG.
+          availableFixVersions: versions
+            .filter((version) => !version.released)
+            .map((version) => version.name),
         }));
       })
       .catch(() => {
@@ -538,10 +556,28 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
         },
       }));
     } catch (unknownError) {
-      const errorMessage = unknownError instanceof Error ? unknownError.message : 'Failed to load CHG';
+      let errorMessage = unknownError instanceof Error ? unknownError.message : 'Failed to load CHG';
+      // A 401 from SNow means the relay tab's session has expired.
+      // The relay may still show as "connected" (still polling) while the SNow session is stale.
+      if (errorMessage.includes('401')) {
+        errorMessage = 'SNow returned 401 — your session may have expired. Refresh the SNow relay tab, re-click the bookmarklet, then try again.';
+      }
       setState((previousState) => ({ ...previousState, isCloning: false, cloneError: errorMessage }));
     }
   }, [state.cloneChgNumber]);
+
+  /**
+   * Applies a saved CRG template to the current form state, filling all dropdowns
+   * and planning content fields so the user only needs to adjust what's different.
+   */
+  const applyTemplate = useCallback((template: CrgTemplate) => {
+    setState((previousState) => ({
+      ...previousState,
+      chgBasicInfo:          { ...template.chgBasicInfo },
+      chgPlanningAssessment: { ...template.chgPlanningAssessment },
+      chgPlanningContent:    { ...template.chgPlanningContent },
+    }));
+  }, []);
 
   const updateEnvironment = useCallback((environmentKey: EnvironmentKey, update: Partial<EnvironmentConfig>) => {
     const environmentStateKey = getEnvironmentStateKey(environmentKey);
@@ -652,6 +688,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       setChgPlanningContent,
       setCloneChgNumber,
       cloneFromChg,
+      applyTemplate,
       updateEnvironment,
       goToStep,
       reset,
@@ -661,7 +698,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     setFetchMode, setProjectKey, setFixVersion, setCustomJql, fetchIssues,
     toggleIssueSelection, selectAllIssues, generateDocs, updateGeneratedField,
     setChgBasicInfo, setChgPlanningAssessment, setChgPlanningContent,
-    setCloneChgNumber, cloneFromChg, updateEnvironment, goToStep, reset, createChg,
+    setCloneChgNumber, cloneFromChg, applyTemplate, updateEnvironment, goToStep, reset, createChg,
   ]);
 
   return { state, actions };
