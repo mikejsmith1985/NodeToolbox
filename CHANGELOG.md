@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **CRG — Wizard state persists across relay reconnects**: The CRG wizard now saves all non-transient fields (project key, fix version, selected issues, generated descriptions, CHG details, planning content, environments) to `localStorage`. When the user navigates away to activate the SNow relay and returns to the tool, all previously entered data is automatically restored — no re-entry required.
+- **CRG — SNow dropdown auto-loads when relay connects**: The `useSnowChoiceOptions` hook now subscribes to the relay connection status. Dropdowns that previously showed a permanent "relay not connected" failure (even after the relay became active) now automatically fetch options as soon as the relay transitions to connected — no page reload needed.
+- **CRG — Warning banners show correct context-aware message**: Step 3 (Change Details) and Step 4 (Planning & Content) dropdown warning banners now distinguish between two states: (1) relay not yet connected — amber informational banner, options will load automatically; (2) relay connected but fetch failed — amber actionable banner with a **Retry** button to re-trigger the fetch without reloading the page.
+
 ### Added
 - **CRG — Named templates**: Save, apply, and delete named presets of step 3 Change Details fields (Basic Info + Planning Assessment + Planning Content). Templates are stored in localStorage and appear in a template picker panel at the top of the Change Details step.
 - **CRG — Dynamic SNow choice options**: Planning assessment dropdowns (Impact, Availability Impact, etc.) and Change Details dropdowns now fetch live choice options from the SNow `sys_choice` table in a single batch request. When the SNow relay is unavailable the dropdowns are disabled and an amber warning banner is shown — no hardcoded fallback values are used, preventing invalid data from being submitted to ServiceNow.

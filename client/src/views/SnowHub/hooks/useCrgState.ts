@@ -1,6 +1,6 @@
 // useCrgState — State management for the six-step Change Request Generator workflow.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
@@ -78,6 +78,9 @@ const FETCH_FAILURE_MESSAGE = 'Failed to fetch issues';
 const DEFAULT_MAX_RESULTS = 100;
 const ISSUE_FIELD_LIST = 'summary,status,priority,issuetype,assignee';
 
+// localStorage key used to persist CRG wizard progress across relay reconnects and page navigations.
+const CRG_STATE_STORAGE_KEY = 'ntbx-crg-state';
+
 // All reference field lookup fields requested when cloning a CHG from SNow.
 const CHG_CLONE_FIELDS = [
   'number', 'short_description', 'description', 'justification', 'risk_impact_analysis',
@@ -149,6 +152,18 @@ export interface CrgTemplate {
   chgPlanningContent: ChgPlanningContent;
 }
 
+/**
+ * Shape stored in localStorage — identical to CrgState minus transient/computed fields.
+ * `selectedIssueKeys` is stored as a plain array because Set is not JSON-serialisable.
+ */
+type PersistedCrgState = Omit<
+  CrgState,
+  'availableFixVersions' | 'isFetchingIssues' | 'fetchError' |
+  'isCloning' | 'cloneError' | 'isSubmitting' | 'submitResult' | 'selectedIssueKeys'
+> & {
+  selectedIssueKeys: string[];
+};
+
 interface CrgState {
   currentStep: CrgStep;
   fetchMode: FetchMode;
@@ -209,7 +224,11 @@ interface CrgActions {
   createChg: () => Promise<void>;
 }
 
-function createInitialCrgState(): CrgState {
+/**
+ * Returns a clean default state — no data carried over from any previous session.
+ * Used when the user explicitly resets the wizard.
+ */
+function createDefaultCrgState(): CrgState {
   return {
     currentStep: 1,
     fetchMode: 'project',
@@ -234,6 +253,47 @@ function createInitialCrgState(): CrgState {
     relEnvironment: { ...createDefaultEnvironmentConfig(), isEnabled: true },
     prdEnvironment: { ...createDefaultEnvironmentConfig(), isEnabled: true },
     pfixEnvironment: createDefaultEnvironmentConfig(),
+    isSubmitting: false,
+    submitResult: null,
+  };
+}
+
+/**
+ * Reads persisted CRG progress from localStorage and converts stored arrays back to Sets.
+ * Returns an empty object when nothing is stored or if the stored data is invalid.
+ */
+function loadPersistedCrgState(): Partial<CrgState> {
+  try {
+    const stored = localStorage.getItem(CRG_STATE_STORAGE_KEY);
+    if (!stored) return {};
+
+    const parsed = JSON.parse(stored) as Partial<PersistedCrgState>;
+    return {
+      ...parsed,
+      // Set is not JSON-serialisable — it is stored as a plain array and restored here.
+      selectedIssueKeys: new Set<string>(parsed.selectedIssueKeys ?? []),
+    };
+  } catch {
+    // Corrupted data or JSON.parse failure — start fresh rather than crashing.
+    return {};
+  }
+}
+
+/**
+ * Creates the initial wizard state, merging clean defaults with any persisted progress.
+ * Transient loading/error/result flags are always reset regardless of what was stored.
+ */
+function createInitialCrgState(): CrgState {
+  const persisted = loadPersistedCrgState();
+  return {
+    ...createDefaultCrgState(),
+    ...persisted,
+    // Always reset transient flags — these should not survive a page reload.
+    availableFixVersions: [],
+    isFetchingIssues: false,
+    fetchError: EMPTY_FETCH_ERROR,
+    isCloning: false,
+    cloneError: null,
     isSubmitting: false,
     submitResult: null,
   };
@@ -331,6 +391,48 @@ function getEnvironmentStateKey(environmentKey: EnvironmentKey) {
  */
 export function useCrgState(): { state: CrgState; actions: CrgActions } {
   const [state, setState] = useState<CrgState>(() => createInitialCrgState());
+
+  // Tracks when reset() was just called so the persistence effect doesn't immediately
+  // re-write the cleared localStorage entry with default values.
+  const justResetRef = useRef(false);
+
+  // ── Persistence — sync non-ephemeral wizard progress to localStorage ──
+  // This ensures users can reconnect the SNow relay (which navigates away and back)
+  // without losing any data they had already entered.
+  useEffect(() => {
+    // Skip writing defaults back to localStorage right after an explicit reset.
+    if (justResetRef.current) {
+      justResetRef.current = false;
+      return;
+    }
+
+    const persistedState: PersistedCrgState = {
+      currentStep:               state.currentStep,
+      fetchMode:                 state.fetchMode,
+      projectKey:                state.projectKey,
+      fixVersion:                state.fixVersion,
+      customJql:                 state.customJql,
+      fetchedIssues:             state.fetchedIssues,
+      selectedIssueKeys:         [...state.selectedIssueKeys],
+      cloneChgNumber:            state.cloneChgNumber,
+      chgBasicInfo:              state.chgBasicInfo,
+      generatedShortDescription: state.generatedShortDescription,
+      generatedDescription:      state.generatedDescription,
+      generatedJustification:    state.generatedJustification,
+      generatedRiskImpact:       state.generatedRiskImpact,
+      chgPlanningAssessment:     state.chgPlanningAssessment,
+      chgPlanningContent:        state.chgPlanningContent,
+      relEnvironment:            state.relEnvironment,
+      prdEnvironment:            state.prdEnvironment,
+      pfixEnvironment:           state.pfixEnvironment,
+    };
+
+    try {
+      localStorage.setItem(CRG_STATE_STORAGE_KEY, JSON.stringify(persistedState));
+    } catch {
+      // Non-fatal — persistence fails gracefully (private mode, storage quota, etc.).
+    }
+  }, [state]);
 
   const setFetchMode = useCallback((fetchMode: FetchMode) => {
     // Switching modes clears any previous fetch error so the user starts fresh with the new input method.
@@ -592,7 +694,11 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
   }, []);
 
   const reset = useCallback(() => {
-    setState(createInitialCrgState());
+    // Signal the persistence effect to skip its next run — we don't want default values
+    // immediately written back to localStorage after an explicit reset.
+    justResetRef.current = true;
+    try { localStorage.removeItem(CRG_STATE_STORAGE_KEY); } catch { /* non-fatal */ }
+    setState(createDefaultCrgState());
   }, []);
 
   /**
@@ -652,6 +758,8 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       );
 
       const changeNumber = responseData.result.number;
+      // Clear persisted progress after a successful submission — the next change starts fresh.
+      try { localStorage.removeItem(CRG_STATE_STORAGE_KEY); } catch { /* non-fatal */ }
       setState((previousState) => ({
         ...previousState,
         isSubmitting: false,

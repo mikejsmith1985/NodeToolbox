@@ -119,6 +119,7 @@ const { mockState, mockActions, mockSnowChoiceConfig } = vi.hoisted(() => ({
   mockSnowChoiceConfig: {
     isFetchFailed: false,
     isLoadingChoices: false,
+    isRelayConnected: true,
   },
 }));
 
@@ -154,6 +155,8 @@ vi.mock('../hooks/useSnowChoiceOptions.ts', () => ({
     isLoadingChoices:   mockSnowChoiceConfig.isLoadingChoices,
     areChoicesFromSnow: !mockSnowChoiceConfig.isFetchFailed && !mockSnowChoiceConfig.isLoadingChoices,
     isFetchFailed:      mockSnowChoiceConfig.isFetchFailed,
+    isRelayConnected:   mockSnowChoiceConfig.isRelayConnected,
+    retryFetch:         vi.fn(),
   }),
 }));
 
@@ -199,6 +202,7 @@ describe('CrgTab', () => {
     // Reset the choice options config so tests don't bleed state into each other.
     mockSnowChoiceConfig.isFetchFailed = false;
     mockSnowChoiceConfig.isLoadingChoices = false;
+    mockSnowChoiceConfig.isRelayConnected = true;
   });
 
   it('renders step 1 with the project key input and fetch button', () => {
@@ -500,24 +504,49 @@ describe('CrgTab', () => {
     expect(screen.getByLabelText('Test Plan')).toBeInTheDocument();
   });
 
-  it('shows a SNow relay warning and disables dropdowns on step 3 when the choice fetch failed', () => {
+  it('shows a "fetch failed" warning with Retry button on step 3 when isFetchFailed and relay connected', () => {
     mockSnowChoiceConfig.isFetchFailed = true;
+    mockSnowChoiceConfig.isRelayConnected = true;
     mockState.currentStep = 3;
     render(<CrgTab />);
 
-    // Warning banner must be present so the user knows they need to connect SNow.
-    expect(screen.getByRole('alert')).toHaveTextContent(/SNow relay is not connected/);
-    // Dropdowns must be disabled — submitting without valid options would create a broken CHG.
+    // Warning must describe the fetch failure (not a "relay not connected" message).
+    expect(screen.getByRole('alert')).toHaveTextContent(/Failed to load dropdown options/);
+    // Retry button must be present so the user can re-trigger without reloading the page.
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    // Dropdowns must still be disabled until options are loaded.
     expect(screen.getByRole('combobox', { name: 'Category' })).toBeDisabled();
   });
 
-  it('shows a SNow relay warning and disables dropdowns on step 4 when the choice fetch failed', () => {
+  it('shows a "relay not connected" warning on step 3 when relay is disconnected', () => {
+    mockSnowChoiceConfig.isFetchFailed = false;
+    mockSnowChoiceConfig.isRelayConnected = false;
+    mockState.currentStep = 3;
+    render(<CrgTab />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/SNow relay not connected/);
+    expect(screen.getByRole('combobox', { name: 'Category' })).toBeDisabled();
+  });
+
+  it('shows a "fetch failed" warning with Retry button on step 4 when isFetchFailed and relay connected', () => {
     mockSnowChoiceConfig.isFetchFailed = true;
+    mockSnowChoiceConfig.isRelayConnected = true;
     mockState.currentStep = 4;
     render(<CrgTab />);
 
-    expect(screen.getByRole('alert')).toHaveTextContent(/SNow relay is not connected/);
-    // All planning assessment dropdowns must be disabled.
+    expect(screen.getByRole('alert')).toHaveTextContent(/Failed to load dropdown options/);
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    const impactDropdown = screen.getByRole('combobox', { name: 'Impact' });
+    expect(impactDropdown).toBeDisabled();
+  });
+
+  it('shows a "relay not connected" warning on step 4 when relay is disconnected', () => {
+    mockSnowChoiceConfig.isFetchFailed = false;
+    mockSnowChoiceConfig.isRelayConnected = false;
+    mockState.currentStep = 4;
+    render(<CrgTab />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/SNow relay not connected/);
     const impactDropdown = screen.getByRole('combobox', { name: 'Impact' });
     expect(impactDropdown).toBeDisabled();
   });
