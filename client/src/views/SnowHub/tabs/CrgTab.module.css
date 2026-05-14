@@ -131,3 +131,5 @@
 
 /* Warning shown when the SNow relay is not connected and choice options cannot be loaded. */
 .choiceUnavailableWarning { margin: 0; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--color-warning); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--color-warning) 10%, transparent); color: var(--color-warning); font-size: var(--font-size-sm); }
+/* Hint text shown below the error message when a well-known cause is detected (e.g. 401 = expired session). */
+.errorHint { display: block; margin-top: var(--spacing-xs); font-size: var(--font-size-xs); opacity: 0.85; font-style: italic; }

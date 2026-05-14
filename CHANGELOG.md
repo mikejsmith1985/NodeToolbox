@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **CRG — 401 session-expiry now shows actionable recovery guidance**: When the SNow relay is active but the `sys_choice` fetch returns HTTP 401, the warning banner now includes a plain-English hint: *"Your ServiceNow session has expired. Go to your SNow tab, log back in, then click Retry."* Similar hints are shown for 403 (permission error) and timeout failures. Unrecognized errors still display the raw message for diagnostics.
+
+### Fixed
 - **CRG — Dropdown failure now shows the exact error reason**: When the SNow relay is connected but the `sys_choice` fetch fails, the warning banner in Step 3 (Change Details) and Step 4 (Planning & Content) now displays the underlying error message (e.g., `SNow relay fetch failed: 401`) so the user can diagnose the problem immediately — expired SNow session, timeout, permission error, etc.
 - **CRG — Dropdown placeholder distinguishes "not connected" from "load failed"**: Previously both states showed "Connect SNow relay to load options." Now, when the relay IS connected but the fetch failed, dropdowns correctly show "Load failed — click Retry above" so users know the relay is active and they only need to click Retry (not reconnect the relay).
 - **CRG — Failure state resets immediately when a new fetch begins**: `isFetchFailed` and `fetchErrorMessage` are now cleared at the start of every fetch attempt (not just on manual Retry). This prevents a stale error banner from showing while a fresh auto-triggered request is already in flight.
