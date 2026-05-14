@@ -30,6 +30,14 @@ describe('browserRelay', () => {
     expect(SNOW_RELAY_BOOKMARKLET_CODE).toContain('X-UserToken');
   });
 
+  it('focuses the NodeToolbox window without navigating it (no page reload)', () => {
+    // The bookmarklet must use window.open("","toolbox") — empty URL = focus only.
+    // Passing the relay server URL as the first argument causes Chrome to navigate
+    // the NodeToolbox window to the root URL, wiping all in-progress form state.
+    expect(SNOW_RELAY_BOOKMARKLET_CODE).toContain('window.open("","toolbox")');
+    expect(SNOW_RELAY_BOOKMARKLET_CODE).not.toMatch(/window\.open\(relayServer,"toolbox"\)/);
+  });
+
   it('generates bookmarklet JavaScript that parses before users drag it', () => {
     const bookmarkletBody = SNOW_RELAY_BOOKMARKLET_CODE.replace(/^javascript:/, '');
 
