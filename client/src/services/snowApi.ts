@@ -68,8 +68,8 @@ export async function snowFetch<ResponseBody>(
     return parseJsonResponse<ResponseBody>(response);
   }
 
-  const isRelayActive =
-    useConnectionStore.getState().relayBridgeStatus?.isConnected ?? false;
+  const relayBridgeStatus = useConnectionStore.getState().relayBridgeStatus;
+  const isRelayActive = relayBridgeStatus?.isConnected ?? false;
 
   if (!isRelayActive) {
     throw new Error(
@@ -92,6 +92,13 @@ async function snowRelayFetch<ResponseBody>(
 ): Promise<ResponseBody> {
   const requestId = crypto.randomUUID();
   const method = ((options.method as string | undefined) ?? 'GET').toUpperCase();
+  const hasSessionToken = useConnectionStore.getState().relayBridgeStatus?.hasSessionToken ?? false;
+
+  if (method !== 'GET' && !hasSessionToken) {
+    throw new Error(
+      'SNow session token (g_ck) not ready. Wait for ServiceNow to finish loading, then click the NodeToolbox SNow Relay bookmarklet again.',
+    );
+  }
 
   // Parse body from its serialized string form back to an object for the relay envelope.
   // The bookmarklet re-serializes it when forwarding to the SNow origin.
@@ -117,7 +124,10 @@ async function snowRelayFetch<ResponseBody>(
 
   if (!result.ok) {
     const errorDetail = result.error !== null ? ` — ${result.error}` : '';
-    throw new Error(`SNow relay fetch ${path} failed: ${result.status}${errorDetail}`);
+    const sessionHint = result.status === 401 || result.status === 403
+      ? ' (ServiceNow rejected the relayed browser request; the relay is connected but the API call is not authorized from the current page/context.)'
+      : '';
+    throw new Error(`SNow relay fetch ${path} failed: ${result.status}${errorDetail}${sessionHint}`);
   }
 
   // The bookmarklet collects the response via a.text(), so result.data is a JSON string.

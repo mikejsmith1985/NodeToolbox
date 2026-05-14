@@ -56,6 +56,7 @@ describe('snowApi — relay routing (relay active)', () => {
         isConnected: true,
         lastPingAt: null,
         version: null,
+        hasSessionToken: true,
       },
     });
   });
@@ -109,7 +110,7 @@ describe('snowApi — relay routing (relay active)', () => {
     });
 
     await expect(snowFetch(SNOW_PATH)).rejects.toThrow(
-      'SNow relay fetch /api/now/table/change_request failed: 403 — Forbidden',
+      'SNow relay fetch /api/now/table/change_request failed: 403 — Forbidden (ServiceNow rejected the relayed browser request; the relay is connected but the API call is not authorized from the current page/context.)',
     );
   });
 
@@ -120,5 +121,41 @@ describe('snowApi — relay routing (relay active)', () => {
     );
 
     await expect(snowFetch(SNOW_PATH)).rejects.toThrow('Relay bridge timed out');
+  });
+});
+
+describe('snowApi — relay active before token readiness', () => {
+  beforeEach(() => {
+    useConnectionStore.setState({
+      relayBridgeStatus: {
+        system: 'snow',
+        isConnected: true,
+        lastPingAt: null,
+        version: null,
+        hasSessionToken: false,
+      },
+    });
+  });
+
+  it('allows GET requests while the relay waits for the g_ck token', async () => {
+    vi.mocked(postRelayRequest).mockResolvedValue(undefined);
+    vi.mocked(waitForRelayResult).mockResolvedValue({
+      id: 'test-uuid-relay-001',
+      ok: true,
+      status: 200,
+      data: SNOW_RESPONSE,
+      error: null,
+    });
+
+    await expect(snowFetch<typeof SNOW_RESPONSE>(SNOW_PATH)).resolves.toEqual(SNOW_RESPONSE);
+    expect(postRelayRequest).toHaveBeenCalledWith(expect.objectContaining({ method: 'GET' }));
+  });
+
+  it('blocks write requests until the relay reports g_ck token readiness', async () => {
+    await expect(
+      snowFetch(SNOW_PATH, { method: 'POST', body: JSON.stringify({ short_description: 'Test CHG' }) }),
+    ).rejects.toThrow('SNow session token (g_ck) not ready');
+
+    expect(postRelayRequest).not.toHaveBeenCalled();
   });
 });

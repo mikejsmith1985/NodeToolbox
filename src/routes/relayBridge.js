@@ -42,6 +42,12 @@ const POLL_TIMEOUT_MS = 28000;
  */
 const RESULT_TIMEOUT_MS = 30000;
 
+/**
+ * Long-poll check-ins should happen roughly every POLL_TIMEOUT_MS. This wider window
+ * lets one slow browser poll roll over without making the UI flicker disconnected.
+ */
+const RELAY_HEARTBEAT_STALE_MS = 65000;
+
 /** Message returned when the active browser relay is gone before a response arrives. */
 const RELAY_DISCONNECTED_ERROR = 'Relay bridge disconnected. Reopen ServiceNow and click the relay bookmarklet again.';
 
@@ -127,6 +133,13 @@ function failPendingResultWaiters(channel, disconnectErrorMessage) {
   });
 }
 
+function isRelayReady(channel) {
+  if (!channel || !channel.isActive || channel.lastPolledAt === null) {
+    return false;
+  }
+  return Date.now() - channel.lastPolledAt <= RELAY_HEARTBEAT_STALE_MS;
+}
+
 // ── Registration ─────────────────────────────────────────────────────────────
 
 /**
@@ -150,6 +163,23 @@ router.post('/register', (req, res) => {
   channel.pendingRequests = [];
   channel.pendingResults  = {};
 
+  res.json({ ok: true, sys, hasSessionToken: channel.hasSessionToken });
+});
+
+/**
+ * Bookmarklet calls this after SNow finishes exposing g_ck.
+ * This updates token readiness without flushing queued requests like a fresh registration would.
+ *
+ * POST /api/relay-bridge/session-token?sys=snow&gck=1
+ */
+router.post('/session-token', (req, res) => {
+  const sys = req.query.sys || 'snow';
+  if (!bridgeState[sys]) {
+    return res.status(400).json({ error: 'Unknown sys: ' + sys });
+  }
+
+  const channel = bridgeState[sys];
+  channel.hasSessionToken = req.query.gck === '1' || req.body?.hasSessionToken === true;
   res.json({ ok: true, sys, hasSessionToken: channel.hasSessionToken });
 });
 
@@ -194,7 +224,7 @@ router.get('/status', (req, res) => {
     return res.json({ isConnected: false, system: sys, lastPingAt: null, version: null });
   }
   res.json({
-    isConnected: channel.isActive,
+    isConnected: isRelayReady(channel),
     system:      sys,
     hasSessionToken: channel.hasSessionToken,
     // lastPolledAt is a millisecond timestamp — convert to ISO string for the client.
@@ -360,7 +390,7 @@ module.exports = router;
  * @returns {boolean} True when the bookmarklet has registered and not deregistered
  */
 module.exports.getBridgeStatus = function getBridgeStatus(sys) {
-  return !!(bridgeState[sys] && bridgeState[sys].isActive);
+  return isRelayReady(bridgeState[sys]);
 };
 
 /**

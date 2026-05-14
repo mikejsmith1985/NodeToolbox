@@ -193,6 +193,23 @@ function hasChoiceOptions(choiceOptions: SnowChoiceOptionMap): boolean {
   return Object.values(choiceOptions).some((fieldOptions) => fieldOptions.length > 1);
 }
 
+function hasAllRequestedChoiceFields(choiceOptions: SnowChoiceOptionMap): boolean {
+  return CHANGE_REQUEST_CHOICE_FIELDS.every((fieldName) => (choiceOptions[fieldName]?.length ?? 0) > 1);
+}
+
+function mergeChoiceOptions(
+  baseChoiceOptions: SnowChoiceOptionMap,
+  additionalChoiceOptions: SnowChoiceOptionMap,
+): SnowChoiceOptionMap {
+  const mergedChoiceOptions = { ...baseChoiceOptions };
+  for (const [fieldName, fieldOptions] of Object.entries(additionalChoiceOptions)) {
+    if ((mergedChoiceOptions[fieldName]?.length ?? 0) <= 1 && fieldOptions.length > 1) {
+      mergedChoiceOptions[fieldName] = fieldOptions;
+    }
+  }
+  return mergedChoiceOptions;
+}
+
 function getErrorMessage(unknownError: unknown): string {
   return unknownError instanceof Error ? unknownError.message : String(unknownError);
 }
@@ -235,15 +252,19 @@ function groupChoicesByField(records: SysChoiceRecord[]): SnowChoiceOptionMap {
 
 async function fetchChoiceOptionsFromServiceNow(): Promise<SnowChoiceOptionMap> {
   const fetchErrors: string[] = [];
+  let mergedChoiceOptions: SnowChoiceOptionMap = {};
 
   for (const metadataPath of [buildUiFormPath(), buildUiMetaPath()]) {
     try {
       const metadataResponse = await snowFetch<unknown>(metadataPath);
       const metadataChoiceOptions = extractChoicesFromUiForm(metadataResponse);
-      if (hasChoiceOptions(metadataChoiceOptions)) {
-        return metadataChoiceOptions;
+      mergedChoiceOptions = mergeChoiceOptions(mergedChoiceOptions, metadataChoiceOptions);
+      if (hasAllRequestedChoiceFields(mergedChoiceOptions)) {
+        return mergedChoiceOptions;
       }
-      fetchErrors.push(`${metadataPath} returned no choice metadata`);
+      if (!hasChoiceOptions(metadataChoiceOptions)) {
+        fetchErrors.push(`${metadataPath} returned no choice metadata`);
+      }
     } catch (metadataError) {
       fetchErrors.push(getErrorMessage(metadataError));
     }
@@ -254,11 +275,15 @@ async function fetchChoiceOptionsFromServiceNow(): Promise<SnowChoiceOptionMap> 
     const sysChoicePath = buildSysChoicePath(CHANGE_REQUEST_CHOICE_FIELDS);
     const sysChoiceResponse = await snowFetch<SysChoiceResponse>(sysChoicePath);
     const sysChoiceOptions = groupChoicesByField(sysChoiceResponse.result ?? []);
-    if (hasChoiceOptions(sysChoiceOptions)) {
-      return sysChoiceOptions;
+    mergedChoiceOptions = mergeChoiceOptions(mergedChoiceOptions, sysChoiceOptions);
+    if (hasChoiceOptions(mergedChoiceOptions)) {
+      return mergedChoiceOptions;
     }
     throw new Error('sys_choice returned no choice metadata');
   } catch (sysChoiceError) {
+    if (hasChoiceOptions(mergedChoiceOptions)) {
+      return mergedChoiceOptions;
+    }
     const sysChoiceErrorMessage = getErrorMessage(sysChoiceError);
     throw new Error(
       `Unable to load live SNow choice metadata. UI metadata attempts: ${fetchErrors.join(' | ')}. sys_choice fallback: ${sysChoiceErrorMessage}`,
@@ -284,6 +309,8 @@ interface UseSnowChoiceOptionsResult {
   fetchErrorMessage: string | null;
   /** True when the relay bridge is connected — drives whether the fetch is attempted. */
   isRelayConnected: boolean;
+  /** True when the relay bridge has detected ServiceNow's g_ck session token. */
+  hasRelaySessionToken: boolean;
   /** Manually re-triggers the SNow choice metadata fetch (e.g. after a transient SNow error). */
   retryFetch: () => void;
 }
@@ -312,11 +339,15 @@ export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
   const isRelayConnected = useConnectionStore(
     (storeState) => storeState.relayBridgeStatus?.isConnected ?? false,
   );
+  const hasRelaySessionToken = useConnectionStore(
+    (storeState) => storeState.relayBridgeStatus?.hasSessionToken ?? false,
+  );
 
   useEffect(() => {
     // Don't attempt while relay is disconnected — snowFetch will throw immediately and
     // we'd be left in a permanent error state until the user manually retried.
     if (!isRelayConnected) return;
+    if (!hasRelaySessionToken) return;
 
     // Skip if we already have fresh data from SNow to avoid redundant API calls on relay
     // status changes (e.g. relay briefly dropping and reconnecting).
@@ -353,7 +384,7 @@ export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
     void fetchChoiceOptions();
 
     return () => { isCancelled = true; };
-  }, [isRelayConnected, areChoicesFromSnow, fetchTrigger]);
+  }, [isRelayConnected, hasRelaySessionToken, areChoicesFromSnow, fetchTrigger]);
 
   /**
    * Forces a re-fetch of sys_choice options. Resets the failure state first so the
@@ -373,6 +404,7 @@ export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
     isFetchFailed,
     fetchErrorMessage,
     isRelayConnected,
+    hasRelaySessionToken,
     retryFetch,
   };
 }

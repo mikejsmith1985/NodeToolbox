@@ -421,6 +421,11 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       return;
     }
 
+    if (state.submitResult?.endsWith(' created')) {
+      try { localStorage.removeItem(CRG_STATE_STORAGE_KEY); } catch { /* non-fatal */ }
+      return;
+    }
+
     const persistedState: PersistedCrgState = {
       currentStep:               state.currentStep,
       fetchMode:                 state.fetchMode,
@@ -674,10 +679,8 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       }));
     } catch (unknownError) {
       let errorMessage = unknownError instanceof Error ? unknownError.message : 'Failed to load CHG';
-      // A 401 from SNow means the relay tab's session has expired.
-      // The relay may still show as "connected" (still polling) while the SNow session is stale.
       if (errorMessage.includes('401')) {
-        errorMessage = 'SNow returned 401 — your session may have expired. Refresh the SNow relay tab, re-click the bookmarklet, then try again.';
+        errorMessage = 'SNow returned 401 — the relay is connected, but ServiceNow rejected the relayed API call. Refresh a full ServiceNow form or list page, click the latest NodeToolbox SNow Relay bookmarklet, then try again.';
       }
       setState((previousState) => ({ ...previousState, isCloning: false, cloneError: errorMessage }));
     }
@@ -774,9 +777,10 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
 
       const changeNumber = responseData.result.number;
       // Clear persisted progress after a successful submission — the next change starts fresh.
+      justResetRef.current = true;
       try { localStorage.removeItem(CRG_STATE_STORAGE_KEY); } catch { /* non-fatal */ }
-      setState((previousState) => ({
-        ...previousState,
+      setState(() => ({
+        ...createDefaultCrgState(),
         isSubmitting: false,
         submitResult: `${changeNumber} created`,
         currentStep:  6 as CrgStep,

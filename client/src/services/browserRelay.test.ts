@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useConnectionStore } from '../store/connectionStore.ts';
 import {
   openSnowRelay,
+  parseRelayReturnRoute,
   RELAY_RETURN_ROUTE_KEY,
   resetBrowserRelayForTests,
   SNOW_RELAY_BOOKMARKLET_CODE,
@@ -28,6 +29,26 @@ describe('browserRelay', () => {
     expect(SNOW_RELAY_BOOKMARKLET_CODE).toContain('/api/relay-bridge/register');
     expect(SNOW_RELAY_BOOKMARKLET_CODE).toContain('/api/relay-bridge/poll');
     expect(SNOW_RELAY_BOOKMARKLET_CODE).toContain('X-UserToken');
+    expect(SNOW_RELAY_BOOKMARKLET_CODE).not.toContain('glide_user_activity');
+    expect(SNOW_RELAY_BOOKMARKLET_CODE).toContain('resolveUserToken');
+  });
+
+  it('reports token readiness after ServiceNow exposes g_ck post-registration', () => {
+    expect(SNOW_RELAY_BOOKMARKLET_CODE).toContain('/api/relay-bridge/session-token');
+    expect(SNOW_RELAY_BOOKMARKLET_CODE).toContain('reportSessionTokenReady');
+  });
+
+  it('refreshes g_ck on every relayed request instead of using only the startup value', () => {
+    const executeRequestSnippet = SNOW_RELAY_BOOKMARKLET_CODE.match(
+      /async function executeRelayRequest\(relayRequest\).*?resolveUserToken\(\)/,
+    );
+
+    expect(executeRequestSnippet).not.toBeNull();
+  });
+
+  it('uses an amber bookmarklet badge when g_ck is not ready yet', () => {
+    expect(SNOW_RELAY_BOOKMARKLET_CODE).toContain('#b08800');
+    expect(SNOW_RELAY_BOOKMARKLET_CODE).toContain('no g_ck');
   });
 
   it('focuses the NodeToolbox window without navigating it (no page reload)', () => {
@@ -65,13 +86,13 @@ describe('browserRelay', () => {
     expect(openSnowRelay('https://snow.example.com')).toBe(false);
   });
 
-  it('stores the current pathname in localStorage so the app can restore it after the relay reload', () => {
+  it('stores a timestamped current pathname so the app can restore it after the relay reload', () => {
     vi.spyOn(window, 'open').mockReturnValue({ closed: false } as Window);
 
     // jsdom sets window.location.pathname to '/' by default
     openSnowRelay('https://snow.example.com');
 
-    expect(localStorage.getItem(RELAY_RETURN_ROUTE_KEY)).toBe('/');
+    expect(parseRelayReturnRoute(localStorage.getItem(RELAY_RETURN_ROUTE_KEY))).toBe('/');
   });
 
   it('does not store a return route when the URL is empty', () => {
@@ -81,5 +102,16 @@ describe('browserRelay', () => {
 
     // openSnowRelay returns early for empty URLs — no route should be stored
     expect(localStorage.getItem(RELAY_RETURN_ROUTE_KEY)).toBeNull();
+  });
+
+  it('ignores old plain-text relay return routes so stale values cannot hijack startup navigation', () => {
+    expect(parseRelayReturnRoute('/snow-hub')).toBeNull();
+  });
+
+  it('ignores expired relay return routes', () => {
+    const nowMs = Date.now();
+    const expiredRoute = JSON.stringify({ path: '/snow-hub', createdAt: nowMs - 10 * 60 * 1000 });
+
+    expect(parseRelayReturnRoute(expiredRoute, nowMs)).toBeNull();
   });
 });

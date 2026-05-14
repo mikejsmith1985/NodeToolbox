@@ -63,6 +63,8 @@ interface SnowPanelProps {
   /** The ServiceNow instance base URL from proxy config — used to provide an "Open ServiceNow" button. */
   snowBaseUrl: string | null;
   lastPingAt: string | null;
+  /** True once the bookmarklet has detected ServiceNow's g_ck token for write APIs. */
+  hasSessionToken: boolean;
 }
 
 /**
@@ -72,7 +74,14 @@ interface SnowPanelProps {
  * (including an "Open ServiceNow" shortcut) so users can set up the relay bridge
  * without leaving NodeToolbox.
  */
-function SnowPanel({ isSnowActive, isRelayActive, isSnowVerified, snowBaseUrl, lastPingAt }: SnowPanelProps) {
+function SnowPanel({
+  isSnowActive,
+  isRelayActive,
+  isSnowVerified,
+  snowBaseUrl,
+  lastPingAt,
+  hasSessionToken,
+}: SnowPanelProps) {
   const lastPingText = lastPingAt !== null
     ? new Date(lastPingAt).toLocaleTimeString()
     : null;
@@ -109,6 +118,12 @@ function SnowPanel({ isSnowActive, isRelayActive, isSnowVerified, snowBaseUrl, l
           : '❌ ServiceNow not reachable'}
       </p>
       <p className={styles.panelLabel}>Method: {getConnectionMethodText()}</p>
+      {isRelayActive && !hasSessionToken ? (
+        <p className={styles.panelWarning} role="alert">
+          ⚠ Relay is connected, but the ServiceNow session token is not ready yet. Wait for the SNow page to finish
+          loading, then click the latest NodeToolbox SNow Relay bookmarklet again.
+        </p>
+      ) : null}
 
       {!isRelayActive && (
         <>
@@ -256,6 +271,7 @@ export function ConnectionBar() {
   const confluenceBaseUrl = useConnectionStore((state) => state.proxyStatus?.confluence?.baseUrl ?? null);
   const isGitHubReady = useConnectionStore((state) => state.isGitHubReady);
   const lastPingAt = relayBridgeStatus?.lastPingAt ?? null;
+  const hasSessionToken = relayBridgeStatus?.hasSessionToken ?? false;
 
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -319,6 +335,7 @@ export function ConnectionBar() {
               isSnowVerified={isSnowVerified}
               snowBaseUrl={snowBaseUrl}
               lastPingAt={lastPingAt}
+              hasSessionToken={hasSessionToken}
             />
           )}
           {activePanel === 'confluence' && (

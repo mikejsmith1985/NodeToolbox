@@ -201,7 +201,7 @@ describe('App shell', () => {
 
   it('restores the pre-relay route after the bookmarklet reloads the window to root', async () => {
     // Simulate what openSnowRelay() writes before the bookmarklet triggers a page reload
-    localStorage.setItem(RELAY_RETURN_ROUTE_KEY, '/snow-hub');
+    localStorage.setItem(RELAY_RETURN_ROUTE_KEY, JSON.stringify({ path: '/snow-hub', createdAt: Date.now() }));
 
     renderApp(DEFAULT_PATH);
 
@@ -211,6 +211,15 @@ describe('App shell', () => {
     });
 
     // Key must be cleared so subsequent loads don't redirect again
+    expect(localStorage.getItem(RELAY_RETURN_ROUTE_KEY)).toBeNull();
+  });
+
+  it('ignores stale plain-text relay return routes from older releases', () => {
+    localStorage.setItem(RELAY_RETURN_ROUTE_KEY, '/snow-hub');
+
+    renderApp(DEFAULT_PATH);
+
+    expect(screen.getByRole('heading', { name: 'Your personal utility belt' })).toBeInTheDocument();
     expect(localStorage.getItem(RELAY_RETURN_ROUTE_KEY)).toBeNull();
   });
 });
