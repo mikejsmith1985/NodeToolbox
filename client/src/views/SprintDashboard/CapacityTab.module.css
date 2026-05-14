@@ -1,0 +1,272 @@
+/* CapacityTab.module.css — Styles for the Team Dashboard Capacity tab. */
+
+/* ── Layout ── */
+
+.capacityTab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+/* ── Shared section styles ── */
+
+.sectionTitle {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-xs);
+}
+
+.sectionDescription {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--spacing-sm);
+}
+
+/* ── Date range section ── */
+
+.dateRangeSection {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+}
+
+.dateInputRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.dateLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.dateInput {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+  padding: var(--spacing-sm);
+  /* Ensure the date input text is always legible regardless of OS color scheme */
+  color-scheme: dark;
+}
+
+.dateInput:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.workDaysBadge {
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  white-space: nowrap;
+}
+
+/* ── Team composition section ── */
+
+.teamSection {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+}
+
+.teamSectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.addRowButton {
+  background: var(--color-accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-bg);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  padding: var(--spacing-sm) var(--spacing-md);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.addRowButton:hover {
+  opacity: 0.85;
+}
+
+.emptyTableMessage {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-md) 0;
+  text-align: center;
+}
+
+/* ── Capacity table ── */
+
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.capacityTable {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.tableHeader {
+  border-bottom: 2px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  text-align: left;
+}
+
+.capacityRow {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.capacityRow:last-child {
+  border-bottom: none;
+}
+
+.capacityRow td {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  vertical-align: middle;
+}
+
+/* ── Row inputs ── */
+
+.roleSelect {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  min-width: 70px;
+}
+
+.roleSelect:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.numberInput {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  width: 70px;
+  text-align: right;
+}
+
+.numberInput:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.percentageInputWrapper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.percentageSymbol {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.removeRowButton {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  line-height: 1;
+  padding: 4px 8px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.removeRowButton:hover {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+/* ── Results panel ── */
+
+.resultsPanel {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+}
+
+.resultsPanelTitle {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-md);
+}
+
+.resultsGrid {
+  display: flex;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.resultCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-xs);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  min-width: 140px;
+  text-align: center;
+}
+
+.resultCardHighlight {
+  border-color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 8%, var(--color-surface-2));
+}
+
+.resultCardAccent {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-2));
+}
+
+.resultIcon {
+  font-size: 1.5rem;
+}
+
+.resultValue {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1;
+}
+
+.resultLabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}

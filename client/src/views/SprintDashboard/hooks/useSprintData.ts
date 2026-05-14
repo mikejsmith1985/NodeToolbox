@@ -39,7 +39,8 @@ export type DashboardTab =
   | 'pipeline'
   | 'planning'
   | 'releases'
-  | 'pointing';
+  | 'pointing'
+  | 'capacity';
 
 export interface SprintDataState {
   projectKey: string;
