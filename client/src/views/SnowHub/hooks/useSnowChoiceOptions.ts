@@ -1,9 +1,10 @@
 // useSnowChoiceOptions — Fetches planning dropdown choices from the SNow sys_choice table.
-// When the relay is unavailable the options map is left empty and isFetchFailed is set true
-// so the UI can show a clear "connect SNow" warning instead of guessing at valid values.
+// Subscribes to the relay bridge status and auto-retries when the relay connects, so users
+// never need to reload the page after activating the bookmarklet.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
+import { useConnectionStore } from '../../../store/connectionStore.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
 
 /** A single selectable option in a SNow choice field (label is what the user sees). */
@@ -75,23 +76,45 @@ interface UseSnowChoiceOptionsResult {
   isLoadingChoices: boolean;
   /** True if the live fetch succeeded (options are from SNow). */
   areChoicesFromSnow: boolean;
-  /** True if the fetch failed — caller should show a "SNow relay required" warning to the user. */
+  /** True if the fetch failed for a reason other than the relay being disconnected. */
   isFetchFailed: boolean;
+  /** True when the relay bridge is connected — drives whether the fetch is attempted. */
+  isRelayConnected: boolean;
+  /** Manually re-triggers the sys_choice fetch (e.g. after a transient SNow error). */
+  retryFetch: () => void;
 }
 
 /**
  * Fetches all change_request dropdown choices from the SNow sys_choice table in one API call.
  * Returns empty option maps when the relay is unavailable — callers should surface a warning
  * rather than letting users select potentially invalid hardcoded values.
+ *
+ * Auto-retries when the relay transitions from disconnected → connected, so the user
+ * never needs to reload the page after activating the bookmarklet.
  */
 export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
   // Start with an empty map — no defaults — so the UI never shows guessed values.
   const [choiceOptions, setChoiceOptions] = useState<SnowChoiceOptionMap>({});
-  const [isLoadingChoices, setIsLoadingChoices]   = useState<boolean>(false);
+  const [isLoadingChoices, setIsLoadingChoices]     = useState<boolean>(false);
   const [areChoicesFromSnow, setAreChoicesFromSnow] = useState<boolean>(false);
   const [isFetchFailed, setIsFetchFailed]           = useState<boolean>(false);
+  // Bumped by retryFetch() to force a re-fetch even when isRelayConnected hasn't changed.
+  const [fetchTrigger, setFetchTrigger] = useState(0);
+
+  // Subscribe to relay connection status so we can auto-retry when it transitions to connected.
+  const isRelayConnected = useConnectionStore(
+    (storeState) => storeState.relayBridgeStatus?.isConnected ?? false,
+  );
 
   useEffect(() => {
+    // Don't attempt while relay is disconnected — snowFetch will throw immediately and
+    // we'd be left in a permanent error state until the user manually retried.
+    if (!isRelayConnected) return;
+
+    // Skip if we already have fresh data from SNow to avoid redundant API calls on relay
+    // status changes (e.g. relay briefly dropping and reconnecting).
+    if (areChoicesFromSnow) return;
+
     let isCancelled = false;
 
     async function fetchChoiceOptions() {
@@ -105,8 +128,8 @@ export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
         setAreChoicesFromSnow(true);
         setIsFetchFailed(false);
       } catch {
-        // Relay not connected, session expired, or SNow returned an error.
-        // Leave choiceOptions empty and signal to the UI that connection is needed.
+        // Relay connected but SNow returned an error (expired session, network issue, etc.).
+        // Leave choiceOptions empty and surface the warning so the user can retry.
         if (!isCancelled) setIsFetchFailed(true);
       } finally {
         if (!isCancelled) setIsLoadingChoices(false);
@@ -116,7 +139,17 @@ export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
     void fetchChoiceOptions();
 
     return () => { isCancelled = true; };
+  }, [isRelayConnected, areChoicesFromSnow, fetchTrigger]);
+
+  /**
+   * Forces a re-fetch of sys_choice options. Resets the failure state first so the
+   * loading indicator appears immediately while the new request is in flight.
+   */
+  const retryFetch = useCallback(() => {
+    setIsFetchFailed(false);
+    setAreChoicesFromSnow(false);
+    setFetchTrigger((previousTrigger) => previousTrigger + 1);
   }, []);
 
-  return { choiceOptions, isLoadingChoices, areChoicesFromSnow, isFetchFailed };
+  return { choiceOptions, isLoadingChoices, areChoicesFromSnow, isFetchFailed, isRelayConnected, retryFetch };
 }

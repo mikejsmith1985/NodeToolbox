@@ -1,7 +1,7 @@
 // useCrgState.test.ts — Unit tests for the Change Request Generator state hook.
 
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
@@ -41,6 +41,8 @@ const MOCK_JIRA_ISSUES = [
 describe('useCrgState', () => {
   afterEach(() => {
     vi.clearAllMocks();
+    // Prevent localStorage state written by the persistence effect from bleeding into subsequent tests.
+    localStorage.clear();
   });
 
   function mockVersionFetch() {
@@ -603,6 +605,136 @@ describe('useCrgState', () => {
       expect(result.current.state.chgBasicInfo.assignmentGroup.displayName).toBe('Platform');
       expect(result.current.state.chgPlanningAssessment.impact).toBe('3 - Low');
       expect(result.current.state.chgPlanningContent.implementationPlan).toBe('Run pipeline.');
+    });
+  });
+
+  describe('localStorage persistence', () => {
+    const STORAGE_KEY = 'ntbx-crg-state';
+
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
+    afterEach(() => {
+      localStorage.clear();
+    });
+
+    it('persists wizard state to localStorage when fields change', async () => {
+      mockVersionFetch();
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.setProjectKey('FOO');
+      });
+
+      // Wait for the useEffect to sync to localStorage.
+      await waitFor(() => {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        expect(stored).not.toBeNull();
+        const parsed = JSON.parse(stored!);
+        expect(parsed.projectKey).toBe('FOO');
+      });
+    });
+
+    it('restores persisted state on remount', () => {
+      // Seed localStorage with a previously saved state.
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        currentStep: 3,
+        projectKey: 'SEED',
+        fixVersion: '2.0.0',
+        fetchMode: 'project',
+        customJql: '',
+        fetchedIssues: [],
+        selectedIssueKeys: [],
+        cloneChgNumber: '',
+        chgBasicInfo: { category: 'Software', changeType: 'Normal', environment: '',
+          requestedBy: { sysId: '', displayName: '' }, configItem: { sysId: '', displayName: '' },
+          assignmentGroup: { sysId: '', displayName: '' }, assignedTo: { sysId: '', displayName: '' },
+          changeManager: { sysId: '', displayName: '' }, tester: { sysId: '', displayName: '' },
+          serviceManager: { sysId: '', displayName: '' }, isExpedited: false },
+        generatedShortDescription: 'Saved desc',
+        generatedDescription: '', generatedJustification: '', generatedRiskImpact: '',
+        chgPlanningAssessment: { impact: '', systemAvailabilityImplication: '', hasBeenTested: '',
+          impactedPersonsAware: '', hasBeenPerformedPreviously: '', successProbability: '', canBeBackedOut: '' },
+        chgPlanningContent: { implementationPlan: '', backoutPlan: '', testPlan: '' },
+        relEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
+        prdEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
+        pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
+      }));
+
+      const { result } = renderHook(() => useCrgState());
+
+      expect(result.current.state.projectKey).toBe('SEED');
+      expect(result.current.state.currentStep).toBe(3);
+      expect(result.current.state.generatedShortDescription).toBe('Saved desc');
+      // Transient flags must always start clean regardless of what was stored.
+      expect(result.current.state.isFetchingIssues).toBe(false);
+      expect(result.current.state.isSubmitting).toBe(false);
+    });
+
+    it('converts selectedIssueKeys from stored array back to a Set', () => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        currentStep: 2,
+        projectKey: 'PRJ',
+        fixVersion: '1.0.0',
+        fetchMode: 'project',
+        customJql: '',
+        fetchedIssues: [],
+        selectedIssueKeys: ['PRJ-1', 'PRJ-2'],
+        cloneChgNumber: '',
+        chgBasicInfo: { category: '', changeType: '', environment: '',
+          requestedBy: { sysId: '', displayName: '' }, configItem: { sysId: '', displayName: '' },
+          assignmentGroup: { sysId: '', displayName: '' }, assignedTo: { sysId: '', displayName: '' },
+          changeManager: { sysId: '', displayName: '' }, tester: { sysId: '', displayName: '' },
+          serviceManager: { sysId: '', displayName: '' }, isExpedited: false },
+        generatedShortDescription: '', generatedDescription: '', generatedJustification: '', generatedRiskImpact: '',
+        chgPlanningAssessment: { impact: '', systemAvailabilityImplication: '', hasBeenTested: '',
+          impactedPersonsAware: '', hasBeenPerformedPreviously: '', successProbability: '', canBeBackedOut: '' },
+        chgPlanningContent: { implementationPlan: '', backoutPlan: '', testPlan: '' },
+        relEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
+        prdEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
+        pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
+      }));
+
+      const { result } = renderHook(() => useCrgState());
+
+      expect(result.current.state.selectedIssueKeys).toBeInstanceOf(Set);
+      expect(result.current.state.selectedIssueKeys.has('PRJ-1')).toBe(true);
+      expect(result.current.state.selectedIssueKeys.has('PRJ-2')).toBe(true);
+    });
+
+    it('ensures a new mount starts clean after reset is called', async () => {
+      mockVersionFetch();
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => { result.current.actions.setProjectKey('CLEAR'); });
+
+      // Wait until localStorage has the non-empty project key persisted.
+      await waitFor(() => {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        expect(stored).not.toBeNull();
+        expect(JSON.parse(stored!).projectKey).toBe('CLEAR');
+      });
+
+      act(() => { result.current.actions.reset(); });
+
+      // The reset must clear the in-memory wizard state regardless of localStorage.
+      expect(result.current.state.projectKey).toBe('');
+      expect(result.current.state.currentStep).toBe(1);
+
+      // The real user-facing guarantee: a new hook instance after reset must NOT
+      // restore the old project key (i.e., CLEAR must no longer appear on remount).
+      const { result: freshHook } = renderHook(() => useCrgState());
+      expect(freshHook.current.state.projectKey).not.toBe('CLEAR');
+      expect(freshHook.current.state.currentStep).toBe(1);
+    });
+
+    it('starts cleanly when localStorage contains invalid JSON', () => {
+      localStorage.setItem(STORAGE_KEY, 'NOT_VALID_JSON{{');
+      const { result } = renderHook(() => useCrgState());
+
+      expect(result.current.state.currentStep).toBe(1);
+      expect(result.current.state.projectKey).toBe('');
     });
   });
 });
