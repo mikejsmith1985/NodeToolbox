@@ -54,6 +54,24 @@ const STEP_TITLE_PREFIX = 'Step';
 const DEFAULT_RESULT_MESSAGE = 'Generated content will appear here after you complete the wizard.';
 const EMPTY_ENVIRONMENT_DATES = 'Not scheduled';
 
+/**
+ * Returns a plain-English action hint for well-known SNow relay fetch error patterns.
+ * This helps users fix the root cause (e.g. expired session) without guessing.
+ * Returns null for unrecognized errors so the raw message is shown without a misleading hint.
+ */
+function resolveSnowFetchErrorHint(errorMessage: string): string | null {
+  if (errorMessage.includes('401')) {
+    return 'Your ServiceNow session has expired. Go to your SNow tab, log back in, then click Retry.';
+  }
+  if (errorMessage.includes('403')) {
+    return 'Access denied by ServiceNow. Check that your account has permission to read sys_choice, then click Retry.';
+  }
+  if (errorMessage.includes('timed out') || errorMessage.includes('timeout')) {
+    return 'The request to SNow timed out. Check that the relay bookmarklet tab is open and connected, then click Retry.';
+  }
+  return null;
+}
+
 type CrgHookResult = ReturnType<typeof useCrgState>;
 type CrgStateData = CrgHookResult['state'];
 type CrgActionSet = CrgHookResult['actions'];
@@ -378,6 +396,11 @@ function ChangeDetailsStep({ state, actions, choiceOptions, isLoadingChoices, is
           ⚠ Failed to load dropdown options from SNow
           {fetchErrorMessage ? `: ${fetchErrorMessage}` : '.'}{' '}
           <button className={styles.linkButton} onClick={retryFetch} type="button">Retry</button>
+          {fetchErrorMessage ? (
+            <span className={styles.errorHint}>
+              {resolveSnowFetchErrorHint(fetchErrorMessage)}
+            </span>
+          ) : null}
         </p>
       ) : null}
 
@@ -611,6 +634,11 @@ function PlanningStep({ state, actions, isRovoUnlocked, onEnhanceWithRovo, choic
           ⚠ Failed to load dropdown options from SNow
           {fetchErrorMessage ? `: ${fetchErrorMessage}` : '.'}{' '}
           <button className={styles.linkButton} onClick={retryFetch} type="button">Retry</button>
+          {fetchErrorMessage ? (
+            <span className={styles.errorHint}>
+              {resolveSnowFetchErrorHint(fetchErrorMessage)}
+            </span>
+          ) : null}
         </p>
       ) : null}
 
