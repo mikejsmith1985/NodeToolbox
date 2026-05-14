@@ -62,6 +62,7 @@ describe('useSnowChoiceOptions', () => {
     expect(result.current.isLoadingChoices).toBe(false);
     expect(result.current.areChoicesFromSnow).toBe(false);
     expect(result.current.isFetchFailed).toBe(false);
+    expect(result.current.fetchErrorMessage).toBeNull();
     expect(result.current.isRelayConnected).toBe(false);
   });
 
@@ -127,6 +128,7 @@ describe('useSnowChoiceOptions', () => {
     expect(impactOptions[1]).toEqual({ value: '1', label: 'High' });
     expect(result.current.isLoadingChoices).toBe(false);
     expect(result.current.isFetchFailed).toBe(false);
+    expect(result.current.fetchErrorMessage).toBeNull();
   });
 
   it('sets isFetchFailed true and leaves choiceOptions empty when snowFetch rejects', async () => {
@@ -144,6 +146,21 @@ describe('useSnowChoiceOptions', () => {
     expect(result.current.isFetchFailed).toBe(true);
     expect(result.current.areChoicesFromSnow).toBe(false);
     expect(result.current.choiceOptions).toEqual({});
+  });
+
+  it('captures the error message from the thrown error as fetchErrorMessage', async () => {
+    mockRelayRef.isConnected = true;
+    setRelayConnected(true);
+    vi.mocked(snowFetch).mockRejectedValueOnce(new Error('SNow relay fetch failed: 401') as never);
+
+    const { result } = renderHook(() => useSnowChoiceOptions());
+
+    await waitFor(() => {
+      expect(result.current.isFetchFailed).toBe(true);
+    });
+
+    // The exact error message must be surfaced so the user can diagnose root cause.
+    expect(result.current.fetchErrorMessage).toBe('SNow relay fetch failed: 401');
   });
 
   it('retryFetch resets failure state and triggers a new request', async () => {
@@ -165,6 +182,7 @@ describe('useSnowChoiceOptions', () => {
 
     await waitFor(() => expect(result.current.areChoicesFromSnow).toBe(true));
     expect(result.current.isFetchFailed).toBe(false);
+    expect(result.current.fetchErrorMessage).toBeNull();
     expect(vi.mocked(snowFetch)).toHaveBeenCalledTimes(2);
   });
 

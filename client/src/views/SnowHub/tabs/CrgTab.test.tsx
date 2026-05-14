@@ -155,6 +155,7 @@ vi.mock('../hooks/useSnowChoiceOptions.ts', () => ({
     isLoadingChoices:   mockSnowChoiceConfig.isLoadingChoices,
     areChoicesFromSnow: !mockSnowChoiceConfig.isFetchFailed && !mockSnowChoiceConfig.isLoadingChoices,
     isFetchFailed:      mockSnowChoiceConfig.isFetchFailed,
+    fetchErrorMessage:  mockSnowChoiceConfig.isFetchFailed ? 'SNow relay fetch failed: 401' : null,
     isRelayConnected:   mockSnowChoiceConfig.isRelayConnected,
     retryFetch:         vi.fn(),
   }),
