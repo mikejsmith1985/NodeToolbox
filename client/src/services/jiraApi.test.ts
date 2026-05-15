@@ -60,10 +60,37 @@ describe('jiraApi', () => {
   });
 
   it('jiraPost throws on an error response', async () => {
-    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 400 } as Response);
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 400, json: vi.fn().mockRejectedValue(new Error('no json')) } as unknown as Response);
 
     await expect(jiraPost(JIRA_CREATE_PATH, JIRA_CREATE_BODY)).rejects.toThrow(
       'Jira POST /rest/api/3/issue failed: 400',
+    );
+  });
+
+  it('jiraPost includes Jira errorMessages and field errors from the response body', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: vi.fn().mockResolvedValue({
+        errorMessages: ['The reporter specified is not a user.'],
+        errors: { issuetype: 'Issue Type is required.' },
+      }),
+    } as unknown as Response);
+
+    await expect(jiraPost(JIRA_CREATE_PATH, JIRA_CREATE_BODY)).rejects.toThrow(
+      'Jira POST /rest/api/3/issue failed: 400 — The reporter specified is not a user.; Issue Type is required.',
+    );
+  });
+
+  it('jiraPost falls back to status code when error response body is not JSON', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: vi.fn().mockRejectedValue(new SyntaxError('Unexpected token')),
+    } as unknown as Response);
+
+    await expect(jiraPost(JIRA_CREATE_PATH, JIRA_CREATE_BODY)).rejects.toThrow(
+      'Jira POST /rest/api/3/issue failed: 500',
     );
   });
 

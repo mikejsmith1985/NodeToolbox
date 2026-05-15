@@ -4,8 +4,8 @@
 // summaries, creating issues) is identical to the Quick Create form. The wizard
 // guides users step-by-step:
 //   1. Pick Problem Record  — load the PRB
-//   2. Defect Details       — choose Jira project + edit Defect summary
-//   3. Story Details        — edit Story summary
+//   2. Issue Details        — choose Jira project, issue type, and primary summary
+//   3. SL Story Details     — edit the companion story summary
 //   4. Review & Create      — confirm and create both Jira issues
 
 import { useState, type ChangeEvent } from 'react';
@@ -13,7 +13,7 @@ import { useState, type ChangeEvent } from 'react';
 import type { usePrbState } from '../hooks/usePrbState.ts';
 import styles from './PrbTab.module.css';
 
-const STEP_TITLES = ['Pick PRB', 'Defect', 'Story', 'Review'] as const;
+const STEP_TITLES = ['Pick PRB', 'Issue', 'SL Story', 'Review'] as const;
 const TOTAL_STEPS = STEP_TITLES.length;
 const FIRST_STEP_INDEX = 0;
 const LAST_STEP_INDEX = TOTAL_STEPS - 1;
@@ -47,6 +47,7 @@ function renderStepBody(currentStep: number, props: PrbWizardProps): React.React
         </div>
         {state.isFetchingPrb ? <p className={styles.loadingText}>Loading PRB details...</p> : null}
         {state.fetchError ? <p className={styles.errorText} role="alert">{state.fetchError}</p> : null}
+        {state.fetchWarning ? <p className={styles.warningText} role="status">{state.fetchWarning}</p> : null}
         {state.prbData ? (
           <p className={styles.detailValue}>
             ✅ Loaded {state.prbData.number}: {state.prbData.shortDescription}
@@ -68,12 +69,20 @@ function renderStepBody(currentStep: number, props: PrbWizardProps): React.React
           />
         </label>
         <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>Defect Summary</span>
+          <span className={styles.fieldLabel}>Issue Summary</span>
           <input
             className={styles.input}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => actions.setDefectSummary(event.target.value)}
-            value={state.defectSummaryTemplate}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => actions.setPrimaryIssueSummary(event.target.value)}
+            value={state.primaryIssueSummaryTemplate}
           />
+        </label>
+        <label className={styles.checkboxLabel}>
+          <input
+            checked={state.isPrimaryIssueDefect}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => actions.setIsPrimaryIssueDefect(event.target.checked)}
+            type="checkbox"
+          />
+          <span>Create primary issue as Defect</span>
         </label>
       </div>
     );
@@ -83,22 +92,60 @@ function renderStepBody(currentStep: number, props: PrbWizardProps): React.React
     return (
       <div className={styles.sectionBody}>
         <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>Story Summary</span>
+          <span className={styles.fieldLabel}>SL Story Summary</span>
           <input
             className={styles.input}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => actions.setStorySummary(event.target.value)}
-            value={state.storySummaryTemplate}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => actions.setSlStorySummary(event.target.value)}
+            value={state.slStorySummaryTemplate}
           />
         </label>
       </div>
     );
   }
 
+  // Review step: show the exact fields that will be submitted to Jira so the
+  // user can confirm before creating issues. Uses a structured card layout
+  // mirroring what the Quick Create preview shows.
   return (
     <div className={styles.sectionBody}>
-      <p className={styles.detailValue}>Project: {state.jiraProjectKey}</p>
-      <p className={styles.detailValue}>Defect: {state.defectSummaryTemplate}</p>
-      <p className={styles.detailValue}>Story: {state.storySummaryTemplate}</p>
+      <div className={styles.detailCard}>
+        <p className={styles.detailLabel}>Issue 1 — Primary</p>
+        <div className={styles.detailGrid}>
+          <div>
+            <span className={styles.detailLabel}>Issue Type</span>
+            <p className={styles.detailValue}>{state.isPrimaryIssueDefect ? 'Defect' : 'Story'}</p>
+          </div>
+          <div>
+            <span className={styles.detailLabel}>Summary</span>
+            <p className={styles.detailValue}>{state.primaryIssueSummaryTemplate}</p>
+          </div>
+        </div>
+        {state.prbData ? (
+          <div>
+            <span className={styles.detailLabel}>Description</span>
+            <p className={styles.detailValue}>{`${state.prbData.number}\n\n${state.prbData.description}`}</p>
+          </div>
+        ) : null}
+      </div>
+      <div className={styles.detailCard}>
+        <p className={styles.detailLabel}>Issue 2 — SL Story</p>
+        <div className={styles.detailGrid}>
+          <div>
+            <span className={styles.detailLabel}>Issue Type</span>
+            <p className={styles.detailValue}>Story</p>
+          </div>
+          <div>
+            <span className={styles.detailLabel}>Summary</span>
+            <p className={styles.detailValue}>{state.slStorySummaryTemplate}</p>
+          </div>
+        </div>
+        {state.prbData ? (
+          <div>
+            <span className={styles.detailLabel}>Description</span>
+            <p className={styles.detailValue}>{`${state.prbData.number}\n\n${state.prbData.description}`}</p>
+          </div>
+        ) : null}
+      </div>
       <div className={styles.buttonRow}>
         <button className={styles.primaryButton} onClick={() => void actions.createJiraIssues()} type="button">
           Create Jira Issues
@@ -119,10 +166,10 @@ function canAdvanceFromStep(currentStep: number, state: PrbHookResult['state']):
     return state.prbData !== null;
   }
   if (currentStep === 1) {
-    return state.jiraProjectKey.length > 0 && state.defectSummaryTemplate.length > 0;
+    return state.jiraProjectKey.length > 0 && state.primaryIssueSummaryTemplate.length > 0;
   }
   if (currentStep === 2) {
-    return state.storySummaryTemplate.length > 0;
+    return state.slStorySummaryTemplate.length > 0;
   }
   return false;
 }
