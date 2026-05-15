@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
-import type { CtaskTemplate } from './useCrgState.ts';
+import type { CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
 import { useCrgState } from './useCrgState.ts';
 
 vi.mock('../../../services/jiraApi.ts', () => ({
@@ -667,6 +667,32 @@ describe('useCrgState', () => {
       expect(bodyString.implementation_plan).toBe('Deploy via script');
     });
 
+    it('falls back to the basic config item when disabled environments still hold older mapped values', async () => {
+      vi.mocked(snowFetch).mockResolvedValue({ result: { number: 'CHG0005678' } } as never);
+
+      const { result } = await advanceToChangeDetailsStep();
+
+      act(() => {
+        result.current.actions.setChgBasicInfo({
+          configItem: { sysId: 'ci-basic-002', displayName: 'Current Basic CI' },
+        });
+        result.current.actions.updateEnvironment('pfix', {
+          isEnabled: false,
+          configItem: { sysId: 'ci-disabled-001', displayName: 'Disabled PFIX CI' },
+        });
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      const bodyString = JSON.parse(
+        (vi.mocked(snowFetch).mock.calls[0][1] as RequestInit).body as string,
+      ) as Record<string, unknown>;
+
+      expect(bodyString.cmdb_ci).toBe('ci-basic-002');
+    });
+
     it('sets submitResult to an error string when snowFetch throws', async () => {
       vi.mocked(snowFetch).mockRejectedValue(new Error('SNow relay not connected') as never);
 
@@ -721,6 +747,47 @@ describe('useCrgState', () => {
       );
       expect(result.current.state.submitResult).toBe('1 CTASK appended to CHG0001234');
     });
+
+    it('builds a CTASK template draft by cloning an existing CTASK number', async () => {
+      vi.mocked(snowFetch).mockResolvedValueOnce({
+        result: [
+          {
+            short_description:  { value: 'Validate release', display_value: 'Validate release' },
+            description:        { value: 'Run smoke tests after deployment.', display_value: 'Run smoke tests after deployment.' },
+            assignment_group:   { value: 'grp-001', display_value: 'Platform Team' },
+            assigned_to:        { value: 'usr-001', display_value: 'Jane Smith' },
+            planned_start_date: { value: '2026-01-01 10:00:00', display_value: '2026-01-01 10:00:00' },
+            planned_end_date:   { value: '2026-01-01T11:00:00', display_value: '2026-01-01T11:00:00' },
+            close_notes:        { value: 'Validation complete.', display_value: 'Validation complete.' },
+          },
+        ],
+      } as never);
+      const { result } = renderHook(() => useCrgState());
+      let clonedTemplateData: CtaskTemplateData | null = null;
+
+      await act(async () => {
+        clonedTemplateData = await result.current.actions.cloneCtaskTemplate('ctask0001234');
+      });
+
+      expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('/api/now/table/change_task?');
+      expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('number%3DCTASK0001234');
+      expect(clonedTemplateData).toEqual({
+        shortDescription: 'Validate release',
+        description:      'Run smoke tests after deployment.',
+        assignmentGroup:  { sysId: 'grp-001', displayName: 'Platform Team' },
+        assignedTo:       { sysId: 'usr-001', displayName: 'Jane Smith' },
+        plannedStartDate: '2026-01-01T10:00',
+        plannedEndDate:   '2026-01-01T11:00',
+        closeNotes:       'Validation complete.',
+      });
+    });
+
+    it('reports a clear error when the CTASK clone source is not found', async () => {
+      vi.mocked(snowFetch).mockResolvedValueOnce({ result: [] } as never);
+      const { result } = renderHook(() => useCrgState());
+
+      await expect(result.current.actions.cloneCtaskTemplate('CTASK9999999')).rejects.toThrow('CTASK9999999');
+    });
   });
 
   describe('applyTemplate', () => {
@@ -750,9 +817,9 @@ describe('useCrgState', () => {
         chgPlanningContent: {
           implementationPlan: 'Run pipeline.', backoutPlan: 'Revert tag.', testPlan: 'Smoke tests.',
         },
-        relEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00' },
-        prdEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00' },
-        pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
+        relEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00', configItem: { sysId: '', displayName: '' } },
+        prdEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00', configItem: { sysId: '', displayName: '' } },
+        pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { sysId: '', displayName: '' } },
       };
 
       act(() => {
@@ -783,6 +850,34 @@ describe('useCrgState', () => {
       });
 
       expect(result.current.state.relEnvironment).toEqual(originalRelEnvironment);
+    });
+
+    it('hydrates missing config items when applying an older environment template', () => {
+      const { result } = renderHook(() => useCrgState());
+      const olderEnvironmentTemplate = {
+        id: 'tpl-older-env',
+        name: 'Older Environment Template',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        chgBasicInfo:          result.current.state.chgBasicInfo,
+        chgPlanningAssessment: result.current.state.chgPlanningAssessment,
+        chgPlanningContent:    result.current.state.chgPlanningContent,
+        relEnvironment: {
+          isEnabled: true,
+          plannedStartDate: '2026-01-05T10:00',
+          plannedEndDate: '2026-01-05T11:00',
+        },
+      } as unknown as Parameters<typeof result.current.actions.applyTemplate>[0];
+
+      act(() => {
+        result.current.actions.applyTemplate(olderEnvironmentTemplate);
+      });
+
+      expect(result.current.state.relEnvironment).toEqual({
+        isEnabled: true,
+        plannedStartDate: '2026-01-05T10:00',
+        plannedEndDate: '2026-01-05T11:00',
+        configItem: { sysId: '', displayName: '' },
+      });
     });
   });
 
@@ -845,6 +940,9 @@ describe('useCrgState', () => {
       expect(result.current.state.projectKey).toBe('SEED');
       expect(result.current.state.currentStep).toBe(3);
       expect(result.current.state.generatedShortDescription).toBe('Saved desc');
+      expect(result.current.state.relEnvironment.configItem).toEqual({ sysId: '', displayName: '' });
+      expect(result.current.state.prdEnvironment.configItem).toEqual({ sysId: '', displayName: '' });
+      expect(result.current.state.pfixEnvironment.configItem).toEqual({ sysId: '', displayName: '' });
       // Transient flags must always start clean regardless of what was stored.
       expect(result.current.state.isFetchingIssues).toBe(false);
       expect(result.current.state.isSubmitting).toBe(false);
@@ -879,6 +977,7 @@ describe('useCrgState', () => {
       expect(result.current.state.selectedIssueKeys).toBeInstanceOf(Set);
       expect(result.current.state.selectedIssueKeys.has('PRJ-1')).toBe(true);
       expect(result.current.state.selectedIssueKeys.has('PRJ-2')).toBe(true);
+      expect(result.current.state.relEnvironment.configItem).toEqual({ sysId: '', displayName: '' });
     });
 
     it('ensures a new mount starts clean after reset is called', async () => {

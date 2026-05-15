@@ -74,6 +74,16 @@ export const APP_CARDS: AppCardDef[] = [
     sectionKey: 'agile',
   },
   {
+    id: 'reports-hub',
+    route: '/reports-hub',
+    icon: '📈',
+    title: 'Reports Hub',
+    description:
+      'Director and RTE reporting dashboard — portfolio snapshots, delivery health, flow, quality, and dashboard summaries.',
+    tags: ['Reports', 'Director', 'RTE', 'Dashboard'],
+    sectionKey: 'admin',
+  },
+  {
     id: 'snow-hub',
     route: '/snow-hub',
     icon: '❄️',

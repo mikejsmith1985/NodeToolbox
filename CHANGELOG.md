@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SNow Hub — PRB Generator shows full issue preview before creation**: Both Quick Create and the Wizard review step now display a structured preview card for each Jira issue (issue type, summary, and description) before the user clicks Create, so there are no surprises about what will be submitted.
 
 ### Added
+- **SNow Hub — CRG Configuration tab**: Change Request setup now has its own dedicated **Configuration** tab for cloning existing CHGs, saving/updating CHG templates, managing saved field defaults, and loading reusable CTASK templates before walking the CHG wizard itself.
 - **Reports Hub — Dashboard tab**: Reports Hub now includes a Jira-style dashboard tab with saved-filter-style widgets for critical defects, blocked work, open risks, and unassigned work, plus donut summaries by team, priority, status, and source.
 - **CRG — CTASK templates and append flow**: The Review & Create step now supports reusable CTASK templates, selecting CTASKs to create with the new CHG, and appending selected CTASKs to an existing CHG by number.
 - **CRG — CTASK templates can be cloned from existing CTASKs**: The CTASK Templates panel can now load an existing ServiceNow CTASK by number and pre-fill the template editor for saving or adjustment.
@@ -22,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Home — Reports Hub is visible again on the launcher**: The React app already had the `/reports-hub` route, but the Home card catalog was missing the Reports Hub card entry, so users had no visible launcher card for the tool. The Reports Hub card is now restored to the Home view.
+- **SNow Hub — CRG cloning now pulls from the full readable change record**: Loading a CHG no longer limits the ServiceNow query to a hardcoded `sysparm_fields` list, which improves clone coverage on locked-down instances where field ACLs and customized field sets were causing important values to come back blank.
+- **SNow Hub — CRG template and pin management moved out of the wizard flow**: The step-by-step CHG wizard now focuses on walking the release, while save/pin/template management lives in the new Configuration tab and the wizard only reuses the saved defaults inline.
 - **SNow Hub — PRB Generator summaries now support defect-or-story primary issues and incident-aware titles**: The primary Jira issue now uses an **Issue Summary** field with a default-to-defect checkbox, removes the old `Defect for` prefix, pulls the linked incident number from the PRB's related incident list, and formats summaries as `INC########: PRB#######: "Problem Statement"` while the second Jira issue always remains an `[SL] ...` story.
 - **CRG — cloned reference fields and environment mapping are now resilient**: Cloned Change Manager/reference values render even when ServiceNow returns display-only or sys_id-only data, Step 5 environment checkboxes are all editable, and selecting REL/PRD/PFIX maps to the live ServiceNow Environment choice when a matching option exists.
 - **CRG — blocked live dropdowns now stay editable**: When ServiceNow omits or blocks choice metadata, Change Details, Planning, and Environment fields switch to manual inputs so cloned CHG values and saved template values remain usable.

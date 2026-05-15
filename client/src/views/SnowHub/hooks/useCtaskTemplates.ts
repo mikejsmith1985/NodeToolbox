@@ -2,12 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import type { CtaskTemplate } from './useCrgState.ts';
+import type { CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
 
 const CTASK_TEMPLATES_STORAGE_KEY = 'ntbx-ctask-templates';
 const MAX_CTASK_TEMPLATES = 20;
-
-type CtaskTemplateData = Omit<CtaskTemplate, 'id' | 'name' | 'createdAt'>;
 
 function loadCtaskTemplatesFromStorage(): CtaskTemplate[] {
   try {

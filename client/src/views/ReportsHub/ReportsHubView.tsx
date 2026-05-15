@@ -1,11 +1,12 @@
 // ReportsHubView.tsx — Director & RTE-level PI reporting dashboard across all ART teams.
 //
-// Nine tabs: Feature Report, Defect Tracker, Risk Board, Flow, Impact, Individual, Quality,
-// Sprint Health, and Throughput. Hero KPI grid provides at-a-glance counts. All data
+// Ten tabs: Dashboard, Feature Report, Defect Tracker, Risk Board, Flow, Impact, Individual,
+// Quality, Sprint Health, and Throughput. Hero KPI grid provides at-a-glance counts. All data
 // loaded via useReportsHubState. Each tab also includes an "About this report" explainer
 // card, a per-tab copy-to-clipboard button, and a "Last generated" relative timestamp.
 
 import { useCallback, useEffect, useState } from 'react'
+import { Cell, Pie, PieChart, Tooltip } from 'recharts'
 
 import type {
   IndividualEntry,
@@ -27,6 +28,7 @@ const VIEW_TITLE = '📈 Reports Hub'
 const VIEW_SUBTITLE = 'Director & RTE reporting dashboard for PI planning.'
 
 const TAB_OPTIONS: { key: ReportsHubTab; label: string }[] = [
+  { key: 'dashboard', label: '🧭 Dashboard' },
   { key: 'features', label: '🏛️ Feature Report' },
   { key: 'defects', label: '🔴 Defect Tracker' },
   { key: 'risks', label: '⚠️ Risk Board' },
@@ -53,9 +55,21 @@ const CRITICAL_PRIORITY_VALUES = new Set(['Highest', 'Critical'])
 // Rolling window for throughput benchmark: last N sprints are averaged to produce the baseline
 const BENCHMARK_WINDOW_SPRINTS = 6
 const COPY_FEEDBACK_DURATION_MS = 2000
+const DASHBOARD_WIDGET_LIMIT = 6
+const DASHBOARD_PIE_WIDTH = 240
+const DASHBOARD_PIE_HEIGHT = 220
+const DASHBOARD_PIE_OUTER_RADIUS = 72
+const DASHBOARD_PIE_INNER_RADIUS = 42
+const DASHBOARD_CHART_COLORS = ['#60a5fa', '#34d399', '#fbbf24', '#f87171', '#c084fc', '#38bdf8']
 
 // Per-tab explainer bullet texts sourced from legacy rhReportPitch() in 20-reports-hub.js
 const TAB_DESCRIPTIONS: Record<ReportsHubTab, string[]> = {
+  dashboard: [
+    'Recreates a Jira-style dashboard view with saved-filter widgets on the left and summary charts on the right.',
+    'Pulls together critical defects, blocked sprint work, open risks, and unassigned work without switching tabs.',
+    'Donut charts summarize the same issue pool by team, priority, status, and source so hot spots are obvious at a glance.',
+    'Use for: operational reviews, Scrum of Scrums prep, and quick stakeholder snapshots.',
+  ],
   features: [
     'All Features and Epics across the ART — PI, status, due dates, and dependencies in one view.',
     'Replaces manual PI board updates and deck-building for stakeholder reviews.',
@@ -224,6 +238,271 @@ function TabPreamble({
         <CopyReportButton textToCopy={reportText} />
       </div>
       <AboutReportCard tabKey={tabKey} isCollapsed={isCollapsed} onToggle={onToggleExplainer} />
+    </div>
+  )
+}
+
+// ── Dashboard tab ──
+
+interface DashboardIssueEntry {
+  key: string
+  summary: string
+  teamName: string
+  assigneeName: string | null
+  priorityLabel: string
+  statusName: string
+  statusCategory: string
+  sourceLabel: string
+}
+
+interface DashboardChartSlice {
+  name: string
+  value: number
+}
+
+interface DashboardWidgetCardProps {
+  title: string
+  subtitle: string
+  totalCount: number
+  issues: DashboardIssueEntry[]
+}
+
+interface DashboardChartCardProps {
+  title: string
+  slices: DashboardChartSlice[]
+}
+
+interface DashboardTabProps {
+  defects: JiraFeatureIssue[]
+  risks: JiraFeatureIssue[]
+  sprintIssues: SprintIssue[]
+  isLoading: boolean
+  error: string | null
+}
+
+function resolveDashboardPriorityLabel(priorityLabel: string | null): string {
+  return priorityLabel ?? 'None'
+}
+
+function resolveDashboardStatusLabel(statusCategory: string): string {
+  if (statusCategory === 'done') return 'Done'
+  if (statusCategory === 'indeterminate') return 'In Progress'
+  return 'To Do'
+}
+
+function buildDashboardChartSlices(groupLabels: string[]): DashboardChartSlice[] {
+  const labelCounts = new Map<string, number>()
+  for (const groupLabel of groupLabels) {
+    labelCounts.set(groupLabel, (labelCounts.get(groupLabel) ?? 0) + 1)
+  }
+  return Array.from(labelCounts.entries())
+    .map(([name, value]) => ({ name, value }))
+    .sort((firstSlice, secondSlice) => secondSlice.value - firstSlice.value)
+}
+
+function buildDashboardIssueFromFeature(
+  issue: JiraFeatureIssue,
+  sourceLabel: string,
+): DashboardIssueEntry {
+  return {
+    key: issue.key,
+    summary: issue.summary,
+    teamName: issue.teamName,
+    assigneeName: issue.assigneeName,
+    priorityLabel: resolveDashboardPriorityLabel(issue.priority),
+    statusName: issue.statusName,
+    statusCategory: issue.statusCategory,
+    sourceLabel,
+  }
+}
+
+function buildDashboardIssueFromSprint(issue: SprintIssue): DashboardIssueEntry {
+  return {
+    key: issue.key,
+    summary: issue.summary,
+    teamName: issue.teamName,
+    assigneeName: issue.assigneeName,
+    priorityLabel: resolveDashboardPriorityLabel(issue.priority),
+    statusName: issue.statusName,
+    statusCategory: issue.statusCategory,
+    sourceLabel: 'Sprint Work',
+  }
+}
+
+function DashboardWidgetCard({ title, subtitle, totalCount, issues }: DashboardWidgetCardProps) {
+  return (
+    <section className={styles.dashboardCard}>
+      <div className={styles.dashboardCardHeader}>
+        <div>
+          <h3 className={styles.dashboardCardTitle}>{title}</h3>
+          <p className={styles.dashboardCardSubtitle}>{subtitle}</p>
+        </div>
+        <span className={styles.dashboardCardCount}>{totalCount}</span>
+      </div>
+      {issues.length === 0 ? (
+        <p className={styles.emptyState}>No issues matched this widget.</p>
+      ) : (
+        <div className={styles.tableWrapper}>
+          <table className={styles.reportTable}>
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Summary</th>
+                <th>Team</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {issues.map((issue) => (
+                <tr key={issue.key}>
+                  <td>{issue.key}</td>
+                  <td>{issue.summary}</td>
+                  <td>{issue.teamName}</td>
+                  <td>
+                    <StatusBadge statusName={issue.statusName} statusCategory={issue.statusCategory} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function DashboardChartCard({ title, slices }: DashboardChartCardProps) {
+  return (
+    <section className={styles.dashboardCard}>
+      <div className={styles.dashboardCardHeader}>
+        <div>
+          <h3 className={styles.dashboardCardTitle}>{title}</h3>
+          <p className={styles.dashboardCardSubtitle}>Summary of the current dashboard issue pool.</p>
+        </div>
+      </div>
+      {slices.length === 0 ? (
+        <p className={styles.emptyState}>No issues available for charting.</p>
+      ) : (
+        <div className={styles.dashboardChartSection}>
+          <PieChart height={DASHBOARD_PIE_HEIGHT} width={DASHBOARD_PIE_WIDTH}>
+            <Pie
+              data={slices}
+              dataKey="value"
+              innerRadius={DASHBOARD_PIE_INNER_RADIUS}
+              nameKey="name"
+              outerRadius={DASHBOARD_PIE_OUTER_RADIUS}
+            >
+              {slices.map((slice, sliceIndex) => (
+                <Cell
+                  key={`${title}-${slice.name}`}
+                  fill={DASHBOARD_CHART_COLORS[sliceIndex % DASHBOARD_CHART_COLORS.length]}
+                />
+              ))}
+            </Pie>
+            <Tooltip />
+          </PieChart>
+          <ul className={styles.dashboardLegendList}>
+            {slices.map((slice, sliceIndex) => (
+              <li className={styles.dashboardLegendItem} key={`${title}-${slice.name}-legend`}>
+                <span
+                  className={styles.dashboardLegendSwatch}
+                  style={{ backgroundColor: DASHBOARD_CHART_COLORS[sliceIndex % DASHBOARD_CHART_COLORS.length] }}
+                />
+                <span>{slice.name}</span>
+                <strong>{slice.value}</strong>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  )
+}
+
+/** Jira-style dashboard tab with filter widgets on the left and summary charts on the right. */
+function DashboardTab({
+  defects,
+  risks,
+  sprintIssues,
+  isLoading,
+  error,
+}: DashboardTabProps) {
+  if (isLoading) return <p className={styles.emptyState}>Loading dashboard data…</p>
+  if (error !== null) return <p className={styles.emptyState}>{error}</p>
+
+  const openDefects = defects.filter((defect) => defect.statusCategory !== 'done')
+  const openRisks = risks.filter((risk) => risk.statusCategory !== 'done')
+  const activeSprintIssues = sprintIssues.filter((issue) => issue.statusCategory !== 'done')
+  const dashboardIssuePool = [
+    ...openDefects.map((defect) => buildDashboardIssueFromFeature(defect, 'Defect')),
+    ...openRisks.map((risk) => buildDashboardIssueFromFeature(risk, 'Risk')),
+    ...activeSprintIssues.map((issue) => buildDashboardIssueFromSprint(issue)),
+  ]
+  const criticalDefects = openDefects
+    .filter((defect) => HIGH_PRIORITY_VALUES.has(resolveDashboardPriorityLabel(defect.priority)))
+  const criticalDefectItems = criticalDefects
+    .slice(0, DASHBOARD_WIDGET_LIMIT)
+    .map((defect) => buildDashboardIssueFromFeature(defect, 'Defect'))
+  const blockedSprintIssues = activeSprintIssues.filter((issue) => issue.isBlocked)
+  const blockedWorkItems = blockedSprintIssues
+    .slice(0, DASHBOARD_WIDGET_LIMIT)
+    .map((issue) => buildDashboardIssueFromSprint(issue))
+  const openRiskItems = openRisks
+    .slice(0, DASHBOARD_WIDGET_LIMIT)
+    .map((risk) => buildDashboardIssueFromFeature(risk, 'Risk'))
+  const unassignedIssues = dashboardIssuePool
+    .filter((issue) => issue.assigneeName === null)
+  const unassignedWorkItems = unassignedIssues.slice(0, DASHBOARD_WIDGET_LIMIT)
+  const issuesByTeam = buildDashboardChartSlices(dashboardIssuePool.map((issue) => issue.teamName))
+  const issuesByPriority = buildDashboardChartSlices(dashboardIssuePool.map((issue) => issue.priorityLabel))
+  const issuesByStatus = buildDashboardChartSlices(
+    dashboardIssuePool.map((issue) => resolveDashboardStatusLabel(issue.statusCategory)),
+  )
+  const issuesBySource = buildDashboardChartSlices(dashboardIssuePool.map((issue) => issue.sourceLabel))
+
+  return (
+    <div>
+      <h3 className={styles.tabSectionHeading}>Dashboard Snapshot</h3>
+      <div className={styles.kpiGrid}>
+        <div className={styles.kpiCard}>
+          <span className={styles.kpiLabel}>Open Defects</span>
+          <span className={`${styles.kpiValue} ${openDefects.length > 0 ? styles.kpiValueRed : ''}`}>
+            {openDefects.length}
+          </span>
+        </div>
+        <div className={styles.kpiCard}>
+          <span className={styles.kpiLabel}>Blocked Work</span>
+          <span className={`${styles.kpiValue} ${blockedSprintIssues.length > 0 ? styles.kpiValueAmber : ''}`}>
+            {blockedSprintIssues.length}
+          </span>
+        </div>
+        <div className={styles.kpiCard}>
+          <span className={styles.kpiLabel}>Open Risks</span>
+          <span className={`${styles.kpiValue} ${openRisks.length > 0 ? styles.kpiValueAmber : ''}`}>
+            {openRisks.length}
+          </span>
+        </div>
+        <div className={styles.kpiCard}>
+          <span className={styles.kpiLabel}>Unassigned Work</span>
+          <span className={`${styles.kpiValue} ${unassignedIssues.length > 0 ? styles.kpiValueRed : ''}`}>
+            {unassignedIssues.length}
+          </span>
+        </div>
+      </div>
+      <div className={styles.dashboardLayout}>
+        <div className={styles.dashboardColumn}>
+          <DashboardWidgetCard title="Critical Defects" subtitle="Highest-priority open defects that need immediate attention." totalCount={criticalDefects.length} issues={criticalDefectItems} />
+          <DashboardWidgetCard title="Blocked Work" subtitle="Current sprint issues marked blocked or impeded." totalCount={blockedSprintIssues.length} issues={blockedWorkItems} />
+          <DashboardWidgetCard title="Open Risks" subtitle="Active risk items across configured ART teams." totalCount={openRisks.length} issues={openRiskItems} />
+          <DashboardWidgetCard title="Unassigned Work" subtitle="Open items that still do not have a named owner." totalCount={unassignedIssues.length} issues={unassignedWorkItems} />
+        </div>
+        <div className={styles.dashboardColumn}>
+          <DashboardChartCard title="Issues by Team" slices={issuesByTeam} />
+          <DashboardChartCard title="Issues by Priority" slices={issuesByPriority} />
+          <DashboardChartCard title="Issues by Status" slices={issuesByStatus} />
+          <DashboardChartCard title="Issues by Source" slices={issuesBySource} />
+        </div>
+      </div>
     </div>
   )
 }
@@ -913,7 +1192,15 @@ function ThroughputTab({ throughputData, isLoading, error }: ThroughputTabProps)
 function buildTabReportText(tabKey: ReportsHubTab, state: ReturnType<typeof useReportsHubState>['state']): string {
   const timestamp = new Date().toLocaleString()
   const lines: string[] = [`Reports Hub — ${tabKey} — ${timestamp}`]
-  if (tabKey === 'features') {
+  if (tabKey === 'dashboard') {
+    const openDefectCount = state.defects.filter((defect) => defect.statusCategory !== 'done').length
+    const openRiskCount = state.risks.filter((risk) => risk.statusCategory !== 'done').length
+    const blockedIssueCount = state.sprintIssues.filter((issue) => issue.isBlocked).length
+    lines.push('', 'Dashboard Snapshot:')
+    lines.push(`  Open Defects: ${openDefectCount}`)
+    lines.push(`  Open Risks: ${openRiskCount}`)
+    lines.push(`  Blocked Work: ${blockedIssueCount}`)
+  } else if (tabKey === 'features') {
     lines.push('', 'Features:')
     for (const feature of state.features) {
       lines.push(`  ${feature.key}  ${feature.summary}  [${feature.statusName}]`)
@@ -959,6 +1246,16 @@ export default function ReportsHubView() {
 
   function renderActiveTab() {
     switch (state.activeTab) {
+      case 'dashboard':
+        return (
+          <DashboardTab
+            defects={state.defects}
+            risks={state.risks}
+            sprintIssues={state.sprintIssues}
+            isLoading={state.isLoadingDefects || state.isLoadingRisks || state.isLoadingSprintData}
+            error={state.defectsError ?? state.risksError ?? state.sprintDataError}
+          />
+        )
       case 'features':
         return (
           <FeatureReportTab
@@ -1105,8 +1402,8 @@ export default function ReportsHubView() {
         reportText={activeTabReportText}
       />
 
-      {/* Tab content — show empty state if no teams configured on features tab */}
-      {hasNoArtTeams && state.activeTab === 'features' ? (
+      {/* Tab content — dashboard and reports need ART team configuration before Jira queries can load. */}
+      {hasNoArtTeams && (state.activeTab === 'dashboard' || state.activeTab === 'features') ? (
         <p className={styles.emptyState}>
           No ART teams configured — add them in ART View Settings or run a Refresh.
         </p>

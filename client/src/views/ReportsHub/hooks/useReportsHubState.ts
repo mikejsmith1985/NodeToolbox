@@ -32,8 +32,18 @@ const LOAD_THROUGHPUT_FAILURE = 'Failed to load throughput data'
 
 // ── Type definitions ──
 
-/** All nine reporting tabs available in the Reports Hub. */
-export type ReportsHubTab = 'features' | 'defects' | 'risks' | 'flow' | 'impact' | 'individual' | 'quality' | 'sprintHealth' | 'throughput'
+/** All reporting tabs available in the Reports Hub. */
+export type ReportsHubTab =
+  | 'dashboard'
+  | 'features'
+  | 'defects'
+  | 'risks'
+  | 'flow'
+  | 'impact'
+  | 'individual'
+  | 'quality'
+  | 'sprintHealth'
+  | 'throughput'
 
 /** A single ART team configuration loaded from localStorage. */
 export interface ArtTeamConfig {

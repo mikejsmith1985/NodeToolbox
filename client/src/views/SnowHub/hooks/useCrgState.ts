@@ -17,6 +17,7 @@ interface EnvironmentConfig {
   isEnabled: boolean;
   plannedStartDate: string;
   plannedEndDate: string;
+  configItem: SnowReference;
 }
 
 /**
@@ -78,20 +79,16 @@ const FETCH_FAILURE_MESSAGE = 'Failed to fetch issues';
 const DEFAULT_MAX_RESULTS = 100;
 const ISSUE_FIELD_LIST = 'summary,status,priority,issuetype,assignee';
 const CTASK_DEFAULT_SHORT_DESCRIPTION = 'Change task';
+const CTASK_CLONE_FIELDS = [
+  'number', 'short_description', 'description', 'assignment_group', 'assigned_to',
+  'planned_start_date', 'planned_end_date', 'close_notes',
+].join(',');
+const SNOW_DATE_TIME_INPUT_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::\d{2})?/;
 
 // localStorage key used to persist CRG wizard progress across relay reconnects and page navigations.
 const CRG_STATE_STORAGE_KEY = 'ntbx-crg-state';
 
 // All reference field lookup fields requested when cloning a CHG from SNow.
-const CHG_CLONE_FIELDS = [
-  'number', 'short_description', 'description', 'justification', 'risk_impact_analysis',
-  'category', 'type', 'cmdb_ci', 'requested_by', 'assignment_group', 'assigned_to',
-  'change_manager', 'impact', 'implementation_plan', 'backout_plan', 'test_plan',
-  'u_environment', 'u_tester', 'u_service_manager', 'u_expedited',
-  'u_availability_impact', 'u_change_tested', 'u_impacted_persons_aware',
-  'u_performed_previously', 'u_success_probability', 'u_can_be_backed_out',
-].join(',');
-
 // A blank SNow reference used as a default value for all reference fields.
 const EMPTY_SNOW_REFERENCE: SnowReference = { sysId: '', displayName: '' };
 
@@ -100,6 +97,7 @@ function createDefaultEnvironmentConfig(): EnvironmentConfig {
     isEnabled: false,
     plannedStartDate: EMPTY_VALUE,
     plannedEndDate: EMPTY_VALUE,
+    configItem: { ...EMPTY_SNOW_REFERENCE },
   };
 }
 
@@ -174,6 +172,9 @@ export interface CtaskTemplate {
   closeNotes: string;
 }
 
+/** Editable CTASK fields stored in a reusable template before ids and metadata are assigned. */
+export type CtaskTemplateData = Omit<CtaskTemplate, 'id' | 'name' | 'createdAt'>;
+
 /**
  * Shape stored in localStorage — identical to CrgState minus transient/computed fields.
  * `selectedIssueKeys` is stored as a plain array because Set is not JSON-serialisable.
@@ -244,6 +245,7 @@ interface CrgActions {
   addChangeTask: (template: CtaskTemplate) => void;
   removeChangeTask: (taskId: string) => void;
   appendTasksToExistingChg: (chgNumber: string) => Promise<void>;
+  cloneCtaskTemplate: (ctaskNumber: string) => Promise<CtaskTemplateData>;
   updateEnvironment: (environmentKey: EnvironmentKey, update: Partial<EnvironmentConfig>) => void;
   goToStep: (step: CrgStep) => void;
   reset: () => void;
@@ -286,6 +288,19 @@ function createDefaultCrgState(): CrgState {
   };
 }
 
+function mergeEnvironmentConfig(
+  environmentConfig: Partial<EnvironmentConfig> | undefined,
+): EnvironmentConfig {
+  return {
+    ...createDefaultEnvironmentConfig(),
+    ...environmentConfig,
+    configItem: {
+      ...EMPTY_SNOW_REFERENCE,
+      ...(environmentConfig?.configItem ?? {}),
+    },
+  };
+}
+
 /**
  * Reads persisted CRG progress from localStorage and converts stored arrays back to Sets.
  * Returns an empty object when nothing is stored or if the stored data is invalid.
@@ -316,6 +331,9 @@ function createInitialCrgState(): CrgState {
   return {
     ...createDefaultCrgState(),
     ...persisted,
+    relEnvironment: mergeEnvironmentConfig(persisted.relEnvironment),
+    prdEnvironment: mergeEnvironmentConfig(persisted.prdEnvironment),
+    pfixEnvironment: mergeEnvironmentConfig(persisted.pfixEnvironment),
     // Always reset transient flags — these should not survive a page reload.
     availableFixVersions: [],
     isFetchingIssues: false,
@@ -402,6 +420,26 @@ function buildChangeTaskPayload(changeSysId: string, template: CtaskTemplate): R
   return ctaskPayload;
 }
 
+function normalizeSnowDateTimeForInput(field: unknown): string {
+  const snowDateTime = extractChoiceValue(field) || extractStringValue(field);
+  if (!snowDateTime) return EMPTY_VALUE;
+
+  const dateTimeMatch = SNOW_DATE_TIME_INPUT_PATTERN.exec(snowDateTime);
+  return dateTimeMatch ? `${dateTimeMatch[1]}T${dateTimeMatch[2]}` : snowDateTime;
+}
+
+function buildCtaskTemplateDataFromRecord(ctaskRecord: Record<string, unknown>): CtaskTemplateData {
+  return {
+    shortDescription: extractStringValue(ctaskRecord.short_description),
+    description:      extractStringValue(ctaskRecord.description),
+    assignmentGroup:  extractSnowReference(ctaskRecord.assignment_group),
+    assignedTo:       extractSnowReference(ctaskRecord.assigned_to),
+    plannedStartDate: normalizeSnowDateTimeForInput(ctaskRecord.planned_start_date),
+    plannedEndDate:   normalizeSnowDateTimeForInput(ctaskRecord.planned_end_date),
+    closeNotes:       extractStringValue(ctaskRecord.close_notes),
+  };
+}
+
 async function createChangeTasks(changeSysId: string, templates: CtaskTemplate[]): Promise<number> {
   for (const template of templates) {
     await snowFetch(
@@ -483,6 +521,66 @@ function getEnvironmentStateKey(environmentKey: EnvironmentKey) {
     pfix: 'pfixEnvironment',
   } as const;
   return environmentStateKeyMap[environmentKey];
+}
+
+function inferEnvironmentKeyFromValue(environmentValue: string): EnvironmentKey | null {
+  const normalizedEnvironmentValue = environmentValue.trim().toLowerCase();
+  if (!normalizedEnvironmentValue) {
+    return null;
+  }
+
+  if (normalizedEnvironmentValue.includes('pfix') || normalizedEnvironmentValue.includes('fix')) {
+    return 'pfix';
+  }
+
+  if (normalizedEnvironmentValue.includes('prd') || normalizedEnvironmentValue.includes('prod')) {
+    return 'prd';
+  }
+
+  if (normalizedEnvironmentValue.includes('rel') || normalizedEnvironmentValue.includes('release')) {
+    return 'rel';
+  }
+
+  return null;
+}
+
+function resolveMappedConfigItem(state: CrgState): SnowReference {
+  const environmentPriority: EnvironmentKey[] = ['pfix', 'prd', 'rel'];
+
+  for (const environmentKey of environmentPriority) {
+    const environmentState = state[getEnvironmentStateKey(environmentKey)];
+    if (environmentState.isEnabled && environmentState.configItem.sysId) {
+      return environmentState.configItem;
+    }
+  }
+
+  return state.chgBasicInfo.configItem;
+}
+
+function buildClonedEnvironmentState(
+  previousState: CrgState,
+  clonedEnvironmentValue: string,
+  clonedConfigItem: SnowReference,
+): Pick<CrgState, 'relEnvironment' | 'prdEnvironment' | 'pfixEnvironment'> {
+  const nextEnvironmentState = {
+    relEnvironment:  { ...previousState.relEnvironment },
+    prdEnvironment:  { ...previousState.prdEnvironment },
+    pfixEnvironment: { ...previousState.pfixEnvironment },
+  };
+  const matchedEnvironmentKey = inferEnvironmentKeyFromValue(clonedEnvironmentValue);
+
+  if (!matchedEnvironmentKey) {
+    return nextEnvironmentState;
+  }
+
+  const matchedEnvironmentStateKey = getEnvironmentStateKey(matchedEnvironmentKey);
+  nextEnvironmentState[matchedEnvironmentStateKey] = {
+    ...nextEnvironmentState[matchedEnvironmentStateKey],
+    isEnabled: true,
+    configItem: clonedConfigItem,
+  };
+
+  return nextEnvironmentState;
 }
 
 /**
@@ -716,7 +814,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     try {
       const encodedNumber = encodeURIComponent(chgNumber);
       const response = await snowFetch<{ result: Record<string, unknown>[] }>(
-        `/api/now/table/change_request?sysparm_query=number%3D${encodedNumber}&sysparm_limit=1&sysparm_fields=${CHG_CLONE_FIELDS}&sysparm_display_value=all`,
+        `/api/now/table/change_request?sysparm_query=number%3D${encodedNumber}&sysparm_limit=1&sysparm_display_value=all`,
       );
 
       if (!response.result?.length) {
@@ -729,6 +827,8 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       }
 
       const chg = response.result[0];
+      const clonedEnvironmentValue = extractChoiceValue(chg.u_environment);
+      const clonedConfigItem = extractSnowReference(chg.cmdb_ci);
 
       setState((previousState) => ({
         ...previousState,
@@ -741,16 +841,17 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
         chgBasicInfo: {
           category:        extractChoiceValue(chg.category),
           changeType:      extractChoiceValue(chg.type),
-          environment:     extractChoiceValue(chg.u_environment),
+          environment:     clonedEnvironmentValue,
           requestedBy:     extractSnowReference(chg.requested_by),
-          configItem:      extractSnowReference(chg.cmdb_ci),
+          configItem:      clonedConfigItem,
           assignmentGroup: extractSnowReference(chg.assignment_group),
           assignedTo:      extractSnowReference(chg.assigned_to),
           changeManager:   extractSnowReference(chg.change_manager),
           tester:          extractSnowReference(chg.u_tester),
           serviceManager:  extractSnowReference(chg.u_service_manager),
-          isExpedited:     extractStringValue(chg.u_expedited) === 'true',
+          isExpedited:     extractChoiceValue(chg.u_expedited) === 'true',
         },
+        ...buildClonedEnvironmentState(previousState, clonedEnvironmentValue, clonedConfigItem),
         chgPlanningAssessment: {
           impact:                        extractChoiceValue(chg.impact),
           systemAvailabilityImplication: extractChoiceValue(chg.u_availability_impact),
@@ -785,9 +886,9 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       chgBasicInfo:          { ...template.chgBasicInfo },
       chgPlanningAssessment: { ...template.chgPlanningAssessment },
       chgPlanningContent:    { ...template.chgPlanningContent },
-      relEnvironment:        template.relEnvironment ? { ...template.relEnvironment } : previousState.relEnvironment,
-      prdEnvironment:        template.prdEnvironment ? { ...template.prdEnvironment } : previousState.prdEnvironment,
-      pfixEnvironment:       template.pfixEnvironment ? { ...template.pfixEnvironment } : previousState.pfixEnvironment,
+      relEnvironment:        template.relEnvironment ? mergeEnvironmentConfig(template.relEnvironment) : previousState.relEnvironment,
+      prdEnvironment:        template.prdEnvironment ? mergeEnvironmentConfig(template.prdEnvironment) : previousState.prdEnvironment,
+      pfixEnvironment:       template.pfixEnvironment ? mergeEnvironmentConfig(template.pfixEnvironment) : previousState.pfixEnvironment,
     }));
   }, []);
 
@@ -840,6 +941,34 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     }
   }, [state.changeTasks]);
 
+  const cloneCtaskTemplate = useCallback(async (ctaskNumber: string): Promise<CtaskTemplateData> => {
+    const normalizedCtaskNumber = ctaskNumber.trim().toUpperCase();
+    if (!normalizedCtaskNumber) {
+      throw new Error('Enter a CTASK number before cloning a template.');
+    }
+
+    let ctaskRecord: Record<string, unknown> | undefined;
+    try {
+      const encodedQuery = encodeURIComponent(`number=${normalizedCtaskNumber}`);
+      const responseData = await snowFetch<{ result: Record<string, unknown>[] }>(
+        `/api/now/table/change_task?sysparm_query=${encodedQuery}&sysparm_limit=1&sysparm_fields=${CTASK_CLONE_FIELDS}&sysparm_display_value=all`,
+      );
+      ctaskRecord = responseData.result?.[0];
+    } catch (unknownError) {
+      const errorMessage = unknownError instanceof Error ? unknownError.message : 'CTASK clone failed';
+      if (errorMessage.includes('401')) {
+        throw new Error('SNow returned 401 while cloning the CTASK. Refresh a full ServiceNow form or list page, click the latest NodeToolbox SNow Relay bookmarklet, then try again.');
+      }
+      throw new Error(errorMessage);
+    }
+
+    if (!ctaskRecord) {
+      throw new Error(`${normalizedCtaskNumber} was not found in ServiceNow.`);
+    }
+
+    return buildCtaskTemplateDataFromRecord(ctaskRecord);
+  }, []);
+
   const updateEnvironment = useCallback((environmentKey: EnvironmentKey, update: Partial<EnvironmentConfig>) => {
     const environmentStateKey = getEnvironmentStateKey(environmentKey);
     setState((previousState) => ({
@@ -883,10 +1012,12 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     if (state.chgBasicInfo.environment)  chgPayload.u_environment = state.chgBasicInfo.environment;
     if (state.chgBasicInfo.isExpedited)  chgPayload.u_expedited   = true;
 
-    // Reference fields — only include when the user selected a real record (has a sys_id).
-    if (state.chgBasicInfo.requestedBy.sysId)     chgPayload.requested_by      = state.chgBasicInfo.requestedBy.sysId;
-    if (state.chgBasicInfo.configItem.sysId)      chgPayload.cmdb_ci           = state.chgBasicInfo.configItem.sysId;
-    if (state.chgBasicInfo.assignmentGroup.sysId) chgPayload.assignment_group  = state.chgBasicInfo.assignmentGroup.sysId;
+     const mappedConfigItem = resolveMappedConfigItem(state);
+
+     // Reference fields — only include when the user selected a real record (has a sys_id).
+     if (state.chgBasicInfo.requestedBy.sysId)     chgPayload.requested_by      = state.chgBasicInfo.requestedBy.sysId;
+     if (mappedConfigItem.sysId)                   chgPayload.cmdb_ci           = mappedConfigItem.sysId;
+     if (state.chgBasicInfo.assignmentGroup.sysId) chgPayload.assignment_group  = state.chgBasicInfo.assignmentGroup.sysId;
     if (state.chgBasicInfo.assignedTo.sysId)      chgPayload.assigned_to       = state.chgBasicInfo.assignedTo.sysId;
     if (state.chgBasicInfo.changeManager.sysId)   chgPayload.change_manager    = state.chgBasicInfo.changeManager.sysId;
     if (state.chgBasicInfo.tester.sysId)          chgPayload.u_tester          = state.chgBasicInfo.tester.sysId;
@@ -980,6 +1111,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       addChangeTask,
       removeChangeTask,
       appendTasksToExistingChg,
+      cloneCtaskTemplate,
       updateEnvironment,
       goToStep,
       reset,
@@ -990,7 +1122,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     toggleIssueSelection, selectAllIssues, generateDocs, updateGeneratedField,
     setChgBasicInfo, setChgPlanningAssessment, setChgPlanningContent,
     setCloneChgNumber, cloneFromChg, applyTemplate, addChangeTask, removeChangeTask,
-    appendTasksToExistingChg, updateEnvironment, goToStep, reset, createChg,
+    appendTasksToExistingChg, cloneCtaskTemplate, updateEnvironment, goToStep, reset, createChg,
   ]);
 
   return { state, actions };

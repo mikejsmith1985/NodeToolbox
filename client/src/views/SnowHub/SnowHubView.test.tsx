@@ -48,9 +48,10 @@ const { mockCrgState, mockCrgActions, mockPrbState, mockPrbActions, mockReleaseS
       backoutPlan: '',
       testPlan: '',
     },
-    relEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
-    prdEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '' },
-    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
+    relEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '', configItem: { sysId: '', displayName: '' } },
+    prdEnvironment: { isEnabled: true, plannedStartDate: '', plannedEndDate: '', configItem: { sysId: '', displayName: '' } },
+    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { sysId: '', displayName: '' } },
+    changeTasks: [] as unknown[],
     isSubmitting: false,
     submitResult: null as string | null,
   },
@@ -71,14 +72,20 @@ const { mockCrgState, mockCrgActions, mockPrbState, mockPrbActions, mockReleaseS
     cloneFromChg: vi.fn().mockResolvedValue(undefined),
     applyTemplate: vi.fn(),
     updateEnvironment: vi.fn(),
+    addChangeTask: vi.fn(),
+    removeChangeTask: vi.fn(),
+    appendTasksToExistingChg: vi.fn().mockResolvedValue(undefined),
+    cloneCtaskTemplate: vi.fn().mockResolvedValue({}),
     goToStep: vi.fn(),
     reset: vi.fn(),
+    createChg: vi.fn().mockResolvedValue(undefined),
   },
   mockPrbState: {
     prbNumber: '',
     prbData: null as {
       sysId: string;
       number: string;
+      incidentNumber: string;
       shortDescription: string;
       description: string;
       state: string;
@@ -87,9 +94,11 @@ const { mockCrgState, mockCrgActions, mockPrbState, mockPrbActions, mockReleaseS
     } | null,
     isFetchingPrb: false,
     fetchError: null as string | null,
+    fetchWarning: null as string | null,
     jiraProjectKey: '',
-    defectSummaryTemplate: '',
-    storySummaryTemplate: '',
+    isPrimaryIssueDefect: true,
+    primaryIssueSummaryTemplate: '',
+    slStorySummaryTemplate: '',
     isCreatingIssues: false,
     createError: null as string | null,
     createdIssueKeys: [] as string[],
@@ -98,8 +107,9 @@ const { mockCrgState, mockCrgActions, mockPrbState, mockPrbActions, mockReleaseS
     setPrbNumber: vi.fn(),
     fetchPrb: vi.fn().mockResolvedValue(undefined),
     setJiraProjectKey: vi.fn(),
-    setDefectSummary: vi.fn(),
-    setStorySummary: vi.fn(),
+    setIsPrimaryIssueDefect: vi.fn(),
+    setPrimaryIssueSummary: vi.fn(),
+    setSlStorySummary: vi.fn(),
     createJiraIssues: vi.fn().mockResolvedValue(undefined),
     reset: vi.fn(),
   },
@@ -220,10 +230,11 @@ describe('SnowHubView', () => {
     expect(screen.getByRole('heading', { name: 'SNow Hub' })).toBeInTheDocument();
   });
 
-  it('renders the four tab buttons', () => {
+  it('renders the five tab buttons', () => {
     render(<SnowHubView />);
 
     expect(screen.getByRole('tab', { name: 'CHG' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Configuration' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'PRB Generator' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Release Management' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Sync Monitor' })).toBeInTheDocument();
@@ -244,6 +255,16 @@ describe('SnowHubView', () => {
 
     expect(screen.getByLabelText('PRB Number')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Load PRB' })).toBeInTheDocument();
+  });
+
+  it('switches to the Configuration tab', async () => {
+    const user = userEvent.setup();
+    render(<SnowHubView />);
+
+    await user.click(screen.getByRole('tab', { name: 'Configuration' }));
+
+    expect(screen.getByRole('heading', { name: 'CRG Configuration' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Load CHG' })).toBeInTheDocument();
   });
 
   it('switches to the Release Management tab', async () => {

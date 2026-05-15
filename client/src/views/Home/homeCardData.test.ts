@@ -5,8 +5,9 @@ import { describe, expect, it } from 'vitest';
 import { APP_CARDS, APP_SECTIONS } from './homeCardData.ts';
 
 describe('homeCardData', () => {
-  it('contains only the eight Phase 1 home cards', () => {
-    expect(APP_CARDS).toHaveLength(8);
+  it('contains the retained home cards including Reports Hub', () => {
+    expect(APP_CARDS).toHaveLength(9);
+    expect(APP_CARDS.some((appCard) => appCard.id === 'reports-hub')).toBe(true);
   });
 
   it('defines every required field for each card', () => {
