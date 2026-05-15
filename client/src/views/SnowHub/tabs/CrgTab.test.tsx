@@ -336,6 +336,17 @@ describe('CrgTab', () => {
     expect(screen.getByRole('button', { name: 'Fetch Issues' })).toBeInTheDocument();
   });
 
+  it('jumps directly to a selected wizard step from the step indicator', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 4;
+
+    render(<CrgTab />);
+
+    await user.click(screen.getByRole('button', { name: '2. Review Issues' }));
+
+    expect(mockActions.goToStep).toHaveBeenCalledWith(2);
+  });
+
   it('renders a fix version dropdown when fix versions are available', () => {
     mockState.availableFixVersions = ['1.2.3', '1.2.4'] as never[];
     render(<CrgTab />);
@@ -974,8 +985,62 @@ describe('CrgTab', () => {
 
     render(<CrgTab mode="configuration" />);
 
-    await user.click(screen.getByRole('button', { name: '📌 Pin to payload' }));
+    await user.click(screen.getByRole('button', { name: 'Pin exact value for Custom Change Rule' }));
 
     expect(mockActions.pinCustomSnowField).toHaveBeenCalledWith('u_custom_change_rule', 'cab_required');
+  });
+
+  it('groups loaded SNow fields into a searchable inspector with readable labels', async () => {
+    const user = userEvent.setup();
+    mockState.inspectedSnowFields = [
+      { fieldName: 'u_has_change_been_tested', displayValue: 'Yes - Testing has been performed', storedValue: 'yes' },
+      { fieldName: 'approval', displayValue: 'Not Yet Requested', storedValue: 'not requested' },
+    ];
+
+    render(<CrgTab mode="configuration" />);
+
+    expect(screen.getByRole('heading', { name: 'ServiceNow field inspector' })).toBeInTheDocument();
+    expect(screen.getByText('Custom change fields')).toBeInTheDocument();
+    expect(screen.getByText('Workflow and approval fields')).toBeInTheDocument();
+    expect(screen.getByText('Has Change Been Tested')).toBeInTheDocument();
+    expect(screen.getByText('u_has_change_been_tested')).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: 'Search loaded ServiceNow fields' }), 'approval');
+
+    expect(screen.queryByText('Has Change Been Tested')).not.toBeInTheDocument();
+    expect(screen.getByText('Approval')).toBeInTheDocument();
+  });
+
+  it('shows pinned payload values in a compact ledger and removes them by readable label', async () => {
+    const user = userEvent.setup();
+    mockState.customSnowFields = { u_custom_change_rule: 'cab_required' };
+    mockState.inspectedSnowFields = [
+      {
+        fieldName: 'u_custom_change_rule',
+        displayValue: 'CAB required',
+        storedValue: 'cab_required',
+      },
+    ];
+
+    render(<CrgTab mode="configuration" />);
+
+    expect(screen.getByText('Pinned exact payload values')).toBeInTheDocument();
+    expect(screen.getAllByText('CAB required').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Pinned').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Remove payload pin for Custom Change Rule' }));
+
+    expect(mockActions.removeCustomSnowField).toHaveBeenCalledWith('u_custom_change_rule');
+  });
+
+  it('keeps pinned payload values visible when no CHG inspector data is loaded', () => {
+    mockState.customSnowFields = { u_custom_change_rule: 'cab_required' };
+    mockState.inspectedSnowFields = [];
+
+    render(<CrgTab mode="configuration" />);
+
+    expect(screen.getAllByText('Custom Change Rule').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('u_custom_change_rule').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('cab_required').length).toBeGreaterThan(0);
   });
 });

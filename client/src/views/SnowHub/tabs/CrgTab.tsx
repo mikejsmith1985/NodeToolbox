@@ -11,6 +11,7 @@ import type {
   CrgTemplate,
   CtaskTemplate,
   CtaskTemplateData,
+  InspectedSnowField,
   SnowReference,
 } from '../hooks/useCrgState.ts';
 import type { CrgPinnedField, CrgPinnedFieldInput } from '../hooks/useCrgFieldPins.ts';
@@ -69,6 +70,13 @@ const DEFAULT_RESULT_MESSAGE = 'Generated content will appear here after you com
 const EMPTY_ENVIRONMENT_DATES = 'Not scheduled';
 const WORKSPACE_PANEL_TITLE = 'Clone, Templates & Defaults';
 const WORKSPACE_PANEL_HINT = 'Clone a known-good CHG, save repeatable templates, and build reusable pinned field options without filling the wizard with static pin lists.';
+const PAYLOAD_INSPECTOR_TITLE = 'ServiceNow field inspector';
+const PAYLOAD_INSPECTOR_HINT = 'Load a known-good CHG, review the readable fields that came back, then pin only the exact custom values that should be submitted with future changes.';
+const PAYLOAD_SEARCH_PLACEHOLDER = 'Search field label, API name, or value...';
+const PAYLOAD_EMPTY_STATE = 'No CHG fields loaded yet. Enter a CHG number and choose Load CHG to inspect available fields.';
+const PAYLOAD_NO_MATCHES = 'No loaded fields match that search.';
+const PAYLOAD_PINNED_LEDGER_TITLE = 'Pinned exact payload values';
+const PAYLOAD_PINNED_LEDGER_EMPTY = 'No exact payload values pinned yet.';
 const SHORT_MANUAL_VALUE_PLACEHOLDER = 'Internal ServiceNow value';
 const PIN_SECTION_CHANGE_DETAILS = 'Change Details';
 const PIN_SECTION_PLANNING = 'Planning';
@@ -93,6 +101,21 @@ const ENVIRONMENT_VALUE_PIN_KEY = 'chgBasicInfo.environment';
 const REL_CONFIG_ITEM_PIN_KEY = 'relEnvironment.configItem';
 const PRD_CONFIG_ITEM_PIN_KEY = 'prdEnvironment.configItem';
 const PFIX_CONFIG_ITEM_PIN_KEY = 'pfixEnvironment.configItem';
+const CUSTOM_PAYLOAD_GROUP_KEY = 'custom';
+const LIFECYCLE_PAYLOAD_GROUP_KEY = 'lifecycle';
+const SCHEDULE_PAYLOAD_GROUP_KEY = 'schedule';
+const SYSTEM_PAYLOAD_GROUP_KEY = 'system';
+const OTHER_PAYLOAD_GROUP_KEY = 'other';
+const PAYLOAD_LABEL_ACRONYMS = new Set(['api', 'cab', 'chg', 'ci', 'sla', 'snow']);
+const PAYLOAD_SCHEDULE_FIELD_TOKENS = ['date', 'time', 'due', 'window', 'schedule', 'start', 'end'];
+const PAYLOAD_LIFECYCLE_FIELD_TOKENS = ['active', 'approval', 'state', 'status', 'model', 'conflict', 'escalation', 'knowledge'];
+const PAYLOAD_GROUP_DEFINITIONS = [
+  { key: CUSTOM_PAYLOAD_GROUP_KEY, label: 'Custom change fields' },
+  { key: LIFECYCLE_PAYLOAD_GROUP_KEY, label: 'Workflow and approval fields' },
+  { key: SCHEDULE_PAYLOAD_GROUP_KEY, label: 'Schedule fields' },
+  { key: SYSTEM_PAYLOAD_GROUP_KEY, label: 'System fields' },
+  { key: OTHER_PAYLOAD_GROUP_KEY, label: 'Other loaded fields' },
+] as const;
 
 function buildCurrentTemplateData(state: CrgStateData): Omit<CrgTemplate, 'id' | 'name' | 'createdAt'> {
   return {
@@ -416,6 +439,7 @@ function resolveSuggestedEnvironmentValue(
 
 interface StepIndicatorProps {
   currentStep: CrgStateData['currentStep'];
+  onStepSelect: (step: CrgStateData['currentStep']) => void;
 }
 
 interface CrgStepProps {
@@ -519,11 +543,120 @@ interface CrgWorkspaceExtras {
   findPinnedField: (fieldKey: string, fieldValue: CrgPinnedField['value']) => CrgPinnedField | undefined;
 }
 
+type PayloadFieldGroupKey = typeof PAYLOAD_GROUP_DEFINITIONS[number]['key'];
+
+interface PayloadFieldView {
+  fieldName: string;
+  label: string;
+  displayValue: string;
+  storedValue: string;
+  groupKey: PayloadFieldGroupKey;
+  isPinned: boolean;
+}
+
+interface PayloadFieldInspectorPanelProps {
+  inspectedSnowFields: InspectedSnowField[];
+  customSnowFields: Record<string, string>;
+  onPinPayloadField: (fieldName: string, storedValue: string) => void;
+  onRemovePayloadField: (fieldName: string) => void;
+}
+
+interface PayloadFieldRowProps {
+  payloadField: PayloadFieldView;
+  onTogglePayloadField: (payloadField: PayloadFieldView) => void;
+}
+
+interface PinnedPayloadLedgerProps {
+  pinnedPayloadFields: PayloadFieldView[];
+  onRemovePayloadField: (fieldName: string) => void;
+}
+
 interface StepHeadingProps {
   currentStep: CrgStateData['currentStep'];
 }
 
-function StepIndicator({ currentStep }: StepIndicatorProps) {
+function formatPayloadFieldWord(fieldNamePart: string): string {
+  const lowerFieldNamePart = fieldNamePart.toLowerCase();
+  if (PAYLOAD_LABEL_ACRONYMS.has(lowerFieldNamePart)) return lowerFieldNamePart.toUpperCase();
+  return `${lowerFieldNamePart.slice(0, 1).toUpperCase()}${lowerFieldNamePart.slice(1)}`;
+}
+
+function createPayloadFieldLabel(fieldName: string): string {
+  const fieldNameWithoutCustomPrefix = fieldName.startsWith('u_') ? fieldName.slice(2) : fieldName;
+  return fieldNameWithoutCustomPrefix
+    .split('_')
+    .filter(Boolean)
+    .map(formatPayloadFieldWord)
+    .join(' ');
+}
+
+function classifyPayloadField(fieldName: string): PayloadFieldGroupKey {
+  if (fieldName.startsWith('u_')) return CUSTOM_PAYLOAD_GROUP_KEY;
+  if (fieldName.startsWith('sys_')) return SYSTEM_PAYLOAD_GROUP_KEY;
+  if (PAYLOAD_SCHEDULE_FIELD_TOKENS.some((fieldToken) => fieldName.includes(fieldToken))) return SCHEDULE_PAYLOAD_GROUP_KEY;
+  if (PAYLOAD_LIFECYCLE_FIELD_TOKENS.some((fieldToken) => fieldName.includes(fieldToken))) return LIFECYCLE_PAYLOAD_GROUP_KEY;
+  return OTHER_PAYLOAD_GROUP_KEY;
+}
+
+function createPayloadFieldView(
+  inspectedField: InspectedSnowField,
+  customSnowFields: Record<string, string>,
+): PayloadFieldView {
+  return {
+    fieldName: inspectedField.fieldName,
+    label: createPayloadFieldLabel(inspectedField.fieldName),
+    displayValue: inspectedField.displayValue,
+    storedValue: inspectedField.storedValue,
+    groupKey: classifyPayloadField(inspectedField.fieldName),
+    isPinned: inspectedField.fieldName in customSnowFields,
+  };
+}
+
+function createPinnedPayloadFieldView(fieldName: string, fieldValue: string): PayloadFieldView {
+  return {
+    fieldName,
+    label: createPayloadFieldLabel(fieldName),
+    displayValue: fieldValue,
+    storedValue: fieldValue,
+    groupKey: classifyPayloadField(fieldName),
+    isPinned: true,
+  };
+}
+
+function createMergedPayloadFieldViews(
+  inspectedSnowFields: InspectedSnowField[],
+  customSnowFields: Record<string, string>,
+): PayloadFieldView[] {
+  const inspectedFieldNames = new Set(inspectedSnowFields.map((inspectedField) => inspectedField.fieldName));
+  const inspectedPayloadFields = inspectedSnowFields.map((inspectedField) => createPayloadFieldView(inspectedField, customSnowFields));
+  const pinnedOnlyPayloadFields = Object.entries(customSnowFields)
+    .filter(([fieldName]) => !inspectedFieldNames.has(fieldName))
+    .map(([fieldName, fieldValue]) => createPinnedPayloadFieldView(fieldName, fieldValue));
+  return [...inspectedPayloadFields, ...pinnedOnlyPayloadFields];
+}
+
+function doesPayloadFieldMatchSearch(payloadField: PayloadFieldView, normalizedSearchQuery: string): boolean {
+  if (!normalizedSearchQuery) return true;
+  const searchablePayloadText = [
+    payloadField.label,
+    payloadField.fieldName,
+    payloadField.displayValue,
+    payloadField.storedValue,
+  ].join(' ').toLowerCase();
+  return searchablePayloadText.includes(normalizedSearchQuery);
+}
+
+function groupPayloadFieldViews(payloadFields: PayloadFieldView[]): Map<PayloadFieldGroupKey, PayloadFieldView[]> {
+  const payloadFieldGroups = new Map<PayloadFieldGroupKey, PayloadFieldView[]>();
+  payloadFields.forEach((payloadField) => {
+    const groupFields = payloadFieldGroups.get(payloadField.groupKey) ?? [];
+    groupFields.push(payloadField);
+    payloadFieldGroups.set(payloadField.groupKey, groupFields);
+  });
+  return payloadFieldGroups;
+}
+
+function StepIndicator({ currentStep, onStepSelect }: StepIndicatorProps) {
   return (
     <ol className={styles.stepIndicator}>
       {STEP_DEFINITIONS.map((stepDefinition) => {
@@ -531,8 +664,15 @@ function StepIndicator({ currentStep }: StepIndicatorProps) {
         const stepClassName = isActiveStep ? `${styles.stepBadge} ${styles.activeStep}` : styles.stepBadge;
 
         return (
-          <li className={stepClassName} key={stepDefinition.step}>
-            {stepDefinition.step}. {stepDefinition.label}
+          <li key={stepDefinition.step}>
+            <button
+              aria-current={isActiveStep ? 'step' : undefined}
+              className={stepClassName}
+              onClick={() => onStepSelect(stepDefinition.step)}
+              type="button"
+            >
+              {stepDefinition.step}. {stepDefinition.label}
+            </button>
           </li>
         );
       })}
@@ -622,6 +762,160 @@ function applyPinnedFieldValue(actions: CrgActionSet, pinnedField: CrgPinnedFiel
   }
 }
 
+function PayloadFieldRow({ payloadField, onTogglePayloadField }: PayloadFieldRowProps) {
+  const actionLabel = payloadField.isPinned
+    ? `Unpin exact value for ${payloadField.label}`
+    : `Pin exact value for ${payloadField.label}`;
+  const buttonClassName = payloadField.isPinned
+    ? `${styles.secondaryButton} ${styles.activePinButton}`
+    : styles.secondaryButton;
+  const shouldShowStoredValue = payloadField.storedValue !== payloadField.displayValue;
+
+  return (
+    <article className={styles.payloadInspectorRow}>
+      <div className={styles.payloadFieldIdentity}>
+        <div className={styles.payloadFieldTitleRow}>
+          <strong>{payloadField.label}</strong>
+          {payloadField.isPinned ? <span className={styles.payloadPinnedBadge}>Pinned</span> : null}
+        </div>
+        <code className={styles.payloadApiName}>{payloadField.fieldName}</code>
+      </div>
+      <div className={styles.payloadValueBlock}>
+        <span className={styles.payloadValueLabel}>Value from loaded CHG</span>
+        <span className={styles.payloadDisplayValue} title={payloadField.displayValue}>
+          {payloadField.displayValue}
+        </span>
+        {shouldShowStoredValue ? (
+          <span className={styles.payloadStoredValue}>Submitted value: {payloadField.storedValue}</span>
+        ) : null}
+      </div>
+      <button
+        aria-label={actionLabel}
+        className={buttonClassName}
+        onClick={() => onTogglePayloadField(payloadField)}
+        type="button"
+      >
+        {payloadField.isPinned ? 'Pinned' : 'Pin exact value'}
+      </button>
+    </article>
+  );
+}
+
+function PinnedPayloadLedger({ pinnedPayloadFields, onRemovePayloadField }: PinnedPayloadLedgerProps) {
+  if (pinnedPayloadFields.length === 0) {
+    return <p className={styles.panelHint}>{PAYLOAD_PINNED_LEDGER_EMPTY}</p>;
+  }
+
+  return (
+    <div className={styles.payloadPinnedLedger}>
+      {pinnedPayloadFields.map((payloadField) => (
+        <div className={styles.payloadPinnedItem} key={payloadField.fieldName}>
+          <div className={styles.payloadPinnedItemText}>
+            <strong>{payloadField.label}</strong>
+            <code className={styles.payloadApiName}>{payloadField.fieldName}</code>
+            <span>{payloadField.displayValue}</span>
+          </div>
+          <button
+            aria-label={`Remove payload pin for ${payloadField.label}`}
+            className={styles.linkButton}
+            onClick={() => onRemovePayloadField(payloadField.fieldName)}
+            type="button"
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PayloadFieldInspectorPanel({
+  inspectedSnowFields,
+  customSnowFields,
+  onPinPayloadField,
+  onRemovePayloadField,
+}: PayloadFieldInspectorPanelProps) {
+  const [payloadSearchQuery, setPayloadSearchQuery] = useState<string>('');
+  const normalizedSearchQuery = payloadSearchQuery.trim().toLowerCase();
+  const payloadFields = useMemo(() => (
+    createMergedPayloadFieldViews(inspectedSnowFields, customSnowFields)
+  ), [customSnowFields, inspectedSnowFields]);
+  const visiblePayloadFields = useMemo(() => (
+    payloadFields.filter((payloadField) => doesPayloadFieldMatchSearch(payloadField, normalizedSearchQuery))
+  ), [normalizedSearchQuery, payloadFields]);
+  const pinnedPayloadFields = payloadFields.filter((payloadField) => payloadField.isPinned);
+  const groupedPayloadFields = groupPayloadFieldViews(visiblePayloadFields);
+
+  function handleTogglePayloadField(payloadField: PayloadFieldView): void {
+    if (payloadField.isPinned) {
+      onRemovePayloadField(payloadField.fieldName);
+      return;
+    }
+    onPinPayloadField(payloadField.fieldName, payloadField.storedValue);
+  }
+
+  return (
+    <div className={`${styles.clonePanel} ${styles.payloadInspectorPanel}`}>
+      <div className={styles.payloadInspectorHeader}>
+        <div>
+          <h4 className={styles.panelSectionTitle}>{PAYLOAD_INSPECTOR_TITLE}</h4>
+          <p className={styles.panelHint}>{PAYLOAD_INSPECTOR_HINT}</p>
+        </div>
+        <span className={styles.payloadCountPill}>
+          {pinnedPayloadFields.length} pinned / {payloadFields.length} loaded
+        </span>
+      </div>
+
+      {payloadFields.length > 0 ? (
+        <>
+          <input
+            aria-label="Search loaded ServiceNow fields"
+            className={styles.input}
+            onChange={(event) => setPayloadSearchQuery(event.target.value)}
+            placeholder={PAYLOAD_SEARCH_PLACEHOLDER}
+            value={payloadSearchQuery}
+          />
+          {visiblePayloadFields.length > 0 ? (
+            PAYLOAD_GROUP_DEFINITIONS.map((payloadGroup) => {
+              const groupPayloadFields = groupedPayloadFields.get(payloadGroup.key) ?? [];
+              if (groupPayloadFields.length === 0) return null;
+              return (
+                <section className={styles.payloadGroup} key={payloadGroup.key}>
+                  <div className={styles.payloadGroupHeader}>
+                    <h5>{payloadGroup.label}</h5>
+                    <span>{groupPayloadFields.length} field(s)</span>
+                  </div>
+                  <div className={styles.payloadInspectorList}>
+                    {groupPayloadFields.map((payloadField) => (
+                      <PayloadFieldRow
+                        key={payloadField.fieldName}
+                        onTogglePayloadField={handleTogglePayloadField}
+                        payloadField={payloadField}
+                      />
+                    ))}
+                  </div>
+                </section>
+              );
+            })
+          ) : (
+            <p className={styles.panelHint}>{PAYLOAD_NO_MATCHES}</p>
+          )}
+        </>
+      ) : (
+        <p className={styles.panelHint}>{PAYLOAD_EMPTY_STATE}</p>
+      )}
+
+      <div className={styles.payloadPinnedSummary}>
+        <h5>{PAYLOAD_PINNED_LEDGER_TITLE}</h5>
+        <PinnedPayloadLedger
+          onRemovePayloadField={onRemovePayloadField}
+          pinnedPayloadFields={pinnedPayloadFields}
+        />
+      </div>
+    </div>
+  );
+}
+
 function CrgWorkspacePanel({
   state,
   actions,
@@ -639,8 +933,6 @@ function CrgWorkspacePanel({
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId);
   const customSnowFields = state.customSnowFields ?? {};
   const inspectedSnowFields = state.inspectedSnowFields ?? [];
-  const pinnedPayloadFields = Object.entries(customSnowFields)
-    .sort(([leftFieldName], [rightFieldName]) => leftFieldName.localeCompare(rightFieldName));
   const pinnedFieldSummary = useMemo(() => {
     const pinnedFieldCountMap = new Map<string, { label: string; count: number }>();
     pinnedFields.forEach((pinnedField) => {
@@ -798,51 +1090,12 @@ function CrgWorkspacePanel({
           )}
         </div>
 
-        <div className={styles.clonePanel}>
-          <h4 className={styles.panelSectionTitle}>Pinned SNow payload fields</h4>
-          <p className={styles.panelHint}>Load a known-good CHG, then pin exact ServiceNow API fields when your instance has custom fields the wizard does not know by name.</p>
-          {inspectedSnowFields.length > 0 ? (
-            <div className={styles.pinnedFieldList}>
-              {inspectedSnowFields.map((inspectedField) => {
-                const isPayloadFieldPinned = inspectedField.fieldName in customSnowFields;
-                return (
-                  <div className={styles.pinnedFieldCard} key={inspectedField.fieldName}>
-                    <strong>{inspectedField.fieldName}</strong>
-                    <span className={styles.pinnedFieldValue}>{inspectedField.displayValue}</span>
-                    <button
-                      className={isPayloadFieldPinned ? `${styles.linkButton} ${styles.activePinButton}` : styles.linkButton}
-                      onClick={() => {
-                        if (isPayloadFieldPinned) {
-                          actions.removeCustomSnowField(inspectedField.fieldName);
-                        } else {
-                          handlePinPayloadField(inspectedField.fieldName, inspectedField.storedValue);
-                        }
-                      }}
-                      type="button"
-                    >
-                      {isPayloadFieldPinned ? '📌 Pinned to payload' : '📌 Pin to payload'}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className={styles.panelHint}>No CHG fields loaded yet. Enter a CHG number and choose Load CHG to inspect available fields.</p>
-          )}
-          {pinnedPayloadFields.length > 0 ? (
-            <div className={styles.pinnedFieldList}>
-              {pinnedPayloadFields.map(([fieldName, fieldValue]) => (
-                <div className={styles.pinnedFieldCard} key={fieldName}>
-                  <strong>{fieldName}</strong>
-                  <span className={styles.pinnedFieldValue}>{fieldValue}</span>
-                  <button className={styles.linkButton} onClick={() => actions.removeCustomSnowField(fieldName)} type="button">
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
+        <PayloadFieldInspectorPanel
+          customSnowFields={customSnowFields}
+          inspectedSnowFields={inspectedSnowFields}
+          onPinPayloadField={handlePinPayloadField}
+          onRemovePayloadField={actions.removeCustomSnowField}
+        />
       </div>
     </section>
   );
@@ -2146,7 +2399,7 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
         </div>
         <p className={styles.summaryPill}>{issueCountSummary}</p>
       </header>
-      {shouldShowWizardChrome ? <StepIndicator currentStep={state.currentStep} /> : null}
+      {shouldShowWizardChrome ? <StepIndicator currentStep={state.currentStep} onStepSelect={actions.goToStep} /> : null}
       {mode === 'configuration' ? (
         <>
           <CrgWorkspacePanel actions={actions} state={state} {...workspaceExtras} />
