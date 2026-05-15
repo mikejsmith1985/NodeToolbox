@@ -52,6 +52,14 @@
   background: var(--color-surface-1);
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.stepBadge:hover,
+.stepBadge:focus-visible {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 .activeStep {
@@ -428,6 +436,130 @@
   overflow-wrap: anywhere;
 }
 
+.payloadInspectorPanel {
+  grid-column: 1 / -1;
+}
+
+.payloadInspectorHeader,
+.payloadGroupHeader,
+.payloadFieldTitleRow,
+.payloadPinnedItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.payloadInspectorHeader,
+.payloadPinnedItem {
+  flex-wrap: wrap;
+}
+
+.payloadCountPill,
+.payloadPinnedBadge {
+  flex: none;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.payloadGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+.payloadGroupHeader h5,
+.payloadPinnedSummary h5 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.payloadGroupHeader span {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.payloadInspectorList,
+.payloadPinnedLedger {
+  display: grid;
+  gap: var(--spacing-sm);
+}
+
+.payloadInspectorRow {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.1fr) minmax(240px, 1.4fr) auto;
+  gap: var(--spacing-md);
+  align-items: center;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-1);
+}
+
+.payloadFieldIdentity,
+.payloadValueBlock,
+.payloadPinnedSummary,
+.payloadPinnedItemText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
+.payloadFieldTitleRow strong {
+  min-width: 0;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.payloadApiName {
+  color: var(--color-text-secondary);
+  font-family: monospace;
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+.payloadValueLabel,
+.payloadStoredValue {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.payloadDisplayValue {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.payloadPinnedSummary {
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+.payloadPinnedItem {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-1));
+}
+
+.payloadPinnedItemText span {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
 .rovoButton {
   border: 1px solid var(--color-accent);
   background: transparent;
@@ -506,5 +638,14 @@
 
   .pinnedFieldValue {
     text-align: left;
+  }
+
+  .payloadInspectorRow {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .payloadInspectorRow .secondaryButton {
+    width: 100%;
   }
 }

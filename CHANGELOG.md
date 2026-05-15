@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **SNow Hub — CRG Configuration field inspector is usable for real payloads**: The custom ServiceNow payload inspector now uses grouped, searchable rows with readable labels, secondary API names, safe value wrapping, and a compact pinned-value ledger instead of overlapping raw field cards.
+- **SNow Hub — CRG wizard steps are directly navigable**: The step indicator pills are now clickable buttons, so users can jump straight to a specific CHG step instead of backing through the wizard one step at a time.
 - **SNow Hub — CRG wizard no longer exposes template/pin management**: The CHG flow now hides saved-value selectors, pin buttons, and saved-option guidance entirely; reusable value and payload pin management stays in the Configuration tab.
 - **SNow Hub — CRG cloned custom choices populate from display values**: When ServiceNow returns custom choice fields with blank internal values but populated display values, cloned planning fields now keep the visible value instead of going blank.
 - **SNow Hub — CRG Configuration can pin exact ServiceNow payload fields**: Loading a reference CHG now exposes its readable fields in Configuration so instance-specific API fields can be pinned into the create payload, matching the legacy toolbox's ability to preserve custom CHG fields.
