@@ -19,7 +19,6 @@ export type SnowChoiceOptionMap = Record<string, SnowChoiceOption[]>;
 const CHANGE_REQUEST_TABLE_NAME = 'change_request';
 const NEW_CHANGE_REQUEST_SYS_ID = '-1';
 const SNOW_FORM_VIEW_NAMES = ['default', 'normal'] as const;
-const MAX_SYS_CHOICE_RECORDS = 200;
 
 // All change_request choice fields we want to resolve from the same form metadata SNow uses.
 const CHANGE_REQUEST_CHOICE_FIELDS = [
@@ -37,19 +36,9 @@ const CHANGE_REQUEST_CHOICE_FIELDS = [
 
 type UnknownRecord = Record<string, unknown>;
 
-interface SysChoiceRecord {
-  element: string;
-  value:   string;
-  label:   string;
-}
-
-interface SysChoiceResponse {
-  result: SysChoiceRecord[];
-}
-
 /**
  * Builds the UI Form API path for a new change_request record. This endpoint mirrors the
- * native SNow form and is accessible to normal interactive users more often than sys_choice.
+ * native SNow form and avoids direct sys_choice ACL checks in hardened instances.
  */
 function buildUiFormPath(formViewName: (typeof SNOW_FORM_VIEW_NAMES)[number]): string {
   const encodedTableName = encodeURIComponent(CHANGE_REQUEST_TABLE_NAME);
@@ -61,18 +50,6 @@ function buildUiFormPath(formViewName: (typeof SNOW_FORM_VIEW_NAMES)[number]): s
 function buildUiMetaPath(): string {
   const encodedTableName = encodeURIComponent(CHANGE_REQUEST_TABLE_NAME);
   return `/api/now/ui/meta/${encodedTableName}`;
-}
-
-/**
- * Builds the legacy sys_choice query URL used only as a compatibility fallback.
- * Some SNow instances allow this table, but locked-down environments often return 403.
- */
-function buildSysChoicePath(fields: readonly string[]): string {
-  const fieldList = fields.join(',');
-  const query = encodeURIComponent(
-    `name=change_request^elementIN${fieldList}^language=en^inactive=false`,
-  );
-  return `/api/now/table/sys_choice?sysparm_query=${query}&sysparm_fields=element,value,label&sysparm_limit=${MAX_SYS_CHOICE_RECORDS}&sysparm_display_value=false`;
 }
 
 function isObjectRecord(candidate: unknown): candidate is UnknownRecord {
@@ -233,26 +210,11 @@ function extractChoicesFromUiForm(responseData: unknown): SnowChoiceOptionMap {
   return choiceOptions;
 }
 
-/**
- * Groups a flat list of sys_choice records into a map from field name → options.
- * Prepends an empty option to every list so the user can leave a field blank.
- */
-function groupChoicesByField(records: SysChoiceRecord[]): SnowChoiceOptionMap {
-  const grouped: SnowChoiceOptionMap = {};
-
-  for (const record of records) {
-    if (!grouped[record.element]) {
-      grouped[record.element] = [{ value: '', label: '' }];
-    }
-    grouped[record.element].push({ value: record.value, label: record.label });
-  }
-
-  return grouped;
-}
-
+/** Loads live change_request choice metadata from UI endpoints only. */
 async function fetchChoiceOptionsFromServiceNow(): Promise<SnowChoiceOptionMap> {
   const fetchErrors: string[] = [];
   let mergedChoiceOptions: SnowChoiceOptionMap = {};
+  let hasSuccessfulMetadataResponse = false;
 
   const metadataPaths = [
     ...SNOW_FORM_VIEW_NAMES.map((formViewName) => buildUiFormPath(formViewName)),
@@ -262,6 +224,7 @@ async function fetchChoiceOptionsFromServiceNow(): Promise<SnowChoiceOptionMap> 
   for (const metadataPath of metadataPaths) {
     try {
       const metadataResponse = await snowFetch<unknown>(metadataPath);
+      hasSuccessfulMetadataResponse = true;
       const metadataChoiceOptions = extractChoicesFromUiForm(metadataResponse);
       mergedChoiceOptions = mergeChoiceOptions(mergedChoiceOptions, metadataChoiceOptions);
       if (hasAllRequestedChoiceFields(mergedChoiceOptions)) {
@@ -275,26 +238,17 @@ async function fetchChoiceOptionsFromServiceNow(): Promise<SnowChoiceOptionMap> 
     }
   }
 
-  // Legacy fallback for instances that expose sys_choice; many hardened environments deny it.
-  try {
-    const sysChoicePath = buildSysChoicePath(CHANGE_REQUEST_CHOICE_FIELDS);
-    const sysChoiceResponse = await snowFetch<SysChoiceResponse>(sysChoicePath);
-    const sysChoiceOptions = groupChoicesByField(sysChoiceResponse.result ?? []);
-    mergedChoiceOptions = mergeChoiceOptions(mergedChoiceOptions, sysChoiceOptions);
-    if (hasChoiceOptions(mergedChoiceOptions)) {
-      return mergedChoiceOptions;
-    }
-    throw new Error('sys_choice returned no choice metadata');
-  } catch (sysChoiceError) {
-    if (hasChoiceOptions(mergedChoiceOptions)) {
-      return mergedChoiceOptions;
-    }
-    const sysChoiceErrorMessage = getErrorMessage(sysChoiceError);
+  if (hasChoiceOptions(mergedChoiceOptions)) {
+    return mergedChoiceOptions;
+  }
+
+  if (hasSuccessfulMetadataResponse) {
     throw new Error(
-      `Unable to load live SNow choice metadata. UI metadata attempts: ${fetchErrors.join(' | ')}. sys_choice fallback: ${sysChoiceErrorMessage}`,
-      { cause: sysChoiceError },
+      'SNow UI metadata returned no live choice options. Clone a known-good CHG or use saved template values, then click Retry if you expect live options.',
     );
   }
+
+  throw new Error(`Unable to load live SNow choice metadata. UI metadata attempts: ${fetchErrors.join(' | ')}`);
 }
 
 interface UseSnowChoiceOptionsResult {
@@ -391,10 +345,7 @@ export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
     return () => { isCancelled = true; };
   }, [isRelayConnected, hasRelaySessionToken, areChoicesFromSnow, fetchTrigger]);
 
-  /**
-   * Forces a re-fetch of sys_choice options. Resets the failure state first so the
-   * loading indicator appears immediately while the new request is in flight.
-   */
+  /** Forces a re-fetch of SNow metadata and shows the loading indicator immediately. */
   const retryFetch = useCallback(() => {
     setIsFetchFailed(false);
     setFetchErrorMessage(null);

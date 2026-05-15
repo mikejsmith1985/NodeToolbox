@@ -10,6 +10,7 @@ import { useCrgTemplates } from './useCrgTemplates.ts';
 // We can't use real localStorage in jsdom reliably across tests, so we use
 // vi.spyOn to intercept reads and writes.
 const LOCAL_STORAGE_KEY = 'ntbx-crg-templates';
+const EMPTY_SNOW_REFERENCE = { sysId: '', displayName: '' };
 
 function makeMinimalTemplate(overrides: Partial<CrgTemplate> = {}): CrgTemplate {
   return {
@@ -35,9 +36,9 @@ function makeMinimalTemplate(overrides: Partial<CrgTemplate> = {}): CrgTemplate 
     chgPlanningContent: {
       implementationPlan: 'Deploy via pipeline.', backoutPlan: 'Revert tag.', testPlan: 'Smoke test.',
     },
-    relEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00' },
-    prdEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00' },
-    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '' },
+    relEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00', configItem: { ...EMPTY_SNOW_REFERENCE } },
+    prdEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00', configItem: { ...EMPTY_SNOW_REFERENCE } },
+    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE } },
     ...overrides,
   };
 }
@@ -106,7 +107,7 @@ describe('useCrgTemplates', () => {
         category:    'Hardware',
         environment: 'pfix',
       },
-      pfixEnvironment: { isEnabled: true, plannedStartDate: '2026-01-03T10:00', plannedEndDate: '2026-01-03T11:00' },
+      pfixEnvironment: { isEnabled: true, plannedStartDate: '2026-01-03T10:00', plannedEndDate: '2026-01-03T11:00', configItem: { ...EMPTY_SNOW_REFERENCE } },
     });
 
     const unsafeTemplateUpdate = {

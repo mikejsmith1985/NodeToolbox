@@ -4,7 +4,17 @@
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { ChgBasicInfo, ChgPlanningAssessment, ChgPlanningContent, CrgTemplate, CtaskTemplate } from '../hooks/useCrgState.ts';
+import type {
+  ChgBasicInfo,
+  ChgPlanningAssessment,
+  ChgPlanningContent,
+  CrgTemplate,
+  CtaskTemplate,
+  CtaskTemplateData,
+  SnowReference,
+} from '../hooks/useCrgState.ts';
+import type { CrgPinnedField, CrgPinnedFieldInput } from '../hooks/useCrgFieldPins.ts';
+import { useCrgFieldPins } from '../hooks/useCrgFieldPins.ts';
 import { useCrgState } from '../hooks/useCrgState.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
@@ -16,6 +26,9 @@ import styles from './CrgTab.module.css';
 
 const TAB_TITLE = 'Change Request Generator';
 const TAB_SUBTITLE = 'Guide a release from Jira issue lookup through a complete ServiceNow Change Request.';
+const CONFIGURATION_TAB_TITLE = 'CRG Configuration';
+const CONFIGURATION_TAB_SUBTITLE = 'Load existing changes and CTASKs, save reusable defaults, and prepare templates before walking the CHG wizard.';
+const CONFIGURATION_SUMMARY = 'Configuration mode';
 const STEP_DEFINITIONS = [
   { step: 1, label: 'Fetch Issues' },
   { step: 2, label: 'Review Issues' },
@@ -54,8 +67,101 @@ const CONSOLIDATED_RESULT_LABEL = 'Consolidated Result';
 const STEP_TITLE_PREFIX = 'Step';
 const DEFAULT_RESULT_MESSAGE = 'Generated content will appear here after you complete the wizard.';
 const EMPTY_ENVIRONMENT_DATES = 'Not scheduled';
+const WORKSPACE_PANEL_TITLE = 'Clone, Templates & Defaults';
+const WORKSPACE_PANEL_HINT = 'Clone a known-good CHG, save repeatable templates, and build reusable pinned field options without filling the wizard with static pin lists.';
+const SHORT_MANUAL_VALUE_PLACEHOLDER = 'Type or paste the internal ServiceNow value';
+const PIN_SECTION_CHANGE_DETAILS = 'Change Details';
+const PIN_SECTION_PLANNING = 'Planning';
+const PIN_SECTION_ENVIRONMENTS = 'Environments';
+const CATEGORY_PIN_KEY = 'chgBasicInfo.category';
+const CHANGE_TYPE_PIN_KEY = 'chgBasicInfo.changeType';
+const REQUESTED_BY_PIN_KEY = 'chgBasicInfo.requestedBy';
+const ASSIGNMENT_GROUP_PIN_KEY = 'chgBasicInfo.assignmentGroup';
+const ASSIGNED_TO_PIN_KEY = 'chgBasicInfo.assignedTo';
+const CHANGE_MANAGER_PIN_KEY = 'chgBasicInfo.changeManager';
+const TESTER_PIN_KEY = 'chgBasicInfo.tester';
+const SERVICE_MANAGER_PIN_KEY = 'chgBasicInfo.serviceManager';
+const IS_EXPEDITED_PIN_KEY = 'chgBasicInfo.isExpedited';
+const IMPACT_PIN_KEY = 'chgPlanningAssessment.impact';
+const SYSTEM_AVAILABILITY_PIN_KEY = 'chgPlanningAssessment.systemAvailabilityImplication';
+const HAS_BEEN_TESTED_PIN_KEY = 'chgPlanningAssessment.hasBeenTested';
+const IMPACTED_PERSONS_AWARE_PIN_KEY = 'chgPlanningAssessment.impactedPersonsAware';
+const PERFORMED_PREVIOUSLY_PIN_KEY = 'chgPlanningAssessment.hasBeenPerformedPreviously';
+const SUCCESS_PROBABILITY_PIN_KEY = 'chgPlanningAssessment.successProbability';
+const CAN_BE_BACKED_OUT_PIN_KEY = 'chgPlanningAssessment.canBeBackedOut';
+const ENVIRONMENT_VALUE_PIN_KEY = 'chgBasicInfo.environment';
+const REL_CONFIG_ITEM_PIN_KEY = 'relEnvironment.configItem';
+const PRD_CONFIG_ITEM_PIN_KEY = 'prdEnvironment.configItem';
+const PFIX_CONFIG_ITEM_PIN_KEY = 'pfixEnvironment.configItem';
 
-type CtaskTemplateData = Omit<CtaskTemplate, 'id' | 'name' | 'createdAt'>;
+function buildCurrentTemplateData(state: CrgStateData): Omit<CrgTemplate, 'id' | 'name' | 'createdAt'> {
+  return {
+    chgBasicInfo:          state.chgBasicInfo,
+    chgPlanningAssessment: state.chgPlanningAssessment,
+    chgPlanningContent:    state.chgPlanningContent,
+    relEnvironment:        state.relEnvironment,
+    prdEnvironment:        state.prdEnvironment,
+    pfixEnvironment:       state.pfixEnvironment,
+  };
+}
+
+function resolvePlanningAssessmentPinKey(fieldKey: keyof ChgPlanningAssessment): string {
+  switch (fieldKey) {
+    case 'impact':
+      return IMPACT_PIN_KEY;
+    case 'systemAvailabilityImplication':
+      return SYSTEM_AVAILABILITY_PIN_KEY;
+    case 'hasBeenTested':
+      return HAS_BEEN_TESTED_PIN_KEY;
+    case 'impactedPersonsAware':
+      return IMPACTED_PERSONS_AWARE_PIN_KEY;
+    case 'hasBeenPerformedPreviously':
+      return PERFORMED_PREVIOUSLY_PIN_KEY;
+    case 'successProbability':
+      return SUCCESS_PROBABILITY_PIN_KEY;
+    case 'canBeBackedOut':
+      return CAN_BE_BACKED_OUT_PIN_KEY;
+  }
+}
+
+function resolveEnvironmentConfigItemPinKey(environmentKey: EnvironmentKey): string {
+  switch (environmentKey) {
+    case 'rel':
+      return REL_CONFIG_ITEM_PIN_KEY;
+    case 'prd':
+      return PRD_CONFIG_ITEM_PIN_KEY;
+    case 'pfix':
+      return PFIX_CONFIG_ITEM_PIN_KEY;
+  }
+}
+
+function isSnowReferenceValue(value: CrgPinnedField['value']): value is SnowReference {
+  return typeof value === 'object' && value !== null && 'displayName' in value && 'sysId' in value;
+}
+
+function canPinFieldValue(value: CrgPinnedField['value']): boolean {
+  if (typeof value === 'string') {
+    return value.trim().length > 0;
+  }
+
+  if (typeof value === 'boolean') {
+    return true;
+  }
+
+  return value.displayName.trim().length > 0 || value.sysId.trim().length > 0;
+}
+
+function formatPinnedFieldValue(value: CrgPinnedField['value']): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'Yes' : 'No';
+  }
+
+  return value.displayName || value.sysId || 'No value';
+}
 
 function createEmptyCtaskTemplateData(): CtaskTemplateData {
   return {
@@ -127,6 +233,150 @@ function buildRenderedChoiceOptions(
     : options;
 }
 
+interface ManualChoiceInputState {
+  options: { value: string; label: string }[];
+  isLoadingChoices: boolean;
+  isFetchFailed: boolean;
+  isRelayConnected: boolean;
+  hasRelaySessionToken: boolean;
+}
+
+/**
+ * Decides when a choice field should become editable instead of disabled.
+ * This preserves cloned and pinned ServiceNow values when metadata ACLs block live dropdown options.
+ */
+function shouldRenderManualChoiceInput({
+  options,
+  isLoadingChoices,
+  isFetchFailed,
+  isRelayConnected,
+  hasRelaySessionToken,
+}: ManualChoiceInputState): boolean {
+  if (isLoadingChoices) {
+    return false;
+  }
+
+  return (
+    isFetchFailed ||
+    !isRelayConnected ||
+    !hasRelaySessionToken ||
+    !hasSelectableChoiceOptions(options)
+  );
+}
+
+interface PinnedFieldSelectorProps {
+  fieldKey: string;
+  fieldLabel: string;
+  getPinnedFields: (fieldKey: string) => CrgPinnedField[];
+  onApplyPinnedField: (pinnedField: CrgPinnedField) => void;
+}
+
+function PinnedFieldSelector({
+  fieldKey,
+  fieldLabel,
+  getPinnedFields,
+  onApplyPinnedField,
+}: PinnedFieldSelectorProps) {
+  const pinnedOptions = getPinnedFields(fieldKey);
+
+  if (pinnedOptions.length === 0) {
+    return null;
+  }
+
+  return (
+    <label className={styles.fieldGroup}>
+      <span className={styles.fieldHelpText}>Pinned {fieldLabel} values</span>
+      <select
+        aria-label={`Pinned ${fieldLabel} values`}
+        className={styles.input}
+        defaultValue=""
+        onChange={(event) => {
+          const selectedPinnedField = pinnedOptions.find((pinnedField) => pinnedField.id === event.target.value);
+          if (selectedPinnedField) {
+            onApplyPinnedField(selectedPinnedField);
+            event.target.value = '';
+          }
+        }}
+      >
+        <option value="">Use a saved value…</option>
+        {pinnedOptions.map((pinnedField) => (
+          <option key={pinnedField.id} value={pinnedField.id}>{formatPinnedFieldValue(pinnedField.value)}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+interface FieldControlsProps {
+  fieldKey: string;
+  fieldLabel: string;
+  fieldSection: string;
+  fieldValue: CrgPinnedField['value'];
+  shouldShowSaveButton?: boolean;
+  upsertPin: (pinnedField: CrgPinnedFieldInput) => void;
+  removePin: (pinId: string) => void;
+  getPinnedFields: (fieldKey: string) => CrgPinnedField[];
+  findPinnedField: (fieldKey: string, fieldValue: CrgPinnedField['value']) => CrgPinnedField | undefined;
+  onApplyPinnedField: (pinnedField: CrgPinnedField) => void;
+}
+
+function FieldControls({
+  fieldKey,
+  fieldLabel,
+  fieldSection,
+  fieldValue,
+  shouldShowSaveButton = true,
+  upsertPin,
+  removePin,
+  getPinnedFields,
+  findPinnedField,
+  onApplyPinnedField,
+}: FieldControlsProps) {
+  const pinnedOptions = getPinnedFields(fieldKey);
+  const matchingPinnedField = findPinnedField(fieldKey, fieldValue);
+  const canSaveCurrentValue = canPinFieldValue(fieldValue);
+
+  if (!shouldShowSaveButton && pinnedOptions.length === 0) {
+    return null;
+  }
+
+  function handlePinToggle(): void {
+    if (matchingPinnedField) {
+      removePin(matchingPinnedField.id);
+      return;
+    }
+
+    upsertPin({
+      key: fieldKey,
+      label: fieldLabel,
+      section: fieldSection,
+      value: fieldValue,
+    });
+  }
+
+  return (
+    <div className={styles.fieldSupportRow}>
+      <PinnedFieldSelector
+        fieldKey={fieldKey}
+        fieldLabel={fieldLabel}
+        getPinnedFields={getPinnedFields}
+        onApplyPinnedField={onApplyPinnedField}
+      />
+      {shouldShowSaveButton ? (
+        <button
+          aria-label={matchingPinnedField ? `Remove saved ${fieldLabel}` : `Save ${fieldLabel}`}
+          className={matchingPinnedField ? `${styles.linkButton} ${styles.activePinButton}` : styles.linkButton}
+          disabled={!matchingPinnedField && !canSaveCurrentValue}
+          onClick={handlePinToggle}
+          type="button"
+        >
+          {matchingPinnedField ? '📌 Saved' : '📌 Save option'}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 type CrgHookResult = ReturnType<typeof useCrgState>;
 type CrgStateData = CrgHookResult['state'];
 type CrgActionSet = CrgHookResult['actions'];
@@ -175,7 +425,7 @@ interface PlanningStepExtras {
   onEnhanceWithRovo: () => void;
   /** Dynamic choice options fetched from SNow form metadata for planning dropdowns. */
   choiceOptions: SnowChoiceOptionMap;
-  /** True while the sys_choice fetch is still in flight. */
+  /** True while the SNow metadata fetch is still in flight. */
   isLoadingChoices: boolean;
   /** True when the SNow metadata fetch failed — options are unavailable and user must connect SNow. */
   isFetchFailed: boolean;
@@ -183,13 +433,17 @@ interface PlanningStepExtras {
   isRelayConnected: boolean;
   /** True when the relay has detected SNow's g_ck session token. */
   hasRelaySessionToken: boolean;
-  /** Manually re-triggers the sys_choice fetch after a transient error. */
+  /** Manually re-triggers the SNow metadata fetch after a transient error. */
   retryFetch: () => void;
   /**
    * Human-readable reason the last fetch failed (e.g. "SNow relay fetch … failed: 401").
    * null when no failure has occurred or a new fetch is in progress.
    */
   fetchErrorMessage: string | null;
+  upsertPin: (pinnedField: CrgPinnedFieldInput) => void;
+  removePin: (pinId: string) => void;
+  getPinnedFields: (fieldKey: string) => CrgPinnedField[];
+  findPinnedField: (fieldKey: string, fieldValue: CrgPinnedField['value']) => CrgPinnedField | undefined;
 }
 
 interface EnvironmentStepExtras {
@@ -203,13 +457,17 @@ interface EnvironmentStepExtras {
   isRelayConnected: boolean;
   /** True when the relay has detected SNow's g_ck session token. */
   hasRelaySessionToken: boolean;
+  upsertPin: (pinnedField: CrgPinnedFieldInput) => void;
+  removePin: (pinId: string) => void;
+  getPinnedFields: (fieldKey: string) => CrgPinnedField[];
+  findPinnedField: (fieldKey: string, fieldValue: CrgPinnedField['value']) => CrgPinnedField | undefined;
 }
 
 /** Additional props for the Change Details step — templates and dynamic choice options. */
 interface ChangeDetailsExtras {
   /** Dynamic choice options fetched from SNow form metadata for basic info dropdowns. */
   choiceOptions: SnowChoiceOptionMap;
-  /** True while the sys_choice fetch is still in flight. */
+  /** True while the SNow metadata fetch is still in flight. */
   isLoadingChoices: boolean;
   /** True when the SNow metadata fetch failed — options are unavailable and user must connect SNow. */
   isFetchFailed: boolean;
@@ -217,17 +475,17 @@ interface ChangeDetailsExtras {
   isRelayConnected: boolean;
   /** True when the relay has detected SNow's g_ck session token. */
   hasRelaySessionToken: boolean;
-  /** Manually re-triggers the sys_choice fetch after a transient error. */
+  /** Manually re-triggers the SNow metadata fetch after a transient error. */
   retryFetch: () => void;
   /**
    * Human-readable reason the last fetch failed (e.g. "SNow relay fetch … failed: 401").
    * null when no failure has occurred or a new fetch is in progress.
    */
   fetchErrorMessage: string | null;
-  templates: CrgTemplate[];
-  saveTemplate: (name: string, data: Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>) => string;
-  updateTemplate: (templateId: string, data: Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>) => void;
-  deleteTemplate: (templateId: string) => void;
+  upsertPin: (pinnedField: CrgPinnedFieldInput) => void;
+  removePin: (pinId: string) => void;
+  getPinnedFields: (fieldKey: string) => CrgPinnedField[];
+  findPinnedField: (fieldKey: string, fieldValue: CrgPinnedField['value']) => CrgPinnedField | undefined;
 }
 
 interface CtaskTemplateExtras {
@@ -235,6 +493,25 @@ interface CtaskTemplateExtras {
   saveTemplate: (name: string, data: CtaskTemplateData) => string;
   updateTemplate: (templateId: string, data: CtaskTemplateData) => void;
   deleteTemplate: (templateId: string) => void;
+}
+
+interface StepRenderOptions {
+  headingStep?: CrgStateData['currentStep'];
+  shouldShowNavigation?: boolean;
+  shouldShowSaveButtons?: boolean;
+}
+
+interface CrgWorkspaceExtras {
+  templates: CrgTemplate[];
+  saveTemplate: (name: string, data: Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>) => string;
+  updateTemplate: (templateId: string, data: Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>) => void;
+  deleteTemplate: (templateId: string) => void;
+  pinnedFields: CrgPinnedField[];
+  upsertPin: (pinnedField: CrgPinnedFieldInput) => void;
+  removePin: (pinId: string) => void;
+  clearPins: () => void;
+  getPinnedFields: (fieldKey: string) => CrgPinnedField[];
+  findPinnedField: (fieldKey: string, fieldValue: CrgPinnedField['value']) => CrgPinnedField | undefined;
 }
 
 interface StepHeadingProps {
@@ -268,6 +545,247 @@ function StepHeading({ currentStep }: StepHeadingProps) {
       </p>
       <h3 className={styles.sectionTitle}>{activeStepDefinition?.label}</h3>
     </div>
+  );
+}
+
+function applyPinnedFieldValue(actions: CrgActionSet, pinnedField: CrgPinnedField): void {
+  const pinnedValue = pinnedField.value;
+
+  switch (pinnedField.key) {
+    case CATEGORY_PIN_KEY:
+      if (typeof pinnedValue === 'string') actions.setChgBasicInfo({ category: pinnedValue });
+      return;
+    case CHANGE_TYPE_PIN_KEY:
+      if (typeof pinnedValue === 'string') actions.setChgBasicInfo({ changeType: pinnedValue });
+      return;
+    case REQUESTED_BY_PIN_KEY:
+      if (isSnowReferenceValue(pinnedValue)) actions.setChgBasicInfo({ requestedBy: pinnedValue });
+      return;
+    case ASSIGNMENT_GROUP_PIN_KEY:
+      if (isSnowReferenceValue(pinnedValue)) actions.setChgBasicInfo({ assignmentGroup: pinnedValue });
+      return;
+    case ASSIGNED_TO_PIN_KEY:
+      if (isSnowReferenceValue(pinnedValue)) actions.setChgBasicInfo({ assignedTo: pinnedValue });
+      return;
+    case CHANGE_MANAGER_PIN_KEY:
+      if (isSnowReferenceValue(pinnedValue)) actions.setChgBasicInfo({ changeManager: pinnedValue });
+      return;
+    case TESTER_PIN_KEY:
+      if (isSnowReferenceValue(pinnedValue)) actions.setChgBasicInfo({ tester: pinnedValue });
+      return;
+    case SERVICE_MANAGER_PIN_KEY:
+      if (isSnowReferenceValue(pinnedValue)) actions.setChgBasicInfo({ serviceManager: pinnedValue });
+      return;
+    case IS_EXPEDITED_PIN_KEY:
+      if (typeof pinnedValue === 'boolean') actions.setChgBasicInfo({ isExpedited: pinnedValue });
+      return;
+    case IMPACT_PIN_KEY:
+      if (typeof pinnedValue === 'string') actions.setChgPlanningAssessment({ impact: pinnedValue });
+      return;
+    case SYSTEM_AVAILABILITY_PIN_KEY:
+      if (typeof pinnedValue === 'string') actions.setChgPlanningAssessment({ systemAvailabilityImplication: pinnedValue });
+      return;
+    case HAS_BEEN_TESTED_PIN_KEY:
+      if (typeof pinnedValue === 'string') actions.setChgPlanningAssessment({ hasBeenTested: pinnedValue });
+      return;
+    case IMPACTED_PERSONS_AWARE_PIN_KEY:
+      if (typeof pinnedValue === 'string') actions.setChgPlanningAssessment({ impactedPersonsAware: pinnedValue });
+      return;
+    case PERFORMED_PREVIOUSLY_PIN_KEY:
+      if (typeof pinnedValue === 'string') actions.setChgPlanningAssessment({ hasBeenPerformedPreviously: pinnedValue });
+      return;
+    case SUCCESS_PROBABILITY_PIN_KEY:
+      if (typeof pinnedValue === 'string') actions.setChgPlanningAssessment({ successProbability: pinnedValue });
+      return;
+    case CAN_BE_BACKED_OUT_PIN_KEY:
+      if (typeof pinnedValue === 'string') actions.setChgPlanningAssessment({ canBeBackedOut: pinnedValue });
+      return;
+    case ENVIRONMENT_VALUE_PIN_KEY:
+      if (typeof pinnedValue === 'string') actions.setChgBasicInfo({ environment: pinnedValue });
+      return;
+    case REL_CONFIG_ITEM_PIN_KEY:
+      if (isSnowReferenceValue(pinnedValue)) actions.updateEnvironment('rel', { configItem: pinnedValue });
+      return;
+    case PRD_CONFIG_ITEM_PIN_KEY:
+      if (isSnowReferenceValue(pinnedValue)) actions.updateEnvironment('prd', { configItem: pinnedValue });
+      return;
+    case PFIX_CONFIG_ITEM_PIN_KEY:
+      if (isSnowReferenceValue(pinnedValue)) actions.updateEnvironment('pfix', { configItem: pinnedValue });
+      return;
+    default:
+      return;
+  }
+}
+
+function CrgWorkspacePanel({
+  state,
+  actions,
+  templates,
+  saveTemplate,
+  updateTemplate,
+  deleteTemplate,
+  pinnedFields,
+  clearPins,
+}: CrgStepProps & CrgWorkspaceExtras) {
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  const [isSavePromptVisible, setIsSavePromptVisible] = useState<boolean>(false);
+  const [newTemplateName, setNewTemplateName] = useState<string>('');
+
+  const selectedTemplate = templates.find((template) => template.id === selectedTemplateId);
+  const pinnedFieldSummary = useMemo(() => {
+    const pinnedFieldCountMap = new Map<string, { label: string; count: number }>();
+    pinnedFields.forEach((pinnedField) => {
+      const existingSummary = pinnedFieldCountMap.get(pinnedField.key);
+      pinnedFieldCountMap.set(pinnedField.key, {
+        label: pinnedField.label,
+        count: (existingSummary?.count ?? 0) + 1,
+      });
+    });
+    return [...pinnedFieldCountMap.values()].sort((leftSummary, rightSummary) => leftSummary.label.localeCompare(rightSummary.label));
+  }, [pinnedFields]);
+
+  function handleApplyTemplate(): void {
+    if (selectedTemplate) {
+      actions.applyTemplate(selectedTemplate);
+    }
+  }
+
+  function handleCloneNumberChange(event: ChangeEvent<HTMLInputElement>): void {
+    actions.setCloneChgNumber(event.target.value.toUpperCase());
+  }
+
+  function handleUpdateTemplate(): void {
+    if (selectedTemplateId) {
+      updateTemplate(selectedTemplateId, buildCurrentTemplateData(state));
+    }
+  }
+
+  function handleSaveTemplate(): void {
+    saveTemplate(newTemplateName, buildCurrentTemplateData(state));
+    setNewTemplateName('');
+    setIsSavePromptVisible(false);
+  }
+
+  function handleDeleteTemplate(): void {
+    deleteTemplate(selectedTemplateId);
+    setSelectedTemplateId('');
+  }
+
+  return (
+    <section className={styles.workspacePanel}>
+      <div className={styles.stepHeading}>
+        <p className={styles.stepMeta}>Workspace tools</p>
+        <h3 className={styles.sectionTitle}>{WORKSPACE_PANEL_TITLE}</h3>
+      </div>
+      <p className={styles.panelHint}>{WORKSPACE_PANEL_HINT}</p>
+      <div className={styles.workspaceGrid}>
+        <div className={styles.clonePanel}>
+          <h4 className={styles.panelSectionTitle}>Clone from existing CHG</h4>
+          <p className={styles.panelHint}>Load a known-good change first, then save repeatable templates or field options from what came back.</p>
+          <div className={styles.cloneInputRow}>
+            <input
+              aria-label="Existing CHG number"
+              className={styles.input}
+              disabled={state.isCloning}
+              onChange={handleCloneNumberChange}
+              placeholder="e.g. CHG0001234"
+              value={state.cloneChgNumber}
+            />
+            <button
+              className={styles.secondaryButton}
+              disabled={state.isCloning || !state.cloneChgNumber}
+              onClick={() => void actions.cloneFromChg()}
+              type="button"
+            >
+              {state.isCloning ? 'Loading…' : 'Load CHG'}
+            </button>
+          </div>
+          {state.cloneError ? <p className={styles.errorText} role="alert">{state.cloneError}</p> : null}
+        </div>
+
+        <div className={styles.clonePanel}>
+          <h4 className={styles.panelSectionTitle}>CHG Templates</h4>
+          <p className={styles.panelHint}>Templates still cover Change Details, Planning, and Environments for the 90% path that follows the same release shape.</p>
+          {templates.length > 0 ? (
+            <div className={styles.cloneInputRow}>
+              <select
+                aria-label="Select CHG template"
+                className={styles.input}
+                onChange={(event) => setSelectedTemplateId(event.target.value)}
+                value={selectedTemplateId}
+              >
+                <option value="">Select a template…</option>
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>{template.name}</option>
+                ))}
+              </select>
+              <button className={styles.secondaryButton} disabled={!selectedTemplate} onClick={handleApplyTemplate} type="button">
+                Apply to Steps 3-5
+              </button>
+              <button className={styles.secondaryButton} disabled={!selectedTemplateId} onClick={handleUpdateTemplate} type="button">
+                Update selected
+              </button>
+              <button className={styles.linkButton} disabled={!selectedTemplateId} onClick={handleDeleteTemplate} type="button">
+                Delete
+              </button>
+            </div>
+          ) : (
+            <p className={styles.panelHint}>No CHG templates saved yet.</p>
+          )}
+          {isSavePromptVisible ? (
+            <div className={styles.cloneInputRow}>
+              <input
+                aria-label="CHG template name"
+                className={styles.input}
+                onChange={(event) => setNewTemplateName(event.target.value)}
+                placeholder="Template name…"
+                value={newTemplateName}
+              />
+              <button className={styles.secondaryButton} onClick={handleSaveTemplate} type="button">
+                Save
+              </button>
+              <button className={styles.linkButton} onClick={() => setIsSavePromptVisible(false)} type="button">
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              className={styles.linkButton}
+              onClick={() => {
+                setIsSavePromptVisible(true);
+                setNewTemplateName('');
+              }}
+              type="button"
+            >
+              + Save current Steps 3-5 as template
+            </button>
+          )}
+        </div>
+
+        <div className={styles.clonePanel}>
+          <h4 className={styles.panelSectionTitle}>Pinned field options</h4>
+          <p className={styles.panelHint}>Saved values now appear inline on matching fields as reusable dropdown choices, so ad hoc changes do not depend on one giant pinned-values list.</p>
+          {pinnedFields.length > 0 ? (
+            <>
+              <p className={styles.panelHint}>{pinnedFields.length} saved option(s) across {pinnedFieldSummary.length} field(s).</p>
+              <div className={styles.pinnedFieldList}>
+                {pinnedFieldSummary.map((fieldSummary) => (
+                  <div className={styles.pinnedFieldCard} key={fieldSummary.label}>
+                    <strong>{fieldSummary.label}</strong>
+                    <span className={styles.pinnedFieldValue}>{fieldSummary.count} saved option(s)</span>
+                  </div>
+                ))}
+              </div>
+              <button className={styles.linkButton} onClick={clearPins} type="button">
+                Clear all saved options
+              </button>
+            </>
+          ) : (
+            <p className={styles.panelHint}>No field options saved yet. Save values from Step 3, Step 4, or Step 5 and they will show up inline on those fields.</p>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -430,16 +948,14 @@ function ChangeDetailsStep({
   hasRelaySessionToken,
   retryFetch,
   fetchErrorMessage,
-  templates,
-  saveTemplate,
-  updateTemplate,
-  deleteTemplate,
-}: CrgStepProps & ChangeDetailsExtras) {
-  // Local state for the template picker and save-as-template flow.
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
-  const [isSavePromptVisible, setIsSavePromptVisible] = useState<boolean>(false);
-  const [newTemplateName, setNewTemplateName]         = useState<string>('');
-
+  upsertPin,
+  removePin,
+  getPinnedFields,
+  findPinnedField,
+  headingStep,
+  shouldShowNavigation = true,
+  shouldShowSaveButtons = true,
+}: CrgStepProps & ChangeDetailsExtras & StepRenderOptions) {
   function handleBasicInfoChange<K extends keyof ChgBasicInfo>(
     fieldKey: K,
     value: ChgBasicInfo[K],
@@ -447,86 +963,101 @@ function ChangeDetailsStep({
     actions.setChgBasicInfo({ [fieldKey]: value } as Partial<ChgBasicInfo>);
   }
 
-  function handleCloneNumberChange(event: ChangeEvent<HTMLInputElement>): void {
-    actions.setCloneChgNumber(event.target.value.toUpperCase());
-  }
-
-  function handleApplyTemplate(): void {
-    const chosenTemplate = templates.find((template) => template.id === selectedTemplateId);
-    if (chosenTemplate) {
-      actions.applyTemplate(chosenTemplate);
-    }
-  }
-
-  function handleDeleteTemplate(): void {
-    deleteTemplate(selectedTemplateId);
-    setSelectedTemplateId('');
-  }
-
-  function buildCurrentTemplateData(): Omit<CrgTemplate, 'id' | 'name' | 'createdAt'> {
-    return {
-      chgBasicInfo:          state.chgBasicInfo,
-      chgPlanningAssessment: state.chgPlanningAssessment,
-      chgPlanningContent:    state.chgPlanningContent,
-      relEnvironment:        state.relEnvironment,
-      prdEnvironment:        state.prdEnvironment,
-      pfixEnvironment:       state.pfixEnvironment,
-    };
-  }
-
-  function handleSaveTemplate(): void {
-    saveTemplate(newTemplateName, buildCurrentTemplateData());
-    setNewTemplateName('');
-    setIsSavePromptVisible(false);
-  }
-
-  function handleUpdateTemplate(): void {
-    if (selectedTemplateId) {
-      updateTemplate(selectedTemplateId, buildCurrentTemplateData());
-    }
-  }
-
   const { chgBasicInfo: basicInfo } = state;
-  const isCloneInputDisabled = state.isCloning;
 
   // Resolve dynamic choice options for the basic-info dropdowns.
   // These are empty until the SNow relay is connected and live form metadata loads.
   const categoryOptions    = choiceOptions['category']      ?? [];
   const changeTypeOptions  = choiceOptions['type']          ?? [];
-  const canLoadChoiceOptions = isRelayConnected && hasRelaySessionToken;
+  const shouldUseManualCategoryInput = shouldRenderManualChoiceInput({
+    options: categoryOptions,
+    isLoadingChoices,
+    isFetchFailed,
+    isRelayConnected,
+    hasRelaySessionToken,
+  });
+  const shouldUseManualChangeTypeInput = shouldRenderManualChoiceInput({
+    options: changeTypeOptions,
+    isLoadingChoices,
+    isFetchFailed,
+    isRelayConnected,
+    hasRelaySessionToken,
+  });
 
   /**
-   * Renders the options for a single dropdown. Shows a loading placeholder while in-flight,
-   * a "waiting for relay" message when not yet connected, or a "load failed" indicator when
-   * the SNow fetch errored — prevents any hardcoded guesses from appearing.
+   * Renders either live SNow choices or a manual value input.
+   * Manual mode keeps cloned/template values usable when SNow hides form metadata.
    */
-  function renderDropdownOptions(options: { value: string; label: string }[], currentValue: string) {
+  function renderBasicChoiceField(
+    label: string,
+    pinKey: string,
+    fieldName: 'category' | 'changeType',
+    options: { value: string; label: string }[],
+    currentValue: string,
+    shouldUseManualInput: boolean,
+  ) {
+    if (shouldUseManualInput) {
+      return (
+        <div className={styles.fieldGroup}>
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>{label}</span>
+            <input
+              className={styles.input}
+              onChange={(event) => handleBasicInfoChange(fieldName, event.target.value)}
+              placeholder={SHORT_MANUAL_VALUE_PLACEHOLDER}
+              value={currentValue}
+            />
+          </label>
+          <FieldControls
+            fieldKey={pinKey}
+            fieldLabel={label}
+            fieldSection={PIN_SECTION_CHANGE_DETAILS}
+            fieldValue={currentValue}
+            shouldShowSaveButton={shouldShowSaveButtons}
+            upsertPin={upsertPin}
+            removePin={removePin}
+            getPinnedFields={getPinnedFields}
+            findPinnedField={findPinnedField}
+            onApplyPinnedField={(pinnedField) => applyPinnedFieldValue(actions, pinnedField)}
+          />
+        </div>
+      );
+    }
+
     if (isLoadingChoices) {
-      return <option disabled value="">Loading options…</option>;
-    }
-    if (!isRelayConnected) {
-      return <option disabled value="">Connect SNow relay to load options</option>;
-    }
-    if (!hasRelaySessionToken) {
-      return <option disabled value="">Waiting for SNow session token…</option>;
-    }
-    if (isFetchFailed) {
-      return <option disabled value="">Load failed — click Retry above</option>;
+      return (
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>{label}</span>
+          <select className={styles.input} disabled value="">
+            <option disabled value="">Loading options…</option>
+          </select>
+        </label>
+      );
     }
 
     const renderedOptions = buildRenderedChoiceOptions(options, currentValue);
-    if (!hasSelectableChoiceOptions(renderedOptions)) {
-      return <option disabled value="">No live SNow options returned</option>;
-    }
-
-    return renderedOptions.map((option) => (
-      <option key={`${option.value}-${option.label}`} value={option.value}>{option.label || 'Select…'}</option>
-    ));
+    return (
+      <div className={styles.fieldGroup}>
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>{label}</span>
+          <select
+            className={styles.input}
+            onChange={(event) => handleBasicInfoChange(fieldName, event.target.value)}
+            value={resolveStoredChoiceValue(currentValue, renderedOptions)}
+          >
+            {renderedOptions.map((option) => (
+              <option key={`${option.value}-${option.label}`} value={option.value}>{option.label || 'Select…'}</option>
+            ))}
+          </select>
+        </label>
+        <FieldControls fieldKey={pinKey} fieldLabel={label} fieldSection={PIN_SECTION_CHANGE_DETAILS} fieldValue={currentValue} shouldShowSaveButton={shouldShowSaveButtons} upsertPin={upsertPin} removePin={removePin} getPinnedFields={getPinnedFields} findPinnedField={findPinnedField} onApplyPinnedField={(pinnedField) => applyPinnedFieldValue(actions, pinnedField)} />
+      </div>
+    );
   }
 
   return (
     <section className={styles.section}>
-      <StepHeading currentStep={state.currentStep} />
+      <StepHeading currentStep={headingStep ?? state.currentStep} />
 
       {/* Choice availability warning — shown when options haven't been loaded yet. */}
       {!isRelayConnected && !isFetchFailed ? (
@@ -551,194 +1082,64 @@ function ChangeDetailsStep({
         </p>
       ) : null}
 
-      {/* Saved Templates panel — apply a previously saved set of field values in one click */}
-      <div className={styles.clonePanel}>
-        <h4 className={styles.panelSectionTitle}>Saved Templates</h4>
-        {templates.length > 0 ? (
-          <div className={styles.cloneInputRow}>
-            <select
-              aria-label="Select template"
-              className={styles.input}
-              onChange={(event) => setSelectedTemplateId(event.target.value)}
-              value={selectedTemplateId}
-            >
-              <option value="">Select a template…</option>
-              {templates.map((template) => (
-                <option key={template.id} value={template.id}>{template.name}</option>
-              ))}
-            </select>
-            <button
-              className={styles.secondaryButton}
-              disabled={!selectedTemplateId}
-              onClick={handleApplyTemplate}
-              type="button"
-            >
-              Apply
-            </button>
-            <button
-              className={styles.secondaryButton}
-              disabled={!selectedTemplateId}
-              onClick={handleUpdateTemplate}
-              type="button"
-            >
-              Update selected
-            </button>
-            <button
-              className={styles.linkButton}
-              disabled={!selectedTemplateId}
-              onClick={handleDeleteTemplate}
-              type="button"
-            >
-              Delete
-            </button>
-          </div>
-        ) : (
-          <p className={styles.panelHint}>No templates saved yet.</p>
-        )}
+      {/* Basic Change Info — mirrors the top section of the SNow Change Request form */}
+      {shouldUseManualCategoryInput || shouldUseManualChangeTypeInput ? (
+        <p className={styles.panelHint}>
+          Live basic-info choices are unavailable. Type the internal ServiceNow value or use one of the saved field options shown inline below.
+        </p>
+      ) : null}
+      <div className={styles.detailsGrid}>
+        {renderBasicChoiceField('Category', CATEGORY_PIN_KEY, 'category', categoryOptions, basicInfo.category, shouldUseManualCategoryInput)}
+        {renderBasicChoiceField('Change Type', CHANGE_TYPE_PIN_KEY, 'changeType', changeTypeOptions, basicInfo.changeType, shouldUseManualChangeTypeInput)}
 
-        {/* Inline save-as-template flow — shows a name input on demand */}
-        {isSavePromptVisible ? (
-          <div className={styles.cloneInputRow}>
-            <input
-              aria-label="Template name"
-              className={styles.input}
-              onChange={(event) => setNewTemplateName(event.target.value)}
-              placeholder="Template name…"
-              value={newTemplateName}
-            />
-            <button className={styles.secondaryButton} onClick={handleSaveTemplate} type="button">
-              Save
-            </button>
-            <button className={styles.linkButton} onClick={() => setIsSavePromptVisible(false)} type="button">
-              Cancel
-            </button>
-          </div>
-        ) : (
-          <div>
-            <button
-              className={styles.linkButton}
-              onClick={() => { setIsSavePromptVisible(true); setNewTemplateName(''); }}
-              type="button"
-            >
-              + Save current fields as template
-            </button>
-          </div>
-        )}
+        <div className={styles.fieldGroup}>
+          <SnowLookupField label="Requested By" tableName="sys_user" value={basicInfo.requestedBy} onChange={(ref) => handleBasicInfoChange('requestedBy', ref)} />
+          <FieldControls fieldKey={REQUESTED_BY_PIN_KEY} fieldLabel="Requested By" fieldSection={PIN_SECTION_CHANGE_DETAILS} fieldValue={basicInfo.requestedBy} shouldShowSaveButton={shouldShowSaveButtons} upsertPin={upsertPin} removePin={removePin} getPinnedFields={getPinnedFields} findPinnedField={findPinnedField} onApplyPinnedField={(pinnedField) => applyPinnedFieldValue(actions, pinnedField)} />
+        </div>
+        <div className={styles.fieldGroup}>
+          <SnowLookupField label="Assignment Group" tableName="sys_user_group" value={basicInfo.assignmentGroup} onChange={(ref) => handleBasicInfoChange('assignmentGroup', ref)} />
+          <FieldControls fieldKey={ASSIGNMENT_GROUP_PIN_KEY} fieldLabel="Assignment Group" fieldSection={PIN_SECTION_CHANGE_DETAILS} fieldValue={basicInfo.assignmentGroup} shouldShowSaveButton={shouldShowSaveButtons} upsertPin={upsertPin} removePin={removePin} getPinnedFields={getPinnedFields} findPinnedField={findPinnedField} onApplyPinnedField={(pinnedField) => applyPinnedFieldValue(actions, pinnedField)} />
+        </div>
+        <div className={styles.fieldGroup}>
+          <SnowLookupField label="Assigned To" tableName="sys_user" value={basicInfo.assignedTo} onChange={(ref) => handleBasicInfoChange('assignedTo', ref)} />
+          <FieldControls fieldKey={ASSIGNED_TO_PIN_KEY} fieldLabel="Assigned To" fieldSection={PIN_SECTION_CHANGE_DETAILS} fieldValue={basicInfo.assignedTo} shouldShowSaveButton={shouldShowSaveButtons} upsertPin={upsertPin} removePin={removePin} getPinnedFields={getPinnedFields} findPinnedField={findPinnedField} onApplyPinnedField={(pinnedField) => applyPinnedFieldValue(actions, pinnedField)} />
+        </div>
+        <div className={styles.fieldGroup}>
+          <SnowLookupField label="Change Manager" tableName="sys_user" value={basicInfo.changeManager} onChange={(ref) => handleBasicInfoChange('changeManager', ref)} />
+          <FieldControls fieldKey={CHANGE_MANAGER_PIN_KEY} fieldLabel="Change Manager" fieldSection={PIN_SECTION_CHANGE_DETAILS} fieldValue={basicInfo.changeManager} shouldShowSaveButton={shouldShowSaveButtons} upsertPin={upsertPin} removePin={removePin} getPinnedFields={getPinnedFields} findPinnedField={findPinnedField} onApplyPinnedField={(pinnedField) => applyPinnedFieldValue(actions, pinnedField)} />
+        </div>
+        <div className={styles.fieldGroup}>
+          <SnowLookupField label="Tester" tableName="sys_user" value={basicInfo.tester} onChange={(ref) => handleBasicInfoChange('tester', ref)} />
+          <FieldControls fieldKey={TESTER_PIN_KEY} fieldLabel="Tester" fieldSection={PIN_SECTION_CHANGE_DETAILS} fieldValue={basicInfo.tester} shouldShowSaveButton={shouldShowSaveButtons} upsertPin={upsertPin} removePin={removePin} getPinnedFields={getPinnedFields} findPinnedField={findPinnedField} onApplyPinnedField={(pinnedField) => applyPinnedFieldValue(actions, pinnedField)} />
+        </div>
+        <div className={styles.fieldGroup}>
+          <SnowLookupField label="Service Manager" tableName="sys_user" value={basicInfo.serviceManager} onChange={(ref) => handleBasicInfoChange('serviceManager', ref)} />
+          <FieldControls fieldKey={SERVICE_MANAGER_PIN_KEY} fieldLabel="Service Manager" fieldSection={PIN_SECTION_CHANGE_DETAILS} fieldValue={basicInfo.serviceManager} shouldShowSaveButton={shouldShowSaveButtons} upsertPin={upsertPin} removePin={removePin} getPinnedFields={getPinnedFields} findPinnedField={findPinnedField} onApplyPinnedField={(pinnedField) => applyPinnedFieldValue(actions, pinnedField)} />
+        </div>
       </div>
 
-      {/* Clone-from-CHG panel — pre-fill all fields by looking up an existing change record */}
-      <div className={styles.clonePanel}>
-        <h4 className={styles.panelSectionTitle}>Clone from existing CHG (optional)</h4>
-        <p className={styles.panelHint}>
-          Enter a CHG number to pre-populate all fields below from a previous change.
-        </p>
-        <div className={styles.cloneInputRow}>
+      <div className={styles.fieldGroup}>
+        <label className={`${styles.fieldGroup} ${styles.inlineCheckbox}`}>
           <input
-            aria-label="Existing CHG number"
-            className={styles.input}
-            disabled={isCloneInputDisabled}
-            onChange={handleCloneNumberChange}
-            placeholder="e.g. CHG0001234"
-            value={state.cloneChgNumber}
+            checked={basicInfo.isExpedited}
+            onChange={(event) => handleBasicInfoChange('isExpedited', event.target.checked)}
+            type="checkbox"
           />
-          <button
-            className={styles.secondaryButton}
-            disabled={isCloneInputDisabled || !state.cloneChgNumber}
-            onClick={() => void actions.cloneFromChg()}
-            type="button"
-          >
-            {state.isCloning ? 'Loading…' : 'Load CHG'}
+          <span>Expedited Change</span>
+        </label>
+        <FieldControls fieldKey={IS_EXPEDITED_PIN_KEY} fieldLabel="Expedited Change" fieldSection={PIN_SECTION_CHANGE_DETAILS} fieldValue={basicInfo.isExpedited} shouldShowSaveButton={shouldShowSaveButtons} upsertPin={upsertPin} removePin={removePin} getPinnedFields={getPinnedFields} findPinnedField={findPinnedField} onApplyPinnedField={(pinnedField) => applyPinnedFieldValue(actions, pinnedField)} />
+      </div>
+
+      {shouldShowNavigation ? (
+        <div className={styles.buttonRow}>
+          <button className={styles.linkButton} onClick={() => actions.goToStep(2)} type="button">
+            Back
+          </button>
+          <button className={styles.primaryButton} onClick={() => actions.goToStep(4)} type="button">
+            Next: Planning
           </button>
         </div>
-        {state.cloneError ? <p className={styles.errorText} role="alert">{state.cloneError}</p> : null}
-      </div>
-
-      {/* Basic Change Info — mirrors the top section of the SNow Change Request form */}
-      <div className={styles.detailsGrid}>
-        <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>Category</span>
-            <select
-              className={styles.input}
-              disabled={isFetchFailed || !canLoadChoiceOptions || isLoadingChoices}
-            onChange={(event) => handleBasicInfoChange('category', event.target.value)}
-            value={basicInfo.category}
-          >
-            {renderDropdownOptions(categoryOptions, basicInfo.category)}
-          </select>
-        </label>
-        <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>Change Type</span>
-          <select
-            className={styles.input}
-            disabled={isFetchFailed || !canLoadChoiceOptions || isLoadingChoices}
-            onChange={(event) => handleBasicInfoChange('changeType', event.target.value)}
-            value={basicInfo.changeType}
-          >
-            {renderDropdownOptions(changeTypeOptions, basicInfo.changeType)}
-          </select>
-        </label>
-
-        <SnowLookupField
-          label="Requested By"
-          tableName="sys_user"
-          value={basicInfo.requestedBy}
-          onChange={(ref) => handleBasicInfoChange('requestedBy', ref)}
-        />
-        <SnowLookupField
-          label="Config Item"
-          tableName="cmdb_ci"
-          value={basicInfo.configItem}
-          onChange={(ref) => handleBasicInfoChange('configItem', ref)}
-        />
-        <SnowLookupField
-          label="Assignment Group"
-          tableName="sys_user_group"
-          value={basicInfo.assignmentGroup}
-          onChange={(ref) => handleBasicInfoChange('assignmentGroup', ref)}
-        />
-        <SnowLookupField
-          label="Assigned To"
-          tableName="sys_user"
-          value={basicInfo.assignedTo}
-          onChange={(ref) => handleBasicInfoChange('assignedTo', ref)}
-        />
-        <SnowLookupField
-          label="Change Manager"
-          tableName="sys_user"
-          value={basicInfo.changeManager}
-          onChange={(ref) => handleBasicInfoChange('changeManager', ref)}
-        />
-        <SnowLookupField
-          label="Tester"
-          tableName="sys_user"
-          value={basicInfo.tester}
-          onChange={(ref) => handleBasicInfoChange('tester', ref)}
-        />
-        <SnowLookupField
-          label="Service Manager"
-          tableName="sys_user"
-          value={basicInfo.serviceManager}
-          onChange={(ref) => handleBasicInfoChange('serviceManager', ref)}
-        />
-      </div>
-
-      <label className={`${styles.fieldGroup} ${styles.inlineCheckbox}`}>
-        <input
-          checked={basicInfo.isExpedited}
-          onChange={(event) => handleBasicInfoChange('isExpedited', event.target.checked)}
-          type="checkbox"
-        />
-        <span>Expedited Change</span>
-      </label>
-
-      <div className={styles.buttonRow}>
-        <button className={styles.linkButton} onClick={() => actions.goToStep(2)} type="button">
-          Back
-        </button>
-        <button className={styles.primaryButton} onClick={() => actions.goToStep(4)} type="button">
-          Next: Planning
-        </button>
-      </div>
+      ) : null}
     </section>
   );
 }
@@ -755,16 +1156,23 @@ function PlanningStep({
   hasRelaySessionToken,
   retryFetch,
   fetchErrorMessage,
-}: CrgStepProps & PlanningStepExtras) {
+  upsertPin,
+  removePin,
+  getPinnedFields,
+  findPinnedField,
+  headingStep,
+  shouldShowNavigation = true,
+  shouldShowSaveButtons = true,
+}: CrgStepProps & PlanningStepExtras & StepRenderOptions) {
   function handleGeneratedFieldChange(fieldName: GeneratedFieldName, event: ChangeEvent<HTMLTextAreaElement>): void {
     actions.updateGeneratedField(fieldName, event.target.value);
   }
 
   function handleAssessmentChange(
     fieldKey: keyof ChgPlanningAssessment,
-    event: ChangeEvent<HTMLSelectElement>,
+    value: string,
   ): void {
-    actions.setChgPlanningAssessment({ [fieldKey]: event.target.value } as Partial<ChgPlanningAssessment>);
+    actions.setChgPlanningAssessment({ [fieldKey]: value } as Partial<ChgPlanningAssessment>);
   }
 
   function handlePlanningContentChange(
@@ -775,11 +1183,19 @@ function PlanningStep({
   }
 
   const { chgPlanningAssessment: assessment, chgPlanningContent: planContent } = state;
-  const canLoadChoiceOptions = isRelayConnected && hasRelaySessionToken;
+  const shouldUseManualPlanningInputs = PLANNING_ASSESSMENT_ROWS.some((row) => (
+    shouldRenderManualChoiceInput({
+      options: choiceOptions[row.snowFieldName] ?? [],
+      isLoadingChoices,
+      isFetchFailed,
+      isRelayConnected,
+      hasRelaySessionToken,
+    })
+  ));
 
   return (
     <section className={styles.section}>
-      <StepHeading currentStep={state.currentStep} />
+      <StepHeading currentStep={headingStep ?? state.currentStep} />
 
       {/* Choice availability warning — mirrors the logic in ChangeDetailsStep. */}
       {!isRelayConnected && !isFetchFailed ? (
@@ -804,39 +1220,67 @@ function PlanningStep({
         </p>
       ) : null}
 
-      {/* Planning assessment dropdowns — seven risk/readiness evaluations resolved from live SNow choices */}
+      {/* Planning assessment fields — use live SNow choices when available, otherwise preserve cloned values. */}
+      {shouldUseManualPlanningInputs ? (
+        <p className={styles.panelHint}>
+          Live planning choices are unavailable. Type the internal ServiceNow values or choose one of the saved options shown inline on each field.
+        </p>
+      ) : null}
       <div className={styles.assessmentGrid}>
         {PLANNING_ASSESSMENT_ROWS.map((row) => {
           const rowOptions = choiceOptions[row.snowFieldName] ?? [];
           const currentAssessmentValue = assessment[row.fieldKey];
           const renderedRowOptions = buildRenderedChoiceOptions(rowOptions, currentAssessmentValue);
-          const hasRowOptions = hasSelectableChoiceOptions(renderedRowOptions);
+          const planningPinKey = resolvePlanningAssessmentPinKey(row.fieldKey);
+          const shouldUseManualInput = shouldRenderManualChoiceInput({
+            options: rowOptions,
+            isLoadingChoices,
+            isFetchFailed,
+            isRelayConnected,
+            hasRelaySessionToken,
+          });
+
           return (
-            <label className={styles.fieldGroup} key={row.fieldKey}>
-              <span className={styles.fieldLabel}>{row.label}</span>
-              <select
-                className={styles.input}
-                disabled={isFetchFailed || !canLoadChoiceOptions || isLoadingChoices || !hasRowOptions}
-                onChange={(event) => handleAssessmentChange(row.fieldKey, event)}
-                value={currentAssessmentValue}
-              >
-                {isLoadingChoices ? (
-                  <option disabled value="">Loading options…</option>
-                ) : !isRelayConnected ? (
-                  <option disabled value="">Connect SNow relay to load options</option>
-                ) : !hasRelaySessionToken ? (
-                  <option disabled value="">Waiting for SNow session token…</option>
-                ) : isFetchFailed ? (
-                  <option disabled value="">Load failed — click Retry above</option>
-                ) : !hasRowOptions ? (
-                  <option disabled value="">No live SNow options returned</option>
+            <div className={styles.fieldGroup} key={row.fieldKey}>
+              <label className={styles.fieldGroup}>
+                <span className={styles.fieldLabel}>{row.label}</span>
+                {shouldUseManualInput ? (
+                  <input
+                    className={styles.input}
+                    onChange={(event) => handleAssessmentChange(row.fieldKey, event.target.value)}
+                    placeholder={SHORT_MANUAL_VALUE_PLACEHOLDER}
+                    value={currentAssessmentValue}
+                  />
                 ) : (
-                  renderedRowOptions.map((option) => (
-                    <option key={`${option.value}-${option.label}`} value={option.value}>{option.label || 'Select…'}</option>
-                  ))
+                  <select
+                    className={styles.input}
+                    disabled={isLoadingChoices}
+                    onChange={(event) => handleAssessmentChange(row.fieldKey, event.target.value)}
+                    value={resolveStoredChoiceValue(currentAssessmentValue, renderedRowOptions)}
+                  >
+                    {isLoadingChoices ? (
+                      <option disabled value="">Loading options…</option>
+                    ) : (
+                      renderedRowOptions.map((option) => (
+                        <option key={`${option.value}-${option.label}`} value={option.value}>{option.label || 'Select…'}</option>
+                      ))
+                    )}
+                  </select>
                 )}
-              </select>
-            </label>
+              </label>
+              <FieldControls
+                fieldKey={planningPinKey}
+                fieldLabel={row.label}
+                fieldSection={PIN_SECTION_PLANNING}
+                fieldValue={currentAssessmentValue}
+                upsertPin={upsertPin}
+                removePin={removePin}
+                getPinnedFields={getPinnedFields}
+                findPinnedField={findPinnedField}
+                shouldShowSaveButton={shouldShowSaveButtons}
+                onApplyPinnedField={(pinnedField) => applyPinnedFieldValue(actions, pinnedField)}
+              />
+            </div>
           );
         })}
       </div>
@@ -894,14 +1338,16 @@ function PlanningStep({
         </div>
       ) : null}
 
-      <div className={styles.buttonRow}>
-        <button className={styles.linkButton} onClick={() => actions.goToStep(3)} type="button">
-          Back
-        </button>
-        <button className={styles.primaryButton} onClick={() => actions.goToStep(5)} type="button">
-          Next: Environments
-        </button>
-      </div>
+      {shouldShowNavigation ? (
+        <div className={styles.buttonRow}>
+          <button className={styles.linkButton} onClick={() => actions.goToStep(3)} type="button">
+            Back
+          </button>
+          <button className={styles.primaryButton} onClick={() => actions.goToStep(5)} type="button">
+            Next: Environments
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -914,9 +1360,22 @@ function EnvironmentStep({
   isFetchFailed,
   isRelayConnected,
   hasRelaySessionToken,
-}: CrgStepProps & EnvironmentStepExtras) {
+  upsertPin,
+  removePin,
+  getPinnedFields,
+  findPinnedField,
+  headingStep,
+  shouldShowNavigation = true,
+  shouldShowSaveButtons = true,
+}: CrgStepProps & EnvironmentStepExtras & StepRenderOptions) {
   const environmentOptions = choiceOptions['u_environment'] ?? [];
-  const canLoadChoiceOptions = isRelayConnected && hasRelaySessionToken;
+  const shouldUseManualEnvironmentInput = shouldRenderManualChoiceInput({
+    options: environmentOptions,
+    isLoadingChoices,
+    isFetchFailed,
+    isRelayConnected,
+    hasRelaySessionToken,
+  });
 
   function handleEnvironmentToggle(environmentKey: EnvironmentKey, event: ChangeEvent<HTMLInputElement>): void {
     const nextSelections: EnvironmentSelectionState = {
@@ -945,73 +1404,110 @@ function EnvironmentStep({
     actions.updateEnvironment(environmentKey, environmentUpdate);
   }
 
-  function renderEnvironmentMappingOptions() {
-    if (isLoadingChoices) return <option disabled value="">Loading options…</option>;
-    if (!isRelayConnected) return <option disabled value="">Connect SNow relay to load options</option>;
-    if (!hasRelaySessionToken) return <option disabled value="">Waiting for SNow session token…</option>;
-    if (isFetchFailed) return <option disabled value="">Load failed — return to Planning and retry</option>;
-
-    const renderedOptions = buildRenderedChoiceOptions(environmentOptions, state.chgBasicInfo.environment);
-    if (!hasSelectableChoiceOptions(renderedOptions)) {
-      return <option disabled value="">No live SNow environment options returned</option>;
-    }
-
-    return renderedOptions.map((option) => (
-      <option key={`${option.value}-${option.label}`} value={option.value}>{option.label || 'Select…'}</option>
-    ));
+  function handleEnvironmentConfigItemChange(environmentKey: EnvironmentKey, configItem: SnowReference): void {
+    actions.updateEnvironment(environmentKey, { configItem });
   }
 
   return (
     <section className={styles.section}>
-      <StepHeading currentStep={state.currentStep} />
+      <StepHeading currentStep={headingStep ?? state.currentStep} />
       <div className={styles.environmentMappingPanel}>
-        <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>ServiceNow Environment</span>
-          <select
-            aria-label="ServiceNow Environment"
-            className={styles.input}
-            disabled={
-              isFetchFailed ||
-              !canLoadChoiceOptions ||
-              isLoadingChoices ||
-              (!state.chgBasicInfo.environment && !hasSelectableChoiceOptions(environmentOptions))
-            }
-            onChange={(event) => actions.setChgBasicInfo({ environment: event.target.value })}
-            value={state.chgBasicInfo.environment}
-          >
-            {renderEnvironmentMappingOptions()}
-          </select>
-        </label>
+        <div className={styles.fieldGroup}>
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>ServiceNow Environment</span>
+            {shouldUseManualEnvironmentInput ? (
+              <input
+                aria-label="ServiceNow Environment"
+                className={styles.input}
+                onChange={(event) => actions.setChgBasicInfo({ environment: event.target.value })}
+                placeholder={SHORT_MANUAL_VALUE_PLACEHOLDER}
+                value={state.chgBasicInfo.environment}
+              />
+            ) : (
+              <select
+                aria-label="ServiceNow Environment"
+                className={styles.input}
+                disabled={isLoadingChoices}
+                onChange={(event) => actions.setChgBasicInfo({ environment: event.target.value })}
+                value={resolveStoredChoiceValue(
+                  state.chgBasicInfo.environment,
+                  buildRenderedChoiceOptions(environmentOptions, state.chgBasicInfo.environment),
+                )}
+              >
+                {isLoadingChoices ? (
+                  <option disabled value="">Loading options…</option>
+                ) : (
+                  buildRenderedChoiceOptions(environmentOptions, state.chgBasicInfo.environment).map((option) => (
+                    <option key={`${option.value}-${option.label}`} value={option.value}>{option.label || 'Select…'}</option>
+                  ))
+                )}
+              </select>
+            )}
+          </label>
+          <FieldControls
+            fieldKey={ENVIRONMENT_VALUE_PIN_KEY}
+            fieldLabel="ServiceNow Environment"
+            fieldSection={PIN_SECTION_ENVIRONMENTS}
+            fieldValue={state.chgBasicInfo.environment}
+            upsertPin={upsertPin}
+            removePin={removePin}
+            getPinnedFields={getPinnedFields}
+            findPinnedField={findPinnedField}
+            shouldShowSaveButton={shouldShowSaveButtons}
+            onApplyPinnedField={(pinnedField) => applyPinnedFieldValue(actions, pinnedField)}
+          />
+        </div>
         <p className={styles.panelHint}>
-          This maps the selected deployment environments below to the single SNow Environment field sent on create.
+          {shouldUseManualEnvironmentInput
+            ? 'Live SNow environment choices are unavailable. Type the internal value or choose one of the saved options shown inline below.'
+            : 'This maps the selected deployment environments below to the single SNow Environment field sent on create.'}
         </p>
       </div>
-      <table aria-label="Environment schedule table" className={styles.issueTable}>
-        <thead>
-          <tr>
-            <th scope="col">Environment</th>
-            <th scope="col">Enabled</th>
-            <th scope="col">Planned Start</th>
-            <th scope="col">Planned End</th>
-          </tr>
-        </thead>
-        <tbody>
-          {ENVIRONMENT_ROW_DEFINITIONS.map((environmentRow) => {
-            const environmentState = state[environmentRow.stateKey];
-            const isDateInputDisabled = !environmentState.isEnabled;
+      <div className={styles.environmentCardGrid}>
+        {ENVIRONMENT_ROW_DEFINITIONS.map((environmentRow) => {
+          const environmentState = state[environmentRow.stateKey];
+          const isDateInputDisabled = !environmentState.isEnabled;
+          const configItemPinKey = resolveEnvironmentConfigItemPinKey(environmentRow.key);
 
-            return (
-              <tr key={environmentRow.key}>
-                <td>{environmentRow.label}</td>
-                <td>
+          return (
+            <section className={styles.environmentCard} key={environmentRow.key}>
+              <div className={styles.environmentCardHeader}>
+                <h4 className={styles.panelSectionTitle}>{environmentRow.label}</h4>
+                <label className={styles.inlineCheckbox}>
                   <input
                     aria-label={`${environmentRow.label} enabled`}
                     checked={environmentState.isEnabled}
                     onChange={(event) => handleEnvironmentToggle(environmentRow.key, event)}
                     type="checkbox"
                   />
-                </td>
-                <td>
+                  <span>Enabled</span>
+                </label>
+              </div>
+
+              <div className={styles.fieldGroup}>
+                <SnowLookupField
+                  label={`${environmentRow.label} Config Item`}
+                  tableName="cmdb_ci"
+                  value={environmentState.configItem}
+                  onChange={(configItem) => handleEnvironmentConfigItemChange(environmentRow.key, configItem)}
+                />
+                <FieldControls
+                  fieldKey={configItemPinKey}
+                  fieldLabel={`${environmentRow.label} Config Item`}
+                  fieldSection={PIN_SECTION_ENVIRONMENTS}
+                  fieldValue={environmentState.configItem}
+                  upsertPin={upsertPin}
+                  removePin={removePin}
+                  getPinnedFields={getPinnedFields}
+                  findPinnedField={findPinnedField}
+                  shouldShowSaveButton={shouldShowSaveButtons}
+                  onApplyPinnedField={(pinnedField) => applyPinnedFieldValue(actions, pinnedField)}
+                />
+              </div>
+
+              <div className={styles.fieldGrid}>
+                <label className={styles.fieldGroup}>
+                  <span className={styles.fieldLabel}>Planned Start</span>
                   <input
                     className={styles.input}
                     disabled={isDateInputDisabled}
@@ -1019,8 +1515,9 @@ function EnvironmentStep({
                     type="datetime-local"
                     value={environmentState.plannedStartDate}
                   />
-                </td>
-                <td>
+                </label>
+                <label className={styles.fieldGroup}>
+                  <span className={styles.fieldLabel}>Planned End</span>
                   <input
                     className={styles.input}
                     disabled={isDateInputDisabled}
@@ -1028,20 +1525,22 @@ function EnvironmentStep({
                     type="datetime-local"
                     value={environmentState.plannedEndDate}
                   />
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      <div className={styles.buttonRow}>
-        <button className={styles.linkButton} onClick={() => actions.goToStep(4)} type="button">
-          Back
-        </button>
-        <button className={styles.primaryButton} onClick={() => actions.goToStep(6)} type="button">
-          Preview Results
-        </button>
+                </label>
+              </div>
+            </section>
+          );
+        })}
       </div>
+      {shouldShowNavigation ? (
+        <div className={styles.buttonRow}>
+          <button className={styles.linkButton} onClick={() => actions.goToStep(4)} type="button">
+            Back
+          </button>
+          <button className={styles.primaryButton} onClick={() => actions.goToStep(6)} type="button">
+            Preview Results
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1052,8 +1551,9 @@ function buildEnvironmentSummary(state: CrgStateData): string[] {
     const scheduleSummary = environmentState.plannedStartDate && environmentState.plannedEndDate
       ? `${environmentState.plannedStartDate} → ${environmentState.plannedEndDate}`
       : EMPTY_ENVIRONMENT_DATES;
+    const configItemSummary = environmentState.configItem.displayName || environmentState.configItem.sysId || 'No Config Item';
 
-    return `${environmentRow.label}: ${environmentState.isEnabled ? 'Enabled' : 'Disabled'} — ${scheduleSummary}`;
+    return `${environmentRow.label}: ${environmentState.isEnabled ? 'Enabled' : 'Disabled'} — ${scheduleSummary} — Config Item: ${configItemSummary}`;
   });
 }
 
@@ -1083,6 +1583,10 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
   const [templateName, setTemplateName] = useState<string>('');
   const [ctaskDraft, setCtaskDraft] = useState<CtaskTemplateData>(() => createEmptyCtaskTemplateData());
   const [appendChgNumber, setAppendChgNumber] = useState<string>('');
+  const [ctaskCloneNumber, setCtaskCloneNumber] = useState<string>('');
+  const [isCloningCtask, setIsCloningCtask] = useState<boolean>(false);
+  const [ctaskCloneError, setCtaskCloneError] = useState<string | null>(null);
+  const [ctaskCloneStatus, setCtaskCloneStatus] = useState<string | null>(null);
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId);
 
   useEffect(() => {
@@ -1091,7 +1595,13 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
     setCtaskDraft(buildCtaskTemplateData(selectedTemplate));
   }, [selectedTemplate]);
 
-  function handleStringFieldChange(fieldName: keyof Pick<CtaskTemplateData, 'shortDescription' | 'description' | 'plannedStartDate' | 'plannedEndDate' | 'closeNotes'>, value: string): void {
+  function handleStringFieldChange(
+    fieldName: keyof Pick<
+      CtaskTemplateData,
+      'shortDescription' | 'description' | 'plannedStartDate' | 'plannedEndDate' | 'closeNotes'
+    >,
+    value: string,
+  ): void {
     setCtaskDraft((previousDraft) => ({ ...previousDraft, [fieldName]: value }));
   }
 
@@ -1110,10 +1620,61 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
     void actions.appendTasksToExistingChg(appendChgNumber.trim().toUpperCase());
   }
 
+  async function handleCloneCtaskTemplate(): Promise<void> {
+    const normalizedCtaskNumber = ctaskCloneNumber.trim().toUpperCase();
+    if (!normalizedCtaskNumber) {
+      setCtaskCloneError('Enter a CTASK number before cloning a template.');
+      setCtaskCloneStatus(null);
+      return;
+    }
+
+    setIsCloningCtask(true);
+    setCtaskCloneError(null);
+    setCtaskCloneStatus(null);
+
+    try {
+      const clonedTemplateData = await actions.cloneCtaskTemplate(normalizedCtaskNumber);
+      setSelectedTemplateId('');
+      setTemplateName(clonedTemplateData.shortDescription || normalizedCtaskNumber);
+      setCtaskDraft(clonedTemplateData);
+      setIsEditorVisible(true);
+      setCtaskCloneNumber(normalizedCtaskNumber);
+      setCtaskCloneStatus(`${normalizedCtaskNumber} loaded into the CTASK template editor.`);
+    } catch (unknownError) {
+      const errorMessage = unknownError instanceof Error ? unknownError.message : 'Failed to clone CTASK template.';
+      setCtaskCloneError(errorMessage);
+    } finally {
+      setIsCloningCtask(false);
+    }
+  }
+
   return (
     <div className={styles.clonePanel}>
       <h4 className={styles.panelSectionTitle}>CTASK Templates</h4>
       <p className={styles.panelHint}>Add reusable Change Tasks to this CHG, or append the selected CTASKs to an existing CHG.</p>
+      <div className={styles.cloneInputRow}>
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>Existing CTASK for template clone</span>
+          <input
+            aria-label="Existing CTASK for template clone"
+            className={styles.input}
+            disabled={isCloningCtask}
+            onChange={(event) => setCtaskCloneNumber(event.target.value.toUpperCase())}
+            placeholder="CTASK0001234"
+            value={ctaskCloneNumber}
+          />
+        </label>
+        <button
+          className={styles.secondaryButton}
+          disabled={isCloningCtask}
+          onClick={() => void handleCloneCtaskTemplate()}
+          type="button"
+        >
+          {isCloningCtask ? 'Loading CTASK…' : 'Load CTASK as Template'}
+        </button>
+      </div>
+      {ctaskCloneError ? <p className={styles.errorText} role="alert">{ctaskCloneError}</p> : null}
+      {ctaskCloneStatus ? <p className={styles.successText} role="status">{ctaskCloneStatus}</p> : null}
       <div className={styles.cloneInputRow}>
         <select
           aria-label="Select CTASK template"
@@ -1197,7 +1758,7 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
   );
 }
 
-function ResultsStep({ state, actions, ...ctaskTemplateExtras }: CrgStepProps & CtaskTemplateExtras) {
+function ResultsStep({ state, actions }: CrgStepProps) {
   const consolidatedResult = buildConsolidatedResult(state);
   const hasGeneratedContent = Boolean(state.generatedShortDescription || state.generatedDescription || state.generatedJustification || state.generatedRiskImpact);
 
@@ -1227,8 +1788,21 @@ function ResultsStep({ state, actions, ...ctaskTemplateExtras }: CrgStepProps & 
             {buildEnvironmentSummary(state).map((environmentSummary) => <li key={environmentSummary}>{environmentSummary}</li>)}
           </ul>
         </div>
+        <div>
+          <h4 className={styles.summaryTitle}>Queued Change Tasks</h4>
+          {state.changeTasks.length > 0 ? (
+            <ul className={styles.environmentList}>
+              {state.changeTasks.map((changeTask) => (
+                <li key={changeTask.id}>
+                  {changeTask.name}: {changeTask.shortDescription}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className={styles.summaryText}>Add CTASK templates from the Configuration tab when this change needs companion tasks.</p>
+          )}
+        </div>
       </div>
-      <CtaskTemplatePanel actions={actions} state={state} {...ctaskTemplateExtras} />
       <label className={styles.fieldGroup}>
         <span className={styles.fieldLabel}>{CONSOLIDATED_RESULT_LABEL}</span>
         <textarea className={styles.textArea} readOnly value={hasGeneratedContent ? consolidatedResult : DEFAULT_RESULT_MESSAGE} />
@@ -1258,7 +1832,6 @@ function renderCurrentStepPanel(
   planningExtras: PlanningStepExtras,
   changeDetailsExtras: ChangeDetailsExtras,
   environmentExtras: EnvironmentStepExtras,
-  ctaskTemplateExtras: CtaskTemplateExtras,
 ) {
   if (state.currentStep === 1) {
     return <FetchIssuesStep actions={actions} state={state} />;
@@ -1269,18 +1842,22 @@ function renderCurrentStepPanel(
   }
 
   if (state.currentStep === 3) {
-    return <ChangeDetailsStep actions={actions} state={state} {...changeDetailsExtras} />;
+    return <ChangeDetailsStep actions={actions} state={state} {...changeDetailsExtras} shouldShowSaveButtons={false} />;
   }
 
   if (state.currentStep === 4) {
-    return <PlanningStep actions={actions} state={state} {...planningExtras} />;
+    return <PlanningStep actions={actions} state={state} {...planningExtras} shouldShowSaveButtons={false} />;
   }
 
   if (state.currentStep === 5) {
-    return <EnvironmentStep actions={actions} state={state} {...environmentExtras} />;
+    return <EnvironmentStep actions={actions} state={state} {...environmentExtras} shouldShowSaveButtons={false} />;
   }
 
-  return <ResultsStep actions={actions} state={state} {...ctaskTemplateExtras} />;
+  return <ResultsStep actions={actions} state={state} />;
+}
+
+export interface CrgTabProps {
+  mode?: 'wizard' | 'configuration';
 }
 
 /**
@@ -1288,10 +1865,11 @@ function renderCurrentStepPanel(
  * comprehensive six-step ServiceNow Change Request with all required fields.
  * A hidden AI assist mode is available via keyboard shortcut for enhanced content generation.
  */
-export default function CrgTab() {
+export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
   const { state, actions } = useCrgState();
   const { isUnlocked, verifyPassphrase, buildPrompt } = useRovoAssist();
   const { templates, saveTemplate, updateTemplate, deleteTemplate } = useCrgTemplates();
+  const { pinnedFields, upsertPin, removePin, clearPins, getPinnedFields, findPinnedField } = useCrgFieldPins();
   const ctaskTemplates = useCtaskTemplates();
   const {
     choiceOptions,
@@ -1312,7 +1890,12 @@ export default function CrgTab() {
   // Prompt modal state — holds the generated prompt text the user pastes into Rovo.
   const [rovoPrompt, setRovoPrompt] = useState<string | null>(null);
 
-  const issueCountSummary = useMemo(() => `${state.fetchedIssues.length} issue(s) loaded`, [state.fetchedIssues.length]);
+  const issueCountSummary = useMemo(() => {
+    if (mode === 'configuration') {
+      return CONFIGURATION_SUMMARY;
+    }
+    return `${state.fetchedIssues.length} issue(s) loaded`;
+  }, [mode, state.fetchedIssues.length]);
 
   useEffect(() => {
     const categoryOptions = choiceOptions['category'] ?? [];
@@ -1431,6 +2014,10 @@ export default function CrgTab() {
     hasRelaySessionToken,
     retryFetch,
     fetchErrorMessage,
+    upsertPin,
+    removePin,
+    getPinnedFields,
+    findPinnedField,
   };
 
   const environmentExtras: EnvironmentStepExtras = {
@@ -1439,6 +2026,10 @@ export default function CrgTab() {
     isFetchFailed,
     isRelayConnected,
     hasRelaySessionToken,
+    upsertPin,
+    removePin,
+    getPinnedFields,
+    findPinnedField,
   };
 
   const changeDetailsExtras: ChangeDetailsExtras = {
@@ -1449,10 +2040,23 @@ export default function CrgTab() {
     hasRelaySessionToken,
     retryFetch,
     fetchErrorMessage,
+    upsertPin,
+    removePin,
+    getPinnedFields,
+    findPinnedField,
+  };
+
+  const workspaceExtras: CrgWorkspaceExtras = {
     templates,
     saveTemplate,
     updateTemplate,
     deleteTemplate,
+    pinnedFields,
+    upsertPin,
+    removePin,
+    clearPins,
+    getPinnedFields,
+    findPinnedField,
   };
 
   const ctaskTemplateExtras: CtaskTemplateExtras = {
@@ -1462,17 +2066,31 @@ export default function CrgTab() {
     deleteTemplate: ctaskTemplates.deleteTemplate,
   };
 
+  const tabTitle = mode === 'configuration' ? CONFIGURATION_TAB_TITLE : TAB_TITLE;
+  const tabSubtitle = mode === 'configuration' ? CONFIGURATION_TAB_SUBTITLE : TAB_SUBTITLE;
+  const shouldShowWizardChrome = mode === 'wizard';
+
   return (
     <div className={styles.tabPanel}>
       <header className={styles.tabHeader}>
         <div>
-          <h2 className={styles.tabTitle}>{TAB_TITLE}</h2>
-          <p className={styles.tabSubtitle}>{TAB_SUBTITLE}</p>
+          <h2 className={styles.tabTitle}>{tabTitle}</h2>
+          <p className={styles.tabSubtitle}>{tabSubtitle}</p>
         </div>
         <p className={styles.summaryPill}>{issueCountSummary}</p>
       </header>
-      <StepIndicator currentStep={state.currentStep} />
-      {renderCurrentStepPanel(state, actions, planningExtras, changeDetailsExtras, environmentExtras, ctaskTemplateExtras)}
+      {shouldShowWizardChrome ? <StepIndicator currentStep={state.currentStep} /> : null}
+      {mode === 'configuration' ? (
+        <>
+          <CrgWorkspacePanel actions={actions} state={state} {...workspaceExtras} />
+          <ChangeDetailsStep actions={actions} state={state} {...changeDetailsExtras} headingStep={3} shouldShowNavigation={false} />
+          <PlanningStep actions={actions} state={state} {...planningExtras} headingStep={4} shouldShowNavigation={false} />
+          <EnvironmentStep actions={actions} state={state} {...environmentExtras} headingStep={5} shouldShowNavigation={false} />
+          <CtaskTemplatePanel actions={actions} state={state} {...ctaskTemplateExtras} />
+        </>
+      ) : (
+        renderCurrentStepPanel(state, actions, planningExtras, changeDetailsExtras, environmentExtras)
+      )}
 
       {/* Hidden passphrase modal — only visible after Ctrl+Alt+Z, never in documentation */}
       {isPassphraseModalVisible ? (

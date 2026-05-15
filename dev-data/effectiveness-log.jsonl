@@ -3,3 +3,4 @@
 {"pattern":"bugfix","model":"claude-sonnet-4.6","prompts":4,"success":true,"timestamp":"2026-05-08T16:36:00Z","files_changed":18,"notes":"v0.6.4 gh issue #45 — 6 UX fixes: toast system, confirm/prompt dialogs, fix-version dropdown, ART search+persist, inline expand, home button"}
 {"pattern":"bugfix","model":"claude-sonnet-4.6","prompts":1,"success":true,"timestamp":"2026-05-08T13:44:12Z","files_changed":8}
 {"pattern":"bugfix","model":"gpt-5.5","prompts":10,"success":true,"timestamp":"2026-05-11T22:49:54.1518280Z","files_changed":23}
+{"pattern":"multi-file-refactor","model":"gpt-5.4","prompts":8,"success":true,"timestamp":"2026-05-15T10:10:00-04:00","files_changed":17,"notes":"SNow Hub: added dedicated CRG Configuration tab, improved CHG clone hydration/migration, and fixed PRB Jira preview/create behavior."}

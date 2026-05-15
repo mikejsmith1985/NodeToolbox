@@ -1,6 +1,6 @@
 // ReportsHubView.test.tsx — Unit tests for the Reports Hub tabbed view component.
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { JiraFeatureIssue, ReportsHubTab, SprintIssue, ThroughputEntry } from './hooks/useReportsHubState.ts';
@@ -71,8 +71,9 @@ describe('ReportsHubView', () => {
     expect(screen.getByText(/art teams/i)).toBeInTheDocument();
   });
 
-  it('renders 9 tab buttons', () => {
+  it('renders 10 tab buttons including the dashboard tab', () => {
     render(<ReportsHubView />);
+    expect(screen.getByRole('tab', { name: /dashboard/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /feature report/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /defect tracker/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /risk board/i })).toBeInTheDocument();
@@ -82,6 +83,89 @@ describe('ReportsHubView', () => {
     expect(screen.getByRole('tab', { name: /quality/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /sprint health/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /throughput/i })).toBeInTheDocument();
+  });
+
+  it('shows the dashboard widget layout when dashboard tab is active', () => {
+    mockState.activeTab = 'dashboard';
+    mockState.defects = [
+      {
+        key: 'TBX-201',
+        summary: 'Critical deployment defect',
+        statusName: 'In Progress',
+        statusCategory: 'indeterminate',
+        teamName: 'Team A',
+        fixVersions: [],
+        assigneeName: 'Alice',
+        piName: null,
+        priority: 'Critical',
+      },
+    ];
+    mockState.risks = [
+      {
+        key: 'TBX-301',
+        summary: 'Release risk is open',
+        statusName: 'Open',
+        statusCategory: 'new',
+        teamName: 'Team A',
+        fixVersions: [],
+        assigneeName: null,
+        piName: null,
+        priority: 'High',
+      },
+    ];
+    mockState.sprintIssues = [
+      {
+        key: 'TBX-401',
+        summary: 'Blocked implementation task',
+        statusName: 'Blocked',
+        statusCategory: 'indeterminate',
+        teamName: 'Team A',
+        assigneeName: 'Bob',
+        priority: 'High',
+        isBlocked: true,
+        updatedDate: '2026-05-15T00:00:00.000Z',
+        sprintName: 'Sprint 42',
+      },
+    ];
+
+    render(<ReportsHubView />);
+
+    expect(screen.getByText(/dashboard snapshot/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /critical defects/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /blocked work/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /open risks/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /issues by team/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /issues by priority/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /issues by status/i })).toBeInTheDocument();
+    expect(screen.getByText('TBX-201')).toBeInTheDocument();
+    expect(screen.getAllByText('TBX-301').length).toBeGreaterThan(0);
+    expect(screen.getByText('TBX-401')).toBeInTheDocument();
+  });
+
+  it('shows full blocked and unassigned counts even when the widget list is capped', () => {
+    mockState.activeTab = 'dashboard';
+    mockState.sprintIssues = Array.from({ length: 7 }, (_, issueIndex) => ({
+      key: `TBX-50${issueIndex}`,
+      summary: `Blocked item ${issueIndex}`,
+      statusName: 'Blocked',
+      statusCategory: 'indeterminate',
+      teamName: 'Team A',
+      assigneeName: null,
+      priority: 'High',
+      isBlocked: true,
+      updatedDate: '2026-05-15T00:00:00.000Z',
+      sprintName: 'Sprint 42',
+    }));
+
+    render(<ReportsHubView />);
+
+    const blockedWorkCard = screen.getByText('Blocked Work', { selector: 'span' }).closest('div');
+    const unassignedWorkCard = screen.getByText('Unassigned Work', { selector: 'span' }).closest('div');
+
+    expect(blockedWorkCard).not.toBeNull();
+    expect(unassignedWorkCard).not.toBeNull();
+    expect(within(blockedWorkCard as HTMLElement).getByText('7')).toBeInTheDocument();
+    expect(within(unassignedWorkCard as HTMLElement).getByText('7')).toBeInTheDocument();
   });
 
   it('shows the feature report table when features are loaded', () => {

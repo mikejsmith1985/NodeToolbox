@@ -56,7 +56,7 @@ interface UseCrgTemplatesResult {
 
 /**
  * Manages CHG field templates in localStorage so users can save a common
- * set of dropdown values and re-apply them with a single click in step 3.
+ * set of Steps 3-5 values and re-apply them from the shared CRG workspace.
  */
 export function useCrgTemplates(): UseCrgTemplatesResult {
   const [templates, setTemplates] = useState<CrgTemplate[]>(() => loadTemplatesFromStorage());
