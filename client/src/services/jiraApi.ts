@@ -25,9 +25,34 @@ function emitApiEvent(detail: JiraApiEventDetail): void {
   window.dispatchEvent(new CustomEvent<JiraApiEventDetail>(TOOLBOX_API_EVENT, { detail }));
 }
 
-function assertSuccessfulResponse(response: Response, messagePrefix: string): void {
+/**
+ * Throws a descriptive error when the response is not OK.
+ * Attempts to read Jira's JSON error body so the UI surfaces the actual
+ * rejection reason (e.g. "Issue Type is required.") rather than just the
+ * HTTP status code.
+ */
+async function assertSuccessfulResponse(response: Response, messagePrefix: string): Promise<void> {
   if (!response.ok) {
-    throw new Error(`${messagePrefix}: ${response.status}`);
+    // Start with the bare status code as the fallback description.
+    let errorDetail = String(response.status);
+    try {
+      // Jira error bodies look like: { errorMessages: [...], errors: { field: "msg" } }
+      const errorBody = await response.json() as Record<string, unknown>;
+      const jiraErrorMessages = Array.isArray(errorBody.errorMessages)
+        ? (errorBody.errorMessages as unknown[]).filter((msg): msg is string => typeof msg === 'string')
+        : [];
+      const jiraFieldErrors =
+        errorBody.errors !== null && typeof errorBody.errors === 'object'
+          ? Object.values(errorBody.errors as Record<string, string>)
+          : [];
+      const allJiraErrors = [...jiraErrorMessages, ...jiraFieldErrors].filter(Boolean);
+      if (allJiraErrors.length > 0) {
+        errorDetail = `${response.status} — ${allJiraErrors.join('; ')}`;
+      }
+    } catch {
+      // JSON parsing failed — the status code is the best description we have.
+    }
+    throw new Error(`${messagePrefix}: ${errorDetail}`);
   }
 }
 
@@ -70,7 +95,7 @@ async function trackApiCall<ReturnValue>(
 export async function jiraGet<ResponseBody>(path: string): Promise<ResponseBody> {
   return trackApiCall('GET', path, async () => {
     const response = await fetch(`${JIRA_PROXY_BASE}${path}`);
-    assertSuccessfulResponse(response, `Jira GET ${path} failed`);
+    await assertSuccessfulResponse(response, `Jira GET ${path} failed`);
     const value = await parseJsonResponse<ResponseBody>(response);
     return { value, status: response.status };
   });
@@ -87,7 +112,7 @@ export async function jiraPost<ResponseBody>(
       headers: { 'Content-Type': JSON_CONTENT_TYPE },
       body: JSON.stringify(body),
     });
-    assertSuccessfulResponse(response, `Jira POST ${path} failed`);
+    await assertSuccessfulResponse(response, `Jira POST ${path} failed`);
     const value = await parseJsonResponse<ResponseBody>(response);
     return { value, status: response.status };
   });
@@ -107,7 +132,7 @@ export async function jiraPut(path: string, body: unknown): Promise<void> {
       headers: { 'Content-Type': JSON_CONTENT_TYPE },
       body: JSON.stringify(body),
     });
-    assertSuccessfulResponse(response, `Jira PUT ${path} failed`);
+    await assertSuccessfulResponse(response, `Jira PUT ${path} failed`);
     return { value: undefined, status: response.status };
   });
 }
