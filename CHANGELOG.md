@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **SNow Hub — CRG wizard no longer exposes template/pin management**: The CHG flow now hides saved-value selectors, pin buttons, and saved-option guidance entirely; reusable value and payload pin management stays in the Configuration tab.
+- **SNow Hub — CRG cloned custom choices populate from display values**: When ServiceNow returns custom choice fields with blank internal values but populated display values, cloned planning fields now keep the visible value instead of going blank.
+- **SNow Hub — CRG Configuration can pin exact ServiceNow payload fields**: Loading a reference CHG now exposes its readable fields in Configuration so instance-specific API fields can be pinned into the create payload, matching the legacy toolbox's ability to preserve custom CHG fields.
+- **SNow Hub — CRG live metadata requests preserve display values**: Change Request choice metadata requests now include `sysparm_display_value=all` so live dropdown parsing has the best chance of receiving readable labels on locked-down ServiceNow instances.
 - **SNow Hub — PRB Generator uses 'Defect' issue type for enterprise Jira**: The primary issue now maps to the enterprise Jira issue type `Defect` instead of `Bug` when the defect checkbox is checked, matching the issue-type name expected on locked-down Jira instances.
 - **SNow Hub — PRB Generator surfaces Jira error details on failure**: Jira POST errors now include the structured message from Jira's response body (e.g. "Issue Type is required.") rather than just the HTTP status code, so users can diagnose and fix problems without checking the network tab.
 - **SNow Hub — PRB Generator preserves partial success**: If one of the two Jira issues is created and the other fails, the successfully created issue key is now shown alongside the specific error for the failed issue instead of discarding both results.

@@ -264,6 +264,7 @@ describe('useSnowChoiceOptions', () => {
 
     const calledPath = vi.mocked(snowFetch).mock.calls[0][0] as string;
     expect(calledPath).toContain('/api/now/ui/form/change_request/-1');
+    expect(calledPath).toContain('sysparm_display_value=all');
     expect(vi.mocked(snowFetch)).toHaveBeenCalledTimes(1);
   });
 
@@ -303,6 +304,7 @@ describe('useSnowChoiceOptions', () => {
 
     const uiMetaPath = vi.mocked(snowFetch).mock.calls[2][0] as string;
     expect(uiMetaPath).toContain('/api/now/ui/meta/change_request');
+    expect(uiMetaPath).toContain('sysparm_display_value=all');
     expect(result.current.choiceOptions.impact[1]).toEqual({ value: '1', label: 'High' });
   });
 

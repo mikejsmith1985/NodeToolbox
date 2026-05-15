@@ -44,12 +44,12 @@ function buildUiFormPath(formViewName: (typeof SNOW_FORM_VIEW_NAMES)[number]): s
   const encodedTableName = encodeURIComponent(CHANGE_REQUEST_TABLE_NAME);
   const encodedNewRecordSysId = encodeURIComponent(NEW_CHANGE_REQUEST_SYS_ID);
   const encodedFormView = encodeURIComponent(formViewName);
-  return `/api/now/ui/form/${encodedTableName}/${encodedNewRecordSysId}?sysparm_view=${encodedFormView}`;
+  return `/api/now/ui/form/${encodedTableName}/${encodedNewRecordSysId}?sysparm_view=${encodedFormView}&sysparm_display_value=all`;
 }
 
 function buildUiMetaPath(): string {
   const encodedTableName = encodeURIComponent(CHANGE_REQUEST_TABLE_NAME);
-  return `/api/now/ui/meta/${encodedTableName}`;
+  return `/api/now/ui/meta/${encodedTableName}?sysparm_display_value=all`;
 }
 
 function isObjectRecord(candidate: unknown): candidate is UnknownRecord {

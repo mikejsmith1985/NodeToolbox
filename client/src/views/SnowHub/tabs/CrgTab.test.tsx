@@ -114,6 +114,8 @@ const {
     chgPlanningContent: {
       implementationPlan: '', backoutPlan: '', testPlan: '',
     },
+    customSnowFields: {},
+    inspectedSnowFields: [] as Array<{ fieldName: string; displayValue: string; storedValue: string }>,
     relEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference } },
     prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference } },
     pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference } },
@@ -134,6 +136,8 @@ const {
     setChgBasicInfo: vi.fn(),
     setChgPlanningAssessment: vi.fn(),
     setChgPlanningContent: vi.fn(),
+    pinCustomSnowField: vi.fn(),
+    removeCustomSnowField: vi.fn(),
     setCloneChgNumber: vi.fn(),
     cloneFromChg: vi.fn().mockResolvedValue(undefined),
     applyTemplate: vi.fn(),
@@ -275,6 +279,8 @@ function resetMockState(): void {
     chgBasicInfo: { ...DEFAULT_BASIC_INFO },
     chgPlanningAssessment: { ...DEFAULT_PLANNING_ASSESSMENT },
     chgPlanningContent: { ...DEFAULT_PLANNING_CONTENT },
+    customSnowFields: {},
+    inspectedSnowFields: [],
     relEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE } },
     prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE } },
     pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE } },
@@ -683,14 +689,14 @@ describe('CrgTab', () => {
     render(<CrgTab />);
 
     expect(screen.queryByRole('heading', { name: 'Clone, Templates & Defaults' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '+ Save current Steps 3-5 as template' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+ Save current CRG defaults as template' })).not.toBeInTheDocument();
   });
 
   it('reveals the template name input when "Save as template" is clicked', async () => {
     const user = userEvent.setup();
     render(<CrgTab mode="configuration" />);
 
-    await user.click(screen.getByRole('button', { name: '+ Save current Steps 3-5 as template' }));
+    await user.click(screen.getByRole('button', { name: '+ Save current CRG defaults as template' }));
 
     expect(screen.getByRole('textbox', { name: 'CHG template name' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
@@ -704,7 +710,7 @@ describe('CrgTab', () => {
 
     render(<CrgTab mode="configuration" />);
 
-    await user.click(screen.getByRole('button', { name: '+ Save current Steps 3-5 as template' }));
+    await user.click(screen.getByRole('button', { name: '+ Save current CRG defaults as template' }));
     await user.type(screen.getByRole('textbox', { name: 'CHG template name' }), 'Release Defaults');
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
@@ -815,7 +821,7 @@ describe('CrgTab', () => {
     const categoryInput = screen.getByRole('textbox', { name: 'Category' });
     fireEvent.change(categoryInput, { target: { value: 'software' } });
     expect(mockActions.setChgBasicInfo).toHaveBeenLastCalledWith({ category: 'software' });
-    expect(screen.getByText(/saved field options shown inline below/i)).toBeInTheDocument();
+    expect(screen.queryByText(/saved field options shown inline below/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save Category' })).not.toBeInTheDocument();
   });
 
@@ -842,6 +848,7 @@ describe('CrgTab', () => {
     await user.type(impactInput, '1');
     expect(mockActions.setChgPlanningAssessment).toHaveBeenLastCalledWith({ impact: '1' });
     expect(screen.getByText(/Live planning choices are unavailable/i)).toBeInTheDocument();
+    expect(screen.queryByText(/saved options shown inline/i)).not.toBeInTheDocument();
   });
 
   it('keeps step 4 values editable when choice fetch fails', () => {
@@ -877,6 +884,24 @@ describe('CrgTab', () => {
     fireEvent.change(environmentInput, { target: { value: 'prd' } });
     expect(mockActions.setChgBasicInfo).toHaveBeenLastCalledWith({ environment: 'prd' });
     expect(screen.getByText(/Live SNow environment choices are unavailable\./)).toBeInTheDocument();
+    expect(screen.queryByText(/saved options shown inline/i)).not.toBeInTheDocument();
+  });
+
+  it('does not expose pinned field selectors in the main CHG wizard', () => {
+    mockSnowChoiceConfig.hasChoiceOptions = false;
+    mockState.currentStep = 4;
+    mockPinnedFields.push({
+      id: 'chgPlanningAssessment.impact:string:1',
+      key: 'chgPlanningAssessment.impact',
+      label: 'Impact',
+      section: 'Planning',
+      value: '1',
+    });
+
+    render(<CrgTab />);
+
+    expect(screen.queryByRole('combobox', { name: 'Pinned Impact values' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Use a saved value…')).not.toBeInTheDocument();
   });
 
   it('pins boolean and reference values from step fields', async () => {
@@ -920,5 +945,37 @@ describe('CrgTab', () => {
 
     await user.click(screen.getByRole('button', { name: 'Clear all saved options' }));
     expect(mockFieldPinActions.clearPins).toHaveBeenCalled();
+  });
+
+  it('shows reusable pinned field selectors only in configuration mode', () => {
+    mockSnowChoiceConfig.hasChoiceOptions = false;
+    mockPinnedFields.push({
+      id: 'chgPlanningAssessment.impact:string:1',
+      key: 'chgPlanningAssessment.impact',
+      label: 'Impact',
+      section: 'Planning',
+      value: '1',
+    });
+
+    render(<CrgTab mode="configuration" />);
+
+    expect(screen.getByRole('combobox', { name: 'Pinned Impact values' })).toBeInTheDocument();
+  });
+
+  it('pins exact SNow payload fields from the configuration inspector', async () => {
+    const user = userEvent.setup();
+    mockState.inspectedSnowFields = [
+      {
+        fieldName: 'u_custom_change_rule',
+        displayValue: 'CAB required',
+        storedValue: 'cab_required',
+      },
+    ];
+
+    render(<CrgTab mode="configuration" />);
+
+    await user.click(screen.getByRole('button', { name: '📌 Pin to payload' }));
+
+    expect(mockActions.pinCustomSnowField).toHaveBeenCalledWith('u_custom_change_rule', 'cab_required');
   });
 });

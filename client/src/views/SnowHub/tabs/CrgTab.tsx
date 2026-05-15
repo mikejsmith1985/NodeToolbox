@@ -69,7 +69,7 @@ const DEFAULT_RESULT_MESSAGE = 'Generated content will appear here after you com
 const EMPTY_ENVIRONMENT_DATES = 'Not scheduled';
 const WORKSPACE_PANEL_TITLE = 'Clone, Templates & Defaults';
 const WORKSPACE_PANEL_HINT = 'Clone a known-good CHG, save repeatable templates, and build reusable pinned field options without filling the wizard with static pin lists.';
-const SHORT_MANUAL_VALUE_PLACEHOLDER = 'Type or paste the internal ServiceNow value';
+const SHORT_MANUAL_VALUE_PLACEHOLDER = 'Internal ServiceNow value';
 const PIN_SECTION_CHANGE_DETAILS = 'Change Details';
 const PIN_SECTION_PLANNING = 'Planning';
 const PIN_SECTION_ENVIRONMENTS = 'Environments';
@@ -99,6 +99,7 @@ function buildCurrentTemplateData(state: CrgStateData): Omit<CrgTemplate, 'id' |
     chgBasicInfo:          state.chgBasicInfo,
     chgPlanningAssessment: state.chgPlanningAssessment,
     chgPlanningContent:    state.chgPlanningContent,
+    customSnowFields:      state.customSnowFields,
     relEnvironment:        state.relEnvironment,
     prdEnvironment:        state.prdEnvironment,
     pfixEnvironment:       state.pfixEnvironment,
@@ -313,6 +314,7 @@ interface FieldControlsProps {
   fieldSection: string;
   fieldValue: CrgPinnedField['value'];
   shouldShowSaveButton?: boolean;
+  shouldShowPinnedSelector?: boolean;
   upsertPin: (pinnedField: CrgPinnedFieldInput) => void;
   removePin: (pinId: string) => void;
   getPinnedFields: (fieldKey: string) => CrgPinnedField[];
@@ -326,17 +328,17 @@ function FieldControls({
   fieldSection,
   fieldValue,
   shouldShowSaveButton = true,
+  shouldShowPinnedSelector = shouldShowSaveButton,
   upsertPin,
   removePin,
   getPinnedFields,
   findPinnedField,
   onApplyPinnedField,
 }: FieldControlsProps) {
-  const pinnedOptions = getPinnedFields(fieldKey);
   const matchingPinnedField = findPinnedField(fieldKey, fieldValue);
   const canSaveCurrentValue = canPinFieldValue(fieldValue);
 
-  if (!shouldShowSaveButton && pinnedOptions.length === 0) {
+  if (!shouldShowSaveButton && !shouldShowPinnedSelector) {
     return null;
   }
 
@@ -356,12 +358,14 @@ function FieldControls({
 
   return (
     <div className={styles.fieldSupportRow}>
-      <PinnedFieldSelector
-        fieldKey={fieldKey}
-        fieldLabel={fieldLabel}
-        getPinnedFields={getPinnedFields}
-        onApplyPinnedField={onApplyPinnedField}
-      />
+      {shouldShowPinnedSelector ? (
+        <PinnedFieldSelector
+          fieldKey={fieldKey}
+          fieldLabel={fieldLabel}
+          getPinnedFields={getPinnedFields}
+          onApplyPinnedField={onApplyPinnedField}
+        />
+      ) : null}
       {shouldShowSaveButton ? (
         <button
           aria-label={matchingPinnedField ? `Remove saved ${fieldLabel}` : `Save ${fieldLabel}`}
@@ -499,6 +503,7 @@ interface StepRenderOptions {
   headingStep?: CrgStateData['currentStep'];
   shouldShowNavigation?: boolean;
   shouldShowSaveButtons?: boolean;
+  shouldShowPinnedSelectors?: boolean;
 }
 
 interface CrgWorkspaceExtras {
@@ -632,6 +637,10 @@ function CrgWorkspacePanel({
   const [newTemplateName, setNewTemplateName] = useState<string>('');
 
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId);
+  const customSnowFields = state.customSnowFields ?? {};
+  const inspectedSnowFields = state.inspectedSnowFields ?? [];
+  const pinnedPayloadFields = Object.entries(customSnowFields)
+    .sort(([leftFieldName], [rightFieldName]) => leftFieldName.localeCompare(rightFieldName));
   const pinnedFieldSummary = useMemo(() => {
     const pinnedFieldCountMap = new Map<string, { label: string; count: number }>();
     pinnedFields.forEach((pinnedField) => {
@@ -669,6 +678,10 @@ function CrgWorkspacePanel({
   function handleDeleteTemplate(): void {
     deleteTemplate(selectedTemplateId);
     setSelectedTemplateId('');
+  }
+
+  function handlePinPayloadField(fieldName: string, storedValue: string): void {
+    actions.pinCustomSnowField(fieldName, storedValue);
   }
 
   return (
@@ -720,7 +733,7 @@ function CrgWorkspacePanel({
                 ))}
               </select>
               <button className={styles.secondaryButton} disabled={!selectedTemplate} onClick={handleApplyTemplate} type="button">
-                Apply to Steps 3-5
+                Apply to CRG defaults
               </button>
               <button className={styles.secondaryButton} disabled={!selectedTemplateId} onClick={handleUpdateTemplate} type="button">
                 Update selected
@@ -757,14 +770,14 @@ function CrgWorkspacePanel({
               }}
               type="button"
             >
-              + Save current Steps 3-5 as template
+              + Save current CRG defaults as template
             </button>
           )}
         </div>
 
         <div className={styles.clonePanel}>
           <h4 className={styles.panelSectionTitle}>Pinned field options</h4>
-          <p className={styles.panelHint}>Saved values now appear inline on matching fields as reusable dropdown choices, so ad hoc changes do not depend on one giant pinned-values list.</p>
+          <p className={styles.panelHint}>Manage reusable values here only; the CHG wizard stays focused on creating the change.</p>
           {pinnedFields.length > 0 ? (
             <>
               <p className={styles.panelHint}>{pinnedFields.length} saved option(s) across {pinnedFieldSummary.length} field(s).</p>
@@ -781,8 +794,54 @@ function CrgWorkspacePanel({
               </button>
             </>
           ) : (
-            <p className={styles.panelHint}>No field options saved yet. Save values from Step 3, Step 4, or Step 5 and they will show up inline on those fields.</p>
+            <p className={styles.panelHint}>No field options saved yet. Load a CHG or enter defaults below, then save only the values you want to reuse.</p>
           )}
+        </div>
+
+        <div className={styles.clonePanel}>
+          <h4 className={styles.panelSectionTitle}>Pinned SNow payload fields</h4>
+          <p className={styles.panelHint}>Load a known-good CHG, then pin exact ServiceNow API fields when your instance has custom fields the wizard does not know by name.</p>
+          {inspectedSnowFields.length > 0 ? (
+            <div className={styles.pinnedFieldList}>
+              {inspectedSnowFields.map((inspectedField) => {
+                const isPayloadFieldPinned = inspectedField.fieldName in customSnowFields;
+                return (
+                  <div className={styles.pinnedFieldCard} key={inspectedField.fieldName}>
+                    <strong>{inspectedField.fieldName}</strong>
+                    <span className={styles.pinnedFieldValue}>{inspectedField.displayValue}</span>
+                    <button
+                      className={isPayloadFieldPinned ? `${styles.linkButton} ${styles.activePinButton}` : styles.linkButton}
+                      onClick={() => {
+                        if (isPayloadFieldPinned) {
+                          actions.removeCustomSnowField(inspectedField.fieldName);
+                        } else {
+                          handlePinPayloadField(inspectedField.fieldName, inspectedField.storedValue);
+                        }
+                      }}
+                      type="button"
+                    >
+                      {isPayloadFieldPinned ? '📌 Pinned to payload' : '📌 Pin to payload'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className={styles.panelHint}>No CHG fields loaded yet. Enter a CHG number and choose Load CHG to inspect available fields.</p>
+          )}
+          {pinnedPayloadFields.length > 0 ? (
+            <div className={styles.pinnedFieldList}>
+              {pinnedPayloadFields.map(([fieldName, fieldValue]) => (
+                <div className={styles.pinnedFieldCard} key={fieldName}>
+                  <strong>{fieldName}</strong>
+                  <span className={styles.pinnedFieldValue}>{fieldValue}</span>
+                  <button className={styles.linkButton} onClick={() => actions.removeCustomSnowField(fieldName)} type="button">
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
     </section>
@@ -1085,7 +1144,9 @@ function ChangeDetailsStep({
       {/* Basic Change Info — mirrors the top section of the SNow Change Request form */}
       {shouldUseManualCategoryInput || shouldUseManualChangeTypeInput ? (
         <p className={styles.panelHint}>
-          Live basic-info choices are unavailable. Type the internal ServiceNow value or use one of the saved field options shown inline below.
+          {shouldShowSaveButtons
+            ? 'Live basic-info choices are unavailable. Type the internal ServiceNow value or use a saved field option from this configuration workspace.'
+            : 'Live basic-info choices are unavailable. Type the internal ServiceNow value.'}
         </p>
       ) : null}
       <div className={styles.detailsGrid}>
@@ -1223,7 +1284,9 @@ function PlanningStep({
       {/* Planning assessment fields — use live SNow choices when available, otherwise preserve cloned values. */}
       {shouldUseManualPlanningInputs ? (
         <p className={styles.panelHint}>
-          Live planning choices are unavailable. Type the internal ServiceNow values or choose one of the saved options shown inline on each field.
+          {shouldShowSaveButtons
+            ? 'Live planning choices are unavailable. Type the internal ServiceNow values or use saved field options from this configuration workspace.'
+            : 'Live planning choices are unavailable. Type the internal ServiceNow values.'}
         </p>
       ) : null}
       <div className={styles.assessmentGrid}>
@@ -1459,7 +1522,11 @@ function EnvironmentStep({
         </div>
         <p className={styles.panelHint}>
           {shouldUseManualEnvironmentInput
-            ? 'Live SNow environment choices are unavailable. Type the internal value or choose one of the saved options shown inline below.'
+            ? (
+                shouldShowSaveButtons
+                  ? 'Live SNow environment choices are unavailable. Type the internal value or use a saved field option from this configuration workspace.'
+                  : 'Live SNow environment choices are unavailable. Type the internal value.'
+              )
             : 'This maps the selected deployment environments below to the single SNow Environment field sent on create.'}
         </p>
       </div>
