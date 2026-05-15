@@ -71,6 +71,17 @@ export interface ChgPlanningContent {
   testPlan: string;           // SNow field: test_plan
 }
 
+/**
+ * A field discovered from a real ServiceNow CHG. The Configuration tab can pin
+ * these exact API-name/value pairs when a ServiceNow instance uses custom fields
+ * that are not part of the standard wizard.
+ */
+export interface InspectedSnowField {
+  fieldName: string;
+  displayValue: string;
+  storedValue: string;
+}
+
 const EMPTY_VALUE = '';
 const EMPTY_FETCH_ERROR = null;
 const REQUIRED_FIELDS_MESSAGE = 'Project key and fix version are required.';
@@ -84,6 +95,16 @@ const CTASK_CLONE_FIELDS = [
   'planned_start_date', 'planned_end_date', 'close_notes',
 ].join(',');
 const SNOW_DATE_TIME_INPUT_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::\d{2})?/;
+const INSPECTED_FIELD_SKIP_LIST = new Set([
+  'sys_id', 'sys_created_by', 'sys_created_on', 'sys_updated_by', 'sys_updated_on',
+  'sys_class_name', 'sys_domain', 'sys_mod_count', 'sys_tags', 'watch_list', 'work_notes_list',
+  'number', 'short_description', 'description', 'justification', 'risk_impact_analysis',
+  'category', 'type', 'u_environment', 'requested_by', 'cmdb_ci', 'assignment_group',
+  'assigned_to', 'change_manager', 'u_tester', 'u_service_manager', 'u_expedited',
+  'impact', 'u_availability_impact', 'u_change_tested', 'u_impacted_persons_aware',
+  'u_performed_previously', 'u_success_probability', 'u_can_be_backed_out',
+  'implementation_plan', 'backout_plan', 'test_plan', 'planned_start_date', 'planned_end_date',
+]);
 
 // localStorage key used to persist CRG wizard progress across relay reconnects and page navigations.
 const CRG_STATE_STORAGE_KEY = 'ntbx-crg-state';
@@ -149,6 +170,8 @@ export interface CrgTemplate {
   chgBasicInfo: ChgBasicInfo;
   chgPlanningAssessment: ChgPlanningAssessment;
   chgPlanningContent: ChgPlanningContent;
+  /** Optional for backward compatibility with templates saved before custom SNow field pins. */
+  customSnowFields?: Record<string, string>;
   /** Optional for backward compatibility with templates saved before environment scheduling was added. */
   relEnvironment?: EnvironmentConfig;
   prdEnvironment?: EnvironmentConfig;
@@ -214,6 +237,10 @@ interface CrgState {
   chgPlanningAssessment: ChgPlanningAssessment;
   // Step 4: Planning long-form text areas
   chgPlanningContent: ChgPlanningContent;
+  /** Exact SNow API fields pinned from Configuration for instance-specific payload parity. */
+  customSnowFields: Record<string, string>;
+  /** Full readable field list from the most recently loaded CHG. */
+  inspectedSnowFields: InspectedSnowField[];
   // Step 5: Environment schedule
   relEnvironment: EnvironmentConfig;
   prdEnvironment: EnvironmentConfig;
@@ -237,6 +264,8 @@ interface CrgActions {
   setChgBasicInfo: (update: Partial<ChgBasicInfo>) => void;
   setChgPlanningAssessment: (update: Partial<ChgPlanningAssessment>) => void;
   setChgPlanningContent: (update: Partial<ChgPlanningContent>) => void;
+  pinCustomSnowField: (fieldName: string, fieldValue: string) => void;
+  removeCustomSnowField: (fieldName: string) => void;
   setCloneChgNumber: (chgNumber: string) => void;
   /** Fetches a SNow CHG by number and pre-populates all form fields with its values. */
   cloneFromChg: () => Promise<void>;
@@ -279,6 +308,8 @@ function createDefaultCrgState(): CrgState {
     generatedRiskImpact: EMPTY_VALUE,
     chgPlanningAssessment: createDefaultChgPlanningAssessment(),
     chgPlanningContent: createDefaultChgPlanningContent(),
+    customSnowFields: {},
+    inspectedSnowFields: [],
     relEnvironment: createDefaultEnvironmentConfig(),
     prdEnvironment: createDefaultEnvironmentConfig(),
     pfixEnvironment: createDefaultEnvironmentConfig(),
@@ -372,8 +403,11 @@ function extractChoiceValue(field: unknown): string {
   if (typeof field === 'string') return field;
   if (typeof field === 'object' && field !== null) {
     const snowField = field as Record<string, unknown>;
-    if ('value' in snowField) return String(snowField.value ?? EMPTY_VALUE);
-    if ('display_value' in snowField) return String(snowField.display_value ?? EMPTY_VALUE);
+    const internalValue = String(snowField.value ?? EMPTY_VALUE).trim();
+    if (internalValue) return internalValue;
+
+    const displayValue = String(snowField.display_value ?? EMPTY_VALUE).trim();
+    if (displayValue) return displayValue;
   }
   return EMPTY_VALUE;
 }
@@ -393,6 +427,29 @@ function extractSnowReference(field: unknown): SnowReference {
   const displayName = String(snowField.display_value ?? EMPTY_VALUE);
   if (!sysId && !displayName) return { ...EMPTY_SNOW_REFERENCE };
   return { sysId, displayName };
+}
+
+function extractInspectableFieldValue(field: unknown): { displayValue: string; storedValue: string } {
+  if (field && typeof field === 'object') {
+    const snowField = field as Record<string, unknown>;
+    const displayValue = String(snowField.display_value || snowField.value || EMPTY_VALUE).trim();
+    const storedValue = String(snowField.value || snowField.display_value || EMPTY_VALUE).trim();
+    return { displayValue, storedValue };
+  }
+
+  const fieldValue = field === null || field === undefined ? EMPTY_VALUE : String(field).trim();
+  return { displayValue: fieldValue, storedValue: fieldValue };
+}
+
+function buildInspectedSnowFields(chgRecord: Record<string, unknown>): InspectedSnowField[] {
+  return Object.entries(chgRecord)
+    .filter(([fieldName, fieldValue]) => !INSPECTED_FIELD_SKIP_LIST.has(fieldName) && fieldValue !== null && fieldValue !== EMPTY_VALUE)
+    .map(([fieldName, fieldValue]) => ({
+      fieldName,
+      ...extractInspectableFieldValue(fieldValue),
+    }))
+    .filter((inspectedField) => inspectedField.storedValue.length > 0 || inspectedField.displayValue.length > 0)
+    .sort((leftField, rightField) => leftField.fieldName.localeCompare(rightField.fieldName));
 }
 
 function extractReferenceSysId(field: unknown): string {
@@ -628,6 +685,8 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       generatedRiskImpact:       state.generatedRiskImpact,
       chgPlanningAssessment:     state.chgPlanningAssessment,
       chgPlanningContent:        state.chgPlanningContent,
+      customSnowFields:          state.customSnowFields,
+      inspectedSnowFields:       state.inspectedSnowFields,
       relEnvironment:            state.relEnvironment,
       prdEnvironment:            state.prdEnvironment,
       pfixEnvironment:           state.pfixEnvironment,
@@ -796,6 +855,33 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     }));
   }, []);
 
+  const pinCustomSnowField = useCallback((fieldName: string, fieldValue: string) => {
+    const normalizedFieldName = fieldName.trim();
+    const normalizedFieldValue = fieldValue.trim();
+    if (!normalizedFieldName || !normalizedFieldValue) {
+      return;
+    }
+
+    setState((previousState) => ({
+      ...previousState,
+      customSnowFields: {
+        ...previousState.customSnowFields,
+        [normalizedFieldName]: normalizedFieldValue,
+      },
+    }));
+  }, []);
+
+  const removeCustomSnowField = useCallback((fieldName: string) => {
+    setState((previousState) => {
+      const remainingCustomSnowFields = { ...previousState.customSnowFields };
+      delete remainingCustomSnowFields[fieldName];
+      return {
+        ...previousState,
+        customSnowFields: remainingCustomSnowFields,
+      };
+    });
+  }, []);
+
   const setCloneChgNumber = useCallback((chgNumber: string) => {
     setState((previousState) => ({ ...previousState, cloneChgNumber: chgNumber }));
   }, []);
@@ -829,11 +915,13 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       const chg = response.result[0];
       const clonedEnvironmentValue = extractChoiceValue(chg.u_environment);
       const clonedConfigItem = extractSnowReference(chg.cmdb_ci);
+      const inspectedSnowFields = buildInspectedSnowFields(chg);
 
       setState((previousState) => ({
         ...previousState,
         isCloning: false,
         cloneError: null,
+        inspectedSnowFields,
         generatedShortDescription: extractStringValue(chg.short_description),
         generatedDescription:      extractStringValue(chg.description),
         generatedJustification:    extractStringValue(chg.justification),
@@ -886,6 +974,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       chgBasicInfo:          { ...template.chgBasicInfo },
       chgPlanningAssessment: { ...template.chgPlanningAssessment },
       chgPlanningContent:    { ...template.chgPlanningContent },
+      customSnowFields:      { ...(template.customSnowFields ?? previousState.customSnowFields) },
       relEnvironment:        template.relEnvironment ? mergeEnvironmentConfig(template.relEnvironment) : previousState.relEnvironment,
       prdEnvironment:        template.prdEnvironment ? mergeEnvironmentConfig(template.prdEnvironment) : previousState.prdEnvironment,
       pfixEnvironment:       template.pfixEnvironment ? mergeEnvironmentConfig(template.pfixEnvironment) : previousState.pfixEnvironment,
@@ -1000,6 +1089,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
 
     // Build the payload — core text fields are always included.
     const chgPayload: Record<string, unknown> = {
+      ...state.customSnowFields,
       short_description:    state.generatedShortDescription,
       description:          state.generatedDescription,
       justification:        state.generatedJustification,
@@ -1088,7 +1178,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
   }, [
     state.generatedShortDescription, state.generatedDescription,
     state.generatedJustification, state.generatedRiskImpact,
-    state.chgBasicInfo, state.chgPlanningAssessment, state.chgPlanningContent, state.changeTasks,
+    state.chgBasicInfo, state.chgPlanningAssessment, state.chgPlanningContent, state.customSnowFields, state.changeTasks,
   ]);
 
   const actions = useMemo<CrgActions>(() => {
@@ -1105,6 +1195,8 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       setChgBasicInfo,
       setChgPlanningAssessment,
       setChgPlanningContent,
+      pinCustomSnowField,
+      removeCustomSnowField,
       setCloneChgNumber,
       cloneFromChg,
       applyTemplate,
@@ -1121,6 +1213,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     setFetchMode, setProjectKey, setFixVersion, setCustomJql, fetchIssues,
     toggleIssueSelection, selectAllIssues, generateDocs, updateGeneratedField,
     setChgBasicInfo, setChgPlanningAssessment, setChgPlanningContent,
+    pinCustomSnowField, removeCustomSnowField,
     setCloneChgNumber, cloneFromChg, applyTemplate, addChangeTask, removeChangeTask,
     appendTasksToExistingChg, cloneCtaskTemplate, updateEnvironment, goToStep, reset, createChg,
   ]);

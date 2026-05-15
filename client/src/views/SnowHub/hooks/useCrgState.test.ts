@@ -429,6 +429,7 @@ describe('useCrgState', () => {
             u_performed_previously:    { value: 'No', display_value: 'No' },
             u_success_probability:     { value: '90-99%', display_value: '90-99%' },
             u_can_be_backed_out:       { value: 'Yes', display_value: 'Yes' },
+            u_custom_change_rule:       { value: '', display_value: 'CAB required' },
           },
         ],
       } as never);
@@ -453,6 +454,12 @@ describe('useCrgState', () => {
       expect(result.current.state.chgBasicInfo.changeManager).toEqual({ sysId: 'mgr-001', displayName: 'Riley Manager' });
       expect(result.current.state.chgPlanningAssessment.impact).toBe('2');
       expect(result.current.state.chgPlanningContent.implementationPlan).toBe('Run script');
+      expect(result.current.state.inspectedSnowFields).toContainEqual({
+        fieldName: 'u_custom_change_rule',
+        displayValue: 'CAB required',
+        storedValue: 'CAB required',
+      });
+      expect(result.current.state.inspectedSnowFields.some((snowField) => snowField.fieldName === 'impact')).toBe(false);
     });
 
     it('shows cloned display-only reference values even when SNow omits the sys_id', async () => {
@@ -477,6 +484,42 @@ describe('useCrgState', () => {
       expect(result.current.state.chgBasicInfo.changeManager).toEqual({
         sysId: '',
         displayName: 'Display Only Manager',
+      });
+    });
+
+    it('uses display values when custom SNow choice fields omit internal values', async () => {
+      vi.mocked(snowFetch).mockResolvedValueOnce({
+        result: [
+          {
+            impact:                    { value: '1', display_value: '1 - High' },
+            u_availability_impact:     { value: '', display_value: 'No Impact' },
+            u_change_tested:           { value: '', display_value: 'Yes' },
+            u_impacted_persons_aware:  { value: '', display_value: 'Yes' },
+            u_performed_previously:    { value: '', display_value: 'No' },
+            u_success_probability:     { value: '', display_value: '90-99%' },
+            u_can_be_backed_out:       { value: '', display_value: 'Yes' },
+          },
+        ],
+      } as never);
+
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.setCloneChgNumber('CHG0001234');
+      });
+
+      await act(async () => {
+        await result.current.actions.cloneFromChg();
+      });
+
+      expect(result.current.state.chgPlanningAssessment).toEqual({
+        impact:                        '1',
+        systemAvailabilityImplication: 'No Impact',
+        hasBeenTested:                 'Yes',
+        impactedPersonsAware:          'Yes',
+        hasBeenPerformedPreviously:    'No',
+        successProbability:            '90-99%',
+        canBeBackedOut:                'Yes',
       });
     });
 
@@ -665,6 +708,26 @@ describe('useCrgState', () => {
       expect(bodyString.assignment_group).toBe('grp-001');
       expect(bodyString.impact).toBe('2');
       expect(bodyString.implementation_plan).toBe('Deploy via script');
+    });
+
+    it('includes exact custom SNow fields pinned from configuration in the POST body', async () => {
+      vi.mocked(snowFetch).mockResolvedValue({ result: { number: 'CHG0005678' } } as never);
+
+      const { result } = await advanceToChangeDetailsStep();
+
+      act(() => {
+        result.current.actions.pinCustomSnowField('u_custom_change_rule', 'cab_required');
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      const bodyString = JSON.parse(
+        (vi.mocked(snowFetch).mock.calls[0][1] as RequestInit).body as string,
+      ) as Record<string, unknown>;
+
+      expect(bodyString.u_custom_change_rule).toBe('cab_required');
     });
 
     it('falls back to the basic config item when disabled environments still hold older mapped values', async () => {
@@ -877,6 +940,47 @@ describe('useCrgState', () => {
         plannedStartDate: '2026-01-05T10:00',
         plannedEndDate: '2026-01-05T11:00',
         configItem: { sysId: '', displayName: '' },
+      });
+    });
+
+    it('applies custom SNow payload fields from templates and preserves them for legacy templates', () => {
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.pinCustomSnowField('u_existing_payload_rule', 'keep_me');
+      });
+
+      act(() => {
+        result.current.actions.applyTemplate({
+          id: 'tpl-custom-fields',
+          name: 'Custom Payload Fields',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          chgBasicInfo:          result.current.state.chgBasicInfo,
+          chgPlanningAssessment: result.current.state.chgPlanningAssessment,
+          chgPlanningContent:    result.current.state.chgPlanningContent,
+          customSnowFields: {
+            u_custom_change_rule: 'cab_required',
+          },
+        });
+      });
+
+      expect(result.current.state.customSnowFields).toEqual({
+        u_custom_change_rule: 'cab_required',
+      });
+
+      act(() => {
+        result.current.actions.applyTemplate({
+          id: 'tpl-legacy-custom-fields',
+          name: 'Legacy Custom Fields',
+          createdAt: '2026-01-02T00:00:00.000Z',
+          chgBasicInfo:          result.current.state.chgBasicInfo,
+          chgPlanningAssessment: result.current.state.chgPlanningAssessment,
+          chgPlanningContent:    result.current.state.chgPlanningContent,
+        });
+      });
+
+      expect(result.current.state.customSnowFields).toEqual({
+        u_custom_change_rule: 'cab_required',
       });
     });
   });
