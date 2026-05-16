@@ -293,7 +293,7 @@ describe('AdminHubView', () => {
 describe('Diagnostics section', () => {
   it('renders the Diagnostics section heading', () => {
     renderAdminHubView();
-    expect(screen.getByRole('heading', { name: /diagnostics/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /run diagnostics/i })).toBeInTheDocument();
   });
 
   it('renders the Run Diagnostics button', () => {
@@ -343,7 +343,7 @@ describe('Diagnostics section', () => {
 describe('Backup & Reset section', () => {
   it('renders the Backup & Reset section heading', () => {
     renderAdminHubView();
-    expect(screen.getByText(/backup.*reset/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /backup.*reset/i })).toBeInTheDocument();
   });
 
   it('renders the Download Backup button', () => {
@@ -519,45 +519,6 @@ describe('Launcher download links', () => {
   });
 });
 
-// ── Advanced lock button tests ──
-
-describe('Advanced lock button', () => {
-  it('renders the lock button when isAdvancedUnlocked is false', () => {
-    renderAdminHubView();
-    expect(screen.getByRole('button', { name: /unlock advanced sections/i })).toBeInTheDocument();
-  });
-
-  it('renders the lock button label "🔒 Advanced" when locked', () => {
-    renderAdminHubView();
-    expect(screen.getByText(/🔒 Advanced/)).toBeInTheDocument();
-  });
-
-  it('renders the "Lock Advanced" button when isAdvancedUnlocked is true', () => {
-    mockState.isAdvancedUnlocked = true;
-    renderAdminHubView();
-    expect(screen.getByRole('button', { name: /lock advanced sections/i })).toBeInTheDocument();
-    mockState.isAdvancedUnlocked = false;
-  });
-
-  it('calls tryAdvancedUnlock when the lock button is clicked', async () => {
-    const { userEvent } = await import('@testing-library/user-event');
-    const user = userEvent.setup();
-    renderAdminHubView();
-    await user.click(screen.getByRole('button', { name: /unlock advanced sections/i }));
-    expect(mockActions.tryAdvancedUnlock).toHaveBeenCalledOnce();
-  });
-
-  it('calls advancedLock when the unlock button is clicked', async () => {
-    const { userEvent } = await import('@testing-library/user-event');
-    const user = userEvent.setup();
-    mockState.isAdvancedUnlocked = true;
-    renderAdminHubView();
-    await user.click(screen.getByRole('button', { name: /lock advanced sections/i }));
-    expect(mockActions.advancedLock).toHaveBeenCalledOnce();
-    mockState.isAdvancedUnlocked = false;
-  });
-});
-
 // ── New always-visible sections ──
 
 describe('Enterprise Standards Panel', () => {
@@ -574,39 +535,22 @@ describe('Credential Management Section', () => {
   });
 });
 
-// ── Advanced-gated sections ──
+// ── Consolidated debug sections (now always visible, Advanced unlock removed) ──
 
-describe('Advanced-gated sections', () => {
-  it('shows the locked placeholder when isAdvancedUnlocked is false', () => {
-    renderAdminHubView();
-    expect(screen.getByText(/unlock advanced/i)).toBeInTheDocument();
-  });
-
-  it('renders Tool Visibility section when isAdvancedUnlocked is true', () => {
-    mockState.isAdvancedUnlocked = true;
+describe('Consolidated debug sections', () => {
+  it('renders Tool Visibility section', () => {
     renderAdminHubView();
     expect(screen.getByRole('heading', { name: /tool visibility/i })).toBeInTheDocument();
-    mockState.isAdvancedUnlocked = false;
   });
 
-  it('renders Client Diagnostics panel when isAdvancedUnlocked is true', () => {
-    mockState.isAdvancedUnlocked = true;
+  it('renders Client Diagnostics panel', () => {
     renderAdminHubView();
     expect(screen.getByRole('heading', { name: /client diagnostics/i })).toBeInTheDocument();
-    mockState.isAdvancedUnlocked = false;
   });
 
-  it('renders TBX Backup/Restore section when isAdvancedUnlocked is true', () => {
-    mockState.isAdvancedUnlocked = true;
+  it('renders TBX Backup/Restore section', () => {
     renderAdminHubView();
     expect(screen.getByRole('heading', { name: /backup.*restore/i })).toBeInTheDocument();
-    mockState.isAdvancedUnlocked = false;
-  });
-
-  it('does not render the three advanced sections when locked', () => {
-    renderAdminHubView();
-    expect(screen.queryByRole('heading', { name: /tool visibility/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /client diagnostics/i })).not.toBeInTheDocument();
   });
 });
 
