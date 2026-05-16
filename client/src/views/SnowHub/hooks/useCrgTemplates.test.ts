@@ -10,6 +10,7 @@ import { useCrgTemplates } from './useCrgTemplates.ts';
 // We can't use real localStorage in jsdom reliably across tests, so we use
 // vi.spyOn to intercept reads and writes.
 const LOCAL_STORAGE_KEY = 'ntbx-crg-templates';
+const DEFAULT_TEMPLATE_STORAGE_KEY = 'ntbx-crg-default-template-id';
 const EMPTY_SNOW_REFERENCE = { sysId: '', displayName: '' };
 
 function makeMinimalTemplate(overrides: Partial<CrgTemplate> = {}): CrgTemplate {
@@ -36,9 +37,9 @@ function makeMinimalTemplate(overrides: Partial<CrgTemplate> = {}): CrgTemplate 
     chgPlanningContent: {
       implementationPlan: 'Deploy via pipeline.', backoutPlan: 'Revert tag.', testPlan: 'Smoke test.',
     },
-    relEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00', configItem: { ...EMPTY_SNOW_REFERENCE } },
-    prdEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00', configItem: { ...EMPTY_SNOW_REFERENCE } },
-    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE } },
+    relEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' },
+    prdEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' },
+    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' },
     ...overrides,
   };
 }
@@ -107,7 +108,7 @@ describe('useCrgTemplates', () => {
         category:    'Hardware',
         environment: 'pfix',
       },
-      pfixEnvironment: { isEnabled: true, plannedStartDate: '2026-01-03T10:00', plannedEndDate: '2026-01-03T11:00', configItem: { ...EMPTY_SNOW_REFERENCE } },
+      pfixEnvironment: { isEnabled: true, plannedStartDate: '2026-01-03T10:00', plannedEndDate: '2026-01-03T11:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' },
     });
 
     const unsafeTemplateUpdate = {
@@ -172,6 +173,40 @@ describe('useCrgTemplates', () => {
 
     expect(result.current.templates[0].name).toBe('Second');
     expect(result.current.templates[1].name).toBe('First');
+  });
+
+  it('persists and restores the default template selection', () => {
+    const existingTemplate = makeMinimalTemplate({ id: 'tpl-default' });
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([existingTemplate]));
+
+    const { result } = renderHook(() => useCrgTemplates());
+
+    act(() => {
+      result.current.setDefaultTemplateId('tpl-default');
+    });
+
+    expect(result.current.defaultTemplateId).toBe('tpl-default');
+    expect(localStorage.getItem(DEFAULT_TEMPLATE_STORAGE_KEY)).toBe('tpl-default');
+
+    const { result: remountedResult } = renderHook(() => useCrgTemplates());
+    expect(remountedResult.current.defaultTemplateId).toBe('tpl-default');
+  });
+
+  it('clears the default template when that template is deleted', () => {
+    const existingTemplate = makeMinimalTemplate({ id: 'tpl-default' });
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([existingTemplate]));
+
+    const { result } = renderHook(() => useCrgTemplates());
+
+    act(() => {
+      result.current.setDefaultTemplateId('tpl-default');
+    });
+    act(() => {
+      result.current.deleteTemplate('tpl-default');
+    });
+
+    expect(result.current.defaultTemplateId).toBeNull();
+    expect(localStorage.getItem(DEFAULT_TEMPLATE_STORAGE_KEY)).toBeNull();
   });
 
   it('uses "Unnamed Template" when an empty name is provided', () => {

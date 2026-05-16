@@ -7,8 +7,6 @@ import { useEffect, useRef, useState, useCallback, type MouseEvent as ReactMouse
 
 import { BookmarkletInstallLink } from '../../components/BookmarkletInstallLink/index.tsx'
 import ConfirmDialog from '../../components/ConfirmDialog/index.tsx'
-import PromptDialog from '../../components/PromptDialog/index.tsx'
-import { useToast } from '../../components/Toast/ToastProvider.tsx'
 import { SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts'
 import { useConnectionStore } from '../../store/connectionStore'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
@@ -24,6 +22,7 @@ import type {
 import type { ConnectivityConfigResult, ConnectionProbeResult } from '../../types/config.ts'
 import ClientDiagnosticsPanel from './ClientDiagnosticsPanel'
 import CredentialManagementSection from './CredentialManagementSection'
+import { CrgSubmissionDebugSection } from './CrgSubmissionDebugSection'
 import EnterpriseStandardsPanel from './EnterpriseStandardsPanel'
 import TbxBackupRestoreSection from './TbxBackupRestoreSection'
 import ToolVisibilitySection from './ToolVisibilitySection'
@@ -1550,6 +1549,8 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
       <EnterpriseStandardsPanel />
       <CredentialManagementSection />
 
+      <CrgSubmissionDebugSection />
+
       <DiagnosticsSection
         isDiagnosticsRunning={state.isDiagnosticsRunning}
         diagnosticsResult={state.diagnosticsResult}
@@ -1590,17 +1591,9 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
 
       <FeatureRequestSection />
 
-      {state.isAdvancedUnlocked ? (
-        <>
-          <ToolVisibilitySection />
-          <ClientDiagnosticsPanel />
-          <TbxBackupRestoreSection />
-        </>
-      ) : (
-        <p className={styles.lockedSectionsPlaceholder}>
-          🔒 Unlock Advanced to access Tool Visibility, Client Diagnostics, and Backup/Restore.
-        </p>
-      )}
+      <ToolVisibilitySection />
+      <ClientDiagnosticsPanel />
+      <TbxBackupRestoreSection />
     </>
   )
 }
@@ -1608,54 +1601,14 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
 /** Admin Hub — configuration and developer tools for NodeToolbox administrators. */
 export default function AdminHubView() {
   const { state, actions } = useAdminHubState()
-  const { showToast } = useToast()
   const [activeAdminTab, setActiveAdminTab] = useState<AdminHubTab>('main')
-
-  useEffect(() => {
-    if (state.advancedUnlockError === null) {
-      return
-    }
-
-    showToast(state.advancedUnlockError, 'error')
-    actions.clearAdvancedUnlockError()
-  }, [actions, showToast, state.advancedUnlockError])
 
   return (
     <div className={styles.adminHubView}>
       <header>
         <h1 className={styles.pageTitle}>{VIEW_TITLE}</h1>
         <p className={styles.pageSubtitle}>{VIEW_SUBTITLE}</p>
-        <div className={styles.headerActions}>
-          {state.isAdvancedUnlocked ? (
-            <button
-              className={styles.advancedLockButton}
-              onClick={actions.advancedLock}
-              aria-label="Lock advanced sections"
-            >
-              🔓 Lock Advanced
-            </button>
-          ) : (
-            <button
-              className={styles.advancedLockButton}
-              onClick={actions.tryAdvancedUnlock}
-              aria-label="Unlock advanced sections"
-            >
-              🔒 Advanced
-            </button>
-          )}
-        </div>
       </header>
-
-      {state.isAdvancedUnlockDialogOpen && (
-        <PromptDialog
-          inputLabel="Admin passphrase"
-          isPassword
-          message={state.advancedUnlockPromptMessage}
-          onCancel={actions.closeAdvancedUnlockDialog}
-          onConfirm={actions.submitAdvancedUnlock}
-          placeholder="Enter passphrase"
-        />
-      )}
 
       {state.isResetAllSettingsConfirmOpen && (
         <ConfirmDialog

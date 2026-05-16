@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { jiraPost } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
 import type { SnowUser } from '../../../types/snow.ts';
+import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 
 interface SnowPrbRecord {
   sysId: string;
@@ -149,9 +150,9 @@ function extractServiceNowFieldValue(fieldValue: ServiceNowFieldValue | undefine
     return EMPTY_VALUE;
   }
   if (typeof fieldValue === 'string') {
-    return fieldValue;
+    return normalizeRichTextToPlainText(fieldValue);
   }
-  return String(fieldValue.display_value ?? fieldValue.value ?? EMPTY_VALUE);
+  return normalizeRichTextToPlainText(fieldValue.display_value ?? fieldValue.value ?? EMPTY_VALUE);
 }
 
 function extractServiceNowReference(fieldValue: ServiceNowFieldValue | undefined): SnowUser | null {

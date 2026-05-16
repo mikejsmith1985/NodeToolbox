@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { jiraGet, jiraPut } from '../../../services/jiraApi.ts';
+import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 
 // ── Named constants — legacy-compatible storage and Jira request details. ───────
 
@@ -168,18 +169,7 @@ function readStoryPoints(fieldsObject: Record<string, unknown>): number {
 }
 
 function readPlainTextDescription(descriptionValue: unknown): string {
-  if (typeof descriptionValue === 'string') return descriptionValue;
-  if (!isRecord(descriptionValue)) return '';
-  const extractedText = collectAtlassianDocumentText(descriptionValue).trim();
-  return extractedText;
-}
-
-function collectAtlassianDocumentText(documentNode: unknown): string {
-  if (!isRecord(documentNode)) return '';
-  const nodeText = typeof documentNode.text === 'string' ? documentNode.text : '';
-  const contentNodes = Array.isArray(documentNode.content) ? documentNode.content : [];
-  const childText = contentNodes.map(collectAtlassianDocumentText).filter(Boolean).join(' ');
-  return [nodeText, childText].filter(Boolean).join(' ');
+  return normalizeRichTextToPlainText(descriptionValue);
 }
 
 function isRecord(valueToCheck: unknown): valueToCheck is Record<string, unknown> {

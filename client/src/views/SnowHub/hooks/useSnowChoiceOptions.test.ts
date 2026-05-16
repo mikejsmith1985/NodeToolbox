@@ -43,6 +43,7 @@ function makeUiFormResponse(fields: Record<string, { choices: Array<{ value: str
 describe('useSnowChoiceOptions', () => {
   afterEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     // Reset relay state between tests so they don't bleed into each other.
     mockRelayRef.isConnected = false;
     mockRelayRef.hasSessionToken = false;
@@ -361,5 +362,152 @@ describe('useSnowChoiceOptions', () => {
 
     // 'category' was not returned — it must be absent, not filled with guessed values.
     expect(result.current.choiceOptions['category']).toBeUndefined();
+  });
+
+  it('applies extractor JSON and exposes fallback choices', () => {
+    mockRelayRef.isConnected = false;
+    setRelayConnected(false);
+
+    const { result } = renderHook(() => useSnowChoiceOptions());
+    let applyResult = { isSuccess: false, message: '' };
+    act(() => {
+      applyResult = result.current.applyExtractorChoiceJson(
+        '{"fields":{"impact":[{"value":"3","label":"3 - Low"}],"u_change_tested":[{"value":"yes","label":"Yes"}]}}',
+      );
+    });
+
+    expect(applyResult.isSuccess).toBe(true);
+    expect(result.current.hasExtractorChoices).toBe(true);
+    expect(result.current.choiceOptions.impact[1]).toEqual({ value: '3', label: '3 - Low' });
+    expect(result.current.choiceOptions.u_change_tested[1]).toEqual({ value: 'yes', label: 'Yes' });
+  });
+
+  it('supports extractor payloads that nest choices under formFields and choiceOptions', () => {
+    mockRelayRef.isConnected = false;
+    setRelayConnected(false);
+
+    const { result } = renderHook(() => useSnowChoiceOptions());
+    let applyResult = { isSuccess: false, message: '' };
+    act(() => {
+      applyResult = result.current.applyExtractorChoiceJson(JSON.stringify({
+        formFields: {
+          impact: {
+            value: '3',
+            displayValue: '3 - Low',
+            choices: [{ value: '3', label: '3 - Low' }],
+          },
+        },
+        choiceOptions: {
+          u_change_tested: [{ value: 'yes', label: 'Yes' }],
+        },
+      }));
+    });
+
+    expect(applyResult.isSuccess).toBe(true);
+    expect(result.current.choiceOptions.impact[1]).toEqual({ value: '3', label: '3 - Low' });
+    expect(result.current.choiceOptions.u_change_tested[1]).toEqual({ value: 'yes', label: 'Yes' });
+  });
+
+  it('maps instance-specific extractor planning fields to CRG canonical choice fields', () => {
+    mockRelayRef.isConnected = false;
+    setRelayConnected(false);
+
+    const { result } = renderHook(() => useSnowChoiceOptions());
+    let applyResult = { isSuccess: false, message: '' };
+    act(() => {
+      applyResult = result.current.applyExtractorChoiceJson(JSON.stringify({
+        choiceOptions: {
+          u_implications_of_system_availability: [
+            { value: 'c_func', label: 'Application or Service would remain functioning as designed' },
+          ],
+          u_has_this_change_been_tested: [
+            { value: 'yes', label: 'Yes - Testing has been performed or proven process' },
+          ],
+          u_are_impacted_persons_aware_prepared_for_test_checkout: [
+            { value: 'teamval', label: 'Checkout includes Technical team validation (manual or automated)' },
+          ],
+          u_has_change_been_performed_previously: [
+            { value: 'successful', label: 'Previously successful on all attempts' },
+          ],
+          u_assessment_of_success_probability: [
+            { value: 'vcon', label: 'Very Confident' },
+          ],
+          u_can_change_be_backed_out: [
+            { value: 'yes', label: 'Yes' },
+          ],
+          u_impact: [
+            { value: '1-High', label: '1-High - Change with significant impact' },
+          ],
+        },
+      }));
+    });
+
+    expect(applyResult.isSuccess).toBe(true);
+    expect(result.current.choiceOptions.impact[1]).toEqual({
+      value: '1-High',
+      label: '1-High - Change with significant impact',
+    });
+    expect(result.current.choiceOptions.u_availability_impact[1]).toEqual({
+      value: 'c_func',
+      label: 'Application or Service would remain functioning as designed',
+    });
+    expect(result.current.choiceOptions.u_change_tested[1]).toEqual({
+      value: 'yes',
+      label: 'Yes - Testing has been performed or proven process',
+    });
+    expect(result.current.choiceOptions.u_impacted_persons_aware[1]).toEqual({
+      value: 'teamval',
+      label: 'Checkout includes Technical team validation (manual or automated)',
+    });
+    expect(result.current.choiceOptions.u_performed_previously[1]).toEqual({
+      value: 'successful',
+      label: 'Previously successful on all attempts',
+    });
+    expect(result.current.choiceOptions.u_success_probability[1]).toEqual({
+      value: 'vcon',
+      label: 'Very Confident',
+    });
+    expect(result.current.choiceOptions.u_can_be_backed_out[1]).toEqual({
+      value: 'yes',
+      label: 'Yes',
+    });
+  });
+
+  it('ignores extractor field objects that only contain current values and no choices', () => {
+    mockRelayRef.isConnected = false;
+    setRelayConnected(false);
+
+    const { result } = renderHook(() => useSnowChoiceOptions());
+    let applyResult = { isSuccess: true, message: '' };
+    act(() => {
+      applyResult = result.current.applyExtractorChoiceJson(JSON.stringify({
+        fields: {
+          impact: {
+            value: '3',
+            displayValue: '3 - Low',
+          },
+        },
+      }));
+    });
+
+    expect(applyResult.isSuccess).toBe(false);
+    expect(applyResult.message).toContain('No supported choice fields were found');
+    expect(result.current.choiceOptions.impact).toBeUndefined();
+  });
+
+  it('clears extractor fallback choices', () => {
+    mockRelayRef.isConnected = false;
+    setRelayConnected(false);
+
+    const { result } = renderHook(() => useSnowChoiceOptions());
+    act(() => {
+      result.current.applyExtractorChoiceJson('{"fields":{"impact":[{"value":"3","label":"3 - Low"}]}}');
+    });
+    act(() => {
+      result.current.clearExtractorChoices();
+    });
+
+    expect(result.current.hasExtractorChoices).toBe(false);
+    expect(result.current.choiceOptions).toEqual({});
   });
 });

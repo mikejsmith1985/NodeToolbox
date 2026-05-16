@@ -5,6 +5,7 @@
 import { useCallback, useState } from 'react';
 
 import type { JiraIssue } from '../../../types/jira.ts';
+import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 
 // SHA-256 hex digest of the activation passphrase.
 // The raw passphrase is never stored in source — only the digest is kept.
@@ -55,12 +56,45 @@ function buildIssueListText(selectedIssues: JiraIssue[]): string {
     .join('\n');
 }
 
+function readPlainTextValue(fieldValue: unknown): string {
+  return normalizeRichTextToPlainText(fieldValue);
+}
+
+function buildIssueDetailLines(issue: JiraIssue): string[] {
+  const detailLines = [`[${issue.key}] ${issue.fields.summary}`];
+  const issueDescription = readPlainTextValue(issue.fields.description);
+  const acceptanceCriteriaText = readPlainTextValue(issue.fields.customfield_10200);
+
+  if (issueDescription) {
+    detailLines.push(`Description: ${issueDescription}`);
+  }
+  if (acceptanceCriteriaText) {
+    detailLines.push(`Acceptance Criteria: ${acceptanceCriteriaText}`);
+  }
+  if (!issueDescription && !acceptanceCriteriaText) {
+    detailLines.push('Description: (not provided)');
+    detailLines.push('Acceptance Criteria: (not provided)');
+  }
+
+  return detailLines;
+}
+
+function buildIssueDetailText(selectedIssues: JiraIssue[]): string {
+  if (selectedIssues.length === 0) {
+    return '(no issue details available)';
+  }
+  return selectedIssues
+    .map((issue) => buildIssueDetailLines(issue).join('\n'))
+    .join('\n\n');
+}
+
 /**
  * Builds the complete prompt text to paste into Rovo.
  * Any currently-populated CHG fields are included so Rovo can refine them.
  */
 function buildRovoPromptText(selectedIssues: JiraIssue[], currentFields: RovoGeneratedFields): string {
   const issueListText = buildIssueListText(selectedIssues);
+  const issueDetailText = buildIssueDetailText(selectedIssues);
 
   // Only include existing content if at least one field is non-empty.
   const existingContent = [
@@ -75,6 +109,9 @@ function buildRovoPromptText(selectedIssues: JiraIssue[], currentFields: RovoGen
     '',
     'Jira issues included in this release:',
     issueListText,
+    '',
+    'Jira issue details for better CHG drafting:',
+    issueDetailText,
     '',
     existingContent ? `Existing content to refine:\n${existingContent}\n` : '',
     'Generate the following four CHG fields. Respond ONLY in this exact format with no extra commentary:',

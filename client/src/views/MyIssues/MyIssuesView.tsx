@@ -16,6 +16,7 @@ import { useConnectionStore } from '../../store/connectionStore.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
 import { detectLinkedPairs, collectLinkedSnowSysIds } from '../../utils/issueLinkCalculator.ts';
+import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import HygieneView from '../Hygiene/HygieneView.tsx';
 import { LinkedIssuePair } from './LinkedIssuePair.tsx';
 import { SnowIssueRow } from './SnowIssueRow.tsx';
@@ -247,9 +248,10 @@ function DetailPanel({
     }
   }
 
-  const isDescriptionLong = (issue.fields.description?.length ?? 0) > DESCRIPTION_TRUNCATE_LENGTH;
-  const truncatedDescription = issue.fields.description
-    ? issue.fields.description.slice(0, DESCRIPTION_TRUNCATE_LENGTH)
+  const normalizedDescription = normalizeRichTextToPlainText(issue.fields.description);
+  const isDescriptionLong = normalizedDescription.length > DESCRIPTION_TRUNCATE_LENGTH;
+  const truncatedDescription = normalizedDescription
+    ? normalizedDescription.slice(0, DESCRIPTION_TRUNCATE_LENGTH)
     : null;
 
   return (

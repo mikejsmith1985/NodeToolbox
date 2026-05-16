@@ -3,8 +3,10 @@
 // Tabs: Smart Formatter (HTML→Markdown), JSON Formatter, Case Converter,
 // URL Encoder/Decoder, Base64 Encoder/Decoder, and Element Extractor bookmarklet.
 
-import { useState } from 'react'
+import { useState, type MouseEvent as ReactMouseEvent } from 'react'
 
+import { BookmarkletInstallLink } from '../../components/BookmarkletInstallLink/index.tsx'
+import { buildServiceNowExtractorBookmarkletHref } from './serviceNowExtractorBookmarklet.ts'
 import {
   buildCaseVariants,
   convertToMarkdown,
@@ -52,8 +54,140 @@ const JSON_INDENT_MODES: { key: JsonIndentMode; label: string }[] = [
 const CASE_INPUT_PLACEHOLDER = 'Type or paste text — all 10 formats update live'
 const COPY_SUCCESS_LABEL = '✓ Copied'
 const COPY_DEFAULT_LABEL = 'Copy'
-const BOOKMARKLET_HREF =
-  "javascript:(function(){alert('NodeToolbox Element Extractor — drag this to your bookmarks bar to activate.');})()"
+const EXTRACTOR_IMPORT_EMPTY_JSON = '{\n  "fields": {},\n  "choiceOptions": {}\n}'
+
+interface ExtractorChoiceOption {
+  value: string
+  label: string
+}
+
+interface ExtractorFieldValue {
+  label?: string
+  value?: string
+  displayValue?: string
+  choices?: ExtractorChoiceOption[]
+}
+
+interface ExtractorPayload {
+  extractor?: string
+  source?: string
+  extractedAt?: string
+  page?: {
+    title?: string
+    href?: string
+  }
+  fields?: Record<string, ExtractorFieldValue>
+  choiceOptions?: Record<string, ExtractorChoiceOption[]>
+}
+
+const EXTRACTOR_BOOKMARKLET_HREF = buildServiceNowExtractorBookmarkletHref()
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function parseChoiceOptions(choiceCollection: unknown): ExtractorChoiceOption[] {
+  if (Array.isArray(choiceCollection)) {
+    return choiceCollection.flatMap((choiceValue): ExtractorChoiceOption[] => {
+      if (!isRecord(choiceValue)) {
+        if (typeof choiceValue === 'string') {
+          return [{ value: choiceValue, label: choiceValue }]
+        }
+        return []
+      }
+      const value = typeof choiceValue.value === 'string' ? choiceValue.value : ''
+      const label = typeof choiceValue.label === 'string'
+        ? choiceValue.label
+        : (typeof choiceValue.text === 'string' ? choiceValue.text : value)
+      if (value === '' && label === '') {
+        return []
+      }
+      return [{ value, label }]
+    })
+  }
+
+  if (!isRecord(choiceCollection)) {
+    return []
+  }
+
+  return Object.entries(choiceCollection).flatMap(([choiceKey, choiceValue]): ExtractorChoiceOption[] => {
+    if (typeof choiceValue === 'string') {
+      return [{ value: choiceKey, label: choiceValue }]
+    }
+    if (!isRecord(choiceValue)) {
+      return []
+    }
+    const value = typeof choiceValue.value === 'string' ? choiceValue.value : choiceKey
+    const label = typeof choiceValue.label === 'string'
+      ? choiceValue.label
+      : (typeof choiceValue.text === 'string' ? choiceValue.text : value)
+    return [{ value, label }]
+  })
+}
+
+function normalizeExtractorPayload(rawPayload: unknown): ExtractorPayload {
+  if (!isRecord(rawPayload)) {
+    throw new Error('Extractor JSON must be an object.')
+  }
+
+  const fieldsValue = isRecord(rawPayload.fields) ? rawPayload.fields : {}
+  const choiceOptionsValue = isRecord(rawPayload.choiceOptions) ? rawPayload.choiceOptions : {}
+  const normalizedFields: Record<string, ExtractorFieldValue> = {}
+
+  Object.entries(fieldsValue).forEach(([fieldName, fieldValue]) => {
+    if (!isRecord(fieldValue)) return
+    normalizedFields[fieldName] = {
+      label: typeof fieldValue.label === 'string' ? fieldValue.label : fieldName,
+      value: typeof fieldValue.value === 'string' ? fieldValue.value : '',
+      displayValue: typeof fieldValue.displayValue === 'string' ? fieldValue.displayValue : '',
+      choices: parseChoiceOptions(fieldValue.choices),
+    }
+  })
+
+  const normalizedChoiceOptions: Record<string, ExtractorChoiceOption[]> = {}
+  Object.entries(choiceOptionsValue).forEach(([fieldName, choiceCollection]) => {
+    normalizedChoiceOptions[fieldName] = parseChoiceOptions(choiceCollection)
+  })
+
+  return {
+    extractor: typeof rawPayload.extractor === 'string' ? rawPayload.extractor : 'NodeToolbox Extractor',
+    source: typeof rawPayload.source === 'string' ? rawPayload.source : 'servicenow-form',
+    extractedAt: typeof rawPayload.extractedAt === 'string' ? rawPayload.extractedAt : new Date().toISOString(),
+    page: isRecord(rawPayload.page)
+      ? {
+          title: typeof rawPayload.page.title === 'string' ? rawPayload.page.title : '',
+          href: typeof rawPayload.page.href === 'string' ? rawPayload.page.href : '',
+        }
+      : undefined,
+    fields: normalizedFields,
+    choiceOptions: normalizedChoiceOptions,
+  }
+}
+
+function buildFilteredExtractorPayload(
+  parsedPayload: ExtractorPayload,
+  selectedFieldNames: string[],
+): ExtractorPayload {
+  const selectedFieldNameSet = new Set(selectedFieldNames)
+  const filteredFields: Record<string, ExtractorFieldValue> = {}
+  const filteredChoiceOptions: Record<string, ExtractorChoiceOption[]> = {}
+
+  Object.entries(parsedPayload.fields ?? {}).forEach(([fieldName, fieldValue]) => {
+    if (!selectedFieldNameSet.has(fieldName)) return
+    filteredFields[fieldName] = fieldValue
+  })
+
+  Object.entries(parsedPayload.choiceOptions ?? {}).forEach(([fieldName, choiceValues]) => {
+    if (!selectedFieldNameSet.has(fieldName)) return
+    filteredChoiceOptions[fieldName] = choiceValues
+  })
+
+  return {
+    ...parsedPayload,
+    fields: filteredFields,
+    choiceOptions: filteredChoiceOptions,
+  }
+}
 
 // ── Helper: character/line stats bar ──
 
@@ -489,35 +623,162 @@ function Base64Panel({
 
 /** Static information and bookmarklet installer for the Element Extractor tool. */
 function ElementExtractorPanel() {
+  const [extractorJsonInput, setExtractorJsonInput] = useState<string>('')
+  const [selectedFieldNames, setSelectedFieldNames] = useState<string[]>([])
+  const [extractorParseError, setExtractorParseError] = useState<string | null>(null)
+  const [parsedExtractorPayload, setParsedExtractorPayload] = useState<ExtractorPayload | null>(null)
+
+  function handleExtractorBookmarkletClick(event: ReactMouseEvent<HTMLAnchorElement>) {
+    event.preventDefault()
+    window.alert('Drag the NodeToolbox Extractor button to your bookmarks bar, then click it from a ServiceNow form page.')
+  }
+
+  function handleExtractorJsonChange(nextValue: string) {
+    setExtractorJsonInput(nextValue)
+
+    const trimmedInput = nextValue.trim()
+    if (trimmedInput === '') {
+      setExtractorParseError(null)
+      setParsedExtractorPayload(null)
+      setSelectedFieldNames([])
+      return
+    }
+
+    try {
+      const parsedPayload = normalizeExtractorPayload(JSON.parse(trimmedInput) as unknown)
+      const extractedFieldNames = Object.keys(parsedPayload.fields ?? {})
+      setParsedExtractorPayload(parsedPayload)
+      setSelectedFieldNames(extractedFieldNames)
+      setExtractorParseError(null)
+    } catch (unknownError) {
+      const parseErrorMessage = unknownError instanceof Error ? unknownError.message : String(unknownError)
+      setExtractorParseError(`Invalid JSON: ${parseErrorMessage}`)
+      setParsedExtractorPayload(null)
+      setSelectedFieldNames([])
+    }
+  }
+
+  function toggleFieldSelection(fieldName: string) {
+    setSelectedFieldNames((previousSelections) => (
+      previousSelections.includes(fieldName)
+        ? previousSelections.filter((selectedFieldName) => selectedFieldName !== fieldName)
+        : [...previousSelections, fieldName]
+    ))
+  }
+
+  const availableFieldEntries = Object.entries(parsedExtractorPayload?.fields ?? {})
+  const filteredPayload = parsedExtractorPayload
+    ? buildFilteredExtractorPayload(parsedExtractorPayload, selectedFieldNames)
+    : null
+  const filteredPayloadJson = filteredPayload ? JSON.stringify(filteredPayload, null, 2) : ''
+
+  function copyFilteredPayload() {
+    if (!filteredPayloadJson) return
+    navigator.clipboard.writeText(filteredPayloadJson)
+  }
+
   return (
     <div className={styles.extractorPanel}>
       <div className={styles.infoCard}>
         <h3 className={styles.infoCardTitle}>What this does</h3>
         <p className={styles.infoCardBody}>
-          The Element Extractor bookmarklet inspects any web page you visit and extracts all
-          interactive elements — form fields, table columns, buttons, and links — outputting a
-          structured JSON summary. Use it to reverse-engineer legacy apps, build selectors for
-          automation, or document web interfaces quickly.
+          The SNow Field Extractor opens a review panel directly on the current ServiceNow form,
+          scans visible fields plus accessible frames and open shadow roots, then lets you choose
+          the exact field names and values to copy into SNow Hub.
         </p>
       </div>
       <div className={styles.infoCard}>
         <h3 className={styles.infoCardTitle}>Install Bookmarklet</h3>
         <p className={styles.infoCardBody}>
-          Drag the button below to your browser&apos;s bookmarks bar. Then visit any page and click
-          it to run the extractor.
+          Drag the button below to your browser&apos;s bookmarks bar. Then open a ServiceNow Change
+          Request form and click it to scan the page.
         </p>
-        {/* eslint-disable-next-line react/jsx-no-script-url */}
-        <a
-          href={BOOKMARKLET_HREF}
+        <BookmarkletInstallLink
+          bookmarkletCode={EXTRACTOR_BOOKMARKLET_HREF}
           className={styles.bookmarkletLink}
           title="Drag to your bookmarks bar"
-          draggable
+          onClick={handleExtractorBookmarkletClick}
         >
-          🔍 NodeToolbox Extractor
-        </a>
+          🔍 NodeToolbox SNow Field Extractor
+        </BookmarkletInstallLink>
         <p className={styles.infoCardBody}>
-          Note: The bookmarklet runs entirely in the browser — no data leaves your machine.
+          Note: The bookmarklet runs entirely in the browser and shows a field-selection GUI before
+          anything is copied.
         </p>
+      </div>
+      <div className={styles.infoCard}>
+        <h3 className={styles.infoCardTitle}>Validate and select fields before import</h3>
+        <p className={styles.infoCardBody}>
+          Paste extractor JSON here, choose exactly which fields to keep, and copy the filtered output into
+          SNow Hub CRG Configuration.
+        </p>
+        <textarea
+          aria-label="Extractor validation JSON input"
+          className={styles.panelTextarea}
+          value={extractorJsonInput}
+          onChange={(changeEvent) => handleExtractorJsonChange(changeEvent.target.value)}
+          placeholder={EXTRACTOR_IMPORT_EMPTY_JSON}
+        />
+        {extractorParseError !== null ? (
+          <p className={styles.errorBar} role="alert">{extractorParseError}</p>
+        ) : null}
+        {parsedExtractorPayload !== null ? (
+          <>
+            <div className={styles.extractorSelectionHeader}>
+              <span className={styles.infoCardBody}>
+                Parsed {availableFieldEntries.length} field(s). Selected {selectedFieldNames.length}.
+              </span>
+              <div className={styles.radioGroup}>
+                <button
+                  className={styles.actionButton}
+                  type="button"
+                  onClick={() => setSelectedFieldNames(availableFieldEntries.map(([fieldName]) => fieldName))}
+                >
+                  Select all
+                </button>
+                <button
+                  className={styles.actionButton}
+                  type="button"
+                  onClick={() => setSelectedFieldNames([])}
+                >
+                  Clear selection
+                </button>
+              </div>
+            </div>
+            <div className={styles.extractorFieldList} role="group" aria-label="Extractor field selection">
+              {availableFieldEntries.map(([fieldName, fieldValue]) => {
+                const fieldLabel = fieldValue.label || fieldName
+                const fieldPreview = fieldValue.displayValue || fieldValue.value || '(empty)'
+                const isSelected = selectedFieldNames.includes(fieldName)
+                return (
+                  <label className={styles.extractorFieldRow} key={fieldName}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleFieldSelection(fieldName)}
+                    />
+                    <span>
+                      <strong>{fieldLabel}</strong> <code>{fieldName}</code>
+                      <span className={styles.extractorFieldPreview}>{fieldPreview}</span>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+            <div className={styles.panelHeader}>
+              <span className={styles.panelLabel}>Filtered JSON output</span>
+              <button className={styles.actionButton} type="button" onClick={copyFilteredPayload}>
+                Copy filtered JSON
+              </button>
+            </div>
+            <textarea
+              aria-label="Extractor filtered JSON output"
+              className={styles.panelTextarea}
+              value={filteredPayloadJson}
+              readOnly
+            />
+          </>
+        ) : null}
       </div>
     </div>
   )

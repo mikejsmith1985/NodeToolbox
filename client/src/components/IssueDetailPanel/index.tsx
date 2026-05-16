@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 
 import { jiraGet, jiraPost, jiraPut } from '../../services/jiraApi.ts';
 import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
+import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import styles from './IssueDetailPanel.module.css';
 
 const DESCRIPTION_PREVIEW_LENGTH = 300;
@@ -185,10 +186,11 @@ export default function IssueDetailPanel({
     }
   }
 
-  const descriptionPreview = issue.fields.description
-    ? issue.fields.description.slice(0, DESCRIPTION_PREVIEW_LENGTH)
+  const normalizedDescription = normalizeRichTextToPlainText(issue.fields.description);
+  const descriptionPreview = normalizedDescription
+    ? normalizedDescription.slice(0, DESCRIPTION_PREVIEW_LENGTH)
     : null;
-  const hasTruncatedDescription = (issue.fields.description?.length ?? 0) > DESCRIPTION_PREVIEW_LENGTH;
+  const hasTruncatedDescription = normalizedDescription.length > DESCRIPTION_PREVIEW_LENGTH;
   const hasTransitions = availableTransitions.length > 0;
   const hasValidStoryPointsInput = storyPointsInput.trim() !== '' && !Number.isNaN(Number(storyPointsInput));
   const selectPlaceholder = isLoadingTransitions || hasTransitions

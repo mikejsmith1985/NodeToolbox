@@ -33,6 +33,23 @@ const CHANGE_REQUEST_CHOICE_FIELDS = [
   'u_success_probability',
   'u_can_be_backed_out',
 ] as const;
+type ChangeRequestChoiceFieldName = (typeof CHANGE_REQUEST_CHOICE_FIELDS)[number];
+
+const EXTRACTOR_CHOICE_FIELD_ALIASES: Record<ChangeRequestChoiceFieldName, readonly string[]> = {
+  category: ['category'],
+  type: ['type'],
+  u_environment: ['u_environment'],
+  // Some enterprise SNow instances use custom planning field names. Keep CRG's
+  // canonical state stable while accepting the real API names discovered by the extractor.
+  impact: ['u_impact', 'impact'],
+  u_availability_impact: ['u_implications_of_system_availability', 'u_availability_impact'],
+  u_change_tested: ['u_has_this_change_been_tested', 'u_change_tested'],
+  u_impacted_persons_aware: ['u_are_impacted_persons_aware_prepared_for_test_checkout', 'u_impacted_persons_aware'],
+  u_performed_previously: ['u_has_change_been_performed_previously', 'u_performed_previously'],
+  u_success_probability: ['u_assessment_of_success_probability', 'u_success_probability'],
+  u_can_be_backed_out: ['u_can_change_be_backed_out', 'u_can_be_backed_out'],
+};
+const EXTRACTOR_CHOICE_STORAGE_KEY = 'ntbx-snow-choice-extractor-options';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -54,6 +71,15 @@ function buildUiMetaPath(): string {
 
 function isObjectRecord(candidate: unknown): candidate is UnknownRecord {
   return typeof candidate === 'object' && candidate !== null && !Array.isArray(candidate);
+}
+
+function resolveCanonicalChoiceFieldName(fieldName: string): ChangeRequestChoiceFieldName | null {
+  for (const canonicalFieldName of CHANGE_REQUEST_CHOICE_FIELDS) {
+    if (EXTRACTOR_CHOICE_FIELD_ALIASES[canonicalFieldName].includes(fieldName)) {
+      return canonicalFieldName;
+    }
+  }
+  return null;
 }
 
 function readStringProperty(record: UnknownRecord, propertyNames: readonly string[]): string | null {
@@ -120,13 +146,14 @@ function assignChoicesFromNamedField(
   fieldCandidate: unknown,
   choiceOptions: SnowChoiceOptionMap,
 ): void {
-  if (!CHANGE_REQUEST_CHOICE_FIELDS.includes(fieldName as (typeof CHANGE_REQUEST_CHOICE_FIELDS)[number])) {
+  const canonicalFieldName = resolveCanonicalChoiceFieldName(fieldName);
+  if (canonicalFieldName === null) {
     return;
   }
 
   const fieldChoices = extractFieldChoices(fieldCandidate);
   if (fieldChoices.length > 0) {
-    choiceOptions[fieldName] = fieldChoices;
+    choiceOptions[canonicalFieldName] = fieldChoices;
   }
 }
 
@@ -189,6 +216,114 @@ function mergeChoiceOptions(
 
 function getErrorMessage(unknownError: unknown): string {
   return unknownError instanceof Error ? unknownError.message : String(unknownError);
+}
+
+function isKnownChoiceFieldName(fieldName: string): boolean {
+  return resolveCanonicalChoiceFieldName(fieldName) !== null;
+}
+
+function ensureBlankChoiceFirst(fieldChoices: SnowChoiceOption[]): SnowChoiceOption[] {
+  if (fieldChoices.length === 0) {
+    return [];
+  }
+
+  const normalizedFieldChoices = fieldChoices.filter((fieldChoice) => fieldChoice.value !== '');
+  return [{ value: '', label: '' }, ...normalizedFieldChoices];
+}
+
+function resolveExtractorChoiceCollection(fieldValue: unknown): unknown {
+  if (!isObjectRecord(fieldValue)) {
+    return fieldValue;
+  }
+
+  return fieldValue.choices
+    ?? fieldValue.choice_list
+    ?? fieldValue.choiceList
+    ?? fieldValue.values
+    ?? fieldValue.options
+    ?? null;
+}
+
+function extractChoicesForFieldValue(fieldValue: unknown): SnowChoiceOption[] {
+  const choiceCollection = resolveExtractorChoiceCollection(fieldValue);
+  if (choiceCollection === null) {
+    return [];
+  }
+  return normalizeChoiceOptions(choiceCollection);
+}
+
+function extractChoicesFromExtractorObject(extractorObject: UnknownRecord): SnowChoiceOptionMap {
+  const extractorChoiceOptions: SnowChoiceOptionMap = {};
+  for (const canonicalFieldName of CHANGE_REQUEST_CHOICE_FIELDS) {
+    for (const fieldNameAlias of EXTRACTOR_CHOICE_FIELD_ALIASES[canonicalFieldName]) {
+      const fieldValue = extractorObject[fieldNameAlias];
+      if (fieldValue === undefined) continue;
+
+      const fieldChoices = extractChoicesForFieldValue(fieldValue);
+      const normalizedFieldChoices = ensureBlankChoiceFirst(fieldChoices);
+      if (normalizedFieldChoices.length > 1) {
+        extractorChoiceOptions[canonicalFieldName] = normalizedFieldChoices;
+        break;
+      }
+    }
+  }
+  return extractorChoiceOptions;
+}
+
+function extractChoicesFromExtractorArray(extractorArray: unknown[]): SnowChoiceOptionMap {
+  const extractorChoiceOptions: SnowChoiceOptionMap = {};
+  for (const fieldEntry of extractorArray) {
+    if (!isObjectRecord(fieldEntry)) continue;
+    const fieldName = readStringProperty(fieldEntry, ['field', 'fieldName', 'name', 'element']);
+    if (!fieldName || !isKnownChoiceFieldName(fieldName)) continue;
+    const canonicalFieldName = resolveCanonicalChoiceFieldName(fieldName);
+    if (canonicalFieldName === null) continue;
+
+    const fieldChoices = normalizeChoiceOptions(fieldEntry.choices ?? fieldEntry.values ?? fieldEntry.options);
+    const normalizedFieldChoices = ensureBlankChoiceFirst(fieldChoices);
+    if (normalizedFieldChoices.length > 1) {
+      extractorChoiceOptions[canonicalFieldName] = normalizedFieldChoices;
+    }
+  }
+  return extractorChoiceOptions;
+}
+
+function parseExtractorChoiceJson(extractorJsonText: string): SnowChoiceOptionMap {
+  const parsedExtractorPayload = JSON.parse(extractorJsonText) as unknown;
+  if (Array.isArray(parsedExtractorPayload)) {
+    return extractChoicesFromExtractorArray(parsedExtractorPayload);
+  }
+  if (!isObjectRecord(parsedExtractorPayload)) {
+    return {};
+  }
+
+  const nestedFieldObject = isObjectRecord(parsedExtractorPayload.fields) ? parsedExtractorPayload.fields : null;
+  const nestedFormFieldObject = isObjectRecord(parsedExtractorPayload.formFields) ? parsedExtractorPayload.formFields : null;
+  const nestedChoiceOptionsObject = isObjectRecord(parsedExtractorPayload.choiceOptions)
+    ? parsedExtractorPayload.choiceOptions
+    : null;
+
+  const directChoices = extractChoicesFromExtractorObject(parsedExtractorPayload);
+  const fieldChoices = nestedFieldObject ? extractChoicesFromExtractorObject(nestedFieldObject) : {};
+  const formFieldChoices = nestedFormFieldObject ? extractChoicesFromExtractorObject(nestedFormFieldObject) : {};
+  const choiceOptionChoices = nestedChoiceOptionsObject ? extractChoicesFromExtractorObject(nestedChoiceOptionsObject) : {};
+  return mergeChoiceOptions(
+    mergeChoiceOptions(
+      mergeChoiceOptions(directChoices, fieldChoices),
+      formFieldChoices,
+    ),
+    choiceOptionChoices,
+  );
+}
+
+function loadStoredExtractorChoiceOptions(): SnowChoiceOptionMap {
+  try {
+    const storedChoiceJson = localStorage.getItem(EXTRACTOR_CHOICE_STORAGE_KEY);
+    if (!storedChoiceJson) return {};
+    return parseExtractorChoiceJson(storedChoiceJson);
+  } catch {
+    return {};
+  }
 }
 
 /**
@@ -272,6 +407,12 @@ interface UseSnowChoiceOptionsResult {
   hasRelaySessionToken: boolean;
   /** Manually re-triggers the SNow choice metadata fetch (e.g. after a transient SNow error). */
   retryFetch: () => void;
+  /** True when extractor-provided choices are currently available for fallback rendering. */
+  hasExtractorChoices: boolean;
+  /** Applies extractor JSON and persists it for future CRG sessions. */
+  applyExtractorChoiceJson: (extractorJsonText: string) => { isSuccess: boolean; message: string };
+  /** Clears persisted extractor-provided choice options. */
+  clearExtractorChoices: () => void;
 }
 
 /**
@@ -284,7 +425,8 @@ interface UseSnowChoiceOptionsResult {
  */
 export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
   // Start with an empty map — no defaults — so the UI never shows guessed values.
-  const [choiceOptions, setChoiceOptions]           = useState<SnowChoiceOptionMap>({});
+  const [extractorChoiceOptions, setExtractorChoiceOptions] = useState<SnowChoiceOptionMap>(() => loadStoredExtractorChoiceOptions());
+  const [choiceOptions, setChoiceOptions]           = useState<SnowChoiceOptionMap>(() => loadStoredExtractorChoiceOptions());
   const [isLoadingChoices, setIsLoadingChoices]     = useState<boolean>(false);
   const [areChoicesFromSnow, setAreChoicesFromSnow] = useState<boolean>(false);
   const [isFetchFailed, setIsFetchFailed]           = useState<boolean>(false);
@@ -324,7 +466,7 @@ export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
         const serviceNowChoiceOptions = await fetchChoiceOptionsFromServiceNow();
         if (isCancelled) return;
 
-        setChoiceOptions(serviceNowChoiceOptions);
+        setChoiceOptions(mergeChoiceOptions(serviceNowChoiceOptions, extractorChoiceOptions));
         setAreChoicesFromSnow(true);
         setIsFetchFailed(false);
       } catch (fetchError) {
@@ -332,6 +474,9 @@ export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
         // Capture the message so the user sees "401" or "timed out" rather than a generic banner.
         if (!isCancelled) {
           const errorText = fetchError instanceof Error ? fetchError.message : String(fetchError);
+          if (hasChoiceOptions(extractorChoiceOptions)) {
+            setChoiceOptions(extractorChoiceOptions);
+          }
           setIsFetchFailed(true);
           setFetchErrorMessage(errorText);
         }
@@ -343,7 +488,7 @@ export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
     void fetchChoiceOptions();
 
     return () => { isCancelled = true; };
-  }, [isRelayConnected, hasRelaySessionToken, areChoicesFromSnow, fetchTrigger]);
+  }, [isRelayConnected, hasRelaySessionToken, areChoicesFromSnow, fetchTrigger, extractorChoiceOptions]);
 
   /** Forces a re-fetch of SNow metadata and shows the loading indicator immediately. */
   const retryFetch = useCallback(() => {
@@ -352,6 +497,40 @@ export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
     setAreChoicesFromSnow(false);
     setFetchTrigger((previousTrigger) => previousTrigger + 1);
   }, []);
+
+  const applyExtractorChoiceJson = useCallback((extractorJsonText: string) => {
+    try {
+      const parsedExtractorChoices = parseExtractorChoiceJson(extractorJsonText);
+      if (!hasChoiceOptions(parsedExtractorChoices)) {
+        return {
+          isSuccess: false,
+          message: 'No supported choice fields were found in the extractor JSON.',
+        };
+      }
+
+      localStorage.setItem(EXTRACTOR_CHOICE_STORAGE_KEY, JSON.stringify(parsedExtractorChoices));
+      setExtractorChoiceOptions(parsedExtractorChoices);
+      setChoiceOptions((previousChoices) => mergeChoiceOptions(previousChoices, parsedExtractorChoices));
+      return {
+        isSuccess: true,
+        message: `Loaded extractor choices for ${Object.keys(parsedExtractorChoices).length} field(s).`,
+      };
+    } catch (parseError) {
+      return {
+        isSuccess: false,
+        message: `Invalid extractor JSON: ${getErrorMessage(parseError)}`,
+      };
+    }
+  }, []);
+
+  const clearExtractorChoices = useCallback(() => {
+    localStorage.removeItem(EXTRACTOR_CHOICE_STORAGE_KEY);
+    setExtractorChoiceOptions({});
+    setChoiceOptions((previousChoices) => {
+      if (areChoicesFromSnow) return previousChoices;
+      return {};
+    });
+  }, [areChoicesFromSnow]);
 
   return {
     choiceOptions,
@@ -362,5 +541,8 @@ export function useSnowChoiceOptions(): UseSnowChoiceOptionsResult {
     isRelayConnected,
     hasRelaySessionToken,
     retryFetch,
+    hasExtractorChoices: hasChoiceOptions(extractorChoiceOptions),
+    applyExtractorChoiceJson,
+    clearExtractorChoices,
   };
 }

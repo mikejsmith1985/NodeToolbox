@@ -1,6 +1,6 @@
 // TextToolsView.test.tsx — Unit tests for the Text Tools tabbed view component.
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockState, mockActions } = vi.hoisted(() => ({
@@ -109,5 +109,61 @@ describe('TextToolsView', () => {
     render(<TextToolsView />);
     // The extractor tab panel is rendered — tab button exists
     expect(screen.getByRole('tab', { name: /extractor/i })).toBeInTheDocument();
+  });
+
+  it('renders a real javascript bookmarklet href for the extractor installer link', () => {
+    mockState.activeTab = 'extractor';
+    render(<TextToolsView />);
+
+    expect(screen.getByRole('link', { name: /nodetoolbox snow field extractor/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('javascript:'),
+    );
+  });
+
+  it('filters pasted extractor JSON when a field is deselected', () => {
+    mockState.activeTab = 'extractor';
+    render(<TextToolsView />);
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Extractor validation JSON input' }), {
+      target: {
+        value: JSON.stringify({
+          fields: {
+            impact: { label: 'Impact', value: '3', displayValue: '3 - Low' },
+            u_change_tested: { label: 'Has Been Tested', value: 'yes', displayValue: 'Yes' },
+          },
+          choiceOptions: {
+            impact: [{ value: '3', label: '3 - Low' }],
+            u_change_tested: [{ value: 'yes', label: 'Yes' }],
+          },
+        }),
+      },
+    });
+
+    expect(screen.getByRole('group', { name: 'Extractor field selection' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /Impact impact/i })).toBeChecked();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Has Been Tested u_change_tested/i }));
+
+    const filteredJsonOutput = screen.getByRole('textbox', { name: 'Extractor filtered JSON output' });
+    const filteredPayload = JSON.parse((filteredJsonOutput as HTMLTextAreaElement).value) as {
+      fields: Record<string, unknown>;
+      choiceOptions: Record<string, unknown>;
+    };
+    expect(filteredPayload.fields.impact).toBeDefined();
+    expect(filteredPayload.choiceOptions.impact).toBeDefined();
+    expect(filteredPayload.fields.u_change_tested).toBeUndefined();
+    expect(filteredPayload.choiceOptions.u_change_tested).toBeUndefined();
+  });
+
+  it('shows parse errors for invalid extractor JSON', () => {
+    mockState.activeTab = 'extractor';
+    render(<TextToolsView />);
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Extractor validation JSON input' }), {
+      target: { value: '{ not valid json' },
+    });
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Invalid JSON/i);
   });
 });

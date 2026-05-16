@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
+import { useCrgSubmissionDebugStore } from '../../../hooks/useCrgSubmissionDebugStore.ts';
 
 // Step 3 was added (Change Details) so the wizard now runs 1 through 6.
 type CrgStep = 1 | 2 | 3 | 4 | 5 | 6;
@@ -1575,6 +1576,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
         ? `${normalizedChangeNumber} updated`
         : `${normalizedChangeNumber} updated with verification warnings (${mismatchMessages.length})`;
 
+      useCrgSubmissionDebugStore.getState().updateLastSubmissionDebug(submissionDebug);
       setState((previousState) => ({
         ...previousState,
         isSubmitting: false,
@@ -1584,6 +1586,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       }));
     } catch (unknownError) {
       const errorMessage = unknownError instanceof Error ? unknownError.message : 'CHG update failed';
+      useCrgSubmissionDebugStore.getState().updateLastSubmissionDebug(null);
       setState((previousState) => ({
         ...previousState,
         isSubmitting: false,
@@ -1712,22 +1715,25 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       // Clear persisted progress after a successful submission — the next change starts fresh.
       justResetRef.current = true;
       try { localStorage.removeItem(CRG_STATE_STORAGE_KEY); } catch { /* non-fatal */ }
+      const submissionDebug = buildSubmissionDebugData(
+        'create',
+        changeNumber,
+        chgPayload,
+        responseData,
+        null,
+        [],
+      );
+      useCrgSubmissionDebugStore.getState().updateLastSubmissionDebug(submissionDebug);
       setState(() => ({
         ...createDefaultCrgState(),
         isSubmitting: false,
         submitResult: creationSummary,
         currentStep:  6 as CrgStep,
-        submissionDebug: buildSubmissionDebugData(
-          'create',
-          changeNumber,
-          chgPayload,
-          responseData,
-          null,
-          [],
-        ),
+        submissionDebug,
       }));
     } catch (unknownError) {
       const errorMessage = unknownError instanceof Error ? unknownError.message : 'CHG creation failed';
+      useCrgSubmissionDebugStore.getState().updateLastSubmissionDebug(null);
       setState((previousState) => ({
         ...previousState,
         isSubmitting: false,

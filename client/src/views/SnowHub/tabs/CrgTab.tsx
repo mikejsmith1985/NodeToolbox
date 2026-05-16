@@ -11,7 +11,6 @@ import type {
   CrgTemplate,
   CtaskTemplate,
   CtaskTemplateData,
-  InspectedSnowField,
   SnowReference,
 } from '../hooks/useCrgState.ts';
 import type { CrgPinnedField, CrgPinnedFieldInput } from '../hooks/useCrgFieldPins.ts';
@@ -53,11 +52,28 @@ const PLANNING_ASSESSMENT_ROWS = [
   { label: 'Impact',                          fieldKey: 'impact',                        snowFieldName: 'impact' },
   { label: 'System Availability Implication',  fieldKey: 'systemAvailabilityImplication', snowFieldName: 'u_availability_impact' },
   { label: 'Has Been Tested',                 fieldKey: 'hasBeenTested',                 snowFieldName: 'u_change_tested' },
-  { label: 'Impacted Persons Aware',          fieldKey: 'impactedPersonsAware',          snowFieldName: 'u_impacted_persons_aware' },
   { label: 'Performed Previously',            fieldKey: 'hasBeenPerformedPreviously',    snowFieldName: 'u_performed_previously' },
   { label: 'Success Probability',             fieldKey: 'successProbability',            snowFieldName: 'u_success_probability' },
   { label: 'Can Be Backed Out',               fieldKey: 'canBeBackedOut',                snowFieldName: 'u_can_be_backed_out' },
 ] as const;
+
+const EXTRACTOR_PLANNING_ASSESSMENT_FIELD_ALIASES: Record<keyof ChgPlanningAssessment, readonly string[]> = {
+  impact: ['u_impact', 'impact'],
+  systemAvailabilityImplication: ['u_implications_of_system_availability', 'u_availability_impact'],
+  hasBeenTested: ['u_has_this_change_been_tested', 'u_change_tested'],
+  impactedPersonsAware: ['u_are_impacted_persons_aware_prepared_for_test_checkout', 'u_impacted_persons_aware'],
+  hasBeenPerformedPreviously: ['u_has_change_been_performed_previously', 'u_performed_previously'],
+  successProbability: ['u_assessment_of_success_probability', 'u_success_probability'],
+  canBeBackedOut: ['u_can_change_be_backed_out', 'u_can_be_backed_out'],
+};
+
+const EXTRACTOR_PLANNING_CONTENT_FIELD_ALIASES: Record<keyof ChgPlanningContent, readonly string[]> = {
+  implementationPlan: ['implementation_plan'],
+  backoutPlan: ['backout_plan'],
+  testPlan: ['test_plan'],
+};
+
+const EXTRACTOR_VALUE_PROPERTY_NAMES = ['value', 'displayValue', 'display_value'] as const;
 
 const ENVIRONMENT_ROW_DEFINITIONS = [
   { key: 'rel', label: 'REL', stateKey: 'relEnvironment' },
@@ -69,14 +85,10 @@ const STEP_TITLE_PREFIX = 'Step';
 const DEFAULT_RESULT_MESSAGE = 'Generated content will appear here after you complete the wizard.';
 const EMPTY_ENVIRONMENT_DATES = 'Not scheduled';
 const WORKSPACE_PANEL_TITLE = 'Clone, Templates & Defaults';
-const WORKSPACE_PANEL_HINT = 'Clone a known-good CHG, save repeatable templates, and build reusable pinned field options without filling the wizard with static pin lists.';
-const PAYLOAD_INSPECTOR_TITLE = 'ServiceNow field inspector';
-const PAYLOAD_INSPECTOR_HINT = 'Load a known-good CHG, review the readable fields that came back, then pin only the exact custom values that should be submitted with future changes.';
-const PAYLOAD_SEARCH_PLACEHOLDER = 'Search field label, API name, or value...';
-const PAYLOAD_EMPTY_STATE = 'No CHG fields loaded yet. Enter a CHG number and choose Load CHG to inspect available fields.';
-const PAYLOAD_NO_MATCHES = 'No loaded fields match that search.';
-const PAYLOAD_PINNED_LEDGER_TITLE = 'Pinned exact payload values';
-const PAYLOAD_PINNED_LEDGER_EMPTY = 'No exact payload values pinned yet.';
+const WORKSPACE_PANEL_HINT = 'Clone a known-good CHG, save repeatable templates, and load extractor JSON choices so unavailable ServiceNow dropdowns still render usable options.';
+const EXTRACTOR_PANEL_TITLE = 'Extractor JSON choices';
+const EXTRACTOR_PANEL_HINT = 'Paste the extractor JSON output to load allowed values for CHG dropdown fields when live ServiceNow choice metadata is unavailable.';
+const EXTRACTOR_JSON_PLACEHOLDER = '{\n  "fields": {\n    "impact": [{ "value": "3", "label": "3 - Low" }],\n    "u_change_tested": [{ "value": "yes", "label": "Yes" }]\n  }\n}';
 const SHORT_MANUAL_VALUE_PLACEHOLDER = 'Internal ServiceNow value';
 const PIN_SECTION_CHANGE_DETAILS = 'Change Details';
 const PIN_SECTION_PLANNING = 'Planning';
@@ -101,24 +113,9 @@ const ENVIRONMENT_VALUE_PIN_KEY = 'chgBasicInfo.environment';
 const REL_CONFIG_ITEM_PIN_KEY = 'relEnvironment.configItem';
 const PRD_CONFIG_ITEM_PIN_KEY = 'prdEnvironment.configItem';
 const PFIX_CONFIG_ITEM_PIN_KEY = 'pfixEnvironment.configItem';
-const CUSTOM_PAYLOAD_GROUP_KEY = 'custom';
-const LIFECYCLE_PAYLOAD_GROUP_KEY = 'lifecycle';
-const SCHEDULE_PAYLOAD_GROUP_KEY = 'schedule';
-const SYSTEM_PAYLOAD_GROUP_KEY = 'system';
-const OTHER_PAYLOAD_GROUP_KEY = 'other';
-const PAYLOAD_LABEL_ACRONYMS = new Set(['api', 'cab', 'chg', 'ci', 'sla', 'snow']);
-const PAYLOAD_SCHEDULE_FIELD_TOKENS = ['date', 'time', 'due', 'window', 'schedule', 'start', 'end'];
-const PAYLOAD_LIFECYCLE_FIELD_TOKENS = ['active', 'approval', 'state', 'status', 'model', 'conflict', 'escalation', 'knowledge'];
-const PAYLOAD_GROUP_DEFINITIONS = [
-  { key: CUSTOM_PAYLOAD_GROUP_KEY, label: 'Custom change fields' },
-  { key: LIFECYCLE_PAYLOAD_GROUP_KEY, label: 'Workflow and approval fields' },
-  { key: SCHEDULE_PAYLOAD_GROUP_KEY, label: 'Schedule fields' },
-  { key: SYSTEM_PAYLOAD_GROUP_KEY, label: 'System fields' },
-  { key: OTHER_PAYLOAD_GROUP_KEY, label: 'Other loaded fields' },
-] as const;
-
 function buildCurrentTemplateData(state: CrgStateData): Omit<CrgTemplate, 'id' | 'name' | 'createdAt'> {
   return {
+    shortDescriptionConfig: state.shortDescriptionConfig,
     chgBasicInfo:          state.chgBasicInfo,
     chgPlanningAssessment: state.chgPlanningAssessment,
     chgPlanningContent:    state.chgPlanningContent,
@@ -260,9 +257,6 @@ function buildRenderedChoiceOptions(
 interface ManualChoiceInputState {
   options: { value: string; label: string }[];
   isLoadingChoices: boolean;
-  isFetchFailed: boolean;
-  isRelayConnected: boolean;
-  hasRelaySessionToken: boolean;
 }
 
 /**
@@ -272,20 +266,12 @@ interface ManualChoiceInputState {
 function shouldRenderManualChoiceInput({
   options,
   isLoadingChoices,
-  isFetchFailed,
-  isRelayConnected,
-  hasRelaySessionToken,
 }: ManualChoiceInputState): boolean {
   if (isLoadingChoices) {
     return false;
   }
 
-  return (
-    isFetchFailed ||
-    !isRelayConnected ||
-    !hasRelaySessionToken ||
-    !hasSelectableChoiceOptions(options)
-  );
+  return !hasSelectableChoiceOptions(options);
 }
 
 interface PinnedFieldSelectorProps {
@@ -411,6 +397,80 @@ type GeneratedFieldName = Parameters<CrgActionSet['updateGeneratedField']>[0];
 type EnvironmentKey = Parameters<CrgActionSet['updateEnvironment']>[0];
 type FetchMode = CrgStateData['fetchMode'];
 type EnvironmentSelectionState = Record<EnvironmentKey, boolean>;
+type UnknownRecord = Record<string, unknown>;
+
+interface ExtractorFieldValueResult {
+  planningAssessment: Partial<ChgPlanningAssessment>;
+  planningContent: Partial<ChgPlanningContent>;
+  appliedValueCount: number;
+}
+
+function isObjectRecord(candidate: unknown): candidate is UnknownRecord {
+  return typeof candidate === 'object' && candidate !== null && !Array.isArray(candidate);
+}
+
+function readExtractorFieldText(fieldCandidate: unknown): string {
+  if (typeof fieldCandidate === 'string') {
+    return fieldCandidate;
+  }
+  if (!isObjectRecord(fieldCandidate)) {
+    return '';
+  }
+
+  for (const propertyName of EXTRACTOR_VALUE_PROPERTY_NAMES) {
+    const propertyValue = fieldCandidate[propertyName];
+    if (typeof propertyValue === 'string' && propertyValue.trim().length > 0) {
+      return propertyValue;
+    }
+  }
+  return '';
+}
+
+function resolveExtractorFieldContainers(extractorPayload: UnknownRecord): UnknownRecord[] {
+  return [
+    isObjectRecord(extractorPayload.fields) ? extractorPayload.fields : null,
+    isObjectRecord(extractorPayload.formFields) ? extractorPayload.formFields : null,
+    extractorPayload,
+  ].filter((fieldContainer): fieldContainer is UnknownRecord => fieldContainer !== null);
+}
+
+function readExtractorValue(fieldContainers: UnknownRecord[], fieldAliases: readonly string[]): string {
+  for (const fieldAlias of fieldAliases) {
+    for (const fieldContainer of fieldContainers) {
+      const fieldValue = readExtractorFieldText(fieldContainer[fieldAlias]);
+      if (fieldValue) {
+        return fieldValue;
+      }
+    }
+  }
+  return '';
+}
+
+function buildExtractorFieldValueResult(extractorJsonText: string): ExtractorFieldValueResult {
+  const extractorPayload = JSON.parse(extractorJsonText) as unknown;
+  if (!isObjectRecord(extractorPayload)) {
+    return { planningAssessment: {}, planningContent: {}, appliedValueCount: 0 };
+  }
+
+  const fieldContainers = resolveExtractorFieldContainers(extractorPayload);
+  const planningAssessment: Partial<ChgPlanningAssessment> = {};
+  const planningContent: Partial<ChgPlanningContent> = {};
+
+  for (const [fieldKey, fieldAliases] of Object.entries(EXTRACTOR_PLANNING_ASSESSMENT_FIELD_ALIASES)) {
+    const fieldValue = readExtractorValue(fieldContainers, fieldAliases);
+    if (fieldValue) planningAssessment[fieldKey as keyof ChgPlanningAssessment] = fieldValue;
+  }
+  for (const [fieldKey, fieldAliases] of Object.entries(EXTRACTOR_PLANNING_CONTENT_FIELD_ALIASES)) {
+    const fieldValue = readExtractorValue(fieldContainers, fieldAliases);
+    if (fieldValue) planningContent[fieldKey as keyof ChgPlanningContent] = fieldValue;
+  }
+
+  return {
+    planningAssessment,
+    planningContent,
+    appliedValueCount: Object.keys(planningAssessment).length + Object.keys(planningContent).length,
+  };
+}
 
 function resolveSuggestedEnvironmentValue(
   options: { value: string; label: string }[],
@@ -493,6 +553,10 @@ interface EnvironmentStepExtras {
 
 /** Additional props for the Change Details step — templates and dynamic choice options. */
 interface ChangeDetailsExtras {
+  templates: CrgTemplate[];
+  defaultTemplateId: string | null;
+  setDefaultTemplateId: (templateId: string) => void;
+  clearDefaultTemplateId: () => void;
   /** Dynamic choice options fetched from SNow form metadata for basic info dropdowns. */
   choiceOptions: SnowChoiceOptionMap;
   /** True while the SNow metadata fetch is still in flight. */
@@ -523,6 +587,10 @@ interface CtaskTemplateExtras {
   deleteTemplate: (templateId: string) => void;
 }
 
+interface ResultsStepExtras {
+  ctaskTemplates: CtaskTemplate[];
+}
+
 interface StepRenderOptions {
   headingStep?: CrgStateData['currentStep'];
   shouldShowNavigation?: boolean;
@@ -535,125 +603,13 @@ interface CrgWorkspaceExtras {
   saveTemplate: (name: string, data: Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>) => string;
   updateTemplate: (templateId: string, data: Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>) => void;
   deleteTemplate: (templateId: string) => void;
-  pinnedFields: CrgPinnedField[];
-  upsertPin: (pinnedField: CrgPinnedFieldInput) => void;
-  removePin: (pinId: string) => void;
-  clearPins: () => void;
-  getPinnedFields: (fieldKey: string) => CrgPinnedField[];
-  findPinnedField: (fieldKey: string, fieldValue: CrgPinnedField['value']) => CrgPinnedField | undefined;
-}
-
-type PayloadFieldGroupKey = typeof PAYLOAD_GROUP_DEFINITIONS[number]['key'];
-
-interface PayloadFieldView {
-  fieldName: string;
-  label: string;
-  displayValue: string;
-  storedValue: string;
-  groupKey: PayloadFieldGroupKey;
-  isPinned: boolean;
-}
-
-interface PayloadFieldInspectorPanelProps {
-  inspectedSnowFields: InspectedSnowField[];
-  customSnowFields: Record<string, string>;
-  onPinPayloadField: (fieldName: string, storedValue: string) => void;
-  onRemovePayloadField: (fieldName: string) => void;
-}
-
-interface PayloadFieldRowProps {
-  payloadField: PayloadFieldView;
-  onTogglePayloadField: (payloadField: PayloadFieldView) => void;
-}
-
-interface PinnedPayloadLedgerProps {
-  pinnedPayloadFields: PayloadFieldView[];
-  onRemovePayloadField: (fieldName: string) => void;
+  hasExtractorChoices: boolean;
+  applyExtractorChoiceJson: (extractorJsonText: string) => { isSuccess: boolean; message: string };
+  clearExtractorChoices: () => void;
 }
 
 interface StepHeadingProps {
   currentStep: CrgStateData['currentStep'];
-}
-
-function formatPayloadFieldWord(fieldNamePart: string): string {
-  const lowerFieldNamePart = fieldNamePart.toLowerCase();
-  if (PAYLOAD_LABEL_ACRONYMS.has(lowerFieldNamePart)) return lowerFieldNamePart.toUpperCase();
-  return `${lowerFieldNamePart.slice(0, 1).toUpperCase()}${lowerFieldNamePart.slice(1)}`;
-}
-
-function createPayloadFieldLabel(fieldName: string): string {
-  const fieldNameWithoutCustomPrefix = fieldName.startsWith('u_') ? fieldName.slice(2) : fieldName;
-  return fieldNameWithoutCustomPrefix
-    .split('_')
-    .filter(Boolean)
-    .map(formatPayloadFieldWord)
-    .join(' ');
-}
-
-function classifyPayloadField(fieldName: string): PayloadFieldGroupKey {
-  if (fieldName.startsWith('u_')) return CUSTOM_PAYLOAD_GROUP_KEY;
-  if (fieldName.startsWith('sys_')) return SYSTEM_PAYLOAD_GROUP_KEY;
-  if (PAYLOAD_SCHEDULE_FIELD_TOKENS.some((fieldToken) => fieldName.includes(fieldToken))) return SCHEDULE_PAYLOAD_GROUP_KEY;
-  if (PAYLOAD_LIFECYCLE_FIELD_TOKENS.some((fieldToken) => fieldName.includes(fieldToken))) return LIFECYCLE_PAYLOAD_GROUP_KEY;
-  return OTHER_PAYLOAD_GROUP_KEY;
-}
-
-function createPayloadFieldView(
-  inspectedField: InspectedSnowField,
-  customSnowFields: Record<string, string>,
-): PayloadFieldView {
-  return {
-    fieldName: inspectedField.fieldName,
-    label: createPayloadFieldLabel(inspectedField.fieldName),
-    displayValue: inspectedField.displayValue,
-    storedValue: inspectedField.storedValue,
-    groupKey: classifyPayloadField(inspectedField.fieldName),
-    isPinned: inspectedField.fieldName in customSnowFields,
-  };
-}
-
-function createPinnedPayloadFieldView(fieldName: string, fieldValue: string): PayloadFieldView {
-  return {
-    fieldName,
-    label: createPayloadFieldLabel(fieldName),
-    displayValue: fieldValue,
-    storedValue: fieldValue,
-    groupKey: classifyPayloadField(fieldName),
-    isPinned: true,
-  };
-}
-
-function createMergedPayloadFieldViews(
-  inspectedSnowFields: InspectedSnowField[],
-  customSnowFields: Record<string, string>,
-): PayloadFieldView[] {
-  const inspectedFieldNames = new Set(inspectedSnowFields.map((inspectedField) => inspectedField.fieldName));
-  const inspectedPayloadFields = inspectedSnowFields.map((inspectedField) => createPayloadFieldView(inspectedField, customSnowFields));
-  const pinnedOnlyPayloadFields = Object.entries(customSnowFields)
-    .filter(([fieldName]) => !inspectedFieldNames.has(fieldName))
-    .map(([fieldName, fieldValue]) => createPinnedPayloadFieldView(fieldName, fieldValue));
-  return [...inspectedPayloadFields, ...pinnedOnlyPayloadFields];
-}
-
-function doesPayloadFieldMatchSearch(payloadField: PayloadFieldView, normalizedSearchQuery: string): boolean {
-  if (!normalizedSearchQuery) return true;
-  const searchablePayloadText = [
-    payloadField.label,
-    payloadField.fieldName,
-    payloadField.displayValue,
-    payloadField.storedValue,
-  ].join(' ').toLowerCase();
-  return searchablePayloadText.includes(normalizedSearchQuery);
-}
-
-function groupPayloadFieldViews(payloadFields: PayloadFieldView[]): Map<PayloadFieldGroupKey, PayloadFieldView[]> {
-  const payloadFieldGroups = new Map<PayloadFieldGroupKey, PayloadFieldView[]>();
-  payloadFields.forEach((payloadField) => {
-    const groupFields = payloadFieldGroups.get(payloadField.groupKey) ?? [];
-    groupFields.push(payloadField);
-    payloadFieldGroups.set(payloadField.groupKey, groupFields);
-  });
-  return payloadFieldGroups;
 }
 
 function StepIndicator({ currentStep, onStepSelect }: StepIndicatorProps) {
@@ -762,160 +718,6 @@ function applyPinnedFieldValue(actions: CrgActionSet, pinnedField: CrgPinnedFiel
   }
 }
 
-function PayloadFieldRow({ payloadField, onTogglePayloadField }: PayloadFieldRowProps) {
-  const actionLabel = payloadField.isPinned
-    ? `Unpin exact value for ${payloadField.label}`
-    : `Pin exact value for ${payloadField.label}`;
-  const buttonClassName = payloadField.isPinned
-    ? `${styles.secondaryButton} ${styles.activePinButton}`
-    : styles.secondaryButton;
-  const shouldShowStoredValue = payloadField.storedValue !== payloadField.displayValue;
-
-  return (
-    <article className={styles.payloadInspectorRow}>
-      <div className={styles.payloadFieldIdentity}>
-        <div className={styles.payloadFieldTitleRow}>
-          <strong>{payloadField.label}</strong>
-          {payloadField.isPinned ? <span className={styles.payloadPinnedBadge}>Pinned</span> : null}
-        </div>
-        <code className={styles.payloadApiName}>{payloadField.fieldName}</code>
-      </div>
-      <div className={styles.payloadValueBlock}>
-        <span className={styles.payloadValueLabel}>Value from loaded CHG</span>
-        <span className={styles.payloadDisplayValue} title={payloadField.displayValue}>
-          {payloadField.displayValue}
-        </span>
-        {shouldShowStoredValue ? (
-          <span className={styles.payloadStoredValue}>Submitted value: {payloadField.storedValue}</span>
-        ) : null}
-      </div>
-      <button
-        aria-label={actionLabel}
-        className={buttonClassName}
-        onClick={() => onTogglePayloadField(payloadField)}
-        type="button"
-      >
-        {payloadField.isPinned ? 'Pinned' : 'Pin exact value'}
-      </button>
-    </article>
-  );
-}
-
-function PinnedPayloadLedger({ pinnedPayloadFields, onRemovePayloadField }: PinnedPayloadLedgerProps) {
-  if (pinnedPayloadFields.length === 0) {
-    return <p className={styles.panelHint}>{PAYLOAD_PINNED_LEDGER_EMPTY}</p>;
-  }
-
-  return (
-    <div className={styles.payloadPinnedLedger}>
-      {pinnedPayloadFields.map((payloadField) => (
-        <div className={styles.payloadPinnedItem} key={payloadField.fieldName}>
-          <div className={styles.payloadPinnedItemText}>
-            <strong>{payloadField.label}</strong>
-            <code className={styles.payloadApiName}>{payloadField.fieldName}</code>
-            <span>{payloadField.displayValue}</span>
-          </div>
-          <button
-            aria-label={`Remove payload pin for ${payloadField.label}`}
-            className={styles.linkButton}
-            onClick={() => onRemovePayloadField(payloadField.fieldName)}
-            type="button"
-          >
-            Remove
-          </button>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function PayloadFieldInspectorPanel({
-  inspectedSnowFields,
-  customSnowFields,
-  onPinPayloadField,
-  onRemovePayloadField,
-}: PayloadFieldInspectorPanelProps) {
-  const [payloadSearchQuery, setPayloadSearchQuery] = useState<string>('');
-  const normalizedSearchQuery = payloadSearchQuery.trim().toLowerCase();
-  const payloadFields = useMemo(() => (
-    createMergedPayloadFieldViews(inspectedSnowFields, customSnowFields)
-  ), [customSnowFields, inspectedSnowFields]);
-  const visiblePayloadFields = useMemo(() => (
-    payloadFields.filter((payloadField) => doesPayloadFieldMatchSearch(payloadField, normalizedSearchQuery))
-  ), [normalizedSearchQuery, payloadFields]);
-  const pinnedPayloadFields = payloadFields.filter((payloadField) => payloadField.isPinned);
-  const groupedPayloadFields = groupPayloadFieldViews(visiblePayloadFields);
-
-  function handleTogglePayloadField(payloadField: PayloadFieldView): void {
-    if (payloadField.isPinned) {
-      onRemovePayloadField(payloadField.fieldName);
-      return;
-    }
-    onPinPayloadField(payloadField.fieldName, payloadField.storedValue);
-  }
-
-  return (
-    <div className={`${styles.clonePanel} ${styles.payloadInspectorPanel}`}>
-      <div className={styles.payloadInspectorHeader}>
-        <div>
-          <h4 className={styles.panelSectionTitle}>{PAYLOAD_INSPECTOR_TITLE}</h4>
-          <p className={styles.panelHint}>{PAYLOAD_INSPECTOR_HINT}</p>
-        </div>
-        <span className={styles.payloadCountPill}>
-          {pinnedPayloadFields.length} pinned / {payloadFields.length} loaded
-        </span>
-      </div>
-
-      {payloadFields.length > 0 ? (
-        <>
-          <input
-            aria-label="Search loaded ServiceNow fields"
-            className={styles.input}
-            onChange={(event) => setPayloadSearchQuery(event.target.value)}
-            placeholder={PAYLOAD_SEARCH_PLACEHOLDER}
-            value={payloadSearchQuery}
-          />
-          {visiblePayloadFields.length > 0 ? (
-            PAYLOAD_GROUP_DEFINITIONS.map((payloadGroup) => {
-              const groupPayloadFields = groupedPayloadFields.get(payloadGroup.key) ?? [];
-              if (groupPayloadFields.length === 0) return null;
-              return (
-                <section className={styles.payloadGroup} key={payloadGroup.key}>
-                  <div className={styles.payloadGroupHeader}>
-                    <h5>{payloadGroup.label}</h5>
-                    <span>{groupPayloadFields.length} field(s)</span>
-                  </div>
-                  <div className={styles.payloadInspectorList}>
-                    {groupPayloadFields.map((payloadField) => (
-                      <PayloadFieldRow
-                        key={payloadField.fieldName}
-                        onTogglePayloadField={handleTogglePayloadField}
-                        payloadField={payloadField}
-                      />
-                    ))}
-                  </div>
-                </section>
-              );
-            })
-          ) : (
-            <p className={styles.panelHint}>{PAYLOAD_NO_MATCHES}</p>
-          )}
-        </>
-      ) : (
-        <p className={styles.panelHint}>{PAYLOAD_EMPTY_STATE}</p>
-      )}
-
-      <div className={styles.payloadPinnedSummary}>
-        <h5>{PAYLOAD_PINNED_LEDGER_TITLE}</h5>
-        <PinnedPayloadLedger
-          onRemovePayloadField={onRemovePayloadField}
-          pinnedPayloadFields={pinnedPayloadFields}
-        />
-      </div>
-    </div>
-  );
-}
-
 function CrgWorkspacePanel({
   state,
   actions,
@@ -923,27 +725,18 @@ function CrgWorkspacePanel({
   saveTemplate,
   updateTemplate,
   deleteTemplate,
-  pinnedFields,
-  clearPins,
+  hasExtractorChoices,
+  applyExtractorChoiceJson,
+  clearExtractorChoices,
 }: CrgStepProps & CrgWorkspaceExtras) {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [isSavePromptVisible, setIsSavePromptVisible] = useState<boolean>(false);
   const [newTemplateName, setNewTemplateName] = useState<string>('');
+  const [extractorJsonInput, setExtractorJsonInput] = useState<string>('');
+  const [extractorStatusMessage, setExtractorStatusMessage] = useState<string | null>(null);
+  const [hasExtractorStatusError, setHasExtractorStatusError] = useState<boolean>(false);
 
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId);
-  const customSnowFields = state.customSnowFields ?? {};
-  const inspectedSnowFields = state.inspectedSnowFields ?? [];
-  const pinnedFieldSummary = useMemo(() => {
-    const pinnedFieldCountMap = new Map<string, { label: string; count: number }>();
-    pinnedFields.forEach((pinnedField) => {
-      const existingSummary = pinnedFieldCountMap.get(pinnedField.key);
-      pinnedFieldCountMap.set(pinnedField.key, {
-        label: pinnedField.label,
-        count: (existingSummary?.count ?? 0) + 1,
-      });
-    });
-    return [...pinnedFieldCountMap.values()].sort((leftSummary, rightSummary) => leftSummary.label.localeCompare(rightSummary.label));
-  }, [pinnedFields]);
 
   function handleApplyTemplate(): void {
     if (selectedTemplate) {
@@ -972,8 +765,37 @@ function CrgWorkspacePanel({
     setSelectedTemplateId('');
   }
 
-  function handlePinPayloadField(fieldName: string, storedValue: string): void {
-    actions.pinCustomSnowField(fieldName, storedValue);
+  function handleApplyExtractorChoices(): void {
+    const applyResult = applyExtractorChoiceJson(extractorJsonInput);
+    let appliedValueCount = 0;
+
+    try {
+      const fieldValueResult = buildExtractorFieldValueResult(extractorJsonInput);
+      appliedValueCount = fieldValueResult.appliedValueCount;
+      if (Object.keys(fieldValueResult.planningAssessment).length > 0) {
+        actions.setChgPlanningAssessment(fieldValueResult.planningAssessment);
+      }
+      if (Object.keys(fieldValueResult.planningContent).length > 0) {
+        actions.setChgPlanningContent(fieldValueResult.planningContent);
+      }
+    } catch {
+      // applyExtractorChoiceJson already reports JSON parsing failures; avoid a second conflicting error.
+    }
+
+    const statusMessages = [
+      applyResult.isSuccess ? applyResult.message : null,
+      appliedValueCount > 0 ? `Applied ${appliedValueCount} extracted value(s).` : null,
+      !applyResult.isSuccess && appliedValueCount === 0 ? applyResult.message : null,
+    ].filter((statusMessage): statusMessage is string => statusMessage !== null);
+
+    setExtractorStatusMessage(statusMessages.join(' '));
+    setHasExtractorStatusError(!applyResult.isSuccess && appliedValueCount === 0);
+  }
+
+  function handleClearExtractorChoices(): void {
+    clearExtractorChoices();
+    setExtractorStatusMessage('Extractor choices cleared.');
+    setHasExtractorStatusError(false);
   }
 
   return (
@@ -1068,34 +890,65 @@ function CrgWorkspacePanel({
         </div>
 
         <div className={styles.clonePanel}>
-          <h4 className={styles.panelSectionTitle}>Pinned field options</h4>
-          <p className={styles.panelHint}>Manage reusable values here only; the CHG wizard stays focused on creating the change.</p>
-          {pinnedFields.length > 0 ? (
-            <>
-              <p className={styles.panelHint}>{pinnedFields.length} saved option(s) across {pinnedFieldSummary.length} field(s).</p>
-              <div className={styles.pinnedFieldList}>
-                {pinnedFieldSummary.map((fieldSummary) => (
-                  <div className={styles.pinnedFieldCard} key={fieldSummary.label}>
-                    <strong>{fieldSummary.label}</strong>
-                    <span className={styles.pinnedFieldValue}>{fieldSummary.count} saved option(s)</span>
-                  </div>
-                ))}
-              </div>
-              <button className={styles.linkButton} onClick={clearPins} type="button">
-                Clear all saved options
-              </button>
-            </>
-          ) : (
-            <p className={styles.panelHint}>No field options saved yet. Load a CHG or enter defaults below, then save only the values you want to reuse.</p>
-          )}
+          <h4 className={styles.panelSectionTitle}>Short Description Defaults</h4>
+          <p className={styles.panelHint}>Build short descriptions as <strong>Application - Team - Change Details</strong>. Change Details defaults to Fix Version in project mode, or issue-type counts in custom JQL mode.</p>
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>Application</span>
+            <input
+              aria-label="Short description application"
+              className={styles.input}
+              onChange={(event) => actions.setShortDescriptionConfig({ application: event.target.value })}
+              placeholder="e.g. Enrollment"
+              value={state.shortDescriptionConfig.application}
+            />
+          </label>
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>Team</span>
+            <input
+              aria-label="Short description team"
+              className={styles.input}
+              onChange={(event) => actions.setShortDescriptionConfig({ team: event.target.value })}
+              placeholder="e.g. Transformers"
+              value={state.shortDescriptionConfig.team}
+            />
+          </label>
+          <label className={styles.fieldGroup}>
+            <span className={styles.fieldLabel}>Change Details Override</span>
+            <input
+              aria-label="Short description change details override"
+              className={styles.input}
+              onChange={(event) => actions.setShortDescriptionConfig({ changeDetailsOverride: event.target.value })}
+              placeholder="Leave blank to auto-fill from Fix Version or issue types"
+              value={state.shortDescriptionConfig.changeDetailsOverride}
+            />
+          </label>
         </div>
 
-        <PayloadFieldInspectorPanel
-          customSnowFields={customSnowFields}
-          inspectedSnowFields={inspectedSnowFields}
-          onPinPayloadField={handlePinPayloadField}
-          onRemovePayloadField={actions.removeCustomSnowField}
-        />
+        <div className={styles.clonePanel}>
+          <h4 className={styles.panelSectionTitle}>{EXTRACTOR_PANEL_TITLE}</h4>
+          <p className={styles.panelHint}>{EXTRACTOR_PANEL_HINT}</p>
+          <textarea
+            aria-label="Extractor JSON input"
+            className={styles.textArea}
+            onChange={(event) => setExtractorJsonInput(event.target.value)}
+            placeholder={EXTRACTOR_JSON_PLACEHOLDER}
+            value={extractorJsonInput}
+          />
+          <div className={styles.buttonRow}>
+            <button className={styles.secondaryButton} onClick={handleApplyExtractorChoices} type="button">
+              Apply extractor JSON
+            </button>
+            <button className={styles.linkButton} onClick={handleClearExtractorChoices} type="button">
+              Clear extractor choices
+            </button>
+          </div>
+          {hasExtractorChoices ? (
+            <p className={styles.successText}>Extractor choices are active for unavailable dropdowns.</p>
+          ) : null}
+          {extractorStatusMessage ? (
+            <p className={hasExtractorStatusError ? styles.errorText : styles.successText}>{extractorStatusMessage}</p>
+          ) : null}
+        </div>
       </div>
     </section>
   );
@@ -1253,6 +1106,10 @@ function ReviewIssuesStep({ state, actions }: CrgStepProps) {
 function ChangeDetailsStep({
   state,
   actions,
+  templates,
+  defaultTemplateId,
+  setDefaultTemplateId,
+  clearDefaultTemplateId,
   choiceOptions,
   isLoadingChoices,
   isFetchFailed,
@@ -1266,8 +1123,39 @@ function ChangeDetailsStep({
   findPinnedField,
   headingStep,
   shouldShowNavigation = true,
-  shouldShowSaveButtons = true,
+  shouldShowSaveButtons = false,
 }: CrgStepProps & ChangeDetailsExtras & StepRenderOptions) {
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(defaultTemplateId ?? '');
+  const hasAutoAppliedDefaultTemplateRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    if (!shouldShowNavigation) {
+      return;
+    }
+    if (hasAutoAppliedDefaultTemplateRef.current) {
+      return;
+    }
+    if (!defaultTemplateId) {
+      return;
+    }
+
+    const defaultTemplate = templates.find((template) => template.id === defaultTemplateId);
+    if (!defaultTemplate) {
+      return;
+    }
+
+    actions.applyTemplate(defaultTemplate);
+    setSelectedTemplateId(defaultTemplate.id);
+    hasAutoAppliedDefaultTemplateRef.current = true;
+  }, [actions, defaultTemplateId, shouldShowNavigation, templates]);
+
+  useEffect(() => {
+    if (!defaultTemplateId) {
+      return;
+    }
+    setSelectedTemplateId(defaultTemplateId);
+  }, [defaultTemplateId]);
+
   function handleBasicInfoChange<K extends keyof ChgBasicInfo>(
     fieldKey: K,
     value: ChgBasicInfo[K],
@@ -1284,17 +1172,13 @@ function ChangeDetailsStep({
   const shouldUseManualCategoryInput = shouldRenderManualChoiceInput({
     options: categoryOptions,
     isLoadingChoices,
-    isFetchFailed,
-    isRelayConnected,
-    hasRelaySessionToken,
   });
   const shouldUseManualChangeTypeInput = shouldRenderManualChoiceInput({
     options: changeTypeOptions,
     isLoadingChoices,
-    isFetchFailed,
-    isRelayConnected,
-    hasRelaySessionToken,
   });
+  const selectedTemplate = templates.find((template) => template.id === selectedTemplateId);
+  const hasDefaultTemplateSelection = defaultTemplateId !== null;
 
   /**
    * Renders either live SNow choices or a manual value input.
@@ -1370,6 +1254,54 @@ function ChangeDetailsStep({
   return (
     <section className={styles.section}>
       <StepHeading currentStep={headingStep ?? state.currentStep} />
+
+      {shouldShowNavigation ? (
+        <div className={styles.clonePanel}>
+          <h4 className={styles.panelSectionTitle}>Step 3 Template Defaults</h4>
+          <p className={styles.panelHint}>Apply a saved template before editing Change Details. Optionally mark one as the default so Step 3 starts pre-filled.</p>
+          {templates.length > 0 ? (
+            <div className={styles.cloneInputRow}>
+              <select
+                aria-label="Step 3 template"
+                className={styles.input}
+                onChange={(event) => setSelectedTemplateId(event.target.value)}
+                value={selectedTemplateId}
+              >
+                <option value="">Select a template…</option>
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>{template.name}</option>
+                ))}
+              </select>
+              <button
+                className={styles.secondaryButton}
+                disabled={!selectedTemplate}
+                onClick={() => selectedTemplate && actions.applyTemplate(selectedTemplate)}
+                type="button"
+              >
+                Apply template
+              </button>
+              <button
+                className={styles.secondaryButton}
+                disabled={!selectedTemplate}
+                onClick={() => selectedTemplate && setDefaultTemplateId(selectedTemplate.id)}
+                type="button"
+              >
+                Set as default
+              </button>
+              <button
+                className={styles.linkButton}
+                disabled={!hasDefaultTemplateSelection}
+                onClick={clearDefaultTemplateId}
+                type="button"
+              >
+                Clear default
+              </button>
+            </div>
+          ) : (
+            <p className={styles.panelHint}>No CHG templates saved yet. Save one in Configuration mode first.</p>
+          )}
+        </div>
+      ) : null}
 
       {/* Choice availability warning — shown when options haven't been loaded yet. */}
       {!isRelayConnected && !isFetchFailed ? (
@@ -1476,7 +1408,7 @@ function PlanningStep({
   findPinnedField,
   headingStep,
   shouldShowNavigation = true,
-  shouldShowSaveButtons = true,
+  shouldShowSaveButtons = false,
 }: CrgStepProps & PlanningStepExtras & StepRenderOptions) {
   function handleGeneratedFieldChange(fieldName: GeneratedFieldName, event: ChangeEvent<HTMLTextAreaElement>): void {
     actions.updateGeneratedField(fieldName, event.target.value);
@@ -1501,9 +1433,6 @@ function PlanningStep({
     shouldRenderManualChoiceInput({
       options: choiceOptions[row.snowFieldName] ?? [],
       isLoadingChoices,
-      isFetchFailed,
-      isRelayConnected,
-      hasRelaySessionToken,
     })
   ));
 
@@ -1551,9 +1480,6 @@ function PlanningStep({
           const shouldUseManualInput = shouldRenderManualChoiceInput({
             options: rowOptions,
             isLoadingChoices,
-            isFetchFailed,
-            isRelayConnected,
-            hasRelaySessionToken,
           });
 
           return (
@@ -1673,24 +1599,23 @@ function EnvironmentStep({
   actions,
   choiceOptions,
   isLoadingChoices,
-  isFetchFailed,
-  isRelayConnected,
-  hasRelaySessionToken,
   upsertPin,
   removePin,
   getPinnedFields,
   findPinnedField,
   headingStep,
   shouldShowNavigation = true,
-  shouldShowSaveButtons = true,
+  shouldShowSaveButtons = false,
 }: CrgStepProps & EnvironmentStepExtras & StepRenderOptions) {
   const environmentOptions = choiceOptions['u_environment'] ?? [];
+  const impactedPersonsAwareOptions = choiceOptions['u_impacted_persons_aware'] ?? [];
   const shouldUseManualEnvironmentInput = shouldRenderManualChoiceInput({
     options: environmentOptions,
     isLoadingChoices,
-    isFetchFailed,
-    isRelayConnected,
-    hasRelaySessionToken,
+  });
+  const shouldUseManualImpactedPersonsAwareInput = shouldRenderManualChoiceInput({
+    options: impactedPersonsAwareOptions,
+    isLoadingChoices,
   });
 
   function handleEnvironmentToggle(environmentKey: EnvironmentKey, event: ChangeEvent<HTMLInputElement>): void {
@@ -1722,6 +1647,10 @@ function EnvironmentStep({
 
   function handleEnvironmentConfigItemChange(environmentKey: EnvironmentKey, configItem: SnowReference): void {
     actions.updateEnvironment(environmentKey, { configItem });
+  }
+
+  function handleEnvironmentImpactedPersonsAwareChange(environmentKey: EnvironmentKey, impactedPersonsAware: string): void {
+    actions.updateEnvironment(environmentKey, { impactedPersonsAware });
   }
 
   return (
@@ -1825,6 +1754,38 @@ function EnvironmentStep({
                 />
               </div>
 
+              <label className={styles.fieldGroup}>
+                <span className={styles.fieldLabel}>{environmentRow.label} Impacted Persons Aware</span>
+                {shouldUseManualImpactedPersonsAwareInput ? (
+                  <input
+                    aria-label={`${environmentRow.label} Impacted Persons Aware`}
+                    className={styles.input}
+                    onChange={(event) => handleEnvironmentImpactedPersonsAwareChange(environmentRow.key, event.target.value)}
+                    placeholder={SHORT_MANUAL_VALUE_PLACEHOLDER}
+                    value={environmentState.impactedPersonsAware}
+                  />
+                ) : (
+                  <select
+                    aria-label={`${environmentRow.label} Impacted Persons Aware`}
+                    className={styles.input}
+                    disabled={isLoadingChoices}
+                    onChange={(event) => handleEnvironmentImpactedPersonsAwareChange(environmentRow.key, event.target.value)}
+                    value={resolveStoredChoiceValue(
+                      environmentState.impactedPersonsAware,
+                      buildRenderedChoiceOptions(impactedPersonsAwareOptions, environmentState.impactedPersonsAware),
+                    )}
+                  >
+                    {isLoadingChoices ? (
+                      <option disabled value="">Loading options…</option>
+                    ) : (
+                      buildRenderedChoiceOptions(impactedPersonsAwareOptions, environmentState.impactedPersonsAware).map((option) => (
+                        <option key={`${option.value}-${option.label}`} value={option.value}>{option.label || 'Select…'}</option>
+                      ))
+                    )}
+                  </select>
+                )}
+              </label>
+
               <div className={styles.fieldGrid}>
                 <label className={styles.fieldGroup}>
                   <span className={styles.fieldLabel}>Planned Start</span>
@@ -1909,12 +1870,6 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
   const [ctaskCloneStatus, setCtaskCloneStatus] = useState<string | null>(null);
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId);
 
-  useEffect(() => {
-    if (!selectedTemplate) return;
-    setTemplateName(selectedTemplate.name);
-    setCtaskDraft(buildCtaskTemplateData(selectedTemplate));
-  }, [selectedTemplate]);
-
   function handleStringFieldChange(
     fieldName: keyof Pick<
       CtaskTemplateData,
@@ -1923,6 +1878,16 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
     value: string,
   ): void {
     setCtaskDraft((previousDraft) => ({ ...previousDraft, [fieldName]: value }));
+  }
+
+  function handleSelectedCtaskTemplateChange(event: ChangeEvent<HTMLSelectElement>): void {
+    const nextTemplateId = event.target.value;
+    setSelectedTemplateId(nextTemplateId);
+    const nextTemplate = templates.find((template) => template.id === nextTemplateId);
+    if (!nextTemplate) return;
+
+    setTemplateName(nextTemplate.name);
+    setCtaskDraft(buildCtaskTemplateData(nextTemplate));
   }
 
   function handleSaveTemplate(): void {
@@ -1999,7 +1964,7 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
         <select
           aria-label="Select CTASK template"
           className={styles.input}
-          onChange={(event) => setSelectedTemplateId(event.target.value)}
+          onChange={handleSelectedCtaskTemplateChange}
           value={selectedTemplateId}
         >
           <option value="">Select a CTASK template…</option>
@@ -2078,9 +2043,13 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
   );
 }
 
-function ResultsStep({ state, actions }: CrgStepProps) {
+function ResultsStep({ state, actions, ctaskTemplates }: CrgStepProps & ResultsStepExtras) {
+  const [selectedCtaskTemplateId, setSelectedCtaskTemplateId] = useState('');
+  const [existingChgNumber, setExistingChgNumber] = useState('');
+  const selectedCtaskTemplate = ctaskTemplates.find((template) => template.id === selectedCtaskTemplateId) ?? null;
   const consolidatedResult = buildConsolidatedResult(state);
   const hasGeneratedContent = Boolean(state.generatedShortDescription || state.generatedDescription || state.generatedJustification || state.generatedRiskImpact);
+  const normalizedExistingChgNumber = existingChgNumber.trim().toUpperCase();
 
   return (
     <section className={styles.section}>
@@ -2110,16 +2079,51 @@ function ResultsStep({ state, actions }: CrgStepProps) {
         </div>
         <div>
           <h4 className={styles.summaryTitle}>Queued Change Tasks</h4>
+          {ctaskTemplates.length > 0 ? (
+            <div className={styles.cloneInputRow}>
+              <select
+                aria-label="Select CTASK template for review"
+                className={styles.input}
+                onChange={(event) => setSelectedCtaskTemplateId(event.target.value)}
+                value={selectedCtaskTemplateId}
+              >
+                <option value="">Select a CTASK template…</option>
+                {ctaskTemplates.map((template) => (
+                  <option key={template.id} value={template.id}>{template.name}</option>
+                ))}
+              </select>
+              <button
+                className={styles.secondaryButton}
+                disabled={!selectedCtaskTemplate}
+                onClick={() => selectedCtaskTemplate && actions.addChangeTask(selectedCtaskTemplate)}
+                type="button"
+              >
+                Add CTASK to Change
+              </button>
+            </div>
+          ) : null}
           {state.changeTasks.length > 0 ? (
             <ul className={styles.environmentList}>
               {state.changeTasks.map((changeTask) => (
                 <li key={changeTask.id}>
                   {changeTask.name}: {changeTask.shortDescription}
+                  <button
+                    className={styles.linkButton}
+                    onClick={() => actions.removeChangeTask(changeTask.id)}
+                    type="button"
+                    aria-label={`Remove CTASK ${changeTask.shortDescription || changeTask.name}`}
+                  >
+                    Remove
+                  </button>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className={styles.summaryText}>Add CTASK templates from the Configuration tab when this change needs companion tasks.</p>
+            <p className={styles.summaryText}>
+              {ctaskTemplates.length > 0
+                ? 'Select one or more CTASK templates above to include them when creating the CHG.'
+                : 'Add CTASK templates in the Configuration tab to make them available here.'}
+            </p>
           )}
         </div>
       </div>
@@ -2129,6 +2133,16 @@ function ResultsStep({ state, actions }: CrgStepProps) {
       </label>
       {state.submitResult ? <p className={styles.successText}>{state.submitResult}</p> : null}
       {state.isSubmitting ? <p className={styles.loadingText}>Submitting change request...</p> : null}
+      <label className={styles.fieldGroup}>
+        <span className={styles.fieldLabel}>Existing CHG number</span>
+        <input
+          aria-label="Existing CHG number"
+          className={styles.input}
+          onChange={(event) => setExistingChgNumber(event.target.value.toUpperCase())}
+          placeholder="CHG0001234"
+          value={existingChgNumber}
+        />
+      </label>
       <div className={styles.buttonRow}>
         <button
           className={styles.primaryButton}
@@ -2137,6 +2151,14 @@ function ResultsStep({ state, actions }: CrgStepProps) {
           type="button"
         >
           {state.isSubmitting ? 'Creating CHG…' : 'Create CHG'}
+        </button>
+        <button
+          className={styles.secondaryButton}
+          disabled={state.isSubmitting || !hasGeneratedContent || !normalizedExistingChgNumber}
+          onClick={() => void actions.updateExistingChg(normalizedExistingChgNumber)}
+          type="button"
+        >
+          {state.isSubmitting ? 'Updating CHG…' : 'Update Existing CHG'}
         </button>
         <button className={styles.secondaryButton} onClick={() => actions.reset()} type="button">
           Start Over
@@ -2152,6 +2174,7 @@ function renderCurrentStepPanel(
   planningExtras: PlanningStepExtras,
   changeDetailsExtras: ChangeDetailsExtras,
   environmentExtras: EnvironmentStepExtras,
+  resultsExtras: ResultsStepExtras,
 ) {
   if (state.currentStep === 1) {
     return <FetchIssuesStep actions={actions} state={state} />;
@@ -2173,7 +2196,7 @@ function renderCurrentStepPanel(
     return <EnvironmentStep actions={actions} state={state} {...environmentExtras} shouldShowSaveButtons={false} />;
   }
 
-  return <ResultsStep actions={actions} state={state} />;
+  return <ResultsStep actions={actions} state={state} {...resultsExtras} />;
 }
 
 export interface CrgTabProps {
@@ -2188,8 +2211,16 @@ export interface CrgTabProps {
 export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
   const { state, actions } = useCrgState();
   const { isUnlocked, verifyPassphrase, buildPrompt } = useRovoAssist();
-  const { templates, saveTemplate, updateTemplate, deleteTemplate } = useCrgTemplates();
-  const { pinnedFields, upsertPin, removePin, clearPins, getPinnedFields, findPinnedField } = useCrgFieldPins();
+  const {
+    templates,
+    defaultTemplateId,
+    saveTemplate,
+    updateTemplate,
+    deleteTemplate,
+    setDefaultTemplateId,
+    clearDefaultTemplateId,
+  } = useCrgTemplates();
+  const { upsertPin, removePin, getPinnedFields, findPinnedField } = useCrgFieldPins();
   const ctaskTemplates = useCtaskTemplates();
   const {
     choiceOptions,
@@ -2199,6 +2230,9 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     hasRelaySessionToken,
     retryFetch,
     fetchErrorMessage,
+    hasExtractorChoices,
+    applyExtractorChoiceJson,
+    clearExtractorChoices,
   } = useSnowChoiceOptions();
 
   // Modal visibility and passphrase input state for the hidden activation flow.
@@ -2221,6 +2255,7 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     const categoryOptions = choiceOptions['category'] ?? [];
     const changeTypeOptions = choiceOptions['type'] ?? [];
     const environmentOptions = choiceOptions['u_environment'] ?? [];
+    const impactedPersonsAwareOptions = choiceOptions['u_impacted_persons_aware'] ?? [];
     const normalizedBasicInfo: Partial<ChgBasicInfo> = {};
 
     const normalizedCategory = resolveStoredChoiceValue(state.chgBasicInfo.category, categoryOptions);
@@ -2244,9 +2279,31 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
         normalizedPlanningAssessment[row.fieldKey] = normalizedValue;
       }
     }
+    const normalizedFallbackImpactedPersonsAware = resolveStoredChoiceValue(
+      state.chgPlanningAssessment.impactedPersonsAware,
+      impactedPersonsAwareOptions,
+    );
+    if (normalizedFallbackImpactedPersonsAware !== state.chgPlanningAssessment.impactedPersonsAware) {
+      normalizedPlanningAssessment.impactedPersonsAware = normalizedFallbackImpactedPersonsAware;
+    }
 
     if (Object.keys(normalizedPlanningAssessment).length > 0) {
       actions.setChgPlanningAssessment(normalizedPlanningAssessment);
+    }
+
+    const normalizedRelImpactedPersonsAware = resolveStoredChoiceValue(state.relEnvironment.impactedPersonsAware, impactedPersonsAwareOptions);
+    if (normalizedRelImpactedPersonsAware !== state.relEnvironment.impactedPersonsAware) {
+      actions.updateEnvironment('rel', { impactedPersonsAware: normalizedRelImpactedPersonsAware });
+    }
+
+    const normalizedPrdImpactedPersonsAware = resolveStoredChoiceValue(state.prdEnvironment.impactedPersonsAware, impactedPersonsAwareOptions);
+    if (normalizedPrdImpactedPersonsAware !== state.prdEnvironment.impactedPersonsAware) {
+      actions.updateEnvironment('prd', { impactedPersonsAware: normalizedPrdImpactedPersonsAware });
+    }
+
+    const normalizedPfixImpactedPersonsAware = resolveStoredChoiceValue(state.pfixEnvironment.impactedPersonsAware, impactedPersonsAwareOptions);
+    if (normalizedPfixImpactedPersonsAware !== state.pfixEnvironment.impactedPersonsAware) {
+      actions.updateEnvironment('pfix', { impactedPersonsAware: normalizedPfixImpactedPersonsAware });
     }
   }, [
     actions,
@@ -2262,6 +2319,9 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     state.chgPlanningAssessment.hasBeenPerformedPreviously,
     state.chgPlanningAssessment.successProbability,
     state.chgPlanningAssessment.canBeBackedOut,
+    state.relEnvironment.impactedPersonsAware,
+    state.prdEnvironment.impactedPersonsAware,
+    state.pfixEnvironment.impactedPersonsAware,
   ]);
 
   // Listen for the hidden activation key combination: Ctrl+Alt+Z.
@@ -2353,6 +2413,10 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
   };
 
   const changeDetailsExtras: ChangeDetailsExtras = {
+    templates,
+    defaultTemplateId,
+    setDefaultTemplateId,
+    clearDefaultTemplateId,
     choiceOptions,
     isLoadingChoices,
     isFetchFailed,
@@ -2371,12 +2435,9 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     saveTemplate,
     updateTemplate,
     deleteTemplate,
-    pinnedFields,
-    upsertPin,
-    removePin,
-    clearPins,
-    getPinnedFields,
-    findPinnedField,
+    hasExtractorChoices,
+    applyExtractorChoiceJson,
+    clearExtractorChoices,
   };
 
   const ctaskTemplateExtras: CtaskTemplateExtras = {
@@ -2384,6 +2445,10 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     saveTemplate:   ctaskTemplates.saveTemplate,
     updateTemplate: ctaskTemplates.updateTemplate,
     deleteTemplate: ctaskTemplates.deleteTemplate,
+  };
+
+  const resultsExtras: ResultsStepExtras = {
+    ctaskTemplates: ctaskTemplates.templates,
   };
 
   const tabTitle = mode === 'configuration' ? CONFIGURATION_TAB_TITLE : TAB_TITLE;
@@ -2403,13 +2468,13 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
       {mode === 'configuration' ? (
         <>
           <CrgWorkspacePanel actions={actions} state={state} {...workspaceExtras} />
-          <ChangeDetailsStep actions={actions} state={state} {...changeDetailsExtras} headingStep={3} shouldShowNavigation={false} />
-          <PlanningStep actions={actions} state={state} {...planningExtras} headingStep={4} shouldShowNavigation={false} />
-          <EnvironmentStep actions={actions} state={state} {...environmentExtras} headingStep={5} shouldShowNavigation={false} />
+          <ChangeDetailsStep actions={actions} state={state} {...changeDetailsExtras} headingStep={3} shouldShowNavigation={false} shouldShowSaveButtons={false} />
+          <PlanningStep actions={actions} state={state} {...planningExtras} headingStep={4} shouldShowNavigation={false} shouldShowSaveButtons={false} />
+          <EnvironmentStep actions={actions} state={state} {...environmentExtras} headingStep={5} shouldShowNavigation={false} shouldShowSaveButtons={false} />
           <CtaskTemplatePanel actions={actions} state={state} {...ctaskTemplateExtras} />
         </>
       ) : (
-        renderCurrentStepPanel(state, actions, planningExtras, changeDetailsExtras, environmentExtras)
+        renderCurrentStepPanel(state, actions, planningExtras, changeDetailsExtras, environmentExtras, resultsExtras)
       )}
 
       {/* Hidden passphrase modal — only visible after Ctrl+Alt+Z, never in documentation */}

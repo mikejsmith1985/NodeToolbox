@@ -67,8 +67,10 @@ const {
   mockState,
   mockActions,
   mockSnowChoiceConfig,
+  mockExtractorChoiceActions,
   mockTemplates,
   mockTemplateActions,
+  mockTemplatePreference,
   mockPinnedFields,
   mockFieldPinActions,
   mockCtaskTemplates,
@@ -93,6 +95,11 @@ const {
     generatedDescription: '',
     generatedJustification: '',
     generatedRiskImpact: '',
+    shortDescriptionConfig: {
+      application: '',
+      team: '',
+      changeDetailsOverride: '',
+    },
     cloneChgNumber: '',
     isCloning: false,
     cloneError: null as string | null,
@@ -116,12 +123,20 @@ const {
     },
     customSnowFields: {},
     inspectedSnowFields: [] as Array<{ fieldName: string; displayValue: string; storedValue: string }>,
-    relEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference } },
-    prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference } },
-    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference } },
+    relEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference }, impactedPersonsAware: '' },
+    prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference }, impactedPersonsAware: '' },
+    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference }, impactedPersonsAware: '' },
     changeTasks: [] as unknown[],
     isSubmitting: false,
     submitResult: null as string | null,
+    submissionDebug: null as null | {
+      operation: 'create' | 'update';
+      targetChgNumber: string;
+      requestPayloadJson: string;
+      operationResponseJson: string;
+      verificationRecordJson: string;
+      mismatchMessages: string[];
+    },
   },
     mockActions: {
     setFetchMode: vi.fn(),
@@ -133,6 +148,7 @@ const {
     selectAllIssues: vi.fn(),
     generateDocs: vi.fn(),
     updateGeneratedField: vi.fn(),
+    setShortDescriptionConfig: vi.fn(),
     setChgBasicInfo: vi.fn(),
     setChgPlanningAssessment: vi.fn(),
     setChgPlanningContent: vi.fn(),
@@ -145,6 +161,7 @@ const {
     addChangeTask: vi.fn(),
     removeChangeTask: vi.fn(),
     appendTasksToExistingChg: vi.fn().mockResolvedValue(undefined),
+    updateExistingChg: vi.fn().mockResolvedValue(undefined),
     cloneCtaskTemplate: vi.fn().mockResolvedValue({
       shortDescription: 'Validate cloned deployment',
       description:      'Run cloned CTASK validation steps.',
@@ -165,12 +182,22 @@ const {
     isRelayConnected: true,
     hasRelaySessionToken: true,
     hasChoiceOptions: true,
+    hasExtractorChoices: false,
   },
+    mockExtractorChoiceActions: {
+      applyExtractorChoiceJson: vi.fn(() => ({ isSuccess: true, message: 'Loaded extractor choices for 2 field(s).' })),
+      clearExtractorChoices: vi.fn(),
+    },
     mockTemplates: [] as unknown[],
     mockTemplateActions: {
       saveTemplate: vi.fn(),
       updateTemplate: vi.fn(),
       deleteTemplate: vi.fn(),
+    },
+    mockTemplatePreference: {
+      defaultTemplateId: null as string | null,
+      setDefaultTemplateId: vi.fn(),
+      clearDefaultTemplateId: vi.fn(),
     },
     mockPinnedFields,
     mockFieldPinActions: {
@@ -203,9 +230,12 @@ vi.mock('../hooks/useCrgState.ts', () => ({
 vi.mock('../hooks/useCrgTemplates.ts', () => ({
   useCrgTemplates: () => ({
     templates:      mockTemplates,
+    defaultTemplateId: mockTemplatePreference.defaultTemplateId,
     saveTemplate:   mockTemplateActions.saveTemplate,
     updateTemplate: mockTemplateActions.updateTemplate,
     deleteTemplate: mockTemplateActions.deleteTemplate,
+    setDefaultTemplateId: mockTemplatePreference.setDefaultTemplateId,
+    clearDefaultTemplateId: mockTemplatePreference.clearDefaultTemplateId,
   }),
 }));
 
@@ -233,7 +263,7 @@ vi.mock('../hooks/useCtaskTemplates.ts', () => ({
 // default). Tests can set mockSnowChoiceConfig.isFetchFailed=true to simulate relay unavailability.
 vi.mock('../hooks/useSnowChoiceOptions.ts', () => ({
   useSnowChoiceOptions: () => ({
-    choiceOptions: mockSnowChoiceConfig.isFetchFailed || !mockSnowChoiceConfig.hasChoiceOptions ? {} : {
+    choiceOptions: !mockSnowChoiceConfig.hasChoiceOptions ? {} : {
       category:                [{ value: '', label: '' }, { value: 'software', label: 'Software' }],
       type:                    [{ value: '', label: '' }, { value: 'normal', label: 'Normal' }],
       u_environment:           [{ value: '', label: '' }, { value: 'prod', label: 'Production' }, { value: 'pfix', label: 'Production Fix' }],
@@ -252,6 +282,9 @@ vi.mock('../hooks/useSnowChoiceOptions.ts', () => ({
     isRelayConnected:   mockSnowChoiceConfig.isRelayConnected,
     hasRelaySessionToken: mockSnowChoiceConfig.hasRelaySessionToken,
     retryFetch:         vi.fn(),
+    hasExtractorChoices: mockSnowChoiceConfig.hasExtractorChoices,
+    applyExtractorChoiceJson: mockExtractorChoiceActions.applyExtractorChoiceJson,
+    clearExtractorChoices: mockExtractorChoiceActions.clearExtractorChoices,
   }),
 }));
 
@@ -273,6 +306,11 @@ function resetMockState(): void {
     generatedDescription: '',
     generatedJustification: '',
     generatedRiskImpact: '',
+    shortDescriptionConfig: {
+      application: '',
+      team: '',
+      changeDetailsOverride: '',
+    },
     cloneChgNumber: '',
     isCloning: false,
     cloneError: null,
@@ -281,12 +319,13 @@ function resetMockState(): void {
     chgPlanningContent: { ...DEFAULT_PLANNING_CONTENT },
     customSnowFields: {},
     inspectedSnowFields: [],
-    relEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE } },
-    prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE } },
-    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE } },
+    relEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' },
+    prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' },
+    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' },
     changeTasks: [],
     isSubmitting: false,
     submitResult: null,
+    submissionDebug: null,
   });
 }
 
@@ -297,6 +336,7 @@ describe('CrgTab', () => {
     mockActions.fetchIssues.mockResolvedValue(undefined);
     mockActions.cloneFromChg.mockResolvedValue(undefined);
     mockActions.createChg.mockResolvedValue(undefined);
+    mockActions.updateExistingChg.mockResolvedValue(undefined);
     mockActions.cloneCtaskTemplate.mockResolvedValue({
       shortDescription: 'Validate cloned deployment',
       description:      'Run cloned CTASK validation steps.',
@@ -312,10 +352,17 @@ describe('CrgTab', () => {
     mockSnowChoiceConfig.isRelayConnected = true;
     mockSnowChoiceConfig.hasRelaySessionToken = true;
     mockSnowChoiceConfig.hasChoiceOptions = true;
+    mockSnowChoiceConfig.hasExtractorChoices = false;
+    mockTemplatePreference.defaultTemplateId = null;
     mockTemplates.splice(0, mockTemplates.length);
     mockPinnedFields.splice(0, mockPinnedFields.length);
     mockCtaskTemplates.splice(0, mockCtaskTemplates.length);
     Object.values(mockTemplateActions).forEach((mockAction) => mockAction.mockReset());
+    Object.values(mockTemplatePreference).forEach((mockActionOrValue) => {
+      if (typeof mockActionOrValue === 'function') {
+        mockActionOrValue.mockReset();
+      }
+    });
     Object.values(mockFieldPinActions).forEach((mockAction) => mockAction.mockReset());
     mockFieldPinActions.getPinnedFields.mockImplementation((fieldKey: string) => (
       mockPinnedFields.filter((pinnedField) => pinnedField.key === fieldKey)
@@ -326,6 +373,11 @@ describe('CrgTab', () => {
       ))
     ));
     Object.values(mockCtaskTemplateActions).forEach((mockAction) => mockAction.mockReset());
+    Object.values(mockExtractorChoiceActions).forEach((mockAction) => mockAction.mockReset());
+    mockExtractorChoiceActions.applyExtractorChoiceJson.mockReturnValue({
+      isSuccess: true,
+      message: 'Loaded extractor choices for 2 field(s).',
+    });
   });
 
   it('renders step 1 with the project key input and fetch button', () => {
@@ -416,6 +468,33 @@ describe('CrgTab', () => {
     expect(screen.getByText('PRD')).toBeInTheDocument();
     expect(screen.getByText('PFIX')).toBeInTheDocument();
     expect(screen.getByTestId('lookup-rel-config-item')).toBeInTheDocument();
+  });
+
+  it('renders impacted persons aware in each environment card on step 5', () => {
+    mockState.currentStep = 5;
+    render(<CrgTab />);
+
+    expect(screen.getByRole('combobox', { name: 'REL Impacted Persons Aware' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'PRD Impacted Persons Aware' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'PFIX Impacted Persons Aware' })).toBeInTheDocument();
+  });
+
+  it('removes impacted persons aware from the planning step', () => {
+    mockState.currentStep = 4;
+    render(<CrgTab />);
+
+    expect(screen.queryByRole('combobox', { name: 'Impacted Persons Aware' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Impacted Persons Aware' })).not.toBeInTheDocument();
+  });
+
+  it('updates the selected environment impacted persons aware value on step 5', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 5;
+    render(<CrgTab />);
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'PRD Impacted Persons Aware' }), 'yes');
+
+    expect(mockActions.updateEnvironment).toHaveBeenCalledWith('prd', { impactedPersonsAware: 'yes' });
   });
 
   it('allows all environment rows to be selected or unselected on step 5', () => {
@@ -512,6 +591,33 @@ describe('CrgTab', () => {
     await user.click(screen.getByRole('button', { name: 'Create CHG' }));
 
     expect(mockActions.createChg).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls updateExistingChg when Update Existing CHG is clicked on step 6', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
+
+    render(<CrgTab />);
+
+    await user.type(screen.getByRole('textbox', { name: 'Existing CHG number' }), 'chg0001234');
+    await user.click(screen.getByRole('button', { name: 'Update Existing CHG' }));
+
+    expect(mockActions.updateExistingChg).toHaveBeenCalledWith('CHG0001234');
+  });
+
+  it('adds a CTASK template to the change from step 6 (Review & Create)', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
+    mockCtaskTemplates.push(DEFAULT_CTASK_TEMPLATE);
+
+    render(<CrgTab />);
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Select CTASK template for review' }), 'ctask-template-001');
+    await user.click(screen.getByRole('button', { name: 'Add CTASK to Change' }));
+
+    expect(mockActions.addChangeTask).toHaveBeenCalledWith(DEFAULT_CTASK_TEMPLATE);
   });
 
   it('disables the Create CHG button when isSubmitting is true', () => {
@@ -692,7 +798,20 @@ describe('CrgTab', () => {
 
     expect(screen.getByRole('heading', { name: 'Clone, Templates & Defaults' })).toBeInTheDocument();
     expect(screen.getByText('No CHG templates saved yet.')).toBeInTheDocument();
-    expect(screen.getByText(/No field options saved yet\./)).toBeInTheDocument();
+    expect(screen.getByText('Short Description Defaults')).toBeInTheDocument();
+    expect(screen.getByText('Extractor JSON choices')).toBeInTheDocument();
+  });
+
+  it('updates short description defaults from configuration mode', () => {
+    render(<CrgTab mode="configuration" />);
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Short description application' }), { target: { value: 'Enrollment' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Short description team' }), { target: { value: 'Transformers' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Short description change details override' }), { target: { value: '1.2.3' } });
+
+    expect(mockActions.setShortDescriptionConfig).toHaveBeenCalledWith({ application: 'Enrollment' });
+    expect(mockActions.setShortDescriptionConfig).toHaveBeenCalledWith({ team: 'Transformers' });
+    expect(mockActions.setShortDescriptionConfig).toHaveBeenCalledWith({ changeDetailsOverride: '1.2.3' });
   });
 
   it('does not show the configuration workspace inside the wizard flow', () => {
@@ -717,7 +836,7 @@ describe('CrgTab', () => {
   it('saves current change details and environment schedules as a template', async () => {
     const user = userEvent.setup();
     mockState.chgBasicInfo = { ...mockState.chgBasicInfo, category: 'software', environment: 'prod' };
-    mockState.relEnvironment = { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00', configItem: { ...EMPTY_SNOW_REFERENCE } };
+    mockState.relEnvironment = { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' };
 
     render(<CrgTab mode="configuration" />);
 
@@ -737,7 +856,7 @@ describe('CrgTab', () => {
   it('updates the selected saved template from the current form state', async () => {
     const user = userEvent.setup();
     mockState.chgBasicInfo = { ...mockState.chgBasicInfo, category: 'software', environment: 'prod' };
-    mockState.prdEnvironment = { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00', configItem: { ...EMPTY_SNOW_REFERENCE } };
+    mockState.prdEnvironment = { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' };
     mockTemplates.push({
       id: 'tpl-001',
       name: 'Release Defaults',
@@ -766,6 +885,86 @@ describe('CrgTab', () => {
     render(<CrgTab />);
 
     expect(screen.getByRole('combobox', { name: 'Category' })).toBeInTheDocument();
+  });
+
+  it('shows Step 3 template controls before Change Details fields in wizard mode', () => {
+    mockState.currentStep = 3;
+    mockTemplates.push({
+      id: 'tpl-001',
+      name: 'Release Defaults',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      chgBasicInfo: DEFAULT_BASIC_INFO,
+      chgPlanningAssessment: DEFAULT_PLANNING_ASSESSMENT,
+      chgPlanningContent: DEFAULT_PLANNING_CONTENT,
+    });
+
+    render(<CrgTab />);
+
+    const templateHeading = screen.getByRole('heading', { name: 'Step 3 Template Defaults' });
+    const categoryLabel = screen.getByText('Category');
+    expect(templateHeading.compareDocumentPosition(categoryLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('applies a selected template from Step 3 template controls', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 3;
+    const stepTemplate = {
+      id: 'tpl-001',
+      name: 'Release Defaults',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      chgBasicInfo: DEFAULT_BASIC_INFO,
+      chgPlanningAssessment: DEFAULT_PLANNING_ASSESSMENT,
+      chgPlanningContent: DEFAULT_PLANNING_CONTENT,
+    };
+    mockTemplates.push(stepTemplate);
+
+    render(<CrgTab />);
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Step 3 template' }), 'tpl-001');
+    await user.click(screen.getByRole('button', { name: 'Apply template' }));
+
+    expect(mockActions.applyTemplate).toHaveBeenCalledWith(stepTemplate);
+  });
+
+  it('sets and clears the default template from Step 3 template controls', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 3;
+    mockTemplates.push({
+      id: 'tpl-001',
+      name: 'Release Defaults',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      chgBasicInfo: DEFAULT_BASIC_INFO,
+      chgPlanningAssessment: DEFAULT_PLANNING_ASSESSMENT,
+      chgPlanningContent: DEFAULT_PLANNING_CONTENT,
+    });
+    mockTemplatePreference.defaultTemplateId = 'tpl-001';
+
+    render(<CrgTab />);
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Step 3 template' }), 'tpl-001');
+    await user.click(screen.getByRole('button', { name: 'Set as default' }));
+    await user.click(screen.getByRole('button', { name: 'Clear default' }));
+
+    expect(mockTemplatePreference.setDefaultTemplateId).toHaveBeenCalledWith('tpl-001');
+    expect(mockTemplatePreference.clearDefaultTemplateId).toHaveBeenCalled();
+  });
+
+  it('auto-applies the default template when Step 3 opens in wizard mode', () => {
+    mockState.currentStep = 3;
+    const stepTemplate = {
+      id: 'tpl-001',
+      name: 'Release Defaults',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      chgBasicInfo: DEFAULT_BASIC_INFO,
+      chgPlanningAssessment: DEFAULT_PLANNING_ASSESSMENT,
+      chgPlanningContent: DEFAULT_PLANNING_CONTENT,
+    };
+    mockTemplates.push(stepTemplate);
+    mockTemplatePreference.defaultTemplateId = 'tpl-001';
+
+    render(<CrgTab />);
+
+    expect(mockActions.applyTemplate).toHaveBeenCalledWith(stepTemplate);
   });
 
   it('does not show the ServiceNow Environment mapping on step 3', () => {
@@ -821,6 +1020,7 @@ describe('CrgTab', () => {
   it('keeps step 3 values editable when choice fetch fails', () => {
     mockSnowChoiceConfig.isFetchFailed = true;
     mockSnowChoiceConfig.isRelayConnected = true;
+    mockSnowChoiceConfig.hasChoiceOptions = false;
     mockState.currentStep = 3;
     render(<CrgTab />);
 
@@ -839,6 +1039,7 @@ describe('CrgTab', () => {
   it('keeps step 3 values editable when relay is disconnected', () => {
     mockSnowChoiceConfig.isFetchFailed = false;
     mockSnowChoiceConfig.isRelayConnected = false;
+    mockSnowChoiceConfig.hasChoiceOptions = false;
     mockState.currentStep = 3;
     render(<CrgTab />);
 
@@ -865,6 +1066,7 @@ describe('CrgTab', () => {
   it('keeps step 4 values editable when choice fetch fails', () => {
     mockSnowChoiceConfig.isFetchFailed = true;
     mockSnowChoiceConfig.isRelayConnected = true;
+    mockSnowChoiceConfig.hasChoiceOptions = false;
     mockState.currentStep = 4;
     render(<CrgTab />);
 
@@ -876,6 +1078,7 @@ describe('CrgTab', () => {
   it('keeps step 4 values editable when relay is disconnected', () => {
     mockSnowChoiceConfig.isFetchFailed = false;
     mockSnowChoiceConfig.isRelayConnected = false;
+    mockSnowChoiceConfig.hasChoiceOptions = false;
     mockState.currentStep = 4;
     render(<CrgTab />);
 
@@ -915,132 +1118,88 @@ describe('CrgTab', () => {
     expect(screen.queryByText('Use a saved value…')).not.toBeInTheDocument();
   });
 
-  it('pins boolean and reference values from step fields', async () => {
-    const user = userEvent.setup();
-    mockState.chgBasicInfo = {
-      ...mockState.chgBasicInfo,
-      assignmentGroup: { sysId: 'group-123', displayName: 'Release Managers' },
-      isExpedited: true,
-    };
-
+  it('does not expose save-option pinning actions in configuration mode', () => {
     render(<CrgTab mode="configuration" />);
 
-    await user.click(screen.getByRole('button', { name: 'Save Assignment Group' }));
-    await user.click(screen.getByRole('button', { name: 'Save Expedited Change' }));
-
-    expect(mockFieldPinActions.upsertPin).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      key: 'chgBasicInfo.assignmentGroup',
-      label: 'Assignment Group',
-      section: 'Change Details',
-      value: { sysId: 'group-123', displayName: 'Release Managers' },
-    }));
-    expect(mockFieldPinActions.upsertPin).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      key: 'chgBasicInfo.isExpedited',
-      label: 'Expedited Change',
-      section: 'Change Details',
-      value: true,
-    }));
+    expect(screen.queryByRole('button', { name: /Save Assignment Group/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Save Expedited Change/i })).not.toBeInTheDocument();
   });
 
-  it('applies saved field options from inline selectors and clears them from the workspace', async () => {
+  it('applies extractor JSON choices from configuration mode', async () => {
     const user = userEvent.setup();
-    mockPinnedFields.push(
-      { id: 'chgBasicInfo.category:string:software', key: 'chgBasicInfo.category', label: 'Category', section: 'Change Details', value: 'software' },
-      { id: 'chgBasicInfo.assignmentGroup:reference:group-001|Release Managers', key: 'chgBasicInfo.assignmentGroup', label: 'Assignment Group', section: 'Change Details', value: { sysId: 'group-001', displayName: 'Release Managers' } },
-    );
-
     render(<CrgTab mode="configuration" />);
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Pinned Category values' }), 'chgBasicInfo.category:string:software');
-    expect(mockActions.setChgBasicInfo).toHaveBeenCalledWith({ category: 'software' });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Extractor JSON input' }), {
+      target: { value: '{"fields":{"impact":[{"value":"3","label":"3 - Low"}]}}' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Apply extractor JSON' }));
 
-    await user.click(screen.getByRole('button', { name: 'Clear all saved options' }));
-    expect(mockFieldPinActions.clearPins).toHaveBeenCalled();
+    expect(mockExtractorChoiceActions.applyExtractorChoiceJson).toHaveBeenCalled();
+    expect(screen.getByText('Loaded extractor choices for 2 field(s).')).toBeInTheDocument();
   });
 
-  it('shows reusable pinned field selectors only in configuration mode', () => {
-    mockSnowChoiceConfig.hasChoiceOptions = false;
-    mockPinnedFields.push({
-      id: 'chgPlanningAssessment.impact:string:1',
-      key: 'chgPlanningAssessment.impact',
-      label: 'Impact',
-      section: 'Planning',
-      value: '1',
+  it('applies issue 55 extractor values to planning fields from configuration mode', async () => {
+    const user = userEvent.setup();
+    render(<CrgTab mode="configuration" />);
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Extractor JSON input' }), {
+      target: {
+        value: JSON.stringify({
+          fields: {
+            u_impact: { value: '1-High', displayValue: '1-High - Change with significant impact' },
+            u_implications_of_system_availability: { value: 'c_func', displayValue: 'Application remains functioning' },
+            u_has_this_change_been_tested: { value: 'yes', displayValue: 'Yes - Testing has been performed' },
+            u_are_impacted_persons_aware_prepared_for_test_checkout: { value: 'teamval', displayValue: 'Technical validation planned' },
+            u_has_change_been_performed_previously: { value: 'successful', displayValue: 'Previously successful on all attempts' },
+            u_assessment_of_success_probability: { value: 'vcon', displayValue: 'Very Confident' },
+            u_can_change_be_backed_out: { value: 'yes', displayValue: 'Yes' },
+            implementation_plan: { value: 'Run deployment pipeline', displayValue: 'Run deployment pipeline' },
+            backout_plan: { value: 'Revert release tag', displayValue: 'Revert release tag' },
+            test_plan: { value: 'Smoke test enrollment jobs', displayValue: 'Smoke test enrollment jobs' },
+          },
+        }),
+      },
     });
 
-    render(<CrgTab mode="configuration" />);
+    await user.click(screen.getByRole('button', { name: 'Apply extractor JSON' }));
 
-    expect(screen.getByRole('combobox', { name: 'Pinned Impact values' })).toBeInTheDocument();
+    expect(mockActions.setChgPlanningAssessment).toHaveBeenCalledWith({
+      impact: '1-High',
+      systemAvailabilityImplication: 'c_func',
+      hasBeenTested: 'yes',
+      impactedPersonsAware: 'teamval',
+      hasBeenPerformedPreviously: 'successful',
+      successProbability: 'vcon',
+      canBeBackedOut: 'yes',
+    });
+    expect(mockActions.setChgPlanningContent).toHaveBeenCalledWith({
+      implementationPlan: 'Run deployment pipeline',
+      backoutPlan: 'Revert release tag',
+      testPlan: 'Smoke test enrollment jobs',
+    });
+    expect(screen.getByText(/Applied 10 extracted value/)).toBeInTheDocument();
   });
 
-  it('pins exact SNow payload fields from the configuration inspector', async () => {
+  it('clears extractor JSON choices from configuration mode', async () => {
     const user = userEvent.setup();
-    mockState.inspectedSnowFields = [
-      {
-        fieldName: 'u_custom_change_rule',
-        displayValue: 'CAB required',
-        storedValue: 'cab_required',
-      },
-    ];
-
     render(<CrgTab mode="configuration" />);
 
-    await user.click(screen.getByRole('button', { name: 'Pin exact value for Custom Change Rule' }));
+    await user.click(screen.getByRole('button', { name: 'Clear extractor choices' }));
 
-    expect(mockActions.pinCustomSnowField).toHaveBeenCalledWith('u_custom_change_rule', 'cab_required');
+    expect(mockExtractorChoiceActions.clearExtractorChoices).toHaveBeenCalled();
+    expect(screen.getByText('Extractor choices cleared.')).toBeInTheDocument();
   });
 
-  it('groups loaded SNow fields into a searchable inspector with readable labels', async () => {
-    const user = userEvent.setup();
-    mockState.inspectedSnowFields = [
-      { fieldName: 'u_has_change_been_tested', displayValue: 'Yes - Testing has been performed', storedValue: 'yes' },
-      { fieldName: 'approval', displayValue: 'Not Yet Requested', storedValue: 'not requested' },
-    ];
+  it('uses extractor-provided choices as dropdowns when live fetch fails', () => {
+    mockSnowChoiceConfig.isFetchFailed = true;
+    mockSnowChoiceConfig.isRelayConnected = true;
+    mockSnowChoiceConfig.hasRelaySessionToken = true;
+    mockSnowChoiceConfig.hasChoiceOptions = true;
+    mockState.currentStep = 4;
 
-    render(<CrgTab mode="configuration" />);
+    render(<CrgTab />);
 
-    expect(screen.getByRole('heading', { name: 'ServiceNow field inspector' })).toBeInTheDocument();
-    expect(screen.getByText('Custom change fields')).toBeInTheDocument();
-    expect(screen.getByText('Workflow and approval fields')).toBeInTheDocument();
-    expect(screen.getByText('Has Change Been Tested')).toBeInTheDocument();
-    expect(screen.getByText('u_has_change_been_tested')).toBeInTheDocument();
-
-    await user.type(screen.getByRole('textbox', { name: 'Search loaded ServiceNow fields' }), 'approval');
-
-    expect(screen.queryByText('Has Change Been Tested')).not.toBeInTheDocument();
-    expect(screen.getByText('Approval')).toBeInTheDocument();
-  });
-
-  it('shows pinned payload values in a compact ledger and removes them by readable label', async () => {
-    const user = userEvent.setup();
-    mockState.customSnowFields = { u_custom_change_rule: 'cab_required' };
-    mockState.inspectedSnowFields = [
-      {
-        fieldName: 'u_custom_change_rule',
-        displayValue: 'CAB required',
-        storedValue: 'cab_required',
-      },
-    ];
-
-    render(<CrgTab mode="configuration" />);
-
-    expect(screen.getByText('Pinned exact payload values')).toBeInTheDocument();
-    expect(screen.getAllByText('CAB required').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Pinned').length).toBeGreaterThan(0);
-
-    await user.click(screen.getByRole('button', { name: 'Remove payload pin for Custom Change Rule' }));
-
-    expect(mockActions.removeCustomSnowField).toHaveBeenCalledWith('u_custom_change_rule');
-  });
-
-  it('keeps pinned payload values visible when no CHG inspector data is loaded', () => {
-    mockState.customSnowFields = { u_custom_change_rule: 'cab_required' };
-    mockState.inspectedSnowFields = [];
-
-    render(<CrgTab mode="configuration" />);
-
-    expect(screen.getAllByText('Custom Change Rule').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('u_custom_change_rule').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('cab_required').length).toBeGreaterThan(0);
+    expect(screen.getByRole('combobox', { name: 'Impact' })).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Impact' })).not.toBeInTheDocument();
   });
 });
