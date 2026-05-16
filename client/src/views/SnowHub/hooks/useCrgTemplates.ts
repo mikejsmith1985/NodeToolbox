@@ -8,6 +8,7 @@ import type { CrgTemplate } from './useCrgState.ts';
 
 // localStorage key used to persist templates between sessions.
 const TEMPLATES_STORAGE_KEY = 'ntbx-crg-templates';
+const DEFAULT_TEMPLATE_ID_STORAGE_KEY = 'ntbx-crg-default-template-id';
 
 // Maximum templates allowed to prevent unbounded localStorage growth.
 const MAX_TEMPLATES = 20;
@@ -39,9 +40,31 @@ function saveTemplatesToStorage(templates: CrgTemplate[]): void {
   }
 }
 
+function loadDefaultTemplateIdFromStorage(): string | null {
+  try {
+    return localStorage.getItem(DEFAULT_TEMPLATE_ID_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveDefaultTemplateIdToStorage(defaultTemplateId: string | null): void {
+  try {
+    if (!defaultTemplateId) {
+      localStorage.removeItem(DEFAULT_TEMPLATE_ID_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(DEFAULT_TEMPLATE_ID_STORAGE_KEY, defaultTemplateId);
+  } catch {
+    // Storage quota exceeded or private browsing — silently ignore.
+  }
+}
+
 interface UseCrgTemplatesResult {
   /** All saved templates ordered by creation date (newest first). */
   templates: CrgTemplate[];
+  /** Optional selected template ID that should auto-apply on Step 3 in wizard mode. */
+  defaultTemplateId: string | null;
   /**
    * Saves the provided template data under the given name.
    * Returns the ID of the newly created template so the caller can
@@ -52,6 +75,10 @@ interface UseCrgTemplatesResult {
   updateTemplate: (templateId: string, templateData: CrgTemplateData) => void;
   /** Permanently deletes the template with the given ID. */
   deleteTemplate: (templateId: string) => void;
+  /** Marks a template as the default Step 3 starter. */
+  setDefaultTemplateId: (templateId: string) => void;
+  /** Clears any previously selected default template. */
+  clearDefaultTemplateId: () => void;
 }
 
 /**
@@ -60,11 +87,16 @@ interface UseCrgTemplatesResult {
  */
 export function useCrgTemplates(): UseCrgTemplatesResult {
   const [templates, setTemplates] = useState<CrgTemplate[]>(() => loadTemplatesFromStorage());
+  const [defaultTemplateId, setDefaultTemplateIdState] = useState<string | null>(() => loadDefaultTemplateIdFromStorage());
 
   // Keep localStorage in sync whenever the in-memory list changes.
   useEffect(() => {
     saveTemplatesToStorage(templates);
   }, [templates]);
+
+  useEffect(() => {
+    saveDefaultTemplateIdToStorage(defaultTemplateId);
+  }, [defaultTemplateId]);
 
   const saveTemplate = useCallback(
     (name: string, templateData: CrgTemplateData): string => {
@@ -109,7 +141,26 @@ export function useCrgTemplates(): UseCrgTemplatesResult {
     setTemplates((previousTemplates) =>
       previousTemplates.filter((template) => template.id !== templateId),
     );
+    setDefaultTemplateIdState((previousDefaultTemplateId) => (
+      previousDefaultTemplateId === templateId ? null : previousDefaultTemplateId
+    ));
   }, []);
 
-  return { templates, saveTemplate, updateTemplate, deleteTemplate };
+  const setDefaultTemplateId = useCallback((templateId: string) => {
+    setDefaultTemplateIdState(templateId);
+  }, []);
+
+  const clearDefaultTemplateId = useCallback(() => {
+    setDefaultTemplateIdState(null);
+  }, []);
+
+  return {
+    templates,
+    defaultTemplateId,
+    saveTemplate,
+    updateTemplate,
+    deleteTemplate,
+    setDefaultTemplateId,
+    clearDefaultTemplateId,
+  };
 }

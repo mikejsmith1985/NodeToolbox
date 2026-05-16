@@ -276,3 +276,38 @@
   cursor: grab;
   margin-bottom: var(--spacing-sm);
 }
+
+.extractorSelectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+
+.extractorFieldList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.extractorFieldRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.extractorFieldPreview {
+  display: block;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+  word-break: break-word;
+}

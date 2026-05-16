@@ -29,6 +29,8 @@ export interface JiraIssue {
     created: string;
     updated: string;
     description: string | null;
+    /** Acceptance Criteria custom field content (instance-specific payload shape). */
+    customfield_10200?: unknown;
     /** Story-point estimate from the Jira custom field; null when unestimated. */
     customfield_10016?: number | null;
     /** Fix versions this issue is scheduled for; empty when not assigned to a release. */

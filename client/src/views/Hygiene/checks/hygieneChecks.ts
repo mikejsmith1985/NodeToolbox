@@ -4,6 +4,8 @@
 // browser file. This module keeps the rule predicates small and deterministic so the
 // React hook can compose them and tests can prove each health signal independently.
 
+import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
+
 const STALE_THRESHOLD_DAYS = 14;
 const OLD_IN_SPRINT_THRESHOLD_DAYS = 30;
 const ACCEPTANCE_CRITERIA_MINIMUM_LENGTH = 30;
@@ -216,12 +218,7 @@ function isActiveSprintEntry(sprintEntry: unknown): boolean {
 }
 
 function readPlainTextDescription(descriptionValue: unknown): string {
-  if (typeof descriptionValue === 'string') return descriptionValue;
-  if (!isRecord(descriptionValue)) return '';
-  const nodeText = typeof descriptionValue.text === 'string' ? descriptionValue.text : '';
-  const childNodes = Array.isArray(descriptionValue.content) ? descriptionValue.content : [];
-  const childText = childNodes.map(readPlainTextDescription).filter(Boolean).join(' ');
-  return [nodeText, childText].filter(Boolean).join(' ');
+  return normalizeRichTextToPlainText(descriptionValue);
 }
 
 function isRecord(candidateValue: unknown): candidateValue is Record<string, unknown> {

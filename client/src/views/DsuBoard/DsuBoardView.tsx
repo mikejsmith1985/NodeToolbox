@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { JiraIssue } from '../../types/jira.ts';
+import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import styles from './DsuBoardView.module.css';
 import { useDsuBoardState } from './hooks/useDsuBoardState.ts';
 import type {
@@ -670,7 +671,8 @@ function createIssueLinkDescription(issueLink: DsuIssueLink): string {
 }
 
 function createCommentPreview(issueComment: DsuIssueComment): string {
-  return `${issueComment.author.displayName}: ${issueComment.body} (${issueComment.created.slice(0, 10)})`;
+  const normalizedCommentBody = normalizeRichTextToPlainText(issueComment.body);
+  return `${issueComment.author.displayName}: ${normalizedCommentBody} (${issueComment.created.slice(0, 10)})`;
 }
 
 function IssueDetailOverlay({
@@ -693,10 +695,10 @@ function IssueDetailOverlay({
   const storyPoints = getStoryPoints(issueFields);
   const issueLinks = (issueFields.issuelinks ?? []).slice(0, MAX_OVERLAY_LINK_COUNT);
   const recentComments = (issueFields.comment?.comments ?? []).slice(-MAX_OVERLAY_COMMENT_COUNT);
-  const descriptionPreview =
-    issue.fields.description
-      ? issue.fields.description.slice(0, 300) + (issue.fields.description.length > 300 ? '…' : '')
-      : '—';
+  const normalizedDescription = normalizeRichTextToPlainText(issue.fields.description);
+  const descriptionPreview = normalizedDescription
+    ? normalizedDescription.slice(0, 300) + (normalizedDescription.length > 300 ? '…' : '')
+    : '—';
 
   useEffect(() => {
     void onLoadTransitions(issue.key);
@@ -776,7 +778,7 @@ function IssueDetailOverlay({
           </div>
         )}
 
-        {issue.fields.description && (
+        {normalizedDescription && (
           <p className={styles.overlayDescription}>{descriptionPreview}</p>
         )}
 

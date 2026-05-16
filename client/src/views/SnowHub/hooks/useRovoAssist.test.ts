@@ -24,6 +24,24 @@ function createMockJiraIssue(issueKey: string, summary: string): JiraIssue {
   };
 }
 
+function createAtlassianDocumentNode(text: string): unknown {
+  return {
+    type: 'doc',
+    version: 1,
+    content: [
+      {
+        type: 'paragraph',
+        content: [
+          {
+            type: 'text',
+            text,
+          },
+        ],
+      },
+    ],
+  };
+}
+
 const EMPTY_CURRENT_FIELDS = {
   shortDescription: '',
   description:      '',
@@ -97,6 +115,56 @@ describe('useRovoAssist', () => {
 
     expect(prompt).toContain('TOOL-42');
     expect(prompt).toContain('Fix the release blocker');
+  });
+
+  it('buildPrompt includes Jira description and acceptance criteria details for each issue', () => {
+    const { result } = renderHook(() => useRovoAssist());
+    const selectedIssues = [createMockJiraIssue('TOOL-77', 'Align release validation')];
+    selectedIssues[0].fields.description = 'Implements the release validation updates.';
+    selectedIssues[0].fields.customfield_10200 = 'Given release input is valid, when deployed, then validation passes.';
+
+    const prompt = result.current.buildPrompt(selectedIssues, EMPTY_CURRENT_FIELDS);
+
+    expect(prompt).toContain('Jira issue details for better CHG drafting:');
+    expect(prompt).toContain('Description: Implements the release validation updates.');
+    expect(prompt).toContain('Acceptance Criteria: Given release input is valid, when deployed, then validation passes.');
+  });
+
+  it('buildPrompt strips encoded HTML tags from issue detail text', () => {
+    const { result } = renderHook(() => useRovoAssist());
+    const selectedIssues = [createMockJiraIssue('TOOL-78', 'Clean encoded detail markup')];
+    selectedIssues[0].fields.description = '<p dir="auto" style="animation-duration:0.01ms;">Facets:</p>';
+    selectedIssues[0].fields.customfield_10200 = '<b>Given valid input</b> &amp; expected output';
+
+    const prompt = result.current.buildPrompt(selectedIssues, EMPTY_CURRENT_FIELDS);
+
+    expect(prompt).toContain('Description: Facets:');
+    expect(prompt).toContain('Acceptance Criteria: Given valid input & expected output');
+    expect(prompt).not.toContain('style=');
+    expect(prompt).not.toContain('<p');
+    expect(prompt).not.toContain('<b>');
+  });
+
+  it('buildPrompt extracts Atlassian document-format text for issue details', () => {
+    const { result } = renderHook(() => useRovoAssist());
+    const selectedIssues = [createMockJiraIssue('TOOL-88', 'Handle Atlassian document text')];
+    selectedIssues[0].fields.description = createAtlassianDocumentNode('Document description') as unknown as string;
+    selectedIssues[0].fields.customfield_10200 = createAtlassianDocumentNode('Document acceptance criteria');
+
+    const prompt = result.current.buildPrompt(selectedIssues, EMPTY_CURRENT_FIELDS);
+
+    expect(prompt).toContain('Description: Document description');
+    expect(prompt).toContain('Acceptance Criteria: Document acceptance criteria');
+  });
+
+  it('buildPrompt shows explicit placeholders when issue detail fields are missing', () => {
+    const { result } = renderHook(() => useRovoAssist());
+    const selectedIssues = [createMockJiraIssue('TOOL-99', 'No detail fields')];
+
+    const prompt = result.current.buildPrompt(selectedIssues, EMPTY_CURRENT_FIELDS);
+
+    expect(prompt).toContain('Description: (not provided)');
+    expect(prompt).toContain('Acceptance Criteria: (not provided)');
   });
 
   it('buildPrompt includes "(no issues selected)" when the issue list is empty', () => {

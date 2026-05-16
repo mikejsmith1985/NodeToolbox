@@ -96,6 +96,32 @@ describe('usePrbState', () => {
     });
   });
 
+  it('sanitizes encoded ServiceNow description markup before storing PRB data', async () => {
+    vi.mocked(snowFetch)
+      .mockResolvedValueOnce({
+        result: [
+          {
+            ...MOCK_SERVICE_NOW_PROBLEM_RESPONSE.result[0],
+            description: '<p dir="auto" style="animation-duration:0.01ms;">Facets:</p><b>Deployment details</b>',
+          },
+        ],
+      })
+      .mockResolvedValueOnce(MOCK_SERVICE_NOW_INCIDENT_RESPONSE);
+    const { result } = renderHook(() => usePrbState());
+
+    act(() => {
+      result.current.actions.setPrbNumber('PRB0001234');
+    });
+
+    await act(async () => {
+      await result.current.actions.fetchPrb();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.prbData?.description).toBe('Facets: Deployment details');
+    });
+  });
+
   it('loads a PRB by number query and then fetches the linked incident by problem sys_id', async () => {
     vi.mocked(snowFetch)
       .mockResolvedValueOnce(MOCK_SERVICE_NOW_PROBLEM_RESPONSE)
