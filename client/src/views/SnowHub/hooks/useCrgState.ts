@@ -18,6 +18,7 @@ interface EnvironmentConfig {
   plannedStartDate: string;
   plannedEndDate: string;
   configItem: SnowReference;
+  impactedPersonsAware: string;
 }
 
 /**
@@ -55,7 +56,7 @@ export interface ChgPlanningAssessment {
   impact: string;                         // SNow field: impact (1/2/3)
   systemAvailabilityImplication: string;  // SNow field: u_availability_impact
   hasBeenTested: string;                  // SNow field: u_change_tested
-  impactedPersonsAware: string;           // SNow field: u_impacted_persons_aware
+  impactedPersonsAware: string;           // Legacy fallback for SNow field: u_impacted_persons_aware
   hasBeenPerformedPreviously: string;     // SNow field: u_performed_previously
   successProbability: string;             // SNow field: u_success_probability
   canBeBackedOut: string;                 // SNow field: u_can_be_backed_out
@@ -69,6 +70,16 @@ export interface ChgPlanningContent {
   implementationPlan: string; // SNow field: implementation_plan
   backoutPlan: string;        // SNow field: backout_plan
   testPlan: string;           // SNow field: test_plan
+}
+
+/**
+ * User-configurable pieces for the generated CHG short description.
+ * Final format: "Application - Team - Change Details".
+ */
+export interface ShortDescriptionConfig {
+  application: string;
+  team: string;
+  changeDetailsOverride: string;
 }
 
 /**
@@ -88,8 +99,27 @@ const REQUIRED_FIELDS_MESSAGE = 'Project key and fix version are required.';
 const REQUIRED_JQL_MESSAGE = 'A JQL query is required.';
 const FETCH_FAILURE_MESSAGE = 'Failed to fetch issues';
 const DEFAULT_MAX_RESULTS = 100;
-const ISSUE_FIELD_LIST = 'summary,status,priority,issuetype,assignee';
+const ISSUE_FIELD_LIST = 'summary,status,priority,issuetype,assignee,description,customfield_10200';
 const CTASK_DEFAULT_SHORT_DESCRIPTION = 'Change task';
+const AUTO_IMPLEMENTATION_CTASK_PREFIX = 'Enrollment - AWS';
+const AUTO_TECHNICAL_CHECKOUT_CTASK_SHORT_DESCRIPTION = 'Technical Checkout';
+const AUTO_TECHNICAL_CHECKOUT_CTASK_DESCRIPTION = [
+  'Objective:',
+  'Validate the technical integrity and health of the live environment following a code promotion using CLI tools and GitHub deployment history.',
+  '',
+  'Tasks:',
+  '',
+  'Version Verification: Confirm the active environment is running the correct build by checking GitHub deployment tags or querying a /version endpoint.',
+  '',
+  'Service Health Checks: Use console tools or cURL to probe production endpoints and verify core services return 200 OK.',
+  '',
+  'Database Write Validation: Verify migration scripts executed successfully and that new records are being written correctly.',
+  '',
+  'Log & Error Monitoring: Review real-time application logs for anomalies, exceptions, or connection timeouts immediately following traffic shift.',
+  '',
+  'Success Criteria:',
+  'Deployment is technically verified when the system version is confirmed, database connectivity is stable, and logs show zero critical errors post-launch.',
+].join('\n');
 const CTASK_CLONE_FIELDS = [
   'number', 'short_description', 'description', 'assignment_group', 'assigned_to',
   'planned_start_date', 'planned_end_date', 'close_notes',
@@ -108,6 +138,23 @@ const INSPECTED_FIELD_SKIP_LIST = new Set([
 
 // localStorage key used to persist CRG wizard progress across relay reconnects and page navigations.
 const CRG_STATE_STORAGE_KEY = 'ntbx-crg-state';
+const SHORT_DESCRIPTION_CONFIG_STORAGE_KEY = 'ntbx-crg-short-description-config';
+const CHANGE_MANAGER_ALIAS_FIELD_NAMES = ['change_manager', 'u_change_manager'] as const;
+const USER_LOOKUP_RESULT_FIELDS = 'sys_id';
+const PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY: Record<keyof ChgPlanningAssessment, readonly string[]> = {
+  impact: ['u_impact', 'impact'],
+  systemAvailabilityImplication: ['u_implications_of_system_availability', 'u_availability_impact'],
+  hasBeenTested: ['u_has_this_change_been_tested', 'u_change_tested'],
+  impactedPersonsAware: ['u_are_impacted_persons_aware_prepared_for_test_checkout', 'u_impacted_persons_aware'],
+  hasBeenPerformedPreviously: ['u_has_change_been_performed_previously', 'u_performed_previously'],
+  successProbability: ['u_assessment_of_success_probability', 'u_success_probability'],
+  canBeBackedOut: ['u_can_change_be_backed_out', 'u_can_be_backed_out'],
+};
+const PLANNING_CONTENT_ALIAS_FIELD_NAMES_BY_STATE_KEY: Record<keyof ChgPlanningContent, readonly string[]> = {
+  implementationPlan: ['implementation_plan'],
+  backoutPlan: ['backout_plan'],
+  testPlan: ['test_plan'],
+};
 
 // All reference field lookup fields requested when cloning a CHG from SNow.
 // A blank SNow reference used as a default value for all reference fields.
@@ -119,6 +166,7 @@ function createDefaultEnvironmentConfig(): EnvironmentConfig {
     plannedStartDate: EMPTY_VALUE,
     plannedEndDate: EMPTY_VALUE,
     configItem: { ...EMPTY_SNOW_REFERENCE },
+    impactedPersonsAware: EMPTY_VALUE,
   };
 }
 
@@ -158,6 +206,63 @@ function createDefaultChgPlanningContent(): ChgPlanningContent {
   };
 }
 
+function createDefaultShortDescriptionConfig(): ShortDescriptionConfig {
+  return {
+    application: EMPTY_VALUE,
+    team: EMPTY_VALUE,
+    changeDetailsOverride: EMPTY_VALUE,
+  };
+}
+
+function loadShortDescriptionConfigFromStorage(): ShortDescriptionConfig {
+  try {
+    const storedJson = localStorage.getItem(SHORT_DESCRIPTION_CONFIG_STORAGE_KEY);
+    if (!storedJson) {
+      return createDefaultShortDescriptionConfig();
+    }
+    const parsedConfig = JSON.parse(storedJson) as Partial<ShortDescriptionConfig>;
+    return mergeShortDescriptionConfig(createDefaultShortDescriptionConfig(), parsedConfig as ShortDescriptionConfig);
+  } catch {
+    return createDefaultShortDescriptionConfig();
+  }
+}
+
+function saveShortDescriptionConfigToStorage(shortDescriptionConfig: ShortDescriptionConfig): void {
+  try {
+    localStorage.setItem(SHORT_DESCRIPTION_CONFIG_STORAGE_KEY, JSON.stringify(shortDescriptionConfig));
+  } catch {
+    // Best-effort persistence only — CHG generation still works when storage is unavailable.
+  }
+}
+
+function resolveTemplateShortDescriptionValue(
+  templateValue: string | undefined,
+  fallbackValue: string,
+): string {
+  if (typeof templateValue !== 'string') {
+    return fallbackValue;
+  }
+  return templateValue.trim() ? templateValue : fallbackValue;
+}
+
+function mergeShortDescriptionConfig(
+  currentConfig: ShortDescriptionConfig,
+  templateConfig: ShortDescriptionConfig | undefined,
+): ShortDescriptionConfig {
+  if (!templateConfig) {
+    return currentConfig;
+  }
+
+  return {
+    application: resolveTemplateShortDescriptionValue(templateConfig.application, currentConfig.application),
+    team: resolveTemplateShortDescriptionValue(templateConfig.team, currentConfig.team),
+    changeDetailsOverride: resolveTemplateShortDescriptionValue(
+      templateConfig.changeDetailsOverride,
+      currentConfig.changeDetailsOverride,
+    ),
+  };
+}
+
 /**
  * A saved set of CHG field values that can be applied with a single click.
  * Stores all dropdown selections and planning content so repeat changes
@@ -167,6 +272,8 @@ export interface CrgTemplate {
   id: string;
   name: string;
   createdAt: string;
+  /** Optional for backward compatibility with templates saved before short-description config was added. */
+  shortDescriptionConfig?: ShortDescriptionConfig;
   chgBasicInfo: ChgBasicInfo;
   chgPlanningAssessment: ChgPlanningAssessment;
   chgPlanningContent: ChgPlanningContent;
@@ -198,6 +305,15 @@ export interface CtaskTemplate {
 /** Editable CTASK fields stored in a reusable template before ids and metadata are assigned. */
 export type CtaskTemplateData = Omit<CtaskTemplate, 'id' | 'name' | 'createdAt'>;
 
+export interface ChgSubmissionDebug {
+  operation: 'create' | 'update';
+  targetChgNumber: string;
+  requestPayloadJson: string;
+  operationResponseJson: string;
+  verificationRecordJson: string;
+  mismatchMessages: string[];
+}
+
 /**
  * Shape stored in localStorage — identical to CrgState minus transient/computed fields.
  * `selectedIssueKeys` is stored as a plain array because Set is not JSON-serialisable.
@@ -205,7 +321,7 @@ export type CtaskTemplateData = Omit<CtaskTemplate, 'id' | 'name' | 'createdAt'>
 type PersistedCrgState = Omit<
   CrgState,
   'availableFixVersions' | 'isFetchingIssues' | 'fetchError' |
-  'isCloning' | 'cloneError' | 'isSubmitting' | 'submitResult' | 'selectedIssueKeys'
+  'isCloning' | 'cloneError' | 'isSubmitting' | 'submitResult' | 'submissionDebug' | 'selectedIssueKeys'
 > & {
   selectedIssueKeys: string[];
 };
@@ -233,6 +349,7 @@ interface CrgState {
   generatedDescription: string;
   generatedJustification: string;
   generatedRiskImpact: string;
+  shortDescriptionConfig: ShortDescriptionConfig;
   // Step 4: Planning assessment dropdowns
   chgPlanningAssessment: ChgPlanningAssessment;
   // Step 4: Planning long-form text areas
@@ -249,6 +366,7 @@ interface CrgState {
   changeTasks: CtaskTemplate[];
   isSubmitting: boolean;
   submitResult: string | null;
+  submissionDebug: ChgSubmissionDebug | null;
 }
 
 interface CrgActions {
@@ -261,6 +379,7 @@ interface CrgActions {
   selectAllIssues: (shouldSelectAllIssues: boolean) => void;
   generateDocs: () => void;
   updateGeneratedField: (fieldName: GeneratedFieldKey, value: string) => void;
+  setShortDescriptionConfig: (update: Partial<ShortDescriptionConfig>) => void;
   setChgBasicInfo: (update: Partial<ChgBasicInfo>) => void;
   setChgPlanningAssessment: (update: Partial<ChgPlanningAssessment>) => void;
   setChgPlanningContent: (update: Partial<ChgPlanningContent>) => void;
@@ -274,12 +393,18 @@ interface CrgActions {
   addChangeTask: (template: CtaskTemplate) => void;
   removeChangeTask: (taskId: string) => void;
   appendTasksToExistingChg: (chgNumber: string) => Promise<void>;
+  updateExistingChg: (chgNumber: string) => Promise<void>;
   cloneCtaskTemplate: (ctaskNumber: string) => Promise<CtaskTemplateData>;
   updateEnvironment: (environmentKey: EnvironmentKey, update: Partial<EnvironmentConfig>) => void;
   goToStep: (step: CrgStep) => void;
   reset: () => void;
   /** POSTs all CHG fields to ServiceNow and stores the resulting CHG number. */
   createChg: () => Promise<void>;
+}
+
+interface AutoCreatedChangeTaskRecord {
+  sys_id: unknown;
+  number?: unknown;
 }
 
 /**
@@ -306,6 +431,7 @@ function createDefaultCrgState(): CrgState {
     generatedDescription: EMPTY_VALUE,
     generatedJustification: EMPTY_VALUE,
     generatedRiskImpact: EMPTY_VALUE,
+    shortDescriptionConfig: loadShortDescriptionConfigFromStorage(),
     chgPlanningAssessment: createDefaultChgPlanningAssessment(),
     chgPlanningContent: createDefaultChgPlanningContent(),
     customSnowFields: {},
@@ -316,6 +442,7 @@ function createDefaultCrgState(): CrgState {
     changeTasks: [],
     isSubmitting: false,
     submitResult: null,
+    submissionDebug: null,
   };
 }
 
@@ -359,9 +486,14 @@ function loadPersistedCrgState(): Partial<CrgState> {
  */
 function createInitialCrgState(): CrgState {
   const persisted = loadPersistedCrgState();
+  const persistedShortDescriptionConfig = loadShortDescriptionConfigFromStorage();
   return {
     ...createDefaultCrgState(),
     ...persisted,
+    shortDescriptionConfig: mergeShortDescriptionConfig(
+      persistedShortDescriptionConfig,
+      persisted.shortDescriptionConfig,
+    ),
     relEnvironment: mergeEnvironmentConfig(persisted.relEnvironment),
     prdEnvironment: mergeEnvironmentConfig(persisted.prdEnvironment),
     pfixEnvironment: mergeEnvironmentConfig(persisted.pfixEnvironment),
@@ -429,11 +561,24 @@ function extractSnowReference(field: unknown): SnowReference {
   return { sysId, displayName };
 }
 
+function extractSnowReferenceFromFieldAliases(
+  record: Record<string, unknown>,
+  fieldAliases: readonly string[],
+): SnowReference {
+  for (const fieldAlias of fieldAliases) {
+    const extractedReference = extractSnowReference(record[fieldAlias]);
+    if (extractedReference.sysId || extractedReference.displayName) {
+      return extractedReference;
+    }
+  }
+  return { ...EMPTY_SNOW_REFERENCE };
+}
+
 function extractInspectableFieldValue(field: unknown): { displayValue: string; storedValue: string } {
   if (field && typeof field === 'object') {
     const snowField = field as Record<string, unknown>;
     const displayValue = String(snowField.display_value || snowField.value || EMPTY_VALUE).trim();
-    const storedValue = String(snowField.value || snowField.display_value || EMPTY_VALUE).trim();
+    const storedValue = String(snowField.value ?? EMPTY_VALUE).trim();
     return { displayValue, storedValue };
   }
 
@@ -525,8 +670,268 @@ async function fetchChangeSysIdByNumber(changeNumber: string): Promise<string> {
   return changeSysId;
 }
 
+function buildChangeRequestPayload(state: CrgState): Record<string, unknown> {
+  const changeRequestPayload: Record<string, unknown> = {
+    ...state.customSnowFields,
+    short_description:    state.generatedShortDescription,
+    description:          state.generatedDescription,
+    justification:        state.generatedJustification,
+    risk_impact_analysis: state.generatedRiskImpact,
+  };
+
+  if (state.chgBasicInfo.category)     changeRequestPayload.category      = state.chgBasicInfo.category;
+  if (state.chgBasicInfo.changeType)   changeRequestPayload.type          = state.chgBasicInfo.changeType;
+  if (state.chgBasicInfo.environment)  changeRequestPayload.u_environment = state.chgBasicInfo.environment;
+  if (state.chgBasicInfo.isExpedited)  changeRequestPayload.u_expedited   = true;
+
+  const mappedConfigItem = resolveMappedConfigItem(state);
+  if (state.chgBasicInfo.requestedBy.sysId)     changeRequestPayload.requested_by      = state.chgBasicInfo.requestedBy.sysId;
+  if (mappedConfigItem.sysId)                   changeRequestPayload.cmdb_ci           = mappedConfigItem.sysId;
+  if (state.chgBasicInfo.assignmentGroup.sysId) changeRequestPayload.assignment_group  = state.chgBasicInfo.assignmentGroup.sysId;
+  if (state.chgBasicInfo.assignedTo.sysId)      changeRequestPayload.assigned_to       = state.chgBasicInfo.assignedTo.sysId;
+  if (state.chgBasicInfo.tester.sysId)          changeRequestPayload.u_tester          = state.chgBasicInfo.tester.sysId;
+  if (state.chgBasicInfo.serviceManager.sysId)  changeRequestPayload.u_service_manager = state.chgBasicInfo.serviceManager.sysId;
+
+  if (state.chgPlanningAssessment.impact)                        changeRequestPayload.impact                  = state.chgPlanningAssessment.impact;
+  if (state.chgPlanningAssessment.systemAvailabilityImplication) changeRequestPayload.u_availability_impact   = state.chgPlanningAssessment.systemAvailabilityImplication;
+  if (state.chgPlanningAssessment.hasBeenTested)                 changeRequestPayload.u_change_tested         = state.chgPlanningAssessment.hasBeenTested;
+  const mappedImpactedPersonsAware = resolveMappedImpactedPersonsAware(state);
+  if (mappedImpactedPersonsAware)                                changeRequestPayload.u_impacted_persons_aware = mappedImpactedPersonsAware;
+  if (state.chgPlanningAssessment.hasBeenPerformedPreviously)    changeRequestPayload.u_performed_previously  = state.chgPlanningAssessment.hasBeenPerformedPreviously;
+  if (state.chgPlanningAssessment.successProbability)            changeRequestPayload.u_success_probability    = state.chgPlanningAssessment.successProbability;
+  if (state.chgPlanningAssessment.canBeBackedOut)                changeRequestPayload.u_can_be_backed_out     = state.chgPlanningAssessment.canBeBackedOut;
+
+  if (state.chgPlanningContent.implementationPlan) changeRequestPayload.implementation_plan = state.chgPlanningContent.implementationPlan;
+  if (state.chgPlanningContent.backoutPlan)        changeRequestPayload.backout_plan        = state.chgPlanningContent.backoutPlan;
+  if (state.chgPlanningContent.testPlan)           changeRequestPayload.test_plan           = state.chgPlanningContent.testPlan;
+  applyDynamicPlanningAliasValues(changeRequestPayload, state);
+
+  return changeRequestPayload;
+}
+
+function serializeDebugValue(debugValue: unknown): string {
+  try {
+    return JSON.stringify(debugValue, null, 2);
+  } catch {
+    return String(debugValue);
+  }
+}
+
+async function fetchChangeRecordByNumber(changeNumber: string): Promise<Record<string, unknown> | null> {
+  const normalizedChangeNumber = changeNumber.trim().toUpperCase();
+  const encodedQuery = encodeURIComponent(`number=${normalizedChangeNumber}`);
+  const responseData = await snowFetch<{ result?: unknown }>(
+    `/api/now/table/change_request?sysparm_query=${encodedQuery}&sysparm_limit=1&sysparm_display_value=all`,
+  );
+
+  if (!Array.isArray(responseData.result)) {
+    return null;
+  }
+  const matchedChangeRecord = responseData.result[0];
+  return matchedChangeRecord && typeof matchedChangeRecord === 'object'
+    ? matchedChangeRecord as Record<string, unknown>
+    : null;
+}
+
+function areNormalizedValuesEqual(leftValue: string, rightValue: string): boolean {
+  return leftValue.trim().toLowerCase() === rightValue.trim().toLowerCase();
+}
+
+function resolveRecordFieldValue(record: Record<string, unknown>, fieldAliases: readonly string[]): string {
+  for (const fieldAlias of fieldAliases) {
+    const resolvedChoiceValue = extractChoiceValue(record[fieldAlias]);
+    if (resolvedChoiceValue.trim()) {
+      return resolvedChoiceValue.trim();
+    }
+  }
+  return EMPTY_VALUE;
+}
+
+function buildSubmissionMismatchMessages(state: CrgState, verifiedChangeRecord: Record<string, unknown>): string[] {
+  const mismatchMessages: string[] = [];
+  const expectedPlanningAssessmentValues: Record<keyof ChgPlanningAssessment, string> = {
+    impact: state.chgPlanningAssessment.impact,
+    systemAvailabilityImplication: state.chgPlanningAssessment.systemAvailabilityImplication,
+    hasBeenTested: state.chgPlanningAssessment.hasBeenTested,
+    impactedPersonsAware: resolveMappedImpactedPersonsAware(state),
+    hasBeenPerformedPreviously: state.chgPlanningAssessment.hasBeenPerformedPreviously,
+    successProbability: state.chgPlanningAssessment.successProbability,
+    canBeBackedOut: state.chgPlanningAssessment.canBeBackedOut,
+  };
+
+  for (const [planningAssessmentKey, fieldAliases] of Object.entries(PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY)) {
+    const expectedValue = expectedPlanningAssessmentValues[planningAssessmentKey as keyof ChgPlanningAssessment].trim();
+    if (!expectedValue) {
+      continue;
+    }
+    const actualValue = resolveRecordFieldValue(verifiedChangeRecord, fieldAliases);
+    if (!actualValue) {
+      mismatchMessages.push(`${planningAssessmentKey}: expected "${expectedValue}" but no value was returned from SNow.`);
+      continue;
+    }
+    if (!areNormalizedValuesEqual(expectedValue, actualValue)) {
+      mismatchMessages.push(`${planningAssessmentKey}: expected "${expectedValue}" but SNow returned "${actualValue}".`);
+    }
+  }
+
+  const expectedChangeManager = state.chgBasicInfo.changeManager;
+  if (expectedChangeManager.sysId.trim() || expectedChangeManager.displayName.trim()) {
+    const actualChangeManager = extractSnowReferenceFromFieldAliases(verifiedChangeRecord, CHANGE_MANAGER_ALIAS_FIELD_NAMES);
+    if (expectedChangeManager.sysId.trim() && !areNormalizedValuesEqual(expectedChangeManager.sysId, actualChangeManager.sysId)) {
+      mismatchMessages.push(`changeManager sys_id: expected "${expectedChangeManager.sysId}" but SNow returned "${actualChangeManager.sysId || 'empty'}".`);
+    }
+    if (expectedChangeManager.displayName.trim() && !areNormalizedValuesEqual(expectedChangeManager.displayName, actualChangeManager.displayName)) {
+      mismatchMessages.push(`changeManager display: expected "${expectedChangeManager.displayName}" but SNow returned "${actualChangeManager.displayName || 'empty'}".`);
+    }
+  }
+
+  return mismatchMessages;
+}
+
+function buildSubmissionDebugData(
+  operation: 'create' | 'update',
+  targetChgNumber: string,
+  requestPayload: Record<string, unknown>,
+  operationResponse: unknown,
+  verificationRecord: Record<string, unknown> | null,
+  mismatchMessages: string[],
+): ChgSubmissionDebug {
+  return {
+    operation,
+    targetChgNumber,
+    requestPayloadJson: serializeDebugValue(requestPayload),
+    operationResponseJson: serializeDebugValue(operationResponse),
+    verificationRecordJson: serializeDebugValue(verificationRecord),
+    mismatchMessages,
+  };
+}
+
+async function resolveUserSysIdByDisplayName(userDisplayName: string): Promise<string> {
+  const normalizedUserDisplayName = userDisplayName.trim();
+  if (!normalizedUserDisplayName) {
+    return EMPTY_VALUE;
+  }
+
+  const encodedLookupQuery = encodeURIComponent(`name=${normalizedUserDisplayName}`);
+  const userLookupResponse = await snowFetch<{ result: Array<{ sys_id: unknown }> }>(
+    `/api/now/table/sys_user?sysparm_query=${encodedLookupQuery}&sysparm_fields=${USER_LOOKUP_RESULT_FIELDS}&sysparm_limit=1`,
+  );
+  const matchedUserSysId = extractReferenceSysId(userLookupResponse.result[0]?.sys_id);
+  return matchedUserSysId;
+}
+
+async function resolveChangeManagerSubmissionValue(changeManager: SnowReference): Promise<string> {
+  if (changeManager.sysId.trim()) {
+    return changeManager.sysId.trim();
+  }
+  if (!changeManager.displayName.trim()) {
+    return EMPTY_VALUE;
+  }
+
+  return resolveUserSysIdByDisplayName(changeManager.displayName);
+}
+
+/**
+ * Writes every known alias for each planning field into the payload.
+ * SNow silently ignores field names it doesn't recognise, so sending all
+ * aliases is safe and guarantees the correct field is populated regardless
+ * of which non-standard column name the target instance happens to use.
+ */
+function applyDynamicPlanningAliasValues(changeRequestPayload: Record<string, unknown>, state: CrgState): void {
+  const mappedImpactedPersonsAware = resolveMappedImpactedPersonsAware(state).trim();
+  const planningAssessmentValueByKey: Record<keyof ChgPlanningAssessment, string> = {
+    impact: state.chgPlanningAssessment.impact,
+    systemAvailabilityImplication: state.chgPlanningAssessment.systemAvailabilityImplication,
+    hasBeenTested: state.chgPlanningAssessment.hasBeenTested,
+    impactedPersonsAware: mappedImpactedPersonsAware,
+    hasBeenPerformedPreviously: state.chgPlanningAssessment.hasBeenPerformedPreviously,
+    successProbability: state.chgPlanningAssessment.successProbability,
+    canBeBackedOut: state.chgPlanningAssessment.canBeBackedOut,
+  };
+
+  for (const [assessmentKey, apiFieldNames] of Object.entries(PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY)) {
+    const planningAssessmentValue = planningAssessmentValueByKey[assessmentKey as keyof ChgPlanningAssessment].trim();
+    if (!planningAssessmentValue) continue;
+    // Write to every known alias — SNow ignores fields it doesn't recognise
+    for (const apiFieldName of apiFieldNames) {
+      changeRequestPayload[apiFieldName] = planningAssessmentValue;
+    }
+  }
+
+  for (const [contentKey, apiFieldNames] of Object.entries(PLANNING_CONTENT_ALIAS_FIELD_NAMES_BY_STATE_KEY)) {
+    const planningContentValue = state.chgPlanningContent[contentKey as keyof ChgPlanningContent].trim();
+    if (!planningContentValue) continue;
+    // Write to every known alias — SNow ignores fields it doesn't recognise
+    for (const apiFieldName of apiFieldNames) {
+      changeRequestPayload[apiFieldName] = planningContentValue;
+    }
+  }
+}
+
 function formatCtaskCount(count: number): string {
   return count === 1 ? '1 CTASK' : `${count} CTASKs`;
+}
+
+function resolveAutoCreatedCtaskEnvironmentLabel(state: CrgState): string {
+  if (state.pfixEnvironment.isEnabled) return 'PFIX';
+  if (state.prdEnvironment.isEnabled) return 'PRD';
+  if (state.relEnvironment.isEnabled) return 'REL';
+
+  const normalizedEnvironmentValue = state.chgBasicInfo.environment.trim().toUpperCase();
+  if (normalizedEnvironmentValue.includes('PFIX')) return 'PFIX';
+  if (normalizedEnvironmentValue.includes('PRD') || normalizedEnvironmentValue.includes('PROD')) return 'PRD';
+  if (normalizedEnvironmentValue.includes('REL') || normalizedEnvironmentValue.includes('RELEASE')) return 'REL';
+  return 'ENV';
+}
+
+function resolveImplementationCtaskPrefix(state: CrgState): string {
+  const configuredApplicationName = state.shortDescriptionConfig.application.trim();
+  if (!configuredApplicationName) return AUTO_IMPLEMENTATION_CTASK_PREFIX;
+  return `${configuredApplicationName} - AWS`;
+}
+
+async function fetchAutoCreatedChangeTasks(changeSysId: string): Promise<AutoCreatedChangeTaskRecord[]> {
+  const encodedQuery = encodeURIComponent(`change_request=${changeSysId}`);
+  const responseData = await snowFetch<{ result?: unknown }>(
+    `/api/now/table/change_task?sysparm_query=${encodedQuery}&sysparm_orderby=sys_created_on&sysparm_fields=sys_id,number,short_description&sysparm_limit=10`,
+    { method: 'GET' },
+  );
+  return Array.isArray(responseData.result) ? responseData.result as AutoCreatedChangeTaskRecord[] : [];
+}
+
+async function patchChangeTaskBySysId(changeTaskSysId: string, patchBody: Record<string, unknown>): Promise<void> {
+  await snowFetch(
+    `/api/now/table/change_task/${changeTaskSysId}`,
+    {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(patchBody),
+    },
+  );
+}
+
+async function updateAutoCreatedChangeTasks(changeSysId: string, state: CrgState): Promise<void> {
+  const autoCreatedTasks = await fetchAutoCreatedChangeTasks(changeSysId);
+  if (autoCreatedTasks.length === 0) {
+    return;
+  }
+
+  const implementationTaskSysId = extractReferenceSysId(autoCreatedTasks[0]?.sys_id);
+  if (implementationTaskSysId) {
+    const environmentLabel = resolveAutoCreatedCtaskEnvironmentLabel(state);
+    const implementationTaskPrefix = resolveImplementationCtaskPrefix(state);
+    await patchChangeTaskBySysId(implementationTaskSysId, {
+      short_description: `${implementationTaskPrefix} - ${environmentLabel}`,
+    });
+  }
+
+  const technicalCheckoutTaskSysId = extractReferenceSysId(autoCreatedTasks[1]?.sys_id);
+  if (technicalCheckoutTaskSysId) {
+    await patchChangeTaskBySysId(technicalCheckoutTaskSysId, {
+      short_description: AUTO_TECHNICAL_CHECKOUT_CTASK_SHORT_DESCRIPTION,
+      description:       AUTO_TECHNICAL_CHECKOUT_CTASK_DESCRIPTION,
+    });
+  }
 }
 
 function buildProjectSearchPath(projectKey: string, fixVersion: string): string {
@@ -559,6 +964,59 @@ function buildReleaseLabel(fetchMode: FetchMode, projectKey: string, fixVersion:
     return `custom JQL query (${issueCount} issue(s))`;
   }
   return `${projectKey} ${fixVersion}`;
+}
+
+function buildIssueTypeLabel(issueTypeName: string, issueTypeCount: number): string {
+  if (issueTypeCount === 1) {
+    return issueTypeName;
+  }
+  if (issueTypeName.endsWith('y')) {
+    return `${issueTypeName.slice(0, -1)}ies`;
+  }
+  if (issueTypeName.endsWith('s')) {
+    return issueTypeName;
+  }
+  return `${issueTypeName}s`;
+}
+
+function buildIssueTypeSummary(selectedIssues: JiraIssue[]): string {
+  if (selectedIssues.length === 0) {
+    return '0 Issues';
+  }
+
+  const issueTypeCountByName = new Map<string, number>();
+  for (const selectedIssue of selectedIssues) {
+    const issueTypeName = selectedIssue.fields.issuetype?.name?.trim() || 'Issue';
+    issueTypeCountByName.set(issueTypeName, (issueTypeCountByName.get(issueTypeName) ?? 0) + 1);
+  }
+
+  return [...issueTypeCountByName.entries()]
+    .sort((leftEntry, rightEntry) => rightEntry[1] - leftEntry[1] || leftEntry[0].localeCompare(rightEntry[0]))
+    .map(([issueTypeName, issueTypeCount]) => `${issueTypeCount} ${buildIssueTypeLabel(issueTypeName, issueTypeCount)}`)
+    .join(' ');
+}
+
+function buildAutoChangeDetails(fetchMode: FetchMode, fixVersion: string, selectedIssues: JiraIssue[]): string {
+  const normalizedFixVersion = fixVersion.trim();
+  if (fetchMode === 'project' && normalizedFixVersion) {
+    return normalizedFixVersion;
+  }
+  return buildIssueTypeSummary(selectedIssues);
+}
+
+function buildGeneratedShortDescription(
+  shortDescriptionConfig: ShortDescriptionConfig,
+  fetchMode: FetchMode,
+  projectKey: string,
+  fixVersion: string,
+  selectedIssues: JiraIssue[],
+): string {
+  const shortDescriptionApplication = shortDescriptionConfig.application.trim() || projectKey.trim() || 'Application';
+  const shortDescriptionTeam = shortDescriptionConfig.team.trim() || 'Team';
+  const shortDescriptionDetails = shortDescriptionConfig.changeDetailsOverride.trim()
+    || buildAutoChangeDetails(fetchMode, fixVersion, selectedIssues);
+
+  return `${shortDescriptionApplication} - ${shortDescriptionTeam} - ${shortDescriptionDetails}`;
 }
 
 function getGeneratedStateKey(fieldName: GeneratedFieldKey) {
@@ -614,10 +1072,24 @@ function resolveMappedConfigItem(state: CrgState): SnowReference {
   return state.chgBasicInfo.configItem;
 }
 
+function resolveMappedImpactedPersonsAware(state: CrgState): string {
+  const environmentPriority: EnvironmentKey[] = ['pfix', 'prd', 'rel'];
+
+  for (const environmentKey of environmentPriority) {
+    const environmentState = state[getEnvironmentStateKey(environmentKey)];
+    if (environmentState.isEnabled && environmentState.impactedPersonsAware.trim()) {
+      return environmentState.impactedPersonsAware;
+    }
+  }
+
+  return state.chgPlanningAssessment.impactedPersonsAware;
+}
+
 function buildClonedEnvironmentState(
   previousState: CrgState,
   clonedEnvironmentValue: string,
   clonedConfigItem: SnowReference,
+  clonedImpactedPersonsAware: string,
 ): Pick<CrgState, 'relEnvironment' | 'prdEnvironment' | 'pfixEnvironment'> {
   const nextEnvironmentState = {
     relEnvironment:  { ...previousState.relEnvironment },
@@ -635,6 +1107,7 @@ function buildClonedEnvironmentState(
     ...nextEnvironmentState[matchedEnvironmentStateKey],
     isEnabled: true,
     configItem: clonedConfigItem,
+    impactedPersonsAware: clonedImpactedPersonsAware,
   };
 
   return nextEnvironmentState;
@@ -683,6 +1156,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       generatedDescription:      state.generatedDescription,
       generatedJustification:    state.generatedJustification,
       generatedRiskImpact:       state.generatedRiskImpact,
+      shortDescriptionConfig:    state.shortDescriptionConfig,
       chgPlanningAssessment:     state.chgPlanningAssessment,
       chgPlanningContent:        state.chgPlanningContent,
       customSnowFields:          state.customSnowFields,
@@ -699,6 +1173,10 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       // Non-fatal — persistence fails gracefully (private mode, storage quota, etc.).
     }
   }, [state]);
+
+  useEffect(() => {
+    saveShortDescriptionConfigToStorage(state.shortDescriptionConfig);
+  }, [state.shortDescriptionConfig]);
 
   const setFetchMode = useCallback((fetchMode: FetchMode) => {
     // Switching modes clears any previous fetch error so the user starts fresh with the new input method.
@@ -816,10 +1294,17 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
         previousState.fixVersion,
         selectedIssues.length,
       );
+      const generatedShortDescription = buildGeneratedShortDescription(
+        previousState.shortDescriptionConfig,
+        previousState.fetchMode,
+        previousState.projectKey,
+        previousState.fixVersion,
+        selectedIssues,
+      );
 
       return {
         ...previousState,
-        generatedShortDescription: `Deploy ${releaseLabel}`,
+        generatedShortDescription,
         generatedDescription:      `The following Jira issues are included in this release:\n\n${issueList}`,
         generatedJustification:    `Planned release of ${releaseLabel} containing ${selectedIssues.length} issue(s).`,
         generatedRiskImpact:       `Standard deployment risk. ${selectedIssues.length} issue(s) included. Follow standard runbook.`,
@@ -832,6 +1317,13 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
   const updateGeneratedField = useCallback((fieldName: GeneratedFieldKey, value: string) => {
     const generatedStateKey = getGeneratedStateKey(fieldName);
     setState((previousState) => ({ ...previousState, [generatedStateKey]: value }));
+  }, []);
+
+  const setShortDescriptionConfig = useCallback((update: Partial<ShortDescriptionConfig>) => {
+    setState((previousState) => ({
+      ...previousState,
+      shortDescriptionConfig: { ...previousState.shortDescriptionConfig, ...update },
+    }));
   }, []);
 
   const setChgBasicInfo = useCallback((update: Partial<ChgBasicInfo>) => {
@@ -915,6 +1407,8 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       const chg = response.result[0];
       const clonedEnvironmentValue = extractChoiceValue(chg.u_environment);
       const clonedConfigItem = extractSnowReference(chg.cmdb_ci);
+      const clonedImpactedPersonsAware = extractChoiceValue(chg.u_impacted_persons_aware);
+      const clonedChangeManager = extractSnowReferenceFromFieldAliases(chg, CHANGE_MANAGER_ALIAS_FIELD_NAMES);
       const inspectedSnowFields = buildInspectedSnowFields(chg);
 
       setState((previousState) => ({
@@ -934,17 +1428,17 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
           configItem:      clonedConfigItem,
           assignmentGroup: extractSnowReference(chg.assignment_group),
           assignedTo:      extractSnowReference(chg.assigned_to),
-          changeManager:   extractSnowReference(chg.change_manager),
+          changeManager:   clonedChangeManager,
           tester:          extractSnowReference(chg.u_tester),
           serviceManager:  extractSnowReference(chg.u_service_manager),
           isExpedited:     extractChoiceValue(chg.u_expedited) === 'true',
         },
-        ...buildClonedEnvironmentState(previousState, clonedEnvironmentValue, clonedConfigItem),
+        ...buildClonedEnvironmentState(previousState, clonedEnvironmentValue, clonedConfigItem, clonedImpactedPersonsAware),
         chgPlanningAssessment: {
           impact:                        extractChoiceValue(chg.impact),
           systemAvailabilityImplication: extractChoiceValue(chg.u_availability_impact),
           hasBeenTested:                 extractChoiceValue(chg.u_change_tested),
-          impactedPersonsAware:          extractChoiceValue(chg.u_impacted_persons_aware),
+          impactedPersonsAware:          clonedImpactedPersonsAware,
           hasBeenPerformedPreviously:    extractChoiceValue(chg.u_performed_previously),
           successProbability:            extractChoiceValue(chg.u_success_probability),
           canBeBackedOut:                extractChoiceValue(chg.u_can_be_backed_out),
@@ -972,6 +1466,10 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     setState((previousState) => ({
       ...previousState,
       chgBasicInfo:          { ...template.chgBasicInfo },
+      shortDescriptionConfig: mergeShortDescriptionConfig(
+        previousState.shortDescriptionConfig,
+        template.shortDescriptionConfig,
+      ),
       chgPlanningAssessment: { ...template.chgPlanningAssessment },
       chgPlanningContent:    { ...template.chgPlanningContent },
       customSnowFields:      { ...(template.customSnowFields ?? previousState.customSnowFields) },
@@ -1011,7 +1509,12 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       return;
     }
 
-    setState((previousState) => ({ ...previousState, isSubmitting: true, submitResult: null }));
+    setState((previousState) => ({
+      ...previousState,
+      isSubmitting: true,
+      submitResult: null,
+      submissionDebug: null,
+    }));
     try {
       const changeSysId = await fetchChangeSysIdByNumber(normalizedChangeNumber);
       await createChangeTasks(changeSysId, state.changeTasks);
@@ -1029,6 +1532,67 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       }));
     }
   }, [state.changeTasks]);
+
+  const updateExistingChg = useCallback(async (chgNumber: string) => {
+    const normalizedChangeNumber = chgNumber.trim().toUpperCase();
+    if (!normalizedChangeNumber) {
+      setState((previousState) => ({ ...previousState, submitResult: 'Error: Enter a CHG number before updating.' }));
+      return;
+    }
+
+    setState((previousState) => ({ ...previousState, isSubmitting: true, submitResult: null }));
+
+    try {
+      const changeSysId = await fetchChangeSysIdByNumber(normalizedChangeNumber);
+      const changeRequestPayload = buildChangeRequestPayload(state);
+      const resolvedChangeManagerSysId = await resolveChangeManagerSubmissionValue(state.chgBasicInfo.changeManager);
+      if (resolvedChangeManagerSysId) {
+        // Write to both canonical and instance-specific alias so either field name is populated
+        changeRequestPayload.change_manager   = resolvedChangeManagerSysId;
+        changeRequestPayload.u_change_manager = resolvedChangeManagerSysId;
+      }
+      const patchResponse = await snowFetch(
+        `/api/now/table/change_request/${changeSysId}`,
+        {
+          method:  'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(changeRequestPayload),
+        },
+      );
+      const verifiedChangeRecord = await fetchChangeRecordByNumber(normalizedChangeNumber);
+      const mismatchMessages = verifiedChangeRecord
+        ? buildSubmissionMismatchMessages(state, verifiedChangeRecord)
+        : ['Unable to verify updated CHG record after PATCH.'];
+      const submissionDebug = buildSubmissionDebugData(
+        'update',
+        normalizedChangeNumber,
+        changeRequestPayload,
+        patchResponse,
+        verifiedChangeRecord,
+        mismatchMessages,
+      );
+      const updateResultMessage = mismatchMessages.length === 0
+        ? `${normalizedChangeNumber} updated`
+        : `${normalizedChangeNumber} updated with verification warnings (${mismatchMessages.length})`;
+
+      setState((previousState) => ({
+        ...previousState,
+        isSubmitting: false,
+        currentStep: 6,
+        submitResult: updateResultMessage,
+        submissionDebug,
+      }));
+    } catch (unknownError) {
+      const errorMessage = unknownError instanceof Error ? unknownError.message : 'CHG update failed';
+      setState((previousState) => ({
+        ...previousState,
+        isSubmitting: false,
+        currentStep: 6,
+        submitResult: 'Error: ' + errorMessage,
+        submissionDebug: null,
+      }));
+    }
+  }, [state]);
 
   const cloneCtaskTemplate = useCallback(async (ctaskNumber: string): Promise<CtaskTemplateData> => {
     const normalizedCtaskNumber = ctaskNumber.trim().toUpperCase();
@@ -1085,49 +1649,22 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
    * payload to avoid SNow validation errors on non-required fields.
    */
   const createChg = useCallback(async () => {
-    setState((previousState) => ({ ...previousState, isSubmitting: true, submitResult: null }));
-
-    // Build the payload — core text fields are always included.
-    const chgPayload: Record<string, unknown> = {
-      ...state.customSnowFields,
-      short_description:    state.generatedShortDescription,
-      description:          state.generatedDescription,
-      justification:        state.generatedJustification,
-      risk_impact_analysis: state.generatedRiskImpact,
-    };
-
-    // Basic Info — add only fields the user filled in.
-    if (state.chgBasicInfo.category)     chgPayload.category      = state.chgBasicInfo.category;
-    if (state.chgBasicInfo.changeType)   chgPayload.type          = state.chgBasicInfo.changeType;
-    if (state.chgBasicInfo.environment)  chgPayload.u_environment = state.chgBasicInfo.environment;
-    if (state.chgBasicInfo.isExpedited)  chgPayload.u_expedited   = true;
-
-     const mappedConfigItem = resolveMappedConfigItem(state);
-
-     // Reference fields — only include when the user selected a real record (has a sys_id).
-     if (state.chgBasicInfo.requestedBy.sysId)     chgPayload.requested_by      = state.chgBasicInfo.requestedBy.sysId;
-     if (mappedConfigItem.sysId)                   chgPayload.cmdb_ci           = mappedConfigItem.sysId;
-     if (state.chgBasicInfo.assignmentGroup.sysId) chgPayload.assignment_group  = state.chgBasicInfo.assignmentGroup.sysId;
-    if (state.chgBasicInfo.assignedTo.sysId)      chgPayload.assigned_to       = state.chgBasicInfo.assignedTo.sysId;
-    if (state.chgBasicInfo.changeManager.sysId)   chgPayload.change_manager    = state.chgBasicInfo.changeManager.sysId;
-    if (state.chgBasicInfo.tester.sysId)          chgPayload.u_tester          = state.chgBasicInfo.tester.sysId;
-    if (state.chgBasicInfo.serviceManager.sysId)  chgPayload.u_service_manager = state.chgBasicInfo.serviceManager.sysId;
-
-    // Planning assessment dropdowns.
-    if (state.chgPlanningAssessment.impact)                        chgPayload.impact                   = state.chgPlanningAssessment.impact;
-    if (state.chgPlanningAssessment.systemAvailabilityImplication) chgPayload.u_availability_impact     = state.chgPlanningAssessment.systemAvailabilityImplication;
-    if (state.chgPlanningAssessment.hasBeenTested)                 chgPayload.u_change_tested           = state.chgPlanningAssessment.hasBeenTested;
-    if (state.chgPlanningAssessment.impactedPersonsAware)          chgPayload.u_impacted_persons_aware  = state.chgPlanningAssessment.impactedPersonsAware;
-    if (state.chgPlanningAssessment.hasBeenPerformedPreviously)    chgPayload.u_performed_previously    = state.chgPlanningAssessment.hasBeenPerformedPreviously;
-    if (state.chgPlanningAssessment.successProbability)            chgPayload.u_success_probability     = state.chgPlanningAssessment.successProbability;
-    if (state.chgPlanningAssessment.canBeBackedOut)                chgPayload.u_can_be_backed_out       = state.chgPlanningAssessment.canBeBackedOut;
-
-    // Planning content text areas.
-    if (state.chgPlanningContent.implementationPlan) chgPayload.implementation_plan = state.chgPlanningContent.implementationPlan;
-    if (state.chgPlanningContent.backoutPlan)        chgPayload.backout_plan        = state.chgPlanningContent.backoutPlan;
-    if (state.chgPlanningContent.testPlan)           chgPayload.test_plan           = state.chgPlanningContent.testPlan;
+    setState((previousState) => ({
+      ...previousState,
+      isSubmitting: true,
+      submitResult: null,
+      submissionDebug: null,
+    }));
+    const chgPayload = buildChangeRequestPayload(state);
 
     try {
+      const resolvedChangeManagerSysId = await resolveChangeManagerSubmissionValue(state.chgBasicInfo.changeManager);
+      if (resolvedChangeManagerSysId) {
+        // Write to both canonical and instance-specific alias so either field name is populated
+        chgPayload.change_manager   = resolvedChangeManagerSysId;
+        chgPayload.u_change_manager = resolvedChangeManagerSysId;
+      }
+
       const responseData = await snowFetch<{ result: { number: string; sys_id?: unknown } }>(
         '/api/now/table/change_request',
         {
@@ -1138,8 +1675,22 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       );
 
       const changeNumber = responseData.result.number;
+      const changeSysId = extractReferenceSysId(responseData.result.sys_id) || await fetchChangeSysIdByNumber(changeNumber);
+
+      try {
+        await updateAutoCreatedChangeTasks(changeSysId, state);
+      } catch (unknownError) {
+        const errorMessage = unknownError instanceof Error ? unknownError.message : 'Auto-created CTASK updates failed';
+        setState((previousState) => ({
+          ...previousState,
+          isSubmitting: false,
+          currentStep:  6,
+          submitResult: `${changeNumber} created, but auto-created CTASK updates failed. Check ServiceNow before retrying: ${errorMessage}`,
+        }));
+        return;
+      }
+
       if (state.changeTasks.length > 0) {
-        const changeSysId = extractReferenceSysId(responseData.result.sys_id) || await fetchChangeSysIdByNumber(changeNumber);
         try {
           await createChangeTasks(changeSysId, state.changeTasks);
         } catch (unknownError) {
@@ -1166,6 +1717,14 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
         isSubmitting: false,
         submitResult: creationSummary,
         currentStep:  6 as CrgStep,
+        submissionDebug: buildSubmissionDebugData(
+          'create',
+          changeNumber,
+          chgPayload,
+          responseData,
+          null,
+          [],
+        ),
       }));
     } catch (unknownError) {
       const errorMessage = unknownError instanceof Error ? unknownError.message : 'CHG creation failed';
@@ -1173,6 +1732,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
         ...previousState,
         isSubmitting: false,
         submitResult: 'Error: ' + errorMessage,
+        submissionDebug: null,
       }));
     }
   }, [
@@ -1192,6 +1752,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       selectAllIssues,
       generateDocs,
       updateGeneratedField,
+      setShortDescriptionConfig,
       setChgBasicInfo,
       setChgPlanningAssessment,
       setChgPlanningContent,
@@ -1203,6 +1764,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       addChangeTask,
       removeChangeTask,
       appendTasksToExistingChg,
+      updateExistingChg,
       cloneCtaskTemplate,
       updateEnvironment,
       goToStep,
@@ -1212,10 +1774,12 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
   }, [
     setFetchMode, setProjectKey, setFixVersion, setCustomJql, fetchIssues,
     toggleIssueSelection, selectAllIssues, generateDocs, updateGeneratedField,
+    setShortDescriptionConfig,
     setChgBasicInfo, setChgPlanningAssessment, setChgPlanningContent,
     pinCustomSnowField, removeCustomSnowField,
     setCloneChgNumber, cloneFromChg, applyTemplate, addChangeTask, removeChangeTask,
     appendTasksToExistingChg, cloneCtaskTemplate, updateEnvironment, goToStep, reset, createChg,
+    updateExistingChg,
   ]);
 
   return { state, actions };

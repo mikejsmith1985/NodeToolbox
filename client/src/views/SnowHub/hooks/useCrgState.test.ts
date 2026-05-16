@@ -16,7 +16,7 @@ vi.mock('../../../services/snowApi.ts', () => ({
   snowFetch: vi.fn(),
 }));
 
-function createMockJiraIssue(issueKey: string, summary: string) {
+function createMockJiraIssue(issueKey: string, summary: string, issueTypeName = 'Story') {
   return {
     id: issueKey,
     key: issueKey,
@@ -26,7 +26,7 @@ function createMockJiraIssue(issueKey: string, summary: string) {
       priority: { name: 'Medium', iconUrl: 'priority.png' },
       assignee: null,
       reporter: null,
-      issuetype: { name: 'Story', iconUrl: 'story.png' },
+      issuetype: { name: issueTypeName, iconUrl: 'story.png' },
       created: '2025-01-01T00:00:00.000Z',
       updated: '2025-01-01T00:00:00.000Z',
       description: null,
@@ -196,6 +196,88 @@ describe('useCrgState', () => {
     expect(result.current.state.currentStep).toBe(3);
   });
 
+  it('generates short description as Application - Team - FixVersion in project mode', async () => {
+    vi.mocked(jiraGet)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce({ issues: [createMockJiraIssue('ABC-101', 'Prepare deployment notes')] } as never);
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setShortDescriptionConfig({
+        application: 'Enrollment',
+        team: 'Transformers',
+      });
+      result.current.actions.setProjectKey('abc');
+      result.current.actions.setFixVersion('1.2.3');
+    });
+
+    await act(async () => {
+      await result.current.actions.fetchIssues();
+    });
+
+    act(() => {
+      result.current.actions.generateDocs();
+    });
+
+    expect(result.current.state.generatedShortDescription).toBe('Enrollment - Transformers - 1.2.3');
+  });
+
+  it('uses change details override for short description when provided', async () => {
+    vi.mocked(jiraGet)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce({ issues: [createMockJiraIssue('ABC-101', 'Prepare deployment notes')] } as never);
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setShortDescriptionConfig({
+        application: 'Enrollment',
+        team: 'Transformers',
+        changeDetailsOverride: '6 Stories 3 Defects',
+      });
+      result.current.actions.setProjectKey('abc');
+      result.current.actions.setFixVersion('1.2.3');
+    });
+
+    await act(async () => {
+      await result.current.actions.fetchIssues();
+    });
+
+    act(() => {
+      result.current.actions.generateDocs();
+    });
+
+    expect(result.current.state.generatedShortDescription).toBe('Enrollment - Transformers - 6 Stories 3 Defects');
+  });
+
+  it('generates short description details from selected issue type counts in jql mode', async () => {
+    vi.mocked(jiraGet)
+      .mockResolvedValueOnce({ issues: [
+        createMockJiraIssue('ABC-101', 'Prepare deployment notes', 'Story'),
+        createMockJiraIssue('ABC-102', 'Add fallback query', 'Story'),
+        createMockJiraIssue('ABC-103', 'Fix relay error', 'Defect'),
+      ] } as never);
+    const { result } = renderHook(() => useCrgState());
+
+    act(() => {
+      result.current.actions.setFetchMode('jql');
+      result.current.actions.setCustomJql('project = ABC AND status = Done');
+      result.current.actions.setShortDescriptionConfig({
+        application: 'Enrollment',
+        team: 'Transformers',
+      });
+    });
+
+    await act(async () => {
+      await result.current.actions.fetchIssues();
+    });
+
+    act(() => {
+      result.current.actions.generateDocs();
+    });
+
+    expect(result.current.state.generatedShortDescription).toBe('Enrollment - Transformers - 2 Stories 1 Defect');
+  });
+
   it('updates the selected environment configuration', () => {
     const { result } = renderHook(() => useCrgState());
 
@@ -316,7 +398,7 @@ describe('useCrgState', () => {
     expect(result.current.state.currentStep).toBe(2);
   });
 
-  it('generates docs with a custom JQL label in jql mode', async () => {
+  it('generates docs with issue-type summary details in jql mode', async () => {
     vi.mocked(jiraGet).mockResolvedValueOnce({ issues: MOCK_JIRA_ISSUES } as never);
     const { result } = renderHook(() => useCrgState());
 
@@ -333,8 +415,8 @@ describe('useCrgState', () => {
       result.current.actions.generateDocs();
     });
 
-    // Short description should reference "custom JQL query" rather than a project/version string.
-    expect(result.current.state.generatedShortDescription).toContain('custom JQL query');
+    // JQL mode details are now derived from selected issue type counts.
+    expect(result.current.state.generatedShortDescription).toContain('2 Stories');
     expect(result.current.state.generatedDescription).toContain('ABC-101');
   });
 
@@ -457,7 +539,7 @@ describe('useCrgState', () => {
       expect(result.current.state.inspectedSnowFields).toContainEqual({
         fieldName: 'u_custom_change_rule',
         displayValue: 'CAB required',
-        storedValue: 'CAB required',
+        storedValue: '',
       });
       expect(result.current.state.inspectedSnowFields.some((snowField) => snowField.fieldName === 'impact')).toBe(false);
     });
@@ -484,6 +566,31 @@ describe('useCrgState', () => {
       expect(result.current.state.chgBasicInfo.changeManager).toEqual({
         sysId: '',
         displayName: 'Display Only Manager',
+      });
+    });
+
+    it('uses alias change manager field names when cloning CHG data', async () => {
+      vi.mocked(snowFetch).mockResolvedValueOnce({
+        result: [
+          {
+            u_change_manager: { value: 'mgr-200', display_value: 'Sharma, Raman' },
+          },
+        ],
+      } as never);
+
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.setCloneChgNumber('CHG0001234');
+      });
+
+      await act(async () => {
+        await result.current.actions.cloneFromChg();
+      });
+
+      expect(result.current.state.chgBasicInfo.changeManager).toEqual({
+        sysId: 'mgr-200',
+        displayName: 'Sharma, Raman',
       });
     });
 
@@ -568,6 +675,25 @@ describe('useCrgState', () => {
   });
 
   describe('createChg', () => {
+    beforeEach(() => {
+      vi.mocked(snowFetch).mockImplementation(async (path) => {
+        const requestPath = String(path);
+        if (requestPath.includes('/api/now/table/change_task?')) {
+          return { result: [] } as never;
+        }
+        if (requestPath.includes('/api/now/table/change_task/')) {
+          return { result: { number: 'CTASK000AUTO' } } as never;
+        }
+        if (requestPath.includes('/api/now/table/change_task')) {
+          return { result: { number: 'CTASK0001001' } } as never;
+        }
+        if (requestPath.includes('/api/now/table/change_request?')) {
+          return { result: [{ sys_id: 'chg-sys-001' }] } as never;
+        }
+        return { result: { number: 'CHG0001234', sys_id: 'chg-sys-001' } } as never;
+      });
+    });
+
     afterEach(() => {
       vi.clearAllMocks();
     });
@@ -597,7 +723,9 @@ describe('useCrgState', () => {
     }
 
     it('POSTs the generated fields to the SNow table endpoint and records the CHG number', async () => {
-      vi.mocked(snowFetch).mockResolvedValue({ result: { number: 'CHG0001234' } } as never);
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: { number: 'CHG0001234', sys_id: 'chg-sys-001' } } as never)
+        .mockResolvedValueOnce({ result: [] } as never);
 
       const { result } = await advanceToChangeDetailsStep();
 
@@ -617,6 +745,7 @@ describe('useCrgState', () => {
     it('creates selected CTASKs after the CHG is created', async () => {
       vi.mocked(snowFetch)
         .mockResolvedValueOnce({ result: { number: 'CHG0001234', sys_id: 'chg-sys-001' } } as never)
+        .mockResolvedValueOnce({ result: [] } as never)
         .mockResolvedValueOnce({ result: { number: 'CTASK0001001' } } as never);
 
       const { result } = await advanceToChangeDetailsStep();
@@ -630,13 +759,13 @@ describe('useCrgState', () => {
       });
 
       expect(vi.mocked(snowFetch)).toHaveBeenNthCalledWith(
-        2,
+        3,
         '/api/now/table/change_task',
         expect.objectContaining({ method: 'POST' }),
       );
 
       const ctaskBody = JSON.parse(
-        (vi.mocked(snowFetch).mock.calls[1][1] as RequestInit).body as string,
+        (vi.mocked(snowFetch).mock.calls[2][1] as RequestInit).body as string,
       ) as Record<string, unknown>;
       expect(ctaskBody.change_request).toBe('chg-sys-001');
       expect(ctaskBody.short_description).toBe('Validate production deployment');
@@ -647,6 +776,7 @@ describe('useCrgState', () => {
     it('reports partial success when CHG creation succeeds but CTASK creation fails', async () => {
       vi.mocked(snowFetch)
         .mockResolvedValueOnce({ result: { number: 'CHG0001234', sys_id: 'chg-sys-001' } } as never)
+        .mockResolvedValueOnce({ result: [] } as never)
         .mockRejectedValueOnce(new Error('CTASK denied') as never);
 
       const { result } = await advanceToChangeDetailsStep();
@@ -663,9 +793,52 @@ describe('useCrgState', () => {
       expect(result.current.state.isSubmitting).toBe(false);
     });
 
+    it('patches the two auto-created ServiceNow CTASKs after CHG creation', async () => {
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: { number: 'CHG0001234', sys_id: 'chg-sys-001' } } as never)
+        .mockResolvedValueOnce({
+          result: [
+            { sys_id: 'auto-ctask-001', number: 'CTASK0002001' },
+            { sys_id: 'auto-ctask-002', number: 'CTASK0002002' },
+          ],
+        } as never)
+        .mockResolvedValueOnce({ result: { number: 'CTASK0002001' } } as never)
+        .mockResolvedValueOnce({ result: { number: 'CTASK0002002' } } as never);
+
+      const { result } = await advanceToChangeDetailsStep();
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      expect(vi.mocked(snowFetch)).toHaveBeenNthCalledWith(
+        3,
+        '/api/now/table/change_task/auto-ctask-001',
+        expect.objectContaining({ method: 'PATCH' }),
+      );
+      expect(vi.mocked(snowFetch)).toHaveBeenNthCalledWith(
+        4,
+        '/api/now/table/change_task/auto-ctask-002',
+        expect.objectContaining({ method: 'PATCH' }),
+      );
+
+      const implementationPatchBody = JSON.parse(
+        (vi.mocked(snowFetch).mock.calls[2][1] as RequestInit).body as string,
+      ) as Record<string, unknown>;
+      const technicalCheckoutPatchBody = JSON.parse(
+        (vi.mocked(snowFetch).mock.calls[3][1] as RequestInit).body as string,
+      ) as Record<string, unknown>;
+
+      expect(implementationPatchBody.short_description).toBe('Enrollment - AWS - ENV');
+      expect(technicalCheckoutPatchBody.short_description).toBe('Technical Checkout');
+      expect(typeof technicalCheckoutPatchBody.description).toBe('string');
+    });
+
     it('clears the persisted draft after successful CHG creation so future visits start fresh', async () => {
       const STORAGE_KEY = 'ntbx-crg-state';
-      vi.mocked(snowFetch).mockResolvedValue({ result: { number: 'CHG0001234' } } as never);
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: { number: 'CHG0001234', sys_id: 'chg-sys-001' } } as never)
+        .mockResolvedValueOnce({ result: [] } as never);
 
       const { result } = await advanceToChangeDetailsStep();
 
@@ -708,6 +881,27 @@ describe('useCrgState', () => {
       expect(bodyString.assignment_group).toBe('grp-001');
       expect(bodyString.impact).toBe('2');
       expect(bodyString.implementation_plan).toBe('Deploy via script');
+    });
+
+    it('uses the mapped environment impacted persons aware value in the POST body', async () => {
+      vi.mocked(snowFetch).mockResolvedValue({ result: { number: 'CHG0005678' } } as never);
+
+      const { result } = await advanceToChangeDetailsStep();
+
+      act(() => {
+        result.current.actions.setChgPlanningAssessment({ impactedPersonsAware: 'fallback-aware' });
+        result.current.actions.updateEnvironment('prd', { isEnabled: true, impactedPersonsAware: 'env-aware' });
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      const bodyString = JSON.parse(
+        (vi.mocked(snowFetch).mock.calls[0][1] as RequestInit).body as string,
+      ) as Record<string, unknown>;
+
+      expect(bodyString.u_impacted_persons_aware).toBe('env-aware');
     });
 
     it('includes exact custom SNow fields pinned from configuration in the POST body', async () => {
@@ -767,6 +961,188 @@ describe('useCrgState', () => {
 
       expect(result.current.state.submitResult).toContain('SNow relay not connected');
       expect(result.current.state.isSubmitting).toBe(false);
+    });
+
+    it('resolves a display-only change manager to sys_id before create', async () => {
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: [{ sys_id: 'mgr-700' }] } as never)
+        .mockResolvedValueOnce({ result: { number: 'CHG0007777', sys_id: 'chg-sys-777' } } as never)
+        .mockResolvedValueOnce({ result: [] } as never);
+
+      const { result } = await advanceToChangeDetailsStep();
+
+      act(() => {
+        result.current.actions.setChgBasicInfo({
+          changeManager: { sysId: '', displayName: 'Sharma, Raman' },
+        });
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg();
+      });
+
+      expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('/api/now/table/sys_user?');
+      const createBody = JSON.parse(
+        (vi.mocked(snowFetch).mock.calls[1][1] as RequestInit).body as string,
+      ) as Record<string, unknown>;
+      expect(createBody.change_manager).toBe('mgr-700');
+    });
+  });
+
+  describe('updateExistingChg', () => {
+    it('PATCHes an existing CHG with current planning values', async () => {
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: [{ sys_id: 'chg-sys-123' }] } as never)
+        .mockResolvedValueOnce({ result: { number: 'CHG0001234' } } as never)
+        .mockResolvedValueOnce({
+          result: [{
+            impact: { value: '2', display_value: '2' },
+            u_change_tested: { value: 'yes', display_value: 'yes' },
+          }],
+        } as never);
+
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.updateGeneratedField('shortDescription', 'Enrollment - Transformers - fixVersion');
+        result.current.actions.updateGeneratedField('description', 'Deploying release package.');
+        result.current.actions.setChgPlanningAssessment({
+          impact: '2',
+          hasBeenTested: 'yes',
+        });
+        result.current.actions.setChgPlanningContent({
+          implementationPlan: 'Run deployment script.',
+          backoutPlan: 'Rollback package.',
+          testPlan: 'Validate smoke tests.',
+        });
+      });
+
+      await act(async () => {
+        await result.current.actions.updateExistingChg('chg0001234');
+      });
+
+      expect(vi.mocked(snowFetch)).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining('/api/now/table/change_request?'),
+      );
+      expect(vi.mocked(snowFetch)).toHaveBeenNthCalledWith(
+        2,
+        '/api/now/table/change_request/chg-sys-123',
+        expect.objectContaining({ method: 'PATCH' }),
+      );
+
+      const patchBody = JSON.parse(
+        (vi.mocked(snowFetch).mock.calls[1][1] as RequestInit).body as string,
+      ) as Record<string, unknown>;
+      expect(patchBody.short_description).toBe('Enrollment - Transformers - fixVersion');
+      expect(patchBody.impact).toBe('2');
+      expect(patchBody.u_change_tested).toBe('yes');
+      expect(patchBody.implementation_plan).toBe('Run deployment script.');
+      expect(patchBody.backout_plan).toBe('Rollback package.');
+      expect(patchBody.test_plan).toBe('Validate smoke tests.');
+      expect(result.current.state.submitResult).toBe('CHG0001234 updated');
+    });
+
+    it('returns a clear error when CHG number is empty', async () => {
+      const { result } = renderHook(() => useCrgState());
+
+      await act(async () => {
+        await result.current.actions.updateExistingChg('');
+      });
+
+      expect(result.current.state.submitResult).toBe('Error: Enter a CHG number before updating.');
+      expect(vi.mocked(snowFetch)).not.toHaveBeenCalled();
+    });
+
+    it('writes planning alias field names unconditionally even when no fields are pinned or inspected', async () => {
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: [{ sys_id: 'chg-sys-456' }] } as never)
+        .mockResolvedValueOnce({ result: { number: 'CHG0004567' } } as never)
+        .mockResolvedValueOnce({
+          result: [{
+            u_assessment_of_success_probability: { value: 'vcon', display_value: 'Very Confident' },
+          }],
+        } as never);
+
+      const { result } = renderHook(() => useCrgState());
+
+      // No pinCustomSnowField call — pure default state with a planning value set
+      act(() => {
+        result.current.actions.setChgPlanningAssessment({ successProbability: 'vcon' });
+      });
+
+      await act(async () => {
+        await result.current.actions.updateExistingChg('chg0004567');
+      });
+
+      const patchBody = JSON.parse(
+        (vi.mocked(snowFetch).mock.calls[1][1] as RequestInit).body as string,
+      ) as Record<string, unknown>;
+      // Both canonical and instance-specific aliases must be present in the payload
+      expect(patchBody.u_success_probability).toBe('vcon');
+      expect(patchBody.u_assessment_of_success_probability).toBe('vcon');
+    });
+
+    it('overrides pinned alias planning fields with current UI values during CHG update', async () => {
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: [{ sys_id: 'chg-sys-456' }] } as never)
+        .mockResolvedValueOnce({ result: { number: 'CHG0004567' } } as never)
+        .mockResolvedValueOnce({
+          result: [{
+            u_implications_of_system_availability: { value: 'no_impact', display_value: 'No Impact' },
+            u_availability_impact: { value: 'no_impact', display_value: 'No Impact' },
+          }],
+        } as never);
+
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.pinCustomSnowField('u_implications_of_system_availability', 'legacy-value');
+        result.current.actions.setChgPlanningAssessment({
+          systemAvailabilityImplication: 'no_impact',
+        });
+      });
+
+      await act(async () => {
+        await result.current.actions.updateExistingChg('chg0004567');
+      });
+
+      const patchBody = JSON.parse(
+        (vi.mocked(snowFetch).mock.calls[1][1] as RequestInit).body as string,
+      ) as Record<string, unknown>;
+      expect(patchBody.u_implications_of_system_availability).toBe('no_impact');
+      expect(patchBody.u_availability_impact).toBe('no_impact');
+    });
+
+    it('resolves a display-only change manager to sys_id before update', async () => {
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: [{ sys_id: 'chg-sys-456' }] } as never)
+        .mockResolvedValueOnce({ result: [{ sys_id: 'mgr-333' }] } as never)
+        .mockResolvedValueOnce({ result: { number: 'CHG0004567' } } as never)
+        .mockResolvedValueOnce({
+          result: [{
+            change_manager: { value: 'mgr-333', display_value: 'Sharma, Raman' },
+          }],
+        } as never);
+
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.setChgBasicInfo({
+          changeManager: { sysId: '', displayName: 'Sharma, Raman' },
+        });
+      });
+
+      await act(async () => {
+        await result.current.actions.updateExistingChg('chg0004567');
+      });
+
+      expect(vi.mocked(snowFetch).mock.calls[1][0]).toContain('/api/now/table/sys_user?');
+      const patchBody = JSON.parse(
+        (vi.mocked(snowFetch).mock.calls[2][1] as RequestInit).body as string,
+      ) as Record<string, unknown>;
+      expect(patchBody.change_manager).toBe('mgr-333');
+      expect(patchBody.u_change_manager).toBe('mgr-333');
     });
   });
 
@@ -880,9 +1256,9 @@ describe('useCrgState', () => {
         chgPlanningContent: {
           implementationPlan: 'Run pipeline.', backoutPlan: 'Revert tag.', testPlan: 'Smoke tests.',
         },
-        relEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00', configItem: { sysId: '', displayName: '' } },
-        prdEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00', configItem: { sysId: '', displayName: '' } },
-        pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { sysId: '', displayName: '' } },
+        relEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00', configItem: { sysId: '', displayName: '' }, impactedPersonsAware: '' },
+        prdEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00', configItem: { sysId: '', displayName: '' }, impactedPersonsAware: '' },
+        pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { sysId: '', displayName: '' }, impactedPersonsAware: '' },
       };
 
       act(() => {
@@ -895,6 +1271,74 @@ describe('useCrgState', () => {
       expect(result.current.state.chgPlanningContent.implementationPlan).toBe('Run pipeline.');
       expect(result.current.state.relEnvironment.isEnabled).toBe(true);
       expect(result.current.state.prdEnvironment.plannedStartDate).toBe('2026-01-02T10:00');
+    });
+
+    it('preserves configured short-description defaults when template values are blank', () => {
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.setShortDescriptionConfig({
+          application: 'Enrollment',
+          team: 'Transformers',
+          changeDetailsOverride: 'FixVersion',
+        });
+      });
+
+      act(() => {
+        result.current.actions.applyTemplate({
+          id: 'tpl-empty-short-description',
+          name: 'Legacy Blank Short Description',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          shortDescriptionConfig: {
+            application: '',
+            team: '',
+            changeDetailsOverride: '',
+          },
+          chgBasicInfo:          result.current.state.chgBasicInfo,
+          chgPlanningAssessment: result.current.state.chgPlanningAssessment,
+          chgPlanningContent:    result.current.state.chgPlanningContent,
+        });
+      });
+
+      expect(result.current.state.shortDescriptionConfig).toEqual({
+        application: 'Enrollment',
+        team: 'Transformers',
+        changeDetailsOverride: 'FixVersion',
+      });
+    });
+
+    it('applies non-empty template short-description values without clearing existing defaults', () => {
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.setShortDescriptionConfig({
+          application: 'Enrollment',
+          team: 'Transformers',
+          changeDetailsOverride: 'FixVersion',
+        });
+      });
+
+      act(() => {
+        result.current.actions.applyTemplate({
+          id: 'tpl-partial-short-description',
+          name: 'Partial Short Description',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          shortDescriptionConfig: {
+            application: 'Claims',
+            team: '',
+            changeDetailsOverride: '',
+          },
+          chgBasicInfo:          result.current.state.chgBasicInfo,
+          chgPlanningAssessment: result.current.state.chgPlanningAssessment,
+          chgPlanningContent:    result.current.state.chgPlanningContent,
+        });
+      });
+
+      expect(result.current.state.shortDescriptionConfig).toEqual({
+        application: 'Claims',
+        team: 'Transformers',
+        changeDetailsOverride: 'FixVersion',
+      });
     });
 
     it('preserves current environment schedules when applying a legacy template', () => {
@@ -940,6 +1384,7 @@ describe('useCrgState', () => {
         plannedStartDate: '2026-01-05T10:00',
         plannedEndDate: '2026-01-05T11:00',
         configItem: { sysId: '', displayName: '' },
+        impactedPersonsAware: '',
       });
     });
 
@@ -987,6 +1432,7 @@ describe('useCrgState', () => {
 
   describe('localStorage persistence', () => {
     const STORAGE_KEY = 'ntbx-crg-state';
+    const SHORT_DESCRIPTION_CONFIG_KEY = 'ntbx-crg-short-description-config';
 
     beforeEach(() => {
       localStorage.clear();
@@ -1116,6 +1562,46 @@ describe('useCrgState', () => {
 
       expect(result.current.state.currentStep).toBe(1);
       expect(result.current.state.projectKey).toBe('');
+    });
+
+    it('persists short description defaults independently and keeps them after reset/remount', async () => {
+      mockVersionFetch();
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.setShortDescriptionConfig({
+          application: 'Enrollment',
+          team: 'Transformers',
+          changeDetailsOverride: 'FixVersion',
+        });
+      });
+
+      await waitFor(() => {
+        const storedConfig = localStorage.getItem(SHORT_DESCRIPTION_CONFIG_KEY);
+        expect(storedConfig).not.toBeNull();
+        expect(JSON.parse(storedConfig!)).toEqual({
+          application: 'Enrollment',
+          team: 'Transformers',
+          changeDetailsOverride: 'FixVersion',
+        });
+      });
+
+      act(() => {
+        result.current.actions.reset();
+      });
+
+      expect(result.current.state.shortDescriptionConfig).toEqual({
+        application: 'Enrollment',
+        team: 'Transformers',
+        changeDetailsOverride: 'FixVersion',
+      });
+
+      const { result: freshHook } = renderHook(() => useCrgState());
+      expect(freshHook.current.state.shortDescriptionConfig).toEqual({
+        application: 'Enrollment',
+        team: 'Transformers',
+        changeDetailsOverride: 'FixVersion',
+      });
     });
   });
 });
