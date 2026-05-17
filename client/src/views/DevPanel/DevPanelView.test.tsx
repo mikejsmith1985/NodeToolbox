@@ -341,7 +341,7 @@ describe('DevPanelView — GitHub Debug tab', () => {
     await user.click(screen.getByRole('button', { name: /Fetch GitHub Debug Info/i }));
 
     expect(await screen.findByText(/Configuration Status/i)).toBeInTheDocument();
-    expect(screen.getByText('✓ Configured')).toBeInTheDocument();
+    expect(screen.getByText('✓ Connected')).toBeInTheDocument();
     expect(screen.getByText('ghp_...***')).toBeInTheDocument();
     expect(screen.getByText('token <PAT>')).toBeInTheDocument();
     expect(screen.getByText(/Probe Result/i)).toBeInTheDocument();
@@ -401,5 +401,97 @@ describe('DevPanelView — GitHub Debug tab', () => {
     expect(screen.getByText('✗ Not Configured')).toBeInTheDocument();
     expect(screen.getByText(/GitHub PAT not configured/i)).toBeInTheDocument();
     expect(screen.getByText('Not configured')).toBeInTheDocument();
+  });
+
+  it('shows connected status and authenticated user when the probe succeeds', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const endpointUrl = String(input);
+      if (endpointUrl.includes('/api/scheduler/github-debug')) {
+        return {
+          ok: true,
+          json: async () => ({
+            isConfigured: true,
+            timestamp: '2026-01-01T12:00:00.000Z',
+            debugInfo: {
+              pat: 'ghp_...tDg3',
+              baseUrl: 'https://api.github.com',
+              authHeaderFormat: 'token <PAT>',
+              sentHeader: 'Authorization: token ghp_...tDg3',
+            },
+            probeResult: {
+              endpoint: '/user (authenticated user info)',
+              method: 'GET',
+              statusCode: 200,
+              statusText: 'OK',
+              responseTime: 312,
+              success: true,
+              authenticatedAs: 'mikejsmith1985',
+            },
+          }),
+        } as Response;
+      }
+      return { ok: true, json: async () => ({}) } as Response;
+    });
+
+    const user = userEvent.setup();
+    renderDevPanelView();
+    await user.click(screen.getByRole('tab', { name: /GitHub Debug/i }));
+    await user.click(screen.getByRole('button', { name: /Fetch GitHub Debug Info/i }));
+
+    // Status header must say "Connected" — not just "Configured" — when the probe passed
+    expect(await screen.findByText('✓ Connected')).toBeInTheDocument();
+    // The actual status code + method must be visible (may appear in span + parent containers)
+    expect(screen.getByText('GET')).toBeInTheDocument();
+    expect(screen.getAllByText(/200.*OK/).length).toBeGreaterThan(0);
+    // Authenticated-as must be displayed
+    expect(screen.getByText('mikejsmith1985')).toBeInTheDocument();
+    // No error banner
+    expect(screen.queryByText(/probe failed/i)).not.toBeInTheDocument();
+  });
+
+  it('shows a red failure status and the actual HTTP error when the probe fails', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const endpointUrl = String(input);
+      if (endpointUrl.includes('/api/scheduler/github-debug')) {
+        return {
+          ok: true,
+          json: async () => ({
+            isConfigured: true,
+            timestamp: '2026-01-01T12:00:00.000Z',
+            debugInfo: {
+              pat: 'ghp_...tDg3',
+              baseUrl: 'https://api.github.com',
+              authHeaderFormat: 'token <PAT>',
+              sentHeader: 'Authorization: token ghp_...tDg3',
+            },
+            probeResult: {
+              endpoint: '/user (authenticated user info)',
+              method: 'GET',
+              statusCode: 401,
+              statusText: 'Unauthorized',
+              responseTime: 198,
+              success: false,
+              errorMessage: 'HTTP 401 Unauthorized — Bad credentials',
+            },
+          }),
+        } as Response;
+      }
+      return { ok: true, json: async () => ({}) } as Response;
+    });
+
+    const user = userEvent.setup();
+    renderDevPanelView();
+    await user.click(screen.getByRole('tab', { name: /GitHub Debug/i }));
+    await user.click(screen.getByRole('button', { name: /Fetch GitHub Debug Info/i }));
+
+    // Status header must say "failed" — not the misleading green "Configured"
+    expect(await screen.findByText('✗ PAT configured but probe failed')).toBeInTheDocument();
+    // The actual error must appear at least once (it shows in both the prominent banner
+    // and the probe result table — both rendering it is correct behaviour)
+    expect(screen.getAllByText(/HTTP 401 Unauthorized — Bad credentials/).length).toBeGreaterThan(0);
+    // The probe details show the real status code — appears in both the span and parent containers
+    expect(screen.getAllByText(/401.*Unauthorized/).length).toBeGreaterThan(0);
+    // Success flag shows ✗
+    expect(screen.getByText('✗ No')).toBeInTheDocument();
   });
 });

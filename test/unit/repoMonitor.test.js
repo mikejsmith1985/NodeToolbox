@@ -1,10 +1,10 @@
 // test/unit/repoMonitor.test.js — Unit tests for the repository monitor service.
-// Tests the exported utility functions and scheduler state management.
-// Outbound HTTP calls to GitHub and Jira are not tested here — those are
-// covered by the integration tests via nock-intercepted HTTP.
+// Tests the exported utility functions, scheduler state management, and the
+// GitHub connectivity probe. HTTP is intercepted with nock for probe tests.
 
 'use strict';
 
+const nock        = require('nock');
 const repoMonitor = require('../../src/services/repoMonitor');
 
 // ── Shared test configuration ─────────────────────────────────────────────────
@@ -141,5 +141,61 @@ describe('runRepoMonitor', () => {
     const configuration = buildTestConfig();
     configuration.github.pat = '';
     await expect(repoMonitor.runRepoMonitor(configuration)).resolves.toBeUndefined();
+  });
+});
+
+// ── testGitHubConnectivity ────────────────────────────────────────────────────
+
+describe('testGitHubConnectivity', () => {
+  afterEach(() => nock.cleanAll());
+
+  it('returns success=true with authenticatedAs when GitHub returns HTTP 200', async () => {
+    nock('https://api.github.com')
+      .get('/user')
+      .reply(200, { login: 'mikejsmith1985', name: 'Mike Smith' });
+
+    const configuration = buildTestConfig();
+    const probeResult   = await repoMonitor.testGitHubConnectivity(configuration);
+
+    expect(probeResult.success).toBe(true);
+    expect(probeResult.statusCode).toBe(200);
+    expect(probeResult.statusText).toBe('OK');
+    expect(probeResult.method).toBe('GET');
+    expect(probeResult.endpoint).toMatch(/\/user/);
+    expect(probeResult.authenticatedAs).toBe('mikejsmith1985');
+    expect(probeResult.errorMessage).toBeUndefined();
+    expect(typeof probeResult.responseTime).toBe('number');
+  });
+
+  it('returns success=false with a human-readable errorMessage when GitHub returns HTTP 401', async () => {
+    nock('https://api.github.com')
+      .get('/user')
+      .reply(401, { message: 'Bad credentials' });
+
+    const configuration = buildTestConfig();
+    const probeResult   = await repoMonitor.testGitHubConnectivity(configuration);
+
+    expect(probeResult.success).toBe(false);
+    expect(probeResult.statusCode).toBe(401);
+    expect(probeResult.statusText).toBe('Unauthorized');
+    expect(probeResult.errorMessage).toMatch(/401/);
+    expect(probeResult.errorMessage).toMatch(/Unauthorized/);
+    expect(probeResult.errorMessage).toMatch(/Bad credentials/);
+    expect(probeResult.authenticatedAs).toBeNull();
+  });
+
+  it('returns success=false with errorMessage when GitHub returns HTTP 403', async () => {
+    nock('https://api.github.com')
+      .get('/user')
+      .reply(403, { message: 'Forbidden' });
+
+    const configuration = buildTestConfig();
+    const probeResult   = await repoMonitor.testGitHubConnectivity(configuration);
+
+    expect(probeResult.success).toBe(false);
+    expect(probeResult.statusCode).toBe(403);
+    expect(probeResult.statusText).toBe('Forbidden');
+    expect(probeResult.errorMessage).toMatch(/403/);
+    expect(probeResult.authenticatedAs).toBeNull();
   });
 });

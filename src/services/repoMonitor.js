@@ -656,35 +656,85 @@ function buildConnectivityValidationResult(configuredRepos, repoProbeResults, op
   };
 }
 
+// ── HTTP status code → reason phrase lookup (covers GitHub's typical response codes) ──
+const HTTP_STATUS_TEXT = {
+  200: 'OK',
+  201: 'Created',
+  204: 'No Content',
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  404: 'Not Found',
+  422: 'Unprocessable Entity',
+  429: 'Too Many Requests',
+  500: 'Internal Server Error',
+  502: 'Bad Gateway',
+  503: 'Service Unavailable',
+};
+
 /**
- * Tests raw GitHub API connectivity using the public GitHub status endpoint.
- * Returns detailed request/response information for debugging auth and network issues.
+ * Returns the standard HTTP reason phrase for a status code (e.g. 401 → "Unauthorized").
+ * Falls back to an empty string for unknown codes.
+ *
+ * @param {number} statusCode
+ * @returns {string}
+ */
+function resolveHttpStatusText(statusCode) {
+  return HTTP_STATUS_TEXT[statusCode] || '';
+}
+
+/**
+ * Tests raw GitHub API connectivity by calling the /user endpoint with the configured PAT.
+ * Returns a GitHubProbeResult-shaped object whose field names match the TypeScript interface
+ * in client/src/services/schedulerApi.ts so the debug panel can render them directly.
+ *
+ * Fields returned:
+ *   endpoint      — path probed (always "/user (authenticated user info)")
+ *   method        — HTTP method used (always "GET")
+ *   statusCode    — HTTP response status code (e.g. 200, 401, 403)
+ *   statusText    — Human-readable reason phrase (e.g. "OK", "Unauthorized")
+ *   responseTime  — Round-trip time in milliseconds
+ *   success       — true when GitHub returned HTTP 200
+ *   authenticatedAs — GitHub login of the authenticated user, or null on failure
+ *   errorMessage  — Populated when success is false; contains the HTTP status + GitHub message
  *
  * @param {import('../config/loader').ProxyConfig} configuration
  * @returns {Promise<object>}
  */
 function testGitHubConnectivity(configuration) {
-  const githubPat = configuration.github && configuration.github.pat;
+  const githubPat    = configuration.github && configuration.github.pat;
   const githubBaseUrl = (configuration.github && configuration.github.baseUrl) || 'https://api.github.com';
   const isTlsVerified = configuration.sslVerify !== false;
 
-  // Test with a simple public endpoint that requires authentication
+  const requestStartTime = Date.now();
+
   return makeGithubApiRequest(
-    '/user',  // Simple endpoint that requires valid PAT
+    '/user',
     githubPat,
     githubBaseUrl,
     isTlsVerified
   ).then((userResponse) => {
-    const authenticated = userResponse.status === 200;
-    const userLogin = userResponse.body && userResponse.body.login ? userResponse.body.login : 'unknown';
+    const elapsedMs       = Date.now() - requestStartTime;
+    const isSuccess       = userResponse.status === 200;
+    const userLogin       = userResponse.body && userResponse.body.login ? userResponse.body.login : null;
+    const githubMessage   = userResponse.body && userResponse.body.message ? userResponse.body.message : null;
+
+    // Build a human-readable error when the probe fails so the UI shows the actual
+    // reason (e.g. "HTTP 401 Unauthorized — Bad credentials") instead of generic tips.
+    const errorMessage = isSuccess
+      ? undefined
+      : 'HTTP ' + userResponse.status + ' ' + resolveHttpStatusText(userResponse.status) +
+        (githubMessage ? ' — ' + githubMessage : '');
 
     return {
-      endpoint: '/user (authenticated user info)',
-      httpStatus: userResponse.status,
-      authenticated,
-      authenticatedAs: authenticated ? userLogin : null,
-      message: authenticated ? 'PAT is valid and authenticated' : 'PAT authentication failed (HTTP ' + userResponse.status + ')',
-      response: userResponse.body,
+      endpoint:        '/user (authenticated user info)',
+      method:          'GET',
+      statusCode:      userResponse.status,
+      statusText:      resolveHttpStatusText(userResponse.status),
+      responseTime:    elapsedMs,
+      success:         isSuccess,
+      authenticatedAs: isSuccess ? userLogin : null,
+      errorMessage,
     };
   });
 }
