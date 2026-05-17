@@ -441,13 +441,39 @@ function renderGitHubDebugInfo(debugInfo: GitHubDebugResponse) {
     return <div className={styles.emptyState}>Loading GitHub debug info...</div>;
   }
 
+  // Connectivity is "working" only when a probe ran and succeeded.
+  // isConfigured=true only means a PAT is stored — not that it works.
+  const hasProbeResult        = !!debugInfo.probeResult;
+  const isProbeSuccess        = hasProbeResult && debugInfo.probeResult!.success;
+  const isConfiguredButFailed = debugInfo.isConfigured && hasProbeResult && !isProbeSuccess;
+
+  const configStatusLabel = !debugInfo.isConfigured
+    ? '✗ Not Configured'
+    : isProbeSuccess
+      ? '✓ Connected'
+      : isConfiguredButFailed
+        ? '✗ PAT configured but probe failed'
+        : '✓ Configured (probe not yet run)';
+
   return (
     <>
       <div className={styles.emptyState}>
-        <div><strong>Configuration Status:</strong> {debugInfo.isConfigured ? '✓ Configured' : '✗ Not Configured'}</div>
+        <div>
+          <strong>Configuration Status:</strong>{' '}
+          <span style={{ color: isProbeSuccess ? '#4ade80' : isConfiguredButFailed ? '#f87171' : undefined }}>
+            {configStatusLabel}
+          </span>
+        </div>
         {debugInfo.timestamp && <div><strong>Checked at:</strong> {formatTimestamp(debugInfo.timestamp)}</div>}
         {debugInfo.message && <div><strong>Message:</strong> {debugInfo.message}</div>}
       </div>
+
+      {/* Show the actual probe failure prominently — before the generic tips */}
+      {isConfiguredButFailed && debugInfo.probeResult!.errorMessage && (
+        <div className={styles.pauseBanner}>
+          ⚠ GitHub probe failed: <strong>{debugInfo.probeResult!.errorMessage}</strong>
+        </div>
+      )}
 
       <div className={styles.emptyState}>
         <div><strong>Debug Info:</strong></div>
@@ -470,11 +496,19 @@ function renderGitHubDebugInfo(debugInfo: GitHubDebugResponse) {
           <div style={{ paddingLeft: '1rem', fontFamily: 'monospace', fontSize: '0.9rem' }}>
             <div><strong>Endpoint:</strong> {debugInfo.probeResult.endpoint}</div>
             <div><strong>Method:</strong> {debugInfo.probeResult.method}</div>
-            <div><strong>Status:</strong> {debugInfo.probeResult.statusCode} {debugInfo.probeResult.statusText}</div>
+            <div>
+              <strong>Status:</strong>{' '}
+              <span style={{ color: debugInfo.probeResult.success ? '#4ade80' : '#f87171' }}>
+                {debugInfo.probeResult.statusCode} {debugInfo.probeResult.statusText}
+              </span>
+            </div>
             <div><strong>Response Time:</strong> {debugInfo.probeResult.responseTime}ms</div>
             <div><strong>Success:</strong> {debugInfo.probeResult.success ? '✓ Yes' : '✗ No'}</div>
+            {debugInfo.probeResult.authenticatedAs && (
+              <div><strong>Authenticated as:</strong> {debugInfo.probeResult.authenticatedAs}</div>
+            )}
             {debugInfo.probeResult.errorMessage && (
-              <div><strong>Error:</strong> {debugInfo.probeResult.errorMessage}</div>
+              <div style={{ color: '#f87171' }}><strong>Error:</strong> {debugInfo.probeResult.errorMessage}</div>
             )}
           </div>
         </div>
@@ -486,13 +520,17 @@ function renderGitHubDebugInfo(debugInfo: GitHubDebugResponse) {
 
       <div className={styles.emptyState} style={{ fontSize: '0.85rem', color: '#999' }}>
         <p><strong>What this shows:</strong> This debug panel displays the exact authentication headers being sent to GitHub and the results of a connectivity probe. If the probe shows HTTP 200 with success=true, GitHub connectivity is working correctly.</p>
-        <p><strong>Common issues:</strong></p>
-        <ul style={{ marginLeft: '1rem' }}>
-          <li>HTTP 401: Invalid or expired GitHub PAT token</li>
-          <li>HTTP 403: Valid token but insufficient permissions</li>
-          <li>Network error: GitHub is unreachable or firewall/proxy blocking</li>
-          <li>If PAT shows &quot;Not configured&quot;: Add your GitHub PAT in Admin Hub settings</li>
-        </ul>
+        {!isProbeSuccess && (
+          <>
+            <p><strong>Common issues:</strong></p>
+            <ul style={{ marginLeft: '1rem' }}>
+              <li>HTTP 401: Invalid or expired GitHub PAT token</li>
+              <li>HTTP 403: Valid token but insufficient scopes (needs <code>repo</code> or <code>read:user</code>)</li>
+              <li>Network error: GitHub is unreachable or firewall/proxy blocking</li>
+              <li>If PAT shows &quot;Not configured&quot;: Add your GitHub PAT in Admin Hub settings</li>
+            </ul>
+          </>
+        )}
       </div>
     </>
   )

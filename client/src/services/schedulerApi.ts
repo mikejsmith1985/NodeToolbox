@@ -96,6 +96,8 @@ export interface GitHubProbeResult {
   statusText: string;
   responseTime: number;
   success: boolean;
+  /** GitHub login of the authenticated user — only present when success is true. */
+  authenticatedAs?: string | null;
   errorMessage?: string;
 }
 
