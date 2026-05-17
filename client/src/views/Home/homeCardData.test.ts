@@ -6,7 +6,7 @@ import { APP_CARDS, APP_SECTIONS } from './homeCardData.ts';
 
 describe('homeCardData', () => {
   it('contains the retained home cards including Reports Hub', () => {
-    expect(APP_CARDS).toHaveLength(9);
+    expect(APP_CARDS).toHaveLength(10);
     expect(APP_CARDS.some((appCard) => appCard.id === 'reports-hub')).toBe(true);
   });
 

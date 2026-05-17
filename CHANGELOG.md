@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Admin Hub — "Check Repo Access" button**: A new *📋 Check Repo Access* button in Service Connectivity probes each Scheduler-configured repository at the branches/PRs endpoint level (not just `/user` auth). Results table shows per-repo HTTP status codes with a human-readable diagnosis that distinguishes: IP allow list blocks ("Your IP address is not in the allowed list"), SAML SSO not authorized, generic 403 scope errors, 401 invalid PAT, and 404 wrong repo path. This surfaces the true cause of failures that the existing *Test Connection* probe hides (it tests `/user`, which passes even when org-scoped endpoints are blocked by an IP allow list).
+- **Repo monitor — probeErrorMessage now populated on HTTP errors**: `probeSingleRepoConnectivity` previously left `probeErrorMessage: null` for all HTTP-level failures (403, 404, etc.) — it was only populated for network exceptions. It now extracts `body.message` from GitHub's error response, making the message available in `/api/scheduler/validate` and surfaced by the new "Check Repo Access" UI.
+
+### Changed
+- **Admin Hub — Update Management moved to top**: The 🚀 Update Management section now appears immediately after the Admin Access unlock form, making it the first content section visible without scrolling.
+
+### Added
+- **GitHub App — "Find my Installation ID" diagnostic**: A new collapsible *🔍 Find my Installation ID* section in Admin Hub queries `GET /app/installations` using the saved App credentials and lists every organisation/account where the App is installed. Each row includes an *✅ Use this ID* button that auto-fills the Installation ID field — eliminates the most common cause of HTTP 404 errors (wrong or missing Installation ID).
+- **GitHub App — App ID or Client ID clarification**: The "App ID" field is now labelled *App ID or Client ID* with inline guidance explaining that GitHub recommends the `Iv1.`-prefixed Client ID as the JWT `iss` claim (both are accepted). Installation ID is called out as a separate, distinct value.
+
+### Changed
+- **Home card count updated**: `homeCardData.test.ts` now expects 10 cards to match the current catalog after the addition of the GitHub App admin card in a prior release.
+
 ### Changed
 - **Connection bar — GitHub icon now reflects live connectivity**: The GitHub icon is green only after a successful probe, not simply because credentials are present. A background probe runs at server startup; the cache clears when credentials are saved so the icon turns gray until the next successful *Test Connection*. `GET /api/proxy-status` adds `probeCheckedAt` (ISO timestamp) for "last checked" display in future.
 

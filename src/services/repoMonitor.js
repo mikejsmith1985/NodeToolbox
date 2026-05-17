@@ -607,6 +607,16 @@ function probeSingleRepoConnectivity(repoFullPath, githubPat, githubBaseUrl, isT
       const pullRequestCount = Array.isArray(pullsResponse.body) ? pullsResponse.body.length : 0;
       const isReachable = branchesResponse.status >= 200 && branchesResponse.status < 300 &&
         pullsResponse.status >= 200 && pullsResponse.status < 300;
+
+      // When the probe fails, extract GitHub's error message from the response body so the UI
+      // surfaces the actual reason (e.g. "Your IP address is not in the allowed list for this resource")
+      // instead of leaving probeErrorMessage null and hiding the real cause from the operator.
+      const githubErrorMessage = !isReachable
+        ? ((branchesResponse.body && branchesResponse.body.message) ||
+           (pullsResponse.body && pullsResponse.body.message) ||
+           null)
+        : null;
+
       return {
         repo: repoFullPath,
         isReachable,
@@ -614,7 +624,7 @@ function probeSingleRepoConnectivity(repoFullPath, githubPat, githubBaseUrl, isT
         pullsHttpStatus: pullsResponse.status,
         branchProbeCount: branchCount,
         pullRequestProbeCount: pullRequestCount,
-        probeErrorMessage: null,
+        probeErrorMessage: githubErrorMessage,
       };
     })
     .catch((probeError) => ({

@@ -199,3 +199,49 @@ describe('testGitHubConnectivity', () => {
     expect(probeResult.authenticatedAs).toBeNull();
   });
 });
+
+// ── validateRepoMonitorConnectivity — probeErrorMessage capture ──────────────
+
+describe('validateRepoMonitorConnectivity — probeErrorMessage from GitHub API body', () => {
+  afterEach(() => nock.cleanAll());
+
+  it('sets probeErrorMessage to the GitHub API body message when branches returns 403', async () => {
+    nock('https://api.github.com')
+      .get('/repos/zilvertonz/test-repo/branches')
+      .query(true)
+      .reply(403, { message: 'Your IP address is not in the allowed list for this resource.' })
+      .get('/repos/zilvertonz/test-repo/pulls')
+      .query(true)
+      .reply(403, { message: 'Your IP address is not in the allowed list for this resource.' });
+
+    const configuration = buildTestConfig();
+    configuration.scheduler.repoMonitor.repos = ['zilvertonz/test-repo'];
+    const result = await repoMonitor.validateRepoMonitorConnectivity(configuration);
+
+    const repoResult = result.repoMonitor.repos[0];
+    expect(repoResult.isReachable).toBe(false);
+    expect(repoResult.branchesHttpStatus).toBe(403);
+    // The actual GitHub error message must be surfaced — not null — so the UI
+    // can tell the operator whether it is an IP allow list block, SAML enforcement,
+    // or a missing scope issue.
+    expect(repoResult.probeErrorMessage).toMatch(/IP address/i);
+  });
+
+  it('sets probeErrorMessage to null when the probe succeeds', async () => {
+    nock('https://api.github.com')
+      .get('/repos/zilvertonz/test-repo/branches')
+      .query(true)
+      .reply(200, [{ name: 'main' }])
+      .get('/repos/zilvertonz/test-repo/pulls')
+      .query(true)
+      .reply(200, []);
+
+    const configuration = buildTestConfig();
+    configuration.scheduler.repoMonitor.repos = ['zilvertonz/test-repo'];
+    const result = await repoMonitor.validateRepoMonitorConnectivity(configuration);
+
+    const repoResult = result.repoMonitor.repos[0];
+    expect(repoResult.isReachable).toBe(true);
+    expect(repoResult.probeErrorMessage).toBeNull();
+  });
+});

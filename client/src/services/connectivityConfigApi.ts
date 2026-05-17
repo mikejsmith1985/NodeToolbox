@@ -72,3 +72,24 @@ export async function testConfluenceConnectivity(): Promise<ConnectionProbeResul
   });
   return parseProbeResponse(response);
 }
+
+/** Shape of a single GitHub App installation returned by the diagnostic endpoint. */
+export interface GitHubAppInstallation {
+  id:          number;
+  account:     string;
+  accountType: string;
+  appSlug:     string;
+}
+
+/**
+ * Calls GET /api/config/github-app/installations to list all orgs/accounts where
+ * the configured GitHub App is installed. Used to find the correct Installation ID
+ * when the user only has the App ID and Private Key saved.
+ */
+export async function listGitHubAppInstallations(): Promise<{ ok: boolean; installations: GitHubAppInstallation[]; message?: string }> {
+  const response = await fetch('/api/config/github-app/installations');
+  if (!response.ok && response.status !== 200) {
+    return { ok: false, installations: [], message: `HTTP ${response.status}` };
+  }
+  return response.json() as Promise<{ ok: boolean; installations: GitHubAppInstallation[]; message?: string }>;
+}

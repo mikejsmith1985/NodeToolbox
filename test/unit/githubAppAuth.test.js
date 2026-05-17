@@ -13,6 +13,7 @@ const {
   getValidInstallationToken,
   clearInstallationTokenCache,
   hasGitHubAppCredentials,
+  listGitHubAppInstallations,
 } = require('../../src/services/githubAppAuth');
 
 // ── Test key pair ─────────────────────────────────────────────────────────────
@@ -190,5 +191,72 @@ describe('getValidInstallationToken', () => {
   it('rejects with an "incomplete" error when any credential is missing', async () => {
     const configuration = { github: {}, sslVerify: true };
     await expect(getValidInstallationToken(configuration)).rejects.toThrow(/incomplete/i);
+  });
+});
+
+// ── listGitHubAppInstallations ────────────────────────────────────────────────
+
+describe('listGitHubAppInstallations', () => {
+  afterEach(() => nock.cleanAll());
+
+  function buildTestConfig() {
+    return {
+      github: {
+        appId:        '42',
+        appPrivateKey: testPrivateKeyPem,
+        baseUrl:       'https://api.github.com',
+      },
+      sslVerify: true,
+    };
+  }
+
+  it('returns a normalized list of installations on HTTP 200', async () => {
+    const mockInstallations = [
+      { id: 111, account: { login: 'my-org', type: 'Organization' }, app_slug: 'my-app' },
+      { id: 222, account: { login: 'my-user', type: 'User' }, app_slug: 'my-app' },
+    ];
+
+    nock('https://api.github.com')
+      .get('/app/installations')
+      .reply(200, mockInstallations);
+
+    const result = await listGitHubAppInstallations(buildTestConfig());
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ id: 111, account: 'my-org',  accountType: 'Organization', appSlug: 'my-app' });
+    expect(result[1]).toEqual({ id: 222, account: 'my-user', accountType: 'User',         appSlug: 'my-app' });
+  });
+
+  it('returns an empty array when the app has no installations', async () => {
+    nock('https://api.github.com')
+      .get('/app/installations')
+      .reply(200, []);
+
+    const result = await listGitHubAppInstallations(buildTestConfig());
+    expect(result).toEqual([]);
+  });
+
+  it('rejects with an error message when GitHub returns HTTP 401', async () => {
+    nock('https://api.github.com')
+      .get('/app/installations')
+      .reply(401, { message: 'Bad credentials' });
+
+    await expect(listGitHubAppInstallations(buildTestConfig()))
+      .rejects.toThrow(/401/);
+  });
+
+  it('rejects with a helpful message when App ID or Private Key is missing', async () => {
+    const configuration = { github: {}, sslVerify: true };
+    await expect(listGitHubAppInstallations(configuration))
+      .rejects.toThrow(/App ID and Private Key are required/i);
+  });
+
+  it('falls back to "(unknown)" when account.login is absent', async () => {
+    nock('https://api.github.com')
+      .get('/app/installations')
+      .reply(200, [{ id: 333, account: {}, app_slug: '' }]);
+
+    const result = await listGitHubAppInstallations(buildTestConfig());
+    expect(result[0].account).toBe('(unknown)');
   });
 });

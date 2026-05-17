@@ -246,6 +246,96 @@ function hasGitHubAppCredentials(configuration) {
   return !!(githubConfig.appId && githubConfig.installationId && githubConfig.appPrivateKey);
 }
 
+/**
+ * Lists all installations for this GitHub App by calling GET /app/installations
+ * using a freshly generated JWT. Returns an array of installation objects.
+ *
+ * This is a diagnostic helper — it lets users identify the correct Installation ID
+ * without leaving the Admin Hub. A 404 on the token endpoint usually means the
+ * Installation ID is wrong, or the App has not been installed on any org/account yet.
+ *
+ * To install the app: GitHub App settings → "Install App" tab → click Install
+ * next to your organization. The Installation ID will appear in the resulting URL.
+ *
+ * @param {import('../config/loader').ProxyConfig} configuration
+ * @returns {Promise<Array<{ id: number, account: string, accountType: string, appSlug: string }>>}
+ */
+async function listGitHubAppInstallations(configuration) {
+  const githubConfig = configuration.github || {};
+  const { appId, appPrivateKey, baseUrl } = githubConfig;
+
+  if (!appId || !appPrivateKey) {
+    throw new Error('App ID and Private Key are required to list installations. Save them in Admin Hub first.');
+  }
+
+  const appJwt        = generateGitHubAppJwt(appId, appPrivateKey);
+  const cleanBaseUrl  = (baseUrl || 'https://api.github.com').replace(/\/$/, '');
+  const isTlsVerified = configuration.sslVerify !== false;
+
+  const listUrl = cleanBaseUrl + '/app/installations';
+  let targetUrl;
+  try {
+    targetUrl = new URL(listUrl);
+  } catch (urlParseError) {
+    throw new Error('Invalid GitHub API base URL: ' + urlParseError.message);
+  }
+
+  const isHttps   = targetUrl.protocol === 'https:';
+  const transport = isHttps ? https : http;
+
+  return new Promise((resolve, reject) => {
+    const requestOptions = {
+      hostname:           targetUrl.hostname,
+      port:               targetUrl.port || (isHttps ? 443 : 80),
+      path:               targetUrl.pathname + targetUrl.search,
+      method:             'GET',
+      rejectUnauthorized: isTlsVerified !== false,
+      headers: {
+        'Accept':        'application/vnd.github+json',
+        'Authorization': 'Bearer ' + appJwt,
+        'User-Agent':    GITHUB_APP_USER_AGENT,
+      },
+    };
+
+    const request = transport.request(requestOptions, (response) => {
+      const responseChunks = [];
+      response.on('data', (chunk) => responseChunks.push(chunk));
+      response.on('end', () => {
+        const rawBody = Buffer.concat(responseChunks).toString('utf8');
+        let parsedBody;
+        try {
+          parsedBody = JSON.parse(rawBody);
+        } catch (_jsonParseError) {
+          return reject(new Error('Non-JSON response from GitHub (HTTP ' + response.statusCode + ')'));
+        }
+
+        if (response.statusCode !== 200) {
+          return reject(new Error(
+            'Failed to list installations: HTTP ' + response.statusCode +
+            (parsedBody.message ? ' — ' + parsedBody.message : '')
+          ));
+        }
+
+        // Normalize the GitHub API response to the fields callers actually need
+        const normalizedInstallations = (Array.isArray(parsedBody) ? parsedBody : []).map((installation) => ({
+          id:          installation.id,
+          account:     installation.account?.login || '(unknown)',
+          accountType: installation.account?.type  || 'unknown',
+          appSlug:     installation.app_slug       || '',
+        }));
+
+        resolve(normalizedInstallations);
+      });
+    });
+
+    request.on('error', (networkError) => {
+      reject(networkError);
+    });
+
+    request.end();
+  });
+}
+
 // ── Exports ───────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -254,4 +344,5 @@ module.exports = {
   getValidInstallationToken,
   clearInstallationTokenCache,
   hasGitHubAppCredentials,
+  listGitHubAppInstallations,
 };

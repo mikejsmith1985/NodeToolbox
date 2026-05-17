@@ -775,3 +775,106 @@ describe('Feature Request section', () => {
     expect(screen.getByText(/copied!/i)).toBeInTheDocument();
   });
 });
+
+// ── Check Repo Access button ──────────────────────────────────────────────────
+// The "Check Repo Access" button probes configured scheduler repos at the branches
+// and PRs level, surfacing IP allow list blocks, SAML enforcement, and scope errors
+// that the basic /user "Test Connection" probe cannot detect.
+
+describe('Check Repo Access button', () => {
+  it('renders when admin is unlocked', () => {
+    mockState.isAdminUnlocked = true;
+    renderAdminHubView();
+    expect(screen.getByRole('button', { name: /check repo access/i })).toBeInTheDocument();
+    mockState.isAdminUnlocked = false;
+  });
+
+  it('does not render when admin is locked', () => {
+    mockState.isAdminUnlocked = false;
+    renderAdminHubView();
+    expect(screen.queryByRole('button', { name: /check repo access/i })).not.toBeInTheDocument();
+  });
+
+  it('calls /api/scheduler/validate when clicked', async () => {
+    mockState.isAdminUnlocked = true;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        repoMonitor: {
+          repos: [],
+          isGitHubConfigured: true,
+          isGitHubReachable: false,
+          configuredRepoCount: 0,
+          reachableRepoCount: 0,
+          unreachableRepoCount: 0,
+          probeErrorMessage: null,
+          checkedAt: '2026-05-17T20:00:00Z',
+          validationMode: 'read-only-github-probe',
+        },
+      }),
+    }));
+    const user = userEvent.setup();
+    renderAdminHubView();
+    await user.click(screen.getByRole('button', { name: /check repo access/i }));
+    expect(fetch).toHaveBeenCalledWith('/api/scheduler/validate');
+    mockState.isAdminUnlocked = false;
+  });
+
+  it('shows an IP allow list diagnosis when probe returns 403 with that message', async () => {
+    mockState.isAdminUnlocked = true;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        repoMonitor: {
+          repos: [{
+            repo: 'zilvertonz/test-repo',
+            isReachable: false,
+            branchesHttpStatus: 403,
+            pullsHttpStatus: 403,
+            branchProbeCount: 0,
+            pullRequestProbeCount: 0,
+            probeErrorMessage: 'Your IP address is not in the allowed list for this resource.',
+          }],
+          isGitHubConfigured: true,
+          isGitHubReachable: false,
+          configuredRepoCount: 1,
+          reachableRepoCount: 0,
+          unreachableRepoCount: 1,
+          probeErrorMessage: null,
+          checkedAt: '2026-05-17T20:00:00Z',
+          validationMode: 'read-only-github-probe',
+        },
+      }),
+    }));
+    const user = userEvent.setup();
+    renderAdminHubView();
+    await user.click(screen.getByRole('button', { name: /check repo access/i }));
+    expect(await screen.findByText(/ip not on org allow list/i)).toBeInTheDocument();
+    mockState.isAdminUnlocked = false;
+  });
+
+  it('shows an error message when no repos are configured in the scheduler', async () => {
+    mockState.isAdminUnlocked = true;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        repoMonitor: {
+          repos: [],
+          isGitHubConfigured: true,
+          isGitHubReachable: false,
+          configuredRepoCount: 0,
+          reachableRepoCount: 0,
+          unreachableRepoCount: 0,
+          probeErrorMessage: null,
+          checkedAt: '2026-05-17T20:00:00Z',
+          validationMode: 'read-only-github-probe',
+        },
+      }),
+    }));
+    const user = userEvent.setup();
+    renderAdminHubView();
+    await user.click(screen.getByRole('button', { name: /check repo access/i }));
+    expect(await screen.findByText(/no repos configured/i)).toBeInTheDocument();
+    mockState.isAdminUnlocked = false;
+  });
+});
