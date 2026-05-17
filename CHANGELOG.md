@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
+- **Dev Panel — diagnostics migrated and repo-monitor validation added**: Moved diagnostics-focused tooling (CRG debug, runtime diagnostics, backup/restore, client diagnostics, and tool visibility) into the Admin Hub **Dev Panel** tab with in-UI guidance. Added a new **Repo Monitor Validation** tab and a read-only server probe (`/api/scheduler/validate`) that checks GitHub branch/PR endpoints per configured repo, so users can prove “connected with zero events” versus “not connected” without creating test data in production repos.
+- **Dev Panel — server logs parser now handles API response shape correctly**: Fixed the server-log crash caused by treating `/api/logs` as an array; the hook now supports both `{ entries: [...] }` and legacy array payloads, preventing `(intermediate value).filter is not a function` runtime failures.
+- **Dev Workspace — repo URL add flow restored in Settings**: The GitHub repository field now accepts full GitHub URLs and owner/repo values, includes a visible **Add to Monitor List** action, and surfaces the current monitored-repo list with remove controls directly in Settings.
+- **Dev Workspace — monitored repo changes now persist immediately**: Adding/removing repos from the Settings quick-add flow now saves directly to scheduler config so the list survives refresh/navigation and monitor runs use the updated repo set without extra manual save steps.
+- **UI polish — translucent surfaces and stronger depth**: Updated the global shell, shared tabs, tool cards, and Admin Hub sections to use softer glass-like panels, reduced hard borders, and restrained accent glow so the interface feels more futuristic and less noisy.
+- **Dev Workspace — Settings UX redesigned for readability and responsive layout**: Rebuilt the Settings tab into card-based sections with consistent field blocks, responsive grids, and full-width controls so labels/inputs no longer collide or clip. Repo Monitor action fields and repository editor now render in clear rows with reliable spacing at common desktop widths.
+- **Dev Workspace — Event Actions clarified with plain-language guidance**: Repo Monitor Event Actions now explicitly explain that each box expects a Jira status name (leave blank for log-only behavior), with concrete placeholders like `In Progress`, `In Review`, and `Done`.
+- **Dev Workspace — Event Actions now use Jira-loaded status options**: Settings now fetch Jira project statuses and present transition targets as dropdown selections (with `No status change` fallback), so users pick valid workflow states instead of typing free-form status text.
+- **Dev Workspace — legacy repo monitor settings import path added**: If scheduler repos are empty but legacy browser settings (`tbxRepoMonitorSettings`) exist, NodeToolbox now auto-imports those repos/rules into the monitor settings draft and prompts the user to save.
+- **Dev Workspace — repo setup now accepts pasted GitHub URLs**: Repo Monitor repository input now accepts full GitHub URLs (including `.git` and SSH forms like `git@github.com:owner/repo.git`) and auto-normalizes them to `owner/repo`.
+- **Dev Workspace — Repo Monitor setup now supports Add Repo + visible monitored list**: Replaced the bulk-only repo textarea flow with an explicit add/remove workflow: paste URL or owner/repo, click **Add Repo**, then manage the normalized monitored repo list directly below.
+- **Global navigation — sticky connection bar and sticky tab bars**: The app header/connection bar now remains visible while scrolling, and top-level tab bars across major views are sticky so navigation stays on screen as users move through long pages.
+- **Global UX foundation — shared top-level tab component introduced**: Added reusable `PrimaryTabs` and migrated major tools (Dev Workspace, Snow Hub, Sprint Dashboard, My Issues, Text Tools, Reports Hub, Admin Hub, ART View, Dev Panel, and Work Log) to a shared tab system so navigation behavior and visual spec stay consistent as tools expand.
+- **Dev Workspace — Repo Monitor now uses legacy scheduler config/results with editable rules**: The Repo Monitor tab now reads real scheduler status/results (`/api/scheduler/*`) and shows event evidence from the legacy monitor service. Settings now auto-load server-side monitor defaults (repos, branch pattern, interval, and event transitions) and save updates back to the scheduler config.
+- **Dev Workspace — Hygiene now auto-runs on first launch when a project key is configured**: Opening the Hygiene tab with a saved project key now immediately executes the hygiene query once, so developers land on live issue-health results instead of an empty state.
+- **Dev Workspace — simplified tab flow for current usage**: Reordered top-level tabs to **Repo Monitor → Git Sync → Time Tracking → Settings** so monitoring is first and settings stay rightmost. Removed the Git Sync **Manual Post** and **Hook Generator** sub-features to reduce confusion and keep the workspace focused on the primary sync and monitoring workflows.
+- **Dev Workspace — proxy-safe sync wiring**: Git Sync now uses existing proxy routes (`/github-proxy` and `/jira-proxy`) so enterprise-restricted environments do not depend on missing `/api/github` or `/api/jira` endpoints.
+- **Dev Workspace — primary Hygiene tab restored and monitor score issue corrected**: Added a dedicated top-level **Hygiene** tab as the primary landing tab and kept **Repo Monitor** separate as its own operational tab. Hygiene now defaults queries to `assignee = currentUser()` (plus optional Extra JQL), and the prior monitor-click-based score behavior was removed so monitor actions no longer degrade score.
+- **Dev Workspace — Repo Monitor now has verifiable evidence and configurable monitor scope/actions**: Added **Repo Monitor Settings** in Settings to configure monitored repositories and event-action toggles (missing Jira-key events and healthy/empty cycle logging). Repo Monitor now runs real GitHub checks, writes a dedicated monitor log, and shows a **Last Monitor Evidence** summary (repo count, commits scanned, key compliance, and check timestamp) to prove monitor activity.
 - **Admin Hub — consolidated debug/diagnostics sections and removed redundant "Advanced" unlock**: CRG submission debug, Client Diagnostics, Tool Visibility, and Backup/Restore sections now appear directly after the single Admin unlock (no separate Advanced unlock). This eliminates the redundant dual-password requirement and streamlines the admin workflow. CRG submission debug data from the wizard is now globally accessible via the new store hook so Admin Hub can display the most recent CHG create/update diagnostics without keeping the debug section in Step 6.
 - **SNow Hub CRG — submission debug moved from Step 6 UI to Admin Hub Debugging section**: The "Last SNow submission debug" section no longer clutters the wizard's Review & Create step; all diagnostics are now hidden and accessible in Admin Hub under "CRG Submission Debug" after admin unlock. This keeps the wizard focused on user input while preserving the diagnostic capability for troubleshooting.
 - **SNow Hub — planning alias fields and Change Manager now always write to all known field names**: Removed the detection gate that previously blocked planning alias field writes when no fields were pinned or inspected. All known aliases (e.g. `u_assessment_of_success_probability`, `u_implications_of_system_availability`, `u_change_manager`) are now unconditionally included in every create/update payload — ServiceNow silently ignores field names it doesn't recognise, so sending all aliases is safe and guarantees the correct field is populated regardless of instance-specific column names.
@@ -39,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SNow Hub — PRB Generator shows full issue preview before creation**: Both Quick Create and the Wizard review step now display a structured preview card for each Jira issue (issue type, summary, and description) before the user clicks Create, so there are no surprises about what will be submitted.
 
 ### Added
+- **Home + Workspace — Personal Toolbox builder**: Added a new **Personal Toolbox** launcher card and `/personal-toolbox` view that brings major tools into one customizable tabbed workspace. Users can include/exclude modules, reorder tab priority, and persist their personal module set/order in browser settings.
 - **SNow Hub — CRG Configuration tab**: Change Request setup now has its own dedicated **Configuration** tab for cloning existing CHGs, saving/updating CHG templates, managing saved field defaults, and loading reusable CTASK templates before walking the CHG wizard itself.
 - **Reports Hub — Dashboard tab**: Reports Hub now includes a Jira-style dashboard tab with saved-filter-style widgets for critical defects, blocked work, open risks, and unassigned work, plus donut summaries by team, priority, status, and source.
 - **CRG — CTASK templates and append flow**: The Review & Create step now supports reusable CTASK templates, selecting CTASKs to create with the new CHG, and appending selected CTASKs to an existing CHG by number.
@@ -47,6 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CRG — Clone, Templates & Defaults workspace**: Change Request setup now uses a compact shared workspace for cloning an existing CHG, saving/updating templates, and managing reusable field defaults without bouncing backward through the wizard.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Home — Reports Hub is visible again on the launcher**: The React app already had the `/reports-hub` route, but the Home card catalog was missing the Reports Hub card entry, so users had no visible launcher card for the tool. The Reports Hub card is now restored to the Home view.
 - **SNow Hub — CRG cloning now pulls from the full readable change record**: Loading a CHG no longer limits the ServiceNow query to a hardcoded `sysparm_fields` list, which improves clone coverage on locked-down instances where field ACLs and customized field sets were causing important values to come back blank.
 - **SNow Hub — CRG template and pin management moved out of the wizard flow**: The step-by-step CHG wizard now focuses on walking the release, while save/pin/template management lives in the new Configuration tab and the wizard only reuses the saved defaults inline.
@@ -107,6 +131,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Feature Request in AdminHub**: A new "💡 Request a Feature" section at the bottom of the AdminHub Config tab.Users with a GitHub account can open a pre-filled issue directly (`🚀 Open GitHub Issue`). Users without one can click **📋 Copy Request** to copy the formatted request as plain text and send it via email, Teams, or any other channel.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 
 - **Admin Hub — unlock form now appears at the top of the Config tab**: `AdminAccessSection` was previously rendered after `ServiceConnectivitySection`, so the "🔒 Unlock Admin Access" message was visible with no nearby login form, making it appear that unlocking was broken. The section order is now: Admin Access → Proxy → Service Connectivity → ART Settings.
 
@@ -127,7 +153,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed (Home — removed role/persona filter buttons)
 - **Home view — Dev, QA, SM, PO, RTE buttons removed**: The persona filter strip provided no real value; it only reordered cards without unlocking role-specific workflows, data, or views. The Home view now always shows all cards in sectioned layout. Saved drag order is preserved. `homePersona`/`setHomePersona` have been removed from the settings store and from localStorage.
 
-### Fixed (update install — missing version in request body)
+### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+ (update install — missing version in request body)
 - **Auto-update — 400 error fixed**: The "Install Update" button was POSTing to `/api/update` with no body, triggering `{"error":"version is required"}`. The request now sends `{ version: latestVersion }` as JSON so the server can download the correct release.
 
 
@@ -141,10 +169,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Topbar — gradient accent line**: The top bar border-bottom is now a blue-to-purple gradient accent instead of a flat line.
 - **Tokens — added glow vars**: `--color-cyan`, `--color-purple`, `--glow-accent`, `--glow-success`, `--glow-warning`, `--glow-danger`, `--glow-purple`, `--glow-cyan` added to `:root`.
 
-### Fixed (v0.7.8 — Relay bookmarklet install on React 19)
+### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+ (v0.7.8 — Relay bookmarklet install on React 19)
 - **Relay bookmarklet — drag-to-bookmarks works again**: React 19 blocks `javascript:` URLs passed through JSX `href` props, which produced the browser error `React has blocked a javascript: URL as a security precaution` and prevented the SNow relay bookmarklet from installing. The relay setup links now assign the bookmarklet URL directly to the DOM anchor after render, preserving drag-to-bookmarks installation without triggering React's sanitizer.
 
-### Fixed (v0.7.6 — Repair Chrome-safe ServiceNow relay)
+### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+ (v0.7.6 — Repair Chrome-safe ServiceNow relay)
 - **Relay — fixed the Chrome bridge instead of relying on broken tab messaging**: ServiceNow is still opened in the original named `__crg_snow` tab, but the bookmarklet now registers, polls, and returns results through the local HTTP bridge at `http://127.0.0.1:5555/api/relay-bridge/*`, avoiding Chrome/Edge COOP breakage.
 - **Relay bridge — added CORS/private-network headers**: `/api/relay-bridge/*` now explicitly allows ServiceNow bookmarklets to call the local NodeToolbox bridge, including `Access-Control-Allow-Private-Network: true` for Chrome/Edge private-network preflight checks.
 - **Relay — ServiceNow `g_ck` support restored**: The bookmarklet again extracts ServiceNow's `g_ck` token (`window.g_ck`, `NOW.GlideConfig.g_ck`, or `glide_user_activity`) and sends it as `X-UserToken`, matching the working HTML ToolBox implementation.
@@ -154,20 +186,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Relay bookmarklet — bridge failures are visible**: If the bookmarklet cannot reach the local NodeToolbox bridge, ServiceNow now shows a red failure badge and an alert instead of silently doing nothing.
 - **Relay bridge — disconnects fail fast**: If the ServiceNow tab closes or navigates away while NodeToolbox is waiting for a relay result, the request now fails immediately with a recovery message instead of hanging until the 30-second timeout.
 
-### Fixed (v0.7.5 — Relay connect flow, single-tab launch, update install)
+### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+ (v0.7.5 — Relay connect flow, single-tab launch, update install)
 - **Relay — Open ServiceNow button**: A `🔗 Open ServiceNow` button now appears in the Relay panel when a SNow base URL is configured and the relay is not yet active. Click it to open the SNow page, activate the bookmarklet, and the relay indicator turns green.
 - **Relay — bookmarklet activation feedback**: The bookmarklet now shows a green confirmation banner on the SNow page after successful registration ("✅ NodeToolbox relay active — keep this tab open") and automatically focuses back to the NodeToolbox tab via `window.open('', 'nodetoolbox')`. The `window.name` is set to `'nodetoolbox'` in the React app so the browser can locate the tab by name.
 - **Relay — registration error surfaced**: Bookmarklet now shows a user-visible `alert()` and logs a `console.error` if NodeToolbox is not reachable on port 5555 (previously the error was silent in AdminHub's copy of the bookmarklet).
 - **Launch — double browser tab fixed**: The VBS launcher now passes `--no-open` to the exe, preventing both processes from opening the browser simultaneously. The VBS is the sole browser-opener (after its port-ready poll confirms the server is up); the exe only opens the browser when launched directly (without VBS).
 - **Update Management — Install Update button**: Admin Hub now shows a `🔄 Install Update` button when an update is available. Clicking it POSTs to `/api/update`, waits up to 60 seconds for the server to restart, then reloads the page to run the new version. Progress ("⏳ Installing and restarting…") and error states are displayed inline.
 
-### Fixed (v0.7.4 — Relay bridge actually works now)
+### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+ (v0.7.4 — Relay bridge actually works now)
 - **Root cause fix — SNow API calls now route through relay**: `snowFetch` was hardcoded to always use the server-side proxy (`/snow-proxy/*`), ignoring the relay bridge entirely. SNow API calls now check `connectionStore.relayBridgeStatus.isConnected` and route through the relay bridge bookmarklet when active. `forceDirectProxy: true` can override this for callers that need direct access.
 - **Status type mismatch fixed**: The server `/api/relay-bridge/status` endpoint returned `{ active, sys }` but the React client's `RelayBridgeStatus` type expected `{ isConnected, system }`. The runtime object never had `isConnected`, so the relay indicator was permanently red even when the bookmarklet was running. Server now returns the correct shape: `{ isConnected, system, lastPingAt (ISO string), version }`.
 - **Relay polling reduced from 30 s → 3 s**: Indicator now turns green within 3 seconds of bookmarklet activation instead of up to 30 seconds.
 - **Bookmarklet registration failure is now visible**: If the bookmarklet can't reach NodeToolbox on port 5555, it now logs a `console.error` and shows an alert, rather than silently doing nothing.
 
-### Fixed (v0.7.3 — Check for Updates)
+### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+ (v0.7.3 — Check for Updates)
 - **Admin Hub — Check for Updates**: Fixed silent failure where network/server errors made the button appear to do nothing. Errors are now displayed below the button with a clear message. Added missing CSS classes (`updateVersionRow`, `updateStatusAvailable`, `updateStatusSuccess`, `updateStatusError`, `releaseNotesTextarea`) so the result area renders correctly.
 
 ### Added (v0.7.2 — Relay Connect panel, Snow/GitHub config UI, expanded diagnostics)
@@ -176,7 +214,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Diagnostics — expanded payload**: `GET /api/diagnostics` now returns `isPkgExe`, `platform`, `snow` (baseUrl, credential presence, masked username, session state), `relay` (active systems, last registered/polled timestamps), and `github` (baseUrl, PAT presence).
 - **API — connectivity config endpoints**: `GET /api/config/connectivity` returns sanitised Snow/GitHub config for the UI; `POST /api/config/connectivity` saves updated config; `POST /api/config/connectivity/test` probes Snow or GitHub and returns `{ ok, statusCode, message }`.
 
-### Fixed (v0.7.1 — VBS launch fix)
+### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+ (v0.7.1 — VBS launch fix)
 - `Launch Toolbox Silent.vbs`: replaced `Chr(8594)` with `ChrW(8594)` — VBScript's `Chr()` only accepts 0–255; the Unicode right-arrow (→, codepoint 8594) caused a `800A0005` runtime error that prevented the timeout-diagnostic dialog from rendering, crashing the launcher on startup.
 
 ### Added (v0.6.9 — Home layout polish)
@@ -195,18 +235,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - On every launch, `portManager` already automatically kills any occupant of port 5555 before binding, so relaunching the exe always results in a clean single instance.
   - Confirmation messages appear inline after each action.
 
-### Fixed (v0.6.6 — Connection bar always red bug)
+### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+ (v0.6.6 — Connection bar always red bug)
 - Root-cause fix: `ProxyStatusResponse` TypeScript type was entirely wrong — it had flat fields (`jiraConfigured`, `snowConfigured`) but the server actually returns a nested structure (`{ jira: { ready, configured, ... }, snow: { ... } }`). This meant `isJiraReady` was always `false` regardless of actual connectivity, keeping every indicator permanently red.
 - Updated `ProxyStatusResponse` to the correct nested shape with `ProxyServiceStatus` and `ProxySnowStatus` sub-interfaces.
 - Updated `connectionStore.setProxyStatus` to read `status.jira.ready` and `status.snow.ready`.
 - Updated `useProxyStatus` to probe Jira/SNow based on `status.jira.configured` and `status.snow.configured`.
 - Updated all tests (including `proxyApi.test.ts`) to use the correct nested mock shape.
 
-### Fixed (v0.6.5 — UX polish)
+### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+ (v0.6.5 — UX polish)
 - Made whole issue cards clickable to toggle the inline detail panel in Sprint Dashboard (overview, assignee, blockers, stale), ART View impediments, and My Issues — the caret icon remains as a visual affordance hint.
 - Connection status bar now shows a **green** dot when a service is configured, and a **red** dot when it is not — replacing the ambiguous gray that made all services look identical regardless of connectivity.
 
-### Fixed (v0.6.4 — Issue #45 follow-up fixes)
+### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+ (v0.6.4 — Issue #45 follow-up fixes)
 - Replaced Admin Hub browser-native prompts, confirms, and alerts with shared in-app prompt, confirm, and toast components so advanced unlock, reset flows, and backup/restore errors stay inside the app UI.
 - Added a visible global Home button outside the landing page so users can return to the dashboard from any tool screen.
 - Fixed Snow Hub CRG fix-version loading so unreleased Jira versions populate a dropdown with text-input fallback when metadata is unavailable.
@@ -340,6 +386,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Toolbox v0.24.10 → NodeToolbox parity is still ~80% remaining. The remaining missing/partial views are documented in the session plan and tracked for `v0.5.8+`: Mermaid editor, Story Pointing, Defect Management, Pipeline View, Hygiene panel, Standup Board (boardwalk + 15-min timer), DSU Daily, Release Monitor, Impact Analysis, Connection Wizard, PRB Setup Wizard overlay, Dev Panel (API inspector), AI Chat / Rovo, plus partial gaps inside My Issues, ART View, Sprint Dashboard, DSU Board, SNow Hub, and Admin Hub.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **React build not found on exe launch (root cause fix)**: The pkg `assets` configuration was silently failing to include `client/dist/**/*` in the executable snapshot. End-to-end testing in a clean temp directory containing ONLY the exe (no `client/dist/` on disk) reproduced the "⚠ React build not found" 503 page on `/admin-hub` even after v0.5.4 and v0.5.5 attempted fixes. Verified via diagnostic logging that pkg's snapshot virtual filesystem returned `ENOENT File '...client/dist/index.html' was not included into executable at compilation stage` despite multiple asset configurations (glob, explicit list, CLI `--assets` flag).
   - Solution: bake the entire React build into a JavaScript module (`src/embeddedClient.js`) at release time as base64-encoded `Buffer` literals. pkg always bundles JS source as bytecode, so the SPA now ships *inside* the executable independent of the asset virtualization layer.
   - New script `scripts/generate-embedded-client.js` walks `client/dist/` and emits the embedded module.
@@ -347,11 +395,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `server.js` static middleware in pkg mode now serves directly from the in-memory embedded map; SPA catch-all returns `embeddedClientFiles['index.html']`.
   - Verified end-to-end: copying ONLY the new exe to a clean temp directory (no `client/dist/` anywhere on disk) → `/admin-hub` returns React HTML with title "NodeToolbox", `/favicon.svg` serves with `image/svg+xml` content-type.
 
-### Fixed (earlier in this Unreleased cycle)
+### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+ (earlier in this Unreleased cycle)
 - **VBS launcher — stale old process served instead of new version**: When a previous NodeToolbox instance (e.g., v0.5.3) was still running on port 5555, the VBS launcher short-circuited: it detected the port as listening and opened the browser directly to the old broken server, skipping the launch of the new exe entirely. Fixed by removing the pre-launch short-circuit (`If IsPortListening Then ... Exit Sub`). The VBS now always launches the newest exe — `portManager.js` unconditionally kills any occupant and waits 1500ms for the OS to release the binding, after which the polling loop correctly opens the browser to the new process.
 - Also removed the stale "client/dist/ folder missing" bullet from the timeout diagnostic message — `client/dist/` is now bundled in the exe snapshot and shipped in the exe-zip, so it is never missing.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Exe distribution — React build not found (readFileSync-based static serving)**: `express.static` (used in v0.5.3) relies on `fs.createReadStream` internally, which does not work reliably with `@yao-pkg/pkg`'s snapshot virtual filesystem. Even with `client/dist/` bundled via `pkg.assets`, the React SPA was never served — the exe still showed "⚠ React build not found". Fixed by:
   - Adding `resolveAppBaseDir()` to `server.js`: probes the snapshot path (`__dirname`) via `fs.readFileSync` first; falls back to `path.dirname(process.execPath)` (real disk next to the exe) if the snapshot is inaccessible.
   - Adding a custom `readFileSync`-based static middleware for pkg exe mode — `fs.readFileSync` is guaranteed by `@yao-pkg/pkg` to work with snapshot virtual paths.
@@ -359,6 +411,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Re-adding `client/dist/` to the exe-zip in `scripts/local-release.ps1` as a belt-and-suspenders fallback alongside the exe.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **VBS launcher — silent failure on corporate PCs (fix/vbs-launcher-corporate-pc)**: `Launch Toolbox Silent.vbs` was fire-and-forget: if the exe was blocked by antivirus/SmartScreen, port 5555 was locked, or the exe's built-in browser-open command was blocked by group policy, nothing visible happened. Fixed by:
   - Adding a post-launch polling loop (up to 30 seconds, 1-second intervals) that uses `netstat` to check when port 5555 becomes ready — `netstat` works on all Windows machines without elevated permissions or PowerShell.
   - Opening the browser directly from the VBS once the port is ready, as a belt-and-suspenders backup when the exe's `start` command is blocked.
@@ -367,6 +421,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Defining `SERVER_PORT`, `SERVER_READY_TIMEOUT_SECONDS`, and `POLL_INTERVAL_MS` as named constants instead of magic numbers.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Admin Hub — Launcher download buttons were disabled (fix #vbs-launcher)**: The "⬇️ Silent Launcher (.vbs)" and "⬇️ Launcher (.bat)" buttons in the Proxy & Server Setup section were rendered as disabled buttons with a "legacy dashboard" tooltip, making them non-functional. Fixed by:
   - Adding `GET /api/download/launcher-vbs` and `GET /api/download/launcher-bat` endpoints to `src/routes/api.js` that serve the distribution-root launcher files as file downloads.
   - Replacing the disabled `<button disabled>` elements with proper `<a href>` download links pointing to the new endpoints.
@@ -435,6 +491,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SPRINT_ISSUE_FIELDS` now requests `customfield_10016,fixVersions` from the Jira sprint issues API.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **SNow Hub tab label**: "CRG" corrected to "CHG" (Change Request) in `SnowHubView.tsx`. The internal key remains `crg` to avoid breaking any persisted UI state.
 - **No Home navigation**: The NodeToolbox title in the top bar is now a clickable `<Link>` that navigates back to the Home route (`/`) from any tool view.
 - **Jira "connected but not working"**: `ConnectionBar` now shows green only when a live API probe (`GET /jira-proxy/rest/api/2/myself`) returns 200 — not merely when credentials are present in the config file. Added `isJiraVerified` / `isSnowVerified` to `connectionStore` alongside the existing `isJiraReady` / `isSnowReady` config-presence flags.
@@ -443,6 +501,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `useProxyStatus.ts`: after every poll, runs Jira and SNow probes in parallel (via `Promise.allSettled`) when the respective service is configured, then writes the verified flags to the connection store.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **EXE distribution — 503 "React build not found"**: `express.static` and `fs.existsSync` do not work with `@yao-pkg/pkg`'s virtual snapshot filesystem on Windows. `server.js` now uses `path.dirname(process.execPath)` (the real directory containing the `.exe`) as the asset base when `process.pkg` is truthy, instead of `__dirname` (the virtual snapshot path). `client/dist/` is now shipped alongside the `.exe` in the exe ZIP so it is extracted to the real filesystem on first use.
 - `scripts/local-release.ps1`: exe ZIP staging now includes `client/dist/` so users who extract the exe ZIP have the React SPA next to the executable.
 - `package.json`: removed `pkg.assets` (`client/dist/**/*`) — assets are no longer bundled into the pkg snapshot since they are shipped as external files in the exe ZIP.
@@ -502,12 +562,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Production SPA serving in `server.js`** — If `client/dist/index.html` exists (i.e., after `npm run build:client`), Express now serves the React SPA and returns `index.html` for all non-API routes. Falls back to `public/toolbox.html` if no React build exists, so existing deployments are unaffected until Phase 7 cutover.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **App cards unresponsive after SNow relay fix** — An orphaned code fragment (dangling `.push()` / `});` / `}` lines from old request-log rendering) was left in `buildFullReport` during the `tbxFetchDiagReport` rewrite. The stray `)` caused an `Unexpected token` JS syntax error that silently prevented all scripts in toolbox.html from loading, breaking every click handler including app card navigation.
 
 ### Tests
 - **`toolboxHtml.test.js` — JS syntax guard**: New test parses every `<script>` block in toolbox.html with V8 at test time. Any syntax error that would break app card interactions (or any other JS) is now caught before claiming success.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **SNow relay "connects then immediately disconnects"** — Three root causes found and fixed:
   1. **`snowReady = false` on SNow 401 (lines `rmCheckConn` and `rmLoadMyCHGs`)**: When ServiceNow returned HTTP 401 via the relay (expired session, SSO re-login needed), the catch handler was clearing `CRG.relay.snowReady`. A 401 from SNow means the *SNow session* is expired — the relay bridge itself is still functional. Clearing the flag meant every failed request also broke the relay routing, sending all subsequent requests back to the Basic Auth proxy (which also returns 401). Both catch handlers now leave `snowReady` intact and surface a clear "SNow session expired — re-login to ServiceNow" message instead.
   2. **`pagehide` deregisters on SNow SPA navigation**: ServiceNow's SPA framework fires `pagehide` during internal page transitions, causing the relay bookmarklet to immediately send a deregister beacon. Added a 1-second grace period before the deregister beacon fires. A `pageshow` listener cancels the timer if the page is restored from bfcache or the SPA bounces back within the grace window.
@@ -515,6 +579,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Relay bridge registration history not visible**: Added `lastRegisteredAt`, `lastDeregisteredAt`, and `lastPolledAt` timestamps to each bridge channel. Exposed via `GET /api/relay-bridge/status` and `GET /api/snow-diag` so the SNow diagnostic report can show exactly when the bookmarklet last registered, deregistered, and polled — making it possible to diagnose connection drops without guessing.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **"My Active Changes" showed empty instead of auth error on proxy 401** — When the ServiceNow proxy credentials were invalid or expired, `rmLoadMyCHGs` called `.then(r => r.json())` without checking `r.ok`. A 401 response from SNow still returns a JSON error body (no `result` key), so the code silently treated it as "no changes found" and displayed "No active changes assigned to Smith, Michael." Now checks `r.ok` first and throws a descriptive error that routes through the existing 401 catch handler, surfacing "SNow credentials invalid or expired — update them in Toolbox Settings → ServiceNow Connection."
 - **"No change request found: CHGxxxxxxx" on proxy 401** — Same root cause as above: `rmLoadCHG` parsed the 401 JSON response body, found no `result`, and threw a misleading "No change request found" error even though the CHG existed in SNow. Now checks `r.ok` before parsing so the real error is surfaced.
 - **SNow Diagnostic Test 3 always used wrong state codes** — `snwDiagRunLiveTests` hardcoded a fallback of `['1','2','-4']` (not valid CHG state codes) and read `rmPrefs.states` instead of `rmPrefs.defaultStateFilter` (the correct key saved by `rmSaveDisplayPreferences`). Additionally, the intermediate `stateCodeMap` tried to translate string labels ("open", "in_progress") when stored values are already SNow numeric codes. Corrected the fallback to `['-2','-1','0']` (Scheduled, Implement, Review — matching the default checked boxes), fixed the localStorage key to `defaultStateFilter`, and removed the unnecessary mapping layer.
@@ -526,6 +592,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SNow Diagnostics Report in Admin Hub** — New "❄️ ServiceNow Diagnostics" card in the Admin Hub Diagnostics panel. Clicking "❄️ Copy SNow Report" runs three diagnostic layers in parallel and copies a full plain-text report to the clipboard: (1) static snapshot of localStorage SNow identity keys, proxy URL, and RM display preferences; (2) server config from the new `GET /api/snow-diag` endpoint (proxy credentials masked, relay bridge status); (3) three live SNow API calls — a connectivity ping, an identity verification against the cached `sys_id`, and the exact My Changes query that Release Management executes internally. If the live My Changes query returns zero results the report lists the three most likely causes with corrective steps. Backend: `GET /api/snow-diag` added to `api.js`; `getBridgeStatus(sys)` exported from `relayBridge.js`.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Release Management "My Changes" empty in proxy mode**— In server/proxy mode (no relay bookmarklet), `miSnowResolveUser()` authenticated as the configured service account, so `gs.getUserID()` returned the service account's `sys_id` instead of the real user's. The "My Changes" query then found nothing because the user's change requests are assigned to their personal account, not the service account. Fixed by adding a **SNow Identity** card to RM Settings where the user can type their SNow username, look it up via the proxy, and pin the result. The pinned identity is shared with the My Issues view via the same `tbxMISnowSysId` localStorage keys. Added `rmRenderIdentityBadge()`, `rmSearchSnowIdentity()`, `rmSelectSnowIdentityFromEl()`, and `rmClearSnowIdentity()`.
 - **RM Settings identity badge rendered on every Settings open** — `rmLoadDisplayPreferences()` now calls `rmRenderIdentityBadge()` so the user always sees who "My Changes" is querying as when they open Settings.
 - **"My Changes" empty state shows proxy-mode hint** — When the change list is empty and the relay is not active (`IS_NODETOOLBOX_SERVER && !relay.snowReady`), a small inline note now appears with a direct link to RM Settings so the user can check or correct their identity without hunting.
@@ -537,9 +605,13 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 - **Repo Monitor settings inaccessible after move to Dev Workspace** — When the Repo Monitor operational panel was moved to Dev Workspace, the settings form (repos, branch pattern, poll interval, Jira transitions, active hours, catch-up mode) was left in the wrong place (SNow Hub RM). The settings card is now correctly placed inside `dw-panel-monitor` (Dev Workspace → Repo Monitor) directly below the activity log. `dwShowTab('monitor')` now also calls `rmLoadSettingsUI()` to populate the form on every open.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Admin Hub "DEV_PANEL is not defined"** — `DEV_PANEL` (Network Activity Monitor state) and `OPT_STATS` (cache hit counters) were referenced throughout the Admin Hub and Dev Panel code but never declared. Admin Hub failed to render after unlock. Both objects are now declared with full initial state alongside the other module globals.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Admin Hub unlock "Verification error — browser crypto unavailable"** —The unlock dialog relied on `window.crypto.subtle` (Web Crypto API) which is only available in secure contexts (HTTPS or the exact hostname `localhost`). Accessing NodeToolbox over an IP address or a non-localhost hostname caused an immediate `crypto.subtle` failure. Separately, `ADMIN_HUB_CREDENTIAL_HASH` — the value the hash was compared against — was never defined anywhere in the codebase, meaning the unlock would always fail even when `crypto.subtle` worked. Fixed by moving credential verification server-side: `adminHubSubmitCredentials()` now POSTs `{username, password}` to a new `POST /api/admin-verify` endpoint that performs the SHA-256 comparison using Node's built-in `crypto` module. The credential hash is stored in `toolbox-proxy.json` under `admin.credentialHash`. Default credentials: **admin / toolbox** — change by replacing the hash in the config file. No client-side crypto required.
 
 `hgGetGlobalRules()` threw `ReferenceError: HG_BUILT_IN_RULES is not defined` whenever `localStorage` had no saved hygiene rules, which propagated through `adminHubBuildHygieneRulesPanel()` → `adminHubBuildHTML()` and left `admin-hub-body` empty. Fixed by defining `HG_BUILT_IN_RULES` as an array of 11 default enterprise Feature/Risk hygiene rules (6 Feature, 5 Risk) at the hygiene module initialisation block. Also defined `HG_STATE` (runtime hygiene results object) and `HG_FIX_VERSION_CACHE` (per-session version-list cache) which were similarly referenced but never declared, preventing latent crashes in the hygiene tab.
@@ -550,6 +622,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 - **Gzip compression for all responses** — Installed the `compression` npm package and mounted `app.use(compression())` as the first Express middleware in `server.js`. The primary beneficiary is `toolbox.html` (2.75 MB uncompressed) which compresses to ~300–400 KB on the wire — roughly an 8× reduction — improving both initial page load time and the in-app update download speed.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **`jira.configured` returned `false` when only a base URL was set** — `isServiceConfigured()`
   in `loader.js` required both a URL and at least one credential, so the `configured` field in
   `GET /api/proxy-status` was `false` even when the user had typed in a Jira URL but not yet
@@ -635,6 +709,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
   section so the dashboard can display connection state.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Chrome wizard now auto-assigns Jira URL from proxy server** — When Chrome users
   complete the proxy connection test in the onboarding wizard (`tbxWizTestProxy`), the
   `jira.baseUrl` returned by `/api/proxy-status` is now persisted to `tbxCRGenJiraUrl`
@@ -651,6 +727,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
   who access Toolbox through the NodeToolbox server.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Assignment group member lookup now returns results** —`crLoadGroupMembers` was
   using a SQL-style subquery (`sys_id IN (SELECT user FROM sys_user_grmember...)`)
   that SNow's Table API silently ignores — it returns HTTP 200 with an empty result
@@ -677,6 +755,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
   exist.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Connection bar shows correct Jira/proxy status on every page** — Six global variables
   (`TBX_CONN_BARS_REGISTRY`, `TBX_PROXY_AUTH_FAILED`, `_tbxProxyRetryTimer`,
   `_tbxProxyRetryCount`, `TBX_PROXY_MAX_RETRIES`, `TBX_PROXY_RETRY_INTERVAL_MS`) were
@@ -695,6 +775,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
   green even if a helper fails in the future.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Version badge now reflects the installed release**— `TOOLBOX_VERSION` in `toolbox.html` was
   hardcoded and never updated by the release script, causing the version badge and update-checker
   to always show `0.0.16` regardless of the installed build. The release script now patches the
@@ -710,6 +792,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
   intended, giving users immediate access to all tool cards.
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Reports Hub auto-loads data on every open** — Navigating away from Reports Hub while a fetch
   was in-flight left `RH_STATE.generatingFeatures` (and equivalent flags for other tabs) permanently
   `true`. On re-entry `rhShowTab()`'s guard (`!generating && !loaded`) evaluated to `false` and
@@ -736,6 +820,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 ## [0.0.19] — Fix: CORS on proxy "Test Connection", relay Open button no-ops without saved URL
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **"Test Connection" in Toolbox Settings caused a CORS error in proxy mode** — `tbxTestJiraPAT()`
   called Jira directly from the browser (`fetch(jiraBaseUrl + '/rest/api/2/myself', ...)`), which
   CORS policy blocked even when the NodeToolbox proxy server was running at `localhost:5555`. In
@@ -757,6 +843,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 ## [0.0.18]— Fix: SNow Hub Connect button, setup redirect loop, relay-mode PAT requirement, default Jira URL
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **SNow Hub "Connect" button did nothing** — `snhOnOpen()` never called `tbxInitConnBar()`,
   so the connection-bar dots were never painted and the Connect button had no bound handler.
   Added `tbxInitConnBar('snh', ['jira', 'snow'], 'snhConnect')` to `snhOnOpen()` and wrote a
@@ -786,6 +874,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 ## [0.0.17] — Fix: Reports Hub blank, garbled emoji, relay warning in proxy mode
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Reports Hub opened blank / showed no content** — `rhOnOpen()` was never wired into
   the `showView()` monkey-patch dispatcher that fires per-view initialization hooks. All
   other views (Sprint Dashboard, My Issues, Work Log, etc.) had their `xOnOpen()` called
@@ -809,6 +899,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 ## [0.0.16] — Fix: Garbled characters, version display, Jira relay dependency (issue #31)
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Garbled / mojibake characters throughout UI** — 1,595 garbled Unicode sequences
   (mojibake from a CP1252→UTF-8 re-encoding incident) replaced with the correct symbols:
   `—`, `•`, `·`, `…`, `↑`, `↓`, `▲`, `▼`, `⚠`, `✓`, `✔`, `→`, `↻`, `✕`, `⚡`, `🐛`,
@@ -825,6 +917,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 ## [0.0.14] — Fix: Reports Hub rendering, version display, relay vs proxy status
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Reports Hub showed unreadable ANSI escape sequences and control characters** — Raw
   Jira ticket descriptions containing ANSI colour codes (e.g. `\x1b[32m`) or other C0/C1
   control bytes were rendered verbatim in the Reports Hub, producing garbled output.
@@ -844,6 +938,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 ## [0.0.13]— Fix: v0.0.13 UI Issues
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Relay warnings showed despite proxy being connected** — `TOOLBOX_VERSION` and
   `MIN_PROXY_SERVER_VERSION` were still set to the old standalone HTML Toolbox value
   `'0.24.25'`. The Node.js proxy reports `'0.0.13'` from `package.json`, so the UI
@@ -878,7 +974,9 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 
 ---
 
-### Fixed (v0.0.12 / previous [Unreleased])
+### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+ (v0.0.12 / previous [Unreleased])
 - **Root cause of "HTML not found" on corporate PCs** — The `resolvePortConflict`
   function previously detected an existing NodeToolbox on port 5555 and redirected the
   browser to it, then called `process.exit(0)`. If that old stuck session was a
@@ -904,6 +1002,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 ## [0.0.11] — Fix: Dashboard HTML Compiled Into Exe Snapshot
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **"File Not Found" page shown after setup wizard — confirmed root cause and real fix
   (Issue #22, v0.0.10 partial fix)** — The v0.0.10 fix pre-loaded `toolbox.html` via
   `fs.readFileSync` at module startup. This appeared to work on the build machine because
@@ -947,6 +1047,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 ## [0.0.10] — Fix: Dashboard Loads After Setup, Silent Launch Option
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **"File Not Found" page shown immediately after setup wizard (Issue #22)** — After
   completing the setup wizard in the `.exe` distribution, the browser was redirected to
   `/` but received the "⚠ toolbox.html not found" error page instead of the dashboard.
@@ -985,6 +1087,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 ## [0.0.9] — Fix: Startup Errors Now Visible, Corporate SSL Fixed
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Server crash on port conflict was silent** — Without a `server.on('error')` handler,
   an `EADDRINUSE` error (port 5555 already in use by another process) threw an unhandled
   exception: the console window closed instantly and the user saw nothing. A handler is
@@ -1020,6 +1124,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 ## [0.0.8] — Fix: Exe Auto-Opens Browser, Pkg Asset Path Verified
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **Exe browser auto-open** — Double-clicking `nodetoolbox-vX.Y.Z.exe` no longer leaves the
   user staring at a console window. The server now detects `process.pkg` (truthy in all
   bundled exe builds) and automatically opens `http://localhost:5555` in the default
@@ -1038,6 +1144,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 ## [0.0.7] — Fix: Launcher Window Disappears, Exe Download Blocked
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **`Launch Toolbox.bat`** — Server window disappearing on launch (v0.0.6 regression).
   The `start /b` flag ran Node inside the launcher's console window without creating
   a new one. When the bat file exited, the console closed and killed the Node process
@@ -1087,6 +1195,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 ## [0.0.5] — Fix: v0.0.4 Issue Resolution (Issue #15)
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **`src/routes/proxy.js`** — All three proxy routes (`/jira-proxy`, `/snow-proxy`, `/github-proxy`) were using `req.path` to build the downstream URL, which strips query strings. Changed to `req.url` so query parameters are correctly forwarded. This was the root cause of: Team Dashboard board search returning all boards regardless of search term, ART View Overview showing blank (JQL filters dropped), and any API call relying on GET query params.
 - **`public/toolbox.html`** — Removed 35 embedded BOM (U+FEFF / zero-width no-break space) characters that appeared as garbled glyphs in some browsers.
 - **`public/toolbox.html`** — Added the missing **Admin Hub** card to the home page grid. The view existed and was fully implemented, but had no entry point on the home screen. Added under a new "Administration" section.
@@ -1103,6 +1213,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 ## [0.0.4] — Fix: Portable launcher for distributed zip
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - **`Launch Toolbox.bat`** (new file) — Replaced the broken `Launch Toolbox.lnk` in the distributable zip with a portable `.bat` launcher. The `.lnk` shortcut embedded absolute paths from the CI build machine (`D:\a\NodeToolbox\...`) which do not exist on the end-user's machine. The `.bat` uses `%~dp0` (the bat file's own directory at runtime) so it works correctly regardless of where the zip is extracted.
 - **`scripts/local-release.ps1`** — Updated `$IncludedPaths` to bundle `Launch Toolbox.bat` instead of `Launch Toolbox.lnk`. Removed the `create-launcher.js` step (step 2/4 → now 3 steps total). Updated dry-run output.
 - **`.github/workflows/release.yml`** — Removed the `node scripts/create-launcher.js` CI step, which was generating a machine-specific `.lnk` that could never be used on another machine.
@@ -1115,6 +1227,8 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 ## [0.0.3] — Fix: CI + release script compatibility
 
 ### Fixed
+- **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
+
 - `test/unit/local-release.test.js` — Wrapped all tests in `describeOnWindows` guard (`process.platform === 'win32' ? describe : describe.skip`). Tests were calling `powershell.exe` directly, which does not exist on Linux CI runners, causing 6 test failures on every push to main.
 - `scripts/local-release.ps1` — Removed `Set-StrictMode -Version Latest`. Even assigning to automatic variables like `$LASTEXITCODE` throws `VariableIsUndefined` on a fresh `pwsh` session (GitHub Actions `windows-latest`) under latest strict mode. `$ErrorActionPreference = 'Stop'` is sufficient for build script error handling.
 - `scripts/local-release.ps1` — Coerced `Where-Object` pipeline results to `[array]` so `.Count` property is always available under strict mode (returns `$null` instead of empty array when no items match).
@@ -1206,3 +1320,5 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 
 ### Changed
 - Forge Workflow initialized with Forge Terminal Workflow Architect
+
+

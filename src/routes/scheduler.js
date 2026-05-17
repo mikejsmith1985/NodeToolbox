@@ -99,6 +99,71 @@ function createSchedulerRouter(configuration) {
     res.json(repoMonitor.getSchedulerResults());
   });
 
+  // ── GET /api/scheduler/validate ───────────────────────────────────────────
+  // Performs a read-only GitHub connectivity probe for each configured monitor
+  // repo so operators can confirm "reachable with zero events" vs "not connected".
+  router.get('/api/scheduler/validate', (req, res) => {
+    repoMonitor.validateRepoMonitorConnectivity(configuration)
+      .then((validationResult) => {
+        res.json(validationResult);
+      })
+      .catch((validationError) => {
+        res.status(500).json({
+          error: 'Scheduler validation failed',
+          message: validationError.message,
+        });
+      });
+  });
+
+  // ── GET /api/scheduler/github-debug ───────────────────────────────────────
+  // Debug endpoint to test raw GitHub API connectivity with request/response logging.
+  // Shows exact headers, PAT configuration, and GitHub's response for troubleshooting.
+  router.get('/api/scheduler/github-debug', (req, res) => {
+    const githubPat = configuration.github && configuration.github.pat;
+    const githubBaseUrl = (configuration.github && configuration.github.baseUrl) || 'https://api.github.com';
+
+    if (!githubPat) {
+      return res.json({
+        isConfigured: false,
+        message: 'GitHub PAT not configured in Admin Hub',
+        debugInfo: {
+          pat: null,
+          baseUrl: githubBaseUrl,
+          authHeaderFormat: 'token <PAT>',
+          expectedHeader: 'Authorization: token ghp_*** (masked for security)',
+        },
+      });
+    }
+
+    const maskedPat = githubPat.substring(0, 4) + '...' + githubPat.substring(githubPat.length - 4);
+
+    repoMonitor.testGitHubConnectivity(configuration)
+      .then((debugResult) => {
+        res.json({
+          isConfigured: true,
+          timestamp: new Date().toISOString(),
+          debugInfo: {
+            pat: maskedPat,
+            baseUrl: githubBaseUrl,
+            authHeaderFormat: 'token <PAT>',
+            sentHeader: 'Authorization: token ' + maskedPat,
+          },
+          probeResult: debugResult,
+        });
+      })
+      .catch((debugError) => {
+        res.status(500).json({
+          error: 'GitHub debug probe failed',
+          message: debugError.message,
+          debugInfo: {
+            pat: maskedPat,
+            baseUrl: githubBaseUrl,
+            authHeaderFormat: 'token <PAT>',
+          },
+        });
+      });
+  });
+
   return router;
 }
 
