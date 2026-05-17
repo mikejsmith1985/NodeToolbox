@@ -11,6 +11,7 @@ import {
   type HygieneFinding,
   type HygieneFlag,
 } from './checks/hygieneChecks.ts';
+import { useEffect, useRef } from 'react';
 import { useHygieneState } from './hooks/useHygieneState.ts';
 import styles from './HygieneView.module.css';
 
@@ -23,14 +24,31 @@ const NO_FLAGS_MESSAGE = 'No Hygiene flags found for the current project and fil
 const NO_VALUE_LABEL = '—';
 const JIRA_BROWSE_PREFIX = '/browse/';
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+const MAX_HYGIENE_SCORE = 100;
+const HYGIENE_SCORE_FLAG_PENALTY = 5;
 
 /** Renders the standalone Hygiene checker and delegates stateful Jira work to `useHygieneState`. */
 export default function HygieneView() {
   const hygieneState = useHygieneState();
+  const hasAutoRunTriggeredRef = useRef(false);
+  const isHygieneLoading = hygieneState.isLoading;
+  const loadHygiene = hygieneState.loadHygiene;
+  const hygieneScore = Math.max(
+    0,
+    MAX_HYGIENE_SCORE - hygieneState.summary.totalFlags * HYGIENE_SCORE_FLAG_PENALTY,
+  );
   const hasLoadedFindings = hygieneState.findings.length > 0;
   const hasVisibleFindings = hygieneState.filteredFindings.length > 0;
   const hasProjectKey = hygieneState.projectKey.trim().length > 0;
   const shouldShowNoFlags = !hygieneState.isLoading && hasProjectKey && !hasVisibleFindings;
+
+  useEffect(() => {
+    if (hasAutoRunTriggeredRef.current || !hasProjectKey || isHygieneLoading) {
+      return;
+    }
+    hasAutoRunTriggeredRef.current = true;
+    void loadHygiene();
+  }, [hasProjectKey, isHygieneLoading, loadHygiene]);
 
   return (
     <section className={styles.hygieneView} aria-label={VIEW_TITLE}>
@@ -79,6 +97,10 @@ export default function HygieneView() {
       )}
 
       <div className={styles.summaryGrid} aria-label="Hygiene summary tiles">
+        <div className={styles.summaryTile} aria-label="Hygiene score tile">
+          <strong>{hygieneScore}/100</strong>
+          <span>Hygiene Score</span>
+        </div>
         <button
           type="button"
           className={hygieneState.selectedFilter === null ? styles.summaryTileSelected : styles.summaryTile}

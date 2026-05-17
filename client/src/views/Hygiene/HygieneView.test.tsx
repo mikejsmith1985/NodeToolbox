@@ -110,6 +110,15 @@ describe('HygieneView', () => {
 
     expect(hookState.setProjectKey).toHaveBeenCalledWith('ABC');
     expect(hookState.setExtraJql).toHaveBeenCalledWith('AND labels = hygiene');
+    expect(hookState.loadHygiene).toHaveBeenCalledTimes(2);
+  });
+
+  it('auto-runs hygiene on first render when a project key is already configured', () => {
+    const hookState = buildHookState({ projectKey: 'TBX' });
+    mockUseHygieneState.mockReturnValue(hookState);
+
+    render(<HygieneView />);
+
     expect(hookState.loadHygiene).toHaveBeenCalledTimes(1);
   });
 

@@ -4,8 +4,8 @@
 // messages using a regex pattern, then posts a comment or worklog entry to each matching
 // Jira issue. Exposes a live countdown (nextRunInSeconds) for UI display.
 //
-// Falls back gracefully: tries the local proxy first, then direct GitHub API, then no-ops
-// if both are unreachable (useful when running in offline/dev mode).
+// Uses server-side proxy routes for both GitHub reads and Jira writes so browser clients
+// can operate in restricted enterprise environments where direct outbound calls are blocked.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -13,9 +13,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 const SECONDS_PER_MINUTE = 60
 const COUNTDOWN_TICK_INTERVAL_MS = 1000
-const GITHUB_API_BASE = 'https://api.github.com'
-const PROXY_COMMITS_ENDPOINT = '/api/github/commits'
+const DEFAULT_GITHUB_API_BASE = 'https://api.github.com'
+const GITHUB_PROXY_BASE = '/github-proxy'
+const JIRA_PROXY_BASE = '/jira-proxy/rest/api/2/issue'
 const DEFAULT_INTERVAL_MINUTES = 15
+const DEFAULT_WORKLOG_SECONDS = 60
 
 // ── Types ──
 
@@ -29,12 +31,27 @@ interface GitHubCommit {
 export interface PollingEngineOptions {
   githubPat: string
   repoFullName: string
+  monitoredReposText?: string
   jiraProjectKey: string
   intervalMinutes: number
   maxCommits: number
   keyPattern: string
   commitTemplate: string
   strategy: 'comment' | 'worklog'
+  mode?: 'sync' | 'monitor'
+  shouldLogMissingJiraKeys?: boolean
+  shouldLogHealthyRuns?: boolean
+  onLogEntry?: (entry: string) => void
+  onCycleComplete?: (summary: PollingCycleSummary) => void
+}
+
+export interface PollingCycleSummary {
+  repoCount: number
+  commitCount: number
+  commitsWithJiraKey: number
+  commitsWithoutJiraKey: number
+  jiraUpdatesPosted: number
+  completedAt: string
 }
 
 /** Observable state exposed to the UI for status display. */
@@ -97,67 +114,139 @@ export function useGitHubPollingEngine(
   const optionsRef = useRef(options)
   useEffect(() => { optionsRef.current = options })
 
-  const fetchCommits = useCallback(async (): Promise<GitHubCommit[]> => {
+  const fetchCommitsForRepo = useCallback(async (repoFullName: string): Promise<GitHubCommit[]> => {
     const currentOptions = optionsRef.current
     const authHeaders: Record<string, string> = { Accept: 'application/vnd.github+json' }
     if (currentOptions.githubPat) {
       authHeaders['Authorization'] = `Bearer ${currentOptions.githubPat}`
     }
+    if (!repoFullName.trim()) return []
+
     const perPage = currentOptions.maxCommits
-
-    // Try the server-side proxy first (avoids CORS issues)
-    try {
-      const proxyUrl =
-        `${PROXY_COMMITS_ENDPOINT}?repo=${encodeURIComponent(currentOptions.repoFullName)}&per_page=${perPage}`
-      const proxyResponse = await fetch(proxyUrl, { headers: authHeaders })
-      if (proxyResponse.ok) return (await proxyResponse.json()) as GitHubCommit[]
-    } catch { /* fall through to direct call */ }
-
-    // Fall back to direct GitHub API
-    try {
-      const directUrl =
-        `${GITHUB_API_BASE}/repos/${currentOptions.repoFullName}/commits?per_page=${perPage}`
-      const directResponse = await fetch(directUrl, { headers: authHeaders })
-      if (directResponse.ok) return (await directResponse.json()) as GitHubCommit[]
-    } catch { /* fall through to empty result */ }
-
-    return []
+    const githubApiBase = currentOptions.githubPat ? DEFAULT_GITHUB_API_BASE : GITHUB_PROXY_BASE
+    const githubCommitsUrl = `${githubApiBase}/repos/${repoFullName}/commits?per_page=${perPage}`
+    const commitsResponse = await fetch(githubCommitsUrl, { headers: authHeaders })
+    if (!commitsResponse.ok) {
+      throw new Error(`GitHub commits request failed: ${commitsResponse.status}`)
+    }
+    return (await commitsResponse.json()) as GitHubCommit[]
   }, [])
 
   const postCommitToJira = useCallback(
     async (issueKey: string, commentBody: string): Promise<void> => {
-      const endpoint =
-        optionsRef.current.strategy === 'worklog'
-          ? `/api/jira/issue/${issueKey}/worklog`
-          : `/api/jira/issue/${issueKey}/comment`
-      await fetch(endpoint, {
+      const isWorklogStrategy = optionsRef.current.strategy === 'worklog'
+      const endpoint = isWorklogStrategy
+        ? `${JIRA_PROXY_BASE}/${issueKey}/worklog`
+        : `${JIRA_PROXY_BASE}/${issueKey}/comment`
+      const payload = isWorklogStrategy
+        ? { comment: commentBody, timeSpentSeconds: DEFAULT_WORKLOG_SECONDS }
+        : { body: commentBody }
+
+      const jiraResponse = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body: commentBody }),
+        body: JSON.stringify(payload),
       })
+      if (!jiraResponse.ok) {
+        throw new Error(`Jira post failed for ${issueKey}: ${jiraResponse.status}`)
+      }
     },
     [],
   )
 
   const runSyncCycle = useCallback(async (): Promise<void> => {
     const currentOptions = optionsRef.current
+    const logSyncEntry = currentOptions.onLogEntry
+    const mode = currentOptions.mode ?? 'sync'
+
+    const monitoredRepos = currentOptions.monitoredReposText?.trim()
+      ? currentOptions.monitoredReposText
+        .split(/[,\n]/)
+        .map((repoName) => repoName.trim())
+        .filter(Boolean)
+      : [currentOptions.repoFullName.trim()].filter(Boolean)
+
+    if (monitoredRepos.length === 0) {
+      logSyncEntry?.(mode === 'monitor' ? 'Monitor skipped: no repositories configured.' : 'Sync skipped: repository is not configured.')
+      return
+    }
+
     setLastRunAt(new Date().toISOString())
-    const commits = await fetchCommits()
-    for (const commit of commits) {
-      const commitMessage = commit.commit?.message ?? ''
-      const extractedKeys = extractJiraKeys(commitMessage, currentOptions.keyPattern)
-      if (extractedKeys.length === 0) continue
-      const summaryLine = commitMessage.split('\n')[0]
-      const shortSha = commit.sha?.slice(0, 7) ?? ''
-      for (const jiraKey of extractedKeys) {
-        const commentBody = buildCommentBody(
-          currentOptions.commitTemplate, jiraKey, summaryLine, shortSha,
-        )
-        // Swallow individual post failures — one issue should not halt the whole sync cycle.
-        try { await postCommitToJira(jiraKey, commentBody) } catch { /* intentionally ignored */ }
+    logSyncEntry?.(mode === 'monitor'
+      ? `Monitor started for ${monitoredRepos.length} repo(s).`
+      : `Sync started for ${monitoredRepos.length} repo(s).`)
+
+    let totalCommitCount = 0
+    let totalCommitsWithJiraKey = 0
+    let totalCommitsWithoutJiraKey = 0
+    let totalIssuesPosted = 0
+
+    for (const repoFullName of monitoredRepos) {
+      let repoCommits: GitHubCommit[]
+      try {
+        repoCommits = await fetchCommitsForRepo(repoFullName)
+      } catch (caughtError) {
+        const errorMessage = caughtError instanceof Error ? caughtError.message : String(caughtError)
+        logSyncEntry?.(`${mode === 'monitor' ? 'Monitor' : 'Sync'} failed for ${repoFullName}: ${errorMessage}`)
+        continue
+      }
+
+      totalCommitCount += repoCommits.length
+
+      if (repoCommits.length === 0) {
+        if (currentOptions.shouldLogHealthyRuns !== false) {
+          logSyncEntry?.(`${repoFullName}: no commits returned in this cycle.`)
+        }
+        continue
+      }
+
+      for (const commit of repoCommits) {
+        const commitMessage = commit.commit?.message ?? ''
+        const extractedKeys = extractJiraKeys(commitMessage, currentOptions.keyPattern)
+        if (extractedKeys.length === 0) {
+          totalCommitsWithoutJiraKey += 1
+          continue
+        }
+
+        totalCommitsWithJiraKey += 1
+        if (mode === 'monitor') continue
+
+        const summaryLine = commitMessage.split('\n')[0]
+        const shortSha = commit.sha?.slice(0, 7) ?? ''
+        for (const jiraKey of extractedKeys) {
+          const commentBody = buildCommentBody(
+            currentOptions.commitTemplate, jiraKey, summaryLine, shortSha,
+          )
+          try {
+            await postCommitToJira(jiraKey, commentBody)
+            totalIssuesPosted += 1
+          } catch (caughtError) {
+            const errorMessage = caughtError instanceof Error ? caughtError.message : String(caughtError)
+            logSyncEntry?.(`Failed to post ${jiraKey}: ${errorMessage}`)
+          }
+        }
       }
     }
-  }, [fetchCommits, postCommitToJira])
+
+    if (mode === 'monitor' && currentOptions.shouldLogMissingJiraKeys !== false) {
+      logSyncEntry?.(`Monitor result: ${totalCommitsWithoutJiraKey} commit(s) missing Jira keys across ${monitoredRepos.length} repo(s).`)
+    }
+
+    if (mode === 'sync') {
+      logSyncEntry?.(`Sync completed: ${totalCommitCount} commits scanned, ${totalIssuesPosted} Jira updates posted.`)
+    } else if (currentOptions.shouldLogHealthyRuns !== false) {
+      logSyncEntry?.(`Monitor completed: ${totalCommitCount} commits scanned, ${totalCommitsWithJiraKey} with Jira keys.`)
+    }
+
+    currentOptions.onCycleComplete?.({
+      repoCount: monitoredRepos.length,
+      commitCount: totalCommitCount,
+      commitsWithJiraKey: totalCommitsWithJiraKey,
+      commitsWithoutJiraKey: totalCommitsWithoutJiraKey,
+      jiraUpdatesPosted: totalIssuesPosted,
+      completedAt: new Date().toISOString(),
+    })
+  }, [fetchCommitsForRepo, postCommitToJira])
 
   const stopPolling = useCallback((): void => {
     if (pollingIntervalRef.current !== null) {

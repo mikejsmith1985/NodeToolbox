@@ -28,39 +28,61 @@
 .tabList {
   display: flex;
   gap: var(--spacing-xs);
-  border-bottom: 1px solid var(--color-border);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 6px;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: linear-gradient(180deg, rgba(13, 17, 23, 0.92), rgba(13, 17, 23, 0.76));
+  box-shadow: var(--shadow-surface);
+  backdrop-filter: blur(16px) saturate(140%);
+  flex-wrap: wrap;
 }
 
 .tabButton {
   padding: var(--spacing-sm) var(--spacing-md);
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
   color: var(--color-text-secondary);
   font-size: var(--font-size-md);
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
 }
 
 .tabButton:hover {
   color: var(--color-text-primary);
+  background: rgba(88, 166, 255, 0.08);
 }
 
 .activeTab {
   color: var(--color-accent);
-  border-bottom-color: var(--color-accent);
+  background: linear-gradient(180deg, rgba(88, 166, 255, 0.22), rgba(88, 166, 255, 0.08));
+  border-color: rgba(88, 166, 255, 0.35);
+  box-shadow:
+    0 0 16px rgba(88, 166, 255, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 /* ── Section card ── */
 
 .sectionCard {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: linear-gradient(180deg, rgba(24, 31, 45, 0.94), rgba(17, 24, 39, 0.9));
+  border: 1px solid rgba(88, 166, 255, 0.14);
   border-radius: var(--radius-md);
   padding: var(--spacing-md);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+  box-shadow:
+    var(--shadow-surface),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(14px) saturate(135%);
 }
 
 .sectionTitle {
@@ -89,8 +111,8 @@
   align-items: center;
   gap: var(--spacing-sm);
   padding: var(--spacing-sm) var(--spacing-md);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
+  background: rgba(17, 24, 39, 0.82);
+  border: 1px solid rgba(88, 166, 255, 0.14);
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
@@ -118,8 +140,8 @@
 
 .downloadButton {
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: linear-gradient(180deg, rgba(24, 31, 45, 0.96), rgba(17, 24, 39, 0.9));
+  border: 1px solid rgba(88, 166, 255, 0.14);
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
@@ -140,10 +162,11 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-sm);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
+  background: linear-gradient(180deg, rgba(17, 24, 39, 0.9), rgba(11, 15, 22, 0.94));
+  border: 1px solid rgba(88, 166, 255, 0.14);
   border-radius: var(--radius-sm);
   padding: var(--spacing-sm) var(--spacing-md);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .codeText {
@@ -176,43 +199,56 @@
 .textInput {
   flex: 1;
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
+  background: rgba(17, 24, 39, 0.85);
+  border: 1px solid rgba(88, 166, 255, 0.16);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .textInput:focus {
   outline: none;
-  border-color: var(--color-accent);
+  border-color: rgba(88, 166, 255, 0.42);
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.12);
 }
 
 .dateInput {
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
+  background: rgba(17, 24, 39, 0.85);
+  border: 1px solid rgba(88, 166, 255, 0.16);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 /* ── Buttons ── */
 
 .actionButton {
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: linear-gradient(180deg, rgba(24, 31, 45, 0.96), rgba(17, 24, 39, 0.9));
+  border: 1px solid rgba(88, 166, 255, 0.14);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
   cursor: pointer;
-  transition: background 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.15s;
   white-space: nowrap;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
 }
 
 .actionButton:hover {
-  background: var(--color-border);
+  background: rgba(88, 166, 255, 0.1);
+  border-color: rgba(88, 166, 255, 0.36);
+  box-shadow:
+    0 0 16px rgba(88, 166, 255, 0.12),
+    0 10px 22px rgba(0, 0, 0, 0.22);
+  transform: translateY(-1px);
 }
 
 .actionButton:disabled {
@@ -221,13 +257,14 @@
 }
 
 .saveButton {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
+  background: linear-gradient(180deg, rgba(88, 166, 255, 0.96), rgba(52, 211, 255, 0.84));
+  border-color: rgba(88, 166, 255, 0.75);
   color: var(--color-background);
+  box-shadow: 0 0 18px rgba(88, 166, 255, 0.22);
 }
 
 .saveButton:hover {
-  opacity: 0.9;
+  opacity: 1;
 }
 
 .saveStatus {
@@ -262,12 +299,13 @@
 .pinInput {
   width: 120px;
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
+  background: rgba(17, 24, 39, 0.85);
+  border: 1px solid rgba(88, 166, 255, 0.16);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
   letter-spacing: 0.2em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .adminDescription {
@@ -309,7 +347,7 @@
 
 .sectionDivider {
   border: none;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid rgba(88, 166, 255, 0.16);
   margin: 0;
 }
 
@@ -325,8 +363,8 @@
 /* ── Diagnostics result block ── */
 
 .diagnosticsResultPre {
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
+  background: linear-gradient(180deg, rgba(17, 24, 39, 0.9), rgba(11, 15, 22, 0.94));
+  border: 1px solid rgba(88, 166, 255, 0.14);
   border-radius: var(--radius-sm);
   padding: var(--spacing-sm) var(--spacing-md);
   font-family: 'Consolas', 'Monaco', monospace;
@@ -359,16 +397,18 @@
 .narrowNumberInput {
   width: 80px;
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
+  background: rgba(17, 24, 39, 0.85);
+  border: 1px solid rgba(88, 166, 255, 0.16);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .narrowNumberInput:focus {
   outline: none;
-  border-color: var(--color-accent);
+  border-color: rgba(88, 166, 255, 0.42);
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.12);
 }
 
 /* ── Update version row ── */
@@ -399,14 +439,15 @@
 .releaseNotesTextarea {
   width: 100%;
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
+  background: rgba(17, 24, 39, 0.85);
+  border: 1px solid rgba(88, 166, 255, 0.16);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
   font-family: inherit;
   resize: vertical;
   box-sizing: border-box;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 /* ── Feature request textarea ── */
@@ -414,8 +455,8 @@
 .featureRequestTextarea {
   width: 100%;
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
+  background: rgba(17, 24, 39, 0.85);
+  border: 1px solid rgba(88, 166, 255, 0.16);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
@@ -423,11 +464,13 @@
   resize: vertical;
   box-sizing: border-box;
   min-height: 80px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .featureRequestTextarea:focus {
   outline: none;
-  border-color: var(--color-accent);
+  border-color: rgba(88, 166, 255, 0.42);
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.12);
 }
 
 .optionalLabel {
@@ -446,18 +489,24 @@
 
 .advancedLockButton {
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: transparent;
-  border: 1px solid var(--color-border);
+  background: rgba(17, 24, 39, 0.75);
+  border: 1px solid rgba(88, 166, 255, 0.16);
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
 }
 
 .advancedLockButton:hover {
   color: var(--color-text-primary);
-  border-color: var(--color-accent);
+  background: rgba(88, 166, 255, 0.08);
+  border-color: rgba(88, 166, 255, 0.32);
+  box-shadow: 0 0 14px rgba(88, 166, 255, 0.1);
 }
 
 /* ── Locked sections placeholder ── */
@@ -467,8 +516,9 @@
   color: var(--color-text-muted);
   text-align: center;
   padding: var(--spacing-md);
-  border: 1px dashed var(--color-border);
+  border: 1px dashed rgba(88, 166, 255, 0.16);
   border-radius: var(--radius-md);
+  background: rgba(17, 24, 39, 0.6);
 }
 
 /* ── Enterprise Standards rules table ── */
@@ -483,7 +533,7 @@
   grid-template-columns: 1fr 2fr auto auto;
   gap: var(--spacing-sm);
   padding-bottom: var(--spacing-xs);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid rgba(88, 166, 255, 0.16);
   font-size: var(--font-size-xs, 0.75rem);
   color: var(--color-text-muted);
   font-weight: 600;
@@ -496,7 +546,7 @@
   gap: var(--spacing-sm);
   align-items: center;
   padding: var(--spacing-xs) 0;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid rgba(88, 166, 255, 0.1);
   font-size: var(--font-size-sm);
 }
 
@@ -526,21 +576,21 @@
   flex-direction: column;
   gap: var(--spacing-sm);
   padding: var(--spacing-sm);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
+  background: rgba(17, 24, 39, 0.82);
+  border: 1px solid rgba(88, 166, 255, 0.14);
   border-radius: var(--radius-sm);
 }
 
 /* ── Danger button (destructive actions) ── */
 
 .dangerButton {
-  background: transparent;
+  background: rgba(248, 81, 73, 0.08);
   color: #f87171;
-  border-color: #f87171;
+  border-color: rgba(248, 81, 73, 0.38);
 }
 
 .dangerButton:hover {
-  background: #f87171;
+  background: rgba(248, 81, 73, 0.96);
   color: #fff;
 }
 
@@ -584,7 +634,7 @@
 }
 
 .toolVisibilityItem:hover {
-  background: var(--color-surface);
+  background: rgba(88, 166, 255, 0.06);
 }
 
 .toolVisibilityIcon {
@@ -642,6 +692,12 @@
   align-items: center;
   cursor: grab;
   user-select: none;
+  background: linear-gradient(180deg, rgba(88, 166, 255, 0.18), rgba(88, 166, 255, 0.08));
+  border: 1px solid rgba(88, 166, 255, 0.42);
+  border-radius: var(--radius-sm);
+  color: var(--color-accent);
+  padding: 4px 10px;
+  box-shadow: 0 0 16px rgba(88, 166, 255, 0.12);
 }
 
 .bookmarkletLink:active {
@@ -681,13 +737,14 @@
 /* Read-only textarea that displays the GitHub release notes. */
 .releaseNotesTextarea {
   width: 100%;
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
+  background: rgba(17, 24, 39, 0.85);
+  border: 1px solid rgba(88, 166, 255, 0.16);
+  border-radius: var(--radius-sm);
   padding: var(--spacing-sm);
   color: var(--color-text-primary);
   font-family: inherit;
   font-size: var(--font-size-sm);
   resize: vertical;
   box-sizing: border-box;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }

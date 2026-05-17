@@ -9,6 +9,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
 
+import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import { jiraPost, jiraPut } from '../../services/jiraApi.ts';
 import { snowFetch } from '../../services/snowApi.ts';
@@ -976,29 +977,17 @@ export default function MyIssuesView() {
       </header>
 
       {/* Top-level Report / Settings tabs */}
-      <div aria-label="My Issues tabs" className={styles.tabList} role="tablist">
-        {MY_ISSUES_TABS.map((tabOption) => {
-          const isActiveTab = tabOption.key === activeTab;
-          return (
-            <button
-              aria-controls={`${tabOption.key}-panel`}
-              aria-selected={isActiveTab}
-              className={`${styles.tabButton} ${isActiveTab ? styles.activeTab : ''}`}
-              id={`${tabOption.key}-tab`}
-              key={tabOption.key}
-              onClick={() => setActiveTab(tabOption.key)}
-              role="tab"
-              type="button"
-            >
-              {tabOption.label}
-            </button>
-          );
-        })}
-      </div>
+      <PrimaryTabs
+        ariaLabel="My Issues tabs"
+        idPrefix="my-issues"
+        tabs={MY_ISSUES_TABS}
+        activeTab={activeTab}
+        onChange={setActiveTab}
+      />
 
       {/* ── Report tab ── */}
       {activeTab === 'report' && (
-        <section id="report-panel" role="tabpanel" aria-labelledby="report-tab">
+        <section id="my-issues-report-panel" role="tabpanel" aria-labelledby="my-issues-report-tab">
           {/* Source strip */}
           <div className={styles.sourceStrip} style={{ marginTop: 'var(--spacing-sm)' }}>
             {SOURCE_OPTIONS.map((sourceOption) => (
@@ -1271,14 +1260,14 @@ export default function MyIssuesView() {
 
       {/* ── Hygiene tab ── */}
       {activeTab === 'hygiene' && (
-        <section id="hygiene-panel" role="tabpanel" aria-labelledby="hygiene-tab">
+        <section id="my-issues-hygiene-panel" role="tabpanel" aria-labelledby="my-issues-hygiene-tab">
           <HygieneView />
         </section>
       )}
 
       {/* ── Settings tab ── */}
       {activeTab === 'settings' && (
-        <section id="settings-panel" role="tabpanel" aria-labelledby="settings-tab">
+        <section id="my-issues-settings-panel" role="tabpanel" aria-labelledby="my-issues-settings-tab">
           <div className={styles.settingsPanel}>
             <div className={styles.settingsSection}>
               <h2 className={styles.settingsSectionTitle}>Default view mode</h2>

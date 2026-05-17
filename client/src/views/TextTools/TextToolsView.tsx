@@ -6,6 +6,7 @@
 import { useState, type MouseEvent as ReactMouseEvent } from 'react'
 
 import { BookmarkletInstallLink } from '../../components/BookmarkletInstallLink/index.tsx'
+import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx'
 import { buildServiceNowExtractorBookmarkletHref } from './serviceNowExtractorBookmarklet.ts'
 import {
   buildCaseVariants,
@@ -855,19 +856,13 @@ export default function TextToolsView() {
         <p className={styles.pageSubtitle}>{VIEW_SUBTITLE}</p>
       </header>
 
-      <div role="tablist" className={styles.tabList}>
-        {TAB_OPTIONS.map((tabOption) => (
-          <button
-            key={tabOption.key}
-            role="tab"
-            aria-selected={state.activeTab === tabOption.key}
-            className={`${styles.tabButton} ${state.activeTab === tabOption.key ? styles.activeTab : ''}`}
-            onClick={() => actions.setActiveTab(tabOption.key)}
-          >
-            {tabOption.label}
-          </button>
-        ))}
-      </div>
+      <PrimaryTabs
+        ariaLabel="Text Tools tabs"
+        idPrefix="text-tools"
+        tabs={TAB_OPTIONS}
+        activeTab={state.activeTab}
+        onChange={actions.setActiveTab}
+      />
 
       {renderActiveTabContent()}
     </div>

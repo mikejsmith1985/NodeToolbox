@@ -31,6 +31,7 @@ const HYGIENE_FIELDS = [
   'customfield_10020',
 ].join(',');
 const HYGIENE_MAX_RESULTS = 200;
+const DEFAULT_ASSIGNEE_CLAUSE = 'assignee = currentUser()';
 const EMPTY_FILTER: HygieneCheckId | null = null;
 
 export const HYGIENE_PROJECT_KEY_STORAGE_KEY = 'tbxHygieneProjectKey';
@@ -62,7 +63,7 @@ export interface HygieneActions {
 export function buildHygieneSearchPath(projectKey: string, extraJql: string): string {
   const normalizedProjectKey = projectKey.trim().toUpperCase();
   const extraJqlClause = extraJql.trim();
-  const jqlText = `project=${normalizedProjectKey} AND statusCategory != Done${extraJqlClause ? ` ${extraJqlClause}` : ''}`;
+  const jqlText = `project=${normalizedProjectKey} AND statusCategory != Done AND ${DEFAULT_ASSIGNEE_CLAUSE}${extraJqlClause ? ` ${extraJqlClause}` : ''}`;
   return `/rest/api/2/search?jql=${encodeURIComponent(jqlText)}&fields=${HYGIENE_FIELDS}&maxResults=${HYGIENE_MAX_RESULTS}`;
 }
 

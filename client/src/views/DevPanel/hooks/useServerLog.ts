@@ -51,7 +51,8 @@ export function useServerLog(): ServerLogHookResult {
         return
       }
 
-      const allEntries: ServerLogEntry[] = await response.json()
+      const rawResponse = await response.json() as unknown
+      const allEntries = parseServerLogEntries(rawResponse)
       const newEntries = allEntries.filter(
         (entry) => entry.id > lastSeenIdRef.current,
       )
@@ -96,4 +97,22 @@ export function useServerLog(): ServerLogHookResult {
   }, [])
 
   return { entries, isLoading, fetchError, clearLog }
+}
+
+/**
+ * Normalizes the /api/logs payload shape to a stable array of entries.
+ * Accepts either the legacy array format or the current object format:
+ * { entries: ServerLogEntry[] }.
+ */
+function parseServerLogEntries(rawResponse: unknown): ServerLogEntry[] {
+  if (Array.isArray(rawResponse)) return rawResponse as ServerLogEntry[]
+  if (
+    typeof rawResponse === 'object' &&
+    rawResponse !== null &&
+    'entries' in rawResponse &&
+    Array.isArray((rawResponse as { entries?: unknown }).entries)
+  ) {
+    return (rawResponse as { entries: ServerLogEntry[] }).entries
+  }
+  return []
 }

@@ -64,6 +64,16 @@ export const APP_CARDS: AppCardDef[] = [
     sectionKey: 'agile',
   },
   {
+    id: 'personal-toolbox',
+    route: '/personal-toolbox',
+    icon: '🧰',
+    title: 'Personal Toolbox',
+    description:
+      'Build one workspace from all major tools by selecting only the modules you want in your tab bar.',
+    tags: ['Workspace', 'Personalization', 'Tabs'],
+    sectionKey: 'agile',
+  },
+  {
     id: 'dev-workspace',
     route: '/dev-workspace',
     icon: '🏗',
@@ -138,6 +148,7 @@ export const RECENT_VIEW_LABELS: Record<string, string> = {
   'dsu-board': '🏃 Team Dashboard',
   art: '🚂 ART View',
   'my-issues': '📊 My Issues',
+  'personal-toolbox': '🧰 Personal Toolbox',
   'dev-workspace': '🏗 Dev Workspace',
   'snow-hub': '❄️ SNow Hub',
   'text-tools': '🛠 Text Tools',

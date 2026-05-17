@@ -18,6 +18,9 @@ describe('useDevWorkspaceSettings', () => {
     expect(result.current.settings.commitKeyPattern).toBe('[A-Z]+-\\d+')
     expect(result.current.settings.postingStrategy).toBe('comment')
     expect(result.current.settings.branchPrefixesToStrip).toBe('feature/,bugfix/,fix/,hotfix/,release/')
+    expect(result.current.settings.monitoredReposText).toBe('')
+    expect(result.current.settings.shouldLogMissingJiraKeys).toBe(true)
+    expect(result.current.settings.shouldLogHealthyRuns).toBe(true)
   })
 
   it('PAT is hidden (isPatVisible=false) by default', () => {
@@ -35,12 +38,18 @@ describe('useDevWorkspaceSettings', () => {
   it('loads settings from localStorage on mount', () => {
     localStorage.setItem(
       SETTINGS_STORAGE_KEY,
-      JSON.stringify({ syncIntervalMinutes: 30, postingStrategy: 'worklog', maxCommitsPerSync: 100 }),
+      JSON.stringify({
+        syncIntervalMinutes: 30,
+        postingStrategy: 'worklog',
+        maxCommitsPerSync: 100,
+        monitoredReposText: 'owner/repo-one, owner/repo-two',
+      }),
     )
     const { result } = renderHook(() => useDevWorkspaceSettings())
     expect(result.current.settings.syncIntervalMinutes).toBe(30)
     expect(result.current.settings.postingStrategy).toBe('worklog')
     expect(result.current.settings.maxCommitsPerSync).toBe(100)
+    expect(result.current.settings.monitoredReposText).toBe('owner/repo-one, owner/repo-two')
   })
 
   it('merges partial updates without erasing unrelated fields', () => {
