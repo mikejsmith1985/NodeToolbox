@@ -6,7 +6,8 @@
   gap: var(--spacing-md);
   padding: var(--spacing-md);
   height: 100%;
-  overflow: hidden;
+  /* No overflow here — .mainContent (App.module.css) is the scroll container.
+     overflow: hidden would trap position:sticky on PrimaryTabs. */
 }
 
 .pageHeader {
