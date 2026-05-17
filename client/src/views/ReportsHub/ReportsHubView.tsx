@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Cell, Pie, PieChart, Tooltip } from 'recharts'
 
+import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx'
 import type {
   IndividualEntry,
   JiraFeatureIssue,
@@ -1379,19 +1380,13 @@ export default function ReportsHubView() {
       </div>
 
       {/* Tab strip */}
-      <div role="tablist" className={styles.tabList}>
-        {TAB_OPTIONS.map((tabOption) => (
-          <button
-            key={tabOption.key}
-            role="tab"
-            aria-selected={state.activeTab === tabOption.key}
-            className={`${styles.tabButton} ${state.activeTab === tabOption.key ? styles.activeTab : ''}`}
-            onClick={() => actions.setActiveTab(tabOption.key)}
-          >
-            {tabOption.label}
-          </button>
-        ))}
-      </div>
+      <PrimaryTabs
+        ariaLabel="Reports Hub tabs"
+        idPrefix="reports-hub"
+        tabs={TAB_OPTIONS}
+        activeTab={state.activeTab}
+        onChange={actions.setActiveTab}
+      />
 
       {/* Tab preamble (explainer card + timestamp + copy button) */}
       <TabPreamble

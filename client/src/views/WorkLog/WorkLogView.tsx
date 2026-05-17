@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 
+import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs';
 import { useWorkLogState, type WorkLogTimer } from './hooks/useWorkLogState.ts';
 import styles from './WorkLogView.module.css';
 
@@ -33,8 +34,42 @@ export default function WorkLogView() {
     );
   }, [workLogState.history]);
 
-  const historyForActiveTab =
-    activeTabName === TODAY_TAB ? todayHistory : [...workLogState.history].reverse();
+  const historyTabOptions = useMemo(
+    () => [
+      { key: TODAY_TAB, label: `Today (${todayHistory.length})` },
+      { key: HISTORY_TAB, label: `History (${workLogState.history.length})` },
+    ] as const,
+    [todayHistory.length, workLogState.history.length],
+  );
+
+  function renderHistoryTable(entries: typeof workLogState.history, emptyMessage: string): React.ReactNode {
+    if (entries.length === 0) {
+      return <p className={styles.emptyState}>{emptyMessage}</p>;
+    }
+
+    return (
+      <table className={styles.historyTable}>
+        <thead>
+          <tr>
+            <th>Posted</th>
+            <th>Issue</th>
+            <th>Duration</th>
+            <th>Comment</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((historyEntry, historyIndex) => (
+            <tr key={`${historyEntry.issueKey}-${historyEntry.postedAtIso}-${historyIndex}`}>
+              <td>{new Date(historyEntry.postedAtIso).toLocaleString()}</td>
+              <td>{historyEntry.issueKey}</td>
+              <td>{workLogState.formatDuration(historyEntry.durationSeconds)}</td>
+              <td>{historyEntry.comment || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }
 
   function openPostDialogForTimer(timer: WorkLogTimer): void {
     const seconds = workLogState.computeElapsedSeconds(timer);
@@ -141,51 +176,31 @@ export default function WorkLogView() {
         </div>
       )}
 
-      <div className={styles.tabsRow} role="tablist">
-        <button
-          type="button"
-          className={activeTabName === TODAY_TAB ? styles.tabButtonActive : styles.tabButton}
-          role="tab"
-          aria-selected={activeTabName === TODAY_TAB}
-          onClick={() => setActiveTabName(TODAY_TAB)}
-        >
-          Today ({todayHistory.length})
-        </button>
-        <button
-          type="button"
-          className={activeTabName === HISTORY_TAB ? styles.tabButtonActive : styles.tabButton}
-          role="tab"
-          aria-selected={activeTabName === HISTORY_TAB}
-          onClick={() => setActiveTabName(HISTORY_TAB)}
-        >
-          History ({workLogState.history.length})
-        </button>
-      </div>
+      <PrimaryTabs
+        tabs={historyTabOptions}
+        activeTab={activeTabName}
+        onChange={setActiveTabName}
+        ariaLabel="Work log history tabs"
+        idPrefix="work-log-history"
+      />
 
-      {historyForActiveTab.length === 0 ? (
-        <p className={styles.emptyState}>No work logged yet.</p>
-      ) : (
-        <table className={styles.historyTable}>
-          <thead>
-            <tr>
-              <th>Posted</th>
-              <th>Issue</th>
-              <th>Duration</th>
-              <th>Comment</th>
-            </tr>
-          </thead>
-          <tbody>
-            {historyForActiveTab.map((historyEntry, historyIndex) => (
-              <tr key={`${historyEntry.issueKey}-${historyEntry.postedAtIso}-${historyIndex}`}>
-                <td>{new Date(historyEntry.postedAtIso).toLocaleString()}</td>
-                <td>{historyEntry.issueKey}</td>
-                <td>{workLogState.formatDuration(historyEntry.durationSeconds)}</td>
-                <td>{historyEntry.comment || '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <section
+        id="work-log-history-today-panel"
+        role="tabpanel"
+        aria-labelledby="work-log-history-today-tab"
+        hidden={activeTabName !== TODAY_TAB}
+      >
+        {renderHistoryTable(todayHistory, 'No work logged today.')}
+      </section>
+
+      <section
+        id="work-log-history-history-panel"
+        role="tabpanel"
+        aria-labelledby="work-log-history-history-tab"
+        hidden={activeTabName !== HISTORY_TAB}
+      >
+        {renderHistoryTable([...workLogState.history].reverse(), 'No work logged yet.')}
+      </section>
 
       {postDialogState && (
         <div className={styles.dialogBackdrop} role="dialog" aria-modal="true" aria-label="Log work">

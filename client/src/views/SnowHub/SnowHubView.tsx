@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 
+import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import ConfigurationTab from './tabs/ConfigurationTab.tsx';
 import CrgTab from './tabs/CrgTab.tsx';
 import PrbTab from './tabs/PrbTab.tsx';
@@ -54,31 +55,17 @@ export default function SnowHubView() {
         <h1 className={styles.pageTitle}>{VIEW_TITLE}</h1>
         <p className={styles.pageSubtitle}>{VIEW_SUBTITLE}</p>
       </header>
-      <div aria-label="SNow Hub tabs" className={styles.tabList} role="tablist">
-        {TAB_OPTIONS.map((tabOption) => {
-          const isActiveTab = tabOption.key === activeTab;
-          const buttonClassName = isActiveTab ? `${styles.tabButton} ${styles.activeTab}` : styles.tabButton;
-
-          return (
-            <button
-              aria-controls={`${tabOption.key}-panel`}
-              aria-selected={isActiveTab}
-              className={buttonClassName}
-              id={`${tabOption.key}-tab`}
-              key={tabOption.key}
-              onClick={() => setActiveTab(tabOption.key)}
-              role="tab"
-              type="button"
-            >
-              {tabOption.label}
-            </button>
-          );
-        })}
-      </div>
+      <PrimaryTabs
+        ariaLabel="SNow Hub tabs"
+        idPrefix="snow-hub"
+        tabs={TAB_OPTIONS}
+        activeTab={activeTab}
+        onChange={setActiveTab}
+      />
       <section
-        aria-labelledby={`${activeTab}-tab`}
+        aria-labelledby={`snow-hub-${activeTab}-tab`}
         className={styles.panelSurface}
-        id={`${activeTab}-panel`}
+        id={`snow-hub-${activeTab}-panel`}
         role="tabpanel"
       >
         {renderActiveTabPanel(activeTab)}

@@ -14,6 +14,9 @@
   border-bottom: 1px solid var(--color-border);
   padding: 0 var(--spacing-md);
   background: var(--color-surface-1);
+  position: sticky;
+  top: 0;
+  z-index: 40;
 }
 
 .tabBtn {
@@ -312,11 +315,17 @@
 }
 
 .fieldLabel {
+  display: block;
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-xs);
+  overflow-wrap: anywhere;
 }
 
 .textInput {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: var(--spacing-sm);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -326,6 +335,9 @@
 }
 
 .textArea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: var(--spacing-sm);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -336,6 +348,9 @@
 }
 
 .selectInput {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: var(--spacing-sm);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -426,14 +441,14 @@
 
 .patInputRow {
   display: flex;
-  gap: var(--spacing-xs);
-  align-items: center;
-  margin-bottom: var(--spacing-sm);
+  gap: var(--spacing-sm);
+  align-items: stretch;
+  flex-wrap: wrap;
 }
 
 .patInputRow .textInput {
-  flex: 1;
-  margin-bottom: 0;
+  flex: 1 1 320px;
+  min-width: 240px;
 }
 
 .patVisibilityBtn {
@@ -442,7 +457,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -457,7 +472,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-danger, #f87171);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -467,7 +482,79 @@
   cursor: not-allowed;
 }
 
-/* ── Settings sections ── */
+/* ── Settings layout ── */
+
+.settingsHeader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.settingsCard {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.settingsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.settingsField {
+  min-width: 0;
+}
+
+.settingsFieldWide {
+  grid-column: 1 / -1;
+}
+
+.settingsActions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: var(--spacing-sm);
+}
+
+.repoAddRow {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.repoAddRow .textInput {
+  flex: 1 1 320px;
+}
+
+.repoListContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
+}
+
+.repoListItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+}
+
+.repoPathText {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
 
 .settingsSection {
   margin-bottom: var(--spacing-md);
@@ -480,26 +567,27 @@
 }
 
 .sectionSubTitle {
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   font-weight: 700;
-  color: var(--color-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--color-text-primary);
   margin: 0 0 var(--spacing-sm);
 }
 
 .radioGroup {
   display: flex;
-  gap: var(--spacing-md);
+  gap: var(--spacing-lg);
   margin-bottom: var(--spacing-sm);
+  flex-wrap: wrap;
 }
 
 .radioLabel {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--spacing-xs);
   font-size: var(--font-size-sm);
   cursor: pointer;
+  color: var(--color-text-primary);
+  min-width: 180px;
 }
 
 /* ── PowerShell hooks section ── */

@@ -20,6 +20,7 @@ import {
 
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import JiraFieldPicker from '../../components/JiraFieldPicker/index.tsx';
+import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import type { JiraIssue } from '../../types/jira.ts';
 import StoryPointingView from '../StoryPointing/StoryPointingView.tsx';
 import BoardPicker from './BoardPicker.tsx';
@@ -1458,29 +1459,17 @@ export default function SprintDashboardView() {
         <p>{VIEW_SUBTITLE}</p>
       </header>
 
-      <div aria-label="Sprint Dashboard tabs" className={styles.tabList} role="tablist">
-        {TAB_OPTIONS.map((tabOption) => {
-          const isActiveTab = tabOption.key === state.activeTab;
-          return (
-            <button
-              aria-controls={`${tabOption.key}-panel`}
-              aria-selected={isActiveTab}
-              className={`${styles.tabButton} ${isActiveTab ? styles.activeTab : ''}`}
-              id={`${tabOption.key}-tab`}
-              key={tabOption.key}
-              onClick={() => actions.setActiveTab(tabOption.key)}
-              role="tab"
-              type="button"
-            >
-              {tabOption.label}
-            </button>
-          );
-        })}
-      </div>
+      <PrimaryTabs
+        ariaLabel="Sprint Dashboard tabs"
+        idPrefix="sprint-dashboard"
+        tabs={TAB_OPTIONS}
+        activeTab={state.activeTab}
+        onChange={actions.setActiveTab}
+      />
 
       <section
-        aria-labelledby={`${state.activeTab}-tab`}
-        id={`${state.activeTab}-panel`}
+        aria-labelledby={`sprint-dashboard-${state.activeTab}-tab`}
+        id={`sprint-dashboard-${state.activeTab}-panel`}
         role="tabpanel"
       >
         {renderActiveTabPanel(state.activeTab)}

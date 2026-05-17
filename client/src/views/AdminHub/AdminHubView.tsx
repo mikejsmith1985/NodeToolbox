@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, useCallback, type MouseEvent as ReactMouse
 
 import { BookmarkletInstallLink } from '../../components/BookmarkletInstallLink/index.tsx'
 import ConfirmDialog from '../../components/ConfirmDialog/index.tsx'
+import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx'
 import { SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts'
 import { useConnectionStore } from '../../store/connectionStore'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
@@ -1549,27 +1550,6 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
       <EnterpriseStandardsPanel />
       <CredentialManagementSection />
 
-      <CrgSubmissionDebugSection />
-
-      <DiagnosticsSection
-        isDiagnosticsRunning={state.isDiagnosticsRunning}
-        diagnosticsResult={state.diagnosticsResult}
-        diagnosticsError={state.diagnosticsError}
-        isDiagnosticsSectionCollapsed={state.isDiagnosticsSectionCollapsed}
-        onRunDiagnostics={actions.runDiagnostics}
-        onSetCollapsed={actions.setDiagnosticsSectionCollapsed}
-      />
-
-      <BackupSection
-        isBackupRestoring={state.isBackupRestoring}
-        restoreError={state.restoreError}
-        isBackupSectionCollapsed={state.isBackupSectionCollapsed}
-        onDownloadBackup={actions.downloadBackup}
-        onTriggerRestoreBackup={actions.triggerRestoreBackup}
-        onOpenResetAllSettingsDialog={actions.openResetAllSettingsDialog}
-        onSetCollapsed={actions.setBackupSectionCollapsed}
-      />
-
       <HygieneRulesSection
         hygieneRules={state.hygieneRules}
         isHygieneSectionCollapsed={state.isHygieneSectionCollapsed}
@@ -1590,10 +1570,6 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
       />
 
       <FeatureRequestSection />
-
-      <ToolVisibilitySection />
-      <ClientDiagnosticsPanel />
-      <TbxBackupRestoreSection />
     </>
   )
 }
@@ -1621,35 +1597,69 @@ export default function AdminHubView() {
         />
       )}
 
-      <div aria-label="Admin Hub tabs" className={styles.tabList} role="tablist">
-        {ADMIN_HUB_TAB_OPTIONS.map((tabOption) => {
-          const isActiveTab = tabOption.key === activeAdminTab
-          return (
-            <button
-              aria-controls={`${tabOption.key}-panel`}
-              aria-selected={isActiveTab}
-              className={`${styles.tabButton} ${isActiveTab ? styles.activeTab : ''}`}
-              id={`${tabOption.key}-tab`}
-              key={tabOption.key}
-              onClick={() => setActiveAdminTab(tabOption.key)}
-              role="tab"
-              type="button"
-            >
-              {tabOption.label}
-            </button>
-          )
-        })}
-      </div>
+      <PrimaryTabs
+        ariaLabel="Admin Hub tabs"
+        idPrefix="admin-hub"
+        tabs={ADMIN_HUB_TAB_OPTIONS}
+        activeTab={activeAdminTab}
+        onChange={setActiveAdminTab}
+      />
 
       {activeAdminTab === 'main' && (
-        <section id="main-panel" role="tabpanel" aria-labelledby="main-tab">
+        <section id="admin-hub-main-panel" role="tabpanel" aria-labelledby="admin-hub-main-tab">
           <AdminHubMainContent actions={actions} state={state} />
         </section>
       )}
 
       {activeAdminTab === 'dev-panel' && (
-        <section id="dev-panel-panel" role="tabpanel" aria-labelledby="dev-panel-tab">
+        <section id="admin-hub-dev-panel-panel" role="tabpanel" aria-labelledby="admin-hub-dev-panel-tab">
           <DevPanelView />
+          <section className={styles.sectionCard}>
+            <h2 className={styles.sectionTitle}>🧭 Diagnostics Toolkit Guide</h2>
+            <p className={styles.adminDescription}>
+              <strong>Repo Monitor Validation</strong> reads scheduler config, status, and result
+              events directly from server APIs so you can confirm monitoring is actually connected
+              and processing repo activity.
+            </p>
+            <p className={styles.adminDescription}>
+              <strong>CRG Submission Debug</strong> captures the exact request/response JSON from
+              the last CRG submission and compares fields so mapping problems are visible immediately.
+            </p>
+            <p className={styles.adminDescription}>
+              <strong>Diagnostics</strong> calls the server health endpoint and returns runtime
+              details (version, uptime, platform, relay and integration state) as raw JSON for
+              precise troubleshooting.
+            </p>
+            <p className={styles.adminDescription}>
+              <strong>Backup &amp; Restore</strong> exports or restores local settings snapshots by
+              reading and writing browser storage keys, which allows recoverable configuration changes.
+            </p>
+            <p className={styles.adminDescription}>
+              <strong>Client Diagnostics</strong> gives a read-only browser/settings snapshot, and
+              <strong> Tool Visibility</strong> explains and controls which home cards are shown.
+            </p>
+          </section>
+          <CrgSubmissionDebugSection />
+          <DiagnosticsSection
+            isDiagnosticsRunning={state.isDiagnosticsRunning}
+            diagnosticsResult={state.diagnosticsResult}
+            diagnosticsError={state.diagnosticsError}
+            isDiagnosticsSectionCollapsed={state.isDiagnosticsSectionCollapsed}
+            onRunDiagnostics={actions.runDiagnostics}
+            onSetCollapsed={actions.setDiagnosticsSectionCollapsed}
+          />
+          <BackupSection
+            isBackupRestoring={state.isBackupRestoring}
+            restoreError={state.restoreError}
+            isBackupSectionCollapsed={state.isBackupSectionCollapsed}
+            onDownloadBackup={actions.downloadBackup}
+            onTriggerRestoreBackup={actions.triggerRestoreBackup}
+            onOpenResetAllSettingsDialog={actions.openResetAllSettingsDialog}
+            onSetCollapsed={actions.setBackupSectionCollapsed}
+          />
+          <ClientDiagnosticsPanel />
+          <TbxBackupRestoreSection />
+          <ToolVisibilitySection />
         </section>
       )}
     </div>

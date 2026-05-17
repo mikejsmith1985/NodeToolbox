@@ -25,6 +25,10 @@
   gap: var(--spacing-xs);
   border-bottom: 1px solid var(--color-border);
   margin-bottom: var(--spacing-md);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--color-bg);
 }
 
 .tabButton {
