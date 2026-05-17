@@ -26,6 +26,7 @@ const MY_ISSUES_BOARD_ID_STORAGE_KEY = 'tbxMIBoardId';
 const MY_ISSUES_JQL_HISTORY_STORAGE_KEY = 'tbxMIJqlHistory';
 const RECENT_VIEWS_STORAGE_KEY = 'tbxRecentViews';
 const STATUS_MAPPINGS_STORAGE_KEY = 'tbxStatusMappings';
+const PERSONAL_TOOLBOX_MODULE_IDS_STORAGE_KEY = 'tbxPersonalToolboxModuleIds';
 
 interface SettingsState {
   theme: Theme;
@@ -46,6 +47,7 @@ interface SettingsState {
    * The system-defined "To Do → New" mapping is always applied in addition.
    */
   statusMappings: StatusMapping[];
+  personalToolboxModuleIds: string[];
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
   setCardOrder: (cardOrder: string[]) => void;
@@ -62,6 +64,7 @@ interface SettingsState {
   addRecentView: (viewId: string) => void;
   /** Replaces the full list of user-configured status mappings (system mapping preserved separately). */
   setStatusMappings: (mappings: StatusMapping[]) => void;
+  setPersonalToolboxModuleIds: (moduleIds: string[]) => void;
 }
 
 function canUseLocalStorage(): boolean {
@@ -253,6 +256,7 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
       return { recentViews };
     }),
   statusMappings: readStoredStatusMappings(),
+  personalToolboxModuleIds: readStoredStringArray(PERSONAL_TOOLBOX_MODULE_IDS_STORAGE_KEY),
   setStatusMappings: (mappings) => {
     // Only persist user-defined mappings; system-defined ones are always re-applied at runtime.
     const userDefinedMappings = mappings.filter((mapping) => !mapping.isSystemDefined);
@@ -262,5 +266,9 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
       // Storage access can be blocked in some browser modes, so the in-memory state remains authoritative.
     }
     setState({ statusMappings: mappings });
+  },
+  setPersonalToolboxModuleIds: (moduleIds) => {
+    writeStoredStringArray(PERSONAL_TOOLBOX_MODULE_IDS_STORAGE_KEY, moduleIds);
+    setState({ personalToolboxModuleIds: moduleIds });
   },
 }));

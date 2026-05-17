@@ -3,14 +3,12 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { mockJiraGet, mockJiraPost } = vi.hoisted(() => ({
+const { mockJiraGet } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
-  mockJiraPost: vi.fn(),
 }));
 
 vi.mock('../../../services/jiraApi.ts', () => ({
   jiraGet: mockJiraGet,
-  jiraPost: mockJiraPost,
 }));
 
 import { useDevWorkspaceState } from './useDevWorkspaceState.ts';
@@ -20,9 +18,9 @@ describe('useDevWorkspaceState', () => {
     vi.clearAllMocks();
   });
 
-  it('initialises with activeTab=time and empty timers', () => {
+  it('initialises with activeTab=hygiene and empty timers', () => {
     const { result } = renderHook(() => useDevWorkspaceState());
-    expect(result.current.state.activeTab).toBe('time');
+    expect(result.current.state.activeTab).toBe('hygiene');
     expect(result.current.state.issueTimers).toEqual([]);
   });
 

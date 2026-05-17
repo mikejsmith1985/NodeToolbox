@@ -56,7 +56,7 @@ describe('useHygieneState helpers', () => {
     const searchPath = buildHygieneSearchPath('tbx', 'AND labels = hygiene');
     const decodedSearchPath = decodeURIComponent(searchPath);
 
-    expect(decodedSearchPath).toContain('jql=project=TBX AND statusCategory != Done AND labels = hygiene');
+    expect(decodedSearchPath).toContain('jql=project=TBX AND statusCategory != Done AND assignee = currentUser() AND labels = hygiene');
     expect(decodedSearchPath).toContain('fields=summary,status,assignee,issuetype,priority,created,updated,description');
     expect(decodedSearchPath).toContain('maxResults=200');
   });
@@ -130,7 +130,7 @@ describe('useHygieneState', () => {
     });
 
     const searchPath = String(mockJiraGet.mock.calls[0][0]);
-    expect(decodeURIComponent(searchPath)).toContain('project=TBX AND statusCategory != Done AND labels = hygiene');
+    expect(decodeURIComponent(searchPath)).toContain('project=TBX AND statusCategory != Done AND assignee = currentUser() AND labels = hygiene');
     expect(result.current.findings).toHaveLength(1);
     expect(result.current.summary.totalFlags).toBe(1);
   });

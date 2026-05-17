@@ -3,6 +3,7 @@
 import { Fragment, useState } from 'react';
 
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
+import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import { useToast } from '../../components/Toast/ToastProvider.tsx';
 import JiraBoardPicker from '../../components/JiraBoardPicker/index.tsx';
 import JiraFieldPicker from '../../components/JiraFieldPicker/index.tsx';
@@ -49,19 +50,13 @@ export default function ArtView() {
     <div className={styles.artView}>
       <PiProgressHeader piName={state.selectedPiName} stats={state.piProgressStats} />
 
-      <div className={styles.tabBar} role="tablist">
-        {ART_TAB_DEFINITIONS.map((tab) => (
-          <button
-            key={tab.key}
-            role="tab"
-            aria-selected={state.activeTab === tab.key}
-            className={`${styles.tabBtn} ${state.activeTab === tab.key ? styles.tabBtnActive : ''}`}
-            onClick={() => actions.setActiveTab(tab.key)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <PrimaryTabs
+        ariaLabel="ART View tabs"
+        idPrefix="art-view"
+        tabs={ART_TAB_DEFINITIONS}
+        activeTab={state.activeTab}
+        onChange={actions.setActiveTab}
+      />
 
       <div className={styles.tabContent}>
         {state.activeTab === 'overview' && (

@@ -32,6 +32,9 @@ export interface DevWorkspaceSettings {
   commitMessageTemplate: string
   postingStrategy: PostingStrategy
   branchPrefixesToStrip: string
+  monitoredReposText: string
+  shouldLogMissingJiraKeys: boolean
+  shouldLogHealthyRuns: boolean
 }
 
 // ── Helpers ──
@@ -48,6 +51,9 @@ function buildDefaultSettings(): DevWorkspaceSettings {
     commitMessageTemplate: DEFAULT_COMMIT_MESSAGE_TEMPLATE,
     postingStrategy: 'comment',
     branchPrefixesToStrip: DEFAULT_BRANCH_PREFIXES,
+    monitoredReposText: '',
+    shouldLogMissingJiraKeys: true,
+    shouldLogHealthyRuns: true,
   }
 }
 
@@ -68,6 +74,9 @@ function loadSettingsFromStorage(): DevWorkspaceSettings {
       commitMessageTemplate: parsed.commitMessageTemplate ?? defaults.commitMessageTemplate,
       postingStrategy: parsed.postingStrategy ?? defaults.postingStrategy,
       branchPrefixesToStrip: parsed.branchPrefixesToStrip ?? defaults.branchPrefixesToStrip,
+      monitoredReposText: parsed.monitoredReposText ?? defaults.monitoredReposText,
+      shouldLogMissingJiraKeys: parsed.shouldLogMissingJiraKeys ?? defaults.shouldLogMissingJiraKeys,
+      shouldLogHealthyRuns: parsed.shouldLogHealthyRuns ?? defaults.shouldLogHealthyRuns,
     }
   } catch {
     return buildDefaultSettings()
