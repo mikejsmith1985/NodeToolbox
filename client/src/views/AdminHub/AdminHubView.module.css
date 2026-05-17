@@ -748,3 +748,59 @@
   box-sizing: border-box;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
+
+/* -- GitHub App collapsible block -- */
+
+.collapsibleBlock {
+  margin-top: var(--spacing-sm);
+  border: 1px solid rgba(88, 166, 255, 0.14);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: rgba(17, 24, 39, 0.6);
+}
+
+.collapsibleSummary {
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  font-weight: 600;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.collapsibleSummary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsibleBlock[open] .collapsibleSummary::before {
+  content: '▼ ';
+  font-size: 0.65rem;
+}
+
+.collapsibleBlock:not([open]) .collapsibleSummary::before {
+  content: '▶ ';
+  font-size: 0.65rem;
+}
+
+.statusBadgeGreen {
+  display: inline-block;
+  font-size: var(--font-size-xs, 0.7rem);
+  font-weight: 600;
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  border-radius: 10px;
+  padding: 1px 7px;
+  margin-left: var(--spacing-xs);
+  vertical-align: middle;
+}
+
+/* Row of helper buttons shown beneath the PEM textarea (upload + show/hide). */
+.pemControls {
+  display: flex;
+  gap: var(--spacing-sm, 8px);
+  margin-top: var(--spacing-xs, 4px);
+}

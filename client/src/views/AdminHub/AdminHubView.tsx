@@ -3,7 +3,7 @@
 // The Config tab keeps the existing proxy, ART, access-control, hygiene, update, and backup sections.
 // The Dev Panel tab embeds the live API diagnostics view so leadership and support workflows stay in one hub.
 
-import { useEffect, useRef, useState, useCallback, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useRef, useState, useCallback, type ChangeEvent, type MouseEvent as ReactMouseEvent } from 'react'
 
 import { BookmarkletInstallLink } from '../../components/BookmarkletInstallLink/index.tsx'
 import ConfirmDialog from '../../components/ConfirmDialog/index.tsx'
@@ -963,6 +963,7 @@ interface ServiceConnectivitySectionProps {
   onLoad(): void
   onSaveSnow(snow: { baseUrl: string; username: string; password: string }): void
   onSaveGitHub(github: { baseUrl: string; pat: string }): void
+  onSaveGitHubApp(appCredentials: { appId: string; installationId: string; appPrivateKey: string }): void
   onSaveConfluence(confluence: { baseUrl: string; username: string; apiToken: string }): void
   onTestSnow(): void
   onTestGitHub(): void
@@ -990,6 +991,7 @@ function ServiceConnectivitySection({
   onLoad,
   onSaveSnow,
   onSaveGitHub,
+  onSaveGitHubApp,
   onSaveConfluence,
   onTestSnow,
   onTestGitHub,
@@ -1002,6 +1004,13 @@ function ServiceConnectivitySection({
   const [snowPassword, setSnowPassword] = useState('')
   const [githubBaseUrl, setGithubBaseUrl] = useState(connectivityConfig?.github.baseUrl ?? '')
   const [githubPat, setGithubPat] = useState('')
+  // State for GitHub App credential fields
+  const [githubAppId, setGithubAppId] = useState('')
+  const [githubInstallationId, setGithubInstallationId] = useState('')
+  const [githubAppPrivateKey, setGithubAppPrivateKey] = useState('')
+  // Controls whether the PEM textarea shows its content or is blurred for security.
+  const [isPemVisible, setIsPemVisible] = useState(false)
+  const pemFileInputRef = useRef<HTMLInputElement>(null)
   const [confluenceBaseUrl, setConfluenceBaseUrl] = useState(connectivityConfig?.confluence.baseUrl ?? '')
   const [confluenceUsername, setConfluenceUsername] = useState('')
   const [confluenceApiToken, setConfluenceApiToken] = useState('')
@@ -1034,6 +1043,29 @@ function ServiceConnectivitySection({
   function handleSaveGitHub() {
     onSaveGitHub({ baseUrl: githubBaseUrl, pat: githubPat })
     setGithubPat('')
+  }
+
+  /** Submits the GitHub App credentials and clears all three fields after save. */
+  function handleSaveGitHubApp() {
+    onSaveGitHubApp({ appId: githubAppId, installationId: githubInstallationId, appPrivateKey: githubAppPrivateKey })
+    setGithubAppId('')
+    setGithubInstallationId('')
+    setGithubAppPrivateKey('')
+    setIsPemVisible(false)
+  }
+
+  /** Reads a .pem file selected via the hidden file input and populates the PEM field. */
+  function handlePemFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (loadEvent) => {
+      const pemText = loadEvent.target?.result as string
+      if (pemText) setGithubAppPrivateKey(pemText.trim())
+    }
+    reader.readAsText(file)
+    // Reset the file input so the same file can be re-selected if needed
+    event.target.value = ''
   }
 
   /** Submits the Confluence config form and clears credential inputs after save. */
@@ -1133,9 +1165,11 @@ function ServiceConnectivitySection({
           <h3 className={styles.sectionTitle}>GitHub</h3>
           {connectivityConfig !== null && (
             <p className={styles.adminDescription}>
-              {connectivityConfig.github.hasPat
-                ? '✅ Personal Access Token stored'
-                : '⚠️ No PAT configured — GitHub features disabled'}
+              {connectivityConfig.github.hasAppAuth
+                ? '✅ GitHub App credentials stored (preferred)'
+                : connectivityConfig.github.hasPat
+                  ? '✅ Personal Access Token stored'
+                  : '⚠️ No GitHub credentials configured — GitHub features disabled'}
             </p>
           )}
           <div className={styles.fieldRow}>
@@ -1178,6 +1212,103 @@ function ServiceConnectivitySection({
               {githubTestResult.isOk ? `✅ ${githubTestResult.message}` : `❌ ${githubTestResult.message} (HTTP ${githubTestResult.statusCode})`}
             </p>
           )}
+
+          {/* ── GitHub App (enterprise SAML bypass) ── */}
+          <details className={styles.collapsibleBlock}>
+            <summary className={styles.collapsibleSummary}>
+              🔐 GitHub App credentials{' '}
+              {connectivityConfig?.github.hasAppAuth && <span className={styles.statusBadgeGreen}>configured</span>}
+            </summary>
+            <p className={styles.adminDescription}>
+              If a PAT returns HTTP 401 due to SAML SSO enforcement, configure a GitHub App instead.
+              GitHub Apps are installed at the organisation level and their tokens bypass per-user SSO requirements.{' '}
+              <strong>App ID</strong> and <strong>Installation ID</strong> are found in your org&apos;s installed apps settings.
+              The <strong>Private Key</strong> is the <code>.pem</code> file downloaded from the GitHub App settings page.
+            </p>
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel} htmlFor="github-app-id">App ID</label>
+              <input
+                id="github-app-id"
+                type="text"
+                className={styles.textInput}
+                value={githubAppId}
+                onChange={(e) => setGithubAppId(e.target.value)}
+                placeholder={connectivityConfig?.github.hasAppAuth ? CREDENTIAL_PLACEHOLDER : '123456'}
+                autoComplete="off"
+              />
+            </div>
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel} htmlFor="github-installation-id">Installation ID</label>
+              <input
+                id="github-installation-id"
+                type="text"
+                className={styles.textInput}
+                value={githubInstallationId}
+                onChange={(e) => setGithubInstallationId(e.target.value)}
+                placeholder={connectivityConfig?.github.hasAppAuth ? CREDENTIAL_PLACEHOLDER : '456789'}
+                autoComplete="off"
+              />
+            </div>
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel} htmlFor="github-app-private-key">Private Key (PEM)</label>
+              {/* Hidden file input — triggered by the Upload button below */}
+              <input
+                ref={pemFileInputRef}
+                type="file"
+                accept=".pem,.key,.txt"
+                style={{ display: 'none' }}
+                onChange={handlePemFileChange}
+              />
+              <textarea
+                id="github-app-private-key"
+                className={styles.textInput}
+                rows={6}
+                value={githubAppPrivateKey}
+                onChange={(e) => setGithubAppPrivateKey(e.target.value)}
+                placeholder={connectivityConfig?.github.hasAppAuth ? CREDENTIAL_PLACEHOLDER : '-----BEGIN RSA PRIVATE KEY-----\n…\n-----END RSA PRIVATE KEY-----'}
+                autoComplete="off"
+                style={{
+                  fontFamily: 'monospace',
+                  fontSize: '0.75rem',
+                  resize: 'vertical',
+                  // Blur the content unless the user explicitly toggles visibility.
+                  filter: isPemVisible ? 'none' : 'blur(4px)',
+                  transition: 'filter 0.15s ease',
+                }}
+              />
+              <div className={styles.pemControls}>
+                <button
+                  type="button"
+                  className={styles.actionButton}
+                  onClick={() => pemFileInputRef.current?.click()}
+                  title="Load PEM from file instead of copy-pasting"
+                >
+                  📂 Upload .pem file
+                </button>
+                <button
+                  type="button"
+                  className={styles.actionButton}
+                  onClick={() => setIsPemVisible((prev) => !prev)}
+                  title={isPemVisible ? 'Hide private key content' : 'Reveal private key content'}
+                >
+                  {isPemVisible ? '🙈 Hide' : '👁 Show'}
+                </button>
+              </div>
+            </div>
+            <div className={styles.inputRow}>
+              <button className={`${styles.actionButton} ${styles.saveButton}`} onClick={handleSaveGitHubApp}>
+                💾 Save GitHub App Config
+              </button>
+              <button
+                className={styles.actionButton}
+                onClick={onTestGitHub}
+                disabled={isGitHubTesting}
+                title="Test GitHub connectivity using App credentials (or PAT if App not configured)"
+              >
+                {isGitHubTesting ? '⏳ Testing…' : '🔌 Test Connection'}
+              </button>
+            </div>
+          </details>
 
           <hr className={styles.sectionDivider} />
 
@@ -1532,6 +1663,7 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
         onLoad={() => void actions.loadConnectivityConfig()}
         onSaveSnow={(snow) => void actions.saveSnowConfig(snow)}
         onSaveGitHub={(github) => void actions.saveGitHubConfig(github)}
+        onSaveGitHubApp={(appCredentials) => void actions.saveGitHubAppConfig(appCredentials)}
         onSaveConfluence={(confluence) => void actions.saveConfluenceConfig(confluence)}
         onTestSnow={() => void actions.testSnowConfig()}
         onTestGitHub={() => void actions.testGitHubConfig()}

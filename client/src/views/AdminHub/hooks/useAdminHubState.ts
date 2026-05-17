@@ -218,6 +218,7 @@ export interface AdminHubActions {
   loadConnectivityConfig(): Promise<void>
   saveSnowConfig(snow: { baseUrl: string; username: string; password: string }): Promise<void>
   saveGitHubConfig(github: { baseUrl: string; pat: string }): Promise<void>
+  saveGitHubAppConfig(appCredentials: { appId: string; installationId: string; appPrivateKey: string }): Promise<void>
   saveConfluenceConfig(confluence: { baseUrl: string; username: string; apiToken: string }): Promise<void>
   testSnowConfig(): Promise<void>
   testGitHubConfig(): Promise<void>
@@ -843,6 +844,22 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     }
   }, [])
 
+  /** Saves GitHub App credentials (appId, installationId, appPrivateKey) and refreshes config. */
+  const saveGitHubAppConfig = useCallback(
+    async (appCredentials: { appId: string; installationId: string; appPrivateKey: string }) => {
+      try {
+        const savedConfig = await saveConnectivityConfig({ github: appCredentials })
+        setConnectivityConfig(savedConfig)
+        setConnectivitySaveStatus('✓ Saved')
+        setTimeout(() => setConnectivitySaveStatus(null), SAVE_STATUS_CLEAR_DELAY_MS)
+      } catch {
+        setConnectivitySaveStatus('❌ Save failed')
+        setTimeout(() => setConnectivitySaveStatus(null), SAVE_STATUS_CLEAR_DELAY_MS)
+      }
+    },
+    [],
+  )
+
   /** Runs a live connectivity probe against the configured Snow instance. */
   const testSnowConfig = useCallback(async () => {
     setSnowTesting(true)
@@ -946,6 +963,7 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     loadConnectivityConfig,
     saveSnowConfig,
     saveGitHubConfig,
+    saveGitHubAppConfig,
     saveConfluenceConfig,
     testSnowConfig,
     testGitHubConfig,

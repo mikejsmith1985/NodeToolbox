@@ -25,7 +25,7 @@ interface ConnectionState {
   isSnowVerified: boolean;
   /** True when Confluence base URL and credentials are configured. */
   isConfluenceReady: boolean;
-  /** True when a GitHub PAT is configured. */
+  /** True when a GitHub PAT or GitHub App is configured. */
   isGitHubReady: boolean;
   proxyStatus: ProxyStatusResponse | null;
   relayBridgeStatus: RelayBridgeStatus | null;

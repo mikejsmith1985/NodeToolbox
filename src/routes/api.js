@@ -11,6 +11,7 @@ const crypto     = require('crypto');
 const express    = require('express');
 const { saveConfigToDisk, isServiceConfigured, isServiceBaseUrlSet } = require('../config/loader');
 const snowSession = require('../services/snowSession');
+const { clearInstallationTokenCache, hasGitHubAppCredentials, getValidInstallationToken } = require('../services/githubAppAuth');
 
 const { prepareUpdate, spawnReplacementAndExit }   = require('../utils/updater');
 const relayBridge = require('./relayBridge');
@@ -48,7 +49,7 @@ function createApiRouter(configuration) {
     const snowBaseUrl = (isServiceBaseUrlSet(configuration.snow) ? configuration.snow.baseUrl : null)
       || snowSession.resolveSnowBaseUrl('') || null;
 
-    const isGithubReady = !!configuration.github.pat;
+    const isGithubReady = !!(configuration.github.pat) || hasGitHubAppCredentials(configuration);
 
     const confluenceConfig        = configuration.confluence || {};
     const isConfluenceHasCredentials = !!(confluenceConfig.username && confluenceConfig.apiToken);
@@ -149,8 +150,9 @@ function createApiRouter(configuration) {
         usernameMasked: maskCredentialUsername(snowConfig.username || ''),
       },
       github: {
-        baseUrl: githubConfig.baseUrl || '',
-        hasPat:  !!(githubConfig.pat),
+        baseUrl:    githubConfig.baseUrl || '',
+        hasPat:     !!(githubConfig.pat),
+        hasAppAuth: hasGitHubAppCredentials(configuration),
       },
       confluence: {
         baseUrl:        confluenceConfig.baseUrl || '',
@@ -190,6 +192,23 @@ function createApiRouter(configuration) {
     if (ghUpdate.pat && ghUpdate.pat.trim()) {
       configuration.github.pat = ghUpdate.pat.trim();
     }
+    // Apply GitHub App credentials — clear token cache so the new key takes effect immediately.
+    let isAppCredentialChanged = false;
+    if (ghUpdate.appId !== undefined) {
+      configuration.github.appId = (ghUpdate.appId || '').trim();
+      isAppCredentialChanged = true;
+    }
+    if (ghUpdate.installationId !== undefined) {
+      configuration.github.installationId = (ghUpdate.installationId || '').trim();
+      isAppCredentialChanged = true;
+    }
+    if (ghUpdate.appPrivateKey && ghUpdate.appPrivateKey.trim()) {
+      configuration.github.appPrivateKey = ghUpdate.appPrivateKey.trim();
+      isAppCredentialChanged = true;
+    }
+    if (isAppCredentialChanged) {
+      clearInstallationTokenCache();
+    }
 
     // Apply Confluence fields — same pattern as Snow/GitHub.
     configuration.confluence = configuration.confluence || {};
@@ -214,8 +233,9 @@ function createApiRouter(configuration) {
         usernameMasked: maskCredentialUsername(configuration.snow.username || ''),
       },
       github: {
-        baseUrl: configuration.github.baseUrl || '',
-        hasPat:  !!(configuration.github.pat),
+        baseUrl:    configuration.github.baseUrl || '',
+        hasPat:     !!(configuration.github.pat),
+        hasAppAuth: hasGitHubAppCredentials(configuration),
       },
       confluence: {
         baseUrl:        savedConfluenceConfig.baseUrl || '',
@@ -264,23 +284,41 @@ function createApiRouter(configuration) {
 
     } else if (system === 'github') {
       const githubConfig = configuration.github || {};
-      if (!githubConfig.pat) {
-        return res.json({ ok: false, statusCode: 0, message: 'No GitHub PAT configured.' });
+      const isAppConfigured = hasGitHubAppCredentials(configuration);
+      const isPatConfigured = !!(githubConfig.pat);
+
+      if (!isAppConfigured && !isPatConfigured) {
+        return res.json({ ok: false, statusCode: 0, message: 'No GitHub credentials configured. Add a PAT or GitHub App credentials in Admin Hub.' });
       }
+
       try {
         const githubBaseUrl = (githubConfig.baseUrl || 'https://api.github.com').replace(/\/$/, '');
+        let authHeader;
+
+        if (isAppConfigured) {
+          // Prefer App auth — bypasses SAML SSO enforcement on enterprise orgs
+          const installationToken = await getValidInstallationToken(configuration);
+          authHeader = 'token ' + installationToken;
+        } else {
+          authHeader = 'token ' + githubConfig.pat;
+        }
+
         const proxyResponse = await fetch(githubBaseUrl + '/user', {
           method: 'GET',
           headers: {
-            'Authorization': 'token ' + githubConfig.pat,
+            'Authorization': authHeader,
             'User-Agent':    'NodeToolbox',
             'Accept':        'application/vnd.github.v3+json',
           },
         });
+        const authMethod = isAppConfigured ? 'GitHub App' : 'PAT';
         res.json({
           ok:         proxyResponse.ok,
           statusCode: proxyResponse.status,
-          message:    proxyResponse.ok ? 'Connected successfully.' : 'Received HTTP ' + proxyResponse.status,
+          authMethod,
+          message:    proxyResponse.ok
+            ? 'Connected successfully via ' + authMethod + '.'
+            : 'Received HTTP ' + proxyResponse.status + ' (auth method: ' + authMethod + ')',
         });
       } catch (testError) {
         res.json({ ok: false, statusCode: 0, message: 'Connection failed: ' + testError.message });
@@ -781,6 +819,8 @@ function mergeSnowConfig(configuration, incomingSnow) {
 
 /**
  * Merges incoming GitHub configuration fields into the live config object.
+ * Clears the App installation token cache when App credentials change so
+ * the next API call fetches a fresh token.
  *
  * @param {object} configuration    - Live config (mutated in place)
  * @param {object} [incomingGithub] - Partial GitHub config from the request
@@ -788,6 +828,25 @@ function mergeSnowConfig(configuration, incomingSnow) {
 function mergeGithubConfig(configuration, incomingGithub) {
   if (!incomingGithub) return;
   if (incomingGithub.pat !== undefined) configuration.github.pat = (incomingGithub.pat || '').trim();
+
+  // Apply GitHub App fields — clear the installation token cache so the new
+  // credentials take effect immediately without waiting for the old token to expire.
+  let isAppCredentialChanged = false;
+  if (incomingGithub.appId !== undefined) {
+    configuration.github.appId = (incomingGithub.appId || '').trim();
+    isAppCredentialChanged = true;
+  }
+  if (incomingGithub.installationId !== undefined) {
+    configuration.github.installationId = (incomingGithub.installationId || '').trim();
+    isAppCredentialChanged = true;
+  }
+  if (incomingGithub.appPrivateKey !== undefined && incomingGithub.appPrivateKey.trim()) {
+    configuration.github.appPrivateKey = incomingGithub.appPrivateKey.trim();
+    isAppCredentialChanged = true;
+  }
+  if (isAppCredentialChanged) {
+    clearInstallationTokenCache();
+  }
 }
 
 /**
