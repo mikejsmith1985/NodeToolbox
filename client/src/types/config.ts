@@ -74,6 +74,8 @@ export interface ConnectivityConfigResult {
     baseUrl: string;
     /** True when a PAT is stored in server config. */
     hasPat: boolean;
+    /** True when all three GitHub App credentials (appId, installationId, appPrivateKey) are stored. */
+    hasAppAuth: boolean;
   };
   confluence: {
     /** The Confluence Cloud base URL (e.g. https://yoursite.atlassian.net). */
@@ -98,6 +100,12 @@ export interface ConnectivityConfigUpdate {
     baseUrl?: string;
     /** Only sent when the user types a new value — empty string = do not update. */
     pat?: string;
+    /** GitHub App ID (numeric, shown on the app settings page). */
+    appId?: string;
+    /** GitHub App Installation ID (visible in the installation URL). */
+    installationId?: string;
+    /** RSA private key PEM downloaded from GitHub App settings. Highly sensitive. */
+    appPrivateKey?: string;
   };
   confluence?: {
     baseUrl?: string;

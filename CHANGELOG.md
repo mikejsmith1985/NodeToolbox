@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **GitHub App authentication**: Alternative to PAT for organisations where SAML SSO enforcement blocks Personal Access Tokens (HTTP 401). Configure a GitHub App in Admin Hub → GitHub → *GitHub App credentials* (collapsible panel). Requires App ID, Installation ID, and RSA private key (PEM). When App credentials are present they take priority over the PAT — installation tokens bypass per-user SSO requirements. Tokens are cached in memory with a 5-minute refresh buffer. All three credentials are base64-obfuscated on disk, same as the PAT. New env vars: `TBX_GITHUB_APP_ID`, `TBX_GITHUB_INSTALLATION_ID`, `TBX_GITHUB_APP_PRIVATE_KEY`. Added 10 unit tests covering JWT structure, RS256 signature, token fetching, cache reuse, and error cases.
+- **GitHub App — Test Connection button**: The collapsible GitHub App panel now includes a *Test Connection* button that exercises the same live connectivity probe used by the PAT test, automatically preferring App credentials when configured.
+- **GitHub App — PEM file upload**: The Private Key field now has an *Upload .pem file* button that reads the file directly without the key ever appearing in a form field. Avoids clipboard exposure of the RSA key.
+- **GitHub App — PEM show/hide toggle**: The PEM textarea is blurred by default and a *Show / Hide* button reveals the content on demand, preventing shoulder-surfing of the private key during input.
+
+### Changed
+- **Admin Hub — GitHub connectivity test now uses App auth when configured**: The *Test Connection* button prefers the GitHub App installation token over the PAT and reports which auth method succeeded (e.g. "Connected successfully via GitHub App.").
+- **Admin Hub — GitHub status badge now shows three states**: "✅ GitHub App credentials stored (preferred)" / "✅ Personal Access Token stored" / "⚠️ No GitHub credentials configured".
+- **Connection bar — GitHub icon now reflects App auth**: The GitHub icon in the top connection bar is now green when either a PAT or a GitHub App is configured (was PAT-only).
+
 ### Fixed
+- **GitHub App credentials were silently dropped on save**: The `POST /api/config/connectivity` handler only saved `baseUrl` and `pat` — `appId`, `installationId`, and `appPrivateKey` were never written to disk. All three App fields are now persisted correctly and the installation token cache is cleared immediately after save.
 - **Dev Panel — GitHub Debug tab now shows accurate connectivity status**: Fixed a critical field-name mismatch where the server returned `httpStatus`/`authenticated`/`message` but the client expected `statusCode`/`success`/`errorMessage`. The status badge now shows three states: **✓ Connected** (probe passed), **✗ PAT configured but probe failed** (probe returned non-200), or **✗ Not Configured** (no PAT). The actual HTTP error (e.g. "HTTP 401 Unauthorized — Bad credentials") now appears in a prominent red banner at the top — not buried in a generic tips list. All probe fields (method, status code/text, response time, authenticated-as) are correctly populated. Added 3 server-side unit tests for `testGitHubConnectivity` and 3 new client rendering tests (success, 401 failure, unconfigured).
 
 

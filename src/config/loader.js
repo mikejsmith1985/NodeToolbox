@@ -70,7 +70,7 @@ const MAX_SEEN_BRANCHES_PER_REPO = 500;
 const OBFUSCATED_CREDENTIAL_FIELDS = {
   jira:       ['username', 'apiToken', 'pat'],
   snow:       ['username', 'password'],
-  github:     ['pat'],
+  github:     ['pat', 'appPrivateKey'],
   confluence: ['username', 'apiToken'],
 };
 
@@ -124,8 +124,11 @@ function saveConfigToDisk(configuration) {
       password: configuration.snow.password,
     },
     github: {
-      baseUrl: configuration.github.baseUrl,
-      pat:     configuration.github.pat,
+      baseUrl:        configuration.github.baseUrl,
+      pat:            configuration.github.pat,
+      appId:          configuration.github.appId          || '',
+      installationId: configuration.github.installationId || '',
+      appPrivateKey:  configuration.github.appPrivateKey  || '',
     },
     confluence: {
       baseUrl:  (configuration.confluence || {}).baseUrl  || '',
@@ -189,6 +192,12 @@ function createConfigTemplate() {
     github: {
       baseUrl: DEFAULT_GITHUB_BASE_URL,
       pat:     '',
+      // GitHub App credentials — fill these in as an alternative to the PAT when
+      // SAML SSO enforcement blocks token-based authentication in your org.
+      // Register a GitHub App at github.com → Settings → Developer Settings.
+      appId:          '',
+      installationId: '',
+      appPrivateKey:  '',
     },
     // Confluence Cloud — uses your Atlassian email + an API token from
     // https://id.atlassian.com/manage-profile/security/api-tokens
@@ -326,8 +335,13 @@ function buildDefaultConfig() {
       password: '',
     },
     github: {
-      baseUrl: DEFAULT_GITHUB_BASE_URL,
-      pat:     '',
+      baseUrl:        DEFAULT_GITHUB_BASE_URL,
+      pat:            '',
+      // GitHub App authentication fields — an alternative to PATs that bypasses
+      // SAML SSO enforcement on enterprise GitHub organisations.
+      appId:          '',
+      installationId: '',
+      appPrivateKey:  '',
     },
     // Confluence Cloud uses Basic Auth (email + Atlassian API token).
     // The base URL is the Atlassian tenant root (e.g. https://zilverton.atlassian.net).
@@ -387,8 +401,11 @@ function applyFileConfig(configuration) {
   }
 
   if (fileConfig.github) {
-    if (fileConfig.github.pat)     configuration.github.pat     = fileConfig.github.pat;
-    if (fileConfig.github.baseUrl) configuration.github.baseUrl = fileConfig.github.baseUrl;
+    if (fileConfig.github.pat)            configuration.github.pat            = fileConfig.github.pat;
+    if (fileConfig.github.baseUrl)        configuration.github.baseUrl        = fileConfig.github.baseUrl;
+    if (fileConfig.github.appId)          configuration.github.appId          = fileConfig.github.appId;
+    if (fileConfig.github.installationId) configuration.github.installationId = fileConfig.github.installationId;
+    if (fileConfig.github.appPrivateKey)  configuration.github.appPrivateKey  = fileConfig.github.appPrivateKey;
   }
 
   if (fileConfig.confluence) {
@@ -441,6 +458,14 @@ function applyEnvironmentConfig(configuration) {
   // TBX_GITHUB_TOKEN takes priority over GITHUB_TOKEN (namespace-prefixed version wins)
   if (process.env.GITHUB_TOKEN)     configuration.github.pat = process.env.GITHUB_TOKEN;
   if (process.env.TBX_GITHUB_TOKEN) configuration.github.pat = process.env.TBX_GITHUB_TOKEN;
+
+  // GitHub App credentials — preferred over PATs on enterprise orgs with SAML SSO enforcement
+  if (process.env.TBX_GITHUB_APP_ID)          configuration.github.appId          = process.env.TBX_GITHUB_APP_ID;
+  if (process.env.TBX_GITHUB_INSTALLATION_ID) configuration.github.installationId = process.env.TBX_GITHUB_INSTALLATION_ID;
+  // Private key may be multi-line PEM — replace literal \n sequences injected by env var tools
+  if (process.env.TBX_GITHUB_APP_PRIVATE_KEY) {
+    configuration.github.appPrivateKey = process.env.TBX_GITHUB_APP_PRIVATE_KEY.replace(/\\n/g, '\n');
+  }
 
   // Confluence Cloud — uses Basic Auth (email + Atlassian API token), not a PAT
   if (process.env.TBX_CONFLUENCE_URL)      configuration.confluence.baseUrl  = process.env.TBX_CONFLUENCE_URL;
