@@ -6,7 +6,8 @@
   gap: var(--spacing-lg);
   padding: var(--spacing-md);
   max-width: 800px;
-  overflow: auto;
+  /* No overflow here — the scroll container must be .mainContent (App.module.css)
+     so that position:sticky on PrimaryTabs sticks below the connection bar. */
 }
 
 /* ── Page header ── */
