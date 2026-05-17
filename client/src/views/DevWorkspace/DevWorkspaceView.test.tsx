@@ -1,13 +1,12 @@
 // DevWorkspaceView.test.tsx — Unit tests for the Dev Workspace tabbed view component.
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockState, mockActions } = vi.hoisted(() => ({
   mockState: {
-    activeTab: 'time' as 'time' | 'gitsync' | 'monitor' | 'settings',
+    activeTab: 'hygiene' as 'hygiene' | 'time' | 'gitsync' | 'monitor' | 'settings',
     workLogTab: 'timers' as 'timers' | 'today' | 'history',
-    gitSyncSubTab: 'sync' as 'sync' | 'manual' | 'hooks',
     issueTimers: [
       {
         issueKey: 'TBX-1',
@@ -23,16 +22,12 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     issueSearchError: null as string | null,
     isSyncRunning: false,
     syncLog: [] as string[],
+    monitorLog: [] as string[],
     lastSyncAt: null as string | null,
-    manualPostInput: '',
-    manualPostComment: '',
-    manualPostResult: null as string | null,
-    isManualPosting: false,
   },
   mockActions: {
     setActiveTab: vi.fn(),
     setWorkLogTab: vi.fn(),
-    setGitSyncSubTab: vi.fn(),
     setIssueSearchKey: vi.fn(),
     searchAndAddIssue: vi.fn().mockResolvedValue(undefined),
     startTimer: vi.fn(),
@@ -42,16 +37,36 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     toggleSync: vi.fn(),
     appendSyncLog: vi.fn(),
     clearSyncLog: vi.fn(),
-    setManualPostInput: vi.fn(),
-    setManualPostComment: vi.fn(),
-    postManualComment: vi.fn().mockResolvedValue(undefined),
-    resetManualPost: vi.fn(),
+    appendMonitorLog: vi.fn(),
+    clearMonitorLog: vi.fn(),
     logWorkEntry: vi.fn(),
   },
 }));
 
+const {
+  mockFetchSchedulerConfig,
+  mockFetchSchedulerResults,
+  mockFetchSchedulerStatus,
+  mockRunSchedulerNow,
+  mockUpdateSchedulerConfig,
+} = vi.hoisted(() => ({
+  mockFetchSchedulerConfig: vi.fn(),
+  mockFetchSchedulerResults: vi.fn(),
+  mockFetchSchedulerStatus: vi.fn(),
+  mockRunSchedulerNow: vi.fn(),
+  mockUpdateSchedulerConfig: vi.fn(),
+}));
+
 vi.mock('./hooks/useDevWorkspaceState.ts', () => ({
   useDevWorkspaceState: () => ({ state: mockState, actions: mockActions }),
+}));
+
+vi.mock('../../services/schedulerApi.ts', () => ({
+  fetchSchedulerConfig: mockFetchSchedulerConfig,
+  fetchSchedulerResults: mockFetchSchedulerResults,
+  fetchSchedulerStatus: mockFetchSchedulerStatus,
+  runSchedulerNow: mockRunSchedulerNow,
+  updateSchedulerConfig: mockUpdateSchedulerConfig,
 }));
 
 import DevWorkspaceView from './DevWorkspaceView.tsx';
@@ -60,7 +75,38 @@ describe('DevWorkspaceView', () => {
   beforeEach(() => {
     mockState.activeTab = 'time';
     mockState.workLogTab = 'timers';
-    mockState.gitSyncSubTab = 'sync';
+    let currentSchedulerConfig = {
+      repoMonitor: {
+        enabled: true,
+        repos: [] as string[],
+        branchPattern: '^main$',
+        intervalMin: 5,
+        transitions: {
+          branchCreated: '',
+          commitPushed: '',
+          prOpened: '',
+          prMerged: '',
+        },
+      },
+    };
+    mockFetchSchedulerConfig.mockImplementation(async () => currentSchedulerConfig);
+    mockFetchSchedulerStatus.mockResolvedValue({
+      repoMonitor: {
+        enabled: true,
+        repos: [],
+        intervalMin: 5,
+        lastRunAt: null,
+        nextRunAt: null,
+        eventCount: 0,
+      },
+    });
+    mockFetchSchedulerResults.mockResolvedValue({
+      repoMonitor: { lastRunAt: null, nextRunAt: null, eventCount: 0, events: [] },
+    });
+    mockRunSchedulerNow.mockResolvedValue(undefined);
+    mockUpdateSchedulerConfig.mockImplementation(async (nextSchedulerConfig: typeof currentSchedulerConfig) => {
+      currentSchedulerConfig = nextSchedulerConfig;
+    });
     vi.clearAllMocks();
   });
 
@@ -68,8 +114,9 @@ describe('DevWorkspaceView', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders the 4 tab buttons', () => {
+  it('renders the 5 tab buttons', () => {
     render(<DevWorkspaceView />);
+    expect(screen.getByRole('tab', { name: /hygiene/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /time tracking/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /git sync/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /repo monitor/i })).toBeInTheDocument();
@@ -100,20 +147,35 @@ describe('DevWorkspaceView', () => {
     expect(screen.getByRole('tab', { name: /today/i })).toBeInTheDocument();
   });
 
-  it('calls URL.createObjectURL when a hook download button is clicked', () => {
-    const createObjectURLMock = vi.fn().mockReturnValue('blob:mock-url');
-    const revokeObjectURLMock = vi.fn();
-    vi.stubGlobal('URL', { createObjectURL: createObjectURLMock, revokeObjectURL: revokeObjectURLMock });
-
-    mockState.activeTab = 'gitsync';
-    mockState.gitSyncSubTab = 'hooks';
-
+  it('shows monitor add controls in Settings tab for repo URLs', () => {
+    mockState.activeTab = 'settings';
     render(<DevWorkspaceView />);
 
-    const downloadBtn = screen.getByRole('button', { name: /download post-commit hook/i });
-    fireEvent.click(downloadBtn);
+    expect(
+      screen.getByLabelText(/primary sync repository \(owner\/repo or github url\)/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add to monitor list/i })).toBeInTheDocument();
+  });
 
-    expect(createObjectURLMock).toHaveBeenCalledTimes(1);
-    expect(createObjectURLMock).toHaveBeenCalledWith(expect.any(Blob));
+  it('persists monitored repos when adding from the primary sync repository field', async () => {
+    mockState.activeTab = 'settings';
+    render(<DevWorkspaceView />);
+
+    const primaryRepositoryInput = await screen.findByLabelText(
+      /primary sync repository \(owner\/repo or github url\)/i,
+    );
+    fireEvent.change(primaryRepositoryInput, {
+      target: { value: 'https://github.com/mikejsmith1985/NodeToolbox' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /add to monitor list/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateSchedulerConfig).toHaveBeenCalledWith({
+        repoMonitor: expect.objectContaining({
+          repos: expect.arrayContaining(['mikejsmith1985/NodeToolbox']),
+        }),
+      });
+    });
   });
 });
+

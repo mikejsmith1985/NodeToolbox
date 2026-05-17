@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const THEME_STORAGE_KEY = 'tbx-theme';
 const CARD_ORDER_STORAGE_KEY = 'tbxCardOrder';
 const RECENT_VIEWS_STORAGE_KEY = 'tbxRecentViews';
+const PERSONAL_TOOLBOX_MODULE_IDS_STORAGE_KEY = 'tbxPersonalToolboxModuleIds';
 
 async function loadSettingsStoreModule() {
   vi.resetModules();
@@ -66,6 +67,23 @@ describe('useSettingsStore', () => {
     ]);
     expect(window.localStorage.getItem(RECENT_VIEWS_STORAGE_KEY)).toBe(
       JSON.stringify(['dev-workspace', 'snow-hub', 'reports-hub', 'text-tools', 'admin-hub']),
+    );
+  });
+
+  it('stores selected personal toolbox modules and persists them', async () => {
+    const { useSettingsStore } = await loadSettingsStoreModule();
+
+    useSettingsStore
+      .getState()
+      .setPersonalToolboxModuleIds(['my-issues', 'dev-workspace', 'reports-hub']);
+
+    expect(useSettingsStore.getState().personalToolboxModuleIds).toEqual([
+      'my-issues',
+      'dev-workspace',
+      'reports-hub',
+    ]);
+    expect(window.localStorage.getItem(PERSONAL_TOOLBOX_MODULE_IDS_STORAGE_KEY)).toBe(
+      JSON.stringify(['my-issues', 'dev-workspace', 'reports-hub']),
     );
   });
 });

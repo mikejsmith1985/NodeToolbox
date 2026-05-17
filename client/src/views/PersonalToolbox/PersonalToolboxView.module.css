@@ -1,0 +1,143 @@
+.personalToolboxView {
+  display: grid;
+  gap: 16px;
+}
+
+.pageHeader {
+  display: grid;
+  gap: 6px;
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: 28px;
+}
+
+.pageSubtitle {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.builderPanel {
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--panel-bg);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.builderHeader {
+  display: grid;
+  gap: 4px;
+}
+
+.builderTitle {
+  margin: 0;
+  font-size: 18px;
+}
+
+.builderSubtitle {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.builderGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.moduleSelectionColumn {
+  display: grid;
+  gap: 10px;
+}
+
+.moduleToggle {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  background: var(--card-bg);
+}
+
+.moduleToggleContent {
+  display: grid;
+  gap: 4px;
+}
+
+.moduleTitle {
+  font-weight: 700;
+}
+
+.moduleDescription {
+  color: var(--text-muted);
+}
+
+.moduleOrderColumn {
+  display: grid;
+  gap: 10px;
+}
+
+.orderTitle {
+  margin: 0;
+  font-size: 16px;
+}
+
+.orderList {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+}
+
+.orderItem {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.orderActions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.orderButton {
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--button-bg);
+  color: var(--text-primary);
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.orderButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.resetButton {
+  justify-self: start;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--button-bg);
+  color: var(--text-primary);
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.emptyState {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+@media (max-width: 980px) {
+  .builderGrid {
+    grid-template-columns: 1fr;
+  }
+}
+

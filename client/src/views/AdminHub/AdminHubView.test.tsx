@@ -291,22 +291,29 @@ describe('AdminHubView', () => {
 // ── Diagnostics section tests ──
 
 describe('Diagnostics section', () => {
-  it('renders the Diagnostics section heading', () => {
+  it('renders the Diagnostics section in the Dev Panel tab', async () => {
+    const user = userEvent.setup();
     renderAdminHubView();
+    await user.click(screen.getByRole('tab', { name: /dev panel/i }));
     expect(screen.getByRole('button', { name: /run diagnostics/i })).toBeInTheDocument();
   });
 
-  it('renders the Run Diagnostics button', () => {
+  it('renders the Run Diagnostics button', async () => {
+    const user = userEvent.setup();
     renderAdminHubView();
+    await user.click(screen.getByRole('tab', { name: /dev panel/i }));
     expect(screen.getByRole('button', { name: /run diagnostics/i })).toBeInTheDocument();
   });
 
-  it('does not render the Copy Report button when diagnosticsResult is null', () => {
+  it('does not render the Copy Report button when diagnosticsResult is null', async () => {
+    const user = userEvent.setup();
     renderAdminHubView();
+    await user.click(screen.getByRole('tab', { name: /dev panel/i }));
     expect(screen.queryByRole('button', { name: /copy report/i })).not.toBeInTheDocument();
   });
 
-  it('renders the diagnostics result pre-block when result is available', () => {
+  it('renders the diagnostics result pre-block when result is available', async () => {
+    const user = userEvent.setup();
     mockState.diagnosticsResult = {
       version: '2.3.0',
       nodeVersion: 'v20.0.0',
@@ -314,11 +321,13 @@ describe('Diagnostics section', () => {
       timestamp: '2024-01-01T00:00:00.000Z',
     };
     renderAdminHubView();
+    await user.click(screen.getByRole('tab', { name: /dev panel/i }));
     expect(screen.getByText(/2\.3\.0/)).toBeInTheDocument();
     mockState.diagnosticsResult = null;
   });
 
-  it('renders the Copy Report button when result is available', () => {
+  it('renders the Copy Report button when result is available', async () => {
+    const user = userEvent.setup();
     mockState.diagnosticsResult = {
       version: '2.3.0',
       nodeVersion: 'v20.0.0',
@@ -326,13 +335,16 @@ describe('Diagnostics section', () => {
       timestamp: '2024-01-01T00:00:00.000Z',
     };
     renderAdminHubView();
+    await user.click(screen.getByRole('tab', { name: /dev panel/i }));
     expect(screen.getByRole('button', { name: /copy report/i })).toBeInTheDocument();
     mockState.diagnosticsResult = null;
   });
 
-  it('renders the error message when diagnosticsError is set', () => {
+  it('renders the error message when diagnosticsError is set', async () => {
+    const user = userEvent.setup();
     mockState.diagnosticsError = 'Connection refused';
     renderAdminHubView();
+    await user.click(screen.getByRole('tab', { name: /dev panel/i }));
     expect(screen.getByText(/connection refused/i)).toBeInTheDocument();
     mockState.diagnosticsError = null;
   });
@@ -341,29 +353,39 @@ describe('Diagnostics section', () => {
 // ── Backup & Reset section tests ──
 
 describe('Backup & Reset section', () => {
-  it('renders the Backup & Reset section heading', () => {
+  it('renders the Backup & Reset section heading', async () => {
+    const user = userEvent.setup();
     renderAdminHubView();
+    await user.click(screen.getByRole('tab', { name: /dev panel/i }));
     expect(screen.getByRole('heading', { name: /backup.*reset/i })).toBeInTheDocument();
   });
 
-  it('renders the Download Backup button', () => {
+  it('renders the Download Backup button', async () => {
+    const user = userEvent.setup();
     renderAdminHubView();
+    await user.click(screen.getByRole('tab', { name: /dev panel/i }));
     expect(screen.getByRole('button', { name: /download backup/i })).toBeInTheDocument();
   });
 
-  it('renders the Restore Backup button', () => {
+  it('renders the Restore Backup button', async () => {
+    const user = userEvent.setup();
     renderAdminHubView();
+    await user.click(screen.getByRole('tab', { name: /dev panel/i }));
     expect(screen.getByRole('button', { name: /restore backup/i })).toBeInTheDocument();
   });
 
-  it('renders the Reset All Settings button', () => {
+  it('renders the Reset All Settings button', async () => {
+    const user = userEvent.setup();
     renderAdminHubView();
+    await user.click(screen.getByRole('tab', { name: /dev panel/i }));
     expect(screen.getByRole('button', { name: /reset all settings/i })).toBeInTheDocument();
   });
 
-  it('renders the restore error when restoreError is set', () => {
+  it('renders the restore error when restoreError is set', async () => {
+    const user = userEvent.setup();
     mockState.restoreError = 'Invalid backup file';
     renderAdminHubView();
+    await user.click(screen.getByRole('tab', { name: /dev panel/i }));
     expect(screen.getByText(/invalid backup file/i)).toBeInTheDocument();
     mockState.restoreError = null;
   });
@@ -538,18 +560,24 @@ describe('Credential Management Section', () => {
 // ── Consolidated debug sections (now always visible, Advanced unlock removed) ──
 
 describe('Consolidated debug sections', () => {
-  it('renders Tool Visibility section', () => {
+  it('renders Tool Visibility section', async () => {
+    const user = userEvent.setup();
     renderAdminHubView();
+    await user.click(screen.getByRole('tab', { name: /dev panel/i }));
     expect(screen.getByRole('heading', { name: /tool visibility/i })).toBeInTheDocument();
   });
 
-  it('renders Client Diagnostics panel', () => {
+  it('renders Client Diagnostics panel', async () => {
+    const user = userEvent.setup();
     renderAdminHubView();
+    await user.click(screen.getByRole('tab', { name: /dev panel/i }));
     expect(screen.getByRole('heading', { name: /client diagnostics/i })).toBeInTheDocument();
   });
 
-  it('renders TBX Backup/Restore section', () => {
+  it('renders TBX Backup/Restore section', async () => {
+    const user = userEvent.setup();
     renderAdminHubView();
+    await user.click(screen.getByRole('tab', { name: /dev panel/i }));
     expect(screen.getByRole('heading', { name: /backup.*restore/i })).toBeInTheDocument();
   });
 });

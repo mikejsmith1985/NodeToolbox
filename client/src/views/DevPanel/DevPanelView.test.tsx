@@ -19,11 +19,23 @@ function renderDevPanelView() {
 }
 
 beforeEach(() => {
-  // Default fetch mock returns an empty server log to avoid unhandled promise rejections.
-  vi.spyOn(global, 'fetch').mockResolvedValue({
-    ok: true,
-    json: async () => [],
-  } as Response)
+  // Default fetch mock handles requests to endpoints that expect array responses
+  // Other endpoints set up specific mocks in their tests
+  vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+    const endpointUrl = String(input);
+    // For scheduler endpoints, return minimal response structure to avoid errors
+    if (endpointUrl.includes('/api/scheduler')) {
+      return {
+        ok: true,
+        json: async () => ({}),
+      } as Response;
+    }
+    // For server logs, return empty array
+    return {
+      ok: true,
+      json: async () => [],
+    } as Response;
+  })
 });
 
 afterEach(() => {
@@ -172,5 +184,222 @@ describe('DevPanelView — Server Logs tab', () => {
     await user.click(screen.getByRole('tab', { name: /Server Logs/i }));
 
     expect(await screen.findByText(/Could not fetch server logs/i)).toBeInTheDocument();
+  });
+});
+
+describe('DevPanelView — Repo Monitor Validation tab', () => {
+  it('loads scheduler status data and displays monitor validation counters', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const endpointUrl = String(input);
+      if (endpointUrl.includes('/api/scheduler/config')) {
+        return {
+          ok: true,
+          json: async () => ({
+            repoMonitor: {
+              enabled: true,
+              repos: ['mikejsmith1985/NodeToolbox'],
+              branchPattern: 'main',
+              intervalMin: 15,
+              transitions: {
+                branchCreated: 'Backlog',
+                commitPushed: 'In Progress',
+                prOpened: 'In Review',
+                prMerged: 'Done',
+              },
+            },
+          }),
+        } as Response;
+      }
+      if (endpointUrl.includes('/api/scheduler/status')) {
+        return {
+          ok: true,
+          json: async () => ({
+            repoMonitor: {
+              enabled: true,
+              repos: ['mikejsmith1985/NodeToolbox'],
+              intervalMin: 15,
+              lastRunAt: '2026-01-01T00:00:00.000Z',
+              nextRunAt: '2026-01-01T00:15:00.000Z',
+              eventCount: 3,
+            },
+          }),
+        } as Response;
+      }
+      if (endpointUrl.includes('/api/scheduler/results')) {
+        return {
+          ok: true,
+          json: async () => ({
+            repoMonitor: {
+              lastRunAt: '2026-01-01T00:00:00.000Z',
+              nextRunAt: '2026-01-01T00:15:00.000Z',
+              eventCount: 3,
+              events: [
+                {
+                  repo: 'mikejsmith1985/NodeToolbox',
+                  eventType: 'prOpened',
+                  jiraKey: 'TBX-123',
+                  message: 'Transitioned issue',
+                  isSuccess: true,
+                  timestamp: '2026-01-01T00:00:00.000Z',
+                  source: 'server',
+                },
+              ],
+            },
+          }),
+        } as Response;
+      }
+      if (endpointUrl.includes('/api/scheduler/validate')) {
+        return {
+          ok: true,
+          json: async () => ({
+            repoMonitor: {
+              checkedAt: '2026-01-01T00:00:00.000Z',
+              isGitHubConfigured: true,
+              isGitHubReachable: true,
+              configuredRepoCount: 1,
+              reachableRepoCount: 1,
+              unreachableRepoCount: 0,
+              probeErrorMessage: null,
+              validationMode: 'read-only-github-probe',
+              repos: [
+                {
+                  repo: 'mikejsmith1985/NodeToolbox',
+                  isReachable: true,
+                  branchesHttpStatus: 200,
+                  pullsHttpStatus: 200,
+                  branchProbeCount: 1,
+                  pullRequestProbeCount: 1,
+                  probeErrorMessage: null,
+                },
+              ],
+            },
+          }),
+        } as Response;
+      }
+      return { ok: true, json: async () => ({ entries: [] }) } as Response;
+    });
+
+    const user = userEvent.setup();
+    renderDevPanelView();
+    await user.click(screen.getByRole('tab', { name: /Repo Monitor Validation/i }));
+
+    expect(await screen.findByText('Configured repos')).toBeInTheDocument();
+    expect(screen.getByText('Event count')).toBeInTheDocument();
+    expect(screen.getByText('GitHub probe')).toBeInTheDocument();
+    expect(screen.getByText('Reachable repos:')).toBeInTheDocument();
+    expect(screen.getAllByText(/mikejsmith1985\/NodeToolbox/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/TBX-123/i)).toBeInTheDocument();
+  });
+});
+
+describe('DevPanelView — GitHub Debug tab', () => {
+  it('switches to the GitHub Debug tab when that button is clicked', async () => {
+    const user = userEvent.setup();
+    renderDevPanelView();
+
+    await user.click(screen.getByRole('tab', { name: /GitHub Debug/i }));
+
+    // The tab should be visible even if data isn't loaded yet
+    expect(screen.getByRole('tabpanel', { name: /GitHub Debug/i })).toBeInTheDocument();
+  });
+
+  it('displays GitHub debug info when the fetch button is clicked', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const endpointUrl = String(input);
+      if (endpointUrl.includes('/api/scheduler/github-debug')) {
+        return {
+          ok: true,
+          json: async () => ({
+            isConfigured: true,
+            timestamp: '2026-01-01T00:00:00.000Z',
+            debugInfo: {
+              pat: 'ghp_...***',
+              baseUrl: 'https://api.github.com',
+              authHeaderFormat: 'token <PAT>',
+              sentHeader: 'Authorization: token ghp_...***',
+            },
+            probeResult: {
+              endpoint: 'https://api.github.com/repos/mikejsmith1985/NodeToolbox/branches',
+              method: 'GET',
+              statusCode: 200,
+              statusText: 'OK',
+              responseTime: 245,
+              success: true,
+            },
+          }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        json: async () => ({}),
+      } as Response;
+    });
+
+    const user = userEvent.setup();
+    renderDevPanelView();
+    await user.click(screen.getByRole('tab', { name: /GitHub Debug/i }));
+    await user.click(screen.getByRole('button', { name: /Fetch GitHub Debug Info/i }));
+
+    expect(await screen.findByText(/Configuration Status/i)).toBeInTheDocument();
+    expect(screen.getByText('✓ Configured')).toBeInTheDocument();
+    expect(screen.getByText('ghp_...***')).toBeInTheDocument();
+    expect(screen.getByText('token <PAT>')).toBeInTheDocument();
+    expect(screen.getByText(/Probe Result/i)).toBeInTheDocument();
+    expect(screen.getByText('GET')).toBeInTheDocument();
+  });
+
+  it('shows an error banner when the debug fetch fails', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const endpointUrl = String(input);
+      if (endpointUrl.includes('/api/scheduler/github-debug')) {
+        throw new Error('GitHub debug fetch failed');
+      }
+      return {
+        ok: true,
+        json: async () => ({}),
+      } as Response;
+    });
+
+    const user = userEvent.setup();
+    renderDevPanelView();
+    await user.click(screen.getByRole('tab', { name: /GitHub Debug/i }));
+    await user.click(screen.getByRole('button', { name: /Fetch GitHub Debug Info/i }));
+
+    expect(await screen.findByText(/GitHub debug fetch failed/i)).toBeInTheDocument();
+  });
+
+  it('displays unconfigured status when GitHub PAT is not configured', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const endpointUrl = String(input);
+      if (endpointUrl.includes('/api/scheduler/github-debug')) {
+        return {
+          ok: true,
+          json: async () => ({
+            isConfigured: false,
+            message: 'GitHub PAT not configured in Admin Hub',
+            debugInfo: {
+              pat: null,
+              baseUrl: 'https://api.github.com',
+              authHeaderFormat: 'token <PAT>',
+              expectedHeader: 'Authorization: token ghp_*** (masked for security)',
+            },
+          }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        json: async () => ({}),
+      } as Response;
+    });
+
+    const user = userEvent.setup();
+    renderDevPanelView();
+    await user.click(screen.getByRole('tab', { name: /GitHub Debug/i }));
+    await user.click(screen.getByRole('button', { name: /Fetch GitHub Debug Info/i }));
+
+    expect(await screen.findByText(/Configuration Status/i)).toBeInTheDocument();
+    expect(screen.getByText('✗ Not Configured')).toBeInTheDocument();
+    expect(screen.getByText(/GitHub PAT not configured/i)).toBeInTheDocument();
+    expect(screen.getByText('Not configured')).toBeInTheDocument();
   });
 });

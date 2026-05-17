@@ -5,7 +5,13 @@
   gap: 16px;
   padding: 4px 16px;
   font-size: 12px;
-  background: var(--color-surface-2);
+  background: linear-gradient(180deg, rgba(24, 31, 45, 0.95), rgba(24, 31, 45, 0.82));
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(16px) saturate(140%);
 }
 
 .indicator {
@@ -45,7 +51,7 @@
 }
 
 .indicatorButton:hover {
-  background: var(--color-surface-3, rgba(255,255,255,0.08));
+  background: var(--color-accent-soft, rgba(255,255,255,0.08));
 }
 
 .indicatorButton:focus-visible {
@@ -64,14 +70,15 @@
   top: 100%;
   left: 0;
   z-index: 200;
-  background: var(--color-surface-2);
-  border: 1px solid var(--color-border, rgba(255,255,255,0.12));
+  background: linear-gradient(180deg, rgba(24, 31, 45, 0.98), rgba(17, 24, 39, 0.94));
+  border: 1px solid var(--color-border-strong, rgba(255,255,255,0.12));
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  box-shadow: var(--shadow-floating);
   padding: 12px 16px;
   min-width: 320px;
   max-width: 480px;
   font-size: 13px;
+  backdrop-filter: blur(18px) saturate(150%);
 }
 
 .panelContent {
@@ -116,7 +123,7 @@
 }
 
 .panelButton:hover {
-  background: var(--color-surface-4, rgba(255,255,255,0.14));
+  background: var(--color-accent-soft, rgba(255,255,255,0.14));
 }
 
 .panelHint {
@@ -140,8 +147,8 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: var(--color-accent-subtle, rgba(59,130,246,0.15));
-  border: 1px solid var(--color-accent, #3b82f6);
+  background: linear-gradient(180deg, rgba(88, 166, 255, 0.18), rgba(88, 166, 255, 0.08));
+  border: 1px solid rgba(88, 166, 255, 0.45);
   border-radius: 4px;
   color: var(--color-accent, #3b82f6);
   cursor: grab;
@@ -149,6 +156,7 @@
   padding: 4px 10px;
   text-decoration: none;
   user-select: none;
+  box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.08), 0 0 16px rgba(88, 166, 255, 0.12);
 }
 
 .bookmarkletLink:hover {

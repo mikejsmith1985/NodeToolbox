@@ -20,6 +20,7 @@ import DevWorkspaceView from './views/DevWorkspace/DevWorkspaceView.tsx';
 import DsuBoardView from './views/DsuBoard/DsuBoardView.tsx';
 import HomeView from './views/Home/HomeView.tsx';
 import MyIssuesView from './views/MyIssues/MyIssuesView.tsx';
+import PersonalToolboxView from './views/PersonalToolbox/PersonalToolboxView.tsx';
 import ReportsHubView from './views/ReportsHub/ReportsHubView.tsx';
 import SettingsView from './views/Settings/SettingsView.tsx';
 import SnowHubView from './views/SnowHub/SnowHubView.tsx';
@@ -32,6 +33,7 @@ const HOME_ROUTE = '/';
 const SETTINGS_ROUTE = '/settings';
 const SNOW_HUB_ROUTE = '/snow-hub';
 const MY_ISSUES_ROUTE = '/my-issues';
+const PERSONAL_TOOLBOX_ROUTE = '/personal-toolbox';
 const SPRINT_DASHBOARD_ROUTE = '/sprint-dashboard';
 const ART_ROUTE = '/art';
 const DEV_WORKSPACE_ROUTE = '/dev-workspace';
@@ -88,6 +90,7 @@ export default function App() {
           <Route path={SETTINGS_ROUTE} element={<SettingsView />} />
           <Route path={SNOW_HUB_ROUTE} element={<SnowHubView />} />
           <Route path={MY_ISSUES_ROUTE} element={<MyIssuesView />} />
+          <Route path={PERSONAL_TOOLBOX_ROUTE} element={<PersonalToolboxView />} />
           <Route path={SPRINT_DASHBOARD_ROUTE} element={<SprintDashboardView />} />
           <Route path={ART_ROUTE} element={<ArtView />} />
           <Route path={DEV_WORKSPACE_ROUTE} element={<DevWorkspaceView />} />

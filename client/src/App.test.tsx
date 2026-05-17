@@ -61,6 +61,10 @@ vi.mock('./views/MyIssues/MyIssuesView.tsx', () => ({
   default: () => <h1>My Issues Mock</h1>,
 }));
 
+vi.mock('./views/PersonalToolbox/PersonalToolboxView.tsx', () => ({
+  default: () => <h1>Personal Toolbox Mock</h1>,
+}));
+
 vi.mock('./views/ReportsHub/ReportsHubView.tsx', () => ({
   default: () => <h1>Reports Hub Mock</h1>,
 }));
@@ -196,6 +200,14 @@ describe('App shell', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'DSU Board Mock' })).toBeInTheDocument();
+    });
+  });
+
+  it('keeps the personal toolbox route accessible', async () => {
+    renderApp('/personal-toolbox');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Personal Toolbox Mock' })).toBeInTheDocument();
     });
   });
 
