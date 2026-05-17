@@ -34,12 +34,17 @@ export interface ProxySnowStatus extends ProxyServiceStatus {
   sessionExpiresAt: string | null;
 }
 
+export interface ProxyGitHubStatus extends ProxyServiceStatus {
+  /** ISO timestamp of the last live connectivity probe, or null if never probed. */
+  probeCheckedAt: string | null;
+}
+
 export interface ProxyStatusResponse {
   version: string;
   sslVerify: boolean;
   jira: ProxyServiceStatus;
   snow: ProxySnowStatus;
-  github: ProxyServiceStatus;
+  github: ProxyGitHubStatus;
   confluence: ProxyServiceStatus;
 }
 

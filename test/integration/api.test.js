@@ -43,7 +43,9 @@ describe('GET /api/proxy-status', () => {
     expect(response.status).toBe(200);
     expect(response.body.proxy).toBe(true);
     expect(response.body.jira.ready).toBe(true);
-    expect(response.body.github.ready).toBe(true);
+    // github.ready now reflects a live probe result (false until first Test Connection
+    // succeeds). Use github.configured to assert credentials are present.
+    expect(response.body.github.configured).toBe(true);
   });
 
   it('reports jira.ready=false when Jira has no credentials', async () => {

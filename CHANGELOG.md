@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Connection bar — GitHub icon now reflects live connectivity**: The GitHub icon is green only after a successful probe, not simply because credentials are present. A background probe runs at server startup; the cache clears when credentials are saved so the icon turns gray until the next successful *Test Connection*. `GET /api/proxy-status` adds `probeCheckedAt` (ISO timestamp) for "last checked" display in future.
+
 ### Added
 - **GitHub App authentication**: Alternative to PAT for organisations where SAML SSO enforcement blocks Personal Access Tokens (HTTP 401). Configure a GitHub App in Admin Hub → GitHub → *GitHub App credentials* (collapsible panel). Requires App ID, Installation ID, and RSA private key (PEM). When App credentials are present they take priority over the PAT — installation tokens bypass per-user SSO requirements. Tokens are cached in memory with a 5-minute refresh buffer. All three credentials are base64-obfuscated on disk, same as the PAT. New env vars: `TBX_GITHUB_APP_ID`, `TBX_GITHUB_INSTALLATION_ID`, `TBX_GITHUB_APP_PRIVATE_KEY`. Added 10 unit tests covering JWT structure, RS256 signature, token fetching, cache reuse, and error cases.
 - **GitHub App — Test Connection button**: The collapsible GitHub App panel now includes a *Test Connection* button that exercises the same live connectivity probe used by the PAT test, automatically preferring App credentials when configured.
