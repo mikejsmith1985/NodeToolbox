@@ -522,3 +522,53 @@ describe('GET /api/download/launcher-bat', () => {
     expect(response.text).toContain('node server.js');
   });
 });
+
+// ── GET /api/config/github-app/installations ─────────────────────────────────
+
+describe('GET /api/config/github-app/installations', () => {
+  const nock = require('nock');
+
+  afterEach(() => nock.cleanAll());
+
+  it('returns 400 when App credentials are not configured', async () => {
+    const configuration = { github: {}, jira: {}, snow: {}, confluence: {} };
+    const response = await request(buildTestApp(configuration))
+      .get('/api/config/github-app/installations');
+
+    expect(response.status).toBe(400);
+    expect(response.body.ok).toBe(false);
+  });
+
+  it('returns 200 with installation list when GitHub App responds successfully', async () => {
+    // Generate a real RSA key so JWT signing works inside the route handler
+    const crypto = require('crypto');
+    const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const testPem = privateKey.export({ type: 'pkcs8', format: 'pem' });
+
+    const configuration = {
+      github: {
+        appId: '12345',
+        appPrivateKey: testPem,
+        baseUrl: 'https://api.github.com',
+        installationId: '0',
+      },
+      jira: {}, snow: {}, confluence: {},
+    };
+
+    const mockInstallations = [
+      { id: 777, account: { login: 'test-org', type: 'Organization' }, app_slug: 'ntbx' },
+    ];
+    nock('https://api.github.com')
+      .get('/app/installations')
+      .reply(200, mockInstallations);
+
+    const response = await request(buildTestApp(configuration))
+      .get('/api/config/github-app/installations');
+
+    expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
+    expect(response.body.installations).toHaveLength(1);
+    expect(response.body.installations[0].id).toBe(777);
+    expect(response.body.installations[0].account).toBe('test-org');
+  });
+});

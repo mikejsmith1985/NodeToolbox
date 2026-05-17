@@ -9,6 +9,8 @@ import { BookmarkletInstallLink } from '../../components/BookmarkletInstallLink/
 import ConfirmDialog from '../../components/ConfirmDialog/index.tsx'
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx'
 import { SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts'
+import { listGitHubAppInstallations, type GitHubAppInstallation } from '../../services/connectivityConfigApi.ts'
+import { fetchSchedulerValidation, type SchedulerValidationRepoResult } from '../../services/schedulerApi.ts'
 import { useConnectionStore } from '../../store/connectionStore'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
@@ -971,6 +973,29 @@ interface ServiceConnectivitySectionProps {
 }
 
 /**
+ * Translates a per-repo probe HTTP status and GitHub error message into a human-readable
+ * diagnosis. Distinguishes IP allow list blocks (common in SAML orgs) from scope errors,
+ * auth failures, and path errors so the operator knows exactly what to fix.
+ */
+function interpretRepoProbeFailure(httpStatus: number | null, githubMessage: string | null): string {
+  if (httpStatus === null) return 'Network error — GitHub unreachable'
+  if (httpStatus >= 200 && httpStatus < 300) return '✅ Connected'
+  const lowerMessage = (githubMessage ?? '').toLowerCase()
+  if (httpStatus === 403) {
+    if (lowerMessage.includes('ip') || lowerMessage.includes('allow')) {
+      return '❌ IP not on org allow list — contact your GitHub org admin to add your IP, or get the GitHub App installation approved'
+    }
+    if (lowerMessage.includes('saml')) {
+      return '❌ SAML SSO not authorized — go to github.com/settings/tokens → Configure SSO → Authorize your org'
+    }
+    return '❌ 403 Access denied — org may have IP allow list or SAML enforcement; check PAT has repo scope'
+  }
+  if (httpStatus === 401) return '❌ 401 — PAT invalid or expired'
+  if (httpStatus === 404) return '❌ 404 — Repo not found; verify path uses org/repo format (e.g. zilvertonz/my-repo)'
+  return `❌ HTTP ${httpStatus}${githubMessage ? ` — ${githubMessage}` : ''}`
+}
+
+/**
  * Service Connectivity section — edits the server-side Snow and GitHub config
  * stored in toolbox-proxy.json. Requires admin unlock to prevent accidental changes.
  * Password and PAT fields show a masked placeholder when credentials are already stored;
@@ -1011,6 +1036,14 @@ function ServiceConnectivitySection({
   // Controls whether the PEM textarea shows its content or is blurred for security.
   const [isPemVisible, setIsPemVisible] = useState(false)
   const pemFileInputRef = useRef<HTMLInputElement>(null)
+  // Installation ID lookup diagnostic — populated by "Find my Installation ID" button.
+  const [isInstallationsLoading, setIsInstallationsLoading] = useState(false)
+  const [foundInstallations, setFoundInstallations] = useState<GitHubAppInstallation[] | null>(null)
+  const [installationsError, setInstallationsError] = useState<string | null>(null)
+  // Repo-level access probe — validates each configured scheduler repo, not just /user auth.
+  const [isValidatingRepoAccess, setIsValidatingRepoAccess] = useState(false)
+  const [repoAccessResults, setRepoAccessResults] = useState<SchedulerValidationRepoResult[] | null>(null)
+  const [repoAccessError, setRepoAccessError] = useState<string | null>(null)
   const [confluenceBaseUrl, setConfluenceBaseUrl] = useState(connectivityConfig?.confluence.baseUrl ?? '')
   const [confluenceUsername, setConfluenceUsername] = useState('')
   const [confluenceApiToken, setConfluenceApiToken] = useState('')
@@ -1066,6 +1099,55 @@ function ServiceConnectivitySection({
     reader.readAsText(file)
     // Reset the file input so the same file can be re-selected if needed
     event.target.value = ''
+  }
+
+  /**
+   * Queries the server for all installations of the configured GitHub App.
+   * Populates foundInstallations so the user can identify the correct Installation ID.
+   * Requires App ID (or Client ID) and Private Key to be saved already.
+   */
+  async function handleFindInstallations() {
+    setIsInstallationsLoading(true)
+    setFoundInstallations(null)
+    setInstallationsError(null)
+    try {
+      const result = await listGitHubAppInstallations()
+      if (result.ok) {
+        setFoundInstallations(result.installations)
+        if (result.installations.length === 0) {
+          setInstallationsError('No installations found. The app may not be installed on any org yet. Go to your GitHub App settings → Install App tab → click Install.')
+        }
+      } else {
+        setInstallationsError(result.message ?? 'Failed to list installations.')
+      }
+    } catch (listError) {
+      setInstallationsError(listError instanceof Error ? listError.message : 'Unknown error')
+    } finally {
+      setIsInstallationsLoading(false)
+    }
+  }
+
+  /**
+   * Runs the per-repo connectivity probe (branches + PRs endpoints) and surfaces results
+   * with human-readable diagnoses. Separate from Test Connection which only probes /user.
+   */
+  async function handleValidateRepoAccess() {
+    setIsValidatingRepoAccess(true)
+    setRepoAccessResults(null)
+    setRepoAccessError(null)
+    try {
+      const validation = await fetchSchedulerValidation()
+      const repos = validation.repoMonitor.repos
+      if (repos.length === 0) {
+        setRepoAccessError('No repos configured in the Scheduler section. Add at least one repo there first.')
+      } else {
+        setRepoAccessResults(repos)
+      }
+    } catch (validationError) {
+      setRepoAccessError(validationError instanceof Error ? validationError.message : 'Repo access check failed')
+    } finally {
+      setIsValidatingRepoAccess(false)
+    }
   }
 
   /** Submits the Confluence config form and clears credential inputs after save. */
@@ -1213,6 +1295,43 @@ function ServiceConnectivitySection({
             </p>
           )}
 
+          {/* Repo-level access probe — tests actual repo endpoints, not just /user auth.
+              Surfaces IP allow list blocks, SAML enforcement, and scope errors per repo. */}
+          <div className={styles.inputRow}>
+            <button
+              className={styles.actionButton}
+              onClick={handleValidateRepoAccess}
+              disabled={isValidatingRepoAccess}
+            >
+              {isValidatingRepoAccess ? '⏳ Checking…' : '📋 Check Repo Access'}
+            </button>
+          </div>
+          {repoAccessError !== null && (
+            <p className={styles.sectionErrorText}>{repoAccessError}</p>
+          )}
+          {repoAccessResults !== null && repoAccessResults.length > 0 && (
+            <table className={styles.installationsTable} aria-label="Repo access probe results">
+              <thead>
+                <tr>
+                  <th>Repo</th>
+                  <th>Branches</th>
+                  <th>PRs</th>
+                  <th>Diagnosis</th>
+                </tr>
+              </thead>
+              <tbody>
+                {repoAccessResults.map((repoResult) => (
+                  <tr key={`repo-access-${repoResult.repo}`}>
+                    <td>{repoResult.repo}</td>
+                    <td>{repoResult.branchesHttpStatus ?? '—'}</td>
+                    <td>{repoResult.pullsHttpStatus ?? '—'}</td>
+                    <td>{interpretRepoProbeFailure(repoResult.branchesHttpStatus, repoResult.probeErrorMessage)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
           {/* ── GitHub App (enterprise SAML bypass) ── */}
           <details className={styles.collapsibleBlock}>
             <summary className={styles.collapsibleSummary}>
@@ -1221,12 +1340,17 @@ function ServiceConnectivitySection({
             </summary>
             <p className={styles.adminDescription}>
               If a PAT returns HTTP 401 due to SAML SSO enforcement, configure a GitHub App instead.
-              GitHub Apps are installed at the organisation level and their tokens bypass per-user SSO requirements.{' '}
-              <strong>App ID</strong> and <strong>Installation ID</strong> are found in your org&apos;s installed apps settings.
-              The <strong>Private Key</strong> is the <code>.pem</code> file downloaded from the GitHub App settings page.
+              GitHub Apps are installed at the organisation level and their tokens bypass per-user SSO requirements.
+            </p>
+            <p className={styles.adminDescription}>
+              <strong>App ID or Client ID</strong> — both work as the JWT <code>iss</code> claim. Find either on your
+              GitHub App&apos;s settings page. The <strong>Client ID</strong> starts with <code>Iv1.</code>;
+              the numeric <strong>App ID</strong> is labelled &ldquo;App ID&rdquo; above it.{' '}
+              The <strong>Installation ID</strong> is a <em>separate</em> number — use the
+              &ldquo;🔍 Find my Installation ID&rdquo; button below to look it up once the App ID and Private Key are saved.
             </p>
             <div className={styles.fieldRow}>
-              <label className={styles.fieldLabel} htmlFor="github-app-id">App ID</label>
+              <label className={styles.fieldLabel} htmlFor="github-app-id">App ID or Client ID</label>
               <input
                 id="github-app-id"
                 type="text"
@@ -1245,7 +1369,7 @@ function ServiceConnectivitySection({
                 className={styles.textInput}
                 value={githubInstallationId}
                 onChange={(e) => setGithubInstallationId(e.target.value)}
-                placeholder={connectivityConfig?.github.hasAppAuth ? CREDENTIAL_PLACEHOLDER : '456789'}
+                placeholder={connectivityConfig?.github.hasAppAuth ? CREDENTIAL_PLACEHOLDER : 'use 🔍 below to find this'}
                 autoComplete="off"
               />
             </div>
@@ -1308,6 +1432,63 @@ function ServiceConnectivitySection({
                 {isGitHubTesting ? '⏳ Testing…' : '🔌 Test Connection'}
               </button>
             </div>
+          </details>
+
+          {/* ── Installation ID lookup diagnostic ── */}
+          <details className={styles.collapsibleBlock}>
+            <summary className={styles.collapsibleSummary}>🔍 Find my Installation ID</summary>
+            <p className={styles.adminDescription}>
+              <strong>Not sure of your Installation ID?</strong> Save your App ID (or Client ID) and Private Key first
+              using the form above, then click below to list every place the app is installed.
+              A 404 error on Test Connection almost always means the Installation ID is wrong, or the app
+              has been <em>created</em> but not yet <em>installed</em> on your org.
+              To install: GitHub App settings → &ldquo;Install App&rdquo; tab → Install.
+            </p>
+            <button
+              type="button"
+              className={styles.actionButton}
+              onClick={() => void handleFindInstallations()}
+              disabled={isInstallationsLoading || !connectivityConfig?.github.hasAppAuth}
+              title={connectivityConfig?.github.hasAppAuth ? 'Query GitHub for all installations of this app' : 'Save App ID and Private Key first'}
+            >
+              {isInstallationsLoading ? '⏳ Looking up…' : '🔍 Find my Installation ID'}
+            </button>
+
+            {installationsError !== null && (
+              <p className={styles.sectionErrorText}>❌ {installationsError}</p>
+            )}
+
+            {foundInstallations !== null && foundInstallations.length > 0 && (
+              <table className={styles.installationsTable}>
+                <thead>
+                  <tr>
+                    <th>Installation ID</th>
+                    <th>Account</th>
+                    <th>Type</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {foundInstallations.map((installation) => (
+                    <tr key={installation.id}>
+                      <td><code>{installation.id}</code></td>
+                      <td>{installation.account}</td>
+                      <td>{installation.accountType}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className={styles.actionButton}
+                          onClick={() => setGithubInstallationId(String(installation.id))}
+                          title="Copy this Installation ID into the field above"
+                        >
+                          ✅ Use this ID
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </details>
 
           <hr className={styles.sectionDivider} />
@@ -1638,6 +1819,18 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
         onToggleFeatureFlag={actions.toggleFeatureFlag}
       />
 
+      <UpdateManagementSection
+        updateCheckResult={state.updateCheckResult}
+        updateCheckError={state.updateCheckError}
+        isCheckingUpdate={state.isCheckingUpdate}
+        isInstallingUpdate={state.isInstallingUpdate}
+        updateInstallError={state.updateInstallError}
+        isUpdateSectionCollapsed={state.isUpdateSectionCollapsed}
+        onCheckForUpdates={actions.checkForUpdates}
+        onInstallUpdate={actions.installUpdate}
+        onSetCollapsed={actions.setUpdateSectionCollapsed}
+      />
+
       <ProxySection
         jiraProxyUrl={state.proxyUrls.jiraProxyUrl}
         snowProxyUrl={state.proxyUrls.snowProxyUrl}
@@ -1687,18 +1880,6 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
         isHygieneSectionCollapsed={state.isHygieneSectionCollapsed}
         onUpdateHygieneRule={actions.updateHygieneRule}
         onSetCollapsed={actions.setHygieneSectionCollapsed}
-      />
-
-      <UpdateManagementSection
-        updateCheckResult={state.updateCheckResult}
-        updateCheckError={state.updateCheckError}
-        isCheckingUpdate={state.isCheckingUpdate}
-        isInstallingUpdate={state.isInstallingUpdate}
-        updateInstallError={state.updateInstallError}
-        isUpdateSectionCollapsed={state.isUpdateSectionCollapsed}
-        onCheckForUpdates={actions.checkForUpdates}
-        onInstallUpdate={actions.installUpdate}
-        onSetCollapsed={actions.setUpdateSectionCollapsed}
       />
 
       <FeatureRequestSection />

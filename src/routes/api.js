@@ -11,7 +11,7 @@ const crypto     = require('crypto');
 const express    = require('express');
 const { saveConfigToDisk, isServiceConfigured, isServiceBaseUrlSet } = require('../config/loader');
 const snowSession = require('../services/snowSession');
-const { clearInstallationTokenCache, hasGitHubAppCredentials, getValidInstallationToken } = require('../services/githubAppAuth');
+const { clearInstallationTokenCache, hasGitHubAppCredentials, getValidInstallationToken, listGitHubAppInstallations } = require('../services/githubAppAuth');
 
 const { prepareUpdate, spawnReplacementAndExit }   = require('../utils/updater');
 const relayBridge = require('./relayBridge');
@@ -87,7 +87,6 @@ async function runGitHubConnectivityProbe(configuration) {
     // Persist result so proxy-status can reflect actual connectivity
     githubProbeCache = { isConnected: probeResponse.ok, checkedAt: new Date() };
     return probeResult;
-
   } catch (probeError) {
     githubProbeCache = { isConnected: false, checkedAt: new Date() };
     return { ok: false, statusCode: 0, authMethod: 'unknown', message: 'Connection failed: ' + probeError.message };
@@ -324,6 +323,28 @@ function createApiRouter(configuration) {
         usernameMasked: maskCredentialUsername(savedConfluenceConfig.username || ''),
       },
     });
+  });
+
+  // ── GET /api/config/github-app/installations ─────────────────────────────
+  // Diagnostic endpoint: lists all orgs/accounts where this GitHub App is installed.
+  // Requires only appId + appPrivateKey (already saved) — no installationId needed.
+  // Returns the installationId for each installation so users can copy the correct value.
+  // A 404 on the token endpoint almost always means the wrong installationId was entered.
+
+  router.get('/api/config/github-app/installations', async (req, res) => {
+    const githubConfig = configuration.github || {};
+    if (!githubConfig.appId || !githubConfig.appPrivateKey) {
+      return res.status(400).json({
+        ok: false,
+        message: 'App ID (or Client ID) and Private Key must be saved before listing installations.',
+      });
+    }
+    try {
+      const installations = await listGitHubAppInstallations(configuration);
+      res.json({ ok: true, installations });
+    } catch (listError) {
+      res.json({ ok: false, installations: [], message: listError.message });
+    }
   });
 
   // ── POST /api/config/connectivity/test ────────────────────────────────────

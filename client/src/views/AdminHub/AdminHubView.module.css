@@ -804,3 +804,28 @@
   gap: var(--spacing-sm, 8px);
   margin-top: var(--spacing-xs, 4px);
 }
+
+/* ── Installation lookup table ── */
+.installationsTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: var(--spacing-sm, 8px);
+  font-size: 0.85rem;
+}
+
+.installationsTable th,
+.installationsTable td {
+  text-align: left;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border, #333);
+}
+
+.installationsTable thead th {
+  background: var(--color-bg-surface, #1e1e1e);
+  font-weight: 600;
+  color: var(--color-text-secondary, #aaa);
+}
+
+.installationsTable tbody tr:nth-child(even) {
+  background: var(--color-bg-subtle, #161616);
+}
