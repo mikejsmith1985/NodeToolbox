@@ -37,7 +37,7 @@ function buildProxyStatusWithSnowUrl(snowBaseUrl: string): ProxyStatusResponse {
       sessionExpiresAt: null,
       baseUrl: snowBaseUrl,
     },
-    github: { configured: false, hasCredentials: false, ready: false },
+    github: { configured: false, hasCredentials: false, ready: false, probeCheckedAt: null },
     confluence: { configured: false, hasCredentials: false, ready: false },
   };
 }
@@ -256,7 +256,7 @@ describe('ConnectionBar', () => {
         sslVerify: true,
         jira: { configured: false, hasCredentials: false, ready: false },
         snow: { configured: false, hasCredentials: false, ready: false, sessionMode: false, sessionExpiresAt: null, baseUrl: null },
-        github: { configured: false, hasCredentials: false, ready: false },
+        github: { configured: false, hasCredentials: false, ready: false, probeCheckedAt: null },
         confluence: { configured: true, hasCredentials: true, ready: true, baseUrl: 'https://mysite.atlassian.net/' },
       },
     });

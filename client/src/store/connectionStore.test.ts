@@ -11,7 +11,7 @@ const MOCK_PROXY_STATUS: ProxyStatusResponse = {
   sslVerify: true,
   jira: { configured: true, hasCredentials: true, ready: true, baseUrl: 'https://jira.example.com' },
   snow: { configured: false, hasCredentials: false, ready: false, sessionMode: false, sessionExpiresAt: null, baseUrl: null },
-  github: { configured: false, hasCredentials: false, ready: false },
+  github: { configured: false, hasCredentials: false, ready: false, probeCheckedAt: null },
   confluence: { configured: true, hasCredentials: true, ready: true, baseUrl: 'https://confluence.example.com' },
 };
 

@@ -20,6 +20,80 @@ const logBuffer   = require('../utils/logBuffer');
 /** Application version read once at startup — avoids repeated disk I/O per request */
 const APP_VERSION = require('../../package.json').version;
 
+// ── GitHub Connectivity Probe Cache ──────────────────────────────────────────
+//
+// Stores the last live probe result so proxy-status can report real connectivity
+// rather than just credential presence. The cache is updated after each test and
+// cleared when credentials change so the icon reflects truth, not assumptions.
+
+/** @type {{ isConnected: boolean, checkedAt: Date|null }} */
+let githubProbeCache = {
+  isConnected: false,
+  checkedAt: null,
+};
+
+/**
+ * Runs a live connectivity probe against the GitHub API (/user endpoint) using
+ * whichever auth method is configured — App credentials take priority over PAT.
+ * Updates githubProbeCache and returns the probe result.
+ *
+ * @param {import('../config/loader').ProxyConfig} configuration
+ * @returns {Promise<{ ok: boolean, statusCode: number, authMethod: string, message: string }>}
+ */
+async function runGitHubConnectivityProbe(configuration) {
+  const githubConfig    = configuration.github || {};
+  const isAppConfigured = hasGitHubAppCredentials(configuration);
+  const isPatConfigured = !!(githubConfig.pat);
+
+  if (!isAppConfigured && !isPatConfigured) {
+    const noCredentialsResult = { ok: false, statusCode: 0, authMethod: 'none', message: 'No GitHub credentials configured.' };
+    githubProbeCache = { isConnected: false, checkedAt: new Date() };
+    return noCredentialsResult;
+  }
+
+  try {
+    const githubBaseUrl = (githubConfig.baseUrl || 'https://api.github.com').replace(/\/$/, '');
+    let authHeader;
+    let authMethod;
+
+    if (isAppConfigured) {
+      // Prefer App auth — bypasses SAML SSO enforcement on enterprise orgs
+      const installationToken = await getValidInstallationToken(configuration);
+      authHeader = 'token ' + installationToken;
+      authMethod = 'GitHub App';
+    } else {
+      authHeader = 'token ' + githubConfig.pat;
+      authMethod = 'PAT';
+    }
+
+    const probeResponse = await fetch(githubBaseUrl + '/user', {
+      method:  'GET',
+      headers: {
+        'Authorization': authHeader,
+        'User-Agent':    'NodeToolbox',
+        'Accept':        'application/vnd.github.v3+json',
+      },
+    });
+
+    const probeResult = {
+      ok:         probeResponse.ok,
+      statusCode: probeResponse.status,
+      authMethod,
+      message: probeResponse.ok
+        ? 'Connected successfully via ' + authMethod + '.'
+        : 'Received HTTP ' + probeResponse.status + ' (auth method: ' + authMethod + ')',
+    };
+
+    // Persist result so proxy-status can reflect actual connectivity
+    githubProbeCache = { isConnected: probeResponse.ok, checkedAt: new Date() };
+    return probeResult;
+
+  } catch (probeError) {
+    githubProbeCache = { isConnected: false, checkedAt: new Date() };
+    return { ok: false, statusCode: 0, authMethod: 'unknown', message: 'Connection failed: ' + probeError.message };
+  }
+}
+
 // ── Router Factory ────────────────────────────────────────────────────────────
 
 /**
@@ -49,7 +123,7 @@ function createApiRouter(configuration) {
     const snowBaseUrl = (isServiceBaseUrlSet(configuration.snow) ? configuration.snow.baseUrl : null)
       || snowSession.resolveSnowBaseUrl('') || null;
 
-    const isGithubReady = !!(configuration.github.pat) || hasGitHubAppCredentials(configuration);
+    const isGithubReady = githubProbeCache.isConnected;
 
     const confluenceConfig        = configuration.confluence || {};
     const isConfluenceHasCredentials = !!(confluenceConfig.username && confluenceConfig.apiToken);
@@ -75,9 +149,10 @@ function createApiRouter(configuration) {
         baseUrl:          snowBaseUrl,
       },
       github: {
-        configured:     isGithubReady,
-        hasCredentials: isGithubReady,
+        configured:     !!(configuration.github.pat) || hasGitHubAppCredentials(configuration),
+        hasCredentials: !!(configuration.github.pat) || hasGitHubAppCredentials(configuration),
         ready:          isGithubReady,
+        probeCheckedAt: githubProbeCache.checkedAt ? githubProbeCache.checkedAt.toISOString() : null,
       },
       confluence: {
         configured:     isConfluenceConfigured,
@@ -209,6 +284,12 @@ function createApiRouter(configuration) {
     if (isAppCredentialChanged) {
       clearInstallationTokenCache();
     }
+    // Any GitHub credential change invalidates the last probe result — icon turns
+    // amber/gray until the user runs Test Connection with the new credentials.
+    const isGitHubCredentialChanged = isAppCredentialChanged || !!(ghUpdate.pat && ghUpdate.pat.trim());
+    if (isGitHubCredentialChanged) {
+      githubProbeCache = { isConnected: false, checkedAt: null };
+    }
 
     // Apply Confluence fields — same pattern as Snow/GitHub.
     configuration.confluence = configuration.confluence || {};
@@ -283,42 +364,13 @@ function createApiRouter(configuration) {
       }
 
     } else if (system === 'github') {
-      const githubConfig = configuration.github || {};
-      const isAppConfigured = hasGitHubAppCredentials(configuration);
-      const isPatConfigured = !!(githubConfig.pat);
-
-      if (!isAppConfigured && !isPatConfigured) {
-        return res.json({ ok: false, statusCode: 0, message: 'No GitHub credentials configured. Add a PAT or GitHub App credentials in Admin Hub.' });
-      }
-
       try {
-        const githubBaseUrl = (githubConfig.baseUrl || 'https://api.github.com').replace(/\/$/, '');
-        let authHeader;
-
-        if (isAppConfigured) {
-          // Prefer App auth — bypasses SAML SSO enforcement on enterprise orgs
-          const installationToken = await getValidInstallationToken(configuration);
-          authHeader = 'token ' + installationToken;
-        } else {
-          authHeader = 'token ' + githubConfig.pat;
-        }
-
-        const proxyResponse = await fetch(githubBaseUrl + '/user', {
-          method: 'GET',
-          headers: {
-            'Authorization': authHeader,
-            'User-Agent':    'NodeToolbox',
-            'Accept':        'application/vnd.github.v3+json',
-          },
-        });
-        const authMethod = isAppConfigured ? 'GitHub App' : 'PAT';
+        const probeResult = await runGitHubConnectivityProbe(configuration);
         res.json({
-          ok:         proxyResponse.ok,
-          statusCode: proxyResponse.status,
-          authMethod,
-          message:    proxyResponse.ok
-            ? 'Connected successfully via ' + authMethod + '.'
-            : 'Received HTTP ' + proxyResponse.status + ' (auth method: ' + authMethod + ')',
+          ok:         probeResult.ok,
+          statusCode: probeResult.statusCode,
+          authMethod: probeResult.authMethod,
+          message:    probeResult.message,
         });
       } catch (testError) {
         res.json({ ok: false, statusCode: 0, message: 'Connection failed: ' + testError.message });
@@ -760,6 +812,14 @@ function createApiRouter(configuration) {
       },
     });
   });
+
+  // ── Startup GitHub probe ─────────────────────────────────────────────────────
+  // Run a background connectivity check once at startup so the connection bar
+  // reflects real status immediately — not just "credentials are present".
+  // Non-blocking: errors are swallowed and the cache stays false.
+  if (hasGitHubAppCredentials(configuration) || configuration.github.pat) {
+    runGitHubConnectivityProbe(configuration).catch(() => {});
+  }
 
   return router;
 }
