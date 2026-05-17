@@ -193,6 +193,49 @@ function getSchedulerResults() {
 }
 
 /**
+ * Performs a read-only connectivity probe against GitHub monitor endpoints.
+ * This does not post Jira comments and does not modify scheduler seen-state.
+ *
+ * @param {import('../config/loader').ProxyConfig} configuration
+ * @returns {Promise<object>}
+ */
+function validateRepoMonitorConnectivity(configuration) {
+  const repoMonitor = (configuration.scheduler && configuration.scheduler.repoMonitor) || {};
+  const configuredRepos = Array.isArray(repoMonitor.repos) ? repoMonitor.repos : [];
+  const hasGitHubPat = !!(configuration.github && configuration.github.pat);
+  const githubBaseUrl = (configuration.github && configuration.github.baseUrl) || 'https://api.github.com';
+  const isTlsVerified = configuration.sslVerify !== false;
+
+  if (!hasGitHubPat) {
+    return Promise.resolve(buildConnectivityValidationResult(configuredRepos, [], {
+      isGitHubConfigured: false,
+      isGitHubReachable: false,
+      probeErrorMessage: 'GitHub PAT not configured',
+    }));
+  }
+
+  let probeChain = Promise.resolve();
+  const repoProbeResults = [];
+
+  configuredRepos.forEach((repoFullPath) => {
+    probeChain = probeChain.then(() => probeSingleRepoConnectivity(
+      repoFullPath,
+      configuration.github.pat,
+      githubBaseUrl,
+      isTlsVerified,
+    ).then((probeResult) => {
+      repoProbeResults.push(probeResult);
+    }));
+  });
+
+  return probeChain.then(() => buildConnectivityValidationResult(configuredRepos, repoProbeResults, {
+    isGitHubConfigured: true,
+    isGitHubReachable: repoProbeResults.every((repoProbeResult) => repoProbeResult.isReachable),
+    probeErrorMessage: null,
+  }));
+}
+
+/**
  * Updates the scheduler configuration and resets the run timer so changes
  * take effect on the next scheduler loop tick.
  *
@@ -545,6 +588,107 @@ function appendResultEvent(eventData) {
   schedulerRuntimeStats.repoMonitor.eventCount++;
 }
 
+/**
+ * Calls GitHub branches and pulls endpoints for one repo to validate read-only connectivity.
+ *
+ * @param {string} repoFullPath
+ * @param {string} githubPat
+ * @param {string} githubBaseUrl
+ * @param {boolean} isTlsVerified
+ * @returns {Promise<object>}
+ */
+function probeSingleRepoConnectivity(repoFullPath, githubPat, githubBaseUrl, isTlsVerified) {
+  return Promise.all([
+    makeGithubApiRequest('/repos/' + repoFullPath + '/branches?per_page=1', githubPat, githubBaseUrl, isTlsVerified),
+    makeGithubApiRequest('/repos/' + repoFullPath + '/pulls?state=all&per_page=1', githubPat, githubBaseUrl, isTlsVerified),
+  ])
+    .then(([branchesResponse, pullsResponse]) => {
+      const branchCount = Array.isArray(branchesResponse.body) ? branchesResponse.body.length : 0;
+      const pullRequestCount = Array.isArray(pullsResponse.body) ? pullsResponse.body.length : 0;
+      const isReachable = branchesResponse.status >= 200 && branchesResponse.status < 300 &&
+        pullsResponse.status >= 200 && pullsResponse.status < 300;
+      return {
+        repo: repoFullPath,
+        isReachable,
+        branchesHttpStatus: branchesResponse.status,
+        pullsHttpStatus: pullsResponse.status,
+        branchProbeCount: branchCount,
+        pullRequestProbeCount: pullRequestCount,
+        probeErrorMessage: null,
+      };
+    })
+    .catch((probeError) => ({
+      repo: repoFullPath,
+      isReachable: false,
+      branchesHttpStatus: null,
+      pullsHttpStatus: null,
+      branchProbeCount: 0,
+      pullRequestProbeCount: 0,
+      probeErrorMessage: probeError.message,
+    }));
+}
+
+/**
+ * Builds a structured response that distinguishes "no events found" from "no connectivity."
+ *
+ * @param {string[]} configuredRepos
+ * @param {object[]} repoProbeResults
+ * @param {{ isGitHubConfigured: boolean, isGitHubReachable: boolean, probeErrorMessage: string|null }} options
+ * @returns {object}
+ */
+function buildConnectivityValidationResult(configuredRepos, repoProbeResults, options) {
+  const configuredRepoCount = configuredRepos.length;
+  const reachableRepoCount = repoProbeResults.filter((repoProbeResult) => repoProbeResult.isReachable).length;
+  const unreachableRepoCount = repoProbeResults.filter((repoProbeResult) => !repoProbeResult.isReachable).length;
+
+  return {
+    repoMonitor: {
+      checkedAt: new Date().toISOString(),
+      isGitHubConfigured: options.isGitHubConfigured,
+      isGitHubReachable: options.isGitHubReachable,
+      configuredRepoCount,
+      reachableRepoCount,
+      unreachableRepoCount,
+      probeErrorMessage: options.probeErrorMessage,
+      repos: repoProbeResults,
+      validationMode: 'read-only-github-probe',
+    },
+  };
+}
+
+/**
+ * Tests raw GitHub API connectivity using the public GitHub status endpoint.
+ * Returns detailed request/response information for debugging auth and network issues.
+ *
+ * @param {import('../config/loader').ProxyConfig} configuration
+ * @returns {Promise<object>}
+ */
+function testGitHubConnectivity(configuration) {
+  const githubPat = configuration.github && configuration.github.pat;
+  const githubBaseUrl = (configuration.github && configuration.github.baseUrl) || 'https://api.github.com';
+  const isTlsVerified = configuration.sslVerify !== false;
+
+  // Test with a simple public endpoint that requires authentication
+  return makeGithubApiRequest(
+    '/user',  // Simple endpoint that requires valid PAT
+    githubPat,
+    githubBaseUrl,
+    isTlsVerified
+  ).then((userResponse) => {
+    const authenticated = userResponse.status === 200;
+    const userLogin = userResponse.body && userResponse.body.login ? userResponse.body.login : 'unknown';
+
+    return {
+      endpoint: '/user (authenticated user info)',
+      httpStatus: userResponse.status,
+      authenticated,
+      authenticatedAs: authenticated ? userLogin : null,
+      message: authenticated ? 'PAT is valid and authenticated' : 'PAT authentication failed (HTTP ' + userResponse.status + ')',
+      response: userResponse.body,
+    };
+  });
+}
+
 // ── Exports ───────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -552,5 +696,7 @@ module.exports = {
   runRepoMonitor,
   getSchedulerStatus,
   getSchedulerResults,
+  validateRepoMonitorConnectivity,
   applySchedulerConfig,
+  testGitHubConnectivity,
 };

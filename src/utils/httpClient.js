@@ -34,6 +34,7 @@ function buildBasicAuthHeader(username, password) {
  * Builds the correct Authorization header for a service configuration.
  * PAT (Bearer token) takes priority over Basic Auth because SSO/Okta environments
  * block username+password authentication but allow personal access tokens.
+ * Note: Jira and Confluence use Bearer for PAT; GitHub uses token.
  *
  * @param {{ pat?: string, username?: string, apiToken?: string, password?: string }} serviceConfig
  * @returns {string|null} Authorization header value, or null if no credentials are configured
@@ -48,6 +49,18 @@ function buildAuthHeader(serviceConfig) {
   // apiToken takes priority over password — Jira uses apiToken, SNow uses password
   const credentialSecret = serviceConfig.apiToken || serviceConfig.password || '';
   return buildBasicAuthHeader(serviceConfig.username || '', credentialSecret);
+}
+
+/**
+ * Builds a GitHub-specific Authorization header using the 'token' scheme.
+ * GitHub PAT tokens use 'token <PAT>' format, not 'Bearer <PAT>'.
+ *
+ * @param {string} githubPat - GitHub Personal Access Token
+ * @returns {string|null}
+ */
+function buildGitHubAuthHeader(githubPat) {
+  if (!githubPat) return null;
+  return 'token ' + githubPat;
 }
 
 // ── Proxy Request ─────────────────────────────────────────────────────────────
@@ -175,10 +188,14 @@ function makeGithubApiRequest(apiPath, githubPat, githubBaseUrl, shouldVerifyTls
       rejectUnauthorized: shouldVerifyTls !== false,
       headers: {
         'Accept':        'application/vnd.github+json',
-        'Authorization': 'Bearer ' + githubPat,
+        'Authorization': buildGitHubAuthHeader(githubPat),
         'User-Agent':    PROXY_USER_AGENT,
       },
     };
+
+    // Log request details (safe: PAT is masked)
+    const maskedPat = githubPat ? githubPat.substring(0, 4) + '...' + githubPat.substring(githubPat.length - 4) : 'NONE';
+    console.log('  [GitHub API] → ' + requestUrl.hostname + requestUrl.pathname + ' (auth: ' + maskedPat + ')');
 
     const request = transport.request(requestOptions, (response) => {
       const responseChunks = [];
@@ -186,14 +203,20 @@ function makeGithubApiRequest(apiPath, githubPat, githubBaseUrl, shouldVerifyTls
       response.on('end', () => {
         const rawBody = Buffer.concat(responseChunks).toString('utf8');
         try {
-          resolve({ status: response.statusCode, body: JSON.parse(rawBody) });
+          const parsedBody = JSON.parse(rawBody);
+          console.log('  [GitHub API] ← HTTP ' + response.statusCode + ' (' + (parsedBody.message || 'ok') + ')');
+          resolve({ status: response.statusCode, body: parsedBody });
         } catch (_jsonParseError) {
+          console.log('  [GitHub API] ← HTTP ' + response.statusCode + ' (non-JSON response)');
           resolve({ status: response.statusCode, body: {} });
         }
       });
     });
 
-    request.on('error', reject);
+    request.on('error', (requestError) => {
+      console.error('  [GitHub API] ✗ Request error: ' + requestError.message);
+      reject(requestError);
+    });
     request.end();
   });
 }
@@ -287,7 +310,16 @@ function buildOutboundHeaders(clientReq, serviceConfig, sessionOverrides) {
     // Session mode: inject SNow g_ck token instead of credentials
     Object.assign(outboundHeaders, sessionOverrides);
   } else {
-    const authorizationHeader = buildAuthHeader(serviceConfig);
+    // Detect if this is a GitHub request by checking baseUrl
+    const isGitHub = serviceConfig.baseUrl && serviceConfig.baseUrl.includes('api.github.com');
+    
+    let authorizationHeader;
+    if (isGitHub && serviceConfig.pat) {
+      authorizationHeader = buildGitHubAuthHeader(serviceConfig.pat);
+    } else {
+      authorizationHeader = buildAuthHeader(serviceConfig);
+    }
+    
     if (authorizationHeader) {
       outboundHeaders['Authorization'] = authorizationHeader;
     }
@@ -302,6 +334,8 @@ module.exports = {
   proxyRequest,
   buildAuthHeader,
   buildBasicAuthHeader,
+  buildGitHubAuthHeader,
   makeGithubApiRequest,
   makeJiraApiRequest,
+  proxyRequest,
 };

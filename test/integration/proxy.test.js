@@ -104,7 +104,7 @@ describe('GET /jira-proxy/*', () => {
 describe('GET /github-proxy/*', () => {
   afterEach(() => nock.cleanAll());
 
-  it('proxies the request to the GitHub API with Bearer token', async () => {
+  it('proxies the request to the GitHub API with token header', async () => {
     const configuration = {
       jira:   { baseUrl: '', pat: '' },
       snow:   { baseUrl: '' },
@@ -113,7 +113,7 @@ describe('GET /github-proxy/*', () => {
     };
 
     nock('https://api.github.com', {
-      reqheaders: { authorization: 'Bearer ghp_test_token' },
+      reqheaders: { authorization: 'token ghp_test_token' },
     })
       .get('/user')
       .reply(200, { login: 'testuser' });
