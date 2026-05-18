@@ -798,6 +798,111 @@
   margin: 0 0 var(--spacing-md);
 }
 
+/* ── Releases tab: urgency badges ── */
+
+/** Base pill shared by all urgency levels; modifier classes below set the colour. */
+.releaseUrgencyBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/** Past release date that has not been marked released — highest urgency. */
+.releaseUrgencyBadgeOverdue {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+/** Release within RELEASE_URGENCY_CRITICAL_DAYS days — same red palette as overdue. */
+.releaseUrgencyBadgeCritical {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+/** Release within RELEASE_URGENCY_WARNING_DAYS days — amber alert. */
+.releaseUrgencyBadgeWarning {
+  background: #fff3cd;
+  color: #856404;
+}
+
+/** Release is beyond the warning horizon — healthy green. */
+.releaseUrgencyBadgeUpcoming {
+  background: #d4edda;
+  color: #155724;
+}
+
+/** Version has been formally released in Jira — muted, no action needed. */
+.releaseUrgencyBadgeReleased {
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+}
+
+/** Version has no release date configured — neutral grey. */
+.releaseUrgencyBadgeNoDate {
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+}
+
+/* ── Releases tab: per-version progress bar ── */
+
+.releaseProgressTrack {
+  width: 80px;
+  height: 6px;
+  background: var(--color-surface-2);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+.releaseProgressFill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+
+/* ── Releases tab: expandable issue detail rows ── */
+
+/** The outer td that wraps the nested issue table — no extra padding avoids double borders. */
+.releaseExpandedRow {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface-1);
+}
+
+.releaseIssueTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.releaseIssueTable th,
+.releaseIssueTable td {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.releaseIssueTable th {
+  background: var(--color-surface-2);
+  font-weight: 600;
+}
+
+/** Done issues are dimmed so the reader's eye goes to the still-open work first. */
+.releaseIssueRowDone {
+  opacity: 0.55;
+}
+
+/** Issue key cell uses monospace so keys like PROJ-123 align visually in multi-team tables. */
+.releaseIssueKeyCell {
+  font-family: monospace;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
 .settingsFieldRow {
   display: flex;
   align-items: center;
@@ -819,5 +924,192 @@
   background: #e9ecef;
   border-radius: 3px;
   color: #495057;
+}
+
+/* ── Impediments panel: toolbar, team sections, legend, stale badges, prompts ── */
+
+.impedimentsToolbar {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.impedimentsReasonSelect {
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.impedimentTeamSection {
+  margin-bottom: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  overflow: hidden;
+}
+
+.impedimentTeamHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface-2);
+  border: none;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: bold;
+  text-align: left;
+  color: var(--color-text);
+}
+
+.impedimentTeamHeader:hover {
+  background: var(--color-surface-3, #e9ecef);
+}
+
+.impedimentTeamHeaderMeta {
+  font-weight: normal;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs, 0.75rem);
+}
+
+.impedimentLegend {
+  margin-bottom: var(--spacing-md);
+}
+
+.impedimentLegendToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+.impedimentLegendToggle:hover {
+  background: var(--color-surface-2);
+}
+
+.impedimentLegendIcon {
+  font-size: 0.6rem;
+}
+
+.impedimentLegendBody {
+  margin: var(--spacing-xs) 0 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  font-size: var(--font-size-sm);
+}
+
+.impedimentLegendEntry {
+  margin-bottom: var(--spacing-xs);
+}
+
+.impedimentLegendTerm {
+  font-weight: bold;
+  float: left;
+  margin-right: var(--spacing-xs);
+}
+
+.impedimentLegendTerm::after {
+  content: ':';
+}
+
+.impedimentLegendDesc {
+  margin-left: 0;
+  color: var(--color-text-secondary);
+}
+
+.impedimentReasonCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.impedimentReasonPrompt {
+  font-size: var(--font-size-xs, 0.75rem);
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+
+/* Stale tier badges: green = fresh, amber = stale, red = critical */
+.impedimentStaleBadgeFresh {
+  display: inline-block;
+  padding: 0.1rem 0.375rem;
+  border-radius: 3px;
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: bold;
+  background: #d4edda;
+  color: #155724;
+}
+
+.impedimentStaleBadgeStale {
+  display: inline-block;
+  padding: 0.1rem 0.375rem;
+  border-radius: 3px;
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: bold;
+  background: #fff3cd;
+  color: #856404;
+}
+
+.impedimentStaleBadgeCritical {
+  display: inline-block;
+  padding: 0.1rem 0.375rem;
+  border-radius: 3px;
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: bold;
+  background: #f8d7da;
+  color: #721c24;
+}
+
+/* ── SoS Jira Sync ── */
+
+/** Badge shown next to the team name in the SoS accordion header when a sosIssueKey is configured. */
+.sosJiraKeyBadge {
+  font-family: monospace;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  background: #e3f2fd;
+  color: #1565c0;
+  border-radius: 3px;
+  margin-left: 0.4rem;
+  font-weight: normal;
+  flex-shrink: 0;
+}
+
+/** Footer row inside the SoS narrative section with sync state + Post to Jira button. */
+.sosSyncFooter {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+}
+
+/** Sync state label — shows "Local only" or "Synced · HH:MM:SS". */
+.sosSyncState {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  flex: 1;
+}
+
+/** Error message shown when the jiraPost call fails. */
+.sosSyncError {
+  font-size: var(--font-size-sm);
+  color: var(--color-danger);
+  width: 100%;
 }
 

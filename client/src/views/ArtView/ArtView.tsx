@@ -3,6 +3,7 @@
 import { Fragment, useState } from 'react';
 
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
+import { jiraPost } from '../../services/jiraApi.ts';
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import { useToast } from '../../components/Toast/ToastProvider.tsx';
 import JiraBoardPicker from '../../components/JiraBoardPicker/index.tsx';
@@ -12,8 +13,8 @@ import BlueprintTab from './BlueprintTab.tsx';
 import DependenciesTab from './DependenciesTab.tsx';
 import type { ArtTab, ArtTeam, ArtBoardPrepIssue, PiProgressStats } from './hooks/useArtData.ts';
 import { useArtData } from './hooks/useArtData.ts';
-import type { ImpedimentReason } from './hooks/artHelpers.ts';
-import { detectImpedimentReasons, isImpediment } from './hooks/artHelpers.ts';
+import type { ImpedimentReason, ImpedimentStaleTier } from './hooks/artHelpers.ts';
+import { classifyImpedimentStaleness, computeDaysSinceUpdate, detectImpedimentReasons, isImpediment } from './hooks/artHelpers.ts';
 import styles from './ArtView.module.css';
 
 // ── Constants ──
@@ -644,7 +645,60 @@ interface ImpedimentsPanelProps extends TeamsPanelProps {
   onTeamProjectKeyFilterChange: (value: string) => void;
 }
 
-/** Renders the Impediments tab showing blocked/flagged issues across all teams with detection reason. */
+// ── Constants: Impediments panel ──
+
+/** Human-readable option labels for the reason filter, plus the "show all" sentinel. */
+const IMPEDIMENT_REASON_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'all', label: 'All Reasons' },
+  { value: 'Blocked Status', label: 'Blocked Status' },
+  { value: 'Blocked Link', label: 'Blocked Link' },
+  { value: 'Flagged', label: 'Flagged' },
+  { value: 'Label', label: 'Label' },
+];
+
+/**
+ * Short actionable prompt shown below each reason badge in the Impediments table.
+ * Prompts nudge the team toward the next concrete action without being prescriptive.
+ */
+const IMPEDIMENT_REASON_PROMPTS: Record<ImpedimentReason, string> = {
+  'Blocked Status': 'Update status or add a resolution comment',
+  'Blocked Link': 'Follow up with the team owning the blocking issue',
+  'Flagged': 'Remove the impediment flag once cleared',
+  'Label': 'Escalate to Scrum Master if unresolved',
+};
+
+/**
+ * Legend entries describing each detection signal in plain English.
+ * Used by the collapsible "Detection Signals" legend in the Impediments panel.
+ */
+const IMPEDIMENT_LEGEND_ENTRIES: Array<{ reason: ImpedimentReason; description: string }> = [
+  { reason: 'Blocked Status', description: 'The Jira status name contains "block" (e.g., "Blocked", "Blocked – Waiting").' },
+  { reason: 'Blocked Link', description: 'An open "is blocked by" or "blocks" issue link points to an unresolved issue.' },
+  { reason: 'Flagged', description: 'The Jira impediment flag 🚩 is set via the board context menu.' },
+  { reason: 'Label', description: 'The issue carries a "blocked" or "impediment" label.' },
+];
+
+/** Default stale threshold in days when no ART settings are persisted. */
+const IMPEDIMENT_STALE_DAYS_DEFAULT = 5;
+
+// ── Helpers: Impediments panel ──
+
+/** Reads the stale-days threshold from ART settings in localStorage, falling back to the default. */
+function readStaleDaysThreshold(): number {
+  try {
+    const settings = JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as { staleDays?: number };
+    return typeof settings.staleDays === 'number' && settings.staleDays > 0
+      ? settings.staleDays
+      : IMPEDIMENT_STALE_DAYS_DEFAULT;
+  } catch {
+    return IMPEDIMENT_STALE_DAYS_DEFAULT;
+  }
+}
+
+/**
+ * Renders the Impediments tab with grouped/collapsible team sections, reason filter,
+ * stale-tier badges, detection legend, and actionable prompts.
+ */
 function ImpedimentsPanel({
   teams,
   teamProjectKeyFilter,
@@ -652,22 +706,58 @@ function ImpedimentsPanel({
   onTeamProjectKeyFilterChange,
 }: ImpedimentsPanelProps) {
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
+  const [selectedReasonFilter, setSelectedReasonFilter] = useState<string>('all');
+  // Tracks which team sections are collapsed; empty set means all sections start expanded.
+  const [collapsedTeamIds, setCollapsedTeamIds] = useState<Set<string>>(new Set());
+  // Legend starts closed so its content doesn't create duplicate text matches with table data.
+  const [isLegendOpen, setIsLegendOpen] = useState(false);
 
-  // Collect issues matching any impediment signal, attaching detected reasons and team name.
-  const impedimentIssues = teams.flatMap((team) =>
-    team.sprintIssues
-      .map((issue) => ({ ...issue, teamName: team.name, reasons: detectImpedimentReasons(issue) }))
-      .filter((issue) => issue.reasons.length > 0),
-  );
+  const staleDaysThreshold = readStaleDaysThreshold();
+  const nowMs = Date.now();
+
+  // Build per-team groups: annotate issues with reasons, days elapsed, and stale tier,
+  // then apply the reason filter. Teams with zero matching issues are omitted entirely.
+  const teamGroups = teams
+    .map((team) => {
+      const issuesWithMeta = team.sprintIssues
+        .map((issue) => {
+          const reasons = detectImpedimentReasons(issue);
+          const daysSinceUpdate = computeDaysSinceUpdate(issue, nowMs);
+          const staleTier: ImpedimentStaleTier = classifyImpedimentStaleness(daysSinceUpdate, staleDaysThreshold);
+          return { ...issue, reasons, daysSinceUpdate, staleTier };
+        })
+        .filter((issue) => issue.reasons.length > 0)
+        .filter((issue) =>
+          selectedReasonFilter === 'all' || issue.reasons.includes(selectedReasonFilter as ImpedimentReason),
+        );
+      return { team, issues: issuesWithMeta };
+    })
+    .filter(({ issues }) => issues.length > 0);
+
+  const totalImpedimentCount = teamGroups.reduce((sum, { issues }) => sum + issues.length, 0);
 
   function toggleExpandedIssue(issueKey: string) {
-    setExpandedIssueKey((previousIssueKey) => previousIssueKey === issueKey ? null : issueKey);
+    setExpandedIssueKey((prev) => (prev === issueKey ? null : issueKey));
+  }
+
+  function toggleTeamSection(teamId: string) {
+    setCollapsedTeamIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(teamId)) {
+        next.delete(teamId);
+      } else {
+        next.add(teamId);
+      }
+      return next;
+    });
   }
 
   return (
     <div className={styles.panel}>
       <h3 className={styles.sectionTitle}>Impediments</h3>
-      <div className={styles.teamFilterRow}>
+
+      {/* ── Toolbar: project key filter + reason filter ── */}
+      <div className={styles.impedimentsToolbar}>
         <input
           className={styles.teamFilterInput}
           onChange={(event) => onTeamProjectKeyFilterChange(event.target.value)}
@@ -675,65 +765,155 @@ function ImpedimentsPanel({
           type="search"
           value={teamProjectKeyFilter}
         />
+        <select
+          aria-label="Filter by reason"
+          className={styles.impedimentsReasonSelect}
+          onChange={(event) => setSelectedReasonFilter(event.target.value)}
+          value={selectedReasonFilter}
+        >
+          {IMPEDIMENT_REASON_FILTER_OPTIONS.map(({ value, label }) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
       </div>
-      {impedimentIssues.length === 0 && (
+
+      {/* ── Detection Signals legend (collapsed by default) ── */}
+      <div className={styles.impedimentLegend}>
+        <button
+          aria-expanded={isLegendOpen}
+          aria-label="Detection Signals"
+          className={styles.impedimentLegendToggle}
+          onClick={() => setIsLegendOpen((prev) => !prev)}
+          type="button"
+        >
+          <span aria-hidden="true" className={styles.impedimentLegendIcon}>{isLegendOpen ? '▲' : '▼'}</span>
+          {' '}Detection Signals
+        </button>
+        {isLegendOpen && (
+          <dl className={styles.impedimentLegendBody}>
+            {IMPEDIMENT_LEGEND_ENTRIES.map(({ reason, description }) => (
+              <div key={reason} className={styles.impedimentLegendEntry}>
+                <dt className={styles.impedimentLegendTerm}>{reason}</dt>
+                <dd className={styles.impedimentLegendDesc}>{description}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </div>
+
+      {/* ── Empty state when no issues match the current filters ── */}
+      {totalImpedimentCount === 0 && (
         <p className={styles.emptyState}>No impediments found across all teams.</p>
       )}
-      <table className={styles.dataTable}>
-        <thead>
-          <tr>
-            <th scope="col">Key</th>
-            <th scope="col">Summary</th>
-            <th scope="col">Team</th>
-            <th scope="col">Reason</th>
-            <th scope="col">Assignee</th>
-          </tr>
-        </thead>
-        <tbody>
-          {impedimentIssues.map((issue) => {
-            const isExpanded = expandedIssueKey === issue.key;
-            const expandButtonLabel = `${isExpanded ? 'Collapse' : 'Expand'} details for ${issue.key}`;
 
-            return (
-              <Fragment key={issue.key}>
-                {/* Whole row toggles the detail panel; caret is a visual affordance hint. */}
-                <tr
-                  aria-expanded={isExpanded}
-                  aria-label={expandButtonLabel}
-                  onClick={() => toggleExpandedIssue(issue.key)}
-                  onKeyDown={(keyEvent) => {
-                    if (keyEvent.key === 'Enter' || keyEvent.key === ' ')
-                      toggleExpandedIssue(issue.key);
-                  }}
-                  role="button"
-                  style={{ cursor: 'pointer', userSelect: 'none' }}
-                  tabIndex={0}
-                >
-                  <td>
-                    <div className={styles.issueKeyCell}>
-                      <span>{issue.key}</span>
-                      <span aria-hidden="true" className={styles.expandToggleButton}>
-                        {isExpanded ? '▲' : '▼'}
-                      </span>
-                    </div>
-                  </td>
-                  <td>{issue.fields.summary}</td>
-                  <td>{issue.teamName}</td>
-                  <td>{issue.reasons.join(', ')}</td>
-                  <td>{issue.fields.assignee?.displayName ?? '—'}</td>
-                </tr>
-                {isExpanded && (
+      {/* ── Per-team collapsible sections ── */}
+      {teamGroups.map(({ team, issues }) => {
+        const isTeamCollapsed = collapsedTeamIds.has(team.id);
+        const teamHeaderLabel = `${team.name} (${issues.length} impediment${issues.length !== 1 ? 's' : ''})`;
+
+        return (
+          <div key={team.id} className={styles.impedimentTeamSection}>
+            {/* Team section header acts as a collapse/expand toggle for its issue table. */}
+            <button
+              aria-expanded={!isTeamCollapsed}
+              aria-label={teamHeaderLabel}
+              className={styles.impedimentTeamHeader}
+              onClick={() => toggleTeamSection(team.id)}
+              type="button"
+            >
+              <span>{team.name}</span>
+              <span className={styles.impedimentTeamHeaderMeta}>
+                {issues.length} impediment{issues.length !== 1 ? 's' : ''}
+                {' '}
+                <span aria-hidden="true">{isTeamCollapsed ? '▶' : '▼'}</span>
+              </span>
+            </button>
+
+            {!isTeamCollapsed && (
+              <table className={styles.dataTable}>
+                <thead>
                   <tr>
-                    <td className={styles.issueDetailCell} colSpan={5}>
-                      <IssueDetailPanel isEmbedded issue={issue} onIssueUpdated={onIssueUpdated} />
-                    </td>
+                    <th scope="col">Key</th>
+                    <th scope="col">Summary</th>
+                    <th scope="col">Reason</th>
+                    <th scope="col">Days</th>
+                    <th scope="col">Assignee</th>
                   </tr>
-                )}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
+                </thead>
+                <tbody>
+                  {issues.map((issue) => {
+                    const isExpanded = expandedIssueKey === issue.key;
+                    const expandButtonLabel = `${isExpanded ? 'Collapse' : 'Expand'} details for ${issue.key}`;
+
+                    return (
+                      <Fragment key={issue.key}>
+                        {/* Whole row toggles the detail panel; caret is a visual affordance hint. */}
+                        <tr
+                          aria-expanded={isExpanded}
+                          aria-label={expandButtonLabel}
+                          onClick={() => toggleExpandedIssue(issue.key)}
+                          onKeyDown={(keyEvent) => {
+                            if (keyEvent.key === 'Enter' || keyEvent.key === ' ')
+                              toggleExpandedIssue(issue.key);
+                          }}
+                          role="button"
+                          style={{ cursor: 'pointer', userSelect: 'none' }}
+                          tabIndex={0}
+                        >
+                          <td>
+                            <div className={styles.issueKeyCell}>
+                              <span>{issue.key}</span>
+                              <span aria-hidden="true" className={styles.expandToggleButton}>
+                                {isExpanded ? '▲' : '▼'}
+                              </span>
+                            </div>
+                          </td>
+                          <td>{issue.fields.summary}</td>
+                          <td>
+                            {/* Primary reason text + actionable prompt nudging the next step. */}
+                            <div className={styles.impedimentReasonCell}>
+                              <span>{issue.reasons.join(', ')}</span>
+                              <span
+                                className={styles.impedimentReasonPrompt}
+                                data-testid={`impediment-prompt-${issue.key}`}
+                              >
+                                {IMPEDIMENT_REASON_PROMPTS[issue.reasons[0]]}
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            {/* Days since last update badge with colour-coded stale tier. */}
+                            <span
+                              className={
+                                issue.staleTier === 'critical'
+                                  ? styles.impedimentStaleBadgeCritical
+                                  : issue.staleTier === 'stale'
+                                    ? styles.impedimentStaleBadgeStale
+                                    : styles.impedimentStaleBadgeFresh
+                              }
+                              data-testid={`impediment-stale-badge-${issue.key}`}
+                            >
+                              {issue.daysSinceUpdate}d
+                            </span>
+                          </td>
+                          <td>{issue.fields.assignee?.displayName ?? '—'}</td>
+                        </tr>
+                        {isExpanded && (
+                          <tr>
+                            <td className={styles.issueDetailCell} colSpan={5}>
+                              <IssueDetailPanel isEmbedded issue={issue} onIssueUpdated={onIssueUpdated} />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -866,6 +1046,24 @@ function PredictabilityPanel({ teams }: TeamsPanelProps) {
 
 // ── Releases helpers ──
 
+/** Urgency classification bucket for a release version based on its date relative to today. */
+type ReleaseUrgencyLevel = 'released' | 'overdue' | 'critical' | 'warning' | 'upcoming' | 'no-date';
+
+// Thresholds matching the PI urgency palette so the release radar uses consistent colour signals.
+/** Release dates within this many days trigger the critical (red) urgency level. */
+const RELEASE_URGENCY_CRITICAL_DAYS = 7;
+/** Release dates within this many days trigger the warning (amber) urgency level. */
+const RELEASE_URGENCY_WARNING_DAYS = 30;
+
+/** A lightweight summary of a single issue within an expandable release row. */
+interface ReleaseIssueSummary {
+  key: string;
+  summary: string;
+  statusName: string;
+  isDone: boolean;
+  teamName: string;
+}
+
 /** A single fix-version bucket aggregating issues from potentially multiple teams. */
 interface ReleaseVersionSummary {
   versionName: string;
@@ -874,10 +1072,31 @@ interface ReleaseVersionSummary {
   teamNames: string[];
   doneCount: number;
   totalIssueCount: number;
+  /** Timeline urgency computed from the release date; drives badge colour in the UI. */
+  urgency: ReleaseUrgencyLevel;
+  /** Slim issue snapshots used to populate the expandable detail row. */
+  issues: ReleaseIssueSummary[];
 }
 
 /**
- * Groups all team sprint issues by fix version, aggregating done/total counts and contributing teams.
+ * Classifies how urgent a release version is relative to today's date.
+ * Released versions always return "released" — their date is no longer relevant.
+ */
+function classifyReleaseUrgency(releaseDate: string | null, isReleased: boolean): ReleaseUrgencyLevel {
+  if (isReleased) return 'released';
+  if (!releaseDate) return 'no-date';
+
+  const daysRemaining = computeDaysRemainingInPi(releaseDate);
+  if (daysRemaining === null) return 'no-date';
+  if (daysRemaining < 0) return 'overdue';
+  if (daysRemaining <= RELEASE_URGENCY_CRITICAL_DAYS) return 'critical';
+  if (daysRemaining <= RELEASE_URGENCY_WARNING_DAYS) return 'warning';
+  return 'upcoming';
+}
+
+/**
+ * Groups all team sprint issues by fix version, aggregating done/total counts,
+ * contributing teams, urgency classification, and a slim issue list for expandable rows.
  * Issues without any fix version are excluded; they are not release-oriented.
  */
 function groupIssuesByFixVersion(teams: ArtTeam[]): ReleaseVersionSummary[] {
@@ -887,6 +1106,7 @@ function groupIssuesByFixVersion(teams: ArtTeam[]): ReleaseVersionSummary[] {
     teamNameSet: Set<string>;
     doneCount: number;
     totalIssueCount: number;
+    issueSummaries: ReleaseIssueSummary[];
   }
 
   const versionMap = new Map<string, VersionAccumulator>();
@@ -897,6 +1117,13 @@ function groupIssuesByFixVersion(teams: ArtTeam[]): ReleaseVersionSummary[] {
       if (fixVersions.length === 0) continue;
 
       const issueIsDone = isIssueCompleted(issue);
+      const issueSummary: ReleaseIssueSummary = {
+        key: issue.key,
+        summary: issue.fields.summary,
+        statusName: issue.fields.status.name,
+        isDone: issueIsDone,
+        teamName: team.name,
+      };
 
       for (const fixVersion of fixVersions) {
         if (!versionMap.has(fixVersion.name)) {
@@ -906,6 +1133,7 @@ function groupIssuesByFixVersion(teams: ArtTeam[]): ReleaseVersionSummary[] {
             teamNameSet: new Set(),
             doneCount: 0,
             totalIssueCount: 0,
+            issueSummaries: [],
           });
         }
 
@@ -913,6 +1141,8 @@ function groupIssuesByFixVersion(teams: ArtTeam[]): ReleaseVersionSummary[] {
         accumulator.teamNameSet.add(team.name);
         accumulator.totalIssueCount++;
         if (issueIsDone) accumulator.doneCount++;
+        // Each issue may appear in multiple fix versions; add it to each version it belongs to.
+        accumulator.issueSummaries.push(issueSummary);
       }
     }
   }
@@ -925,6 +1155,8 @@ function groupIssuesByFixVersion(teams: ArtTeam[]): ReleaseVersionSummary[] {
       teamNames: Array.from(accumulator.teamNameSet).sort(),
       doneCount: accumulator.doneCount,
       totalIssueCount: accumulator.totalIssueCount,
+      urgency: classifyReleaseUrgency(accumulator.releaseDate, accumulator.isReleased),
+      issues: accumulator.issueSummaries,
     }))
     .sort((firstVersion, secondVersion) => {
       // Released versions appear after unreleased so upcoming work is prominent.
@@ -941,9 +1173,35 @@ function groupIssuesByFixVersion(teams: ArtTeam[]): ReleaseVersionSummary[] {
     });
 }
 
-/** Renders the Releases tab with fix-version-grouped issue tracking across all teams. */
+// Urgency display configuration — maps each level to its human label and CSS modifier class.
+// Kept as a plain object so callers get a compile-time error if a new level is added without
+// updating this config.
+const RELEASE_URGENCY_CONFIG: Record<ReleaseUrgencyLevel, { label: string; cssClass: string }> = {
+  released: { label: 'Released', cssClass: styles.releaseUrgencyBadgeReleased },
+  overdue: { label: 'Overdue', cssClass: styles.releaseUrgencyBadgeOverdue },
+  critical: { label: 'Critical', cssClass: styles.releaseUrgencyBadgeCritical },
+  warning: { label: 'Warning', cssClass: styles.releaseUrgencyBadgeWarning },
+  upcoming: { label: 'Upcoming', cssClass: styles.releaseUrgencyBadgeUpcoming },
+  'no-date': { label: 'No Date', cssClass: styles.releaseUrgencyBadgeNoDate },
+};
+
+/** Renders the Releases tab with urgency badges, mini progress bars, and expandable issue detail rows. */
 function ReleasesPanel({ teams }: TeamsPanelProps) {
   const releaseVersions = groupIssuesByFixVersion(teams);
+  // Tracks which version rows are currently expanded — uses version name as key.
+  const [expandedVersionNames, setExpandedVersionNames] = useState<Set<string>>(new Set());
+
+  function toggleVersionExpanded(versionName: string): void {
+    setExpandedVersionNames((previousSet) => {
+      const updatedSet = new Set(previousSet);
+      if (updatedSet.has(versionName)) {
+        updatedSet.delete(versionName);
+      } else {
+        updatedSet.add(versionName);
+      }
+      return updatedSet;
+    });
+  }
 
   return (
     <div className={styles.panel}>
@@ -959,21 +1217,93 @@ function ReleasesPanel({ teams }: TeamsPanelProps) {
             <tr>
               <th scope="col">Fix Version</th>
               <th scope="col">Release Date</th>
-              <th scope="col">Status</th>
+              <th scope="col">Urgency</th>
+              <th scope="col">Progress</th>
               <th scope="col">Done / Total</th>
               <th scope="col">Teams</th>
+              <th scope="col" aria-label="Expand / Collapse" />
             </tr>
           </thead>
           <tbody>
-            {releaseVersions.map((releaseVersion) => (
-              <tr key={releaseVersion.versionName}>
-                <td>{releaseVersion.versionName}</td>
-                <td>{releaseVersion.releaseDate ?? '—'}</td>
-                <td>{releaseVersion.isReleased ? '✅ Released' : '🔜 Upcoming'}</td>
-                <td>{releaseVersion.doneCount} / {releaseVersion.totalIssueCount}</td>
-                <td>{releaseVersion.teamNames.join(', ')}</td>
-              </tr>
-            ))}
+            {releaseVersions.map((releaseVersion) => {
+              const isExpanded = expandedVersionNames.has(releaseVersion.versionName);
+              const urgencyConfig = RELEASE_URGENCY_CONFIG[releaseVersion.urgency];
+              const completionPercent = releaseVersion.totalIssueCount > 0
+                ? Math.round((releaseVersion.doneCount / releaseVersion.totalIssueCount) * 100)
+                : 0;
+
+              return (
+                <Fragment key={releaseVersion.versionName}>
+                  <tr>
+                    <td>{releaseVersion.versionName}</td>
+                    <td>{releaseVersion.releaseDate ?? '—'}</td>
+                    <td>
+                      <span className={`${styles.releaseUrgencyBadge} ${urgencyConfig.cssClass}`}>
+                        {urgencyConfig.label}
+                      </span>
+                    </td>
+                    <td>
+                      {/* Accessible progress bar; aria-valuenow drives automated tests as well as assistive technology. */}
+                      <div
+                        className={styles.releaseProgressTrack}
+                        role="progressbar"
+                        aria-valuenow={completionPercent}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-label={`${releaseVersion.versionName} completion: ${completionPercent}%`}
+                      >
+                        <div
+                          className={styles.releaseProgressFill}
+                          style={{ width: `${completionPercent}%` }}
+                        />
+                      </div>
+                    </td>
+                    <td>{releaseVersion.doneCount} / {releaseVersion.totalIssueCount}</td>
+                    <td>{releaseVersion.teamNames.join(', ')}</td>
+                    <td>
+                      <button
+                        className={styles.expandToggleButton}
+                        onClick={() => toggleVersionExpanded(releaseVersion.versionName)}
+                        aria-expanded={isExpanded}
+                        aria-label={`${isExpanded ? 'Collapse' : 'Expand'} issues for ${releaseVersion.versionName}`}
+                        type="button"
+                      >
+                        {isExpanded ? '▲' : '▼'}
+                      </button>
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr>
+                      <td colSpan={7} className={styles.releaseExpandedRow}>
+                        <table className={styles.releaseIssueTable}>
+                          <thead>
+                            <tr>
+                              <th scope="col">Key</th>
+                              <th scope="col">Summary</th>
+                              <th scope="col">Status</th>
+                              <th scope="col">Team</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {releaseVersion.issues.map((issueSummary) => (
+                              <tr
+                                key={issueSummary.key}
+                                className={issueSummary.isDone ? styles.releaseIssueRowDone : ''}
+                              >
+                                <td className={styles.releaseIssueKeyCell}>{issueSummary.key}</td>
+                                <td>{issueSummary.summary}</td>
+                                <td>{issueSummary.statusName}</td>
+                                <td>{issueSummary.teamName}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -1223,10 +1553,49 @@ interface SosTeamNarrativeProps {
   team: ArtTeam;
   /** The date string (YYYY-MM-DD) for which to load and save the narrative. */
   selectedDateString: string;
+  /** Optional Jira issue key to enable the "Post to Jira" sync feature. */
+  sosIssueKey?: string;
+}
+
+// ── SoS Jira sync helpers ──
+
+/** Shape of the sync record stored in localStorage for a given team+date. */
+interface SosSyncRecord {
+  /** ISO timestamp of the last successful Jira post. */
+  postedAt: string;
+}
+
+/** Returns the localStorage key for a team+date sync record. */
+function buildSosSyncStorageKey(teamId: string, dateString: string): string {
+  return `tbxSosSyncRecord-${teamId}-${dateString}`;
+}
+
+/** Reads the sync record from localStorage, returning null if absent or invalid. */
+function readSosSyncRecord(teamId: string, dateString: string): SosSyncRecord | null {
+  try {
+    const stored = localStorage.getItem(buildSosSyncStorageKey(teamId, dateString));
+    if (!stored) return null;
+    return JSON.parse(stored) as SosSyncRecord;
+  } catch {
+    return null;
+  }
+}
+
+/** Persists the sync record to localStorage. */
+function writeSosSyncRecord(teamId: string, dateString: string, record: SosSyncRecord): void {
+  localStorage.setItem(buildSosSyncStorageKey(teamId, dateString), JSON.stringify(record));
+}
+
+/** Formats the narrative fields as a Jira wiki-markup comment body. */
+function buildSosJiraCommentBody(narrative: SosNarrativeData, teamName: string, dateString: string): string {
+  const fieldLines = SOS_NARRATIVE_FIELDS.map(
+    (fieldName) => `*${SOS_NARRATIVE_FIELD_LABELS[fieldName]}:* ${narrative[fieldName] || '_None_'}`,
+  ).join('\n');
+  return `h3. SoS Update — ${teamName} — ${dateString}\n\n${fieldLines}`;
 }
 
 /** Renders the 5 narrative textarea fields for a single team's SoS accordion section. */
-function SosTeamNarrative({ team, selectedDateString }: SosTeamNarrativeProps) {
+function SosTeamNarrative({ team, selectedDateString, sosIssueKey }: SosTeamNarrativeProps) {
   const storedNarrative = readStoredSosNarrative(team.id, selectedDateString);
 
   // Load settings for stale-day threshold
@@ -1242,6 +1611,13 @@ function SosTeamNarrative({ team, selectedDateString }: SosTeamNarrativeProps) {
   const [narrativeData, setNarrativeData] = useState<SosNarrativeData>(
     storedNarrative ?? { ...autoNarrative, editedAt: {} },
   );
+
+  // Sync state: initialized from localStorage so "Synced" survives a page refresh.
+  const [syncRecord, setSyncRecord] = useState<SosSyncRecord | null>(() =>
+    sosIssueKey ? readSosSyncRecord(team.id, selectedDateString) : null,
+  );
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   function handleFieldChange(fieldName: SosNarrativeField, newValue: string) {
     const updatedData: SosNarrativeData = {
@@ -1263,6 +1639,24 @@ function SosTeamNarrative({ team, selectedDateString }: SosTeamNarrativeProps) {
     };
     setNarrativeData(updatedData);
     storeSosNarrative(team.id, selectedDateString, updatedData);
+  }
+
+  async function handlePostToJira() {
+    if (!sosIssueKey) return;
+    setIsSyncing(true);
+    setSyncError(null);
+    try {
+      const commentBody = buildSosJiraCommentBody(narrativeData, team.name, selectedDateString);
+      await jiraPost(`/rest/api/2/issue/${sosIssueKey}/comment`, { body: commentBody });
+      const newRecord: SosSyncRecord = { postedAt: new Date().toISOString() };
+      writeSosSyncRecord(team.id, selectedDateString, newRecord);
+      setSyncRecord(newRecord);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to post to Jira';
+      setSyncError(message);
+    } finally {
+      setIsSyncing(false);
+    }
   }
 
   return (
@@ -1298,6 +1692,25 @@ function SosTeamNarrative({ team, selectedDateString }: SosTeamNarrativeProps) {
           </div>
         );
       })}
+
+      {/* Jira sync footer — only shown when a sosIssueKey is configured for this team */}
+      {sosIssueKey && (
+        <div className={styles.sosSyncFooter}>
+          <span className={styles.sosSyncState}>
+            {syncRecord
+              ? `✅ Synced · ${new Date(syncRecord.postedAt).toLocaleTimeString()}`
+              : '🔵 Local only'}
+          </span>
+          <button
+            className={styles.secondaryBtn}
+            onClick={() => void handlePostToJira()}
+            disabled={isSyncing}
+          >
+            {isSyncing ? 'Posting…' : 'Post to Jira'}
+          </button>
+          {syncError && <span className={styles.sosSyncError}>{syncError}</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -1440,6 +1853,15 @@ function SosPanel({ teams, sosExpandedTeams, onToggleSosTeam }: SosPanelProps) {
               aria-expanded={isExpanded}
             >
               {team.name}
+              {/* Jira SoS issue badge — shows the linked issue key when configured */}
+              {team.sosIssueKey && (
+                <span
+                  className={styles.sosJiraKeyBadge}
+                  title="Jira SoS Issue"
+                >
+                  {team.sosIssueKey}
+                </span>
+              )}
               {/* Per-team stats badge so facilitators see at-a-glance health without expanding */}
               <span className={styles.sosAccordionStats}>
                 {teamTotalIssues} issues · {teamDoneCount}/{teamTotalIssues} done
@@ -1476,6 +1898,7 @@ function SosPanel({ teams, sosExpandedTeams, onToggleSosTeam }: SosPanelProps) {
                   key={`${team.id}-${selectedDateString}`}
                   team={team}
                   selectedDateString={selectedDateString}
+                  sosIssueKey={team.sosIssueKey}
                 />
               </div>
             )}
