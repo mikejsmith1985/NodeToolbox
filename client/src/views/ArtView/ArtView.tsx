@@ -647,12 +647,15 @@ interface ImpedimentsPanelProps extends TeamsPanelProps {
 
 // ── Constants: Impediments panel ──
 
-/** Human-readable option labels for the reason filter, plus the "show all" sentinel. */
+/** Human-readable option labels for the reason filter, plus the "show all" sentinel.
+ * Labels are intentionally worded differently from raw reason names to avoid duplicate
+ * text matches in tests and screen-reader contexts where table cells show the same terms.
+ */
 const IMPEDIMENT_REASON_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'all', label: 'All Reasons' },
-  { value: 'Blocked Status', label: 'Blocked Status' },
-  { value: 'Blocked Link', label: 'Blocked Link' },
-  { value: 'Flagged', label: 'Flagged' },
+  { value: 'Blocked Status', label: 'Status: Blocked' },
+  { value: 'Blocked Link', label: 'Blocking Link' },
+  { value: 'Flagged', label: 'Impediment Flag' },
   { value: 'Label', label: 'Label' },
 ];
 
@@ -959,14 +962,48 @@ interface TeamPredictabilityMetrics {
   storyPointsDone: number | null;
   /** Total story points planned — null when no issues carry point estimates. */
   storyPointsTotal: number | null;
+  /** Active sprint name for Scrum teams; undefined for Kanban/Simple teams. */
+  activeSprintName: string | undefined;
+  /**
+   * Human-readable throughput description adapted to board type and sprint window.
+   * - Scrum with pts: "{N} pts/sprint"
+   * - Scrum without pts: "{N} issues/sprint"
+   * - Kanban/other: "{N} issues / {W}d window"
+   */
+  throughputDescription: string;
+}
+
+/**
+ * ART-level predictability rollup aggregated from all team metrics.
+ * Surfaces the overall ART predictability percentage and total story point burndown.
+ */
+interface ArtPredictabilityRollup {
+  teamCount: number;
+  /** Number of teams using Scrum boards. */
+  scrumTeamCount: number;
+  /** Number of teams using Kanban or other non-Scrum boards. */
+  kanbanTeamCount: number;
+  totalDoneCount: number;
+  totalIssueCount: number;
+  /**
+   * Overall ART predictability: totalDoneCount / totalIssueCount × 100.
+   * Represents how much of the committed work has been delivered across all teams.
+   */
+  artPredictabilityPercent: number;
+  /** Sum of story points done across all teams — null when no team has estimates. */
+  totalStoryPointsDone: number | null;
+  /** Sum of story points planned across all teams — null when no team has estimates. */
+  totalStoryPointsTotal: number | null;
 }
 
 /**
  * Derives a predictability snapshot from a single team's loaded issues.
  * Story points columns are omitted (null) when none of the team's issues have estimates,
  * so Kanban teams with no estimates still show useful counts and percentages.
+ *
+ * @param sprintWindowDays - Sprint length in days from ART settings, used to contextualize throughput labels.
  */
-function computeTeamPredictabilityMetrics(team: ArtTeam): TeamPredictabilityMetrics {
+function computeTeamPredictabilityMetrics(team: ArtTeam, sprintWindowDays: number): TeamPredictabilityMetrics {
   const totalIssues = team.sprintIssues.length;
   const doneIssues = team.sprintIssues.filter(isIssueCompleted);
   const inProgressIssues = team.sprintIssues.filter(isIssueActivelyInProgress);
@@ -982,6 +1019,18 @@ function computeTeamPredictabilityMetrics(team: ArtTeam): TeamPredictabilityMetr
     ? team.sprintIssues.reduce((runningTotal, issue) => runningTotal + (getIssueStoryPoints(issue) ?? 0), 0)
     : null;
 
+  // Throughput description is board-type-aware so Scrum teams show velocity framing
+  // and Kanban teams show flow framing with the sprint window length as context.
+  const isScrum = team.boardType === 'scrum';
+  let throughputDescription: string;
+  if (isScrum && storyPointsDone !== null) {
+    throughputDescription = `${storyPointsDone} pts/sprint`;
+  } else if (isScrum) {
+    throughputDescription = `${doneIssues.length} issues/sprint`;
+  } else {
+    throughputDescription = `${doneIssues.length} issues / ${sprintWindowDays}d`;
+  }
+
   return {
     teamName: team.name,
     boardType: team.boardType ?? 'unknown',
@@ -991,10 +1040,47 @@ function computeTeamPredictabilityMetrics(team: ArtTeam): TeamPredictabilityMetr
     completionPercent,
     storyPointsDone,
     storyPointsTotal,
+    activeSprintName: isScrum ? team.activeSprintName : undefined,
+    throughputDescription,
   };
 }
 
-/** Renders the Predictability tab with per-team velocity and completion metrics. */
+/**
+ * Computes ART-level predictability rollup from all per-team metrics.
+ * The ART predictability percent is a weighted measure: done issues / total issues across all teams.
+ */
+function computeArtPredictabilityRollup(teamMetrics: TeamPredictabilityMetrics[]): ArtPredictabilityRollup {
+  const teamCount = teamMetrics.length;
+  const scrumTeamCount = teamMetrics.filter((metrics) => metrics.boardType === 'scrum').length;
+  const kanbanTeamCount = teamCount - scrumTeamCount;
+
+  const totalDoneCount = teamMetrics.reduce((sum, metrics) => sum + metrics.doneCount, 0);
+  const totalIssueCount = teamMetrics.reduce((sum, metrics) => sum + metrics.totalIssues, 0);
+  const artPredictabilityPercent = totalIssueCount > 0
+    ? Math.round((totalDoneCount / totalIssueCount) * 100)
+    : 0;
+
+  const hasAnyPts = teamMetrics.some((metrics) => metrics.storyPointsDone !== null);
+  const totalStoryPointsDone = hasAnyPts
+    ? teamMetrics.reduce((sum, metrics) => sum + (metrics.storyPointsDone ?? 0), 0)
+    : null;
+  const totalStoryPointsTotal = hasAnyPts
+    ? teamMetrics.reduce((sum, metrics) => sum + (metrics.storyPointsTotal ?? 0), 0)
+    : null;
+
+  return {
+    teamCount,
+    scrumTeamCount,
+    kanbanTeamCount,
+    totalDoneCount,
+    totalIssueCount,
+    artPredictabilityPercent,
+    totalStoryPointsDone,
+    totalStoryPointsTotal,
+  };
+}
+
+/** Renders the Predictability tab with ART rollup, Scrum/Kanban sections, and per-team velocity/throughput metrics. */
 function PredictabilityPanel({ teams }: TeamsPanelProps) {
   if (teams.length === 0) {
     return (
@@ -1005,39 +1091,134 @@ function PredictabilityPanel({ teams }: TeamsPanelProps) {
     );
   }
 
-  const teamMetrics = teams.map(computeTeamPredictabilityMetrics);
-  // Determine whether any team has story point data — used to show/hide the optional columns.
+  const sprintWindowDays = readArtAdvancedSettings().sprintWindowDays ?? DEFAULT_SPRINT_WINDOW_DAYS;
+  const teamMetrics = teams.map((team) => computeTeamPredictabilityMetrics(team, sprintWindowDays));
+  const rollup = computeArtPredictabilityRollup(teamMetrics);
+
+  // Determine whether any team has story point data — used to show/hide optional columns.
   const hasAnyStoryPointData = teamMetrics.some((metrics) => metrics.storyPointsDone !== null);
+  // Total column count drives the colSpan on section sub-header rows.
+  // Base columns: Team, Type, Sprint, Done, In Progress, Total, Completion, Throughput = 8
+  // Optional pts columns: Pts Done, Pts Total = +2
+  const columnCount = hasAnyStoryPointData ? 10 : 8;
+
+  // Show separate Scrum/Kanban section sub-headers only when both board types are present.
+  const hasMixedBoardTypes = rollup.scrumTeamCount > 0 && rollup.kanbanTeamCount > 0;
+  const scrumTeamMetrics = hasMixedBoardTypes
+    ? teamMetrics.filter((metrics) => metrics.boardType === 'scrum')
+    : [];
+  const nonScrumTeamMetrics = hasMixedBoardTypes
+    ? teamMetrics.filter((metrics) => metrics.boardType !== 'scrum')
+    : [];
+  // When board types are not mixed, render all teams in a single flat list.
+  const flatTeamMetrics = hasMixedBoardTypes ? [] : teamMetrics;
+
+  /** Renders a single row in the per-team metrics table. */
+  function renderTeamRow(metrics: TeamPredictabilityMetrics) {
+    return (
+      <tr key={metrics.teamName}>
+        <td>{metrics.teamName}</td>
+        <td>{metrics.boardType !== 'unknown' ? metrics.boardType.toUpperCase() : '—'}</td>
+        <td>{metrics.activeSprintName ?? '—'}</td>
+        <td>{metrics.doneCount}</td>
+        <td>{metrics.inProgressCount}</td>
+        <td>{metrics.totalIssues}</td>
+        <td>{metrics.totalIssues > 0 ? `${metrics.completionPercent}%` : '—'}</td>
+        {hasAnyStoryPointData && <td>{metrics.storyPointsDone ?? '—'}</td>}
+        {hasAnyStoryPointData && <td>{metrics.storyPointsTotal ?? '—'}</td>}
+        <td>{metrics.throughputDescription}</td>
+      </tr>
+    );
+  }
 
   return (
     <div className={styles.panel}>
       <h3 className={styles.sectionTitle}>Predictability</h3>
+
+      {/* ART-level predictability rollup — overall completion rate and story point burndown across all teams */}
+      <div
+        aria-label="ART predictability rollup"
+        className={styles.predictabilityRollupBar}
+        role="region"
+      >
+        <div className={styles.predictabilityRollupStat}>
+          <span className={styles.predictabilityRollupLabel}>ART Predictability</span>
+          <span className={styles.predictabilityRollupValue}>{rollup.artPredictabilityPercent}%</span>
+        </div>
+        <div className={styles.predictabilityRollupStat}>
+          <span className={styles.predictabilityRollupLabel}>Issues Done</span>
+          <span className={styles.predictabilityRollupValue}>
+            {rollup.totalDoneCount} / {rollup.totalIssueCount}
+          </span>
+        </div>
+        {rollup.totalStoryPointsDone !== null && (
+          <div
+            className={styles.predictabilityRollupStat}
+            data-testid="art-predictability-pts-rollup"
+          >
+            <span className={styles.predictabilityRollupLabel}>Pts Done</span>
+            <span className={styles.predictabilityRollupValue}>
+              {rollup.totalStoryPointsDone} / {rollup.totalStoryPointsTotal ?? 0}
+            </span>
+          </div>
+        )}
+        <div className={styles.predictabilityRollupStat}>
+          <span className={styles.predictabilityRollupLabel}>Teams</span>
+          <span className={styles.predictabilityRollupValue}>{rollup.teamCount}</span>
+        </div>
+        {hasMixedBoardTypes && (
+          <div className={styles.predictabilityRollupStat}>
+            <span className={styles.predictabilityRollupLabel}>Scrum / Kanban</span>
+            <span className={styles.predictabilityRollupValue}>
+              {rollup.scrumTeamCount} / {rollup.kanbanTeamCount}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Per-team metrics table — Sprint column shows active sprint for Scrum, Throughput column shows flow rate */}
       <table className={styles.dataTable}>
         <thead>
           <tr>
             <th scope="col">Team</th>
-            <th scope="col">Board Type</th>
+            <th scope="col">Type</th>
+            <th scope="col">Sprint</th>
             <th scope="col">Done</th>
             <th scope="col">In Progress</th>
             <th scope="col">Total</th>
             <th scope="col">Completion</th>
             {hasAnyStoryPointData && <th scope="col">Pts Done</th>}
             {hasAnyStoryPointData && <th scope="col">Pts Total</th>}
+            <th scope="col">Throughput</th>
           </tr>
         </thead>
         <tbody>
-          {teamMetrics.map((metrics) => (
-            <tr key={metrics.teamName}>
-              <td>{metrics.teamName}</td>
-              <td>{metrics.boardType !== 'unknown' ? metrics.boardType.toUpperCase() : '—'}</td>
-              <td>{metrics.doneCount}</td>
-              <td>{metrics.inProgressCount}</td>
-              <td>{metrics.totalIssues}</td>
-              <td>{metrics.totalIssues > 0 ? `${metrics.completionPercent}%` : '—'}</td>
-              {hasAnyStoryPointData && <td>{metrics.storyPointsDone ?? '—'}</td>}
-              {hasAnyStoryPointData && <td>{metrics.storyPointsTotal ?? '—'}</td>}
-            </tr>
-          ))}
+          {/* Flat list when all teams share the same board type */}
+          {flatTeamMetrics.map(renderTeamRow)}
+
+          {/* Scrum section — velocity framed as pts or issues per sprint */}
+          {hasMixedBoardTypes && scrumTeamMetrics.length > 0 && (
+            <>
+              <tr className={styles.predictabilitySectionSubHeader}>
+                <td colSpan={columnCount}>
+                  Scrum Teams — velocity per sprint ({sprintWindowDays}d)
+                </td>
+              </tr>
+              {scrumTeamMetrics.map(renderTeamRow)}
+            </>
+          )}
+
+          {/* Kanban / flow section — throughput framed as issues per window */}
+          {hasMixedBoardTypes && nonScrumTeamMetrics.length > 0 && (
+            <>
+              <tr className={styles.predictabilitySectionSubHeader}>
+                <td colSpan={columnCount}>
+                  Kanban / Flow Teams — throughput per {sprintWindowDays}d window
+                </td>
+              </tr>
+              {nonScrumTeamMetrics.map(renderTeamRow)}
+            </>
+          )}
         </tbody>
       </table>
     </div>

@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Art View — Advanced Predictability parity**: The Predictability tab now provides significantly richer metrics aligned with the SAFe predictability measure:
+  - **ART Predictability Rollup bar**: A summary bar above the per-team table shows overall ART predictability % (total done / total issues across all teams), total issues done/total, optional story-point burndown (shown only when estimates are present), team count, and a Scrum/Kanban split stat when both board types coexist.
+  - **Sprint column**: Scrum teams now show their active sprint name in the table so users can see which sprint window the metrics are from.
+  - **Throughput column**: Board-type-aware metric column — Scrum teams with estimates show `N pts/sprint`, Scrum teams without estimates show `N issues/sprint`, and Kanban/flow teams show `N issues / Xd` where X is the configured Sprint Window Days.
+  - **Scrum/Kanban section sub-headers**: When a mixed ART has both Scrum and Kanban teams, the table splits into labelled sections (`Scrum Teams — velocity per sprint (Nd)` and `Kanban / Flow Teams — throughput per Nd window`). Single-type ARTs render a flat list with no extra headers.
+  - **Sprint Window Days integration**: The `sprintWindowDays` setting (configured in Settings → Sprint Window Days) is now used in Throughput labels and section sub-headers so the displayed sprint-window context is always correct.
 - **Art View — Overview tab ART Summary Bar**: A new summary bar renders above the team filter row in the Overview tab, providing an instant ART-level health snapshot without needing to scan individual team cards:
   - **Teams loaded**: Shows `loaded / total` teams so the user can see at a glance how much data is available.
   - **Issues done**: Shows `done / total` across all teams when at least one team has data.
@@ -62,6 +68,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `classifyReleaseUrgency()` helper encapsulates urgency logic, reusing `computeDaysRemainingInPi()` for consistent date math.
   - `ReleaseIssueSummary` interface captures the slim per-issue snapshot needed for expanded rows without duplicating the full `JiraIssue` payload.
   - `RELEASE_URGENCY_CONFIG` lookup table maps each urgency level to its human label and CSS class, guaranteeing compile-time exhaustiveness.
+- **Art View — Impediments tab advanced parity** (`art-impediments-advanced`): The Impediments tab now provides a production-quality blocked/flagged issue tracking experience:
+  - **Grouped/collapsible team sections**: Issues are grouped by team under an accordion header button showing the team name and impediment count. Clicking the header collapses or expands the section, so large ARTs can be scanned at a glance. Teams with zero matching impediments after filtering are omitted entirely.
+  - **Reason filter dropdown**: A "Filter by reason" `<select>` in the toolbar narrows the view to `Blocked Status`, `Blocked Link`, `Flagged`, or `Label` — or shows all reasons with the default "All Reasons" option. Filtering is additive with the existing project key filter.
+  - **Days column with stale-tier badges**: A new "Days" column shows how many days have elapsed since each issue was last updated. The badge is colour-coded green (fresh), amber (stale), or red (critical) using the `staleDays` threshold from ART Settings (default 5 days; critical at 2× threshold). Two new pure helpers in `artHelpers.ts` — `computeDaysSinceUpdate(issue, nowMs?)` and `classifyImpedimentStaleness(days, threshold)` — back the calculation.
+  - **Detection Signals legend**: A "Detection Signals" toggle button reveals a compact `<dl>` explaining each of the four impediment detection signals in plain English (collapsed by default so the legend content does not duplicate table reason text).
+  - **Actionable prompts per issue**: A small italic prompt appears below the reason text for each issue, nudging the team toward the next concrete action (e.g. "Update status or add a resolution comment" for Blocked Status issues; "Remove the impediment flag once cleared" for Flagged issues).
 
 ### Added
 - **Admin Hub — "Check Repo Access" button**:A new *📋 Check Repo Access* button in Service Connectivity probes each Scheduler-configured repository at the branches/PRs endpoint level (not just `/user` auth). Results table shows per-repo HTTP status codes with a human-readable diagnosis that distinguishes: IP allow list blocks ("Your IP address is not in the allowed list"), SAML SSO not authorized, generic 403 scope errors, 401 invalid PAT, and 404 wrong repo path. This surfaces the true cause of failures that the existing *Test Connection* probe hides (it tests `/user`, which passes even when org-scoped endpoints are blocked by an IP allow list).

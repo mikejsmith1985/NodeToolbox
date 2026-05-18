@@ -1,4 +1,4 @@
-// ArtView.test.tsx — Unit tests for the ART View tabbed component (7 original + 2 new tabs + PI header + SoS drawer).
+// ArtView.test.tsx — Unit tests for the ART View tabbed component (7 original + 2 new tabs + PI header + SoS drawer + Jira sync).
 
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -6,8 +6,10 @@ import type { ArtTab, ArtTeam } from './hooks/useArtData.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import { ToastProvider } from '../../components/Toast/ToastProvider.tsx';
 
-const { mockJiraGet } = vi.hoisted(() => ({
+const { mockJiraGet, mockJiraPost } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
+  // Hoisted so tests can assert on calls to the Jira comment post endpoint.
+  mockJiraPost: vi.fn(),
 }));
 
 const { mockState, mockActions } = vi.hoisted(() => ({
@@ -64,7 +66,7 @@ vi.mock('./hooks/useArtData.ts', () => ({
 
 vi.mock('../../services/jiraApi.ts', () => ({
   jiraGet: mockJiraGet,
-  jiraPost: vi.fn(),
+  jiraPost: mockJiraPost,
   jiraPut: vi.fn(),
 }));
 
@@ -1151,8 +1153,8 @@ describe('ArtView', () => {
       },
     ];
     renderArtView();
-    // 1 done out of 2 total = 50%
-    expect(screen.getByText('50%')).toBeInTheDocument();
+    // 1 done out of 2 total = 50% (shown in both rollup bar and table row; check at least one appears)
+    expect(screen.getAllByText('50%').length).toBeGreaterThanOrEqual(1);
     mockState.activeTab = 'overview';
     mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
   });
@@ -1196,6 +1198,230 @@ describe('ArtView', () => {
     mockState.teams = [];
     renderArtView();
     expect(screen.getByText(/no teams loaded/i)).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  // ── art-predictability-advanced: ART rollup, Scrum/Kanban sections, sprint name, throughput ──
+
+  it('shows ART predictability rollup region in the Predictability tab', () => {
+    mockState.activeTab = 'predictability';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'scrum' as const,
+        sprintIssues: [
+          {
+            id: 'TBX-P1', key: 'TBX-P1',
+            fields: {
+              summary: 'Done issue',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // The rollup summary bar should be visible
+    expect(screen.getByRole('region', { name: /art predictability rollup/i })).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows ART overall predictability percentage in the Predictability tab rollup', () => {
+    mockState.activeTab = 'predictability';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'scrum' as const,
+        sprintIssues: [
+          {
+            id: 'TBX-P2', key: 'TBX-P2',
+            fields: {
+              summary: 'Done',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+          {
+            id: 'TBX-P3', key: 'TBX-P3',
+            fields: {
+              summary: 'Not done',
+              status: { name: 'To Do', statusCategory: { key: 'new' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // 1 done out of 2 total = 50% ART predictability
+    const rollupBar = screen.getByRole('region', { name: /art predictability rollup/i });
+    expect(within(rollupBar).getByText('50%')).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows story points in the ART predictability rollup when estimates are present', () => {
+    mockState.activeTab = 'predictability';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'scrum' as const,
+        sprintIssues: [
+          {
+            id: 'TBX-P4', key: 'TBX-P4',
+            fields: {
+              summary: 'Done with pts',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              customfield_10016: 13,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // ART rollup should show total points done
+    expect(screen.getByTestId('art-predictability-pts-rollup')).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows active sprint name for Scrum teams in the Predictability tab', () => {
+    mockState.activeTab = 'predictability';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'scrum' as const,
+        activeSprintName: 'Sprint 12',
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // Sprint column should show the active sprint name for Scrum teams
+    expect(screen.getByText('Sprint 12')).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows throughput column in the Predictability tab for Kanban teams', () => {
+    mockState.activeTab = 'predictability';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Kanban Team',
+        boardId: '77',
+        boardType: 'kanban' as const,
+        sprintIssues: [
+          {
+            id: 'TBX-KAN-1', key: 'TBX-KAN-1',
+            fields: {
+              summary: 'Done kanban issue',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // Throughput column header should appear
+    expect(screen.getByRole('columnheader', { name: /throughput/i })).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows separate Scrum and Kanban section sub-headers when both board types exist', () => {
+    mockState.activeTab = 'predictability';
+    mockState.teams = [
+      {
+        id: 'team-scrum',
+        name: 'Scrum Team',
+        boardId: '10',
+        boardType: 'scrum' as const,
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+      {
+        id: 'team-kanban',
+        name: 'Kanban Team',
+        boardId: '20',
+        boardType: 'kanban' as const,
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // Both section sub-headers should be visible
+    expect(screen.getByText(/scrum teams/i)).toBeInTheDocument();
+    // Use specific "flow teams" wording to avoid matching the rollup label "Scrum / Kanban"
+    expect(screen.getByText(/kanban \/ flow teams/i)).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('does not show section sub-headers when all teams are the same board type', () => {
+    mockState.activeTab = 'predictability';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Scrum A',
+        boardId: '10',
+        boardType: 'scrum' as const,
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+      {
+        id: 'team-2',
+        name: 'Scrum B',
+        boardId: '11',
+        boardType: 'scrum' as const,
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // No section sub-headers when all teams share the same board type
+    expect(screen.queryByText(/scrum teams/i)).not.toBeInTheDocument();
     mockState.activeTab = 'overview';
     mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
   });
@@ -1617,6 +1843,809 @@ describe('ArtView', () => {
     expect(screen.getByTestId('pi-days-remaining')).toHaveTextContent(/overdue/i);
 
     localStorage.removeItem('tbxARTSettings');
+  });
+
+  // ── art-impediments-advanced: reason filter dropdown ──
+
+  it('renders a reason filter dropdown in the Impediments toolbar', () => {
+    mockState.activeTab = 'impediments';
+    renderArtView();
+    expect(screen.getByRole('combobox', { name: /filter by reason/i })).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows "All Reasons" as the default option in the reason filter', () => {
+    mockState.activeTab = 'impediments';
+    renderArtView();
+    expect(screen.getByRole('combobox', { name: /filter by reason/i })).toHaveValue('all');
+    mockState.activeTab = 'overview';
+  });
+
+  it('hides a Flagged-only issue when reason filter is set to "Blocked Status"', () => {
+    mockState.activeTab = 'impediments';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-40', key: 'ALPHA-40',
+            fields: {
+              summary: 'Flagged only issue',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              customfield_10021: true,
+            },
+          },
+          {
+            id: 'ALPHA-41', key: 'ALPHA-41',
+            fields: {
+              summary: 'Status blocked issue',
+              status: { name: 'Blocked', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+
+    fireEvent.change(screen.getByRole('combobox', { name: /filter by reason/i }), {
+      target: { value: 'Blocked Status' },
+    });
+
+    // Only the status-blocked issue should be visible; the flagged-only one is filtered out.
+    expect(screen.getByText('ALPHA-41')).toBeInTheDocument();
+    expect(screen.queryByText('ALPHA-40')).not.toBeInTheDocument();
+
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows all impediment issues again when reason filter is reset to "all"', () => {
+    mockState.activeTab = 'impediments';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-42', key: 'ALPHA-42',
+            fields: {
+              summary: 'Flagged issue',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              customfield_10021: true,
+            },
+          },
+          {
+            id: 'ALPHA-43', key: 'ALPHA-43',
+            fields: {
+              summary: 'Blocked issue',
+              status: { name: 'Blocked', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+
+    const reasonFilter = screen.getByRole('combobox', { name: /filter by reason/i });
+    fireEvent.change(reasonFilter, { target: { value: 'Flagged' } });
+    fireEvent.change(reasonFilter, { target: { value: 'all' } });
+
+    // Both issues should be visible after resetting the filter.
+    expect(screen.getByText('ALPHA-42')).toBeInTheDocument();
+    expect(screen.getByText('ALPHA-43')).toBeInTheDocument();
+
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  // ── art-impediments-advanced: grouped/collapsible team sections ──
+
+  it('shows a collapsible team section header button for each team with impediments', () => {
+    mockState.activeTab = 'impediments';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-50', key: 'ALPHA-50',
+            fields: {
+              summary: 'Blocked story',
+              status: { name: 'Blocked', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // The team section header should appear as a button containing the team name.
+    expect(screen.getByRole('button', { name: /alpha team/i })).toBeInTheDocument();
+
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  it('hides issue rows when a team section header is clicked to collapse it', () => {
+    mockState.activeTab = 'impediments';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-51', key: 'ALPHA-51',
+            fields: {
+              summary: 'Visible blocked story',
+              status: { name: 'Blocked', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+
+    // Issue should be visible initially (team section expanded by default).
+    expect(screen.getByText('ALPHA-51')).toBeInTheDocument();
+
+    // Click the team header to collapse the section.
+    fireEvent.click(screen.getByRole('button', { name: /alpha team/i }));
+
+    // The issue row should no longer be visible.
+    expect(screen.queryByText('ALPHA-51')).not.toBeInTheDocument();
+
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  it('does not show a team section for teams with no impediments', () => {
+    mockState.activeTab = 'impediments';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        // No impediments — clean sprint
+        sprintIssues: [
+          {
+            id: 'ALPHA-52', key: 'ALPHA-52',
+            fields: {
+              summary: 'Normal in-progress story',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+
+    // No team section header button should appear since there are no impediments.
+    expect(screen.queryByRole('button', { name: /alpha team/i })).not.toBeInTheDocument();
+
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  // ── art-impediments-advanced: Days column with stale tier ──
+
+  it('shows a Days column header in the Impediments table', () => {
+    mockState.activeTab = 'impediments';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-55', key: 'ALPHA-55',
+            fields: {
+              summary: 'Blocked story',
+              status: { name: 'Blocked', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByRole('columnheader', { name: /days/i })).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows a stale tier badge when an impediment issue has a very old updated date', () => {
+    mockState.activeTab = 'impediments';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-56', key: 'ALPHA-56',
+            fields: {
+              summary: 'Ancient blocked story',
+              status: { name: 'Blocked', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2020-01-01T00:00:00.000Z',
+              // Very old date guarantees critical tier regardless of configured threshold
+              updated: '2020-01-01T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // The stale tier badge should indicate "critical" staleness for a very old impediment.
+    expect(screen.getByTestId('impediment-stale-badge-ALPHA-56')).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  // ── art-impediments-advanced: detection legend ──
+
+  it('renders the impediment detection legend section in the Impediments panel', () => {
+    mockState.activeTab = 'impediments';
+    renderArtView();
+    // The legend toggle button should always be visible even when the legend body is collapsed.
+    expect(screen.getByRole('button', { name: /detection signals/i })).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows all four detection signal descriptions when the legend is opened', () => {
+    mockState.activeTab = 'impediments';
+    // Use default teams with no impediments so the legend is the only source of reason text.
+    renderArtView();
+
+    // The legend starts collapsed; click to open it before asserting on content.
+    fireEvent.click(screen.getByRole('button', { name: /detection signals/i }));
+
+    expect(screen.getByText(/blocked status/i)).toBeInTheDocument();
+    expect(screen.getByText(/blocked link/i)).toBeInTheDocument();
+    expect(screen.getByText(/flagged/i)).toBeInTheDocument();
+    // "Label" appears as both a table column header and legend term when issues exist,
+    // but with no impediment issues in mock state there is only the legend term.
+    expect(screen.getAllByText(/label/i).length).toBeGreaterThanOrEqual(1);
+    mockState.activeTab = 'overview';
+  });
+
+  // ── art-impediments-advanced: actionable prompts ──
+
+  it('shows an actionable prompt for a Flagged impediment', () => {
+    mockState.activeTab = 'impediments';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-60', key: 'ALPHA-60',
+            fields: {
+              summary: 'Flagged impediment story',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              customfield_10021: true,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // Actionable prompt for "Flagged" reason should be visible in the row.
+    expect(screen.getByTestId('impediment-prompt-ALPHA-60')).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows a "Blocked Status" actionable prompt for a status-blocked impediment', () => {
+    mockState.activeTab = 'impediments';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-61', key: 'ALPHA-61',
+            fields: {
+              summary: 'Status blocked story',
+              status: { name: 'Blocked', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByTestId('impediment-prompt-ALPHA-61')).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  // ── SoS parity: Jira-backed sync ──
+
+  it('shows the sosIssueKey badge in the SoS accordion header when a team has a sosIssueKey configured', () => {
+    mockState.activeTab = 'sos';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sosIssueKey: 'ALPHA-SOS-1',
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText('ALPHA-SOS-1')).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  it('does not show a sosIssueKey badge in the SoS accordion header when no sosIssueKey is configured', () => {
+    mockState.activeTab = 'sos';
+    // Default beforeEach team has no sosIssueKey set
+    renderArtView();
+    expect(screen.queryByTitle(/jira sos issue/i)).not.toBeInTheDocument();
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows a Post to Jira button in an expanded SoS accordion section when sosIssueKey is set', () => {
+    mockState.activeTab = 'sos';
+    mockState.sosExpandedTeams = ['team-1'];
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sosIssueKey: 'ALPHA-SOS-1',
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByRole('button', { name: /post to jira/i })).toBeInTheDocument();
+    mockState.sosExpandedTeams = [];
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  it('does not show Post to Jira button in an expanded SoS accordion when sosIssueKey is absent', () => {
+    mockState.activeTab = 'sos';
+    mockState.sosExpandedTeams = ['team-1'];
+    // Default team has no sosIssueKey
+    renderArtView();
+    expect(screen.queryByRole('button', { name: /post to jira/i })).not.toBeInTheDocument();
+    mockState.sosExpandedTeams = [];
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows Local only sync state when sosIssueKey is configured but no Jira comment has been posted yet', () => {
+    mockState.activeTab = 'sos';
+    mockState.sosExpandedTeams = ['team-1'];
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sosIssueKey: 'ALPHA-SOS-1',
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText(/local only/i)).toBeInTheDocument();
+    mockState.sosExpandedTeams = [];
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  it('calls jiraPost with the correct path and comment body when Post to Jira is clicked', async () => {
+    mockJiraPost.mockResolvedValue({});
+    mockState.activeTab = 'sos';
+    mockState.sosExpandedTeams = ['team-1'];
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sosIssueKey: 'ALPHA-SOS-1',
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    fireEvent.click(screen.getByRole('button', { name: /post to jira/i }));
+    await screen.findByText(/synced/i);
+    expect(mockJiraPost).toHaveBeenCalledWith(
+      '/rest/api/2/issue/ALPHA-SOS-1/comment',
+      expect.objectContaining({ body: expect.stringContaining('SoS Update') }),
+    );
+    mockJiraPost.mockReset();
+    mockState.sosExpandedTeams = [];
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows a Synced indicator after a successful Post to Jira', async () => {
+    mockJiraPost.mockResolvedValue({});
+    mockState.activeTab = 'sos';
+    mockState.sosExpandedTeams = ['team-1'];
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sosIssueKey: 'ALPHA-SOS-1',
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    fireEvent.click(screen.getByRole('button', { name: /post to jira/i }));
+    expect(await screen.findByText(/synced/i)).toBeInTheDocument();
+    mockJiraPost.mockReset();
+    mockState.sosExpandedTeams = [];
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows a sync error message when the Post to Jira call fails', async () => {
+    mockJiraPost.mockRejectedValue(new Error('Jira unavailable'));
+    mockState.activeTab = 'sos';
+    mockState.sosExpandedTeams = ['team-1'];
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sosIssueKey: 'ALPHA-SOS-1',
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    fireEvent.click(screen.getByRole('button', { name: /post to jira/i }));
+    expect(await screen.findByText(/jira unavailable/i)).toBeInTheDocument();
+    mockJiraPost.mockReset();
+    mockState.sosExpandedTeams = [];
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  // ── art-releases-advanced: urgency badges, progress bars, expandable issue lists ──
+
+  it('shows an "Overdue" urgency badge in the Releases tab when a fix version date has passed', () => {
+    mockState.activeTab = 'releases';
+    mockState.teams = [
+      {
+        id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-70', key: 'ALPHA-70',
+            fields: {
+              summary: 'Overdue story',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              // A date far in the past guarantees "Overdue" regardless of when the test runs.
+              fixVersions: [{ name: 'v1.0-old', releaseDate: '2020-01-01', released: false }],
+            },
+          },
+        ],
+        isLoading: false, loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText('Overdue')).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows a "Released" urgency badge for an already-released fix version', () => {
+    mockState.activeTab = 'releases';
+    mockState.teams = [
+      {
+        id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-71', key: 'ALPHA-71',
+            fields: {
+              summary: 'Released story',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              fixVersions: [{ name: 'v1.0-done', releaseDate: '2025-01-01', released: true }],
+            },
+          },
+        ],
+        isLoading: false, loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText('Released')).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows a "No Date" urgency badge for a fix version with no release date', () => {
+    mockState.activeTab = 'releases';
+    mockState.teams = [
+      {
+        id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-72', key: 'ALPHA-72',
+            fields: {
+              summary: 'Undated story',
+              status: { name: 'To Do', statusCategory: { key: 'new' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              // No releaseDate field — should classify as "No Date"
+              fixVersions: [{ name: 'vTBD', released: false }],
+            },
+          },
+        ],
+        isLoading: false, loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText('No Date')).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows a progress bar for each release version in the Releases tab', () => {
+    mockState.activeTab = 'releases';
+    mockState.teams = [
+      {
+        id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-73', key: 'ALPHA-73',
+            fields: {
+              summary: 'Done feature',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              fixVersions: [{ name: 'v5.0', released: false }],
+            },
+          },
+        ],
+        isLoading: false, loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('sets the correct aria-valuenow on the progress bar based on done/total ratio', () => {
+    mockState.activeTab = 'releases';
+    mockState.teams = [
+      {
+        id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-74', key: 'ALPHA-74',
+            fields: {
+              summary: 'Done story',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              fixVersions: [{ name: 'v5.1', released: false }],
+            },
+          },
+          {
+            id: 'ALPHA-75', key: 'ALPHA-75',
+            fields: {
+              summary: 'In progress story',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              fixVersions: [{ name: 'v5.1', released: false }],
+            },
+          },
+        ],
+        isLoading: false, loadError: null,
+      },
+    ];
+    renderArtView();
+    // 1 done out of 2 total = 50%
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50');
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('expands the issue list when the release version expand button is clicked', () => {
+    mockState.activeTab = 'releases';
+    mockState.teams = [
+      {
+        id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-80', key: 'ALPHA-80',
+            fields: {
+              summary: 'Feature to expand',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              fixVersions: [{ name: 'v6.0', released: false }],
+            },
+          },
+        ],
+        isLoading: false, loadError: null,
+      },
+    ];
+    renderArtView();
+    // Issue key must NOT be visible before expanding
+    expect(screen.queryByText('ALPHA-80')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /expand issues for v6\.0/i }));
+    // Issue key and summary must appear after expanding
+    expect(screen.getByText('ALPHA-80')).toBeInTheDocument();
+    expect(screen.getByText('Feature to expand')).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('collapses the issue list when the expand button is clicked a second time', () => {
+    mockState.activeTab = 'releases';
+    mockState.teams = [
+      {
+        id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-81', key: 'ALPHA-81',
+            fields: {
+              summary: 'Collapsible feature',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              fixVersions: [{ name: 'v7.0', released: false }],
+            },
+          },
+        ],
+        isLoading: false, loadError: null,
+      },
+    ];
+    renderArtView();
+    // Expand
+    fireEvent.click(screen.getByRole('button', { name: /expand issues for v7\.0/i }));
+    expect(screen.getByText('ALPHA-81')).toBeInTheDocument();
+    // Collapse — after expand the button label flips to "Collapse…"
+    fireEvent.click(screen.getByRole('button', { name: /collapse issues for v7\.0/i }));
+    expect(screen.queryByText('ALPHA-81')).not.toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows the issue status in the expanded release issue list', () => {
+    mockState.activeTab = 'releases';
+    mockState.teams = [
+      {
+        id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-82', key: 'ALPHA-82',
+            fields: {
+              summary: 'Status check story',
+              status: { name: 'In Review', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              fixVersions: [{ name: 'v8.0', released: false }],
+            },
+          },
+        ],
+        isLoading: false, loadError: null,
+      },
+    ];
+    renderArtView();
+    fireEvent.click(screen.getByRole('button', { name: /expand issues for v8\.0/i }));
+    expect(screen.getByText('In Review')).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
   });
 });
 
