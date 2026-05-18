@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Error feedback**: If the post fails, an inline error message is shown below the button.
 
 ### Fixed
+- **DSU Board — issue-link and comment previews now tolerate Jira payloads with partial link/comment metadata**: the client build and overlay rendering no longer assume every linked issue and comment includes fully-populated type, summary, status, author, and created fields.
 - **Art View — shared Jira typing now covers PI, impediment, dependency, and release metadata used by the parity views**: the client build no longer fails when Art View tests and release/reason logic reference Jira fields such as alternate story points, flagged state, labels, issue links, parent keys, comments, and fix-version release dates.
 - **Release pipeline — fresh-clone releases now install client dependencies before building the React app**: `scripts/local-release.ps1` no longer relies on an already-populated `client/node_modules` folder, so re-running a release from a clean clone now succeeds through the React build step.
 - **Art View — Jira board selection metadata now stays accurate when boards reload or the picker falls back to manual entry**: project-filtered board loads no longer leave the picker stuck in a stale loading/error state, and manual board-ID entry now clears any previously selected board metadata instead of preserving the wrong board name.
