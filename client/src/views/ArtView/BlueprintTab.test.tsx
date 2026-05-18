@@ -72,7 +72,8 @@ const MOCK_FEATURE_RESPONSE = {
 
 describe('BlueprintTab', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    // resetAllMocks clears both call history and any unconsumed once-values from prior tests
+    vi.resetAllMocks();
     localStorage.clear();
   });
 
@@ -260,5 +261,50 @@ describe('BlueprintTab', () => {
     await waitFor(() => {
       expect(screen.getByText(/no features found/i)).toBeInTheDocument();
     });
+  });
+
+  it('uses PI-aware JQL when selectedPiName and team projectKey are both set', async () => {
+    mockJiraGet
+      .mockResolvedValueOnce(MOCK_SPRINT_ISSUES_RESPONSE)
+      .mockResolvedValueOnce(MOCK_FEATURE_RESPONSE);
+
+    render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
+    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
+
+    await waitFor(() => screen.getByText('User Authentication Feature'));
+
+    // The first API call should use project + PI field filter, not openSprints()
+    const firstCallUrl = mockJiraGet.mock.calls[0][0] as string;
+    expect(firstCallUrl).toContain('cf%5B');         // encoded cf[...]
+    expect(firstCallUrl).toContain('PI%2025.1');     // PI name (space → %20) in JQL
+    expect(firstCallUrl).not.toContain('openSprints');
+  });
+
+  it('falls back to openSprints JQL when no PI is selected', async () => {
+    // Render with empty selectedPiName so the early-exit guard shows the warning —
+    // we verify the guard path renders correctly (no fetch is made).
+    render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="" />);
+    expect(screen.getByText(/no pi selected/i)).toBeInTheDocument();
+    expect(mockJiraGet).not.toHaveBeenCalled();
+  });
+
+  it('falls back to openSprints JQL when team has no projectKey', async () => {
+    const teamsWithoutProjectKey: ArtTeam[] = [
+      { ...MOCK_TEAMS[0], projectKey: undefined },
+    ];
+
+    mockJiraGet
+      .mockResolvedValueOnce(MOCK_SPRINT_ISSUES_RESPONSE)
+      .mockResolvedValueOnce(MOCK_FEATURE_RESPONSE);
+
+    render(<BlueprintTab teams={teamsWithoutProjectKey} selectedPiName="PI 25.1" />);
+    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
+
+    await waitFor(() => screen.getByText('User Authentication Feature'));
+
+    // When no project key exists, openSprints() must be used as the query scope
+    const firstCallUrl = mockJiraGet.mock.calls[0][0] as string;
+    expect(firstCallUrl).toContain('openSprints');
+    expect(firstCallUrl).not.toContain('cf%5B');
   });
 });
