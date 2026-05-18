@@ -12,6 +12,8 @@ import BlueprintTab from './BlueprintTab.tsx';
 import DependenciesTab from './DependenciesTab.tsx';
 import type { ArtTab, ArtTeam, ArtBoardPrepIssue, PiProgressStats } from './hooks/useArtData.ts';
 import { useArtData } from './hooks/useArtData.ts';
+import type { ImpedimentReason } from './hooks/artHelpers.ts';
+import { detectImpedimentReasons, isImpediment } from './hooks/artHelpers.ts';
 import styles from './ArtView.module.css';
 
 // ── Constants ──
@@ -405,65 +407,6 @@ function TeamCard({ selectedPiName, team, onLoad }: TeamCardProps) {
 
 interface TeamsPanelProps {
   teams: ArtTeam[];
-}
-
-// ── Impediments helpers ──
-
-/**
- * Human-readable reason labels that explain why an issue was classified as an impediment.
- * Multiple reasons may apply to a single issue.
- */
-type ImpedimentReason = 'Blocked Status' | 'Blocked Link' | 'Flagged' | 'Label';
-
-/**
- * Returns all detected reasons why a Jira issue is an impediment.
- * Checks four independent signals so that issues flagged in any way surface here.
- */
-function detectImpedimentReasons(issue: JiraIssue): ImpedimentReason[] {
-  const reasons: ImpedimentReason[] = [];
-
-  // 1. Status name explicitly contains "block" (e.g. "Blocked", "Blocking", "Blocked – Waiting")
-  if (issue.fields.status.name.toLowerCase().includes('block')) {
-    reasons.push('Blocked Status');
-  }
-
-  // 2. At least one issue link is a "is blocked by" or "blocks" relationship with an open inward issue.
-  //    We check both inward and outward link types so the detection works regardless of direction stored.
-  const hasBlockedByLink = (issue.fields.issuelinks ?? []).some((link) => {
-    const inwardName = link.type?.inward?.toLowerCase() ?? '';
-    const outwardName = link.type?.outward?.toLowerCase() ?? '';
-    // Only count the link as a blocker when the linked inward issue is still open (not resolved)
-    const linkedInwardIssueIsOpen =
-      link.inwardIssue !== undefined &&
-      link.inwardIssue.fields?.status?.name?.toLowerCase() !== 'done' &&
-      link.inwardIssue.fields?.status?.name?.toLowerCase() !== 'resolved' &&
-      link.inwardIssue.fields?.status?.name?.toLowerCase() !== 'closed';
-    return (inwardName.includes('block') || outwardName.includes('block')) && linkedInwardIssueIsOpen;
-  });
-  if (hasBlockedByLink) {
-    reasons.push('Blocked Link');
-  }
-
-  // 3. Jira "flagged" custom field (customfield_10021) — set by the Jira impediment flag button.
-  if (issue.fields.customfield_10021) {
-    reasons.push('Flagged');
-  }
-
-  // 4. Issue label explicitly marks the item as blocked or an impediment.
-  const labels = issue.fields.labels ?? [];
-  const hasBlockedLabel = labels.some(
-    (label) => label.toLowerCase() === 'blocked' || label.toLowerCase() === 'impediment',
-  );
-  if (hasBlockedLabel) {
-    reasons.push('Label');
-  }
-
-  return reasons;
-}
-
-/** Returns true when an issue is an impediment by any detection signal. */
-function isImpediment(issue: JiraIssue): boolean {
-  return detectImpedimentReasons(issue).length > 0;
 }
 
 // ── Impediments panel ──
@@ -966,9 +909,12 @@ function buildSosNarrativeStorageKey(teamId: string, dateString: string): string
   return `tbxSosNarrative_${teamId}_${dateString}`;
 }
 
-/** Returns today's date as YYYY-MM-DD. */
-function getTodayDateString(): string {
-  return new Date().toISOString().slice(0, 10);
+/** Formats a Date using local calendar values so storage keys match the user's timezone. */
+function formatLocalDateString(date: Date): string {
+  const yearNumber = date.getFullYear();
+  const monthNumber = String(date.getMonth() + 1).padStart(2, '0');
+  const dayNumber = String(date.getDate()).padStart(2, '0');
+  return `${yearNumber}-${monthNumber}-${dayNumber}`;
 }
 
 /** The 5 SoS narrative field names aligned with the legacy Toolbox app. */
@@ -1135,7 +1081,7 @@ function generateSosDateOptions(): { value: string; label: string }[] {
   const now = new Date();
   for (let dayOffset = 0; dayOffset < 14; dayOffset++) {
     const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOffset);
-    const value = date.toISOString().slice(0, 10);
+    const value = formatLocalDateString(date);
     const label =
       dayOffset === 0
         ? `Today (${value})`
@@ -1299,7 +1245,11 @@ function SosPanel({ teams, sosExpandedTeams, onToggleSosTeam }: SosPanelProps) {
                 )}
 
                 {/* Editable SoS narrative fields — auto-generated, manually overridable */}
-                <SosTeamNarrative team={team} selectedDateString={selectedDateString} />
+                <SosTeamNarrative
+                  key={`${team.id}-${selectedDateString}`}
+                  team={team}
+                  selectedDateString={selectedDateString}
+                />
               </div>
             )}
           </div>
