@@ -484,6 +484,65 @@
 }
 
 
+/* ── Predictability Panel: ART rollup bar and section sub-headers ── */
+
+/**
+ * Summary bar above the per-team table showing ART-wide predictability,
+ * total issues done, and optional story point burndown.
+ */
+.predictabilityRollupBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  align-items: stretch;
+}
+
+/** One stat cell inside the predictability rollup bar — label above, value below. */
+.predictabilityRollupStat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-right: 1px solid var(--color-border);
+  min-width: 90px;
+}
+
+.predictabilityRollupStat:last-child {
+  border-right: none;
+}
+
+.predictabilityRollupLabel {
+  font-size: 0.68rem;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.predictabilityRollupValue {
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+/**
+ * Section sub-header row inside the per-team table tbody,
+ * used to visually separate Scrum teams from Kanban / Flow teams.
+ */
+.predictabilitySectionSubHeader td {
+  background: var(--color-surface-2);
+  font-weight: bold;
+  font-size: 0.73rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-top: 2px solid var(--color-border);
+}
 
 .depMapSvg {
   display: block;
