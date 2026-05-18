@@ -422,6 +422,135 @@ describe('ArtView', () => {
     mockState.sosExpandedTeams = [];
   });
 
+  // ── SoS parity: richer impediment detection ──
+
+  it('counts a flagged issue (customfield_10021) in the SoS Pulse impediment count', () => {
+    mockState.activeTab = 'sos';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-30', key: 'ALPHA-30',
+            fields: {
+              // Summary does NOT contain "block" — only the flag field triggers impediment detection
+              summary: 'Flagged task no block keyword',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              customfield_10021: true,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // Pulse should show 1 impediment because the flagged field triggers detection
+    expect(screen.getByText(/1 impediment/i)).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows a label-blocked issue in the SoS accordion impediment list', () => {
+    mockState.activeTab = 'sos';
+    mockState.sosExpandedTeams = ['team-1'];
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-31', key: 'ALPHA-31',
+            fields: {
+              summary: 'Label only impediment',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              labels: ['blocked'],
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // The issue should appear in the accordion's impediment list
+    expect(screen.getAllByText(/label only impediment/i).length).toBeGreaterThanOrEqual(1);
+    mockState.sosExpandedTeams = [];
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  // ── SoS parity: date picker ──
+
+  it('renders a date selector in the SoS panel', () => {
+    mockState.activeTab = 'sos';
+    renderArtView();
+    expect(screen.getByRole('combobox', { name: /select sos date/i })).toBeInTheDocument();
+  });
+
+  // ── SoS parity: copy SoS report ──
+
+  it('renders a Copy SoS Report button in the SoS panel', () => {
+    mockState.activeTab = 'sos';
+    renderArtView();
+    expect(screen.getByRole('button', { name: /copy sos report/i })).toBeInTheDocument();
+  });
+
+  // ── SoS parity: per-team completion badge in accordion header ──
+
+  it('shows per-team issue count in the SoS accordion header', () => {
+    mockState.activeTab = 'sos';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-32', key: 'ALPHA-32',
+            fields: {
+              summary: 'Some task',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+          {
+            id: 'ALPHA-33', key: 'ALPHA-33',
+            fields: {
+              summary: 'Another task',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // The accordion header button should display "2 issues" or similar completion info
+    expect(screen.getByText(/2 issues/i)).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
   // ── Feature: Monthly Report ──
 
   it('shows the Monthly Report tab with a month selector', () => {
@@ -435,6 +564,59 @@ describe('ArtView', () => {
     renderArtView();
     expect(screen.getByRole('button', { name: /copy all/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /export html/i })).toBeInTheDocument();
+  });
+
+  // ── Monthly Report parity: pillar filter ──
+
+  it('renders a pillar filter dropdown in the Monthly Report toolbar', () => {
+    mockState.activeTab = 'monthly';
+    renderArtView();
+    expect(screen.getByRole('combobox', { name: /filter by pillar/i })).toBeInTheDocument();
+  });
+
+  it('hides a card when the selected pillar does not match it', () => {
+    mockState.activeTab = 'monthly';
+    // Pre-seed localStorage so the Alpha Team card has a pillar of 'Growth'
+    const yearMonth = new Date().toISOString().slice(0, 7);
+    localStorage.setItem(
+      `tbxMonthlyReport_team-1_${yearMonth}`,
+      JSON.stringify({ teamId: 'team-1', teamName: 'Alpha Team', accomplished: '', outcomes: '', risks: '', stakeholders: '', pillar: 'Growth' }),
+    );
+    mockState.teams = [
+      { id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null },
+      { id: 'team-2', name: 'Beta Team', boardId: '43', projectKey: '', sprintIssues: [], isLoading: false, loadError: null },
+    ];
+    renderArtView();
+    const pillarFilter = screen.getByRole('combobox', { name: /filter by pillar/i });
+    fireEvent.change(pillarFilter, { target: { value: 'Affordability' } });
+    // Alpha Team's card has Growth pillar, not Affordability — the card editor should be hidden.
+    // We check for the pillar select's aria-label which is unique to the card (not the filter dropdowns).
+    expect(screen.queryByRole('combobox', { name: /pillar for alpha team/i })).not.toBeInTheDocument();
+    localStorage.removeItem(`tbxMonthlyReport_team-1_${yearMonth}`);
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  // ── Monthly Report parity: draft indicator ──
+
+  it('shows a draft indicator on a Monthly Report card that has content', () => {
+    mockState.activeTab = 'monthly';
+    const yearMonth = new Date().toISOString().slice(0, 7);
+    localStorage.setItem(
+      `tbxMonthlyReport_team-1_${yearMonth}`,
+      JSON.stringify({ teamId: 'team-1', teamName: 'Alpha Team', accomplished: 'Shipped feature X', outcomes: '', risks: '', stakeholders: '', pillar: '' }),
+    );
+    renderArtView();
+    // A visual draft indicator (e.g. "Draft" text or checkmark) should be present
+    expect(screen.getByTitle(/draft/i)).toBeInTheDocument();
+    localStorage.removeItem(`tbxMonthlyReport_team-1_${yearMonth}`);
+  });
+
+  // ── Monthly Report parity: export text ──
+
+  it('renders an Export Text button in the Monthly Report toolbar', () => {
+    mockState.activeTab = 'monthly';
+    renderArtView();
+    expect(screen.getByRole('button', { name: /export text/i })).toBeInTheDocument();
   });
 
   // ── Feature: Advanced ART Settings ──
@@ -476,6 +658,46 @@ describe('ArtView', () => {
     expect(screen.getByText('Transformers Board')).toBeInTheDocument();
     expect(screen.queryByText('Board 42')).not.toBeInTheDocument();
     mockState.activeTab = 'overview';
+  });
+
+  // ── Feature: handlePiFieldChange only reloads PI options when field ID is complete ──
+
+  it('does not call loadPiOptions when PI field input has partial text in fallback path', async () => {
+    // Make the Jira fields API fail so JiraFieldPicker renders the fallback text input
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/field') return Promise.reject(new Error('Jira unavailable'));
+      return Promise.resolve({ values: [] });
+    });
+
+    mockState.activeTab = 'settings';
+    renderArtView();
+
+    // Wait for the fallback input to appear after the fields API fails
+    const piInput = await screen.findByRole('textbox', { name: /pi field/i });
+
+    // Type a partial (incomplete) custom field ID — no reload should fire
+    fireEvent.change(piInput, { target: { value: 'customfield_' } });
+    expect(mockActions.loadPiOptions).not.toHaveBeenCalled();
+
+    fireEvent.change(piInput, { target: { value: 'customfield_103' } });
+    expect(mockActions.loadPiOptions).not.toHaveBeenCalled();
+  });
+
+  it('calls loadPiOptions when PI field is set to a complete custom field ID in fallback path', async () => {
+    // Make the Jira fields API fail so JiraFieldPicker renders the fallback text input
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/field') return Promise.reject(new Error('Jira unavailable'));
+      return Promise.resolve({ values: [] });
+    });
+
+    mockState.activeTab = 'settings';
+    renderArtView();
+
+    const piInput = await screen.findByRole('textbox', { name: /pi field/i });
+
+    // A fully-formed field ID must trigger the reload exactly once
+    fireEvent.change(piInput, { target: { value: 'customfield_10301' } });
+    expect(mockActions.loadPiOptions).toHaveBeenCalledTimes(1);
   });
 
   // ── Overview parity: board type badge ──
@@ -658,6 +880,418 @@ describe('ArtView', () => {
     ];
     renderArtView();
     expect(screen.getByText(/1 stale/i)).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  // ── Risk/Forecast: Impediments parity ──
+
+  it('shows a flagged issue (customfield_10021) in the Impediments tab even without "block" in status', () => {
+    mockState.activeTab = 'impediments';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-10', key: 'ALPHA-10',
+            fields: {
+              summary: 'Flagged story without block status',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              customfield_10021: true,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText('ALPHA-10')).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows a blocked-link issue in the Impediments tab when an "is blocked by" link is present', () => {
+    mockState.activeTab = 'impediments';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-11', key: 'ALPHA-11',
+            fields: {
+              summary: 'Story with blocked-by link',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              issuelinks: [
+                {
+                  type: { name: 'Blocks', inward: 'is blocked by', outward: 'blocks' },
+                  inwardIssue: { key: 'OTHER-1', fields: { summary: 'Blocking issue', status: { name: 'In Progress' } } },
+                },
+              ],
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText('ALPHA-11')).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows a label-blocked issue in the Impediments tab when labels include "blocked"', () => {
+    mockState.activeTab = 'impediments';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-12', key: 'ALPHA-12',
+            fields: {
+              summary: 'Story labelled as blocked',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              labels: ['blocked', 'needs-review'],
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText('ALPHA-12')).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows a Reason column in the Impediments table', () => {
+    mockState.activeTab = 'impediments';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-7', key: 'ALPHA-7',
+            fields: {
+              summary: 'Blocked release task',
+              status: { name: 'Blocked', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByRole('columnheader', { name: /reason/i })).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows "Blocked Status" reason label for a status-blocked issue in the Impediments tab', () => {
+    mockState.activeTab = 'impediments';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-7', key: 'ALPHA-7',
+            fields: {
+              summary: 'Blocked release task',
+              status: { name: 'Blocked', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText(/blocked status/i)).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+    mockState.activeTab = 'overview';
+  });
+
+  // ── Risk/Forecast: Predictability parity ──
+
+  it('shows the Predictability tab with a per-team metrics table', () => {
+    mockState.activeTab = 'predictability';
+    renderArtView();
+    expect(screen.getByRole('columnheader', { name: /team/i })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /done/i })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /total/i })).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows completion percentage per team in the Predictability tab', () => {
+    mockState.activeTab = 'predictability';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'scrum' as const,
+        sprintIssues: [
+          {
+            id: 'TBX-1', key: 'TBX-1',
+            fields: {
+              summary: 'Done story',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+          {
+            id: 'TBX-2', key: 'TBX-2',
+            fields: {
+              summary: 'In progress story',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // 1 done out of 2 total = 50%
+    expect(screen.getByText('50%')).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows story points done when issues have story point estimates in Predictability tab', () => {
+    mockState.activeTab = 'predictability';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'scrum' as const,
+        sprintIssues: [
+          {
+            id: 'TBX-1', key: 'TBX-1',
+            fields: {
+              summary: 'Done story with points',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              customfield_10016: 5,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // Should show story points column header and at least one value of "5" (done = 5, total = 5)
+    expect(screen.getByRole('columnheader', { name: /pts done/i })).toBeInTheDocument();
+    expect(screen.getAllByText('5').length).toBeGreaterThanOrEqual(1);
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows "No teams loaded" empty state in Predictability tab when teams array is empty', () => {
+    mockState.activeTab = 'predictability';
+    mockState.teams = [];
+    renderArtView();
+    expect(screen.getByText(/no teams loaded/i)).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  // ── Risk/Forecast: Releases parity ──
+
+  it('shows fix version name in the Releases tab when issues have fixVersions', () => {
+    mockState.activeTab = 'releases';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-20', key: 'ALPHA-20',
+            fields: {
+              summary: 'Feature for v2.0',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              fixVersions: [{ name: 'v2.0', releaseDate: '2025-06-01', released: false }],
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText('v2.0')).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows release date in the Releases tab when available', () => {
+    mockState.activeTab = 'releases';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-21', key: 'ALPHA-21',
+            fields: {
+              summary: 'Release story',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              fixVersions: [{ name: 'v2.1', releaseDate: '2025-07-15', released: false }],
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText('2025-07-15')).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows done and total issue counts per fix version in the Releases tab', () => {
+    mockState.activeTab = 'releases';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-22', key: 'ALPHA-22',
+            fields: {
+              summary: 'Done story',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              fixVersions: [{ name: 'v3.0', released: false }],
+            },
+          },
+          {
+            id: 'ALPHA-23', key: 'ALPHA-23',
+            fields: {
+              summary: 'In progress story',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              fixVersions: [{ name: 'v3.0', released: false }],
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // 1 done, 2 total → "1 / 2"
+    expect(screen.getByText('1 / 2')).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows an empty state message in Releases tab when no issues have fix versions', () => {
+    mockState.activeTab = 'releases';
+    renderArtView();
+    expect(screen.getByText(/no release data found/i)).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows team name in Releases tab for a fix version', () => {
+    mockState.activeTab = 'releases';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        sprintIssues: [
+          {
+            id: 'ALPHA-24', key: 'ALPHA-24',
+            fields: {
+              summary: 'Feature',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+              fixVersions: [{ name: 'v4.0', released: false }],
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText('Alpha Team')).toBeInTheDocument();
+    mockState.activeTab = 'overview';
     mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
   });
 });
