@@ -47,12 +47,14 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     setSelectedPiName: vi.fn(),
     addTeam: vi.fn(),
     removeTeam: vi.fn(),
+    saveTeams: vi.fn(),
     loadAllTeams: vi.fn().mockResolvedValue(undefined),
     loadTeam: vi.fn().mockResolvedValue(undefined),
     loadPiOptions: vi.fn().mockResolvedValue(undefined),
     toggleSosTeam: vi.fn(),
     loadBoardPrep: vi.fn().mockResolvedValue(undefined),
     setBoardPrepTeamFilter: vi.fn(),
+    updateTeamSosKey: vi.fn(),
   },
 }));
 
@@ -74,6 +76,15 @@ function renderArtView() {
       <ArtView />
     </ToastProvider>,
   );
+}
+
+function createLocalYearMonth(): string {
+  const currentDate = new Date();
+  return `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function createLocalDateString(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 describe('ArtView', () => {
@@ -499,6 +510,50 @@ describe('ArtView', () => {
     expect(screen.getByRole('combobox', { name: /select sos date/i })).toBeInTheDocument();
   });
 
+  it('reloads the stored SoS narrative when the selected SoS date changes', () => {
+    mockState.activeTab = 'sos';
+    mockState.sosExpandedTeams = ['team-1'];
+    const currentDate = new Date();
+    const todayDateString = createLocalDateString(currentDate);
+    const previousDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() - 1);
+    const previousDateString = createLocalDateString(previousDate);
+    localStorage.setItem(
+      `tbxSosNarrative_team-1_${todayDateString}`,
+      JSON.stringify({
+        yesterday: 'Yesterday update',
+        today: 'Today update',
+        blockers: 'None',
+        risks: 'None',
+        dependencies: 'None',
+        editedAt: {},
+      }),
+    );
+    localStorage.setItem(
+      `tbxSosNarrative_team-1_${previousDateString}`,
+      JSON.stringify({
+        yesterday: 'Previous day update',
+        today: 'Previous day plan',
+        blockers: 'Waiting',
+        risks: 'Low',
+        dependencies: 'Platform',
+        editedAt: {},
+      }),
+    );
+
+    renderArtView();
+
+    fireEvent.change(screen.getByRole('combobox', { name: /select sos date/i }), {
+      target: { value: previousDateString },
+    });
+
+    expect(screen.getByRole('textbox', { name: /yesterday narrative for alpha team/i })).toHaveValue('Previous day update');
+    expect(screen.getByRole('textbox', { name: /today narrative for alpha team/i })).toHaveValue('Previous day plan');
+
+    localStorage.removeItem(`tbxSosNarrative_team-1_${todayDateString}`);
+    localStorage.removeItem(`tbxSosNarrative_team-1_${previousDateString}`);
+    mockState.sosExpandedTeams = [];
+  });
+
   // ── SoS parity: copy SoS report ──
 
   it('renders a Copy SoS Report button in the SoS panel', () => {
@@ -577,7 +632,7 @@ describe('ArtView', () => {
   it('hides a card when the selected pillar does not match it', () => {
     mockState.activeTab = 'monthly';
     // Pre-seed localStorage so the Alpha Team card has a pillar of 'Growth'
-    const yearMonth = new Date().toISOString().slice(0, 7);
+    const yearMonth = createLocalYearMonth();
     localStorage.setItem(
       `tbxMonthlyReport_team-1_${yearMonth}`,
       JSON.stringify({ teamId: 'team-1', teamName: 'Alpha Team', accomplished: '', outcomes: '', risks: '', stakeholders: '', pillar: 'Growth' }),
@@ -600,7 +655,7 @@ describe('ArtView', () => {
 
   it('shows a draft indicator on a Monthly Report card that has content', () => {
     mockState.activeTab = 'monthly';
-    const yearMonth = new Date().toISOString().slice(0, 7);
+    const yearMonth = createLocalYearMonth();
     localStorage.setItem(
       `tbxMonthlyReport_team-1_${yearMonth}`,
       JSON.stringify({ teamId: 'team-1', teamName: 'Alpha Team', accomplished: 'Shipped feature X', outcomes: '', risks: '', stakeholders: '', pillar: '' }),
@@ -1293,6 +1348,86 @@ describe('ArtView', () => {
     expect(screen.getByText('Alpha Team')).toBeInTheDocument();
     mockState.activeTab = 'overview';
     mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  // ── Settings parity: missing settings fields ──
+
+  it('shows PI End Date input in Settings tab', () => {
+    mockState.activeTab = 'settings';
+    renderArtView();
+    expect(screen.getByRole('textbox', { name: /pi end date/i })).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows Sprint Window Days input in Settings tab', () => {
+    mockState.activeTab = 'settings';
+    renderArtView();
+    expect(screen.getByRole('spinbutton', { name: /sprint window days/i })).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows Story Points Auto-detect checkbox in Settings tab', () => {
+    mockState.activeTab = 'settings';
+    renderArtView();
+    expect(screen.getByRole('checkbox', { name: /auto-detect story points/i })).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows P-Code Field picker in Settings tab', () => {
+    mockState.activeTab = 'settings';
+    renderArtView();
+    expect(screen.getByRole('combobox', { name: /p-code field/i })).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+  });
+
+  it('shows SoS Issue Key input per team in Settings team list', () => {
+    mockState.activeTab = 'settings';
+    renderArtView();
+    // The per-team SoS Issue Key input for "Alpha Team" should be present
+    expect(screen.getByRole('textbox', { name: /sos issue key for alpha team/i })).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+  });
+
+  it('calls updateTeamSosKey when a team SoS Issue Key input changes', () => {
+    mockState.activeTab = 'settings';
+    renderArtView();
+    fireEvent.change(screen.getByRole('textbox', { name: /sos issue key for alpha team/i }), {
+      target: { value: 'ALPHA-SOS' },
+    });
+    expect(mockActions.updateTeamSosKey).toHaveBeenCalledWith('team-1', 'ALPHA-SOS');
+    mockState.activeTab = 'overview';
+  });
+
+  it('persists PI End Date to localStorage when the input value changes', () => {
+    mockState.activeTab = 'settings';
+    localStorage.removeItem('tbxARTSettings');
+    renderArtView();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /pi end date/i }), {
+      target: { value: '2025-09-30' },
+    });
+
+    const stored = JSON.parse(localStorage.getItem('tbxARTSettings') ?? '{}') as { piEndDate?: string };
+    expect(stored.piEndDate).toBe('2025-09-30');
+
+    localStorage.removeItem('tbxARTSettings');
+    mockState.activeTab = 'overview';
+  });
+
+  it('persists Sprint Window Days to localStorage when the input value changes', () => {
+    mockState.activeTab = 'settings';
+    localStorage.removeItem('tbxARTSettings');
+    renderArtView();
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: /sprint window days/i }), {
+      target: { value: '10' },
+    });
+
+    const stored = JSON.parse(localStorage.getItem('tbxARTSettings') ?? '{}') as { sprintWindowDays?: number };
+    expect(stored.sprintWindowDays).toBe(10);
+
+    localStorage.removeItem('tbxARTSettings');
+    mockState.activeTab = 'overview';
   });
 });
 

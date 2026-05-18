@@ -129,6 +129,7 @@ export default function ArtView() {
             onReloadPiOptions={actions.loadPiOptions}
             onRemoveTeam={actions.removeTeam}
             onSaveTeams={actions.saveTeams}
+            onUpdateTeamSosKey={actions.updateTeamSosKey}
           />
         )}
       </div>
@@ -1623,10 +1624,12 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
 
 interface SettingsPanelProps {
   teams: ArtTeam[];
-  onAddTeam: (name: string, boardId: string, projectKey?: string, boardName?: string) => void;
+  onAddTeam: (name: string, boardId: string, projectKey?: string, boardName?: string, sosIssueKey?: string) => void;
   onReloadPiOptions: () => Promise<void>;
   onRemoveTeam: (teamId: string) => void;
   onSaveTeams: () => void;
+  /** Updates the SoS Jira issue key for a specific team without requiring a full Save Teams. */
+  onUpdateTeamSosKey: (teamId: string, sosIssueKey: string) => void;
 }
 
 /** Shape of the ART advanced settings object stored under 'tbxARTSettings' in localStorage. */
@@ -1635,7 +1638,15 @@ interface ArtAdvancedSettings {
   spFieldId?: string;
   isSpAutoDetect?: boolean;
   featureLinkField?: string;
+  pCodeField?: string;
   staleDays?: number;
+  /** ISO date string (YYYY-MM-DD) for the end of the current Program Increment. */
+  piEndDate?: string;
+  /**
+   * Length of a sprint in calendar days, used by future burndown and stale-issue calculations.
+   * Defaults to DEFAULT_SPRINT_WINDOW_DAYS when not set.
+   */
+  sprintWindowDays?: number;
 }
 
 /** Reads ART advanced settings from localStorage or returns an empty object. */
@@ -1653,6 +1664,8 @@ function writeArtAdvancedSettings(settings: ArtAdvancedSettings): void {
 }
 
 const DEFAULT_STALE_DAYS_SETTING = 5;
+/** Default sprint length in calendar days (2-week sprint). Used by stale-issue and sprint-window calculations. */
+const DEFAULT_SPRINT_WINDOW_DAYS = 14;
 /**
  * Matches a fully-formed Jira custom field ID (e.g. "customfield_10301").
  * Requires at least 4 digits after the prefix because Jira's generated IDs
@@ -1669,20 +1682,28 @@ function SettingsPanel({
   onReloadPiOptions,
   onRemoveTeam,
   onSaveTeams,
+  onUpdateTeamSosKey,
 }: SettingsPanelProps) {
   const { showToast } = useToast();
   const [newTeamName, setNewTeamName] = useState('');
   const [newBoardId, setNewBoardId] = useState('');
   const [newBoardName, setNewBoardName] = useState('');
   const [newProjectKey, setNewProjectKey] = useState('');
+  const [newSosIssueKey, setNewSosIssueKey] = useState('');
 
   const storedSettings = readArtAdvancedSettings();
   const [piFieldId, setPiFieldId] = useState(storedSettings.piFieldId ?? '');
   const [spFieldId, setSpFieldId] = useState(storedSettings.spFieldId ?? '');
   const [featureLinkField, setFeatureLinkField] = useState(storedSettings.featureLinkField ?? '');
+  const [pCodeField, setPCodeField] = useState(storedSettings.pCodeField ?? '');
   const [staleDaysInput, setStaleDaysInput] = useState(
     String(storedSettings.staleDays ?? DEFAULT_STALE_DAYS_SETTING),
   );
+  const [sprintWindowDaysInput, setSprintWindowDaysInput] = useState(
+    String(storedSettings.sprintWindowDays ?? DEFAULT_SPRINT_WINDOW_DAYS),
+  );
+  const [piEndDate, setPiEndDate] = useState(storedSettings.piEndDate ?? '');
+  const [isSpAutoDetect, setIsSpAutoDetect] = useState(storedSettings.isSpAutoDetect ?? false);
 
   function handleAddTeam() {
     if (!newTeamName.trim() || !newBoardId.trim()) return;
@@ -1691,11 +1712,13 @@ function SettingsPanel({
       newBoardId.trim(),
       newProjectKey.trim() || undefined,
       newBoardName.trim() || undefined,
+      newSosIssueKey.trim() || undefined,
     );
     setNewTeamName('');
     setNewBoardId('');
     setNewBoardName('');
     setNewProjectKey('');
+    setNewSosIssueKey('');
   }
 
   function handleSaveTeams() {
@@ -1739,6 +1762,29 @@ function SettingsPanel({
     }
   }
 
+  function handleSprintWindowDaysChange(value: string) {
+    setSprintWindowDaysInput(value);
+    const parsedDays = parseInt(value, 10);
+    if (!isNaN(parsedDays) && parsedDays > 0) {
+      saveSettingField('sprintWindowDays', parsedDays);
+    }
+  }
+
+  function handlePiEndDateChange(value: string) {
+    setPiEndDate(value);
+    saveSettingField('piEndDate', value);
+  }
+
+  function handlePCodeFieldChange(value: string) {
+    setPCodeField(value);
+    saveSettingField('pCodeField', value);
+  }
+
+  function handleIsSpAutoDetectChange(checked: boolean) {
+    setIsSpAutoDetect(checked);
+    saveSettingField('isSpAutoDetect', checked);
+  }
+
   return (
     <div className={styles.panel}>
       <h3 className={styles.sectionTitle}>Team Settings</h3>
@@ -1771,6 +1817,14 @@ function SettingsPanel({
           placeholder="Select a project"
           value={newProjectKey}
         />
+        <input
+          aria-label="SoS Issue Key (optional)"
+          className={styles.textInput}
+          onChange={(event) => setNewSosIssueKey(event.target.value)}
+          placeholder="SoS Issue Key (optional)"
+          type="text"
+          value={newSosIssueKey}
+        />
         <button className={styles.primaryBtn} onClick={handleAddTeam}>
           Add Team
         </button>
@@ -1793,6 +1847,15 @@ function SettingsPanel({
             {team.projectKey && (
               <span className={styles.projectKeyBadge}>{team.projectKey}</span>
             )}
+            {/* Per-team SoS issue key — auto-saved on change so no extra Save click is needed */}
+            <input
+              aria-label={`SoS Issue Key for ${team.name}`}
+              className={styles.textInput}
+              onChange={(event) => onUpdateTeamSosKey(team.id, event.target.value)}
+              placeholder="SoS Issue Key"
+              type="text"
+              value={team.sosIssueKey ?? ''}
+            />
             <button className={styles.removeBtn} onClick={() => onRemoveTeam(team.id)}>
               Remove
             </button>
@@ -1804,7 +1867,7 @@ function SettingsPanel({
       <div className={styles.settingsSection}>
         <h4 className={styles.settingsSectionTitle}>Advanced ART Settings</h4>
         <p className={styles.settingsSectionHint}>
-          These field IDs are used by Blueprint, Dependencies, and the SoS stale-issue detector.
+          These field IDs and values are used by Blueprint, Dependencies, SoS, and the stale-issue detector.
           Changes take effect immediately and are saved to your browser.
         </p>
 
@@ -1828,6 +1891,21 @@ function SettingsPanel({
           />
         </div>
 
+        {/* Auto-detect toggle: when checked, the secondary story-point field (customfield_10028) is
+            tried automatically so teams whose Jira instances use the alternate field get correct counts. */}
+        <div className={styles.settingsFieldRow}>
+          <label className={styles.settingsCheckboxLabel}>
+            <input
+              aria-label="Auto-detect story points"
+              checked={isSpAutoDetect}
+              className={styles.settingsCheckbox}
+              onChange={(event) => handleIsSpAutoDetectChange(event.target.checked)}
+              type="checkbox"
+            />
+            Auto-detect story points (try secondary field automatically)
+          </label>
+        </div>
+
         <div className={styles.settingsFieldRow}>
           <JiraFieldPicker
             id="art-feature-link-field"
@@ -1838,17 +1916,59 @@ function SettingsPanel({
           />
         </div>
 
+        {/* P-Code field: the Jira custom field used to store a portfolio/program code that links
+            features to their parent Capabilities or Epics in the portfolio backlog. */}
+        <div className={styles.settingsFieldRow}>
+          <JiraFieldPicker
+            id="art-pcode-field"
+            label="P-Code Field"
+            onChange={handlePCodeFieldChange}
+            placeholder="Program/portfolio code field"
+            value={pCodeField}
+          />
+        </div>
+
         <div className={styles.settingsFieldRow}>
           <label className={styles.settingsFieldLabel}>Stale Days Threshold</label>
           <input
-            type="number"
-            className={styles.textInput}
-            placeholder={String(DEFAULT_STALE_DAYS_SETTING)}
-            value={staleDaysInput}
-            min={1}
-            max={90}
-            onChange={(event) => handleStaleDaysChange(event.target.value)}
             aria-label="Stale Days Threshold"
+            className={styles.textInput}
+            max={90}
+            min={1}
+            onChange={(event) => handleStaleDaysChange(event.target.value)}
+            placeholder={String(DEFAULT_STALE_DAYS_SETTING)}
+            type="number"
+            value={staleDaysInput}
+          />
+        </div>
+
+        {/* Sprint window: how many calendar days a sprint covers. Used for burndown projections
+            and to determine whether an in-progress issue is mid-sprint or nearing end-of-sprint. */}
+        <div className={styles.settingsFieldRow}>
+          <label className={styles.settingsFieldLabel}>Sprint Window (days)</label>
+          <input
+            aria-label="Sprint Window Days"
+            className={styles.textInput}
+            max={90}
+            min={1}
+            onChange={(event) => handleSprintWindowDaysChange(event.target.value)}
+            placeholder={String(DEFAULT_SPRINT_WINDOW_DAYS)}
+            type="number"
+            value={sprintWindowDaysInput}
+          />
+        </div>
+
+        {/* PI End Date: the last day of the current PI. Used by Overview and SoS panels to
+            show how many days remain and to colour-code urgency indicators. */}
+        <div className={styles.settingsFieldRow}>
+          <label className={styles.settingsFieldLabel}>PI End Date</label>
+          <input
+            aria-label="PI End Date"
+            className={styles.textInput}
+            onChange={(event) => handlePiEndDateChange(event.target.value)}
+            type="text"
+            value={piEndDate}
+            placeholder="YYYY-MM-DD"
           />
         </div>
       </div>
