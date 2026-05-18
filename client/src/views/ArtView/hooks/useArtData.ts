@@ -272,6 +272,11 @@ export interface ArtTeam {
   projectKey?: string;
   /** Active sprint name for Scrum boards — absent when using PI mode, Kanban, or when no sprint is loaded. */
   activeSprintName?: string;
+  /**
+   * Optional Jira issue key for this team's SoS tracking issue.
+   * Used by the SoS panel to surface the team's standup Jira item and by future SoS sync features.
+   */
+  sosIssueKey?: string;
   sprintIssues: JiraIssue[];
   isLoading: boolean;
   loadError: string | null;
@@ -318,7 +323,7 @@ export interface ArtDataState {
 export interface ArtDataActions {
   setActiveTab: (tab: ArtTab) => void;
   setSelectedPiName: (name: string) => void;
-  addTeam: (name: string, boardId: string, projectKey?: string, boardName?: string) => void;
+  addTeam: (name: string, boardId: string, projectKey?: string, boardName?: string, sosIssueKey?: string) => void;
   removeTeam: (teamId: string) => void;
   saveTeams: () => void;
   loadPiOptions: () => Promise<void>;
@@ -329,6 +334,8 @@ export interface ArtDataActions {
   /** Fetch backlog-ready issues for all teams' boards (issues not yet in a sprint). */
   loadBoardPrep: () => Promise<void>;
   setBoardPrepTeamFilter: (teamName: string) => void;
+  /** Update the SoS Jira issue key for a specific team, persisted with the team roster. */
+  updateTeamSosKey: (teamId: string, sosIssueKey: string) => void;
 }
 
 /** Returns a team record safe to persist without volatile loading or issue data. */
@@ -340,6 +347,7 @@ function buildStoredTeamRecord(team: ArtTeam): ArtTeam {
     boardName: team.boardName,
     boardType: team.boardType,
     projectKey: team.projectKey,
+    sosIssueKey: team.sosIssueKey,
     sprintIssues: [],
     isLoading: false,
     loadError: null,
@@ -373,6 +381,9 @@ function loadStoredTeams(): ArtTeam[] {
           : undefined,
         projectKey: typeof team.projectKey === 'string' && team.projectKey.trim() !== ''
           ? team.projectKey
+          : undefined,
+        sosIssueKey: typeof team.sosIssueKey === 'string' && team.sosIssueKey.trim() !== ''
+          ? team.sosIssueKey.trim()
           : undefined,
         sprintIssues: [],
         isLoading: false,
@@ -451,7 +462,7 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
     persistSelectedPiName(name);
   }, []);
 
-  const addTeam = useCallback((name: string, boardId: string, projectKey?: string, boardName?: string) => {
+  const addTeam = useCallback((name: string, boardId: string, projectKey?: string, boardName?: string, sosIssueKey?: string) => {
     // Use timestamp + random suffix for a unique ID without crypto.randomUUID
     const newTeamId = Date.now().toString(36) + Math.random().toString(36).slice(2);
     const newTeam: ArtTeam = {
@@ -460,6 +471,7 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
       boardId,
       boardName: boardName?.trim() || undefined,
       projectKey: projectKey?.trim() || undefined,
+      sosIssueKey: sosIssueKey?.trim() || undefined,
       sprintIssues: [],
       isLoading: false,
       loadError: null,
@@ -719,6 +731,20 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
     setBoardPrepTeamFilterState(teamName);
   }, []);
 
+  /**
+   * Updates the SoS Jira issue key for a team in-place.
+   * The change is immediately reflected in state and persisted via the existing teams useEffect.
+   */
+  const updateTeamSosKey = useCallback((teamId: string, sosIssueKey: string) => {
+    setTeams((previous) =>
+      previous.map((team) =>
+        team.id === teamId
+          ? { ...team, sosIssueKey: sosIssueKey.trim() || undefined }
+          : team,
+      ),
+    );
+  }, []);
+
   return {
     state: {
       activeTab,
@@ -746,6 +772,7 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
       toggleSosTeam,
       loadBoardPrep,
       setBoardPrepTeamFilter,
+      updateTeamSosKey,
     },
   };
 }
