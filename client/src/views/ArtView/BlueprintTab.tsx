@@ -65,6 +65,14 @@ const DEFAULT_PI_FIELD_ID = 'customfield_10301';
 const HEALTH_GREEN_THRESHOLD = 70;
 const HEALTH_AMBER_THRESHOLD = 40;
 const STATUS_DONE_KEYWORDS = ['done', 'closed', 'resolved', 'complete'];
+/**
+ * Max issues to fetch per team board when a PI filter is active. Raised to 500
+ * (from the 200 used for openSprints queries) to match the PI-aware path in
+ * useArtData.ts and avoid silently truncating large PIs.
+ */
+const PI_ISSUE_MAX_RESULTS = 500;
+/** Max issues to fetch per team board when falling back to open-sprints JQL. */
+const OPEN_SPRINT_MAX_RESULTS = 200;
 
 // ── Pure helper functions ──
 
@@ -176,8 +184,10 @@ async function fetchBlueprintData(teams: ArtTeam[], selectedPiName: string): Pro
       ? `project = "${team.projectKey!}" AND cf[${piFieldNumber}] = "${trimmedPiName}"`
       : `board = ${team.boardId} AND sprint in openSprints()`;
     const fields = `summary,status,issuetype,assignee,${featureLinkField},parent,customfield_10100`;
+    // Use a higher result cap for PI queries — large PIs can exceed 200 issues per team.
+    const maxResults = hasPiFilter ? PI_ISSUE_MAX_RESULTS : OPEN_SPRINT_MAX_RESULTS;
     const result = await jiraGet<{ issues: BlueprintRawIssue[] }>(
-      `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(fields)}&maxResults=200`,
+      `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(fields)}&maxResults=${maxResults}`,
     );
     allRawIssues.push(...(result.issues ?? []));
   }

@@ -725,7 +725,6 @@ function ImpedimentsPanel({
   const [isLegendOpen, setIsLegendOpen] = useState(false);
 
   const staleDaysThreshold = readStaleDaysThreshold();
-  const nowMs = Date.now();
 
   // Build per-team groups: annotate issues with reasons, days elapsed, and stale tier,
   // then apply the reason filter. Teams with zero matching issues are omitted entirely.
@@ -734,7 +733,7 @@ function ImpedimentsPanel({
       const issuesWithMeta = team.sprintIssues
         .map((issue) => {
           const reasons = detectImpedimentReasons(issue);
-          const daysSinceUpdate = computeDaysSinceUpdate(issue, nowMs);
+          const daysSinceUpdate = computeDaysSinceUpdate(issue);
           const staleTier: ImpedimentStaleTier = classifyImpedimentStaleness(daysSinceUpdate, staleDaysThreshold);
           return { ...issue, reasons, daysSinceUpdate, staleTier };
         })
@@ -2253,8 +2252,8 @@ function formatCardsAsCsv(
   statsMap?: Map<string, MonthlyJiraStats>,
 ): string {
   /** Wraps a single cell value in double quotes and escapes embedded quotes per RFC 4180. */
-  function escapeCsvCell(value: string): string {
-    return `"${value.replace(/"/g, '""')}"`;
+  function escapeCsvCell(value: string | undefined | null): string {
+    return `"${String(value ?? '').replace(/"/g, '""')}"`;
   }
 
   const HEADER_ROW = [

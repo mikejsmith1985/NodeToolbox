@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Error feedback**: If the post fails, an inline error message is shown below the button.
 
 ### Fixed
+- **Art View — Jira board selection metadata now stays accurate when boards reload or the picker falls back to manual entry**: project-filtered board loads no longer leave the picker stuck in a stale loading/error state, and manual board-ID entry now clears any previously selected board metadata instead of preserving the wrong board name.
+- **Art View — Monthly Report CSV export now tolerates empty fields**: exporting cards no longer crashes when older saved drafts are missing one or more optional text fields.
 - **Art View — Blueprint and Dependencies PI queries now fetch up to 500 issues per team** (was incorrectly capped at 200 while the PI-aware hook path already used 500). Large PIs with more than 200 issues per team no longer silently truncate the Blueprint hierarchy or the cross-team dependency table. Open-sprint fallback queries retain the 200-issue cap.
 - **Art View — Settings PI field change no longer triggers noisy Jira reloads on every keystroke**: `handlePiFieldChange` now only calls `loadPiOptions()` when the entered value is a fully-formed Jira custom field ID (`customfield_NNNN+`). This prevents stale/duplicate PI-options reloads while the user is typing in the `JiraFieldPicker` fallback text input (shown when Jira's field metadata API is unavailable).
 - **Art View — SoS and Monthly Report parity improvements**:

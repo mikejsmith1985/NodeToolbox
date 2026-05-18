@@ -280,6 +280,40 @@ describe('BlueprintTab', () => {
     expect(firstCallUrl).not.toContain('openSprints');
   });
 
+  it('uses maxResults=500 for PI-mode queries to avoid truncating large PIs', async () => {
+    mockJiraGet
+      .mockResolvedValueOnce(MOCK_SPRINT_ISSUES_RESPONSE)
+      .mockResolvedValueOnce(MOCK_FEATURE_RESPONSE);
+
+    render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
+    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
+
+    await waitFor(() => screen.getByText('User Authentication Feature'));
+
+    // PI-mode fetch must use the higher 500 cap, not the 200 used for openSprints
+    const firstCallUrl = mockJiraGet.mock.calls[0][0] as string;
+    expect(firstCallUrl).toContain('maxResults=500');
+  });
+
+  it('uses maxResults=200 for openSprints fallback queries', async () => {
+    const teamsWithoutProjectKey: ArtTeam[] = [
+      { ...MOCK_TEAMS[0], projectKey: undefined },
+    ];
+
+    mockJiraGet
+      .mockResolvedValueOnce(MOCK_SPRINT_ISSUES_RESPONSE)
+      .mockResolvedValueOnce(MOCK_FEATURE_RESPONSE);
+
+    render(<BlueprintTab teams={teamsWithoutProjectKey} selectedPiName="PI 25.1" />);
+    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
+
+    await waitFor(() => screen.getByText('User Authentication Feature'));
+
+    const firstCallUrl = mockJiraGet.mock.calls[0][0] as string;
+    expect(firstCallUrl).toContain('maxResults=200');
+    expect(firstCallUrl).not.toContain('maxResults=500');
+  });
+
   it('falls back to openSprints JQL when no PI is selected', async () => {
     // Render with empty selectedPiName so the early-exit guard shows the warning —
     // we verify the guard path renders correctly (no fetch is made).

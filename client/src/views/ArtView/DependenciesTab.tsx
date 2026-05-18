@@ -63,7 +63,14 @@ interface DependencyRow {
 // ── Constants ──
 
 const FIELDS_WITH_LINKS = 'summary,status,issuetype,assignee,issuelinks';
-const MAX_RESULTS_PER_BOARD = 200;
+/** Max issues to fetch per team board when falling back to open-sprints JQL. */
+const OPEN_SPRINT_MAX_RESULTS = 200;
+/**
+ * Max issues to fetch per team board when a PI filter is active. Raised to 500
+ * (from the 200 used for openSprints queries) to match the PI-aware path in
+ * useArtData.ts and avoid silently truncating large PIs.
+ */
+const PI_ISSUE_MAX_RESULTS = 500;
 const ALL_TEAMS_FILTER_VALUE = 'ALL';
 /** Default PI custom field — must match useArtData.ts DEFAULT_PI_FIELD_ID. */
 const DEFAULT_PI_FIELD_ID = 'customfield_10301';
@@ -166,8 +173,10 @@ async function fetchDependencyRows(teams: ArtTeam[], selectedPiName: string): Pr
     const jql = hasPiFilter
       ? `project = "${team.projectKey!}" AND cf[${piFieldNumber}] = "${trimmedPiName}"`
       : `board = ${team.boardId} AND sprint in openSprints()`;
+    // Use a higher result cap for PI queries — large PIs can exceed 200 issues per team.
+    const maxResults = hasPiFilter ? PI_ISSUE_MAX_RESULTS : OPEN_SPRINT_MAX_RESULTS;
     const result = await jiraGet<{ issues: IssueWithLinks[] }>(
-      `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(FIELDS_WITH_LINKS)}&maxResults=${MAX_RESULTS_PER_BOARD}`,
+      `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(FIELDS_WITH_LINKS)}&maxResults=${maxResults}`,
     );
     allIssuesWithLinks.push(...(result.issues ?? []));
   }

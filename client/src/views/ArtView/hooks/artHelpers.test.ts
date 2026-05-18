@@ -496,7 +496,7 @@ describe('generateMonthlyAccomplishedText', () => {
 
   it('appends an overflow line when done count exceeds 10', () => {
     // Build 11 done issues — one above the cap.
-    const doneIssues = Array.from({ length: 11 }, (_, index) =>
+    const doneIssues = Array.from({ length: 11 }, () =>
       buildTestIssue({
         status: { name: 'Done', statusCategory: { key: 'done' } },
       }),
@@ -540,8 +540,7 @@ describe('generateMonthlyRisksText', () => {
     expect(lines).toHaveLength(3);
   });
 
-  it('does not include done issues even if they were flagged before closing', () => {
-    // A done + flagged issue should not appear in risks (it was resolved).
+  it('includes done issues when they still match impediment signals', () => {
     // generateMonthlyRisksText delegates to isImpediment which checks all signals.
     // The done status does NOT suppress the impediment flag — both can coexist.
     // This test verifies the actual behaviour rather than an assumed filter.
