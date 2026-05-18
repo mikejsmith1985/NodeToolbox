@@ -3,16 +3,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
+import { isIssueDone, isIssueInProgress, resolveIssueStoryPoints } from './artHelpers.ts';
 
 const SPRINT_STATE_ACTIVE = 'active';
 const SPRINT_ISSUE_MAX_RESULTS = 100;
 const BOARD_ISSUE_MAX_RESULTS = 200;
 const PI_ISSUE_MAX_RESULTS = 500;
-const SPRINT_ISSUE_FIELDS = 'summary,status,priority,assignee,reporter,issuetype,created,updated,description';
-const BOARD_PREP_FIELDS = 'summary,status,priority,customfield_10016';
+// All fields required by Overview, Impediments, SoS, Predictability, and Releases parity paths.
+// Keeping a single constant here means any new tab automatically gets the full dataset.
+const SPRINT_ISSUE_FIELDS = [
+  'summary', 'status', 'priority', 'assignee', 'reporter', 'issuetype',
+  'created', 'updated', 'description',
+  // Dependency / blocker parity
+  'issuelinks',
+  // Release parity
+  'fixVersions',
+  // Story-point fields (primary + alternate instance field)
+  'customfield_10016', 'customfield_10028',
+  // Impediment / flagged field
+  'customfield_10021',
+  // Program Increment scoping field
+  'customfield_10301',
+  // Label-based impediment detection and planning grouping
+  'labels',
+  // Epic fallback for planning hierarchy
+  'parent',
+].join(',');
+
+// Board Prep backlog queries include both story-point fields so resolveIssueStoryPoints
+// can handle instances that only populate the alternate field.
+const BOARD_PREP_FIELDS = 'summary,status,priority,customfield_10016,customfield_10028';
 const BOARD_PREP_MAX_RESULTS = 100;
-const STATUS_CATEGORY_DONE = 'done';
-const STATUS_CATEGORY_IN_PROGRESS = 'indeterminate';
 const ART_TEAMS_STORAGE_KEY = 'nodetoolbox-art-teams';
 const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
 const DEFAULT_PI_FIELD_ID = 'customfield_10301';
@@ -375,21 +396,6 @@ function persistTeams(teams: ArtTeam[]): void {
   }
 }
 
-/** Determines whether a Jira issue counts as done based on status category or name. */
-function isIssueDone(issue: JiraIssue): boolean {
-  const categoryKey = issue.fields.status.statusCategory?.key;
-  if (categoryKey) return categoryKey === STATUS_CATEGORY_DONE;
-  return issue.fields.status.name.toLowerCase() === 'done';
-}
-
-/** Determines whether a Jira issue is actively in progress. */
-function isIssueInProgress(issue: JiraIssue): boolean {
-  const categoryKey = issue.fields.status.statusCategory?.key;
-  if (categoryKey) return categoryKey === STATUS_CATEGORY_IN_PROGRESS;
-  const statusName = issue.fields.status.name.toLowerCase();
-  return statusName === 'in progress' || statusName === 'in review';
-}
-
 /** Computes PI-level aggregate stats from all loaded sprint issues across every team. */
 function computePiProgressStats(teams: ArtTeam[]): PiProgressStats {
   const allIssues = teams.flatMap((team) => team.sprintIssues);
@@ -694,7 +700,8 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
             teamName: team.name,
             key: issue.key,
             summary: issue.fields.summary,
-            estimate: issue.fields.customfield_10016 ?? null,
+            // Use the shared helper so both known story-point fields are checked automatically.
+            estimate: resolveIssueStoryPoints(issue),
             priority: issue.fields.priority?.name ?? null,
           }));
         }),
