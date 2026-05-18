@@ -65,6 +65,23 @@ interface DependencyRow {
 const FIELDS_WITH_LINKS = 'summary,status,issuetype,assignee,issuelinks';
 const MAX_RESULTS_PER_BOARD = 200;
 const ALL_TEAMS_FILTER_VALUE = 'ALL';
+/** Default PI custom field — must match useArtData.ts DEFAULT_PI_FIELD_ID. */
+const DEFAULT_PI_FIELD_ID = 'customfield_10301';
+
+// ── Settings helper ──
+
+interface ArtAdvancedSettings {
+  piFieldId?: string;
+}
+
+/** Reads ART advanced settings from localStorage, returning an empty object on failure. */
+function loadArtSettings(): ArtAdvancedSettings {
+  try {
+    return JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as ArtAdvancedSettings;
+  } catch {
+    return {};
+  }
+}
 
 // ── Helper functions ──
 
@@ -130,13 +147,25 @@ function extractOutwardDependencies(
   return rows;
 }
 
-/** Fetches sprint issues with issue links for all team boards and builds cross-team dependency rows. */
-async function fetchDependencyRows(teams: ArtTeam[]): Promise<DependencyRow[]> {
+/** Fetches sprint issues with issue links for all team boards and builds cross-team dependency rows.
+ * When a PI is selected and the team has a known project key, scopes by PI field instead of
+ * openSprints() so dependencies reflect the full PI, not just the current sprint.
+ */
+async function fetchDependencyRows(teams: ArtTeam[], selectedPiName: string): Promise<DependencyRow[]> {
   const projectKeyToTeamName = buildProjectKeyToTeamMap(teams);
+  const settings = loadArtSettings();
+  const piFieldId = settings.piFieldId?.trim() || DEFAULT_PI_FIELD_ID;
+  // piFieldNumber strips the "customfield_" prefix for the cf[N] JQL syntax
+  const piFieldNumber = piFieldId.replace('customfield_', '');
+  const trimmedPiName = selectedPiName.trim();
 
   const allIssuesWithLinks: IssueWithLinks[] = [];
   for (const team of teams) {
-    const jql = `board = ${team.boardId} AND sprint in openSprints()`;
+    const hasProjectKey = Boolean(team.projectKey?.trim());
+    const hasPiFilter = Boolean(trimmedPiName) && hasProjectKey;
+    const jql = hasPiFilter
+      ? `project = "${team.projectKey!}" AND cf[${piFieldNumber}] = "${trimmedPiName}"`
+      : `board = ${team.boardId} AND sprint in openSprints()`;
     const result = await jiraGet<{ issues: IssueWithLinks[] }>(
       `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(FIELDS_WITH_LINKS)}&maxResults=${MAX_RESULTS_PER_BOARD}`,
     );
@@ -236,10 +265,12 @@ function DependencyTable({ rows }: DependencyTableProps) {
 
 interface DependenciesTabProps {
   teams: ArtTeam[];
+  /** The currently selected PI name, used to scope issues by PI instead of openSprints(). */
+  selectedPiName: string;
 }
 
 /** Replaces the SVG dependency map with a searchable, filterable cross-team dependency table. */
-export default function DependenciesTab({ teams }: DependenciesTabProps) {
+export default function DependenciesTab({ teams, selectedPiName }: DependenciesTabProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [allRows, setAllRows] = useState<DependencyRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -257,7 +288,7 @@ export default function DependenciesTab({ teams }: DependenciesTabProps) {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const rows = await fetchDependencyRows(teams);
+      const rows = await fetchDependencyRows(teams, selectedPiName);
       setAllRows(rows);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load dependencies';

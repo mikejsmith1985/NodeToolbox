@@ -60,6 +60,8 @@ interface ArtAdvancedSettings {
 // ── Constants ──
 
 const DEFAULT_FEATURE_LINK_FIELD = 'customfield_10108';
+/** Default PI custom field — must match useArtData.ts DEFAULT_PI_FIELD_ID. */
+const DEFAULT_PI_FIELD_ID = 'customfield_10301';
 const HEALTH_GREEN_THRESHOLD = 70;
 const HEALTH_AMBER_THRESHOLD = 40;
 const STATUS_DONE_KEYWORDS = ['done', 'closed', 'resolved', 'complete'];
@@ -151,17 +153,28 @@ function buildFeatureNodes(
 }
 
 /** Main Jira data-fetching logic for the blueprint hierarchy. */
-async function fetchBlueprintData(teams: ArtTeam[]): Promise<BlueprintFeatureNode[]> {
+async function fetchBlueprintData(teams: ArtTeam[], selectedPiName: string): Promise<BlueprintFeatureNode[]> {
   const settings = loadArtSettings();
   const featureLinkField = settings.featureLinkField ?? DEFAULT_FEATURE_LINK_FIELD;
+  const piFieldId = settings.piFieldId?.trim() || DEFAULT_PI_FIELD_ID;
+  // piFieldNumber strips the "customfield_" prefix for the cf[N] JQL syntax
+  const piFieldNumber = piFieldId.replace('customfield_', '');
+  const trimmedPiName = selectedPiName.trim();
   const artProjectKeys = new Set(
     teams.map((team) => team.projectKey?.toUpperCase()).filter((key): key is string => Boolean(key)),
   );
 
-  // Fetch sprint issues for every team board with feature-link fields included
+  // Fetch sprint issues for every team board with feature-link fields included.
+  // When a PI is selected and the team has a known project key, scope by PI field
+  // instead of openSprints() so the hierarchy reflects the full PI backlog, not just
+  // the current sprint — matching legacy PI-aware behavior.
   const allRawIssues: BlueprintRawIssue[] = [];
   for (const team of teams) {
-    const jql = `board = ${team.boardId} AND sprint in openSprints()`;
+    const hasProjectKey = Boolean(team.projectKey?.trim());
+    const hasPiFilter = Boolean(trimmedPiName) && hasProjectKey;
+    const jql = hasPiFilter
+      ? `project = "${team.projectKey!}" AND cf[${piFieldNumber}] = "${trimmedPiName}"`
+      : `board = ${team.boardId} AND sprint in openSprints()`;
     const fields = `summary,status,issuetype,assignee,${featureLinkField},parent,customfield_10100`;
     const result = await jiraGet<{ issues: BlueprintRawIssue[] }>(
       `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(fields)}&maxResults=200`,
@@ -368,7 +381,7 @@ export default function BlueprintTab({ teams, selectedPiName }: BlueprintTabProp
     setIsLoading(true);
     setLoadError(null);
     try {
-      const loadedFeatures = await fetchBlueprintData(teams);
+      const loadedFeatures = await fetchBlueprintData(teams, selectedPiName);
       setFeatures(loadedFeatures);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load blueprint data';

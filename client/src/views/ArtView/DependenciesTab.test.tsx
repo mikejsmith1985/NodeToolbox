@@ -104,30 +104,31 @@ const MOCK_ISSUES_WITH_LINKS_RESPONSE = {
 
 describe('DependenciesTab', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    // resetAllMocks clears both call history and any unconsumed once-values from prior tests
+    vi.resetAllMocks();
     localStorage.clear();
   });
 
   it('renders the Load Dependencies button', () => {
-    render(<DependenciesTab teams={MOCK_TEAMS} />);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);
     expect(screen.getByRole('button', { name: /load dependencies/i })).toBeInTheDocument();
   });
 
   it('shows empty state message before loading', () => {
-    render(<DependenciesTab teams={MOCK_TEAMS} />);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);
     expect(screen.getByText(/click.*load dependencies/i)).toBeInTheDocument();
   });
 
   it('shows loading indicator while fetching', () => {
     mockJiraGet.mockReturnValue(new Promise(() => {}));
-    render(<DependenciesTab teams={MOCK_TEAMS} />);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);
     fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
     expect(screen.getByText(/loading cross-team dependencies/i)).toBeInTheDocument();
   });
 
   it('renders a table after loading', async () => {
     mockJiraGet.mockResolvedValue(MOCK_ISSUES_WITH_LINKS_RESPONSE);
-    render(<DependenciesTab teams={MOCK_TEAMS} />);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);
     fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
 
     await waitFor(() => {
@@ -137,7 +138,7 @@ describe('DependenciesTab', () => {
 
   it('renders the from-issue key in the dependency row', async () => {
     mockJiraGet.mockResolvedValue(MOCK_ISSUES_WITH_LINKS_RESPONSE);
-    render(<DependenciesTab teams={MOCK_TEAMS} />);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);
     fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
 
     await waitFor(() => {
@@ -147,7 +148,7 @@ describe('DependenciesTab', () => {
 
   it('renders the to-issue key in the dependency row', async () => {
     mockJiraGet.mockResolvedValue(MOCK_ISSUES_WITH_LINKS_RESPONSE);
-    render(<DependenciesTab teams={MOCK_TEAMS} />);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);
     fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
 
     await waitFor(() => {
@@ -157,7 +158,7 @@ describe('DependenciesTab', () => {
 
   it('renders the link type label in the row', async () => {
     mockJiraGet.mockResolvedValue(MOCK_ISSUES_WITH_LINKS_RESPONSE);
-    render(<DependenciesTab teams={MOCK_TEAMS} />);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);
     fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
 
     await waitFor(() => {
@@ -167,7 +168,7 @@ describe('DependenciesTab', () => {
 
   it('renders team name columns', async () => {
     mockJiraGet.mockResolvedValue(MOCK_ISSUES_WITH_LINKS_RESPONSE);
-    render(<DependenciesTab teams={MOCK_TEAMS} />);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);
     fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
 
     await waitFor(() => {
@@ -178,7 +179,7 @@ describe('DependenciesTab', () => {
 
   it('shows no-dependencies message when there are none', async () => {
     mockJiraGet.mockResolvedValue({ issues: [] });
-    render(<DependenciesTab teams={MOCK_TEAMS} />);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);
     fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
 
     await waitFor(() => {
@@ -187,18 +188,18 @@ describe('DependenciesTab', () => {
   });
 
   it('renders team filter dropdown', () => {
-    render(<DependenciesTab teams={MOCK_TEAMS} />);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);
     expect(screen.getByRole('combobox', { name: /filter by team/i })).toBeInTheDocument();
   });
 
   it('renders link type filter dropdown', () => {
-    render(<DependenciesTab teams={MOCK_TEAMS} />);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);
     expect(screen.getByRole('combobox', { name: /filter by link type/i })).toBeInTheDocument();
   });
 
   it('filters rows by team when team filter is changed', async () => {
     mockJiraGet.mockResolvedValue(MOCK_ISSUES_WITH_LINKS_RESPONSE);
-    render(<DependenciesTab teams={MOCK_TEAMS} />);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);
     fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
     await waitFor(() => screen.getByRole('table'));
 
@@ -212,7 +213,7 @@ describe('DependenciesTab', () => {
 
   it('shows an error message when the API call fails', async () => {
     mockJiraGet.mockRejectedValue(new Error('Connection refused'));
-    render(<DependenciesTab teams={MOCK_TEAMS} />);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);
     fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
 
     await waitFor(() => {
@@ -221,7 +222,55 @@ describe('DependenciesTab', () => {
   });
 
   it('does not render a table or SVG — is purely tabular', () => {
-    render(<DependenciesTab teams={MOCK_TEAMS} />);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);
     expect(document.querySelector('svg')).not.toBeInTheDocument();
+  });
+
+  it('uses PI-aware JQL when selectedPiName and team projectKey are both set', async () => {
+    mockJiraGet.mockResolvedValue(MOCK_ISSUES_WITH_LINKS_RESPONSE);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
+    fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
+
+    await waitFor(() => screen.getByRole('table'));
+
+    // Both board fetches should use the PI filter, not openSprints()
+    for (const call of mockJiraGet.mock.calls) {
+      const url = call[0] as string;
+      expect(url).toContain('cf%5B');          // encoded cf[...]
+      expect(url).toContain('PI%2025.1');      // PI name (space → %20) in JQL
+      expect(url).not.toContain('openSprints');
+    }
+  });
+
+  it('falls back to openSprints JQL when no PI is selected', async () => {
+    mockJiraGet.mockResolvedValue(MOCK_ISSUES_WITH_LINKS_RESPONSE);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);
+    fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
+
+    await waitFor(() => screen.getByRole('table'));
+
+    for (const call of mockJiraGet.mock.calls) {
+      const url = call[0] as string;
+      expect(url).toContain('openSprints');
+      expect(url).not.toContain('cf%5B');
+    }
+  });
+
+  it('falls back to openSprints JQL when team has no projectKey', async () => {
+    const teamsWithoutProjectKey: ArtTeam[] = [
+      { ...MOCK_TEAMS[0], projectKey: undefined },
+      { ...MOCK_TEAMS[1], projectKey: undefined },
+    ];
+    mockJiraGet.mockResolvedValue({ issues: [] });
+    render(<DependenciesTab teams={teamsWithoutProjectKey} selectedPiName="PI 25.1" />);
+    fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
+
+    await waitFor(() => expect(mockJiraGet).toHaveBeenCalled());
+
+    for (const call of mockJiraGet.mock.calls) {
+      const url = call[0] as string;
+      expect(url).toContain('openSprints');
+      expect(url).not.toContain('cf%5B');
+    }
   });
 });
