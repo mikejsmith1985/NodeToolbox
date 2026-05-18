@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Art View — Monthly Report Jira parity**: The Monthly Report tab now derives metrics and narrative content from each team's already-loaded Jira sprint issues:
+  - **Jira stats strip**: Each team card gains a read-only strip showing done/total issues, completion %, velocity/committed story points (when issues carry estimates), and an impediment count with amber highlight when risks exist.
+  - **Generate from Jira button**: A single click pre-fills the "Accomplished" field with bullet lines for each done issue (KEY: summary, capped at 10 with an overflow note) and the "Risks" field with bullet lines for every detected impediment (same four-signal detection as the Impediments tab). Existing manual content is preserved when generation returns nothing.
+  - **Load hint**: Cards whose team data has not yet been fetched show an italic hint ("Load this team from the Overview tab to enable Jira-driven generation.") instead of an empty stats strip.
+  - **Export CSV**: A new "Export CSV" toolbar button exports visible cards with columns for Team, Pillar, Accomplished, Outcomes, Risks, Stakeholders, Velocity Pts, Committed Pts, Completion %, and Impediments — ready for Excel / Google Sheets.
+  - **Jira stats in HTML and Text exports**: The existing "Export HTML" and "Export Text" (and "Copy All") outputs now include a progress line per team (e.g. `Progress: 60% complete · 21/35 pts · ⚠️ 2 impediments`) when Jira data is available.
+  - 17 new helper-level unit tests covering `computeMonthlyJiraStats`, `generateMonthlyAccomplishedText`, and `generateMonthlyRisksText`, plus 5 new component-level tests for the stats bar, generate button, load hint, and generate-click behaviour.
 - **Art View — Advanced Predictability parity**: The Predictability tab now provides significantly richer metrics aligned with the SAFe predictability measure:
   - **ART Predictability Rollup bar**: A summary bar above the per-team table shows overall ART predictability % (total done / total issues across all teams), total issues done/total, optional story-point burndown (shown only when estimates are present), team count, and a Scrum/Kanban split stat when both board types coexist.
   - **Sprint column**: Scrum teams now show their active sprint name in the table so users can see which sprint window the metrics are from.
