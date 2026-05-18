@@ -6,12 +6,227 @@ import type { JiraIssue } from '../../../types/jira.ts';
 
 const SPRINT_STATE_ACTIVE = 'active';
 const SPRINT_ISSUE_MAX_RESULTS = 100;
+const BOARD_ISSUE_MAX_RESULTS = 200;
+const PI_ISSUE_MAX_RESULTS = 500;
 const SPRINT_ISSUE_FIELDS = 'summary,status,priority,assignee,reporter,issuetype,created,updated,description';
 const BOARD_PREP_FIELDS = 'summary,status,priority,customfield_10016';
 const BOARD_PREP_MAX_RESULTS = 100;
 const STATUS_CATEGORY_DONE = 'done';
 const STATUS_CATEGORY_IN_PROGRESS = 'indeterminate';
 const ART_TEAMS_STORAGE_KEY = 'nodetoolbox-art-teams';
+const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
+const DEFAULT_PI_FIELD_ID = 'customfield_10301';
+const EMPTY_PI_NAME = '';
+const PI_SUGGESTION_YEAR_OFFSETS = [-6, -5, -4, -3, -2, -1, 0, 1] as const;
+
+type ArtBoardType = 'scrum' | 'kanban' | 'simple' | 'unknown';
+
+interface ArtAdvancedSettings {
+  piFieldId?: string;
+  piName?: string;
+}
+
+interface JiraBoardMetadata {
+  id: number;
+  name?: string;
+  type?: string;
+}
+
+interface JiraSprintMetadata {
+  id: number;
+  name: string;
+  state: string;
+}
+
+interface JiraAutocompleteSuggestion {
+  value?: string;
+  displayName?: string;
+}
+
+interface JiraAutocompleteResponse {
+  results?: JiraAutocompleteSuggestion[];
+}
+
+interface JiraBoardProjectResponse {
+  values?: Array<{ key?: string }>;
+}
+
+interface JiraPiSearchResponse {
+  issues?: Array<{ fields?: Record<string, unknown> }>;
+}
+
+function readArtAdvancedSettings(): ArtAdvancedSettings {
+  try {
+    return JSON.parse(localStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as ArtAdvancedSettings;
+  } catch {
+    return {};
+  }
+}
+
+function writeArtAdvancedSettings(settings: ArtAdvancedSettings): void {
+  try {
+    localStorage.setItem(ART_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // The current session remains usable even when local persistence is unavailable.
+  }
+}
+
+function getStoredSelectedPiName(): string {
+  return readArtAdvancedSettings().piName?.trim() ?? EMPTY_PI_NAME;
+}
+
+function persistSelectedPiName(piName: string): void {
+  const currentSettings = readArtAdvancedSettings();
+  writeArtAdvancedSettings({ ...currentSettings, piName });
+}
+
+function normalizeBoardType(boardTypeValue?: string): ArtBoardType {
+  const normalizedBoardType = boardTypeValue?.trim().toLowerCase();
+  if (normalizedBoardType === 'scrum' || normalizedBoardType === 'kanban' || normalizedBoardType === 'simple') {
+    return normalizedBoardType;
+  }
+
+  return 'unknown';
+}
+
+function buildPiAutocompleteFieldName(piFieldId: string): string {
+  if (piFieldId.startsWith('customfield_')) {
+    return `cf[${piFieldId.replace('customfield_', '')}]`;
+  }
+
+  return piFieldId;
+}
+
+function extractPiNameFromFieldValue(fieldValue: unknown): string | null {
+  if (typeof fieldValue === 'string') {
+    const trimmedPiName = fieldValue.trim();
+    return trimmedPiName === '' ? null : trimmedPiName;
+  }
+
+  if (typeof fieldValue === 'object' && fieldValue !== null) {
+    const fieldRecord = fieldValue as { value?: unknown; name?: unknown };
+    if (typeof fieldRecord.value === 'string' && fieldRecord.value.trim() !== '') {
+      return fieldRecord.value.trim();
+    }
+
+    if (typeof fieldRecord.name === 'string' && fieldRecord.name.trim() !== '') {
+      return fieldRecord.name.trim();
+    }
+  }
+
+  return null;
+}
+
+function createUniqueProjectKeys(teams: ArtTeam[]): string[] {
+  return Array.from(
+    new Set(
+      teams
+        .map((team) => team.projectKey?.trim())
+        .filter((projectKey): projectKey is string => Boolean(projectKey)),
+    ),
+  );
+}
+
+function createPiSuggestionPrefixes(): string[] {
+  const currentTwoDigitYear = new Date().getFullYear() % 100;
+
+  return PI_SUGGESTION_YEAR_OFFSETS
+    .map((yearOffset) => currentTwoDigitYear + yearOffset)
+    .filter((yearNumber) => yearNumber >= 0 && yearNumber <= 99)
+    .map((yearNumber) => `PI ${String(yearNumber).padStart(2, '0')}`);
+}
+
+function sortPiNames(piNames: string[]): string[] {
+  return Array.from(new Set(piNames))
+    .sort((leftPiName, rightPiName) => {
+      const leftMatch = leftPiName.match(/(\d+)\.(\d+)/);
+      const rightMatch = rightPiName.match(/(\d+)\.(\d+)/);
+
+      if (leftMatch && rightMatch) {
+        const yearDifference = Number(leftMatch[1]) - Number(rightMatch[1]);
+        if (yearDifference !== 0) {
+          return yearDifference;
+        }
+
+        return Number(leftMatch[2]) - Number(rightMatch[2]);
+      }
+
+      return leftPiName.localeCompare(rightPiName);
+    })
+    .reverse();
+}
+
+async function fetchPiNamesFromAutocomplete(piFieldId: string): Promise<string[]> {
+  const autocompleteFieldName = buildPiAutocompleteFieldName(piFieldId);
+  const autocompleteResults = await Promise.all(
+    createPiSuggestionPrefixes().map(async (piPrefix) => {
+      try {
+        const response = await jiraGet<JiraAutocompleteResponse>(
+          `/rest/api/2/jql/autocompletedata/suggestions?fieldName=${encodeURIComponent(autocompleteFieldName)}&fieldValue=${encodeURIComponent(piPrefix)}`,
+        );
+
+        return response.results ?? [];
+      } catch {
+        return [];
+      }
+    }),
+  );
+
+  return autocompleteResults.flatMap((resultSet) =>
+    resultSet
+      .map((suggestion) => (suggestion.value ?? suggestion.displayName ?? '').replace(/^"|"$/g, '').trim())
+      .filter((piName) => piName !== ''),
+  );
+}
+
+async function fetchPiNamesFromIssues(piFieldId: string, projectKeys: string[]): Promise<string[]> {
+  const piFieldNumber = piFieldId.replace('customfield_', '');
+  const projectFilterClause = projectKeys.length > 0
+    ? ` AND project in (${projectKeys.map((projectKey) => `"${projectKey}"`).join(', ')})`
+    : '';
+  const piSearchJql = `cf[${piFieldNumber}] is not EMPTY${projectFilterClause} ORDER BY created DESC`;
+  const response = await jiraGet<JiraPiSearchResponse>(
+    `/rest/api/2/search?jql=${encodeURIComponent(piSearchJql)}&maxResults=1000&fields=${encodeURIComponent(piFieldId)}`,
+  );
+
+  return (response.issues ?? [])
+    .map((issue) => extractPiNameFromFieldValue(issue.fields?.[piFieldId]))
+    .filter((piName): piName is string => Boolean(piName));
+}
+
+async function loadAvailablePiNamesFromJira(teams: ArtTeam[]): Promise<string[]> {
+  if (teams.length === 0) {
+    return [];
+  }
+
+  const projectKeys = createUniqueProjectKeys(teams);
+  if (projectKeys.length === 0) {
+    return [];
+  }
+
+  const piFieldId = readArtAdvancedSettings().piFieldId?.trim() || DEFAULT_PI_FIELD_ID;
+  const autocompletePiNames = await fetchPiNamesFromAutocomplete(piFieldId);
+
+  if (autocompletePiNames.length > 0) {
+    return sortPiNames(autocompletePiNames);
+  }
+
+  const fallbackPiNames = await fetchPiNamesFromIssues(piFieldId, projectKeys);
+  return sortPiNames(fallbackPiNames);
+}
+
+async function resolveTeamProjectKey(team: ArtTeam): Promise<string | undefined> {
+  if (team.projectKey?.trim()) {
+    return team.projectKey.trim();
+  }
+
+  try {
+    const response = await jiraGet<JiraBoardProjectResponse>(`/rest/agile/1.0/board/${team.boardId}/project`);
+    return response.values?.[0]?.key?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export type ArtTab =
   | 'overview'
@@ -30,8 +245,12 @@ export interface ArtTeam {
   id: string;
   name: string;
   boardId: string;
+  boardName?: string;
+  boardType?: ArtBoardType;
   /** Optional Jira project key (e.g. "ALPHA") used for Blueprint off-train detection. */
   projectKey?: string;
+  /** Active sprint name for Scrum boards — absent when using PI mode, Kanban, or when no sprint is loaded. */
+  activeSprintName?: string;
   sprintIssues: JiraIssue[];
   isLoading: boolean;
   loadError: string | null;
@@ -60,6 +279,8 @@ export interface ArtDataState {
   activeTab: ArtTab;
   teams: ArtTeam[];
   selectedPiName: string;
+  availablePiNames: string[];
+  isLoadingPiOptions: boolean;
   isLoadingAllTeams: boolean;
   /** Team IDs whose SoS accordion sections are currently expanded. */
   sosExpandedTeams: string[];
@@ -76,9 +297,10 @@ export interface ArtDataState {
 export interface ArtDataActions {
   setActiveTab: (tab: ArtTab) => void;
   setSelectedPiName: (name: string) => void;
-  addTeam: (name: string, boardId: string, projectKey?: string) => void;
+  addTeam: (name: string, boardId: string, projectKey?: string, boardName?: string) => void;
   removeTeam: (teamId: string) => void;
   saveTeams: () => void;
+  loadPiOptions: () => Promise<void>;
   loadTeam: (teamId: string) => Promise<void>;
   loadAllTeams: () => Promise<void>;
   /** Expand or collapse a team's SoS accordion section. */
@@ -94,6 +316,8 @@ function buildStoredTeamRecord(team: ArtTeam): ArtTeam {
     id: team.id,
     name: team.name,
     boardId: team.boardId,
+    boardName: team.boardName,
+    boardType: team.boardType,
     projectKey: team.projectKey,
     sprintIssues: [],
     isLoading: false,
@@ -120,6 +344,12 @@ function loadStoredTeams(): ArtTeam[] {
         id: String(team.id ?? ''),
         name: String(team.name ?? ''),
         boardId: String(team.boardId ?? ''),
+        boardName: typeof team.boardName === 'string' && team.boardName.trim() !== ''
+          ? team.boardName
+          : undefined,
+        boardType: typeof team.boardType === 'string'
+          ? normalizeBoardType(team.boardType)
+          : undefined,
         projectKey: typeof team.projectKey === 'string' && team.projectKey.trim() !== ''
           ? team.projectKey
           : undefined,
@@ -180,8 +410,10 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
   const [teams, setTeams] = useState<ArtTeam[]>(loadStoredTeams);
   // teamsRef keeps an always-current reference so loadTeam can read boardId without stale closures
   const teamsRef = useRef<ArtTeam[]>([]);
-  teamsRef.current = teams;
-  const [selectedPiName, setSelectedPiNameState] = useState('');
+  const [selectedPiName, setSelectedPiNameState] = useState(getStoredSelectedPiName);
+  const selectedPiNameRef = useRef(selectedPiName);
+  const [availablePiNames, setAvailablePiNames] = useState<string[]>([]);
+  const [isLoadingPiOptions, setIsLoadingPiOptions] = useState(false);
   const [isLoadingAllTeams, setIsLoadingAllTeams] = useState(false);
   const [sosExpandedTeams, setSosExpandedTeams] = useState<string[]>([]);
   const [boardPrepIssues, setBoardPrepIssues] = useState<ArtBoardPrepIssue[]>([]);
@@ -193,6 +425,14 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
     persistTeams(teams);
   }, [teams]);
 
+  useEffect(() => {
+    teamsRef.current = teams;
+  }, [teams]);
+
+  useEffect(() => {
+    selectedPiNameRef.current = selectedPiName;
+  }, [selectedPiName]);
+
   // Derive PI progress stats from live team data without a separate state variable
   const piProgressStats = useMemo(() => computePiProgressStats(teams), [teams]);
 
@@ -200,17 +440,19 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
     setActiveTabState(tab);
   }, []);
 
-  const setSelectedPiName= useCallback((name: string) => {
+  const setSelectedPiName = useCallback((name: string) => {
     setSelectedPiNameState(name);
+    persistSelectedPiName(name);
   }, []);
 
-  const addTeam = useCallback((name: string, boardId: string, projectKey?: string) => {
+  const addTeam = useCallback((name: string, boardId: string, projectKey?: string, boardName?: string) => {
     // Use timestamp + random suffix for a unique ID without crypto.randomUUID
     const newTeamId = Date.now().toString(36) + Math.random().toString(36).slice(2);
     const newTeam: ArtTeam = {
       id: newTeamId,
       name,
       boardId,
+      boardName: boardName?.trim() || undefined,
       projectKey: projectKey?.trim() || undefined,
       sprintIssues: [],
       isLoading: false,
@@ -227,6 +469,18 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
     persistTeams(teamsRef.current);
   }, []);
 
+  const loadPiOptions = useCallback(async () => {
+    setIsLoadingPiOptions(true);
+    try {
+      const loadedPiNames = await loadAvailablePiNamesFromJira(teamsRef.current);
+      setAvailablePiNames(loadedPiNames);
+    } catch {
+      setAvailablePiNames([]);
+    } finally {
+      setIsLoadingPiOptions(false);
+    }
+  }, []);
+
   const loadTeam = useCallback(async (teamId: string) => {
     // Read boardId directly from the ref to avoid stale closures in concurrent mode
     const targetTeam = teamsRef.current.find((team) => team.id === teamId);
@@ -240,39 +494,169 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
     );
 
     try {
-      const sprintResponse = await jiraGet<{ values: { id: number; name: string; state: string }[] }>(
-        `/rest/agile/1.0/board/${boardId}/sprint?state=${SPRINT_STATE_ACTIVE}`,
-      );
-      const activeSprint = sprintResponse.values[0];
+      const boardMetadata = await jiraGet<JiraBoardMetadata>(`/rest/agile/1.0/board/${boardId}`);
+      const normalizedBoardType = normalizeBoardType(boardMetadata.type);
+      const resolvedBoardName = boardMetadata.name?.trim() || targetTeam.boardName;
+      const piFieldId = readArtAdvancedSettings().piFieldId?.trim() || DEFAULT_PI_FIELD_ID;
+      const hasSelectedPiName = selectedPiNameRef.current.trim() !== '';
+      const resolvedProjectKey = hasSelectedPiName
+        ? await resolveTeamProjectKey(targetTeam)
+        : targetTeam.projectKey?.trim();
 
-      if (!activeSprint) {
+      if (hasSelectedPiName && !resolvedProjectKey) {
         setTeams((current) =>
           current.map((team) =>
             team.id === teamId
-              ? { ...team, isLoading: false, loadError: 'No active sprint found', sprintIssues: [] }
+              ? {
+                  ...team,
+                  boardName: resolvedBoardName,
+                  boardType: normalizedBoardType,
+                  activeSprintName: undefined,
+                  isLoading: false,
+                  loadError: 'PI filter unavailable: no project key for this board',
+                  sprintIssues: [],
+                }
               : team,
           ),
         );
         return;
       }
 
-      const issueResponse = await jiraGet<{ issues: JiraIssue[] }>(
-        `/rest/agile/1.0/sprint/${activeSprint.id}/issue?maxResults=${SPRINT_ISSUE_MAX_RESULTS}&fields=${SPRINT_ISSUE_FIELDS}`,
-      );
+      if (hasSelectedPiName && resolvedProjectKey) {
+        const piFieldNumber = piFieldId.replace('customfield_', '');
+        const piSearchJql = `project="${resolvedProjectKey}" AND cf[${piFieldNumber}]="${selectedPiNameRef.current.trim()}" ORDER BY updated DESC`;
+        const issueResponse = await jiraGet<{ issues: JiraIssue[] }>(
+          `/rest/api/2/search?jql=${encodeURIComponent(piSearchJql)}&fields=${encodeURIComponent(SPRINT_ISSUE_FIELDS)}&maxResults=${PI_ISSUE_MAX_RESULTS}`,
+        );
 
-      setTeams((current) =>
-        current.map((team) =>
-          team.id === teamId
-            ? { ...team, isLoading: false, loadError: null, sprintIssues: issueResponse.issues }
-            : team,
-        ),
-      );
+        setTeams((current) =>
+          current.map((team) =>
+            team.id === teamId
+              ? {
+                  ...team,
+                  boardName: resolvedBoardName,
+                  boardType: normalizedBoardType,
+                  projectKey: resolvedProjectKey,
+                  activeSprintName: undefined,
+                  isLoading: false,
+                  loadError: null,
+                  sprintIssues: issueResponse.issues,
+                }
+              : team,
+          ),
+        );
+        return;
+      }
+
+      if (normalizedBoardType === 'kanban' || normalizedBoardType === 'simple') {
+        const issueResponse = await jiraGet<{ issues: JiraIssue[] }>(
+          `/rest/agile/1.0/board/${boardId}/issue?maxResults=${BOARD_ISSUE_MAX_RESULTS}&fields=${encodeURIComponent(SPRINT_ISSUE_FIELDS)}`,
+        );
+
+        setTeams((current) =>
+          current.map((team) =>
+            team.id === teamId
+              ? {
+                  ...team,
+                  boardName: resolvedBoardName,
+                  boardType: normalizedBoardType,
+                  projectKey: resolvedProjectKey ?? team.projectKey,
+                  // Kanban boards have no sprints, so any previously stored sprint name is no longer valid.
+                  activeSprintName: undefined,
+                  isLoading: false,
+                  loadError: null,
+                  sprintIssues: issueResponse.issues,
+                }
+              : team,
+          ),
+        );
+        return;
+      }
+
+      try {
+        const sprintResponse = await jiraGet<{ values: JiraSprintMetadata[] }>(
+          `/rest/agile/1.0/board/${boardId}/sprint?state=${SPRINT_STATE_ACTIVE}`,
+        );
+        const activeSprint = sprintResponse.values[0];
+
+        if (!activeSprint) {
+          setTeams((current) =>
+            current.map((team) =>
+              team.id === teamId
+                ? {
+                    ...team,
+                    boardName: resolvedBoardName,
+                    boardType: normalizedBoardType,
+                    projectKey: resolvedProjectKey ?? team.projectKey,
+                    activeSprintName: undefined,
+                    isLoading: false,
+                    loadError: 'No active sprint found',
+                    sprintIssues: [],
+                  }
+                : team,
+            ),
+          );
+          return;
+        }
+
+        const issueResponse = await jiraGet<{ issues: JiraIssue[] }>(
+          `/rest/agile/1.0/sprint/${activeSprint.id}/issue?maxResults=${SPRINT_ISSUE_MAX_RESULTS}&fields=${encodeURIComponent(SPRINT_ISSUE_FIELDS)}`,
+        );
+
+        setTeams((current) =>
+          current.map((team) =>
+            team.id === teamId
+              ? {
+                  ...team,
+                  boardName: resolvedBoardName,
+                  boardType: normalizedBoardType,
+                  projectKey: resolvedProjectKey ?? team.projectKey,
+                  // Store the sprint name so the Overview card can display it without a re-fetch.
+                  activeSprintName: activeSprint.name,
+                  isLoading: false,
+                  loadError: null,
+                  sprintIssues: issueResponse.issues,
+                }
+              : team,
+          ),
+        );
+      } catch (sprintError) {
+        const sprintErrorMessage = sprintError instanceof Error ? sprintError.message : String(sprintError);
+        const normalizedSprintErrorMessage = sprintErrorMessage.toLowerCase();
+        const canUseBoardIssueFallback = normalizedSprintErrorMessage.includes("doesn't support sprints")
+          || normalizedSprintErrorMessage.includes('does not support sprints');
+
+        if (!canUseBoardIssueFallback) {
+          throw sprintError;
+        }
+
+        const issueResponse = await jiraGet<{ issues: JiraIssue[] }>(
+          `/rest/agile/1.0/board/${boardId}/issue?maxResults=${BOARD_ISSUE_MAX_RESULTS}&fields=${encodeURIComponent(SPRINT_ISSUE_FIELDS)}`,
+        );
+
+        setTeams((current) =>
+          current.map((team) =>
+            team.id === teamId
+              ? {
+                  ...team,
+                  boardName: resolvedBoardName,
+                  boardType: normalizedBoardType,
+                  projectKey: resolvedProjectKey ?? team.projectKey,
+                  activeSprintName: undefined,
+                  isLoading: false,
+                  loadError: null,
+                  sprintIssues: issueResponse.issues,
+                }
+              : team,
+          ),
+        );
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to load team';
       setTeams((current) =>
         current.map((team) =>
           team.id === teamId
-            ? { ...team, isLoading: false, loadError: errorMessage, sprintIssues: [] }
+            ? { ...team, activeSprintName: undefined, isLoading: false, loadError: errorMessage, sprintIssues: [] }
             : team,
         ),
       );
@@ -333,6 +717,8 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
       activeTab,
       teams,
       selectedPiName,
+      availablePiNames,
+      isLoadingPiOptions,
       isLoadingAllTeams,
       sosExpandedTeams,
       boardPrepIssues,
@@ -347,6 +733,7 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
       addTeam,
       removeTeam,
       saveTeams,
+      loadPiOptions,
       loadTeam,
       loadAllTeams,
       toggleSosTeam,

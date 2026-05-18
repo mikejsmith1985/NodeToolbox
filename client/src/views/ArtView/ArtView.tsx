@@ -47,8 +47,15 @@ export default function ArtView() {
   }
 
   return (
-    <div className={styles.artView}>
-      <PiProgressHeader piName={state.selectedPiName} stats={state.piProgressStats} />
+      <div className={styles.artView}>
+      <PiProgressHeader
+        availablePiNames={state.availablePiNames}
+        isLoadingPiOptions={state.isLoadingPiOptions}
+        onPiNameChange={actions.setSelectedPiName}
+        onReloadPiOptions={actions.loadPiOptions}
+        piName={state.selectedPiName}
+        stats={state.piProgressStats}
+      />
 
       <PrimaryTabs
         ariaLabel="ART View tabs"
@@ -61,6 +68,7 @@ export default function ArtView() {
       <div className={styles.tabContent}>
         {state.activeTab === 'overview' && (
           <OverviewPanel
+            selectedPiName={state.selectedPiName}
             teamProjectKeyFilter={teamProjectKeyFilter}
             teams={filteredTeams}
             isLoadingAllTeams={state.isLoadingAllTeams}
@@ -87,7 +95,7 @@ export default function ArtView() {
           <BlueprintTab teams={state.teams} selectedPiName={state.selectedPiName} />
         )}
         {state.activeTab === 'dependencies' && (
-          <DependenciesTab teams={state.teams} />
+          <DependenciesTab teams={state.teams} selectedPiName={state.selectedPiName} />
         )}
         {state.activeTab === 'boardprep' && (
           <BoardPrepPanel
@@ -116,6 +124,7 @@ export default function ArtView() {
           <SettingsPanel
             teams={state.teams}
             onAddTeam={actions.addTeam}
+            onReloadPiOptions={actions.loadPiOptions}
             onRemoveTeam={actions.removeTeam}
             onSaveTeams={actions.saveTeams}
           />
@@ -129,17 +138,50 @@ export default function ArtView() {
 
 interface PiProgressHeaderProps {
   piName: string;
+  availablePiNames: string[];
+  isLoadingPiOptions: boolean;
+  onPiNameChange: (piName: string) => void;
+  onReloadPiOptions: () => Promise<void>;
   stats: PiProgressStats;
 }
 
 /** Renders the PI-level progress bar above the tab bar, showing overall completion across all teams. */
-function PiProgressHeader({ piName, stats }: PiProgressHeaderProps) {
+function PiProgressHeader({
+  piName,
+  availablePiNames,
+  isLoadingPiOptions,
+  onPiNameChange,
+  onReloadPiOptions,
+  stats,
+}: PiProgressHeaderProps) {
   const displayName = piName.trim() || 'No PI selected';
   const progressBarWidth = `${stats.completionPercent}%`;
 
   return (
     <div className={styles.piProgressHeader}>
       <span className={styles.piProgressName}>{displayName}</span>
+      <select
+        aria-label="Program Increment"
+        className={styles.textInput}
+        id="art-pi-selector"
+        onChange={(changeEvent) => onPiNameChange(changeEvent.target.value)}
+        value={piName}
+      >
+        <option value="">
+          {isLoadingPiOptions ? 'Loading program increments…' : '— Select Program Increment —'}
+        </option>
+        {availablePiNames.map((availablePiName) => (
+          <option key={availablePiName} value={availablePiName}>{availablePiName}</option>
+        ))}
+      </select>
+      <button
+        className={styles.secondaryBtn}
+        disabled={isLoadingPiOptions}
+        onClick={() => onReloadPiOptions()}
+        type="button"
+      >
+        {isLoadingPiOptions ? 'Loading…' : 'Reload PIs'}
+      </button>
       <div className={styles.piProgressBarTrack}>
         <div className={styles.piProgressBarFill} style={{ width: progressBarWidth }} />
       </div>
@@ -155,6 +197,7 @@ function PiProgressHeader({ piName, stats }: PiProgressHeaderProps) {
 
 interface OverviewPanelProps {
   teams: ArtTeam[];
+  selectedPiName: string;
   teamProjectKeyFilter: string;
   isLoadingAllTeams: boolean;
   onLoadAllTeams: () => Promise<void>;
@@ -165,6 +208,7 @@ interface OverviewPanelProps {
 /** Renders the Overview tab with team health cards and the Load All Teams control. */
 function OverviewPanel({
   teams,
+  selectedPiName,
   teamProjectKeyFilter,
   isLoadingAllTeams,
   onLoadAllTeams,
@@ -196,7 +240,7 @@ function OverviewPanel({
           <p className={styles.emptyState}>No teams configured. Add teams in the Settings tab.</p>
         )}
         {teams.map((team) => (
-          <TeamCard key={team.id} team={team} onLoad={onLoadTeam} />
+          <TeamCard key={team.id} selectedPiName={selectedPiName} team={team} onLoad={onLoadTeam} />
         ))}
       </div>
     </div>
@@ -204,23 +248,154 @@ function OverviewPanel({
 }
 
 interface TeamCardProps {
+  selectedPiName: string;
   team: ArtTeam;
   onLoad: (teamId: string) => Promise<void>;
 }
 
-/** Renders a single team's sprint summary card. */
-function TeamCard({ team, onLoad }: TeamCardProps) {
+// ── TeamCard health stats ──
+
+/** Status category key Jira uses to mark an item as complete. */
+const OVERVIEW_CARD_STATUS_DONE = 'done';
+/** Status category key Jira uses for items that are actively in progress. */
+const OVERVIEW_CARD_STATUS_IN_PROGRESS = 'indeterminate';
+/**
+ * Fallback stale-issue threshold in days.
+ * Matches the default in the SoS section and the ART Settings default.
+ */
+const OVERVIEW_CARD_STALE_DAYS_DEFAULT = 5;
+
+interface TeamCardHealthStats {
+  totalIssueCount: number;
+  doneCount: number;
+  inProgressCount: number;
+  blockedCount: number;
+  staleCount: number;
+  completionPercent: number;
+}
+
+/**
+ * Derives a health snapshot from a team's loaded issues.
+ * Reads the user-configured stale threshold from localStorage, falling back to the default when absent.
+ */
+function computeTeamCardHealthStats(team: ArtTeam): TeamCardHealthStats {
+  const totalIssueCount = team.sprintIssues.length;
+  if (totalIssueCount === 0) {
+    return { totalIssueCount: 0, doneCount: 0, inProgressCount: 0, blockedCount: 0, staleCount: 0, completionPercent: 0 };
+  }
+
+  const nowMs = Date.now();
+  const MS_PER_DAY = 86_400_000;
+
+  // Read the user-configured stale threshold so the Overview card stays in sync with SoS settings.
+  let staleDays = OVERVIEW_CARD_STALE_DAYS_DEFAULT;
+  try {
+    const artSettings = JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as { staleDays?: number };
+    if (typeof artSettings.staleDays === 'number' && artSettings.staleDays > 0) {
+      staleDays = artSettings.staleDays;
+    }
+  } catch {
+    // Storage errors are non-fatal; the default threshold is used instead.
+  }
+
+  const doneIssues = team.sprintIssues.filter((issue) => {
+    const categoryKey = issue.fields.status.statusCategory?.key;
+    return categoryKey ? categoryKey === OVERVIEW_CARD_STATUS_DONE : issue.fields.status.name.toLowerCase() === 'done';
+  });
+
+  const inProgressIssues = team.sprintIssues.filter((issue) => {
+    const categoryKey = issue.fields.status.statusCategory?.key;
+    if (categoryKey) return categoryKey === OVERVIEW_CARD_STATUS_IN_PROGRESS;
+    const statusName = issue.fields.status.name.toLowerCase();
+    return statusName === 'in progress' || statusName === 'in review';
+  });
+
+  const blockedCount = team.sprintIssues.filter((issue) =>
+    issue.fields.status.name.toLowerCase().includes('block'),
+  ).length;
+
+  const staleCount = inProgressIssues.filter((issue) => {
+    const updatedMs = new Date(issue.fields.updated).getTime();
+    return (nowMs - updatedMs) / MS_PER_DAY > staleDays;
+  }).length;
+
+  const doneCount = doneIssues.length;
+  const inProgressCount = inProgressIssues.length;
+  const completionPercent = Math.round((doneCount / totalIssueCount) * 100);
+
+  return { totalIssueCount, doneCount, inProgressCount, blockedCount, staleCount, completionPercent };
+}
+
+/** Returns the CSS class string for the board type badge based on the board's Agile method. */
+function getBoardTypeBadgeClass(boardType: string, styles: Record<string, string>): string {
+  if (boardType === 'scrum') return `${styles.boardTypeBadge} ${styles.boardTypeBadgeScrum}`;
+  if (boardType === 'kanban') return `${styles.boardTypeBadge} ${styles.boardTypeBadgeKanban}`;
+  return `${styles.boardTypeBadge} ${styles.boardTypeBadgeSimple}`;
+}
+
+/** Renders a single team's overview card with board type, optional sprint name, and health stats. */
+function TeamCard({ selectedPiName, team, onLoad }: TeamCardProps) {
+  const isKanbanOrSimpleBoard = team.boardType === 'kanban' || team.boardType === 'simple';
+  const issueCountLabel = selectedPiName.trim() !== ''
+    ? 'PI issues'
+    : isKanbanOrSimpleBoard
+      ? 'board issues'
+      : 'sprint issues';
+
+  const hasLoadedIssues = team.sprintIssues.length > 0;
+  const healthStats = hasLoadedIssues ? computeTeamCardHealthStats(team) : null;
+
+  // Sprint name only appears on Scrum cards when the user is not filtering by a PI.
+  const shouldShowSprintName = Boolean(team.activeSprintName)
+    && !isKanbanOrSimpleBoard
+    && selectedPiName.trim() === '';
+
   return (
     <div className={styles.teamCard}>
       <div className={styles.teamCardHeader}>
         <span className={styles.teamName}>{team.name}</span>
-        <span className={styles.boardId}>Board {team.boardId}</span>
+        {team.boardType && team.boardType !== 'unknown' && (
+          <span className={getBoardTypeBadgeClass(team.boardType, styles as unknown as Record<string, string>)}>
+            {team.boardType.toUpperCase()}
+          </span>
+        )}
       </div>
+      <span className={styles.boardId}>{team.boardName ?? `Board ${team.boardId}`}</span>
+
+      {/* Sprint name — shows the active sprint for Scrum boards outside of PI mode */}
+      {shouldShowSprintName && (
+        <span className={styles.sprintName}>{team.activeSprintName}</span>
+      )}
+
       {team.loadError && <p className={styles.errorText}>{team.loadError}</p>}
       {team.isLoading && <p className={styles.loadingText}>Loading…</p>}
-      {!team.isLoading && !team.loadError && (
-        <p className={styles.issueCount}>{team.sprintIssues.length} sprint issues</p>
+
+      {!team.isLoading && !team.loadError && hasLoadedIssues && healthStats && (
+        <>
+          {/* Mini bar gives instant at-a-glance completion without requiring the user to do arithmetic */}
+          <div className={styles.teamCardProgressTrack} title={`${healthStats.completionPercent}% complete`}>
+            <div
+              className={styles.teamCardProgressFill}
+              style={{ width: `${healthStats.completionPercent}%` }}
+            />
+          </div>
+          <div className={styles.teamCardStats}>
+            <span className={styles.teamCardStatDone}>{healthStats.doneCount} done</span>
+            <span className={styles.teamCardStatInProgress}>{healthStats.inProgressCount} in progress</span>
+            {healthStats.blockedCount > 0 && (
+              <span className={styles.teamCardStatBlocked}>🚧 {healthStats.blockedCount} blocked</span>
+            )}
+            {healthStats.staleCount > 0 && (
+              <span className={styles.teamCardStatStale}>⏱ {healthStats.staleCount} stale</span>
+            )}
+          </div>
+        </>
       )}
+
+      {!team.isLoading && !team.loadError && !hasLoadedIssues && (
+        <p className={styles.issueCount}>0 {issueCountLabel}</p>
+      )}
+
       <button className={styles.loadBtn} onClick={() => onLoad(team.id)} disabled={team.isLoading}>
         Refresh
       </button>
@@ -409,6 +584,7 @@ function BoardPrepPanel({
       <h3 className={styles.sectionTitle}>Board Prep</h3>
       <div className={styles.boardPrepControls}>
         <input
+          aria-label="Board Prep PI Name"
           type="text"
           className={styles.textInput}
           placeholder="PI Name"
@@ -1059,7 +1235,8 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
 
 interface SettingsPanelProps {
   teams: ArtTeam[];
-  onAddTeam: (name: string, boardId: string, projectKey?: string) => void;
+  onAddTeam: (name: string, boardId: string, projectKey?: string, boardName?: string) => void;
+  onReloadPiOptions: () => Promise<void>;
   onRemoveTeam: (teamId: string) => void;
   onSaveTeams: () => void;
 }
@@ -1090,10 +1267,17 @@ function writeArtAdvancedSettings(settings: ArtAdvancedSettings): void {
 const DEFAULT_STALE_DAYS_SETTING = 5;
 
 /** Renders the Settings tab for managing ART team roster, board IDs, and advanced field configuration. */
-function SettingsPanel({ teams, onAddTeam, onRemoveTeam, onSaveTeams }: SettingsPanelProps) {
+function SettingsPanel({
+  teams,
+  onAddTeam,
+  onReloadPiOptions,
+  onRemoveTeam,
+  onSaveTeams,
+}: SettingsPanelProps) {
   const { showToast } = useToast();
   const [newTeamName, setNewTeamName] = useState('');
   const [newBoardId, setNewBoardId] = useState('');
+  const [newBoardName, setNewBoardName] = useState('');
   const [newProjectKey, setNewProjectKey] = useState('');
 
   const storedSettings = readArtAdvancedSettings();
@@ -1106,9 +1290,15 @@ function SettingsPanel({ teams, onAddTeam, onRemoveTeam, onSaveTeams }: Settings
 
   function handleAddTeam() {
     if (!newTeamName.trim() || !newBoardId.trim()) return;
-    onAddTeam(newTeamName.trim(), newBoardId.trim(), newProjectKey.trim() || undefined);
+    onAddTeam(
+      newTeamName.trim(),
+      newBoardId.trim(),
+      newProjectKey.trim() || undefined,
+      newBoardName.trim() || undefined,
+    );
     setNewTeamName('');
     setNewBoardId('');
+    setNewBoardName('');
     setNewProjectKey('');
   }
 
@@ -1126,6 +1316,7 @@ function SettingsPanel({ teams, onAddTeam, onRemoveTeam, onSaveTeams }: Settings
   function handlePiFieldChange(value: string) {
     setPiFieldId(value);
     saveSettingField('piFieldId', value);
+    void onReloadPiOptions();
   }
 
   function handleSpFieldChange(value: string) {
@@ -1160,7 +1351,13 @@ function SettingsPanel({ teams, onAddTeam, onRemoveTeam, onSaveTeams }: Settings
         <JiraBoardPicker
           id="art-board-picker"
           label="Board"
-          onChange={setNewBoardId}
+          onBoardSelected={(selectedBoard) => setNewBoardName(selectedBoard?.name ?? '')}
+          onChange={(boardId) => {
+            setNewBoardId(boardId);
+            if (boardId === '') {
+              setNewBoardName('');
+            }
+          }}
           placeholder="Select a board"
           projectKey={newProjectKey || undefined}
           value={newBoardId}
@@ -1190,7 +1387,7 @@ function SettingsPanel({ teams, onAddTeam, onRemoveTeam, onSaveTeams }: Settings
         {teams.map((team) => (
           <div key={team.id} className={styles.teamListRow}>
             <span className={styles.teamName}>{team.name}</span>
-            <span className={styles.boardId}>Board {team.boardId}</span>
+            <span className={styles.boardId}>{team.boardName ?? `Board ${team.boardId}`}</span>
             {team.projectKey && (
               <span className={styles.projectKeyBadge}>{team.projectKey}</span>
             )}

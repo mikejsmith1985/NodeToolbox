@@ -132,6 +132,96 @@
   cursor: not-allowed;
 }
 
+/* ── TeamCard: board type badge ── */
+
+.boardTypeBadge {
+  font-size: 0.65rem;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 999px;
+  letter-spacing: 0.04em;
+}
+
+.boardTypeBadgeScrum {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.boardTypeBadgeKanban {
+  background: #fce4ec;
+  color: #880e4f;
+}
+
+.boardTypeBadgeSimple {
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+}
+
+/* ── TeamCard: active sprint name ── */
+
+.sprintName {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+/* ── TeamCard: mini progress bar ── */
+
+.teamCardProgressTrack {
+  height: 4px;
+  background: var(--color-surface-2);
+  border-radius: 2px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+.teamCardProgressFill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* ── TeamCard: health stat chips ── */
+
+.teamCardStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.teamCardStatDone {
+  font-size: 0.72rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #d4edda;
+  color: #155724;
+}
+
+.teamCardStatInProgress {
+  font-size: 0.72rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #fff3cd;
+  color: #856404;
+}
+
+.teamCardStatBlocked {
+  font-size: 0.72rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.teamCardStatStale {
+  font-size: 0.72rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #e2e3e5;
+  color: #383d41;
+}
+
 .primaryBtn {
   padding: var(--spacing-sm) var(--spacing-md);
   border: none;

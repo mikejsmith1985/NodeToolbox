@@ -2,7 +2,7 @@
 
 import { render, screen, fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ArtTab } from './hooks/useArtData.ts';
+import type { ArtTab, ArtTeam } from './hooks/useArtData.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import { ToastProvider } from '../../components/Toast/ToastProvider.tsx';
 
@@ -17,14 +17,17 @@ const { mockState, mockActions } = vi.hoisted(() => ({
       {
         id: 'team-1',
         name: 'Alpha Team',
-        boardId: '42',
-        projectKey: '',
+          boardId: '42',
+          boardName: 'Transformers Board',
+          projectKey: '',
         sprintIssues: [] as JiraIssue[],
         isLoading: false,
         loadError: null as string | null,
       },
-    ],
+    ] as ArtTeam[],
     selectedPiName: 'PI-2025-Q1',
+    availablePiNames: ['PI-2025-Q2', 'PI-2025-Q1'],
+    isLoadingPiOptions: false,
     isLoadingAllTeams: false,
     sosExpandedTeams: [] as string[],
     boardPrepIssues: [] as Array<{ teamName: string; key: string; summary: string; estimate: number | null; priority: string | null }>,
@@ -46,6 +49,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     removeTeam: vi.fn(),
     loadAllTeams: vi.fn().mockResolvedValue(undefined),
     loadTeam: vi.fn().mockResolvedValue(undefined),
+    loadPiOptions: vi.fn().mockResolvedValue(undefined),
     toggleSosTeam: vi.fn(),
     loadBoardPrep: vi.fn().mockResolvedValue(undefined),
     setBoardPrepTeamFilter: vi.fn(),
@@ -76,7 +80,23 @@ describe('ArtView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockState.activeTab = 'overview';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardName: 'Transformers Board',
+        projectKey: '',
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
     mockState.sosExpandedTeams = [];
+    mockState.selectedPiName = 'PI-2025-Q1';
+    mockState.availablePiNames = ['PI-2025-Q2', 'PI-2025-Q1'];
+    mockState.isLoadingPiOptions = false;
+    mockState.boardPrepIssues = [];
     mockJiraGet.mockImplementation((path: string) => {
       if (path === '/rest/api/2/field') {
         return Promise.resolve([]);
@@ -213,7 +233,22 @@ describe('ArtView', () => {
 
   it('renders the PI progress header above the tab bar with PI name', () => {
     renderArtView();
-    expect(screen.getByText('PI-2025-Q1')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /program increment/i })).toHaveValue('PI-2025-Q1');
+  });
+
+  it('renders a Program Increment selector in the header', () => {
+    renderArtView();
+    expect(screen.getByRole('combobox', { name: /program increment/i })).toBeInTheDocument();
+  });
+
+  it('updates the selected PI when the header selector changes', () => {
+    renderArtView();
+
+    fireEvent.change(screen.getByRole('combobox', { name: /program increment/i }), {
+      target: { value: 'PI-2025-Q2' },
+    });
+
+    expect(mockActions.setSelectedPiName).toHaveBeenCalledWith('PI-2025-Q2');
   });
 
   it('renders PI progress header completion percentage', () => {
@@ -233,6 +268,13 @@ describe('ArtView', () => {
     renderArtView();
     expect(screen.getByText(/no pi selected/i)).toBeInTheDocument();
     mockState.selectedPiName = 'PI-2025-Q1';
+  });
+
+  it('shows the board name on overview team cards when Jira metadata is available', () => {
+    renderArtView();
+
+    expect(screen.getByText('Transformers Board')).toBeInTheDocument();
+    expect(screen.queryByText('Board 42')).not.toBeInTheDocument();
   });
 
   // ── Feature 1: Dependency Tab (table-based, no SVG) ──
@@ -260,7 +302,7 @@ describe('ArtView', () => {
   it('shows the Board Prep PI name input field', () => {
     mockState.activeTab = 'boardprep';
     renderArtView();
-    expect(screen.getByDisplayValue('PI-2025-Q1')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /board prep pi name/i })).toHaveValue('PI-2025-Q1');
   });
 
   it('shows Board Prep table headers when issues are loaded', () => {
@@ -425,6 +467,198 @@ describe('ArtView', () => {
     mockState.activeTab = 'settings';
     renderArtView();
     expect(screen.getByRole('combobox', { name: /project/i })).toBeInTheDocument();
+  });
+
+  it('shows the board name in the settings team list when Jira metadata is available', () => {
+    mockState.activeTab = 'settings';
+    renderArtView();
+
+    expect(screen.getByText('Transformers Board')).toBeInTheDocument();
+    expect(screen.queryByText('Board 42')).not.toBeInTheDocument();
+    mockState.activeTab = 'overview';
+  });
+
+  // ── Overview parity: board type badge ──
+
+  it('shows a SCRUM badge on team cards when boardType is scrum', () => {
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'scrum' as const,
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText('SCRUM')).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows a KANBAN badge on team cards when boardType is kanban', () => {
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'kanban' as const,
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText('KANBAN')).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('does not show a board type badge when boardType is absent', () => {
+    // default beforeEach teams have no boardType set
+    renderArtView();
+    expect(screen.queryByText('SCRUM')).not.toBeInTheDocument();
+    expect(screen.queryByText('KANBAN')).not.toBeInTheDocument();
+  });
+
+  it('shows the active sprint name on Scrum team cards when not in PI mode', () => {
+    mockState.selectedPiName = '';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'scrum' as const,
+        activeSprintName: 'Sprint 14',
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText('Sprint 14')).toBeInTheDocument();
+    mockState.selectedPiName = 'PI-2025-Q1';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('hides the sprint name on Scrum team cards when PI mode is active', () => {
+    mockState.selectedPiName = 'PI 25.3';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'scrum' as const,
+        activeSprintName: 'Sprint 14',
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.queryByText('Sprint 14')).not.toBeInTheDocument();
+    mockState.selectedPiName = 'PI-2025-Q1';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows done and in-progress counts on team cards when issues are loaded', () => {
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'scrum' as const,
+        sprintIssues: [
+          {
+            id: 'TBX-1', key: 'TBX-1',
+            fields: {
+              summary: 'Task A',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+          {
+            id: 'TBX-2', key: 'TBX-2',
+            fields: {
+              summary: 'Task B',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText(/1 done/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 in progress/i)).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows a blocked badge on team cards when blocked issues are present', () => {
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'scrum' as const,
+        sprintIssues: [
+          {
+            id: 'TBX-3', key: 'TBX-3',
+            fields: {
+              summary: 'Blocked story',
+              status: { name: 'Blocked', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText(/1 blocked/i)).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows a stale badge on team cards when in-progress issues have not been updated recently', () => {
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'scrum' as const,
+        sprintIssues: [
+          {
+            id: 'TBX-4', key: 'TBX-4',
+            fields: {
+              summary: 'Stale story',
+              // Very old update date guarantees staleness regardless of threshold setting
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2020-01-01T00:00:00.000Z', updated: '2020-01-01T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByText(/1 stale/i)).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
   });
 });
 
