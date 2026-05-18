@@ -41,11 +41,13 @@ const MOCK_DONE_ISSUE = {
 describe('useArtData', () => {
   beforeEach(() => {
     localStorage.clear();
+    mockJiraGet.mockReset();
   });
 
   afterEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
+    mockJiraGet.mockReset();
   });
 
   it('initialises with empty teams and overview tab', () => {
@@ -81,6 +83,16 @@ describe('useArtData', () => {
     expect(result.current.state.teams[0].boardId).toBe('42');
   });
 
+  it('stores the selected board name when addTeam receives Jira board metadata', () => {
+    const { result } = renderHook(() => useArtData());
+
+    act(() => {
+      result.current.actions.addTeam('Alpha Team', '42', 'ALPHA', 'Transformers Board');
+    });
+
+    expect(result.current.state.teams[0].boardName).toBe('Transformers Board');
+  });
+
   it('removes a team when removeTeam is called', () => {
     const { result } = renderHook(() => useArtData());
     act(() => { result.current.actions.addTeam('Alpha Team', '42'); });
@@ -113,6 +125,7 @@ describe('useArtData', () => {
 
   it('loads sprint issues for a team when loadTeam resolves', async () => {
     mockJiraGet
+      .mockResolvedValueOnce({ id: 42, name: 'Alpha Board', type: 'scrum' })
       .mockResolvedValueOnce({ values: [{ id: 7, name: 'Sprint 7', state: 'active' }] })
       .mockResolvedValueOnce({ issues: [MOCK_ISSUE] });
     const { result } = renderHook(() => useArtData());
@@ -121,6 +134,52 @@ describe('useArtData', () => {
     await act(async () => { await result.current.actions.loadTeam(teamId); });
     expect(result.current.state.teams[0].sprintIssues).toHaveLength(1);
     expect(result.current.state.teams[0].loadError).toBeNull();
+  });
+
+  it('loads board issues for kanban teams instead of requiring a sprint', async () => {
+    mockJiraGet
+      .mockResolvedValueOnce({ id: 467, name: 'SIS Board', type: 'kanban' })
+      .mockResolvedValueOnce({ issues: [MOCK_ISSUE] });
+    const { result } = renderHook(() => useArtData());
+    act(() => { result.current.actions.addTeam('SIS', '467'); });
+    const teamId = result.current.state.teams[0].id;
+
+    await act(async () => {
+      await result.current.actions.loadTeam(teamId);
+    });
+
+    expect(result.current.state.teams[0].boardName).toBe('SIS Board');
+    expect(result.current.state.teams[0].boardType).toBe('kanban');
+    expect(result.current.state.teams[0].sprintIssues).toHaveLength(1);
+    expect(result.current.state.teams[0].loadError).toBeNull();
+  });
+
+  it('loads PI options from Jira autocomplete and strips JQL quotes', async () => {
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ piFieldId: 'customfield_10301' }));
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      if (requestPath.includes('/rest/api/2/jql/autocompletedata/suggestions')) {
+        return Promise.resolve({
+          results: [
+            { value: '"PI 26.2"' },
+            { displayName: '"PI 26.3"' },
+          ],
+        });
+      }
+
+      return Promise.resolve({ issues: [] });
+    });
+
+    const { result } = renderHook(() => useArtData());
+
+    act(() => {
+      result.current.actions.addTeam('Alpha Team', '42', 'ALPHA');
+    });
+
+    await act(async () => {
+      await result.current.actions.loadPiOptions();
+    });
+
+    expect(result.current.state.availablePiNames).toEqual(['PI 26.3', 'PI 26.2']);
   });
 
   it('sets team loadError when loadTeam rejects', async () => {
@@ -235,6 +294,7 @@ describe('useArtData', () => {
 
   it('piProgressStats correctly counts done issues by statusCategory', async () => {
     mockJiraGet
+      .mockResolvedValueOnce({ id: 42, name: 'Alpha Board', type: 'scrum' })
       .mockResolvedValueOnce({ values: [{ id: 7, name: 'Sprint 7', state: 'active' }] })
       .mockResolvedValueOnce({ issues: [MOCK_ISSUE, MOCK_DONE_ISSUE] });
     const { result } = renderHook(() => useArtData());
@@ -256,5 +316,34 @@ describe('useArtData', () => {
     const { result } = renderHook(() => useArtData());
     act(() => { result.current.actions.setActiveTab('boardprep'); });
     expect(result.current.state.activeTab).toBe('boardprep');
+  });
+
+  // ── Overview parity: activeSprintName ──
+
+  it('stores activeSprintName on the team after loading a Scrum board', async () => {
+    mockJiraGet
+      .mockResolvedValueOnce({ id: 42, name: 'Alpha Board', type: 'scrum' })
+      .mockResolvedValueOnce({ values: [{ id: 7, name: 'Sprint 7', state: 'active' }] })
+      .mockResolvedValueOnce({ issues: [MOCK_ISSUE] });
+
+    const { result } = renderHook(() => useArtData());
+    act(() => { result.current.actions.addTeam('Alpha Team', '42'); });
+    const teamId = result.current.state.teams[0].id;
+    await act(async () => { await result.current.actions.loadTeam(teamId); });
+
+    expect(result.current.state.teams[0].activeSprintName).toBe('Sprint 7');
+  });
+
+  it('does not store activeSprintName for Kanban teams', async () => {
+    mockJiraGet
+      .mockResolvedValueOnce({ id: 467, name: 'SIS Board', type: 'kanban' })
+      .mockResolvedValueOnce({ issues: [MOCK_ISSUE] });
+
+    const { result } = renderHook(() => useArtData());
+    act(() => { result.current.actions.addTeam('SIS', '467'); });
+    const teamId = result.current.state.teams[0].id;
+    await act(async () => { await result.current.actions.loadTeam(teamId); });
+
+    expect(result.current.state.teams[0].activeSprintName).toBeUndefined();
   });
 });
