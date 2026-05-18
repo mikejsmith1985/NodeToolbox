@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Art View — Blueprint and Dependencies PI queries now fetch up to 500 issues per team** (was incorrectly capped at 200 while the PI-aware hook path already used 500). Large PIs with more than 200 issues per team no longer silently truncate the Blueprint hierarchy or the cross-team dependency table. Open-sprint fallback queries retain the 200-issue cap.
+- **Art View — Settings PI field change no longer triggers noisy Jira reloads on every keystroke**: `handlePiFieldChange` now only calls `loadPiOptions()` when the entered value is a fully-formed Jira custom field ID (`customfield_NNNN+`). This prevents stale/duplicate PI-options reloads while the user is typing in the `JiraFieldPicker` fallback text input (shown when Jira's field metadata API is unavailable).
+- **Art View — SoS and Monthly Report parity improvements**:
+  - **SoS impediment detection** now uses the same 4-signal logic as the Impediments tab (blocked status, "is blocked by" link, Jira flag `customfield_10021`, and `blocked`/`impediment` labels). The Pulse count and per-team accordion list no longer miss flagged or label-blocked issues that lack "block" in their summary.
+  - **SoS date picker**: A date selector above the accordion lets facilitators view and edit narratives for any of the past 14 days — narratives are stored per-team per-date so previous sessions are not overwritten.
+  - **SoS Copy Report**: A "Copy SoS Report" button formats all team narratives for the selected date as plain text for pasting into Jira, Confluence, or email.
+  - **SoS accordion header badge**: Each team's accordion header now shows issue count and done/total completion at a glance so facilitators can assess team health without expanding every row.
+  - **Monthly Report — month persistence**: The selected month is now saved to `localStorage` (`tbxMonthlyReportMeta`) and restored when the tab is re-opened, so users do not need to re-navigate after switching tabs.
+  - **Monthly Report — pillar filter**: A "Filter by pillar" dropdown in the toolbar narrows visible cards to a single portfolio pillar (Growth, Affordability, Operating Model) independently of the team filter.
+  - **Monthly Report — draft indicator**: Cards that have at least one content field filled show a "✓ Draft" badge in the card header, making it easy to scan which teams have submitted entries.
+  - **Monthly Report — Export Text**: An "Export Text" button downloads the visible cards as a plain-text `.txt` file alongside the existing HTML export.
+
 ### Added
 - **Admin Hub — "Check Repo Access" button**: A new *📋 Check Repo Access* button in Service Connectivity probes each Scheduler-configured repository at the branches/PRs endpoint level (not just `/user` auth). Results table shows per-repo HTTP status codes with a human-readable diagnosis that distinguishes: IP allow list blocks ("Your IP address is not in the allowed list"), SAML SSO not authorized, generic 403 scope errors, 401 invalid PAT, and 404 wrong repo path. This surfaces the true cause of failures that the existing *Test Connection* probe hides (it tests `/user`, which passes even when org-scoped endpoints are blocked by an IP allow list).
 - **Admin Hub — Repo monitor — probeErrorMessage now populated on HTTP errors**: `probeSingleRepoConnectivity` previously left `probeErrorMessage: null` for all HTTP-level failures (403, 404, etc.) — it was only populated for network exceptions. It now extracts `body.message` from GitHub's error response, making the message available in `/api/scheduler/validate` and surfaced by the new "Check Repo Access" UI.

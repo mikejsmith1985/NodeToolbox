@@ -407,13 +407,74 @@ interface TeamsPanelProps {
   teams: ArtTeam[];
 }
 
+// ── Impediments helpers ──
+
+/**
+ * Human-readable reason labels that explain why an issue was classified as an impediment.
+ * Multiple reasons may apply to a single issue.
+ */
+type ImpedimentReason = 'Blocked Status' | 'Blocked Link' | 'Flagged' | 'Label';
+
+/**
+ * Returns all detected reasons why a Jira issue is an impediment.
+ * Checks four independent signals so that issues flagged in any way surface here.
+ */
+function detectImpedimentReasons(issue: JiraIssue): ImpedimentReason[] {
+  const reasons: ImpedimentReason[] = [];
+
+  // 1. Status name explicitly contains "block" (e.g. "Blocked", "Blocking", "Blocked – Waiting")
+  if (issue.fields.status.name.toLowerCase().includes('block')) {
+    reasons.push('Blocked Status');
+  }
+
+  // 2. At least one issue link is a "is blocked by" or "blocks" relationship with an open inward issue.
+  //    We check both inward and outward link types so the detection works regardless of direction stored.
+  const hasBlockedByLink = (issue.fields.issuelinks ?? []).some((link) => {
+    const inwardName = link.type?.inward?.toLowerCase() ?? '';
+    const outwardName = link.type?.outward?.toLowerCase() ?? '';
+    // Only count the link as a blocker when the linked inward issue is still open (not resolved)
+    const linkedInwardIssueIsOpen =
+      link.inwardIssue !== undefined &&
+      link.inwardIssue.fields?.status?.name?.toLowerCase() !== 'done' &&
+      link.inwardIssue.fields?.status?.name?.toLowerCase() !== 'resolved' &&
+      link.inwardIssue.fields?.status?.name?.toLowerCase() !== 'closed';
+    return (inwardName.includes('block') || outwardName.includes('block')) && linkedInwardIssueIsOpen;
+  });
+  if (hasBlockedByLink) {
+    reasons.push('Blocked Link');
+  }
+
+  // 3. Jira "flagged" custom field (customfield_10021) — set by the Jira impediment flag button.
+  if (issue.fields.customfield_10021) {
+    reasons.push('Flagged');
+  }
+
+  // 4. Issue label explicitly marks the item as blocked or an impediment.
+  const labels = issue.fields.labels ?? [];
+  const hasBlockedLabel = labels.some(
+    (label) => label.toLowerCase() === 'blocked' || label.toLowerCase() === 'impediment',
+  );
+  if (hasBlockedLabel) {
+    reasons.push('Label');
+  }
+
+  return reasons;
+}
+
+/** Returns true when an issue is an impediment by any detection signal. */
+function isImpediment(issue: JiraIssue): boolean {
+  return detectImpedimentReasons(issue).length > 0;
+}
+
+// ── Impediments panel ──
+
 interface ImpedimentsPanelProps extends TeamsPanelProps {
   teamProjectKeyFilter: string;
   onIssueUpdated: () => void;
   onTeamProjectKeyFilterChange: (value: string) => void;
 }
 
-/** Renders the Impediments tab showing blocked issues across all teams. */
+/** Renders the Impediments tab showing blocked/flagged issues across all teams with detection reason. */
 function ImpedimentsPanel({
   teams,
   teamProjectKeyFilter,
@@ -421,10 +482,12 @@ function ImpedimentsPanel({
   onTeamProjectKeyFilterChange,
 }: ImpedimentsPanelProps) {
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
-  const blockedIssues = teams.flatMap((team) =>
+
+  // Collect issues matching any impediment signal, attaching detected reasons and team name.
+  const impedimentIssues = teams.flatMap((team) =>
     team.sprintIssues
-      .filter((issue) => issue.fields.status.name.toLowerCase().includes('block'))
-      .map((issue) => ({ ...issue, teamName: team.name })),
+      .map((issue) => ({ ...issue, teamName: team.name, reasons: detectImpedimentReasons(issue) }))
+      .filter((issue) => issue.reasons.length > 0),
   );
 
   function toggleExpandedIssue(issueKey: string) {
@@ -443,8 +506,8 @@ function ImpedimentsPanel({
           value={teamProjectKeyFilter}
         />
       </div>
-      {blockedIssues.length === 0 && (
-        <p className={styles.emptyState}>No blocked issues found across all teams.</p>
+      {impedimentIssues.length === 0 && (
+        <p className={styles.emptyState}>No impediments found across all teams.</p>
       )}
       <table className={styles.dataTable}>
         <thead>
@@ -452,11 +515,12 @@ function ImpedimentsPanel({
             <th scope="col">Key</th>
             <th scope="col">Summary</th>
             <th scope="col">Team</th>
+            <th scope="col">Reason</th>
             <th scope="col">Assignee</th>
           </tr>
         </thead>
         <tbody>
-          {blockedIssues.map((issue) => {
+          {impedimentIssues.map((issue) => {
             const isExpanded = expandedIssueKey === issue.key;
             const expandButtonLabel = `${isExpanded ? 'Collapse' : 'Expand'} details for ${issue.key}`;
 
@@ -478,21 +542,19 @@ function ImpedimentsPanel({
                   <td>
                     <div className={styles.issueKeyCell}>
                       <span>{issue.key}</span>
-                      <span
-                        aria-hidden="true"
-                        className={styles.expandToggleButton}
-                      >
+                      <span aria-hidden="true" className={styles.expandToggleButton}>
                         {isExpanded ? '▲' : '▼'}
                       </span>
                     </div>
                   </td>
                   <td>{issue.fields.summary}</td>
                   <td>{issue.teamName}</td>
+                  <td>{issue.reasons.join(', ')}</td>
                   <td>{issue.fields.assignee?.displayName ?? '—'}</td>
                 </tr>
                 {isExpanded && (
                   <tr>
-                    <td className={styles.issueDetailCell} colSpan={4}>
+                    <td className={styles.issueDetailCell} colSpan={5}>
                       <IssueDetailPanel isEmbedded issue={issue} onIssueUpdated={onIssueUpdated} />
                     </td>
                   </tr>
@@ -506,33 +568,244 @@ function ImpedimentsPanel({
   );
 }
 
-/** Renders the Predictability tab with team velocity metrics. */
+// ── Predictability helpers ──
+
+/** Status category key constants used by both the Overview and Predictability panels. */
+const STATUS_CATEGORY_DONE_KEY = 'done';
+const STATUS_CATEGORY_IN_PROGRESS_KEY = 'indeterminate';
+
+/** Returns true when an issue's status category (or name fallback) indicates completion. */
+function isIssueCompleted(issue: JiraIssue): boolean {
+  const categoryKey = issue.fields.status.statusCategory?.key;
+  if (categoryKey) return categoryKey === STATUS_CATEGORY_DONE_KEY;
+  return issue.fields.status.name.toLowerCase() === 'done';
+}
+
+/** Returns true when an issue is actively in progress by status category or known name patterns. */
+function isIssueActivelyInProgress(issue: JiraIssue): boolean {
+  const categoryKey = issue.fields.status.statusCategory?.key;
+  if (categoryKey) return categoryKey === STATUS_CATEGORY_IN_PROGRESS_KEY;
+  const statusName = issue.fields.status.name.toLowerCase();
+  return statusName === 'in progress' || statusName === 'in review';
+}
+
+/**
+ * Returns the story-point estimate for an issue, checking the two common custom field IDs.
+ * Returns null when neither field is populated.
+ */
+function getIssueStoryPoints(issue: JiraIssue): number | null {
+  return issue.fields.customfield_10016 ?? issue.fields.customfield_10028 ?? null;
+}
+
+/** Aggregate per-team metrics surfaced in the Predictability tab. */
+interface TeamPredictabilityMetrics {
+  teamName: string;
+  boardType: string;
+  totalIssues: number;
+  doneCount: number;
+  inProgressCount: number;
+  completionPercent: number;
+  /** Story points completed — null when no issues carry point estimates. */
+  storyPointsDone: number | null;
+  /** Total story points planned — null when no issues carry point estimates. */
+  storyPointsTotal: number | null;
+}
+
+/**
+ * Derives a predictability snapshot from a single team's loaded issues.
+ * Story points columns are omitted (null) when none of the team's issues have estimates,
+ * so Kanban teams with no estimates still show useful counts and percentages.
+ */
+function computeTeamPredictabilityMetrics(team: ArtTeam): TeamPredictabilityMetrics {
+  const totalIssues = team.sprintIssues.length;
+  const doneIssues = team.sprintIssues.filter(isIssueCompleted);
+  const inProgressIssues = team.sprintIssues.filter(isIssueActivelyInProgress);
+  const completionPercent = totalIssues > 0 ? Math.round((doneIssues.length / totalIssues) * 100) : 0;
+
+  const allPoints = team.sprintIssues.map(getIssueStoryPoints);
+  const hasAnyPointEstimates = allPoints.some((pointValue) => pointValue !== null);
+
+  const storyPointsDone = hasAnyPointEstimates
+    ? doneIssues.reduce((runningTotal, issue) => runningTotal + (getIssueStoryPoints(issue) ?? 0), 0)
+    : null;
+  const storyPointsTotal = hasAnyPointEstimates
+    ? team.sprintIssues.reduce((runningTotal, issue) => runningTotal + (getIssueStoryPoints(issue) ?? 0), 0)
+    : null;
+
+  return {
+    teamName: team.name,
+    boardType: team.boardType ?? 'unknown',
+    totalIssues,
+    doneCount: doneIssues.length,
+    inProgressCount: inProgressIssues.length,
+    completionPercent,
+    storyPointsDone,
+    storyPointsTotal,
+  };
+}
+
+/** Renders the Predictability tab with per-team velocity and completion metrics. */
 function PredictabilityPanel({ teams }: TeamsPanelProps) {
+  if (teams.length === 0) {
+    return (
+      <div className={styles.panel}>
+        <h3 className={styles.sectionTitle}>Predictability</h3>
+        <p className={styles.emptyState}>No teams loaded. Load teams from the Overview tab.</p>
+      </div>
+    );
+  }
+
+  const teamMetrics = teams.map(computeTeamPredictabilityMetrics);
+  // Determine whether any team has story point data — used to show/hide the optional columns.
+  const hasAnyStoryPointData = teamMetrics.some((metrics) => metrics.storyPointsDone !== null);
+
   return (
     <div className={styles.panel}>
       <h3 className={styles.sectionTitle}>Predictability</h3>
-      {teams.length === 0 && (
-        <p className={styles.emptyState}>No teams loaded. Load teams from the Overview tab.</p>
-      )}
-      {teams.map((team) => (
-        <div key={team.id} className={styles.teamCard}>
-          <span className={styles.teamName}>{team.name}</span>
-          <span className={styles.issueCount}>{team.sprintIssues.length} issues this sprint</span>
-        </div>
-      ))}
+      <table className={styles.dataTable}>
+        <thead>
+          <tr>
+            <th scope="col">Team</th>
+            <th scope="col">Board Type</th>
+            <th scope="col">Done</th>
+            <th scope="col">In Progress</th>
+            <th scope="col">Total</th>
+            <th scope="col">Completion</th>
+            {hasAnyStoryPointData && <th scope="col">Pts Done</th>}
+            {hasAnyStoryPointData && <th scope="col">Pts Total</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {teamMetrics.map((metrics) => (
+            <tr key={metrics.teamName}>
+              <td>{metrics.teamName}</td>
+              <td>{metrics.boardType !== 'unknown' ? metrics.boardType.toUpperCase() : '—'}</td>
+              <td>{metrics.doneCount}</td>
+              <td>{metrics.inProgressCount}</td>
+              <td>{metrics.totalIssues}</td>
+              <td>{metrics.totalIssues > 0 ? `${metrics.completionPercent}%` : '—'}</td>
+              {hasAnyStoryPointData && <td>{metrics.storyPointsDone ?? '—'}</td>}
+              {hasAnyStoryPointData && <td>{metrics.storyPointsTotal ?? '—'}</td>}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-/** Renders the Releases tab with fix version tracking. */
+// ── Releases helpers ──
+
+/** A single fix-version bucket aggregating issues from potentially multiple teams. */
+interface ReleaseVersionSummary {
+  versionName: string;
+  releaseDate: string | null;
+  isReleased: boolean;
+  teamNames: string[];
+  doneCount: number;
+  totalIssueCount: number;
+}
+
+/**
+ * Groups all team sprint issues by fix version, aggregating done/total counts and contributing teams.
+ * Issues without any fix version are excluded; they are not release-oriented.
+ */
+function groupIssuesByFixVersion(teams: ArtTeam[]): ReleaseVersionSummary[] {
+  interface VersionAccumulator {
+    releaseDate: string | null;
+    isReleased: boolean;
+    teamNameSet: Set<string>;
+    doneCount: number;
+    totalIssueCount: number;
+  }
+
+  const versionMap = new Map<string, VersionAccumulator>();
+
+  for (const team of teams) {
+    for (const issue of team.sprintIssues) {
+      const fixVersions = issue.fields.fixVersions ?? [];
+      if (fixVersions.length === 0) continue;
+
+      const issueIsDone = isIssueCompleted(issue);
+
+      for (const fixVersion of fixVersions) {
+        if (!versionMap.has(fixVersion.name)) {
+          versionMap.set(fixVersion.name, {
+            releaseDate: fixVersion.releaseDate ?? null,
+            isReleased: fixVersion.released ?? false,
+            teamNameSet: new Set(),
+            doneCount: 0,
+            totalIssueCount: 0,
+          });
+        }
+
+        const accumulator = versionMap.get(fixVersion.name)!;
+        accumulator.teamNameSet.add(team.name);
+        accumulator.totalIssueCount++;
+        if (issueIsDone) accumulator.doneCount++;
+      }
+    }
+  }
+
+  return Array.from(versionMap.entries())
+    .map(([versionName, accumulator]) => ({
+      versionName,
+      releaseDate: accumulator.releaseDate,
+      isReleased: accumulator.isReleased,
+      teamNames: Array.from(accumulator.teamNameSet).sort(),
+      doneCount: accumulator.doneCount,
+      totalIssueCount: accumulator.totalIssueCount,
+    }))
+    .sort((firstVersion, secondVersion) => {
+      // Released versions appear after unreleased so upcoming work is prominent.
+      if (firstVersion.isReleased !== secondVersion.isReleased) {
+        return firstVersion.isReleased ? 1 : -1;
+      }
+      // Within the same released/unreleased group, sort ascending by date so nearest deadline is first.
+      if (firstVersion.releaseDate && secondVersion.releaseDate) {
+        return firstVersion.releaseDate.localeCompare(secondVersion.releaseDate);
+      }
+      if (firstVersion.releaseDate) return -1;
+      if (secondVersion.releaseDate) return 1;
+      return firstVersion.versionName.localeCompare(secondVersion.versionName);
+    });
+}
+
+/** Renders the Releases tab with fix-version-grouped issue tracking across all teams. */
 function ReleasesPanel({ teams }: TeamsPanelProps) {
-  const releaseIssues = teams.flatMap((team) => team.sprintIssues);
+  const releaseVersions = groupIssuesByFixVersion(teams);
 
   return (
     <div className={styles.panel}>
       <h3 className={styles.sectionTitle}>Releases</h3>
-      {releaseIssues.length === 0 && (
-        <p className={styles.emptyState}>No release issues found. Load teams from the Overview tab.</p>
+      {releaseVersions.length === 0 && (
+        <p className={styles.emptyState}>
+          No release data found. Assign fix versions to issues in Jira, then reload teams.
+        </p>
+      )}
+      {releaseVersions.length > 0 && (
+        <table className={styles.dataTable}>
+          <thead>
+            <tr>
+              <th scope="col">Fix Version</th>
+              <th scope="col">Release Date</th>
+              <th scope="col">Status</th>
+              <th scope="col">Done / Total</th>
+              <th scope="col">Teams</th>
+            </tr>
+          </thead>
+          <tbody>
+            {releaseVersions.map((releaseVersion) => (
+              <tr key={releaseVersion.versionName}>
+                <td>{releaseVersion.versionName}</td>
+                <td>{releaseVersion.releaseDate ?? '—'}</td>
+                <td>{releaseVersion.isReleased ? '✅ Released' : '🔜 Upcoming'}</td>
+                <td>{releaseVersion.doneCount} / {releaseVersion.totalIssueCount}</td>
+                <td>{releaseVersion.teamNames.join(', ')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );
@@ -655,6 +928,8 @@ interface SosPanelProps {
 
 /**
  * Computes the aggregate pulse stats across all teams for the SoS Pulse summary.
+ * Uses the same 4-signal impediment detection as the Impediments tab so that flagged,
+ * label-blocked, link-blocked, and status-blocked issues all count toward the pulse.
  * Teams at risk are those with fewer than 50% of their issues marked done.
  */
 function computeSosPulse(teams: ArtTeam[]): { impedimentCount: number; completionPercent: number; teamsAtRisk: string[] } {
@@ -669,13 +944,12 @@ function computeSosPulse(teams: ArtTeam[]): { impedimentCount: number; completio
     const doneCount = team.sprintIssues.filter(
       (issue) => issue.fields.status.statusCategory?.key === 'done' || issue.fields.status.name.toLowerCase() === 'done',
     ).length;
-    const teamImpediments = team.sprintIssues.filter((issue) =>
-      issue.fields.summary.toLowerCase().includes('block'),
-    ).length;
+    // Use the same 4-signal detection as ImpedimentsPanel so the pulse count is consistent.
+    const teamImpedimentCount = team.sprintIssues.filter(isImpediment).length;
 
     totalIssues += issueCount;
     totalDone += doneCount;
-    impedimentCount += teamImpediments;
+    impedimentCount += teamImpedimentCount;
 
     const teamCompletionPercent = issueCount > 0 ? (doneCount / issueCount) * 100 : 0;
     if (issueCount > 0 && teamCompletionPercent < RISK_THRESHOLD_PERCENT) {
@@ -725,10 +999,7 @@ function autoGenerateSosNarrative(team: ArtTeam, staleDaysThreshold: number): Om
       issue.fields.status.statusCategory?.key === 'indeterminate' ||
       issue.fields.status.name.toLowerCase().includes('progress'),
   );
-  const blockedIssues = team.sprintIssues.filter((issue) =>
-    issue.fields.status.name.toLowerCase().includes('block') ||
-    issue.fields.summary.toLowerCase().includes('block'),
-  );
+  const blockedIssues = team.sprintIssues.filter(isImpediment);
   const staleIssues = inProgressIssues.filter((issue) => {
     const updatedMs = new Date(issue.fields.updated).getTime();
     return (now - updatedMs) / msPerDay > staleDaysThreshold;
@@ -777,12 +1048,13 @@ const DEFAULT_STALE_DAYS = 5;
 
 interface SosTeamNarrativeProps {
   team: ArtTeam;
+  /** The date string (YYYY-MM-DD) for which to load and save the narrative. */
+  selectedDateString: string;
 }
 
 /** Renders the 5 narrative textarea fields for a single team's SoS accordion section. */
-function SosTeamNarrative({ team }: SosTeamNarrativeProps) {
-  const todayString = getTodayDateString();
-  const storedNarrative = readStoredSosNarrative(team.id, todayString);
+function SosTeamNarrative({ team, selectedDateString }: SosTeamNarrativeProps) {
+  const storedNarrative = readStoredSosNarrative(team.id, selectedDateString);
 
   // Load settings for stale-day threshold
   let staleDays = DEFAULT_STALE_DAYS;
@@ -805,7 +1077,7 @@ function SosTeamNarrative({ team }: SosTeamNarrativeProps) {
       editedAt: { ...narrativeData.editedAt, [fieldName]: new Date().toISOString() },
     };
     setNarrativeData(updatedData);
-    storeSosNarrative(team.id, todayString, updatedData);
+    storeSosNarrative(team.id, selectedDateString, updatedData);
   }
 
   function handleRevertField(fieldName: SosNarrativeField) {
@@ -817,7 +1089,7 @@ function SosTeamNarrative({ team }: SosTeamNarrativeProps) {
       editedAt: updatedEditedAt,
     };
     setNarrativeData(updatedData);
-    storeSosNarrative(team.id, todayString, updatedData);
+    storeSosNarrative(team.id, selectedDateString, updatedData);
   }
 
   return (
@@ -857,13 +1129,97 @@ function SosTeamNarrative({ team }: SosTeamNarrativeProps) {
   );
 }
 
+/** Generates a list of the past 14 days (inclusive) as date option objects for the SoS date picker. */
+function generateSosDateOptions(): { value: string; label: string }[] {
+  const options: { value: string; label: string }[] = [];
+  const now = new Date();
+  for (let dayOffset = 0; dayOffset < 14; dayOffset++) {
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOffset);
+    const value = date.toISOString().slice(0, 10);
+    const label =
+      dayOffset === 0
+        ? `Today (${value})`
+        : dayOffset === 1
+          ? `Yesterday (${value})`
+          : value;
+    options.push({ value, label });
+  }
+  return options;
+}
+
+/**
+ * Formats all team narratives as a single plain-text SoS report for pasting into
+ * Confluence, email, or Jira comments.
+ */
+function formatSosReportAsText(
+  teams: ArtTeam[],
+  selectedDateString: string,
+  staleDaysThreshold: number,
+): string {
+  const lines: string[] = [`SoS Report — ${selectedDateString}`, ''];
+  for (const team of teams) {
+    const stored = readStoredSosNarrative(team.id, selectedDateString);
+    const autoNarrative = autoGenerateSosNarrative(team, staleDaysThreshold);
+    const narrative = stored ?? { ...autoNarrative, editedAt: {} };
+    lines.push(`=== ${team.name} ===`);
+    SOS_NARRATIVE_FIELDS.forEach((fieldName) => {
+      if (narrative[fieldName] && narrative[fieldName] !== 'None') {
+        lines.push(`${SOS_NARRATIVE_FIELD_LABELS[fieldName]}:\n${narrative[fieldName]}`);
+      }
+    });
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
 /** Renders the enhanced SoS tab with a Pulse summary and per-team accordion sections with narrative fields. */
 function SosPanel({ teams, sosExpandedTeams, onToggleSosTeam }: SosPanelProps) {
   const pulse = computeSosPulse(teams);
+  const sosDateOptions = generateSosDateOptions();
+  const [selectedDateString, setSelectedDateString] = useState(sosDateOptions[0].value);
+
+  // Load stale-days threshold for the report formatter
+  let staleDays = DEFAULT_STALE_DAYS;
+  try {
+    const settings = JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as { staleDays?: number };
+    if (typeof settings.staleDays === 'number') staleDays = settings.staleDays;
+  } catch {
+    // Use default
+  }
+
+  function handleCopySosReport() {
+    const text = formatSosReportAsText(teams, selectedDateString, staleDays);
+    navigator.clipboard.writeText(text).catch(() => {
+      // Fallback for environments where clipboard API is unavailable
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    });
+  }
 
   return (
     <div className={styles.panel}>
       <h3 className={styles.sectionTitle}>Scrum of Scrums</h3>
+
+      {/* Toolbar: date selector and report export */}
+      <div className={styles.sosToolbar}>
+        <select
+          className={styles.textInput}
+          value={selectedDateString}
+          onChange={(event) => setSelectedDateString(event.target.value)}
+          aria-label="Select SoS date"
+        >
+          {sosDateOptions.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <button className={styles.secondaryBtn} onClick={handleCopySosReport}>
+          Copy SoS Report
+        </button>
+      </div>
 
       {/* Pulse: aggregate health at a glance */}
       <div className={styles.sosPulse}>
@@ -886,9 +1242,8 @@ function SosPanel({ teams, sosExpandedTeams, onToggleSosTeam }: SosPanelProps) {
       {/* Per-team accordion sections with narrative fields */}
       {teams.map((team) => {
         const isExpanded = sosExpandedTeams.includes(team.id);
-        const teamImpediments = team.sprintIssues.filter((issue) =>
-          issue.fields.summary.toLowerCase().includes('block'),
-        );
+        // Use the full 4-signal impediment detection so the accordion list matches the Impediments tab.
+        const teamImpediments = team.sprintIssues.filter(isImpediment);
         const assignees = [
           ...new Set(
             team.sprintIssues
@@ -896,6 +1251,13 @@ function SosPanel({ teams, sosExpandedTeams, onToggleSosTeam }: SosPanelProps) {
               .filter((name): name is string => Boolean(name)),
           ),
         ];
+        // Per-team completion for the accordion header badge
+        const teamTotalIssues = team.sprintIssues.length;
+        const teamDoneCount = team.sprintIssues.filter(
+          (issue) =>
+            issue.fields.status.statusCategory?.key === 'done' ||
+            issue.fields.status.name.toLowerCase() === 'done',
+        ).length;
 
         return (
           <div key={team.id} className={styles.sosAccordion}>
@@ -905,13 +1267,16 @@ function SosPanel({ teams, sosExpandedTeams, onToggleSosTeam }: SosPanelProps) {
               aria-expanded={isExpanded}
             >
               {team.name}
+              {/* Per-team stats badge so facilitators see at-a-glance health without expanding */}
+              <span className={styles.sosAccordionStats}>
+                {teamTotalIssues} issues · {teamDoneCount}/{teamTotalIssues} done
+                {teamImpediments.length > 0 && ` · ⚠️ ${teamImpediments.length}`}
+              </span>
               <span className={styles.sosAccordionChevron}>{isExpanded ? '▲' : '▼'}</span>
             </button>
 
             {isExpanded && (
               <div className={styles.sosAccordionBody}>
-                <p className={styles.sosStat}>{team.sprintIssues.length} issues</p>
-
                 {assignees.length > 0 && (
                   <div className={styles.sosAssignees}>
                     <strong>Assignees: </strong>{assignees.join(', ')}
@@ -934,7 +1299,7 @@ function SosPanel({ teams, sosExpandedTeams, onToggleSosTeam }: SosPanelProps) {
                 )}
 
                 {/* Editable SoS narrative fields — auto-generated, manually overridable */}
-                <SosTeamNarrative team={team} />
+                <SosTeamNarrative team={team} selectedDateString={selectedDateString} />
               </div>
             )}
           </div>
@@ -1065,6 +1430,31 @@ function downloadTextFile(content: string, filename: string, mimeType: string): 
   URL.revokeObjectURL(url);
 }
 
+/** localStorage key for persisting the selected month across Monthly Report visits. */
+const MONTHLY_REPORT_META_STORAGE_KEY = 'tbxMonthlyReportMeta';
+
+/** Loads the last-used month (YYYY-MM) from localStorage, or returns null if not stored. */
+function loadPersistedMonthSelection(): string | null {
+  try {
+    const raw = localStorage.getItem(MONTHLY_REPORT_META_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { selectedYearMonth?: string };
+    return parsed.selectedYearMonth ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persists the selected month to localStorage so it survives tab switches. */
+function savePersistedMonthSelection(yearMonth: string): void {
+  localStorage.setItem(MONTHLY_REPORT_META_STORAGE_KEY, JSON.stringify({ selectedYearMonth: yearMonth }));
+}
+
+/** Returns true when a monthly report card has at least one content field filled in. */
+function monthlyCardHasDraftContent(card: MonthlyReportCard): boolean {
+  return Boolean(card.accomplished || card.outcomes || card.risks || card.stakeholders);
+}
+
 const PILLAR_OPTIONS: MonthlyReportPillar[] = ['', 'Growth', 'Affordability', 'Operating Model'];
 
 interface MonthlyReportCardEditorProps {
@@ -1078,10 +1468,21 @@ function MonthlyReportCardEditor({ card, onChange }: MonthlyReportCardEditorProp
     onChange({ ...card, [fieldName]: value });
   }
 
+  const hasDraftContent = monthlyCardHasDraftContent(card);
+
   return (
     <div className={styles.monthlyCard}>
       <div className={styles.monthlyCardHeader}>
         <span className={styles.monthlyCardTeamName}>{card.teamName}</span>
+        {/* Draft indicator: a checkmark badge signals the card has been filled in */}
+        {hasDraftContent && (
+          <span
+            className={styles.monthlyCardDraftIndicator}
+            title="Draft — this card has content"
+          >
+            ✓ Draft
+          </span>
+        )}
         <select
           className={styles.monthlyPillarSelect}
           value={card.pillar}
@@ -1141,19 +1542,33 @@ function MonthlyReportCardEditor({ card, onChange }: MonthlyReportCardEditorProp
   );
 }
 
-/** Renders the Monthly Report tab with per-team editable report cards, month selector, and export actions. */
+/**
+ * Renders the Monthly Report tab with per-team editable report cards, month selector,
+ * pillar filter, draft indicators, and export actions (HTML and plain text).
+ * The selected month is persisted to localStorage so it is remembered across tab switches.
+ */
 function MonthlyReportPanel({ teams }: TeamsPanelProps) {
   const monthOptions = generateMonthOptions();
-  const [selectedYearMonth, setSelectedYearMonth] = useState(monthOptions[0].value);
+
+  // Restore the last-used month, defaulting to the current month if nothing is stored.
+  const [selectedYearMonth, setSelectedYearMonth] = useState(() => {
+    const persisted = loadPersistedMonthSelection();
+    // Validate that the stored value is still in the available 12-month window.
+    const isStillAvailable = persisted && monthOptions.some((option) => option.value === persisted);
+    return isStillAvailable ? persisted : monthOptions[0].value;
+  });
+
   const [teamFilter, setTeamFilter] = useState('all');
+  const [pillarFilter, setPillarFilter] = useState<MonthlyReportPillar>('');
 
   // Load cards for all teams for the current month, initialising from localStorage
   const [cards, setCards] = useState<MonthlyReportCard[]>(() =>
-    teams.map((team) => loadMonthlyReportCard(team, monthOptions[0].value)),
+    teams.map((team) => loadMonthlyReportCard(team, selectedYearMonth)),
   );
 
   function handleMonthChange(newYearMonth: string) {
     setSelectedYearMonth(newYearMonth);
+    savePersistedMonthSelection(newYearMonth);
     setCards(teams.map((team) => loadMonthlyReportCard(team, newYearMonth)));
   }
 
@@ -1164,7 +1579,10 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
     saveMonthlyReportCard(updatedCard.teamId, selectedYearMonth, updatedCard);
   }
 
-  const visibleCards = teamFilter === 'all' ? cards : cards.filter((card) => card.teamId === teamFilter);
+  // Apply team filter first, then pillar filter
+  const visibleCards = cards
+    .filter((card) => teamFilter === 'all' || card.teamId === teamFilter)
+    .filter((card) => pillarFilter === '' || card.pillar === pillarFilter);
 
   function handleCopyAll() {
     const text = formatCardsAsText(visibleCards, selectedYearMonth);
@@ -1182,6 +1600,11 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
   function handleExportHtml() {
     const html = formatCardsAsHtml(visibleCards, selectedYearMonth);
     downloadTextFile(html, `monthly-report-${selectedYearMonth}.html`, 'text/html');
+  }
+
+  function handleExportText() {
+    const text = formatCardsAsText(visibleCards, selectedYearMonth);
+    downloadTextFile(text, `monthly-report-${selectedYearMonth}.txt`, 'text/plain');
   }
 
   return (
@@ -1212,11 +1635,26 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
           ))}
         </select>
 
+        <select
+          className={styles.textInput}
+          value={pillarFilter}
+          onChange={(event) => setPillarFilter(event.target.value as MonthlyReportPillar)}
+          aria-label="Filter by pillar"
+        >
+          <option value="">All Pillars</option>
+          {PILLAR_OPTIONS.filter((pillar) => pillar !== '').map((pillar) => (
+            <option key={pillar} value={pillar}>{pillar}</option>
+          ))}
+        </select>
+
         <button className={styles.secondaryBtn} onClick={handleCopyAll}>
           Copy All
         </button>
         <button className={styles.secondaryBtn} onClick={handleExportHtml}>
           Export HTML
+        </button>
+        <button className={styles.secondaryBtn} onClick={handleExportText}>
+          Export Text
         </button>
       </div>
 
@@ -1265,6 +1703,14 @@ function writeArtAdvancedSettings(settings: ArtAdvancedSettings): void {
 }
 
 const DEFAULT_STALE_DAYS_SETTING = 5;
+/**
+ * Matches a fully-formed Jira custom field ID (e.g. "customfield_10301").
+ * Requires at least 4 digits after the prefix because Jira's generated IDs
+ * are always 4–5+ digits (10000+). This guards onReloadPiOptions so it only
+ * fires when the user has finished entering a complete field ID, not on every
+ * keystroke in the fallback text input.
+ */
+const VALID_CUSTOM_FIELD_ID_PATTERN = /^customfield_\d{4,}$/;
 
 /** Renders the Settings tab for managing ART team roster, board IDs, and advanced field configuration. */
 function SettingsPanel({
@@ -1316,7 +1762,13 @@ function SettingsPanel({
   function handlePiFieldChange(value: string) {
     setPiFieldId(value);
     saveSettingField('piFieldId', value);
-    void onReloadPiOptions();
+    // Only trigger the expensive PI reload when the value is a complete Jira custom field
+    // ID (e.g. "customfield_10301"). In the JiraFieldPicker fallback text-input path this
+    // function fires on every keystroke, so the guard prevents noisy/stale reloads while
+    // the user is still typing.
+    if (VALID_CUSTOM_FIELD_ID_PATTERN.test(value)) {
+      void onReloadPiOptions();
+    }
   }
 
   function handleSpFieldChange(value: string) {

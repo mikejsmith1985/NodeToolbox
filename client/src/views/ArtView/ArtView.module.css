@@ -457,6 +457,13 @@
 
 /* ── SoS Drawer ── */
 
+.sosToolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
 .sosPulse {
   display: flex;
   align-items: center;
@@ -512,6 +519,15 @@
 .sosAccordionChevron {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.sosAccordionStats {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  font-weight: normal;
+  margin-left: auto;
+  margin-right: var(--spacing-sm);
 }
 
 .sosAccordionBody {
@@ -638,6 +654,16 @@
 .monthlyCardTeamName {
   font-weight: 600;
   font-size: 0.9rem;
+}
+
+.monthlyCardDraftIndicator {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #2ecc71;
+  background: rgba(46, 204, 113, 0.12);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  margin-left: 0.5rem;
 }
 
 .monthlyPillarSelect {
