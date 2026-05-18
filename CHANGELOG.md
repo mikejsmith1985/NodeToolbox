@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Story points rollup**: Shows `done SP / total SP` when any issue carries a story point estimate; omitted entirely when no estimates are present.
   - **Days remaining in PI**: When `piEndDate` is configured in Settings, shows how many days remain until the PI ends. Turns yellow at ≤14 days and red at ≤7 days; displays "Ends today" on the last day and "Overdue" once the date has passed.
 - **Art View — PI Progress Header days remaining badge**: The PI progress header (above the tab bar) now shows a days-remaining pill alongside the done/in progress/to-do pills when `piEndDate` is configured. Urgency colouring matches the ART Summary Bar thresholds (yellow ≤14d, red ≤7d, "Overdue" when past).
+- **Art View — SoS Jira parity**: The SoS tab now surfaces the per-team `sosIssueKey` and enables direct Jira sync:
+  - **Jira issue key badge** appears in each accordion header when a `sosIssueKey` is configured in Settings, so facilitators can see which Jira issue backs each team's SoS entry at a glance.
+  - **Post to Jira button** in each expanded accordion section posts the team's current SoS narrative as a Jira comment (`POST /rest/api/2/issue/{key}/comment`) using wiki-markup formatting.
+  - **Sync state indicator** ("🔵 Local only" → "✅ Synced · HH:MM:SS") so facilitators know instantly whether the narrative has been pushed to Jira for the selected date.
+  - **Error feedback**: If the post fails, an inline error message is shown below the button.
 
 ### Fixed
 - **Art View — Blueprint and Dependencies PI queries now fetch up to 500 issues per team** (was incorrectly capped at 200 while the PI-aware hook path already used 500). Large PIs with more than 200 issues per team no longer silently truncate the Blueprint hierarchy or the cross-team dependency table. Open-sprint fallback queries retain the 200-issue cap.
@@ -50,9 +55,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Per-team SoS Issue Key**: Each team row in the Settings team list now shows an inline text input for the team's SoS Jira issue key (`sosIssueKey`). The value is auto-saved on change (no extra "Save Teams" click needed), persisted in `nodetoolbox-art-teams` via the existing team persistence layer, and available to future SoS sync features.
   - `ArtTeam` now carries `sosIssueKey?: string` and the `addTeam` action accepts it as an optional fifth argument.
   - A new `updateTeamSosKey(teamId, sosIssueKey)` action in `useArtData` allows in-place updates to the SoS key without removing and re-adding a team.
+- **Art View — Releases tab advanced parity** (`art-releases-advanced`): The Releases tab now provides a production-quality release-tracking experience:
+  - **Urgency badges**: Each fix version shows a colour-coded urgency pill — `Overdue` (red, past due and unreleased), `Critical` (red, ≤7 days remaining), `Warning` (amber, ≤30 days remaining), `Upcoming` (green, beyond warning horizon), `Released` (grey, formally released in Jira), and `No Date` (grey, no release date configured).
+  - **Mini progress bars**: A compact horizontal bar alongside each fix version shows the ratio of done-to-total issues at a glance, with `role="progressbar"` and `aria-valuenow` for accessibility.
+  - **Expandable issue detail rows**: An expand/collapse button per version reveals a nested sub-table of individual issues (key, summary, status, team). Done issues are dimmed so open work is visually prominent. The button's `aria-expanded` and `aria-label` attributes update dynamically to reflect current state.
+  - `classifyReleaseUrgency()` helper encapsulates urgency logic, reusing `computeDaysRemainingInPi()` for consistent date math.
+  - `ReleaseIssueSummary` interface captures the slim per-issue snapshot needed for expanded rows without duplicating the full `JiraIssue` payload.
+  - `RELEASE_URGENCY_CONFIG` lookup table maps each urgency level to its human label and CSS class, guaranteeing compile-time exhaustiveness.
 
 ### Added
-- **Admin Hub — "Check Repo Access" button**: A new *📋 Check Repo Access* button in Service Connectivity probes each Scheduler-configured repository at the branches/PRs endpoint level (not just `/user` auth). Results table shows per-repo HTTP status codes with a human-readable diagnosis that distinguishes: IP allow list blocks ("Your IP address is not in the allowed list"), SAML SSO not authorized, generic 403 scope errors, 401 invalid PAT, and 404 wrong repo path. This surfaces the true cause of failures that the existing *Test Connection* probe hides (it tests `/user`, which passes even when org-scoped endpoints are blocked by an IP allow list).
+- **Admin Hub — "Check Repo Access" button**:A new *📋 Check Repo Access* button in Service Connectivity probes each Scheduler-configured repository at the branches/PRs endpoint level (not just `/user` auth). Results table shows per-repo HTTP status codes with a human-readable diagnosis that distinguishes: IP allow list blocks ("Your IP address is not in the allowed list"), SAML SSO not authorized, generic 403 scope errors, 401 invalid PAT, and 404 wrong repo path. This surfaces the true cause of failures that the existing *Test Connection* probe hides (it tests `/user`, which passes even when org-scoped endpoints are blocked by an IP allow list).
 - **Admin Hub — Repo monitor — probeErrorMessage now populated on HTTP errors**: `probeSingleRepoConnectivity` previously left `probeErrorMessage: null` for all HTTP-level failures (403, 404, etc.) — it was only populated for network exceptions. It now extracts `body.message` from GitHub's error response, making the message available in `/api/scheduler/validate` and surfaced by the new "Check Repo Access" UI.
 
 ### Changed
