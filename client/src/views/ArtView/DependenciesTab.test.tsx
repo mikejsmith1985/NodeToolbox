@@ -242,6 +242,34 @@ describe('DependenciesTab', () => {
     }
   });
 
+  it('uses maxResults=500 for PI-mode queries to avoid truncating large PIs', async () => {
+    mockJiraGet.mockResolvedValue(MOCK_ISSUES_WITH_LINKS_RESPONSE);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
+    fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
+
+    await waitFor(() => screen.getByRole('table'));
+
+    // PI-mode fetches must use the higher 500 cap, not the 200 used for openSprints
+    for (const call of mockJiraGet.mock.calls) {
+      const url = call[0] as string;
+      expect(url).toContain('maxResults=500');
+    }
+  });
+
+  it('uses maxResults=200 for openSprints fallback queries', async () => {
+    mockJiraGet.mockResolvedValue(MOCK_ISSUES_WITH_LINKS_RESPONSE);
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);
+    fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
+
+    await waitFor(() => screen.getByRole('table'));
+
+    for (const call of mockJiraGet.mock.calls) {
+      const url = call[0] as string;
+      expect(url).toContain('maxResults=200');
+      expect(url).not.toContain('maxResults=500');
+    }
+  });
+
   it('falls back to openSprints JQL when no PI is selected', async () => {
     mockJiraGet.mockResolvedValue(MOCK_ISSUES_WITH_LINKS_RESPONSE);
     render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="" />);

@@ -21,6 +21,7 @@ interface JiraBoardPickerProps {
   label: string;
   value: string;
   onChange: (boardId: string) => void;
+  onBoardSelected?: (board: JiraBoard | null) => void;
   placeholder?: string;
   projectKey?: string;
 }
@@ -43,19 +44,21 @@ export default function JiraBoardPicker({
   label,
   value,
   onChange,
+  onBoardSelected,
   placeholder,
   projectKey,
 }: JiraBoardPickerProps) {
+  const boardsApiPath = useMemo(() => buildBoardsApiPath(projectKey), [projectKey]);
   const [availableBoards, setAvailableBoards] = useState<JiraBoard[]>([]);
-  const [isLoadingBoards, setIsLoadingBoards] = useState(true);
-  const [hasLoadingError, setHasLoadingError] = useState(false);
+  const [loadedBoardsApiPath, setLoadedBoardsApiPath] = useState<string | null>(null);
+  const [failedBoardsApiPath, setFailedBoardsApiPath] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
     async function loadBoards(): Promise<void> {
       try {
-        const loadedBoards = await jiraGet<JiraBoardResponse>(buildBoardsApiPath(projectKey));
+        const loadedBoards = await jiraGet<JiraBoardResponse>(boardsApiPath);
         if (!isMounted) {
           return;
         }
@@ -63,29 +66,28 @@ export default function JiraBoardPicker({
         const selectableBoards = [...loadedBoards.values]
           .sort((leftBoard, rightBoard) => leftBoard.name.localeCompare(rightBoard.name));
         setAvailableBoards(selectableBoards);
-        setHasLoadingError(false);
+        setLoadedBoardsApiPath(boardsApiPath);
+        setFailedBoardsApiPath(null);
       } catch {
         if (!isMounted) {
           return;
         }
 
         setAvailableBoards([]);
-        setHasLoadingError(true);
-      } finally {
-        if (isMounted) {
-          setIsLoadingBoards(false);
-        }
+        setLoadedBoardsApiPath(null);
+        setFailedBoardsApiPath(boardsApiPath);
       }
     }
 
-    setIsLoadingBoards(true);
-    setHasLoadingError(false);
     void loadBoards();
 
     return () => {
       isMounted = false;
     };
-  }, [projectKey]);
+  }, [boardsApiPath]);
+
+  const isLoadingBoards = loadedBoardsApiPath !== boardsApiPath && failedBoardsApiPath !== boardsApiPath;
+  const hasLoadingError = failedBoardsApiPath === boardsApiPath;
 
   const hasStoredBoardValue = useMemo(
     () => value.length > 0 && !availableBoards.some((board) => String(board.id) === value),
@@ -99,7 +101,10 @@ export default function JiraBoardPicker({
         <input
           className={styles.fallbackInput}
           id={id}
-          onChange={(changeEvent) => onChange(changeEvent.target.value)}
+          onChange={(changeEvent) => {
+            onChange(changeEvent.target.value);
+            onBoardSelected?.(null);
+          }}
           type="text"
           value={value}
         />
@@ -122,12 +127,18 @@ export default function JiraBoardPicker({
   return (
     <div className={styles.fieldGroup}>
       <label className={styles.label} htmlFor={id}>{label}</label>
-      <select
-        className={styles.select}
-        id={id}
-        onChange={(changeEvent) => onChange(changeEvent.target.value)}
-        value={value}
-      >
+        <select
+          className={styles.select}
+          id={id}
+          onChange={(changeEvent) => {
+            const nextBoardId = changeEvent.target.value;
+            onChange(nextBoardId);
+            onBoardSelected?.(
+              availableBoards.find((board) => String(board.id) === nextBoardId) ?? null,
+            );
+          }}
+          value={value}
+        >
         <option disabled value="">— {placeholder ?? DEFAULT_PLACEHOLDER} —</option>
         {hasStoredBoardValue && <option value={value}>{createCurrentBoardLabel(value)}</option>}
         {availableBoards.map((board) => (
