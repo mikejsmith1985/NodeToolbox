@@ -25,16 +25,16 @@ const MAX_OVERLAY_LINK_COUNT = 5;
 const MAX_OVERLAY_COMMENT_COUNT = 3;
 
 interface DsuIssueLink {
-  type: { inward: string; outward: string; name: string };
-  inwardIssue?: { key: string; fields: { summary: string; status: { name: string } } };
-  outwardIssue?: { key: string; fields: { summary: string; status: { name: string } } };
+  type?: { inward?: string; outward?: string; name?: string };
+  inwardIssue?: { key: string; fields?: { summary?: string; status?: { name?: string } } };
+  outwardIssue?: { key: string; fields?: { summary?: string; status?: { name?: string } } };
 }
 
 interface DsuIssueComment {
   id: string;
-  author: { displayName: string };
-  body: string;
-  created: string;
+  author?: { displayName?: string } | null;
+  body?: unknown;
+  created?: string;
 }
 
 type DsuIssueFields = JiraIssue['fields'] & {
@@ -660,19 +660,21 @@ function getStoryPoints(issueFields: DsuIssueFields): number | null {
 
 function createIssueLinkDescription(issueLink: DsuIssueLink): string {
   if (issueLink.outwardIssue) {
-    return `${issueLink.type.outward}: ${issueLink.outwardIssue.key} - ${issueLink.outwardIssue.fields.summary} (${issueLink.outwardIssue.fields.status.name})`;
+    return `${issueLink.type?.outward ?? 'Linked to'}: ${issueLink.outwardIssue.key} - ${issueLink.outwardIssue.fields?.summary ?? 'No summary'} (${issueLink.outwardIssue.fields?.status?.name ?? 'Unknown'})`;
   }
 
   if (issueLink.inwardIssue) {
-    return `${issueLink.type.inward}: ${issueLink.inwardIssue.key} - ${issueLink.inwardIssue.fields.summary} (${issueLink.inwardIssue.fields.status.name})`;
+    return `${issueLink.type?.inward ?? 'Linked from'}: ${issueLink.inwardIssue.key} - ${issueLink.inwardIssue.fields?.summary ?? 'No summary'} (${issueLink.inwardIssue.fields?.status?.name ?? 'Unknown'})`;
   }
 
-  return issueLink.type.name;
+  return issueLink.type?.name ?? 'Linked issue';
 }
 
 function createCommentPreview(issueComment: DsuIssueComment): string {
-  const normalizedCommentBody = normalizeRichTextToPlainText(issueComment.body);
-  return `${issueComment.author.displayName}: ${normalizedCommentBody} (${issueComment.created.slice(0, 10)})`;
+  const normalizedCommentBody = normalizeRichTextToPlainText(issueComment.body ?? '');
+  const authorName = issueComment.author?.displayName ?? 'Unknown';
+  const createdDate = issueComment.created?.slice(0, 10) ?? 'Unknown date';
+  return `${authorName}: ${normalizedCommentBody} (${createdDate})`;
 }
 
 function IssueDetailOverlay({
