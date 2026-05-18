@@ -1,6 +1,6 @@
 // ArtView.test.tsx — Unit tests for the ART View tabbed component (7 original + 2 new tabs + PI header + SoS drawer).
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArtTab, ArtTeam } from './hooks/useArtData.ts';
 import type { JiraIssue } from '../../types/jira.ts';
@@ -1428,6 +1428,195 @@ describe('ArtView', () => {
 
     localStorage.removeItem('tbxARTSettings');
     mockState.activeTab = 'overview';
+  });
+
+  // ── art-overview-advanced: ART Summary Bar ──
+
+  it('renders the ART summary bar region in the Overview tab when teams are configured', () => {
+    renderArtView();
+    expect(screen.getByRole('region', { name: /art summary/i })).toBeInTheDocument();
+  });
+
+  it('does not render the ART summary bar when no teams are configured', () => {
+    mockState.teams = [];
+    renderArtView();
+    expect(screen.queryByTestId('art-summary-bar')).not.toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows 0 / 1 teams loaded in the ART summary bar when a team has no issues fetched yet', () => {
+    // Default team has sprintIssues=[] so it counts as not loaded
+    renderArtView();
+    const summaryBar = screen.getByTestId('art-summary-bar');
+    expect(within(summaryBar).getByText('0 / 1')).toBeInTheDocument();
+  });
+
+  it('shows 1 / 1 teams loaded in the ART summary bar when a team has at least one issue loaded', () => {
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'scrum' as const,
+        sprintIssues: [
+          {
+            id: 'TBX-OVA-1', key: 'TBX-OVA-1',
+            fields: {
+              summary: 'A loaded story',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // Scope to the teams-loaded cell to avoid collision with the issues-done cell, which also shows "1 / 1"
+    const teamsCell = screen.getByTestId('art-summary-teams-loaded');
+    expect(within(teamsCell).getByText('1 / 1')).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows the blocked stat in the ART summary bar when impediments exist', () => {
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'scrum' as const,
+        sprintIssues: [
+          {
+            id: 'TBX-OVA-2', key: 'TBX-OVA-2',
+            fields: {
+              summary: 'A blocked story',
+              status: { name: 'Blocked', statusCategory: { key: 'indeterminate' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-01T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    // The summary bar uses data-testid to avoid text clashing with the per-team card chips
+    expect(screen.getByTestId('art-summary-blocked')).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('does not show the blocked stat in the ART summary bar when there are no impediments', () => {
+    // Default team has no issues loaded
+    renderArtView();
+    expect(screen.queryByTestId('art-summary-blocked')).not.toBeInTheDocument();
+  });
+
+  it('shows story points rollup in the ART summary bar when issues carry estimates', () => {
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'scrum' as const,
+        sprintIssues: [
+          {
+            id: 'TBX-OVA-3', key: 'TBX-OVA-3',
+            fields: {
+              summary: 'Estimated story',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null, assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z', updated: '2025-01-01T00:00:00.000Z',
+              description: null,
+              customfield_10016: 8,
+            },
+          },
+        ],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+    renderArtView();
+    expect(screen.getByTestId('art-summary-story-points')).toBeInTheDocument();
+    // 8 done out of 8 total
+    const summaryBar = screen.getByTestId('art-summary-bar');
+    expect(within(summaryBar).getByText('8 / 8')).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('does not show story points in the ART summary bar when no issues carry estimates', () => {
+    // Default team has no issues
+    renderArtView();
+    expect(screen.queryByTestId('art-summary-story-points')).not.toBeInTheDocument();
+  });
+
+  it('shows days remaining in the ART summary bar when piEndDate is configured', () => {
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + 10);
+    const futureDateString = `${futureDate.getFullYear()}-${String(futureDate.getMonth() + 1).padStart(2, '0')}-${String(futureDate.getDate()).padStart(2, '0')}`;
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ piEndDate: futureDateString }));
+
+    renderArtView();
+    expect(screen.getByTestId('art-summary-days-remaining')).toBeInTheDocument();
+
+    localStorage.removeItem('tbxARTSettings');
+  });
+
+  it('does not show days remaining in the ART summary bar when piEndDate is not configured', () => {
+    localStorage.removeItem('tbxARTSettings');
+    renderArtView();
+    expect(screen.queryByTestId('art-summary-days-remaining')).not.toBeInTheDocument();
+  });
+
+  it('shows an overdue indicator in the ART summary bar when the PI end date has passed', () => {
+    const pastDate = new Date();
+    pastDate.setDate(pastDate.getDate() - 3);
+    const pastDateString = `${pastDate.getFullYear()}-${String(pastDate.getMonth() + 1).padStart(2, '0')}-${String(pastDate.getDate()).padStart(2, '0')}`;
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ piEndDate: pastDateString }));
+
+    renderArtView();
+    expect(screen.getByTestId('art-summary-days-remaining')).toHaveTextContent(/overdue/i);
+
+    localStorage.removeItem('tbxARTSettings');
+  });
+
+  // ── art-overview-advanced: PI Progress Header days remaining ──
+
+  it('shows a days-remaining badge in the PI progress header when piEndDate is configured', () => {
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + 5);
+    const futureDateString = `${futureDate.getFullYear()}-${String(futureDate.getMonth() + 1).padStart(2, '0')}-${String(futureDate.getDate()).padStart(2, '0')}`;
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ piEndDate: futureDateString }));
+
+    renderArtView();
+    expect(screen.getByTestId('pi-days-remaining')).toBeInTheDocument();
+
+    localStorage.removeItem('tbxARTSettings');
+  });
+
+  it('does not render a days-remaining badge in the PI progress header when piEndDate is not set', () => {
+    localStorage.removeItem('tbxARTSettings');
+    renderArtView();
+    expect(screen.queryByTestId('pi-days-remaining')).not.toBeInTheDocument();
+  });
+
+  it('shows overdue label in the PI progress header when PI end date has passed', () => {
+    const pastDate = new Date();
+    pastDate.setDate(pastDate.getDate() - 2);
+    const pastDateString = `${pastDate.getFullYear()}-${String(pastDate.getMonth() + 1).padStart(2, '0')}-${String(pastDate.getDate()).padStart(2, '0')}`;
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ piEndDate: pastDateString }));
+
+    renderArtView();
+    expect(screen.getByTestId('pi-days-remaining')).toHaveTextContent(/overdue/i);
+
+    localStorage.removeItem('tbxARTSettings');
   });
 });
 

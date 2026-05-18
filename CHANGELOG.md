@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Art View — Overview tab ART Summary Bar**: A new summary bar renders above the team filter row in the Overview tab, providing an instant ART-level health snapshot without needing to scan individual team cards:
+  - **Teams loaded**: Shows `loaded / total` teams so the user can see at a glance how much data is available.
+  - **Issues done**: Shows `done / total` across all teams when at least one team has data.
+  - **Blocked count**: Surfaced with a 🚧 indicator and critical (red) colouring only when impediments exist, keeping the bar clean when the ART is healthy.
+  - **Story points rollup**: Shows `done SP / total SP` when any issue carries a story point estimate; omitted entirely when no estimates are present.
+  - **Days remaining in PI**: When `piEndDate` is configured in Settings, shows how many days remain until the PI ends. Turns yellow at ≤14 days and red at ≤7 days; displays "Ends today" on the last day and "Overdue" once the date has passed.
+- **Art View — PI Progress Header days remaining badge**: The PI progress header (above the tab bar) now shows a days-remaining pill alongside the done/in progress/to-do pills when `piEndDate` is configured. Urgency colouring matches the ART Summary Bar thresholds (yellow ≤14d, red ≤7d, "Overdue" when past).
+
 ### Fixed
 - **Art View — Blueprint and Dependencies PI queries now fetch up to 500 issues per team** (was incorrectly capped at 200 while the PI-aware hook path already used 500). Large PIs with more than 200 issues per team no longer silently truncate the Blueprint hierarchy or the cross-team dependency table. Open-sprint fallback queries retain the 200-issue cap.
 - **Art View — Settings PI field change no longer triggers noisy Jira reloads on every keystroke**: `handlePiFieldChange` now only calls `loadPiOptions()` when the entered value is a fully-formed Jira custom field ID (`customfield_NNNN+`). This prevents stale/duplicate PI-options reloads while the user is typing in the `JiraFieldPicker` fallback text input (shown when Jira's field metadata API is unavailable).

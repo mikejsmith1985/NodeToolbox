@@ -160,6 +160,29 @@ function PiProgressHeader({
   const displayName = piName.trim() || 'No PI selected';
   const progressBarWidth = `${stats.completionPercent}%`;
 
+  // Read piEndDate from localStorage so the header stays in sync with the Settings panel.
+  let piEndDate: string | undefined;
+  try {
+    const artSettings = JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as { piEndDate?: string };
+    piEndDate = artSettings.piEndDate;
+  } catch {
+    // localStorage errors are non-fatal.
+  }
+
+  const daysRemaining = computeDaysRemainingInPi(piEndDate);
+  const daysRemainingLabel = daysRemaining === null
+    ? null
+    : daysRemaining < 0
+      ? 'Overdue'
+      : daysRemaining === 0
+        ? 'Ends today'
+        : `${daysRemaining}d left`;
+
+  const isDaysCritical = daysRemaining !== null && daysRemaining <= PI_DAYS_CRITICAL_THRESHOLD;
+  const isDaysWarning = daysRemaining !== null
+    && daysRemaining > PI_DAYS_CRITICAL_THRESHOLD
+    && daysRemaining <= PI_DAYS_WARNING_THRESHOLD;
+
   return (
     <div className={styles.piProgressHeader}>
       <span className={styles.piProgressName}>{displayName}</span>
@@ -192,6 +215,19 @@ function PiProgressHeader({
       <span className={styles.piProgressPill + ' ' + styles.piProgressPillDone}>{stats.doneCount} done</span>
       <span className={styles.piProgressPill + ' ' + styles.piProgressPillInProgress}>{stats.inProgressCount} in progress</span>
       <span className={styles.piProgressPill + ' ' + styles.piProgressPillToDo}>{stats.toDoCount} to do</span>
+      {/* Days remaining badge — urgency colour shifts from warning (yellow) to critical (red) as PI end approaches */}
+      {daysRemainingLabel !== null && (
+        <span
+          className={[
+            styles.piProgressPill,
+            isDaysCritical ? styles.piProgressPillCritical : '',
+            isDaysWarning ? styles.piProgressPillWarning : '',
+          ].join(' ').trim()}
+          data-testid="pi-days-remaining"
+        >
+          {daysRemainingLabel}
+        </span>
+      )}
     </div>
   );
 }
@@ -229,6 +265,8 @@ function OverviewPanel({
           {isLoadingAllTeams ? 'Loading…' : 'Load All Teams'}
         </button>
       </div>
+      {/* ART-level summary bar — aggregates health across all teams at a glance */}
+      <ArtSummaryBar teams={teams} />
       <div className={styles.teamFilterRow}>
         <input
           className={styles.teamFilterInput}
@@ -258,7 +296,103 @@ interface TeamCardProps {
 
 // ── TeamCard health stats ──
 
-/** Status category key Jira uses to mark an item as complete. */
+/**
+ * Parses a YYYY-MM-DD string as a local calendar date (not UTC) and returns
+ * the number of days between today and that date.
+ * Returns: positive = days remaining, 0 = ends today, negative = overdue.
+ * Returns null when the string is absent or malformed.
+ */
+function computeDaysRemainingInPi(piEndDate: string | undefined): number | null {
+  if (!piEndDate || piEndDate.trim() === '') return null;
+
+  const dateParts = piEndDate.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!dateParts) return null;
+
+  const [, yearStr, monthStr, dayStr] = dateParts;
+  // Use local calendar date to avoid UTC midnight offset issues when comparing against today.
+  const endDateLocalMs = new Date(Number(yearStr), Number(monthStr) - 1, Number(dayStr)).getTime();
+  const today = new Date();
+  const todayStartMs = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+
+  return Math.round((endDateLocalMs - todayStartMs) / 86_400_000);
+}
+
+// ── PI urgency thresholds — match the color palette in ArtView.module.css ──
+
+/** Days remaining at or below this value triggers the critical (red) urgency indicator. */
+const PI_DAYS_CRITICAL_THRESHOLD = 7;
+/** Days remaining at or below this value triggers the warning (yellow) urgency indicator. */
+const PI_DAYS_WARNING_THRESHOLD = 14;
+
+/** Shape of the ART-level rollup used by ArtSummaryBar. */
+interface ArtSummaryStats {
+  teamCount: number;
+  loadedTeamCount: number;
+  totalIssueCount: number;
+  doneCount: number;
+  blockedCount: number;
+  totalStoryPoints: number;
+  doneStoryPoints: number;
+  hasAnyStoryPoints: boolean;
+  daysRemaining: number | null;
+}
+
+/**
+ * Aggregates issues from all teams into a single ART-level summary snapshot.
+ * Story points are included in the summary only when at least one issue carries an estimate.
+ */
+function computeArtSummaryStats(teams: ArtTeam[], piEndDate?: string): ArtSummaryStats {
+  const teamCount = teams.length;
+  let loadedTeamCount = 0;
+  let totalIssueCount = 0;
+  let doneCount = 0;
+  let blockedCount = 0;
+  let totalStoryPoints = 0;
+  let doneStoryPoints = 0;
+
+  for (const team of teams) {
+    if (team.sprintIssues.length > 0) loadedTeamCount++;
+    for (const issue of team.sprintIssues) {
+      totalIssueCount++;
+
+      const categoryKey = issue.fields.status.statusCategory?.key;
+      const isDone = categoryKey
+        ? categoryKey === OVERVIEW_CARD_STATUS_DONE
+        : issue.fields.status.name.toLowerCase() === 'done';
+
+      if (isDone) doneCount++;
+
+      const isBlocked = issue.fields.status.name.toLowerCase().includes('block');
+      if (isBlocked) blockedCount++;
+
+      // Try the standard story points fields; fall back gracefully when absent.
+      const storyPoints =
+        (issue.fields as Record<string, unknown>)['customfield_10016'] ??
+        (issue.fields as Record<string, unknown>)['customfield_10028'];
+      if (typeof storyPoints === 'number' && storyPoints > 0) {
+        totalStoryPoints += storyPoints;
+        if (isDone) doneStoryPoints += storyPoints;
+      }
+    }
+  }
+
+  const hasAnyStoryPoints = totalStoryPoints > 0;
+  const daysRemaining = computeDaysRemainingInPi(piEndDate);
+
+  return {
+    teamCount,
+    loadedTeamCount,
+    totalIssueCount,
+    doneCount,
+    blockedCount,
+    totalStoryPoints,
+    doneStoryPoints,
+    hasAnyStoryPoints,
+    daysRemaining,
+  };
+}
+
+
 const OVERVIEW_CARD_STATUS_DONE = 'done';
 /** Status category key Jira uses for items that are actively in progress. */
 const OVERVIEW_CARD_STATUS_IN_PROGRESS = 'indeterminate';
@@ -410,7 +544,99 @@ interface TeamsPanelProps {
   teams: ArtTeam[];
 }
 
-// ── Impediments panel ──
+// ── ART Summary Bar ──
+
+/**
+ * Renders an ART-level summary bar at the top of the Overview tab.
+ * Provides a quick at-a-glance health snapshot across all configured teams:
+ * teams loaded, total completion, blocked issues, story points, and days remaining in PI.
+ */
+function ArtSummaryBar({ teams }: { teams: ArtTeam[] }) {
+  if (teams.length === 0) return null;
+
+  // Read piEndDate from settings so the bar stays in sync with the Settings panel.
+  let piEndDate: string | undefined;
+  try {
+    const artSettings = JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as { piEndDate?: string };
+    piEndDate = artSettings.piEndDate;
+  } catch {
+    // localStorage errors are non-fatal; days remaining is simply omitted.
+  }
+
+  const stats = computeArtSummaryStats(teams, piEndDate);
+  const { daysRemaining } = stats;
+
+  const daysRemainingLabel = daysRemaining === null
+    ? null
+    : daysRemaining < 0
+      ? 'Overdue'
+      : daysRemaining === 0
+        ? 'Ends today'
+        : `${daysRemaining}d left`;
+
+  const isDaysRemainingCritical = daysRemaining !== null && daysRemaining <= PI_DAYS_CRITICAL_THRESHOLD;
+  const isDaysRemainingWarning = daysRemaining !== null
+    && daysRemaining > PI_DAYS_CRITICAL_THRESHOLD
+    && daysRemaining <= PI_DAYS_WARNING_THRESHOLD;
+
+  return (
+    <section
+      aria-label="ART Summary"
+      className={styles.artSummaryBar}
+      data-testid="art-summary-bar"
+    >
+      {/* Teams loaded indicator */}
+      <span className={styles.artSummaryBarStat} data-testid="art-summary-teams-loaded">
+        <span className={styles.artSummaryBarLabel}>Teams</span>
+        <span className={styles.artSummaryBarValue}>{stats.loadedTeamCount} / {stats.teamCount}</span>
+      </span>
+
+      {/* Issues done vs total — only shown when at least one team has data */}
+      {stats.totalIssueCount > 0 && (
+        <span className={styles.artSummaryBarStat} data-testid="art-summary-issues">
+          <span className={styles.artSummaryBarLabel}>Issues Done</span>
+          <span className={styles.artSummaryBarValue}>{stats.doneCount} / {stats.totalIssueCount}</span>
+        </span>
+      )}
+
+      {/* Blocked count — only surfaced when impediments exist to keep the bar clean when healthy */}
+      {stats.blockedCount > 0 && (
+        <span
+          className={`${styles.artSummaryBarStat} ${styles.artSummaryBarStatCritical}`}
+          data-testid="art-summary-blocked"
+        >
+          <span className={styles.artSummaryBarLabel}>Blocked</span>
+          <span className={styles.artSummaryBarValue}>🚧 {stats.blockedCount}</span>
+        </span>
+      )}
+
+      {/* Story points rollup — only shown when estimates are present on any issue */}
+      {stats.hasAnyStoryPoints && (
+        <span className={styles.artSummaryBarStat} data-testid="art-summary-story-points">
+          <span className={styles.artSummaryBarLabel}>Points Done</span>
+          <span className={styles.artSummaryBarValue}>{stats.doneStoryPoints} / {stats.totalStoryPoints}</span>
+        </span>
+      )}
+
+      {/* Days remaining — conditionally shown with urgency colour based on proximity to PI end */}
+      {daysRemainingLabel !== null && (
+        <span
+          className={[
+            styles.artSummaryBarStat,
+            isDaysRemainingCritical ? styles.artSummaryBarStatCritical : '',
+            isDaysRemainingWarning ? styles.artSummaryBarStatWarning : '',
+          ].join(' ').trim()}
+          data-testid="art-summary-days-remaining"
+        >
+          <span className={styles.artSummaryBarLabel}>PI End</span>
+          <span className={styles.artSummaryBarValue}>{daysRemainingLabel}</span>
+        </span>
+      )}
+    </section>
+  );
+}
+
+
 
 interface ImpedimentsPanelProps extends TeamsPanelProps {
   teamProjectKeyFilter: string;
