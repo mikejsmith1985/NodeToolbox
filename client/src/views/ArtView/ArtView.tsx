@@ -1,6 +1,6 @@
 // ArtView.tsx — Tabbed ART (Agile Release Train) view for multi-team PI planning and health dashboards.
 
-import { Fragment, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import { jiraPost } from '../../services/jiraApi.ts';
@@ -13,8 +13,17 @@ import BlueprintTab from './BlueprintTab.tsx';
 import DependenciesTab from './DependenciesTab.tsx';
 import type { ArtTab, ArtTeam, ArtBoardPrepIssue, PiProgressStats } from './hooks/useArtData.ts';
 import { useArtData } from './hooks/useArtData.ts';
-import type { ImpedimentReason, ImpedimentStaleTier } from './hooks/artHelpers.ts';
-import { classifyImpedimentStaleness, computeDaysSinceUpdate, detectImpedimentReasons, isImpediment } from './hooks/artHelpers.ts';
+import type { ImpedimentReason, ImpedimentStaleTier, MonthlyJiraStats } from './hooks/artHelpers.ts';
+import {
+  classifyImpedimentStaleness,
+  computeDaysSinceUpdate,
+  computeMonthlyJiraStats,
+  detectImpedimentReasons,
+  generateMonthlyAccomplishedText,
+  generateMonthlyRisksText,
+  isImpediment,
+} from './hooks/artHelpers.ts';
+import type { JiraIssue } from '../../types/jira.ts';
 import styles from './ArtView.module.css';
 
 // ── Constants ──
@@ -2150,12 +2159,24 @@ function saveMonthlyReportCard(teamId: string, yearMonth: string, card: MonthlyR
   localStorage.setItem(buildMonthlyReportStorageKey(teamId, yearMonth), JSON.stringify(card));
 }
 
-/** Formats all visible cards as plain text for copying to clipboard. */
-function formatCardsAsText(cards: MonthlyReportCard[], yearMonth: string): string {
+/** Formats all visible cards as plain text for copying to clipboard or file download. */
+function formatCardsAsText(
+  cards: MonthlyReportCard[],
+  yearMonth: string,
+  statsMap?: Map<string, MonthlyJiraStats>,
+): string {
   const lines: string[] = [`Monthly Report — ${yearMonth}`, ''];
   for (const card of cards) {
     lines.push(`=== ${card.teamName} ===`);
     if (card.pillar) lines.push(`Pillar: ${card.pillar}`);
+    // Include Jira-derived metrics when available so the exported file is self-contained.
+    const stats = statsMap?.get(card.teamId);
+    if (stats && stats.totalIssueCount > 0) {
+      const velocityLabel = stats.committedPoints > 0
+        ? `${stats.velocityPoints}/${stats.committedPoints} pts`
+        : `${stats.doneIssueCount}/${stats.totalIssueCount} issues`;
+      lines.push(`Progress: ${stats.completionPercent}% complete · ${velocityLabel}${stats.impedimentCount > 0 ? ` · ⚠️ ${stats.impedimentCount} impediment${stats.impedimentCount !== 1 ? 's' : ''}` : ''}`);
+    }
     if (card.accomplished) lines.push(`Accomplished:\n${card.accomplished}`);
     if (card.outcomes) lines.push(`Outcomes:\n${card.outcomes}`);
     if (card.risks) lines.push(`Risks:\n${card.risks}`);
@@ -2166,19 +2187,28 @@ function formatCardsAsText(cards: MonthlyReportCard[], yearMonth: string): strin
 }
 
 /** Formats all visible cards as a self-contained HTML document for download. */
-function formatCardsAsHtml(cards: MonthlyReportCard[], yearMonth: string): string {
+function formatCardsAsHtml(
+  cards: MonthlyReportCard[],
+  yearMonth: string,
+  statsMap?: Map<string, MonthlyJiraStats>,
+): string {
   const cardHtml = cards
-    .map(
-      (card) => `
+    .map((card) => {
+      const stats = statsMap?.get(card.teamId);
+      const statsRow = stats && stats.totalIssueCount > 0
+        ? `<p class="stats">${stats.doneIssueCount}/${stats.totalIssueCount} done (${stats.completionPercent}%)${stats.committedPoints > 0 ? ` · ${stats.velocityPoints}/${stats.committedPoints} pts` : ''}${stats.impedimentCount > 0 ? ` · ⚠️ ${stats.impedimentCount} impediment${stats.impedimentCount !== 1 ? 's' : ''}` : ''}</p>`
+        : '';
+      return `
         <section class="card">
           <h2>${card.teamName}</h2>
           ${card.pillar ? `<p><strong>Pillar:</strong> ${card.pillar}</p>` : ''}
+          ${statsRow}
           ${card.accomplished ? `<h3>Accomplished</h3><pre>${card.accomplished}</pre>` : ''}
           ${card.outcomes ? `<h3>Outcomes</h3><pre>${card.outcomes}</pre>` : ''}
           ${card.risks ? `<h3>Risks</h3><pre>${card.risks}</pre>` : ''}
           ${card.stakeholders ? `<p><strong>Stakeholders:</strong> ${card.stakeholders}</p>` : ''}
-        </section>`,
-    )
+        </section>`;
+    })
     .join('\n');
 
   return `<!DOCTYPE html>
@@ -2191,6 +2221,7 @@ function formatCardsAsHtml(cards: MonthlyReportCard[], yearMonth: string): strin
     .card { border: 1px solid #ccc; padding: 1rem; margin-bottom: 1.5rem; border-radius: 6px; }
     h2 { background: #0052cc; color: #fff; margin: -1rem -1rem 1rem; padding: 0.5rem 1rem; border-radius: 4px 4px 0 0; }
     pre { white-space: pre-wrap; background: #f8f8f8; padding: 0.5rem; border-radius: 4px; }
+    .stats { font-size: 0.85rem; color: #555; background: #f4f5f7; padding: 0.3rem 0.5rem; border-radius: 4px; }
   </style>
 </head>
 <body>
@@ -2209,6 +2240,46 @@ function downloadTextFile(content: string, filename: string, mimeType: string): 
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Formats visible cards as a CSV file ready for import into Excel or Google Sheets.
+ * Includes Jira-derived velocity, committed points, completion %, and impediment count
+ * as additional columns when a stats map is provided — columns are blank when no data is loaded.
+ */
+function formatCardsAsCsv(
+  cards: MonthlyReportCard[],
+  yearMonth: string,
+  statsMap?: Map<string, MonthlyJiraStats>,
+): string {
+  /** Wraps a single cell value in double quotes and escapes embedded quotes per RFC 4180. */
+  function escapeCsvCell(value: string): string {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+
+  const HEADER_ROW = [
+    'Team', 'Pillar', 'Accomplished', 'Outcomes', 'Risks', 'Stakeholders',
+    'Velocity Pts', 'Committed Pts', 'Completion %', 'Impediments',
+  ].map(escapeCsvCell).join(',');
+
+  const dataRows = cards.map((card) => {
+    const stats = statsMap?.get(card.teamId);
+    const hasStats = stats && stats.totalIssueCount > 0;
+    return [
+      card.teamName,
+      card.pillar,
+      card.accomplished,
+      card.outcomes,
+      card.risks,
+      card.stakeholders,
+      hasStats ? String(stats.velocityPoints) : '',
+      hasStats ? String(stats.committedPoints) : '',
+      hasStats ? `${stats.completionPercent}%` : '',
+      hasStats ? String(stats.impedimentCount) : '',
+    ].map(escapeCsvCell).join(',');
+  });
+
+  return [`# Monthly Report — ${yearMonth}`, HEADER_ROW, ...dataRows].join('\n');
 }
 
 /** localStorage key for persisting the selected month across Monthly Report visits. */
@@ -2240,16 +2311,37 @@ const PILLAR_OPTIONS: MonthlyReportPillar[] = ['', 'Growth', 'Affordability', 'O
 
 interface MonthlyReportCardEditorProps {
   card: MonthlyReportCard;
+  /** Sprint issues loaded for this team from Jira — empty array when data has not been fetched. */
+  jiraIssues: JiraIssue[];
   onChange: (updatedCard: MonthlyReportCard) => void;
 }
 
 /** Renders a single editable monthly report card for one team. */
-function MonthlyReportCardEditor({ card, onChange }: MonthlyReportCardEditorProps) {
+function MonthlyReportCardEditor({ card, jiraIssues, onChange }: MonthlyReportCardEditorProps) {
   function handleFieldChange(fieldName: keyof MonthlyReportCard, value: string) {
     onChange({ ...card, [fieldName]: value });
   }
 
   const hasDraftContent = monthlyCardHasDraftContent(card);
+  // Jira stats and the generate button are only shown when the team's issues have been loaded.
+  const hasJiraData = jiraIssues.length > 0;
+  // Compute stats inline — they change whenever the issues change (after team refresh).
+  const jiraStats = hasJiraData ? computeMonthlyJiraStats(jiraIssues) : null;
+
+  /**
+   * Pre-fills the "Accomplished" and "Risks" fields from the team's loaded Jira issues.
+   * Overwrites only fields that have auto-generated content — preserves manually entered text
+   * when generation returns an empty string (e.g., no done issues → Accomplished unchanged).
+   */
+  function handleGenerateFromJira() {
+    const generatedAccomplished = generateMonthlyAccomplishedText(jiraIssues);
+    const generatedRisks = generateMonthlyRisksText(jiraIssues);
+    onChange({
+      ...card,
+      accomplished: generatedAccomplished || card.accomplished,
+      risks: generatedRisks || card.risks,
+    });
+  }
 
   return (
     <div className={styles.monthlyCard}>
@@ -2275,6 +2367,43 @@ function MonthlyReportCardEditor({ card, onChange }: MonthlyReportCardEditorProp
           ))}
         </select>
       </div>
+
+      {/* Jira-derived stats strip — only rendered when sprint issues have been loaded for this team */}
+      {jiraStats && (
+        <div className={styles.monthlyJiraStatsBar} data-testid={`jira-stats-${card.teamId}`}>
+          <span className={styles.monthlyJiraStatItem}>
+            {jiraStats.doneIssueCount}/{jiraStats.totalIssueCount} done
+          </span>
+          <span className={styles.monthlyJiraStatItem}>
+            {jiraStats.completionPercent}% complete
+          </span>
+          {jiraStats.committedPoints > 0 && (
+            <span className={styles.monthlyJiraStatItem}>
+              {jiraStats.velocityPoints}/{jiraStats.committedPoints} pts
+            </span>
+          )}
+          {jiraStats.impedimentCount > 0 && (
+            <span className={`${styles.monthlyJiraStatItem} ${styles.monthlyJiraStatItemImpediment}`}>
+              ⚠️ {jiraStats.impedimentCount} impediment{jiraStats.impedimentCount !== 1 ? 's' : ''}
+            </span>
+          )}
+          <button
+            className={styles.monthlyJiraGenerateBtn}
+            onClick={handleGenerateFromJira}
+            title="Pre-fill Accomplished and Risks from Jira issues"
+            type="button"
+          >
+            Generate from Jira
+          </button>
+        </div>
+      )}
+
+      {/* Hint shown when the team has not had its Jira data loaded yet */}
+      {!hasJiraData && (
+        <p className={styles.monthlyJiraHint}>
+          Load this team from the Overview tab to enable Jira-driven generation.
+        </p>
+      )}
 
       <div className={styles.monthlyFieldRow}>
         <label className={styles.monthlyFieldLabel}>Accomplished</label>
@@ -2325,7 +2454,8 @@ function MonthlyReportCardEditor({ card, onChange }: MonthlyReportCardEditorProp
 
 /**
  * Renders the Monthly Report tab with per-team editable report cards, month selector,
- * pillar filter, draft indicators, and export actions (HTML and plain text).
+ * pillar filter, draft indicators, Jira-derived stats strips, "Generate from Jira" buttons,
+ * and export actions (HTML, plain text, and CSV).
  * The selected month is persisted to localStorage so it is remembered across tab switches.
  */
 function MonthlyReportPanel({ teams }: TeamsPanelProps) {
@@ -2347,6 +2477,12 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
     teams.map((team) => loadMonthlyReportCard(team, selectedYearMonth)),
   );
 
+  // Build a stable teamId → sprintIssues map so editors don't rebuild it on every render.
+  const issuesByTeamId = useMemo(
+    () => new Map(teams.map((team) => [team.id, team.sprintIssues])),
+    [teams],
+  );
+
   function handleMonthChange(newYearMonth: string) {
     setSelectedYearMonth(newYearMonth);
     savePersistedMonthSelection(newYearMonth);
@@ -2365,8 +2501,21 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
     .filter((card) => teamFilter === 'all' || card.teamId === teamFilter)
     .filter((card) => pillarFilter === '' || card.pillar === pillarFilter);
 
+  /**
+   * Builds a stats map from currently loaded team issues so exports include Jira metrics.
+   * Only teams that have had their data fetched contribute non-zero stats.
+   */
+  function buildExportStatsMap(): Map<string, MonthlyJiraStats> {
+    return new Map(
+      visibleCards.map((card) => [
+        card.teamId,
+        computeMonthlyJiraStats(issuesByTeamId.get(card.teamId) ?? []),
+      ]),
+    );
+  }
+
   function handleCopyAll() {
-    const text = formatCardsAsText(visibleCards, selectedYearMonth);
+    const text = formatCardsAsText(visibleCards, selectedYearMonth, buildExportStatsMap());
     navigator.clipboard.writeText(text).catch(() => {
       // Fallback: create a temporary textarea for older browsers
       const textarea = document.createElement('textarea');
@@ -2379,13 +2528,18 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
   }
 
   function handleExportHtml() {
-    const html = formatCardsAsHtml(visibleCards, selectedYearMonth);
+    const html = formatCardsAsHtml(visibleCards, selectedYearMonth, buildExportStatsMap());
     downloadTextFile(html, `monthly-report-${selectedYearMonth}.html`, 'text/html');
   }
 
   function handleExportText() {
-    const text = formatCardsAsText(visibleCards, selectedYearMonth);
+    const text = formatCardsAsText(visibleCards, selectedYearMonth, buildExportStatsMap());
     downloadTextFile(text, `monthly-report-${selectedYearMonth}.txt`, 'text/plain');
+  }
+
+  function handleExportCsv() {
+    const csv = formatCardsAsCsv(visibleCards, selectedYearMonth, buildExportStatsMap());
+    downloadTextFile(csv, `monthly-report-${selectedYearMonth}.csv`, 'text/csv');
   }
 
   return (
@@ -2437,6 +2591,9 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
         <button className={styles.secondaryBtn} onClick={handleExportText}>
           Export Text
         </button>
+        <button className={styles.secondaryBtn} onClick={handleExportCsv}>
+          Export CSV
+        </button>
       </div>
 
       {teams.length === 0 && (
@@ -2445,7 +2602,12 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
 
       <div className={styles.monthlyCardList}>
         {visibleCards.map((card) => (
-          <MonthlyReportCardEditor key={card.teamId} card={card} onChange={handleCardChange} />
+          <MonthlyReportCardEditor
+            key={card.teamId}
+            card={card}
+            jiraIssues={issuesByTeamId.get(card.teamId) ?? []}
+            onChange={handleCardChange}
+          />
         ))}
       </div>
     </div>

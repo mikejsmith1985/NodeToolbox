@@ -676,6 +676,136 @@ describe('ArtView', () => {
     expect(screen.getByRole('button', { name: /export text/i })).toBeInTheDocument();
   });
 
+  // ── Monthly Report Jira parity: CSV export ──
+
+  it('renders an Export CSV button in the Monthly Report toolbar', () => {
+    mockState.activeTab = 'monthly';
+    renderArtView();
+    expect(screen.getByRole('button', { name: /export csv/i })).toBeInTheDocument();
+  });
+
+  // ── Monthly Report Jira parity: stats bar ──
+
+  it('shows the Jira stats bar when the team has loaded sprint issues', () => {
+    mockState.activeTab = 'monthly';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: '',
+        sprintIssues: [
+          {
+            id: 'TBX-1',
+            key: 'TBX-1',
+            fields: {
+              summary: 'Done story',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null,
+              assignee: null,
+              reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z',
+              updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ] as JiraIssue[],
+        isLoading: false,
+        loadError: null,
+      },
+    ] as ArtTeam[];
+    renderArtView();
+    // The stats bar appears and shows "1/1 done" for one done issue.
+    expect(screen.getByTestId('jira-stats-team-1')).toBeInTheDocument();
+    expect(screen.getByText(/1\/1 done/i)).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows the "Generate from Jira" button when the team has loaded sprint issues', () => {
+    mockState.activeTab = 'monthly';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: '',
+        sprintIssues: [
+          {
+            id: 'TBX-1',
+            key: 'TBX-1',
+            fields: {
+              summary: 'Done story',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null,
+              assignee: null,
+              reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z',
+              updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ] as JiraIssue[],
+        isLoading: false,
+        loadError: null,
+      },
+    ] as ArtTeam[];
+    renderArtView();
+    expect(screen.getByRole('button', { name: /generate from jira/i })).toBeInTheDocument();
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
+  it('shows the "load team" hint and no stats bar when the team has no sprint issues loaded', () => {
+    mockState.activeTab = 'monthly';
+    // Default mockState.teams has an empty sprintIssues array.
+    renderArtView();
+    expect(screen.queryByTestId('jira-stats-team-1')).not.toBeInTheDocument();
+    expect(screen.getByText(/load this team from the overview tab/i)).toBeInTheDocument();
+  });
+
+  it('pre-fills accomplished and risks fields when "Generate from Jira" is clicked', () => {
+    mockState.activeTab = 'monthly';
+    const yearMonth = createLocalYearMonth();
+    // Start with empty card (no localStorage content).
+    localStorage.removeItem(`tbxMonthlyReport_team-1_${yearMonth}`);
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: '',
+        sprintIssues: [
+          {
+            id: 'TBX-10',
+            key: 'TBX-10',
+            fields: {
+              summary: 'Finished the widget',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              priority: null,
+              assignee: null,
+              reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '2025-01-01T00:00:00.000Z',
+              updated: '2025-01-02T00:00:00.000Z',
+              description: null,
+            },
+          },
+        ] as JiraIssue[],
+        isLoading: false,
+        loadError: null,
+      },
+    ] as ArtTeam[];
+    renderArtView();
+    fireEvent.click(screen.getByRole('button', { name: /generate from jira/i }));
+    // After generation the Accomplished textarea should contain the done issue bullet.
+    const accomplishedTextarea = screen.getByPlaceholderText(/what did the team accomplish/i) as HTMLTextAreaElement;
+    expect(accomplishedTextarea.value).toContain('TBX-10');
+    expect(accomplishedTextarea.value).toContain('Finished the widget');
+    localStorage.removeItem(`tbxMonthlyReport_team-1_${yearMonth}`);
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
   // ── Feature: Advanced ART Settings ──
 
   it('shows PI Field picker in Settings tab', () => {

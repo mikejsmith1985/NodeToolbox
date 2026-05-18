@@ -137,3 +137,135 @@ export function detectImpedimentReasons(issue: JiraIssue): ImpedimentReason[] {
 export function isImpediment(issue: JiraIssue): boolean {
   return detectImpedimentReasons(issue).length > 0;
 }
+
+// ── Impediment staleness helpers ──
+
+/** Number of milliseconds in one calendar day — used by all staleness calculations. */
+const IMPEDIMENT_MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+/**
+ * Represents how stale an impediment is relative to the configured threshold:
+ *   - 'fresh'    — updated within the stale threshold (still being actively worked)
+ *   - 'stale'    — past the threshold (needs attention soon)
+ *   - 'critical' — at or beyond 2× the threshold (should be escalated)
+ */
+export type ImpedimentStaleTier = 'fresh' | 'stale' | 'critical';
+
+/**
+ * Classifies an impediment as fresh, stale, or critical based on how long ago it was
+ * last updated compared to the configured stale threshold.
+ * Using 2× the threshold as the critical boundary keeps the tiers proportional:
+ * a 5-day threshold means stale at 5d and critical at 10d.
+ */
+export function classifyImpedimentStaleness(
+  daysSinceUpdate: number,
+  staleThresholdDays: number,
+): ImpedimentStaleTier {
+  if (daysSinceUpdate >= staleThresholdDays * 2) return 'critical';
+  if (daysSinceUpdate >= staleThresholdDays) return 'stale';
+  return 'fresh';
+}
+
+/**
+ * Computes the number of whole days elapsed since the issue was last updated.
+ * The `nowMs` parameter defaults to `Date.now()` and can be overridden in tests
+ * to produce a deterministic result without time-travel mocks.
+ */
+export function computeDaysSinceUpdate(issue: JiraIssue, nowMs: number = Date.now()): number {
+  const updatedMs = new Date(issue.fields.updated).getTime();
+  return Math.max(0, Math.floor((nowMs - updatedMs) / IMPEDIMENT_MS_PER_DAY));
+}
+
+// ── Monthly Report Jira-derived helpers ──
+
+/**
+ * A read-only snapshot of Jira-derived metrics for a single team's monthly report card.
+ * Always computed live from the team's loaded sprint issues — never persisted to localStorage.
+ * All values are 0 when no issues have been loaded so callers can detect the "not loaded" state.
+ */
+export interface MonthlyJiraStats {
+  /** Story points completed (done issues only). Drawn from the velocity calculation. */
+  velocityPoints: number;
+  /** Total committed story points across all issues regardless of status. */
+  committedPoints: number;
+  /** Percentage of issues in the done state, rounded to the nearest integer. */
+  completionPercent: number;
+  /** Number of issues classified as impediments by any of the four detection signals. */
+  impedimentCount: number;
+  /** Number of issues whose status category is "done". */
+  doneIssueCount: number;
+  /** Total issues loaded for the team — 0 means the team data has not been fetched yet. */
+  totalIssueCount: number;
+}
+
+/**
+ * Derives a monthly report metrics snapshot from a team's loaded sprint issues.
+ * Returns all-zero values when the issue list is empty so callers can show a
+ * "no data loaded" hint rather than misleading zero-percent statistics.
+ */
+export function computeMonthlyJiraStats(issues: JiraIssue[]): MonthlyJiraStats {
+  const totalIssueCount = issues.length;
+  if (totalIssueCount === 0) {
+    return {
+      velocityPoints: 0,
+      committedPoints: 0,
+      completionPercent: 0,
+      impedimentCount: 0,
+      doneIssueCount: 0,
+      totalIssueCount: 0,
+    };
+  }
+
+  const doneIssueCount = issues.filter(isIssueDone).length;
+
+  return {
+    velocityPoints: computeVelocityPoints(issues),
+    committedPoints: computeCommittedStoryPoints(issues),
+    completionPercent: Math.round((doneIssueCount / totalIssueCount) * 100),
+    impedimentCount: issues.filter(isImpediment).length,
+    doneIssueCount,
+    totalIssueCount,
+  };
+}
+
+/**
+ * Maximum number of done-issue bullets included in the auto-generated "Accomplished" text.
+ * Capped so the field stays readable when a team closes many small stories in a sprint.
+ */
+const MONTHLY_ACCOMPLISHED_MAX_ISSUE_COUNT = 10;
+
+/**
+ * Auto-generates the "Accomplished" narrative from a team's done sprint issues.
+ * Lists each done issue as a bullet line (KEY: summary), capping at
+ * MONTHLY_ACCOMPLISHED_MAX_ISSUE_COUNT with an overflow note when needed.
+ * Returns an empty string when no issues are done, letting the caller decide
+ * whether to leave the field blank or keep existing manual content.
+ */
+export function generateMonthlyAccomplishedText(issues: JiraIssue[]): string {
+  const doneIssues = issues.filter(isIssueDone);
+  if (doneIssues.length === 0) return '';
+
+  const topDoneIssues = doneIssues.slice(0, MONTHLY_ACCOMPLISHED_MAX_ISSUE_COUNT);
+  const bulletLines = topDoneIssues.map((issue) => `• ${issue.key}: ${issue.fields.summary}`);
+
+  if (doneIssues.length > MONTHLY_ACCOMPLISHED_MAX_ISSUE_COUNT) {
+    bulletLines.push(`• …and ${doneIssues.length - MONTHLY_ACCOMPLISHED_MAX_ISSUE_COUNT} more`);
+  }
+
+  return bulletLines.join('\n');
+}
+
+/**
+ * Auto-generates the "Risks" narrative from a team's open impediment issues.
+ * Uses the same four-signal impediment detection as the Impediments tab so every
+ * issue surfaced there also appears in the Monthly Report risks field.
+ * Returns an empty string when no impediments are detected.
+ */
+export function generateMonthlyRisksText(issues: JiraIssue[]): string {
+  const impedimentIssues = issues.filter(isImpediment);
+  if (impedimentIssues.length === 0) return '';
+
+  return impedimentIssues
+    .map((issue) => `• ${issue.key}: ${issue.fields.summary}`)
+    .join('\n');
+}
