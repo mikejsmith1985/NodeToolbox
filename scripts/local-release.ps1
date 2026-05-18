@@ -114,7 +114,8 @@ if ($DryRun) {
     Write-Host ""
     Write-Host "  [dry-run] local-release.ps1 would perform the following steps:"
     Write-Host ""
-    Write-Host "  1. npm install           - install all dependencies (incl. dev tools)"
+    Write-Host "  1. npm install           - install root dependencies (incl. dev tools)"
+    Write-Host "  1c. cd client; npm install - install React client dependencies for fresh clones"
     if ($BumpType -ne '') {
         Write-Host "  1b. npm version $BumpType    - bump version in package.json + package-lock.json"
     }
@@ -150,12 +151,21 @@ Write-Host ""
 Write-Host "  NodeToolbox Release Builder - v$AppVersion"
 Write-Host ""
 
-# Step 1: Install all dependencies (including @yao-pkg/pkg for the exe build)
-Write-Host "  [1/6] npm install..."
+# Step 1: Install both root and client dependencies so the release works from a
+# fresh clone, not just from a developer machine that already built the client.
+Write-Host "  [1/6] Installing root and client dependencies..."
 Push-Location $RepoRoot
 try {
     npm install --silent
     if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
+
+    Push-Location (Join-Path $RepoRoot 'client')
+    try {
+        npm install --silent
+        if ($LASTEXITCODE -ne 0) { throw "client npm install failed with exit code $LASTEXITCODE" }
+    } finally {
+        Pop-Location
+    }
 } finally {
     Pop-Location
 }
