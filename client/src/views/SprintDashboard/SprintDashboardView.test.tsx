@@ -76,6 +76,10 @@ const { mockState, mockActions, mockConfig, mockConfigActions } = vi.hoisted(() 
     mockState: {
       projectKey: 'TBX',
       activeTab: 'overview' as DashboardTab,
+      scopeMode: 'sprint' as const,
+      selectedSprintId: 7,
+      selectedFixVersionName: '',
+      selectedPiValue: '',
       sprintInfo: initialSprintInfo as JiraSprint | null,
       sprintIssues: [
         buildInProgressIssue('TBX-10', 'Wire up the backend', 'Alice'),
@@ -87,8 +91,12 @@ const { mockState, mockActions, mockConfig, mockConfigActions } = vi.hoisted(() 
       isTimerRunning: false,
       timerSecondsRemaining: 900,
       boardId: null as number | null,
+      selectedBoardName: null as string | null,
       boardType: null as 'scrum' | 'kanban' | null,
       availableBoards: [] as Array<{ id: number; name: string; type: 'scrum' | 'kanban'; projectKey: string }>,
+      availableScopeSprints: [initialSprintInfo] as JiraSprint[],
+      availableFixVersions: [] as Array<{ id: string; name: string }>,
+      availablePiValues: [] as string[],
       availableSprints: null as JiraSprint[] | null,
       isLoadingAvailableSprints: false,
     },
@@ -101,15 +109,20 @@ const { mockState, mockActions, mockConfig, mockConfigActions } = vi.hoisted(() 
       startTimer: vi.fn(),
       stopTimer: vi.fn(),
       selectBoard: vi.fn().mockResolvedValue(undefined),
+      setScopeMode: vi.fn().mockResolvedValue(undefined),
+      selectSprintScope: vi.fn().mockResolvedValue(undefined),
+      selectFixVersionScope: vi.fn().mockResolvedValue(undefined),
+      selectPiScope: vi.fn().mockResolvedValue(undefined),
       loadAvailableSprints: vi.fn().mockResolvedValue(undefined),
       moveIssueToSprint: vi.fn().mockResolvedValue(undefined),
     },
     mockConfig: {
       staleDaysThreshold: 5,
       storyPointScale: '1,2,3,5,8,13,21',
-      sprintWindow: 3,
+      sprintWindow: 6,
       cycleTimeStartField: '',
       cycleTimeDoneField: '',
+      cycleTimeBaselineDays: 0,
       kanbanPeriodDays: 14,
       customStoryPointsFieldId: 'story_points',
       customEpicLinkFieldId: 'epic_link',
@@ -129,8 +142,31 @@ vi.mock('./hooks/useDashboardConfig.ts', () => ({
   useDashboardConfig: () => ({ config: mockConfig, actions: mockConfigActions }),
 }));
 
-vi.mock('../StoryPointing/StoryPointingView.tsx', () => ({
-  default: () => <div>Mock Story Pointing</div>,
+vi.mock('../../components/JiraFieldPicker/index.tsx', () => ({
+  default: ({
+    id,
+    label,
+    value,
+    onChange,
+  }: {
+    id: string;
+    label: string;
+    value: string;
+    onChange: (nextValue: string) => void;
+  }) => (
+    <label htmlFor={id}>
+      {label}
+      <input id={id} onChange={(event) => onChange(event.target.value)} value={value} />
+    </label>
+  ),
+}));
+
+vi.mock('./StandupTab.tsx', () => ({
+  default: () => <div>Mock Standup Workspace</div>,
+}));
+
+vi.mock('./RosterTab.tsx', () => ({
+  default: () => <div>Mock Roster Workspace</div>,
 }));
 
 vi.mock('../../services/jiraApi.ts', () => ({
@@ -145,9 +181,72 @@ describe('SprintDashboardView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockState.activeTab = 'overview';
+    mockState.sprintIssues = [
+      {
+        id: 'TBX-10',
+        key: 'TBX-10',
+        fields: {
+          summary: 'Wire up the backend',
+          status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+          priority: { name: 'High', iconUrl: 'priority.png' },
+          assignee: {
+            accountId: 'user-1',
+            displayName: 'Alice',
+            emailAddress: 'alice@example.com',
+            avatarUrls: {},
+          },
+          reporter: null,
+          issuetype: { name: 'Story', iconUrl: 'story.png' },
+          created: '2025-01-01T00:00:00.000Z',
+          updated: '2025-01-02T00:00:00.000Z',
+          description: null,
+        },
+      },
+      {
+        id: 'TBX-11',
+        key: 'TBX-11',
+        fields: {
+          summary: 'Polish the UI',
+          status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+          priority: { name: 'High', iconUrl: 'priority.png' },
+          assignee: {
+            accountId: 'user-1',
+            displayName: 'Bob',
+            emailAddress: 'bob@example.com',
+            avatarUrls: {},
+          },
+          reporter: null,
+          issuetype: { name: 'Story', iconUrl: 'story.png' },
+          created: '2025-01-01T00:00:00.000Z',
+          updated: '2025-01-02T00:00:00.000Z',
+          description: null,
+        },
+      },
+      {
+        id: 'TBX-12',
+        key: 'TBX-12',
+        fields: {
+          summary: 'Blocked issue',
+          status: { name: 'Blocked', statusCategory: { key: 'indeterminate' } },
+          priority: { name: 'High', iconUrl: 'priority.png' },
+          assignee: null,
+          reporter: null,
+          issuetype: { name: 'Story', iconUrl: 'story.png' },
+          created: '2025-01-01T00:00:00.000Z',
+          updated: '2025-01-02T00:00:00.000Z',
+          description: null,
+        },
+      },
+    ];
     mockJiraGet.mockImplementation((path: string) => {
       if (path === '/rest/api/2/field') {
         return Promise.resolve([]);
+      }
+      if (path === '/rest/api/2/project/TBX/versions') {
+        return Promise.resolve([]);
+      }
+      if (path.startsWith('/rest/api/2/search?jql=')) {
+        return Promise.resolve({ issues: [] });
       }
 
       return Promise.resolve({ values: [] });
@@ -159,37 +258,100 @@ describe('SprintDashboardView', () => {
       startDate: '2025-01-01T00:00:00.000Z',
       endDate: '2025-01-14T00:00:00.000Z',
     };
+    mockState.projectKey = 'TBX';
     mockState.loadError = null;
     mockState.isLoadingSprint = false;
+    mockState.scopeMode = 'sprint';
+    mockState.selectedSprintId = 7;
+    mockState.selectedFixVersionName = '';
+    mockState.selectedPiValue = '';
     mockState.availableBoards = [];
     mockState.boardId = null;
+    mockState.selectedBoardName = null;
+    mockState.boardType = null;
+    mockState.availableScopeSprints = [mockState.sprintInfo];
+    mockState.availableFixVersions = [];
+    mockState.availablePiValues = [];
     mockState.availableSprints = null;
   });
 
   it('renders the core tab buttons', () => {
     render(<SprintDashboardView />);
 
+    expect(screen.getByRole('heading', { name: 'Team Dashboard' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Overview' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'By Assignee' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Blockers' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Defects' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Standup' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'View Work By' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Sprint' })).toBeInTheDocument();
   });
 
-  it('shows the Settings tab with project key input', () => {
+  it('shows board-friendly wording in the Settings tab before a board is selected', () => {
     mockState.activeTab = 'settings';
     render(<SprintDashboardView />);
 
+    expect(screen.getByRole('heading', { name: 'Board Settings' })).toBeInTheDocument();
     expect(screen.getByLabelText(/project key/i)).toBeInTheDocument();
+    expect(screen.getByText(/load the team board and dashboard data/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /load board/i })).toBeInTheDocument();
+  });
+
+  it('shows scrum-specific load wording in the Settings tab for scrum boards', () => {
+    mockState.activeTab = 'settings';
+    mockState.boardType = 'scrum';
+    render(<SprintDashboardView />);
+
+    expect(screen.getByText(/load the active sprint/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /load sprint/i })).toBeInTheDocument();
   });
 
   it('renders Overview tab with sprint info when sprint is loaded', () => {
     mockState.activeTab = 'overview';
+    mockState.boardId = 333;
+    mockState.selectedBoardName = 'Transformers SCRUM';
     render(<SprintDashboardView />);
 
-    expect(screen.getByText('Sprint 7')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Sprint 7' })).toBeInTheDocument();
+    expect(screen.getByText('Transformers SCRUM')).toBeInTheDocument();
+    expect(screen.queryByText('Board 333')).not.toBeInTheDocument();
+  });
+
+  it('shows a board-focused empty state in Overview when no team board data is loaded', () => {
+    mockState.activeTab = 'overview';
+    mockState.sprintInfo = null;
+    mockState.sprintIssues = [];
+    mockState.boardId = null;
+    mockState.projectKey = '';
+    render(<SprintDashboardView />);
+
+    expect(screen.getByText('No board data loaded. Go to Settings and load a team board.')).toBeInTheDocument();
+  });
+
+  it('auto-loads the saved dashboard selection after a refresh when a project key is already configured', () => {
+    mockState.activeTab = 'overview';
+    mockState.projectKey = 'TBX';
+    mockState.boardId = 42;
+    mockState.sprintInfo = null;
+    mockState.sprintIssues = [];
+
+    render(<SprintDashboardView />);
+
+    expect(mockActions.loadSprint).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not auto-load when no dashboard selection has been saved yet', () => {
+    mockState.activeTab = 'overview';
+    mockState.projectKey = '';
+    mockState.boardId = null;
+    mockState.sprintInfo = null;
+    mockState.sprintIssues = [];
+
+    render(<SprintDashboardView />);
+
+    expect(mockActions.loadSprint).not.toHaveBeenCalled();
   });
 
   it('renders By Assignee swim lanes when issues are present', () => {
@@ -208,12 +370,11 @@ describe('SprintDashboardView', () => {
     expect(screen.getByRole('heading', { name: 'Blocked' })).toBeInTheDocument();
   });
 
-  it('renders the Standup timer display', () => {
+  it('renders the Standup workspace', () => {
     mockState.activeTab = 'standup';
     render(<SprintDashboardView />);
 
-    // Timer should display 15:00 (900 seconds)
-    expect(screen.getByText('15:00')).toBeInTheDocument();
+    expect(screen.getByText('Mock Standup Workspace')).toBeInTheDocument();
   });
 
   it('renders the burn-down chart when on Overview tab', () => {
@@ -238,40 +399,66 @@ describe('SprintDashboardView', () => {
     render(<SprintDashboardView />);
 
     expect(screen.getByRole('heading', { name: 'Sprint Metrics' })).toBeInTheDocument();
-    expect(screen.getByText(/Completion/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Predictability' })).toBeInTheDocument();
   });
 
-  it('renders the Pipeline tab with per-status kanban columns', () => {
+  it('renders the Pipeline tab with the REL-centered pipeline layout', () => {
     mockState.activeTab = 'pipeline';
     render(<SprintDashboardView />);
 
-    expect(screen.getByRole('heading', { name: 'Kanban Pipeline' })).toBeInTheDocument();
-    // Mock issues have "In Progress" and "Blocked" statuses — both appear as column headings.
-    expect(screen.getByRole('heading', { name: 'In Progress' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Release Pipeline' })).toBeInTheDocument();
+    expect(screen.getByText(/rel stories anchor the pipeline/i)).toBeInTheDocument();
   });
 
-  it('renders the Planning tab with unestimated issues section', () => {
+  it('renders the Planning tab with backlog planning controls', () => {
     mockState.activeTab = 'planning';
     render(<SprintDashboardView />);
 
-    expect(screen.getByRole('heading', { name: 'Sprint Planning' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Unestimated Issues' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Backlog Planning' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /copy follow-up report/i })).toBeInTheDocument();
   });
 
-  it('renders the Pointing tab with the embedded story-pointing view', () => {
+  it('renders the Pointing tab with the team dashboard pointing flow', () => {
     mockState.activeTab = 'pointing';
     render(<SprintDashboardView />);
 
-    expect(screen.getByText('Mock Story Pointing')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Story Pointing' })).toBeInTheDocument();
+    expect(screen.getByText('Wire up the backend')).toBeInTheDocument();
   });
 
-  it('renders the Releases tab grouped by fix version', () => {
+  it('renders the Release Radar using project versions', async () => {
     mockState.activeTab = 'releases';
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/project/TBX/versions') {
+        return Promise.resolve([
+          { id: 'rel-1', name: 'Release 24.1', releaseDate: '2099-01-15', released: false, archived: false },
+        ]);
+      }
+      if (path.includes('fixVersion%3D%22Release%2024.1%22')) {
+        return Promise.resolve({
+          issues: [
+            {
+              id: 'TBX-99',
+              key: 'TBX-99',
+              fields: {
+                summary: 'Prepare production deploy',
+                status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+                assignee: { displayName: 'Alice' },
+                issuetype: { name: 'Story', iconUrl: 'story.png' },
+                priority: { name: 'High', iconUrl: 'priority.png' },
+              },
+            },
+          ],
+        });
+      }
+
+      return Promise.resolve({ values: [] });
+    });
     render(<SprintDashboardView />);
 
-    expect(screen.getByRole('heading', { name: 'Release Readiness' })).toBeInTheDocument();
-    // All mock issues have no fixVersions, so they fall under "No Version".
-    expect(screen.getByText('No Version')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Release Radar' })).toBeInTheDocument();
+    expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
+    expect(screen.getByText(/1 release/i)).toBeInTheDocument();
   });
 
   // ── New feature tests ──
@@ -295,10 +482,12 @@ describe('SprintDashboardView', () => {
 
     expect(screen.getByLabelText(/stale threshold/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/story point scale/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/sprint window/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/kanban period/i)).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: /story points field/i })).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: /epic link field/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/scrum velocity window/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/cycle-time baseline/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/kanban throughput window/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/story points field/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/epic link field/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Detect' })).toBeInTheDocument();
   });
 
   it('renders Move to Sprint buttons in the Assignee tab', () => {

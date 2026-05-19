@@ -3,7 +3,9 @@
 .appShell {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   background: var(--color-bg);
   color: var(--color-text-primary);
 }
@@ -55,6 +57,8 @@
 
 .mainContent {
   flex: 1;
+  /* Allow the shared app body to become the real scroll container for sticky tool tabs. */
+  min-height: 0;
   overflow: auto;
 }
 

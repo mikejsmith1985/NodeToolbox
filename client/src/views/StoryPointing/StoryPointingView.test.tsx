@@ -22,6 +22,8 @@ const SAMPLE_ISSUE: StoryPointingIssue = {
   key: 'TBX-101',
   summary: 'Build Story Pointing view',
   description: 'Facilitators can estimate one issue at a time.',
+  acceptanceCriteria: 'Acceptance criteria are visible on demand.',
+  latestComment: 'Latest Jira comment.',
   issueType: 'Story',
   status: 'Ready',
   priority: 'High',
@@ -95,6 +97,8 @@ describe('StoryPointingView', () => {
     expect(screen.getByText('TBX-101')).toBeInTheDocument();
     expect(screen.getByText('Build Story Pointing view')).toBeInTheDocument();
     expect(screen.getByText('Facilitators can estimate one issue at a time.')).toBeInTheDocument();
+    expect(screen.getByText('Acceptance criteria are visible on demand.')).toBeInTheDocument();
+    expect(screen.getByText('Latest Jira comment.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Vote 13 story points' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Vote unknown story points' })).toBeInTheDocument();
   });

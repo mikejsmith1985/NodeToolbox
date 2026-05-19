@@ -9,6 +9,7 @@ const DARK_THEME: Theme = 'dark';
 const LIGHT_THEME: Theme = 'light';
 const DEFAULT_SNOW_HUB_TAB = 'crg';
 const DEFAULT_TEXT_TOOLS_TAB = 'case';
+const DEFAULT_SPRINT_DASHBOARD_ACTIVE_TAB = 'overview';
 const EMPTY_STRING = '';
 const EMPTY_STRING_LIST: string[] = [];
 const MAX_RECENT_VIEW_COUNT = 5;
@@ -21,6 +22,13 @@ const CONFLUENCE_URL_STORAGE_KEY = 'tbxConfUrl';
 const SNOW_HUB_TAB_STORAGE_KEY = 'tbxSnowHubTab';
 const TEXT_TOOLS_TAB_STORAGE_KEY = 'tbxTextToolsTab';
 const DSU_PROJECT_KEY_STORAGE_KEY = 'tbxDSUProjKey';
+const SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY = 'tbxSprintDashboardProjectKey';
+const SPRINT_DASHBOARD_BOARD_ID_STORAGE_KEY = 'tbxSprintDashboardBoardId';
+const SPRINT_DASHBOARD_ACTIVE_TAB_STORAGE_KEY = 'tbxSprintDashboardActiveTab';
+const SPRINT_DASHBOARD_SCOPE_MODE_STORAGE_KEY = 'tbxSprintDashboardScopeMode';
+const SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY = 'tbxSprintDashboardSelectedSprintId';
+const SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY = 'tbxSprintDashboardSelectedFixVersion';
+const SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY = 'tbxSprintDashboardSelectedPiValue';
 const MY_ISSUES_JQL_STORAGE_KEY = 'tbxMIJql';
 const MY_ISSUES_BOARD_ID_STORAGE_KEY = 'tbxMIBoardId';
 const MY_ISSUES_JQL_HISTORY_STORAGE_KEY = 'tbxMIJqlHistory';
@@ -37,6 +45,13 @@ interface SettingsState {
   snowHubTab: string;
   textToolsTab: string;
   dsuProjectKey: string;
+  sprintDashboardProjectKey: string;
+  sprintDashboardBoardId: string;
+  sprintDashboardActiveTab: string;
+  sprintDashboardScopeMode: string;
+  sprintDashboardSelectedSprintId: string;
+  sprintDashboardSelectedFixVersion: string;
+  sprintDashboardSelectedPiValue: string;
   myIssuesJql: string;
   myIssuesBoardId: string;
   myIssuesJqlHistory: string[];
@@ -57,6 +72,13 @@ interface SettingsState {
   setSnowHubTab: (tab: string) => void;
   setTextToolsTab: (tab: string) => void;
   setDsuProjectKey: (projectKey: string) => void;
+  setSprintDashboardProjectKey: (projectKey: string) => void;
+  setSprintDashboardBoardId: (boardId: string) => void;
+  setSprintDashboardActiveTab: (activeTab: string) => void;
+  setSprintDashboardScopeMode: (scopeMode: string) => void;
+  setSprintDashboardSelectedSprintId: (sprintId: string) => void;
+  setSprintDashboardSelectedFixVersion: (fixVersionName: string) => void;
+  setSprintDashboardSelectedPiValue: (piValue: string) => void;
   setMyIssuesJql: (jql: string) => void;
   setMyIssuesBoardId: (boardId: string) => void;
   setMyIssuesJqlHistory: (jqlHistory: string[]) => void;
@@ -191,6 +213,28 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
   snowHubTab: readStoredString(SNOW_HUB_TAB_STORAGE_KEY, DEFAULT_SNOW_HUB_TAB),
   textToolsTab: readStoredString(TEXT_TOOLS_TAB_STORAGE_KEY, DEFAULT_TEXT_TOOLS_TAB),
   dsuProjectKey: readStoredString(DSU_PROJECT_KEY_STORAGE_KEY, EMPTY_STRING),
+  sprintDashboardProjectKey: readStoredString(
+    SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY,
+    EMPTY_STRING,
+  ),
+  sprintDashboardBoardId: readStoredString(SPRINT_DASHBOARD_BOARD_ID_STORAGE_KEY, EMPTY_STRING),
+  sprintDashboardActiveTab: readStoredString(
+    SPRINT_DASHBOARD_ACTIVE_TAB_STORAGE_KEY,
+    DEFAULT_SPRINT_DASHBOARD_ACTIVE_TAB,
+  ),
+  sprintDashboardScopeMode: readStoredString(SPRINT_DASHBOARD_SCOPE_MODE_STORAGE_KEY, 'sprint'),
+  sprintDashboardSelectedSprintId: readStoredString(
+    SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY,
+    EMPTY_STRING,
+  ),
+  sprintDashboardSelectedFixVersion: readStoredString(
+    SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY,
+    EMPTY_STRING,
+  ),
+  sprintDashboardSelectedPiValue: readStoredString(
+    SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY,
+    EMPTY_STRING,
+  ),
   myIssuesJql: readStoredString(MY_ISSUES_JQL_STORAGE_KEY, EMPTY_STRING),
   myIssuesBoardId: readStoredString(MY_ISSUES_BOARD_ID_STORAGE_KEY, EMPTY_STRING),
   myIssuesJqlHistory: readStoredStringArray(MY_ISSUES_JQL_HISTORY_STORAGE_KEY),
@@ -232,6 +276,34 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
   setDsuProjectKey: (projectKey) => {
     writeStoredString(DSU_PROJECT_KEY_STORAGE_KEY, projectKey);
     setState({ dsuProjectKey: projectKey });
+  },
+  setSprintDashboardProjectKey: (projectKey) => {
+    writeStoredString(SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY, projectKey);
+    setState({ sprintDashboardProjectKey: projectKey });
+  },
+  setSprintDashboardBoardId: (boardId) => {
+    writeStoredString(SPRINT_DASHBOARD_BOARD_ID_STORAGE_KEY, boardId);
+    setState({ sprintDashboardBoardId: boardId });
+  },
+  setSprintDashboardActiveTab: (activeTab) => {
+    writeStoredString(SPRINT_DASHBOARD_ACTIVE_TAB_STORAGE_KEY, activeTab);
+    setState({ sprintDashboardActiveTab: activeTab });
+  },
+  setSprintDashboardScopeMode: (scopeMode) => {
+    writeStoredString(SPRINT_DASHBOARD_SCOPE_MODE_STORAGE_KEY, scopeMode);
+    setState({ sprintDashboardScopeMode: scopeMode });
+  },
+  setSprintDashboardSelectedSprintId: (sprintId) => {
+    writeStoredString(SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY, sprintId);
+    setState({ sprintDashboardSelectedSprintId: sprintId });
+  },
+  setSprintDashboardSelectedFixVersion: (fixVersionName) => {
+    writeStoredString(SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY, fixVersionName);
+    setState({ sprintDashboardSelectedFixVersion: fixVersionName });
+  },
+  setSprintDashboardSelectedPiValue: (piValue) => {
+    writeStoredString(SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY, piValue);
+    setState({ sprintDashboardSelectedPiValue: piValue });
   },
   setMyIssuesJql: (jql) => {
     writeStoredString(MY_ISSUES_JQL_STORAGE_KEY, jql);

@@ -31,18 +31,43 @@ export default function StoryPointingView() {
   return (
     <section className={styles.storyPointingView} aria-label={VIEW_TITLE}>
       <header className={styles.pageHeader}>
-        <h1 className={styles.pageTitle}>{VIEW_TITLE}</h1>
-        <p className={styles.pageSubtitle}>{VIEW_SUBTITLE}</p>
+        <div>
+          <h1 className={styles.pageTitle}>{VIEW_TITLE}</h1>
+          <p className={styles.pageSubtitle}>{VIEW_SUBTITLE}</p>
+        </div>
+        <div className={styles.summaryCards} aria-live="polite">
+          <div className={styles.summaryCard}>
+            <span className={styles.summaryLabel}>Queue</span>
+            <strong className={styles.summaryValue}>
+              {currentPosition} / {pointingState.deck.length}
+            </strong>
+          </div>
+          <div className={styles.summaryCard}>
+            <span className={styles.summaryLabel}>Pointed</span>
+            <strong className={styles.summaryValue}>{pointingState.session.pointedCount}</strong>
+          </div>
+          <div className={styles.summaryCard}>
+            <span className={styles.summaryLabel}>Skipped</span>
+            <strong className={styles.summaryValue}>{pointingState.session.skippedCount}</strong>
+          </div>
+          <div className={styles.summaryCard}>
+            <span className={styles.summaryLabel}>Selected vote</span>
+            <strong className={styles.summaryValue}>{pointingState.selectedVote ?? NO_VALUE_LABEL}</strong>
+          </div>
+        </div>
       </header>
 
       <div className={styles.controlsPanel}>
-        <textarea
-          className={styles.queryInput}
-          aria-label="Jira issue search"
-          placeholder={QUERY_PLACEHOLDER}
-          value={pointingState.queryText}
-          onChange={(changeEvent) => pointingState.setQueryText(changeEvent.target.value)}
-        />
+        <label className={styles.queryLabel}>
+          Jira issue search
+          <textarea
+            className={styles.queryInput}
+            aria-label="Jira issue search"
+            placeholder={QUERY_PLACEHOLDER}
+            value={pointingState.queryText}
+            onChange={(changeEvent) => pointingState.setQueryText(changeEvent.target.value)}
+          />
+        </label>
         <div className={styles.controlButtons}>
           <button
             type="button"
@@ -65,30 +90,6 @@ export default function StoryPointingView() {
         </div>
       </div>
 
-      <div className={styles.summaryBar} aria-live="polite">
-        <span>
-          {currentPosition} / {pointingState.deck.length} issues · {pointingState.session.pointedCount} pointed ·{' '}
-          {pointingState.session.skippedCount} skipped
-        </span>
-        {pointingState.currentIssue && (
-          <label className={styles.jumpLabel}>
-            Jump to issue
-            <select
-              className={styles.jumpSelect}
-              aria-label="Jump to issue"
-              value={pointingState.currentIssueIndex}
-              onChange={(changeEvent) => pointingState.goToIssue(Number(changeEvent.target.value))}
-            >
-              {pointingState.deck.map((deckIssue, deckIssueIndex) => (
-                <option key={deckIssue.key} value={deckIssueIndex}>
-                  {deckIssue.key} — {deckIssue.summary}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-      </div>
-
       {pointingState.loadError && (
         <p className={styles.errorMessage} role="alert">
           ⚠ {pointingState.loadError}
@@ -102,10 +103,27 @@ export default function StoryPointingView() {
 
       {pointingState.currentIssue ? (
         <article className={styles.issueCard}>
-          <div className={styles.issueHeader}>
-            <span className={styles.issueType}>{pointingState.currentIssue.issueType || 'Issue'}</span>
-            <span className={styles.issueKey}>{pointingState.currentIssue.key}</span>
-            <span className={styles.issueStatus}>{pointingState.currentIssue.status || NO_VALUE_LABEL}</span>
+          <div className={styles.issueToolbar}>
+            <div className={styles.issueHeader}>
+              <span className={styles.issueType}>{pointingState.currentIssue.issueType || 'Issue'}</span>
+              <span className={styles.issueKey}>{pointingState.currentIssue.key}</span>
+              <span className={styles.issueStatus}>{pointingState.currentIssue.status || NO_VALUE_LABEL}</span>
+            </div>
+            <label className={styles.jumpLabel}>
+              Jump to issue
+              <select
+                className={styles.jumpSelect}
+                aria-label="Jump to issue"
+                value={pointingState.currentIssueIndex}
+                onChange={(changeEvent) => pointingState.goToIssue(Number(changeEvent.target.value))}
+              >
+                {pointingState.deck.map((deckIssue, deckIssueIndex) => (
+                  <option key={deckIssue.key} value={deckIssueIndex}>
+                    {deckIssue.key} — {deckIssue.summary}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
           <h2 className={styles.issueSummary}>{pointingState.currentIssue.summary}</h2>
           <dl className={styles.metadataGrid}>
@@ -122,9 +140,29 @@ export default function StoryPointingView() {
               <dd>{pointingState.currentIssue.storyPoints || NO_VALUE_LABEL}</dd>
             </div>
           </dl>
-          <p className={styles.descriptionText}>
-            {pointingState.currentIssue.description || 'No Jira description was returned for this issue.'}
-          </p>
+          <section className={styles.contextPanel}>
+            <h3 className={styles.contextTitle}>Quick context</h3>
+            <p className={styles.descriptionText}>
+              {pointingState.currentIssue.description || 'No Jira description was returned for this issue.'}
+            </p>
+          </section>
+          <details className={styles.contextDetails}>
+            <summary className={styles.contextSummary}>More context</summary>
+            <div className={styles.contextDetailGrid}>
+              <div className={styles.contextBlock}>
+                <h4 className={styles.contextBlockTitle}>Acceptance criteria</h4>
+                <p className={styles.contextBody}>
+                  {pointingState.currentIssue.acceptanceCriteria || 'No acceptance criteria were returned for this issue.'}
+                </p>
+              </div>
+              <div className={styles.contextBlock}>
+                <h4 className={styles.contextBlockTitle}>Latest comment</h4>
+                <p className={styles.contextBody}>
+                  {pointingState.currentIssue.latestComment || 'No Jira comments were returned for this issue.'}
+                </p>
+              </div>
+            </div>
+          </details>
 
           <div className={styles.voteDeck} aria-label="Story point cards">
             {POINTING_SCALE.map((pointingValue) => (

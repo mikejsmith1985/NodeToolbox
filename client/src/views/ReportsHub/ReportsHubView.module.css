@@ -6,7 +6,6 @@
   gap: var(--spacing-md);
   padding: var(--spacing-md);
   height: 100%;
-  overflow: auto;
 }
 
 /* ── Page header ── */

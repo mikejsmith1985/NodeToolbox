@@ -6,12 +6,13 @@
   gap: var(--spacing-md);
   padding: var(--spacing-md);
   height: 100%;
-  overflow: auto;
   color: var(--color-text-primary);
 }
 
 .pageHeader {
-  margin-bottom: var(--spacing-xs);
+  display: grid;
+  gap: var(--spacing-md);
+  grid-template-columns: minmax(0, 1.4fr) minmax(18rem, 1fr);
 }
 
 .pageTitle {
@@ -26,6 +27,34 @@
   margin: 0;
 }
 
+.summaryCards {
+  display: grid;
+  gap: var(--spacing-sm);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.summaryCard {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface);
+}
+
+.summaryLabel {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs, 12px);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.summaryValue {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+}
+
 .controlsPanel {
   display: grid;
   grid-template-columns: minmax(18rem, 1fr) auto;
@@ -35,6 +64,13 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg, 10px);
   padding: var(--spacing-md);
+}
+
+.queryLabel {
+  display: grid;
+  gap: var(--spacing-xs);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
 }
 
 .queryInput {
@@ -87,29 +123,30 @@
   cursor: not-allowed;
 }
 
-.summaryBar {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: var(--spacing-sm);
-  font-size: var(--font-size-sm);
-  color: var(--color-text-muted);
-}
-
 .jumpLabel {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-sm);
+  display: grid;
+  gap: var(--spacing-xs);
+  min-width: min(100%, 26rem);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
 }
 
 .jumpSelect {
-  max-width: 22rem;
+  min-width: 0;
+  width: 100%;
   font-size: var(--font-size-sm);
-  padding: var(--spacing-xs) var(--spacing-sm);
+  padding: var(--spacing-sm);
   border-radius: var(--radius-md, 8px);
   border: 1px solid var(--color-border);
   background: var(--color-background);
   color: var(--color-text-primary);
+  /* Keep the native Windows select menu in dark mode so option text stays readable. */
+  color-scheme: dark;
+}
+
+.jumpSelect option {
+  background: var(--color-surface-2, #161b22);
+  color: var(--color-text-primary, #e6edf3);
 }
 
 .statusMessage {
@@ -133,6 +170,14 @@
   border-radius: var(--radius-lg, 10px);
   padding: var(--spacing-md);
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(15, 23, 42, 0.08));
+}
+
+.issueToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  align-items: flex-start;
 }
 
 .issueHeader {
@@ -187,13 +232,52 @@
   color: var(--color-text-primary);
 }
 
+.contextPanel,
+.contextDetails {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--spacing-md);
+  background: var(--color-background);
+}
+
+.contextTitle,
+.contextBlockTitle {
+  margin: 0 0 var(--spacing-xs);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
 .descriptionText {
   margin: 0;
-  max-height: 12rem;
-  overflow: auto;
   line-height: 1.5;
   color: var(--color-text-primary);
   white-space: pre-wrap;
+}
+
+.contextSummary {
+  cursor: pointer;
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.contextDetailGrid {
+  display: grid;
+  gap: var(--spacing-md);
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  margin-top: var(--spacing-md);
+}
+
+.contextBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.contextBody {
+  margin: 0;
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  line-height: 1.5;
 }
 
 .voteDeck {
@@ -242,7 +326,18 @@
 }
 
 @media (max-width: 720px) {
+  .pageHeader,
   .controlsPanel {
+    grid-template-columns: 1fr;
+  }
+
+  .summaryCards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .summaryCards {
     grid-template-columns: 1fr;
   }
 }

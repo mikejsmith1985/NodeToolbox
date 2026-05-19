@@ -1,47 +1,19 @@
-// TbxBackupRestoreSection.tsx — Export / import / reset for tbx* localStorage data.
+// TbxBackupRestoreSection.tsx — Export / import / reset for durable NodeToolbox localStorage settings.
 //
-// Distinct from the existing BackupSection (which targets 'toolbox-' prefixed keys).
-// This section handles all keys that start with 'tbx', matching the NodeToolbox
-// naming convention used by the settings store and new features.
+// Distinct from the existing BackupSection (which targets older toolbox-prefixed data).
+// This section covers the modern settings store plus legacy persistent keys that still
+// power a few tools, so updates do not silently drop saved configuration.
 
 import { useRef, useState } from 'react';
 
 import ConfirmDialog from '../../components/ConfirmDialog/index.tsx';
 import { useToast } from '../../components/Toast/ToastProvider.tsx';
+import {
+  collectPersistentSettingsLocalStorageData,
+  removePersistentSettingsLocalStorageData,
+  restorePersistentSettingsLocalStorageData,
+} from '../../utils/persistentSettingsStorage.ts';
 import styles from './AdminHubView.module.css';
-
-// ── Constants ──
-
-/** All localStorage keys matching this prefix are included in export/reset. */
-const TBX_KEY_PREFIX = 'tbx';
-
-// ── Helpers ──
-
-/** Collects all tbx* localStorage entries into a plain object. */
-function collectTbxLocalStorageData(): Record<string, string> {
-  const collectedData: Record<string, string> = {};
-  for (let storageIndex = 0; storageIndex < localStorage.length; storageIndex++) {
-    const storageKey = localStorage.key(storageIndex);
-    if (storageKey !== null && storageKey.startsWith(TBX_KEY_PREFIX)) {
-      collectedData[storageKey] = localStorage.getItem(storageKey) ?? '';
-    }
-  }
-  return collectedData;
-}
-
-/** Removes all tbx* keys from localStorage. */
-function removeTbxLocalStorageData(): void {
-  const keysToRemove: string[] = [];
-  for (let storageIndex = 0; storageIndex < localStorage.length; storageIndex++) {
-    const storageKey = localStorage.key(storageIndex);
-    if (storageKey !== null && storageKey.startsWith(TBX_KEY_PREFIX)) {
-      keysToRemove.push(storageKey);
-    }
-  }
-  for (const keyToRemove of keysToRemove) {
-    localStorage.removeItem(keyToRemove);
-  }
-}
 
 /** Triggers a JSON file download with the given filename and content. */
 function triggerJsonDownload(filename: string, jsonString: string): void {
@@ -56,14 +28,14 @@ function triggerJsonDownload(filename: string, jsonString: string): void {
 
 // ── Main component ──
 
-/** Backup / Restore Settings section — export, import, or reset all tbx* localStorage data. */
+/** Backup / Restore Settings section — export, import, or reset all durable local settings. */
 export default function TbxBackupRestoreSection() {
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
 
   function handleExportSettings() {
-    const exportData = collectTbxLocalStorageData();
+    const exportData = collectPersistentSettingsLocalStorageData();
     const jsonString = JSON.stringify(exportData, null, 2);
     const dateString = new Date().toISOString().slice(0, 10);
     triggerJsonDownload(`nodetoolbox-backup-${dateString}.json`, jsonString);
@@ -84,14 +56,7 @@ export default function TbxBackupRestoreSection() {
           return;
         }
 
-        // Only restore keys matching the tbx* prefix to avoid polluting localStorage.
-        for (const [restoreKey, restoreValue] of Object.entries(
-          parsedData as Record<string, unknown>,
-        )) {
-          if (restoreKey.startsWith(TBX_KEY_PREFIX) && typeof restoreValue === 'string') {
-            localStorage.setItem(restoreKey, restoreValue);
-          }
-        }
+        restorePersistentSettingsLocalStorageData(parsedData as Record<string, unknown>);
 
         window.location.reload();
       } catch {
@@ -110,7 +75,7 @@ export default function TbxBackupRestoreSection() {
 
   function handleConfirmResetAllData() {
     setIsResetDialogOpen(false);
-    removeTbxLocalStorageData();
+    removePersistentSettingsLocalStorageData();
     window.location.reload();
   }
 
@@ -119,7 +84,8 @@ export default function TbxBackupRestoreSection() {
       <h2 className={styles.sectionTitle}>💾 Backup / Restore Settings</h2>
       <p className={styles.adminDescription}>
         Export all NodeToolbox configuration to a JSON file, or import a previously saved backup.
-        Reset All Data removes every <code>tbx*</code> localStorage key — use with caution.
+        Reset All Data removes every durable local setting, including older keys that some tools
+        still use behind the scenes.
       </p>
 
       <div className={styles.devUtilitiesRow}>
@@ -155,7 +121,7 @@ export default function TbxBackupRestoreSection() {
         <ConfirmDialog
           confirmLabel="Reset All Data"
           isDangerous
-          message="Clear all NodeToolbox data? This removes all tbx* localStorage keys and cannot be undone."
+          message="Clear all saved NodeToolbox settings? This removes every durable localStorage setting and cannot be undone."
           onCancel={() => setIsResetDialogOpen(false)}
           onConfirm={handleConfirmResetAllData}
         />

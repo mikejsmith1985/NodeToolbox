@@ -25,6 +25,7 @@ const EPIC_MAX_RESULTS = 200;
 const CHILD_MAX_RESULTS = 100;
 const EMPTY_COUNT = 0;
 const DEFAULT_STATUS_CATEGORY_FILTER: StatusCategoryKey[] = ['new', 'indeterminate', 'done'];
+const HIERARCHY_REFERENCE_FIELDS = ['parent', 'customfield_10008'].join(',');
 
 const EPIC_FIELDS = [
   'summary',
@@ -87,6 +88,7 @@ interface JiraIssueResponse {
       statusCategory?: { key?: string } | null;
     } | null;
     assignee?: { displayName?: string } | null;
+    parent?: { key?: string } | null;
     [customField: string]: unknown;
   };
 }
@@ -120,7 +122,20 @@ export function usePipelineState(): UsePipelineState {
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      const response = await jiraGet<JiraSearchResponse>(buildEpicsSearchPath(trimmedProjectKey));
+      const hierarchyReferenceResponse = await jiraGet<JiraSearchResponse>(buildHierarchyReferenceSearchPath(trimmedProjectKey));
+      const hierarchyKeys = Array.from(
+        new Set(
+          (hierarchyReferenceResponse.issues ?? [])
+            .map(readHierarchyKey)
+            .filter((hierarchyKey): hierarchyKey is string => Boolean(hierarchyKey)),
+        ),
+      );
+      if (hierarchyKeys.length === EMPTY_COUNT) {
+        setLoadedEpics([]);
+        return;
+      }
+
+      const response = await jiraGet<JiraSearchResponse>(buildHierarchyIssueSearchPath(hierarchyKeys));
       setLoadedEpics((response.issues ?? []).map(mapJiraIssueToEpicSummary));
     } catch (caughtError: unknown) {
       setErrorMessage(readErrorMessage(caughtError, 'Failed to load pipeline epics.'));
@@ -179,9 +194,14 @@ export function usePipelineState(): UsePipelineState {
 
 // ── Jira mapping and fetch helpers. ────────────────────────────────────────────
 
-function buildEpicsSearchPath(projectKey: string): string {
-  const epicJql = `project=${projectKey} AND issuetype=Epic ORDER BY status,created`;
-  return buildSearchPath(epicJql, EPIC_FIELDS, EPIC_MAX_RESULTS);
+function buildHierarchyReferenceSearchPath(projectKey: string): string {
+  const hierarchyReferenceJql = `project=${projectKey} ORDER BY status,created`;
+  return buildSearchPath(hierarchyReferenceJql, HIERARCHY_REFERENCE_FIELDS, EPIC_MAX_RESULTS);
+}
+
+function buildHierarchyIssueSearchPath(hierarchyKeys: string[]): string {
+  const hierarchyIssueJql = `issuekey in (${hierarchyKeys.join(', ')}) ORDER BY status,created`;
+  return buildSearchPath(hierarchyIssueJql, EPIC_FIELDS, Math.min(EPIC_MAX_RESULTS, hierarchyKeys.length));
 }
 
 function buildChildSearchPath(epicKey: string, relationshipClause: string): string {
@@ -220,6 +240,17 @@ function mapJiraIssueToChildIssue(rawIssue: JiraIssueResponse): ChildIssue {
     statusCategoryKey: normalizeStatusCategoryKey(fieldsObject.status?.statusCategory?.key),
     storyPoints: readStoryPoints(fieldsObject as Record<string, unknown>),
   };
+}
+
+function readHierarchyKey(rawIssue: JiraIssueResponse): string | null {
+  const fieldsObject = rawIssue.fields ?? {};
+  const parentKey = fieldsObject.parent?.key;
+  if (typeof parentKey === 'string' && parentKey) {
+    return parentKey;
+  }
+
+  const epicLinkKey = fieldsObject.customfield_10008;
+  return typeof epicLinkKey === 'string' && epicLinkKey ? epicLinkKey : null;
 }
 
 async function fetchChildrenForEpic(epicKey: string): Promise<ChildIssue[]> {

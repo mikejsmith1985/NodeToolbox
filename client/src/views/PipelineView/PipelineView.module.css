@@ -5,12 +5,15 @@
   flex-direction: column;
   gap: var(--spacing-md);
   height: 100%;
-  overflow: hidden;
+  /* No overflow here — .mainContent is the global scroll container.
+     overflow: hidden would trap position: sticky on PrimaryTabs. */
   padding: var(--spacing-md);
 }
 
 .pageHeader {
-  margin-bottom: var(--spacing-xs);
+  display: grid;
+  gap: var(--spacing-md);
+  grid-template-columns: minmax(0, 1.3fr) minmax(16rem, 1fr);
 }
 
 .pageTitle {
@@ -25,6 +28,34 @@
   margin: 0;
 }
 
+.summaryCards {
+  display: grid;
+  gap: var(--spacing-sm);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.summaryCard {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+
+.summaryLabel {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.summaryValue {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+}
+
 .controlsPanel {
   align-items: center;
   background: var(--color-surface);
@@ -34,6 +65,14 @@
   flex-wrap: wrap;
   gap: var(--spacing-sm);
   padding: var(--spacing-sm);
+}
+
+.controlField {
+  display: grid;
+  gap: 4px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  flex: 1 1 220px;
 }
 
 .controlInput {
@@ -90,11 +129,6 @@
   display: inline-flex;
   font-size: var(--font-size-sm);
   gap: 4px;
-}
-
-.summaryBar {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
 }
 
 .errorMessage {
@@ -244,7 +278,12 @@
 }
 
 @media (max-width: 900px) {
+  .pageHeader,
   .swimlanes {
+    grid-template-columns: 1fr;
+  }
+
+  .summaryCards {
     grid-template-columns: 1fr;
   }
 }

@@ -25,16 +25,16 @@ const MAX_OVERLAY_LINK_COUNT = 5;
 const MAX_OVERLAY_COMMENT_COUNT = 3;
 
 interface DsuIssueLink {
-  type: { inward: string; outward: string; name: string };
-  inwardIssue?: { key: string; fields: { summary: string; status: { name: string } } };
-  outwardIssue?: { key: string; fields: { summary: string; status: { name: string } } };
+  type?: { inward?: string; outward?: string; name?: string };
+  inwardIssue?: { key: string; fields?: { summary?: string; status?: { name?: string } } };
+  outwardIssue?: { key: string; fields?: { summary?: string; status?: { name?: string } } };
 }
 
 interface DsuIssueComment {
   id: string;
-  author: { displayName: string };
-  body: string;
-  created: string;
+  author?: { displayName?: string } | null;
+  body?: unknown;
+  created?: string;
 }
 
 type DsuIssueFields = JiraIssue['fields'] & {
@@ -45,9 +45,13 @@ type DsuIssueFields = JiraIssue['fields'] & {
   comment?: { comments: DsuIssueComment[]; total: number };
 };
 
+interface DsuBoardViewProps {
+  projectKey?: string;
+}
+
 /** Main DSU Board view rendering 8 board sections with project controls and filter bar. */
-export default function DsuBoardView() {
-  const { state, actions } = useDsuBoardState();
+export default function DsuBoardView({ projectKey = '' }: DsuBoardViewProps) {
+  const { state, actions } = useDsuBoardState(projectKey);
   const allIssues = useMemo(
     () => state.sections.flatMap((section) => section.issues),
     [state.sections],
@@ -181,31 +185,75 @@ function ViewModeButton({ label, modeKey, activeMode, onSelect }: ViewModeButton
   );
 }
 
-interface FilterPillGroupProps {
+interface MultiSelectFilterDropdownProps {
   label: string;
   options: string[];
   activeValues: string[];
   onToggle: (value: string) => void;
+  emptyLabel: string;
 }
 
-function FilterPillGroup({ label, options, activeValues, onToggle }: FilterPillGroupProps) {
-  if (options.length === 0) {
-    return null;
+function formatFilterSummary(activeValues: string[], emptyLabel: string): string {
+  if (activeValues.length === 0) {
+    return emptyLabel;
   }
 
+  if (activeValues.length === 1) {
+    return activeValues[0];
+  }
+
+  return `${activeValues.length} selected`;
+}
+
+function MultiSelectFilterDropdown({
+  label,
+  options,
+  activeValues,
+  onToggle,
+  emptyLabel,
+}: MultiSelectFilterDropdownProps) {
+  const visibleOptions = [...options, ...activeValues.filter((activeValue) => !options.includes(activeValue))];
+  if (visibleOptions.length === 0) {
+    return null;
+  }
+  const hasActiveValues = activeValues.length > 0;
+
   return (
-    <div className={styles.filterGroup}>
-      <span className={styles.filterLabel}>{label}</span>
-      {options.map((optionValue) => (
-        <button
-          key={optionValue}
-          className={`${styles.filterPill} ${activeValues.includes(optionValue) ? styles.filterPillActive : ''}`}
-          onClick={() => onToggle(optionValue)}
-        >
-          {optionValue}
-        </button>
-      ))}
-    </div>
+    <details className={styles.filterMenu}>
+      <summary
+        className={`${styles.filterMenuTrigger} ${hasActiveValues ? styles.filterMenuTriggerActive : ''}`}
+      >
+        <span className={styles.filterSummaryContent}>
+          <span className={styles.filterFieldLabel}>{label}</span>
+          <span className={styles.filterSummaryValue}>
+            {formatFilterSummary(activeValues, emptyLabel)}
+          </span>
+        </span>
+        {hasActiveValues && <span className={styles.filterSummaryCount}>{activeValues.length}</span>}
+      </summary>
+      <div className={styles.filterMenuPanel}>
+        {visibleOptions.map((optionValue) => {
+          const isActive = activeValues.includes(optionValue);
+          const isUnavailableOption = !options.includes(optionValue);
+
+          return (
+            <label
+              key={optionValue}
+              className={`${styles.filterOptionRow} ${isActive ? styles.filterOptionRowActive : ''}`}
+            >
+              <input
+                checked={isActive}
+                className={styles.filterOptionCheckbox}
+                onChange={() => onToggle(optionValue)}
+                type="checkbox"
+              />
+              <span className={styles.filterOptionText}>{optionValue}</span>
+              {isUnavailableOption && <span className={styles.filterOptionHint}>Saved</span>}
+            </label>
+          );
+        })}
+      </div>
+    </details>
   );
 }
 
@@ -214,31 +262,84 @@ interface FilterDropdownProps {
   options: string[];
   value: string;
   emptyLabel: string;
+  id: string;
   onChange: (value: string) => void;
 }
 
-function FilterDropdown({ label, options, value, emptyLabel, onChange }: FilterDropdownProps) {
+function FilterDropdown({ label, options, value, emptyLabel, id, onChange }: FilterDropdownProps) {
   if (options.length === 0 && !value) {
     return null;
   }
 
   return (
-    <div className={styles.filterGroup}>
-      <label className={styles.filterLabel}>
-        {label}
-        <select
-          className={styles.filterDropdown}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-        >
-          <option value="">{emptyLabel}</option>
-          {options.map((optionValue) => (
-            <option key={optionValue} value={optionValue}>
-              {optionValue}
-            </option>
-          ))}
-        </select>
-      </label>
+    <label className={styles.filterField} htmlFor={id}>
+      <span className={styles.filterFieldLabel}>{label}</span>
+      <select
+        className={`${styles.filterDropdown} ${value ? styles.filterDropdownActive : ''}`}
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        <option value="">{emptyLabel}</option>
+        {options.map((optionValue) => (
+          <option key={optionValue} value={optionValue}>
+            {optionValue}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function FilterToolbarSpacer() {
+  return <div className={styles.filterToolbarSpacer} aria-hidden="true" />;
+}
+
+function ActiveFilterSummary({
+  activeAssigneeFilters,
+  multiCriteriaFilters,
+}: Pick<MultiCriteriaFilterBarProps, 'activeAssigneeFilters' | 'multiCriteriaFilters'>) {
+  const activeFilterCount =
+    activeAssigneeFilters.length +
+    multiCriteriaFilters.issueTypes.length +
+    multiCriteriaFilters.priorities.length +
+    multiCriteriaFilters.statuses.length +
+    (multiCriteriaFilters.fixVersion ? 1 : 0) +
+    (multiCriteriaFilters.piValue ? 1 : 0);
+
+  if (activeFilterCount === 0) {
+    return null;
+  }
+
+  return (
+    <p className={styles.activeFilterSummary}>
+      {activeFilterCount} active filter{activeFilterCount === 1 ? '' : 's'}
+    </p>
+  );
+}
+
+function MultiCriteriaFilterHeader({
+  activeAssigneeFilters,
+  multiCriteriaFilters,
+  onClearAll,
+}: Pick<
+  MultiCriteriaFilterBarProps,
+  'activeAssigneeFilters' | 'multiCriteriaFilters' | 'onClearAll'
+>) {
+  const hasAnyActiveFilters =
+    activeAssigneeFilters.length > 0 || hasActiveMultiCriteriaFilters(multiCriteriaFilters);
+
+  return (
+    <div className={styles.filterToolbarHeader}>
+      <ActiveFilterSummary
+        activeAssigneeFilters={activeAssigneeFilters}
+        multiCriteriaFilters={multiCriteriaFilters}
+      />
+      {hasAnyActiveFilters && (
+        <button className={styles.clearFiltersBtn} onClick={onClearAll}>
+          Clear all
+        </button>
+      )}
     </div>
   );
 }
@@ -268,68 +369,60 @@ function MultiCriteriaFilterBar({
   onSetPiValue,
   onClearAll,
 }: MultiCriteriaFilterBarProps) {
-  const missingAssigneeFilters = activeAssigneeFilters.filter(
-    (assigneeName) => !filterOptions.assignees.includes(assigneeName),
-  );
-  const hasAnyActiveFilters =
-    activeAssigneeFilters.length > 0 || hasActiveMultiCriteriaFilters(multiCriteriaFilters);
-
   return (
     <div className={styles.filterBar}>
-      <FilterPillGroup
-        label="Issue type:"
+      <MultiCriteriaFilterHeader
+        activeAssigneeFilters={activeAssigneeFilters}
+        multiCriteriaFilters={multiCriteriaFilters}
+        onClearAll={onClearAll}
+      />
+      <MultiSelectFilterDropdown
+        label="Issue type"
         options={filterOptions.issueTypes}
         activeValues={multiCriteriaFilters.issueTypes}
+        emptyLabel="All issue types"
         onToggle={onToggleIssueType}
       />
-      <FilterPillGroup
-        label="Priority:"
+      <MultiSelectFilterDropdown
+        label="Priority"
         options={filterOptions.priorities}
         activeValues={multiCriteriaFilters.priorities}
+        emptyLabel="All priorities"
         onToggle={onTogglePriority}
       />
       {filterOptions.statuses.length > 1 && (
-        <FilterPillGroup
-          label="Status:"
+        <MultiSelectFilterDropdown
+          label="Status"
           options={filterOptions.statuses}
           activeValues={multiCriteriaFilters.statuses}
+          emptyLabel="All statuses"
           onToggle={onToggleStatus}
         />
       )}
       <FilterDropdown
-        label="Fix version:"
+        id="dsu-fix-version-filter"
+        label="Fix version"
         options={filterOptions.fixVersions}
         value={multiCriteriaFilters.fixVersion}
         emptyLabel="All fix versions"
         onChange={onSetFixVersion}
       />
       <FilterDropdown
-        label="PI:"
+        id="dsu-pi-filter"
+        label="PI"
         options={filterOptions.piValues}
         value={multiCriteriaFilters.piValue}
         emptyLabel="All PIs"
         onChange={onSetPiValue}
       />
-      <FilterPillGroup
-        label="Assignee:"
+      <MultiSelectFilterDropdown
+        label="Assignee"
         options={filterOptions.assignees}
         activeValues={activeAssigneeFilters}
+        emptyLabel="All assignees"
         onToggle={onToggleAssignee}
       />
-      {missingAssigneeFilters.map((assigneeName) => (
-        <button
-          key={assigneeName}
-          className={`${styles.filterPill} ${styles.filterPillActive}`}
-          onClick={() => onToggleAssignee(assigneeName)}
-        >
-          {assigneeName} ✕
-        </button>
-      ))}
-      {hasAnyActiveFilters && (
-        <button className={styles.clearFiltersBtn} onClick={onClearAll}>
-          Clear all
-        </button>
-      )}
+      <FilterToolbarSpacer />
     </div>
   );
 }
@@ -660,19 +753,21 @@ function getStoryPoints(issueFields: DsuIssueFields): number | null {
 
 function createIssueLinkDescription(issueLink: DsuIssueLink): string {
   if (issueLink.outwardIssue) {
-    return `${issueLink.type.outward}: ${issueLink.outwardIssue.key} - ${issueLink.outwardIssue.fields.summary} (${issueLink.outwardIssue.fields.status.name})`;
+    return `${issueLink.type?.outward ?? 'Linked to'}: ${issueLink.outwardIssue.key} - ${issueLink.outwardIssue.fields?.summary ?? 'No summary'} (${issueLink.outwardIssue.fields?.status?.name ?? 'Unknown'})`;
   }
 
   if (issueLink.inwardIssue) {
-    return `${issueLink.type.inward}: ${issueLink.inwardIssue.key} - ${issueLink.inwardIssue.fields.summary} (${issueLink.inwardIssue.fields.status.name})`;
+    return `${issueLink.type?.inward ?? 'Linked from'}: ${issueLink.inwardIssue.key} - ${issueLink.inwardIssue.fields?.summary ?? 'No summary'} (${issueLink.inwardIssue.fields?.status?.name ?? 'Unknown'})`;
   }
 
-  return issueLink.type.name;
+  return issueLink.type?.name ?? 'Linked issue';
 }
 
 function createCommentPreview(issueComment: DsuIssueComment): string {
-  const normalizedCommentBody = normalizeRichTextToPlainText(issueComment.body);
-  return `${issueComment.author.displayName}: ${normalizedCommentBody} (${issueComment.created.slice(0, 10)})`;
+  const normalizedCommentBody = normalizeRichTextToPlainText(issueComment.body ?? '');
+  const authorName = issueComment.author?.displayName ?? 'Unknown';
+  const createdDate = issueComment.created?.slice(0, 10) ?? 'Unknown date';
+  return `${authorName}: ${normalizedCommentBody} (${createdDate})`;
 }
 
 function IssueDetailOverlay({

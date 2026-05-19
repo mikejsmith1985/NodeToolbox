@@ -1,4 +1,4 @@
-// TbxBackupRestoreSection.test.tsx — Tests for the tbx* Backup / Restore Settings section.
+// TbxBackupRestoreSection.test.tsx — Tests for the durable settings Backup / Restore section.
 
 import { render, screen, fireEvent } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -61,8 +61,11 @@ describe('TbxBackupRestoreSection', () => {
     expect(localStorage.getItem('tbxSomeSetting')).toBe('value');
   });
 
-  it('clears tbx* localStorage keys when Reset All Data is confirmed', () => {
+  it('clears durable settings keys when Reset All Data is confirmed', () => {
     localStorage.setItem('tbxSomeSetting', 'value');
+    localStorage.setItem('ntbx-crg-templates', '{"template":"chg"}');
+    localStorage.setItem('nodetoolbox-art-teams', '[{"name":"Alpha Team"}]');
+    localStorage.setItem('ntbx-relay-return-route', '/snow-hub');
     localStorage.setItem('otherKey', 'other');
     // Use Object.defineProperty to stub location.reload in jsdom.
     const reloadMock = vi.fn();
@@ -75,7 +78,10 @@ describe('TbxBackupRestoreSection', () => {
     fireEvent.click(screen.getByRole('button', { name: /reset all data/i }));
     fireEvent.click(screen.getByRole('button', { name: /^reset all data$/i }));
     expect(localStorage.getItem('tbxSomeSetting')).toBeNull();
-    // Non-tbx keys must not be removed.
+    expect(localStorage.getItem('ntbx-crg-templates')).toBeNull();
+    expect(localStorage.getItem('nodetoolbox-art-teams')).toBeNull();
+    // Transient browser state and unrelated keys must not be removed.
+    expect(localStorage.getItem('ntbx-relay-return-route')).toBe('/snow-hub');
     expect(localStorage.getItem('otherKey')).toBe('other');
   });
 

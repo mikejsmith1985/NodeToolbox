@@ -72,58 +72,182 @@
 
 .filterBar {
   display: flex;
-  gap: var(--spacing-xs);
-  align-items: center;
-  padding: var(--spacing-xs) var(--spacing-md);
+  gap: var(--spacing-sm);
+  align-items: flex-start;
+  padding: var(--spacing-sm) var(--spacing-md);
   background: var(--color-surface-2);
   border-bottom: 1px solid var(--color-border);
   flex-wrap: wrap;
 }
 
-.filterGroup {
+.filterToolbarHeader {
   display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
   align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  margin-bottom: 2px;
 }
 
-.filterLabel {
+.filterField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.filterFieldLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.activeFilterSummary {
+  margin: 0;
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
 }
 
-.filterPill {
-  padding: var(--spacing-xs) var(--spacing-sm);
+.filterMenu {
+  position: relative;
+  min-width: 180px;
+}
+
+.filterMenu[open] {
+  z-index: 2;
+}
+
+.filterMenuTrigger {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-height: 42px;
+  padding: 9px 12px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: 12px;
   background: var(--color-surface-1);
-  color: var(--color-text-secondary);
   cursor: pointer;
-  font-size: var(--font-size-sm);
+  list-style: none;
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
 
-.filterPillActive {
-  background: var(--color-accent);
-  color: var(--color-bg);
-  border-color: var(--color-accent);
+.filterMenuTrigger::-webkit-details-marker {
+  display: none;
+}
+
+.filterMenuTrigger:hover,
+.filterMenu[open] .filterMenuTrigger {
+  border-color: #60a5fa66;
+  box-shadow: 0 0 0 1px #60a5fa22;
+}
+
+.filterMenuTriggerActive,
+.filterDropdownActive {
+  border-color: #60a5fa88;
+  box-shadow: 0 0 0 1px #60a5fa22;
+}
+
+.filterSummaryContent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.filterSummaryValue {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.filterSummaryCount {
+  min-width: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #60a5fa1a;
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.filterMenuPanel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 100%;
+  max-width: 320px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-1);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.38);
+}
+
+.filterOptionRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.filterOptionRow:hover {
+  background: var(--color-surface-2);
+}
+
+.filterOptionRowActive {
+  background: #60a5fa14;
+}
+
+.filterOptionCheckbox {
+  accent-color: var(--color-accent);
+}
+
+.filterOptionText {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.filterOptionHint {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
 }
 
 .filterDropdown {
-  padding: var(--spacing-xs) var(--spacing-sm);
+  min-height: 42px;
+  padding: 9px 12px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-2);
+  border-radius: 12px;
+  background: var(--color-surface-1);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
-  margin-left: 4px;
+}
+
+.filterToolbarSpacer {
+  flex: 1 1 120px;
 }
 
 .clearFiltersBtn {
+  margin-left: auto;
   font-size: 11px;
-  padding: 2px 9px;
+  padding: 6px 12px;
   border-radius: 100px;
   border: 1px solid #ef444466;
-  background: none;
+  background: #ef444411;
   color: #ef4444;
   cursor: pointer;
   font-weight: 700;

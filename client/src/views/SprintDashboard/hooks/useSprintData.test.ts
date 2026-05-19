@@ -12,6 +12,7 @@ vi.mock('../../../services/jiraApi.ts', () => ({
 }));
 
 import { useSprintData } from './useSprintData.ts';
+import { useSettingsStore } from '../../../store/settingsStore.ts';
 
 function createMockSprint(sprintId: number) {
   return {
@@ -64,11 +65,31 @@ describe('useSprintData', () => {
   beforeEach(() => {
     mockJiraGet.mockReset();
     localStorage.clear();
+    useSettingsStore.setState({
+      dsuProjectKey: '',
+      sprintDashboardProjectKey: '',
+      sprintDashboardBoardId: '',
+      sprintDashboardActiveTab: 'overview',
+      sprintDashboardScopeMode: 'sprint',
+      sprintDashboardSelectedSprintId: '',
+      sprintDashboardSelectedFixVersion: '',
+      sprintDashboardSelectedPiValue: '',
+    });
   });
 
   afterEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    useSettingsStore.setState({
+      dsuProjectKey: '',
+      sprintDashboardProjectKey: '',
+      sprintDashboardBoardId: '',
+      sprintDashboardActiveTab: 'overview',
+      sprintDashboardScopeMode: 'sprint',
+      sprintDashboardSelectedSprintId: '',
+      sprintDashboardSelectedFixVersion: '',
+      sprintDashboardSelectedPiValue: '',
+    });
   });
 
   it('initialises with empty projectKey and overview tab', () => {
@@ -76,6 +97,7 @@ describe('useSprintData', () => {
 
     expect(result.current.state.projectKey).toBe('');
     expect(result.current.state.activeTab).toBe('overview');
+    expect(result.current.state.scopeMode).toBe('sprint');
   });
 
   it('initialises with null boardId and null boardType', () => {
@@ -93,6 +115,8 @@ describe('useSprintData', () => {
     });
 
     expect(result.current.state.projectKey).toBe('TBX');
+    expect(localStorage.getItem('tbxSprintDashboardProjectKey')).toBe('TBX');
+    expect(useSettingsStore.getState().dsuProjectKey).toBe('TBX');
   });
 
   it('sets activeTab when setActiveTab is called', () => {
@@ -103,6 +127,33 @@ describe('useSprintData', () => {
     });
 
     expect(result.current.state.activeTab).toBe('blockers');
+    expect(localStorage.getItem('tbxSprintDashboardActiveTab')).toBe('blockers');
+  });
+
+  it('restores the persisted project key and active tab on first render', () => {
+    useSettingsStore.getState().setSprintDashboardProjectKey('ENFCT');
+    useSettingsStore.getState().setSprintDashboardActiveTab('standup');
+    useSettingsStore.getState().setSprintDashboardScopeMode('pi');
+    useSettingsStore.getState().setSprintDashboardSelectedSprintId('13');
+    useSettingsStore.getState().setSprintDashboardSelectedFixVersion('Release 24.1');
+    useSettingsStore.getState().setSprintDashboardSelectedPiValue('PI-24.1');
+
+    const { result } = renderHook(() => useSprintData());
+
+    expect(result.current.state.projectKey).toBe('ENFCT');
+    expect(result.current.state.activeTab).toBe('standup');
+    expect(result.current.state.scopeMode).toBe('pi');
+    expect(result.current.state.selectedSprintId).toBe(13);
+    expect(result.current.state.selectedFixVersionName).toBe('Release 24.1');
+    expect(result.current.state.selectedPiValue).toBe('PI-24.1');
+  });
+
+  it('falls back to the DSU project key when Sprint Dashboard has not saved its own project yet', () => {
+    useSettingsStore.getState().setDsuProjectKey('TBX');
+
+    const { result } = renderHook(() => useSprintData());
+
+    expect(result.current.state.projectKey).toBe('TBX');
   });
 
   it('supports the embedded story pointing tab', () => {
@@ -115,14 +166,27 @@ describe('useSprintData', () => {
     expect(result.current.state.activeTab).toBe('pointing');
   });
 
+  it('supports the roster tab', () => {
+    const { result } = renderHook(() => useSprintData());
+
+    act(() => {
+      result.current.actions.setActiveTab('roster');
+    });
+
+    expect(result.current.state.activeTab).toBe('roster');
+    expect(localStorage.getItem('tbxSprintDashboardActiveTab')).toBe('roster');
+  });
+
   // ── Scrum board loading ──
 
   it('loads sprint and issues after loadSprint resolves for a scrum board', async () => {
-    // Call sequence: boards → board info → sprint → issues
+    // Call sequence: boards → board info → versions → PI values → sprint list → issues
     mockJiraGet
       .mockResolvedValueOnce({ values: [MOCK_BOARD] })       // boards list
       .mockResolvedValueOnce(MOCK_BOARD_INFO_SCRUM)           // board info (type detection)
-      .mockResolvedValueOnce({ values: [MOCK_SPRINT] })       // active sprint
+      .mockResolvedValueOnce([])                              // project versions
+      .mockResolvedValueOnce({ issues: [] })                  // PI values
+      .mockResolvedValueOnce({ values: [MOCK_SPRINT] })       // board scope sprints
       .mockResolvedValueOnce({ issues: MOCK_ISSUES });        // sprint issues
 
     const { result } = renderHook(() => useSprintData());
@@ -140,6 +204,8 @@ describe('useSprintData', () => {
       expect(result.current.state.sprintInfo).not.toBeNull();
       expect(result.current.state.isLoadingSprint).toBe(false);
       expect(result.current.state.boardType).toBe('scrum');
+      expect(result.current.state.selectedSprintId).toBe(7);
+      expect(result.current.state.selectedBoardName).toBe('Board 42');
     });
   });
 
@@ -147,6 +213,8 @@ describe('useSprintData', () => {
     mockJiraGet
       .mockResolvedValueOnce({ values: [MOCK_BOARD] })
       .mockResolvedValueOnce(MOCK_BOARD_INFO_SCRUM)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ issues: [] })
       .mockResolvedValueOnce({ values: [MOCK_SPRINT] })
       .mockResolvedValueOnce({ issues: MOCK_ISSUES });
 
@@ -159,10 +227,12 @@ describe('useSprintData', () => {
   });
 
   it('uses a saved boardId from localStorage without re-fetching the board list', async () => {
-    localStorage.setItem('tbxSprintDashboardBoardId', '42');
-    // Only board info + sprint + issues — no boards list call.
+    useSettingsStore.getState().setSprintDashboardBoardId('42');
     mockJiraGet
       .mockResolvedValueOnce(MOCK_BOARD_INFO_SCRUM)
+      .mockResolvedValueOnce({ values: [MOCK_BOARD] })
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ issues: [] })
       .mockResolvedValueOnce({ values: [MOCK_SPRINT] })
       .mockResolvedValueOnce({ issues: MOCK_ISSUES });
 
@@ -172,9 +242,47 @@ describe('useSprintData', () => {
     await waitFor(() => {
       expect(result.current.state.sprintIssues).toHaveLength(2);
       expect(result.current.state.boardId).toBe(42);
+      expect(result.current.state.availableBoards).toEqual([MOCK_BOARD]);
     });
-    // Board list call (4th mock) should not have been used.
-    expect(mockJiraGet).toHaveBeenCalledTimes(3);
+    expect(mockJiraGet).toHaveBeenCalledTimes(6);
+  });
+
+  it('backfills the project key from board metadata when loading a saved board', async () => {
+    useSettingsStore.getState().setSprintDashboardBoardId('42');
+    mockJiraGet
+      .mockResolvedValueOnce(MOCK_BOARD_INFO_SCRUM)
+      .mockResolvedValueOnce({ values: [MOCK_BOARD] })
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ issues: [] })
+      .mockResolvedValueOnce({ values: [MOCK_SPRINT] })
+      .mockResolvedValueOnce({ issues: MOCK_ISSUES });
+
+    const { result } = renderHook(() => useSprintData());
+
+    await act(async () => {
+      await result.current.actions.loadSprint();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.projectKey).toBe('TBX');
+    });
+    expect(localStorage.getItem('tbxSprintDashboardProjectKey')).toBe('TBX');
+    expect(useSettingsStore.getState().dsuProjectKey).toBe('TBX');
+  });
+
+  it('clears the saved board when the project changes so the next load uses the new project boards', () => {
+    useSettingsStore.getState().setSprintDashboardProjectKey('TBX');
+    useSettingsStore.getState().setSprintDashboardBoardId('42');
+
+    const { result } = renderHook(() => useSprintData());
+
+    act(() => {
+      result.current.actions.setProjectKey('ENFCT');
+    });
+
+    expect(result.current.state.projectKey).toBe('ENFCT');
+    expect(result.current.state.boardId).toBeNull();
+    expect(useSettingsStore.getState().sprintDashboardBoardId).toBe('');
   });
 
   // ── Kanban board loading ──
@@ -183,6 +291,8 @@ describe('useSprintData', () => {
     mockJiraGet
       .mockResolvedValueOnce({ values: [MOCK_KANBAN_BOARD] })  // boards list
       .mockResolvedValueOnce(MOCK_BOARD_INFO_KANBAN)            // board info → kanban
+      .mockResolvedValueOnce([])                                // project versions
+      .mockResolvedValueOnce({ issues: [] })                    // PI values
       .mockResolvedValueOnce({ issues: MOCK_ISSUES });          // board issues
 
     const { result } = renderHook(() => useSprintData());
@@ -198,11 +308,40 @@ describe('useSprintData', () => {
     });
   });
 
+  it('explains how to recover when a scrum board has no active sprint', async () => {
+    mockJiraGet
+      .mockResolvedValueOnce({ values: [MOCK_BOARD] })
+      .mockResolvedValueOnce(MOCK_BOARD_INFO_SCRUM)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ issues: [] })
+      .mockResolvedValueOnce({ values: [] });
+
+    const { result } = renderHook(() => useSprintData());
+
+    act(() => {
+      result.current.actions.setProjectKey('TBX');
+    });
+
+    await act(async () => {
+      await result.current.actions.loadSprint();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.loadError).toBe(
+        'No active sprint found on this board. Try selecting a different scrum board in Settings, or switch to a kanban board.',
+      );
+      expect(result.current.state.isLoadingSprint).toBe(false);
+    });
+  });
+
   // ── Board selection ──
 
   it('selectBoard saves boardId to localStorage and reloads the dashboard', async () => {
     mockJiraGet
       .mockResolvedValueOnce(MOCK_BOARD_INFO_SCRUM)
+      .mockResolvedValueOnce({ values: [MOCK_BOARD] })
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ issues: [] })
       .mockResolvedValueOnce({ values: [MOCK_SPRINT] })
       .mockResolvedValueOnce({ issues: MOCK_ISSUES });
 
@@ -226,9 +365,12 @@ describe('useSprintData', () => {
     act(() => {
       result.current.actions.setProjectKey('TBX');
     });
-    localStorage.setItem('tbxSprintDashboardBoardId', '42');
+    useSettingsStore.getState().setSprintDashboardBoardId('42');
     mockJiraGet
       .mockResolvedValueOnce(MOCK_BOARD_INFO_SCRUM)
+      .mockResolvedValueOnce({ values: [MOCK_BOARD] })
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ issues: [] })
       .mockResolvedValueOnce({ values: [MOCK_SPRINT] })
       .mockResolvedValueOnce({ issues: MOCK_ISSUES })
       .mockResolvedValueOnce({ values: [MOCK_SPRINT, futureSprint] }); // availableSprints call
@@ -242,9 +384,12 @@ describe('useSprintData', () => {
   });
 
   it('loadAvailableSprints is a no-op when availableSprints is already loaded', async () => {
-    localStorage.setItem('tbxSprintDashboardBoardId', '42');
+    useSettingsStore.getState().setSprintDashboardBoardId('42');
     mockJiraGet
       .mockResolvedValueOnce(MOCK_BOARD_INFO_SCRUM)
+      .mockResolvedValueOnce({ values: [MOCK_BOARD] })
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ issues: [] })
       .mockResolvedValueOnce({ values: [MOCK_SPRINT] })
       .mockResolvedValueOnce({ issues: MOCK_ISSUES })
       .mockResolvedValueOnce({ values: [MOCK_SPRINT] }); // first availableSprints fetch
@@ -266,9 +411,12 @@ describe('useSprintData', () => {
     vi.stubGlobal('fetch', mockFetch);
 
     // Seed two issues in state by going through a successful load.
-    localStorage.setItem('tbxSprintDashboardBoardId', '42');
+    useSettingsStore.getState().setSprintDashboardBoardId('42');
     mockJiraGet
       .mockResolvedValueOnce(MOCK_BOARD_INFO_SCRUM)
+      .mockResolvedValueOnce({ values: [MOCK_BOARD] })
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ issues: [] })
       .mockResolvedValueOnce({ values: [MOCK_SPRINT] })
       .mockResolvedValueOnce({ issues: MOCK_ISSUES });
 

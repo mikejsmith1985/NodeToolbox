@@ -1,12 +1,13 @@
-// SprintDashboardView.tsx — Sprint Dashboard view with 11 tabs for sprint health, delivery tracking, and story pointing.
+// SprintDashboardView.tsx — Sprint Dashboard view with 12 tabs for sprint health, delivery tracking, and story pointing.
 //
-// Provides eleven tabs: Overview (sprint info + burn-down chart), By Assignee (swim lanes),
+// Provides twelve tabs: Overview (sprint info + burn-down chart), By Assignee (swim lanes),
 // Blockers (wall of blocked/stale issues), Defects (bug radar by priority),
-// Standup (board walk + 15-min timer), Settings (project key + board picker + advanced config),
-// Metrics (velocity/burn stats), Pipeline (kanban WIP by status), Planning (unestimated work),
-// Pointing (embedded planning poker), and Releases (readiness by fix version).
+// Standup (board walk + 15-min timer), Roster (team members for non-sprint standup scope),
+// Settings (project key + board picker + advanced config), Metrics (velocity/burn stats),
+// Pipeline (kanban WIP by status), Planning (unestimated work), Pointing (embedded planning poker),
+// and Releases (readiness by fix version).
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import {
   CartesianGrid,
@@ -21,21 +22,43 @@ import {
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import JiraFieldPicker from '../../components/JiraFieldPicker/index.tsx';
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
-import type { JiraIssue } from '../../types/jira.ts';
-import StoryPointingView from '../StoryPointing/StoryPointingView.tsx';
+import { jiraGet, jiraPost, jiraPut } from '../../services/jiraApi.ts';
+import type { JiraComment, JiraIssue, JiraTransition, JiraVersion } from '../../types/jira.ts';
+import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import BoardPicker from './BoardPicker.tsx';
 import CapacityTab from './CapacityTab.tsx';
 import MoveToSprintButton from './MoveToSprintButton.tsx';
+import RosterTab from './RosterTab.tsx';
+import StandupTab from './StandupTab.tsx';
 import type { DashboardConfig } from './hooks/useDashboardConfig.ts';
 import { useDashboardConfig } from './hooks/useDashboardConfig.ts';
+import {
+  calculateIssueAgeDays,
+  isBlockedIssue,
+  isDoneIssue,
+  isStaleIssue,
+  readStoryPoints,
+  readStoryPointsValue,
+} from './hooks/sprintDashboardIssueUtils.ts';
 import { useSprintData } from './hooks/useSprintData.ts';
-import type { DashboardTab } from './hooks/useSprintData.ts';
+import type { DashboardScopeMode, DashboardTab } from './hooks/useSprintData.ts';
 import styles from './SprintDashboardView.module.css';
 
 // ── Named constants ──
 
-const VIEW_TITLE = 'Sprint Dashboard';
-const VIEW_SUBTITLE = 'Monitor sprint health, team progress, and facilitate standup from one place.';
+const VIEW_TITLE = 'Team Dashboard';
+const VIEW_SUBTITLE = 'Monitor team health, board progress, and facilitate standup from one place.';
+const SCOPE_MODE_LABEL = 'View Work By';
+const TEAM_DASHBOARD_TABS_ARIA_LABEL = 'Team Dashboard tabs';
+const DASHBOARD_PI_JQL_FIELD_ID = 'cf[10301]';
+const DASHBOARD_SCOPE_MODE_SPRINT = 'sprint';
+const DASHBOARD_SCOPE_MODE_FIX_VERSION = 'fixVersion';
+const DASHBOARD_SCOPE_MODE_PI = 'pi';
+const DASHBOARD_SCOPE_OPTION_LABELS: Record<DashboardScopeMode, string> = {
+  sprint: 'Sprint',
+  fixVersion: 'Fix Version',
+  pi: 'PI',
+};
 
 const TAB_OPTIONS: { key: DashboardTab; label: string }[] = [
   { key: 'overview', label: 'Overview' },
@@ -43,6 +66,7 @@ const TAB_OPTIONS: { key: DashboardTab; label: string }[] = [
   { key: 'blockers', label: 'Blockers' },
   { key: 'defects', label: 'Defects' },
   { key: 'standup', label: 'Standup' },
+  { key: 'roster', label: 'Roster' },
   { key: 'metrics', label: 'Metrics' },
   { key: 'pipeline', label: 'Pipeline' },
   { key: 'planning', label: 'Planning' },
@@ -52,52 +76,79 @@ const TAB_OPTIONS: { key: DashboardTab; label: string }[] = [
   { key: 'settings', label: 'Settings' },
 ];
 
-const BLOCKED_STATUSES = ['blocked', 'impeded', 'on hold'];
 const MS_PER_DAY = 86_400_000;
-const TIMER_WARNING_SECONDS = 300; // last 5 minutes
-const TIMER_DANGER_SECONDS = 60;   // last 1 minute
 const EXPAND_TOGGLE_COLLAPSED_ICON = '▼';
 const EXPAND_TOGGLE_EXPANDED_ICON = '▲';
 const BLOCKED_SECTION_KEY = 'blocked';
 const STALE_SECTION_KEY = 'stale';
-const IN_PROGRESS_SECTION_KEY = 'all-in-progress';
+const BOARD_SETTINGS_TITLE = 'Board Settings';
+const GENERIC_SETTINGS_DESCRIPTION = 'Enter your Jira project key to load the team board and dashboard data.';
+const SCRUM_SETTINGS_DESCRIPTION = 'Enter your Jira project key to load the active sprint.';
+const GENERIC_LOAD_BUTTON_LABEL = 'Load Board';
+const SCRUM_LOAD_BUTTON_LABEL = 'Load Sprint';
+const SCRUM_VELOCITY_WINDOW_LABEL = 'Scrum velocity window (past sprints)';
+const KANBAN_THROUGHPUT_WINDOW_LABEL = 'Kanban throughput window (days)';
+const OVERVIEW_EMPTY_STATE_MESSAGE = 'No board data loaded. Go to Settings and load a team board.';
 
 // Burn-down chart lines use these named identifiers in recharts data.
 const BURN_IDEAL_KEY = 'ideal';
 const BURN_REMAINING_KEY = 'remaining';
+const BURN_COMPLETED_KEY = 'completed';
+const BURNUP_TOGGLE_LABEL = 'Show Burnup';
+const OVERVIEW_GROUP_ORDER = ['In Progress', 'To Do', 'Done'] as const;
+const OVERVIEW_IN_PROGRESS_STATUS_TOKENS = ['progress', 'review', 'dev', 'test'];
+const OVERVIEW_TO_DO_STATUS_TOKENS = ['to do', 'open', 'backlog', 'new'];
+const BLOCKERS_FILTER_LABEL = 'Show:';
 
-/** Statuses with more issues than this threshold are flagged as pipeline bottlenecks. */
-const BOTTLENECK_THRESHOLD = 3;
+const RELEASE_FIELDS =
+  'summary,status,assignee,priority,issuetype,fixVersions';
+const RELEASE_MAX_RESULTS = 50;
+const RELEASE_BUCKETS = [
+  { id: 'overdue', label: 'Overdue', emoji: '🚨' },
+  { id: 'critical', label: 'Due This Week', emoji: '🔴' },
+  { id: 'watch', label: 'Next 30 Days', emoji: '🟡' },
+  { id: 'ontrack', label: 'On Track', emoji: '🟢' },
+  { id: 'nodate', label: 'Unscheduled', emoji: '📅' },
+] as const;
+const RELEASE_PROGRESS_STATUS_TOKENS = [
+  'in progress',
+  'in-progress',
+  'in review',
+  'in-review',
+  'testing',
+  'uat',
+  'qa',
+  'review',
+  'deploying',
+  'in development',
+] as const;
+const CYCLE_TIME_PAGE_SIZE = 100;
+const MAX_CYCLE_TIME_ISSUES = 200;
+const DEFECT_MAX_RESULTS = 200;
+const PLANNING_MAX_RESULTS = 200;
+const PLANNING_DETAIL_FIELDS = 'description,comment,parent,customfield_10201,customfield_10008,fixVersions,assignee,status';
+const POINTING_DETAIL_FIELDS = 'description,comment,parent,customfield_10200';
+const PIPELINE_REL_FIELDS = 'summary,status,assignee,priority,labels,comment,issuelinks,customfield_10016,customfield_10028';
+const PIPELINE_COMPANION_FIELDS = 'summary,status,assignee,labels,updated';
+const PIPELINE_DEV_FIELDS = 'summary,status,assignee,labels';
+const PIPELINE_ROLES = ['DEV', 'REL', 'SL', 'QE', 'BT', 'BC', 'TDR'] as const;
+const DEFAULT_POINTING_DONE_STATUSES = ['Done', 'Closed', 'Resolved', 'Accepted'] as const;
+const POINTING_SORT_OPTIONS = [
+  { id: 'default', label: 'Default' },
+  { id: 'priority', label: 'Priority' },
+  { id: 'created-newest', label: 'Created (newest)' },
+  { id: 'created-oldest', label: 'Created (oldest)' },
+  { id: 'summary', label: 'Summary A-Z' },
+] as const;
+const PLANNING_GROUP_OPTIONS = ['release', 'epic', 'assignee'] as const;
 
-/** Label shown for issues that have no fix version assigned to any release. */
-const NO_VERSION_LABEL = 'No Version';
-
-// Story-point size distribution boundaries follow the Fibonacci planning scale.
-const STORY_POINTS_SMALL_UPPER = 1;   // 0–1 pts = Small
-const STORY_POINTS_MEDIUM_UPPER = 3;  // 2–3 pts = Medium
-const STORY_POINTS_LARGE_UPPER = 8;   // 5–8 pts = Large; 13+ = Extra Large
+type DashboardBoardType = ReturnType<typeof useSprintData>['state']['boardType'];
+type PointingSortId = (typeof POINTING_SORT_OPTIONS)[number]['id'];
+type PlanningGroupBy = (typeof PLANNING_GROUP_OPTIONS)[number];
+type PipelineFilterMode = 'all' | 'inflight' | 'attention' | 'blocked';
+type PipelineRole = (typeof PIPELINE_ROLES)[number];
 
 // ── Helper functions ──
-
-/** Calculates days since a Jira date string. */
-function calculateAgingDays(updatedDateString: string): number {
-  return Math.floor((Date.now() - new Date(updatedDateString).getTime()) / MS_PER_DAY);
-}
-
-/** Returns true when the issue is in a blocked/impeded status. */
-function isBlockedIssue(issue: JiraIssue): boolean {
-  const lowerStatusName = issue.fields.status.name.toLowerCase();
-  return BLOCKED_STATUSES.some((blockedStatus) => lowerStatusName.includes(blockedStatus));
-}
-
-/**
- * Returns true when the issue has been in progress for more than `staleDaysThreshold` days.
- * The threshold comes from user-configurable settings (default 5) rather than a hardcoded value.
- */
-function isStaleIssue(issue: JiraIssue, staleDaysThreshold: number): boolean {
-  const isInProgress = issue.fields.status.statusCategory.key === 'indeterminate';
-  return isInProgress && calculateAgingDays(issue.fields.updated) >= staleDaysThreshold;
-}
 
 /** Groups issues by assignee display name, with unassigned issues bucketed under "Unassigned". */
 function groupIssuesByAssignee(issues: JiraIssue[]): Map<string, JiraIssue[]> {
@@ -112,36 +163,777 @@ function groupIssuesByAssignee(issues: JiraIssue[]): Map<string, JiraIssue[]> {
   return groupedIssues;
 }
 
-/** Groups issues by their status name, producing one bucket per unique status for the Pipeline view. */
-function groupIssuesByStatus(issues: JiraIssue[]): Map<string, JiraIssue[]> {
-  const groupedIssues = new Map<string, JiraIssue[]>();
-
-  for (const issue of issues) {
-    const statusName = issue.fields.status.name;
-    groupedIssues.set(statusName, [...(groupedIssues.get(statusName) ?? []), issue]);
-  }
-
-  return groupedIssues;
+interface PointingIssueDetail {
+  description: string;
+  acceptanceCriteria: string;
+  comments: JiraComment[];
+  parentKey: string | null;
+  parentSummary: string | null;
 }
 
-/**
- * Groups issues by fix version name for the Releases view.
- * Issues with no fixVersions fall under NO_VERSION_LABEL.
- * An issue assigned to multiple versions appears in each version's bucket.
- */
-function groupIssuesByFixVersion(issues: JiraIssue[]): Map<string, JiraIssue[]> {
-  const groupedIssues = new Map<string, JiraIssue[]>();
+interface PipelineChecklistItem {
+  label: string;
+  isChecked: boolean;
+  checkedAt: Date | null;
+}
 
-  for (const issue of issues) {
-    const versionNames = issue.fields.fixVersions?.map((version) => version.name) ?? [];
-    const targetVersions = versionNames.length > 0 ? versionNames : [NO_VERSION_LABEL];
+interface PipelineChecklistResult {
+  source: 'dc' | 'cloud-property' | 'error' | 'unavailable';
+  isIntDeployChecked: boolean;
+  intDeployTimestamp: Date | null;
+  isDay4CleanChecked: boolean;
+  isDay4ExtendedChecked: boolean;
+  allItems: PipelineChecklistItem[];
+}
 
-    for (const versionName of targetVersions) {
-      groupedIssues.set(versionName, [...(groupedIssues.get(versionName) ?? []), issue]);
+interface PipelineCompanionIssue {
+  key: string;
+  status: string;
+  assignee: string | null;
+  hoursOpen: number | null;
+}
+
+interface PipelineIntWindowState {
+  deployedAt: string | null;
+  daysSinceDeploy: number | null;
+  decision: 'clean' | 'extended' | null;
+  deadlineDate: string | null;
+}
+
+interface PipelineRow {
+  relKey: string;
+  relSummary: string;
+  relStatus: string;
+  relAssignee: string | null;
+  storyPoints: number | null;
+  devKey: string | null;
+  devSummary: string | null;
+  devStatus: string | null;
+  devLabels: string[];
+  companions: Partial<Record<Lowercase<PipelineRole>, PipelineCompanionIssue>>;
+  checklist: PipelineChecklistResult | null;
+  relComments: JiraComment[];
+  intWindow: PipelineIntWindowState;
+  alerts: string[];
+}
+
+interface PlanningIssueDetail {
+  description: string;
+  acceptanceCriteria: string;
+  comments: JiraComment[];
+  parentKey: string | null;
+  parentSummary: string | null;
+  subStatusValue: string | null;
+  subStatusOptions: string[];
+}
+
+function buildSearchPath(jql: string, fields: string, maxResults: number): string {
+  return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${fields}&maxResults=${maxResults}`;
+}
+
+function escapeJqlValue(jqlValue: string): string {
+  return jqlValue.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+}
+
+function buildWorkScopeClause(scopeState: Pick<
+  ReturnType<typeof useSprintData>['state'],
+  'scopeMode' | 'selectedSprintId' | 'selectedFixVersionName' | 'selectedPiValue'
+>): string | null {
+  if (scopeState.scopeMode === DASHBOARD_SCOPE_MODE_SPRINT) {
+    return scopeState.selectedSprintId !== null ? `sprint = ${scopeState.selectedSprintId}` : null;
+  }
+  if (scopeState.scopeMode === DASHBOARD_SCOPE_MODE_FIX_VERSION) {
+    return scopeState.selectedFixVersionName
+      ? `fixVersion = "${escapeJqlValue(scopeState.selectedFixVersionName)}"`
+      : null;
+  }
+
+  return scopeState.selectedPiValue
+    ? `${DASHBOARD_PI_JQL_FIELD_ID} = "${escapeJqlValue(scopeState.selectedPiValue)}"`
+    : null;
+}
+
+function buildScopedProjectJql(
+  projectKey: string,
+  scopeState: Pick<
+    ReturnType<typeof useSprintData>['state'],
+    'scopeMode' | 'selectedSprintId' | 'selectedFixVersionName' | 'selectedPiValue'
+  >,
+  additionalClauses: string[],
+  orderByClause: string,
+): string {
+  const jqlClauses = [`project = "${escapeJqlValue(projectKey)}"`];
+  const workScopeClause = buildWorkScopeClause(scopeState);
+  if (workScopeClause) {
+    jqlClauses.push(workScopeClause);
+  }
+  jqlClauses.push(...additionalClauses.filter(Boolean));
+  return `${jqlClauses.join(' AND ')} ORDER BY ${orderByClause}`;
+}
+
+function readScopeSelectorLabel(scopeMode: DashboardScopeMode): string {
+  return DASHBOARD_SCOPE_OPTION_LABELS[scopeMode];
+}
+
+function readIssueStatusName(issue: JiraIssue): string {
+  return issue.fields.status?.name ?? 'Unknown';
+}
+
+function readIssueTypeName(issue: JiraIssue): string {
+  return issue.fields.issuetype?.name ?? 'Issue';
+}
+
+function readIssuePriorityName(issue: JiraIssue): string {
+  return issue.fields.priority?.name ?? 'None';
+}
+
+function readAssigneeName(issue: JiraIssue): string {
+  return issue.fields.assignee?.displayName ?? 'Unassigned';
+}
+
+function getDefectPriorityOrder(priorityName: string): number {
+  const normalizedPriority = priorityName.toLowerCase();
+  if (normalizedPriority === 'highest' || normalizedPriority === 'critical' || normalizedPriority === 'blocker') {
+    return 0;
+  }
+  if (normalizedPriority === 'high') {
+    return 1;
+  }
+  if (normalizedPriority === 'medium') {
+    return 2;
+  }
+  if (normalizedPriority === 'low' || normalizedPriority === 'lowest') {
+    return 3;
+  }
+  return 4;
+}
+
+function isDefectIssue(issue: JiraIssue): boolean {
+  const normalizedIssueType = readIssueTypeName(issue).toLowerCase();
+  return normalizedIssueType.includes('bug') || normalizedIssueType.includes('defect');
+}
+
+function readIssueAgeDays(issue: JiraIssue): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(issue.fields.created).getTime()) / MS_PER_DAY));
+}
+
+function readIssueUpdatedAgeDays(issue: JiraIssue): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(issue.fields.updated).getTime()) / MS_PER_DAY));
+}
+
+function readPlanningEpicKey(issue: JiraIssue): string | null {
+  const epicField = issue.fields.customfield_10014 ?? issue.fields.customfield_10008 ?? issue.fields.parent;
+  if (typeof epicField === 'string') {
+    return epicField;
+  }
+  if (epicField && typeof epicField === 'object' && 'key' in epicField && typeof epicField.key === 'string') {
+    return epicField.key;
+  }
+  return null;
+}
+
+function normalizeCommentBody(commentBody: unknown): string {
+  return normalizeRichTextToPlainText(commentBody);
+}
+
+function detectPipelineRole(summary: string): PipelineRole {
+  const bracketMatch = summary.match(/^\[([A-Z]+)\]\s/);
+  if (bracketMatch && PIPELINE_ROLES.includes(bracketMatch[1] as PipelineRole)) {
+    return bracketMatch[1] as PipelineRole;
+  }
+
+  const dashMatch = summary.match(/^(REL|SL|QE|BT|BC|TDR)\s*[–-]/);
+  if (dashMatch) {
+    return dashMatch[1] as PipelineRole;
+  }
+
+  return 'DEV';
+}
+
+function findPointingSuggestion(
+  issue: JiraIssue,
+  issues: JiraIssue[],
+  customStoryPointsFieldId: string,
+): { key: string; points: number } | null {
+  const summary = issue.fields.summary ?? '';
+  const bracketMatch = summary.match(/^\[([A-Z]+)\]\s(.+)$/);
+  if (bracketMatch && bracketMatch[1] !== 'DEV') {
+    const normalizedBaseSummary = bracketMatch[2].trim().toLowerCase();
+    for (const candidateIssue of issues) {
+      const candidateMatch = candidateIssue.fields.summary.match(/^\[DEV\]\s(.+)$/i);
+      if (!candidateMatch) {
+        continue;
+      }
+      if (candidateMatch[1].trim().toLowerCase() !== normalizedBaseSummary) {
+        continue;
+      }
+      const candidatePoints = readStoryPoints(candidateIssue, customStoryPointsFieldId);
+      if (candidatePoints > 0) {
+        return { key: candidateIssue.key, points: candidatePoints };
+      }
     }
   }
 
-  return groupedIssues;
+  const dashMatch = summary.match(/^(?:SL|QE|BT|BC|REL|TDR)\s*[–-]\s*([A-Z]+-\d+)\s*[–-]/);
+  if (dashMatch) {
+    const matchedIssue = issues.find((candidateIssue) => candidateIssue.key === dashMatch[1]);
+    if (!matchedIssue) {
+      return null;
+    }
+    const candidatePoints = readStoryPoints(matchedIssue, customStoryPointsFieldId);
+    if (candidatePoints > 0) {
+      return { key: matchedIssue.key, points: candidatePoints };
+    }
+  }
+
+  return null;
+}
+
+function parsePointingScale(pointingScale: string): number[] {
+  const parsedScale = pointingScale
+    .split(',')
+    .map((pointingValue) => Number(pointingValue.trim()))
+    .filter((pointingValue) => !Number.isNaN(pointingValue));
+  return parsedScale.length > 0 ? parsedScale : [1, 2, 3, 5, 8, 13, 21];
+}
+
+function parsePipelineDevKey(summary: string): string | null {
+  const match = summary.match(/REL\s*–\s*([A-Z]+-\d+)\s*–/);
+  return match?.[1] ?? null;
+}
+
+function parsePipelineCompanionDevKey(summary: string): string | null {
+  const match = summary.match(/(?:SL|QE|BT|BC|TDR)\s*–\s*([A-Z]+-\d+)\s*–/);
+  return match?.[1] ?? null;
+}
+
+function parsePipelineCompanionType(summary: string): Lowercase<PipelineRole> | null {
+  const match = summary.match(/^(SL|QE|BT|BC|TDR)\s*–/);
+  return match?.[1]?.toLowerCase() as Lowercase<PipelineRole> | null;
+}
+
+function buildPointingQueue(
+  issues: JiraIssue[],
+  {
+    selectedTypes,
+    selectedStatuses,
+    sortBy,
+    showPointed,
+    pipelineRoleFilter,
+    customStoryPointsFieldId,
+  }: {
+    selectedTypes: string[];
+    selectedStatuses: string[];
+    sortBy: PointingSortId;
+    showPointed: boolean;
+    pipelineRoleFilter: PipelineRole | '';
+    customStoryPointsFieldId: string;
+  },
+): JiraIssue[] {
+  const nextQueue = issues.filter((issue) => {
+    const issueTypeName = readIssueTypeName(issue);
+    const statusName = readIssueStatusName(issue);
+    const storyPoints = readStoryPoints(issue, customStoryPointsFieldId);
+
+    if (!showPointed && storyPoints > 0) {
+      return false;
+    }
+    if (selectedTypes.length > 0 && !selectedTypes.includes(issueTypeName)) {
+      return false;
+    }
+    if (selectedStatuses.length > 0 && !selectedStatuses.includes(statusName)) {
+      return false;
+    }
+    if (pipelineRoleFilter && detectPipelineRole(issue.fields.summary) !== pipelineRoleFilter) {
+      return false;
+    }
+    return true;
+  });
+
+  if (sortBy === 'priority') {
+    nextQueue.sort(
+      (leftIssue, rightIssue) =>
+        getDefectPriorityOrder(readIssuePriorityName(leftIssue))
+        - getDefectPriorityOrder(readIssuePriorityName(rightIssue)),
+    );
+  }
+  if (sortBy === 'created-newest') {
+    nextQueue.sort((leftIssue, rightIssue) => new Date(rightIssue.fields.created).getTime() - new Date(leftIssue.fields.created).getTime());
+  }
+  if (sortBy === 'created-oldest') {
+    nextQueue.sort((leftIssue, rightIssue) => new Date(leftIssue.fields.created).getTime() - new Date(rightIssue.fields.created).getTime());
+  }
+  if (sortBy === 'summary') {
+    nextQueue.sort((leftIssue, rightIssue) => leftIssue.fields.summary.localeCompare(rightIssue.fields.summary));
+  }
+
+  return nextQueue;
+}
+
+function buildEmptyPipelineChecklist(source: PipelineChecklistResult['source']): PipelineChecklistResult {
+  return {
+    source,
+    isIntDeployChecked: false,
+    intDeployTimestamp: null,
+    isDay4CleanChecked: false,
+    isDay4ExtendedChecked: false,
+    allItems: [],
+  };
+}
+
+function normalizePipelineChecklistItems(
+  allItems: PipelineChecklistItem[],
+  source: PipelineChecklistResult['source'],
+): PipelineChecklistResult {
+  const intDeployItem = allItems.find((item) => item.label.toLowerCase().includes('int env deployed'));
+  const day4CleanItem = allItems.find(
+    (item) => item.label.toLowerCase().includes('day 4') && item.label.toLowerCase().includes('clean'),
+  );
+  const day4ExtendedItem = allItems.find((item) => item.label.toLowerCase().includes('fixes in flight'));
+
+  return {
+    source,
+    isIntDeployChecked: Boolean(intDeployItem?.isChecked),
+    intDeployTimestamp: intDeployItem?.isChecked ? intDeployItem.checkedAt : null,
+    isDay4CleanChecked: Boolean(day4CleanItem?.isChecked),
+    isDay4ExtendedChecked: Boolean(day4ExtendedItem?.isChecked),
+    allItems,
+  };
+}
+
+function derivePipelineDeployDate(
+  relComments: JiraComment[],
+  checklistResult: PipelineChecklistResult | null,
+): Date | null {
+  if (checklistResult?.isIntDeployChecked && checklistResult.intDeployTimestamp) {
+    return checklistResult.intDeployTimestamp;
+  }
+
+  for (const relComment of relComments) {
+    const normalizedCommentBody = normalizeCommentBody(relComment.body);
+    if (normalizedCommentBody.includes('INT env deployed') && normalizedCommentBody.includes('4/7 day window')) {
+      return relComment.created ? new Date(relComment.created) : null;
+    }
+  }
+
+  return null;
+}
+
+function derivePipelineIntWindow(
+  relComments: JiraComment[],
+  checklistResult: PipelineChecklistResult | null,
+): PipelineIntWindowState {
+  const deployedAt = derivePipelineDeployDate(relComments, checklistResult);
+  if (!deployedAt) {
+    return { deployedAt: null, daysSinceDeploy: null, decision: null, deadlineDate: null };
+  }
+
+  let decision: PipelineIntWindowState['decision'] = null;
+  if (checklistResult?.isDay4CleanChecked) {
+    decision = 'clean';
+  }
+  if (checklistResult?.isDay4ExtendedChecked) {
+    decision = 'extended';
+  }
+  if (!decision) {
+    for (const relComment of relComments) {
+      const normalizedCommentBody = normalizeCommentBody(relComment.body);
+      if (!normalizedCommentBody.includes('INT window Day 4')) {
+        continue;
+      }
+      if (normalizedCommentBody.toLowerCase().includes('clean')) {
+        decision = 'clean';
+      }
+      if (normalizedCommentBody.toLowerCase().includes('fixes in flight')) {
+        decision = 'extended';
+      }
+    }
+  }
+
+  const daysSinceDeploy = Math.floor((Date.now() - deployedAt.getTime()) / MS_PER_DAY);
+  const deadlineDate = new Date(deployedAt.getTime() + (7 * MS_PER_DAY));
+
+  return {
+    deployedAt: deployedAt.toISOString(),
+    daysSinceDeploy,
+    decision,
+    deadlineDate: deadlineDate.toISOString(),
+  };
+}
+
+function derivePipelineAlerts(row: PipelineRow): string[] {
+  const nextAlerts: string[] = [];
+  const hasBlockedDev = row.devLabels.includes('Blocked');
+  const hasOpenTdr = row.companions.tdr != null && !['Done', 'Accepted', 'Closed'].includes(row.companions.tdr.status);
+  if (hasBlockedDev && hasOpenTdr) {
+    nextAlerts.push('BLOCKED');
+  } else if (hasOpenTdr) {
+    nextAlerts.push('TDR_OPEN');
+  }
+
+  const daysSinceDeploy = row.intWindow.daysSinceDeploy;
+  if (daysSinceDeploy != null) {
+    if (daysSinceDeploy >= 8) {
+      nextAlerts.push('OVERDUE');
+    } else if (daysSinceDeploy === 7) {
+      nextAlerts.push('DAY7_DEPLOY');
+    } else if (daysSinceDeploy === 4 && !row.intWindow.decision) {
+      nextAlerts.push('DAY4_DECISION');
+    }
+  }
+
+  if (row.relStatus.toLowerCase().includes('ready to accept')) {
+    nextAlerts.push('AWAITING_PO');
+  }
+
+  return nextAlerts;
+}
+
+function correlatePipelineRows(
+  relStories: JiraIssue[],
+  companionStories: JiraIssue[],
+  devStories: JiraIssue[],
+): PipelineRow[] {
+  const devStoryByKey = new Map(devStories.map((issue) => [issue.key, issue]));
+  const companionsByDevKey = new Map<string, Partial<Record<Lowercase<PipelineRole>, PipelineCompanionIssue>>>();
+
+  for (const companionStory of companionStories) {
+    const companionType = parsePipelineCompanionType(companionStory.fields.summary);
+    const devKey = parsePipelineCompanionDevKey(companionStory.fields.summary);
+    if (!companionType || !devKey) {
+      continue;
+    }
+
+    const existingCompanions = companionsByDevKey.get(devKey) ?? {};
+    existingCompanions[companionType] = {
+      key: companionStory.key,
+      status: readIssueStatusName(companionStory),
+      assignee: companionStory.fields.assignee?.displayName ?? null,
+      hoursOpen: Math.floor((Date.now() - new Date(companionStory.fields.updated).getTime()) / (1000 * 60 * 60)),
+    };
+    companionsByDevKey.set(devKey, existingCompanions);
+  }
+
+  return relStories.map((relStory) => {
+    const devKey = parsePipelineDevKey(relStory.fields.summary);
+    const devStory = devKey ? devStoryByKey.get(devKey) ?? null : null;
+    const relComments = relStory.fields.comment?.comments ?? [];
+    const row: PipelineRow = {
+      relKey: relStory.key,
+      relSummary: relStory.fields.summary,
+      relStatus: readIssueStatusName(relStory),
+      relAssignee: relStory.fields.assignee?.displayName ?? null,
+      storyPoints: readStoryPoints(relStory, ''),
+      devKey,
+      devSummary: devStory?.fields.summary ?? null,
+      devStatus: devStory ? readIssueStatusName(devStory) : null,
+      devLabels: devStory?.fields.labels ?? [],
+      companions: devKey ? companionsByDevKey.get(devKey) ?? {} : {},
+      checklist: null,
+      relComments,
+      intWindow: derivePipelineIntWindow(relComments, null),
+      alerts: [],
+    };
+    row.alerts = derivePipelineAlerts(row);
+    return row;
+  });
+}
+
+type ReleaseBucketId = (typeof RELEASE_BUCKETS)[number]['id'];
+
+interface ReleaseRadarEntry {
+  version: JiraVersion;
+  issues: JiraIssue[];
+  doneCount: number;
+  progressCount: number;
+  todoCount: number;
+  totalCount: number;
+  completionPercentage: number;
+  releaseDate: string | null;
+  daysLeft: number | null;
+  bucket: ReleaseBucketId;
+}
+
+/** Mirrors the legacy release radar status classification for done / progress / to-do. */
+function classifyReleaseIssueStatus(issue: JiraIssue): 'done' | 'progress' | 'todo' {
+  if (isDoneIssue(issue)) {
+    return 'done';
+  }
+
+  if (issue.fields.status.statusCategory.key === 'indeterminate') {
+    return 'progress';
+  }
+
+  const normalizedStatusName = issue.fields.status.name.toLowerCase();
+  if (
+    RELEASE_PROGRESS_STATUS_TOKENS.includes(
+      normalizedStatusName as (typeof RELEASE_PROGRESS_STATUS_TOKENS)[number],
+    )
+    || normalizedStatusName.includes('progress')
+    || normalizedStatusName.includes('review')
+  ) {
+    return 'progress';
+  }
+
+  return 'todo';
+}
+
+/** Uses the same release risk buckets as the live legacy Release Radar. */
+function classifyReleaseRiskBucket(daysLeft: number | null): ReleaseBucketId {
+  if (daysLeft === null) {
+    return 'nodate';
+  }
+  if (daysLeft < 0) {
+    return 'overdue';
+  }
+  if (daysLeft <= 7) {
+    return 'critical';
+  }
+  if (daysLeft <= 30) {
+    return 'watch';
+  }
+  return 'ontrack';
+}
+
+/** Formats release dates the same way the legacy radar shows the due date badge text. */
+function formatReleaseDate(releaseDate: string | null): string {
+  if (!releaseDate) {
+    return '—';
+  }
+
+  return new Date(`${releaseDate}T12:00:00`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+/** Formats the countdown badge using the legacy day-left wording. */
+function formatReleaseCountdown(daysLeft: number | null): string {
+  if (daysLeft === null) {
+    return 'No date';
+  }
+  if (daysLeft < 0) {
+    return `${Math.abs(daysLeft)}d overdue`;
+  }
+  if (daysLeft === 0) {
+    return 'Today!';
+  }
+  return `${daysLeft}d left`;
+}
+
+function getReleaseCountdownClassName(daysLeft: number | null): string {
+  if (daysLeft === null) {
+    return styles.releaseCountdownNoDate;
+  }
+  if (daysLeft < 0) {
+    return styles.releaseCountdownOverdue;
+  }
+  if (daysLeft <= 7) {
+    return styles.releaseCountdownCritical;
+  }
+  if (daysLeft <= 30) {
+    return styles.releaseCountdownWatch;
+  }
+  return styles.releaseCountdownOnTrack;
+}
+
+function getReleaseBucketSectionClassName(bucketId: ReleaseBucketId): string {
+  if (bucketId === 'overdue') {
+    return styles.releaseBucketOverdue;
+  }
+  if (bucketId === 'critical') {
+    return styles.releaseBucketCritical;
+  }
+  if (bucketId === 'watch') {
+    return styles.releaseBucketWatch;
+  }
+  if (bucketId === 'ontrack') {
+    return styles.releaseBucketOnTrack;
+  }
+  return styles.releaseBucketNoDate;
+}
+
+function getReleaseCompletionClassName(completionPercentage: number): string {
+  if (completionPercentage >= 80) {
+    return styles.releaseCompletionOnTrack;
+  }
+  if (completionPercentage >= 50) {
+    return styles.releaseCompletionWatch;
+  }
+  return styles.releaseCompletionMuted;
+}
+
+interface PredictabilityRow {
+  name: string;
+  committedPoints: number;
+  completedPoints: number;
+  committedItems: number;
+  completedItems: number;
+  completionPercentage: number;
+}
+
+interface CycleTimeSummary {
+  averageDays: number;
+  medianDays: number;
+  percentile85Days: number;
+  measuredIssueCount: number;
+  totalFetchedCount: number;
+  excludedCount: number;
+  wasCapped: boolean;
+  improvementPercentage: number | null;
+  startLabel: string;
+  doneLabel: string;
+  usedExactStatusMatch: boolean;
+  workflowFetchSucceeded: boolean;
+}
+
+interface BottleneckRow {
+  statusName: string;
+  categoryKey: string;
+  averageDays: number;
+  issueCount: number;
+}
+
+interface ThroughputRow {
+  name: string;
+  itemCount: number;
+  storyPoints: number;
+}
+
+interface MetricsDataState {
+  predictabilityRows: PredictabilityRow[];
+  cycleTimeSummary: CycleTimeSummary | null;
+  bottleneckRows: BottleneckRow[];
+  throughputRows: ThroughputRow[];
+  boardTypeLabel: string;
+}
+
+function calculateMedian(sortedValues: number[]): number {
+  if (sortedValues.length === 0) {
+    return 0;
+  }
+  if (sortedValues.length % 2 === 1) {
+    return sortedValues[Math.floor(sortedValues.length / 2)];
+  }
+  const rightIndex = sortedValues.length / 2;
+  return (sortedValues[rightIndex - 1] + sortedValues[rightIndex]) / 2;
+}
+
+function calculatePercentile(sortedValues: number[], percentile: number): number {
+  if (sortedValues.length === 0) {
+    return 0;
+  }
+  const percentileIndex = Math.min(
+    sortedValues.length - 1,
+    Math.max(0, Math.floor(sortedValues.length * percentile)),
+  );
+  return sortedValues[percentileIndex];
+}
+
+function mapStatusCategory(
+  statusName: string,
+  workflowStatusCategoryMap: Record<string, string>,
+): string {
+  return workflowStatusCategoryMap[statusName.toLowerCase()] ?? 'new';
+}
+
+function buildCycleTimeStatusCategoryMap(
+  projectStatuses: Array<{ statuses?: Array<{ name?: string; statusCategory?: { key?: string; id?: number } }> }>,
+): Record<string, string> {
+  const statusCategoryMap: Record<string, string> = {};
+
+  for (const issueTypeStatuses of projectStatuses) {
+    for (const status of issueTypeStatuses.statuses ?? []) {
+      const normalizedStatusName = status.name?.toLowerCase();
+      if (!normalizedStatusName) {
+        continue;
+      }
+
+      const categoryKey = status.statusCategory?.key;
+      const categoryId = status.statusCategory?.id;
+      if (categoryKey === 'done' || categoryId === 4) {
+        statusCategoryMap[normalizedStatusName] = 'done';
+      } else if (
+        categoryKey === 'indeterminate'
+        || categoryKey === 'in_progress'
+        || categoryId === 3
+      ) {
+        statusCategoryMap[normalizedStatusName] = 'indeterminate';
+      } else {
+        statusCategoryMap[normalizedStatusName] = 'new';
+      }
+    }
+  }
+
+  return statusCategoryMap;
+}
+
+async function fetchAllCycleTimeIssues(
+  projectKey: string,
+  customStoryPointsFieldId: string,
+  scopeClause: string | null,
+): Promise<{ issues: JiraIssue[]; total: number; wasCapped: boolean }> {
+  const jqlClauses = [
+    `project = "${escapeJqlValue(projectKey)}"`,
+    'statusCategory = Done',
+    'updated >= -90d',
+  ];
+  if (scopeClause) {
+    jqlClauses.push(scopeClause);
+  }
+  const encodedJql = encodeURIComponent(`${jqlClauses.join(' AND ')} ORDER BY updated DESC`);
+  const requestedFields = [
+    'summary',
+    'status',
+    'issuetype',
+    'created',
+    'updated',
+    'customfield_10016',
+    'customfield_10028',
+  ];
+  if (!requestedFields.includes(customStoryPointsFieldId)) {
+    requestedFields.push(customStoryPointsFieldId);
+  }
+
+  const accumulatedIssues: JiraIssue[] = [];
+  let startAt = 0;
+  let totalAvailable = 0;
+
+  while (accumulatedIssues.length < MAX_CYCLE_TIME_ISSUES) {
+    const response = await jiraGet<{ issues?: JiraIssue[]; total?: number }>(
+      `/rest/api/2/search?jql=${encodedJql}&maxResults=${CYCLE_TIME_PAGE_SIZE}&startAt=${startAt}&expand=changelog&fields=${requestedFields.join(',')}`,
+    );
+    const pageIssues = response.issues ?? [];
+    totalAvailable = response.total ?? totalAvailable;
+    accumulatedIssues.push(...pageIssues);
+    startAt += pageIssues.length;
+
+    if (pageIssues.length === 0 || startAt >= totalAvailable) {
+      break;
+    }
+  }
+
+  return {
+    issues: accumulatedIssues.slice(0, MAX_CYCLE_TIME_ISSUES),
+    total: totalAvailable,
+    wasCapped: totalAvailable > MAX_CYCLE_TIME_ISSUES,
+  };
+}
+
+/** Chooses Settings tab wording that matches Scrum boards without forcing sprint language on Kanban teams. */
+function getBoardSettingsCopy(boardType: DashboardBoardType) {
+  if (boardType === 'scrum') {
+    return {
+      description: SCRUM_SETTINGS_DESCRIPTION,
+      loadButtonLabel: SCRUM_LOAD_BUTTON_LABEL,
+    };
+  }
+
+  return {
+    description: GENERIC_SETTINGS_DESCRIPTION,
+    loadButtonLabel: GENERIC_LOAD_BUTTON_LABEL,
+  };
 }
 
 /** Per-assignee velocity metrics derived from sprint issues. */
@@ -156,9 +948,13 @@ interface AssigneeMetrics {
 }
 
 /** Derives velocity metrics for a single assignee from their slice of sprint issues. */
-function computeAssigneeMetrics(assigneeName: string, assigneeIssues: JiraIssue[]): AssigneeMetrics {
+function computeAssigneeMetrics(
+  assigneeName: string,
+  assigneeIssues: JiraIssue[],
+  customStoryPointsFieldId: string,
+): AssigneeMetrics {
   const doneCount = assigneeIssues.filter(
-    (issue) => issue.fields.status.statusCategory.key === 'done',
+    isDoneIssue,
   ).length;
   const inProgressCount = assigneeIssues.filter(
     (issue) => issue.fields.status.statusCategory.key === 'indeterminate',
@@ -166,51 +962,35 @@ function computeAssigneeMetrics(assigneeName: string, assigneeIssues: JiraIssue[
   const toDoCount = assigneeIssues.filter(
     (issue) => issue.fields.status.statusCategory.key === 'new',
   ).length;
-  const hasAnyPoints = assigneeIssues.some((issue) => issue.fields.customfield_10016 != null);
+  const hasAnyPoints = assigneeIssues.some(
+    (issue) => readStoryPointsValue(issue, customStoryPointsFieldId) !== null,
+  );
   const totalStoryPoints = hasAnyPoints
-    ? assigneeIssues.reduce((sum, issue) => sum + (issue.fields.customfield_10016 ?? 0), 0)
+    ? assigneeIssues.reduce(
+        (sum, issue) => sum + readStoryPoints(issue, customStoryPointsFieldId),
+        0,
+      )
     : null;
 
   return { assigneeName, totalCount: assigneeIssues.length, doneCount, inProgressCount, toDoCount, totalStoryPoints };
 }
 
-/** Story-point size distribution counts across a set of issues. */
-interface SizeDistribution {
-  smallCount: number;
-  mediumCount: number;
-  largeCount: number;
-  extraLargeCount: number;
-  unestimatedCount: number;
-}
-
-/**
- * Buckets issues into Fibonacci story-point size ranges.
- * Issues with no customfield_10016 value are counted as unestimated.
- */
-function calculateSizeDistribution(issues: JiraIssue[]): SizeDistribution {
-  let smallCount = 0;
-  let mediumCount = 0;
-  let largeCount = 0;
-  let extraLargeCount = 0;
-  let unestimatedCount = 0;
-
-  for (const issue of issues) {
-    const points = issue.fields.customfield_10016;
-
-    if (points == null) {
-      unestimatedCount++;
-    } else if (points <= STORY_POINTS_SMALL_UPPER) {
-      smallCount++;
-    } else if (points <= STORY_POINTS_MEDIUM_UPPER) {
-      mediumCount++;
-    } else if (points <= STORY_POINTS_LARGE_UPPER) {
-      largeCount++;
-    } else {
-      extraLargeCount++;
-    }
-  }
-
-  return { smallCount, mediumCount, largeCount, extraLargeCount, unestimatedCount };
+function groupIssuesByOverviewSection(issues: JiraIssue[]): Record<(typeof OVERVIEW_GROUP_ORDER)[number], JiraIssue[]> {
+  return issues.reduce<Record<(typeof OVERVIEW_GROUP_ORDER)[number], JiraIssue[]>>(
+    (currentGroups, issue) => {
+      const normalizedStatusName = issue.fields.status.name.toLowerCase();
+      const targetGroup = isDoneIssue(issue)
+        ? 'Done'
+        : OVERVIEW_IN_PROGRESS_STATUS_TOKENS.some((statusToken) => normalizedStatusName.includes(statusToken))
+          ? 'In Progress'
+          : OVERVIEW_TO_DO_STATUS_TOKENS.some((statusToken) => normalizedStatusName.includes(statusToken))
+            ? 'To Do'
+            : 'To Do';
+      currentGroups[targetGroup].push(issue);
+      return currentGroups;
+    },
+    { 'In Progress': [], 'To Do': [], Done: [] },
+  );
 }
 
 /** Calculates flow counts (total / in-progress / in-review / blocked / done) for the stats bar. */
@@ -257,14 +1037,8 @@ function buildBurnDownData(
     day: dayIndex,
     [BURN_IDEAL_KEY]: Math.round(totalIssues - (totalIssues / totalDays) * dayIndex),
     [BURN_REMAINING_KEY]: remainingCount,
+    [BURN_COMPLETED_KEY]: doneCount,
   }));
-}
-
-/** Formats seconds as MM:SS for the standup timer display. */
-function formatTimerDisplay(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 // ── Issue card with move-to-sprint action ──
@@ -356,18 +1130,214 @@ function IssueCardWithMove({
 
 // ── Sub-renderers ──
 
-/** Renders the sprint info card with name, state, and dates. */
-function SprintInfoCard({ sprintInfo }: { sprintInfo: NonNullable<ReturnType<typeof useSprintData>['state']['sprintInfo']> }) {
+function DashboardScopeSelector({
+  sprintState,
+  onScopeModeChange,
+  onSprintScopeChange,
+  onFixVersionScopeChange,
+  onPiScopeChange,
+}: {
+  sprintState: ReturnType<typeof useSprintData>['state'];
+  onScopeModeChange: (scopeMode: DashboardScopeMode) => Promise<void>;
+  onSprintScopeChange: (sprintId: number) => Promise<void>;
+  onFixVersionScopeChange: (fixVersionName: string) => Promise<void>;
+  onPiScopeChange: (piValue: string) => Promise<void>;
+}) {
+  const secondaryLabel = readScopeSelectorLabel(sprintState.scopeMode);
+
+  return (
+    <div className={styles.scopeSelectorBar}>
+      <label className={styles.scopeSelectorField}>
+        <span>{SCOPE_MODE_LABEL}</span>
+        <select
+          className={styles.settingsInput}
+          onChange={(changeEvent) =>
+            void onScopeModeChange(changeEvent.target.value as DashboardScopeMode)}
+          value={sprintState.scopeMode}
+        >
+          <option value={DASHBOARD_SCOPE_MODE_SPRINT}>Sprint</option>
+          <option value={DASHBOARD_SCOPE_MODE_PI}>PI</option>
+          <option value={DASHBOARD_SCOPE_MODE_FIX_VERSION}>Fix Version</option>
+        </select>
+      </label>
+
+      <label className={styles.scopeSelectorField}>
+        <span>{secondaryLabel}</span>
+        {sprintState.scopeMode === DASHBOARD_SCOPE_MODE_SPRINT ? (
+          <select
+            className={styles.settingsInput}
+            onChange={(changeEvent) => void onSprintScopeChange(Number(changeEvent.target.value))}
+            value={sprintState.selectedSprintId ?? ''}
+          >
+            <option disabled value="">
+              Active Sprint
+            </option>
+            {sprintState.availableScopeSprints.map((scopeSprint) => (
+              <option key={scopeSprint.id} value={scopeSprint.id}>
+                {scopeSprint.name}
+              </option>
+            ))}
+          </select>
+        ) : sprintState.scopeMode === DASHBOARD_SCOPE_MODE_FIX_VERSION ? (
+          <select
+            className={styles.settingsInput}
+            onChange={(changeEvent) => void onFixVersionScopeChange(changeEvent.target.value)}
+            value={sprintState.selectedFixVersionName}
+          >
+            <option disabled value="">
+              Select Fix Version
+            </option>
+            {sprintState.availableFixVersions.map((availableFixVersion) => (
+              <option key={availableFixVersion.id} value={availableFixVersion.name}>
+                {availableFixVersion.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <select
+            className={styles.settingsInput}
+            onChange={(changeEvent) => void onPiScopeChange(changeEvent.target.value)}
+            value={sprintState.selectedPiValue}
+          >
+            <option disabled value="">
+              Select PI
+            </option>
+            {sprintState.availablePiValues.map((availablePiValue) => (
+              <option key={availablePiValue} value={availablePiValue}>
+                {availablePiValue}
+              </option>
+            ))}
+          </select>
+        )}
+      </label>
+    </div>
+  );
+}
+
+/** Renders the sprint or board summary card with name, dates, and board context. */
+function SprintInfoCard({
+  sprintInfo,
+  boardId,
+  selectedBoardName,
+  boardType,
+  scopeMode,
+  selectedFixVersionName,
+  selectedPiValue,
+}: {
+  sprintInfo: ReturnType<typeof useSprintData>['state']['sprintInfo'];
+  boardId: number | null;
+  selectedBoardName: string | null;
+  boardType: DashboardBoardType;
+  scopeMode: DashboardScopeMode;
+  selectedFixVersionName: string;
+  selectedPiValue: string;
+}) {
+  const title = scopeMode === DASHBOARD_SCOPE_MODE_FIX_VERSION
+    ? selectedFixVersionName || 'Fix Version'
+    : scopeMode === DASHBOARD_SCOPE_MODE_PI
+      ? selectedPiValue || 'PI'
+      : sprintInfo?.name ?? (boardType === 'kanban' ? 'Kanban Board' : 'Team Board');
+  const boardContextLabel = selectedBoardName ?? (boardId !== null ? `Board ${boardId}` : null);
+
   return (
     <div className={styles.sprintInfoCard}>
-      <h2 className={styles.sprintName}>{sprintInfo.name}</h2>
+      <div className={styles.sprintInfoHeader}>
+        <h2 className={styles.sprintName}>{title}</h2>
+        {boardContextLabel && <span className={styles.boardIdBadge}>{boardContextLabel}</span>}
+      </div>
       <div className={styles.sprintMeta}>
-        <span>State: {sprintInfo.state}</span>
-        <span>Start: {sprintInfo.startDate.slice(0, 10)}</span>
-        <span>End: {sprintInfo.endDate.slice(0, 10)}</span>
+        {sprintInfo ? (
+          <>
+            <span>State: {sprintInfo.state}</span>
+            <span>Start: {sprintInfo.startDate.slice(0, 10)}</span>
+            <span>End: {sprintInfo.endDate.slice(0, 10)}</span>
+            {sprintInfo.goal && <span>Goal: {sprintInfo.goal}</span>}
+          </>
+        ) : (
+          <span>Active work items on the board</span>
+        )}
       </div>
     </div>
   );
+}
+
+function OverviewStatCards({
+  issues,
+  customStoryPointsFieldId,
+}: {
+  issues: JiraIssue[];
+  customStoryPointsFieldId: string;
+}) {
+  const totalCount = issues.length;
+  const doneCount = issues.filter(isDoneIssue).length;
+  const inProgressCount = issues.filter(
+    (issue) => issue.fields.status.statusCategory.key === 'indeterminate',
+  ).length;
+  const toDoCount = totalCount - doneCount - inProgressCount;
+  const totalStoryPoints = issues.reduce(
+    (currentPoints, issue) => currentPoints + readStoryPoints(issue, customStoryPointsFieldId),
+    0,
+  );
+  const doneStoryPoints = issues
+    .filter(isDoneIssue)
+    .reduce(
+      (currentPoints, issue) => currentPoints + readStoryPoints(issue, customStoryPointsFieldId),
+      0,
+    );
+
+  return (
+    <div className={styles.flowStatsBar}>
+      <StatChip label="Total" value={totalCount} />
+      <StatChip label="To Do" value={toDoCount} />
+      <StatChip label="In Progress" value={inProgressCount} />
+      <StatChip label="Done" value={doneCount} />
+      {totalStoryPoints > 0 && <StatChip label="Points Done" value={`${doneStoryPoints}/${totalStoryPoints}`} />}
+    </div>
+  );
+}
+
+function StatChip({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className={styles.flowStatChip}>
+      <span className={styles.flowStatCount}>{value}</span>
+      <span className={styles.flowStatLabel}>{label}</span>
+    </div>
+  );
+}
+
+function DashboardTabShell({
+  title,
+  description,
+  stats,
+  actions,
+  filters,
+  children,
+}: {
+  title: string;
+  description: string;
+  stats?: ReactNode;
+  actions?: ReactNode;
+  filters?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className={styles.dashboardTabShell}>
+      <header className={styles.dashboardTabHeader}>
+        <div className={styles.dashboardTabCopy}>
+          <h2 className={styles.blockersSectionTitle}>{title}</h2>
+          <p className={styles.dashboardTabSubtitle}>{description}</p>
+        </div>
+        {actions ? <div className={styles.dashboardTabActions}>{actions}</div> : null}
+      </header>
+      {stats ? <div className={styles.dashboardTabStats}>{stats}</div> : null}
+      {filters ? <div className={styles.dashboardTabFilters}>{filters}</div> : null}
+      <div className={styles.dashboardTabContent}>{children}</div>
+    </div>
+  );
+}
+
+function DashboardEmptyState({ message }: { message: string }) {
+  return <div className={styles.dashboardEmptyState}>{message}</div>;
 }
 
 /** Renders the 5-chip flow stats bar (Total / In Progress / In Review / Blocked / Done). */
@@ -417,8 +1387,9 @@ function BurnDownChart({
   sprintInfo: NonNullable<ReturnType<typeof useSprintData>['state']['sprintInfo']>;
   issues: JiraIssue[];
 }) {
+  const [isBurnupVisible, setIsBurnupVisible] = useState(false);
   const doneCount = issues.filter(
-    (issue) => issue.fields.status.statusCategory.key === 'done',
+    isDoneIssue,
   ).length;
 
   const burnDownData = buildBurnDownData(
@@ -430,7 +1401,16 @@ function BurnDownChart({
 
   return (
     <div className={styles.chartSection}>
-      <p className={styles.chartTitle}>Burn-Down Chart</p>
+      <div className={styles.chartHeader}>
+        <p className={styles.chartTitle}>Burn-Down Chart</p>
+        <button
+          className={styles.chartToggleButton}
+          onClick={() => setIsBurnupVisible((currentValue) => !currentValue)}
+          type="button"
+        >
+          {isBurnupVisible ? 'Hide Burnup' : BURNUP_TOGGLE_LABEL}
+        </button>
+      </div>
       <ResponsiveContainer height={240} width="100%">
         <LineChart data={burnDownData}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
@@ -466,6 +1446,15 @@ function BurnDownChart({
             stroke="var(--color-accent)"
             type="monotone"
           />
+          {isBurnupVisible && (
+            <Line
+              dataKey={BURN_COMPLETED_KEY}
+              dot={false}
+              name="Completed"
+              stroke="var(--color-success)"
+              type="monotone"
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -490,44 +1479,66 @@ function OverviewTab({
   onMoveToSprint: (issueKey: string, targetSprintId: number) => Promise<void>;
   onIssueUpdated: () => void;
 }) {
+  const groupedIssues = groupIssuesByOverviewSection(issues);
+  const shouldRenderBoardSummary = sprintInfo !== null || issues.length > 0 || sprintState.boardId !== null;
+
   return (
     <div>
-      {sprintInfo ? (
+      {shouldRenderBoardSummary ? (
         <>
-          <SprintInfoCard sprintInfo={sprintInfo} />
+          <SprintInfoCard
+            boardId={sprintState.boardId}
+            selectedBoardName={sprintState.selectedBoardName}
+            boardType={sprintState.boardType}
+            scopeMode={sprintState.scopeMode}
+            selectedFixVersionName={sprintState.selectedFixVersionName}
+            selectedPiValue={sprintState.selectedPiValue}
+            sprintInfo={sprintInfo}
+          />
+          <OverviewStatCards
+            customStoryPointsFieldId={configState.customStoryPointsFieldId}
+            issues={issues}
+          />
           <HealthBadge issues={issues} />
           <FlowStatsBar issues={issues} />
-          <BurnDownChart issues={issues} sprintInfo={sprintInfo} />
+          {sprintInfo && <BurnDownChart issues={issues} sprintInfo={sprintInfo} />}
         </>
       ) : (
         <p style={{ color: 'var(--color-text-secondary)' }}>
-          No sprint loaded. Go to Settings and enter a project key.
+          {OVERVIEW_EMPTY_STATE_MESSAGE}
         </p>
       )}
 
-      {issues.length > 0 && (
-        <div className={styles.blockersSection}>
-          <div className={styles.blockersSectionHeader}>
-            <h3 className={styles.blockersSectionTitle}>All Issues</h3>
-            <span className={styles.countBadge}>{issues.length}</span>
+      {OVERVIEW_GROUP_ORDER.map((groupLabel) => {
+        const groupIssues = groupedIssues[groupLabel];
+        if (groupIssues.length === 0) {
+          return null;
+        }
+
+        return (
+          <div className={styles.blockersSection} key={groupLabel}>
+            <div className={styles.blockersSectionHeader}>
+              <h3 className={styles.blockersSectionTitle}>{groupLabel}</h3>
+              <span className={styles.countBadge}>{groupIssues.length}</span>
+            </div>
+            <div className={styles.laneIssueGrid}>
+              {groupIssues.map((issue) => (
+                <IssueCardWithMove
+                  availableSprints={sprintState.availableSprints}
+                  currentSprintId={sprintState.sprintInfo?.id ?? null}
+                  isLoadingAvailableSprints={sprintState.isLoadingAvailableSprints}
+                  issue={issue}
+                  key={issue.key}
+                  onFetchSprints={onFetchSprints}
+                  onIssueUpdated={onIssueUpdated}
+                  onMoveToSprint={onMoveToSprint}
+                  staleDaysThreshold={configState.staleDaysThreshold}
+                />
+              ))}
+            </div>
           </div>
-          <div className={styles.laneIssueGrid}>
-            {issues.map((issue) => (
-              <IssueCardWithMove
-                availableSprints={sprintState.availableSprints}
-                currentSprintId={sprintState.sprintInfo?.id ?? null}
-                isLoadingAvailableSprints={sprintState.isLoadingAvailableSprints}
-                issue={issue}
-                key={issue.key}
-                onFetchSprints={onFetchSprints}
-                onIssueUpdated={onIssueUpdated}
-                onMoveToSprint={onMoveToSprint}
-                staleDaysThreshold={configState.staleDaysThreshold}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+        );
+      })}
     </div>
   );
 }
@@ -548,28 +1559,51 @@ function AssigneeTab({
   onMoveToSprint: (issueKey: string, targetSprintId: number) => Promise<void>;
   onIssueUpdated: () => void;
 }) {
-  const groupedIssues = groupIssuesByAssignee(issues);
+  const groupedIssues = Array.from(groupIssuesByAssignee(issues).entries())
+    .map(([assigneeName, assigneeIssues]) => ({
+      assigneeName,
+      assigneeIssues,
+      metrics: computeAssigneeMetrics(
+        assigneeName,
+        assigneeIssues,
+        configState.customStoryPointsFieldId,
+      ),
+    }))
+    .sort(
+      (leftGroup, rightGroup) =>
+        rightGroup.metrics.inProgressCount
+          + rightGroup.metrics.toDoCount
+          - (leftGroup.metrics.inProgressCount + leftGroup.metrics.toDoCount),
+    );
 
   return (
     <div>
-      {Array.from(groupedIssues.entries()).map(([assigneeName, assigneeIssues]) => {
-        const inProgressCount = assigneeIssues.filter(
-          (issue) => issue.fields.status.statusCategory.key === 'indeterminate',
-        ).length;
-        const toDoCount = assigneeIssues.filter(
-          (issue) => issue.fields.status.statusCategory.key === 'new',
-        ).length;
-        const doneCount = assigneeIssues.filter(
-          (issue) => issue.fields.status.statusCategory.key === 'done',
-        ).length;
+      {groupedIssues.map(({ assigneeName, assigneeIssues, metrics }) => {
+        const completionPercentage = metrics.totalCount === 0
+          ? 0
+          : Math.round((metrics.doneCount / metrics.totalCount) * 100);
 
         return (
           <div className={styles.assigneeLane} key={assigneeName}>
             <div className={styles.assigneeHeader}>
-              <span className={styles.assigneeName}>{assigneeName}</span>
-              <span className={styles.assigneeCountBadge}>🔵 {inProgressCount} in progress</span>
-              <span className={styles.assigneeCountBadge}>⚪ {toDoCount} to do</span>
-              <span className={styles.assigneeCountBadge}>✅ {doneCount} done</span>
+              <div className={styles.assigneeSummary}>
+                <span className={styles.assigneeName}>{assigneeName}</span>
+                <span className={styles.assigneeMetaText}>
+                  {metrics.totalCount} issues · {completionPercentage}% done
+                  {metrics.totalStoryPoints !== null ? ` · ${metrics.totalStoryPoints} pts` : ''}
+                </span>
+              </div>
+              <div className={styles.assigneeHeaderBadges}>
+                <span className={styles.assigneeCountBadge}>🔵 {metrics.inProgressCount} in progress</span>
+                <span className={styles.assigneeCountBadge}>⚪ {metrics.toDoCount} to do</span>
+                <span className={styles.assigneeCountBadge}>✅ {metrics.doneCount} done</span>
+              </div>
+            </div>
+            <div className={styles.assigneeProgressTrack}>
+              <div
+                className={styles.assigneeProgressFill}
+                style={{ width: `${completionPercentage}%` }}
+              />
             </div>
             <div className={styles.laneIssueGrid}>
               {assigneeIssues.map((issue) => (
@@ -593,7 +1627,7 @@ function AssigneeTab({
   );
 }
 
-/** Renders the Blockers tab: Blocked issues, Stale in-progress, All in-progress. */
+/** Renders the Blockers tab with the legacy blocked/stale filter model. */
 function BlockersTab({
   issues,
   staleDaysThreshold,
@@ -603,14 +1637,11 @@ function BlockersTab({
   staleDaysThreshold: number;
   onIssueUpdated: () => void;
 }) {
+  const [activeFilter, setActiveFilter] = useState<'all' | 'blockers' | 'stale'>('all');
   const [expandedIssueIdentifier, setExpandedIssueIdentifier] = useState<string | null>(null);
   const blockedIssues = issues.filter(isBlockedIssue);
   const staleIssues = issues.filter(
     (issue) => !isBlockedIssue(issue) && isStaleIssue(issue, staleDaysThreshold),
-  );
-  const allInProgressIssues = issues.filter(
-    (issue) =>
-      issue.fields.status.statusCategory.key === 'indeterminate' && !isBlockedIssue(issue),
   );
 
   function createExpandedIssueIdentifier(sectionKey: string, issueKey: string) {
@@ -661,7 +1692,7 @@ function BlockersTab({
           </div>
           <span className={styles.issueSummaryText}>{issue.fields.summary}</span>
           <span className={styles.issueMetaText}>
-            {issue.fields.assignee?.displayName ?? 'Unassigned'} · {calculateAgingDays(issue.fields.updated)}d ago
+            {issue.fields.assignee?.displayName ?? 'Unassigned'} · {calculateIssueAgeDays(issue.fields.updated)}d ago
           </span>
         </div>
         {isExpanded && (
@@ -673,236 +1704,303 @@ function BlockersTab({
 
   return (
     <div>
-      <div className={styles.blockersSection}>
-        <div className={styles.blockersSectionHeader}>
-          <h3 className={styles.blockersSectionTitle}>Blocked</h3>
-          <span className={styles.countBadge}>{blockedIssues.length}</span>
-        </div>
-        {blockedIssues.map((issue) => renderBlockerCard(issue, styles.blockerCard, BLOCKED_SECTION_KEY))}
-        {blockedIssues.length === 0 && (
-          <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
-            No blocked issues. 🎉
-          </p>
-        )}
+      <div className={styles.blockerFilterBar}>
+        <span className={styles.blockerFilterLabel}>{BLOCKERS_FILTER_LABEL}</span>
+        <button
+          className={activeFilter === 'all' ? styles.blockerFilterChipActive : styles.blockerFilterChip}
+          onClick={() => setActiveFilter('all')}
+          type="button"
+        >
+          All ({blockedIssues.length + staleIssues.length})
+        </button>
+        <button
+          className={activeFilter === 'blockers' ? styles.blockerFilterChipActive : styles.blockerFilterChip}
+          onClick={() => setActiveFilter('blockers')}
+          type="button"
+        >
+          🚫 Blocked ({blockedIssues.length})
+        </button>
+        <button
+          className={activeFilter === 'stale' ? styles.blockerFilterChipActive : styles.blockerFilterChip}
+          onClick={() => setActiveFilter('stale')}
+          type="button"
+        >
+          ⚠️ Stale ({staleIssues.length})
+        </button>
       </div>
 
-      <div className={styles.blockersSection}>
-        <div className={styles.blockersSectionHeader}>
-          <h3 className={styles.blockersSectionTitle}>
-            Stale (In Progress {staleDaysThreshold}+ days)
-          </h3>
-          <span className={styles.countBadge}>{staleIssues.length}</span>
+      {(activeFilter === 'all' || activeFilter === 'blockers') && blockedIssues.length > 0 && (
+        <div className={styles.blockersSection}>
+          <div className={styles.blockersSectionHeader}>
+            <h3 className={styles.blockersSectionTitle}>Blocked</h3>
+            <span className={styles.countBadge}>{blockedIssues.length}</span>
+          </div>
+          {blockedIssues.map((issue) => renderBlockerCard(issue, styles.blockerCard, BLOCKED_SECTION_KEY))}
         </div>
-        {staleIssues.map((issue) => renderBlockerCard(issue, `${styles.blockerCard} ${styles.staleCard}`, STALE_SECTION_KEY))}
-      </div>
+      )}
 
-      <div className={styles.blockersSection}>
-        <div className={styles.blockersSectionHeader}>
-          <h3 className={styles.blockersSectionTitle}>All In Progress</h3>
-          <span className={styles.countBadge}>{allInProgressIssues.length}</span>
+      {(activeFilter === 'all' || activeFilter === 'stale') && staleIssues.length > 0 && (
+        <div className={styles.blockersSection}>
+          <div className={styles.blockersSectionHeader}>
+            <h3 className={styles.blockersSectionTitle}>
+              Stale (In Progress {staleDaysThreshold}+ days)
+            </h3>
+            <span className={styles.countBadge}>{staleIssues.length}</span>
+          </div>
+          {staleIssues.map((issue) => renderBlockerCard(issue, `${styles.blockerCard} ${styles.staleCard}`, STALE_SECTION_KEY))}
         </div>
-        {allInProgressIssues.map((issue) => renderBlockerCard(issue, styles.blockerCard, IN_PROGRESS_SECTION_KEY))}
-      </div>
+      )}
+
+      {blockedIssues.length === 0 && staleIssues.length === 0 && (
+        <p style={{ color: 'var(--color-success)', fontSize: 'var(--font-size-sm)', textAlign: 'center' }}>
+          No blocked or stale issues.
+        </p>
+      )}
+
+      {blockedIssues.length + staleIssues.length > 0
+        && ((activeFilter === 'blockers' && blockedIssues.length === 0)
+          || (activeFilter === 'stale' && staleIssues.length === 0)) && (
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', textAlign: 'center' }}>
+          Nothing matching this filter.
+        </p>
+      )}
     </div>
   );
 }
 
-/** Renders the Defects tab: bug issues grouped by priority. */
-function DefectsTab({ issues, onIssueUpdated }: { issues: JiraIssue[]; onIssueUpdated: () => void }) {
+/** Renders the Defects tab using the live legacy mix of sprint-seeded bugs plus a project-wide 90-day defect sweep. */
+function DefectsTab({
+  issues,
+  onIssueUpdated,
+  projectKey,
+  scopeMode,
+  selectedSprintId,
+  selectedFixVersionName,
+  selectedPiValue,
+}: {
+  issues: JiraIssue[];
+  onIssueUpdated: () => void;
+  projectKey: string;
+  scopeMode: DashboardScopeMode;
+  selectedSprintId: number | null;
+  selectedFixVersionName: string;
+  selectedPiValue: string;
+}) {
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
-  const bugIssues = issues.filter((issue) => issue.fields.issuetype.name === 'Bug');
+  const [defectIssues, setDefectIssues] = useState<JiraIssue[]>(issues.filter(isDefectIssue));
+  const [isLoadingDefects, setIsLoadingDefects] = useState(false);
+  const [priorityFilter, setPriorityFilter] = useState('');
+  const [statusCategoryFilter, setStatusCategoryFilter] = useState('');
+  const [showUnassignedOnly, setShowUnassignedOnly] = useState(false);
+  const [sortMode, setSortMode] = useState<'priority-age' | 'age' | 'assignee' | 'status'>('priority-age');
 
-  const PRIORITY_ORDER = ['Critical', 'High', 'Medium', 'Low', 'None'];
+  useEffect(() => {
+    const sprintDefects = issues.filter(isDefectIssue);
+    setDefectIssues(sprintDefects);
 
-  const defectsByPriority = PRIORITY_ORDER.map((priorityName) => ({
-    priorityName,
-    defects: bugIssues.filter((bug) => (bug.fields.priority?.name ?? 'None') === priorityName),
-  })).filter((priorityGroup) => priorityGroup.defects.length > 0);
+    const normalizedProjectKey = projectKey.trim().toUpperCase();
+    if (!normalizedProjectKey) {
+      return;
+    }
 
-  function toggleExpandedIssue(issueKey: string) {
-    setExpandedIssueKey((previousIssueKey) => previousIssueKey === issueKey ? null : issueKey);
-  }
+    let isMounted = true;
+    async function loadProjectDefects() {
+      setIsLoadingDefects(true);
+      try {
+        const jql = buildScopedProjectJql(
+          normalizedProjectKey,
+          { scopeMode, selectedSprintId, selectedFixVersionName, selectedPiValue },
+          [`issuetype in ("Bug","Defect")`],
+          'priority ASC, created ASC',
+        );
+        const response = await jiraGet<{ issues?: JiraIssue[] }>(buildSearchPath(
+          jql,
+          'summary,status,assignee,priority,issuetype,created,updated,issuelinks,customfield_10016,customfield_10028,customfield_10021,labels,fixVersions',
+          DEFECT_MAX_RESULTS,
+        ));
+        if (!isMounted) {
+          return;
+        }
+        const mergedIssues = [...sprintDefects];
+        const seenKeys = new Set(sprintDefects.map((issue) => issue.key));
+        for (const projectDefect of response.issues ?? []) {
+          if (!seenKeys.has(projectDefect.key)) {
+            mergedIssues.push(projectDefect);
+          }
+        }
+        setDefectIssues(mergedIssues);
+      } finally {
+        if (isMounted) {
+          setIsLoadingDefects(false);
+        }
+      }
+    }
 
-  if (bugIssues.length === 0) {
-    return (
-      <p style={{ color: 'var(--color-text-secondary)' }}>No bugs found in this sprint. 🎉</p>
-    );
+    void loadProjectDefects();
+    return () => {
+      isMounted = false;
+    };
+  }, [issues, projectKey, scopeMode, selectedSprintId, selectedFixVersionName, selectedPiValue]);
+
+  const filteredDefects = defectIssues
+    .filter((defectIssue) => priorityFilter === '' || readIssuePriorityName(defectIssue) === priorityFilter)
+    .filter((defectIssue) => statusCategoryFilter === '' || defectIssue.fields.status.statusCategory.key === statusCategoryFilter)
+    .filter((defectIssue) => !showUnassignedOnly || defectIssue.fields.assignee == null)
+    .sort((leftIssue, rightIssue) => {
+      if (sortMode === 'age') {
+        return readIssueAgeDays(rightIssue) - readIssueAgeDays(leftIssue);
+      }
+      if (sortMode === 'assignee') {
+        return readAssigneeName(leftIssue).localeCompare(readAssigneeName(rightIssue));
+      }
+      if (sortMode === 'status') {
+        const statusOrder = { indeterminate: 0, new: 1, done: 2 };
+        const leftOrder = statusOrder[leftIssue.fields.status.statusCategory.key as keyof typeof statusOrder] ?? 1;
+        const rightOrder = statusOrder[rightIssue.fields.status.statusCategory.key as keyof typeof statusOrder] ?? 1;
+        return leftOrder - rightOrder;
+      }
+
+      const priorityDelta = getDefectPriorityOrder(readIssuePriorityName(leftIssue))
+        - getDefectPriorityOrder(readIssuePriorityName(rightIssue));
+      return priorityDelta !== 0 ? priorityDelta : readIssueAgeDays(rightIssue) - readIssueAgeDays(leftIssue);
+    });
+
+  const openDefects = defectIssues.filter((defectIssue) => defectIssue.fields.status.statusCategory.key !== 'done');
+  const needsTriage = filteredDefects.filter((defectIssue) => defectIssue.fields.status.statusCategory.key !== 'done' && defectIssue.fields.assignee == null);
+  const inProgressDefects = filteredDefects.filter((defectIssue) => defectIssue.fields.status.statusCategory.key === 'indeterminate' && defectIssue.fields.assignee != null);
+  const openAssignedDefects = filteredDefects.filter((defectIssue) => defectIssue.fields.status.statusCategory.key === 'new' && defectIssue.fields.assignee != null);
+  const resolvedDefects = filteredDefects.filter((defectIssue) => defectIssue.fields.status.statusCategory.key === 'done');
+  const assigneeLoad = Array.from(groupIssuesByAssignee(openDefects).entries())
+    .map(([assigneeName, assigneeDefects]) => ({ assigneeName, count: assigneeDefects.length }))
+    .sort((leftRow, rightRow) => rightRow.count - leftRow.count || leftRow.assigneeName.localeCompare(rightRow.assigneeName));
+
+  const renderedSections = sortMode === 'priority-age'
+    ? [
+        { title: 'Needs Triage', issues: needsTriage },
+        { title: 'In Progress', issues: inProgressDefects },
+        { title: 'Assigned — Not Started', issues: openAssignedDefects },
+      ]
+    : sortMode === 'assignee'
+      ? Array.from(groupIssuesByAssignee(filteredDefects.filter((defectIssue) => defectIssue.fields.status.statusCategory.key !== 'done')).entries())
+        .map(([assigneeName, groupedIssues]) => ({ title: assigneeName, issues: groupedIssues }))
+      : sortMode === 'status'
+        ? [
+            { title: 'In Progress', issues: filteredDefects.filter((defectIssue) => defectIssue.fields.status.statusCategory.key === 'indeterminate') },
+            { title: 'To Do', issues: filteredDefects.filter((defectIssue) => defectIssue.fields.status.statusCategory.key === 'new') },
+          ]
+        : [
+            { title: 'Open Defects — Oldest First', issues: filteredDefects.filter((defectIssue) => defectIssue.fields.status.statusCategory.key !== 'done') },
+          ];
+
+  if (defectIssues.length === 0 && !isLoadingDefects) {
+    return <p className={styles.issueMetaText}>No defects found. 🎉</p>;
   }
 
   return (
     <div>
-      {defectsByPriority.map(({ priorityName, defects }) => (
-        <div className={styles.defectGroup} key={priorityName}>
-          <div className={styles.defectGroupHeader}>
-            <h3 className={styles.defectGroupTitle}>{priorityName}</h3>
-            <span className={styles.countBadge}>{defects.length}</span>
-          </div>
-          {defects.map((defect) => {
-            const isExpanded = expandedIssueKey === defect.key;
-            const expandButtonLabel = `${isExpanded ? 'Collapse' : 'Expand'} details for ${defect.key}`;
+      <h2 className={styles.blockersSectionTitle}>Defect Management</h2>
+      <div className={styles.flowStatsBar}>
+        <StatChip label="Total" value={defectIssues.length} />
+        <StatChip label="Unassigned" value={openDefects.filter((defectIssue) => defectIssue.fields.assignee == null).length} />
+        <StatChip label="P1/P2 Open" value={openDefects.filter((defectIssue) => getDefectPriorityOrder(readIssuePriorityName(defectIssue)) <= 1).length} />
+        <StatChip label="To Do" value={defectIssues.filter((defectIssue) => defectIssue.fields.status.statusCategory.key === 'new').length} />
+        <StatChip label="In Progress" value={defectIssues.filter((defectIssue) => defectIssue.fields.status.statusCategory.key === 'indeterminate').length} />
+        <StatChip label="Resolved" value={resolvedDefects.length} />
+        <StatChip
+          label="Avg Open Age"
+          value={`${openDefects.length === 0 ? 0 : Math.round(openDefects.reduce((sum, defectIssue) => sum + readIssueAgeDays(defectIssue), 0) / openDefects.length)}d`}
+        />
+      </div>
 
+      <div className={styles.sprintInfoCard} style={{ marginBottom: 'var(--spacing-md)' }}>
+        <div className={styles.blockersSectionHeader}>
+          <h3 className={styles.blockersSectionTitle}>Assignee Load</h3>
+          {isLoadingDefects && <span className={styles.issueMetaText}>Loading all project defects…</span>}
+        </div>
+        <div style={{ display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>
+          {assigneeLoad.map((assigneeRow) => (
+            <span className={styles.releaseSummaryMuted} key={assigneeRow.assigneeName}>
+              {assigneeRow.assigneeName}: {assigneeRow.count}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap', marginBottom: 'var(--spacing-md)' }}>
+        <select className={styles.settingsInput} onChange={(changeEvent) => setPriorityFilter(changeEvent.target.value)} style={{ width: 'auto' }} value={priorityFilter}>
+          <option value="">All Priorities</option>
+          {Array.from(new Set(defectIssues.map((defectIssue) => readIssuePriorityName(defectIssue)))).sort().map((priorityName) => (
+            <option key={priorityName} value={priorityName}>{priorityName}</option>
+          ))}
+        </select>
+        <select className={styles.settingsInput} onChange={(changeEvent) => setStatusCategoryFilter(changeEvent.target.value)} style={{ width: 'auto' }} value={statusCategoryFilter}>
+          <option value="">All Statuses</option>
+          <option value="new">To Do</option>
+          <option value="indeterminate">In Progress</option>
+          <option value="done">Done</option>
+        </select>
+        <select className={styles.settingsInput} onChange={(changeEvent) => setSortMode(changeEvent.target.value as typeof sortMode)} style={{ width: 'auto' }} value={sortMode}>
+          <option value="priority-age">Priority + Age</option>
+          <option value="age">Age</option>
+          <option value="assignee">Assignee</option>
+          <option value="status">Status</option>
+        </select>
+        <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+          <input checked={showUnassignedOnly} onChange={() => setShowUnassignedOnly((previousValue) => !previousValue)} type="checkbox" />
+          Unassigned only
+        </label>
+      </div>
+
+      {renderedSections.filter((section) => section.issues.length > 0).map((section) => (
+        <section className={styles.defectGroup} key={section.title}>
+          <div className={styles.defectGroupHeader}>
+            <h3 className={styles.defectGroupTitle}>{section.title}</h3>
+            <span className={styles.countBadge}>{section.issues.length}</span>
+          </div>
+          {section.issues.map((defectIssue) => {
+            const isExpanded = expandedIssueKey === defectIssue.key;
             return (
-              <div className={styles.issueCardWrapper} key={defect.key}>
+              <div className={styles.issueCardWrapper} key={defectIssue.key}>
                 <div className={styles.defectCard}>
-                  <a className={styles.issueKeyLink} href={`#${defect.key}`}>
-                    {defect.key}
-                  </a>
-                  <span>{defect.fields.summary}</span>
-                  <span className={styles.issueMetaText}>
-                    {defect.fields.assignee?.displayName ?? 'Unassigned'}
-                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+                    <div>
+                      <a className={styles.issueKeyLink} href={`#${defectIssue.key}`}>{defectIssue.key}</a>{' '}
+                      <span>{defectIssue.fields.summary}</span>
+                    </div>
+                    <div className={styles.issueMetaText}>
+                      {readIssuePriorityName(defectIssue)} · {readAssigneeName(defectIssue)} · {readIssueAgeDays(defectIssue)}d old · updated {readIssueUpdatedAgeDays(defectIssue)}d ago
+                    </div>
+                  </div>
                   <button
                     aria-expanded={isExpanded}
-                    aria-label={expandButtonLabel}
                     className={styles.expandToggleButton}
-                    onClick={() => toggleExpandedIssue(defect.key)}
+                    onClick={() => setExpandedIssueKey((previousIssueKey) => previousIssueKey === defectIssue.key ? null : defectIssue.key)}
                     type="button"
                   >
                     {isExpanded ? EXPAND_TOGGLE_EXPANDED_ICON : EXPAND_TOGGLE_COLLAPSED_ICON}
                   </button>
                 </div>
                 {isExpanded && (
-                  <IssueDetailPanel isEmbedded issue={defect} onIssueUpdated={onIssueUpdated} />
+                  <IssueDetailPanel isEmbedded issue={defectIssue} onIssueUpdated={onIssueUpdated} />
                 )}
               </div>
             );
           })}
-        </div>
+        </section>
       ))}
-    </div>
-  );
-}
 
-/** Renders the Standup tab with the 15-minute countdown timer and board-walk columns. */
-function StandupTab({
-  issues,
-  timerSecondsRemaining,
-  isTimerRunning,
-  staleDaysThreshold,
-  onStart,
-  onStop,
-  onReset,
-  onTick,
-}: {
-  issues: JiraIssue[];
-  timerSecondsRemaining: number;
-  isTimerRunning: boolean;
-  staleDaysThreshold: number;
-  onStart: () => void;
-  onStop: () => void;
-  onReset: () => void;
-  onTick: () => void;
-}) {
-  // Tick the timer every second while it is running.
-  useEffect(() => {
-    if (!isTimerRunning) {
-      return;
-    }
-
-    const intervalId = setInterval(() => {
-      onTick();
-    }, 1000);
-
-    return () => clearInterval(intervalId);
-  }, [isTimerRunning, onTick]);
-
-  const isTimerWarning =
-    timerSecondsRemaining <= TIMER_WARNING_SECONDS && timerSecondsRemaining > TIMER_DANGER_SECONDS;
-  const isTimerDanger = timerSecondsRemaining <= TIMER_DANGER_SECONDS;
-
-  const timerDisplayClassName = isTimerDanger
-    ? `${styles.timerDisplay} ${styles.timerDanger}`
-    : isTimerWarning
-      ? `${styles.timerDisplay} ${styles.timerWarning}`
-      : styles.timerDisplay;
-
-  // Board walk: show columns right-to-left (Done → In Review → In Progress → To Do)
-  const BOARD_WALK_COLUMNS = [
-    {
-      label: 'Done',
-      filter: (issue: JiraIssue) => issue.fields.status.statusCategory.key === 'done',
-    },
-    {
-      label: 'In Review',
-      filter: (issue: JiraIssue) => {
-        const lowerStatus = issue.fields.status.name.toLowerCase();
-        return ['in review', 'code review', 'pr review', 'testing'].includes(lowerStatus);
-      },
-    },
-    {
-      label: 'In Progress',
-      filter: (issue: JiraIssue) => {
-        const isInProgress = issue.fields.status.statusCategory.key === 'indeterminate';
-        const lowerStatus = issue.fields.status.name.toLowerCase();
-        const isInReview = ['in review', 'code review', 'pr review', 'testing'].includes(lowerStatus);
-        return isInProgress && !isInReview && !isBlockedIssue(issue);
-      },
-    },
-    {
-      label: 'To Do',
-      filter: (issue: JiraIssue) => issue.fields.status.statusCategory.key === 'new',
-    },
-  ];
-
-  return (
-    <div className={styles.standupLayout}>
-      <div className={styles.timerBlock}>
-        <span className={timerDisplayClassName}>
-          {formatTimerDisplay(timerSecondsRemaining)}
-        </span>
-        <div className={styles.timerControls}>
-          {isTimerRunning ? (
-            <button className={styles.timerButton} onClick={onStop} type="button">
-              Stop
-            </button>
-          ) : (
-            <button className={styles.timerButton} onClick={onStart} type="button">
-              Start
-            </button>
-          )}
-          <button className={styles.timerButton} onClick={onReset} type="button">
-            Reset
-          </button>
-        </div>
-      </div>
-
-      <div className={styles.boardWalk}>
-        {BOARD_WALK_COLUMNS.map((boardColumn) => {
-          const columnIssues = issues.filter(boardColumn.filter);
-
-          return (
-            <div className={styles.boardColumn} key={boardColumn.label}>
-              <h3 className={styles.boardColumnTitle}>{boardColumn.label}</h3>
-              {columnIssues.length === 0 ? (
-                <p className={styles.emptyColumnText}>—</p>
-              ) : (
-                columnIssues.map((issue) => {
-                  const agingDays = calculateAgingDays(issue.fields.updated);
-                  const isAgedWarn = agingDays > 3 && agingDays <= staleDaysThreshold;
-                  const isAgedStale = agingDays > staleDaysThreshold;
-
-                  const cardClassName = isAgedStale
-                    ? `${styles.boardIssueCard} ${styles.boardIssueCardStale}`
-                    : isAgedWarn
-                      ? `${styles.boardIssueCard} ${styles.boardIssueCardWarn}`
-                      : `${styles.boardIssueCard} ${styles.boardIssueCardFresh}`;
-
-                  return (
-                    <div className={cardClassName} key={issue.key}>
-                      <a className={styles.issueKeyLink} href={`#${issue.key}`}>
-                        {issue.key}
-                      </a>
-                      <p style={{ margin: '2px 0', fontSize: 'var(--font-size-sm)' }}>
-                        {issue.fields.summary}
-                      </p>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {resolvedDefects.length > 0 && priorityFilter === '' && statusCategoryFilter === '' && !showUnassignedOnly && (
+        <details className={styles.sprintInfoCard}>
+          <summary style={{ cursor: 'pointer' }}>Resolved ({resolvedDefects.length})</summary>
+          <div style={{ display: 'grid', gap: 'var(--spacing-sm)', marginTop: 'var(--spacing-sm)' }}>
+            {resolvedDefects.slice(0, 20).map((defectIssue) => (
+              <div className={styles.issueMetaText} key={defectIssue.key}>
+                {defectIssue.key} — {defectIssue.fields.summary}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   );
 }
@@ -913,6 +2011,7 @@ interface SettingsTabProps {
   projectKey: string;
   isLoadingSprint: boolean;
   loadError: string | null;
+  boardType: DashboardBoardType;
   boardId: number | null;
   availableBoards: ReturnType<typeof useSprintData>['state']['availableBoards'];
   boardSearchQuery: string;
@@ -924,14 +2023,20 @@ interface SettingsTabProps {
   onConfigChange: (partial: Partial<DashboardConfig>) => void;
 }
 
+interface DetectedWorkflowIssueType {
+  issueTypeName: string;
+  statuses: Array<{ name: string; categoryKey: 'new' | 'indeterminate' | 'done' }>;
+}
+
 /**
- * Renders the Settings tab: project key, board picker, and all eight advanced config fields.
+ * Renders the Settings tab: project key, board picker, and persisted dashboard config fields.
  * All changes persist to localStorage immediately so they survive page reloads.
  */
 function SettingsTab({
   projectKey,
   isLoadingSprint,
   loadError,
+  boardType,
   boardId,
   availableBoards,
   boardSearchQuery,
@@ -942,12 +2047,70 @@ function SettingsTab({
   onSelectBoard,
   onConfigChange,
 }: SettingsTabProps) {
+  const settingsCopy = getBoardSettingsCopy(boardType);
+  const [detectedWorkflowIssueTypes, setDetectedWorkflowIssueTypes] = useState<DetectedWorkflowIssueType[]>([]);
+  const [isDetectingWorkflowStatuses, setIsDetectingWorkflowStatuses] = useState(false);
+  const [workflowDetectError, setWorkflowDetectError] = useState<string | null>(null);
+
+  async function handleDetectWorkflowStatuses() {
+    const normalizedProjectKey = projectKey.trim().toUpperCase();
+    if (!normalizedProjectKey) {
+      setWorkflowDetectError('Enter a project key before detecting workflow statuses.');
+      setDetectedWorkflowIssueTypes([]);
+      return;
+    }
+
+    setIsDetectingWorkflowStatuses(true);
+    setWorkflowDetectError(null);
+
+    try {
+      const projectStatuses = await jiraGet<
+        Array<{ name?: string; statuses?: Array<{ name?: string; statusCategory?: { key?: string; id?: number } }> }>
+      >(`/rest/api/2/project/${encodeURIComponent(normalizedProjectKey)}/statuses`);
+
+      setDetectedWorkflowIssueTypes(
+        projectStatuses.map<DetectedWorkflowIssueType>((issueTypeStatuses) => ({
+          issueTypeName: issueTypeStatuses.name ?? 'Issue Type',
+          statuses: (issueTypeStatuses.statuses ?? [])
+            .map((status) => {
+              const categoryKey = status.statusCategory?.key;
+              const categoryId = status.statusCategory?.id;
+              const normalizedCategoryKey: 'new' | 'indeterminate' | 'done' =
+                categoryKey === 'done' || categoryId === 4
+                ? 'done'
+                : categoryKey === 'indeterminate' || categoryKey === 'in_progress' || categoryId === 3
+                  ? 'indeterminate'
+                  : 'new';
+              return {
+                name: status.name ?? 'Unknown',
+                categoryKey: normalizedCategoryKey,
+              };
+            })
+            .filter((status) => status.name !== 'Unknown'),
+        })),
+      );
+    } catch (caughtError) {
+      setWorkflowDetectError(caughtError instanceof Error ? caughtError.message : 'Failed to detect workflow statuses.');
+      setDetectedWorkflowIssueTypes([]);
+    } finally {
+      setIsDetectingWorkflowStatuses(false);
+    }
+  }
+
+  function handleApplyDetectedWorkflowStatus(
+    statusName: string,
+    targetField: 'cycleTimeStartField' | 'cycleTimeDoneField',
+  ) {
+    const nextValue = config[targetField] === statusName ? '' : statusName;
+    onConfigChange({ [targetField]: nextValue });
+  }
+
   return (
     <div className={styles.settingsPanel}>
       <div>
-        <h2 className={styles.settingsSectionTitle}>Sprint Settings</h2>
+        <h2 className={styles.settingsSectionTitle}>{BOARD_SETTINGS_TITLE}</h2>
         <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
-          Enter your Jira project key to load the active sprint.
+          {settingsCopy.description}
         </p>
       </div>
       <div>
@@ -968,11 +2131,11 @@ function SettingsTab({
       </div>
       <button
         className={styles.loadButton}
-        disabled={isLoadingSprint || !projectKey}
+        disabled={isLoadingSprint || (!projectKey && boardId === null)}
         onClick={onLoadSprint}
         type="button"
       >
-        {isLoadingSprint ? 'Loading…' : 'Load Sprint'}
+        {isLoadingSprint ? 'Loading…' : settingsCopy.loadButtonLabel}
       </button>
       {loadError && <p className={styles.errorMessage}>{loadError}</p>}
 
@@ -994,13 +2157,60 @@ function SettingsTab({
       </div>
 
       <AdvancedConfigFields config={config} onConfigChange={onConfigChange} />
+
+      <div className={styles.settingsDivider} />
+
+      <div className={styles.workflowDetectSection}>
+        <div className={styles.workflowDetectHeader}>
+          <h2 className={styles.settingsSectionTitle}>Workflow Status Detection</h2>
+          <button
+            className={styles.secondaryButton}
+            onClick={() => void handleDetectWorkflowStatuses()}
+            type="button"
+          >
+            {isDetectingWorkflowStatuses ? 'Detecting…' : 'Detect'}
+          </button>
+        </div>
+        <p className={styles.issueMetaText}>
+          Statuses are grouped by issue type, reflecting each type&apos;s Jira workflow. Click a status to fill the corresponding cycle-time field. Leave a field blank to auto-detect using Jira status categories.
+        </p>
+        {workflowDetectError && <p className={styles.errorMessage}>{workflowDetectError}</p>}
+        {detectedWorkflowIssueTypes.map((issueTypeStatuses) => (
+          <div className={styles.workflowIssueTypeCard} key={issueTypeStatuses.issueTypeName}>
+            <h3 className={styles.blockersSectionTitle}>{issueTypeStatuses.issueTypeName}</h3>
+            <div className={styles.workflowStatusChipRow}>
+              {issueTypeStatuses.statuses.map((status) => {
+                const isDoneStatus = status.categoryKey === 'done';
+                const targetField = isDoneStatus ? 'cycleTimeDoneField' : 'cycleTimeStartField';
+                const isSelected = config[targetField] === status.name;
+                const prefix = status.categoryKey === 'done'
+                  ? '🟢'
+                  : status.categoryKey === 'indeterminate'
+                    ? '🔵'
+                    : '⬜';
+
+                return (
+                  <button
+                    className={isSelected ? styles.workflowStatusChipActive : styles.workflowStatusChip}
+                    key={`${issueTypeStatuses.issueTypeName}-${status.name}`}
+                    onClick={() => handleApplyDetectedWorkflowStatus(status.name, targetField)}
+                    type="button"
+                  >
+                    {prefix} {status.name} → {isDoneStatus ? 'set as Done status' : 'set as Start'}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
 /**
- * Renders the eight advanced config fields as labelled inputs.
- * Extracted into its own component so SettingsTab stays under 40 lines.
+ * Renders the advanced config fields as labelled inputs.
+ * Extracted into its own component so the main Settings tab stays focused on layout and flow.
  */
 function AdvancedConfigFields({
   config,
@@ -1025,7 +2235,7 @@ function AdvancedConfigFields({
       />
       <ConfigNumberField
         id="sd-cfg-sprint-window"
-        label="Sprint window (past sprints for velocity)"
+        label={SCRUM_VELOCITY_WINDOW_LABEL}
         onChange={(value) => onConfigChange({ sprintWindow: value })}
         value={config.sprintWindow}
       />
@@ -1042,8 +2252,14 @@ function AdvancedConfigFields({
         value={config.cycleTimeDoneField}
       />
       <ConfigNumberField
+        id="sd-cfg-ct-baseline"
+        label="Cycle-time baseline (days)"
+        onChange={(value) => onConfigChange({ cycleTimeBaselineDays: value })}
+        value={config.cycleTimeBaselineDays}
+      />
+      <ConfigNumberField
         id="sd-cfg-kanban-period"
-        label="Kanban period (days)"
+        label={KANBAN_THROUGHPUT_WINDOW_LABEL}
         onChange={(value) => onConfigChange({ kanbanPeriodDays: value })}
         value={config.kanbanPeriodDays}
       />
@@ -1131,202 +2347,2327 @@ function ConfigNumberField({
 // ── Phase 3 tab components ──
 
 /**
- * Renders the Metrics tab showing sprint completion percentage, issue status counts,
- * and per-assignee velocity (issues done/in-progress/to-do and story points).
+ * Renders the Metrics tab using legacy predictability, cycle-time, bottleneck,
+ * and throughput calculations against Jira history.
  */
-function MetricsTab({ issues }: { issues: JiraIssue[] }) {
-  const totalCount = issues.length;
-  const doneCount = issues.filter((issue) => issue.fields.status.statusCategory.key === 'done').length;
-  const inProgressCount = issues.filter((issue) => issue.fields.status.statusCategory.key === 'indeterminate').length;
-  const toDoCount = issues.filter((issue) => issue.fields.status.statusCategory.key === 'new').length;
-  const completionPercentage = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100);
+function MetricsTab({
+  boardId,
+  boardType,
+  config,
+  projectKey,
+  customStoryPointsFieldId,
+  scopeMode,
+  selectedSprintId,
+  selectedFixVersionName,
+  selectedPiValue,
+}: {
+  boardId: number | null;
+  boardType: DashboardBoardType;
+  config: DashboardConfig;
+  projectKey: string;
+  customStoryPointsFieldId: string;
+  scopeMode: DashboardScopeMode;
+  selectedSprintId: number | null;
+  selectedFixVersionName: string;
+  selectedPiValue: string;
+}) {
+  const [metricsState, setMetricsState] = useState<MetricsDataState>({
+    predictabilityRows: [],
+    cycleTimeSummary: null,
+    bottleneckRows: [],
+    throughputRows: [],
+    boardTypeLabel: 'No board selected',
+  });
+  const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [isLoadingMetrics, setIsLoadingMetrics] = useState(false);
 
-  const assigneeGroups = groupIssuesByAssignee(issues);
-  const assigneeMetricsRows = Array.from(assigneeGroups.entries()).map(([name, assigneeIssues]) =>
-    computeAssigneeMetrics(name, assigneeIssues),
+  useEffect(() => {
+    const normalizedProjectKey = projectKey.trim().toUpperCase();
+    if (!boardId || !normalizedProjectKey) {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadMetrics() {
+      setIsLoadingMetrics(true);
+      setMetricsError(null);
+
+      try {
+        const detectedBoardType = boardType ?? ((await jiraGet<{ type?: string }>(`/rest/agile/1.0/board/${boardId}`)).type as DashboardBoardType | undefined) ?? 'scrum';
+        const boardTypeLabel = `${detectedBoardType.charAt(0).toUpperCase()}${detectedBoardType.slice(1)} board`;
+        const workScopeClause = buildWorkScopeClause({
+          scopeMode,
+          selectedSprintId,
+          selectedFixVersionName,
+          selectedPiValue,
+        });
+
+        const nextState: MetricsDataState = {
+          predictabilityRows: [],
+          cycleTimeSummary: null,
+          bottleneckRows: [],
+          throughputRows: [],
+          boardTypeLabel,
+        };
+
+        if (detectedBoardType === 'scrum' && scopeMode === DASHBOARD_SCOPE_MODE_SPRINT) {
+          const closedSprintResponse = await jiraGet<{ values?: Array<{ id: number; name: string; startDate?: string }> }>(
+            `/rest/agile/1.0/board/${boardId}/sprint?state=closed&maxResults=${config.sprintWindow}&orderBy=startDate`,
+          );
+          const closedSprints = (closedSprintResponse.values ?? [])
+            .sort(
+              (leftSprint, rightSprint) =>
+                new Date(leftSprint.startDate ?? '').getTime()
+                - new Date(rightSprint.startDate ?? '').getTime(),
+            )
+            .slice(-config.sprintWindow);
+
+          nextState.predictabilityRows = await Promise.all(
+            closedSprints.map(async (closedSprint) => {
+              try {
+                const sprintReport = await jiraGet<{
+                  contents?: {
+                    completedIssues?: Array<Record<string, unknown> & { key?: string }>;
+                    incompletedIssues?: Array<Record<string, unknown> & { key?: string }>;
+                    puntedIssues?: Array<Record<string, unknown> & { key?: string }>;
+                    issueKeysAddedDuringSprint?: Record<string, boolean>;
+                  };
+                }>(
+                  `/rest/greenhopper/1.0/rapid/charts/sprintreport?rapidViewId=${boardId}&sprintId=${closedSprint.id}`,
+                );
+                const reportContents = sprintReport.contents;
+                if (!reportContents) {
+                  return {
+                    name: closedSprint.name,
+                    committedPoints: 0,
+                    completedPoints: 0,
+                    committedItems: 0,
+                    completedItems: 0,
+                    completionPercentage: 0,
+                  } satisfies PredictabilityRow;
+                }
+
+                const addedKeys = new Set(
+                  Object.keys(reportContents.issueKeysAddedDuringSprint ?? {}),
+                );
+                const completedIssues = reportContents.completedIssues ?? [];
+                const incompleteIssues = reportContents.incompletedIssues ?? [];
+                const puntedIssues = reportContents.puntedIssues ?? [];
+                const committedIssues = [...completedIssues, ...incompleteIssues, ...puntedIssues].filter(
+                  (issue) => !addedKeys.has(String(issue.key ?? '')),
+                );
+                const completedCommittedIssues = completedIssues.filter(
+                  (issue) => !addedKeys.has(String(issue.key ?? '')),
+                );
+
+                const readSprintReportPoints = (issue: Record<string, unknown>) => {
+                  const currentEstimate = issue.currentEstimateStatistic as
+                    | { statFieldValue?: { value?: number | string } }
+                    | undefined;
+                  const estimate = issue.estimateStatistic as
+                    | { statFieldValue?: { value?: number | string } }
+                    | undefined;
+                  return Number(
+                    currentEstimate?.statFieldValue?.value
+                    ?? estimate?.statFieldValue?.value
+                    ?? 0,
+                  );
+                };
+
+                const committedPoints = committedIssues.reduce(
+                  (sum, issue) => sum + readSprintReportPoints(issue),
+                  0,
+                );
+                const completedPoints = completedCommittedIssues.reduce(
+                  (sum, issue) => sum + readSprintReportPoints(issue),
+                  0,
+                );
+                const completionPercentage = committedPoints > 0
+                  ? Math.round((completedPoints / committedPoints) * 100)
+                  : committedIssues.length > 0
+                    ? Math.round((completedCommittedIssues.length / committedIssues.length) * 100)
+                    : 0;
+
+                return {
+                  name: closedSprint.name,
+                  committedPoints,
+                  completedPoints,
+                  committedItems: committedIssues.length,
+                  completedItems: completedCommittedIssues.length,
+                  completionPercentage,
+                } satisfies PredictabilityRow;
+              } catch {
+                return {
+                  name: closedSprint.name,
+                  committedPoints: 0,
+                  completedPoints: 0,
+                  committedItems: 0,
+                  completedItems: 0,
+                  completionPercentage: 0,
+                } satisfies PredictabilityRow;
+              }
+            }),
+          );
+        }
+
+        const [cycleTimeIssuesResult, projectStatuses] = await Promise.all([
+          fetchAllCycleTimeIssues(normalizedProjectKey, customStoryPointsFieldId, workScopeClause),
+          jiraGet<Array<{ statuses?: Array<{ name?: string; statusCategory?: { key?: string; id?: number } }> }>>(
+            `/rest/api/2/project/${encodeURIComponent(normalizedProjectKey)}/statuses`,
+          ).catch(() => []),
+        ]);
+
+        const statusCategoryMap = buildCycleTimeStatusCategoryMap(projectStatuses);
+        const exactStartStatuses = config.cycleTimeStartField
+          .split(',')
+          .map((value) => value.trim().toLowerCase())
+          .filter(Boolean);
+        const exactDoneStatuses = config.cycleTimeDoneField
+          .split(',')
+          .map((value) => value.trim().toLowerCase())
+          .filter(Boolean);
+        const usedExactStatusMatch = exactStartStatuses.length > 0 || exactDoneStatuses.length > 0;
+        const bottleneckMap = new Map<
+          string,
+          { totalDays: number; count: number; categoryKey: string; displayName: string }
+        >();
+        const cycleTimeRows: Array<{ days: number }> = [];
+        let excludedCount = 0;
+
+        for (const issue of cycleTimeIssuesResult.issues) {
+          const issueWithHistory = issue as JiraIssue & {
+            changelog?: {
+              histories?: Array<{
+                created: string;
+                items?: Array<{ field?: string; fromString?: string; toString?: string }>;
+              }>;
+            };
+          };
+          const histories = [...(issueWithHistory.changelog?.histories ?? [])].sort(
+            (leftHistory, rightHistory) =>
+              new Date(leftHistory.created).getTime() - new Date(rightHistory.created).getTime(),
+          );
+          const createdDate = new Date(issue.fields.created);
+          const currentStatusLower = issue.fields.status.name.toLowerCase();
+          let startTime: Date | null = null;
+          let endTime: Date | null = null;
+          let firstFromStatus: string | null = null;
+          let previousStatusName: string | null = null;
+          let previousStatusTime: Date | null = null;
+          let isFirstHistoryItem = true;
+          const timelineEntries: Array<{ statusName: string; enteredAt: Date; exitedAt: Date }> = [];
+
+          for (const history of histories) {
+            const transitionTime = new Date(history.created);
+            for (const item of history.items ?? []) {
+              if (item.field !== 'status') {
+                continue;
+              }
+
+              const toStatusName = (item.toString ?? '').toLowerCase();
+              const fromStatusName = (item.fromString ?? '').toLowerCase();
+
+              if (isFirstHistoryItem) {
+                firstFromStatus = fromStatusName;
+                previousStatusName = fromStatusName;
+                previousStatusTime = createdDate;
+                isFirstHistoryItem = false;
+              }
+
+              if (previousStatusName !== null && previousStatusTime !== null) {
+                timelineEntries.push({
+                  statusName: previousStatusName,
+                  enteredAt: previousStatusTime,
+                  exitedAt: transitionTime,
+                });
+              }
+
+              previousStatusName = toStatusName;
+              previousStatusTime = transitionTime;
+
+              const isStartTransition = !startTime && (
+                (exactStartStatuses.length > 0 && exactStartStatuses.includes(toStatusName))
+                || (exactStartStatuses.length === 0
+                  && mapStatusCategory(toStatusName, statusCategoryMap) === 'indeterminate')
+              );
+              if (isStartTransition) {
+                startTime = transitionTime;
+              }
+
+              const isDoneTransition = (exactDoneStatuses.length > 0 && exactDoneStatuses.includes(toStatusName))
+                || (exactDoneStatuses.length === 0 && (
+                  mapStatusCategory(toStatusName, statusCategoryMap) === 'done'
+                  || toStatusName === currentStatusLower
+                ));
+              if (isDoneTransition) {
+                endTime = transitionTime;
+              }
+            }
+          }
+
+          if (!startTime && firstFromStatus) {
+            const firstFromWasWork = exactStartStatuses.length === 0
+              ? mapStatusCategory(firstFromStatus, statusCategoryMap) === 'indeterminate'
+              : exactStartStatuses.includes(firstFromStatus);
+            if (firstFromWasWork) {
+              startTime = createdDate;
+            }
+          }
+
+          if (!startTime) {
+            if (endTime) {
+              excludedCount++;
+            }
+            continue;
+          }
+
+          if (!endTime || endTime <= startTime) {
+            continue;
+          }
+
+          const cycleDays = (endTime.getTime() - startTime.getTime()) / MS_PER_DAY;
+          cycleTimeRows.push({ days: cycleDays });
+
+          for (const timelineEntry of timelineEntries) {
+            const clampedEntryTime = Math.max(timelineEntry.enteredAt.getTime(), startTime.getTime());
+            const clampedExitTime = Math.min(timelineEntry.exitedAt.getTime(), endTime.getTime());
+            if (clampedExitTime <= clampedEntryTime) {
+              continue;
+            }
+
+            const dwellDays = (clampedExitTime - clampedEntryTime) / MS_PER_DAY;
+            const categoryKey = mapStatusCategory(timelineEntry.statusName, statusCategoryMap) || 'indeterminate';
+            const existingEntry = bottleneckMap.get(timelineEntry.statusName) ?? {
+              totalDays: 0,
+              count: 0,
+              categoryKey,
+              displayName: timelineEntry.statusName,
+            };
+            existingEntry.totalDays += dwellDays;
+            existingEntry.count += 1;
+            existingEntry.categoryKey = categoryKey;
+            bottleneckMap.set(timelineEntry.statusName, existingEntry);
+          }
+        }
+
+        const sortedCycleTimes = cycleTimeRows
+          .map((entry) => entry.days)
+          .sort((leftDays, rightDays) => leftDays - rightDays);
+        const averageDays = sortedCycleTimes.length === 0
+          ? 0
+          : sortedCycleTimes.reduce((sum, value) => sum + value, 0) / sortedCycleTimes.length;
+        const improvementPercentage = config.cycleTimeBaselineDays > 0
+          ? Math.round((1 - averageDays / config.cycleTimeBaselineDays) * 100)
+          : null;
+
+        nextState.cycleTimeSummary = sortedCycleTimes.length === 0
+          ? null
+          : {
+              averageDays,
+              medianDays: calculateMedian(sortedCycleTimes),
+              percentile85Days: calculatePercentile(sortedCycleTimes, 0.85),
+              measuredIssueCount: sortedCycleTimes.length,
+              totalFetchedCount: cycleTimeIssuesResult.total,
+              excludedCount,
+              wasCapped: cycleTimeIssuesResult.wasCapped,
+              improvementPercentage,
+              startLabel: usedExactStatusMatch && config.cycleTimeStartField
+                ? `"${config.cycleTimeStartField}"`
+                : 'statusCategory = In Progress',
+              doneLabel: usedExactStatusMatch && config.cycleTimeDoneField
+                ? `"${config.cycleTimeDoneField}"`
+                : 'statusCategory = Done',
+              usedExactStatusMatch,
+              workflowFetchSucceeded: projectStatuses.length > 0,
+            };
+
+        const categorySortOrder: Record<string, number> = { new: 0, indeterminate: 1, done: 2 };
+        nextState.bottleneckRows = Array.from(bottleneckMap.values())
+          .map((entry) => ({
+            statusName: entry.displayName,
+            categoryKey: entry.categoryKey,
+            averageDays: entry.count > 0 ? entry.totalDays / entry.count : 0,
+            issueCount: entry.count,
+          }))
+          .sort((leftEntry, rightEntry) => {
+            const categoryDifference =
+              (categorySortOrder[leftEntry.categoryKey] ?? 0)
+              - (categorySortOrder[rightEntry.categoryKey] ?? 0);
+            return categoryDifference !== 0
+              ? categoryDifference
+              : rightEntry.averageDays - leftEntry.averageDays;
+          });
+
+        if (detectedBoardType === 'scrum' && scopeMode === DASHBOARD_SCOPE_MODE_SPRINT) {
+          const closedSprintResponse = await jiraGet<{ values?: Array<{ id: number; name: string; startDate?: string }> }>(
+            `/rest/agile/1.0/board/${boardId}/sprint?state=closed&maxResults=${config.sprintWindow}`,
+          );
+          const closedSprints = (closedSprintResponse.values ?? [])
+            .sort(
+              (leftSprint, rightSprint) =>
+                new Date(leftSprint.startDate ?? '').getTime()
+                - new Date(rightSprint.startDate ?? '').getTime(),
+            )
+            .slice(-config.sprintWindow);
+
+          nextState.throughputRows = await Promise.all(
+            closedSprints.map(async (closedSprint) => {
+              try {
+                const sprintIssuesResponse = await jiraGet<{ issues?: JiraIssue[] }>(
+                  `/rest/agile/1.0/sprint/${closedSprint.id}/issue?maxResults=200&fields=status,customfield_10016,customfield_10028,${customStoryPointsFieldId}`,
+                );
+                const completedIssues = (sprintIssuesResponse.issues ?? []).filter((issue) => {
+                  const normalizedStatusName = issue.fields.status.name.toLowerCase();
+                  return ['done', 'accepted', 'closed', 'resolved', 'complete'].includes(normalizedStatusName);
+                });
+                return {
+                  name: closedSprint.name.replace(/^Sprint /i, 'S'),
+                  itemCount: completedIssues.length,
+                  storyPoints: completedIssues.reduce(
+                    (sum, issue) => sum + readStoryPoints(issue, customStoryPointsFieldId),
+                    0,
+                  ),
+                } satisfies ThroughputRow;
+              } catch {
+                return {
+                  name: closedSprint.name,
+                  itemCount: 0,
+                  storyPoints: 0,
+                } satisfies ThroughputRow;
+              }
+            }),
+          );
+        } else {
+          const weeksToAnalyze = Math.max(1, Math.round(config.kanbanPeriodDays / 7));
+          const throughputJqlClauses = [
+            `project = "${escapeJqlValue(normalizedProjectKey)}"`,
+            `status CHANGED TO "Done" DURING (-${weeksToAnalyze}w, now())`,
+          ];
+          if (workScopeClause) {
+            throughputJqlClauses.push(workScopeClause);
+          }
+          const throughputJql = encodeURIComponent(
+            `${throughputJqlClauses.join(' AND ')} ORDER BY updated DESC`,
+          );
+          const throughputSearchResponse = await jiraGet<{ issues?: JiraIssue[] }>(
+            `/rest/api/2/search?jql=${throughputJql}&maxResults=500&fields=resolutiondate,updated,customfield_10016,customfield_10028,${customStoryPointsFieldId}`,
+          );
+          const throughputBuckets = new Map<string, { itemCount: number; storyPoints: number }>();
+          const now = Date.now();
+
+          for (const issue of throughputSearchResponse.issues ?? []) {
+            const resolvedAt = issue.fields.resolutiondate ?? issue.fields.updated;
+            const weekOffset = Math.floor((now - new Date(resolvedAt).getTime()) / (7 * MS_PER_DAY));
+            const label = `W-${weekOffset}`;
+            const bucket = throughputBuckets.get(label) ?? { itemCount: 0, storyPoints: 0 };
+            bucket.itemCount += 1;
+            bucket.storyPoints += readStoryPoints(issue, customStoryPointsFieldId);
+            throughputBuckets.set(label, bucket);
+          }
+
+          nextState.throughputRows = Array.from(throughputBuckets.entries())
+            .sort(([leftLabel], [rightLabel]) => leftLabel.localeCompare(rightLabel))
+            .slice(-weeksToAnalyze)
+            .map(([label, bucket]) => ({
+              name: label,
+              itemCount: bucket.itemCount,
+              storyPoints: bucket.storyPoints,
+            }));
+        }
+
+        if (isMounted) {
+          setMetricsState(nextState);
+        }
+      } catch (caughtError) {
+        if (isMounted) {
+          setMetricsError(caughtError instanceof Error ? caughtError.message : 'Failed to load metrics.');
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingMetrics(false);
+        }
+      }
+    }
+
+    void loadMetrics();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [boardId, boardType, config, customStoryPointsFieldId, projectKey, scopeMode, selectedSprintId, selectedFixVersionName, selectedPiValue]);
+
+  const predictabilityAverage = metricsState.predictabilityRows.length === 0
+    ? 0
+    : Math.round(
+        metricsState.predictabilityRows.reduce(
+          (sum, row) => sum + row.completionPercentage,
+          0,
+        ) / metricsState.predictabilityRows.length,
+      );
+  const throughputAverage = metricsState.throughputRows.length === 0
+    ? 0
+    : (
+        metricsState.throughputRows.reduce((sum, row) => sum + row.itemCount, 0)
+        / metricsState.throughputRows.length
+      );
+  const maxThroughput = Math.max(...metricsState.throughputRows.map((row) => row.itemCount), 1);
+  const maxPredictabilityPoints = Math.max(
+    ...metricsState.predictabilityRows.map((row) => row.committedPoints || row.committedItems || 1),
+    1,
   );
 
   return (
     <div>
       <h2 className={styles.blockersSectionTitle}>Sprint Metrics</h2>
-      <div className={styles.flowStatsBar}>
-        {([
-          { label: 'Total', value: totalCount },
-          { label: 'Done', value: doneCount },
-          { label: 'In Progress', value: inProgressCount },
-          { label: 'To Do', value: toDoCount },
-          { label: 'Completion', value: `${completionPercentage}%` },
-        ] as const).map((chip) => (
-          <div className={styles.flowStatChip} key={chip.label}>
-            <span className={styles.flowStatCount}>{chip.value}</span>
-            <span className={styles.flowStatLabel}>{chip.label}</span>
+      <p className={styles.issueMetaText}>{metricsState.boardTypeLabel}</p>
+      {isLoadingMetrics && <p className={styles.issueMetaText}>Loading metrics…</p>}
+      {metricsError && <p className={styles.errorMessage}>{metricsError}</p>}
+
+      {!isLoadingMetrics && !metricsError && (
+        <>
+          <div className={styles.sprintInfoCard}>
+            <div className={styles.blockersSectionHeader}>
+              <h3 className={styles.blockersSectionTitle}>Predictability</h3>
+              {metricsState.predictabilityRows.length > 0 && (
+                <span className={styles.issueMetaText}>
+                  <strong>{predictabilityAverage}% avg</strong> · 80% target
+                </span>
+              )}
+            </div>
+            {boardType === 'kanban' ? (
+              <p className={styles.issueMetaText}>
+                Predictability scoring requires sprint commitment data and is not applicable for Kanban boards.
+              </p>
+            ) : metricsState.predictabilityRows.length === 0 ? (
+              <p className={styles.issueMetaText}>No closed sprints found.</p>
+            ) : (
+              <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'flex-end', overflowX: 'auto' }}>
+                {metricsState.predictabilityRows.map((row) => {
+                  const barHeight = Math.max(
+                    8,
+                    Math.round(
+                      ((row.committedPoints || row.committedItems || 0) / maxPredictabilityPoints) * 80,
+                    ),
+                  );
+                  const fillHeight = row.committedPoints > 0
+                    ? Math.round((row.completedPoints / row.committedPoints) * barHeight)
+                    : row.committedItems > 0
+                      ? Math.round((row.completedItems / row.committedItems) * barHeight)
+                      : 0;
+                  return (
+                    <div
+                      key={row.name}
+                      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 72 }}
+                    >
+                      <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700 }}>
+                        {row.completionPercentage}%
+                      </div>
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-end', height: 84, width: '100%' }}>
+                        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 64, borderTop: '1px dashed var(--color-success)' }} />
+                        <div
+                          style={{
+                            position: 'relative',
+                            flex: 1,
+                            height: barHeight,
+                            background: 'var(--color-surface-2)',
+                            borderRadius: '4px 4px 0 0',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <div
+                            style={{
+                              position: 'absolute',
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              height: `${Math.min(fillHeight, barHeight)}px`,
+                              background: row.completionPercentage >= 80
+                                ? 'var(--color-success)'
+                                : row.completionPercentage >= 70
+                                  ? 'var(--color-warning)'
+                                  : 'var(--color-danger)',
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div className={styles.issueMetaText}>{row.name.replace(/^Sprint /i, 'S')}</div>
+                      <div className={styles.issueMetaText}>
+                        {row.completedItems}/{row.committedItems} items
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        ))}
-      </div>
-      <h3 className={styles.blockersSectionTitle}>Per-Assignee Breakdown</h3>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' }}>
-        <thead>
-          <tr>
-            <th style={{ textAlign: 'left', padding: '4px 8px' }}>Assignee</th>
-            <th style={{ textAlign: 'center', padding: '4px 8px' }}>Done</th>
-            <th style={{ textAlign: 'center', padding: '4px 8px' }}>In Progress</th>
-            <th style={{ textAlign: 'center', padding: '4px 8px' }}>To Do</th>
-            <th style={{ textAlign: 'center', padding: '4px 8px' }}>Story Points</th>
-          </tr>
-        </thead>
-        <tbody>
-          {assigneeMetricsRows.map((row) => (
-            <tr key={row.assigneeName}>
-              <td style={{ padding: '4px 8px' }}>{row.assigneeName}</td>
-              <td style={{ textAlign: 'center', padding: '4px 8px' }}>{row.doneCount}</td>
-              <td style={{ textAlign: 'center', padding: '4px 8px' }}>{row.inProgressCount}</td>
-              <td style={{ textAlign: 'center', padding: '4px 8px' }}>{row.toDoCount}</td>
-              <td style={{ textAlign: 'center', padding: '4px 8px' }}>{row.totalStoryPoints ?? '—'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
-/**
- * Renders the Pipeline tab as a kanban-style column-per-status layout.
- * Status lanes with more than BOTTLENECK_THRESHOLD issues are highlighted as bottlenecks.
- */
-function PipelineTab({ issues }: { issues: JiraIssue[] }) {
-  const statusGroups = groupIssuesByStatus(issues);
-  const sortedStatusEntries = Array.from(statusGroups.entries()).sort(([a], [b]) => a.localeCompare(b));
+          <div className={styles.sprintInfoCard}>
+            <div className={styles.blockersSectionHeader}>
+              <h3 className={styles.blockersSectionTitle}>Cycle Time</h3>
+            </div>
+            {metricsState.cycleTimeSummary ? (
+              <>
+                <div className={styles.flowStatsBar}>
+                  <StatChip label="Average" value={`${metricsState.cycleTimeSummary.averageDays.toFixed(1)} days`} />
+                  <StatChip label="Median (p50)" value={`${metricsState.cycleTimeSummary.medianDays.toFixed(1)} days`} />
+                  <StatChip label="p85" value={`${metricsState.cycleTimeSummary.percentile85Days.toFixed(1)} days`} />
+                  <StatChip
+                    label="Issues measured"
+                    value={`${metricsState.cycleTimeSummary.measuredIssueCount}/${metricsState.cycleTimeSummary.totalFetchedCount}`}
+                  />
+                </div>
+                <p className={styles.issueMetaText}>
+                  Based on last 90 days · Start: {metricsState.cycleTimeSummary.startLabel} · End: {metricsState.cycleTimeSummary.doneLabel}
+                </p>
+                {metricsState.cycleTimeSummary.improvementPercentage !== null ? (
+                  <p className={styles.issueMetaText}>
+                    Baseline: <strong>{config.cycleTimeBaselineDays} days</strong> ·{' '}
+                    <strong>
+                      {metricsState.cycleTimeSummary.improvementPercentage >= 0 ? '↓' : '↑'}
+                      {Math.abs(metricsState.cycleTimeSummary.improvementPercentage)}%
+                    </strong>{' '}
+                    vs baseline
+                  </p>
+                ) : (
+                  <p className={styles.issueMetaText}>
+                    Set a cycle-time baseline in Settings to track the legacy 20% reduction goal.
+                  </p>
+                )}
+                {metricsState.cycleTimeSummary.excludedCount > 0 && (
+                  <p className={styles.issueMetaText}>
+                    {metricsState.cycleTimeSummary.excludedCount} completed issue(s) were excluded because they never entered an in-progress status.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className={styles.issueMetaText}>No completed issues matched the cycle-time window.</p>
+            )}
+          </div>
 
-  return (
-    <div>
-      <h2 className={styles.blockersSectionTitle}>Kanban Pipeline</h2>
-      <div style={{ display: 'flex', gap: 'var(--spacing-md)', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        {sortedStatusEntries.map(([statusName, statusIssues]) => {
-          const isBottleneck = statusIssues.length > BOTTLENECK_THRESHOLD;
+          <div className={styles.sprintInfoCard}>
+            <div className={styles.blockersSectionHeader}>
+              <h3 className={styles.blockersSectionTitle}>Bottleneck Analysis</h3>
+            </div>
+            {metricsState.bottleneckRows.length === 0 ? (
+              <p className={styles.issueMetaText}>Bottleneck data will appear once cycle-time issues are loaded.</p>
+            ) : (
+              metricsState.bottleneckRows.map((row, rowIndex) => {
+                const maxAverageDays = Math.max(
+                  ...metricsState.bottleneckRows.map((bottleneckRow) => bottleneckRow.averageDays),
+                  1,
+                );
+                const isPrimaryBottleneck = rowIndex === 0 || (
+                  row.categoryKey === 'indeterminate'
+                  && metricsState.bottleneckRows
+                    .filter((bottleneckRow) => bottleneckRow.categoryKey === 'indeterminate')[0]?.statusName === row.statusName
+                );
+                return (
+                  <div
+                    key={row.statusName}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--spacing-sm)',
+                      padding: '4px 6px',
+                      marginBottom: 2,
+                      borderRadius: 4,
+                      background: isPrimaryBottleneck ? 'color-mix(in srgb, var(--color-danger) 10%, transparent)' : undefined,
+                    }}
+                  >
+                    <div style={{ width: 180, minWidth: 180, fontSize: 'var(--font-size-sm)' }}>
+                      {row.statusName}
+                    </div>
+                    <div style={{ position: 'relative', flex: 1, height: 16, background: 'var(--color-surface-2)', borderRadius: 4 }}>
+                      <div
+                        style={{
+                          width: `${Math.round((row.averageDays / maxAverageDays) * 100)}%`,
+                          height: '100%',
+                          borderRadius: 4,
+                          background: isPrimaryBottleneck ? 'var(--color-danger)' : 'var(--color-accent)',
+                        }}
+                      />
+                    </div>
+                    <div style={{ width: 90, minWidth: 90, fontSize: 'var(--font-size-sm)', textAlign: 'right' }}>
+                      {row.averageDays.toFixed(1)} days
+                    </div>
+                    <div className={styles.issueMetaText}>{row.issueCount} issues</div>
+                  </div>
+                );
+              })
+            )}
+          </div>
 
-          return (
-            <div
-              className={styles.boardColumn}
-              key={statusName}
-              style={{ border: isBottleneck ? '2px solid var(--color-danger, #e53e3e)' : undefined }}
-            >
-              <h3 className={styles.boardColumnTitle}>
-                {statusName}
-                {isBottleneck && ' ⚠️'}
-              </h3>
-              <span className={styles.countBadge}>{statusIssues.length}</span>
-              <div style={{ maxHeight: '200px', overflowY: 'auto', marginTop: 'var(--spacing-xs)' }}>
-                {statusIssues.map((issue) => (
-                  <div key={issue.key} style={{ marginBottom: '4px' }}>
-                    <a className={styles.issueKeyLink} href={`#${issue.key}`}>{issue.key}</a>
-                    <span style={{ fontSize: 'var(--font-size-xs)', marginLeft: '6px' }}>
-                      {issue.fields.summary}
-                    </span>
+          <div className={styles.sprintInfoCard}>
+            <div className={styles.blockersSectionHeader}>
+              <h3 className={styles.blockersSectionTitle}>Throughput Trend</h3>
+              <span className={styles.issueMetaText}>
+                <strong>{throughputAverage.toFixed(1)} items/{boardType === 'kanban' ? 'week' : 'sprint'} avg</strong>
+              </span>
+            </div>
+            {metricsState.throughputRows.length === 0 ? (
+              <p className={styles.issueMetaText}>No throughput history found.</p>
+            ) : (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', overflowX: 'auto', height: 118 }}>
+                {metricsState.throughputRows.map((row) => (
+                  <div
+                    key={row.name}
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 52 }}
+                  >
+                    <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700 }}>{row.itemCount}</div>
+                    <div
+                      style={{
+                        width: '100%',
+                        height: `${Math.max(4, Math.round((row.itemCount / maxThroughput) * 80))}px`,
+                        background: 'var(--color-accent)',
+                        borderRadius: '4px 4px 0 0',
+                      }}
+                    />
+                    <div className={styles.issueMetaText}>{row.name}</div>
                   </div>
                 ))}
               </div>
-            </div>
-          );
-        })}
-      </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-/**
- * Renders the Planning tab showing unestimated issues, backlog size,
- * and a story-point size distribution bar across the sprint.
- */
-function PlanningTab({ issues }: { issues: JiraIssue[] }) {
-  const unestimatedIssues = issues.filter((issue) => issue.fields.customfield_10016 == null);
-  const backlogCount = issues.filter((issue) => issue.fields.status.statusCategory.key === 'new').length;
-  const sizeDistribution = calculateSizeDistribution(issues);
+function PointingTab({
+  boardType,
+  config,
+  issues,
+}: {
+  boardType: DashboardBoardType;
+  config: DashboardConfig;
+  issues: JiraIssue[];
+}) {
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState<PointingSortId>('default');
+  const [showPointed, setShowPointed] = useState(false);
+  const [pipelineRoleFilter, setPipelineRoleFilter] = useState<PipelineRole | ''>('');
+  const [pointingQueue, setPointingQueue] = useState<JiraIssue[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [sessionCounts, setSessionCounts] = useState({ pointed: 0, skipped: 0 });
+  const [detailByIssueKey, setDetailByIssueKey] = useState<Record<string, PointingIssueDetail>>({});
+  const [saveStatusMessage, setSaveStatusMessage] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const allIssueTypes = useMemo(
+    () => Array.from(new Set(issues.map((issue) => readIssueTypeName(issue)))).sort(),
+    [issues],
+  );
+  const allStatuses = useMemo(
+    () => Array.from(new Set(issues.map((issue) => readIssueStatusName(issue)))).sort(),
+    [issues],
+  );
+  const storyPointScale = parsePointingScale(config.storyPointScale);
+  const queueSeedSignature = `${boardType}:${issues.map((issue) => issue.key).join('|')}`;
+
+  useEffect(() => {
+    setSelectedStatuses(allStatuses.filter((statusName) => !DEFAULT_POINTING_DONE_STATUSES.includes(statusName as (typeof DEFAULT_POINTING_DONE_STATUSES)[number])));
+  }, [allStatuses, queueSeedSignature]);
+
+  useEffect(() => {
+    setPointingQueue(
+      buildPointingQueue(issues, {
+        selectedTypes,
+        selectedStatuses,
+        sortBy,
+        showPointed,
+        pipelineRoleFilter,
+        customStoryPointsFieldId: config.customStoryPointsFieldId,
+      }),
+    );
+    setCurrentIndex(0);
+    setSessionCounts({ pointed: 0, skipped: 0 });
+  }, [
+    config.customStoryPointsFieldId,
+    issues,
+    pipelineRoleFilter,
+    selectedStatuses,
+    selectedTypes,
+    showPointed,
+    sortBy,
+  ]);
+
+  const currentIssue = currentIndex < pointingQueue.length ? pointingQueue[currentIndex] : null;
+
+  useEffect(() => {
+    if (!currentIssue || detailByIssueKey[currentIssue.key]) {
+      return;
+    }
+
+    const issueKey = currentIssue.key;
+    let isMounted = true;
+    async function loadPointingDetail() {
+      try {
+        const response = await jiraGet<JiraIssue>(`/rest/api/2/issue/${issueKey}?fields=${POINTING_DETAIL_FIELDS}`);
+        if (!isMounted) {
+          return;
+        }
+        setDetailByIssueKey((previousDetails) => ({
+          ...previousDetails,
+          [issueKey]: {
+            description: normalizeCommentBody(response.fields.description),
+            acceptanceCriteria: normalizeCommentBody(response.fields.customfield_10200),
+            comments: response.fields.comment?.comments ?? [],
+            parentKey: response.fields.parent?.key ?? null,
+            parentSummary: null,
+          },
+        }));
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+        setDetailByIssueKey((previousDetails) => ({
+          ...previousDetails,
+          [issueKey]: {
+            description: '',
+            acceptanceCriteria: '',
+            comments: [],
+            parentKey: null,
+            parentSummary: null,
+          },
+        }));
+      }
+    }
+
+    void loadPointingDetail();
+    return () => {
+      isMounted = false;
+    };
+  }, [currentIssue, detailByIssueKey]);
+
+  const roleCounts = useMemo(() => {
+    const counts: Record<string, number> = { '': 0 };
+    for (const role of PIPELINE_ROLES) {
+      counts[role] = 0;
+    }
+    const unfilteredQueue = buildPointingQueue(issues, {
+      selectedTypes,
+      selectedStatuses,
+      sortBy,
+      showPointed,
+      pipelineRoleFilter: '',
+      customStoryPointsFieldId: config.customStoryPointsFieldId,
+    });
+    counts[''] = unfilteredQueue.length;
+    for (const issue of unfilteredQueue) {
+      const role = detectPipelineRole(issue.fields.summary);
+      counts[role] += 1;
+    }
+    return counts;
+  }, [config.customStoryPointsFieldId, issues, selectedStatuses, selectedTypes, showPointed, sortBy]);
+
+  async function handleVote(pointValue: number) {
+    if (!currentIssue) {
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveStatusMessage('Saving…');
+
+    try {
+      const storyPointsFieldId = config.customStoryPointsFieldId || 'customfield_10016';
+      await jiraPut(`/rest/api/2/issue/${currentIssue.key}`, {
+        fields: { [storyPointsFieldId]: pointValue },
+      });
+      setPointingQueue((previousQueue) => {
+        const nextQueue = previousQueue.map((queuedIssue) => (
+          queuedIssue.key === currentIssue.key
+            ? {
+                ...queuedIssue,
+                fields: {
+                  ...queuedIssue.fields,
+                  [storyPointsFieldId]: pointValue,
+                },
+              }
+            : queuedIssue
+        ));
+        return showPointed
+          ? nextQueue
+          : nextQueue.filter((queuedIssue) => queuedIssue.key !== currentIssue.key);
+      });
+      setSessionCounts((previousCounts) => ({ ...previousCounts, pointed: previousCounts.pointed + 1 }));
+      if (showPointed) {
+        setCurrentIndex((previousIndex) => Math.min(previousIndex + 1, pointingQueue.length));
+      }
+      setSaveStatusMessage(`Saved ${currentIssue.key} at ${pointValue} points.`);
+    } catch (caughtError) {
+      setSaveStatusMessage(caughtError instanceof Error ? caughtError.message : `Failed to save ${currentIssue.key}.`);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function handleSkip() {
+    if (!currentIssue) {
+      return;
+    }
+
+    setPointingQueue((previousQueue) => {
+      if (currentIndex >= previousQueue.length) {
+        return previousQueue;
+      }
+      const nextQueue = [...previousQueue];
+      const [skippedIssue] = nextQueue.splice(currentIndex, 1);
+      nextQueue.push(skippedIssue);
+      return nextQueue;
+    });
+    setSessionCounts((previousCounts) => ({ ...previousCounts, skipped: previousCounts.skipped + 1 }));
+  }
+
+  function toggleTypeFilter(issueTypeName: string) {
+    setSelectedTypes((previousTypes) => (
+      previousTypes.includes(issueTypeName)
+        ? previousTypes.filter((previousType) => previousType !== issueTypeName)
+        : [...previousTypes, issueTypeName]
+    ));
+  }
+
+  function toggleStatusFilter(statusName: string) {
+    setSelectedStatuses((previousStatuses) => (
+      previousStatuses.includes(statusName)
+        ? previousStatuses.filter((previousStatus) => previousStatus !== statusName)
+        : [...previousStatuses, statusName]
+    ));
+  }
+
+  if (issues.length === 0) {
+    return <DashboardEmptyState message="Load a board first from Settings to start pointing." />;
+  }
+  const currentDetail = currentIssue ? detailByIssueKey[currentIssue.key] : null;
+  const suggestedPoints = currentIssue ? findPointingSuggestion(currentIssue, issues, config.customStoryPointsFieldId) : null;
+  const latestComment = currentDetail && currentDetail.comments.length > 0
+    ? currentDetail.comments[currentDetail.comments.length - 1]
+    : null;
+  const queueProgressLabel = pointingQueue.length === 0
+    ? '0/0'
+    : `${Math.min(currentIndex + 1, pointingQueue.length)}/${pointingQueue.length}`;
 
   return (
-    <div>
-      <h2 className={styles.blockersSectionTitle}>Sprint Planning</h2>
-      <div className={styles.flowStatsBar}>
-        {([
-          { label: 'Backlog', value: backlogCount },
-          { label: 'Unestimated', value: unestimatedIssues.length },
-          { label: '0–1 pts', value: sizeDistribution.smallCount },
-          { label: '2–3 pts', value: sizeDistribution.mediumCount },
-          { label: '5–8 pts', value: sizeDistribution.largeCount },
-          { label: '13+ pts', value: sizeDistribution.extraLargeCount },
-        ] as const).map((chip) => (
-          <div className={styles.flowStatChip} key={chip.label}>
-            <span className={styles.flowStatCount}>{chip.value}</span>
-            <span className={styles.flowStatLabel}>{chip.label}</span>
-          </div>
-        ))}
-      </div>
-      <div className={styles.blockersSection}>
-        <div className={styles.blockersSectionHeader}>
-          <h3 className={styles.blockersSectionTitle}>Unestimated Issues</h3>
-          <span className={styles.countBadge}>{unestimatedIssues.length}</span>
+    <DashboardTabShell
+      title="Story Pointing"
+      description="Keep estimation moving: focus the queue, point the current issue, and only expand extra context when you need it."
+      stats={(
+        <div className={styles.flowStatsBar}>
+          <StatChip label="Queue" value={queueProgressLabel} />
+          <StatChip label="Pointed" value={sessionCounts.pointed} />
+          <StatChip label="Skipped" value={sessionCounts.skipped} />
+          <StatChip label="Filtered" value={pointingQueue.length} />
         </div>
-        {unestimatedIssues.length === 0 ? (
-          <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
-            All issues are estimated. 🎉
-          </p>
-        ) : (
-          unestimatedIssues.map((issue) => (
-            <div className={styles.blockerCard} key={issue.key}>
-              <a className={styles.issueKeyLink} href={`#${issue.key}`}>{issue.key}</a>
-              <span className={styles.issueSummaryText}>{issue.fields.summary}</span>
-              <span className={styles.issueMetaText}>
-                {issue.fields.assignee?.displayName ?? 'Unassigned'}
-              </span>
+      )}
+      filters={(
+        <>
+          <span className={styles.issueMetaText}>Role</span>
+          <button
+            className={pipelineRoleFilter === '' ? styles.secondaryButton : styles.workflowStatusChip}
+            onClick={() => setPipelineRoleFilter('')}
+            type="button"
+          >
+            All ({roleCounts[''] ?? 0})
+          </button>
+          {PIPELINE_ROLES.filter((role) => role !== 'TDR').map((role) => (
+            (roleCounts[role] ?? 0) > 0 && (
+              <button
+                className={pipelineRoleFilter === role ? styles.secondaryButton : styles.workflowStatusChip}
+                key={role}
+                onClick={() => setPipelineRoleFilter(role)}
+                type="button"
+              >
+                {role} ({roleCounts[role] ?? 0})
+              </button>
+            )
+          ))}
+          <details className={styles.dashboardFiltersDetail}>
+            <summary className={styles.dashboardFiltersSummary}>Advanced queue filters</summary>
+            <div className={styles.dashboardFiltersGrid}>
+              <div>
+                <div className={styles.issueMetaText}>Issue Types</div>
+                <div className={styles.dashboardCheckboxGroup}>
+                  {allIssueTypes.map((issueTypeName) => (
+                    <label className={styles.dashboardCheckboxLabel} key={issueTypeName}>
+                      <input
+                        checked={selectedTypes.includes(issueTypeName)}
+                        onChange={() => toggleTypeFilter(issueTypeName)}
+                        type="checkbox"
+                      />
+                      {issueTypeName}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className={styles.issueMetaText}>Statuses</div>
+                <div className={styles.dashboardCheckboxGroup}>
+                  {allStatuses.map((statusName) => (
+                    <label className={styles.dashboardCheckboxLabel} key={statusName}>
+                      <input
+                        checked={selectedStatuses.includes(statusName)}
+                        onChange={() => toggleStatusFilter(statusName)}
+                        type="checkbox"
+                      />
+                      {statusName}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className={styles.dashboardFiltersInlineRow}>
+                <label className={styles.dashboardInlineField}>
+                  <span>Sort by</span>
+                  <select
+                    className={styles.settingsInput}
+                    onChange={(changeEvent) => setSortBy(changeEvent.target.value as PointingSortId)}
+                    value={sortBy}
+                  >
+                    {POINTING_SORT_OPTIONS.map((sortOption) => (
+                      <option key={sortOption.id} value={sortOption.id}>{sortOption.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className={styles.dashboardCheckboxLabel}>
+                  <input checked={showPointed} onChange={() => setShowPointed((previousValue) => !previousValue)} type="checkbox" />
+                  Show already pointed
+                </label>
+              </div>
             </div>
+          </details>
+        </>
+      )}
+    >
+      {boardType === 'kanban' && (
+        <div className={styles.dashboardStatusBanner}>
+          <span className={styles.releaseSummaryWatch}>📋 Kanban board detected</span>
+          <span className={styles.releaseSummaryMuted}>Use role and status filters to keep the queue lean.</span>
+        </div>
+      )}
+      {saveStatusMessage && <p className={styles.issueMetaText}>{saveStatusMessage}</p>}
+      {!currentIssue && <DashboardEmptyState message="No issues match the current pointing filters." />}
+      {currentIssue && (
+        <div className={styles.pointingShell}>
+          <article className={styles.pointingFocusCard}>
+            <div className={styles.pointingHeaderRow}>
+              <div>
+                <div className={styles.pointingMetaRow}>
+                  <span className={styles.statusBadge}>{currentIssue.key}</span>
+                  <span className={styles.statusBadge}>{readIssueStatusName(currentIssue)}</span>
+                  <span className={styles.statusBadge}>{readIssuePriorityName(currentIssue)}</span>
+                </div>
+                <h3 className={styles.pointingIssueTitle}>{currentIssue.fields.summary}</h3>
+                <div className={styles.issueMetaText}>👤 {readAssigneeName(currentIssue)}</div>
+              </div>
+              <label className={styles.pointingJumpField}>
+                <span>Jump to issue</span>
+                <select
+                  className={`${styles.settingsInput} ${styles.pointingJumpSelect}`}
+                  onChange={(changeEvent) => setCurrentIndex(Number(changeEvent.target.value))}
+                  value={currentIndex}
+                >
+                  {pointingQueue.map((queueIssue, queueIndex) => (
+                    <option key={queueIssue.key} value={queueIndex}>
+                      {queueIndex + 1}. {queueIssue.key} — {queueIssue.fields.summary}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {suggestedPoints && (
+              <div className={styles.pointingHintBanner}>
+                💡 DEV story <strong>{suggestedPoints.key}</strong> is already pointed at <strong>{suggestedPoints.points}</strong>.
+              </div>
+            )}
+
+            <div className={styles.pointingVoteGrid}>
+              {storyPointScale.map((pointValue) => (
+                <button
+                  className={styles.loadButton}
+                  disabled={isSaving}
+                  key={pointValue}
+                  onClick={() => void handleVote(pointValue)}
+                  style={suggestedPoints?.points === pointValue ? { boxShadow: '0 0 0 2px var(--color-warning)' } : undefined}
+                  type="button"
+                >
+                  {pointValue}
+                </button>
+              ))}
+            </div>
+
+            <div className={styles.pointingActionRow}>
+              <button
+                className={styles.secondaryButton}
+                disabled={currentIndex === 0}
+                onClick={() => setCurrentIndex((previousIndex) => Math.max(0, previousIndex - 1))}
+                type="button"
+              >
+                ← Back
+              </button>
+              <button className={styles.secondaryButton} onClick={handleSkip} type="button">
+                ? Skip
+              </button>
+            </div>
+
+            <details className={styles.pointingContextCard}>
+              <summary className={styles.pointingContextSummary}>Issue context</summary>
+              {currentDetail == null ? (
+                <p className={styles.issueMetaText}>Loading details…</p>
+              ) : (
+                <div className={styles.pointingContextGrid}>
+                  {currentDetail.parentKey && (
+                    <div className={styles.pointingContextBlock}>
+                      <strong>Parent</strong>
+                      <div className={styles.pointingContextBody}>{currentDetail.parentKey}</div>
+                    </div>
+                  )}
+                  <div className={styles.pointingContextBlock}>
+                    <strong>Description</strong>
+                    <div className={styles.pointingContextBody}>
+                      {currentDetail.description || 'No Jira description was returned for this issue.'}
+                    </div>
+                  </div>
+                  <div className={styles.pointingContextBlock}>
+                    <strong>Acceptance Criteria</strong>
+                    <div className={styles.pointingContextBody}>
+                      {currentDetail.acceptanceCriteria || 'No acceptance criteria were returned for this issue.'}
+                    </div>
+                  </div>
+                  <div className={styles.pointingContextBlock}>
+                    <strong>Latest Comment</strong>
+                    <div className={styles.pointingContextBody}>
+                      {latestComment ? normalizeCommentBody(latestComment.body) : 'No Jira comments were returned for this issue.'}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </details>
+          </article>
+        </div>
+      )}
+    </DashboardTabShell>
+  );
+}
+
+function PipelineTab({
+  projectKey,
+  scopeMode,
+  selectedSprintId,
+  selectedFixVersionName,
+  selectedPiValue,
+}: {
+  projectKey: string;
+  scopeMode: DashboardScopeMode;
+  selectedSprintId: number | null;
+  selectedFixVersionName: string;
+  selectedPiValue: string;
+}) {
+  const [pipelineRows, setPipelineRows] = useState<PipelineRow[]>([]);
+  const [isLoadingPipeline, setIsLoadingPipeline] = useState(false);
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
+  const [filterMode, setFilterMode] = useState<PipelineFilterMode>('all');
+  const [expandedRelKey, setExpandedRelKey] = useState<string | null>(null);
+  const [isSavingDecision, setIsSavingDecision] = useState<string | null>(null);
+
+  useEffect(() => {
+    const normalizedProjectKey = projectKey.trim().toUpperCase();
+    if (!normalizedProjectKey) {
+      return;
+    }
+
+    let isMounted = true;
+    async function loadPipeline() {
+      setIsLoadingPipeline(true);
+      setPipelineError(null);
+
+      try {
+        const scopeState = {
+          scopeMode,
+          selectedSprintId,
+          selectedFixVersionName,
+          selectedPiValue,
+        };
+        const [relResponse, companionResponse, devResponse] = await Promise.all([
+          jiraGet<{ issues?: JiraIssue[] }>(buildSearchPath(
+            buildScopedProjectJql(
+              normalizedProjectKey,
+              scopeState,
+              ['summary ~ "REL – "', 'statusCategory != Done'],
+              'updated DESC',
+            ),
+            PIPELINE_REL_FIELDS,
+            100,
+          )),
+          jiraGet<{ issues?: JiraIssue[] }>(buildSearchPath(
+            buildScopedProjectJql(
+              normalizedProjectKey,
+              scopeState,
+              ['(summary ~ "SL – " OR summary ~ "QE – " OR summary ~ "BT – " OR summary ~ "BC – " OR summary ~ "TDR – ")'],
+              'updated DESC',
+            ),
+            PIPELINE_COMPANION_FIELDS,
+            200,
+          )),
+          jiraGet<{ issues?: JiraIssue[] }>(buildSearchPath(
+            buildScopedProjectJql(
+              normalizedProjectKey,
+              scopeState,
+              [
+                'statusCategory = Done',
+                'summary !~ "REL – "',
+                'summary !~ "SL – "',
+                'summary !~ "QE – "',
+                'summary !~ "BT – "',
+                'summary !~ "BC – "',
+                'summary !~ "TDR – "',
+              ],
+              'updated DESC',
+            ),
+            PIPELINE_DEV_FIELDS,
+            200,
+          )),
+        ]);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setPipelineRows(correlatePipelineRows(
+          relResponse.issues ?? [],
+          companionResponse.issues ?? [],
+          devResponse.issues ?? [],
+        ));
+      } catch (caughtError) {
+        if (!isMounted) {
+          return;
+        }
+        setPipelineRows([]);
+        setPipelineError(caughtError instanceof Error ? caughtError.message : 'Failed to load pipeline.');
+      } finally {
+        if (isMounted) {
+          setIsLoadingPipeline(false);
+        }
+      }
+    }
+
+    void loadPipeline();
+    return () => {
+      isMounted = false;
+    };
+  }, [projectKey, scopeMode, selectedSprintId, selectedFixVersionName, selectedPiValue]);
+
+  async function loadChecklist(relKey: string) {
+    async function fetchChecklistState(): Promise<PipelineChecklistResult> {
+      try {
+        const dcResponse = await jiraGet<any>(`/rest/railsware/1.0/checklist/${relKey}`);
+        const checklistContainers = Array.isArray(dcResponse)
+          ? dcResponse
+          : Array.isArray(dcResponse?.checklists)
+            ? dcResponse.checklists
+            : [dcResponse];
+        const allItems: PipelineChecklistItem[] = [];
+        for (const checklistContainer of checklistContainers) {
+          for (const checklistItem of checklistContainer?.items ?? checklistContainer?.checklistItems ?? []) {
+            let checkedAt: Date | null = null;
+            if (checklistItem?.status?.statusState === 'CHECKED') {
+              for (const historyEntry of checklistItem.history ?? []) {
+                if (historyEntry?.to?.statusState === 'CHECKED' && historyEntry.date) {
+                  const candidateDate = new Date(historyEntry.date);
+                  if (!checkedAt || candidateDate > checkedAt) {
+                    checkedAt = candidateDate;
+                  }
+                }
+              }
+            }
+            allItems.push({
+              label: checklistItem.label ?? checklistItem.name ?? '',
+              isChecked: checklistItem?.status?.statusState === 'CHECKED',
+              checkedAt,
+            });
+          }
+        }
+        return normalizePipelineChecklistItems(allItems, 'dc');
+      } catch (dcError) {
+        const isNotFound = dcError instanceof Error && dcError.message.includes('404');
+        if (!isNotFound) {
+          return buildEmptyPipelineChecklist('error');
+        }
+
+        try {
+          const cloudResponse = await jiraGet<{ value?: string }>(
+            `/rest/api/2/issue/${relKey}/properties/com.railsware.SmartChecklist.checklist`,
+          );
+          const allItems = (cloudResponse.value ?? '')
+            .split('\n')
+            .map((checklistLine) => checklistLine.trim())
+            .filter(Boolean)
+            .map((checklistLine) => ({
+              label: checklistLine.replace(/^[+\-x~]\s*/, ''),
+              isChecked: checklistLine.startsWith('+'),
+              checkedAt: null,
+            }));
+          return normalizePipelineChecklistItems(allItems, 'cloud-property');
+        } catch {
+          return buildEmptyPipelineChecklist('unavailable');
+        }
+      }
+    }
+
+    const checklistResult = await fetchChecklistState();
+    setPipelineRows((previousRows) => previousRows.map((pipelineRow) => {
+      if (pipelineRow.relKey !== relKey) {
+        return pipelineRow;
+      }
+      const nextRow = {
+        ...pipelineRow,
+        checklist: checklistResult,
+        intWindow: derivePipelineIntWindow(pipelineRow.relComments, checklistResult),
+      };
+      nextRow.alerts = derivePipelineAlerts(nextRow);
+      return nextRow;
+    }));
+  }
+
+  async function postIntDecision(relKey: string, decision: 'clean' | 'extended') {
+    setIsSavingDecision(relKey);
+    try {
+      await jiraPost(`/rest/api/2/issue/${relKey}/comment`, {
+        body: decision === 'clean'
+          ? 'INT window Day 4 clean — deploy on Day 4/5.'
+          : 'INT window Day 4 — Fixes in flight, extend to Day 7.',
+      });
+      setPipelineRows((previousRows) => previousRows.map((pipelineRow) => {
+        if (pipelineRow.relKey !== relKey) {
+          return pipelineRow;
+        }
+        const nextRow = {
+          ...pipelineRow,
+          intWindow: {
+            ...pipelineRow.intWindow,
+            decision,
+          },
+        };
+        nextRow.alerts = derivePipelineAlerts(nextRow);
+        return nextRow;
+      }));
+    } finally {
+      setIsSavingDecision(null);
+    }
+  }
+
+  function toggleExpandedRow(relKey: string) {
+    const nextExpandedRelKey = expandedRelKey === relKey ? null : relKey;
+    setExpandedRelKey(nextExpandedRelKey);
+    const matchingRow = pipelineRows.find((pipelineRow) => pipelineRow.relKey === relKey);
+    if (nextExpandedRelKey && matchingRow && matchingRow.checklist == null) {
+      void loadChecklist(relKey);
+    }
+  }
+
+  const filteredRows = pipelineRows.filter((pipelineRow) => {
+    if (filterMode === 'inflight') {
+      return pipelineRow.devStatus == null || !pipelineRow.devStatus.toLowerCase().includes('done');
+    }
+    if (filterMode === 'attention') {
+      return pipelineRow.alerts.length > 0;
+    }
+    if (filterMode === 'blocked') {
+      return pipelineRow.alerts.includes('BLOCKED');
+    }
+    return true;
+  });
+
+  if (!projectKey.trim()) {
+    return <DashboardEmptyState message="Add a Project Key in Settings to load the pipeline view." />;
+  }
+
+  return (
+    <DashboardTabShell
+      title="Release Pipeline"
+      description="REL stories anchor the pipeline. Companion stories fill SL, QE, BT, BC, INT Window, and TDR."
+      stats={(
+        <div className={styles.flowStatsBar}>
+          <StatChip label="All" value={pipelineRows.length} />
+          <StatChip label="In Flight" value={pipelineRows.filter((pipelineRow) => pipelineRow.devStatus == null || !pipelineRow.devStatus.toLowerCase().includes('done')).length} />
+          <StatChip label="Attention" value={pipelineRows.filter((pipelineRow) => pipelineRow.alerts.length > 0).length} />
+          <StatChip label="Blocked" value={pipelineRows.filter((pipelineRow) => pipelineRow.alerts.includes('BLOCKED')).length} />
+        </div>
+      )}
+      filters={(
+        <>
+          <button className={filterMode === 'all' ? styles.secondaryButton : styles.workflowStatusChip} onClick={() => setFilterMode('all')} type="button">
+            All ({pipelineRows.length})
+          </button>
+          <button className={filterMode === 'inflight' ? styles.secondaryButton : styles.workflowStatusChip} onClick={() => setFilterMode('inflight')} type="button">
+            In Flight
+          </button>
+          <button className={filterMode === 'attention' ? styles.secondaryButton : styles.workflowStatusChip} onClick={() => setFilterMode('attention')} type="button">
+            Needs Attention ({pipelineRows.filter((pipelineRow) => pipelineRow.alerts.length > 0).length})
+          </button>
+          <button className={filterMode === 'blocked' ? styles.secondaryButton : styles.workflowStatusChip} onClick={() => setFilterMode('blocked')} type="button">
+            Blocked ({pipelineRows.filter((pipelineRow) => pipelineRow.alerts.includes('BLOCKED')).length})
+          </button>
+        </>
+      )}
+    >
+      {isLoadingPipeline && <p className={styles.issueMetaText}>Loading pipeline…</p>}
+      {pipelineError && <p className={styles.errorMessage}>{pipelineError}</p>}
+      {!isLoadingPipeline && !pipelineError && filteredRows.length === 0 && (
+        <DashboardEmptyState message="No active REL stories found in the open sprint." />
+      )}
+      {filteredRows.length > 0 && (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--color-border)' }}>
+                <th style={{ padding: '8px 10px', textAlign: 'left' }}>REL Story</th>
+                <th style={{ padding: '8px 10px', textAlign: 'center' }}>Dev</th>
+                <th style={{ padding: '8px 10px', textAlign: 'center' }}>SL</th>
+                <th style={{ padding: '8px 10px', textAlign: 'center' }}>QE</th>
+                <th style={{ padding: '8px 10px', textAlign: 'center' }}>BT</th>
+                <th style={{ padding: '8px 10px', textAlign: 'center' }}>BC</th>
+                <th style={{ padding: '8px 10px', textAlign: 'center' }}>INT Window</th>
+                <th style={{ padding: '8px 10px', textAlign: 'center' }}>TDR</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.flatMap((pipelineRow) => {
+                const isExpanded = expandedRelKey === pipelineRow.relKey;
+                return [
+                  (
+                    <tr
+                      key={pipelineRow.relKey}
+                      onClick={() => toggleExpandedRow(pipelineRow.relKey)}
+                      style={{ borderBottom: '1px solid var(--color-border)', cursor: 'pointer' }}
+                    >
+                      <td style={{ padding: '8px 10px' }}>
+                        {pipelineRow.alerts.length > 0 && (
+                          <div className={styles.issueMetaText}>{pipelineRow.alerts.join(' · ')}</div>
+                        )}
+                        <a className={styles.issueKeyLink} href={`#${pipelineRow.relKey}`}>{pipelineRow.relKey}</a>{' '}
+                        <span>{pipelineRow.relSummary.replace(/^REL\s*[–-]\s*[A-Z]+-\d+\s*[–-]\s*/, '')}</span>
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>{pipelineRow.devStatus ?? '—'}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>{pipelineRow.companions.sl?.status ?? '—'}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>{pipelineRow.companions.qe?.status ?? '—'}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>{pipelineRow.companions.bt?.status ?? '—'}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>{pipelineRow.companions.bc?.status ?? '—'}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                        {pipelineRow.intWindow.daysSinceDeploy == null
+                          ? '—'
+                          : `Day ${pipelineRow.intWindow.daysSinceDeploy}`}
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>{pipelineRow.companions.tdr ? '⚠' : '—'}</td>
+                    </tr>
+                  ),
+                  isExpanded ? (
+                      <tr key={`${pipelineRow.relKey}-details`}>
+                        <td colSpan={8} style={{ padding: '12px 16px', background: 'var(--color-surface-1)' }}>
+                          <div style={{ display: 'grid', gap: 'var(--spacing-sm)' }}>
+                            <div className={styles.issueMetaText}>
+                              Dev: {pipelineRow.devKey ?? '—'} · REL Assignee: {pipelineRow.relAssignee ?? 'Unassigned'} · Story Points: {pipelineRow.storyPoints ?? '—'}
+                            </div>
+                            {pipelineRow.checklist == null ? (
+                              <p className={styles.issueMetaText}>Loading checklist state…</p>
+                            ) : (
+                              <div className={styles.issueMetaText}>
+                                Checklist source: {pipelineRow.checklist.source} · INT deployed: {pipelineRow.checklist.isIntDeployChecked ? 'Yes' : 'No'}
+                              </div>
+                            )}
+                            <div style={{ display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>
+                              <button
+                                className={styles.secondaryButton}
+                                disabled={isSavingDecision === pipelineRow.relKey}
+                                onClick={() => void postIntDecision(pipelineRow.relKey, 'clean')}
+                                type="button"
+                              >
+                                Mark Day 4 Clean
+                              </button>
+                              <button
+                                className={styles.secondaryButton}
+                                disabled={isSavingDecision === pipelineRow.relKey}
+                                onClick={() => void postIntDecision(pipelineRow.relKey, 'extended')}
+                                type="button"
+                              >
+                                Extend to Day 7
+                              </button>
+                            </div>
+                            {pipelineRow.checklist?.allItems.length ? (
+                              <div style={{ display: 'grid', gap: 4 }}>
+                                {pipelineRow.checklist.allItems.map((checklistItem) => (
+                                  <div className={styles.issueMetaText} key={`${pipelineRow.relKey}-${checklistItem.label}`}>
+                                    {checklistItem.isChecked ? '✓' : '○'} {checklistItem.label}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null,
+                ];
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </DashboardTabShell>
+  );
+}
+
+function PlanningTab({
+  customStoryPointsFieldId,
+  projectKey,
+  scopeMode,
+  selectedSprintId,
+  selectedFixVersionName,
+  selectedPiValue,
+}: {
+  customStoryPointsFieldId: string;
+  projectKey: string;
+  scopeMode: DashboardScopeMode;
+  selectedSprintId: number | null;
+  selectedFixVersionName: string;
+  selectedPiValue: string;
+}) {
+  const [planningIssues, setPlanningIssues] = useState<JiraIssue[]>([]);
+  const [planningVersions, setPlanningVersions] = useState<JiraVersion[]>([]);
+  const [epicSummaryByKey, setEpicSummaryByKey] = useState<Record<string, string>>({});
+  const [groupBy, setGroupBy] = useState<PlanningGroupBy>('release');
+  const [selectedReleaseName, setSelectedReleaseName] = useState('');
+  const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
+  const [planningDetailByIssueKey, setPlanningDetailByIssueKey] = useState<Record<string, PlanningIssueDetail>>({});
+  const [transitionOptionsByIssueKey, setTransitionOptionsByIssueKey] = useState<Record<string, JiraTransition[]>>({});
+  const [transitionSelectionByIssueKey, setTransitionSelectionByIssueKey] = useState<Record<string, string>>({});
+  const [storyPointDraftByIssueKey, setStoryPointDraftByIssueKey] = useState<Record<string, string>>({});
+  const [releaseDraftByIssueKey, setReleaseDraftByIssueKey] = useState<Record<string, string>>({});
+  const [subStatusDraftByIssueKey, setSubStatusDraftByIssueKey] = useState<Record<string, string>>({});
+  const [commentDraftByIssueKey, setCommentDraftByIssueKey] = useState<Record<string, string>>({});
+  const [assigneeSearchByIssueKey, setAssigneeSearchByIssueKey] = useState<Record<string, string>>({});
+  const [assigneeCandidatesByIssueKey, setAssigneeCandidatesByIssueKey] = useState<Record<string, Array<{ accountId: string; displayName: string }>>>({});
+  const [followUpIssueKeys, setFollowUpIssueKeys] = useState<string[]>([]);
+  const [planningStatusMessage, setPlanningStatusMessage] = useState<string | null>(null);
+  const [isLoadingPlanning, setIsLoadingPlanning] = useState(false);
+  const [planningError, setPlanningError] = useState<string | null>(null);
+
+  const reloadPlanningData = useCallback(async () => {
+    const normalizedProjectKey = projectKey.trim().toUpperCase();
+    if (!normalizedProjectKey) {
+      return;
+    }
+
+    setIsLoadingPlanning(true);
+    setPlanningError(null);
+
+    try {
+      const backlogJql = buildScopedProjectJql(
+        normalizedProjectKey,
+        { scopeMode, selectedSprintId, selectedFixVersionName, selectedPiValue },
+        [],
+        'priority ASC, created DESC',
+      );
+      const [backlogResponse, versionResponse] = await Promise.all([
+        jiraGet<{ issues?: JiraIssue[] }>(buildSearchPath(
+          backlogJql,
+          'summary,status,priority,issuetype,assignee,created,updated,customfield_10016,customfield_10028,customfield_10014,customfield_10008,fixVersions,parent,labels,comment,customfield_10201',
+          PLANNING_MAX_RESULTS,
+        )),
+        jiraGet<JiraVersion[]>(`/rest/api/2/project/${encodeURIComponent(normalizedProjectKey)}/versions`),
+      ]);
+
+      const backlogIssues = backlogResponse.issues ?? [];
+      const referencedHierarchyKeys = Array.from(
+        new Set(
+          backlogIssues
+            .map((planningIssue) => readPlanningEpicKey(planningIssue))
+            .filter((planningEpicKey): planningEpicKey is string => Boolean(planningEpicKey)),
+        ),
+      );
+      const epicSummaryResponse = referencedHierarchyKeys.length > 0
+        ? await jiraGet<{ issues?: JiraIssue[] }>(buildSearchPath(
+            `issuekey in (${referencedHierarchyKeys.join(', ')})`,
+            'summary',
+            Math.min(PLANNING_MAX_RESULTS, referencedHierarchyKeys.length),
           ))
-        )}
-      </div>
-    </div>
+        : { issues: [] };
+
+      setPlanningIssues(backlogIssues);
+      setPlanningVersions(versionResponse.filter((planningVersion) => !planningVersion.released && !planningVersion.archived));
+      setEpicSummaryByKey(
+        Object.fromEntries((epicSummaryResponse.issues ?? []).map((epicIssue) => [epicIssue.key, epicIssue.fields.summary])),
+      );
+    } catch (caughtError) {
+      setPlanningIssues([]);
+      setPlanningVersions([]);
+      setPlanningError(caughtError instanceof Error ? caughtError.message : 'Failed to load planning backlog.');
+    } finally {
+      setIsLoadingPlanning(false);
+    }
+  }, [projectKey, scopeMode, selectedSprintId, selectedFixVersionName, selectedPiValue]);
+
+  useEffect(() => {
+    void reloadPlanningData();
+  }, [reloadPlanningData]);
+
+  async function loadPlanningDetail(issue: JiraIssue) {
+    if (planningDetailByIssueKey[issue.key]) {
+      return;
+    }
+
+    const [detailResponse, transitionsResponse, editMetaResponse] = await Promise.all([
+      jiraGet<JiraIssue>(`/rest/api/2/issue/${issue.key}?fields=${PLANNING_DETAIL_FIELDS},customfield_10200`),
+      jiraGet<{ transitions: JiraTransition[] }>(`/rest/api/2/issue/${issue.key}/transitions`),
+      jiraGet<{ fields?: Record<string, { allowedValues?: Array<{ value?: string; name?: string }> }> }>(`/rest/api/2/issue/${issue.key}/editmeta`),
+    ]);
+    setTransitionOptionsByIssueKey((previousTransitions) => ({
+      ...previousTransitions,
+      [issue.key]: transitionsResponse.transitions ?? [],
+    }));
+    setStoryPointDraftByIssueKey((previousDrafts) => ({
+      ...previousDrafts,
+      [issue.key]: String(readStoryPointsValue(issue, customStoryPointsFieldId) ?? ''),
+    }));
+    setReleaseDraftByIssueKey((previousDrafts) => ({
+      ...previousDrafts,
+      [issue.key]: issue.fields.fixVersions?.[0]?.name ?? '',
+    }));
+    setSubStatusDraftByIssueKey((previousDrafts) => ({
+      ...previousDrafts,
+      [issue.key]: detailResponse.fields.customfield_10201?.value ?? detailResponse.fields.customfield_10201?.name ?? '',
+    }));
+    setTransitionSelectionByIssueKey((previousSelections) => ({
+      ...previousSelections,
+      [issue.key]: '',
+    }));
+    setPlanningDetailByIssueKey((previousDetails) => ({
+      ...previousDetails,
+      [issue.key]: {
+        description: normalizeCommentBody(detailResponse.fields.description),
+        acceptanceCriteria: normalizeCommentBody(detailResponse.fields.customfield_10200),
+        comments: detailResponse.fields.comment?.comments ?? [],
+        parentKey: detailResponse.fields.parent?.key ?? null,
+        parentSummary: null,
+        subStatusValue: detailResponse.fields.customfield_10201?.value ?? detailResponse.fields.customfield_10201?.name ?? null,
+        subStatusOptions: editMetaResponse.fields?.customfield_10201?.allowedValues?.map((allowedValue) => allowedValue.value ?? allowedValue.name ?? '').filter(Boolean) ?? [],
+      },
+    }));
+  }
+
+  const filteredPlanningIssues = selectedReleaseName
+    ? planningIssues.filter((planningIssue) => planningIssue.fields.fixVersions?.some((fixVersion) => fixVersion.name === selectedReleaseName))
+    : planningIssues;
+
+  const planningGroups = useMemo(() => {
+    const groupedIssues = new Map<string, JiraIssue[]>();
+    for (const planningIssue of filteredPlanningIssues) {
+      let groupLabel = 'Unscheduled';
+      if (groupBy === 'release') {
+        groupLabel = planningIssue.fields.fixVersions?.[0]?.name ?? 'Unscheduled';
+      }
+      if (groupBy === 'assignee') {
+        groupLabel = readAssigneeName(planningIssue);
+      }
+      if (groupBy === 'epic') {
+        const epicKey = readPlanningEpicKey(planningIssue);
+        groupLabel = epicKey ? `${epicKey} — ${epicSummaryByKey[epicKey] ?? 'Epic'}` : 'No Epic';
+      }
+      groupedIssues.set(groupLabel, [...(groupedIssues.get(groupLabel) ?? []), planningIssue]);
+    }
+    return Array.from(groupedIssues.entries()).sort(([leftLabel], [rightLabel]) => leftLabel.localeCompare(rightLabel));
+  }, [epicSummaryByKey, filteredPlanningIssues, groupBy]);
+
+  async function handlePlanningAction(action: () => Promise<void>, successMessage: string) {
+    try {
+      await action();
+      setPlanningStatusMessage(successMessage);
+      await reloadPlanningData();
+    } catch (caughtError) {
+      setPlanningStatusMessage(caughtError instanceof Error ? caughtError.message : 'Planning update failed.');
+    }
+  }
+
+  async function handleSearchAssignees(issueKey: string) {
+    const assigneeQuery = assigneeSearchByIssueKey[issueKey]?.trim();
+    if (!assigneeQuery) {
+      return;
+    }
+    const searchResults = await jiraGet<Array<{ accountId: string; displayName: string }>>(
+      `/rest/api/2/user/search?query=${encodeURIComponent(assigneeQuery)}&maxResults=8`,
+    );
+    setAssigneeCandidatesByIssueKey((previousCandidates) => ({
+      ...previousCandidates,
+      [issueKey]: searchResults,
+    }));
+  }
+
+  async function copyFollowUpReport() {
+    const followUpIssues = planningIssues.filter((planningIssue) => followUpIssueKeys.includes(planningIssue.key));
+    const reportText = followUpIssues.length === 0
+      ? 'No planning follow-ups flagged.'
+      : followUpIssues.map((planningIssue) => `- ${planningIssue.key}: ${planningIssue.fields.summary}`).join('\n');
+    await navigator.clipboard.writeText(reportText);
+    setPlanningStatusMessage('Follow-up report copied to clipboard.');
+  }
+
+  if (!projectKey.trim()) {
+    return <DashboardEmptyState message="Add a Project Key in Settings to load planning data." />;
+  }
+
+  return (
+    <DashboardTabShell
+      title="Backlog Planning"
+      description="Shape the backlog around release, hierarchy, and ownership without leaving the dashboard."
+      actions={(
+        <button className={styles.secondaryButton} onClick={() => void copyFollowUpReport()} type="button">
+          Copy Follow-up Report
+        </button>
+      )}
+      stats={(
+        <div className={styles.flowStatsBar}>
+          <StatChip label="Issues" value={planningIssues.length} />
+          <StatChip label="Unestimated" value={planningIssues.filter((planningIssue) => readStoryPointsValue(planningIssue, customStoryPointsFieldId) == null).length} />
+          <StatChip label="Unassigned" value={planningIssues.filter((planningIssue) => !planningIssue.fields.assignee).length} />
+          <StatChip label="No Epic" value={planningIssues.filter((planningIssue) => readPlanningEpicKey(planningIssue) == null).length} />
+          <StatChip label="No Release" value={planningIssues.filter((planningIssue) => (planningIssue.fields.fixVersions?.length ?? 0) === 0).length} />
+        </div>
+      )}
+      filters={(
+        <>
+          {PLANNING_GROUP_OPTIONS.map((groupOption) => (
+            <button
+              className={groupBy === groupOption ? styles.secondaryButton : styles.workflowStatusChip}
+              key={groupOption}
+              onClick={() => setGroupBy(groupOption)}
+              type="button"
+            >
+              Group by {groupOption}
+            </button>
+          ))}
+          <label className={styles.dashboardInlineField}>
+            <span>Release</span>
+            <select
+              className={styles.settingsInput}
+              onChange={(changeEvent) => setSelectedReleaseName(changeEvent.target.value)}
+              value={selectedReleaseName}
+            >
+              <option value="">All Releases</option>
+              {planningVersions.map((planningVersion) => (
+                <option key={planningVersion.id} value={planningVersion.name}>{planningVersion.name}</option>
+              ))}
+            </select>
+          </label>
+        </>
+      )}
+    >
+      {planningStatusMessage && <p className={styles.issueMetaText}>{planningStatusMessage}</p>}
+      {isLoadingPlanning && <p className={styles.issueMetaText}>Loading planning backlog…</p>}
+      {planningError && <p className={styles.errorMessage}>{planningError}</p>}
+
+      {!isLoadingPlanning && !planningError && planningGroups.length === 0 && (
+        <DashboardEmptyState message="No backlog issues matched the current release selection." />
+      )}
+
+      {planningGroups.map(([groupLabel, groupedIssues]) => (
+        <section className={styles.blockersSection} key={groupLabel}>
+          <div className={styles.blockersSectionHeader}>
+            <h3 className={styles.blockersSectionTitle}>{groupLabel}</h3>
+            <span className={styles.countBadge}>{groupedIssues.length}</span>
+          </div>
+          {groupedIssues.map((planningIssue) => {
+            const isExpanded = expandedIssueKey === planningIssue.key;
+            const planningDetail = planningDetailByIssueKey[planningIssue.key];
+            return (
+              <div className={styles.issueCardWrapper} key={planningIssue.key}>
+                <div className={styles.blockerCard}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+                    <div>
+                      <a className={styles.issueKeyLink} href={`#${planningIssue.key}`}>{planningIssue.key}</a>{' '}
+                      <span className={styles.issueSummaryText}>{planningIssue.fields.summary}</span>
+                    </div>
+                    <div className={styles.issueMetaText}>
+                      {readIssueStatusName(planningIssue)} · {readAssigneeName(planningIssue)} · {planningIssue.fields.fixVersions?.[0]?.name ?? 'No release'} · {readStoryPointsValue(planningIssue, customStoryPointsFieldId) ?? '—'} pts
+                    </div>
+                  </div>
+                  <button
+                    className={followUpIssueKeys.includes(planningIssue.key) ? styles.secondaryButton : styles.workflowStatusChip}
+                    onClick={() => setFollowUpIssueKeys((previousKeys) => previousKeys.includes(planningIssue.key)
+                      ? previousKeys.filter((previousKey) => previousKey !== planningIssue.key)
+                      : [...previousKeys, planningIssue.key])}
+                    type="button"
+                  >
+                    Follow-up
+                  </button>
+                  <button
+                    aria-expanded={isExpanded}
+                    className={styles.expandToggleButton}
+                    onClick={() => {
+                      const nextExpanded = isExpanded ? null : planningIssue.key;
+                      setExpandedIssueKey(nextExpanded);
+                      if (nextExpanded) {
+                        void loadPlanningDetail(planningIssue);
+                      }
+                    }}
+                    type="button"
+                  >
+                    {isExpanded ? EXPAND_TOGGLE_EXPANDED_ICON : EXPAND_TOGGLE_COLLAPSED_ICON}
+                  </button>
+                </div>
+                {isExpanded && (
+                  <div className={styles.sprintInfoCard}>
+                    <div style={{ display: 'grid', gap: 'var(--spacing-sm)' }}>
+                      {planningDetail?.parentKey && (
+                        <div className={styles.issueMetaText}>Parent: {planningDetail.parentKey}</div>
+                      )}
+                      {planningDetail?.description && (
+                        <div style={{ whiteSpace: 'pre-wrap' }}>{planningDetail.description}</div>
+                      )}
+                      {planningDetail?.acceptanceCriteria && (
+                        <div style={{ whiteSpace: 'pre-wrap' }}>
+                          <strong>Acceptance Criteria</strong>
+                          <div>{planningDetail.acceptanceCriteria}</div>
+                        </div>
+                      )}
+                      <div style={{ display: 'grid', gap: 'var(--spacing-sm)', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+                        <label>
+                          Story Points
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <input
+                              className={styles.settingsInput}
+                              onChange={(changeEvent) => setStoryPointDraftByIssueKey((previousDrafts) => ({
+                                ...previousDrafts,
+                                [planningIssue.key]: changeEvent.target.value,
+                              }))}
+                              value={storyPointDraftByIssueKey[planningIssue.key] ?? ''}
+                            />
+                            <button
+                              className={styles.secondaryButton}
+                              onClick={() => void handlePlanningAction(
+                                async () => jiraPut(`/rest/api/2/issue/${planningIssue.key}`, {
+                                  fields: {
+                                    [customStoryPointsFieldId || 'customfield_10016']: Number(storyPointDraftByIssueKey[planningIssue.key] || 0),
+                                  },
+                                }),
+                                `Saved points for ${planningIssue.key}.`,
+                              )}
+                              type="button"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </label>
+                        <label>
+                          Transition
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <select
+                              className={styles.settingsInput}
+                              onChange={(changeEvent) => setTransitionSelectionByIssueKey((previousSelections) => ({
+                                ...previousSelections,
+                                [planningIssue.key]: changeEvent.target.value,
+                              }))}
+                              value={transitionSelectionByIssueKey[planningIssue.key] ?? ''}
+                            >
+                              <option value="">Transition to…</option>
+                              {(transitionOptionsByIssueKey[planningIssue.key] ?? []).map((transitionOption) => (
+                                <option key={transitionOption.id} value={transitionOption.id}>{transitionOption.name}</option>
+                              ))}
+                            </select>
+                            <button
+                              className={styles.secondaryButton}
+                              onClick={() => void handlePlanningAction(
+                                async () => jiraPost(`/rest/api/2/issue/${planningIssue.key}/transitions`, {
+                                  transition: { id: transitionSelectionByIssueKey[planningIssue.key] },
+                                }),
+                                `Transitioned ${planningIssue.key}.`,
+                              )}
+                              type="button"
+                            >
+                              Apply
+                            </button>
+                          </div>
+                        </label>
+                        <label>
+                          Release
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <select
+                              className={styles.settingsInput}
+                              onChange={(changeEvent) => setReleaseDraftByIssueKey((previousDrafts) => ({
+                                ...previousDrafts,
+                                [planningIssue.key]: changeEvent.target.value,
+                              }))}
+                              value={releaseDraftByIssueKey[planningIssue.key] ?? ''}
+                            >
+                              <option value="">No Release</option>
+                              {planningVersions.map((planningVersion) => (
+                                <option key={planningVersion.id} value={planningVersion.name}>{planningVersion.name}</option>
+                              ))}
+                            </select>
+                            <button
+                              className={styles.secondaryButton}
+                              onClick={() => void handlePlanningAction(
+                                async () => jiraPut(`/rest/api/2/issue/${planningIssue.key}`, {
+                                  update: {
+                                    fixVersions: [
+                                      {
+                                        set: releaseDraftByIssueKey[planningIssue.key]
+                                          ? [{ name: releaseDraftByIssueKey[planningIssue.key] }]
+                                          : [],
+                                      },
+                                    ],
+                                  },
+                                }),
+                                `Updated release for ${planningIssue.key}.`,
+                              )}
+                              type="button"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </label>
+                        <label>
+                          Sub-status
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <select
+                              className={styles.settingsInput}
+                              onChange={(changeEvent) => setSubStatusDraftByIssueKey((previousDrafts) => ({
+                                ...previousDrafts,
+                                [planningIssue.key]: changeEvent.target.value,
+                              }))}
+                              value={subStatusDraftByIssueKey[planningIssue.key] ?? ''}
+                            >
+                              <option value="">None</option>
+                              {(planningDetail?.subStatusOptions ?? []).map((subStatusOption) => (
+                                <option key={subStatusOption} value={subStatusOption}>{subStatusOption}</option>
+                              ))}
+                            </select>
+                            <button
+                              className={styles.secondaryButton}
+                              onClick={() => void handlePlanningAction(
+                                async () => jiraPut(`/rest/api/2/issue/${planningIssue.key}`, {
+                                  fields: {
+                                    customfield_10201: subStatusDraftByIssueKey[planningIssue.key]
+                                      ? { value: subStatusDraftByIssueKey[planningIssue.key] }
+                                      : null,
+                                  },
+                                }),
+                                `Updated sub-status for ${planningIssue.key}.`,
+                              )}
+                              type="button"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </label>
+                      </div>
+
+                      <div style={{ display: 'grid', gap: 'var(--spacing-sm)', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+                        <label>
+                          Assignee search
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <input
+                              className={styles.settingsInput}
+                              onChange={(changeEvent) => setAssigneeSearchByIssueKey((previousSearches) => ({
+                                ...previousSearches,
+                                [planningIssue.key]: changeEvent.target.value,
+                              }))}
+                              value={assigneeSearchByIssueKey[planningIssue.key] ?? ''}
+                            />
+                            <button className={styles.secondaryButton} onClick={() => void handleSearchAssignees(planningIssue.key)} type="button">
+                              Search
+                            </button>
+                          </div>
+                        </label>
+                        {assigneeCandidatesByIssueKey[planningIssue.key]?.length ? (
+                          <label>
+                            Assign to
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <select
+                                className={styles.settingsInput}
+                                onChange={(changeEvent) => setAssigneeSearchByIssueKey((previousSearches) => ({
+                                  ...previousSearches,
+                                  [planningIssue.key]: changeEvent.target.value,
+                                }))}
+                                value={assigneeSearchByIssueKey[planningIssue.key] ?? ''}
+                              >
+                                {assigneeCandidatesByIssueKey[planningIssue.key].map((candidateAssignee) => (
+                                  <option key={candidateAssignee.accountId} value={candidateAssignee.accountId}>{candidateAssignee.displayName}</option>
+                                ))}
+                              </select>
+                              <button
+                                className={styles.secondaryButton}
+                                onClick={() => void handlePlanningAction(
+                                  async () => jiraPut(`/rest/api/2/issue/${planningIssue.key}`, {
+                                    fields: {
+                                      assignee: { accountId: assigneeSearchByIssueKey[planningIssue.key] },
+                                    },
+                                  }),
+                                  `Assigned ${planningIssue.key}.`,
+                                )}
+                                type="button"
+                              >
+                                Assign
+                              </button>
+                            </div>
+                          </label>
+                        ) : null}
+                      </div>
+
+                      <label>
+                        Comment
+                        <div style={{ display: 'grid', gap: 8 }}>
+                          <textarea
+                            className={styles.settingsInput}
+                            onChange={(changeEvent) => setCommentDraftByIssueKey((previousDrafts) => ({
+                              ...previousDrafts,
+                              [planningIssue.key]: changeEvent.target.value,
+                            }))}
+                            rows={3}
+                            value={commentDraftByIssueKey[planningIssue.key] ?? ''}
+                          />
+                          <button
+                            className={styles.secondaryButton}
+                            onClick={() => void handlePlanningAction(
+                              async () => jiraPost(`/rest/api/2/issue/${planningIssue.key}/comment`, {
+                                body: commentDraftByIssueKey[planningIssue.key],
+                              }),
+                              `Posted comment to ${planningIssue.key}.`,
+                            )}
+                            type="button"
+                          >
+                            Post Comment
+                          </button>
+                        </div>
+                      </label>
+
+                      {planningDetail?.comments.length ? (
+                        <details>
+                          <summary style={{ cursor: 'pointer' }}>Comments ({planningDetail.comments.length})</summary>
+                          <div style={{ display: 'grid', gap: 'var(--spacing-sm)', marginTop: 'var(--spacing-sm)' }}>
+                            {planningDetail.comments.slice(-3).reverse().map((issueComment) => (
+                              <div key={issueComment.id} style={{ borderTop: '1px solid var(--color-border)', paddingTop: 'var(--spacing-sm)' }}>
+                                <div className={styles.issueMetaText}>{issueComment.author?.displayName ?? 'Unknown'}</div>
+                                <div style={{ whiteSpace: 'pre-wrap' }}>{normalizeCommentBody(issueComment.body)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </section>
+      ))}
+    </DashboardTabShell>
   );
 }
 
 /**
- * Renders the Releases tab showing issues grouped by fix version with per-version
- * completion percentages to assess release readiness.
+ * Renders the live legacy-style Release Radar driven by project versions, release countdowns,
+ * and per-release issue classification.
  */
-function ReleasesTab({ issues }: { issues: JiraIssue[] }) {
-  const versionGroups = groupIssuesByFixVersion(issues);
+function ReleasesTab({
+  projectKey,
+  scopeMode,
+  selectedSprintId,
+  selectedFixVersionName,
+  selectedPiValue,
+}: {
+  projectKey: string;
+  scopeMode: DashboardScopeMode;
+  selectedSprintId: number | null;
+  selectedFixVersionName: string;
+  selectedPiValue: string;
+}) {
+  const [releaseEntries, setReleaseEntries] = useState<ReleaseRadarEntry[]>([]);
+  const [isLoadingReleaseRadar, setIsLoadingReleaseRadar] = useState(false);
+  const [releaseRadarError, setReleaseRadarError] = useState<string | null>(null);
+  const [expandedReleaseIds, setExpandedReleaseIds] = useState<Record<string, boolean>>({});
 
-  // Sort alphabetically so the table is predictable; "No Version" sorts naturally to the end.
-  const sortedVersionEntries = Array.from(versionGroups.entries()).sort(([a], [b]) =>
-    a.localeCompare(b),
-  );
+  useEffect(() => {
+    const normalizedProjectKey = projectKey.trim().toUpperCase();
+    if (!normalizedProjectKey) {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadReleaseRadar() {
+      setIsLoadingReleaseRadar(true);
+      setReleaseRadarError(null);
+
+      try {
+        const versions = await jiraGet<JiraVersion[]>(
+          `/rest/api/2/project/${encodeURIComponent(normalizedProjectKey)}/versions`,
+        );
+        const unreleasedVersions = versions
+          .filter((version) => !version.released && !version.archived)
+          .sort((leftVersion, rightVersion) => {
+            if (!leftVersion.releaseDate && !rightVersion.releaseDate) {
+              return 0;
+            }
+            if (!leftVersion.releaseDate) {
+              return 1;
+            }
+            if (!rightVersion.releaseDate) {
+              return -1;
+            }
+            return new Date(leftVersion.releaseDate).getTime()
+              - new Date(rightVersion.releaseDate).getTime();
+          });
+        const versionsToInspect =
+          scopeMode === DASHBOARD_SCOPE_MODE_FIX_VERSION && selectedFixVersionName
+            ? unreleasedVersions.filter((version) => version.name === selectedFixVersionName)
+            : unreleasedVersions;
+
+        const nextEntries = await Promise.all(
+          versionsToInspect.map(async (version) => {
+            const releaseJql = buildScopedProjectJql(
+              normalizedProjectKey,
+              { scopeMode, selectedSprintId, selectedFixVersionName, selectedPiValue },
+              [`fixVersion = "${escapeJqlValue(version.name)}"`],
+              'updated DESC',
+            );
+
+            try {
+              const searchResponse = await jiraGet<{ issues?: JiraIssue[] }>(
+                `/rest/api/2/search?jql=${encodeURIComponent(releaseJql)}&maxResults=${RELEASE_MAX_RESULTS}&fields=${RELEASE_FIELDS}`,
+              );
+              const versionIssues = searchResponse.issues ?? [];
+
+              let doneCount = 0;
+              let progressCount = 0;
+              let todoCount = 0;
+              for (const issue of versionIssues) {
+                const issueStatus = classifyReleaseIssueStatus(issue);
+                if (issueStatus === 'done') {
+                  doneCount++;
+                } else if (issueStatus === 'progress') {
+                  progressCount++;
+                } else {
+                  todoCount++;
+                }
+              }
+
+              const totalCount = versionIssues.length;
+              const completionPercentage = totalCount === 0
+                ? 0
+                : Math.round((doneCount / totalCount) * 100);
+              const releaseDate = version.releaseDate ?? null;
+              const daysLeft = releaseDate
+                ? Math.ceil((new Date(`${releaseDate}T12:00:00`).getTime() - Date.now()) / MS_PER_DAY)
+                : null;
+
+              return {
+                version,
+                issues: versionIssues,
+                doneCount,
+                progressCount,
+                todoCount,
+                totalCount,
+                completionPercentage,
+                releaseDate,
+                daysLeft,
+                bucket: classifyReleaseRiskBucket(daysLeft),
+              } satisfies ReleaseRadarEntry;
+            } catch {
+              return {
+                version,
+                issues: [],
+                doneCount: 0,
+                progressCount: 0,
+                todoCount: 0,
+                totalCount: 0,
+                completionPercentage: 0,
+                releaseDate: version.releaseDate ?? null,
+                daysLeft: version.releaseDate
+                  ? Math.ceil((new Date(`${version.releaseDate}T12:00:00`).getTime() - Date.now()) / MS_PER_DAY)
+                  : null,
+                bucket: classifyReleaseRiskBucket(
+                  version.releaseDate
+                    ? Math.ceil((new Date(`${version.releaseDate}T12:00:00`).getTime() - Date.now()) / MS_PER_DAY)
+                    : null,
+                ),
+              } satisfies ReleaseRadarEntry;
+            }
+          }),
+        );
+
+        if (!isMounted) {
+          return;
+        }
+
+        setReleaseEntries(nextEntries);
+        setExpandedReleaseIds((previousExpandedReleaseIds) => {
+          const nextExpandedReleaseIds: Record<string, boolean> = {};
+          for (const entry of nextEntries) {
+            nextExpandedReleaseIds[entry.version.id] = previousExpandedReleaseIds[entry.version.id] ?? false;
+          }
+          return nextExpandedReleaseIds;
+        });
+      } catch (caughtError) {
+        if (!isMounted) {
+          return;
+        }
+        setReleaseEntries([]);
+        setReleaseRadarError(caughtError instanceof Error ? caughtError.message : 'Failed to load release radar.');
+      } finally {
+        if (isMounted) {
+          setIsLoadingReleaseRadar(false);
+        }
+      }
+    }
+
+    void loadReleaseRadar();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [projectKey, scopeMode, selectedSprintId, selectedFixVersionName, selectedPiValue]);
+
+  const atRiskCount = releaseEntries.filter(
+    (entry) => entry.bucket === 'overdue' || entry.bucket === 'critical',
+  ).length;
+  const watchCount = releaseEntries.filter((entry) => entry.bucket === 'watch').length;
+  const onTrackCount = releaseEntries.filter((entry) => entry.bucket === 'ontrack').length;
+  const unscheduledCount = releaseEntries.filter((entry) => entry.bucket === 'nodate').length;
+
+  if (!projectKey.trim()) {
+    return (
+      <p style={{ color: 'var(--color-text-secondary)' }}>
+        Add a Project Key in Settings to see the Release Radar.
+      </p>
+    );
+  }
 
   return (
     <div>
-      <h2 className={styles.blockersSectionTitle}>Release Readiness</h2>
-      {sortedVersionEntries.map(([versionName, versionIssues]) => {
-        const versionDoneCount = versionIssues.filter(
-          (issue) => issue.fields.status.statusCategory.key === 'done',
-        ).length;
-        const versionCompletionPercentage = versionIssues.length === 0
-          ? 0
-          : Math.round((versionDoneCount / versionIssues.length) * 100);
-
-        return (
-          <div className={styles.defectGroup} key={versionName}>
-            <div className={styles.defectGroupHeader}>
-              <h3 className={styles.defectGroupTitle}>{versionName}</h3>
-              <span className={styles.countBadge}>
-                {versionDoneCount}/{versionIssues.length} done · {versionCompletionPercentage}%
-              </span>
-            </div>
-            {versionIssues.map((issue) => (
-              <div className={styles.defectCard} key={issue.key}>
-                <a className={styles.issueKeyLink} href={`#${issue.key}`}>{issue.key}</a>
-                <span>{issue.fields.summary}</span>
-                <span className={styles.issueMetaText}>{issue.fields.status.name}</span>
-              </div>
-            ))}
+      <h2 className={styles.blockersSectionTitle}>Release Radar</h2>
+      {isLoadingReleaseRadar && (
+        <p style={{ color: 'var(--color-text-secondary)' }}>Building Release Radar…</p>
+      )}
+      {releaseRadarError && (
+        <p className={styles.errorMessage}>{releaseRadarError}</p>
+      )}
+      {!isLoadingReleaseRadar && !releaseRadarError && releaseEntries.length === 0 && (
+        <p style={{ color: 'var(--color-text-secondary)' }}>
+          No unreleased fix versions found for {projectKey.trim().toUpperCase()}.
+        </p>
+      )}
+      {releaseEntries.length > 0 && (
+        <>
+          <div className={styles.releaseSummaryBar}>
+            {atRiskCount > 0 && <span className={styles.releaseSummaryRisk}>🔴 {atRiskCount} at risk</span>}
+            {watchCount > 0 && <span className={styles.releaseSummaryWatch}>🟡 {watchCount} watch</span>}
+            {onTrackCount > 0 && <span className={styles.releaseSummaryOnTrack}>🟢 {onTrackCount} on track</span>}
+            {unscheduledCount > 0 && <span className={styles.releaseSummaryMuted}>📅 {unscheduledCount} unscheduled</span>}
+            <span className={styles.releaseSummaryMuted}>
+              {releaseEntries.length} release{releaseEntries.length === 1 ? '' : 's'} · {projectKey.trim().toUpperCase()}
+            </span>
           </div>
-        );
-      })}
+
+          {RELEASE_BUCKETS.map((bucket) => {
+            const bucketEntries = releaseEntries.filter((entry) => entry.bucket === bucket.id);
+            if (bucketEntries.length === 0) {
+              return null;
+            }
+
+            return (
+              <section className={styles.releaseBucketSection} key={bucket.id}>
+                <div className={`${styles.releaseBucketHeader} ${getReleaseBucketSectionClassName(bucket.id)}`}>
+                  <span>{bucket.emoji} {bucket.label}</span>
+                </div>
+
+                {bucketEntries.map((entry) => {
+                  const isExpanded = expandedReleaseIds[entry.version.id] ?? false;
+                  const doneWidth = entry.totalCount === 0
+                    ? 0
+                    : Math.round((entry.doneCount / entry.totalCount) * 100);
+                  const progressWidth = entry.totalCount === 0
+                    ? 0
+                    : Math.round((entry.progressCount / entry.totalCount) * 100);
+
+                  return (
+                    <article className={styles.releaseCard} key={entry.version.id}>
+                      <div className={styles.releaseCardHeader}>
+                        <div className={styles.releaseCardTitleGroup}>
+                          <h3 className={styles.releaseCardTitle}>{entry.version.name}</h3>
+                          <span className={styles.releaseCardDate}>📅 {formatReleaseDate(entry.releaseDate)}</span>
+                        </div>
+                        <span className={`${styles.releaseCountdownBadge} ${getReleaseCountdownClassName(entry.daysLeft)}`}>
+                          {formatReleaseCountdown(entry.daysLeft)}
+                        </span>
+                      </div>
+
+                      {entry.totalCount > 0 ? (
+                        <>
+                          <div className={styles.releaseProgressRow}>
+                            <div className={styles.releaseProgressBar}>
+                              <div className={styles.releaseProgressDone} style={{ width: `${doneWidth}%` }} />
+                              <div
+                                className={styles.releaseProgressInProgress}
+                                style={{ left: `${doneWidth}%`, width: `${progressWidth}%` }}
+                              />
+                              <div className={styles.releaseProgressTarget} />
+                            </div>
+                            <span className={`${styles.releaseCompletionPercent} ${getReleaseCompletionClassName(entry.completionPercentage)}`}>
+                              {entry.completionPercentage}%
+                            </span>
+                          </div>
+                          <div className={styles.releaseCountsLine}>
+                            ✅ {entry.doneCount} done · 🔄 {entry.progressCount} in progress · ⬜ {entry.todoCount} to do
+                          </div>
+                        </>
+                      ) : (
+                        <div className={styles.releaseCountsLine}>No issues linked to this release.</div>
+                      )}
+
+                      {entry.totalCount > 0 && (
+                        <>
+                          <button
+                            className={styles.releaseExpandButton}
+                            onClick={() =>
+                              setExpandedReleaseIds((previousExpandedReleaseIds) => ({
+                                ...previousExpandedReleaseIds,
+                                [entry.version.id]: !isExpanded,
+                              }))}
+                            type="button"
+                          >
+                            {isExpanded ? '▼ Hide issues' : `▶ Show ${entry.totalCount} issues`}
+                          </button>
+
+                          {isExpanded && (
+                            <div className={styles.releaseIssueList}>
+                              {entry.issues.map((issue) => (
+                                <div className={styles.releaseIssueRow} key={issue.key}>
+                                  <span className={styles.releaseIssueStatusIcon}>
+                                    {classifyReleaseIssueStatus(issue) === 'done'
+                                      ? '✅'
+                                      : classifyReleaseIssueStatus(issue) === 'progress'
+                                        ? '🔄'
+                                        : '⬜'}
+                                  </span>
+                                  <a className={styles.issueKeyLink} href={`#${issue.key}`}>{issue.key}</a>
+                                  <span className={styles.releaseIssueSummary}>{issue.fields.summary}</span>
+                                  <span className={styles.releaseIssueAssignee}>
+                                    {issue.fields.assignee?.displayName?.split(' ')[0] ?? '—'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </article>
+                  );
+                })}
+              </section>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }
@@ -1341,12 +4682,31 @@ function ReleasesTab({ issues }: { issues: JiraIssue[] }) {
 export default function SprintDashboardView() {
   const { state, actions } = useSprintData();
   const { config, actions: configActions } = useDashboardConfig();
+  const { loadSprint } = actions;
+  const hasAttemptedRestoreLoad = useRef(false);
 
   // Local state for the board picker search field — not persisted, just UI.
   const [boardSearchQuery, setBoardSearchQuery] = useState('');
 
+  useEffect(() => {
+    if (hasAttemptedRestoreLoad.current) {
+      return;
+    }
+
+    hasAttemptedRestoreLoad.current = true;
+    const hasSavedDashboardSelection = state.boardId !== null || Boolean(state.projectKey.trim());
+    const hasLoadedDashboardData = state.sprintInfo !== null || state.sprintIssues.length > 0;
+
+    if (!hasSavedDashboardSelection || hasLoadedDashboardData) {
+      return;
+    }
+
+    // Restored selections should reopen the dashboard immediately after a refresh.
+    void loadSprint();
+  }, [loadSprint, state.boardId, state.projectKey, state.sprintInfo, state.sprintIssues.length]);
+
   function handleIssueUpdated() {
-    void actions.loadSprint();
+    void loadSprint();
   }
 
   function renderActiveTabPanel(activeTab: DashboardTab) {
@@ -1388,7 +4748,17 @@ export default function SprintDashboardView() {
     }
 
     if (activeTab === 'defects') {
-      return <DefectsTab issues={state.sprintIssues} onIssueUpdated={handleIssueUpdated} />;
+      return (
+        <DefectsTab
+          issues={state.sprintIssues}
+          onIssueUpdated={handleIssueUpdated}
+          projectKey={state.projectKey}
+          scopeMode={state.scopeMode}
+          selectedFixVersionName={state.selectedFixVersionName}
+          selectedPiValue={state.selectedPiValue}
+          selectedSprintId={state.selectedSprintId}
+        />
+      );
     }
 
     if (activeTab === 'standup') {
@@ -1397,37 +4767,75 @@ export default function SprintDashboardView() {
           isTimerRunning={state.isTimerRunning}
           issues={state.sprintIssues}
           onReset={actions.resetTimer}
+          onRefreshIssues={actions.loadSprint}
           onStart={actions.startTimer}
           onStop={actions.stopTimer}
           onTick={actions.tickTimer}
-          staleDaysThreshold={config.staleDaysThreshold}
+          projectKey={state.projectKey}
           timerSecondsRemaining={state.timerSecondsRemaining}
         />
       );
     }
 
+    if (activeTab === 'roster') {
+      return <RosterTab issues={state.sprintIssues} />;
+    }
+
     if (activeTab === 'metrics') {
-      return <MetricsTab issues={state.sprintIssues} />;
-    }
-
-    if (activeTab === 'pipeline') {
-      return <PipelineTab issues={state.sprintIssues} />;
-    }
-
-    if (activeTab === 'planning') {
-      return <PlanningTab issues={state.sprintIssues} />;
-    }
-
-    if (activeTab === 'pointing') {
       return (
-        <div className={styles.embeddedTabContent}>
-          <StoryPointingView />
-        </div>
+        <MetricsTab
+          boardId={state.boardId}
+          boardType={state.boardType}
+          config={config}
+          customStoryPointsFieldId={config.customStoryPointsFieldId}
+          projectKey={state.projectKey}
+          scopeMode={state.scopeMode}
+          selectedFixVersionName={state.selectedFixVersionName}
+          selectedPiValue={state.selectedPiValue}
+          selectedSprintId={state.selectedSprintId}
+        />
       );
     }
 
+    if (activeTab === 'pipeline') {
+      return (
+        <PipelineTab
+          projectKey={state.projectKey}
+          scopeMode={state.scopeMode}
+          selectedFixVersionName={state.selectedFixVersionName}
+          selectedPiValue={state.selectedPiValue}
+          selectedSprintId={state.selectedSprintId}
+        />
+      );
+    }
+
+    if (activeTab === 'planning') {
+      return (
+        <PlanningTab
+          customStoryPointsFieldId={config.customStoryPointsFieldId}
+          projectKey={state.projectKey}
+          scopeMode={state.scopeMode}
+          selectedFixVersionName={state.selectedFixVersionName}
+          selectedPiValue={state.selectedPiValue}
+          selectedSprintId={state.selectedSprintId}
+        />
+      );
+    }
+
+    if (activeTab === 'pointing') {
+      return <PointingTab boardType={state.boardType} config={config} issues={state.sprintIssues} />;
+    }
+
     if (activeTab === 'releases') {
-      return <ReleasesTab issues={state.sprintIssues} />;
+      return (
+        <ReleasesTab
+          projectKey={state.projectKey}
+          scopeMode={state.scopeMode}
+          selectedFixVersionName={state.selectedFixVersionName}
+          selectedPiValue={state.selectedPiValue}
+          selectedSprintId={state.selectedSprintId}
+        />
+      );
     }
 
     if (activeTab === 'capacity') {
@@ -1438,6 +4846,7 @@ export default function SprintDashboardView() {
       <SettingsTab
         availableBoards={state.availableBoards}
         boardId={state.boardId}
+        boardType={state.boardType}
         boardSearchQuery={boardSearchQuery}
         config={config}
         isLoadingSprint={state.isLoadingSprint}
@@ -1459,17 +4868,25 @@ export default function SprintDashboardView() {
         <p>{VIEW_SUBTITLE}</p>
       </header>
 
+      <DashboardScopeSelector
+        onFixVersionScopeChange={actions.selectFixVersionScope}
+        onPiScopeChange={actions.selectPiScope}
+        onScopeModeChange={actions.setScopeMode}
+        onSprintScopeChange={actions.selectSprintScope}
+        sprintState={state}
+      />
+
       <PrimaryTabs
-        ariaLabel="Sprint Dashboard tabs"
-        idPrefix="sprint-dashboard"
+        ariaLabel={TEAM_DASHBOARD_TABS_ARIA_LABEL}
+        idPrefix="team-dashboard"
         tabs={TAB_OPTIONS}
         activeTab={state.activeTab}
         onChange={actions.setActiveTab}
       />
 
       <section
-        aria-labelledby={`sprint-dashboard-${state.activeTab}-tab`}
-        id={`sprint-dashboard-${state.activeTab}-panel`}
+        aria-labelledby={`team-dashboard-${state.activeTab}-tab`}
+        id={`team-dashboard-${state.activeTab}-panel`}
         role="tabpanel"
       >
         {renderActiveTabPanel(state.activeTab)}

@@ -30,6 +30,8 @@ const POINTING_FIELDS = [
   'priority',
   'issuetype',
   'assignee',
+   'comment',
+   'customfield_10200',
   'customfield_10016',
   'customfield_10028',
 ].join(',');
@@ -58,6 +60,8 @@ export interface StoryPointingIssue {
   key: string;
   summary: string;
   description: string;
+  acceptanceCriteria: string;
+  latestComment: string;
   issueType: string;
   status: string;
   priority: string;
@@ -113,6 +117,7 @@ interface JiraIssueResponse {
   fields: {
     summary?: string;
     description?: unknown;
+    comment?: { comments?: Array<{ body?: unknown }> } | null;
     status?: { name?: string } | null;
     priority?: { name?: string } | null;
     issuetype?: { name?: string } | null;
@@ -138,6 +143,8 @@ export function mapJiraIssueToStoryPointingIssue(rawIssue: JiraIssueResponse): S
     key: rawIssue.key,
     summary: fieldsObject.summary ?? '',
     description: readPlainTextDescription(fieldsObject.description),
+    acceptanceCriteria: readPlainTextDescription(fieldsObject.customfield_10200),
+    latestComment: readLatestComment(fieldsObject.comment),
     issueType: fieldsObject.issuetype?.name ?? '',
     status: fieldsObject.status?.name ?? '',
     priority: fieldsObject.priority?.name ?? '',
@@ -170,6 +177,15 @@ function readStoryPoints(fieldsObject: Record<string, unknown>): number {
 
 function readPlainTextDescription(descriptionValue: unknown): string {
   return normalizeRichTextToPlainText(descriptionValue);
+}
+
+function readLatestComment(commentValue: unknown): string {
+  if (!isRecord(commentValue) || !Array.isArray(commentValue.comments) || commentValue.comments.length === EMPTY_COUNT) {
+    return '';
+  }
+
+  const latestComment = commentValue.comments[commentValue.comments.length - NEXT_ISSUE_STEP];
+  return isRecord(latestComment) ? normalizeRichTextToPlainText(latestComment.body) : '';
 }
 
 function isRecord(valueToCheck: unknown): valueToCheck is Record<string, unknown> {

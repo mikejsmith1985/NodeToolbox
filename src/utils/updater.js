@@ -21,6 +21,12 @@ const RELEASE_REPO = 'mikejsmith1985/NodeToolbox';
 /** Base URL for GitHub release asset downloads. */
 const GITHUB_RELEASES_BASE = 'https://github.com';
 
+/** Prefix for the one-shot PowerShell script that applies a staged update after exit. */
+const APPLY_UPDATE_SCRIPT_PREFIX = 'nodetoolbox-apply-update-';
+
+/** Delay between process-exit checks in the detached update script. */
+const UPDATE_EXIT_POLL_INTERVAL_MS = 250;
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -67,7 +73,7 @@ function extractZipWithPowerShell(zipPath, targetDirectory) {
  *   - otherwise               → running as Node.js source → download source-zip
  *
  * @param {string} version - Target release version, e.g. "0.2.9"
- * @returns {Promise<{ mode: 'exe'|'zip', newExecPath: string, newExecArgs: string[] }>}
+ * @returns {Promise<{ newExecPath: string, newExecArgs: string[] }>}
  */
 async function prepareUpdate(version) {
   const isExeMode   = (process.pkg === true);
@@ -111,7 +117,7 @@ function spawnReplacementAndExit(newExecPath, newExecArgs) {
   const childProcess = require('child_process').spawn(newExecPath, newExecArgs, {
     detached:  true,
     stdio:     'ignore',
-    cwd:       process.cwd(),
+    cwd:       resolveCurrentInstallRoot(),
     env:       process.env,
   });
   childProcess.unref();
@@ -119,6 +125,152 @@ function spawnReplacementAndExit(newExecPath, newExecArgs) {
 }
 
 // ── Private helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Returns the on-disk install root that should be updated in place.
+ * In pkg mode this is the directory that contains the running exe.
+ * In node/zip mode this is the directory that contains the launched server.js.
+ *
+ * @returns {string} Absolute install root path
+ */
+function resolveCurrentInstallRoot() {
+  if (process.pkg === true) {
+    return path.dirname(process.execPath);
+  }
+
+  if (process.argv[1]) {
+    return path.dirname(path.resolve(process.argv[1]));
+  }
+
+  return path.join(__dirname, '..', '..');
+}
+
+/**
+ * Escapes a string for single-quoted PowerShell literals.
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+function quotePowerShellString(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+/**
+ * Converts a JavaScript string array into a PowerShell array literal.
+ *
+ * @param {string[]} values
+ * @returns {string}
+ */
+function buildPowerShellArrayLiteral(values) {
+  return `@(${values.map((value) => quotePowerShellString(value)).join(', ')})`;
+}
+
+/**
+ * Writes the detached PowerShell update script and returns the command that
+ * should be spawned after the current process exits.
+ *
+ * @param {{
+ *   stagingDir: string,
+ *   installRoot: string,
+ *   launchPath: string,
+ *   launchArgs: string[],
+ *   currentExePath?: string | null,
+ *   stagedExePath?: string | null
+ * }} updatePlan
+ * @returns {{ newExecPath: string, newExecArgs: string[] }}
+ */
+function buildApplyUpdateCommand(updatePlan) {
+  const scriptPath = path.join(
+    os.tmpdir(),
+    `${APPLY_UPDATE_SCRIPT_PREFIX}${Date.now()}-${process.pid}.ps1`,
+  );
+
+  const updateScript = `
+$ErrorActionPreference = 'Stop'
+
+$currentPid = ${process.pid}
+$installRoot = ${quotePowerShellString(updatePlan.installRoot)}
+$stagingDir = ${quotePowerShellString(updatePlan.stagingDir)}
+$launchPath = ${quotePowerShellString(updatePlan.launchPath)}
+$launchArgs = ${buildPowerShellArrayLiteral(updatePlan.launchArgs)}
+$exitPollIntervalMs = ${UPDATE_EXIT_POLL_INTERVAL_MS}
+$currentExePath = ${quotePowerShellString(updatePlan.currentExePath || '')}
+$stagedExePath = ${quotePowerShellString(updatePlan.stagedExePath || '')}
+
+function Invoke-RobocopyMirror($sourcePath, $destinationPath) {
+    if (-not (Test-Path -LiteralPath $sourcePath)) {
+        return
+    }
+
+    New-Item -ItemType Directory -Path $destinationPath -Force | Out-Null
+    robocopy $sourcePath $destinationPath /MIR /R:2 /W:1 /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) {
+        throw "robocopy failed for $sourcePath"
+    }
+}
+
+function Copy-ReleaseRootFiles($sourceRoot, $destinationRoot) {
+    $rootFileNames = @(
+        'server.js',
+        'package.json',
+        'package-lock.json',
+        'README.md',
+        '.env.example',
+        'Launch Toolbox.bat',
+        'Launch Toolbox Silent.vbs'
+    )
+
+    foreach ($rootFileName in $rootFileNames) {
+        $sourceFilePath = Join-Path $sourceRoot $rootFileName
+        if (Test-Path -LiteralPath $sourceFilePath) {
+            Copy-Item -LiteralPath $sourceFilePath -Destination (Join-Path $destinationRoot $rootFileName) -Force
+        }
+    }
+}
+
+while (Get-Process -Id $currentPid -ErrorAction SilentlyContinue) {
+    Start-Sleep -Milliseconds $exitPollIntervalMs
+}
+
+if ($stagedExePath -ne '') {
+    if (-not (Test-Path -LiteralPath $stagedExePath)) {
+        throw "Expected staged exe not found: $stagedExePath"
+    }
+
+    Copy-Item -LiteralPath $stagedExePath -Destination $currentExePath -Force
+
+    $stagedLauncherPath = Join-Path $stagingDir 'Launch Toolbox Silent.vbs'
+    if (Test-Path -LiteralPath $stagedLauncherPath) {
+        Copy-Item -LiteralPath $stagedLauncherPath -Destination (Join-Path $installRoot 'Launch Toolbox Silent.vbs') -Force
+    }
+
+    Invoke-RobocopyMirror (Join-Path $stagingDir 'client\\dist') (Join-Path $installRoot 'client\\dist')
+} else {
+    Copy-ReleaseRootFiles $stagingDir $installRoot
+    Invoke-RobocopyMirror (Join-Path $stagingDir 'src') (Join-Path $installRoot 'src')
+    Invoke-RobocopyMirror (Join-Path $stagingDir 'scripts') (Join-Path $installRoot 'scripts')
+    Invoke-RobocopyMirror (Join-Path $stagingDir 'client\\dist') (Join-Path $installRoot 'client\\dist')
+    Invoke-RobocopyMirror (Join-Path $stagingDir 'node_modules') (Join-Path $installRoot 'node_modules')
+}
+
+Start-Process -FilePath $launchPath -ArgumentList $launchArgs -WorkingDirectory $installRoot -WindowStyle Hidden
+
+try {
+    if (Test-Path -LiteralPath $stagingDir) {
+        Remove-Item -LiteralPath $stagingDir -Recurse -Force
+    }
+} catch {
+    # A locked temp file should never block the relaunched app from coming back up.
+}
+`;
+
+  fs.writeFileSync(scriptPath, updateScript, 'utf8');
+
+  return {
+    newExecPath: 'powershell',
+    newExecArgs: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
+  };
+}
 
 /**
  * Recursively follows HTTP 3xx redirects then streams the final response body
@@ -160,56 +312,76 @@ function _followRedirectsAndDownload(url, destPath, hopCount, resolve, reject) {
 
 /**
  * Locates the new .exe inside the staging directory and returns the result
- * object for exe-mode updates. The new exe is copied next to the currently
- * running exe so the user can launch it from the same familiar location.
+ * object for exe-mode updates. The detached update script overwrites the
+ * currently-launched exe path after shutdown so manual relaunches use the new
+ * binary instead of falling back to the original download.
  *
  * @param {string} version    - Target version string
  * @param {string} stagingDir - Directory where the exe-zip was extracted
- * @returns {{ mode: 'exe', newExecPath: string, newExecArgs: string[] }}
+ * @returns {{ newExecPath: string, newExecArgs: string[] }}
  */
 function _buildExeUpdateResult(version, stagingDir) {
   const expectedExeName   = `nodetoolbox-v${version}.exe`;
   const stagedExePath     = path.join(stagingDir, expectedExeName);
-  const currentExeDir     = path.dirname(process.execPath);
-  const finalExePath      = path.join(currentExeDir, expectedExeName);
+  const installRoot       = resolveCurrentInstallRoot();
+  const currentExePath    = process.execPath;
+  const launchArgs        = process.argv.slice(2);
 
   if (!fs.existsSync(stagedExePath)) {
     throw new Error(`Expected exe not found after extraction: ${stagedExePath}`);
   }
 
-  fs.copyFileSync(stagedExePath, finalExePath);
-
-  return { mode: 'exe', newExecPath: finalExePath, newExecArgs: [] };
+  return buildApplyUpdateCommand({
+    stagingDir,
+    installRoot,
+    launchPath: currentExePath,
+    launchArgs,
+    currentExePath,
+    stagedExePath,
+  });
 }
 
 /**
- * Locates server.js inside the extracted zip directory, runs `npm ci` to
- * install production dependencies, and returns the result object for
- * zip/node-mode updates.
+ * Returns the result object for zip/node-mode updates. Production dependencies
+ * are installed in staging first so any npm failure surfaces before the
+ * running install is touched; the detached update script then copies the
+ * fully-prepared release back into the original install directory in place.
  *
  * @param {string} stagingDir - Directory where the source-zip was extracted
- * @returns {{ mode: 'zip', newExecPath: string, newExecArgs: string[] }}
+ * @returns {{ newExecPath: string, newExecArgs: string[] }}
  */
 function _buildZipUpdateResult(stagingDir) {
   const serverPath = path.join(stagingDir, 'server.js');
+  const installRoot = resolveCurrentInstallRoot();
+  const launchArgs = [path.join(installRoot, 'server.js'), ...process.argv.slice(2)];
 
   if (!fs.existsSync(serverPath)) {
     throw new Error(`server.js not found after extraction: ${serverPath}`);
   }
 
-  // Install production dependencies in the freshly extracted directory
   execSync('npm ci --omit=dev', {
     cwd:         stagingDir,
     stdio:       'inherit',
     windowsHide: true,
   });
 
-  return { mode: 'zip', newExecPath: process.execPath, newExecArgs: [serverPath] };
+  return buildApplyUpdateCommand({
+    stagingDir,
+    installRoot,
+    launchPath: process.execPath,
+    launchArgs,
+  });
 }
 
 module.exports = {
   downloadFileToPath,
   extractZipWithPowerShell,
   prepareUpdate,
+  resolveCurrentInstallRoot,
   spawnReplacementAndExit,
+  __testables: {
+    buildApplyUpdateCommand,
+    buildPowerShellArrayLiteral,
+    quotePowerShellString,
+  },
 };

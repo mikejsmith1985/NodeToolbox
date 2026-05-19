@@ -43,6 +43,7 @@ const ADVANCED_PASSPHRASE_STORAGE_KEY = 'tbxAdminPassphrase'
 
 const SAVE_STATUS_SUCCESS = '✓ Saved'
 const SAVE_STATUS_CLEAR_DELAY_MS = 2000
+const UPDATE_RESTART_TIMEOUT_MS = 180_000
 const ADVANCED_UNLOCK_INCORRECT_PASSPHRASE_MESSAGE = 'Incorrect passphrase.'
 const ADVANCED_UNLOCK_EXISTING_PROMPT_MESSAGE = 'Enter the admin passphrase to unlock advanced settings:'
 const ADVANCED_UNLOCK_NEW_PROMPT_MESSAGE = 'Enter the admin passphrase to unlock advanced settings:'
@@ -335,7 +336,7 @@ function resolveHygieneStorageKey(key: keyof HygieneRules): string | null {
  * Waits an initial 3 seconds for the server to begin its graceful shutdown before polling.
  * Throws if the server does not respond within maxWaitMs milliseconds.
  */
-async function pollUntilServerRestarts(maxWaitMs = 60_000): Promise<void> {
+async function pollUntilServerRestarts(maxWaitMs = UPDATE_RESTART_TIMEOUT_MS): Promise<void> {
   // Give the server a moment to begin its graceful shutdown before we start polling.
   await new Promise<void>((resolve) => setTimeout(resolve, 3000))
   const pollStartTime = Date.now()
@@ -350,7 +351,7 @@ async function pollUntilServerRestarts(maxWaitMs = 60_000): Promise<void> {
     }
     await new Promise<void>((resolve) => setTimeout(resolve, 1000))
   }
-  throw new Error('Server did not restart within 60 seconds')
+  throw new Error('Server did not restart within 180 seconds')
 }
 
 // ── Hook ──

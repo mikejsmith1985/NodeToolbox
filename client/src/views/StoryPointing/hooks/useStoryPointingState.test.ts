@@ -29,6 +29,10 @@ const SAMPLE_SEARCH_RESPONSE = {
       fields: {
         summary: 'Build single-user pointing deck',
         description: 'As a facilitator, I can point one issue at a time.',
+        customfield_10200: 'Acceptance criteria stay one click away.',
+        comment: {
+          comments: [{ body: 'Latest comment from Jira.' }],
+        },
         status: { name: 'Ready' },
         priority: { name: 'High' },
         issuetype: { name: 'Story' },
@@ -41,6 +45,10 @@ const SAMPLE_SEARCH_RESPONSE = {
       fields: {
         summary: 'Persist selected estimate',
         description: null,
+        customfield_10200: null,
+        comment: {
+          comments: [],
+        },
         status: { name: 'To Do' },
         priority: { name: 'Medium' },
         issuetype: { name: 'Task' },
@@ -78,6 +86,8 @@ describe('helpers', () => {
       key: 'TBX-102',
       summary: 'Persist selected estimate',
       description: '',
+      acceptanceCriteria: '',
+      latestComment: '',
       issueType: 'Task',
       status: 'To Do',
       priority: 'Medium',
