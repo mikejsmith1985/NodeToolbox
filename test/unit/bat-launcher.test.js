@@ -41,38 +41,50 @@ describe('Launch Toolbox.bat', () => {
     expect(fs.existsSync(BAT_FILE_PATH)).toBe(true);
   });
 
-  describe('dependency auto-install', () => {
-    it('runs npm ci to install production dependencies on first launch', () => {
-      // npm ci is faster and more deterministic than npm install because it
-      // reads exactly from package-lock.json rather than resolving ranges.
+  describe('durable bootstrapper layout', () => {
+    it('reads current.txt to find the selected payload version', () => {
+      // The visible launcher must match the silent launcher: current.txt is the
+      // durable source of truth for which version starts after reboot.
       const allLines = getExecutableLines().join('\n');
-      expect(allLines).toMatch(/npm\s+ci/i);
+      expect(allLines).toMatch(/current\.txt/i);
     });
 
-    it('uses --omit=dev to skip devDependencies in the end-user install', () => {
-      // Test tools like jest are in devDependencies and must not be installed
-      // in the end-user distribution — they add megabytes of unnecessary files.
+    it('starts the fixed executable from the versions folder', () => {
+      // Users no longer need Node.js or npm. The batch file launches the bundled
+      // payload chosen by current.txt.
       const allLines = getExecutableLines().join('\n');
-      expect(allLines).toMatch(/--omit=dev/i);
+      expect(allLines).toMatch(/versions/i);
+      expect(allLines).toMatch(/nodetoolbox\.exe/i);
     });
 
-    it('only installs when node_modules is absent (not on every launch)', () => {
-      // Reinstalling on every launch wastes 15-30 seconds. The guard ensures
-      // npm ci only runs when the folder was freshly extracted.
+    it('does not require npm during normal end-user launch', () => {
+      // The single release asset includes the executable payload, so a corporate
+      // user can launch without installing Node dependencies.
       const allLines = getExecutableLines().join('\n');
-      expect(allLines).toMatch(/if not exist.*node_modules/i);
+      expect(allLines).not.toMatch(/npm\s+ci|npm\s+install/i);
+    });
+
+    it('uses numeric version comparison instead of alphabetical sort fallback', () => {
+      // Alphabetical sort would choose 0.9.9 after 0.10.0 and corrupt current.txt.
+      // The batch launcher must compare major/minor/patch numbers like the VBS.
+      const allLines = getExecutableLines().join('\n');
+      expect(allLines).toMatch(/SelectHigherVersion/i);
+      expect(allLines).toMatch(/CANDIDATE_MAJOR_VERSION/i);
+      expect(allLines).not.toMatch(/dir \/b \/ad.*sort/i);
+    });
+
+    it('clears a stale current.txt value before scanning installed fallback versions', () => {
+      // If current.txt points to a missing newer version, the fallback scan must
+      // still select the highest installed working payload.
+      const allLines = getExecutableLines().join('\n');
+      expect(allLines).toMatch(/if not defined PAYLOAD_PATH \(\n\s*set "SELECTED_VERSION="/i);
     });
   });
 
   describe('server process launch', () => {
-    it('runs node server.js directly without the start command', () => {
-      // Previous versions used "start NodeToolbox Server" which spawned a detached
-      // child window. When that child crashed, the window closed instantly and
-      // the user saw no error. Running node directly in the same console window
-      // keeps errors visible — identical to how toolbox-poc.js is run.
-      const serverLaunchLine = getExecutableLines().find(
-        (line) => /node\s+server\.js/i.test(line)
-      );
+    it('runs the payload executable directly without the start command', () => {
+      // Running directly keeps errors visible in the diagnostic launcher window.
+      const serverLaunchLine = getExecutableLines().find((line) => /^"%PAYLOAD_PATH%"/.test(line.trim()));
       expect(serverLaunchLine).toBeDefined();
       expect(serverLaunchLine.trim()).not.toMatch(/^start\s/i);
     });
@@ -80,11 +92,7 @@ describe('Launch Toolbox.bat', () => {
     it('does NOT use the /b flag (would detach and silently kill the server)', () => {
       // /b runs the process in the current console without a new window. When the
       // bat file exits, the console closes and Node dies with it.
-      // Note: "exit /b 1" in the error block is legitimate; this assertion only
-      // targets the node server.js launch line.
-      const serverLaunchLine = getExecutableLines().find(
-        (line) => /node\s+server\.js/i.test(line)
-      );
+      const serverLaunchLine = getExecutableLines().find((line) => /^"%PAYLOAD_PATH%"/.test(line.trim()));
       expect(serverLaunchLine).toBeDefined();
       expect(serverLaunchLine).not.toMatch(/\/b\b/i);
     });
@@ -92,18 +100,13 @@ describe('Launch Toolbox.bat', () => {
     it('passes --open to auto-open the dashboard in the default browser', () => {
       // Without --open the user must manually navigate to http://localhost:5555.
       // --open triggers openBrowserToDashboard() in server.js on startup.
-      const serverLaunchLine = getExecutableLines().find(
-        (line) => /node\s+server\.js/i.test(line)
-      );
+      const serverLaunchLine = getExecutableLines().find((line) => /^"%PAYLOAD_PATH%"/.test(line.trim()));
       expect(serverLaunchLine).toMatch(/--open/);
     });
 
-    it('launches node server.js as the entry point', () => {
-      // server.js is the sole Express entry point — nothing else should be started.
-      const serverLaunchLine = getExecutableLines().find(
-        (line) => /node\s+server\.js/i.test(line)
-      );
-      expect(serverLaunchLine).toMatch(/node\s+server\.js/i);
+    it('launches the selected payload executable as the entry point', () => {
+      const serverLaunchLine = getExecutableLines().find((line) => /^"%PAYLOAD_PATH%"/.test(line.trim()));
+      expect(serverLaunchLine).toMatch(/%PAYLOAD_PATH%/);
     });
   });
 

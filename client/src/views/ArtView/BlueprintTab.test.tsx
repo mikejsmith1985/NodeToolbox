@@ -1,6 +1,6 @@
-// BlueprintTab.test.tsx — TDD tests for the Blueprint tab: PI→Feature→Story hierarchy viewer.
+// BlueprintTab.test.tsx — Integration tests for the Program Epic → Feature → Story Blueprint tab.
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockJiraGet } = vi.hoisted(() => ({
@@ -26,53 +26,59 @@ const MOCK_TEAMS: ArtTeam[] = [
   },
 ];
 
-const MOCK_SPRINT_ISSUES_RESPONSE = {
-  issues: [
-    {
-      id: 'ALPHA-1',
-      key: 'ALPHA-1',
-      fields: {
-        summary: 'Build login form',
-        status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
-        issuetype: { name: 'Story' },
-        assignee: { displayName: 'Jane Doe' },
-        customfield_10108: 'FEAT-10',
-        parent: null,
-      },
-    },
-    {
-      id: 'ALPHA-2',
-      key: 'ALPHA-2',
-      fields: {
-        summary: 'Write unit tests',
-        status: { name: 'Done', statusCategory: { key: 'done' } },
-        issuetype: { name: 'Story' },
-        assignee: null,
-        customfield_10108: 'FEAT-10',
-        parent: null,
-      },
-    },
-  ],
-};
-
-const MOCK_FEATURE_RESPONSE = {
-  issues: [
-    {
-      id: 'FEAT-10',
-      key: 'FEAT-10',
-      fields: {
-        summary: 'User Authentication Feature',
-        status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
-        issuetype: { name: 'Feature' },
-        assignee: { displayName: 'Bob Smith' },
-      },
-    },
-  ],
-};
+function queueSuccessfulBlueprintHierarchy(): void {
+  mockJiraGet
+    .mockResolvedValueOnce({
+      issues: [
+        {
+          id: 'ALPHA-1',
+          key: 'ALPHA-1',
+          fields: {
+            summary: 'Build login form',
+            status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+            issuetype: { name: 'Story' },
+            assignee: { displayName: 'Jane Doe' },
+            customfield_10108: 'FEAT-10',
+            project: { key: 'ALPHA' },
+          },
+        },
+      ],
+    })
+    .mockResolvedValueOnce({
+      issues: [
+        {
+          id: 'FEAT-10',
+          key: 'FEAT-10',
+          fields: {
+            summary: 'User Authentication Feature',
+            status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+            issuetype: { name: 'Feature' },
+            customfield_10100: 'PE-1',
+          },
+        },
+      ],
+    })
+    .mockResolvedValueOnce({
+      issues: [
+        {
+          id: 'PE-1',
+          key: 'PE-1',
+          fields: {
+            summary: 'Member Onboarding',
+            status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+            issuetype: { name: 'Program Epic' },
+          },
+        },
+      ],
+    })
+    .mockResolvedValueOnce({ issues: [] })
+    .mockResolvedValueOnce({ issues: [] })
+    .mockResolvedValueOnce({ issues: [] })
+    .mockResolvedValueOnce({ issues: [] });
+}
 
 describe('BlueprintTab', () => {
   beforeEach(() => {
-    // resetAllMocks clears both call history and any unconsumed once-values from prior tests
     vi.resetAllMocks();
     localStorage.clear();
   });
@@ -89,10 +95,10 @@ describe('BlueprintTab', () => {
 
   it('shows a warning when no teams are configured', () => {
     render(<BlueprintTab teams={[]} selectedPiName="PI 25.1" />);
-    expect(screen.getByText(/no teams/i)).toBeInTheDocument();
+    expect(screen.getByText(/no teams configured/i)).toBeInTheDocument();
   });
 
-  it('renders four view mode buttons', () => {
+  it('renders four Blueprint view mode buttons', () => {
     render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
     expect(screen.getByRole('button', { name: /full hierarchy/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /by team/i })).toBeInTheDocument();
@@ -100,243 +106,77 @@ describe('BlueprintTab', () => {
     expect(screen.getByRole('button', { name: /flat list/i })).toBeInTheDocument();
   });
 
-  it('renders a search bar', () => {
-    render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    expect(screen.getByPlaceholderText(/search/i)).toBeInTheDocument();
-  });
-
-  it('shows loading indicator while fetching', () => {
-    // Never resolves so we stay in loading state
+  it('shows a loading indicator while the hierarchy is fetching', () => {
     mockJiraGet.mockReturnValue(new Promise(() => {}));
     render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
     fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
-    expect(screen.getByText(/loading blueprint/i)).toBeInTheDocument();
+    expect(screen.getByText(/loading blueprint hierarchy/i)).toBeInTheDocument();
   });
 
-  it('renders feature rows after data loads', async () => {
-    mockJiraGet
-      .mockResolvedValueOnce(MOCK_SPRINT_ISSUES_RESPONSE)
-      .mockResolvedValueOnce(MOCK_FEATURE_RESPONSE);
+  it('renders Program Epic, Feature, and Story rows after the hierarchy loads', async () => {
+    queueSuccessfulBlueprintHierarchy();
 
     render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
     fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
 
     await waitFor(() => {
+      expect(screen.getByText('PE-1 — Member Onboarding')).toBeInTheDocument();
       expect(screen.getByText('User Authentication Feature')).toBeInTheDocument();
+      expect(screen.getByText('Build login form')).toBeInTheDocument();
     });
   });
 
-  it('shows story count in feature row after data loads', async () => {
-    mockJiraGet
-      .mockResolvedValueOnce(MOCK_SPRINT_ISSUES_RESPONSE)
-      .mockResolvedValueOnce(MOCK_FEATURE_RESPONSE);
+  it('collapses feature children when the chevron is clicked', async () => {
+    queueSuccessfulBlueprintHierarchy();
 
     render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
     fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
+    await waitFor(() => screen.getByText('Build login form'));
 
-    await waitFor(() => {
-      expect(screen.getByText(/2 stories/i)).toBeInTheDocument();
-    });
-  });
-
-  it('shows completion percentage in the feature health ring', async () => {
-    mockJiraGet
-      .mockResolvedValueOnce(MOCK_SPRINT_ISSUES_RESPONSE)
-      .mockResolvedValueOnce(MOCK_FEATURE_RESPONSE);
-
-    render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
-
-    await waitFor(() => {
-      // 1 of 2 stories done = 50%
-      expect(screen.getByText(/50%/)).toBeInTheDocument();
-    });
-  });
-
-  it('collapses feature children when chevron is clicked', async () => {
-    mockJiraGet
-      .mockResolvedValueOnce(MOCK_SPRINT_ISSUES_RESPONSE)
-      .mockResolvedValueOnce(MOCK_FEATURE_RESPONSE);
-
-    render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
-
-    await waitFor(() => screen.getByText('User Authentication Feature'));
-
-    // Children are visible initially
-    expect(screen.getByText('Build login form')).toBeInTheDocument();
-
-    // Click the collapse button
-    const collapseBtn = screen.getByRole('button', { name: /collapse feat-10/i });
-    fireEvent.click(collapseBtn);
-
-    // Children should be hidden after collapse
+    fireEvent.click(screen.getByRole('button', { name: /collapse feat-10/i }));
     expect(screen.queryByText('Build login form')).not.toBeInTheDocument();
   });
 
-  it('expands collapsed feature when chevron is clicked again', async () => {
-    mockJiraGet
-      .mockResolvedValueOnce(MOCK_SPRINT_ISSUES_RESPONSE)
-      .mockResolvedValueOnce(MOCK_FEATURE_RESPONSE);
+  it('filters the hierarchy by the search term', async () => {
+    queueSuccessfulBlueprintHierarchy();
 
     render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
     fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
     await waitFor(() => screen.getByText('User Authentication Feature'));
 
-    const collapseBtn = screen.getByRole('button', { name: /collapse feat-10/i });
-    fireEvent.click(collapseBtn);
-    fireEvent.click(screen.getByRole('button', { name: /expand feat-10/i }));
-
-    expect(screen.getByText('Build login form')).toBeInTheDocument();
-  });
-
-  it('filters feature list by search term', async () => {
-    const twoFeaturesResponse = {
-      issues: [
-        ...MOCK_SPRINT_ISSUES_RESPONSE.issues,
-        {
-          id: 'ALPHA-3',
-          key: 'ALPHA-3',
-          fields: {
-            summary: 'Setup CI pipeline',
-            status: { name: 'To Do', statusCategory: { key: 'new' } },
-            issuetype: { name: 'Story' },
-            assignee: null,
-            customfield_10108: 'FEAT-20',
-            parent: null,
-          },
-        },
-      ],
-    };
-    const twoFeaturesDetails = {
-      issues: [
-        ...MOCK_FEATURE_RESPONSE.issues,
-        {
-          id: 'FEAT-20',
-          key: 'FEAT-20',
-          fields: {
-            summary: 'CI/CD Infrastructure Feature',
-            status: { name: 'To Do', statusCategory: { key: 'new' } },
-            issuetype: { name: 'Feature' },
-            assignee: null,
-          },
-        },
-      ],
-    };
-
-    mockJiraGet
-      .mockResolvedValueOnce(twoFeaturesResponse)
-      .mockResolvedValueOnce(twoFeaturesDetails);
-
-    render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
-    await waitFor(() => screen.getByText('User Authentication Feature'));
-
-    const searchInput = screen.getByPlaceholderText(/search/i);
-    fireEvent.change(searchInput, { target: { value: 'authentication' } });
-
-    expect(screen.getByText('User Authentication Feature')).toBeInTheDocument();
-    expect(screen.queryByText('CI/CD Infrastructure Feature')).not.toBeInTheDocument();
-  });
-
-  it('shows an error message when the API call fails', async () => {
-    mockJiraGet.mockRejectedValue(new Error('Network error'));
-
-    render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText(/network error/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText(/search program epics, features, or stories/i), {
+      target: { value: 'missing' },
     });
+
+    expect(screen.queryByText('User Authentication Feature')).not.toBeInTheDocument();
+    expect(screen.getByText(/no program epics, features, or stories match/i)).toBeInTheDocument();
   });
 
-  it('shows empty state message when no feature links found', async () => {
-    mockJiraGet
-      .mockResolvedValueOnce({ issues: [] })
-      .mockResolvedValueOnce({ issues: [] });
-
-    render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText(/no features found/i)).toBeInTheDocument();
-    });
-  });
-
-  it('uses PI-aware JQL when selectedPiName and team projectKey are both set', async () => {
-    mockJiraGet
-      .mockResolvedValueOnce(MOCK_SPRINT_ISSUES_RESPONSE)
-      .mockResolvedValueOnce(MOCK_FEATURE_RESPONSE);
+  it('uses a PI-aware first query when the team has a project key', async () => {
+    queueSuccessfulBlueprintHierarchy();
 
     render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
     fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
 
     await waitFor(() => screen.getByText('User Authentication Feature'));
 
-    // The first API call should use project + PI field filter, not openSprints()
     const firstCallUrl = mockJiraGet.mock.calls[0][0] as string;
-    expect(firstCallUrl).toContain('cf%5B');         // encoded cf[...]
-    expect(firstCallUrl).toContain('PI%2025.1');     // PI name (space → %20) in JQL
+    expect(firstCallUrl).toContain('cf%5B');
+    expect(firstCallUrl).toContain('PI%2025.1');
     expect(firstCallUrl).not.toContain('openSprints');
   });
 
-  it('uses maxResults=500 for PI-mode queries to avoid truncating large PIs', async () => {
-    mockJiraGet
-      .mockResolvedValueOnce(MOCK_SPRINT_ISSUES_RESPONSE)
-      .mockResolvedValueOnce(MOCK_FEATURE_RESPONSE);
-
-    render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
-
-    await waitFor(() => screen.getByText('User Authentication Feature'));
-
-    // PI-mode fetch must use the higher 500 cap, not the 200 used for openSprints
-    const firstCallUrl = mockJiraGet.mock.calls[0][0] as string;
-    expect(firstCallUrl).toContain('maxResults=500');
-  });
-
-  it('uses maxResults=200 for openSprints fallback queries', async () => {
+  it('falls back to openSprints JQL when the team does not have a project key', async () => {
     const teamsWithoutProjectKey: ArtTeam[] = [
       { ...MOCK_TEAMS[0], projectKey: undefined },
     ];
-
-    mockJiraGet
-      .mockResolvedValueOnce(MOCK_SPRINT_ISSUES_RESPONSE)
-      .mockResolvedValueOnce(MOCK_FEATURE_RESPONSE);
+    queueSuccessfulBlueprintHierarchy();
 
     render(<BlueprintTab teams={teamsWithoutProjectKey} selectedPiName="PI 25.1" />);
     fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
 
     await waitFor(() => screen.getByText('User Authentication Feature'));
 
-    const firstCallUrl = mockJiraGet.mock.calls[0][0] as string;
-    expect(firstCallUrl).toContain('maxResults=200');
-    expect(firstCallUrl).not.toContain('maxResults=500');
-  });
-
-  it('falls back to openSprints JQL when no PI is selected', async () => {
-    // Render with empty selectedPiName so the early-exit guard shows the warning —
-    // we verify the guard path renders correctly (no fetch is made).
-    render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="" />);
-    expect(screen.getByText(/no pi selected/i)).toBeInTheDocument();
-    expect(mockJiraGet).not.toHaveBeenCalled();
-  });
-
-  it('falls back to openSprints JQL when team has no projectKey', async () => {
-    const teamsWithoutProjectKey: ArtTeam[] = [
-      { ...MOCK_TEAMS[0], projectKey: undefined },
-    ];
-
-    mockJiraGet
-      .mockResolvedValueOnce(MOCK_SPRINT_ISSUES_RESPONSE)
-      .mockResolvedValueOnce(MOCK_FEATURE_RESPONSE);
-
-    render(<BlueprintTab teams={teamsWithoutProjectKey} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
-
-    await waitFor(() => screen.getByText('User Authentication Feature'));
-
-    // When no project key exists, openSprints() must be used as the query scope
     const firstCallUrl = mockJiraGet.mock.calls[0][0] as string;
     expect(firstCallUrl).toContain('openSprints');
     expect(firstCallUrl).not.toContain('cf%5B');

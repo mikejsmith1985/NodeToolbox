@@ -201,10 +201,12 @@ describe('useDsuBoardState', () => {
     useStandupRosterStore.getState().addRosterMember({
       displayName: 'Alice Adams',
       assigneeQueryValue: 'Alice Adams',
+      teamName: 'Transformers',
     });
     useStandupRosterStore.getState().addRosterMember({
       displayName: 'Bob Brown',
       assigneeQueryValue: 'Bob Brown',
+      teamName: 'Clean Up Crew',
     });
     const { result } = renderHook(() => useDsuBoardState());
 

@@ -39,7 +39,6 @@ export type DashboardTab =
   | 'blockers'
   | 'defects'
   | 'standup'
-  | 'roster'
   | 'settings'
   | 'metrics'
   | 'pipeline'
@@ -54,13 +53,13 @@ export type DashboardScopeMode =
   | typeof DASHBOARD_SCOPE_MODE_PI;
 
 const DEFAULT_DASHBOARD_TAB: DashboardTab = 'overview';
+const LEGACY_ROSTER_TAB = 'roster';
 const DASHBOARD_TABS: DashboardTab[] = [
   'overview',
   'assignee',
   'blockers',
   'defects',
   'standup',
-  'roster',
   'settings',
   'metrics',
   'pipeline',
@@ -187,6 +186,9 @@ function readPersistedProjectKey(): string {
 /** Restores the last active tab and falls back to Overview if the stored value is invalid. */
 function readPersistedActiveTab(): DashboardTab {
   const storedActiveTab = useSettingsStore.getState().sprintDashboardActiveTab;
+  if (storedActiveTab === LEGACY_ROSTER_TAB) {
+    return 'settings';
+  }
   return isDashboardTab(storedActiveTab) ? storedActiveTab : DEFAULT_DASHBOARD_TAB;
 }
 

@@ -458,6 +458,7 @@ describe('POST /api/restart', () => {
     const spawnCallArgs = spawnSpy.mock.calls[0];
     expect(spawnCallArgs[0]).toBe(process.execPath);          // same node/exe binary
     expect(Array.isArray(spawnCallArgs[1])).toBe(true);       // argv args forwarded
+    expect(spawnCallArgs[1]).toContain('--restart-handoff');  // restart launches fail fast on port handoff errors
     expect(spawnCallArgs[2].detached).toBe(true);             // fully detached
     expect(spawnCallArgs[2].stdio).toBe('ignore');            // no I/O attached
     expect(exitSpy).toHaveBeenCalledWith(0);
@@ -518,8 +519,10 @@ describe('GET /api/download/launcher-bat', () => {
     const response = await request(buildTestApp(minimalConfig))
       .get('/api/download/launcher-bat');
 
-    // Bat file should contain the node server.js invocation
-    expect(response.text).toContain('node server.js');
+    // Bat file should launch the payload selected by current.txt.
+    expect(response.text).toContain('current.txt');
+    expect(response.text).toContain('nodetoolbox.exe');
+    expect(response.text).toContain('--open');
   });
 });
 

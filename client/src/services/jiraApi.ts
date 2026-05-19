@@ -6,6 +6,8 @@
 
 const JIRA_PROXY_BASE = '/jira-proxy';
 const JSON_CONTENT_TYPE = 'application/json';
+const NO_CONTENT_STATUS = 204;
+const RESET_CONTENT_STATUS = 205;
 const TOOLBOX_API_EVENT = 'toolbox:api';
 
 /** Shape of `event.detail` for every `toolbox:api` CustomEvent dispatched on window. */
@@ -56,8 +58,29 @@ async function assertSuccessfulResponse(response: Response, messagePrefix: strin
   }
 }
 
-function parseJsonResponse<ResponseBody>(response: Response): Promise<ResponseBody> {
-  return response.json() as Promise<ResponseBody>;
+function isEmptySuccessfulResponse(response: Response): boolean {
+  const contentLengthHeader = response.headers?.get('content-length');
+  return response.status === NO_CONTENT_STATUS
+    || response.status === RESET_CONTENT_STATUS
+    || contentLengthHeader === '0';
+}
+
+/**
+ * Parses JSON when Jira actually returned a payload.
+ * Some successful workflow endpoints respond with no content, so callers need
+ * `undefined` instead of a JSON parse failure.
+ */
+async function parseJsonResponse<ResponseBody>(response: Response): Promise<ResponseBody> {
+  if (isEmptySuccessfulResponse(response)) {
+    return undefined as ResponseBody;
+  }
+
+  const responseText = await response.text();
+  if (!responseText.trim()) {
+    return undefined as ResponseBody;
+  }
+
+  return JSON.parse(responseText) as ResponseBody;
 }
 
 /** Records a single API call's timing and outcome via the toolbox:api event bus. */

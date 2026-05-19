@@ -141,7 +141,7 @@
   background: var(--color-background);
   color: var(--color-text-primary);
   /* Keep the native Windows select menu in dark mode so option text stays readable. */
-  color-scheme: dark;
+  color-scheme: inherit;
 }
 
 .jumpSelect option {

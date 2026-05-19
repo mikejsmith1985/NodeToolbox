@@ -10,6 +10,12 @@ const JIRA_CREATE_PATH = '/rest/api/3/issue';
 const JIRA_CREATE_BODY = { fields: { summary: 'Create story' } };
 const JIRA_UPDATE_PATH = '/rest/api/2/issue/ABC-123';
 const JIRA_UPDATE_BODY = { fields: { customfield_10016: 5 } };
+const JSON_RESPONSE_HEADERS = {
+  get: (headerName: string) => (headerName.toLowerCase() === 'content-type' ? 'application/json' : null),
+} as unknown as Headers;
+const EMPTY_RESPONSE_HEADERS = {
+  get: (headerName: string) => (headerName.toLowerCase() === 'content-length' ? '0' : null),
+} as unknown as Headers;
 
 let recordedEvents: JiraApiEventDetail[];
 const recordEvent = (event: Event): void => {
@@ -30,7 +36,8 @@ describe('jiraApi', () => {
   it('jiraGet builds the Jira proxy URL and returns parsed JSON', async () => {
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue(JIRA_RESPONSE),
+      text: vi.fn().mockResolvedValue(JSON.stringify(JIRA_RESPONSE)),
+      headers: JSON_RESPONSE_HEADERS,
     } as unknown as Response);
 
     await expect(jiraGet<typeof JIRA_RESPONSE>(JIRA_PATH)).resolves.toEqual(JIRA_RESPONSE);
@@ -46,7 +53,8 @@ describe('jiraApi', () => {
   it('jiraPost sends JSON with the expected headers', async () => {
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue(JIRA_RESPONSE),
+      text: vi.fn().mockResolvedValue(JSON.stringify(JIRA_RESPONSE)),
+      headers: JSON_RESPONSE_HEADERS,
     } as unknown as Response);
 
     await expect(jiraPost<typeof JIRA_RESPONSE>(JIRA_CREATE_PATH, JIRA_CREATE_BODY)).resolves.toEqual(
@@ -94,6 +102,19 @@ describe('jiraApi', () => {
     );
   });
 
+  it('jiraPost resolves when a successful transition response has no body', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 204,
+      text: vi.fn().mockResolvedValue(''),
+      headers: EMPTY_RESPONSE_HEADERS,
+    } as unknown as Response);
+
+    await expect(
+      jiraPost<void>('/rest/api/2/issue/ABC-123/transitions', { transition: { id: '31' } }),
+    ).resolves.toBeUndefined();
+  });
+
   it('jiraPut sends JSON with the expected headers and resolves on success', async () => {
     vi.mocked(fetch).mockResolvedValue({ ok: true } as Response);
 
@@ -117,7 +138,8 @@ describe('jiraApi', () => {
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       status: 200,
-      json: vi.fn().mockResolvedValue(JIRA_RESPONSE),
+      text: vi.fn().mockResolvedValue(JSON.stringify(JIRA_RESPONSE)),
+      headers: JSON_RESPONSE_HEADERS,
     } as unknown as Response);
 
     await jiraGet(JIRA_PATH);
@@ -149,7 +171,8 @@ describe('jiraApi', () => {
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       status: 201,
-      json: vi.fn().mockResolvedValue(JIRA_RESPONSE),
+      text: vi.fn().mockResolvedValue(JSON.stringify(JIRA_RESPONSE)),
+      headers: JSON_RESPONSE_HEADERS,
     } as unknown as Response);
 
     await jiraPost(JIRA_CREATE_PATH, JIRA_CREATE_BODY);

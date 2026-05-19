@@ -43,8 +43,8 @@
 .recentChip {
   padding: 4px 12px;
   border-radius: 100px;
-  border: 1px solid rgba(88, 166, 255, 0.16);
-  background: rgba(24, 31, 45, 0.84);
+  border: 1px solid var(--color-border);
+  background: var(--color-pill-bg);
   color: var(--color-text-secondary);
   font-size: 12px;
   cursor: pointer;
@@ -57,9 +57,9 @@
 }
 
 .recentChip:hover {
-  border-color: rgba(88, 166, 255, 0.45);
+  border-color: var(--color-border-strong);
   color: var(--color-accent);
-  box-shadow: 0 0 16px rgba(88, 166, 255, 0.12);
+  box-shadow: var(--glow-accent);
 }
 
 .sectionDivider {
@@ -79,7 +79,12 @@
 .sectionLine {
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, rgba(88, 166, 255, 0.3), rgba(139, 92, 246, 0.08), transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-accent) 40%, transparent),
+    color-mix(in srgb, var(--color-border-strong) 50%, transparent),
+    transparent
+  );
 }
 
 .cardGrid {

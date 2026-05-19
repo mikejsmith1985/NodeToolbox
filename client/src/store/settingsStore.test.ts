@@ -13,6 +13,7 @@ const SPRINT_DASHBOARD_SCOPE_MODE_STORAGE_KEY = 'tbxSprintDashboardScopeMode';
 const SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY = 'tbxSprintDashboardSelectedSprintId';
 const SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY = 'tbxSprintDashboardSelectedFixVersion';
 const SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY = 'tbxSprintDashboardSelectedPiValue';
+const SPRINT_DASHBOARD_ACTIVE_TEAM_STORAGE_KEY = 'tbxSprintDashboardActiveTeam';
 
 async function loadSettingsStoreModule() {
   vi.resetModules();
@@ -53,6 +54,16 @@ describe('useSettingsStore', () => {
 
     expect(useSettingsStore.getState().theme).toBe('light');
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
+  });
+
+  it('resolves the stored theme safely before React mounts', async () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'light');
+
+    const { resolveStoredTheme } = await loadSettingsStoreModule();
+
+    expect(resolveStoredTheme()).toBe('light');
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'unexpected');
+    expect(resolveStoredTheme()).toBe('dark');
   });
 
   it('adds a recent view, keeps it unique, and limits the list to five items', async () => {
@@ -102,6 +113,7 @@ describe('useSettingsStore', () => {
     window.localStorage.setItem(SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY, '12');
     window.localStorage.setItem(SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY, 'Release 24.1');
     window.localStorage.setItem(SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY, 'PI-24.1');
+    window.localStorage.setItem(SPRINT_DASHBOARD_ACTIVE_TEAM_STORAGE_KEY, 'Transformers');
 
     const { useSettingsStore } = await loadSettingsStoreModule();
     const settingsState = useSettingsStore.getState();
@@ -113,6 +125,7 @@ describe('useSettingsStore', () => {
     expect(settingsState.sprintDashboardSelectedSprintId).toBe('12');
     expect(settingsState.sprintDashboardSelectedFixVersion).toBe('Release 24.1');
     expect(settingsState.sprintDashboardSelectedPiValue).toBe('PI-24.1');
+    expect(settingsState.sprintDashboardActiveTeam).toBe('Transformers');
   });
 
   it('persists Sprint Dashboard setters back to localStorage', async () => {
@@ -125,6 +138,7 @@ describe('useSettingsStore', () => {
     useSettingsStore.getState().setSprintDashboardSelectedSprintId('19');
     useSettingsStore.getState().setSprintDashboardSelectedFixVersion('Release 25.1');
     useSettingsStore.getState().setSprintDashboardSelectedPiValue('PI-25.1');
+    useSettingsStore.getState().setSprintDashboardActiveTeam('Clean Up Crew');
 
     expect(window.localStorage.getItem(SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY)).toBe('ENFCT');
     expect(window.localStorage.getItem(SPRINT_DASHBOARD_BOARD_ID_STORAGE_KEY)).toBe('77');
@@ -133,5 +147,6 @@ describe('useSettingsStore', () => {
     expect(window.localStorage.getItem(SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY)).toBe('19');
     expect(window.localStorage.getItem(SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY)).toBe('Release 25.1');
     expect(window.localStorage.getItem(SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY)).toBe('PI-25.1');
+    expect(window.localStorage.getItem(SPRINT_DASHBOARD_ACTIVE_TEAM_STORAGE_KEY)).toBe('Clean Up Crew');
   });
 });

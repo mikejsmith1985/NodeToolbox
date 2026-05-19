@@ -1,268 +1,78 @@
-// BlueprintTab.tsx — PI→Feature→Story hierarchy viewer for the Blueprint tab.
+// BlueprintTab.tsx — React renderer for the legacy-style Program Epic → Feature → Story Blueprint hierarchy.
 
-import { useState } from 'react';
-import { jiraGet } from '../../services/jiraApi.ts';
+import { useMemo, useState } from 'react';
+
 import type { ArtTeam } from './hooks/useArtData.ts';
+import {
+  fetchBlueprintHierarchy,
+  filterProgramEpicsBySearch,
+  flattenProgramEpicFeatures,
+  type BlueprintFeatureNode,
+  type BlueprintHealthStatus,
+  type BlueprintProgramEpicNode,
+  type BlueprintStoryNode,
+  type BlueprintSubtaskNode,
+  type BlueprintViewMode,
+} from './blueprintHierarchy.ts';
 import styles from './BlueprintTab.module.css';
 
-// ── Types ──
-
-type BlueprintViewMode = 'hierarchy' | 'by-team' | 'features' | 'flat';
-type HealthStatus = 'green' | 'amber' | 'red';
-
-/** A Jira issue as returned by the Blueprint API call (extends base issue with feature-link fields). */
-interface BlueprintRawIssue {
-  id: string;
-  key: string;
-  fields: {
-    summary?: string;
-    status?: { name: string; statusCategory?: { key: string } };
-    issuetype?: { name: string };
-    assignee?: { displayName: string } | null;
-    /** Feature Epic Link — default customfield, configurable in settings. */
-    customfield_10108?: string | { key?: string } | null;
-    /** Parent link field. */
-    customfield_10100?: string | { key?: string } | null;
-    parent?: { key: string; fields?: { summary?: string } } | null;
-  };
-}
-
-/** Fully resolved story node within a feature. */
-interface BlueprintStoryNode {
-  key: string;
-  summary: string;
-  status: string;
-  assignee: string | null;
-  issueType: string;
-  /** True when this story's project key is not in the ART team project key list. */
-  isOffTrain: boolean;
-}
-
-/** Fully resolved feature node containing all linked stories. */
-interface BlueprintFeatureNode {
-  key: string;
-  summary: string;
-  status: string;
-  completionPercent: number;
-  healthStatus: HealthStatus;
-  /** True when this feature was discovered via hierarchy but has no stories from any ART team. */
-  isExternal: boolean;
-  stories: BlueprintStoryNode[];
-}
-
-/** Advanced ART settings shape stored in localStorage under 'tbxARTSettings'. */
-interface ArtAdvancedSettings {
-  featureLinkField?: string;
-  piFieldId?: string;
-  staleDays?: number;
-}
-
-// ── Constants ──
-
-const DEFAULT_FEATURE_LINK_FIELD = 'customfield_10108';
-/** Default PI custom field — must match useArtData.ts DEFAULT_PI_FIELD_ID. */
-const DEFAULT_PI_FIELD_ID = 'customfield_10301';
-const HEALTH_GREEN_THRESHOLD = 70;
-const HEALTH_AMBER_THRESHOLD = 40;
-const STATUS_DONE_KEYWORDS = ['done', 'closed', 'resolved', 'complete'];
-/**
- * Max issues to fetch per team board when a PI filter is active. Raised to 500
- * (from the 200 used for openSprints queries) to match the PI-aware path in
- * useArtData.ts and avoid silently truncating large PIs.
- */
-const PI_ISSUE_MAX_RESULTS = 500;
-/** Max issues to fetch per team board when falling back to open-sprints JQL. */
-const OPEN_SPRINT_MAX_RESULTS = 200;
-
-// ── Pure helper functions ──
-
-function loadArtSettings(): ArtAdvancedSettings {
-  try {
-    return JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as ArtAdvancedSettings;
-  } catch {
-    return {};
-  }
-}
-
-function computeHealthStatus(completionPercent: number): HealthStatus {
-  if (completionPercent >= HEALTH_GREEN_THRESHOLD) return 'green';
-  if (completionPercent >= HEALTH_AMBER_THRESHOLD) return 'amber';
-  return 'red';
-}
-
-function isStatusDone(statusName: string): boolean {
-  const lower = statusName.toLowerCase();
-  return STATUS_DONE_KEYWORDS.some((keyword) => lower.includes(keyword));
-}
-
-/** Extracts the feature/epic key from a sprint issue, checking multiple candidate fields. */
-function extractFeatureKey(
-  fields: BlueprintRawIssue['fields'],
-  featureLinkField: string,
-): string | null {
-  const candidateFieldIds = [featureLinkField, DEFAULT_FEATURE_LINK_FIELD, 'customfield_10100'];
-  for (const fieldId of candidateFieldIds) {
-    const rawValue = fields[fieldId as keyof typeof fields];
-    if (!rawValue) continue;
-    if (typeof rawValue === 'string' && rawValue.includes('-')) return rawValue;
-    if (typeof rawValue === 'object' && 'key' in rawValue && rawValue.key) return rawValue.key;
-  }
-  if (fields.parent?.key) return fields.parent.key;
-  return null;
-}
-
-/** Groups raw sprint issues into a map of featureKey → list of story nodes. */
-function buildStoryMapFromRawIssues(
-  rawIssues: BlueprintRawIssue[],
-  featureLinkField: string,
-  artProjectKeys: Set<string>,
-): Map<string, BlueprintStoryNode[]> {
-  const storyMap = new Map<string, BlueprintStoryNode[]>();
-  for (const rawIssue of rawIssues) {
-    const featureKey = extractFeatureKey(rawIssue.fields, featureLinkField);
-    if (!featureKey) continue;
-    const projectKey = rawIssue.key.split('-')[0].toUpperCase();
-    const isOffTrain = artProjectKeys.size > 0 && !artProjectKeys.has(projectKey);
-    const story: BlueprintStoryNode = {
-      key: rawIssue.key,
-      summary: rawIssue.fields.summary ?? rawIssue.key,
-      status: rawIssue.fields.status?.name ?? 'Unknown',
-      assignee: rawIssue.fields.assignee?.displayName ?? null,
-      issueType: rawIssue.fields.issuetype?.name ?? 'Story',
-      isOffTrain,
-    };
-    if (!storyMap.has(featureKey)) storyMap.set(featureKey, []);
-    storyMap.get(featureKey)!.push(story);
-  }
-  return storyMap;
-}
-
-/** Assembles the final BlueprintFeatureNode list from raw feature details + grouped stories. */
-function buildFeatureNodes(
-  featureKeys: string[],
-  featureDetailsById: Map<string, BlueprintRawIssue>,
-  storyMap: Map<string, BlueprintStoryNode[]>,
-): BlueprintFeatureNode[] {
-  return featureKeys.map((featureKey) => {
-    const detail = featureDetailsById.get(featureKey);
-    const stories = storyMap.get(featureKey) ?? [];
-    const doneCount = stories.filter((story) => isStatusDone(story.status)).length;
-    const completionPercent = stories.length > 0 ? Math.round((doneCount / stories.length) * 100) : 0;
-    return {
-      key: featureKey,
-      summary: detail?.fields.summary ?? featureKey,
-      status: detail?.fields.status?.name ?? 'Unknown',
-      completionPercent,
-      healthStatus: computeHealthStatus(completionPercent),
-      isExternal: stories.length === 0,
-      stories,
-    };
-  });
-}
-
-/** Main Jira data-fetching logic for the blueprint hierarchy. */
-async function fetchBlueprintData(teams: ArtTeam[], selectedPiName: string): Promise<BlueprintFeatureNode[]> {
-  const settings = loadArtSettings();
-  const featureLinkField = settings.featureLinkField ?? DEFAULT_FEATURE_LINK_FIELD;
-  const piFieldId = settings.piFieldId?.trim() || DEFAULT_PI_FIELD_ID;
-  // piFieldNumber strips the "customfield_" prefix for the cf[N] JQL syntax
-  const piFieldNumber = piFieldId.replace('customfield_', '');
-  const trimmedPiName = selectedPiName.trim();
-  const artProjectKeys = new Set(
-    teams.map((team) => team.projectKey?.toUpperCase()).filter((key): key is string => Boolean(key)),
-  );
-
-  // Fetch sprint issues for every team board with feature-link fields included.
-  // When a PI is selected and the team has a known project key, scope by PI field
-  // instead of openSprints() so the hierarchy reflects the full PI backlog, not just
-  // the current sprint — matching legacy PI-aware behavior.
-  const allRawIssues: BlueprintRawIssue[] = [];
-  for (const team of teams) {
-    const hasProjectKey = Boolean(team.projectKey?.trim());
-    const hasPiFilter = Boolean(trimmedPiName) && hasProjectKey;
-    const jql = hasPiFilter
-      ? `project = "${team.projectKey!}" AND cf[${piFieldNumber}] = "${trimmedPiName}"`
-      : `board = ${team.boardId} AND sprint in openSprints()`;
-    const fields = `summary,status,issuetype,assignee,${featureLinkField},parent,customfield_10100`;
-    // Use a higher result cap for PI queries — large PIs can exceed 200 issues per team.
-    const maxResults = hasPiFilter ? PI_ISSUE_MAX_RESULTS : OPEN_SPRINT_MAX_RESULTS;
-    const result = await jiraGet<{ issues: BlueprintRawIssue[] }>(
-      `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(fields)}&maxResults=${maxResults}`,
-    );
-    allRawIssues.push(...(result.issues ?? []));
-  }
-
-  const storyMap = buildStoryMapFromRawIssues(allRawIssues, featureLinkField, artProjectKeys);
-  const featureKeys = Array.from(storyMap.keys());
-  if (featureKeys.length === 0) return [];
-
-  // Batch-fetch feature details for all discovered feature keys
-  const featureJql = `key in (${featureKeys.join(',')})`;
-  const featureResult = await jiraGet<{ issues: BlueprintRawIssue[] }>(
-    `/rest/api/2/search?jql=${encodeURIComponent(featureJql)}&fields=summary,status,issuetype,assignee&maxResults=${featureKeys.length}`,
-  );
-  const featureDetailsById = new Map<string, BlueprintRawIssue>(
-    (featureResult.issues ?? []).map((feat) => [feat.key, feat]),
-  );
-
-  return buildFeatureNodes(featureKeys, featureDetailsById, storyMap);
-}
-
-/** Filters the feature list by a search term (checks feature key, summary, and story summaries). */
-function filterFeaturesBySearch(
-  features: BlueprintFeatureNode[],
-  searchTerm: string,
-): BlueprintFeatureNode[] {
-  if (!searchTerm.trim()) return features;
-  const lowerTerm = searchTerm.toLowerCase();
-  return features.filter(
-    (feature) =>
-      feature.key.toLowerCase().includes(lowerTerm) ||
-      feature.summary.toLowerCase().includes(lowerTerm) ||
-      feature.stories.some((story) => story.summary.toLowerCase().includes(lowerTerm)),
-  );
-}
-
-// ── Sub-components ──
-
-interface HealthRingProps {
-  completionPercent: number;
-  healthStatus: HealthStatus;
-}
-
-const HEALTH_COLOR_MAP: Record<HealthStatus, string> = {
-  green: '#28a745',
-  amber: '#ffc107',
-  red: '#dc3545',
+const HEALTH_COLOR_MAP: Record<BlueprintHealthStatus, string> = {
+  green: 'var(--color-success)',
+  yellow: 'var(--color-warning)',
+  red: 'var(--color-danger)',
+  blue: 'var(--color-accent)',
+  gray: 'var(--color-text-secondary)',
 };
 
-/** Circular conic-gradient health ring showing feature completion percentage. */
-function HealthRing({ completionPercent, healthStatus }: HealthRingProps) {
-  const fillColor = HEALTH_COLOR_MAP[healthStatus];
-  const backgroundStyle = {
-    background: `conic-gradient(${fillColor} ${completionPercent}%, #e9ecef ${completionPercent}%)`,
-  };
-  return (
-    <div className={styles.healthRing} style={backgroundStyle} title={`${completionPercent}% complete`}>
-      <span className={styles.healthRingLabel}>{completionPercent}%</span>
-    </div>
-  );
-}
-
-interface BlueprintViewModeSwitcherProps {
-  viewMode: BlueprintViewMode;
-  onSetViewMode: (mode: BlueprintViewMode) => void;
-}
-
-const VIEW_MODE_LABELS: { key: BlueprintViewMode; label: string }[] = [
+const VIEW_MODE_LABELS: Array<{ key: BlueprintViewMode; label: string }> = [
   { key: 'hierarchy', label: 'Full Hierarchy' },
   { key: 'by-team', label: 'By Team' },
   { key: 'features', label: 'Features Only' },
   { key: 'flat', label: 'Flat List' },
 ];
 
-/** Row of buttons allowing the user to switch between Blueprint view modes. */
-function BlueprintViewModeSwitcher({ viewMode, onSetViewMode }: BlueprintViewModeSwitcherProps) {
+function readStatusToneClassName(statusName: string): string {
+  const normalizedStatusName = statusName.toLowerCase();
+  if (['done', 'closed', 'resolved'].some((keyword) => normalizedStatusName.includes(keyword))) {
+    return styles.statusToneSuccess;
+  }
+
+  if (['in progress', 'in review', 'in development'].some((keyword) => normalizedStatusName.includes(keyword))) {
+    return styles.statusToneInfo;
+  }
+
+  if (['blocked', 'impediment'].some((keyword) => normalizedStatusName.includes(keyword))) {
+    return styles.statusToneDanger;
+  }
+
+  return styles.statusToneNeutral;
+}
+
+function isStoryDone(statusName: string): boolean {
+  const normalizedStatusName = statusName.toLowerCase();
+  return ['done', 'closed', 'resolved', 'complete'].some((keyword) => normalizedStatusName.includes(keyword));
+}
+
+function HealthRing({ completionPercent, healthStatus }: { completionPercent: number; healthStatus: BlueprintHealthStatus }) {
+  const fillColor = HEALTH_COLOR_MAP[healthStatus];
+  return (
+    <div
+      className={styles.healthRing}
+      style={{ background: `conic-gradient(${fillColor} ${completionPercent}%, var(--color-surface-3) ${completionPercent}%)` }}
+      title={`${completionPercent}% complete`}
+    >
+      <span className={styles.healthRingLabel}>{completionPercent}%</span>
+    </div>
+  );
+}
+
+function BlueprintViewModeSwitcher({
+  viewMode,
+  onSetViewMode,
+}: {
+  viewMode: BlueprintViewMode;
+  onSetViewMode: (mode: BlueprintViewMode) => void;
+}) {
   return (
     <div className={styles.blueprintViewModeStrip}>
       {VIEW_MODE_LABELS.map((modeOption) => (
@@ -270,6 +80,7 @@ function BlueprintViewModeSwitcher({ viewMode, onSetViewMode }: BlueprintViewMod
           key={modeOption.key}
           className={`${styles.viewModeBtn} ${viewMode === modeOption.key ? styles.viewModeBtnActive : ''}`}
           onClick={() => onSetViewMode(modeOption.key)}
+          type="button"
         >
           {modeOption.label}
         </button>
@@ -278,78 +89,190 @@ function BlueprintViewModeSwitcher({ viewMode, onSetViewMode }: BlueprintViewMod
   );
 }
 
-interface BlueprintStoryListProps {
-  stories: BlueprintStoryNode[];
-}
+function BlueprintSubtaskList({ subtasks }: { subtasks: BlueprintSubtaskNode[] }) {
+  if (subtasks.length === 0) {
+    return null;
+  }
 
-/** Renders the indented list of story rows beneath an expanded feature. */
-function BlueprintStoryList({ stories }: BlueprintStoryListProps) {
   return (
-    <ul className={styles.blueprintStoryList}>
-      {stories.map((story) => (
-        <li key={story.key} className={styles.blueprintStoryRow}>
-          <span className={styles.storyKey}>{story.key}</span>
-          <span className={styles.storySummary}>{story.summary}</span>
-          <span className={styles.storyStatus}>{story.status}</span>
-          {story.assignee && <span className={styles.storyAssignee}>{story.assignee}</span>}
-          {story.isOffTrain && <span className={styles.offTrainBadge}>Off-train</span>}
+    <ul className={styles.blueprintSubtaskList}>
+      {subtasks.map((subtask) => (
+        <li key={subtask.key} className={styles.blueprintSubtaskRow}>
+          <span className={styles.subtaskIcon}>⬡</span>
+          <span className={styles.storyKey}>{subtask.key}</span>
+          <span className={styles.storySummary}>{subtask.summary}</span>
+          <span className={`${styles.storyStatus} ${readStatusToneClassName(subtask.status)}`}>{subtask.status}</span>
+          {subtask.assignee && <span className={styles.storyAssignee}>👤 {subtask.assignee}</span>}
         </li>
       ))}
     </ul>
   );
 }
 
-interface BlueprintFeatureRowProps {
+function BlueprintStoryRow({ story }: { story: BlueprintStoryNode }) {
+  const isDone = isStoryDone(story.status);
+  return (
+    <li className={`${styles.blueprintStoryRow} ${isDone ? styles.blueprintStoryRowDone : ''}`}>
+      <div className={styles.blueprintStoryMainRow}>
+        <span className={styles.storyTypeBadge}>{story.issueType}</span>
+        <span className={styles.storyKey}>{story.key}</span>
+        <span className={styles.storySummary}>{story.summary}</span>
+        {story.teamName && <span className={styles.storyTeamName}>{story.teamName}</span>}
+        {story.assignee && <span className={styles.storyAssignee}>👤 {story.assignee}</span>}
+        {story.storyPoints !== null && <span className={styles.storyPointsBadge}>{story.storyPoints} SP</span>}
+        <span className={`${styles.storyStatus} ${readStatusToneClassName(story.status)}`}>{story.status}</span>
+        {story.isOffTrain && <span className={styles.offTrainBadge}>Off-train</span>}
+      </div>
+      {story.offTrainReasons.length > 0 && (
+        <div className={styles.offTrainReasonRow}>
+          {story.offTrainReasons.map((reason) => (
+            <span className={styles.offTrainReasonBadge} key={`${story.key}-${reason.code}`}>
+              {reason.label}
+            </span>
+          ))}
+        </div>
+      )}
+      <BlueprintSubtaskList subtasks={story.subtasks} />
+    </li>
+  );
+}
+
+function BlueprintStoryList({
+  stories,
+  offTrainStories,
+}: {
+  stories: BlueprintStoryNode[];
+  offTrainStories: BlueprintStoryNode[];
+}) {
+  return (
+    <ul className={styles.blueprintStoryList}>
+      {stories.map((story) => (
+        <BlueprintStoryRow key={story.key} story={story} />
+      ))}
+      {offTrainStories.map((story) => (
+        <BlueprintStoryRow key={story.key} story={story} />
+      ))}
+    </ul>
+  );
+}
+
+function BlueprintFeatureRow({
+  feature,
+  isCollapsed,
+  onToggleCollapse,
+  showStories,
+}: {
   feature: BlueprintFeatureNode;
   isCollapsed: boolean;
   onToggleCollapse: (featureKey: string) => void;
   showStories: boolean;
-}
-
-/** Renders a single feature row with health ring, collapse chevron, and optional story list. */
-function BlueprintFeatureRow({ feature, isCollapsed, onToggleCollapse, showStories }: BlueprintFeatureRowProps) {
-  const collapseLabel = isCollapsed ? `Expand ${feature.key}` : `Collapse ${feature.key}`;
-  const storyCountLabel = `${feature.stories.length} ${feature.stories.length === 1 ? 'story' : 'stories'}`;
-
+}) {
+  const storyCount = feature.children.length + feature.offTrain.length;
   return (
     <div className={styles.blueprintFeatureBlock}>
       <div className={styles.blueprintFeatureRow}>
         <button
           className={styles.blueprintChevron}
           onClick={() => onToggleCollapse(feature.key)}
-          aria-label={collapseLabel}
+          aria-label={isCollapsed ? `Expand ${feature.key}` : `Collapse ${feature.key}`}
           aria-expanded={!isCollapsed}
+          type="button"
         >
           {isCollapsed ? '▶' : '▼'}
         </button>
-        <HealthRing completionPercent={feature.completionPercent} healthStatus={feature.healthStatus} />
+        <HealthRing completionPercent={feature.completionPercent} healthStatus={feature.health} />
         <span className={styles.featureKey}>{feature.key}</span>
         <span className={styles.featureSummary}>{feature.summary}</span>
         <span className={styles.featureStatus}>{feature.status}</span>
-        <span className={styles.storyCount}>{storyCountLabel}</span>
+        <span className={styles.storyCount}>{storyCount} {storyCount === 1 ? 'story' : 'stories'}</span>
         {feature.isExternal && <span className={styles.externalBadge}>External</span>}
       </div>
-      {!isCollapsed && showStories && <BlueprintStoryList stories={feature.stories} />}
+      {!isCollapsed && showStories && (
+        <BlueprintStoryList stories={feature.children} offTrainStories={feature.offTrain} />
+      )}
     </div>
   );
 }
 
-interface BlueprintFeatureListProps {
-  viewMode: BlueprintViewMode;
-  features: BlueprintFeatureNode[];
+function BlueprintProgramEpicCard({
+  programEpic,
+  collapsedProgramEpicKeys,
+  collapsedFeatureKeys,
+  onToggleProgramEpicCollapse,
+  onToggleFeatureCollapse,
+  showStories,
+}: {
+  programEpic: BlueprintProgramEpicNode;
+  collapsedProgramEpicKeys: Set<string>;
   collapsedFeatureKeys: Set<string>;
-  onToggleCollapse: (featureKey: string) => void;
+  onToggleProgramEpicCollapse: (programEpicKey: string) => void;
+  onToggleFeatureCollapse: (featureKey: string) => void;
+  showStories: boolean;
+}) {
+  const isCollapsed = collapsedProgramEpicKeys.has(programEpic.key);
+  const totalStoryCount = programEpic.features.reduce((storyCount, feature) => storyCount + feature.children.length, 0);
+  return (
+    <section className={styles.programEpicCard}>
+      <button
+        className={styles.programEpicHeader}
+        onClick={() => onToggleProgramEpicCollapse(programEpic.key)}
+        style={{ borderLeftColor: HEALTH_COLOR_MAP[programEpic.health] }}
+        type="button"
+      >
+        <span className={styles.programEpicIcon}>🔷</span>
+        <div className={styles.programEpicSummary}>
+          <div className={styles.programEpicTitle}>
+            {programEpic.key !== '_none_' ? `${programEpic.key} — ` : ''}
+            {programEpic.summary}
+          </div>
+          {programEpic.status && (
+            <div className={styles.programEpicMeta}>
+              {programEpic.status} · {programEpic.features.length} feature(s) · {totalStoryCount} story/defect(s)
+            </div>
+          )}
+        </div>
+        <div className={styles.programEpicProgress}>
+          <div className={styles.programEpicProgressBar}>
+            <div
+              className={styles.programEpicProgressFill}
+              style={{
+                backgroundColor: HEALTH_COLOR_MAP[programEpic.health],
+                width: `${programEpic.completionPercent}%`,
+              }}
+            />
+          </div>
+          <span className={styles.programEpicPercent}>{programEpic.completionPercent}%</span>
+          <span className={styles.programEpicChevron}>{isCollapsed ? '▶' : '▼'}</span>
+        </div>
+      </button>
+      {!isCollapsed && (
+        <div className={styles.programEpicBody}>
+          {programEpic.features.map((feature) => (
+            <BlueprintFeatureRow
+              key={feature.key}
+              feature={feature}
+              isCollapsed={collapsedFeatureKeys.has(feature.key)}
+              onToggleCollapse={onToggleFeatureCollapse}
+              showStories={showStories}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
 }
 
-/** Renders the feature list according to the active view mode. */
 function BlueprintFeatureList({
-  viewMode,
   features,
   collapsedFeatureKeys,
-  onToggleCollapse,
-}: BlueprintFeatureListProps) {
-  const shouldShowStories = viewMode === 'hierarchy' || viewMode === 'by-team';
-
+  onToggleFeatureCollapse,
+  showStories,
+}: {
+  features: BlueprintFeatureNode[];
+  collapsedFeatureKeys: Set<string>;
+  onToggleFeatureCollapse: (featureKey: string) => void;
+  showStories: boolean;
+}) {
   return (
     <div className={styles.blueprintFeatureList}>
       {features.map((feature) => (
@@ -357,66 +280,125 @@ function BlueprintFeatureList({
           key={feature.key}
           feature={feature}
           isCollapsed={collapsedFeatureKeys.has(feature.key)}
-          onToggleCollapse={onToggleCollapse}
-          showStories={shouldShowStories}
+          onToggleCollapse={onToggleFeatureCollapse}
+          showStories={showStories}
         />
       ))}
     </div>
   );
 }
 
-// ── Main component ──
+function BlueprintTeamBuckets({
+  programEpics,
+  collapsedFeatureKeys,
+  onToggleFeatureCollapse,
+}: {
+  programEpics: BlueprintProgramEpicNode[];
+  collapsedFeatureKeys: Set<string>;
+  onToggleFeatureCollapse: (featureKey: string) => void;
+}) {
+  const featureBucketsByTeamName = useMemo(() => {
+    const teamBuckets = new Map<string, BlueprintFeatureNode[]>();
+    for (const feature of flattenProgramEpicFeatures(programEpics)) {
+      const featureTeamNames = Array.from(new Set(feature.children.map((story) => story.teamName).filter(Boolean)));
+      for (const teamName of featureTeamNames) {
+        const teamFeatures = teamBuckets.get(teamName!) ?? [];
+        teamFeatures.push({
+          ...feature,
+          children: feature.children.filter((story) => story.teamName === teamName),
+        });
+        teamBuckets.set(teamName!, teamFeatures);
+      }
+    }
+
+    return Array.from(teamBuckets.entries()).sort(([leftTeamName], [rightTeamName]) => leftTeamName.localeCompare(rightTeamName));
+  }, [programEpics]);
+
+  return (
+    <div className={styles.teamBucketList}>
+      {featureBucketsByTeamName.map(([teamName, features]) => (
+        <section className={styles.teamBucketCard} key={teamName}>
+          <h4 className={styles.teamBucketTitle}>{teamName}</h4>
+          <BlueprintFeatureList
+            features={features}
+            collapsedFeatureKeys={collapsedFeatureKeys}
+            onToggleFeatureCollapse={onToggleFeatureCollapse}
+            showStories
+          />
+        </section>
+      ))}
+    </div>
+  );
+}
 
 interface BlueprintTabProps {
   teams: ArtTeam[];
   selectedPiName: string;
 }
 
-/** Blueprint tab: displays the PI→Feature→Story hierarchy for all ART teams. */
+/** Blueprint tab: displays the bottom-up Program Epic hierarchy derived from ART team issues. */
 export default function BlueprintTab({ teams, selectedPiName }: BlueprintTabProps) {
   const [viewMode, setViewMode] = useState<BlueprintViewMode>('hierarchy');
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [features, setFeatures] = useState<BlueprintFeatureNode[] | null>(null);
+  const [programEpics, setProgramEpics] = useState<BlueprintProgramEpicNode[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [collapsedProgramEpicKeys, setCollapsedProgramEpicKeys] = useState<Set<string>>(new Set());
   const [collapsedFeatureKeys, setCollapsedFeatureKeys] = useState<Set<string>>(new Set());
 
   const hasNoPiSelected = !selectedPiName.trim();
   const hasNoTeams = teams.length === 0;
-  const hasLoadedData = features !== null;
-  const filteredFeatures = filterFeaturesBySearch(features ?? [], searchTerm);
+  const hasLoadedData = programEpics !== null;
+  const filteredProgramEpics = filterProgramEpicsBySearch(programEpics ?? [], searchTerm);
+  const flattenedFeatures = flattenProgramEpicFeatures(filteredProgramEpics);
 
   async function handleLoadBlueprint() {
-    if (hasNoTeams) return;
+    if (hasNoTeams) {
+      return;
+    }
+
     setIsLoading(true);
     setLoadError(null);
     try {
-      const loadedFeatures = await fetchBlueprintData(teams, selectedPiName);
-      setFeatures(loadedFeatures);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load blueprint data';
-      setLoadError(message);
+      const loadedProgramEpics = await fetchBlueprintHierarchy(teams, selectedPiName);
+      setProgramEpics(loadedProgramEpics);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Failed to load blueprint data');
     } finally {
       setIsLoading(false);
     }
   }
 
+  function toggleProgramEpicCollapse(programEpicKey: string) {
+    setCollapsedProgramEpicKeys((previous) => {
+      const nextProgramEpicKeys = new Set(previous);
+      if (nextProgramEpicKeys.has(programEpicKey)) {
+        nextProgramEpicKeys.delete(programEpicKey);
+      } else {
+        nextProgramEpicKeys.add(programEpicKey);
+      }
+
+      return nextProgramEpicKeys;
+    });
+  }
+
   function toggleFeatureCollapse(featureKey: string) {
     setCollapsedFeatureKeys((previous) => {
-      const next = new Set(previous);
-      if (next.has(featureKey)) {
-        next.delete(featureKey);
+      const nextFeatureKeys = new Set(previous);
+      if (nextFeatureKeys.has(featureKey)) {
+        nextFeatureKeys.delete(featureKey);
       } else {
-        next.add(featureKey);
+        nextFeatureKeys.add(featureKey);
       }
-      return next;
+
+      return nextFeatureKeys;
     });
   }
 
   if (hasNoPiSelected) {
     return (
       <div className={styles.blueprintTab}>
-        <p className={styles.warningText}>No PI selected. Choose a PI name in the Board Prep tab to enable the Blueprint view.</p>
+        <p className={styles.warningText}>No PI selected. Choose a PI from the selector above to enable the Blueprint hierarchy.</p>
       </div>
     );
   }
@@ -429,42 +411,75 @@ export default function BlueprintTab({ teams, selectedPiName }: BlueprintTabProp
     );
   }
 
+  const shouldShowStories = viewMode !== 'features';
+  const shouldShowProgramEpics = viewMode === 'hierarchy';
+  const shouldShowTeamBuckets = viewMode === 'by-team';
+  const shouldShowFlatFeatures = viewMode === 'features' || viewMode === 'flat';
+  const hasVisibleBlueprintData = shouldShowProgramEpics
+    ? filteredProgramEpics.length > 0
+    : flattenedFeatures.length > 0;
+
   return (
     <div className={styles.blueprintTab}>
       <div className={styles.blueprintToolbar}>
-        <button className={styles.loadBtn} onClick={handleLoadBlueprint} disabled={isLoading}>
+        <button className={styles.loadBtn} onClick={handleLoadBlueprint} disabled={isLoading} type="button">
           {isLoading ? 'Loading…' : hasLoadedData ? 'Reload Blueprint' : 'Load Blueprint'}
         </button>
         <BlueprintViewModeSwitcher viewMode={viewMode} onSetViewMode={setViewMode} />
         <input
           type="text"
           className={styles.searchInput}
-          placeholder="Search features or stories…"
+          placeholder="Search Program Epics, features, or stories…"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
         />
       </div>
 
       {loadError && <p className={styles.errorText}>{loadError}</p>}
-
       {isLoading && <p className={styles.loadingText}>Loading blueprint hierarchy…</p>}
 
       {!isLoading && !hasLoadedData && !loadError && (
-        <p className={styles.emptyState}>Click "Load Blueprint" to fetch the PI feature hierarchy from Jira.</p>
+        <p className={styles.emptyState}>Click "Load Blueprint" to run the legacy bottom-up Program Epic hierarchy query chain.</p>
       )}
 
-      {!isLoading && hasLoadedData && filteredFeatures.length === 0 && (
+      {!isLoading && hasLoadedData && !hasVisibleBlueprintData && (
         <p className={styles.emptyState}>
-          {searchTerm ? 'No features match the current search.' : 'No features found. Ensure sprint issues have a feature-link field configured in Settings.'}
+          {searchTerm
+            ? 'No Program Epics, features, or stories match the current search.'
+            : 'No Program Epics found. Check that the Feature Link and Parent Link fields are configured correctly in ART Settings.'}
         </p>
       )}
 
-      {!isLoading && filteredFeatures.length > 0 && (
-        <BlueprintFeatureList
-          viewMode={viewMode}
-          features={filteredFeatures}
+      {!isLoading && shouldShowProgramEpics && filteredProgramEpics.length > 0 && (
+        <div className={styles.programEpicList}>
+          {filteredProgramEpics.map((programEpic) => (
+            <BlueprintProgramEpicCard
+              key={programEpic.key}
+              programEpic={programEpic}
+              collapsedProgramEpicKeys={collapsedProgramEpicKeys}
+              collapsedFeatureKeys={collapsedFeatureKeys}
+              onToggleProgramEpicCollapse={toggleProgramEpicCollapse}
+              onToggleFeatureCollapse={toggleFeatureCollapse}
+              showStories={shouldShowStories}
+            />
+          ))}
+        </div>
+      )}
+
+      {!isLoading && shouldShowTeamBuckets && filteredProgramEpics.length > 0 && (
+        <BlueprintTeamBuckets
+          programEpics={filteredProgramEpics}
           collapsedFeatureKeys={collapsedFeatureKeys}
-          onToggleCollapse={toggleFeatureCollapse}
+          onToggleFeatureCollapse={toggleFeatureCollapse}
+        />
+      )}
+
+      {!isLoading && shouldShowFlatFeatures && flattenedFeatures.length > 0 && (
+        <BlueprintFeatureList
+          features={flattenedFeatures}
+          collapsedFeatureKeys={collapsedFeatureKeys}
+          onToggleFeatureCollapse={toggleFeatureCollapse}
+          showStories={viewMode === 'flat'}
         />
       )}
     </div>

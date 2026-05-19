@@ -285,6 +285,7 @@ describe('SprintDashboardView', () => {
     expect(screen.getByRole('tab', { name: 'Defects' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Standup' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Roster' })).not.toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'View Work By' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Sprint' })).toBeInTheDocument();
   });
@@ -488,6 +489,7 @@ describe('SprintDashboardView', () => {
     expect(screen.getByLabelText(/story points field/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/epic link field/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Detect' })).toBeInTheDocument();
+    expect(screen.getByText('Mock Roster Workspace')).toBeInTheDocument();
   });
 
   it('renders Move to Sprint buttons in the Assignee tab', () => {

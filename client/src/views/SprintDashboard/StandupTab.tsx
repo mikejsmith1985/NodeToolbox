@@ -491,6 +491,9 @@ export default function StandupTab({
           </div>
         ) : null}
       </div>
+      {state.scopeMode === 'roster' && state.activeRosterTeamName ? (
+        <p className={styles.personWalkMeta}>Active roster team: {state.activeRosterTeamName}</p>
+      ) : null}
 
       {state.standupMode === 'dsu-board' ? (
         <DsuBoardView key={projectKey || 'standalone'} projectKey={projectKey} />

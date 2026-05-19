@@ -8,6 +8,8 @@ import type { JiraIssue } from '../../../types/jira.ts';
 
 const STATUS_CATEGORY_DONE = 'done';
 const STATUS_CATEGORY_IN_PROGRESS = 'indeterminate';
+const PI_DATE_RANGE_PATTERN = /(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s*-\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})/;
+const TWO_DIGIT_YEAR_BASE = 2000;
 
 // ── Status helpers ──
 
@@ -174,6 +176,82 @@ export function classifyImpedimentStaleness(
 export function computeDaysSinceUpdate(issue: JiraIssue, nowMs: number = Date.now()): number {
   const updatedMs = new Date(issue.fields.updated).getTime();
   return Math.max(0, Math.floor((nowMs - updatedMs) / IMPEDIMENT_MS_PER_DAY));
+}
+
+// ── Program Increment date helpers ──
+
+/**
+ * Normalizes a two-digit or four-digit year token from a PI name into a full calendar year.
+ * Jira PI labels in this repo use short years such as "26", which map to 2026.
+ */
+function resolveCalendarYear(yearToken: string): number {
+  const parsedYear = Number(yearToken);
+  return yearToken.length <= 2 ? TWO_DIGIT_YEAR_BASE + parsedYear : parsedYear;
+}
+
+/**
+ * Creates a local-midnight Date so PI range checks stay stable across time zones.
+ * This avoids UTC conversion shifting the date into the previous or next day.
+ */
+function createLocalDateAtMidnight(monthNumber: number, dayNumber: number, yearNumber: number): Date {
+  return new Date(yearNumber, monthNumber - 1, dayNumber);
+}
+
+/**
+ * Parses a PI label date range such as "PI 26.3 (05/21/26 - 07/29/26)".
+ * Returns null when the label does not contain a recognizable start/end date pair.
+ */
+export function parsePiDateRange(
+  piName: string,
+): { startDate: Date; endDate: Date } | null {
+  const matchedDateRange = piName.match(PI_DATE_RANGE_PATTERN);
+  if (!matchedDateRange) {
+    return null;
+  }
+
+  const startMonthNumber = Number(matchedDateRange[1]);
+  const startDayNumber = Number(matchedDateRange[2]);
+  const startYearNumber = resolveCalendarYear(matchedDateRange[3]);
+  const endMonthNumber = Number(matchedDateRange[4]);
+  const endDayNumber = Number(matchedDateRange[5]);
+  const endYearNumber = resolveCalendarYear(matchedDateRange[6]);
+
+  return {
+    startDate: createLocalDateAtMidnight(startMonthNumber, startDayNumber, startYearNumber),
+    endDate: createLocalDateAtMidnight(endMonthNumber, endDayNumber, endYearNumber),
+  };
+}
+
+/**
+ * Finds the PI label whose embedded date range covers the provided day.
+ * The check is inclusive so the PI still matches on its start and end dates.
+ */
+export function findPiNameForDate(
+  piNames: string[],
+  todayDate: Date = new Date(),
+): string | null {
+  const normalizedTodayDate = createLocalDateAtMidnight(
+    todayDate.getMonth() + 1,
+    todayDate.getDate(),
+    todayDate.getFullYear(),
+  );
+
+  for (const piName of piNames) {
+    const parsedDateRange = parsePiDateRange(piName);
+    if (!parsedDateRange) {
+      continue;
+    }
+
+    const isDateWithinPiRange =
+      normalizedTodayDate.getTime() >= parsedDateRange.startDate.getTime()
+      && normalizedTodayDate.getTime() <= parsedDateRange.endDate.getTime();
+
+    if (isDateWithinPiRange) {
+      return piName;
+    }
+  }
+
+  return null;
 }
 
 // ── Monthly Report Jira-derived helpers ──

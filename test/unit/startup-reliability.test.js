@@ -35,6 +35,26 @@ describe('server.js — startup error handling', () => {
     expect(SERVER_SOURCE).toMatch(/EADDRINUSE/);
   });
 
+  it('closes the active HTTP listener before Admin Hub restart and update handoffs', () => {
+    // A controlled handoff must release the old listener before the process exits,
+    // otherwise the replacement process can race the old server and time out.
+    expect(SERVER_SOURCE).toMatch(/\.close\(/);
+  });
+
+  it('marks restart-handoff launches so hidden replacements fail fast instead of hanging', () => {
+    // Updater-driven relaunches run without a visible terminal, so they cannot
+    // sit forever on stdin pause logic. The hidden handoff flag gates fast exit.
+    expect(SERVER_SOURCE).toMatch(/--restart-handoff/);
+  });
+
+  it('hands legacy top-level exe launches to the current versioned payload', () => {
+    // If a user double-clicks the old downloaded exe after an Admin Hub update,
+    // server.js must delegate to current.txt instead of serving stale code.
+    expect(SERVER_SOURCE).toMatch(/handoffLegacyExecutableToCurrentPayload/);
+    expect(SERVER_SOURCE).toMatch(/readCurrentVersion/);
+    expect(SERVER_SOURCE).toMatch(/resolvePayloadExecutablePath/);
+  });
+
   it('keeps the console window open after a startup error so users can read it', () => {
     // On the exe: if we just call process.exit(1), the window closes instantly.
     // We must pause stdin (or equivalent) to keep the window alive long enough
@@ -52,21 +72,24 @@ describe('server.js — startup error handling', () => {
 // ── Launch Toolbox.bat — direct execution (no start) ─────────────────────────
 
 describe('Launch Toolbox.bat — direct node execution', () => {
-  it('runs node server.js directly, NOT via the start command', () => {
+  it('runs the selected payload directly, NOT via the start command', () => {
     // "start ..." spawns a detached window. When that child crashes, its window
-    // closes silently. Running node directly keeps the bat window open so errors
-    // are visible — identical to how toolbox-poc.js is run: "node toolbox-poc.js".
+    // closes silently. Running the payload directly keeps errors visible.
     // The line that launches the server must not begin with "start ".
     const serverStartLine = BAT_SOURCE
       .split('\n')
-      .find((line) => line.includes('node server.js'));
+      .find((line) => line.trim().startsWith('"%PAYLOAD_PATH%"'));
 
     expect(serverStartLine).toBeDefined();
     expect(serverStartLine.trim()).not.toMatch(/^start\s/i);
   });
 
-  it('passes --open to node server.js so the browser auto-opens', () => {
-    expect(BAT_SOURCE).toMatch(/node server\.js.*--open/);
+  it('passes --open to the payload so the browser auto-opens', () => {
+    expect(BAT_SOURCE).toMatch(/%PAYLOAD_PATH%.*--open/);
+  });
+
+  it('uses current.txt so relaunch after reboot follows the active version', () => {
+    expect(BAT_SOURCE).toMatch(/current\.txt/);
   });
 });
 

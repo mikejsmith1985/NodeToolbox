@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
-import { isIssueDone, isIssueInProgress, resolveIssueStoryPoints } from './artHelpers.ts';
+import {
+  findPiNameForDate,
+  isIssueDone,
+  isIssueInProgress,
+  resolveIssueStoryPoints,
+} from './artHelpers.ts';
 
 const SPRINT_STATE_ACTIVE = 'active';
 const SPRINT_ISSUE_MAX_RESULTS = 100;
@@ -221,15 +226,15 @@ async function loadAvailablePiNamesFromJira(teams: ArtTeam[]): Promise<string[]>
   }
 
   const projectKeys = createUniqueProjectKeys(teams);
-  if (projectKeys.length === 0) {
-    return [];
-  }
-
   const piFieldId = readArtAdvancedSettings().piFieldId?.trim() || DEFAULT_PI_FIELD_ID;
   const autocompletePiNames = await fetchPiNamesFromAutocomplete(piFieldId);
 
   if (autocompletePiNames.length > 0) {
     return sortPiNames(autocompletePiNames);
+  }
+
+  if (projectKeys.length === 0) {
+    return [];
   }
 
   const fallbackPiNames = await fetchPiNamesFromIssues(piFieldId, projectKeys);
@@ -247,6 +252,36 @@ async function resolveTeamProjectKey(team: ArtTeam): Promise<string | undefined>
   } catch {
     return undefined;
   }
+}
+
+function buildBoardPrepIssuePath(boardId: string, boardType: ArtBoardType): string {
+  const encodedBoardPrepFields = encodeURIComponent(BOARD_PREP_FIELDS);
+
+  if (boardType === 'kanban' || boardType === 'simple') {
+    return `/rest/agile/1.0/board/${boardId}/issue?maxResults=${BOARD_PREP_MAX_RESULTS}&fields=${encodedBoardPrepFields}`;
+  }
+
+  return `/rest/agile/1.0/board/${boardId}/backlog?maxResults=${BOARD_PREP_MAX_RESULTS}&fields=${encodedBoardPrepFields}`;
+}
+
+async function resolveBoardPrepBoardType(team: ArtTeam): Promise<ArtBoardType> {
+  if (team.boardType && team.boardType !== 'unknown') {
+    return team.boardType;
+  }
+
+  const boardMetadata = await jiraGet<JiraBoardMetadata>(`/rest/agile/1.0/board/${team.boardId}`);
+  return normalizeBoardType(boardMetadata.type);
+}
+
+function createBoardPrepIssues(teamName: string, issues: JiraIssue[]): ArtBoardPrepIssue[] {
+  return issues.map<ArtBoardPrepIssue>((issue) => ({
+    teamName,
+    key: issue.key,
+    summary: issue.fields.summary,
+    // Use the shared helper so both known story-point fields are checked automatically.
+    estimate: resolveIssueStoryPoints(issue),
+    priority: issue.fields.priority?.name ?? null,
+  }));
 }
 
 export type ArtTab =
@@ -310,7 +345,7 @@ export interface ArtDataState {
   isLoadingAllTeams: boolean;
   /** Team IDs whose SoS accordion sections are currently expanded. */
   sosExpandedTeams: string[];
-  /** Issues fetched from team board backlogs for the Board Prep panel. */
+  /** Issues fetched from each team's Board Prep source for PI-planning review. */
   boardPrepIssues: ArtBoardPrepIssue[];
   isLoadingBoardPrep: boolean;
   boardPrepError: string | null;
@@ -427,6 +462,7 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
   const [teams, setTeams] = useState<ArtTeam[]>(loadStoredTeams);
   // teamsRef keeps an always-current reference so loadTeam can read boardId without stale closures
   const teamsRef = useRef<ArtTeam[]>([]);
+  const initialStoredTeamCountRef = useRef(teams.length);
   const [selectedPiName, setSelectedPiNameState] = useState(getStoredSelectedPiName);
   const selectedPiNameRef = useRef(selectedPiName);
   const [availablePiNames, setAvailablePiNames] = useState<string[]>([]);
@@ -459,6 +495,7 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
 
   const setSelectedPiName = useCallback((name: string) => {
     setSelectedPiNameState(name);
+    selectedPiNameRef.current = name;
     persistSelectedPiName(name);
   }, []);
 
@@ -487,17 +524,33 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
     persistTeams(teamsRef.current);
   }, []);
 
-  const loadPiOptions = useCallback(async () => {
+  const loadPiOptions = useCallback(async (shouldAutoSelectCurrentPi = false) => {
     setIsLoadingPiOptions(true);
     try {
       const loadedPiNames = await loadAvailablePiNamesFromJira(teamsRef.current);
       setAvailablePiNames(loadedPiNames);
+      if (shouldAutoSelectCurrentPi) {
+        const activePiName = findPiNameForDate(loadedPiNames);
+        if (activePiName !== null) {
+          setSelectedPiNameState(activePiName);
+          selectedPiNameRef.current = activePiName;
+          persistSelectedPiName(activePiName);
+        }
+      }
     } catch {
       setAvailablePiNames([]);
     } finally {
       setIsLoadingPiOptions(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (initialStoredTeamCountRef.current === 0) {
+      return;
+    }
+
+    void loadPiOptions(true);
+  }, [loadPiOptions]);
 
   const loadTeam = useCallback(async (teamId: string) => {
     // Read boardId directly from the ref to avoid stale closures in concurrent mode
@@ -705,17 +758,11 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
     try {
       const teamIssueArrays = await Promise.all(
         currentTeams.map(async (team) => {
+          const boardPrepBoardType = await resolveBoardPrepBoardType(team);
           const response = await jiraGet<{ issues: JiraIssue[] }>(
-            `/rest/agile/1.0/board/${team.boardId}/backlog?maxResults=${BOARD_PREP_MAX_RESULTS}&fields=${BOARD_PREP_FIELDS}`,
+            buildBoardPrepIssuePath(team.boardId, boardPrepBoardType),
           );
-          return response.issues.map<ArtBoardPrepIssue>((issue) => ({
-            teamName: team.name,
-            key: issue.key,
-            summary: issue.fields.summary,
-            // Use the shared helper so both known story-point fields are checked automatically.
-            estimate: resolveIssueStoryPoints(issue),
-            priority: issue.fields.priority?.name ?? null,
-          }));
+          return createBoardPrepIssues(team.name, response.issues);
         }),
       );
       setBoardPrepIssues(teamIssueArrays.flat());

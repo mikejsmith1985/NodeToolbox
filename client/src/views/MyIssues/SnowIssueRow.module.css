@@ -14,8 +14,8 @@
 }
 
 .snowRow:hover {
-  background: rgba(0, 229, 255, 0.04);
-  box-shadow: inset 0 0 12px rgba(0, 229, 255, 0.06);
+  background: color-mix(in srgb, var(--color-tone-info-bg) 80%, transparent);
+  box-shadow: inset var(--glow-cyan);
 }
 
 /* Small SNow logo / icon in the first column */
@@ -28,7 +28,7 @@
   border-radius: var(--radius-sm);
   font-size: 10px;
   font-weight: 700;
-  background: rgba(0, 229, 255, 0.15);
+  background: var(--color-tone-info-bg);
   color: var(--color-cyan);
   flex-shrink: 0;
 }
@@ -63,11 +63,11 @@
   white-space: nowrap;
 }
 
-.statusNew       { background: rgba(124, 58, 237, 0.18); color: #a78bfa; }
-.statusProgress  { background: rgba(0, 229, 255, 0.18);  color: var(--color-cyan); }
-.statusOnHold    { background: rgba(251, 191, 36, 0.18); color: #fbbf24; }
-.statusResolved  { background: rgba(52, 211, 153, 0.18); color: #34d399; }
-.statusClosed    { background: rgba(107, 114, 128, 0.18); color: #9ca3af; }
+.statusNew       { background: var(--color-tone-purple-bg); color: var(--color-tone-purple-fg); }
+.statusProgress  { background: var(--color-tone-info-bg); color: var(--color-tone-info-fg); }
+.statusOnHold    { background: var(--color-tone-warning-bg); color: var(--color-tone-warning-fg); }
+.statusResolved  { background: var(--color-tone-success-bg); color: var(--color-tone-success-fg); }
+.statusClosed    { background: var(--color-tone-neutral-bg); color: var(--color-tone-neutral-fg); }
 .statusDefault   { background: rgba(107, 114, 128, 0.12); color: var(--color-text-secondary); }
 
 /* ── Priority badge ── */
@@ -81,10 +81,10 @@
   white-space: nowrap;
 }
 
-.priorityCritical { color: #f87171; }
-.priorityHigh     { color: #fb923c; }
-.priorityModerate { color: #fbbf24; }
-.priorityLow      { color: #34d399; }
+.priorityCritical { color: var(--color-tone-danger-fg); }
+.priorityHigh     { color: var(--color-tone-orange-fg); }
+.priorityModerate { color: var(--color-tone-warning-fg); }
+.priorityLow      { color: var(--color-tone-success-fg); }
 .priorityDefault  { color: var(--color-text-secondary); }
 
 .openedDate {

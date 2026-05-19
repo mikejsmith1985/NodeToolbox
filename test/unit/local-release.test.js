@@ -91,15 +91,17 @@ describeOnWindows('local-release.ps1', () => {
       expect(output).not.toMatch(/node_modules/i);
     });
 
-    it('includes package-lock.json for reproducible end-user installs', () => {
-      // package-lock.json is required so end users can run "npm ci --omit=dev"
-      // and get exactly the same dependency tree as the release build.
+    it('reports the durable current.txt and versions layout', () => {
+      // The release zip must make launch simple: stable launchers at the top and
+      // the selected executable under versions\<version>.
       const output = runDryRun();
-      expect(output).toMatch(/package-lock\.json/i);
+      expect(output).toMatch(/current\.txt/i);
+      expect(output).toMatch(/versions/i);
+      expect(output).toMatch(/nodetoolbox\.exe/i);
     });
 
-    it('reports that an exe will be built for single-file distribution', () => {
-      // A standalone .exe lets users run NodeToolbox without any extraction step.
+    it('reports that an exe payload will be built for the single release zip', () => {
+      // A standalone .exe payload lets users run NodeToolbox without installing Node.js.
       const output = runDryRun();
       expect(output).toMatch(/\.exe|nodetoolbox.*exe/i);
     });
@@ -111,11 +113,11 @@ describeOnWindows('local-release.ps1', () => {
       expect(output).toMatch(/GitHub Release|gh release create/i);
     });
 
-    it('reports that the exe will be wrapped in its own zip for safe download', () => {
-      // Raw .exe files are flagged as dangerous by browsers and email scanners.
-      // Wrapping the exe in a dedicated -exe.zip lets users download without
-      // security warnings while still getting the single-file executable.
+    it('reports that exactly one zip asset will be published for safe download', () => {
+      // One asset avoids confusing first-time users while still avoiding direct
+      // browser downloads of a raw unsigned executable.
       const output = runDryRun();
+      expect(output).toMatch(/single zip asset|one user-facing zip/i);
       expect(output).toMatch(/-exe\.zip/i);
     });
   });
