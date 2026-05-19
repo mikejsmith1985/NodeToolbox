@@ -49,6 +49,29 @@ const SAMPLE_EPICS_RESPONSE = {
   ],
 };
 
+const SAMPLE_HIERARCHY_REFERENCES_RESPONSE = {
+  issues: [
+    {
+      key: 'TBX-11',
+      fields: {
+        parent: { key: 'TBX-1' },
+      },
+    },
+    {
+      key: 'TBX-12',
+      fields: {
+        customfield_10008: 'TBX-2',
+      },
+    },
+    {
+      key: 'TBX-13',
+      fields: {
+        customfield_10008: 'TBX-3',
+      },
+    },
+  ],
+};
+
 const SAMPLE_CHILDREN_RESPONSE = {
   issues: [
     {
@@ -120,7 +143,9 @@ describe('usePipelineState', () => {
   });
 
   it('loads epics from Jira and maps card fields plus story-point fallback', async () => {
-    mockJiraGet.mockResolvedValue(SAMPLE_EPICS_RESPONSE);
+    mockJiraGet
+      .mockResolvedValueOnce(SAMPLE_HIERARCHY_REFERENCES_RESPONSE)
+      .mockResolvedValueOnce(SAMPLE_EPICS_RESPONSE);
     const renderedHook = renderHook(() => usePipelineState());
 
     act(() => renderedHook.result.current.setProjectKey('tbx'));
@@ -128,7 +153,8 @@ describe('usePipelineState', () => {
       await renderedHook.result.current.reload();
     });
 
-    expect(decodeURIComponent(mockJiraGet.mock.calls[0][0])).toContain('project=TBX AND issuetype=Epic');
+    expect(decodeURIComponent(mockJiraGet.mock.calls[0][0])).toContain('project=TBX ORDER BY status,created');
+    expect(decodeURIComponent(mockJiraGet.mock.calls[1][0])).toContain('issuekey in (TBX-1, TBX-2, TBX-3)');
     expect(renderedHook.result.current.epics).toHaveLength(3);
     expect(renderedHook.result.current.epics[0]).toMatchObject({
       key: 'TBX-1',
@@ -144,7 +170,9 @@ describe('usePipelineState', () => {
   });
 
   it('filters loaded epics by status category multi-select', async () => {
-    mockJiraGet.mockResolvedValue(SAMPLE_EPICS_RESPONSE);
+    mockJiraGet
+      .mockResolvedValueOnce(SAMPLE_HIERARCHY_REFERENCES_RESPONSE)
+      .mockResolvedValueOnce(SAMPLE_EPICS_RESPONSE);
     const renderedHook = renderHook(() => usePipelineState());
 
     act(() => renderedHook.result.current.setProjectKey('TBX'));
@@ -158,7 +186,9 @@ describe('usePipelineState', () => {
   });
 
   it('filters loaded epics by assignee using case-insensitive contains matching', async () => {
-    mockJiraGet.mockResolvedValue(SAMPLE_EPICS_RESPONSE);
+    mockJiraGet
+      .mockResolvedValueOnce(SAMPLE_HIERARCHY_REFERENCES_RESPONSE)
+      .mockResolvedValueOnce(SAMPLE_EPICS_RESPONSE);
     const renderedHook = renderHook(() => usePipelineState());
 
     act(() => renderedHook.result.current.setProjectKey('TBX'));
@@ -171,7 +201,10 @@ describe('usePipelineState', () => {
   });
 
   it('loadChildren uses parent JQL first and rolls up returned child story points', async () => {
-    mockJiraGet.mockResolvedValueOnce(SAMPLE_EPICS_RESPONSE).mockResolvedValueOnce(SAMPLE_CHILDREN_RESPONSE);
+    mockJiraGet
+      .mockResolvedValueOnce(SAMPLE_HIERARCHY_REFERENCES_RESPONSE)
+      .mockResolvedValueOnce(SAMPLE_EPICS_RESPONSE)
+      .mockResolvedValueOnce(SAMPLE_CHILDREN_RESPONSE);
     const renderedHook = renderHook(() => usePipelineState());
 
     act(() => renderedHook.result.current.setProjectKey('TBX'));
@@ -182,7 +215,7 @@ describe('usePipelineState', () => {
       await renderedHook.result.current.loadChildren('TBX-1');
     });
 
-    expect(decodeURIComponent(mockJiraGet.mock.calls[1][0])).toContain('jql=parent=TBX-1');
+    expect(decodeURIComponent(mockJiraGet.mock.calls[2][0])).toContain('jql=parent=TBX-1');
     const expandedEpic = renderedHook.result.current.epics.find((epicSummary) => epicSummary.key === 'TBX-1');
     expect(expandedEpic?.children).toHaveLength(2);
     expect(expandedEpic?.rolledUpStoryPoints).toBe(8);
@@ -191,6 +224,7 @@ describe('usePipelineState', () => {
 
   it('loadChildren falls back to quoted Epic Link JQL when parent returns no children', async () => {
     mockJiraGet
+      .mockResolvedValueOnce(SAMPLE_HIERARCHY_REFERENCES_RESPONSE)
       .mockResolvedValueOnce(SAMPLE_EPICS_RESPONSE)
       .mockResolvedValueOnce({ issues: [] })
       .mockResolvedValueOnce(SAMPLE_CHILDREN_RESPONSE);
@@ -204,7 +238,7 @@ describe('usePipelineState', () => {
       await renderedHook.result.current.loadChildren('TBX-1');
     });
 
-    expect(decodeURIComponent(mockJiraGet.mock.calls[2][0])).toContain('jql="Epic Link"=TBX-1');
+    expect(decodeURIComponent(mockJiraGet.mock.calls[3][0])).toContain('jql="Epic Link"=TBX-1');
     expect(renderedHook.result.current.epics[0].children?.map((childIssue) => childIssue.key)).toEqual([
       'TBX-11',
       'TBX-12',

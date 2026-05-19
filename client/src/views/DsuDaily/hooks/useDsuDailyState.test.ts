@@ -9,6 +9,7 @@ vi.mock('../../../services/jiraApi.ts', () => ({
 }));
 
 import { jiraGet, jiraPost } from '../../../services/jiraApi.ts';
+import { useSettingsStore } from '../../../store/settingsStore.ts';
 import { useDsuDailyState } from './useDsuDailyState.ts';
 
 const mockJiraGet = vi.mocked(jiraGet);
@@ -16,7 +17,7 @@ const mockJiraPost = vi.mocked(jiraPost);
 const STORAGE_KEY = 'tbxDsuDraft';
 const CURRENT_USER_PATH = '/rest/api/2/myself';
 const SEARCH_PATH =
-  '/rest/api/2/search?jql=assignee = currentUser() AND updated >= -7d&fields=summary,status,updated&maxResults=100';
+  '/rest/api/2/search?jql=assignee%20%3D%20currentUser()%20AND%20updated%20%3E%3D%20-7d&fields=summary,status,updated&maxResults=100';
 
 function buildSearchIssue(issueKey: string, summary: string, updated: string, statusCategoryKey: string) {
   return {
@@ -31,6 +32,7 @@ function buildSearchIssue(issueKey: string, summary: string, updated: string, st
 
 beforeEach(() => {
   window.localStorage.clear();
+  useSettingsStore.getState().setDsuProjectKey('');
   mockJiraGet.mockReset();
   mockJiraPost.mockReset();
   vi.useFakeTimers();
@@ -70,6 +72,22 @@ describe('useDsuDailyState', () => {
     expect(mockJiraGet).toHaveBeenNthCalledWith(2, SEARCH_PATH);
     expect(result.current.draft.yesterday).toBe('• TBX-1 - Updated yesterday');
     expect(result.current.draft.today).toBe('• TBX-2 - Continue implementation');
+  });
+
+  it('uses the configured DSU project key when refreshing standalone activity', async () => {
+    useSettingsStore.getState().setDsuProjectKey('ENFCT');
+    mockJiraGet.mockResolvedValueOnce({ accountId: 'abc-123', displayName: 'Alex Smith' }).mockResolvedValueOnce({ issues: [] });
+
+    const { result } = renderHook(() => useDsuDailyState());
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(mockJiraGet).toHaveBeenNthCalledWith(
+      2,
+      '/rest/api/2/search?jql=project%20%3D%20%22ENFCT%22%20AND%20assignee%20%3D%20currentUser()%20AND%20updated%20%3E%3D%20-7d&fields=summary,status,updated&maxResults=100',
+    );
   });
 
   it('uses legacy fallback bullets when refresh finds no matching issues', async () => {

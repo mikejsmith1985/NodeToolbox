@@ -1,8 +1,10 @@
 // useDsuBoardState.ts — State management hook for the DSU (Daily Standup) Board view.
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { jiraGet, jiraPost } from '../../../services/jiraApi.ts';
+import { useSettingsStore } from '../../../store/settingsStore.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
+import { buildStandupRosterAssigneeClause } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
 import {
   DEFAULT_MULTI_CRITERIA_FILTERS,
   type DsuMultiCriteriaFilters,
@@ -18,6 +20,9 @@ const AUTO_FILL_MAX_ISSUES = 5;
 const RECENT_UPDATE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const STANDUP_NOTES_STORAGE_KEY = 'tbxDsuStandupNotes';
 const SELECTED_RELEASE_STORAGE_KEY = 'tbxDSUSelectedRelease';
+const STALE_DAYS_STORAGE_KEY = 'tbxDSUStaleDays';
+const VIEW_MODE_STORAGE_KEY = 'tbxDSUView';
+const COLLAPSED_SECTIONS_STORAGE_KEY = 'tbxDSUCollapsed';
 const SNOW_ROOT_CAUSES_STORAGE_KEY = 'toolbox-snow-root-causes';
 const JIRA_SEARCH_FIELDS = 'summary,status,priority,assignee,issuetype,created,updated,duedate,fixVersions,issuelinks,labels,customfield_10016,customfield_10028,customfield_10014,customfield_10301,comment';
 const JIRA_SEARCH_MAX_RESULTS = 100;
@@ -133,13 +138,42 @@ export interface DsuBoardActions {
   autoFillStandupNotes: () => void;
 }
 
-function createDefaultSections(): DsuBoardSection[] {
+function readStoredCollapsedSections(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem(COLLAPSED_SECTIONS_STORAGE_KEY) ?? '{}') as Record<string, boolean>;
+  } catch {
+    return {};
+  }
+}
+
+function persistCollapsedSections(collapsedSections: Record<string, boolean>): void {
+  localStorage.setItem(COLLAPSED_SECTIONS_STORAGE_KEY, JSON.stringify(collapsedSections));
+}
+
+function readStoredStaleDays(): number {
+  const parsedValue = Number(localStorage.getItem(STALE_DAYS_STORAGE_KEY) ?? DEFAULT_STALE_DAYS);
+  return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : DEFAULT_STALE_DAYS;
+}
+
+function persistStaleDays(staleDays: number): void {
+  localStorage.setItem(STALE_DAYS_STORAGE_KEY, String(staleDays));
+}
+
+function readStoredViewMode(): DsuViewMode {
+  return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === 'table' ? 'table' : 'cards';
+}
+
+function persistViewMode(viewMode: DsuViewMode): void {
+  localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+}
+
+function createDefaultSections(collapsedSections: Record<string, boolean> = {}): DsuBoardSection[] {
   return DSU_SECTION_DEFINITIONS.map((definition) => ({
     ...definition,
     issues: [],
     isLoading: false,
     loadError: null,
-    isCollapsed: false,
+    isCollapsed: collapsedSections[definition.key] ?? false,
   }));
 }
 
@@ -198,6 +232,26 @@ function buildSearchPath(jql: string): string {
   return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${JIRA_SEARCH_FIELDS}&maxResults=${JIRA_SEARCH_MAX_RESULTS}`;
 }
 
+function formatLastBusinessDayEndChicago(): string {
+  const chicagoParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'long',
+  }).formatToParts(new Date());
+  const partMap = Object.fromEntries(chicagoParts.map((part) => [part.type, part.value]));
+  const weekday = partMap.weekday;
+  const daysBack =
+    weekday === 'Sunday' ? 2 : weekday === 'Saturday' ? 1 : weekday === 'Monday' ? 3 : 1;
+  const businessDay = new Date(Number(partMap.year), Number(partMap.month) - 1, Number(partMap.day) - daysBack);
+  return `${businessDay.getFullYear()}/${String(businessDay.getMonth() + 1).padStart(2, '0')}/${String(businessDay.getDate()).padStart(2, '0')} 17:00`;
+}
+
+function buildRosterAssigneeClause(): string | null {
+  return buildStandupRosterAssigneeClause();
+}
+
 function extractUnreleasedVersionNames(projectVersions: JiraProjectVersion[]): string[] {
   return projectVersions
     .filter((projectVersion) => projectVersion.released !== true)
@@ -235,25 +289,28 @@ function buildSectionJql(
   activeReleaseName: string | null,
 ): string | null {
   const projectFilter = `project = "${projectKey}"`;
-  const openStatuses = 'status in ("To Do", "In Progress", "Open")';
 
   switch (sectionKey) {
     case 'new':
-      return `${projectFilter} AND created >= "-1d" ORDER BY created DESC`;
+      return `${projectFilter} AND created >= "${formatLastBusinessDayEndChicago()}" ORDER BY created DESC`;
     case 'stale':
-      return `${projectFilter} AND ${openStatuses} AND updated <= "-${staleDays}d" ORDER BY updated ASC`;
+      return `${projectFilter} AND updated <= "-${staleDays}d" AND statusCategory = "In Progress" ORDER BY updated ASC`;
     case 'release':
       return activeReleaseName
-        ? `${projectFilter} AND fixVersion = "${activeReleaseName}" ORDER BY priority DESC`
-        : `${projectFilter} AND fixVersion in unreleasedVersions() ORDER BY priority DESC`;
+        ? `${projectFilter} AND fixVersion = "${activeReleaseName.replace(/"/g, '\\"')}" ORDER BY priority ASC, updated DESC`
+        : `${projectFilter} AND fixVersion = earliestUnreleasedVersion("${projectKey}") ORDER BY priority ASC, updated DESC`;
     case 'incidents':
-      return `${projectFilter} AND ${openStatuses} AND summary ~ "INC OR PRB" ORDER BY created DESC`;
+      return `${projectFilter} AND (summary ~ "INC*" OR summary ~ "PRB*") AND statusCategory != Done ORDER BY created DESC`;
     case 'open':
-      return `${projectFilter} AND ${openStatuses} ORDER BY updated DESC`;
+      return `${projectFilter} AND statusCategory in ("To Do", "In Progress") ORDER BY priority ASC, updated DESC`;
     case 'watching':
-      return `${projectFilter} AND ${openStatuses} AND watcher = currentUser() ORDER BY updated DESC`;
-    case 'roster-jira':
-      return `${projectFilter} AND ${openStatuses} ORDER BY assignee ASC`;
+      return `${projectFilter} AND watcher = currentUser() ORDER BY updated DESC`;
+    case 'roster-jira': {
+      const rosterAssigneeClause = buildRosterAssigneeClause();
+      return rosterAssigneeClause === null
+        ? null
+        : `${projectFilter} AND ${rosterAssigneeClause} AND statusCategory in ("To Do","In Progress") ORDER BY assignee ASC, priority ASC`;
+    }
     case 'roster-snow':
       return null;
     default:
@@ -262,11 +319,14 @@ function buildSectionJql(
 }
 
 /** Hook providing all state and actions for the DSU Board view. */
-export function useDsuBoardState(): { state: DsuBoardState; actions: DsuBoardActions } {
-  const [projectKey, setProjectKeyState] = useState('');
-  const [staleDays, setStaleDaysState] = useState(DEFAULT_STALE_DAYS);
-  const [viewMode, setViewModeState] = useState<DsuViewMode>('cards');
-  const [sections, setSections] = useState<DsuBoardSection[]>(createDefaultSections);
+export function useDsuBoardState(controlledProjectKey = ''): { state: DsuBoardState; actions: DsuBoardActions } {
+  const persistedProjectKey = useSettingsStore.getState().dsuProjectKey;
+  const autoLoadProjectKey = controlledProjectKey || persistedProjectKey;
+  const [projectKey, setProjectKeyState] = useState(controlledProjectKey || persistedProjectKey);
+  const effectiveProjectKey = controlledProjectKey.trim() ? controlledProjectKey : projectKey;
+  const [staleDays, setStaleDaysState] = useState(readStoredStaleDays);
+  const [viewMode, setViewModeState] = useState<DsuViewMode>(readStoredViewMode);
+  const [sections, setSections] = useState<DsuBoardSection[]>(() => createDefaultSections(readStoredCollapsedSections()));
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [multiCriteriaFilters, setMultiCriteriaFilters] = useState<DsuMultiCriteriaFilters>({
     ...DEFAULT_MULTI_CRITERIA_FILTERS,
@@ -288,6 +348,7 @@ export function useDsuBoardState(): { state: DsuBoardState; actions: DsuBoardAct
   });
 
   const standupNotesDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasAutoLoadedProjectKeyRef = useRef<string | null>(null);
   const standupNotes = storedStandupState.notes;
   const isStandupPanelCollapsed = storedStandupState.isStandupPanelCollapsed;
   const snowUrl = standupNotes.snowUrl;
@@ -315,25 +376,31 @@ export function useDsuBoardState(): { state: DsuBoardState; actions: DsuBoardAct
 
   const setProjectKey = useCallback((key: string) => {
     setProjectKeyState(key);
+    useSettingsStore.getState().setDsuProjectKey(key);
   }, []);
 
   const setStaleDays = useCallback((days: number) => {
     setStaleDaysState(days);
+    persistStaleDays(days);
   }, []);
 
   const setViewMode = useCallback((mode: DsuViewMode) => {
     setViewModeState(mode);
+    persistViewMode(mode);
   }, []);
 
-  const toggleSectionCollapse = useCallback(
-    (sectionKey: string) => {
-      updateSectionState(sectionKey, (boardSection) => ({
-        ...boardSection,
-        isCollapsed: !boardSection.isCollapsed,
-      }));
-    },
-    [updateSectionState],
-  );
+  const toggleSectionCollapse = useCallback((sectionKey: string) => {
+    setSections((currentSections) => {
+      const nextSections = currentSections.map((boardSection) =>
+        boardSection.key === sectionKey ? { ...boardSection, isCollapsed: !boardSection.isCollapsed } : boardSection,
+      );
+      const nextCollapsedState = Object.fromEntries(
+        nextSections.map((boardSection) => [boardSection.key, boardSection.isCollapsed]),
+      );
+      persistCollapsedSections(nextCollapsedState);
+      return nextSections;
+    });
+  }, []);
 
   const toggleFilter = useCallback((assigneeName: string) => {
     setActiveFilters((currentFilters) => toggleStringValue(currentFilters, assigneeName));
@@ -480,15 +547,18 @@ export function useDsuBoardState(): { state: DsuBoardState; actions: DsuBoardAct
 
   const fetchSectionIssues = useCallback(
     async (sectionKey: SectionKey, activeReleaseName: string | null): Promise<JiraIssue[]> => {
-      const jql = buildSectionJql(sectionKey, projectKey, staleDays, activeReleaseName);
+      const jql = buildSectionJql(sectionKey, effectiveProjectKey, staleDays, activeReleaseName);
       if (jql === null) {
+        if (sectionKey === 'roster-jira') {
+          throw new Error('No roster members — add team members in the Team Dashboard → Roster tab first');
+        }
         return [];
       }
 
       const response = await jiraGet<{ issues: JiraIssue[] }>(buildSearchPath(jql));
       return response.issues;
     },
-    [projectKey, staleDays],
+    [effectiveProjectKey, staleDays],
   );
 
   const fetchReleaseSectionIssues = useCallback(
@@ -565,7 +635,7 @@ export function useDsuBoardState(): { state: DsuBoardState; actions: DsuBoardAct
 
     try {
       const projectVersions = await jiraGet<JiraProjectVersion[]>(
-        `/rest/api/2/project/${projectKey}/versions`,
+        `/rest/api/2/project/${effectiveProjectKey}/versions`,
       );
       const unreleasedVersionNames = extractUnreleasedVersionNames(projectVersions);
       const autoDetectedReleaseName = unreleasedVersionNames[0] ?? null;
@@ -613,16 +683,25 @@ export function useDsuBoardState(): { state: DsuBoardState; actions: DsuBoardAct
       }),
     );
   }, [
+    effectiveProjectKey,
     fetchReleaseSectionIssues,
     fetchSectionIssues,
-    projectKey,
     selectedReleaseName,
     updateSectionState,
   ]);
 
+  useEffect(() => {
+    if (!autoLoadProjectKey.trim() || hasAutoLoadedProjectKeyRef.current === autoLoadProjectKey) {
+      return;
+    }
+
+    hasAutoLoadedProjectKeyRef.current = autoLoadProjectKey;
+    void loadBoard();
+  }, [autoLoadProjectKey, loadBoard]);
+
   return {
     state: {
-      projectKey,
+      projectKey: effectiveProjectKey,
       staleDays,
       viewMode,
       sections,

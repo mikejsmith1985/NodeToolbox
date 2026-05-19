@@ -12,8 +12,9 @@ const DASHBOARD_CONFIG_STORAGE_KEY = 'tbxSprintDashboardConfig';
 
 const DEFAULT_STALE_DAYS_THRESHOLD = 5;
 const DEFAULT_STORY_POINT_SCALE = '1,2,3,5,8,13,21';
-const DEFAULT_SPRINT_WINDOW = 3;
+const DEFAULT_SPRINT_WINDOW = 6;
 const DEFAULT_KANBAN_PERIOD_DAYS = 14;
+const DEFAULT_CYCLE_TIME_BASELINE_DAYS = 0;
 const DEFAULT_CUSTOM_STORY_POINTS_FIELD_ID = 'story_points';
 const DEFAULT_CUSTOM_EPIC_LINK_FIELD_ID = 'epic_link';
 
@@ -31,6 +32,8 @@ export interface DashboardConfig {
   cycleTimeStartField: string;
   /** Jira status name that marks the end of the cycle-time clock (e.g. "Done"). */
   cycleTimeDoneField: string;
+  /** Baseline cycle time in days used to measure improvement against the legacy 20% goal. */
+  cycleTimeBaselineDays: number;
   /** Rolling window in days for Kanban throughput calculations. */
   kanbanPeriodDays: number;
   /** Jira custom field ID used for story points (fallback when customfield_10016 is absent). */
@@ -52,6 +55,7 @@ export const DEFAULT_DASHBOARD_CONFIG: DashboardConfig = {
   sprintWindow: DEFAULT_SPRINT_WINDOW,
   cycleTimeStartField: '',
   cycleTimeDoneField: '',
+  cycleTimeBaselineDays: DEFAULT_CYCLE_TIME_BASELINE_DAYS,
   kanbanPeriodDays: DEFAULT_KANBAN_PERIOD_DAYS,
   customStoryPointsFieldId: DEFAULT_CUSTOM_STORY_POINTS_FIELD_ID,
   customEpicLinkFieldId: DEFAULT_CUSTOM_EPIC_LINK_FIELD_ID,
@@ -82,7 +86,7 @@ export function saveDashboardConfigToStorage(config: DashboardConfig): void {
 // ── Hook ──
 
 /**
- * Manages all eight advanced Sprint Dashboard settings.
+ * Manages the persisted Sprint Dashboard settings used by the legacy Team Dashboard parity tabs.
  * Reads from localStorage on mount and writes back on every update.
  * Returns a stable `{ config, actions }` tuple.
  */

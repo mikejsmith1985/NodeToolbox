@@ -46,11 +46,17 @@ describe('saveDashboardConfigToStorage', () => {
   });
 
   it('persists the config blob so a subsequent load returns the same values', () => {
-    const customConfig = { ...DEFAULT_DASHBOARD_CONFIG, staleDaysThreshold: 7, sprintWindow: 5 };
+    const customConfig = {
+      ...DEFAULT_DASHBOARD_CONFIG,
+      staleDaysThreshold: 7,
+      sprintWindow: 5,
+      cycleTimeBaselineDays: 12,
+    };
     saveDashboardConfigToStorage(customConfig);
     const reloaded = loadDashboardConfigFromStorage();
     expect(reloaded.staleDaysThreshold).toBe(7);
     expect(reloaded.sprintWindow).toBe(5);
+    expect(reloaded.cycleTimeBaselineDays).toBe(12);
   });
 });
 
@@ -92,10 +98,15 @@ describe('useDashboardConfig', () => {
     const { result } = renderHook(() => useDashboardConfig());
 
     act(() => {
-      result.current.actions.updateConfig({ sprintWindow: 6, kanbanPeriodDays: 30 });
+      result.current.actions.updateConfig({
+        sprintWindow: 6,
+        cycleTimeBaselineDays: 10,
+        kanbanPeriodDays: 30,
+      });
     });
 
     expect(result.current.config.sprintWindow).toBe(6);
+    expect(result.current.config.cycleTimeBaselineDays).toBe(10);
     expect(result.current.config.kanbanPeriodDays).toBe(30);
   });
 

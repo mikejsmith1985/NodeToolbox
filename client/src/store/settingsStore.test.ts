@@ -6,6 +6,13 @@ const THEME_STORAGE_KEY = 'tbx-theme';
 const CARD_ORDER_STORAGE_KEY = 'tbxCardOrder';
 const RECENT_VIEWS_STORAGE_KEY = 'tbxRecentViews';
 const PERSONAL_TOOLBOX_MODULE_IDS_STORAGE_KEY = 'tbxPersonalToolboxModuleIds';
+const SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY = 'tbxSprintDashboardProjectKey';
+const SPRINT_DASHBOARD_BOARD_ID_STORAGE_KEY = 'tbxSprintDashboardBoardId';
+const SPRINT_DASHBOARD_ACTIVE_TAB_STORAGE_KEY = 'tbxSprintDashboardActiveTab';
+const SPRINT_DASHBOARD_SCOPE_MODE_STORAGE_KEY = 'tbxSprintDashboardScopeMode';
+const SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY = 'tbxSprintDashboardSelectedSprintId';
+const SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY = 'tbxSprintDashboardSelectedFixVersion';
+const SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY = 'tbxSprintDashboardSelectedPiValue';
 
 async function loadSettingsStoreModule() {
   vi.resetModules();
@@ -85,5 +92,46 @@ describe('useSettingsStore', () => {
     expect(window.localStorage.getItem(PERSONAL_TOOLBOX_MODULE_IDS_STORAGE_KEY)).toBe(
       JSON.stringify(['my-issues', 'dev-workspace', 'reports-hub']),
     );
+  });
+
+  it('restores Sprint Dashboard selections from localStorage', async () => {
+    window.localStorage.setItem(SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY, 'TBX');
+    window.localStorage.setItem(SPRINT_DASHBOARD_BOARD_ID_STORAGE_KEY, '42');
+    window.localStorage.setItem(SPRINT_DASHBOARD_ACTIVE_TAB_STORAGE_KEY, 'standup');
+    window.localStorage.setItem(SPRINT_DASHBOARD_SCOPE_MODE_STORAGE_KEY, 'fixVersion');
+    window.localStorage.setItem(SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY, '12');
+    window.localStorage.setItem(SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY, 'Release 24.1');
+    window.localStorage.setItem(SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY, 'PI-24.1');
+
+    const { useSettingsStore } = await loadSettingsStoreModule();
+    const settingsState = useSettingsStore.getState();
+
+    expect(settingsState.sprintDashboardProjectKey).toBe('TBX');
+    expect(settingsState.sprintDashboardBoardId).toBe('42');
+    expect(settingsState.sprintDashboardActiveTab).toBe('standup');
+    expect(settingsState.sprintDashboardScopeMode).toBe('fixVersion');
+    expect(settingsState.sprintDashboardSelectedSprintId).toBe('12');
+    expect(settingsState.sprintDashboardSelectedFixVersion).toBe('Release 24.1');
+    expect(settingsState.sprintDashboardSelectedPiValue).toBe('PI-24.1');
+  });
+
+  it('persists Sprint Dashboard setters back to localStorage', async () => {
+    const { useSettingsStore } = await loadSettingsStoreModule();
+
+    useSettingsStore.getState().setSprintDashboardProjectKey('ENFCT');
+    useSettingsStore.getState().setSprintDashboardBoardId('77');
+    useSettingsStore.getState().setSprintDashboardActiveTab('capacity');
+    useSettingsStore.getState().setSprintDashboardScopeMode('pi');
+    useSettingsStore.getState().setSprintDashboardSelectedSprintId('19');
+    useSettingsStore.getState().setSprintDashboardSelectedFixVersion('Release 25.1');
+    useSettingsStore.getState().setSprintDashboardSelectedPiValue('PI-25.1');
+
+    expect(window.localStorage.getItem(SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY)).toBe('ENFCT');
+    expect(window.localStorage.getItem(SPRINT_DASHBOARD_BOARD_ID_STORAGE_KEY)).toBe('77');
+    expect(window.localStorage.getItem(SPRINT_DASHBOARD_ACTIVE_TAB_STORAGE_KEY)).toBe('capacity');
+    expect(window.localStorage.getItem(SPRINT_DASHBOARD_SCOPE_MODE_STORAGE_KEY)).toBe('pi');
+    expect(window.localStorage.getItem(SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY)).toBe('19');
+    expect(window.localStorage.getItem(SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY)).toBe('Release 25.1');
+    expect(window.localStorage.getItem(SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY)).toBe('PI-25.1');
   });
 });

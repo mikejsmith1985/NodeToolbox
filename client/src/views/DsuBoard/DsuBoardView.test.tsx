@@ -191,11 +191,13 @@ describe('DsuBoardView', () => {
 
   it('renders the multi-criteria filter bar when sections contain multiple issue types and priorities', () => {
     render(<DsuBoardView />);
-    expect(screen.getByText('Issue type:')).toBeInTheDocument();
-    expect(screen.getByText('Priority:')).toBeInTheDocument();
-    expect(screen.getByText('Status:')).toBeInTheDocument();
-    expect(screen.getByText('Fix version:')).toBeInTheDocument();
-    expect(screen.getByText('PI:')).toBeInTheDocument();
+    expect(screen.getByText('Issue type')).toBeInTheDocument();
+    expect(screen.getByText('Priority')).toBeInTheDocument();
+    expect(screen.getByText('Status')).toBeInTheDocument();
+    expect(screen.getByText('Fix version')).toBeInTheDocument();
+    expect(screen.getByText('PI')).toBeInTheDocument();
+    expect(screen.getByText('All issue types')).toBeInTheDocument();
+    expect(screen.getByText('All assignees')).toBeInTheDocument();
   });
 
   it('renders the Standup Notes panel by default', () => {
@@ -254,6 +256,31 @@ describe('DsuBoardView', () => {
     mockState.multiCriteriaFilters.issueTypes = ['Bug'];
     render(<DsuBoardView />);
     expect(screen.getByRole('button', { name: /clear all/i })).toBeInTheDocument();
+  });
+
+  it('toggles an issue-type filter from the dropdown menu', async () => {
+    const { userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    render(<DsuBoardView />);
+
+    await user.click(screen.getByText('All issue types'));
+    await user.click(screen.getByRole('checkbox', { name: 'Bug' }));
+
+    expect(mockActions.toggleIssueTypeFilter).toHaveBeenCalledWith('Bug');
+  });
+
+  it('keeps an active assignee filter visible even when the current option list is empty', () => {
+    const originalSections = mockState.sections;
+    mockState.activeFilters = ['Alice'];
+    mockState.sections = mockState.sections.map((section) => ({ ...section, issues: [] }));
+
+    render(<DsuBoardView />);
+
+    expect(screen.getByText('Assignee')).toBeInTheDocument();
+    expect(screen.getAllByText('Alice').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /clear all/i })).toBeInTheDocument();
+
+    mockState.sections = originalSections;
   });
 
   it('clicking an issue key button calls openDetailOverlay with the correct issue', async () => {

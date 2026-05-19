@@ -18,6 +18,25 @@
   margin: 0 0 var(--spacing-xs);
 }
 
+.scopeSelectorBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: end;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.scopeSelectorField {
+  display: grid;
+  gap: var(--spacing-xs);
+  min-width: 180px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
 /* ── Tab bar ── */
 
 .tabList {
@@ -118,10 +137,17 @@
   margin-bottom: var(--spacing-md);
 }
 
+.sprintInfoHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
 .sprintName {
   font-size: var(--font-size-lg);
   color: var(--color-text-primary);
-  margin: 0 0 var(--spacing-xs);
+  margin: 0;
 }
 
 .sprintMeta {
@@ -130,6 +156,15 @@
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
   flex-wrap: wrap;
+}
+
+.boardIdBadge {
+  font-family: monospace;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-2);
+  border-radius: 999px;
+  padding: 2px var(--spacing-sm);
 }
 
 .flowStatsBar {
@@ -198,7 +233,25 @@
 .chartTitle {
   font-size: var(--font-size-md);
   color: var(--color-text-secondary);
-  margin: 0 0 var(--spacing-md);
+  margin: 0;
+}
+
+.chartHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.chartToggleButton {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
 }
 
 /* ── By Assignee tab ── */
@@ -214,8 +267,10 @@
 .assigneeHeader {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--spacing-md);
   margin-bottom: var(--spacing-sm);
+  flex-wrap: wrap;
 }
 
 .assigneeName {
@@ -224,12 +279,43 @@
   color: var(--color-text-primary);
 }
 
+.assigneeSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.assigneeMetaText {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.assigneeHeaderBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
 .assigneeCountBadge {
   font-size: var(--font-size-sm);
   padding: 2px var(--spacing-xs);
   border-radius: var(--radius-sm);
   background: var(--color-surface-2);
   color: var(--color-text-secondary);
+}
+
+.assigneeProgressTrack {
+  height: 6px;
+  background: var(--color-border);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: var(--spacing-sm);
+}
+
+.assigneeProgressFill {
+  height: 100%;
+  background: var(--color-success);
+  border-radius: 999px;
 }
 
 .laneIssueGrid {
@@ -253,6 +339,45 @@
 
 .blockersSection {
   margin-bottom: var(--spacing-lg);
+}
+
+.blockerFilterBar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-md);
+}
+
+.blockerFilterLabel {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-right: 2px;
+}
+
+.blockerFilterChip {
+  padding: 3px var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.blockerFilterChipActive {
+  padding: 3px var(--spacing-sm);
+  border: 1px solid var(--color-accent);
+  border-radius: 999px;
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #fff;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  font-weight: 700;
 }
 
 .blockersSectionHeader {
@@ -383,6 +508,247 @@
   font-size: var(--font-size-sm);
 }
 
+/* ── Releases tab ── */
+
+.releaseSummaryBar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-md);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.releaseSummaryRisk {
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.releaseSummaryWatch {
+  color: var(--color-warning);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.releaseSummaryOnTrack {
+  color: var(--color-success);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.releaseSummaryMuted {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.releaseBucketSection {
+  margin-bottom: var(--spacing-lg);
+}
+
+.releaseBucketHeader {
+  margin-bottom: var(--spacing-sm);
+  padding-bottom: var(--spacing-xs);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.releaseBucketOverdue {
+  color: var(--color-danger);
+}
+
+.releaseBucketCritical {
+  color: #f97316;
+}
+
+.releaseBucketWatch {
+  color: var(--color-warning);
+}
+
+.releaseBucketOnTrack {
+  color: var(--color-success);
+}
+
+.releaseBucketNoDate {
+  color: var(--color-text-secondary);
+}
+
+.releaseCard {
+  margin-bottom: var(--spacing-md);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+}
+
+.releaseCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+}
+
+.releaseCardTitleGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.releaseCardTitle {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+}
+
+.releaseCardDate {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.releaseCountdownBadge {
+  padding: 3px var(--spacing-sm);
+  border-radius: 999px;
+  color: #fff;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.releaseCountdownOverdue {
+  background: var(--color-danger);
+}
+
+.releaseCountdownCritical {
+  background: #f97316;
+}
+
+.releaseCountdownWatch {
+  background: var(--color-warning);
+}
+
+.releaseCountdownOnTrack {
+  background: var(--color-success);
+}
+
+.releaseCountdownNoDate {
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+}
+
+.releaseProgressRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
+.releaseProgressBar {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-surface-2);
+}
+
+.releaseProgressDone {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--color-success);
+}
+
+.releaseProgressInProgress {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--color-accent);
+}
+
+.releaseProgressTarget {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: 80%;
+  width: 2px;
+  background: var(--color-warning);
+  opacity: 0.7;
+}
+
+.releaseCompletionPercent {
+  min-width: 40px;
+  text-align: right;
+  font-size: var(--font-size-md);
+  font-weight: 800;
+}
+
+.releaseCompletionOnTrack {
+  color: var(--color-success);
+}
+
+.releaseCompletionWatch {
+  color: var(--color-warning);
+}
+
+.releaseCompletionMuted {
+  color: var(--color-text-secondary);
+}
+
+.releaseCountsLine {
+  margin-bottom: var(--spacing-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.releaseExpandButton {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.releaseIssueList {
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+.releaseIssueRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 5px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.releaseIssueStatusIcon {
+  flex-shrink: 0;
+  font-size: var(--font-size-sm);
+}
+
+.releaseIssueSummary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.releaseIssueAssignee {
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
 /* ── Standup tab ── */
 
 .standupLayout {
@@ -435,7 +801,7 @@
 
 .boardWalk {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--spacing-md);
 }
 
@@ -481,6 +847,1123 @@
   padding: var(--spacing-md);
 }
 
+.emptyStandupText {
+  margin: 0;
+  padding: var(--spacing-lg);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+}
+
+.standupToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.standupToggleGroup {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.standupToggleButton {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.standupToggleButtonActive {
+  composes: standupToggleButton;
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface-1));
+  color: var(--color-text-primary);
+}
+
+.standupCheckbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.boardWalkToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.flowStatsBar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.flowStatCard {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-sm);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.flowStatLabel {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.flowStatValue {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.dashboardTabShell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.dashboardTabHeader {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  align-items: flex-start;
+}
+
+.dashboardTabCopy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.dashboardTabSubtitle {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.dashboardTabActions,
+.dashboardTabStats,
+.dashboardTabFilters,
+.dashboardTabContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.dashboardTabFilters {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: var(--spacing-md);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.dashboardInlineField {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.dashboardFiltersDetail {
+  width: 100%;
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+.dashboardFiltersSummary {
+  cursor: pointer;
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.dashboardFiltersGrid {
+  display: grid;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-md);
+}
+
+.dashboardCheckboxGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-xs);
+}
+
+.dashboardCheckboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.dashboardFiltersInlineRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  align-items: center;
+}
+
+.dashboardEmptyState {
+  padding: var(--spacing-lg);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.dashboardStatusBanner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.rosterShell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.rosterSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.rosterInputGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--spacing-sm);
+  align-items: end;
+}
+
+.rosterFieldLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.rosterQuickPickGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.rosterImportTextArea {
+  min-height: 200px;
+  padding: var(--spacing-sm);
+  color: var(--color-text-primary);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+  font: inherit;
+}
+
+.rosterImportActionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.rosterImportPreviewGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.rosterMemberList {
+  display: grid;
+  gap: var(--spacing-sm);
+}
+
+.rosterMemberCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.rosterMemberName {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.pointingShell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.pointingFocusCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.pointingHeaderRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  align-items: flex-start;
+}
+
+.pointingMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-xs);
+}
+
+.pointingIssueTitle {
+  margin: 0 0 var(--spacing-xs);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xl);
+}
+
+.pointingJumpField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-width: min(100%, 30rem);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.pointingJumpSelect {
+  min-width: min(100%, 30rem);
+}
+
+.pointingHintBanner {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 40%, var(--color-border));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-warning) 12%, var(--color-surface-1));
+  color: var(--color-text-primary);
+}
+
+.pointingVoteGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  justify-content: center;
+}
+
+.pointingActionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  justify-content: center;
+}
+
+.pointingContextCard {
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+}
+
+.pointingContextSummary {
+  cursor: pointer;
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.pointingContextGrid {
+  display: grid;
+  gap: var(--spacing-md);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-top: var(--spacing-md);
+}
+
+.pointingContextBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.pointingContextBody {
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.standupStatusBanner {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.boardColumnHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.columnCountBadge {
+  min-width: 28px;
+  padding: 2px var(--spacing-xs);
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  text-align: center;
+}
+
+.statusFilterGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.statusFilterChip {
+  padding: 2px var(--spacing-xs);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.statusFilterChipMuted {
+  composes: statusFilterChip;
+  opacity: 0.55;
+}
+
+.standupIssueHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.standupIssueSummary {
+  margin: var(--spacing-xs) 0;
+  color: var(--color-text-primary);
+  line-height: 1.4;
+  text-align: left;
+}
+
+.standupIssueMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  align-items: center;
+  margin-bottom: var(--spacing-xs);
+}
+
+.statusBadge {
+  padding: 2px var(--spacing-xs);
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.blockedBadge {
+  padding: 2px var(--spacing-xs);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-danger) 20%, transparent);
+  color: var(--color-danger);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.secondaryButton {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.secondaryButton:hover,
+.textActionButton:hover,
+.standupToggleButton:hover,
+.statusFilterChip:hover,
+.statusFilterChipMuted:hover {
+  border-color: var(--color-accent);
+}
+
+.boardWalkCardButton {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.textActionButton {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.personWalkGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.personWalkSnapshotBar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.personWalkSnapshotCard {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: linear-gradient(180deg, rgba(24, 31, 45, 0.96), rgba(17, 24, 39, 0.9));
+  border: 1px solid color-mix(in srgb, var(--color-accent) 20%, var(--color-border));
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 24px rgba(2, 6, 23, 0.22);
+}
+
+.personWalkSnapshotValue {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.personWalkSnapshotLabel {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.personWalkCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: linear-gradient(180deg, rgba(24, 31, 45, 0.96), rgba(17, 24, 39, 0.9));
+  border: 1px solid color-mix(in srgb, var(--color-accent) 16%, var(--color-border));
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 28px rgba(2, 6, 23, 0.26);
+}
+
+.personWalkHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  align-items: flex-start;
+}
+
+.personWalkTitle {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
+}
+
+.personWalkIdentity {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+
+.personWalkAvatar,
+.personWalkAvatarFallback {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.personWalkAvatar {
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, var(--color-border));
+  object-fit: cover;
+}
+
+.personWalkAvatarFallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, var(--color-border));
+}
+
+.personWalkSubtitle,
+.personWalkMeta {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.personWalkMetricBadgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--spacing-xs);
+}
+
+.personWalkMetricBadgeDanger,
+.personWalkMetricBadgeWarn {
+  padding: 2px var(--spacing-xs);
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.personWalkMetricBadgeDanger {
+  background: color-mix(in srgb, var(--color-danger) 18%, transparent);
+  color: var(--color-danger);
+}
+
+.personWalkMetricBadgeWarn {
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
+}
+
+.personWalkProgressHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.personWalkProgressValue {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.personWalkProgressTrack {
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-text-secondary) 22%, transparent);
+  border-radius: 999px;
+}
+
+.personWalkProgressFill {
+  height: 100%;
+  min-width: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #38bdf8, #22c55e);
+}
+
+.personWalkSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.personWalkSectionHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.personWalkSectionTitle {
+  margin: 0;
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+}
+
+.personWalkList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.personWalkListItem {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  align-items: center;
+  padding: var(--spacing-xs) 0;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.personWalkFollowThroughSection,
+.personWalkComposerShell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: linear-gradient(180deg, rgba(24, 31, 45, 0.96), rgba(17, 24, 39, 0.9));
+  border: 1px solid color-mix(in srgb, var(--color-accent) 14%, var(--color-border));
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 28px rgba(2, 6, 23, 0.2);
+}
+
+.personWalkFollowThroughGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.personWalkFollowThroughCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  background: color-mix(in srgb, var(--color-accent) 6%, var(--color-surface-1));
+  border: 1px solid color-mix(in srgb, var(--color-accent) 16%, var(--color-border));
+  border-radius: var(--radius-md);
+}
+
+.personWalkFollowThroughHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.personWalkFollowThroughName {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+}
+
+.personWalkFollowThroughChipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.personWalkFollowThroughChip {
+  padding: 2px var(--spacing-xs);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.personWalkFollowThroughChipMuted,
+.personWalkFollowThroughChipWarn {
+  padding: 2px var(--spacing-xs);
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.personWalkFollowThroughChipMuted {
+  background: color-mix(in srgb, var(--color-text-secondary) 16%, transparent);
+  color: var(--color-text-secondary);
+}
+
+.personWalkFollowThroughChipWarn {
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
+}
+
+.personWalkFollowThroughStatusRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.personWalkFollowThroughStatusSuccess,
+.personWalkFollowThroughStatusWarn {
+  padding: 2px var(--spacing-xs);
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+}
+
+.personWalkFollowThroughStatusSuccess {
+  background: color-mix(in srgb, var(--color-success) 18%, transparent);
+  color: var(--color-success);
+}
+
+.personWalkFollowThroughStatusWarn {
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
+}
+
+.personWalkFollowThroughGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.accountabilitySuccess {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.accountabilityPending {
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
+.errorText {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+.personWalkShell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.personWalkColumns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--spacing-lg);
+}
+
+.personWalkEditorColumn,
+.personWalkPreviewColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.personWalkFieldLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.personWalkFieldTitle {
+  font-weight: 600;
+}
+
+.personWalkTextarea,
+.personWalkPostInput {
+  width: 100%;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-bg) 58%, var(--color-surface-1));
+  color: var(--color-text-primary);
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.personWalkTextarea {
+  resize: vertical;
+}
+
+.personWalkPreviewPanel {
+  padding: var(--spacing-md);
+  background: color-mix(in srgb, var(--color-bg) 52%, var(--color-surface-1));
+  border: 1px solid color-mix(in srgb, var(--color-accent) 12%, var(--color-border));
+  border-radius: var(--radius-md);
+}
+
+.personWalkPreviewTitle {
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+}
+
+.personWalkPreviewStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.personWalkPreviewSection {
+  padding: var(--spacing-sm);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+}
+
+.personWalkPreviewSectionYesterday {
+  background: color-mix(in srgb, var(--color-success) 9%, var(--color-surface-1));
+  border-left-color: var(--color-success);
+}
+
+.personWalkPreviewSectionToday {
+  background: color-mix(in srgb, var(--color-accent) 9%, var(--color-surface-1));
+  border-left-color: var(--color-accent);
+}
+
+.personWalkPreviewSectionBlockers {
+  background: color-mix(in srgb, var(--color-danger) 9%, var(--color-surface-1));
+  border-left-color: var(--color-danger);
+}
+
+.personWalkPreviewSectionTitle {
+  margin: 0 0 var(--spacing-xs);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.personWalkPreviewText {
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--color-text-secondary);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.personWalkPostBodyPreview {
+  margin: var(--spacing-md) 0 0;
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  font: inherit;
+  line-height: 1.5;
+}
+
+.personWalkActionRow {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.personWalkIssueList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.personWalkIssueRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm);
+  background: color-mix(in srgb, var(--color-bg) 58%, var(--color-surface-1));
+  border: 1px solid color-mix(in srgb, var(--color-accent) 10%, var(--color-border));
+  border-left: 4px solid color-mix(in srgb, var(--color-accent) 25%, var(--color-border));
+  border-radius: var(--radius-sm);
+}
+
+.personWalkIssueRowPlanned {
+  border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
+.personWalkIssueRowHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.personWalkIssueKeyRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
+.personWalkIssueIconRow,
+.personWalkIssueBadgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.personWalkIssueIcon {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+.personWalkIssueSummary {
+  margin: 0;
+  color: var(--color-text-primary);
+  line-height: 1.45;
+}
+
+.planIssueButton,
+.planIssueButtonActive {
+  padding: 2px var(--spacing-xs);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.planIssueButtonActive {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  color: var(--color-accent);
+}
+
+.personWalkStatusBadgeTodo {
+  background: color-mix(in srgb, var(--color-text-secondary) 18%, transparent);
+  color: var(--color-text-secondary);
+}
+
+.personWalkStatusBadgeProgress {
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  color: #7dd3fc;
+}
+
+.personWalkStatusBadgeDone {
+  background: color-mix(in srgb, var(--color-success) 18%, transparent);
+  color: var(--color-success);
+}
+
+.personWalkAgeBadgeFresh {
+  background: color-mix(in srgb, var(--color-success) 16%, transparent);
+  color: var(--color-success);
+}
+
+.personWalkAgeBadgeWarn {
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  color: var(--color-warning);
+}
+
+.personWalkAgeBadgeOld {
+  background: color-mix(in srgb, var(--color-danger) 16%, transparent);
+  color: var(--color-danger);
+}
+
+.blockerPanel {
+  padding: var(--spacing-md);
+  background: var(--color-surface-1);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 35%, var(--color-border));
+  border-radius: var(--radius-md);
+}
+
+.blockerPanelTitle {
+  margin: 0 0 var(--spacing-sm);
+  color: var(--color-danger);
+  font-size: var(--font-size-md);
+}
+
+.blockerList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.blockerRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.blockerKey {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+.blockerSummary {
+  flex: 1 1 220px;
+  color: var(--color-text-primary);
+}
+
+.blockerAssignee {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+@media (max-width: 1100px) {
+  .boardWalk {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .boardWalk {
+    grid-template-columns: 1fr;
+  }
+
+  .personWalkHeader,
+  .personWalkSectionHeader,
+  .personWalkActionRow,
+  .standupToolbar,
+  .dashboardTabHeader,
+  .pointingHeaderRow,
+  .dashboardFiltersInlineRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .personWalkIssueRowHeader,
+  .personWalkFollowThroughHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dashboardInlineField {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 /* ── Advanced settings grid ── */
 
 .settingsDivider {
@@ -493,6 +1976,54 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+}
+
+.workflowDetectSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.workflowDetectHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.workflowIssueTypeCard {
+  padding: var(--spacing-md);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.workflowStatusChipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
+}
+
+.workflowStatusChip {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.workflowStatusChipActive {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-accent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface-2));
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  font-weight: 700;
 }
 
 /* ── Stale issue row (used in Overview / Assignee issue lists) ── */

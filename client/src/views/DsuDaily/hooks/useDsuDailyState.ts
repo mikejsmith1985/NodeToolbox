@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { jiraGet, jiraPost } from '../../../services/jiraApi.ts';
+import { useSettingsStore } from '../../../store/settingsStore.ts';
 import {
   buildBulletList,
   classifyByDate,
@@ -13,8 +14,6 @@ import {
 
 const DSU_DRAFT_STORAGE_KEY = 'tbxDsuDraft';
 const CURRENT_USER_PATH = '/rest/api/2/myself';
-const ACTIVITY_SEARCH_PATH =
-  '/rest/api/2/search?jql=assignee = currentUser() AND updated >= -7d&fields=summary,status,updated&maxResults=100';
 const YESTERDAY_EMPTY_TEXT = '• (nothing updated yesterday)';
 const TODAY_EMPTY_TEXT = '• (no active issues assigned)';
 const ISO_DATE_LENGTH = 10;
@@ -86,8 +85,18 @@ function getTodayIso(): string {
   return new Date().toISOString().slice(0, ISO_DATE_LENGTH);
 }
 
+/** Builds the DSU Daily Jira search path, optionally scoping activity to the configured DSU project key. */
+export function buildActivitySearchPath(projectKey: string): string {
+  const trimmedProjectKey = projectKey.trim();
+  const jql = trimmedProjectKey
+    ? `project = "${trimmedProjectKey}" AND assignee = currentUser() AND updated >= -7d`
+    : 'assignee = currentUser() AND updated >= -7d';
+  return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=summary,status,updated&maxResults=100`;
+}
+
 /** Owns the editable DSU Daily draft, Jira activity refresh, clipboard copy, and comment posting. */
-export function useDsuDailyState(): UseDsuDailyState {
+export function useDsuDailyState(projectKeyOverride = ''): UseDsuDailyState {
+  const storedProjectKey = useSettingsStore((storeState) => storeState.dsuProjectKey);
   const [draft, setDraft] = useState<DsuDraft>(readPersistedDraft);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -126,7 +135,9 @@ export function useDsuDailyState(): UseDsuDailyState {
     setErrorMessage(null);
     try {
       await jiraGet<JiraUserResponse>(CURRENT_USER_PATH);
-      const searchResponse = await jiraGet<JiraSearchResponse>(ACTIVITY_SEARCH_PATH);
+      const searchResponse = await jiraGet<JiraSearchResponse>(
+        buildActivitySearchPath(projectKeyOverride || storedProjectKey),
+      );
       const classifiedIssues = classifyByDate(searchResponse.issues ?? [], getTodayIso());
       updateDraft(() => ({
         yesterday: buildBulletList(classifiedIssues.yesterdayList, YESTERDAY_EMPTY_TEXT),
@@ -139,7 +150,7 @@ export function useDsuDailyState(): UseDsuDailyState {
     } finally {
       setIsLoading(false);
     }
-  }, [updateDraft]);
+  }, [projectKeyOverride, storedProjectKey, updateDraft]);
 
   const copy = useCallback(async () => {
     try {

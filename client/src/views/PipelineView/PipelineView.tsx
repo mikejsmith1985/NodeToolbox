@@ -37,6 +37,7 @@ export default function PipelineView() {
       ),
     }));
   }, [pipelineState.epics]);
+  const attentionEpicCount = pipelineState.epics.filter((epicSummary) => epicSummary.completionPercent < 100).length;
 
   const toggleEpicExpansion = (epicSummary: EpicSummary) => {
     const isExpanded = expandedEpicKeys.has(epicSummary.key);
@@ -55,18 +56,37 @@ export default function PipelineView() {
   return (
     <section className={styles.pipelineView} aria-label={VIEW_TITLE}>
       <header className={styles.pageHeader}>
-        <h1 className={styles.pageTitle}>{VIEW_TITLE}</h1>
-        <p className={styles.pageSubtitle}>{VIEW_SUBTITLE}</p>
+        <div>
+          <h1 className={styles.pageTitle}>{VIEW_TITLE}</h1>
+          <p className={styles.pageSubtitle}>{VIEW_SUBTITLE}</p>
+        </div>
+        <div className={styles.summaryCards} aria-live="polite">
+          <div className={styles.summaryCard}>
+            <span className={styles.summaryLabel}>Visible epics</span>
+            <strong className={styles.summaryValue}>{pipelineState.epics.length}</strong>
+          </div>
+          <div className={styles.summaryCard}>
+            <span className={styles.summaryLabel}>In focus</span>
+            <strong className={styles.summaryValue}>{attentionEpicCount}</strong>
+          </div>
+          <div className={styles.summaryCard}>
+            <span className={styles.summaryLabel}>Project</span>
+            <strong className={styles.summaryValue}>{pipelineState.projectKey || NO_VALUE_LABEL}</strong>
+          </div>
+        </div>
       </header>
 
       <div className={styles.controlsPanel}>
-        <input
-          className={styles.controlInput}
-          aria-label="Jira project key"
-          placeholder={PROJECT_INPUT_PLACEHOLDER}
-          value={pipelineState.projectKey}
-          onChange={(changeEvent) => pipelineState.setProjectKey(changeEvent.target.value)}
-        />
+        <label className={styles.controlField}>
+          Jira project key
+          <input
+            className={styles.controlInput}
+            aria-label="Jira project key"
+            placeholder={PROJECT_INPUT_PLACEHOLDER}
+            value={pipelineState.projectKey}
+            onChange={(changeEvent) => pipelineState.setProjectKey(changeEvent.target.value)}
+          />
+        </label>
         <button
           type="button"
           className={styles.buttonPrimary}
@@ -77,13 +97,16 @@ export default function PipelineView() {
         >
           {pipelineState.isLoading ? 'Loading…' : '↻ Load Pipeline'}
         </button>
-        <input
-          className={styles.controlInput}
-          aria-label="Filter by assignee"
-          placeholder={ASSIGNEE_INPUT_PLACEHOLDER}
-          value={pipelineState.assigneeFilter}
-          onChange={(changeEvent) => pipelineState.setAssigneeFilter(changeEvent.target.value)}
-        />
+        <label className={styles.controlField}>
+          Filter by assignee
+          <input
+            className={styles.controlInput}
+            aria-label="Filter by assignee"
+            placeholder={ASSIGNEE_INPUT_PLACEHOLDER}
+            value={pipelineState.assigneeFilter}
+            onChange={(changeEvent) => pipelineState.setAssigneeFilter(changeEvent.target.value)}
+          />
+        </label>
         <fieldset className={styles.statusFilters} aria-label="Status category filters">
           {STATUS_CATEGORY_OPTIONS.map((statusCategoryOption) => (
             <label key={statusCategoryOption.key} className={styles.statusFilterLabel}>
@@ -96,10 +119,6 @@ export default function PipelineView() {
             </label>
           ))}
         </fieldset>
-      </div>
-
-      <div className={styles.summaryBar} aria-live="polite">
-        {pipelineState.epics.length} epic{pipelineState.epics.length === 1 ? '' : 's'} displayed
       </div>
 
       {pipelineState.errorMessage && (

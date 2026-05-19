@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Team Dashboard — recovered local parity work and durable dashboard state**: the recovered Team Dashboard branch now includes the newer Team Dashboard experience that had not been present in `v0.9.31`, including board-aware loading, roster and standup workspace additions, and shared settings persistence for project key, board, active tab, and scope selection.
+- **Admin Hub — durable settings backup registry**: a shared `persistentSettingsStorage` utility now defines which localStorage keys count as durable NodeToolbox settings so backup, restore, and reset flows can include Team Dashboard and other modern `tbx*` settings consistently.
 - **Art View — Monthly Report Jira parity**: The Monthly Report tab now derives metrics and narrative content from each team's already-loaded Jira sprint issues:
   - **Jira stats strip**: Each team card gains a read-only strip showing done/total issues, completion %, velocity/committed story points (when issues carry estimates), and an impediment count with amber highlight when risks exist.
   - **Generate from Jira button**: A single click pre-fills the "Accomplished" field with bullet lines for each done issue (KEY: summary, capped at 10 with an overflow note) and the "Risks" field with bullet lines for every detected impediment (same four-signal detection as the Impediments tab). Existing manual content is preserved when generation returns nothing.
@@ -35,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Error feedback**: If the post fails, an inline error message is shown below the button.
 
 ### Fixed
+- **Self-update — updates now apply back into the original install location instead of relaunching from `%TEMP%`**: ZIP updates stage the full release and dependencies first, then copy the prepared files back into the existing install root after shutdown; EXE updates overwrite the launched executable path in place. Manual relaunches from the original VBS, BAT, or EXE now continue on the updated build instead of reverting to the original downloaded version.
+- **Admin Hub update polling now allows longer in-place ZIP updates**: the browser waits up to 180 seconds for restart so a valid update is not marked failed while the updated install is being applied.
 - **Art View — shared Jira typing now covers PI, impediment, dependency, and release metadata used by the parity views**: the client build no longer fails when Art View tests and release/reason logic reference Jira fields such as alternate story points, flagged state, labels, issue links, parent keys, comments, and fix-version release dates.
 - **Release pipeline — fresh-clone releases now install client dependencies before building the React app**: `scripts/local-release.ps1` no longer relies on an already-populated `client/node_modules` folder, so re-running a release from a clean clone now succeeds through the React build step.
 - **Art View — Jira board selection metadata now stays accurate when boards reload or the picker falls back to manual entry**: project-filtered board loads no longer leave the picker stuck in a stale loading/error state, and manual board-ID entry now clears any previously selected board metadata instead of preserving the wrong board name.
