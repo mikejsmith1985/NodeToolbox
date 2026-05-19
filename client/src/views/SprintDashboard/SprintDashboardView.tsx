@@ -177,6 +177,27 @@ interface PipelineChecklistItem {
   checkedAt: Date | null;
 }
 
+interface PipelineChecklistHistoryEntry {
+  date?: string;
+  to?: { statusState?: string };
+}
+
+interface PipelineChecklistEntryResponse {
+  label?: string;
+  name?: string;
+  status?: { statusState?: string };
+  history?: PipelineChecklistHistoryEntry[];
+}
+
+interface PipelineChecklistContainerResponse {
+  items?: PipelineChecklistEntryResponse[];
+  checklistItems?: PipelineChecklistEntryResponse[];
+}
+
+interface PipelineChecklistResponse extends PipelineChecklistContainerResponse {
+  checklists?: PipelineChecklistContainerResponse[];
+}
+
 interface PipelineChecklistResult {
   source: 'dc' | 'cloud-property' | 'error' | 'unavailable';
   isIntDeployChecked: boolean;
@@ -1787,18 +1808,31 @@ function DefectsTab({
   selectedPiValue: string;
 }) {
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
-  const [defectIssues, setDefectIssues] = useState<JiraIssue[]>(issues.filter(isDefectIssue));
+  const [projectDefectIssues, setProjectDefectIssues] = useState<JiraIssue[]>([]);
   const [isLoadingDefects, setIsLoadingDefects] = useState(false);
   const [priorityFilter, setPriorityFilter] = useState('');
   const [statusCategoryFilter, setStatusCategoryFilter] = useState('');
   const [showUnassignedOnly, setShowUnassignedOnly] = useState(false);
   const [sortMode, setSortMode] = useState<'priority-age' | 'age' | 'assignee' | 'status'>('priority-age');
+  const sprintDefectIssues = useMemo(() => issues.filter(isDefectIssue), [issues]);
+  const normalizedProjectKey = projectKey.trim().toUpperCase();
+  const defectIssues = useMemo(() => {
+    if (!normalizedProjectKey) {
+      return sprintDefectIssues;
+    }
+
+    const mergedIssues = [...sprintDefectIssues];
+    const seenIssueKeys = new Set(sprintDefectIssues.map((issue) => issue.key));
+    for (const projectDefectIssue of projectDefectIssues) {
+      if (!seenIssueKeys.has(projectDefectIssue.key)) {
+        mergedIssues.push(projectDefectIssue);
+      }
+    }
+
+    return mergedIssues;
+  }, [normalizedProjectKey, projectDefectIssues, sprintDefectIssues]);
 
   useEffect(() => {
-    const sprintDefects = issues.filter(isDefectIssue);
-    setDefectIssues(sprintDefects);
-
-    const normalizedProjectKey = projectKey.trim().toUpperCase();
     if (!normalizedProjectKey) {
       return;
     }
@@ -1821,14 +1855,7 @@ function DefectsTab({
         if (!isMounted) {
           return;
         }
-        const mergedIssues = [...sprintDefects];
-        const seenKeys = new Set(sprintDefects.map((issue) => issue.key));
-        for (const projectDefect of response.issues ?? []) {
-          if (!seenKeys.has(projectDefect.key)) {
-            mergedIssues.push(projectDefect);
-          }
-        }
-        setDefectIssues(mergedIssues);
+        setProjectDefectIssues(response.issues ?? []);
       } finally {
         if (isMounted) {
           setIsLoadingDefects(false);
@@ -1840,7 +1867,13 @@ function DefectsTab({
     return () => {
       isMounted = false;
     };
-  }, [issues, projectKey, scopeMode, selectedSprintId, selectedFixVersionName, selectedPiValue]);
+  }, [
+    normalizedProjectKey,
+    scopeMode,
+    selectedSprintId,
+    selectedFixVersionName,
+    selectedPiValue,
+  ]);
 
   const filteredDefects = defectIssues
     .filter((defectIssue) => priorityFilter === '' || readIssuePriorityName(defectIssue) === priorityFilter)
@@ -3044,17 +3077,6 @@ function PointingTab({
   config: DashboardConfig;
   issues: JiraIssue[];
 }) {
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
-  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState<PointingSortId>('default');
-  const [showPointed, setShowPointed] = useState(false);
-  const [pipelineRoleFilter, setPipelineRoleFilter] = useState<PipelineRole | ''>('');
-  const [pointingQueue, setPointingQueue] = useState<JiraIssue[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [sessionCounts, setSessionCounts] = useState({ pointed: 0, skipped: 0 });
-  const [detailByIssueKey, setDetailByIssueKey] = useState<Record<string, PointingIssueDetail>>({});
-  const [saveStatusMessage, setSaveStatusMessage] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
   const allIssueTypes = useMemo(
     () => Array.from(new Set(issues.map((issue) => readIssueTypeName(issue)))).sort(),
     [issues],
@@ -3063,35 +3085,62 @@ function PointingTab({
     () => Array.from(new Set(issues.map((issue) => readIssueStatusName(issue)))).sort(),
     [issues],
   );
+  const defaultSelectedStatuses = useMemo(
+    () => allStatuses.filter(
+      (statusName) => !DEFAULT_POINTING_DONE_STATUSES.includes(
+        statusName as (typeof DEFAULT_POINTING_DONE_STATUSES)[number],
+      ),
+    ),
+    [allStatuses],
+  );
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(defaultSelectedStatuses);
+  const [sortBy, setSortBy] = useState<PointingSortId>('default');
+  const [showPointed, setShowPointed] = useState(false);
+  const [pipelineRoleFilter, setPipelineRoleFilter] = useState<PipelineRole | ''>('');
+  const [pointingQueue, setPointingQueue] = useState<JiraIssue[]>(() =>
+    buildPointingQueue(issues, {
+      selectedTypes: [],
+      selectedStatuses: defaultSelectedStatuses,
+      sortBy: 'default',
+      showPointed: false,
+      pipelineRoleFilter: '',
+      customStoryPointsFieldId: config.customStoryPointsFieldId,
+    }),
+  );
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [sessionCounts, setSessionCounts] = useState({ pointed: 0, skipped: 0 });
+  const [detailByIssueKey, setDetailByIssueKey] = useState<Record<string, PointingIssueDetail>>({});
+  const [saveStatusMessage, setSaveStatusMessage] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const storyPointScale = parsePointingScale(config.storyPointScale);
-  const queueSeedSignature = `${boardType}:${issues.map((issue) => issue.key).join('|')}`;
 
-  useEffect(() => {
-    setSelectedStatuses(allStatuses.filter((statusName) => !DEFAULT_POINTING_DONE_STATUSES.includes(statusName as (typeof DEFAULT_POINTING_DONE_STATUSES)[number])));
-  }, [allStatuses, queueSeedSignature]);
-
-  useEffect(() => {
+  function rebuildPointingSession({
+    nextPipelineRoleFilter = pipelineRoleFilter,
+    nextSelectedStatuses = selectedStatuses,
+    nextSelectedTypes = selectedTypes,
+    nextShowPointed = showPointed,
+    nextSortBy = sortBy,
+  }: {
+    nextPipelineRoleFilter?: PipelineRole | '';
+    nextSelectedStatuses?: string[];
+    nextSelectedTypes?: string[];
+    nextShowPointed?: boolean;
+    nextSortBy?: PointingSortId;
+  } = {}) {
     setPointingQueue(
       buildPointingQueue(issues, {
-        selectedTypes,
-        selectedStatuses,
-        sortBy,
-        showPointed,
-        pipelineRoleFilter,
+        selectedTypes: nextSelectedTypes,
+        selectedStatuses: nextSelectedStatuses,
+        sortBy: nextSortBy,
+        showPointed: nextShowPointed,
+        pipelineRoleFilter: nextPipelineRoleFilter,
         customStoryPointsFieldId: config.customStoryPointsFieldId,
       }),
     );
     setCurrentIndex(0);
     setSessionCounts({ pointed: 0, skipped: 0 });
-  }, [
-    config.customStoryPointsFieldId,
-    issues,
-    pipelineRoleFilter,
-    selectedStatuses,
-    selectedTypes,
-    showPointed,
-    sortBy,
-  ]);
+  }
 
   const currentIssue = currentIndex < pointingQueue.length ? pointingQueue[currentIndex] : null;
 
@@ -3221,19 +3270,23 @@ function PointingTab({
   }
 
   function toggleTypeFilter(issueTypeName: string) {
-    setSelectedTypes((previousTypes) => (
-      previousTypes.includes(issueTypeName)
+    setSelectedTypes((previousTypes) => {
+      const nextSelectedTypes = previousTypes.includes(issueTypeName)
         ? previousTypes.filter((previousType) => previousType !== issueTypeName)
-        : [...previousTypes, issueTypeName]
-    ));
+        : [...previousTypes, issueTypeName];
+      rebuildPointingSession({ nextSelectedTypes });
+      return nextSelectedTypes;
+    });
   }
 
   function toggleStatusFilter(statusName: string) {
-    setSelectedStatuses((previousStatuses) => (
-      previousStatuses.includes(statusName)
+    setSelectedStatuses((previousStatuses) => {
+      const nextSelectedStatuses = previousStatuses.includes(statusName)
         ? previousStatuses.filter((previousStatus) => previousStatus !== statusName)
-        : [...previousStatuses, statusName]
-    ));
+        : [...previousStatuses, statusName];
+      rebuildPointingSession({ nextSelectedStatuses });
+      return nextSelectedStatuses;
+    });
   }
 
   if (issues.length === 0) {
@@ -3265,7 +3318,10 @@ function PointingTab({
           <span className={styles.issueMetaText}>Role</span>
           <button
             className={pipelineRoleFilter === '' ? styles.secondaryButton : styles.workflowStatusChip}
-            onClick={() => setPipelineRoleFilter('')}
+            onClick={() => {
+              setPipelineRoleFilter('');
+              rebuildPointingSession({ nextPipelineRoleFilter: '' });
+            }}
             type="button"
           >
             All ({roleCounts[''] ?? 0})
@@ -3275,7 +3331,10 @@ function PointingTab({
               <button
                 className={pipelineRoleFilter === role ? styles.secondaryButton : styles.workflowStatusChip}
                 key={role}
-                onClick={() => setPipelineRoleFilter(role)}
+                onClick={() => {
+                  setPipelineRoleFilter(role);
+                  rebuildPointingSession({ nextPipelineRoleFilter: role });
+                }}
                 type="button"
               >
                 {role} ({roleCounts[role] ?? 0})
@@ -3320,7 +3379,11 @@ function PointingTab({
                   <span>Sort by</span>
                   <select
                     className={styles.settingsInput}
-                    onChange={(changeEvent) => setSortBy(changeEvent.target.value as PointingSortId)}
+                    onChange={(changeEvent) => {
+                      const nextSortBy = changeEvent.target.value as PointingSortId;
+                      setSortBy(nextSortBy);
+                      rebuildPointingSession({ nextSortBy });
+                    }}
                     value={sortBy}
                   >
                     {POINTING_SORT_OPTIONS.map((sortOption) => (
@@ -3329,7 +3392,15 @@ function PointingTab({
                   </select>
                 </label>
                 <label className={styles.dashboardCheckboxLabel}>
-                  <input checked={showPointed} onChange={() => setShowPointed((previousValue) => !previousValue)} type="checkbox" />
+                  <input
+                    checked={showPointed}
+                    onChange={() => {
+                      const nextShowPointed = !showPointed;
+                      setShowPointed(nextShowPointed);
+                      rebuildPointingSession({ nextShowPointed });
+                    }}
+                    type="checkbox"
+                  />
                   Show already pointed
                 </label>
               </div>
@@ -3560,7 +3631,9 @@ function PipelineTab({
   async function loadChecklist(relKey: string) {
     async function fetchChecklistState(): Promise<PipelineChecklistResult> {
       try {
-        const dcResponse = await jiraGet<any>(`/rest/railsware/1.0/checklist/${relKey}`);
+        const dcResponse = await jiraGet<PipelineChecklistContainerResponse[] | PipelineChecklistResponse>(
+          `/rest/railsware/1.0/checklist/${relKey}`,
+        );
         const checklistContainers = Array.isArray(dcResponse)
           ? dcResponse
           : Array.isArray(dcResponse?.checklists)
@@ -3907,7 +3980,12 @@ function PlanningTab({
   }, [projectKey, scopeMode, selectedSprintId, selectedFixVersionName, selectedPiValue]);
 
   useEffect(() => {
-    void reloadPlanningData();
+    const reloadTimerId = window.setTimeout(() => {
+      void reloadPlanningData();
+    }, 0);
+    return () => {
+      window.clearTimeout(reloadTimerId);
+    };
   }, [reloadPlanningData]);
 
   async function loadPlanningDetail(issue: JiraIssue) {
@@ -4823,7 +4901,14 @@ export default function SprintDashboardView() {
     }
 
     if (activeTab === 'pointing') {
-      return <PointingTab boardType={state.boardType} config={config} issues={state.sprintIssues} />;
+      return (
+        <PointingTab
+          key={`${state.boardType ?? 'none'}:${config.customStoryPointsFieldId}:${state.sprintIssues.map((issue) => issue.key).join('|')}`}
+          boardType={state.boardType}
+          config={config}
+          issues={state.sprintIssues}
+        />
+      );
     }
 
     if (activeTab === 'releases') {

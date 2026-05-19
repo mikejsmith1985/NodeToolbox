@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Error feedback**: If the post fails, an inline error message is shown below the button.
 
 ### Fixed
+- **Team Dashboard — final recovery cleanup for validation-safe Pointing, Defects, Planning, and Pipeline flows**: `SprintDashboardView` no longer relies on effect-driven synchronous state updates that trip the React hooks lint rule, the Pointing queue now resets through explicit session rebuilds when filters or board context change, and the pipeline checklist loader now uses typed Jira responses that build cleanly without `any`.
 - **Self-update — updates now apply back into the original install location instead of relaunching from `%TEMP%`**: ZIP updates stage the full release and dependencies first, then copy the prepared files back into the existing install root after shutdown; EXE updates overwrite the launched executable path in place. Manual relaunches from the original VBS, BAT, or EXE now continue on the updated build instead of reverting to the original downloaded version.
 - **Admin Hub update polling now allows longer in-place ZIP updates**: the browser waits up to 180 seconds for restart so a valid update is not marked failed while the updated install is being applied.
 - **DSU Board — issue-link and comment previews now tolerate Jira payloads with partial link/comment metadata**: the client build and overlay rendering no longer assume every linked issue and comment includes fully-populated type, summary, status, author, and created fields.
