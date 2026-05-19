@@ -1,75 +1,115 @@
 @echo off
-:: Launch Toolbox.bat — starts NodeToolbox and opens the browser.
+:: Launch Toolbox.bat — visible diagnostic bootstrapper for NodeToolbox.
 ::
-:: This window IS the server — keep it open while you use the Toolbox.
-:: Close it (or press Ctrl+C) to stop the server.
-::
-:: On first run (or after a version upgrade to a new folder), production
-:: dependencies are installed automatically via "npm ci". This typically
-:: takes 15-30 seconds and only happens once per extracted folder.
-::
-:: Your credentials are saved in AppData\Roaming\NodeToolbox\ and persist
-:: across version upgrades — no need to re-run the setup wizard.
-::
-:: Requirements:
-::   - Node.js (v18+) must be installed and on your PATH
+:: Most users should double-click "Launch Toolbox Silent.vbs". This batch file
+:: does the same version-pointer resolution with a visible console so startup
+:: errors can be read by a user or help desk technician.
 
+setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
-:: Auto-install production dependencies when this folder is freshly extracted.
-:: "npm ci" uses package-lock.json for a fast, reproducible install.
-if not exist "node_modules" (
-    echo.
-    echo  Installing dependencies, first run only -- takes about 30 seconds...
-    echo  If this hangs, check that npm can reach your registry.
-    echo.
-    npm ci --omit=dev
-    if errorlevel 1 (
-        echo.
-        echo  ERROR: Dependency install failed. Common causes:
-        echo    - Node.js is not installed, get it at https://nodejs.org
-        echo    - npm cannot reach the package registry, check corporate proxy / VPN
-        echo    - Run "npm config set registry https://registry.npmjs.org" and retry
-        echo.
-        pause
-        exit /b 1
-    )
-    echo  Done.
-    echo.
+set "CURRENT_POINTER=current.txt"
+set "VERSIONS_DIR=versions"
+set "PAYLOAD_EXE=nodetoolbox.exe"
+set "SELECTED_VERSION="
+set "PAYLOAD_PATH="
+set "RUN_SOURCE_SERVER="
+
+if exist "%CURRENT_POINTER%" (
+    set /p SELECTED_VERSION=<"%CURRENT_POINTER%"
 )
 
-:: Check that the React UI has been built. In ZIP distributions the build is
-:: included automatically. In git-clone installations the developer must run
-:: "npm run build:client" once before launching. If the source is present we
-:: attempt the build automatically; if not we show a clear error.
-if not exist "client\dist\index.html" (
-    if exist "client\package.json" (
-        echo.
-        echo  Building React UI - first run from source, takes about 60 seconds...
-        echo.
-        cd client
-        npm install
-        npm run build
-        if errorlevel 1 (
-            echo.
-            echo  ERROR: React build failed. Check the output above for details.
-            echo.
-            pause
-            exit /b 1
+if defined SELECTED_VERSION (
+    set "CANDIDATE_PATH=%VERSIONS_DIR%\!SELECTED_VERSION!\%PAYLOAD_EXE%"
+    if exist "!CANDIDATE_PATH!" (
+        set "PAYLOAD_PATH=!CANDIDATE_PATH!"
+    )
+)
+
+if not defined PAYLOAD_PATH (
+    set "SELECTED_VERSION="
+    for /d %%D in ("%VERSIONS_DIR%\*") do (
+        if exist "%%~fD\%PAYLOAD_EXE%" (
+            set "CANDIDATE_VERSION=%%~nxD"
+            call :SelectHigherVersion "!CANDIDATE_VERSION!" "!SELECTED_VERSION!"
+            if "!SHOULD_SELECT_VERSION!"=="1" (
+                set "SELECTED_VERSION=!CANDIDATE_VERSION!"
+                set "PAYLOAD_PATH=%%~fD\%PAYLOAD_EXE%"
+            )
         )
-        cd ..
-        echo  Done.
-        echo.
-    ) else (
-        echo.
-        echo  ERROR: React UI not found - client\dist\index.html is missing.
-        echo  This installation may be corrupted. Re-download NodeToolbox and try again.
-        echo.
-        pause
-        exit /b 1
+    )
+    if defined SELECTED_VERSION (
+        >"%CURRENT_POINTER%" echo !SELECTED_VERSION!
     )
 )
 
-:: Run the server directly in this window so errors are visible.
-:: This window stays open while the server runs -- close it to stop NodeToolbox.
-node server.js --open
+if not defined PAYLOAD_PATH (
+    for /f "delims=" %%E in ('dir /b /a-d "nodetoolbox-v*.exe" 2^>nul ^| sort') do (
+        set "PAYLOAD_PATH=%%E"
+    )
+)
+
+if not defined PAYLOAD_PATH (
+    if exist "server.js" (
+        set "RUN_SOURCE_SERVER=1"
+    )
+)
+
+if not defined PAYLOAD_PATH if not defined RUN_SOURCE_SERVER (
+    echo.
+    echo  ERROR: NodeToolbox payload not found.
+    echo.
+    echo  Expected current.txt and versions\^<version^>\nodetoolbox.exe in:
+    echo  %CD%
+    echo.
+    echo  Please re-extract the NodeToolbox release zip and try again.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo.
+if defined RUN_SOURCE_SERVER (
+    echo  Starting NodeToolbox from source: server.js
+) else (
+    echo  Starting NodeToolbox from: %PAYLOAD_PATH%
+)
+echo  Close this window to stop the server.
+echo.
+
+if defined RUN_SOURCE_SERVER (
+    node server.js --open
+) else (
+    "%PAYLOAD_PATH%" --open
+)
+exit /b %ERRORLEVEL%
+
+:SelectHigherVersion
+set "CANDIDATE_VERSION_VALUE=%~1"
+set "CURRENT_BEST_VERSION_VALUE=%~2"
+set "SHOULD_SELECT_VERSION=0"
+if not defined CURRENT_BEST_VERSION_VALUE (
+    set "SHOULD_SELECT_VERSION=1"
+    exit /b 0
+)
+call :ReadVersionParts "%CANDIDATE_VERSION_VALUE%" CANDIDATE_MAJOR_VERSION CANDIDATE_MINOR_VERSION CANDIDATE_PATCH_VERSION
+call :ReadVersionParts "%CURRENT_BEST_VERSION_VALUE%" CURRENT_MAJOR_VERSION CURRENT_MINOR_VERSION CURRENT_PATCH_VERSION
+if %CANDIDATE_MAJOR_VERSION% GTR %CURRENT_MAJOR_VERSION% set "SHOULD_SELECT_VERSION=1"
+if %CANDIDATE_MAJOR_VERSION% LSS %CURRENT_MAJOR_VERSION% exit /b 0
+if %CANDIDATE_MINOR_VERSION% GTR %CURRENT_MINOR_VERSION% set "SHOULD_SELECT_VERSION=1"
+if %CANDIDATE_MINOR_VERSION% LSS %CURRENT_MINOR_VERSION% exit /b 0
+if %CANDIDATE_PATCH_VERSION% GTR %CURRENT_PATCH_VERSION% set "SHOULD_SELECT_VERSION=1"
+exit /b 0
+
+:ReadVersionParts
+set "VERSION_TEXT=%~1"
+set "VERSION_TEXT=%VERSION_TEXT:v=%"
+for /f "tokens=1-3 delims=." %%A in ("%VERSION_TEXT%") do (
+    set "%~2=%%A"
+    set "%~3=%%B"
+    set "%~4=%%C"
+)
+if not defined %~2 set "%~2=0"
+if not defined %~3 set "%~3=0"
+if not defined %~4 set "%~4=0"
+exit /b 0

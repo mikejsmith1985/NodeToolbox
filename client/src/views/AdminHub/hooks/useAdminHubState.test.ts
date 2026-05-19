@@ -3,7 +3,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useAdminHubState } from './useAdminHubState.ts';
+import { pollUntilServerRestarts, useAdminHubState } from './useAdminHubState.ts';
 
 describe('useAdminHubState', () => {
   afterEach(() => {
@@ -396,3 +396,98 @@ describe('installUpdate', () => {
     expect(result.current.state.updateInstallError).toContain('500');
   });
 });
+
+describe('pollUntilServerRestarts', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('waits for the server to go down before accepting the replacement as healthy', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(global, 'fetch')
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ version: '0.9.37' }),
+      } as Response)
+      .mockRejectedValueOnce(new Error('Server offline'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ version: '0.9.38' }),
+      } as Response)
+
+    const restartPromise = pollUntilServerRestarts({
+      expectedVersion: '0.9.38',
+      maxWaitMs: 5_000,
+    })
+
+    await vi.advanceTimersByTimeAsync(1_500)
+    await expect(restartPromise).resolves.toBeUndefined()
+  })
+
+  it('throws if the old server never shuts down after update acceptance', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ version: '0.9.37' }),
+    } as Response)
+
+    const restartPromise = pollUntilServerRestarts({
+      expectedVersion: '0.9.38',
+      maxWaitMs: 5_000,
+    })
+    const rejectionExpectation = expect(restartPromise).rejects.toThrow(
+      'Server did not shut down after the update was accepted',
+    )
+
+    await vi.advanceTimersByTimeAsync(31_000)
+    await rejectionExpectation
+  })
+
+  it('waits for the expected version instead of any proxy-status success response', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(global, 'fetch')
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ version: '0.9.37' }),
+      } as Response)
+      .mockRejectedValueOnce(new Error('Server offline'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ version: '0.9.37' }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ version: '0.9.38' }),
+      } as Response)
+
+    const restartPromise = pollUntilServerRestarts({
+      expectedVersion: '0.9.38',
+      maxWaitMs: 5_000,
+    })
+
+    await vi.advanceTimersByTimeAsync(2_000)
+    await expect(restartPromise).resolves.toBeUndefined()
+  })
+
+  it('throws if the server comes back on the wrong version until the deadline', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(global, 'fetch')
+      .mockRejectedValueOnce(new Error('Server offline'))
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({ version: '0.9.37' }),
+      } as Response)
+
+    const restartPromise = pollUntilServerRestarts({
+      expectedVersion: '0.9.38',
+      maxWaitMs: 5_000,
+    })
+    const rejectionExpectation = expect(restartPromise).rejects.toThrow(
+      'Server did not restart on version 0.9.38 within 5 seconds',
+    )
+
+    await vi.advanceTimersByTimeAsync(5_500)
+    await rejectionExpectation
+  })
+})

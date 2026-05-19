@@ -55,7 +55,7 @@
   font-size: var(--font-size-md);
   padding: var(--spacing-sm);
   /* Ensure the date input text is always legible regardless of OS color scheme */
-  color-scheme: dark;
+  color-scheme: inherit;
 }
 
 .dateInput:focus {

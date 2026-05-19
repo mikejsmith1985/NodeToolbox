@@ -143,13 +143,13 @@
 }
 
 .boardTypeBadgeScrum {
-  background: #e3f2fd;
-  color: #1565c0;
+  background: var(--color-tone-info-bg);
+  color: var(--color-tone-info-fg);
 }
 
 .boardTypeBadgeKanban {
-  background: #fce4ec;
-  color: #880e4f;
+  background: var(--color-tone-purple-bg);
+  color: var(--color-tone-purple-fg);
 }
 
 .boardTypeBadgeSimple {
@@ -194,32 +194,32 @@
   font-size: 0.72rem;
   padding: 1px 6px;
   border-radius: 999px;
-  background: #d4edda;
-  color: #155724;
+  background: var(--color-tone-success-bg);
+  color: var(--color-tone-success-fg);
 }
 
 .teamCardStatInProgress {
   font-size: 0.72rem;
   padding: 1px 6px;
   border-radius: 999px;
-  background: #fff3cd;
-  color: #856404;
+  background: var(--color-tone-warning-bg);
+  color: var(--color-tone-warning-fg);
 }
 
 .teamCardStatBlocked {
   font-size: 0.72rem;
   padding: 1px 6px;
   border-radius: 999px;
-  background: #f8d7da;
-  color: #721c24;
+  background: var(--color-tone-danger-bg);
+  color: var(--color-tone-danger-fg);
 }
 
 .teamCardStatStale {
   font-size: 0.72rem;
   padding: 1px 6px;
   border-radius: 999px;
-  background: #e2e3e5;
-  color: #383d41;
+  background: var(--color-tone-neutral-bg);
+  color: var(--color-tone-neutral-fg);
 }
 
 .primaryBtn {
@@ -284,7 +284,7 @@
 .expandToggleButton {
   background: transparent;
   border: none;
-  color: var(--color-text-secondary, #8b949e);
+  color: var(--color-text-secondary);
   cursor: pointer;
   padding: 2px 6px;
   font-size: 0.75rem;
@@ -292,7 +292,7 @@
 }
 
 .expandToggleButton:hover {
-  background: var(--color-surface-hover, rgba(255,255,255,0.05));
+  background: var(--color-surface-hover);
 }
 
 .issueDetailCell {
@@ -406,13 +406,13 @@
 }
 
 .piProgressPillDone {
-  background: #d4edda;
-  color: #155724;
+  background: var(--color-tone-success-bg);
+  color: var(--color-tone-success-fg);
 }
 
 .piProgressPillInProgress {
-  background: #fff3cd;
-  color: #856404;
+  background: var(--color-tone-warning-bg);
+  color: var(--color-tone-warning-fg);
 }
 
 .piProgressPillToDo {
@@ -421,13 +421,13 @@
 }
 
 .piProgressPillWarning {
-  background: #fff3cd;
-  color: #856404;
+  background: var(--color-tone-warning-bg);
+  color: var(--color-tone-warning-fg);
 }
 
 .piProgressPillCritical {
-  background: #f8d7da;
-  color: #721c24;
+  background: var(--color-tone-danger-bg);
+  color: var(--color-tone-danger-fg);
 }
 
 /* ── ART Summary Bar ── */
@@ -475,12 +475,12 @@
 
 /** Critical (red) urgency — used for blocked issues and overdue/near-end PI. */
 .artSummaryBarStatCritical .artSummaryBarValue {
-  color: #721c24;
+  color: var(--color-danger);
 }
 
 /** Warning (yellow) urgency — used when PI end date is approaching. */
 .artSummaryBarStatWarning .artSummaryBarValue {
-  color: #856404;
+  color: var(--color-warning);
 }
 
 
@@ -711,22 +711,22 @@
 
 .sosNarrativeTimestamp {
   font-size: 0.7rem;
-  color: #6c757d;
+  color: var(--color-text-secondary);
   font-style: italic;
 }
 
 .sosNarrativeRevertBtn {
   font-size: 0.7rem;
   padding: 0.1rem 0.4rem;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--color-border);
   border-radius: 3px;
-  background: #fff;
+  background: var(--color-surface-2);
   cursor: pointer;
-  color: #495057;
+  color: var(--color-text-primary);
 }
 
 .sosNarrativeRevertBtn:hover {
-  background: #f8f9fa;
+  background: var(--color-surface-hover);
 }
 
 .sosNarrativeTextarea {
@@ -738,6 +738,8 @@
   font-family: inherit;
   resize: vertical;
   box-sizing: border-box;
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
 }
 
 /* ── Monthly Report ── */
@@ -760,7 +762,7 @@
   border: 1px solid var(--color-border);
   border-radius: 6px;
   overflow: hidden;
-  background: var(--color-bg);
+  background: var(--color-surface-1);
 }
 
 .monthlyCardHeader {
@@ -768,8 +770,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 0.625rem 0.875rem;
-  background: #0052cc;
-  color: #fff;
+  background: var(--color-accent);
+  color: var(--color-bg);
   gap: 0.5rem;
 }
 
@@ -781,8 +783,8 @@
 .monthlyCardDraftIndicator {
   font-size: 0.7rem;
   font-weight: 600;
-  color: #2ecc71;
-  background: rgba(46, 204, 113, 0.12);
+  color: var(--color-tone-success-fg);
+  background: var(--color-tone-success-bg);
   padding: 0.1rem 0.4rem;
   border-radius: 3px;
   margin-left: 0.5rem;
@@ -825,6 +827,8 @@
   font-family: inherit;
   resize: vertical;
   box-sizing: border-box;
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
 }
 
 .monthlyTextInput {
@@ -834,6 +838,8 @@
   border-radius: 4px;
   font-size: var(--font-size-sm);
   box-sizing: border-box;
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
 }
 
 /* Jira-derived stats strip — shown below the card header when sprint issues are loaded */
@@ -843,7 +849,7 @@
   flex-wrap: wrap;
   gap: 0.4rem;
   padding: 0.4rem 0.875rem;
-  background: var(--color-bg-subtle, #f4f5f7);
+  background: var(--color-bg-subtle);
   border-bottom: 1px solid var(--color-border);
   font-size: 0.75rem;
 }
@@ -852,25 +858,25 @@
 .monthlyJiraStatItem {
   padding: 0.1rem 0.45rem;
   border-radius: 3px;
-  background: rgba(0, 82, 204, 0.08);
-  color: var(--color-text-secondary, #555);
+  background: var(--color-tone-info-bg);
+  color: var(--color-tone-info-fg);
   font-weight: 500;
 }
 
 /* Impediment chip uses a yellow-amber palette to signal risk */
 .monthlyJiraStatItemImpediment {
-  background: rgba(255, 171, 0, 0.15);
-  color: #a05c00;
+  background: var(--color-tone-warning-bg);
+  color: var(--color-tone-warning-fg);
 }
 
 /* "Generate from Jira" action button inside the stats bar */
 .monthlyJiraGenerateBtn {
   margin-left: auto;
   padding: 0.2rem 0.6rem;
-  border: 1px solid #0052cc;
+  border: 1px solid var(--color-accent);
   border-radius: 4px;
   background: transparent;
-  color: #0052cc;
+  color: var(--color-accent);
   font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
@@ -878,8 +884,8 @@
 }
 
 .monthlyJiraGenerateBtn:hover {
-  background: #0052cc;
-  color: #fff;
+  background: var(--color-accent);
+  color: var(--color-bg);
 }
 
 /* Hint shown on cards whose team has not yet had Jira data loaded */
@@ -887,8 +893,8 @@
   margin: 0;
   padding: 0.35rem 0.875rem;
   font-size: 0.72rem;
-  color: var(--color-text-secondary, #777);
-  background: var(--color-bg-subtle, #f4f5f7);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-subtle);
   border-bottom: 1px solid var(--color-border);
   font-style: italic;
 }
@@ -904,7 +910,7 @@
 .settingsSectionTitle {
   font-size: 0.9rem;
   font-weight: 600;
-  color: var(--color-text);
+  color: var(--color-text-primary);
   margin: 0 0 0.25rem;
 }
 
@@ -929,26 +935,26 @@
 
 /** Past release date that has not been marked released — highest urgency. */
 .releaseUrgencyBadgeOverdue {
-  background: #f8d7da;
-  color: #721c24;
+  background: var(--color-tone-danger-bg);
+  color: var(--color-tone-danger-fg);
 }
 
 /** Release within RELEASE_URGENCY_CRITICAL_DAYS days — same red palette as overdue. */
 .releaseUrgencyBadgeCritical {
-  background: #f8d7da;
-  color: #721c24;
+  background: var(--color-tone-danger-bg);
+  color: var(--color-tone-danger-fg);
 }
 
 /** Release within RELEASE_URGENCY_WARNING_DAYS days — amber alert. */
 .releaseUrgencyBadgeWarning {
-  background: #fff3cd;
-  color: #856404;
+  background: var(--color-tone-warning-bg);
+  color: var(--color-tone-warning-fg);
 }
 
 /** Release is beyond the warning horizon — healthy green. */
 .releaseUrgencyBadgeUpcoming {
-  background: #d4edda;
-  color: #155724;
+  background: var(--color-tone-success-bg);
+  color: var(--color-tone-success-fg);
 }
 
 /** Version has been formally released in Jira — muted, no action needed. */
@@ -1033,13 +1039,40 @@
   color: var(--color-text-secondary);
 }
 
+.settingsFieldBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: min(100%, 780px);
+}
+
+.settingsFieldHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.settingsFieldHint {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+}
+
+.checkboxGrid {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .projectKeyBadge {
   font-family: monospace;
   font-size: 0.75rem;
   padding: 0.1rem 0.375rem;
-  background: #e9ecef;
+  background: var(--color-tone-neutral-bg);
   border-radius: 3px;
-  color: #495057;
+  color: var(--color-tone-neutral-fg);
 }
 
 /* ── Impediments panel: toolbar, team sections, legend, stale badges, prompts ── */
@@ -1056,15 +1089,15 @@
   font-size: var(--font-size-sm);
   padding: var(--spacing-xs) var(--spacing-sm);
   border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
 }
 
 .impedimentTeamSection {
   margin-bottom: var(--spacing-md);
   border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-sm);
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
@@ -1080,11 +1113,11 @@
   font-size: var(--font-size-sm);
   font-weight: bold;
   text-align: left;
-  color: var(--color-text);
+  color: var(--color-text-primary);
 }
 
 .impedimentTeamHeader:hover {
-  background: var(--color-surface-3, #e9ecef);
+  background: var(--color-surface-3);
 }
 
 .impedimentTeamHeaderMeta {
@@ -1103,7 +1136,7 @@
   gap: var(--spacing-xs);
   background: none;
   border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-sm);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
@@ -1123,7 +1156,7 @@
   padding: var(--spacing-sm) var(--spacing-md);
   background: var(--color-surface-2);
   border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-sm);
+  border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
 }
 
@@ -1165,8 +1198,8 @@
   border-radius: 3px;
   font-size: var(--font-size-xs, 0.75rem);
   font-weight: bold;
-  background: #d4edda;
-  color: #155724;
+  background: var(--color-tone-success-bg);
+  color: var(--color-tone-success-fg);
 }
 
 .impedimentStaleBadgeStale {
@@ -1175,8 +1208,8 @@
   border-radius: 3px;
   font-size: var(--font-size-xs, 0.75rem);
   font-weight: bold;
-  background: #fff3cd;
-  color: #856404;
+  background: var(--color-tone-warning-bg);
+  color: var(--color-tone-warning-fg);
 }
 
 .impedimentStaleBadgeCritical {
@@ -1185,8 +1218,8 @@
   border-radius: 3px;
   font-size: var(--font-size-xs, 0.75rem);
   font-weight: bold;
-  background: #f8d7da;
-  color: #721c24;
+  background: var(--color-tone-danger-bg);
+  color: var(--color-tone-danger-fg);
 }
 
 /* ── SoS Jira Sync ── */
@@ -1196,8 +1229,8 @@
   font-family: monospace;
   font-size: 0.7rem;
   padding: 0.1rem 0.4rem;
-  background: #e3f2fd;
-  color: #1565c0;
+  background: var(--color-tone-info-bg);
+  color: var(--color-tone-info-fg);
   border-radius: 3px;
   margin-left: 0.4rem;
   font-weight: normal;

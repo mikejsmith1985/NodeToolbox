@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
   buildStandupRosterAssigneeClause,
+  filterRosterMembersByActiveTeam,
+  resolveActiveRosterTeamName,
   readStoredStandupRosterMembers,
   useStandupRosterStore,
 } from './useStandupRosterStore.ts';
@@ -49,6 +51,84 @@ describe('useStandupRosterStore', () => {
     });
 
     expect(buildStandupRosterAssigneeClause()).toBe('assignee in ("Alice Adams", "Bob Brown")');
+  });
+
+  it('filters the Jira assignee clause down to the active team roster members', () => {
+    useStandupRosterStore.setState({
+      rosterMembers: [
+        {
+          id: 'roster-member:alice adams',
+          displayName: 'Alice Adams',
+          assigneeQueryValue: 'Alice Adams',
+          teamName: 'Transformers',
+        },
+        {
+          id: 'roster-member:bob brown',
+          displayName: 'Bob Brown',
+          assigneeQueryValue: 'Bob Brown',
+          teamName: 'Clean Up Crew',
+        },
+      ],
+    });
+
+    expect(buildStandupRosterAssigneeClause(undefined, 'Clean Up Crew')).toBe('assignee in ("Bob Brown")');
+  });
+
+  it('keeps the full roster when no active team filter is supplied', () => {
+    useStandupRosterStore.setState({
+      rosterMembers: [
+        {
+          id: 'roster-member:alice adams',
+          displayName: 'Alice Adams',
+          assigneeQueryValue: 'Alice Adams',
+          teamName: 'Transformers',
+        },
+        {
+          id: 'roster-member:bob brown',
+          displayName: 'Bob Brown',
+          assigneeQueryValue: 'Bob Brown',
+          teamName: 'Clean Up Crew',
+        },
+      ],
+    });
+
+    expect(buildStandupRosterAssigneeClause()).toBe('assignee in ("Alice Adams", "Bob Brown")');
+  });
+
+  it('defaults the active roster team to the first imported team when none is stored yet', () => {
+    expect(resolveActiveRosterTeamName('', [
+      {
+        id: 'roster-member:beta',
+        displayName: 'Beta Builder',
+        assigneeQueryValue: 'Beta Builder',
+        teamName: 'Zeta Team',
+      },
+      {
+        id: 'roster-member:alpha',
+        displayName: 'Alpha Analyst',
+        assigneeQueryValue: 'Alpha Analyst',
+        teamName: 'Alpha Team',
+      },
+    ])).toBe('Alpha Team');
+  });
+
+  it('can keep teamless members visible in the roster settings view while a team filter is active', () => {
+    expect(filterRosterMembersByActiveTeam([
+      {
+        id: 'roster-member:alice',
+        displayName: 'Alice Adams',
+        assigneeQueryValue: 'Alice Adams',
+        teamName: 'Transformers',
+      },
+      {
+        id: 'roster-member:legacy',
+        displayName: 'Legacy Person',
+        assigneeQueryValue: 'Legacy Person',
+      },
+    ], 'Transformers', { includeTeamlessMembers: true }).map((rosterMember) => rosterMember.displayName)).toEqual([
+      'Alice Adams',
+      'Legacy Person',
+    ]);
   });
 
   it('upserts imported roster members and preserves their metadata fields', () => {

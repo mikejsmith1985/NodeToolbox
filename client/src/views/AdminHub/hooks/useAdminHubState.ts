@@ -43,7 +43,11 @@ const ADVANCED_PASSPHRASE_STORAGE_KEY = 'tbxAdminPassphrase'
 
 const SAVE_STATUS_SUCCESS = '✓ Saved'
 const SAVE_STATUS_CLEAR_DELAY_MS = 2000
+const UPDATE_REQUEST_TIMEOUT_MS = 600_000
+const UPDATE_SHUTDOWN_TIMEOUT_MS = 30_000
 const UPDATE_RESTART_TIMEOUT_MS = 180_000
+const UPDATE_STATUS_POLL_INTERVAL_MS = 500
+const UPDATE_STATUS_REQUEST_TIMEOUT_MS = 2_000
 const ADVANCED_UNLOCK_INCORRECT_PASSPHRASE_MESSAGE = 'Incorrect passphrase.'
 const ADVANCED_UNLOCK_EXISTING_PROMPT_MESSAGE = 'Enter the admin passphrase to unlock advanced settings:'
 const ADVANCED_UNLOCK_NEW_PROMPT_MESSAGE = 'Enter the admin passphrase to unlock advanced settings:'
@@ -331,27 +335,83 @@ function resolveHygieneStorageKey(key: keyof HygieneRules): string | null {
   return null
 }
 
-/**
- * Polls /api/proxy-status until the server responds successfully after an update restart.
- * Waits an initial 3 seconds for the server to begin its graceful shutdown before polling.
- * Throws if the server does not respond within maxWaitMs milliseconds.
- */
-async function pollUntilServerRestarts(maxWaitMs = UPDATE_RESTART_TIMEOUT_MS): Promise<void> {
-  // Give the server a moment to begin its graceful shutdown before we start polling.
-  await new Promise<void>((resolve) => setTimeout(resolve, 3000))
-  const pollStartTime = Date.now()
-  while (Date.now() - pollStartTime < maxWaitMs) {
-    try {
-      const statusResponse = await fetch('/api/proxy-status', {
-        signal: AbortSignal.timeout(2000),
-      })
-      if (statusResponse.ok) return
-    } catch {
-      // Expected while the server is restarting — keep polling.
+function sleepFor(milliseconds: number): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
+}
+
+interface ProxyStatusSnapshot {
+  isResponsive: boolean
+  version: string | null
+}
+
+async function readProxyStatusSnapshot(): Promise<ProxyStatusSnapshot> {
+  try {
+    const statusResponse = await fetch('/api/proxy-status', {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(UPDATE_STATUS_REQUEST_TIMEOUT_MS),
+    })
+    if (!statusResponse.ok) {
+      return { isResponsive: false, version: null }
     }
-    await new Promise<void>((resolve) => setTimeout(resolve, 1000))
+
+    const statusPayload = (await statusResponse.json()) as { version?: unknown }
+    return {
+      isResponsive: true,
+      version: typeof statusPayload.version === 'string' ? statusPayload.version : null,
+    }
+  } catch {
+    return { isResponsive: false, version: null }
   }
-  throw new Error('Server did not restart within 180 seconds')
+}
+
+async function waitForServerShutdown(restartDeadlineTimestamp: number): Promise<void> {
+  const shutdownDeadlineTimestamp = Math.min(
+    restartDeadlineTimestamp,
+    Date.now() + UPDATE_SHUTDOWN_TIMEOUT_MS,
+  )
+
+  while (Date.now() < shutdownDeadlineTimestamp) {
+    const proxyStatusSnapshot = await readProxyStatusSnapshot()
+    if (!proxyStatusSnapshot.isResponsive) return
+    await sleepFor(UPDATE_STATUS_POLL_INTERVAL_MS)
+  }
+
+  throw new Error('Server did not shut down after the update was accepted')
+}
+
+async function waitForServerStartup(
+  restartDeadlineTimestamp: number,
+  expectedVersion: string,
+  maxWaitMs: number,
+): Promise<void> {
+  while (Date.now() < restartDeadlineTimestamp) {
+    const proxyStatusSnapshot = await readProxyStatusSnapshot()
+    const isExpectedVersionRunning =
+      proxyStatusSnapshot.isResponsive && proxyStatusSnapshot.version === expectedVersion
+
+    if (isExpectedVersionRunning) return
+    await sleepFor(UPDATE_STATUS_POLL_INTERVAL_MS)
+  }
+
+  const restartTimeoutSeconds = Math.ceil(maxWaitMs / 1000)
+  throw new Error(
+    `Server did not restart on version ${expectedVersion} within ${restartTimeoutSeconds} seconds`,
+  )
+}
+
+/**
+ * Waits for the current server to go away and then for the replacement server to return.
+ * This two-phase check prevents the updater from mistaking the old process or
+ * the wrong version for a successful restart.
+ */
+export async function pollUntilServerRestarts(options: {
+  expectedVersion: string
+  maxWaitMs?: number
+}): Promise<void> {
+  const maxWaitMs = options.maxWaitMs ?? UPDATE_RESTART_TIMEOUT_MS
+  const restartDeadlineTimestamp = Date.now() + maxWaitMs
+  await waitForServerShutdown(restartDeadlineTimestamp)
+  await waitForServerStartup(restartDeadlineTimestamp, options.expectedVersion, maxWaitMs)
 }
 
 // ── Hook ──
@@ -742,13 +802,14 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ version: updateCheckResult.latestVersion }),
+        signal: AbortSignal.timeout(UPDATE_REQUEST_TIMEOUT_MS),
       })
       if (!updateResponse.ok) {
         const errorText = await updateResponse.text()
         throw new Error(`Server returned ${updateResponse.status}: ${errorText}`)
       }
       // The server shuts down during the update — poll until it comes back.
-      await pollUntilServerRestarts()
+      await pollUntilServerRestarts({ expectedVersion: updateCheckResult.latestVersion })
       window.location.reload()
     } catch (installError) {
       const errorMessage = installError instanceof Error ? installError.message : 'Unknown error'

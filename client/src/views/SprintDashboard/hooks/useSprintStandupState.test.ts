@@ -24,6 +24,7 @@ import {
 } from './useSprintStandupState.ts';
 import { useStandupPlanningStore } from './useStandupPlanningStore.ts';
 import { useStandupRosterStore } from './useStandupRosterStore.ts';
+import { useSettingsStore } from '../../../store/settingsStore.ts';
 
 function buildIssue(
   issueKey: string,
@@ -74,6 +75,7 @@ describe('useSprintStandupState', () => {
     localStorage.clear();
     useStandupPlanningStore.setState({ planEntries: [] });
     useStandupRosterStore.setState({ rosterMembers: [] });
+    useSettingsStore.setState({ sprintDashboardActiveTeam: '' });
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
       writable: true,
@@ -86,6 +88,7 @@ describe('useSprintStandupState', () => {
     localStorage.clear();
     useStandupPlanningStore.setState({ planEntries: [] });
     useStandupRosterStore.setState({ rosterMembers: [] });
+    useSettingsStore.setState({ sprintDashboardActiveTeam: '' });
   });
 
   it('formats the live person-walk preview text exactly', () => {
@@ -251,5 +254,40 @@ describe('useSprintStandupState', () => {
     await waitFor(() => {
       expect(result.current.state.scopeIssues.map((issue) => issue.key)).toEqual(['TBX-8']);
     });
+  });
+
+  it('limits roster scope loading to the currently active team', async () => {
+    useStandupRosterStore.getState().replaceRosterMembers([
+      {
+        displayName: 'Taylor Teammate',
+        assigneeQueryValue: 'Taylor Teammate',
+        teamName: 'Transformers',
+      },
+      {
+        displayName: 'Jordan Joiner',
+        assigneeQueryValue: 'Jordan Joiner',
+        teamName: 'Clean Up Crew',
+      },
+    ]);
+    useSettingsStore.getState().setSprintDashboardActiveTeam('Transformers');
+    mockJiraGet
+      .mockResolvedValueOnce({
+        issues: [buildIssue('TBX-9', 'Transformer work', 'In Progress', 'indeterminate', 'user-9', createRelativeIsoDate(0))],
+      })
+      .mockResolvedValueOnce({ accountId: 'user-1' });
+
+    const { result } = renderHook(() => useSprintStandupState([], 'TBX'));
+
+    await act(async () => {
+      result.current.actions.setScopeMode('roster');
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.activeRosterTeamName).toBe('Transformers');
+      expect(result.current.state.scopeIssues.map((issue) => issue.key)).toEqual(['TBX-9']);
+    });
+
+    expect(mockJiraGet).toHaveBeenCalledWith(expect.stringContaining('Taylor%20Teammate'));
+    expect(mockJiraGet).not.toHaveBeenCalledWith(expect.stringContaining('Jordan%20Joiner'));
   });
 });

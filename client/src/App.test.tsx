@@ -1,7 +1,7 @@
 // App.test.tsx — Unit tests for the Phase 1 routed application shell.
 
 import type { ReactNode } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -150,6 +150,25 @@ describe('App shell', () => {
     renderApp(DEFAULT_PATH);
 
     expect(screen.getByLabelText('Connection status')).toBeInTheDocument();
+  });
+
+  it('shows a global theme toggle and switches the html theme attribute', async () => {
+    renderApp(DEFAULT_PATH);
+
+    const darkThemeButton = screen.getByRole('button', { name: 'Dark' });
+    const lightThemeButton = screen.getByRole('button', { name: 'Light' });
+
+    expect(darkThemeButton).toHaveAttribute('aria-pressed', 'true');
+    expect(lightThemeButton).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(lightThemeButton);
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().theme).toBe('light');
+      expect(document.documentElement).toHaveAttribute('data-theme', 'light');
+      expect(lightThemeButton).toHaveAttribute('aria-pressed', 'true');
+      expect(darkThemeButton).toHaveAttribute('aria-pressed', 'false');
+    });
   });
 
   it('redirects unknown routes to the Home view', async () => {

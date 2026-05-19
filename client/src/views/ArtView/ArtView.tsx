@@ -1,9 +1,9 @@
 // ArtView.tsx — Tabbed ART (Agile Release Train) view for multi-team PI planning and health dashboards.
 
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
-import { jiraPost } from '../../services/jiraApi.ts';
+import { jiraGet, jiraPost } from '../../services/jiraApi.ts';
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import { useToast } from '../../components/Toast/ToastProvider.tsx';
 import JiraBoardPicker from '../../components/JiraBoardPicker/index.tsx';
@@ -13,14 +13,13 @@ import BlueprintTab from './BlueprintTab.tsx';
 import DependenciesTab from './DependenciesTab.tsx';
 import type { ArtTab, ArtTeam, ArtBoardPrepIssue, PiProgressStats } from './hooks/useArtData.ts';
 import { useArtData } from './hooks/useArtData.ts';
-import type { ImpedimentReason, ImpedimentStaleTier, MonthlyJiraStats } from './hooks/artHelpers.ts';
+import type { ImpedimentReason, ImpedimentStaleTier } from './hooks/artHelpers.ts';
 import {
   classifyImpedimentStaleness,
   computeDaysSinceUpdate,
   computeMonthlyJiraStats,
   detectImpedimentReasons,
   generateMonthlyAccomplishedText,
-  generateMonthlyRisksText,
   isImpediment,
 } from './hooks/artHelpers.ts';
 import type { JiraIssue } from '../../types/jira.ts';
@@ -2103,15 +2102,180 @@ function SosPanel({ teams, sosExpandedTeams, onToggleSosTeam }: SosPanelProps) {
 /** Pillar categories used by the SAFe portfolio for classifying features. */
 type MonthlyReportPillar = '' | 'Growth' | 'Affordability' | 'Operating Model';
 
+type MonthlyReportTemplateFieldName =
+  | 'reportTeamName'
+  | 'initiativeName'
+  | 'code'
+  | 'productAreas'
+  | 'accomplished'
+  | 'outcomes'
+  | 'stakeholders'
+  | 'pillar'
+  | 'deliveredDate'
+  | 'pointOfContact';
+
+type MonthlyReportInputMode = 'text' | 'textarea' | 'select';
+
+interface MonthlyReportTemplateRow {
+  fieldName: MonthlyReportTemplateFieldName;
+  label: string;
+  inputMode: MonthlyReportInputMode;
+  isBulletList: boolean;
+  textareaRows?: number;
+}
+
 /** Editable fields that form a single team's monthly report card. */
 interface MonthlyReportCard {
   teamId: string;
   teamName: string;
+  reportTeamName: string;
+  initiativeName: string;
+  code: string;
+  productAreas: string;
   accomplished: string;
   outcomes: string;
-  risks: string;
   stakeholders: string;
   pillar: MonthlyReportPillar;
+  deliveredDate: string;
+  pointOfContact: string;
+  /** Retained so older stored cards can still be loaded without data loss. */
+  risks?: string;
+}
+
+const MONTHLY_REPORT_PLACEHOLDER_TEXT = 'Provide response here';
+const MONTHLY_REPORT_BULLET_PREFIX = '• ';
+const MONTHLY_REPORT_COPY_TABLE_LABEL = 'Monthly accomplishments table';
+const MONTHLY_REPORT_TEMPLATE_ROWS: MonthlyReportTemplateRow[] = [
+  {
+    fieldName: 'reportTeamName',
+    label: 'Team Name (Salesforce: xx or Enrollment: xx)',
+    inputMode: 'text',
+    isBulletList: false,
+  },
+  {
+    fieldName: 'initiativeName',
+    label: 'What is the name of the initiative/project?',
+    inputMode: 'text',
+    isBulletList: false,
+  },
+  {
+    fieldName: 'code',
+    label: 'P or T - Code if applicable:',
+    inputMode: 'text',
+    isBulletList: false,
+  },
+  {
+    fieldName: 'productAreas',
+    label: 'Included Product Areas? (Ex. SalesOps, Telesales, Enrollment Ops, Prod Support, Asset, etc)',
+    inputMode: 'textarea',
+    isBulletList: true,
+    textareaRows: 3,
+  },
+  {
+    fieldName: 'accomplished',
+    label: 'What was accomplished? Provide a summary of the achievement focusing on what was delivered that benefited the business or major technical improvement.',
+    inputMode: 'textarea',
+    isBulletList: true,
+    textareaRows: 4,
+  },
+  {
+    fieldName: 'outcomes',
+    label: 'What are the business outcomes or desired benefits? (Ex. Improved the member experience, cost savings or cost avoidance, major milestone or incremental improvement, process improvement, defect resolution, technology resiliency)',
+    inputMode: 'textarea',
+    isBulletList: true,
+    textareaRows: 4,
+  },
+  {
+    fieldName: 'stakeholders',
+    label: 'Who are the impacted stakeholders? (Members, Brokers, Agents, same info from Product Areas, etc)',
+    inputMode: 'textarea',
+    isBulletList: true,
+    textareaRows: 3,
+  },
+  {
+    fieldName: 'pillar',
+    label: 'What Business Pillar is impacted? (Growth, Affordability, Operating Model)',
+    inputMode: 'select',
+    isBulletList: true,
+  },
+  {
+    fieldName: 'deliveredDate',
+    label: 'Date Delivered Accomplished',
+    inputMode: 'text',
+    isBulletList: true,
+  },
+  {
+    fieldName: 'pointOfContact',
+    label: 'SME / Point of Contact (PO)',
+    inputMode: 'text',
+    isBulletList: true,
+  },
+];
+const MONTHLY_REPORT_DRAFT_FIELDS: MonthlyReportTemplateFieldName[] = [
+  'initiativeName',
+  'code',
+  'productAreas',
+  'accomplished',
+  'outcomes',
+  'stakeholders',
+  'pillar',
+  'deliveredDate',
+  'pointOfContact',
+];
+const PILLAR_OPTIONS: MonthlyReportPillar[] = ['', 'Growth', 'Affordability', 'Operating Model'];
+
+function createDefaultMonthlyReportCard(team: ArtTeam): MonthlyReportCard {
+  return {
+    teamId: team.id,
+    teamName: team.name,
+    reportTeamName: team.name,
+    initiativeName: '',
+    code: '',
+    productAreas: '',
+    accomplished: '',
+    outcomes: '',
+    stakeholders: '',
+    pillar: '',
+    deliveredDate: '',
+    pointOfContact: '',
+    risks: '',
+  };
+}
+
+function readStoredMonthlyText(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function normalizeStoredMonthlyReportCard(team: ArtTeam, storedCard: unknown): MonthlyReportCard {
+  const defaultCard = createDefaultMonthlyReportCard(team);
+
+  if (!storedCard || typeof storedCard !== 'object') {
+    return defaultCard;
+  }
+
+  const storedCardRecord = storedCard as Partial<MonthlyReportCard>;
+  const storedReportTeamName = readStoredMonthlyText(storedCardRecord.reportTeamName).trim();
+  const storedLegacyTeamName = readStoredMonthlyText(storedCardRecord.teamName).trim();
+  const reportTeamName = storedReportTeamName || storedLegacyTeamName || defaultCard.reportTeamName;
+  const storedPillar = readStoredMonthlyText(storedCardRecord.pillar);
+  const normalizedPillar = PILLAR_OPTIONS.includes(storedPillar as MonthlyReportPillar)
+    ? storedPillar as MonthlyReportPillar
+    : '';
+
+  return {
+    ...defaultCard,
+    reportTeamName,
+    initiativeName: readStoredMonthlyText(storedCardRecord.initiativeName),
+    code: readStoredMonthlyText(storedCardRecord.code),
+    productAreas: readStoredMonthlyText(storedCardRecord.productAreas),
+    accomplished: readStoredMonthlyText(storedCardRecord.accomplished),
+    outcomes: readStoredMonthlyText(storedCardRecord.outcomes),
+    stakeholders: readStoredMonthlyText(storedCardRecord.stakeholders),
+    pillar: normalizedPillar,
+    deliveredDate: readStoredMonthlyText(storedCardRecord.deliveredDate),
+    pointOfContact: readStoredMonthlyText(storedCardRecord.pointOfContact),
+    risks: readStoredMonthlyText(storedCardRecord.risks),
+  };
 }
 
 /** Generates a list of the last 12 month labels in 'YYYY-MM' format for the month selector. */
@@ -2138,19 +2302,13 @@ function buildMonthlyReportStorageKey(teamId: string, yearMonth: string): string
 function loadMonthlyReportCard(team: ArtTeam, yearMonth: string): MonthlyReportCard {
   try {
     const stored = localStorage.getItem(buildMonthlyReportStorageKey(team.id, yearMonth));
-    if (stored) return JSON.parse(stored) as MonthlyReportCard;
+    if (stored) {
+      return normalizeStoredMonthlyReportCard(team, JSON.parse(stored));
+    }
   } catch {
     // Fall through to default
   }
-  return {
-    teamId: team.id,
-    teamName: team.name,
-    accomplished: '',
-    outcomes: '',
-    risks: '',
-    stakeholders: '',
-    pillar: '',
-  };
+  return createDefaultMonthlyReportCard(team);
 }
 
 /** Saves a monthly report card to localStorage. */
@@ -2158,57 +2316,91 @@ function saveMonthlyReportCard(teamId: string, yearMonth: string, card: MonthlyR
   localStorage.setItem(buildMonthlyReportStorageKey(teamId, yearMonth), JSON.stringify(card));
 }
 
-/** Formats all visible cards as plain text for copying to clipboard or file download. */
-function formatCardsAsText(
-  cards: MonthlyReportCard[],
-  yearMonth: string,
-  statsMap?: Map<string, MonthlyJiraStats>,
-): string {
-  const lines: string[] = [`Monthly Report — ${yearMonth}`, ''];
-  for (const card of cards) {
-    lines.push(`=== ${card.teamName} ===`);
-    if (card.pillar) lines.push(`Pillar: ${card.pillar}`);
-    // Include Jira-derived metrics when available so the exported file is self-contained.
-    const stats = statsMap?.get(card.teamId);
-    if (stats && stats.totalIssueCount > 0) {
-      const velocityLabel = stats.committedPoints > 0
-        ? `${stats.velocityPoints}/${stats.committedPoints} pts`
-        : `${stats.doneIssueCount}/${stats.totalIssueCount} issues`;
-      lines.push(`Progress: ${stats.completionPercent}% complete · ${velocityLabel}${stats.impedimentCount > 0 ? ` · ⚠️ ${stats.impedimentCount} impediment${stats.impedimentCount !== 1 ? 's' : ''}` : ''}`);
-    }
-    if (card.accomplished) lines.push(`Accomplished:\n${card.accomplished}`);
-    if (card.outcomes) lines.push(`Outcomes:\n${card.outcomes}`);
-    if (card.risks) lines.push(`Risks:\n${card.risks}`);
-    if (card.stakeholders) lines.push(`Stakeholders: ${card.stakeholders}`);
-    lines.push('');
+function readMonthlyTemplateFieldValue(card: MonthlyReportCard, fieldName: MonthlyReportTemplateFieldName): string {
+  const rawFieldValue = card[fieldName];
+  return typeof rawFieldValue === 'string' ? rawFieldValue : '';
+}
+
+function createMonthlyTemplateResponseLines(fieldValue: string, isBulletList: boolean): string[] {
+  const trimmedFieldValue = fieldValue.trim();
+  if (!isBulletList) {
+    return [trimmedFieldValue || MONTHLY_REPORT_PLACEHOLDER_TEXT];
   }
-  return lines.join('\n');
+
+  const responseLines = trimmedFieldValue
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => `${MONTHLY_REPORT_BULLET_PREFIX}${line.replace(/^[•*-]\s*/, '')}`);
+
+  return responseLines.length > 0
+    ? responseLines
+    : [`${MONTHLY_REPORT_BULLET_PREFIX}${MONTHLY_REPORT_PLACEHOLDER_TEXT}`];
+}
+
+function escapeMonthlyReportHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function formatMonthlyTemplateResponseAsText(card: MonthlyReportCard, row: MonthlyReportTemplateRow): string {
+  return createMonthlyTemplateResponseLines(
+    readMonthlyTemplateFieldValue(card, row.fieldName),
+    row.isBulletList,
+  ).join('\n');
+}
+
+function formatMonthlyTemplateResponseAsHtml(card: MonthlyReportCard, row: MonthlyReportTemplateRow): string {
+  const responseLines = createMonthlyTemplateResponseLines(
+    readMonthlyTemplateFieldValue(card, row.fieldName),
+    row.isBulletList,
+  );
+
+  if (!row.isBulletList) {
+    return `<div class="monthly-template-text">${escapeMonthlyReportHtml(responseLines[0]).replaceAll('\n', '<br>')}</div>`;
+  }
+
+  return `<ul class="monthly-template-list">${responseLines.map((line) => `<li>${escapeMonthlyReportHtml(line.replace(/^[•]\s*/, ''))}</li>`).join('')}</ul>`;
+}
+
+/** Formats all visible cards as plain text for copying to clipboard or file download. */
+function formatCardsAsText(cards: MonthlyReportCard[]): string {
+  return cards
+    .map((card) => MONTHLY_REPORT_TEMPLATE_ROWS
+      .map((row) => `${row.label}\n${formatMonthlyTemplateResponseAsText(card, row)}`)
+      .join('\n\n'))
+    .join('\n\n');
+}
+
+function formatCardsAsHtmlFragment(cards: MonthlyReportCard[]): string {
+  return cards
+    .map((card) => {
+      const tableRowsHtml = MONTHLY_REPORT_TEMPLATE_ROWS
+        .map((row) => `
+          <tr>
+            <th scope="row">${escapeMonthlyReportHtml(row.label)}</th>
+            <td>${formatMonthlyTemplateResponseAsHtml(card, row)}</td>
+          </tr>`)
+        .join('');
+
+      return `
+        <table aria-label="${MONTHLY_REPORT_COPY_TABLE_LABEL}" class="monthly-template-table">
+          <tbody>${tableRowsHtml}</tbody>
+        </table>`;
+    })
+    .join('<div class="monthly-template-spacer"></div>');
 }
 
 /** Formats all visible cards as a self-contained HTML document for download. */
 function formatCardsAsHtml(
   cards: MonthlyReportCard[],
   yearMonth: string,
-  statsMap?: Map<string, MonthlyJiraStats>,
 ): string {
-  const cardHtml = cards
-    .map((card) => {
-      const stats = statsMap?.get(card.teamId);
-      const statsRow = stats && stats.totalIssueCount > 0
-        ? `<p class="stats">${stats.doneIssueCount}/${stats.totalIssueCount} done (${stats.completionPercent}%)${stats.committedPoints > 0 ? ` · ${stats.velocityPoints}/${stats.committedPoints} pts` : ''}${stats.impedimentCount > 0 ? ` · ⚠️ ${stats.impedimentCount} impediment${stats.impedimentCount !== 1 ? 's' : ''}` : ''}</p>`
-        : '';
-      return `
-        <section class="card">
-          <h2>${card.teamName}</h2>
-          ${card.pillar ? `<p><strong>Pillar:</strong> ${card.pillar}</p>` : ''}
-          ${statsRow}
-          ${card.accomplished ? `<h3>Accomplished</h3><pre>${card.accomplished}</pre>` : ''}
-          ${card.outcomes ? `<h3>Outcomes</h3><pre>${card.outcomes}</pre>` : ''}
-          ${card.risks ? `<h3>Risks</h3><pre>${card.risks}</pre>` : ''}
-          ${card.stakeholders ? `<p><strong>Stakeholders:</strong> ${card.stakeholders}</p>` : ''}
-        </section>`;
-    })
-    .join('\n');
+  const cardHtml = formatCardsAsHtmlFragment(cards);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -2216,15 +2408,18 @@ function formatCardsAsHtml(
   <meta charset="UTF-8">
   <title>Monthly Report ${yearMonth}</title>
   <style>
-    body { font-family: sans-serif; margin: 2rem; }
-    .card { border: 1px solid #ccc; padding: 1rem; margin-bottom: 1.5rem; border-radius: 6px; }
-    h2 { background: #0052cc; color: #fff; margin: -1rem -1rem 1rem; padding: 0.5rem 1rem; border-radius: 4px 4px 0 0; }
-    pre { white-space: pre-wrap; background: #f8f8f8; padding: 0.5rem; border-radius: 4px; }
-    .stats { font-size: 0.85rem; color: #555; background: #f4f5f7; padding: 0.3rem 0.5rem; border-radius: 4px; }
+    body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+    .monthly-template-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 20px; }
+    .monthly-template-table th,
+    .monthly-template-table td { border: 1px solid #cbd5e1; padding: 10px 12px; vertical-align: top; text-align: left; }
+    .monthly-template-table th { width: 28%; background: #0b67ad; color: #ffffff; font-weight: 600; }
+    .monthly-template-text { white-space: pre-wrap; }
+    .monthly-template-list { margin: 0; padding-left: 18px; }
+    .monthly-template-list li + li { margin-top: 6px; }
+    .monthly-template-spacer { height: 18px; }
   </style>
 </head>
 <body>
-  <h1>Monthly Report — ${yearMonth}</h1>
   ${cardHtml}
 </body>
 </html>`;
@@ -2241,6 +2436,29 @@ function downloadTextFile(content: string, filename: string, mimeType: string): 
   URL.revokeObjectURL(url);
 }
 
+async function copyMonthlyReportToClipboard(html: string, text: string): Promise<void> {
+  if (navigator.clipboard && typeof navigator.clipboard.write === 'function' && typeof ClipboardItem !== 'undefined') {
+    const clipboardItem = new ClipboardItem({
+      'text/html': new Blob([html], { type: 'text/html' }),
+      'text/plain': new Blob([text], { type: 'text/plain' }),
+    });
+    await navigator.clipboard.write([clipboardItem]);
+    return;
+  }
+
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
+}
+
 /**
  * Formats visible cards as a CSV file ready for import into Excel or Google Sheets.
  * Includes Jira-derived velocity, committed points, completion %, and impediment count
@@ -2248,8 +2466,6 @@ function downloadTextFile(content: string, filename: string, mimeType: string): 
  */
 function formatCardsAsCsv(
   cards: MonthlyReportCard[],
-  yearMonth: string,
-  statsMap?: Map<string, MonthlyJiraStats>,
 ): string {
   /** Wraps a single cell value in double quotes and escapes embedded quotes per RFC 4180. */
   function escapeCsvCell(value: string | undefined | null): string {
@@ -2257,28 +2473,34 @@ function formatCardsAsCsv(
   }
 
   const HEADER_ROW = [
-    'Team', 'Pillar', 'Accomplished', 'Outcomes', 'Risks', 'Stakeholders',
-    'Velocity Pts', 'Committed Pts', 'Completion %', 'Impediments',
+    'Team Name',
+    'Initiative / Project',
+    'P or T Code',
+    'Included Product Areas',
+    'Accomplished',
+    'Business Outcomes / Desired Benefits',
+    'Impacted Stakeholders',
+    'Business Pillar',
+    'Date Delivered Accomplished',
+    'SME / Point of Contact (PO)',
   ].map(escapeCsvCell).join(',');
 
   const dataRows = cards.map((card) => {
-    const stats = statsMap?.get(card.teamId);
-    const hasStats = stats && stats.totalIssueCount > 0;
     return [
-      card.teamName,
-      card.pillar,
+      card.reportTeamName,
+      card.initiativeName,
+      card.code,
+      card.productAreas,
       card.accomplished,
       card.outcomes,
-      card.risks,
       card.stakeholders,
-      hasStats ? String(stats.velocityPoints) : '',
-      hasStats ? String(stats.committedPoints) : '',
-      hasStats ? `${stats.completionPercent}%` : '',
-      hasStats ? String(stats.impedimentCount) : '',
+      card.pillar,
+      card.deliveredDate,
+      card.pointOfContact,
     ].map(escapeCsvCell).join(',');
   });
 
-  return [`# Monthly Report — ${yearMonth}`, HEADER_ROW, ...dataRows].join('\n');
+  return [HEADER_ROW, ...dataRows].join('\n');
 }
 
 /** localStorage key for persisting the selected month across Monthly Report visits. */
@@ -2303,10 +2525,10 @@ function savePersistedMonthSelection(yearMonth: string): void {
 
 /** Returns true when a monthly report card has at least one content field filled in. */
 function monthlyCardHasDraftContent(card: MonthlyReportCard): boolean {
-  return Boolean(card.accomplished || card.outcomes || card.risks || card.stakeholders);
+  return MONTHLY_REPORT_DRAFT_FIELDS.some((fieldName) =>
+    readMonthlyTemplateFieldValue(card, fieldName).trim() !== '',
+  );
 }
-
-const PILLAR_OPTIONS: MonthlyReportPillar[] = ['', 'Growth', 'Affordability', 'Operating Model'];
 
 interface MonthlyReportCardEditorProps {
   card: MonthlyReportCard;
@@ -2328,17 +2550,14 @@ function MonthlyReportCardEditor({ card, jiraIssues, onChange }: MonthlyReportCa
   const jiraStats = hasJiraData ? computeMonthlyJiraStats(jiraIssues) : null;
 
   /**
-   * Pre-fills the "Accomplished" and "Risks" fields from the team's loaded Jira issues.
-   * Overwrites only fields that have auto-generated content — preserves manually entered text
-   * when generation returns an empty string (e.g., no done issues → Accomplished unchanged).
+   * Pre-fills the "What was accomplished?" row from the team's loaded Jira issues.
+   * Preserving the manual content here prevents Jira generation from wiping out edited report text.
    */
   function handleGenerateFromJira() {
     const generatedAccomplished = generateMonthlyAccomplishedText(jiraIssues);
-    const generatedRisks = generateMonthlyRisksText(jiraIssues);
     onChange({
       ...card,
       accomplished: generatedAccomplished || card.accomplished,
-      risks: generatedRisks || card.risks,
     });
   }
 
@@ -2389,7 +2608,7 @@ function MonthlyReportCardEditor({ card, jiraIssues, onChange }: MonthlyReportCa
           <button
             className={styles.monthlyJiraGenerateBtn}
             onClick={handleGenerateFromJira}
-            title="Pre-fill Accomplished and Risks from Jira issues"
+            title="Pre-fill the accomplishment summary from Jira issues"
             type="button"
           >
             Generate from Jira
@@ -2404,49 +2623,46 @@ function MonthlyReportCardEditor({ card, jiraIssues, onChange }: MonthlyReportCa
         </p>
       )}
 
-      <div className={styles.monthlyFieldRow}>
-        <label className={styles.monthlyFieldLabel}>Accomplished</label>
-        <textarea
-          className={styles.monthlyTextarea}
-          value={card.accomplished}
-          onChange={(event) => handleFieldChange('accomplished', event.target.value)}
-          rows={3}
-          placeholder="What did the team accomplish this month?"
-        />
-      </div>
+      {MONTHLY_REPORT_TEMPLATE_ROWS.map((row) => {
+        const fieldValue = readMonthlyTemplateFieldValue(card, row.fieldName);
 
-      <div className={styles.monthlyFieldRow}>
-        <label className={styles.monthlyFieldLabel}>Outcomes</label>
-        <textarea
-          className={styles.monthlyTextarea}
-          value={card.outcomes}
-          onChange={(event) => handleFieldChange('outcomes', event.target.value)}
-          rows={2}
-          placeholder="Business outcomes delivered or progressed"
-        />
-      </div>
-
-      <div className={styles.monthlyFieldRow}>
-        <label className={styles.monthlyFieldLabel}>Risks</label>
-        <textarea
-          className={styles.monthlyTextarea}
-          value={card.risks}
-          onChange={(event) => handleFieldChange('risks', event.target.value)}
-          rows={2}
-          placeholder="Current risks or impediments"
-        />
-      </div>
-
-      <div className={styles.monthlyFieldRow}>
-        <label className={styles.monthlyFieldLabel}>Stakeholders</label>
-        <input
-          type="text"
-          className={styles.monthlyTextInput}
-          value={card.stakeholders}
-          onChange={(event) => handleFieldChange('stakeholders', event.target.value)}
-          placeholder="Key stakeholders or reviewers"
-        />
-      </div>
+        return (
+          <div className={styles.monthlyFieldRow} key={row.fieldName}>
+            <label className={styles.monthlyFieldLabel}>{row.label}</label>
+            {row.inputMode === 'textarea' ? (
+              <textarea
+                className={styles.monthlyTextarea}
+                value={fieldValue}
+                onChange={(event) => handleFieldChange(row.fieldName, event.target.value)}
+                rows={row.textareaRows ?? 3}
+                placeholder={MONTHLY_REPORT_PLACEHOLDER_TEXT}
+                aria-label={row.label}
+              />
+            ) : row.inputMode === 'select' ? (
+              <select
+                className={styles.monthlyTextInput}
+                value={card.pillar}
+                onChange={(event) => handleFieldChange('pillar', event.target.value)}
+                aria-label={row.label}
+              >
+                <option value="">{MONTHLY_REPORT_PLACEHOLDER_TEXT}</option>
+                {PILLAR_OPTIONS.filter((pillarOption) => pillarOption !== '').map((pillarOption) => (
+                  <option key={pillarOption} value={pillarOption}>{pillarOption}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                className={styles.monthlyTextInput}
+                value={fieldValue}
+                onChange={(event) => handleFieldChange(row.fieldName, event.target.value)}
+                placeholder={MONTHLY_REPORT_PLACEHOLDER_TEXT}
+                aria-label={row.label}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -2476,7 +2692,7 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
     teams.map((team) => loadMonthlyReportCard(team, selectedYearMonth)),
   );
 
-  // Build a stable teamId → sprintIssues map so editors don't rebuild it on every render.
+  // Build a stable teamId → sprintIssues map so editors receive the latest loaded Jira issues.
   const issuesByTeamId = useMemo(
     () => new Map(teams.map((team) => [team.id, team.sprintIssues])),
     [teams],
@@ -2500,22 +2716,11 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
     .filter((card) => teamFilter === 'all' || card.teamId === teamFilter)
     .filter((card) => pillarFilter === '' || card.pillar === pillarFilter);
 
-  /**
-   * Builds a stats map from currently loaded team issues so exports include Jira metrics.
-   * Only teams that have had their data fetched contribute non-zero stats.
-   */
-  function buildExportStatsMap(): Map<string, MonthlyJiraStats> {
-    return new Map(
-      visibleCards.map((card) => [
-        card.teamId,
-        computeMonthlyJiraStats(issuesByTeamId.get(card.teamId) ?? []),
-      ]),
-    );
-  }
-
   function handleCopyAll() {
-    const text = formatCardsAsText(visibleCards, selectedYearMonth, buildExportStatsMap());
-    navigator.clipboard.writeText(text).catch(() => {
+    const text = formatCardsAsText(visibleCards);
+    const htmlDocument = formatCardsAsHtml(visibleCards, selectedYearMonth);
+    const htmlFragment = formatCardsAsHtmlFragment(visibleCards);
+    copyMonthlyReportToClipboard(htmlFragment || htmlDocument, text).catch(() => {
       // Fallback: create a temporary textarea for older browsers
       const textarea = document.createElement('textarea');
       textarea.value = text;
@@ -2527,17 +2732,17 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
   }
 
   function handleExportHtml() {
-    const html = formatCardsAsHtml(visibleCards, selectedYearMonth, buildExportStatsMap());
+    const html = formatCardsAsHtml(visibleCards, selectedYearMonth);
     downloadTextFile(html, `monthly-report-${selectedYearMonth}.html`, 'text/html');
   }
 
   function handleExportText() {
-    const text = formatCardsAsText(visibleCards, selectedYearMonth, buildExportStatsMap());
+    const text = formatCardsAsText(visibleCards);
     downloadTextFile(text, `monthly-report-${selectedYearMonth}.txt`, 'text/plain');
   }
 
   function handleExportCsv() {
-    const csv = formatCardsAsCsv(visibleCards, selectedYearMonth, buildExportStatsMap());
+    const csv = formatCardsAsCsv(visibleCards);
     downloadTextFile(csv, `monthly-report-${selectedYearMonth}.csv`, 'text/csv');
   }
 
@@ -2630,6 +2835,7 @@ interface ArtAdvancedSettings {
   isSpAutoDetect?: boolean;
   featureLinkField?: string;
   pCodeField?: string;
+  depLinkTypes?: string[];
   staleDays?: number;
   /** ISO date string (YYYY-MM-DD) for the end of the current Program Increment. */
   piEndDate?: string;
@@ -2657,6 +2863,7 @@ function writeArtAdvancedSettings(settings: ArtAdvancedSettings): void {
 const DEFAULT_STALE_DAYS_SETTING = 5;
 /** Default sprint length in calendar days (2-week sprint). Used by stale-issue and sprint-window calculations. */
 const DEFAULT_SPRINT_WINDOW_DAYS = 14;
+const DEFAULT_DEPENDENCY_LINK_TYPES = ['blocks', 'is blocked by', 'depends on', 'is depended on by', 'relates to'];
 /**
  * Matches a fully-formed Jira custom field ID (e.g. "customfield_10301").
  * Requires at least 4 digits after the prefix because Jira's generated IDs
@@ -2665,6 +2872,25 @@ const DEFAULT_SPRINT_WINDOW_DAYS = 14;
  * keystroke in the fallback text input.
  */
 const VALID_CUSTOM_FIELD_ID_PATTERN = /^customfield_\d{4,}$/;
+
+interface JiraIssueLinkTypeOption {
+  name?: string;
+  inward?: string;
+  outward?: string;
+}
+
+function readDependencyLinkTypeNames(issueLinkTypes: JiraIssueLinkTypeOption[]): string[] {
+  const uniqueLinkTypeNames = new Set<string>();
+  for (const issueLinkType of issueLinkTypes) {
+    for (const linkTypeName of [issueLinkType.name, issueLinkType.inward, issueLinkType.outward]) {
+      if (linkTypeName) {
+        uniqueLinkTypeNames.add(linkTypeName);
+      }
+    }
+  }
+
+  return Array.from(uniqueLinkTypeNames).sort((leftName, rightName) => leftName.localeCompare(rightName));
+}
 
 /** Renders the Settings tab for managing ART team roster, board IDs, and advanced field configuration. */
 function SettingsPanel({
@@ -2695,6 +2921,16 @@ function SettingsPanel({
   );
   const [piEndDate, setPiEndDate] = useState(storedSettings.piEndDate ?? '');
   const [isSpAutoDetect, setIsSpAutoDetect] = useState(storedSettings.isSpAutoDetect ?? false);
+  const [dependencyLinkTypeOptions, setDependencyLinkTypeOptions] = useState<string[]>([]);
+  const [selectedDependencyLinkTypes, setSelectedDependencyLinkTypes] = useState(
+    storedSettings.depLinkTypes ?? DEFAULT_DEPENDENCY_LINK_TYPES,
+  );
+  const [isLoadingDependencyLinkTypes, setIsLoadingDependencyLinkTypes] = useState(false);
+  const [dependencyLinkTypeError, setDependencyLinkTypeError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void loadDependencyLinkTypes();
+  }, []);
 
   function handleAddTeam() {
     if (!newTeamName.trim() || !newBoardId.trim()) return;
@@ -2718,7 +2954,7 @@ function SettingsPanel({
   }
 
   /** Persists a single settings field change to localStorage. */
-  function saveSettingField(fieldName: keyof ArtAdvancedSettings, value: string | number | boolean) {
+  function saveSettingField(fieldName: keyof ArtAdvancedSettings, value: string | number | boolean | string[]) {
     const current = readArtAdvancedSettings();
     writeArtAdvancedSettings({ ...current, [fieldName]: value });
   }
@@ -2774,6 +3010,27 @@ function SettingsPanel({
   function handleIsSpAutoDetectChange(checked: boolean) {
     setIsSpAutoDetect(checked);
     saveSettingField('isSpAutoDetect', checked);
+  }
+
+  async function loadDependencyLinkTypes() {
+    setIsLoadingDependencyLinkTypes(true);
+    setDependencyLinkTypeError(null);
+    try {
+      const response = await jiraGet<{ issueLinkTypes?: JiraIssueLinkTypeOption[] }>('/rest/api/2/issueLinkType');
+      setDependencyLinkTypeOptions(readDependencyLinkTypeNames(response.issueLinkTypes ?? []));
+    } catch (error) {
+      setDependencyLinkTypeError(error instanceof Error ? error.message : 'Failed to load dependency link types');
+    } finally {
+      setIsLoadingDependencyLinkTypes(false);
+    }
+  }
+
+  function handleDependencyLinkTypeToggle(dependencyLinkType: string, isChecked: boolean) {
+    const nextDependencyLinkTypes = isChecked
+      ? Array.from(new Set([...selectedDependencyLinkTypes, dependencyLinkType]))
+      : selectedDependencyLinkTypes.filter((storedLinkType) => storedLinkType !== dependencyLinkType);
+    setSelectedDependencyLinkTypes(nextDependencyLinkTypes);
+    saveSettingField('depLinkTypes', nextDependencyLinkTypes);
   }
 
   return (
@@ -2905,6 +3162,40 @@ function SettingsPanel({
             placeholder="Feature link field"
             value={featureLinkField}
           />
+        </div>
+
+        <div className={styles.settingsFieldRow}>
+          <div className={styles.settingsFieldBlock}>
+            <div className={styles.settingsFieldHeader}>
+              <label className={styles.settingsFieldLabel}>Dependency Link Types</label>
+              <button className={styles.secondaryBtn} disabled={isLoadingDependencyLinkTypes} onClick={() => void loadDependencyLinkTypes()} type="button">
+                {isLoadingDependencyLinkTypes ? 'Loading…' : 'Reload Link Types'}
+              </button>
+            </div>
+            <p className={styles.settingsFieldHint}>
+              Choose which Jira link types the dependency graph should include by default.
+            </p>
+            {dependencyLinkTypeError && <p className={styles.errorText}>{dependencyLinkTypeError}</p>}
+            {dependencyLinkTypeOptions.length === 0 && !isLoadingDependencyLinkTypes && !dependencyLinkTypeError && (
+              <p className={styles.emptyState}>No Jira link types are loaded yet.</p>
+            )}
+            {dependencyLinkTypeOptions.length > 0 && (
+              <div className={styles.checkboxGrid}>
+                {dependencyLinkTypeOptions.map((dependencyLinkType) => (
+                  <label className={styles.settingsCheckboxLabel} key={dependencyLinkType}>
+                    <input
+                      aria-label={`Dependency link type ${dependencyLinkType}`}
+                      checked={selectedDependencyLinkTypes.includes(dependencyLinkType)}
+                      className={styles.settingsCheckbox}
+                      onChange={(event) => handleDependencyLinkTypeToggle(dependencyLinkType, event.target.checked)}
+                      type="checkbox"
+                    />
+                    {dependencyLinkType}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* P-Code field: the Jira custom field used to store a portfolio/program code that links

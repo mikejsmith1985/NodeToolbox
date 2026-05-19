@@ -11,11 +11,13 @@ import {
   computeMonthlyJiraStats,
   computeVelocityPoints,
   detectImpedimentReasons,
+  findPiNameForDate,
   generateMonthlyAccomplishedText,
   generateMonthlyRisksText,
   isImpediment,
   isIssueDone,
   isIssueInProgress,
+  parsePiDateRange,
   resolveIssueStoryPoints,
 } from './artHelpers.ts';
 
@@ -384,6 +386,71 @@ describe('classifyImpedimentStaleness', () => {
 
   it('returns "fresh" when days is 0', () => {
     expect(classifyImpedimentStaleness(0, 5)).toBe('fresh');
+  });
+});
+
+// ── Program Increment date helpers ──
+
+describe('parsePiDateRange', () => {
+  it('returns start and end dates for a PI label with an embedded date range', () => {
+    const parsedDateRange = parsePiDateRange('PI 26.3 (05/21/26 - 07/29/26)');
+
+    expect(parsedDateRange).not.toBeNull();
+    expect(parsedDateRange?.startDate.getFullYear()).toBe(2026);
+    expect(parsedDateRange?.startDate.getMonth()).toBe(4);
+    expect(parsedDateRange?.startDate.getDate()).toBe(21);
+    expect(parsedDateRange?.endDate.getFullYear()).toBe(2026);
+    expect(parsedDateRange?.endDate.getMonth()).toBe(6);
+    expect(parsedDateRange?.endDate.getDate()).toBe(29);
+  });
+
+  it('returns null when the PI label does not contain a date range', () => {
+    expect(parsePiDateRange('PI 26.3')).toBeNull();
+  });
+
+  it('supports four-digit years in the embedded PI date range', () => {
+    const parsedDateRange = parsePiDateRange('PI 2026.3 (05/21/2026 - 07/29/2026)');
+
+    expect(parsedDateRange?.startDate.getFullYear()).toBe(2026);
+    expect(parsedDateRange?.endDate.getFullYear()).toBe(2026);
+  });
+});
+
+describe('findPiNameForDate', () => {
+  it('returns the PI whose date range covers the supplied day', () => {
+    const matchedPiName = findPiNameForDate(
+      ['PI 26.2 (02/26/26 - 04/29/26)', 'PI 26.3 (05/21/26 - 07/29/26)'],
+      new Date(2026, 5, 1),
+    );
+
+    expect(matchedPiName).toBe('PI 26.3 (05/21/26 - 07/29/26)');
+  });
+
+  it('treats the PI start and end dates as inclusive', () => {
+    expect(
+      findPiNameForDate(['PI 26.3 (05/21/26 - 07/29/26)'], new Date(2026, 4, 21)),
+    ).toBe('PI 26.3 (05/21/26 - 07/29/26)');
+    expect(
+      findPiNameForDate(['PI 26.3 (05/21/26 - 07/29/26)'], new Date(2026, 6, 29)),
+    ).toBe('PI 26.3 (05/21/26 - 07/29/26)');
+  });
+
+  it('returns null when no available PI covers the supplied day', () => {
+    const matchedPiName = findPiNameForDate(
+      ['PI 26.2 (02/26/26 - 04/29/26)', 'PI 26.4 (08/13/26 - 10/28/26)'],
+      new Date(2026, 5, 1),
+    );
+
+    expect(matchedPiName).toBeNull();
+  });
+
+  it('skips PI labels that do not contain a parseable date range', () => {
+    const matchedPiName = findPiNameForDate(
+      ['PI Legacy', 'PI 26.3 (05/21/26 - 07/29/26)'],
+      new Date(2026, 5, 1),
+    );
+
+    expect(matchedPiName).toBe('PI 26.3 (05/21/26 - 07/29/26)');
   });
 });
 

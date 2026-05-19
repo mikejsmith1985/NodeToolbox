@@ -3,13 +3,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { jiraGet, jiraPost } from '../../../services/jiraApi.ts';
+import { useSettingsStore } from '../../../store/settingsStore.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import {
   useStandupPlanningStore,
   type StandupPlanEntry,
   type StandupScopeMode,
 } from './useStandupPlanningStore.ts';
-import { buildStandupRosterAssigneeClause, useStandupRosterStore } from './useStandupRosterStore.ts';
+import {
+  buildStandupRosterAssigneeClause,
+  resolveActiveRosterTeamName,
+  useStandupRosterStore,
+} from './useStandupRosterStore.ts';
 import { hasBlockingLink as hasSharedBlockingLink } from './sprintDashboardIssueUtils.ts';
 
 const STANDUP_UI_STORAGE_KEY = 'tbxSprintDashboardStandupUi';
@@ -26,7 +31,7 @@ const BOARDWALK_WARNING_AGE_DAYS = 2;
 const BOARDWALK_STALE_AGE_DAYS = 5;
 const DONE_STATUS_NAMES = ['done', 'closed', 'resolved'];
 const DEFAULT_SCOPE_MODE: StandupScopeMode = 'sprint';
-const ROSTER_SCOPE_EMPTY_MESSAGE = 'No roster members yet. Add people in the Roster tab to run roster standup.';
+const ROSTER_SCOPE_EMPTY_MESSAGE = 'No roster members yet. Add people in Settings → Roster to run roster standup.';
 const ROSTER_SCOPE_PROJECT_MESSAGE = 'Set a project key before using roster standup.';
 const ROSTER_SCOPE_FAILURE_MESSAGE = 'Could not load roster issues. Check Jira connection.';
 const ROSTER_SCOPE_RECENT_LOOKBACK_DAYS = 2;
@@ -48,6 +53,7 @@ export interface PersonWalkDraft {
 export interface SprintStandupState {
   standupMode: StandupMode;
   scopeMode: StandupScopeMode;
+  activeRosterTeamName: string;
   shouldShowDoneColumn: boolean;
   scopeIssues: JiraIssue[];
   isLoadingScopeIssues: boolean;
@@ -307,7 +313,15 @@ export function useSprintStandupState(
 ): { state: SprintStandupState; actions: SprintStandupActions } {
   const storedUiState = readStoredStandupUiState();
   const rosterMembers = useStandupRosterStore((state) => state.rosterMembers);
-  const rosterAssigneeClause = useMemo(() => buildStandupRosterAssigneeClause(rosterMembers), [rosterMembers]);
+  const storedActiveRosterTeamName = useSettingsStore((state) => state.sprintDashboardActiveTeam);
+  const activeRosterTeamName = useMemo(
+    () => resolveActiveRosterTeamName(storedActiveRosterTeamName, rosterMembers),
+    [rosterMembers, storedActiveRosterTeamName],
+  );
+  const rosterAssigneeClause = useMemo(
+    () => buildStandupRosterAssigneeClause(rosterMembers, activeRosterTeamName),
+    [activeRosterTeamName, rosterMembers],
+  );
   const planEntries = useStandupPlanningStore((state) => state.planEntries);
   const setPlannedIssueKeys = useStandupPlanningStore((state) => state.setPlannedIssueKeys);
   const normalizedProjectKey = useMemo(() => normalizeProjectKey(projectKey), [projectKey]);
@@ -544,6 +558,7 @@ export function useSprintStandupState(
     () => ({
       standupMode,
       scopeMode,
+      activeRosterTeamName,
       shouldShowDoneColumn,
       scopeIssues,
       isLoadingScopeIssues,
@@ -560,6 +575,7 @@ export function useSprintStandupState(
       personWalkErrorMessage,
     }),
     [
+      activeRosterTeamName,
       boardwalkStatusFilters,
       isLoadingPersonWalk,
       isLoadingScopeIssues,

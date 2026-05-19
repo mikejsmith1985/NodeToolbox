@@ -8,12 +8,15 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import './styles/global.css';
 import App from './App.tsx';
+import { resolveStoredTheme } from './store/settingsStore.ts';
 
 const rootElement = document.getElementById('root');
 
 if (!rootElement) {
   throw new Error('Root element #root not found — check index.html');
 }
+
+document.documentElement.setAttribute('data-theme', resolveStoredTheme());
 
 // Match the original ToolBox relay contract: the bookmarklet finds the app by
 // calling window.open('', 'toolbox') after activation.

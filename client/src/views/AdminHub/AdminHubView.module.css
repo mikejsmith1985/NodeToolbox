@@ -35,7 +35,7 @@
   position: sticky;
   top: 0;
   z-index: 40;
-  background: linear-gradient(180deg, rgba(13, 17, 23, 0.92), rgba(13, 17, 23, 0.76));
+  background: var(--color-tab-bar-bg);
   box-shadow: var(--shadow-surface);
   backdrop-filter: blur(16px) saturate(140%);
   flex-wrap: wrap;
@@ -58,7 +58,7 @@
 
 .tabButton:hover {
   color: var(--color-text-primary);
-  background: rgba(88, 166, 255, 0.08);
+  background: var(--color-surface-hover);
 }
 
 .activeTab {
@@ -73,8 +73,8 @@
 /* ── Section card ── */
 
 .sectionCard {
-  background: linear-gradient(180deg, rgba(24, 31, 45, 0.94), rgba(17, 24, 39, 0.9));
-  border: 1px solid rgba(88, 166, 255, 0.14);
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--spacing-md);
   display: flex;
@@ -82,7 +82,7 @@
   gap: var(--spacing-md);
   box-shadow:
     var(--shadow-surface),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    inset 0 1px 0 var(--color-surface-highlight);
   backdrop-filter: blur(14px) saturate(135%);
 }
 
@@ -100,10 +100,10 @@
   align-items: center;
   gap: var(--spacing-sm);
   padding: var(--spacing-sm) var(--spacing-md);
-  background: rgba(52, 211, 153, 0.1);
-  border: 1px solid rgba(52, 211, 153, 0.3);
+  background: var(--color-tone-success-bg);
+  border: 1px solid color-mix(in srgb, var(--color-tone-success-fg) 30%, transparent);
   border-radius: var(--radius-sm);
-  color: #34d399;
+  color: var(--color-tone-success-fg);
   font-size: var(--font-size-sm);
 }
 
@@ -112,8 +112,8 @@
   align-items: center;
   gap: var(--spacing-sm);
   padding: var(--spacing-sm) var(--spacing-md);
-  background: rgba(17, 24, 39, 0.82);
-  border: 1px solid rgba(88, 166, 255, 0.14);
+  background: var(--color-field-bg);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
@@ -130,7 +130,7 @@
 
 .serverControlMessage {
   font-size: var(--font-size-sm);
-  color: #34d399;
+  color: var(--color-tone-success-fg);
 }
 
 .downloadButtonsRow {
@@ -141,8 +141,8 @@
 
 .downloadButton {
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: linear-gradient(180deg, rgba(24, 31, 45, 0.96), rgba(17, 24, 39, 0.9));
-  border: 1px solid rgba(88, 166, 255, 0.14);
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
@@ -163,11 +163,11 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-sm);
-  background: linear-gradient(180deg, rgba(17, 24, 39, 0.9), rgba(11, 15, 22, 0.94));
-  border: 1px solid rgba(88, 166, 255, 0.14);
+  background: var(--color-card-bg-subtle);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   padding: var(--spacing-sm) var(--spacing-md);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  box-shadow: inset 0 1px 0 var(--color-surface-highlight);
 }
 
 .codeText {
@@ -200,12 +200,12 @@
 .textInput {
   flex: 1;
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: rgba(17, 24, 39, 0.85);
-  border: 1px solid rgba(88, 166, 255, 0.16);
+  background: var(--color-field-bg);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 0 var(--color-surface-highlight);
 }
 
 .textInput:focus {
@@ -216,20 +216,20 @@
 
 .dateInput {
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: rgba(17, 24, 39, 0.85);
-  border: 1px solid rgba(88, 166, 255, 0.16);
+  background: var(--color-field-bg);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 0 var(--color-surface-highlight);
 }
 
 /* ── Buttons ── */
 
 .actionButton {
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: linear-gradient(180deg, rgba(24, 31, 45, 0.96), rgba(17, 24, 39, 0.9));
-  border: 1px solid rgba(88, 166, 255, 0.14);
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
@@ -240,15 +240,15 @@
     box-shadow 0.15s,
     transform 0.15s;
   white-space: nowrap;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-surface);
 }
 
 .actionButton:hover {
-  background: rgba(88, 166, 255, 0.1);
+  background: var(--color-surface-hover);
   border-color: rgba(88, 166, 255, 0.36);
   box-shadow:
-    0 0 16px rgba(88, 166, 255, 0.12),
-    0 10px 22px rgba(0, 0, 0, 0.22);
+    var(--glow-accent),
+    var(--shadow-floating);
   transform: translateY(-1px);
 }
 
@@ -270,7 +270,7 @@
 
 .saveStatus {
   font-size: var(--font-size-sm);
-  color: #34d399;
+  color: var(--color-tone-success-fg);
 }
 
 /* ── Admin access ── */
@@ -281,14 +281,14 @@
   justify-content: space-between;
   gap: var(--spacing-md);
   padding: var(--spacing-sm) var(--spacing-md);
-  background: rgba(52, 211, 153, 0.1);
-  border: 1px solid rgba(52, 211, 153, 0.3);
+  background: var(--color-tone-success-bg);
+  border: 1px solid color-mix(in srgb, var(--color-tone-success-fg) 30%, transparent);
   border-radius: var(--radius-sm);
 }
 
 .adminUnlockedLabel {
   font-size: var(--font-size-sm);
-  color: #34d399;
+  color: var(--color-tone-success-fg);
 }
 
 .pinRow {
@@ -300,13 +300,13 @@
 .pinInput {
   width: 120px;
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: rgba(17, 24, 39, 0.85);
-  border: 1px solid rgba(88, 166, 255, 0.16);
+  background: var(--color-field-bg);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
   letter-spacing: 0.2em;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 0 var(--color-surface-highlight);
 }
 
 .adminDescription {
@@ -342,7 +342,7 @@
 
 .confirmationText {
   font-size: var(--font-size-sm);
-  color: #34d399;
+  color: var(--color-tone-success-fg);
   margin: 0;
 }
 
@@ -364,8 +364,8 @@
 /* ── Diagnostics result block ── */
 
 .diagnosticsResultPre {
-  background: linear-gradient(180deg, rgba(17, 24, 39, 0.9), rgba(11, 15, 22, 0.94));
-  border: 1px solid rgba(88, 166, 255, 0.14);
+  background: var(--color-card-bg-subtle);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   padding: var(--spacing-sm) var(--spacing-md);
   font-family: 'Consolas', 'Monaco', monospace;
@@ -383,7 +383,7 @@
 
 .sectionErrorText {
   font-size: var(--font-size-sm);
-  color: #f87171;
+  color: var(--color-tone-danger-fg);
   margin: 0;
 }
 
@@ -398,12 +398,12 @@
 .narrowNumberInput {
   width: 80px;
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: rgba(17, 24, 39, 0.85);
-  border: 1px solid rgba(88, 166, 255, 0.16);
+  background: var(--color-field-bg);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 0 var(--color-surface-highlight);
 }
 
 .narrowNumberInput:focus {
@@ -424,7 +424,7 @@
 
 .updateStatusSuccess {
   font-size: var(--font-size-sm);
-  color: #34d399;
+  color: var(--color-tone-success-fg);
   margin: 0;
 }
 
@@ -440,15 +440,15 @@
 .releaseNotesTextarea {
   width: 100%;
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: rgba(17, 24, 39, 0.85);
-  border: 1px solid rgba(88, 166, 255, 0.16);
+  background: var(--color-field-bg);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
   font-family: inherit;
   resize: vertical;
   box-sizing: border-box;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 0 var(--color-surface-highlight);
 }
 
 /* ── Feature request textarea ── */
@@ -456,8 +456,8 @@
 .featureRequestTextarea {
   width: 100%;
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: rgba(17, 24, 39, 0.85);
-  border: 1px solid rgba(88, 166, 255, 0.16);
+  background: var(--color-field-bg);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
@@ -465,7 +465,7 @@
   resize: vertical;
   box-sizing: border-box;
   min-height: 80px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 0 var(--color-surface-highlight);
 }
 
 .featureRequestTextarea:focus {
@@ -490,8 +490,8 @@
 
 .advancedLockButton {
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: rgba(17, 24, 39, 0.75);
-  border: 1px solid rgba(88, 166, 255, 0.16);
+  background: var(--color-field-bg-muted);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
@@ -505,7 +505,7 @@
 
 .advancedLockButton:hover {
   color: var(--color-text-primary);
-  background: rgba(88, 166, 255, 0.08);
+  background: var(--color-surface-hover);
   border-color: rgba(88, 166, 255, 0.32);
   box-shadow: 0 0 14px rgba(88, 166, 255, 0.1);
 }
@@ -519,7 +519,7 @@
   padding: var(--spacing-md);
   border: 1px dashed rgba(88, 166, 255, 0.16);
   border-radius: var(--radius-md);
-  background: rgba(17, 24, 39, 0.6);
+  background: var(--color-bg-subtle);
 }
 
 /* ── Enterprise Standards rules table ── */
@@ -577,22 +577,22 @@
   flex-direction: column;
   gap: var(--spacing-sm);
   padding: var(--spacing-sm);
-  background: rgba(17, 24, 39, 0.82);
-  border: 1px solid rgba(88, 166, 255, 0.14);
+  background: var(--color-field-bg);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
 }
 
 /* ── Danger button (destructive actions) ── */
 
 .dangerButton {
-  background: rgba(248, 81, 73, 0.08);
-  color: #f87171;
-  border-color: rgba(248, 81, 73, 0.38);
+  background: var(--color-tone-danger-bg);
+  color: var(--color-tone-danger-fg);
+  border-color: color-mix(in srgb, var(--color-tone-danger-fg) 35%, transparent);
 }
 
 .dangerButton:hover {
-  background: rgba(248, 81, 73, 0.96);
-  color: #fff;
+  background: var(--color-danger);
+  color: var(--color-text-on-accent);
 }
 
 /* ── Credential Management section ── */
@@ -635,7 +635,7 @@
 }
 
 .toolVisibilityItem:hover {
-  background: rgba(88, 166, 255, 0.06);
+  background: var(--color-surface-hover);
 }
 
 .toolVisibilityIcon {
@@ -730,7 +730,7 @@
 
 /* Shown when the version-check request fails — needs to be noticeable. */
 .updateStatusError {
-  color: #e57373;
+  color: var(--color-tone-danger-fg);
   margin: var(--spacing-xs) 0;
   font-size: var(--font-size-sm);
 }
@@ -738,8 +738,8 @@
 /* Read-only textarea that displays the GitHub release notes. */
 .releaseNotesTextarea {
   width: 100%;
-  background: rgba(17, 24, 39, 0.85);
-  border: 1px solid rgba(88, 166, 255, 0.16);
+  background: var(--color-field-bg);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   padding: var(--spacing-sm);
   color: var(--color-text-primary);
@@ -747,7 +747,7 @@
   font-size: var(--font-size-sm);
   resize: vertical;
   box-sizing: border-box;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 0 var(--color-surface-highlight);
 }
 
 /* -- GitHub App collapsible block -- */
@@ -757,7 +757,7 @@
   border: 1px solid rgba(88, 166, 255, 0.14);
   border-radius: var(--radius-sm);
   padding: var(--spacing-sm) var(--spacing-md);
-  background: rgba(17, 24, 39, 0.6);
+  background: var(--color-bg-subtle);
 }
 
 .collapsibleSummary {
@@ -790,9 +790,9 @@
   display: inline-block;
   font-size: var(--font-size-xs, 0.7rem);
   font-weight: 600;
-  color: #34d399;
-  background: rgba(52, 211, 153, 0.12);
-  border: 1px solid rgba(52, 211, 153, 0.3);
+  color: var(--color-tone-success-fg);
+  background: var(--color-tone-success-bg);
+  border: 1px solid color-mix(in srgb, var(--color-tone-success-fg) 30%, transparent);
   border-radius: 10px;
   padding: 1px 7px;
   margin-left: var(--spacing-xs);

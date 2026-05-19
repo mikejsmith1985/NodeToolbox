@@ -66,6 +66,7 @@ export default function App() {
   }, [navigate]);
 
   const theme = useSettingsStore((state) => state.theme);
+  const setTheme = useSettingsStore((state) => state.setTheme);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -81,7 +82,27 @@ export default function App() {
               {APP_TITLE}
             </Link>
           </div>
-          <ConnectionBar />
+          <div className={styles.topBarRight}>
+            <div aria-label="Theme selection" className={styles.themeToggleGroup} role="group">
+              <button
+                aria-pressed={theme === 'dark'}
+                className={`${styles.themeToggleButton} ${theme === 'dark' ? styles.themeToggleButtonActive : ''}`}
+                onClick={() => setTheme('dark')}
+                type="button"
+              >
+                Dark
+              </button>
+              <button
+                aria-pressed={theme === 'light'}
+                className={`${styles.themeToggleButton} ${theme === 'light' ? styles.themeToggleButtonActive : ''}`}
+                onClick={() => setTheme('light')}
+                type="button"
+              >
+                Light
+              </button>
+            </div>
+            <ConnectionBar />
+          </div>
         </header>
 
         <main className={styles.mainContent}>

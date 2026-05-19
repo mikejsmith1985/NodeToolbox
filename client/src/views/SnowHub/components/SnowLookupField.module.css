@@ -10,7 +10,7 @@
 .lookupLabel {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-secondary, #8b949e);
+  color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -24,10 +24,10 @@
 .lookupInput {
   width: 100%;
   padding: 6px 32px 6px 10px;
-  background: var(--input-bg, #0d1117);
-  border: 1px solid var(--border-color, #30363d);
+  background: var(--color-field-bg);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  color: var(--text-primary, #e6edf3);
+  color: var(--color-text-primary);
   font-size: 13px;
   outline: none;
   transition: border-color 0.15s ease;
@@ -35,11 +35,11 @@
 }
 
 .lookupInput:focus {
-  border-color: var(--accent-color, #388bfd);
+  border-color: var(--color-accent);
 }
 
 .lookupInput.resolved {
-  border-color: #3fb950;
+  border-color: var(--color-success);
 }
 
 .lookupInput:disabled {
@@ -53,8 +53,8 @@
   right: 8px;
   width: 14px;
   height: 14px;
-  border: 2px solid var(--border-color, #30363d);
-  border-top-color: var(--accent-color, #388bfd);
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
   pointer-events: none;
@@ -68,7 +68,7 @@
 .checkmark {
   position: absolute;
   right: 8px;
-  color: #3fb950;
+  color: var(--color-success);
   font-size: 14px;
   font-weight: 700;
   pointer-events: none;
@@ -83,8 +83,8 @@
   z-index: 100;
   margin: 0;
   padding: 4px 0;
-  background: var(--panel-bg, #161b22);
-  border: 1px solid var(--border-color, #30363d);
+  background: var(--color-card-bg-subtle);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   list-style: none;
   max-height: 200px;
@@ -95,13 +95,13 @@
 .suggestionItem {
   padding: 7px 12px;
   font-size: 13px;
-  color: var(--text-primary, #e6edf3);
+  color: var(--color-text-primary);
   cursor: pointer;
   transition: background 0.1s ease;
 }
 
 .suggestionItem:hover,
 .suggestionItem[aria-selected='true'] {
-  background: var(--item-hover-bg, #1f2937);
-  color: var(--accent-color, #388bfd);
+  background: var(--color-surface-hover);
+  color: var(--color-accent);
 }

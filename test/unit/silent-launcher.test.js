@@ -49,14 +49,16 @@ describe('Launch Toolbox Silent.vbs — content correctness', () => {
     expect(vbsContent).toMatch(/\.Run\b.*,\s*0\s*,/);
   });
 
-  it('searches for the nodetoolbox-*.exe executable by name prefix', () => {
-    // The VBS must locate the exe dynamically so it works across version numbers
-    expect(vbsContent).toMatch(/nodetoolbox-/i);
+  it('uses current.txt as the durable active-version pointer', () => {
+    // The launcher must read a stable pointer file instead of guessing by file timestamps.
+    expect(vbsContent).toMatch(/current\.txt/i);
   });
 
-  it('falls back to Launch Toolbox.bat when no exe is found', () => {
-    // Zip distribution users do not have an exe — the VBS must run the bat instead
-    expect(vbsContent).toMatch(/Launch Toolbox\.bat/i);
+  it('launches the fixed payload executable from the versions folder', () => {
+    // Payloads live in versions\<version>\nodetoolbox.exe so updates never overwrite
+    // the executable that is currently running.
+    expect(vbsContent).toMatch(/versions/i);
+    expect(vbsContent).toMatch(/nodetoolbox\.exe/i);
   });
 
   it('includes an error message if neither exe nor bat is found', () => {
@@ -64,12 +66,11 @@ describe('Launch Toolbox Silent.vbs — content correctness', () => {
     expect(vbsContent).toMatch(/MsgBox/i);
   });
 
-  it('picks the exe with the most recent DateLastModified when multiple versions exist', () => {
-    // If a user has nodetoolbox-v0.0.9.exe and nodetoolbox-v0.0.12.exe in the same
-    // folder, running the older (buggy) version defeats the entire upgrade.
-    // The VBS must compare DateLastModified and select the NEWEST file, not the first
-    // one returned by filesystem iteration (which is order-dependent).
-    expect(vbsContent).toMatch(/DateLastModified/i);
+  it('does not select payloads by DateLastModified', () => {
+    // Timestamp selection is fragile after antivirus scans or manual extraction.
+    // The durable launcher must use current.txt or semantic version fallback.
+    expect(vbsContent).not.toMatch(/DateLastModified/i);
+    expect(vbsContent).toMatch(/CompareVersions/i);
   });
 });
 

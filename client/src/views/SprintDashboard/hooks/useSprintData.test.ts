@@ -74,6 +74,7 @@ describe('useSprintData', () => {
       sprintDashboardSelectedSprintId: '',
       sprintDashboardSelectedFixVersion: '',
       sprintDashboardSelectedPiValue: '',
+      sprintDashboardActiveTeam: '',
     });
   });
 
@@ -89,6 +90,7 @@ describe('useSprintData', () => {
       sprintDashboardSelectedSprintId: '',
       sprintDashboardSelectedFixVersion: '',
       sprintDashboardSelectedPiValue: '',
+      sprintDashboardActiveTeam: '',
     });
   });
 
@@ -166,15 +168,12 @@ describe('useSprintData', () => {
     expect(result.current.state.activeTab).toBe('pointing');
   });
 
-  it('supports the roster tab', () => {
+  it('falls back to Settings when the stored active tab still points at the removed roster tab', () => {
+    useSettingsStore.getState().setSprintDashboardActiveTab('roster');
+
     const { result } = renderHook(() => useSprintData());
 
-    act(() => {
-      result.current.actions.setActiveTab('roster');
-    });
-
-    expect(result.current.state.activeTab).toBe('roster');
-    expect(localStorage.getItem('tbxSprintDashboardActiveTab')).toBe('roster');
+    expect(result.current.state.activeTab).toBe('settings');
   });
 
   // ── Scrum board loading ──

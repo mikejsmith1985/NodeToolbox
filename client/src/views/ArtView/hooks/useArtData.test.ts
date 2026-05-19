@@ -47,6 +47,7 @@ describe('useArtData', () => {
   afterEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
+    vi.useRealTimers();
     mockJiraGet.mockReset();
   });
 
@@ -62,13 +63,18 @@ describe('useArtData', () => {
     expect(result.current.state.activeTab).toBe('impediments');
   });
 
-  it('loads stored teams from localStorage on initial render', () => {
+  it('loads stored teams from localStorage on initial render', async () => {
     localStorage.setItem(
       'nodetoolbox-art-teams',
       JSON.stringify([{ id: 'team-1', name: 'Stored Team', boardId: '42', projectKey: 'ALPHA' }]),
     );
+    mockJiraGet.mockResolvedValue({ issues: [] });
 
     const { result } = renderHook(() => useArtData());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     expect(result.current.state.teams).toHaveLength(1);
     expect(result.current.state.teams[0].name).toBe('Stored Team');
@@ -182,6 +188,156 @@ describe('useArtData', () => {
     expect(result.current.state.availablePiNames).toEqual(['PI 26.3', 'PI 26.2']);
   });
 
+  it('auto-loads PI options on launch when ART teams are already stored', async () => {
+    localStorage.setItem(
+      'nodetoolbox-art-teams',
+      JSON.stringify([{ id: 'team-1', name: 'Stored Team', boardId: '42', projectKey: 'ALPHA' }]),
+    );
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ piFieldId: 'customfield_10301' }));
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      if (requestPath.includes('/rest/api/2/jql/autocompletedata/suggestions')) {
+        return Promise.resolve({
+          results: [{ value: '"PI 26.3 (05/21/26 - 07/29/26)"' }],
+        });
+      }
+
+      return Promise.resolve({ issues: [] });
+    });
+
+    const { result } = renderHook(() => useArtData());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.state.availablePiNames).toEqual(['PI 26.3 (05/21/26 - 07/29/26)']);
+  });
+
+  it('auto-loads PI options from autocomplete even when stored teams do not include project keys', async () => {
+    localStorage.setItem(
+      'nodetoolbox-art-teams',
+      JSON.stringify([{ id: 'team-1', name: 'Stored Team', boardId: '42' }]),
+    );
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ piFieldId: 'customfield_10301' }));
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      if (requestPath.includes('/rest/api/2/jql/autocompletedata/suggestions')) {
+        return Promise.resolve({
+          results: [{ value: '"PI 26.3 (05/21/26 - 07/29/26)"' }],
+        });
+      }
+
+      return Promise.resolve({ issues: [] });
+    });
+
+    const { result } = renderHook(() => useArtData());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.state.availablePiNames).toEqual(['PI 26.3 (05/21/26 - 07/29/26)']);
+  });
+
+  it('selects the PI that covers the current date during the launch auto-load', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 1));
+    localStorage.setItem(
+      'nodetoolbox-art-teams',
+      JSON.stringify([{ id: 'team-1', name: 'Stored Team', boardId: '42', projectKey: 'ALPHA' }]),
+    );
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ piFieldId: 'customfield_10301' }));
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      if (requestPath.includes('/rest/api/2/jql/autocompletedata/suggestions')) {
+        return Promise.resolve({
+          results: [
+            { value: '"PI 26.2 (02/26/26 - 04/29/26)"' },
+            { value: '"PI 26.3 (05/21/26 - 07/29/26)"' },
+          ],
+        });
+      }
+
+      return Promise.resolve({ issues: [] });
+    });
+
+    const { result } = renderHook(() => useArtData());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.state.selectedPiName).toBe('PI 26.3 (05/21/26 - 07/29/26)');
+    expect(JSON.parse(localStorage.getItem('tbxARTSettings') || '{}').piName).toBe(
+      'PI 26.3 (05/21/26 - 07/29/26)',
+    );
+  });
+
+  it('replaces a stale stored PI with the PI covering today during launch auto-load', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 1));
+    localStorage.setItem(
+      'nodetoolbox-art-teams',
+      JSON.stringify([{ id: 'team-1', name: 'Stored Team', boardId: '42', projectKey: 'ALPHA' }]),
+    );
+    localStorage.setItem(
+      'tbxARTSettings',
+      JSON.stringify({
+        piFieldId: 'customfield_10301',
+        piName: 'PI 26.2 (02/26/26 - 04/29/26)',
+      }),
+    );
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      if (requestPath.includes('/rest/api/2/jql/autocompletedata/suggestions')) {
+        return Promise.resolve({
+          results: [
+            { value: '"PI 26.2 (02/26/26 - 04/29/26)"' },
+            { value: '"PI 26.3 (05/21/26 - 07/29/26)"' },
+          ],
+        });
+      }
+
+      return Promise.resolve({ issues: [] });
+    });
+
+    const { result } = renderHook(() => useArtData());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.state.selectedPiName).toBe('PI 26.3 (05/21/26 - 07/29/26)');
+  });
+
+  it('does not overwrite a manual PI selection when the user reloads PI options', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 1));
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ piFieldId: 'customfield_10301' }));
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      if (requestPath.includes('/rest/api/2/jql/autocompletedata/suggestions')) {
+        return Promise.resolve({
+          results: [
+            { value: '"PI 26.2 (02/26/26 - 04/29/26)"' },
+            { value: '"PI 26.3 (05/21/26 - 07/29/26)"' },
+          ],
+        });
+      }
+
+      return Promise.resolve({ issues: [] });
+    });
+
+    const { result } = renderHook(() => useArtData());
+
+    act(() => {
+      result.current.actions.addTeam('Alpha Team', '42', 'ALPHA');
+      result.current.actions.setSelectedPiName('PI 26.2 (02/26/26 - 04/29/26)');
+    });
+
+    await act(async () => {
+      await result.current.actions.loadPiOptions();
+    });
+
+    expect(result.current.state.selectedPiName).toBe('PI 26.2 (02/26/26 - 04/29/26)');
+  });
+
   it('sets team loadError when loadTeam rejects', async () => {
     mockJiraGet.mockRejectedValue(new Error('Board not found'));
     const { result } = renderHook(() => useArtData());
@@ -246,22 +402,24 @@ describe('useArtData', () => {
   });
 
   it('loadBoardPrep populates boardPrepIssues from board backlog on success', async () => {
-    mockJiraGet.mockResolvedValue({
-      issues: [
-        {
-          id: 'ALPHA-10', key: 'ALPHA-10',
-          fields: {
-            summary: 'Backlog ready story',
-            status: { name: 'To Do', statusCategory: { key: 'new' } },
-            priority: { name: 'High', iconUrl: '' },
-            assignee: null, reporter: null,
-            issuetype: { name: 'Story', iconUrl: '' },
-            created: '', updated: '', description: null,
-            customfield_10016: 5,
+    mockJiraGet
+      .mockResolvedValueOnce({ id: 42, name: 'Alpha Board', type: 'scrum' })
+      .mockResolvedValueOnce({
+        issues: [
+          {
+            id: 'ALPHA-10', key: 'ALPHA-10',
+            fields: {
+              summary: 'Backlog ready story',
+              status: { name: 'To Do', statusCategory: { key: 'new' } },
+              priority: { name: 'High', iconUrl: '' },
+              assignee: null, reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '', updated: '', description: null,
+              customfield_10016: 5,
+            },
           },
-        },
-      ],
-    });
+        ],
+      });
     const { result } = renderHook(() => useArtData());
     act(() => { result.current.actions.addTeam('Alpha Team', '42'); });
     await act(async () => { await result.current.actions.loadBoardPrep(); });
@@ -271,6 +429,57 @@ describe('useArtData', () => {
     expect(result.current.state.boardPrepIssues[0].estimate).toBe(5);
     expect(result.current.state.boardPrepIssues[0].priority).toBe('High');
     expect(result.current.state.isLoadingBoardPrep).toBe(false);
+    expect(result.current.state.boardPrepError).toBeNull();
+    expect(mockJiraGet).toHaveBeenNthCalledWith(1, '/rest/agile/1.0/board/42');
+    expect(mockJiraGet).toHaveBeenNthCalledWith(
+      2,
+      `/rest/agile/1.0/board/42/backlog?maxResults=100&fields=${encodeURIComponent('summary,status,priority,customfield_10016,customfield_10028')}`,
+    );
+  });
+
+  it('loadBoardPrep uses board issues for kanban teams instead of the scrum backlog endpoint', async () => {
+    mockJiraGet
+      .mockResolvedValueOnce({ id: 467, name: 'SIS Board', type: 'kanban' })
+      .mockResolvedValueOnce({
+        issues: [
+          {
+            id: 'SIS-10',
+            key: 'SIS-10',
+            fields: {
+              summary: 'Kanban-ready work item',
+              status: { name: 'Selected for Development', statusCategory: { key: 'indeterminate' } },
+              priority: { name: 'Medium', iconUrl: '' },
+              assignee: null,
+              reporter: null,
+              issuetype: { name: 'Story', iconUrl: '' },
+              created: '',
+              updated: '',
+              description: null,
+              customfield_10016: 8,
+            },
+          },
+        ],
+      });
+
+    const { result } = renderHook(() => useArtData());
+    act(() => { result.current.actions.addTeam('SIS', '467'); });
+
+    await act(async () => { await result.current.actions.loadBoardPrep(); });
+
+    expect(mockJiraGet).toHaveBeenNthCalledWith(1, '/rest/agile/1.0/board/467');
+    expect(mockJiraGet).toHaveBeenNthCalledWith(
+      2,
+      `/rest/agile/1.0/board/467/issue?maxResults=100&fields=${encodeURIComponent('summary,status,priority,customfield_10016,customfield_10028')}`,
+    );
+    expect(result.current.state.boardPrepIssues).toEqual([
+      {
+        teamName: 'SIS',
+        key: 'SIS-10',
+        summary: 'Kanban-ready work item',
+        estimate: 8,
+        priority: 'Medium',
+      },
+    ]);
     expect(result.current.state.boardPrepError).toBeNull();
   });
 

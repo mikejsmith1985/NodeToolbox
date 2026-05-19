@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { JiraIssue } from '../../types/jira.ts';
+import { useSettingsStore } from '../../store/settingsStore.ts';
 import { useStandupRosterStore } from './hooks/useStandupRosterStore.ts';
 import RosterTab from './RosterTab.tsx';
 
@@ -73,6 +74,7 @@ describe('RosterTab', () => {
   beforeEach(() => {
     localStorage.clear();
     useStandupRosterStore.setState({ rosterMembers: [] });
+    useSettingsStore.setState({ sprintDashboardActiveTeam: '' });
   });
 
   it('adds sprint assignees to the roster from the quick-pick list', () => {
@@ -99,6 +101,7 @@ describe('RosterTab', () => {
   });
 
   it('previews pasted roster members and merges them into the current roster', () => {
+    useSettingsStore.getState().setSprintDashboardActiveTeam('QE');
     render(<RosterTab issues={[]} />);
 
     fireEvent.change(screen.getByLabelText('Paste team roster'), {
@@ -108,8 +111,8 @@ describe('RosterTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Merge imported members' }));
 
     expect(screen.getByText('Bhargavi Somagutta')).toBeInTheDocument();
-    expect(screen.getByText('Team: QE')).toBeInTheDocument();
-    expect(screen.getByText('Role: QE')).toBeInTheDocument();
+    expect(screen.getAllByText('QE').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Amber Cannon')).not.toBeInTheDocument();
     expect(useStandupRosterStore.getState().rosterMembers).toHaveLength(2);
     expect(useStandupRosterStore.getState().rosterMembers[0].assigneeQueryValue).toBe('Amber Cannon');
   });
@@ -133,5 +136,53 @@ describe('RosterTab', () => {
       'Amber Cannon',
       'Bhargavi Somagutta',
     ]);
+  });
+
+  it('filters visible roster cards to the active team and assigns quick-add members to that team', () => {
+    useStandupRosterStore.getState().replaceRosterMembers([
+      {
+        displayName: 'Alice Adams',
+        assigneeQueryValue: 'Alice Adams',
+        teamName: 'Transformers',
+      },
+      {
+        displayName: 'Bob Brown',
+        assigneeQueryValue: 'Bob Brown',
+        teamName: 'Clean Up Crew',
+      },
+    ]);
+    useSettingsStore.getState().setSprintDashboardActiveTeam('Transformers');
+
+    render(<RosterTab issues={[buildIssue('TBX-1', 'Jordan Joiner')]} />);
+
+    expect(screen.getByText('Alice Adams')).toBeInTheDocument();
+    expect(screen.queryByText('Bob Brown')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Jordan Joiner' }));
+
+    expect(useStandupRosterStore.getState().rosterMembers.find(
+      (rosterMember) => rosterMember.displayName === 'Jordan Joiner',
+    )?.teamName).toBe('Transformers');
+  });
+
+  it('keeps teamless legacy members visible so they can still be removed after team filtering is introduced', () => {
+    useStandupRosterStore.getState().replaceRosterMembers([
+      {
+        displayName: 'Alice Adams',
+        assigneeQueryValue: 'Alice Adams',
+        teamName: 'Transformers',
+      },
+      {
+        displayName: 'Legacy Person',
+        assigneeQueryValue: 'Legacy Person',
+      },
+    ]);
+    useSettingsStore.getState().setSprintDashboardActiveTeam('Transformers');
+
+    render(<RosterTab issues={[]} />);
+
+    expect(screen.getByText('Alice Adams')).toBeInTheDocument();
+    expect(screen.getByText('Legacy Person')).toBeInTheDocument();
+    expect(screen.getByText('Needs team')).toBeInTheDocument();
   });
 });

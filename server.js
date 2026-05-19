@@ -8,6 +8,7 @@
 
 const path        = require('path');
 const fs          = require('fs');
+const childProcess = require('child_process');
 const express     = require('express');
 const compression = require('compression');
 
@@ -22,6 +23,13 @@ const relayBridgeRouter                     = require('./src/routes/relayBridge'
 const { startSchedulerLoop }                = require('./src/services/repoMonitor');
 const { isPortInUse, resolvePortConflict }  = require('./src/utils/portManager');
 const { installConsoleInterceptor }         = require('./src/utils/logBuffer');
+const { spawnDetachedProcess }              = require('./src/utils/updater');
+const {
+  readCurrentVersion,
+  resolveCurrentInstallRoot,
+  resolvePayloadExecutablePath,
+  resolveSilentLauncherPath,
+} = require('./src/utils/installPaths');
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -31,7 +39,27 @@ const DEFAULT_PORT = 5555;
 /** Version string read from package.json — single source of truth shared with api.js */
 const APP_VERSION = require('./package.json').version;
 
+/** Hidden launch flag used to identify updater-driven restart handoffs. */
+const RESTART_HANDOFF_ARGUMENT = '--restart-handoff';
+
+/** How long a restarted process should wait for the old listener to disappear. */
+const RESTART_HANDOFF_STARTUP_TIMEOUT_MS = 15_000;
+
+/** Poll cadence while a restarted process waits for the old listener to release the port. */
+const RESTART_HANDOFF_POLL_INTERVAL_MS = 500;
+
+/** Delay before forcing idle/keep-alive sockets closed during a controlled shutdown. */
+const FORCE_CLOSE_CONNECTIONS_DELAY_MS = 1_000;
+
+/** Delay that lets the browser receive shutdown/restart responses before exit. */
+const ADMIN_RESPONSE_DELAY_MS = 300;
+
+/** Delay that lets the browser arm update polling after /api/update succeeds. */
+const ADMIN_UPDATE_RESPONSE_DELAY_MS = 3_000;
+
 // ── Bootstrap ────────────────────────────────────────────────────────────────
+
+handoffLegacyExecutableToCurrentPayload();
 
 /**
  * Ensures the configuration file exists on first run.
@@ -47,6 +75,15 @@ installConsoleInterceptor();
 
 /** Live configuration loaded from toolbox-proxy.json + environment variables */
 const configuration = loadConfig();
+
+/** Fixed listen port for the current process, resolved once at startup. */
+const listenPort = configuration.port || DEFAULT_PORT;
+
+/** Tracks whether this process was launched by an Admin Hub restart/update handoff. */
+const isRestartHandoffLaunch = process.argv.includes(RESTART_HANDOFF_ARGUMENT);
+
+// When required by tests, only the Express app object is needed — no port binding.
+let server = null;
 
 // ── Express Application ───────────────────────────────────────────────────────
 
@@ -71,7 +108,11 @@ app.use(createProxyRouter(configuration));
 app.use(createSetupRouter(configuration));
 
 // Internal APIs: /api/proxy-status, /api/proxy-config, /api/snow-session
-app.use(createApiRouter(configuration));
+app.use(createApiRouter(configuration, {
+  requestShutdown: requestShutdownFromAdminHub,
+  requestRestart: requestRestartFromAdminHub,
+  requestReplacement: requestUpdatedReplacementFromAdminHub,
+}));
 
 // Relay bridge: /api/relay-bridge/* — HTTP-based relay for Chrome (bypasses COOP)
 app.use('/api/relay-bridge', relayBridgeRouter);
@@ -240,62 +281,248 @@ function buildClientNotBuiltPage() {
   ].join('\n');
 }
 
-const listenPort = configuration.port || DEFAULT_PORT;
-
-// Only bind a TCP port when the file is executed directly (node server.js).
-// When required by tests, only the Express app object is needed — no port binding.
-let server = null;
+/**
+ * Sleeps for a short interval during restart-handoff startup retries.
+ *
+ * @param {number} milliseconds - Duration to wait before continuing
+ * @returns {Promise<void>}
+ */
+function sleepFor(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
 
 /**
- * Async startup wrapper that handles port conflicts before binding the listener.
+ * Creates a synthetic EADDRINUSE-style error so restart-handoff failures reuse
+ * the same human-readable messaging as a normal bind conflict.
  *
- * Startup sequence:
- *   1. Check if the port is already occupied (isPortInUse).
- *   2. If occupied → resolvePortConflict: kills the occupant, waits for OS
- *        to release the port, then falls through.
- *   3. Bind app.listen() — EADDRINUSE handler still catches any remaining failure.
+ * @param {number} port - TCP port that remained occupied
+ * @returns {NodeJS.ErrnoException}
+ */
+function createPortBusyError(port) {
+  const portBusyError = new Error(`Port ${port} is already in use.`);
+  portBusyError.code = 'EADDRINUSE';
+  return portBusyError;
+}
+
+/**
+ * Adds the hidden restart-handoff flag so relaunched processes know they should
+ * wait briefly for the old listener and then fail fast if it never disappears.
  *
- * Keeping this logic async allows the pre-flight port check without restructuring
- * the rest of the startup (banner, scheduler, browser open) which stay synchronous
- * inside the listen callback.
+ * @returns {string[]}
+ */
+function buildRestartArguments() {
+  const restartArguments = process.pkg ? process.argv.slice(2) : process.argv.slice(1);
+  if (!restartArguments.includes(RESTART_HANDOFF_ARGUMENT)) {
+    restartArguments.push(RESTART_HANDOFF_ARGUMENT);
+  }
+  return restartArguments;
+}
+
+/**
+ * Redirects a directly launched legacy top-level exe to the current payload.
+ * This protects nontechnical users who double-click the old downloaded exe after
+ * Admin Hub has installed a newer version under versions\<version>.
+ *
+ * @returns {void}
+ */
+function handoffLegacyExecutableToCurrentPayload() {
+  if (!process.pkg) {
+    return;
+  }
+
+  const installRoot = resolveCurrentInstallRoot();
+  const currentVersion = readCurrentVersion(installRoot);
+  if (!currentVersion) {
+    return;
+  }
+
+  const currentPayloadPath = resolvePayloadExecutablePath(installRoot, currentVersion);
+  if (!fs.existsSync(currentPayloadPath)) {
+    return;
+  }
+
+  if (path.resolve(currentPayloadPath).toLowerCase() === path.resolve(process.execPath).toLowerCase()) {
+    return;
+  }
+
+  const silentLauncherPath = resolveSilentLauncherPath(installRoot);
+  const handoffCommand = fs.existsSync(silentLauncherPath)
+    ? { execPath: 'wscript.exe', execArgs: [silentLauncherPath, ...process.argv.slice(2)] }
+    : { execPath: currentPayloadPath, execArgs: process.argv.slice(2) };
+
+  const handoffProcess = childProcess.spawn(handoffCommand.execPath, handoffCommand.execArgs, {
+    detached: true,
+    stdio: 'ignore',
+    cwd: installRoot,
+    windowsHide: true,
+  });
+  handoffProcess.unref();
+  process.exit(0);
+}
+
+/**
+ * Binds the Express app to localhost and resolves once the listener is active.
+ *
+ * @param {number} port - TCP port to bind on 127.0.0.1
+ * @returns {Promise<import('http').Server>}
+ */
+function listenOnLoopbackPort(port) {
+  return new Promise((resolve, reject) => {
+    const listeningServer = app.listen(port, '127.0.0.1');
+
+    function handleListening() {
+      listeningServer.off('error', handleError);
+      resolve(listeningServer);
+    }
+
+    function handleError(serverError) {
+      listeningServer.off('listening', handleListening);
+      reject(serverError);
+    }
+
+    listeningServer.once('listening', handleListening);
+    listeningServer.once('error', handleError);
+  });
+}
+
+/**
+ * Stops accepting new HTTP requests and closes lingering keep-alive sockets so
+ * restart and update handoffs release the port before the process exits.
  *
  * @returns {Promise<void>}
  */
-async function launchServer() {
-  const portIsCurrentlyBusy = await isPortInUse(listenPort);
-
-  if (portIsCurrentlyBusy) {
-    // resolvePortConflict kills the occupant and waits for the OS to release
-    // the port binding. Falls through to app.listen() regardless.
-    // If the port is still occupied after the kill, EADDRINUSE handles it.
-    await resolvePortConflict(listenPort, openBrowserToDashboard);
+function closeHttpServer() {
+  if (server === null || !server.listening) {
+    return Promise.resolve();
   }
 
-  server = app.listen(listenPort, '127.0.0.1', () => {
-    printStartupBanner(listenPort);
-    startSchedulerLoop(configuration);
+  const serverToClose = server;
+  server = null;
 
-    // Open the dashboard automatically when:
-    //   --open      : passed explicitly by Launch Toolbox.bat (zip distribution)
-    //   process.pkg : bundled exe; but only when NOT launched by the VBS launcher.
-    //                 The VBS passes --no-open so it can open the browser itself
-    //                 after polling confirms the port is ready — preventing the
-    //                 double-tab that occurs when both the exe and the VBS open
-    //                 the browser at the same time.
-    const shouldOpenBrowser =
-      process.argv.includes('--open') ||
-      (!!process.pkg && !process.argv.includes('--no-open'));
-    if (shouldOpenBrowser) {
-      openBrowserToDashboard(listenPort);
+  return new Promise((resolve, reject) => {
+    const forceCloseTimer = setTimeout(() => {
+      if (typeof serverToClose.closeAllConnections === 'function') {
+        serverToClose.closeAllConnections();
+      }
+    }, FORCE_CLOSE_CONNECTIONS_DELAY_MS);
+
+    serverToClose.close((closeError) => {
+      clearTimeout(forceCloseTimer);
+      if (closeError && closeError.code !== 'ERR_SERVER_NOT_RUNNING') {
+        reject(closeError);
+        return;
+      }
+      resolve();
+    });
+
+    if (typeof serverToClose.closeIdleConnections === 'function') {
+      serverToClose.closeIdleConnections();
     }
   });
+}
 
-  // Handle server-level errors — most importantly EADDRINUSE (port already in use).
-  // Without this handler the error throws as an unhandled exception: the console
-  // window closes instantly and the user sees nothing at all.
-  server.on('error', (serverError) => {
-    console.error('');
-    if (serverError.code === 'EADDRINUSE') {
+/**
+ * Runs a controlled shutdown/restart sequence after the response has already
+ * been sent back to the browser.
+ *
+ * @param {{
+ *   delayMs: number,
+ *   logMessage: string,
+ *   spawnPlan?: { execPath: string, execArgs: string[], workingDirectory?: string }
+ * }} transitionPlan
+ * @returns {void}
+ */
+function scheduleServerTransition(transitionPlan) {
+  setTimeout(async () => {
+    console.log(transitionPlan.logMessage);
+
+    try {
+      await closeHttpServer();
+
+      if (transitionPlan.spawnPlan) {
+        spawnDetachedProcess(
+          transitionPlan.spawnPlan.execPath,
+          transitionPlan.spawnPlan.execArgs,
+          transitionPlan.spawnPlan.workingDirectory,
+        );
+      }
+
+      process.exit(0);
+    } catch (transitionError) {
+      console.error('');
+      console.error('  ❌ Failed to complete the requested server handoff: ' + transitionError.message);
+      console.error('');
+      process.exit(1);
+    }
+  }, transitionPlan.delayMs);
+}
+
+/**
+ * Stops the current process after the shutdown response has been delivered.
+ *
+ * @param {{ delayMs?: number }} [shutdownPlan]
+ * @returns {void}
+ */
+function requestShutdownFromAdminHub(shutdownPlan = {}) {
+  scheduleServerTransition({
+    delayMs: shutdownPlan.delayMs ?? ADMIN_RESPONSE_DELAY_MS,
+    logMessage: '  🛑 Shutdown requested from Admin Hub — stopping server.',
+  });
+}
+
+/**
+ * Relaunches the current binary/script after closing the active listener.
+ *
+ * @param {{ execPath?: string, execArgs?: string[] }} [restartPlan]
+ * @returns {void}
+ */
+function requestRestartFromAdminHub(restartPlan = {}) {
+  scheduleServerTransition({
+    delayMs: restartPlan.delayMs ?? ADMIN_RESPONSE_DELAY_MS,
+    logMessage: '  🔄 Restart requested from Admin Hub — relaunching server.',
+    spawnPlan: {
+      execPath: restartPlan.execPath || process.execPath,
+      execArgs: restartPlan.execArgs || buildRestartArguments(),
+      workingDirectory: process.cwd(),
+    },
+  });
+}
+
+/**
+ * Launches the staged update helper only after the live HTTP listener has closed.
+ *
+ * @param {{ execPath: string, execArgs: string[], targetVersion?: string }} updatePlan
+ * @returns {void}
+ */
+function requestUpdatedReplacementFromAdminHub(updatePlan) {
+  scheduleServerTransition({
+    delayMs: updatePlan.delayMs ?? ADMIN_UPDATE_RESPONSE_DELAY_MS,
+    logMessage: updatePlan.targetVersion
+      ? `  🚀 Applying staged update and relaunching NodeToolbox v${updatePlan.targetVersion}.`
+      : '  🚀 Applying staged update and relaunching NodeToolbox.',
+    spawnPlan: {
+      execPath: updatePlan.execPath,
+      execArgs: updatePlan.execArgs,
+    },
+  });
+}
+
+/**
+ * Prints startup errors in plain English. Normal foreground launches pause so
+ * users can read the message; hidden restart handoffs exit immediately so the
+ * updater can report a real restart failure instead of hanging forever.
+ *
+ * @param {NodeJS.ErrnoException} serverError - Startup or listener error
+ * @returns {void}
+ */
+function handleServerStartupError(serverError) {
+  console.error('');
+
+  if (serverError.code === 'EADDRINUSE') {
+    if (isRestartHandoffLaunch) {
+      console.error('  ❌ Restart handoff could not reclaim port ' + listenPort + ' before the startup deadline.');
+      console.error('     The replacement process is exiting so the updater can surface a real restart failure.');
+    } else {
       console.error('  ❌ Port ' + listenPort + ' is already in use by another program.');
       console.error('     To fix this, either:');
       console.error('       1. Close whatever is already running on port ' + listenPort + ',');
@@ -303,16 +530,99 @@ async function launchServer() {
       console.error('       2. Change the "port" value in your toolbox-proxy.json config');
       console.error('          (found in %APPDATA%\\NodeToolbox\\toolbox-proxy.json)');
       console.error('          and re-launch NodeToolbox.');
-    } else {
-      console.error('  ❌ Server startup error: ' + serverError.message);
     }
-    console.error('');
-    // Keep the console window open so the user can read the message before it
-    // disappears — critical for the .exe (double-click) distribution where there
-    // is no parent terminal to scroll back through.
-    process.stdin.resume();
-    console.error('  Press Ctrl+C or close this window to exit.');
-  });
+  } else {
+    console.error('  ❌ Server startup error: ' + serverError.message);
+  }
+
+  console.error('');
+
+  if (isRestartHandoffLaunch) {
+    process.exit(1);
+    return;
+  }
+
+  // Keep the console window open so the user can read the message before it
+  // disappears — critical for the .exe (double-click) distribution where there
+  // is no parent terminal to scroll back through.
+  process.stdin.resume();
+  console.error('  Press Ctrl+C or close this window to exit.');
+}
+
+/**
+ * Async startup wrapper that handles port conflicts before binding the listener.
+ *
+ * Startup sequence:
+ *   1. Normal launches check whether the configured port is already occupied.
+ *   2. Restart-handoff launches wait briefly for the old listener to go away.
+ *   3. Bind app.listen() and fail fast on restart-handoff startup errors.
+ *
+ * Keeping this logic async allows the pre-flight port check without restructuring
+ * the rest of the startup (banner, scheduler, browser open) which stay synchronous
+ * after the listener is bound.
+ *
+ * @returns {Promise<void>}
+ */
+async function launchServer() {
+  const handoffDeadlineTimestamp = Date.now() + RESTART_HANDOFF_STARTUP_TIMEOUT_MS;
+
+  while (true) {
+    const portIsCurrentlyBusy = await isPortInUse(listenPort);
+
+    if (portIsCurrentlyBusy) {
+      if (isRestartHandoffLaunch) {
+        if (Date.now() >= handoffDeadlineTimestamp) {
+          handleServerStartupError(createPortBusyError(listenPort));
+          return;
+        }
+        await sleepFor(RESTART_HANDOFF_POLL_INTERVAL_MS);
+        continue;
+      }
+
+      // resolvePortConflict kills the occupant and waits for the OS to release
+      // the port binding. Falls through to the listen attempt regardless.
+      await resolvePortConflict(listenPort, openBrowserToDashboard);
+    }
+
+    try {
+      server = await listenOnLoopbackPort(listenPort);
+      break;
+    } catch (serverError) {
+      if (
+        isRestartHandoffLaunch &&
+        serverError.code === 'EADDRINUSE' &&
+        Date.now() < handoffDeadlineTimestamp
+      ) {
+        await sleepFor(RESTART_HANDOFF_POLL_INTERVAL_MS);
+        continue;
+      }
+
+      handleServerStartupError(serverError);
+      return;
+    }
+  }
+
+  // Handle server-level errors — most importantly EADDRINUSE (port already in use).
+  // Without this handler the error throws as an unhandled exception: the console
+  // window closes instantly and the user sees nothing at all.
+  server.on('error', handleServerStartupError);
+
+  printStartupBanner(listenPort);
+  startSchedulerLoop(configuration);
+
+  // Open the dashboard automatically when:
+  //   --open      : passed explicitly by Launch Toolbox.bat (zip distribution)
+  //   process.pkg : bundled exe; but only when NOT launched by the VBS launcher.
+  //                 The VBS passes --no-open so it can open the browser itself
+  //                 after polling confirms the port is ready — preventing the
+  //                 double-tab that occurs when both the exe and the VBS open
+  //                 the browser at the same time.
+  const shouldOpenBrowser =
+    process.argv.includes('--open') ||
+    (!!process.pkg && !process.argv.includes('--no-open'));
+  if (shouldOpenBrowser) {
+    openBrowserToDashboard(listenPort);
+  }
 }
 
 if (require.main === module) {
@@ -340,6 +650,12 @@ if (require.main === module) {
       console.error('  in the NodeToolbox folder, then re-launch.');
     }
     console.error('');
+
+    if (isRestartHandoffLaunch) {
+      process.exit(1);
+      return;
+    }
+
     process.stdin.resume();
     console.error('  Press Ctrl+C or close this window to exit.');
   });

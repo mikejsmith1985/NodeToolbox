@@ -13,12 +13,25 @@ const { saveConfigToDisk, isServiceConfigured, isServiceBaseUrlSet } = require('
 const snowSession = require('../services/snowSession');
 const { clearInstallationTokenCache, hasGitHubAppCredentials, getValidInstallationToken, listGitHubAppInstallations } = require('../services/githubAppAuth');
 
-const { prepareUpdate, spawnReplacementAndExit }   = require('../utils/updater');
+const {
+  prepareUpdate,
+  spawnDetachedProcess,
+  spawnReplacementAndExit,
+} = require('../utils/updater');
 const relayBridge = require('./relayBridge');
 const logBuffer   = require('../utils/logBuffer');
 
 /** Application version read once at startup — avoids repeated disk I/O per request */
 const APP_VERSION = require('../../package.json').version;
+
+/** Delay that lets a shutdown/restart response flush before the process exits. */
+const SHUTDOWN_RESPONSE_DELAY_MS = 300;
+
+/** Delay that gives the browser time to arm restart polling after /api/update succeeds. */
+const UPDATE_RESPONSE_DELAY_MS = 3000;
+
+/** Hidden launch flag used to identify updater-driven restart handoffs. */
+const RESTART_HANDOFF_ARGUMENT = '--restart-handoff';
 
 // ── GitHub Connectivity Probe Cache ──────────────────────────────────────────
 //
@@ -101,10 +114,18 @@ async function runGitHubConnectivityProbe(configuration) {
  * POST /api/proxy-config) are immediately reflected in the proxy behaviour.
  *
  * @param {import('../config/loader').ProxyConfig} configuration
+ * @param {{
+ *   requestShutdown?: (options?: { delayMs?: number }) => void,
+ *   requestRestart?: (options?: { delayMs?: number, execPath?: string, execArgs?: string[] }) => void,
+ *   requestReplacement?: (options: { delayMs?: number, execPath: string, execArgs: string[], targetVersion?: string }) => void
+ * }} [lifecycleHandlers]
  * @returns {import('express').Router}
  */
-function createApiRouter(configuration) {
+function createApiRouter(configuration, lifecycleHandlers = {}) {
   const router = express.Router();
+  const requestShutdown = lifecycleHandlers.requestShutdown || defaultRequestShutdown;
+  const requestRestart = lifecycleHandlers.requestRestart || defaultRequestRestart;
+  const requestReplacement = lifecycleHandlers.requestReplacement || defaultRequestReplacement;
 
   // ── GET /api/proxy-status ────────────────────────────────────────────────
   // Health check endpoint used by the Toolbox front-end for auto-detection.
@@ -724,11 +745,7 @@ function createApiRouter(configuration) {
 
   router.post('/api/shutdown', (_req, res) => {
     res.json({ ok: true, message: 'Server is shutting down.' });
-    // Small delay lets the HTTP response reach the browser before the process ends
-    setTimeout(() => {
-      console.log('  🛑 Shutdown requested from Admin Hub — stopping server.');
-      process.exit(0);
-    }, 300);
+    requestShutdown({ delayMs: SHUTDOWN_RESPONSE_DELAY_MS });
   });
 
   // ── POST /api/restart ────────────────────────────────────────────────────
@@ -739,22 +756,11 @@ function createApiRouter(configuration) {
 
   router.post('/api/restart', (_req, res) => {
     res.json({ ok: true, message: 'Server is restarting.' });
-    setTimeout(() => {
-      console.log('  🔄 Restart requested from Admin Hub — restarting server.');
-      const { spawn } = require('child_process');
-      // When running as a pkg-compiled exe, argv[1] is the internal snapshot path
-      // (e.g. /snapshot/server.js) — skip it and pass only the user args that follow.
-      // When running as plain node, argv[1] is the script path and must be included.
-      const spawnArgs = process.pkg ? process.argv.slice(2) : process.argv.slice(1);
-      const restartedProcess = spawn(process.execPath, spawnArgs, {
-        detached: true,
-        stdio:    'ignore',
-        cwd:      process.cwd(),
-        env:      process.env,
-      });
-      restartedProcess.unref();
-      process.exit(0);
-    }, 300);
+    requestRestart({
+      delayMs: SHUTDOWN_RESPONSE_DELAY_MS,
+      execPath: process.execPath,
+      execArgs: buildRestartArguments(),
+    });
   });
 
   // ── POST /api/update ────────────────────────────────────────────────────
@@ -788,10 +794,21 @@ function createApiRouter(configuration) {
       console.log(`  ✅ Update staged — spawning v${requestedVersion} and exiting.`);
 
       // Respond now that the download is complete and the replacement is ready.
-      // Give the response 300 ms to flush through Express and reach the browser
-      // before process.exit(0) tears down the socket.
-      res.json({ ok: true, restarting: true });
-      setTimeout(() => spawnReplacementAndExit(newExecPath, newExecArgs), 300);
+      // Writing and flushing the JSON body before the shutdown delay gives the
+      // browser time to arm its restart detector before this process exits.
+      res.status(200);
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.write(JSON.stringify({ ok: true, restarting: true }));
+      if (typeof res.flushHeaders === 'function') {
+        res.flushHeaders();
+      }
+      res.end();
+      requestReplacement({
+        delayMs: UPDATE_RESPONSE_DELAY_MS,
+        execPath: newExecPath,
+        execArgs: newExecArgs,
+        targetVersion: requestedVersion,
+      });
     } catch (updateError) {
       // Surface the failure to the client so the UI can display a real error
       // message instead of silently reloading to the same version.
@@ -846,6 +863,65 @@ function createApiRouter(configuration) {
 }
 
 // ── Private Helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Appends the hidden restart-handoff flag so restarted processes fail fast if
+ * the old listener never releases the port.
+ *
+ * @returns {string[]}
+ */
+function buildRestartArguments() {
+  const restartArguments = process.pkg ? process.argv.slice(2) : process.argv.slice(1);
+  if (!restartArguments.includes(RESTART_HANDOFF_ARGUMENT)) {
+    restartArguments.push(RESTART_HANDOFF_ARGUMENT);
+  }
+  return restartArguments;
+}
+
+/**
+ * Default shutdown handler used by isolated route tests that do not inject the
+ * real server lifecycle controls from server.js.
+ *
+ * @param {{ delayMs?: number }} [options]
+ * @returns {void}
+ */
+function defaultRequestShutdown(options = {}) {
+  const delayMs = options.delayMs ?? SHUTDOWN_RESPONSE_DELAY_MS;
+  setTimeout(() => {
+    console.log('  🛑 Shutdown requested from Admin Hub — stopping server.');
+    process.exit(0);
+  }, delayMs);
+}
+
+/**
+ * Default restart handler used when the router runs outside the real server.
+ *
+ * @param {{ delayMs?: number, execPath?: string, execArgs?: string[] }} [options]
+ * @returns {void}
+ */
+function defaultRequestRestart(options = {}) {
+  const delayMs = options.delayMs ?? SHUTDOWN_RESPONSE_DELAY_MS;
+  const execPath = options.execPath || process.execPath;
+  const execArgs = options.execArgs || buildRestartArguments();
+  setTimeout(() => {
+    console.log('  🔄 Restart requested from Admin Hub — relaunching server.');
+    spawnDetachedProcess(execPath, execArgs, process.cwd());
+    process.exit(0);
+  }, delayMs);
+}
+
+/**
+ * Default staged-replacement handler used by isolated route tests.
+ *
+ * @param {{ delayMs?: number, execPath: string, execArgs: string[] }} options
+ * @returns {void}
+ */
+function defaultRequestReplacement(options) {
+  const delayMs = options.delayMs ?? UPDATE_RESPONSE_DELAY_MS;
+  setTimeout(() => {
+    spawnReplacementAndExit(options.execPath, options.execArgs);
+  }, delayMs);
+}
 
 /**
  * Masks a service account username so it can be included in diagnostic reports

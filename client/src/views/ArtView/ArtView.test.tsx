@@ -72,6 +72,17 @@ vi.mock('../../services/jiraApi.ts', () => ({
 
 import ArtView from './ArtView.tsx';
 
+const mockClipboardWrite = vi.fn().mockResolvedValue(undefined);
+const mockClipboardWriteText = vi.fn().mockResolvedValue(undefined);
+
+class MockClipboardItem {
+  items: Record<string, Blob>;
+
+  constructor(items: Record<string, Blob>) {
+    this.items = items;
+  }
+}
+
 function renderArtView() {
   return render(
     <ToastProvider>
@@ -92,6 +103,17 @@ function createLocalDateString(date: Date): string {
 describe('ArtView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: {
+        write: mockClipboardWrite,
+        writeText: mockClipboardWriteText,
+      },
+      configurable: true,
+    });
+    Object.defineProperty(globalThis, 'ClipboardItem', {
+      value: MockClipboardItem,
+      configurable: true,
+    });
     mockState.activeTab = 'overview';
     mockState.teams = [
       {
@@ -116,6 +138,9 @@ describe('ArtView', () => {
       }
       if (path === '/rest/api/2/project') {
         return Promise.resolve([]);
+      }
+      if (path === '/rest/api/2/issueLinkType') {
+        return Promise.resolve({ issueLinkTypes: [] });
       }
 
       return Promise.resolve({ values: [] });
@@ -290,18 +315,20 @@ describe('ArtView', () => {
     expect(screen.queryByText('Board 42')).not.toBeInTheDocument();
   });
 
-  // ── Feature 1: Dependency Tab (table-based, no SVG) ──
+  // ── Feature 1: Dependency Tab ──
 
-  it('shows the Dependencies tab panel with a Load Dependencies button', () => {
+  it('shows the Dependencies tab panel with a Load Dependencies button when a PI is selected', () => {
     mockState.activeTab = 'dependencies';
     renderArtView();
     expect(screen.getByRole('button', { name: /load dependencies/i })).toBeInTheDocument();
   });
 
-  it('does not render an SVG in the Dependencies tab — it is table-based', () => {
+  it('shows the no-PI warning in the Dependencies tab when no PI is selected', () => {
     mockState.activeTab = 'dependencies';
+    mockState.selectedPiName = '';
     renderArtView();
-    expect(document.querySelector('svg')).not.toBeInTheDocument();
+    expect(screen.getByText(/enable the dependency map/i)).toBeInTheDocument();
+    mockState.selectedPiName = 'PI-2025-Q1';
   });
 
   // ── Feature 2: Board Prep Tab ──
@@ -412,8 +439,7 @@ describe('ArtView', () => {
     mockState.activeTab = 'blueprint';
     mockState.selectedPiName = '';
     renderArtView();
-    // Check for the specific message shown only by BlueprintTab (the PI header shows "No PI selected" too)
-    expect(screen.getByText(/choose a pi name/i)).toBeInTheDocument();
+    expect(screen.getByText(/choose a pi from the selector above/i)).toBeInTheDocument();
     mockState.selectedPiName = 'PI-2025-Q1';
   });
 
@@ -433,6 +459,34 @@ describe('ArtView', () => {
     // All 5 narrative sections should have textareas
     expect(screen.getAllByRole('textbox').length).toBeGreaterThanOrEqual(5);
     mockState.sosExpandedTeams = [];
+  });
+
+  it('loads dependency link type checkboxes in ART settings', async () => {
+    mockState.activeTab = 'settings';
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/issueLinkType') {
+        return Promise.resolve({
+          issueLinkTypes: [
+            { name: 'Blocks', inward: 'is blocked by', outward: 'blocks' },
+          ],
+        });
+      }
+
+      if (path === '/rest/api/2/field') {
+        return Promise.resolve([]);
+      }
+
+      if (path === '/rest/api/2/project') {
+        return Promise.resolve([]);
+      }
+
+      return Promise.resolve({ values: [] });
+    });
+
+    renderArtView();
+
+    const dependencyLinkTypeCheckboxes = await screen.findAllByLabelText(/dependency link type blocks/i);
+    expect(dependencyLinkTypeCheckboxes.length).toBeGreaterThan(0);
   });
 
   // ── SoS parity: richer impediment detection ──
@@ -623,6 +677,18 @@ describe('ArtView', () => {
     expect(screen.getByRole('button', { name: /export html/i })).toBeInTheDocument();
   });
 
+  it('renders the exact monthly accomplishment template rows from the approved format', () => {
+    mockState.activeTab = 'monthly';
+    renderArtView();
+    expect(screen.getByLabelText(/team name \(salesforce: xx or enrollment: xx\)/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/what is the name of the initiative\/project/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/included product areas/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/what was accomplished\?/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/what are the business outcomes or desired benefits\?/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/date delivered accomplished/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/sme \/ point of contact \(po\)/i)).toBeInTheDocument();
+  });
+
   // ── Monthly Report parity: pillar filter ──
 
   it('renders a pillar filter dropdown in the Monthly Report toolbar', () => {
@@ -637,7 +703,7 @@ describe('ArtView', () => {
     const yearMonth = createLocalYearMonth();
     localStorage.setItem(
       `tbxMonthlyReport_team-1_${yearMonth}`,
-      JSON.stringify({ teamId: 'team-1', teamName: 'Alpha Team', accomplished: '', outcomes: '', risks: '', stakeholders: '', pillar: 'Growth' }),
+      JSON.stringify({ teamId: 'team-1', teamName: 'Alpha Team', reportTeamName: 'Alpha Team', accomplished: '', outcomes: '', stakeholders: '', pillar: 'Growth' }),
     );
     mockState.teams = [
       { id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null },
@@ -646,9 +712,7 @@ describe('ArtView', () => {
     renderArtView();
     const pillarFilter = screen.getByRole('combobox', { name: /filter by pillar/i });
     fireEvent.change(pillarFilter, { target: { value: 'Affordability' } });
-    // Alpha Team's card has Growth pillar, not Affordability — the card editor should be hidden.
-    // We check for the pillar select's aria-label which is unique to the card (not the filter dropdowns).
-    expect(screen.queryByRole('combobox', { name: /pillar for alpha team/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/what is the name of the initiative\/project/i)).not.toBeInTheDocument();
     localStorage.removeItem(`tbxMonthlyReport_team-1_${yearMonth}`);
     mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
   });
@@ -660,7 +724,7 @@ describe('ArtView', () => {
     const yearMonth = createLocalYearMonth();
     localStorage.setItem(
       `tbxMonthlyReport_team-1_${yearMonth}`,
-      JSON.stringify({ teamId: 'team-1', teamName: 'Alpha Team', accomplished: 'Shipped feature X', outcomes: '', risks: '', stakeholders: '', pillar: '' }),
+      JSON.stringify({ teamId: 'team-1', teamName: 'Alpha Team', reportTeamName: 'Alpha Team', accomplished: 'Shipped feature X', outcomes: '', stakeholders: '', pillar: '' }),
     );
     renderArtView();
     // A visual draft indicator (e.g. "Draft" text or checkmark) should be present
@@ -674,6 +738,46 @@ describe('ArtView', () => {
     mockState.activeTab = 'monthly';
     renderArtView();
     expect(screen.getByRole('button', { name: /export text/i })).toBeInTheDocument();
+  });
+
+  it('copies the monthly report as the email and teams table format', async () => {
+    mockState.activeTab = 'monthly';
+    const yearMonth = createLocalYearMonth();
+    localStorage.setItem(
+      `tbxMonthlyReport_team-1_${yearMonth}`,
+      JSON.stringify({
+        teamId: 'team-1',
+        teamName: 'Alpha Team',
+        reportTeamName: 'Salesforce: Alpha Team',
+        initiativeName: 'Unified Intake',
+        code: 'P-123',
+        productAreas: 'SalesOps',
+        accomplished: 'Delivered the intake workflow',
+        outcomes: 'Reduced manual touchpoints',
+        stakeholders: 'Members',
+        pillar: 'Growth',
+        deliveredDate: '2026-05-15',
+        pointOfContact: 'Jane Doe',
+      }),
+    );
+
+    renderArtView();
+    fireEvent.click(screen.getByRole('button', { name: /copy all/i }));
+
+    expect(mockClipboardWrite).toHaveBeenCalledTimes(1);
+    const clipboardItems = mockClipboardWrite.mock.calls[0][0] as MockClipboardItem[];
+    const clipboardItem = clipboardItems[0];
+    const htmlContent = await clipboardItem.items['text/html'].text();
+    const textContent = await clipboardItem.items['text/plain'].text();
+
+    expect(htmlContent).toContain('Team Name (Salesforce: xx or Enrollment: xx)');
+    expect(htmlContent).toContain('What is the name of the initiative/project?');
+    expect(htmlContent).toContain('Salesforce: Alpha Team');
+    expect(htmlContent).toContain('Unified Intake');
+    expect(textContent).toContain('Date Delivered Accomplished');
+    expect(textContent).toContain('• 2026-05-15');
+
+    localStorage.removeItem(`tbxMonthlyReport_team-1_${yearMonth}`);
   });
 
   // ── Monthly Report Jira parity: CSV export ──
@@ -764,7 +868,7 @@ describe('ArtView', () => {
     expect(screen.getByText(/load this team from the overview tab/i)).toBeInTheDocument();
   });
 
-  it('pre-fills accomplished and risks fields when "Generate from Jira" is clicked', () => {
+  it('pre-fills the accomplishment row when "Generate from Jira" is clicked', () => {
     mockState.activeTab = 'monthly';
     const yearMonth = createLocalYearMonth();
     // Start with empty card (no localStorage content).
@@ -798,8 +902,7 @@ describe('ArtView', () => {
     ] as ArtTeam[];
     renderArtView();
     fireEvent.click(screen.getByRole('button', { name: /generate from jira/i }));
-    // After generation the Accomplished textarea should contain the done issue bullet.
-    const accomplishedTextarea = screen.getByPlaceholderText(/what did the team accomplish/i) as HTMLTextAreaElement;
+    const accomplishedTextarea = screen.getByLabelText(/what was accomplished\?/i) as HTMLTextAreaElement;
     expect(accomplishedTextarea.value).toContain('TBX-10');
     expect(accomplishedTextarea.value).toContain('Finished the widget');
     localStorage.removeItem(`tbxMonthlyReport_team-1_${yearMonth}`);

@@ -2,8 +2,8 @@
 //
 // Provides twelve tabs: Overview (sprint info + burn-down chart), By Assignee (swim lanes),
 // Blockers (wall of blocked/stale issues), Defects (bug radar by priority),
-// Standup (board walk + 15-min timer), Roster (team members for non-sprint standup scope),
-// Settings (project key + board picker + advanced config), Metrics (velocity/burn stats),
+// Standup (board walk + 15-min timer), Settings (project key + board picker + roster settings),
+// Metrics (velocity/burn stats),
 // Pipeline (kanban WIP by status), Planning (unestimated work), Pointing (embedded planning poker),
 // and Releases (readiness by fix version).
 
@@ -66,7 +66,6 @@ const TAB_OPTIONS: { key: DashboardTab; label: string }[] = [
   { key: 'blockers', label: 'Blockers' },
   { key: 'defects', label: 'Defects' },
   { key: 'standup', label: 'Standup' },
-  { key: 'roster', label: 'Roster' },
   { key: 'metrics', label: 'Metrics' },
   { key: 'pipeline', label: 'Pipeline' },
   { key: 'planning', label: 'Planning' },
@@ -2041,6 +2040,7 @@ function DefectsTab({
 // ── Settings tab (project key + board picker + advanced config) ──
 
 interface SettingsTabProps {
+  issues: JiraIssue[];
   projectKey: string;
   isLoadingSprint: boolean;
   loadError: string | null;
@@ -2062,10 +2062,11 @@ interface DetectedWorkflowIssueType {
 }
 
 /**
- * Renders the Settings tab: project key, board picker, and persisted dashboard config fields.
+ * Renders the Settings tab: project key, board picker, roster settings, and persisted dashboard config fields.
  * All changes persist to localStorage immediately so they survive page reloads.
  */
 function SettingsTab({
+  issues,
   projectKey,
   isLoadingSprint,
   loadError,
@@ -2140,103 +2141,107 @@ function SettingsTab({
 
   return (
     <div className={styles.settingsPanel}>
-      <div>
-        <h2 className={styles.settingsSectionTitle}>{BOARD_SETTINGS_TITLE}</h2>
-        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
-          {settingsCopy.description}
-        </p>
-      </div>
-      <div>
-        <label
-          htmlFor="sprint-project-key-input"
-          style={{ display: 'block', marginBottom: 'var(--spacing-xs)', fontSize: 'var(--font-size-md)' }}
-        >
-          Project Key
-        </label>
-        <input
-          className={styles.settingsInput}
-          id="sprint-project-key-input"
-          onChange={(changeEvent) => onProjectKeyChange(changeEvent.target.value.toUpperCase())}
-          placeholder="e.g. TBX"
-          type="text"
-          value={projectKey}
-        />
-      </div>
-      <button
-        className={styles.loadButton}
-        disabled={isLoadingSprint || (!projectKey && boardId === null)}
-        onClick={onLoadSprint}
-        type="button"
-      >
-        {isLoadingSprint ? 'Loading…' : settingsCopy.loadButtonLabel}
-      </button>
-      {loadError && <p className={styles.errorMessage}>{loadError}</p>}
-
-      {availableBoards.length > 0 && (
-        <BoardPicker
-          boards={availableBoards}
-          isLoading={isLoadingSprint}
-          onSearchChange={onBoardSearchChange}
-          onSelectBoard={onSelectBoard}
-          searchQuery={boardSearchQuery}
-          selectedBoardId={boardId}
-        />
-      )}
-
-      <div className={styles.settingsDivider} />
-
-      <div>
-        <h2 className={styles.settingsSectionTitle}>Advanced Settings</h2>
-      </div>
-
-      <AdvancedConfigFields config={config} onConfigChange={onConfigChange} />
-
-      <div className={styles.settingsDivider} />
-
-      <div className={styles.workflowDetectSection}>
-        <div className={styles.workflowDetectHeader}>
-          <h2 className={styles.settingsSectionTitle}>Workflow Status Detection</h2>
-          <button
-            className={styles.secondaryButton}
-            onClick={() => void handleDetectWorkflowStatuses()}
-            type="button"
-          >
-            {isDetectingWorkflowStatuses ? 'Detecting…' : 'Detect'}
-          </button>
+      <div className={styles.settingsPrimaryColumn}>
+        <div>
+          <h2 className={styles.settingsSectionTitle}>{BOARD_SETTINGS_TITLE}</h2>
+          <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
+            {settingsCopy.description}
+          </p>
         </div>
-        <p className={styles.issueMetaText}>
-          Statuses are grouped by issue type, reflecting each type&apos;s Jira workflow. Click a status to fill the corresponding cycle-time field. Leave a field blank to auto-detect using Jira status categories.
-        </p>
-        {workflowDetectError && <p className={styles.errorMessage}>{workflowDetectError}</p>}
-        {detectedWorkflowIssueTypes.map((issueTypeStatuses) => (
-          <div className={styles.workflowIssueTypeCard} key={issueTypeStatuses.issueTypeName}>
-            <h3 className={styles.blockersSectionTitle}>{issueTypeStatuses.issueTypeName}</h3>
-            <div className={styles.workflowStatusChipRow}>
-              {issueTypeStatuses.statuses.map((status) => {
-                const isDoneStatus = status.categoryKey === 'done';
-                const targetField = isDoneStatus ? 'cycleTimeDoneField' : 'cycleTimeStartField';
-                const isSelected = config[targetField] === status.name;
-                const prefix = status.categoryKey === 'done'
-                  ? '🟢'
-                  : status.categoryKey === 'indeterminate'
-                    ? '🔵'
-                    : '⬜';
+        <div>
+          <label
+            htmlFor="sprint-project-key-input"
+            style={{ display: 'block', marginBottom: 'var(--spacing-xs)', fontSize: 'var(--font-size-md)' }}
+          >
+            Project Key
+          </label>
+          <input
+            className={styles.settingsInput}
+            id="sprint-project-key-input"
+            onChange={(changeEvent) => onProjectKeyChange(changeEvent.target.value.toUpperCase())}
+            placeholder="e.g. TBX"
+            type="text"
+            value={projectKey}
+          />
+        </div>
+        <button
+          className={styles.loadButton}
+          disabled={isLoadingSprint || (!projectKey && boardId === null)}
+          onClick={onLoadSprint}
+          type="button"
+        >
+          {isLoadingSprint ? 'Loading…' : settingsCopy.loadButtonLabel}
+        </button>
+        {loadError && <p className={styles.errorMessage}>{loadError}</p>}
 
-                return (
-                  <button
-                    className={isSelected ? styles.workflowStatusChipActive : styles.workflowStatusChip}
-                    key={`${issueTypeStatuses.issueTypeName}-${status.name}`}
-                    onClick={() => handleApplyDetectedWorkflowStatus(status.name, targetField)}
-                    type="button"
-                  >
-                    {prefix} {status.name} → {isDoneStatus ? 'set as Done status' : 'set as Start'}
-                  </button>
-                );
-              })}
-            </div>
+        {availableBoards.length > 0 && (
+          <BoardPicker
+            boards={availableBoards}
+            isLoading={isLoadingSprint}
+            onSearchChange={onBoardSearchChange}
+            onSelectBoard={onSelectBoard}
+            searchQuery={boardSearchQuery}
+            selectedBoardId={boardId}
+          />
+        )}
+
+        <div className={styles.settingsDivider} />
+
+        <div>
+          <h2 className={styles.settingsSectionTitle}>Advanced Settings</h2>
+        </div>
+
+        <AdvancedConfigFields config={config} onConfigChange={onConfigChange} />
+
+        <div className={styles.settingsDivider} />
+
+        <div className={styles.workflowDetectSection}>
+          <div className={styles.workflowDetectHeader}>
+            <h2 className={styles.settingsSectionTitle}>Workflow Status Detection</h2>
+            <button
+              className={styles.secondaryButton}
+              onClick={() => void handleDetectWorkflowStatuses()}
+              type="button"
+            >
+              {isDetectingWorkflowStatuses ? 'Detecting…' : 'Detect'}
+            </button>
           </div>
-        ))}
+          <p className={styles.issueMetaText}>
+            Statuses are grouped by issue type, reflecting each type&apos;s Jira workflow. Click a status to fill the corresponding cycle-time field. Leave a field blank to auto-detect using Jira status categories.
+          </p>
+          {workflowDetectError && <p className={styles.errorMessage}>{workflowDetectError}</p>}
+          {detectedWorkflowIssueTypes.map((issueTypeStatuses) => (
+            <div className={styles.workflowIssueTypeCard} key={issueTypeStatuses.issueTypeName}>
+              <h3 className={styles.blockersSectionTitle}>{issueTypeStatuses.issueTypeName}</h3>
+              <div className={styles.workflowStatusChipRow}>
+                {issueTypeStatuses.statuses.map((status) => {
+                  const isDoneStatus = status.categoryKey === 'done';
+                  const targetField = isDoneStatus ? 'cycleTimeDoneField' : 'cycleTimeStartField';
+                  const isSelected = config[targetField] === status.name;
+                  const prefix = status.categoryKey === 'done'
+                    ? '🟢'
+                    : status.categoryKey === 'indeterminate'
+                      ? '🔵'
+                      : '⬜';
+
+                  return (
+                    <button
+                      className={isSelected ? styles.workflowStatusChipActive : styles.workflowStatusChip}
+                      key={`${issueTypeStatuses.issueTypeName}-${status.name}`}
+                      onClick={() => handleApplyDetectedWorkflowStatus(status.name, targetField)}
+                      type="button"
+                    >
+                      {prefix} {status.name} → {isDoneStatus ? 'set as Done status' : 'set as Start'}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
+      <div className={styles.settingsDivider} />
+      <RosterTab issues={issues} />
     </div>
   );
 }
@@ -4855,10 +4860,6 @@ export default function SprintDashboardView() {
       );
     }
 
-    if (activeTab === 'roster') {
-      return <RosterTab issues={state.sprintIssues} />;
-    }
-
     if (activeTab === 'metrics') {
       return (
         <MetricsTab
@@ -4934,6 +4935,7 @@ export default function SprintDashboardView() {
         boardType={state.boardType}
         boardSearchQuery={boardSearchQuery}
         config={config}
+        issues={state.sprintIssues}
         isLoadingSprint={state.isLoadingSprint}
         loadError={state.loadError}
         onBoardSearchChange={setBoardSearchQuery}

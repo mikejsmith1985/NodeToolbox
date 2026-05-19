@@ -249,7 +249,7 @@ function formatLastBusinessDayEndChicago(): string {
 }
 
 function buildRosterAssigneeClause(): string | null {
-  return buildStandupRosterAssigneeClause();
+  return buildStandupRosterAssigneeClause(undefined, null);
 }
 
 function extractUnreleasedVersionNames(projectVersions: JiraProjectVersion[]): string[] {

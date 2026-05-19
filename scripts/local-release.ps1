@@ -1,9 +1,8 @@
 # scripts/local-release.ps1 — Packages NodeToolbox into distributable artifacts
 # and publishes a GitHub Release — all in one command.
 #
-# Produces two distributable artifacts:
-#   1. nodetoolbox-vX.Y.Z.zip  — slim zip (no node_modules) for users who prefer extraction
-#   2. nodetoolbox-vX.Y.Z.exe  — single-file Windows executable (no extraction required)
+# Produces one distributable artifact:
+#   1. nodetoolbox-vX.Y.Z-exe.zip — stable launchers plus versions\X.Y.Z\nodetoolbox.exe
 # Credentials are stored in AppData\Roaming\NodeToolbox\ and persist across upgrades.
 #
 # Usage:
@@ -84,26 +83,17 @@ $PackageData    = Get-Content $PackageJson -Raw | ConvertFrom-Json
 $AppVersion     = $PackageData.version
 $GitTag         = "v$AppVersion"
 
-$ZipFileName      = "nodetoolbox-v$AppVersion.zip"
-$ZipOutputPath    = Join-Path $DistDir $ZipFileName
-$ExeFileName      = "nodetoolbox-v$AppVersion.exe"
-$ExeOutputPath    = Join-Path $DistDir $ExeFileName
-# The exe is shipped inside its own dedicated zip to prevent browser security
-# warnings that block direct .exe downloads from GitHub Releases.
-$ExeZipFileName   = "nodetoolbox-v$AppVersion-exe.zip"
-$ExeZipOutputPath = Join-Path $DistDir $ExeZipFileName
+$PayloadExeFileName   = "nodetoolbox.exe"
+$PayloadExeOutputPath = Join-Path $DistDir $PayloadExeFileName
+# Keep the -exe.zip suffix because existing Admin Hub updaters download this
+# asset name. It is now the only user-facing artifact, so there is no choice to make.
+$ReleaseZipFileName   = "nodetoolbox-v$AppVersion-exe.zip"
+$ReleaseZipOutputPath = Join-Path $DistDir $ReleaseZipFileName
 
-# Files and directories included in the distributable zip.
-# node_modules is intentionally excluded — Launch Toolbox.bat auto-installs
-# them via "npm ci --omit=dev" on first run, keeping the zip tiny.
+# Stable launchers included at the top level of the distributable zip.
+# node_modules is intentionally excluded because end users run the bundled exe.
 $IncludedPaths = @(
-    (Join-Path $RepoRoot 'server.js'),
-    (Join-Path $RepoRoot 'package.json'),
-    (Join-Path $RepoRoot 'package-lock.json'),
     (Join-Path $RepoRoot 'README.md'),
-    (Join-Path $RepoRoot '.env.example'),
-    (Join-Path $RepoRoot 'src'),
-    (Join-Path $RepoRoot 'scripts'),
     $BatchLauncherPath,
     $SilentLauncherPath
 )
@@ -121,18 +111,17 @@ if ($DryRun) {
     }
     Write-Host "  2. mkdir dist\           - create output directory"
     Write-Host "  3. npm run build:client  - compile React SPA into client/dist/"
-    Write-Host "  4. Compress-Archive      - bundle slim zip into $ZipOutputPath"
-    Write-Host "  5. pkg                   - build self-contained exe at $ExeOutputPath (client/dist bundled inside)"
-    Write-Host "  5b. Compress-Archive     - wrap exe + VBS into $ExeZipOutputPath (browser-safe download)"
-    Write-Host "  6. gh release create     - publish GitHub Release $GitTag with zip and exe-zip"
+    Write-Host "  4. pkg                   - build self-contained payload exe at $PayloadExeOutputPath"
+    Write-Host "  5. Compress-Archive      - bundle one user-facing zip into $ReleaseZipOutputPath"
+    Write-Host "  6. gh release create     - publish GitHub Release $GitTag with the single zip asset"
     Write-Host ""
     Write-Host "  Version:    $AppVersion"
     Write-Host "  Tag:        $GitTag"
-    Write-Host "  Output:     $ZipOutputPath (dist\$ZipFileName)"
-    Write-Host "  Exe:        $ExeOutputPath (dist\$ExeFileName)"
-    Write-Host "  Exe zip:    $ExeZipOutputPath (dist\$ExeZipFileName)"
+    Write-Host "  Output:     $ReleaseZipOutputPath (dist\$ReleaseZipFileName)"
+    Write-Host "  Payload:    $PayloadExeOutputPath (dist\$PayloadExeFileName)"
     Write-Host "  Launcher:   $BatchLauncherPath  (portable -- uses %`~dp0)"
     Write-Host "  Silent:     $SilentLauncherPath  (headless -- hides console)"
+    Write-Host "  Layout:     current.txt + versions\$AppVersion\nodetoolbox.exe"
     Write-Host ""
     Write-Host "  Included paths:"
     foreach ($includedItem in $IncludedPaths) {
@@ -207,91 +196,50 @@ try {
 }
 Write-Host "       ✅ Embedded client generated (src/embeddedClient.js)"
 
-# Step 4: Build the slim zip — collect paths that actually exist
-Write-Host "  [4/6] Building zip: $ZipFileName..."
-
-# @() ensures these are always arrays even when Where-Object returns $null (strict mode safe)
-[array]$pathsToBundle = @($IncludedPaths | Where-Object { Test-Path $_ })
-[array]$missingPaths  = @($IncludedPaths | Where-Object { -not (Test-Path $_) })
-
-if ($missingPaths.Count -gt 0) {
-    Write-Warning "  ⚠ The following paths are missing and will not be included:"
-    foreach ($missingItem in $missingPaths) {
-        Write-Warning "    $missingItem"
-    }
-}
-
-# Build a temp staging folder to flatten the zip layout cleanly
-$StagingDir = Join-Path $DistDir 'staging'
-New-Item -ItemType Directory -Path $StagingDir | Out-Null
-
-foreach ($sourcePath in $pathsToBundle) {
-    $destinationPath = Join-Path $StagingDir (Split-Path $sourcePath -Leaf)
-    if (Test-Path $sourcePath -PathType Container) {
-        Copy-Item $sourcePath $destinationPath -Recurse -Force
-    } else {
-        Copy-Item $sourcePath $destinationPath -Force
-    }
-}
-
-# Copy the React build into client/dist/ preserving the directory hierarchy so
-# server.js finds it at path.join(__dirname, 'client', 'dist', 'index.html').
-# The staging loop above uses Split-Path -Leaf which would flatten client/dist
-# into a top-level dist/ — this dedicated step avoids that flattening.
-$clientDistSource  = Join-Path $RepoRoot 'client\dist'
-$clientDirInStaging = Join-Path $StagingDir 'client'
-New-Item -ItemType Directory -Path $clientDirInStaging -Force | Out-Null
-Copy-Item $clientDistSource (Join-Path $clientDirInStaging 'dist') -Recurse -Force
-
-Compress-Archive -Path (Join-Path $StagingDir '*') -DestinationPath $ZipOutputPath -Force
-
-# Clean up staging dir — only the final artifacts should remain in dist/
-Remove-Item $StagingDir -Recurse -Force
-
-$zipSizeKb = [math]::Round((Get-Item $ZipOutputPath).Length / 1KB)
-Write-Host "       ✅ $ZipOutputPath ($zipSizeKb KB)"
-
-# Step 5: Build the single-file Windows exe using @yao-pkg/pkg.
+# Step 4: Build the single-file Windows exe using @yao-pkg/pkg.
 # Bundles the Node.js runtime + all app code + public assets into one .exe.
 # End users can run NodeToolbox without any extraction or npm install step.
-Write-Host "  [5/6] Building exe: $ExeFileName..."
+Write-Host "  [4/6] Building payload exe: $PayloadExeFileName..."
 Push-Location $RepoRoot
 try {
     # Note: --silent is intentionally omitted so build errors are visible in
     # the release log. pkg output goes to stderr and is captured on failure.
-    npx pkg server.js --targets node20-win-x64 --output $ExeOutputPath
+    npx pkg server.js --targets node20-win-x64 --output $PayloadExeOutputPath
     if ($LASTEXITCODE -ne 0) { throw "pkg build failed with exit code $LASTEXITCODE" }
 } finally {
     Pop-Location
 }
-$exeSizeKb = [math]::Round((Get-Item $ExeOutputPath).Length / 1KB)
-Write-Host "       ✅ $ExeOutputPath ($exeSizeKb KB)"
+$exeSizeKb = [math]::Round((Get-Item $PayloadExeOutputPath).Length / 1KB)
+Write-Host "       ✅ $PayloadExeOutputPath ($exeSizeKb KB)"
 
-# Wrap the exe in its own dedicated zip so users can download it without
-# browser security warnings that block direct .exe file downloads.
-# Include the silent VBScript launcher and client/dist/ alongside the exe.
-#
-# client/dist/ serves as a belt-and-suspenders fallback: the React SPA is
-# bundled inside the exe via pkg.assets (primary path), but server.js also
-# checks path.dirname(process.execPath) in case the snapshot is inaccessible.
-# Shipping client/dist/ in the exe-zip ensures it is always available on disk.
-$ExeZipStagingDir = Join-Path $DistDir 'exe-staging'
-New-Item -ItemType Directory -Path $ExeZipStagingDir | Out-Null
-Copy-Item $ExeOutputPath $ExeZipStagingDir -Force
-if (Test-Path $SilentLauncherPath) {
-    Copy-Item $SilentLauncherPath $ExeZipStagingDir -Force
+# Step 5: Build the single user-facing zip. The top-level launchers never change
+# location; current.txt points them at versions\<version>\nodetoolbox.exe.
+Write-Host "  [5/6] Building one release zip: $ReleaseZipFileName..."
+
+$ReleaseStagingDir = Join-Path $DistDir 'release-staging'
+New-Item -ItemType Directory -Path $ReleaseStagingDir | Out-Null
+
+foreach ($sourcePath in @($IncludedPaths | Where-Object { Test-Path $_ })) {
+    Copy-Item $sourcePath (Join-Path $ReleaseStagingDir (Split-Path $sourcePath -Leaf)) -Force
 }
 
-# Copy client/dist → exe-staging/client/dist so it is available on real disk
-# next to the exe after extraction (fallback if snapshot serving fails).
-$clientDirInExeStaging = Join-Path $ExeZipStagingDir 'client'
-New-Item -ItemType Directory -Path $clientDirInExeStaging -Force | Out-Null
-Copy-Item (Join-Path $RepoRoot 'client\dist') (Join-Path $clientDirInExeStaging 'dist') -Recurse -Force
+Set-Content -Path (Join-Path $ReleaseStagingDir 'current.txt') -Value $AppVersion -Encoding ASCII
 
-Compress-Archive -Path (Join-Path $ExeZipStagingDir '*') -DestinationPath $ExeZipOutputPath -Force
-Remove-Item $ExeZipStagingDir -Recurse -Force
-$exeZipSizeKb = [math]::Round((Get-Item $ExeZipOutputPath).Length / 1KB)
-Write-Host "       ✅ $ExeZipOutputPath ($exeZipSizeKb KB)"
+$versionDirectory = Join-Path $ReleaseStagingDir "versions\$AppVersion"
+New-Item -ItemType Directory -Path $versionDirectory -Force | Out-Null
+Copy-Item $PayloadExeOutputPath (Join-Path $versionDirectory 'nodetoolbox.exe') -Force
+
+# Root compatibility files let currently-shipped flat-layout updaters consume
+# this single asset once. Future updates use versions\ + current.txt only.
+Copy-Item $PayloadExeOutputPath (Join-Path $ReleaseStagingDir "nodetoolbox-v$AppVersion.exe") -Force
+$legacyClientDirectory = Join-Path $ReleaseStagingDir 'client'
+New-Item -ItemType Directory -Path $legacyClientDirectory -Force | Out-Null
+Copy-Item (Join-Path $RepoRoot 'client\dist') (Join-Path $legacyClientDirectory 'dist') -Recurse -Force
+
+Compress-Archive -Path (Join-Path $ReleaseStagingDir '*') -DestinationPath $ReleaseZipOutputPath -Force
+Remove-Item $ReleaseStagingDir -Recurse -Force
+$releaseZipSizeKb = [math]::Round((Get-Item $ReleaseZipOutputPath).Length / 1KB)
+Write-Host "       ✅ $ReleaseZipOutputPath ($releaseZipSizeKb KB)"
 
 # Step 6: Commit version bump (if applicable), merge to main, tag, and publish.
 # The release tag must live on main so that all future git describe calls see it
@@ -303,7 +251,6 @@ try {
     $originalBranch = git branch --show-current 2>$null
 
     # Commit the version bump files if npm version changed them.
-    # toolbox.html is included because the TOOLBOX_VERSION literal was patched above.
     if ($BumpType -ne '') {
         git add package.json package-lock.json
         git commit -m "chore: bump version to $GitTag`n`nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
@@ -359,12 +306,9 @@ try {
     # that informational message; the try/catch handles any residual stderr output safely.
     try { git checkout --quiet $originalBranch } catch { <# stderr noise from git, not a real error #> }
 
-    # Create the GitHub Release and attach two artifacts:
-    #   1. Slim zip  — for users who extract and run via npm / bat launcher
-    #   2. Exe zip   — for users who want a single-file Windows executable
-    # $ExeZipOutputPath is used instead of the raw .exe so users aren't blocked
-    # by browser security warnings that flag unsigned .exe direct downloads.
-    gh release create $GitTag $ZipOutputPath $ExeZipOutputPath `
+    # Create the GitHub Release with one asset so first-time users have exactly
+    # one obvious download. The zip contains stable launchers plus the versioned exe.
+    gh release create $GitTag $ReleaseZipOutputPath `
         --title "NodeToolbox $GitTag" `
         --generate-notes `
         --latest
@@ -376,7 +320,6 @@ try {
 Write-Host "       ✅ GitHub Release $GitTag published"
 Write-Host ""
 Write-Host "  ✅ Release complete:"
-Write-Host "     ZIP:  $ZipOutputPath"
-Write-Host "     EXE:  $ExeZipOutputPath"
+Write-Host "     ZIP:  $ReleaseZipOutputPath"
 Write-Host "     URL:  https://github.com/mikejsmith1985/NodeToolbox/releases/tag/$GitTag"
 Write-Host ""

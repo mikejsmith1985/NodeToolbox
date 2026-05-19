@@ -38,6 +38,10 @@ interface StandupRosterState extends PersistedStandupRosterState {
   removeRosterMember: (memberId: string) => void;
 }
 
+interface RosterTeamFilterOptions {
+  includeTeamlessMembers?: boolean;
+}
+
 function canUseLocalStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
@@ -142,6 +146,10 @@ function createRosterMemberLookupKey(assigneeQueryValue: string): string {
   return normalizeAssigneeQueryValue(assigneeQueryValue);
 }
 
+function normalizeRosterTeamName(teamName: string | undefined): string {
+  return buildOptionalRosterField(teamName) ?? '';
+}
+
 function addRosterMemberToList(
   currentRosterMembers: StandupRosterMember[],
   memberDraft: StandupRosterMemberDraft,
@@ -204,8 +212,12 @@ function replaceRosterMembersInList(memberDrafts: StandupRosterMemberDraft[]): S
 /** Builds a Jira `assignee in (...)` clause from the current standup roster. */
 export function buildStandupRosterAssigneeClause(
   rosterMembers = useStandupRosterStore.getState().rosterMembers,
+  activeTeamName: string | null = null,
 ): string | null {
-  const assigneeQueryValues = rosterMembers
+  const scopedRosterMembers = activeTeamName === null
+    ? rosterMembers
+    : filterRosterMembersByActiveTeam(rosterMembers, activeTeamName);
+  const assigneeQueryValues = scopedRosterMembers
     .map((rosterMember) => normalizeWhitespace(rosterMember.assigneeQueryValue))
     .filter(Boolean);
   if (assigneeQueryValues.length === 0) {
@@ -216,6 +228,52 @@ export function buildStandupRosterAssigneeClause(
     (assigneeQueryValue) => `"${assigneeQueryValue.replace(/"/g, '\\"')}"`,
   );
   return `assignee in (${escapedQueryValues.join(', ')})`;
+}
+
+/** Returns the distinct imported team names in alphabetical order. */
+export function readAvailableRosterTeamNames(
+  rosterMembers = useStandupRosterStore.getState().rosterMembers,
+): string[] {
+  return [...new Set(
+    rosterMembers
+      .map((rosterMember) => normalizeRosterTeamName(rosterMember.teamName))
+      .filter(Boolean),
+  )].sort((firstTeamName, secondTeamName) => firstTeamName.localeCompare(secondTeamName));
+}
+
+/** Resolves the effective active team, defaulting to the first imported team when none is stored yet. */
+export function resolveActiveRosterTeamName(
+  storedActiveTeamName: string,
+  rosterMembers = useStandupRosterStore.getState().rosterMembers,
+): string {
+  const availableRosterTeamNames = readAvailableRosterTeamNames(rosterMembers);
+  const normalizedStoredActiveTeamName = normalizeRosterTeamName(storedActiveTeamName);
+  if (normalizedStoredActiveTeamName && availableRosterTeamNames.includes(normalizedStoredActiveTeamName)) {
+    return normalizedStoredActiveTeamName;
+  }
+
+  return availableRosterTeamNames[0] ?? '';
+}
+
+/** Filters the roster down to the currently active team when team metadata exists. */
+export function filterRosterMembersByActiveTeam(
+  rosterMembers = useStandupRosterStore.getState().rosterMembers,
+  activeTeamName = '',
+  options: RosterTeamFilterOptions = {},
+): StandupRosterMember[] {
+  const resolvedActiveTeamName = resolveActiveRosterTeamName(activeTeamName, rosterMembers);
+  if (!resolvedActiveTeamName) {
+    return rosterMembers;
+  }
+
+  const { includeTeamlessMembers = false } = options;
+  return rosterMembers.filter(
+    (rosterMember) => {
+      const normalizedRosterTeamName = normalizeRosterTeamName(rosterMember.teamName);
+      return normalizedRosterTeamName === resolvedActiveTeamName
+        || (includeTeamlessMembers && !normalizedRosterTeamName);
+    },
+  );
 }
 
 /** Zustand store for the Team Dashboard roster shared by standup and DSU workflows. */

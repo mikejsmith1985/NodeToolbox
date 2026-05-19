@@ -11,15 +11,15 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  background: #f8f9fa;
-  border-bottom: 1px solid #dee2e6;
+  background: var(--color-surface-1);
+  border-bottom: 1px solid var(--color-border);
   flex-wrap: wrap;
 }
 
 .loadBtn {
   padding: 0.375rem 0.875rem;
-  background: #0052cc;
-  color: #fff;
+  background: var(--color-accent);
+  color: var(--color-bg);
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -29,7 +29,7 @@
 }
 
 .loadBtn:disabled {
-  background: #aaa;
+  background: var(--color-surface-4);
   cursor: not-allowed;
 }
 
@@ -38,9 +38,11 @@
   min-width: 160px;
   max-width: 280px;
   padding: 0.375rem 0.625rem;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 0.875rem;
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
 }
 
 /* ── View mode switcher ── */
@@ -52,11 +54,11 @@
 
 .viewModeBtn {
   padding: 0.3rem 0.625rem;
-  background: #fff;
-  border: 1px solid #ced4da;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
   cursor: pointer;
   font-size: 0.8rem;
-  color: #495057;
+  color: var(--color-text-secondary);
 }
 
 .viewModeBtn:first-child {
@@ -68,9 +70,9 @@
 }
 
 .viewModeBtnActive {
-  background: #0052cc;
-  color: #fff;
-  border-color: #0052cc;
+  background: var(--color-accent);
+  color: var(--color-bg);
+  border-color: var(--color-accent);
 }
 
 /* ── Feature list ── */
@@ -79,11 +81,96 @@
   padding: 0.5rem 1rem;
 }
 
+.programEpicList {
+  padding: 0.75rem 1rem 1rem;
+}
+
+.programEpicCard {
+  margin-bottom: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--color-surface-1);
+  box-shadow: var(--shadow-surface);
+}
+
+.programEpicHeader {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border: none;
+  border-left: 5px solid var(--color-accent);
+  background: var(--color-surface-2);
+  cursor: pointer;
+  text-align: left;
+}
+
+.programEpicIcon {
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+
+.programEpicSummary {
+  flex: 1;
+  min-width: 0;
+}
+
+.programEpicTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.programEpicMeta {
+  margin-top: 0.125rem;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.programEpicProgress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.programEpicProgressBar {
+  width: 88px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-surface-3);
+}
+
+.programEpicProgressFill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.programEpicPercent {
+  min-width: 2.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.programEpicChevron {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.programEpicBody {
+  padding: 0.75rem;
+  background: var(--color-bg-subtle);
+}
+
 .blueprintFeatureBlock {
-  border: 1px solid #dee2e6;
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   margin-bottom: 0.5rem;
-  background: #fff;
+  background: var(--color-surface-1);
 }
 
 .blueprintFeatureRow {
@@ -91,7 +178,7 @@
   align-items: center;
   gap: 0.625rem;
   padding: 0.625rem 0.75rem;
-  background: #f8f9fa;
+  background: var(--color-surface-2);
   border-radius: 6px 6px 0 0;
   flex-wrap: wrap;
 }
@@ -111,8 +198,8 @@
 .healthRingLabel {
   font-size: 0.65rem;
   font-weight: bold;
-  color: #333;
-  background: #fff;
+  color: var(--color-text-primary);
+  background: var(--color-surface-1);
   width: 30px;
   height: 30px;
   border-radius: 50%;
@@ -128,7 +215,7 @@
 .featureKey {
   font-family: monospace;
   font-size: 0.8rem;
-  color: #0052cc;
+  color: var(--color-accent);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -136,7 +223,7 @@
 .featureSummary {
   flex: 1;
   font-size: 0.875rem;
-  color: #212529;
+  color: var(--color-text-primary);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -145,13 +232,13 @@
 
 .featureStatus {
   font-size: 0.75rem;
-  color: #6c757d;
+  color: var(--color-text-secondary);
   white-space: nowrap;
 }
 
 .storyCount {
   font-size: 0.75rem;
-  color: #6c757d;
+  color: var(--color-text-secondary);
   white-space: nowrap;
 }
 
@@ -162,7 +249,7 @@
   border: none;
   cursor: pointer;
   font-size: 0.7rem;
-  color: #6c757d;
+  color: var(--color-text-secondary);
   padding: 0.2rem;
   flex-shrink: 0;
 }
@@ -170,8 +257,8 @@
 /* ── Badges ── */
 
 .externalBadge {
-  background: #6c757d;
-  color: #fff;
+  background: var(--color-tone-neutral-bg);
+  color: var(--color-tone-neutral-fg);
   font-size: 0.7rem;
   padding: 0.1rem 0.375rem;
   border-radius: 10px;
@@ -179,8 +266,8 @@
 }
 
 .offTrainBadge {
-  background: #fd7e14;
-  color: #fff;
+  background: var(--color-tone-orange-bg);
+  color: var(--color-tone-orange-fg);
   font-size: 0.65rem;
   padding: 0.1rem 0.3rem;
   border-radius: 10px;
@@ -193,26 +280,44 @@
   list-style: none;
   margin: 0;
   padding: 0.25rem 0.5rem 0.5rem 2.5rem;
-  border-top: 1px solid #dee2e6;
+  border-top: 1px solid var(--color-border);
 }
 
 .blueprintStoryRow {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0.25rem;
-  border-bottom: 1px solid #f0f0f0;
-  flex-wrap: wrap;
+  display: block;
+  padding: 0.35rem 0.25rem;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .blueprintStoryRow:last-child {
   border-bottom: none;
 }
 
+.blueprintStoryRowDone {
+  opacity: 0.7;
+}
+
+.blueprintStoryMainRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .storyKey {
   font-family: monospace;
   font-size: 0.75rem;
-  color: #0052cc;
+  color: var(--color-accent);
+  white-space: nowrap;
+}
+
+.storyTypeBadge {
+  padding: 0.12rem 0.38rem;
+  border-radius: 999px;
+  background: var(--color-tone-neutral-bg);
+  color: var(--color-tone-neutral-fg);
+  font-size: 0.65rem;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -227,45 +332,142 @@
 
 .storyStatus {
   font-size: 0.7rem;
-  color: #6c757d;
+  color: var(--color-tone-neutral-fg);
+  background: var(--color-tone-neutral-bg);
+  border-radius: 999px;
+  padding: 0.1rem 0.4rem;
+  white-space: nowrap;
+}
+
+.storyTeamName {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
   white-space: nowrap;
 }
 
 .storyAssignee {
   font-size: 0.7rem;
-  color: #6c757d;
+  color: var(--color-text-secondary);
   white-space: nowrap;
+}
+
+.storyPointsBadge {
+  padding: 0.12rem 0.38rem;
+  border-radius: 999px;
+  background: var(--color-tone-info-bg);
+  color: var(--color-tone-info-fg);
+  font-size: 0.65rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.offTrainReasonRow {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.35rem;
+  padding-left: 1.7rem;
+}
+
+.offTrainReasonBadge {
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: var(--color-tone-orange-bg);
+  color: var(--color-tone-orange-fg);
+  font-size: 0.65rem;
+  font-weight: 500;
+}
+
+.blueprintSubtaskList {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0 0 0 1.7rem;
+}
+
+.blueprintSubtaskRow {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.2rem 0;
+  flex-wrap: wrap;
+}
+
+.subtaskIcon {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.teamBucketList {
+  padding: 0.75rem 1rem 1rem;
+}
+
+.teamBucketCard {
+  margin-bottom: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-1);
+  overflow: hidden;
+}
+
+.teamBucketTitle {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  background: var(--color-surface-2);
+  border-bottom: 1px solid var(--color-border);
 }
 
 /* ── State messages ── */
 
 .emptyState {
   padding: 2rem 1rem;
-  color: #6c757d;
+  color: var(--color-text-secondary);
   text-align: center;
   font-style: italic;
 }
 
 .loadingText {
   padding: 1rem;
-  color: #6c757d;
+  color: var(--color-text-secondary);
   text-align: center;
 }
 
 .errorText {
   padding: 0.5rem 1rem;
-  color: #dc3545;
-  background: #fff5f5;
-  border: 1px solid #f8d7da;
+  color: var(--color-tone-danger-fg);
+  background: var(--color-tone-danger-bg);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   margin: 0.5rem 1rem;
 }
 
 .warningText {
   padding: 1rem;
-  color: #856404;
-  background: #fff3cd;
-  border: 1px solid #ffecb5;
+  color: var(--color-tone-warning-fg);
+  background: var(--color-tone-warning-bg);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   margin: 1rem;
+}
+
+.statusToneSuccess {
+  background: var(--color-tone-success-bg);
+  color: var(--color-tone-success-fg);
+}
+
+.statusToneInfo {
+  background: var(--color-tone-info-bg);
+  color: var(--color-tone-info-fg);
+}
+
+.statusToneDanger {
+  background: var(--color-tone-danger-bg);
+  color: var(--color-tone-danger-fg);
+}
+
+.statusToneNeutral {
+  background: var(--color-tone-neutral-bg);
+  color: var(--color-tone-neutral-fg);
 }

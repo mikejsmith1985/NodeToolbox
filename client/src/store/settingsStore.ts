@@ -14,7 +14,7 @@ const EMPTY_STRING = '';
 const EMPTY_STRING_LIST: string[] = [];
 const MAX_RECENT_VIEW_COUNT = 5;
 
-const THEME_STORAGE_KEY = 'tbx-theme';
+export const THEME_STORAGE_KEY = 'tbx-theme';
 const CARD_ORDER_STORAGE_KEY = 'tbxCardOrder';
 const CHANGE_REQUEST_GENERATOR_JIRA_URL_STORAGE_KEY = 'tbxCRGenJiraUrl';
 const CHANGE_REQUEST_GENERATOR_SNOW_URL_STORAGE_KEY = 'tbxCRGenSnowUrl';
@@ -29,6 +29,7 @@ const SPRINT_DASHBOARD_SCOPE_MODE_STORAGE_KEY = 'tbxSprintDashboardScopeMode';
 const SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY = 'tbxSprintDashboardSelectedSprintId';
 const SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY = 'tbxSprintDashboardSelectedFixVersion';
 const SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY = 'tbxSprintDashboardSelectedPiValue';
+const SPRINT_DASHBOARD_ACTIVE_TEAM_STORAGE_KEY = 'tbxSprintDashboardActiveTeam';
 const MY_ISSUES_JQL_STORAGE_KEY = 'tbxMIJql';
 const MY_ISSUES_BOARD_ID_STORAGE_KEY = 'tbxMIBoardId';
 const MY_ISSUES_JQL_HISTORY_STORAGE_KEY = 'tbxMIJqlHistory';
@@ -52,6 +53,7 @@ interface SettingsState {
   sprintDashboardSelectedSprintId: string;
   sprintDashboardSelectedFixVersion: string;
   sprintDashboardSelectedPiValue: string;
+  sprintDashboardActiveTeam: string;
   myIssuesJql: string;
   myIssuesBoardId: string;
   myIssuesJqlHistory: string[];
@@ -79,6 +81,7 @@ interface SettingsState {
   setSprintDashboardSelectedSprintId: (sprintId: string) => void;
   setSprintDashboardSelectedFixVersion: (fixVersionName: string) => void;
   setSprintDashboardSelectedPiValue: (piValue: string) => void;
+  setSprintDashboardActiveTeam: (teamName: string) => void;
   setMyIssuesJql: (jql: string) => void;
   setMyIssuesBoardId: (boardId: string) => void;
   setMyIssuesJqlHistory: (jqlHistory: string[]) => void;
@@ -128,7 +131,8 @@ function readStoredStringArray(storageKey: string): string[] {
   }
 }
 
-function readStoredTheme(): Theme {
+/** Resolves the persisted theme preference and falls back to dark when storage is unavailable or invalid. */
+export function resolveStoredTheme(): Theme {
   const storedTheme = readStoredString(THEME_STORAGE_KEY, DARK_THEME);
   return storedTheme === LIGHT_THEME ? LIGHT_THEME : DARK_THEME;
 }
@@ -199,7 +203,7 @@ function writeStoredStringArray(storageKey: string, value: string[]): void {
 
 /** Zustand store for React SPA settings backed by legacy localStorage keys. */
 export const useSettingsStore = create<SettingsState>((setState) => ({
-  theme: readStoredTheme(),
+  theme: resolveStoredTheme(),
   cardOrder: readStoredStringArray(CARD_ORDER_STORAGE_KEY),
   changeRequestGeneratorJiraUrl: readStoredString(
     CHANGE_REQUEST_GENERATOR_JIRA_URL_STORAGE_KEY,
@@ -235,6 +239,7 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
     SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY,
     EMPTY_STRING,
   ),
+  sprintDashboardActiveTeam: readStoredString(SPRINT_DASHBOARD_ACTIVE_TEAM_STORAGE_KEY, EMPTY_STRING),
   myIssuesJql: readStoredString(MY_ISSUES_JQL_STORAGE_KEY, EMPTY_STRING),
   myIssuesBoardId: readStoredString(MY_ISSUES_BOARD_ID_STORAGE_KEY, EMPTY_STRING),
   myIssuesJqlHistory: readStoredStringArray(MY_ISSUES_JQL_HISTORY_STORAGE_KEY),
@@ -304,6 +309,10 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
   setSprintDashboardSelectedPiValue: (piValue) => {
     writeStoredString(SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY, piValue);
     setState({ sprintDashboardSelectedPiValue: piValue });
+  },
+  setSprintDashboardActiveTeam: (teamName) => {
+    writeStoredString(SPRINT_DASHBOARD_ACTIVE_TEAM_STORAGE_KEY, teamName);
+    setState({ sprintDashboardActiveTeam: teamName });
   },
   setMyIssuesJql: (jql) => {
     writeStoredString(MY_ISSUES_JQL_STORAGE_KEY, jql);
