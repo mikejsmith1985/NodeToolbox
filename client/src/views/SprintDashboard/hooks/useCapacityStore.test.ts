@@ -3,8 +3,8 @@
 // Tests cover initial state hydration, each mutation action, and localStorage persistence.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CapacityRow } from '../capacityModel.ts';
 import { useCapacityStore } from './useCapacityStore.ts';
-import type { CapacityRow } from './useCapacityStore.ts';
 
 // ── Helpers ──
 

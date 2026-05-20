@@ -290,7 +290,10 @@ function mapJiraIssueToSprintIssue(
 
 /** JQL for active-sprint issues (used by Flow, Impact, Individual, and Sprint Health). */
 function buildSprintDataJql(projectKey: string): string {
-  return `project="${projectKey}" AND sprint in openSprints() AND issuetype != Epic ORDER BY status ASC`
+  // Some Jira projects do not expose an "Epic" issuetype name, so excluding it by name
+  // makes the entire report fail instead of returning sprint data. A broader sprint query
+  // is safer here because the downstream report logic can tolerate mixed issue types.
+  return `project="${projectKey}" AND sprint in openSprints() ORDER BY status ASC`
 }
 
 /** JQL for resolved issues in closed sprints (used by Throughput). */

@@ -61,4 +61,11 @@ describe('Server integration smoke tests', () => {
       expect(response.headers['content-type']).toMatch(/text\/html/);
     }
   });
+
+  it('redirects demo-mode launches to the setup wizard', async () => {
+    const response = await request(app).get('/?demo=1');
+
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe('/setup?demo=1');
+  });
 });

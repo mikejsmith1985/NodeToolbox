@@ -66,7 +66,13 @@ describe('useArtData', () => {
   it('loads stored teams from localStorage on initial render', async () => {
     localStorage.setItem(
       'nodetoolbox-art-teams',
-      JSON.stringify([{ id: 'team-1', name: 'Stored Team', boardId: '42', projectKey: 'ALPHA' }]),
+      JSON.stringify([{
+        id: 'team-1',
+        name: 'Stored Team',
+        boardId: '42',
+        projectKey: 'ALPHA',
+        piReviewPageUrl: 'https://example.atlassian.net/wiki/pages/12345/Stored-Team',
+      }]),
     );
     mockJiraGet.mockResolvedValue({ issues: [] });
 
@@ -79,6 +85,9 @@ describe('useArtData', () => {
     expect(result.current.state.teams).toHaveLength(1);
     expect(result.current.state.teams[0].name).toBe('Stored Team');
     expect(result.current.state.teams[0].projectKey).toBe('ALPHA');
+    expect(result.current.state.teams[0].piReviewPageUrl).toBe(
+      'https://example.atlassian.net/wiki/pages/12345/Stored-Team',
+    );
   });
 
   it('adds a team when addTeam is called', () => {
@@ -127,6 +136,56 @@ describe('useArtData', () => {
     });
 
     expect(localStorage.getItem('nodetoolbox-art-teams')).toContain('Alpha Team');
+  });
+
+  it('updates and persists a team PI Review page URL', () => {
+    const { result } = renderHook(() => useArtData());
+
+    act(() => {
+      result.current.actions.addTeam('Alpha Team', '42', 'ALPHA');
+    });
+
+    const teamId = result.current.state.teams[0].id;
+    act(() => {
+      result.current.actions.updateTeamPiReviewPageUrl(
+        teamId,
+        'https://example.atlassian.net/wiki/pages/12345/Alpha-Team',
+      );
+    });
+
+    expect(result.current.state.teams[0].piReviewPageUrl).toBe(
+      'https://example.atlassian.net/wiki/pages/12345/Alpha-Team',
+    );
+    expect(localStorage.getItem('nodetoolbox-art-teams')).toContain('https://example.atlassian.net/wiki/pages/12345/Alpha-Team');
+  });
+
+  it('replaces the local ART roster with imported shared teams', () => {
+    const { result } = renderHook(() => useArtData());
+
+    act(() => {
+      result.current.actions.addTeam('Old Team', '11');
+    });
+
+    act(() => {
+      result.current.actions.replaceTeams([
+        {
+          id: 'shared-team-1',
+          name: 'Shared Alpha',
+          boardId: '42',
+          boardName: 'Transformers Board',
+          projectKey: 'ALPHA',
+          sosIssueKey: 'ALPHA-1',
+          piReviewPageUrl: 'https://example.atlassian.net/wiki/pages/12345/Shared-Alpha',
+        },
+      ]);
+    });
+
+    expect(result.current.state.teams).toHaveLength(1);
+    expect(result.current.state.teams[0].id).toBe('shared-team-1');
+    expect(result.current.state.teams[0].name).toBe('Shared Alpha');
+    expect(result.current.state.teams[0].projectKey).toBe('ALPHA');
+    expect(localStorage.getItem('nodetoolbox-art-teams')).toContain('Shared Alpha');
+    expect(localStorage.getItem('nodetoolbox-art-teams')).not.toContain('Old Team');
   });
 
   it('loads sprint issues for a team when loadTeam resolves', async () => {
@@ -543,6 +602,38 @@ describe('useArtData', () => {
     expect(result.current.state.teams[0].activeSprintName).toBe('Sprint 7');
   });
 
+  it('stores activeSprintName for Scrum teams even when a PI is selected', async () => {
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      if (requestPath === '/rest/agile/1.0/board/42') {
+        return Promise.resolve({ id: 42, name: 'Alpha Board', type: 'scrum' });
+      }
+
+      if (requestPath.startsWith('/rest/api/2/search?')) {
+        return Promise.resolve({ issues: [MOCK_ISSUE] });
+      }
+
+      if (requestPath === '/rest/agile/1.0/board/42/sprint?state=active') {
+        return Promise.resolve({ values: [{ id: 7, name: 'Sprint 7', state: 'active' }] });
+      }
+
+      return Promise.reject(new Error(`Unexpected Jira request: ${requestPath}`));
+    });
+
+    const { result } = renderHook(() => useArtData());
+    act(() => {
+      result.current.actions.addTeam('Alpha Team', '42', 'ALPHA');
+      result.current.actions.setSelectedPiName('PI 26.3');
+    });
+
+    const teamId = result.current.state.teams[0].id;
+
+    await act(async () => {
+      await result.current.actions.loadTeam(teamId);
+    });
+
+    expect(result.current.state.teams[0].activeSprintName).toBe('Sprint 7');
+  });
+
   it('does not store activeSprintName for Kanban teams', async () => {
     mockJiraGet
       .mockResolvedValueOnce({ id: 467, name: 'SIS Board', type: 'kanban' })
@@ -554,6 +645,39 @@ describe('useArtData', () => {
     await act(async () => { await result.current.actions.loadTeam(teamId); });
 
     expect(result.current.state.teams[0].activeSprintName).toBeUndefined();
+  });
+
+  it('does not request or store activeSprintName for Kanban teams when a PI is selected', async () => {
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      if (requestPath === '/rest/agile/1.0/board/467') {
+        return Promise.resolve({ id: 467, name: 'SIS Board', type: 'kanban' });
+      }
+
+      if (requestPath.startsWith('/rest/api/2/search?')) {
+        return Promise.resolve({ issues: [MOCK_ISSUE] });
+      }
+
+      return Promise.reject(new Error(`Unexpected Jira request: ${requestPath}`));
+    });
+
+    const { result } = renderHook(() => useArtData());
+    act(() => {
+      result.current.actions.addTeam('SIS', '467', 'SIS');
+      result.current.actions.setSelectedPiName('PI 26.3');
+    });
+
+    const teamId = result.current.state.teams[0].id;
+
+    await act(async () => {
+      await result.current.actions.loadTeam(teamId);
+    });
+
+    expect(result.current.state.teams[0].activeSprintName).toBeUndefined();
+    expect(
+      mockJiraGet.mock.calls.some(([requestPath]) =>
+        String(requestPath).includes('/rest/agile/1.0/board/467/sprint?state=active'),
+      ),
+    ).toBe(false);
   });
 
   // ── Shared foundation: expanded SPRINT_ISSUE_FIELDS ──

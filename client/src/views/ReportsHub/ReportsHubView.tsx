@@ -5,7 +5,7 @@
 // loaded via useReportsHubState. Each tab also includes an "About this report" explainer
 // card, a per-tab copy-to-clipboard button, and a "Last generated" relative timestamp.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Cell, Pie, PieChart, Tooltip } from 'recharts'
 
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx'
@@ -1232,8 +1232,20 @@ export default function ReportsHubView() {
   const { state, actions } = useReportsHubState()
   const { isTabExplainerCollapsed, toggleTabExplainer } = useReportExplainer()
   const { markGenerated, getTabTimestamp } = useLastGenerated()
+  const hasTriggeredInitialReportLoadRef = useRef(false)
 
   const hasNoArtTeams = state.artTeams.length === 0
+
+  // Load the report suite automatically the first time Reports Hub opens so the
+  // dashboard is useful immediately, while still keeping Refresh for manual reloads.
+  useEffect(() => {
+    if (hasNoArtTeams || hasTriggeredInitialReportLoadRef.current) {
+      return
+    }
+
+    hasTriggeredInitialReportLoadRef.current = true
+    void actions.loadAllReports()
+  }, [actions, hasNoArtTeams])
 
   // Record the last-generated timestamp whenever data is refreshed
   useEffect(() => {

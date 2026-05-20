@@ -1,0 +1,293 @@
+/* PiReviewTab.module.css — Styles for the multi-team PI Review workspace and fist-of-five confidence tracker. */
+
+.piReviewTab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pagePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface-1);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.hiddenFileInput {
+  display: none;
+}
+
+.pageSummaryCard {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-2);
+}
+
+.summaryLabel {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.summaryValue {
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+.statusRow,
+.sectionHeader,
+.confidenceCardHeader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dirtyBadge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--color-warning-soft, rgba(245, 158, 11, 0.16));
+  color: var(--color-warning);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tableShell {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-1);
+}
+
+.dataTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.dataTable th,
+.dataTable td {
+  padding: 10px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+  text-align: left;
+}
+
+.dataTable th {
+  background: var(--color-surface-2);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-secondary);
+}
+
+.cellInput,
+.cellTextarea {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-1);
+  color: var(--color-text);
+  font: inherit;
+  padding: 8px 10px;
+}
+
+.cellTextarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.checkboxInput {
+  width: 20px;
+  height: 20px;
+}
+
+.shortCell {
+  min-width: 110px;
+}
+
+.featureCell {
+  min-width: 220px;
+}
+
+.longCell {
+  min-width: 180px;
+}
+
+.rowActionCell {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.removeButton {
+  border: 1px solid var(--color-danger);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-danger);
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.removeButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.recoveryCard,
+.confirmCard {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--color-warning, #f59e0b);
+  border-radius: 12px;
+  background: var(--color-warning-soft, rgba(245, 158, 11, 0.12));
+}
+
+.confirmCard {
+  border-color: var(--color-danger);
+  background: var(--color-danger-soft, rgba(239, 68, 68, 0.12));
+}
+
+.confirmActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.tableTools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-2);
+}
+
+.tableTools legend {
+  padding: 0 6px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.columnToggleButton {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-1);
+  color: var(--color-text);
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.columnToggleButtonActive {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft, rgba(59, 130, 246, 0.16));
+  color: var(--color-primary);
+}
+
+.confidenceSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.confidenceTitle {
+  margin: 0;
+}
+
+.confidenceList {
+  display: grid;
+  gap: 12px;
+}
+
+.confidenceCard {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-2);
+}
+
+.confidenceFieldLabel {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.fistSelector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.fistOption {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  min-width: 72px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-1);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.fistOptionSelected {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.fistIcon {
+  width: 42px;
+  height: 42px;
+}
+
+.palmShape,
+.thumbShape {
+  fill: var(--color-surface-3, #d6dbe6);
+  stroke: var(--color-border-strong, var(--color-border));
+  stroke-width: 2;
+}
+
+.fingerRaised {
+  fill: var(--color-primary);
+  stroke: var(--color-primary);
+  stroke-width: 1;
+}
+
+.fingerFolded {
+  fill: var(--color-surface-3, #b9c0cf);
+  stroke: var(--color-border-strong, var(--color-border));
+  stroke-width: 1;
+}
+
+.fistOptionLabel {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.errorText {
+  color: var(--color-danger);
+}

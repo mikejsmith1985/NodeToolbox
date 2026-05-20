@@ -11,6 +11,7 @@
 import { useCallback, useMemo, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
+import { useConnectionStore } from '../../../store/connectionStore.ts';
 import { useSettingsStore } from '../../../store/settingsStore.ts';
 import type { JiraBoard, JiraIssue, JiraSprint, JiraVersion } from '../../../types/jira.ts';
 
@@ -54,20 +55,6 @@ export type DashboardScopeMode =
 
 const DEFAULT_DASHBOARD_TAB: DashboardTab = 'overview';
 const LEGACY_ROSTER_TAB = 'roster';
-const DASHBOARD_TABS: DashboardTab[] = [
-  'overview',
-  'assignee',
-  'blockers',
-  'defects',
-  'standup',
-  'settings',
-  'metrics',
-  'pipeline',
-  'planning',
-  'releases',
-  'pointing',
-  'capacity',
-];
 
 export interface SprintDataState {
   projectKey: string;
@@ -145,10 +132,6 @@ interface JiraSprintIssuesResponse {
 
 // ── Shared settings helpers ──
 
-function isDashboardTab(value: string): value is DashboardTab {
-  return DASHBOARD_TABS.includes(value as DashboardTab);
-}
-
 function isDashboardScopeMode(value: string): value is DashboardScopeMode {
   return [
     DASHBOARD_SCOPE_MODE_SPRINT,
@@ -183,13 +166,19 @@ function readPersistedProjectKey(): string {
   return settingsState.sprintDashboardProjectKey || settingsState.dsuProjectKey;
 }
 
-/** Restores the last active tab and falls back to Overview if the stored value is invalid. */
+/** Chooses the initial Team Dashboard tab based on setup readiness. */
 function readPersistedActiveTab(): DashboardTab {
   const storedActiveTab = useSettingsStore.getState().sprintDashboardActiveTab;
   if (storedActiveTab === LEGACY_ROSTER_TAB) {
     return 'settings';
   }
-  return isDashboardTab(storedActiveTab) ? storedActiveTab : DEFAULT_DASHBOARD_TAB;
+
+  const hasConfiguredProjectKey = Boolean(readPersistedProjectKey().trim());
+  const hasConfiguredBoardId = readPersistedBoardId() !== null;
+  const isJiraReady = useConnectionStore.getState().isJiraReady;
+  const isInitialDashboardSetupComplete = hasConfiguredProjectKey && hasConfiguredBoardId && isJiraReady;
+
+  return isInitialDashboardSetupComplete ? DEFAULT_DASHBOARD_TAB : 'settings';
 }
 
 /** Restores the last Team Dashboard scope mode and falls back to sprint when invalid. */

@@ -84,8 +84,9 @@ describe('BlueprintTab', () => {
   });
 
   it('renders the Load Blueprint button', () => {
+    mockJiraGet.mockReturnValue(new Promise(() => {}));
     render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    expect(screen.getByRole('button', { name: /load blueprint/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /load blueprint|loading|reload blueprint/i })).toBeInTheDocument();
   });
 
   it('shows a warning when no PI is selected', () => {
@@ -99,6 +100,7 @@ describe('BlueprintTab', () => {
   });
 
   it('renders four Blueprint view mode buttons', () => {
+    mockJiraGet.mockReturnValue(new Promise(() => {}));
     render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
     expect(screen.getByRole('button', { name: /full hierarchy/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /by team/i })).toBeInTheDocument();
@@ -109,15 +111,13 @@ describe('BlueprintTab', () => {
   it('shows a loading indicator while the hierarchy is fetching', () => {
     mockJiraGet.mockReturnValue(new Promise(() => {}));
     render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
     expect(screen.getByText(/loading blueprint hierarchy/i)).toBeInTheDocument();
   });
 
-  it('renders Program Epic, Feature, and Story rows after the hierarchy loads', async () => {
+  it('auto-loads Program Epic, Feature, and Story rows after mount', async () => {
     queueSuccessfulBlueprintHierarchy();
 
     render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
 
     await waitFor(() => {
       expect(screen.getByText('PE-1 — Member Onboarding')).toBeInTheDocument();
@@ -130,7 +130,6 @@ describe('BlueprintTab', () => {
     queueSuccessfulBlueprintHierarchy();
 
     render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
     await waitFor(() => screen.getByText('Build login form'));
 
     fireEvent.click(screen.getByRole('button', { name: /collapse feat-10/i }));
@@ -141,7 +140,6 @@ describe('BlueprintTab', () => {
     queueSuccessfulBlueprintHierarchy();
 
     render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
     await waitFor(() => screen.getByText('User Authentication Feature'));
 
     fireEvent.change(screen.getByPlaceholderText(/search program epics, features, or stories/i), {
@@ -156,7 +154,6 @@ describe('BlueprintTab', () => {
     queueSuccessfulBlueprintHierarchy();
 
     render(<BlueprintTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
 
     await waitFor(() => screen.getByText('User Authentication Feature'));
 
@@ -173,7 +170,6 @@ describe('BlueprintTab', () => {
     queueSuccessfulBlueprintHierarchy();
 
     render(<BlueprintTab teams={teamsWithoutProjectKey} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load blueprint/i }));
 
     await waitFor(() => screen.getByText('User Authentication Feature'));
 

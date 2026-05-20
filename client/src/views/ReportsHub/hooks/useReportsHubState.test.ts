@@ -164,6 +164,24 @@ describe('Sprint data (shared by Flow/Impact/Individual/SprintHealth)', () => {
     });
   });
 
+  it('loadSprintData uses an open-sprint JQL without the Jira-unsafe Epic exclusion', async () => {
+    localStorage.setItem(
+      'tbxARTSettings',
+      JSON.stringify({ teams: [{ name: 'Team A', projectKey: 'TBX' }] }),
+    );
+    mockJiraGet.mockResolvedValue({ issues: [] });
+    const { result } = renderHook(() => useReportsHubState());
+
+    await act(async () => {
+      await result.current.actions.loadSprintData();
+    });
+
+    expect(mockJiraGet).toHaveBeenCalledTimes(1);
+    const requestPath = mockJiraGet.mock.calls[0][0] as string;
+    expect(decodeURIComponent(requestPath)).toContain('project="TBX" AND sprint in openSprints() ORDER BY status ASC');
+    expect(decodeURIComponent(requestPath)).not.toContain('issuetype != Epic');
+  });
+
   it('loadSprintData sets sprintDataError on failure', async () => {
     localStorage.setItem(
       'tbxARTSettings',

@@ -1,16 +1,23 @@
 // ArtView.tsx — Tabbed ART (Agile Release Train) view for multi-team PI planning and health dashboards.
 
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import { jiraGet, jiraPost } from '../../services/jiraApi.ts';
+import {
+  createConfluenceDatabase,
+  loadSharedArtWorkspace,
+  saveSharedArtWorkspace,
+} from '../../services/confluenceApi.ts';
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import { useToast } from '../../components/Toast/ToastProvider.tsx';
 import JiraBoardPicker from '../../components/JiraBoardPicker/index.tsx';
 import JiraFieldPicker from '../../components/JiraFieldPicker/index.tsx';
 import JiraProjectPicker from '../../components/JiraProjectPicker/index.tsx';
+import ArtCapacityTab from './ArtCapacityTab.tsx';
 import BlueprintTab from './BlueprintTab.tsx';
 import DependenciesTab from './DependenciesTab.tsx';
+import PiReviewTab from './PiReviewTab.tsx';
 import type { ArtTab, ArtTeam, ArtBoardPrepIssue, PiProgressStats } from './hooks/useArtData.ts';
 import { useArtData } from './hooks/useArtData.ts';
 import type { ImpedimentReason, ImpedimentStaleTier } from './hooks/artHelpers.ts';
@@ -32,6 +39,8 @@ const ART_TAB_DEFINITIONS: { key: ArtTab; label: string }[] = [
   { key: 'impediments', label: 'Impediments' },
   { key: 'predictability', label: 'Predictability' },
   { key: 'releases', label: 'Releases' },
+  { key: 'pireview', label: 'PI Review' },
+  { key: 'capacity', label: 'Capacity' },
   { key: 'blueprint', label: 'Blueprint' },
   { key: 'dependencies', label: 'Dependencies' },
   { key: 'boardprep', label: 'Board Prep' },
@@ -42,10 +51,12 @@ const ART_TAB_DEFINITIONS: { key: ArtTab; label: string }[] = [
 
 // ── Main ArtView component ──
 
-/** Main ART View with 10 tabs for tracking multi-team PI health across the Agile Release Train. */
+/** Main ART View with 12 tabs for tracking multi-team PI health across the Agile Release Train. */
 export default function ArtView() {
   const { state, actions } = useArtData();
   const [teamProjectKeyFilter, setTeamProjectKeyFilter] = useState('');
+  const lastOverviewAutoLoadKeyRef = useRef('');
+  const { loadAllTeams } = actions;
 
   const filteredTeams = teamProjectKeyFilter
     ? state.teams.filter((team) =>
@@ -54,11 +65,25 @@ export default function ArtView() {
     : state.teams;
 
   function handleIssueUpdated() {
-    void actions.loadAllTeams();
+    void loadAllTeams();
   }
 
+  useEffect(() => {
+    if (state.isLoadingAllTeams || state.teams.length === 0) {
+      return;
+    }
+
+    const overviewAutoLoadKey = `${state.selectedPiName}|${state.teams.map((team) => `${team.id}:${team.boardId}`).join(',')}`;
+    if (lastOverviewAutoLoadKeyRef.current === overviewAutoLoadKey) {
+      return;
+    }
+
+    lastOverviewAutoLoadKeyRef.current = overviewAutoLoadKey;
+    void loadAllTeams();
+  }, [loadAllTeams, state.isLoadingAllTeams, state.selectedPiName, state.teams]);
+
   return (
-      <div className={styles.artView}>
+    <div className={styles.artView}>
       <PiProgressHeader
         availablePiNames={state.availablePiNames}
         isLoadingPiOptions={state.isLoadingPiOptions}
@@ -83,7 +108,7 @@ export default function ArtView() {
             teamProjectKeyFilter={teamProjectKeyFilter}
             teams={filteredTeams}
             isLoadingAllTeams={state.isLoadingAllTeams}
-            onLoadAllTeams={actions.loadAllTeams}
+            onRefreshAllTeams={loadAllTeams}
             onLoadTeam={actions.loadTeam}
             onTeamProjectKeyFilterChange={setTeamProjectKeyFilter}
           />
@@ -101,6 +126,12 @@ export default function ArtView() {
         )}
         {state.activeTab === 'releases' && (
           <ReleasesPanel teams={state.teams} />
+        )}
+        {state.activeTab === 'pireview' && (
+          <PiReviewTab selectedPiName={state.selectedPiName} teams={state.teams} />
+        )}
+        {state.activeTab === 'capacity' && (
+          <ArtCapacityTab teams={state.teams} />
         )}
         {state.activeTab === 'blueprint' && (
           <BlueprintTab teams={state.teams} selectedPiName={state.selectedPiName} />
@@ -136,9 +167,11 @@ export default function ArtView() {
             teams={state.teams}
             onAddTeam={actions.addTeam}
             onReloadPiOptions={actions.loadPiOptions}
+            onReplaceTeams={actions.replaceTeams}
             onRemoveTeam={actions.removeTeam}
             onSaveTeams={actions.saveTeams}
             onUpdateTeamSosKey={actions.updateTeamSosKey}
+            onUpdateTeamPiReviewPageUrl={actions.updateTeamPiReviewPageUrl}
           />
         )}
       </div>
@@ -248,18 +281,18 @@ interface OverviewPanelProps {
   selectedPiName: string;
   teamProjectKeyFilter: string;
   isLoadingAllTeams: boolean;
-  onLoadAllTeams: () => Promise<void>;
+  onRefreshAllTeams: () => Promise<void>;
   onLoadTeam: (teamId: string) => Promise<void>;
   onTeamProjectKeyFilterChange: (value: string) => void;
 }
 
-/** Renders the Overview tab with team health cards and the Load All Teams control. */
+/** Renders the Overview tab with team health cards and a manual refresh control. */
 function OverviewPanel({
   teams,
   selectedPiName,
   teamProjectKeyFilter,
   isLoadingAllTeams,
-  onLoadAllTeams,
+  onRefreshAllTeams,
   onLoadTeam,
   onTeamProjectKeyFilterChange,
 }: OverviewPanelProps) {
@@ -268,10 +301,10 @@ function OverviewPanel({
       <div className={styles.overviewControls}>
         <button
           className={styles.primaryBtn}
-          onClick={() => onLoadAllTeams()}
+          onClick={() => onRefreshAllTeams()}
           disabled={isLoadingAllTeams}
         >
-          {isLoadingAllTeams ? 'Loading…' : 'Load All Teams'}
+          {isLoadingAllTeams ? 'Loading…' : 'Refresh All Teams'}
         </button>
       </div>
       {/* ART-level summary bar — aggregates health across all teams at a glance */}
@@ -2822,10 +2855,13 @@ interface SettingsPanelProps {
   teams: ArtTeam[];
   onAddTeam: (name: string, boardId: string, projectKey?: string, boardName?: string, sosIssueKey?: string) => void;
   onReloadPiOptions: () => Promise<void>;
+  onReplaceTeams: (teams: Array<Partial<ArtTeam>>) => void;
   onRemoveTeam: (teamId: string) => void;
   onSaveTeams: () => void;
   /** Updates the SoS Jira issue key for a specific team without requiring a full Save Teams. */
   onUpdateTeamSosKey: (teamId: string, sosIssueKey: string) => void;
+  /** Updates the PI Review Confluence page URL for a specific team without requiring a full Save Teams. */
+  onUpdateTeamPiReviewPageUrl: (teamId: string, piReviewPageUrl: string) => void;
 }
 
 /** Shape of the ART advanced settings object stored under 'tbxARTSettings' in localStorage. */
@@ -2844,6 +2880,20 @@ interface ArtAdvancedSettings {
    * Defaults to DEFAULT_SPRINT_WINDOW_DAYS when not set.
    */
   sprintWindowDays?: number;
+  /** Numeric Confluence page ID that contains the PI Review table synced by the PI Review tab. */
+  piReviewPageId?: string;
+  /** Shared fallback Confluence page URL or page ID used when no team-specific PI Review page is configured. */
+  piReviewPageUrl?: string;
+  /** Human-readable ART name used by the experimental shared Confluence workspace flow. */
+  sharedArtName?: string;
+  /** Short shared ART key (for example S2E) used by the experimental shared Confluence workspace flow. */
+  sharedArtKey?: string;
+  /** Confluence Database ID backing the experimental shared ART workspace. */
+  sharedArtDatabaseId?: string;
+  /** Confluence Space ID used when creating the shared ART workspace. */
+  sharedArtSpaceId?: string;
+  /** Optional Confluence parent content ID used when creating the shared ART workspace. */
+  sharedArtParentId?: string;
 }
 
 /** Reads ART advanced settings from localStorage or returns an empty object. */
@@ -2864,6 +2914,10 @@ const DEFAULT_STALE_DAYS_SETTING = 5;
 /** Default sprint length in calendar days (2-week sprint). Used by stale-issue and sprint-window calculations. */
 const DEFAULT_SPRINT_WINDOW_DAYS = 14;
 const DEFAULT_DEPENDENCY_LINK_TYPES = ['blocks', 'is blocked by', 'depends on', 'is depended on by', 'relates to'];
+const SHARED_ART_RECENT_WORKSPACES_STORAGE_KEY = 'tbxSharedArtRecentWorkspaces';
+const MAX_RECENT_SHARED_ARTS = 10;
+const PI_REVIEW_PAGE_ID_SETTING_KEY: keyof ArtAdvancedSettings = 'piReviewPageId';
+const PI_REVIEW_PAGE_URL_SETTING_KEY: keyof ArtAdvancedSettings = 'piReviewPageUrl';
 /**
  * Matches a fully-formed Jira custom field ID (e.g. "customfield_10301").
  * Requires at least 4 digits after the prefix because Jira's generated IDs
@@ -2877,6 +2931,122 @@ interface JiraIssueLinkTypeOption {
   name?: string;
   inward?: string;
   outward?: string;
+}
+
+interface SharedArtRecentWorkspace {
+  artName: string;
+  artKey: string;
+  databaseId: string;
+}
+
+interface SharedArtWorkspacePayload {
+  schemaVersion: number;
+  artKey: string;
+  artName: string;
+  updatedAt: string;
+  teams: Array<{
+    id: string;
+    name: string;
+    boardId: string;
+    boardName?: string;
+    projectKey?: string;
+    piReviewPageUrl?: string;
+    sosIssueKey?: string;
+  }>;
+  settings: {
+    piFieldId?: string;
+    spFieldId?: string;
+    isSpAutoDetect?: boolean;
+    featureLinkField?: string;
+    pCodeField?: string;
+    depLinkTypes?: string[];
+    staleDays?: number;
+    piEndDate?: string;
+    sprintWindowDays?: number;
+    piReviewPageUrl?: string;
+  };
+}
+
+function loadRecentSharedArtWorkspaces(): SharedArtRecentWorkspace[] {
+  try {
+    const storedRecentWorkspaces = localStorage.getItem(SHARED_ART_RECENT_WORKSPACES_STORAGE_KEY);
+    if (!storedRecentWorkspaces) {
+      return [];
+    }
+
+    const parsedRecentWorkspaces = JSON.parse(storedRecentWorkspaces) as unknown;
+    if (!Array.isArray(parsedRecentWorkspaces)) {
+      return [];
+    }
+
+    return parsedRecentWorkspaces
+      .filter((workspace): workspace is SharedArtRecentWorkspace =>
+        typeof workspace === 'object'
+        && workspace !== null
+        && typeof workspace.artName === 'string'
+        && typeof workspace.artKey === 'string'
+        && typeof workspace.databaseId === 'string',
+      )
+      .map((workspace) => ({
+        artName: workspace.artName.trim(),
+        artKey: workspace.artKey.trim(),
+        databaseId: workspace.databaseId.trim(),
+      }))
+      .filter((workspace) => workspace.artKey !== '' && workspace.databaseId !== '');
+  } catch {
+    return [];
+  }
+}
+
+function persistRecentSharedArtWorkspaces(recentWorkspaces: SharedArtRecentWorkspace[]): void {
+  localStorage.setItem(
+    SHARED_ART_RECENT_WORKSPACES_STORAGE_KEY,
+    JSON.stringify(recentWorkspaces.slice(0, MAX_RECENT_SHARED_ARTS)),
+  );
+}
+
+function upsertRecentSharedArtWorkspace(workspace: SharedArtRecentWorkspace): SharedArtRecentWorkspace[] {
+  const nextRecentWorkspaces = [
+    workspace,
+    ...loadRecentSharedArtWorkspaces().filter((storedWorkspace) => storedWorkspace.databaseId !== workspace.databaseId),
+  ].slice(0, MAX_RECENT_SHARED_ARTS);
+  persistRecentSharedArtWorkspaces(nextRecentWorkspaces);
+  return nextRecentWorkspaces;
+}
+
+function buildSharedArtWorkspacePayload(
+  artName: string,
+  artKey: string,
+  teams: ArtTeam[],
+  settings: ArtAdvancedSettings,
+): SharedArtWorkspacePayload {
+  return {
+    schemaVersion: 1,
+    artKey: artKey.trim(),
+    artName: artName.trim() || artKey.trim(),
+    updatedAt: new Date().toISOString(),
+    teams: teams.map((team) => ({
+      id: team.id,
+      name: team.name,
+      boardId: team.boardId,
+      boardName: team.boardName,
+      projectKey: team.projectKey,
+      piReviewPageUrl: team.piReviewPageUrl,
+      sosIssueKey: team.sosIssueKey,
+    })),
+    settings: {
+      piFieldId: settings.piFieldId?.trim() || undefined,
+      spFieldId: settings.spFieldId?.trim() || undefined,
+      isSpAutoDetect: settings.isSpAutoDetect ?? false,
+      featureLinkField: settings.featureLinkField?.trim() || undefined,
+      pCodeField: settings.pCodeField?.trim() || undefined,
+      depLinkTypes: settings.depLinkTypes ?? DEFAULT_DEPENDENCY_LINK_TYPES,
+      staleDays: settings.staleDays ?? DEFAULT_STALE_DAYS_SETTING,
+      piEndDate: settings.piEndDate?.trim() || undefined,
+      sprintWindowDays: settings.sprintWindowDays ?? DEFAULT_SPRINT_WINDOW_DAYS,
+      piReviewPageUrl: settings.piReviewPageUrl?.trim() || undefined,
+    },
+  };
 }
 
 function readDependencyLinkTypeNames(issueLinkTypes: JiraIssueLinkTypeOption[]): string[] {
@@ -2897,9 +3067,11 @@ function SettingsPanel({
   teams,
   onAddTeam,
   onReloadPiOptions,
+  onReplaceTeams,
   onRemoveTeam,
   onSaveTeams,
   onUpdateTeamSosKey,
+  onUpdateTeamPiReviewPageUrl,
 }: SettingsPanelProps) {
   const { showToast } = useToast();
   const [newTeamName, setNewTeamName] = useState('');
@@ -2920,6 +3092,15 @@ function SettingsPanel({
     String(storedSettings.sprintWindowDays ?? DEFAULT_SPRINT_WINDOW_DAYS),
   );
   const [piEndDate, setPiEndDate] = useState(storedSettings.piEndDate ?? '');
+  const [piReviewPageUrl, setPiReviewPageUrl] = useState(
+    storedSettings.piReviewPageUrl ?? storedSettings.piReviewPageId ?? '',
+  );
+  const [sharedArtName, setSharedArtName] = useState(storedSettings.sharedArtName ?? '');
+  const [sharedArtKey, setSharedArtKey] = useState(storedSettings.sharedArtKey ?? '');
+  const [sharedArtDatabaseId, setSharedArtDatabaseId] = useState(storedSettings.sharedArtDatabaseId ?? '');
+  const [sharedArtSpaceId, setSharedArtSpaceId] = useState(storedSettings.sharedArtSpaceId ?? '');
+  const [sharedArtParentId, setSharedArtParentId] = useState(storedSettings.sharedArtParentId ?? '');
+  const [recentSharedArtWorkspaces, setRecentSharedArtWorkspaces] = useState(loadRecentSharedArtWorkspaces);
   const [isSpAutoDetect, setIsSpAutoDetect] = useState(storedSettings.isSpAutoDetect ?? false);
   const [dependencyLinkTypeOptions, setDependencyLinkTypeOptions] = useState<string[]>([]);
   const [selectedDependencyLinkTypes, setSelectedDependencyLinkTypes] = useState(
@@ -2927,6 +3108,11 @@ function SettingsPanel({
   );
   const [isLoadingDependencyLinkTypes, setIsLoadingDependencyLinkTypes] = useState(false);
   const [dependencyLinkTypeError, setDependencyLinkTypeError] = useState<string | null>(null);
+  const [sharedArtError, setSharedArtError] = useState<string | null>(null);
+  const [sharedArtStatus, setSharedArtStatus] = useState('');
+  const [isCreatingSharedArt, setIsCreatingSharedArt] = useState(false);
+  const [isPublishingSharedArt, setIsPublishingSharedArt] = useState(false);
+  const [isLoadingSharedArt, setIsLoadingSharedArt] = useState(false);
 
   useEffect(() => {
     void loadDependencyLinkTypes();
@@ -3000,6 +3186,254 @@ function SettingsPanel({
   function handlePiEndDateChange(value: string) {
     setPiEndDate(value);
     saveSettingField('piEndDate', value);
+  }
+
+  function handlePiReviewPageUrlChange(value: string) {
+    setPiReviewPageUrl(value);
+    saveSettingField(PI_REVIEW_PAGE_URL_SETTING_KEY, value.trim());
+    if (value.trim() !== '') {
+      saveSettingField(PI_REVIEW_PAGE_ID_SETTING_KEY, '');
+    }
+  }
+
+  function saveSharedArtWorkspaceReference(
+    nextArtName: string,
+    nextArtKey: string,
+    nextDatabaseId: string,
+    nextSpaceId: string,
+    nextParentId: string,
+  ) {
+    saveSettingField('sharedArtName', nextArtName.trim());
+    saveSettingField('sharedArtKey', nextArtKey.trim());
+    saveSettingField('sharedArtDatabaseId', nextDatabaseId.trim());
+    saveSettingField('sharedArtSpaceId', nextSpaceId.trim());
+    saveSettingField('sharedArtParentId', nextParentId.trim());
+  }
+
+  function getCurrentAdvancedSettingsSnapshot(): ArtAdvancedSettings {
+    return {
+      ...readArtAdvancedSettings(),
+      piFieldId,
+      spFieldId,
+      isSpAutoDetect,
+      featureLinkField,
+      pCodeField,
+      depLinkTypes: selectedDependencyLinkTypes,
+      staleDays: Number.parseInt(staleDaysInput, 10) || DEFAULT_STALE_DAYS_SETTING,
+      piEndDate,
+      sprintWindowDays: Number.parseInt(sprintWindowDaysInput, 10) || DEFAULT_SPRINT_WINDOW_DAYS,
+      piReviewPageUrl: piReviewPageUrl.trim() || undefined,
+      sharedArtName: sharedArtName.trim() || undefined,
+      sharedArtKey: sharedArtKey.trim() || undefined,
+      sharedArtDatabaseId: sharedArtDatabaseId.trim() || undefined,
+      sharedArtSpaceId: sharedArtSpaceId.trim() || undefined,
+      sharedArtParentId: sharedArtParentId.trim() || undefined,
+    };
+  }
+
+  function rememberSharedArtWorkspace(nextArtName: string, nextArtKey: string, nextDatabaseId: string) {
+    setRecentSharedArtWorkspaces(
+      upsertRecentSharedArtWorkspace({
+        artName: nextArtName.trim() || nextArtKey.trim(),
+        artKey: nextArtKey.trim(),
+        databaseId: nextDatabaseId.trim(),
+      }),
+    );
+  }
+
+  function applyLoadedSharedArtWorkspace(
+    sharedWorkspace: SharedArtWorkspacePayload,
+    databaseId: string,
+  ) {
+    const nextArtName = sharedWorkspace.artName.trim() || sharedWorkspace.artKey.trim();
+    const nextArtKey = sharedWorkspace.artKey.trim();
+    const nextPiFieldId = sharedWorkspace.settings.piFieldId ?? '';
+    const nextSpFieldId = sharedWorkspace.settings.spFieldId ?? '';
+    const nextFeatureLinkField = sharedWorkspace.settings.featureLinkField ?? '';
+    const nextPCodeField = sharedWorkspace.settings.pCodeField ?? '';
+    const nextStaleDays = sharedWorkspace.settings.staleDays ?? DEFAULT_STALE_DAYS_SETTING;
+    const nextSprintWindowDays = sharedWorkspace.settings.sprintWindowDays ?? DEFAULT_SPRINT_WINDOW_DAYS;
+    const nextPiEndDate = sharedWorkspace.settings.piEndDate ?? '';
+    const nextPiReviewPageUrl = sharedWorkspace.settings.piReviewPageUrl ?? '';
+    const nextDependencyLinkTypes = sharedWorkspace.settings.depLinkTypes ?? DEFAULT_DEPENDENCY_LINK_TYPES;
+    const nextIsSpAutoDetect = sharedWorkspace.settings.isSpAutoDetect ?? false;
+
+    onReplaceTeams(sharedWorkspace.teams);
+    setSharedArtName(nextArtName);
+    setSharedArtKey(nextArtKey);
+    setSharedArtDatabaseId(databaseId);
+    setPiFieldId(nextPiFieldId);
+    setSpFieldId(nextSpFieldId);
+    setFeatureLinkField(nextFeatureLinkField);
+    setPCodeField(nextPCodeField);
+    setStaleDaysInput(String(nextStaleDays));
+    setSprintWindowDaysInput(String(nextSprintWindowDays));
+    setPiEndDate(nextPiEndDate);
+    setPiReviewPageUrl(nextPiReviewPageUrl);
+    setSelectedDependencyLinkTypes(nextDependencyLinkTypes);
+    setIsSpAutoDetect(nextIsSpAutoDetect);
+
+    const nextSettings: ArtAdvancedSettings = {
+      ...readArtAdvancedSettings(),
+      piFieldId: nextPiFieldId,
+      spFieldId: nextSpFieldId,
+      isSpAutoDetect: nextIsSpAutoDetect,
+      featureLinkField: nextFeatureLinkField,
+      pCodeField: nextPCodeField,
+      depLinkTypes: nextDependencyLinkTypes,
+      staleDays: nextStaleDays,
+      piEndDate: nextPiEndDate,
+      sprintWindowDays: nextSprintWindowDays,
+      piReviewPageId: '',
+      piReviewPageUrl: nextPiReviewPageUrl,
+      sharedArtName: nextArtName,
+      sharedArtKey: nextArtKey,
+      sharedArtDatabaseId: databaseId,
+      sharedArtSpaceId: sharedArtSpaceId.trim() || undefined,
+      sharedArtParentId: sharedArtParentId.trim() || undefined,
+    };
+    writeArtAdvancedSettings(nextSettings);
+    rememberSharedArtWorkspace(nextArtName, nextArtKey, databaseId);
+  }
+
+  async function handleCreateSharedArtWorkspace() {
+    const normalizedSharedArtKey = sharedArtKey.trim();
+    const normalizedSharedArtSpaceId = sharedArtSpaceId.trim();
+    const normalizedSharedArtParentId = sharedArtParentId.trim();
+    const normalizedSharedArtName = sharedArtName.trim();
+    const normalizedArtShortName = normalizedSharedArtKey || normalizedSharedArtName;
+
+    if (normalizedSharedArtName === '' || normalizedSharedArtSpaceId === '') {
+      setSharedArtError('Shared ART Name and Confluence Space ID are required before creating a workspace.');
+      return;
+    }
+
+    setIsCreatingSharedArt(true);
+    setSharedArtError(null);
+    setSharedArtStatus('');
+    try {
+      const createdDatabase = await createConfluenceDatabase({
+        spaceId: normalizedSharedArtSpaceId,
+        title: normalizedSharedArtName,
+        parentId: normalizedSharedArtParentId || undefined,
+      });
+      const sharedWorkspacePayload = buildSharedArtWorkspacePayload(
+        normalizedSharedArtName,
+        normalizedArtShortName,
+        teams,
+        getCurrentAdvancedSettingsSnapshot(),
+      );
+      await saveSharedArtWorkspace(createdDatabase.id, sharedWorkspacePayload);
+
+      setSharedArtName(normalizedSharedArtName);
+      setSharedArtDatabaseId(createdDatabase.id);
+      saveSharedArtWorkspaceReference(
+        normalizedSharedArtName,
+        normalizedArtShortName,
+        createdDatabase.id,
+        normalizedSharedArtSpaceId,
+        normalizedSharedArtParentId,
+      );
+      rememberSharedArtWorkspace(normalizedSharedArtName, normalizedArtShortName, createdDatabase.id);
+      setSharedArtStatus(`Created shared ART workspace ${normalizedSharedArtName} (${createdDatabase.id}).`);
+      showToast('Shared ART workspace created ✓', 'success');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create the shared ART workspace.';
+      setSharedArtError(errorMessage);
+      showToast(errorMessage, 'error');
+    } finally {
+      setIsCreatingSharedArt(false);
+    }
+  }
+
+  async function handlePublishSharedArtWorkspace() {
+    const normalizedSharedArtKey = sharedArtKey.trim();
+    const normalizedDatabaseId = sharedArtDatabaseId.trim();
+    const normalizedSharedArtName = sharedArtName.trim();
+    const normalizedArtShortName = normalizedSharedArtKey || normalizedSharedArtName;
+
+    if (normalizedSharedArtName === '' || normalizedDatabaseId === '') {
+      setSharedArtError('Shared ART Name and Shared ART Database ID are required before publishing.');
+      return;
+    }
+
+    setIsPublishingSharedArt(true);
+    setSharedArtError(null);
+    setSharedArtStatus('');
+    try {
+      await saveSharedArtWorkspace(
+        normalizedDatabaseId,
+        buildSharedArtWorkspacePayload(
+          normalizedSharedArtName,
+          normalizedArtShortName,
+          teams,
+          getCurrentAdvancedSettingsSnapshot(),
+        ),
+      );
+      saveSharedArtWorkspaceReference(
+        normalizedSharedArtName,
+        normalizedArtShortName,
+        normalizedDatabaseId,
+        sharedArtSpaceId,
+        sharedArtParentId,
+      );
+      rememberSharedArtWorkspace(normalizedSharedArtName, normalizedArtShortName, normalizedDatabaseId);
+      setSharedArtStatus(`Published local ART settings to shared workspace ${normalizedDatabaseId}.`);
+      showToast('Shared ART published ✓', 'success');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to publish the shared ART workspace.';
+      setSharedArtError(errorMessage);
+      showToast(errorMessage, 'error');
+    } finally {
+      setIsPublishingSharedArt(false);
+    }
+  }
+
+  async function handleLoadSharedArtWorkspace() {
+    const normalizedDatabaseId = sharedArtDatabaseId.trim();
+    if (normalizedDatabaseId === '') {
+      setSharedArtError('Shared ART Database ID is required before loading.');
+      return;
+    }
+
+    setIsLoadingSharedArt(true);
+    setSharedArtError(null);
+    setSharedArtStatus('');
+    try {
+      const sharedWorkspace = await loadSharedArtWorkspace(normalizedDatabaseId);
+      applyLoadedSharedArtWorkspace(sharedWorkspace, normalizedDatabaseId);
+      saveSharedArtWorkspaceReference(
+        sharedWorkspace.artName,
+        sharedWorkspace.artKey,
+        normalizedDatabaseId,
+        sharedArtSpaceId,
+        sharedArtParentId,
+      );
+      await onReloadPiOptions();
+      setSharedArtStatus(`Loaded shared ART workspace ${sharedWorkspace.artName} (${normalizedDatabaseId}).`);
+      showToast('Shared ART loaded ✓', 'success');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load the shared ART workspace.';
+      setSharedArtError(errorMessage);
+      showToast(errorMessage, 'error');
+    } finally {
+      setIsLoadingSharedArt(false);
+    }
+  }
+
+  function handleRecentSharedArtChange(databaseId: string) {
+    const selectedWorkspace = recentSharedArtWorkspaces.find((workspace) => workspace.databaseId === databaseId);
+    setSharedArtDatabaseId(databaseId);
+    saveSettingField('sharedArtDatabaseId', databaseId);
+
+    if (!selectedWorkspace) {
+      return;
+    }
+
+    setSharedArtName(selectedWorkspace.artName);
+    setSharedArtKey(selectedWorkspace.artKey);
+    saveSettingField('sharedArtName', selectedWorkspace.artName);
+    saveSettingField('sharedArtKey', selectedWorkspace.artKey);
   }
 
   function handlePCodeFieldChange(value: string) {
@@ -3085,6 +3519,9 @@ function SettingsPanel({
       </div>
 
       <div className={styles.teamList}>
+        <p className={styles.settingsSectionHint}>
+          Each team row can carry its own PI Review page URL. The PI Review tab loads one Confluence page per configured team.
+        </p>
         {teams.length === 0 && (
           <p className={styles.emptyState}>No teams configured yet.</p>
         )}
@@ -3103,6 +3540,14 @@ function SettingsPanel({
               placeholder="SoS Issue Key"
               type="text"
               value={team.sosIssueKey ?? ''}
+            />
+            <input
+              aria-label={`PI Review Page URL for ${team.name}`}
+              className={styles.textInput}
+              onChange={(event) => onUpdateTeamPiReviewPageUrl(team.id, event.target.value)}
+              placeholder="PI Review Page URL"
+              type="text"
+              value={team.piReviewPageUrl ?? ''}
             />
             <button className={styles.removeBtn} onClick={() => onRemoveTeam(team.id)}>
               Remove
@@ -3180,18 +3625,24 @@ function SettingsPanel({
               <p className={styles.emptyState}>No Jira link types are loaded yet.</p>
             )}
             {dependencyLinkTypeOptions.length > 0 && (
-              <div className={styles.checkboxGrid}>
+              <div className={styles.toggleButtonGrid}>
                 {dependencyLinkTypeOptions.map((dependencyLinkType) => (
-                  <label className={styles.settingsCheckboxLabel} key={dependencyLinkType}>
-                    <input
-                      aria-label={`Dependency link type ${dependencyLinkType}`}
-                      checked={selectedDependencyLinkTypes.includes(dependencyLinkType)}
-                      className={styles.settingsCheckbox}
-                      onChange={(event) => handleDependencyLinkTypeToggle(dependencyLinkType, event.target.checked)}
-                      type="checkbox"
-                    />
+                  <button
+                    aria-label={`Dependency link type ${dependencyLinkType}`}
+                    aria-pressed={selectedDependencyLinkTypes.includes(dependencyLinkType)}
+                    className={[
+                      styles.toggleButtonChip,
+                      selectedDependencyLinkTypes.includes(dependencyLinkType) ? styles.toggleButtonChipSelected : '',
+                    ].join(' ').trim()}
+                    key={dependencyLinkType}
+                    onClick={() => handleDependencyLinkTypeToggle(
+                      dependencyLinkType,
+                      !selectedDependencyLinkTypes.includes(dependencyLinkType),
+                    )}
+                    type="button"
+                  >
                     {dependencyLinkType}
-                  </label>
+                  </button>
                 ))}
               </div>
             )}
@@ -3252,6 +3703,162 @@ function SettingsPanel({
             value={piEndDate}
             placeholder="YYYY-MM-DD"
           />
+        </div>
+
+        <div className={styles.settingsFieldRow}>
+          <div className={styles.settingsFieldBlock}>
+            <label className={styles.settingsFieldLabel} htmlFor="art-pi-review-page-url">Default PI Review Confluence Page URL or ID</label>
+            <input
+              aria-label="Default PI Review Confluence Page URL or ID"
+              className={styles.textInput}
+              id="art-pi-review-page-url"
+              onChange={(event) => handlePiReviewPageUrlChange(event.target.value)}
+              placeholder="Full Confluence page URL or numeric page ID"
+              type="text"
+              value={piReviewPageUrl}
+            />
+            <p className={styles.settingsFieldHint}>
+              Prefer team-specific PI Review page URLs in the team list above. This shared default is used only when no team-specific PI Review pages are configured yet.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.settingsSection}>
+          <h4 className={styles.settingsSectionTitle}>Shared ART Workspace (Experimental)</h4>
+          <p className={styles.settingsSectionHint}>
+            This experimental flow creates a real Confluence Database and stores the shared ART setup in supported database content properties.
+            It shares team roster and ART settings across NodeToolbox instances without requiring a separate server.
+          </p>
+
+          {recentSharedArtWorkspaces.length > 0 && (
+            <div className={styles.settingsFieldRow}>
+              <label className={styles.settingsFieldLabel} htmlFor="art-shared-recent">Recent Shared ARTs</label>
+              <select
+                aria-label="Recent Shared ARTs"
+                className={styles.textInput}
+                id="art-shared-recent"
+                onChange={(event) => handleRecentSharedArtChange(event.target.value)}
+                value={sharedArtDatabaseId}
+              >
+                <option value="">Select a recent shared ART</option>
+                {recentSharedArtWorkspaces.map((workspace) => (
+                  <option key={workspace.databaseId} value={workspace.databaseId}>
+                    {workspace.artKey} — {workspace.artName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className={styles.settingsFieldRow}>
+            <label className={styles.settingsFieldLabel}>Shared ART Name</label>
+            <input
+              aria-label="Shared ART Name"
+              className={styles.textInput}
+              onChange={(event) => {
+                setSharedArtName(event.target.value);
+                saveSettingField('sharedArtName', event.target.value.trim());
+              }}
+              placeholder="ART display name"
+              type="text"
+              value={sharedArtName}
+            />
+          </div>
+
+          <div className={styles.settingsFieldRow}>
+            <div className={styles.settingsFieldBlock}>
+              <label className={styles.settingsFieldLabel}>ART Short Name (optional)</label>
+              <input
+                aria-label="ART Short Name"
+                className={styles.textInput}
+                onChange={(event) => {
+                  setSharedArtKey(event.target.value);
+                  saveSettingField('sharedArtKey', event.target.value.trim());
+                }}
+                placeholder="S2E"
+                type="text"
+                value={sharedArtKey}
+              />
+              <p className={styles.settingsFieldHint}>
+                Optional short label for the ART workspace. This is only a friendly NodeToolbox label and is not tied to Jira.
+              </p>
+            </div>
+          </div>
+
+          <div className={styles.settingsFieldRow}>
+            <label className={styles.settingsFieldLabel}>Shared ART Database ID</label>
+            <input
+              aria-label="Shared ART Database ID"
+              className={styles.textInput}
+              onChange={(event) => {
+                setSharedArtDatabaseId(event.target.value);
+                saveSettingField('sharedArtDatabaseId', event.target.value.trim());
+              }}
+              placeholder="Confluence database ID"
+              type="text"
+              value={sharedArtDatabaseId}
+            />
+          </div>
+
+          <div className={styles.settingsFieldRow}>
+            <label className={styles.settingsFieldLabel}>Confluence Space ID</label>
+            <input
+              aria-label="Confluence Space ID"
+              className={styles.textInput}
+              onChange={(event) => {
+                setSharedArtSpaceId(event.target.value);
+                saveSettingField('sharedArtSpaceId', event.target.value.trim());
+              }}
+              placeholder="Required when creating"
+              type="text"
+              value={sharedArtSpaceId}
+            />
+          </div>
+
+          <div className={styles.settingsFieldRow}>
+            <label className={styles.settingsFieldLabel}>Parent Content ID (optional)</label>
+            <input
+              aria-label="Parent Content ID"
+              className={styles.textInput}
+              onChange={(event) => {
+                setSharedArtParentId(event.target.value);
+                saveSettingField('sharedArtParentId', event.target.value.trim());
+              }}
+              placeholder="Optional page or folder ID"
+              type="text"
+              value={sharedArtParentId}
+            />
+          </div>
+
+          <div className={styles.settingsButtonRow}>
+            <button
+              className={styles.primaryBtn}
+              disabled={isCreatingSharedArt}
+              onClick={() => void handleCreateSharedArtWorkspace()}
+              type="button"
+            >
+              {isCreatingSharedArt ? 'Creating…' : 'Create Shared ART Workspace'}
+            </button>
+            <button
+              className={styles.secondaryBtn}
+              disabled={isPublishingSharedArt}
+              onClick={() => void handlePublishSharedArtWorkspace()}
+              type="button"
+            >
+              {isPublishingSharedArt ? 'Publishing…' : 'Publish Local ART Settings'}
+            </button>
+            <button
+              className={styles.secondaryBtn}
+              disabled={isLoadingSharedArt}
+              onClick={() => void handleLoadSharedArtWorkspace()}
+              type="button"
+            >
+              {isLoadingSharedArt ? 'Loading…' : 'Load Shared ART Settings'}
+            </button>
+          </div>
+
+          {sharedArtStatus && <p className={styles.metricSummary}>{sharedArtStatus}</p>}
+          {sharedArtError && <p className={styles.errorText}>{sharedArtError}</p>}
         </div>
       </div>
     </div>

@@ -4,7 +4,8 @@ import { useCallback, useMemo, useState } from 'react';
 
 import { snowFetch } from '../../../services/snowApi.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
-import type { ChangeRequest } from '../../../types/snow.ts';
+import type { ChangeRequest, SnowUser } from '../../../types/snow.ts';
+import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 
 type ActivityLogLevel = 'info' | 'success' | 'warning' | 'error';
 
@@ -35,13 +36,24 @@ interface ReleaseManagementActions {
 }
 
 const EMPTY_VALUE = '';
+const CHANGE_TABLE_PATH = '/api/now/table/change_request';
+const CHANGE_LOOKUP_FIELDS =
+  'sys_id,number,short_description,state,assigned_to,planned_start_date,planned_end_date,risk,impact';
+const CHANGE_LOOKUP_LIMIT = 1;
+const ACTIVE_CHANGE_LIMIT = 20;
+const ACTIVE_CHANGE_QUERY = 'assigned_to=javascript:gs.getUserID()^active=true';
 const LOAD_CHANGE_FAILURE_MESSAGE = 'Failed to load change request';
 const LOAD_MY_CHANGES_FAILURE_MESSAGE = 'Failed to load active changes';
 const SNOW_NOT_CONFIGURED_MESSAGE =
   'SNow is not configured or credentials are invalid. Configure SNow credentials in Admin Hub or activate the relay bridge.';
-const MY_ACTIVE_CHANGES_PATH =
-  '/api/now/table/change_request?assigned_to=current_user&state=-2^ORstate=-1&sysparm_limit=20';
 const CHANGE_NUMBER_REQUIRED_MESSAGE = 'Change number is required.';
+
+type ServiceNowFieldValue = string | { value?: unknown; display_value?: unknown };
+type ServiceNowChangeRecord = Record<string, ServiceNowFieldValue | undefined>;
+
+interface ServiceNowChangeQueryResponse {
+  result: ServiceNowChangeRecord[];
+}
 
 function createInitialReleaseManagementState(): ReleaseManagementState {
   return {
@@ -64,12 +76,71 @@ function createLogEntry(message: string, level: ActivityLogLevel): ActivityLogEn
   };
 }
 
-function extractLoadedChange(changeResponse: ChangeRequest | { result: ChangeRequest[] }): ChangeRequest | null {
-  if ('result' in changeResponse) {
-    return changeResponse.result[0] ?? null;
+function buildChangeLookupPath(changeNumber: string): string {
+  const encodedQuery = encodeURIComponent(`number=${changeNumber}`);
+  return (
+    `${CHANGE_TABLE_PATH}?sysparm_query=${encodedQuery}` +
+    `&sysparm_limit=${CHANGE_LOOKUP_LIMIT}` +
+    `&sysparm_fields=${CHANGE_LOOKUP_FIELDS}` +
+    '&sysparm_display_value=all'
+  );
+}
+
+function buildMyActiveChangesPath(): string {
+  const encodedQuery = encodeURIComponent(ACTIVE_CHANGE_QUERY);
+  return (
+    `${CHANGE_TABLE_PATH}?sysparm_query=${encodedQuery}` +
+    `&sysparm_limit=${ACTIVE_CHANGE_LIMIT}` +
+    `&sysparm_fields=${CHANGE_LOOKUP_FIELDS}` +
+    '&sysparm_display_value=all'
+  );
+}
+
+function extractServiceNowFieldValue(fieldValue: ServiceNowFieldValue | undefined): string {
+  if (fieldValue === undefined) {
+    return EMPTY_VALUE;
   }
 
-  return changeResponse;
+  if (typeof fieldValue === 'string') {
+    return normalizeRichTextToPlainText(fieldValue);
+  }
+
+  return normalizeRichTextToPlainText(fieldValue.display_value ?? fieldValue.value ?? EMPTY_VALUE);
+}
+
+function extractServiceNowReference(fieldValue: ServiceNowFieldValue | undefined): SnowUser | null {
+  if (fieldValue === undefined) {
+    return null;
+  }
+
+  if (typeof fieldValue === 'string') {
+    const displayName = normalizeRichTextToPlainText(fieldValue);
+    return displayName
+      ? { sysId: EMPTY_VALUE, name: displayName, email: EMPTY_VALUE }
+      : null;
+  }
+
+  const sysId = String(fieldValue.value ?? EMPTY_VALUE);
+  const name = normalizeRichTextToPlainText(fieldValue.display_value ?? fieldValue.value ?? EMPTY_VALUE);
+  if (!sysId && !name) {
+    return null;
+  }
+
+  return { sysId, name, email: EMPTY_VALUE };
+}
+
+function mapChangeRecord(changeRecord: ServiceNowChangeRecord): ChangeRequest {
+  return {
+    sysId: extractServiceNowFieldValue(changeRecord.sys_id),
+    number: extractServiceNowFieldValue(changeRecord.number),
+    shortDescription: extractServiceNowFieldValue(changeRecord.short_description),
+    state: extractServiceNowFieldValue(changeRecord.state),
+    assignedTo: extractServiceNowReference(changeRecord.assigned_to),
+    plannedStartDate: extractServiceNowFieldValue(changeRecord.planned_start_date),
+    plannedEndDate: extractServiceNowFieldValue(changeRecord.planned_end_date),
+    risk: extractServiceNowFieldValue(changeRecord.risk),
+    impact: extractServiceNowFieldValue(changeRecord.impact),
+  };
 }
 
 /**
@@ -100,7 +171,8 @@ export function useReleaseManagement(): {
   }, []);
 
   const loadChg = useCallback(async () => {
-    if (!state.chgNumber) {
+    const normalizedChangeNumber = state.chgNumber.trim().toUpperCase();
+    if (!normalizedChangeNumber) {
       setState((previousState) => ({ ...previousState, loadError: CHANGE_NUMBER_REQUIRED_MESSAGE }));
       return;
     }
@@ -108,18 +180,18 @@ export function useReleaseManagement(): {
     setState((previousState) => ({ ...previousState, isLoadingChg: true, loadError: null }));
 
     try {
-      const changeResponse = await snowFetch<ChangeRequest | { result: ChangeRequest[] }>(
-        `/api/now/table/change_request?number=${state.chgNumber}`,
+      const changeResponse = await snowFetch<ServiceNowChangeQueryResponse>(
+        buildChangeLookupPath(normalizedChangeNumber),
       );
-      const loadedChg = extractLoadedChange(changeResponse);
+      const loadedChg = changeResponse.result[0] ? mapChangeRecord(changeResponse.result[0]) : null;
       setState((previousState) => ({
         ...previousState,
         loadedChg,
         isLoadingChg: false,
-        loadError: loadedChg ? null : `No change request found for ${state.chgNumber}.`,
+        loadError: loadedChg ? null : `No change request found for ${normalizedChangeNumber}.`,
         activityLog: loadedChg
           ? [createLogEntry(`Loaded change ${loadedChg.number}.`, 'success'), ...previousState.activityLog]
-          : [createLogEntry(`No change request found for ${state.chgNumber}.`, 'warning'), ...previousState.activityLog],
+          : [createLogEntry(`No change request found for ${normalizedChangeNumber}.`, 'warning'), ...previousState.activityLog],
       }));
     } catch (unknownError) {
       const loadError = unknownError instanceof Error ? unknownError.message : LOAD_CHANGE_FAILURE_MESSAGE;
@@ -147,10 +219,10 @@ export function useReleaseManagement(): {
     setState((previousState) => ({ ...previousState, isLoadingMyChanges: true, myChangesError: null }));
 
     try {
-      const myChangesResponse = await snowFetch<{ result: ChangeRequest[] }>(MY_ACTIVE_CHANGES_PATH);
+      const myChangesResponse = await snowFetch<ServiceNowChangeQueryResponse>(buildMyActiveChangesPath());
       setState((previousState) => ({
         ...previousState,
-        myActiveChanges: myChangesResponse.result,
+        myActiveChanges: myChangesResponse.result.map((changeRecord) => mapChangeRecord(changeRecord)),
         isLoadingMyChanges: false,
         myChangesError: null,
         activityLog: [createLogEntry('Loaded My Active Changes.', 'info'), ...previousState.activityLog],

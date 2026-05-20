@@ -63,6 +63,27 @@ describe('GET /api/proxy-status', () => {
     expect(response.body.jira.configured).toBe(true);
     expect(response.body.jira.ready).toBe(false);
   });
+
+  it('returns blank first-install connection status for demo-mode requests', async () => {
+    const configuration = {
+      jira:       { baseUrl: 'https://acme.atlassian.net', pat: 'jira-pat', username: '', apiToken: '' },
+      snow:       { baseUrl: 'https://acme.service-now.com', username: 'snow-user', password: 'snow-password' },
+      github:     { baseUrl: 'https://api.github.com', pat: 'gh-pat' },
+      confluence: { baseUrl: 'https://acme.atlassian.net', username: 'person@example.com', apiToken: 'cloud-token' },
+      sslVerify:  true,
+    };
+
+    const response = await request(buildTestApp(configuration))
+      .get('/api/proxy-status')
+      .set('X-NodeToolbox-Demo-Mode', '1');
+
+    expect(response.status).toBe(200);
+    expect(response.body.jira.ready).toBe(false);
+    expect(response.body.jira.configured).toBe(false);
+    expect(response.body.github.configured).toBe(false);
+    expect(response.body.confluence.configured).toBe(false);
+    expect(response.body.confluence.baseUrl).toBeNull();
+  });
 });
 
 // ── /api/proxy-config ─────────────────────────────────────────────────────────
@@ -87,6 +108,28 @@ describe('GET /api/proxy-config', () => {
     expect(response.body.jira.hasCredentials).toBe(true);
     expect(response.body.jira.pat).toBeUndefined();
     expect(response.body.jira.apiToken).toBeUndefined();
+  });
+
+  it('returns blank first-install config for demo-mode requests', async () => {
+    const configuration = {
+      port:       5555,
+      jira:       { baseUrl: 'https://acme.atlassian.net', pat: 'secret-pat', username: 'user', apiToken: 'token' },
+      snow:       { baseUrl: 'https://acme.service-now.com', username: 'snow-user', password: 'snow-pass' },
+      github:     { baseUrl: 'https://api.github.com', pat: 'gh-secret' },
+      confluence: { baseUrl: 'https://acme.atlassian.net', username: 'person@example.com', apiToken: 'cloud-token' },
+      sslVerify:  true,
+    };
+
+    const response = await request(buildTestApp(configuration))
+      .get('/api/proxy-config')
+      .set('X-NodeToolbox-Demo-Mode', '1');
+
+    expect(response.status).toBe(200);
+    expect(response.body.jira.baseUrl).toBe('');
+    expect(response.body.jira.hasCredentials).toBe(false);
+    expect(response.body.github.hasCredentials).toBe(false);
+    expect(response.body.confluence.baseUrl).toBe('');
+    expect(response.body.confluence.hasCredentials).toBe(false);
   });
 });
 

@@ -8,6 +8,9 @@ export interface StandupRosterMember {
   id: string;
   displayName: string;
   assigneeQueryValue: string;
+  jiraAccountId?: string;
+  snowUserDisplayName?: string;
+  snowUserSysId?: string;
   teamName?: string;
   roleName?: string;
   emailAddress?: string;
@@ -19,6 +22,9 @@ export interface StandupRosterMember {
 export interface StandupRosterMemberDraft {
   displayName: string;
   assigneeQueryValue: string;
+  jiraAccountId?: string;
+  snowUserDisplayName?: string;
+  snowUserSysId?: string;
   teamName?: string;
   roleName?: string;
   emailAddress?: string;
@@ -68,6 +74,9 @@ function isStandupRosterMember(value: unknown): value is StandupRosterMember {
     typeof candidate.id === 'string' &&
     typeof candidate.displayName === 'string' &&
     typeof candidate.assigneeQueryValue === 'string' &&
+    (candidate.jiraAccountId === undefined || typeof candidate.jiraAccountId === 'string') &&
+    (candidate.snowUserDisplayName === undefined || typeof candidate.snowUserDisplayName === 'string') &&
+    (candidate.snowUserSysId === undefined || typeof candidate.snowUserSysId === 'string') &&
     (candidate.teamName === undefined || typeof candidate.teamName === 'string') &&
     (candidate.roleName === undefined || typeof candidate.roleName === 'string') &&
     (candidate.emailAddress === undefined || typeof candidate.emailAddress === 'string') &&
@@ -133,6 +142,9 @@ function createRosterMember(memberDraft: StandupRosterMemberDraft): StandupRoste
     id: createRosterMemberId(assigneeQueryValue),
     displayName,
     assigneeQueryValue,
+    jiraAccountId: buildOptionalRosterField(memberDraft.jiraAccountId),
+    snowUserDisplayName: buildOptionalRosterField(memberDraft.snowUserDisplayName),
+    snowUserSysId: buildOptionalRosterField(memberDraft.snowUserSysId),
     emailAddress: buildOptionalRosterField(memberDraft.emailAddress),
     lanId: buildOptionalRosterField(memberDraft.lanId),
     locationTimeZone: buildOptionalRosterField(memberDraft.locationTimeZone),

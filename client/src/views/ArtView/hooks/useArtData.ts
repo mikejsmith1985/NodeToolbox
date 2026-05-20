@@ -50,6 +50,8 @@ type ArtBoardType = 'scrum' | 'kanban' | 'simple' | 'unknown';
 interface ArtAdvancedSettings {
   piFieldId?: string;
   piName?: string;
+  piReviewPageId?: string;
+  piReviewPageUrl?: string;
 }
 
 interface JiraBoardMetadata {
@@ -79,6 +81,10 @@ interface JiraBoardProjectResponse {
 
 interface JiraPiSearchResponse {
   issues?: Array<{ fields?: Record<string, unknown> }>;
+}
+
+function createArtTeamId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
 function readArtAdvancedSettings(): ArtAdvancedSettings {
@@ -254,6 +260,25 @@ async function resolveTeamProjectKey(team: ArtTeam): Promise<string | undefined>
   }
 }
 
+/**
+ * Reads the active sprint name for a Scrum board when PI mode needs sprint context for reporting.
+ * This keeps the Predictability sprint column populated even when issues are loaded by PI JQL instead of sprint endpoint.
+ */
+async function loadActiveSprintNameForBoard(boardId: string, boardType: ArtBoardType): Promise<string | undefined> {
+  if (boardType !== 'scrum') {
+    return undefined;
+  }
+
+  try {
+    const sprintResponse = await jiraGet<{ values: JiraSprintMetadata[] }>(
+      `/rest/agile/1.0/board/${boardId}/sprint?state=${SPRINT_STATE_ACTIVE}`,
+    );
+    return sprintResponse.values[0]?.name;
+  } catch {
+    return undefined;
+  }
+}
+
 function buildBoardPrepIssuePath(boardId: string, boardType: ArtBoardType): string {
   const encodedBoardPrepFields = encodeURIComponent(BOARD_PREP_FIELDS);
 
@@ -289,6 +314,8 @@ export type ArtTab =
   | 'impediments'
   | 'predictability'
   | 'releases'
+  | 'pireview'
+  | 'capacity'
   | 'blueprint'
   | 'dependencies'
   | 'boardprep'
@@ -305,7 +332,9 @@ export interface ArtTeam {
   boardType?: ArtBoardType;
   /** Optional Jira project key (e.g. "ALPHA") used for Blueprint off-train detection. */
   projectKey?: string;
-  /** Active sprint name for Scrum boards — absent when using PI mode, Kanban, or when no sprint is loaded. */
+  /** Optional Confluence page URL (or bare page ID) used by the PI Review tab for this team. */
+  piReviewPageUrl?: string;
+  /** Active sprint name for Scrum boards — absent for Kanban boards or when Jira does not report an active sprint. */
   activeSprintName?: string;
   /**
    * Optional Jira issue key for this team's SoS tracking issue.
@@ -359,6 +388,7 @@ export interface ArtDataActions {
   setActiveTab: (tab: ArtTab) => void;
   setSelectedPiName: (name: string) => void;
   addTeam: (name: string, boardId: string, projectKey?: string, boardName?: string, sosIssueKey?: string) => void;
+  replaceTeams: (teams: Array<Partial<ArtTeam>>) => void;
   removeTeam: (teamId: string) => void;
   saveTeams: () => void;
   loadPiOptions: () => Promise<void>;
@@ -371,6 +401,8 @@ export interface ArtDataActions {
   setBoardPrepTeamFilter: (teamName: string) => void;
   /** Update the SoS Jira issue key for a specific team, persisted with the team roster. */
   updateTeamSosKey: (teamId: string, sosIssueKey: string) => void;
+  /** Update the PI Review Confluence page URL for a specific team, persisted with the team roster. */
+  updateTeamPiReviewPageUrl: (teamId: string, piReviewPageUrl: string) => void;
 }
 
 /** Returns a team record safe to persist without volatile loading or issue data. */
@@ -382,7 +414,41 @@ function buildStoredTeamRecord(team: ArtTeam): ArtTeam {
     boardName: team.boardName,
     boardType: team.boardType,
     projectKey: team.projectKey,
+    piReviewPageUrl: team.piReviewPageUrl,
     sosIssueKey: team.sosIssueKey,
+    sprintIssues: [],
+    isLoading: false,
+    loadError: null,
+  };
+}
+
+/** Normalizes a persisted/shared team record into the runtime ART team shape. */
+function normalizeStoredTeamRecord(team: Partial<ArtTeam>): ArtTeam | null {
+  const teamName = typeof team.name === 'string' ? team.name.trim() : '';
+  const teamBoardId = typeof team.boardId === 'string' ? team.boardId.trim() : '';
+  if (teamName === '' || teamBoardId === '') {
+    return null;
+  }
+
+  return {
+    id: typeof team.id === 'string' && team.id.trim() !== '' ? team.id : createArtTeamId(),
+    name: teamName,
+    boardId: teamBoardId,
+    boardName: typeof team.boardName === 'string' && team.boardName.trim() !== ''
+      ? team.boardName.trim()
+      : undefined,
+    boardType: typeof team.boardType === 'string'
+      ? normalizeBoardType(team.boardType)
+      : undefined,
+    projectKey: typeof team.projectKey === 'string' && team.projectKey.trim() !== ''
+      ? team.projectKey.trim()
+      : undefined,
+    piReviewPageUrl: typeof team.piReviewPageUrl === 'string' && team.piReviewPageUrl.trim() !== ''
+      ? team.piReviewPageUrl.trim()
+      : undefined,
+    sosIssueKey: typeof team.sosIssueKey === 'string' && team.sosIssueKey.trim() !== ''
+      ? team.sosIssueKey.trim()
+      : undefined,
     sprintIssues: [],
     isLoading: false,
     loadError: null,
@@ -404,27 +470,8 @@ function loadStoredTeams(): ArtTeam[] {
 
     return parsedTeams
       .filter((team): team is Partial<ArtTeam> => typeof team === 'object' && team !== null)
-      .map((team) => ({
-        id: String(team.id ?? ''),
-        name: String(team.name ?? ''),
-        boardId: String(team.boardId ?? ''),
-        boardName: typeof team.boardName === 'string' && team.boardName.trim() !== ''
-          ? team.boardName
-          : undefined,
-        boardType: typeof team.boardType === 'string'
-          ? normalizeBoardType(team.boardType)
-          : undefined,
-        projectKey: typeof team.projectKey === 'string' && team.projectKey.trim() !== ''
-          ? team.projectKey
-          : undefined,
-        sosIssueKey: typeof team.sosIssueKey === 'string' && team.sosIssueKey.trim() !== ''
-          ? team.sosIssueKey.trim()
-          : undefined,
-        sprintIssues: [],
-        isLoading: false,
-        loadError: null,
-      }))
-      .filter((team) => team.id !== '' && team.name !== '' && team.boardId !== '');
+      .map((team) => normalizeStoredTeamRecord(team))
+      .filter((team): team is ArtTeam => team !== null);
   } catch {
     return [];
   }
@@ -500,10 +547,8 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
   }, []);
 
   const addTeam = useCallback((name: string, boardId: string, projectKey?: string, boardName?: string, sosIssueKey?: string) => {
-    // Use timestamp + random suffix for a unique ID without crypto.randomUUID
-    const newTeamId = Date.now().toString(36) + Math.random().toString(36).slice(2);
     const newTeam: ArtTeam = {
-      id: newTeamId,
+      id: createArtTeamId(),
       name,
       boardId,
       boardName: boardName?.trim() || undefined,
@@ -514,6 +559,15 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
       loadError: null,
     };
     setTeams((previous) => [...previous, newTeam]);
+  }, []);
+
+  /** Replaces the full ART roster with a sanitized imported/shared set of teams. */
+  const replaceTeams = useCallback((incomingTeams: Array<Partial<ArtTeam>>) => {
+    setTeams(
+      incomingTeams
+        .map((team) => normalizeStoredTeamRecord(team))
+        .filter((team): team is ArtTeam => team !== null),
+    );
   }, []);
 
   const removeTeam = useCallback((teamId: string) => {
@@ -599,6 +653,7 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
         const issueResponse = await jiraGet<{ issues: JiraIssue[] }>(
           `/rest/api/2/search?jql=${encodeURIComponent(piSearchJql)}&fields=${encodeURIComponent(SPRINT_ISSUE_FIELDS)}&maxResults=${PI_ISSUE_MAX_RESULTS}`,
         );
+        const activeSprintName = await loadActiveSprintNameForBoard(boardId, normalizedBoardType);
 
         setTeams((current) =>
           current.map((team) =>
@@ -608,7 +663,7 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
                   boardName: resolvedBoardName,
                   boardType: normalizedBoardType,
                   projectKey: resolvedProjectKey,
-                  activeSprintName: undefined,
+                  activeSprintName,
                   isLoading: false,
                   loadError: null,
                   sprintIssues: issueResponse.issues,
@@ -735,13 +790,14 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
   }, []);
 
   const loadAllTeams = useCallback(async () => {
+    const currentTeams = teamsRef.current;
     setIsLoadingAllTeams(true);
     try {
-      await Promise.all(teams.map((team) => loadTeam(team.id)));
+      await Promise.all(currentTeams.map((team) => loadTeam(team.id)));
     } finally {
       setIsLoadingAllTeams(false);
     }
-  }, [teams, loadTeam]);
+  }, [loadTeam]);
 
   const toggleSosTeam = useCallback((teamId: string) => {
     setSosExpandedTeams((previous) =>
@@ -792,6 +848,20 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
     );
   }, []);
 
+  /**
+   * Updates the PI Review Confluence page URL for a team in-place.
+   * The URL is stored with the team so the PI Review tab can load one page per configured team.
+   */
+  const updateTeamPiReviewPageUrl = useCallback((teamId: string, piReviewPageUrl: string) => {
+    setTeams((previous) =>
+      previous.map((team) =>
+        team.id === teamId
+          ? { ...team, piReviewPageUrl: piReviewPageUrl.trim() || undefined }
+          : team,
+      ),
+    );
+  }, []);
+
   return {
     state: {
       activeTab,
@@ -811,6 +881,7 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
       setActiveTab,
       setSelectedPiName,
       addTeam,
+      replaceTeams,
       removeTeam,
       saveTeams,
       loadPiOptions,
@@ -820,6 +891,7 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
       loadBoardPrep,
       setBoardPrepTeamFilter,
       updateTeamSosKey,
+      updateTeamPiReviewPageUrl,
     },
   };
 }

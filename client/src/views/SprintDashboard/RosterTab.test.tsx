@@ -1,50 +1,46 @@
 // RosterTab.test.tsx — Rendering tests for the Team Dashboard roster builder.
 
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { jiraGet } from '../../services/jiraApi.ts';
+import { snowFetch } from '../../services/snowApi.ts';
+import { useConnectionStore } from '../../store/connectionStore.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import { useStandupRosterStore } from './hooks/useStandupRosterStore.ts';
 import RosterTab from './RosterTab.tsx';
 
-const IMPORT_SAMPLE_TEXT = `#
+vi.mock('../../services/jiraApi.ts', () => ({
+  jiraGet: vi.fn(),
+}));
 
-Team
+vi.mock('../../services/snowApi.ts', () => ({
+  snowFetch: vi.fn(),
+}));
 
-Name
-
-Role
-
-Email
-
-Location / Time Zone
-
-Lan ID
-
-Working Hours
-
-1
-
-Clean Up Crew
-
-Amber Cannon
-
-Scrum Master
-
-2
-
-QE
-
-Bhargavi Somagutta (6/30)
-
-QE
-
-Bhargavi.Somagutta@cignahealthcare.com
-
-India, GMT+5:30
-
-M07322`;
+vi.mock('../SnowHub/components/SnowLookupField.tsx', () => ({
+  SnowLookupField: ({
+    label,
+    value,
+    onChange,
+    isDisabled,
+  }: {
+    label: string;
+    value: { sysId: string; displayName: string };
+    onChange: (reference: { sysId: string; displayName: string }) => void;
+    isDisabled?: boolean;
+  }) => (
+    <button
+      aria-label={label}
+      disabled={isDisabled}
+      onClick={() => onChange({ sysId: 'snow-user-123', displayName: value.displayName || 'Jordan Joiner SN' })}
+      type="button"
+    >
+      {value.displayName || label}
+    </button>
+  ),
+}));
 
 function buildIssue(issueKey: string, assigneeName: string): JiraIssue {
   return {
@@ -75,10 +71,28 @@ describe('RosterTab', () => {
     localStorage.clear();
     useStandupRosterStore.setState({ rosterMembers: [] });
     useSettingsStore.setState({ sprintDashboardActiveTeam: '' });
+    useConnectionStore.setState({
+      isJiraReady: false,
+      isSnowReady: false,
+      isJiraVerified: false,
+      isSnowVerified: false,
+      isConfluenceReady: false,
+      isGitHubReady: false,
+      proxyStatus: null,
+      relayBridgeStatus: {
+        system: 'snow',
+        isConnected: true,
+        hasSessionToken: true,
+        lastPingAt: new Date().toISOString(),
+        version: 'test',
+      },
+    });
+    vi.mocked(jiraGet).mockReset();
+    vi.mocked(snowFetch).mockReset();
   });
 
   it('adds sprint assignees to the roster from the quick-pick list', () => {
-    render(<RosterTab issues={[buildIssue('TBX-1', 'Alice Adams'), buildIssue('TBX-2', 'Bob Brown')]} />);
+    render(<RosterTab issues={[buildIssue('TBX-1', 'Alice Adams'), buildIssue('TBX-2', 'Bob Brown')]} projectKey="TBX" />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Alice Adams' }));
 
@@ -87,7 +101,7 @@ describe('RosterTab', () => {
   });
 
   it('supports manual roster entries and removal', () => {
-    render(<RosterTab issues={[]} />);
+    render(<RosterTab issues={[]} projectKey="TBX" />);
 
     fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Taylor Teammate' } });
     fireEvent.change(screen.getByLabelText('Jira assignee value'), { target: { value: 'Taylor Teammate' } });
@@ -100,42 +114,11 @@ describe('RosterTab', () => {
     expect(screen.queryByText('Taylor Teammate')).not.toBeInTheDocument();
   });
 
-  it('previews pasted roster members and merges them into the current roster', () => {
-    useSettingsStore.getState().setSprintDashboardActiveTeam('QE');
-    render(<RosterTab issues={[]} />);
+  it('removes the old paste-import workflow from the roster settings', () => {
+    render(<RosterTab issues={[]} projectKey="TBX" />);
 
-    fireEvent.change(screen.getByLabelText('Paste team roster'), {
-      target: { value: IMPORT_SAMPLE_TEXT },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Preview import' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Merge imported members' }));
-
-    expect(screen.getByText('Bhargavi Somagutta')).toBeInTheDocument();
-    expect(screen.getAllByText('QE').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Amber Cannon')).not.toBeInTheDocument();
-    expect(useStandupRosterStore.getState().rosterMembers).toHaveLength(2);
-    expect(useStandupRosterStore.getState().rosterMembers[0].assigneeQueryValue).toBe('Amber Cannon');
-  });
-
-  it('replaces the current roster when the imported roster is applied as a replacement', () => {
-    useStandupRosterStore.getState().addRosterMember({
-      assigneeQueryValue: 'Existing Person',
-      displayName: 'Existing Person',
-    });
-
-    render(<RosterTab issues={[]} />);
-
-    fireEvent.change(screen.getByLabelText('Paste team roster'), {
-      target: { value: IMPORT_SAMPLE_TEXT },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Preview import' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Replace current roster' }));
-
-    expect(screen.queryByText('Existing Person')).not.toBeInTheDocument();
-    expect(useStandupRosterStore.getState().rosterMembers.map((rosterMember) => rosterMember.displayName)).toEqual([
-      'Amber Cannon',
-      'Bhargavi Somagutta',
-    ]);
+    expect(screen.queryByText('Paste importer')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Paste team roster')).not.toBeInTheDocument();
   });
 
   it('filters visible roster cards to the active team and assigns quick-add members to that team', () => {
@@ -153,7 +136,7 @@ describe('RosterTab', () => {
     ]);
     useSettingsStore.getState().setSprintDashboardActiveTeam('Transformers');
 
-    render(<RosterTab issues={[buildIssue('TBX-1', 'Jordan Joiner')]} />);
+    render(<RosterTab issues={[buildIssue('TBX-1', 'Jordan Joiner')]} projectKey="TBX" />);
 
     expect(screen.getByText('Alice Adams')).toBeInTheDocument();
     expect(screen.queryByText('Bob Brown')).not.toBeInTheDocument();
@@ -163,6 +146,124 @@ describe('RosterTab', () => {
     expect(useStandupRosterStore.getState().rosterMembers.find(
       (rosterMember) => rosterMember.displayName === 'Jordan Joiner',
     )?.teamName).toBe('Transformers');
+  });
+
+  it('searches Jira users and adds the selected result to the active team roster', async () => {
+    useStandupRosterStore.getState().addRosterMember({
+      displayName: 'Existing Transformer',
+      assigneeQueryValue: 'Existing Transformer',
+      teamName: 'Transformers',
+    });
+    useSettingsStore.getState().setSprintDashboardActiveTeam('Transformers');
+    vi.mocked(jiraGet).mockResolvedValue([
+      {
+        accountId: 'acct-123',
+        displayName: 'Jordan Joiner',
+        emailAddress: 'jordan.joiner@example.com',
+        avatarUrls: {},
+      },
+    ]);
+
+    render(<RosterTab issues={[]} projectKey="TBX" />);
+
+    fireEvent.change(screen.getByLabelText('Search Jira project users'), { target: { value: 'Jordan' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search project users' }));
+
+    expect(await screen.findByRole('button', { name: 'Add Jordan Joiner' })).toBeInTheDocument();
+    expect(vi.mocked(jiraGet)).toHaveBeenCalledWith(
+      '/rest/api/2/user/assignable/search?project=TBX&query=Jordan&maxResults=8',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Jordan Joiner' }));
+
+    expect(useStandupRosterStore.getState().rosterMembers).toContainEqual({
+      id: 'roster-member:jordan joiner',
+      displayName: 'Jordan Joiner',
+      assigneeQueryValue: 'Jordan Joiner',
+      jiraAccountId: 'acct-123',
+      emailAddress: 'jordan.joiner@example.com',
+      teamName: 'Transformers',
+    });
+  });
+
+  it('loads project users, lets the user deselect one, and adds the remaining users to the active team roster', async () => {
+    useSettingsStore.getState().setSprintDashboardActiveTeam('Transformers');
+    useStandupRosterStore.getState().replaceRosterMembers([
+      {
+        displayName: 'Existing Transformer',
+        assigneeQueryValue: 'Existing Transformer',
+        teamName: 'Transformers',
+      },
+    ]);
+    vi.mocked(jiraGet)
+      .mockResolvedValueOnce([
+        {
+          accountId: 'acct-111',
+          displayName: 'Jordan Joiner',
+          emailAddress: 'jordan.joiner@example.com',
+          avatarUrls: {},
+        },
+        {
+          accountId: 'acct-222',
+          displayName: 'Taylor Teammate',
+          emailAddress: 'taylor.teammate@example.com',
+          avatarUrls: {},
+        },
+      ]);
+
+    render(<RosterTab issues={[]} projectKey="TBX" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load users for TBX' }));
+
+    expect(await screen.findByText('Jordan Joiner')).toBeInTheDocument();
+    expect(screen.getByText('Taylor Teammate')).toBeInTheDocument();
+    expect(vi.mocked(jiraGet)).toHaveBeenCalledWith(
+      '/rest/api/2/user/assignable/search?project=TBX&startAt=0&maxResults=50',
+    );
+
+    fireEvent.click(screen.getByLabelText('Select Jordan Joiner for roster'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected users to roster' }));
+
+    expect(useStandupRosterStore.getState().rosterMembers).toContainEqual({
+      id: 'roster-member:taylor teammate',
+      displayName: 'Taylor Teammate',
+      assigneeQueryValue: 'Taylor Teammate',
+      jiraAccountId: 'acct-222',
+      emailAddress: 'taylor.teammate@example.com',
+      teamName: 'Transformers',
+    });
+    expect(useStandupRosterStore.getState().rosterMembers).not.toContainEqual(
+      expect.objectContaining({
+        displayName: 'Jordan Joiner',
+      }),
+    );
+  });
+
+  it('falls back to multi-project assignable user loading when assignable project users are empty', async () => {
+    vi.mocked(jiraGet)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          accountId: 'acct-333',
+          displayName: 'Project Viewer',
+          emailAddress: 'project.viewer@example.com',
+          avatarUrls: {},
+        },
+      ]);
+
+    render(<RosterTab issues={[]} projectKey="TBX" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load users for TBX' }));
+
+    expect(await screen.findByText('Project Viewer')).toBeInTheDocument();
+    expect(vi.mocked(jiraGet)).toHaveBeenNthCalledWith(
+      1,
+      '/rest/api/2/user/assignable/search?project=TBX&startAt=0&maxResults=50',
+    );
+    expect(vi.mocked(jiraGet)).toHaveBeenNthCalledWith(
+      2,
+      '/rest/api/3/user/assignable/multiProjectSearch?projectKeys=TBX&startAt=0&maxResults=50',
+    );
   });
 
   it('keeps teamless legacy members visible so they can still be removed after team filtering is introduced', () => {
@@ -179,10 +280,71 @@ describe('RosterTab', () => {
     ]);
     useSettingsStore.getState().setSprintDashboardActiveTeam('Transformers');
 
-    render(<RosterTab issues={[]} />);
+    render(<RosterTab issues={[]} projectKey="TBX" />);
 
     expect(screen.getByText('Alice Adams')).toBeInTheDocument();
     expect(screen.getByText('Legacy Person')).toBeInTheDocument();
     expect(screen.getByText('Needs team')).toBeInTheDocument();
+  });
+
+  it('links a roster member to a ServiceNow user from the per-person lookup', () => {
+    useStandupRosterStore.getState().addRosterMember({
+      displayName: 'Jordan Joiner',
+      assigneeQueryValue: 'Jordan Joiner',
+      teamName: 'Transformers',
+    });
+    useSettingsStore.getState().setSprintDashboardActiveTeam('Transformers');
+
+    render(<RosterTab issues={[]} projectKey="TBX" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Link ServiceNow person for Jordan Joiner' }));
+
+    expect(useStandupRosterStore.getState().rosterMembers).toContainEqual({
+      id: 'roster-member:jordan joiner',
+      displayName: 'Jordan Joiner',
+      assigneeQueryValue: 'Jordan Joiner',
+      snowUserDisplayName: 'Jordan Joiner SN',
+      snowUserSysId: 'snow-user-123',
+      teamName: 'Transformers',
+    });
+  });
+
+  it('loads ServiceNow work beside Jira sprint work for linked roster members', async () => {
+    useStandupRosterStore.getState().addRosterMember({
+      displayName: 'Jordan Joiner',
+      assigneeQueryValue: 'Jordan Joiner',
+      jiraAccountId: 'jordan-joiner',
+      snowUserDisplayName: 'Jordan Joiner SN',
+      snowUserSysId: 'snow-user-123',
+      teamName: 'Transformers',
+    });
+    useSettingsStore.getState().setSprintDashboardActiveTeam('Transformers');
+    vi.mocked(snowFetch).mockImplementation(async (path: string) => {
+      if (path.includes('/incident')) {
+        return {
+          result: [
+            {
+              sys_id: 'snow-incident-1',
+              number: 'INC0012345',
+              short_description: 'Investigate login failures',
+              state: 'In Progress',
+              priority: '2 - High',
+              sys_class_name: 'incident',
+              opened_at: '2026-05-03T00:00:00.000Z',
+            },
+          ],
+        };
+      }
+
+      return { result: [] };
+    });
+
+    render(<RosterTab issues={[buildIssue('TBX-9', 'Jordan Joiner')]} projectKey="TBX" />);
+
+    expect(screen.getByText('Jira sprint work')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh linked Jira + SNow work' }));
+
+    expect(await screen.findByText('INC0012345')).toBeInTheDocument();
+    expect(screen.getByText('Investigate login failures')).toBeInTheDocument();
   });
 });

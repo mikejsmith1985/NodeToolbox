@@ -168,18 +168,18 @@ describe('DependenciesTab', () => {
   });
 
   it('renders the Load Dependencies button when a PI is selected', () => {
+    mockJiraGet.mockReturnValue(new Promise(() => {}));
     render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    expect(screen.getByRole('button', { name: /load dependencies/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /load dependencies|loading|reload dependencies/i })).toBeInTheDocument();
   });
 
-  it('renders the dependency SVG graph after loading', async () => {
+  it('auto-loads the dependency SVG graph after mount', async () => {
     queueSuccessfulDependencyHierarchy();
 
     render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/dependency graph/i)).toBeInTheDocument();
+      expect(screen.getByRole('group', { name: 'Dependency Graph' })).toBeInTheDocument();
     });
 
     expect(screen.getByText(/2 links/i)).toBeInTheDocument();
@@ -191,7 +191,6 @@ describe('DependenciesTab', () => {
     queueSuccessfulDependencyHierarchy();
 
     render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
 
     const alphaNodeButton = await screen.findByRole('button', { name: /open details for alpha-1/i });
     fireEvent.click(alphaNodeButton);
@@ -207,8 +206,7 @@ describe('DependenciesTab', () => {
     queueSuccessfulDependencyHierarchy();
 
     render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
-    await screen.findByLabelText(/dependency graph/i);
+    await screen.findByRole('group', { name: 'Dependency Graph' });
 
     fireEvent.click(screen.getByLabelText(/off-train only/i));
 
@@ -225,7 +223,6 @@ describe('DependenciesTab', () => {
     queueSuccessfulDependencyHierarchy();
 
     render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
-    fireEvent.click(screen.getByRole('button', { name: /load dependencies/i }));
 
     await waitFor(() => {
       expect(screen.getByText(/1 link/i)).toBeInTheDocument();
@@ -233,5 +230,18 @@ describe('DependenciesTab', () => {
 
     expect(screen.queryByRole('button', { name: /open details for gamma-9/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/1 off-train/i)).not.toBeInTheDocument();
+  });
+
+  it('renders a dependency graph legend with node and line keys', async () => {
+    queueSuccessfulDependencyHierarchy();
+
+    render(<DependenciesTab teams={MOCK_TEAMS} selectedPiName="PI 25.1" />);
+
+    const dependencyLegend = await screen.findByRole('group', { name: /dependency graph legend/i });
+    expect(within(dependencyLegend).getByText('Program Epic')).toBeInTheDocument();
+    expect(within(dependencyLegend).getByText('Bug / Defect')).toBeInTheDocument();
+    expect(within(dependencyLegend).getByText('Cross-team')).toBeInTheDocument();
+    expect(within(dependencyLegend).getByText('Blocking')).toBeInTheDocument();
+    expect(within(dependencyLegend).getByText('Off-train')).toBeInTheDocument();
   });
 });

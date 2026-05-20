@@ -393,6 +393,8 @@ describe('installUpdate', () => {
     });
 
     expect(result.current.state.isInstallingUpdate).toBe(false);
+    expect(result.current.state.updateInstallPhaseMessage).toBeNull();
+    expect(result.current.state.updateInstallProgressPercent).toBe(0);
     expect(result.current.state.updateInstallError).toContain('500');
   });
 });

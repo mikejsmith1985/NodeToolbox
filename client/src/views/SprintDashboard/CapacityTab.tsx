@@ -8,93 +8,28 @@
 import { useCallback } from 'react';
 
 import { useCapacityStore } from './hooks/useCapacityStore.ts';
-import type { CapacityRow, TeamRole } from './hooks/useCapacityStore.ts';
+import {
+  ALL_TEAM_ROLES,
+  calculateRecommendedCapacity,
+  calculateTotalCapacity,
+  countWorkDays,
+  generateCapacityRowId,
+} from './capacityModel.ts';
+import type { CapacityRow, TeamRole } from './capacityModel.ts';
 import styles from './CapacityTab.module.css';
 
 // ── Named constants ──
-
-const ALL_TEAM_ROLES: TeamRole[] = ['Dev', 'QE', 'BT', 'SL', 'SA', 'PO', 'SM'];
 
 const DEFAULT_ROLE: TeamRole = 'Dev';
 const DEFAULT_MEMBER_COUNT = 1;
 const DEFAULT_CAPACITY_PERCENTAGE = 100;
 const DEFAULT_PTO_DAYS = 0;
 
-/** Capacity buffer applied to the full-team total to get the recommended sprint commitment. */
-const EIGHTY_PERCENT_MULTIPLIER = 0.8;
-
-const SUNDAY_DAY_INDEX = 0;
-const SATURDAY_DAY_INDEX = 6;
-
 const MIN_MEMBER_COUNT = 1;
 const MAX_MEMBER_COUNT = 99;
 const MIN_CAPACITY_PERCENTAGE = 1;
 const MAX_CAPACITY_PERCENTAGE = 100;
 const MIN_PTO_DAYS = 0;
-
-// ── Pure calculation helpers (exported for unit testing) ──
-
-/**
- * Count the number of Monday–Friday work days between two ISO date strings, inclusive
- * of both the start and end dates. Returns 0 if the end is before the start.
- */
-export function countWorkDays(startDateString: string, endDateString: string): number {
-  if (!startDateString || !endDateString) {
-    return 0;
-  }
-
-  // Append a fixed time so Date parsing doesn't shift the date due to timezone offset.
-  const startDate = new Date(`${startDateString}T00:00:00`);
-  const endDate = new Date(`${endDateString}T00:00:00`);
-
-  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime()) || startDate > endDate) {
-    return 0;
-  }
-
-  let workDayCount = 0;
-  const currentDate = new Date(startDate);
-
-  while (currentDate <= endDate) {
-    const dayOfWeek = currentDate.getDay();
-    const isWeekday = dayOfWeek !== SUNDAY_DAY_INDEX && dayOfWeek !== SATURDAY_DAY_INDEX;
-    if (isWeekday) {
-      workDayCount++;
-    }
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
-
-  return workDayCount;
-}
-
-/**
- * Calculate the capacity contribution (in story points) for a single team row.
- *
- * Formula: (workDays × memberCount − totalPtoDays) × (capacityPercentage / 100)
- *
- * PTO days are subtracted before the allocation multiplier because PTO means the
- * person isn't working at all — the multiplier only scales active work days.
- * A negative result is clamped to 0 (more PTO than work days is not meaningful).
- */
-export function calculateRowCapacity(row: CapacityRow, workDayCount: number): number {
-  const availablePersonDays = workDayCount * row.memberCount - row.totalPtoDays;
-  const clampedPersonDays = Math.max(0, availablePersonDays);
-  return clampedPersonDays * (row.capacityPercentage / 100);
-}
-
-/**
- * Sum the capacity contributions from all rows to produce the total team capacity
- * at 100% allocation. Returns 0 when the rows array is empty.
- */
-export function calculateTotalCapacity(rows: CapacityRow[], workDayCount: number): number {
-  return rows.reduce((runningTotal, row) => runningTotal + calculateRowCapacity(row, workDayCount), 0);
-}
-
-// ── Unique ID generator ──
-
-/** Generate a simple time-based unique id for new rows. */
-function generateRowId(): string {
-  return `row-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-}
 
 // ── Sub-components ──
 
@@ -196,7 +131,7 @@ interface CapacityResultsProps {
  * meetings, interruptions, and unplanned work.
  */
 function CapacityResults({ workDayCount, totalCapacityPoints }: CapacityResultsProps) {
-  const eightyPercentCapacity = Math.floor(totalCapacityPoints * EIGHTY_PERCENT_MULTIPLIER);
+  const eightyPercentCapacity = calculateRecommendedCapacity(totalCapacityPoints);
   const roundedTotalCapacity = Math.floor(totalCapacityPoints);
 
   return (
@@ -250,7 +185,7 @@ export default function CapacityTab() {
 
   const handleAddRow = useCallback(() => {
     addRow({
-      id: generateRowId(),
+      id: generateCapacityRowId(),
       role: DEFAULT_ROLE,
       memberCount: DEFAULT_MEMBER_COUNT,
       capacityPercentage: DEFAULT_CAPACITY_PERCENTAGE,

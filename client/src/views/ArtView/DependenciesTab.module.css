@@ -177,10 +177,47 @@
 
 .graphLegend {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 0.75rem;
   font-size: 0.78rem;
   color: var(--color-text-secondary);
+}
+
+.legendSection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.legendLabel {
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.legendNodeSwatch {
+  display: inline-block;
+  width: 1rem;
+  height: 0.7rem;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.legendOffTrainSwatch {
+  background: transparent;
+  border: 2px dashed var(--color-purple);
+}
+
+.legendEdgeSample {
+  width: 2.5rem;
+  height: 0.7rem;
+  flex-shrink: 0;
 }
 
 .graphSvg {

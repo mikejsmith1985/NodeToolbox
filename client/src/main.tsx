@@ -7,6 +7,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import './styles/global.css';
+import './utils/demoModeStorage.ts';
 import App from './App.tsx';
 import { resolveStoredTheme } from './store/settingsStore.ts';
 

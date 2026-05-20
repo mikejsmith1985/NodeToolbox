@@ -321,6 +321,8 @@
 .settingsButtonRow {
   display: flex;
   justify-content: flex-end;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
 }
 
 .teamList {
@@ -1060,10 +1062,35 @@
   font-size: 0.8rem;
 }
 
-.checkboxGrid {
-  display: flex;
+.toggleButtonGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 0.5rem;
-  flex-wrap: wrap;
+}
+
+.toggleButtonChip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  text-align: center;
+  font-size: var(--font-size-sm);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.toggleButtonChip:hover {
+  background: var(--color-surface-hover);
+}
+
+.toggleButtonChipSelected {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-bg);
 }
 
 .projectKeyBadge {

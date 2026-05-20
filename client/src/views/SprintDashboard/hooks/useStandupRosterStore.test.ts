@@ -142,6 +142,9 @@ describe('useStandupRosterStore', () => {
       {
         displayName: 'Alice Adams',
         assigneeQueryValue: 'Alice Adams',
+        jiraAccountId: 'acct-alice',
+        snowUserDisplayName: 'Alice Adams SN',
+        snowUserSysId: 'snow-alice',
         emailAddress: 'alice@example.com',
         roleName: 'QE',
         teamName: 'Transformers',
@@ -159,7 +162,10 @@ describe('useStandupRosterStore', () => {
         displayName: 'Alice Adams',
         emailAddress: 'alice@example.com',
         id: 'roster-member:alice adams',
+        jiraAccountId: 'acct-alice',
         roleName: 'QE',
+        snowUserDisplayName: 'Alice Adams SN',
+        snowUserSysId: 'snow-alice',
         teamName: 'Transformers',
       },
       {

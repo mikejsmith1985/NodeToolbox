@@ -71,6 +71,11 @@ describe('ReportsHubView', () => {
     expect(screen.getByText(/art teams/i)).toBeInTheDocument();
   });
 
+  it('auto-loads all reports when the view opens with configured ART teams', () => {
+    render(<ReportsHubView />);
+    expect(mockActions.loadAllReports).toHaveBeenCalledTimes(1);
+  });
+
   it('renders 10 tab buttons including the dashboard tab', () => {
     render(<ReportsHubView />);
     expect(screen.getByRole('tab', { name: /dashboard/i })).toBeInTheDocument();
@@ -228,6 +233,7 @@ describe('ReportsHubView', () => {
     mockState.artTeams = [];
     render(<ReportsHubView />);
     expect(screen.getByText(/no art teams configured/i)).toBeInTheDocument();
+    expect(mockActions.loadAllReports).not.toHaveBeenCalled();
   });
 
   it('shows the flow tab WIP pipeline heading when flow tab is active', () => {

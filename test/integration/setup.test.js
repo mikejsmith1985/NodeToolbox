@@ -28,6 +28,7 @@ function buildBlankConfig() {
     jira:      { baseUrl: '', pat: '', username: '', apiToken: '' },
     snow:      { baseUrl: '', username: '', password: '' },
     github:    { baseUrl: 'https://api.github.com', pat: '' },
+    confluence: { baseUrl: '', username: '', apiToken: '' },
     sslVerify: true,
     scheduler: { repoMonitor: { enabled: false, repos: [], branchPattern: '', intervalMin: 15, transitions: {}, seenBranches: {}, seenCommits: {}, seenPrs: {} } },
   };
@@ -63,6 +64,11 @@ describe('GET /setup', () => {
     expect(response.text).toMatch(/data-step="snow"|id="step-snow"/i);
   });
 
+  it('has a Confluence setup step', async () => {
+    const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
+    expect(response.text).toMatch(/data-step="confluence"|id="step-confluence"/i);
+  });
+
   it('has a completion/done step', async () => {
     const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
     expect(response.text).toMatch(/data-step="done"|id="step-done"/i);
@@ -96,6 +102,19 @@ describe('GET /setup', () => {
     configuration.snow.baseUrl = 'https://myinstance.service-now.com';
     const response = await request(buildTestApp(configuration)).get('/setup');
     expect(response.text).toContain('https://myinstance.service-now.com');
+  });
+
+  it('does not pre-fill saved service URLs in demo mode', async () => {
+    const configuration = buildBlankConfig();
+    configuration.jira.baseUrl = 'https://saved-jira.atlassian.net';
+    configuration.snow.baseUrl = 'https://saved-snow.service-now.com';
+    configuration.confluence.baseUrl = 'https://saved-confluence.atlassian.net';
+
+    const response = await request(buildTestApp(configuration)).get('/setup?demo=1');
+
+    expect(response.text).not.toContain('https://saved-jira.atlassian.net');
+    expect(response.text).not.toContain('https://saved-snow.service-now.com');
+    expect(response.text).not.toContain('https://saved-confluence.atlassian.net');
   });
 
   it('has no external script or stylesheet URLs (enterprise offline safety)', async () => {
@@ -186,6 +205,50 @@ describe('POST /api/setup', () => {
         snowPassword: '',
       });
     expect(configuration.github.pat).toBe('ghp_mypat');
+  });
+
+  it('updates the live configuration with submitted Confluence credentials', async () => {
+    const configuration = buildBlankConfig();
+    await request(buildTestApp(configuration))
+      .post('/api/setup')
+      .send({
+        jiraBaseUrl: '',
+        jiraPat:     '',
+        githubPat:   '',
+        confluenceBaseUrl: 'https://acme.atlassian.net',
+        confluenceUsername: 'person@example.com',
+        confluenceApiToken: 'cloud-token',
+        snowBaseUrl: '',
+        snowUsername: '',
+        snowPassword: '',
+      });
+    expect(configuration.confluence.baseUrl).toBe('https://acme.atlassian.net');
+    expect(configuration.confluence.username).toBe('person@example.com');
+    expect(configuration.confluence.apiToken).toBe('cloud-token');
+  });
+
+  it('does not mutate or save live configuration when demo-mode setup is submitted', async () => {
+    const configuration = buildBlankConfig();
+    const response = await request(buildTestApp(configuration))
+      .post('/api/setup?demo=1')
+      .send({
+        jiraBaseUrl: 'https://demo.atlassian.net',
+        jiraPat:     'jira-demo-pat',
+        githubPat:   'ghp_demo',
+        confluenceBaseUrl: 'https://demo.atlassian.net',
+        confluenceUsername: 'demo@example.com',
+        confluenceApiToken: 'demo-cloud-token',
+        snowBaseUrl: '',
+        snowUsername: '',
+        snowPassword: '',
+      });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe('/?demo=1');
+    expect(configuration.jira.baseUrl).toBe('');
+    expect(configuration.jira.pat).toBe('');
+    expect(configuration.github.pat).toBe('');
+    expect(configuration.confluence.baseUrl).toBe('');
   });
 
   it('strips trailing slashes from submitted base URLs', async () => {

@@ -12,6 +12,7 @@ const express    = require('express');
 const { saveConfigToDisk, isServiceConfigured, isServiceBaseUrlSet } = require('../config/loader');
 const snowSession = require('../services/snowSession');
 const { clearInstallationTokenCache, hasGitHubAppCredentials, getValidInstallationToken, listGitHubAppInstallations } = require('../services/githubAppAuth');
+const { isDemoModeRequest } = require('../utils/demoMode');
 
 const {
   prepareUpdate,
@@ -132,6 +133,10 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
   // Returns which services are configured and ready — never exposes credentials.
 
   router.get('/api/proxy-status', (req, res) => {
+    if (isDemoModeRequest(req)) {
+      return res.json(buildDemoProxyStatusResponse(configuration));
+    }
+
     const isJiraHasBasicAuth = !!(configuration.jira.username && configuration.jira.apiToken);
     const isJiraHasPat       = !!configuration.jira.pat;
     const isJiraReady        = isServiceBaseUrlSet(configuration.jira) && (isJiraHasBasicAuth || isJiraHasPat);
@@ -234,6 +239,10 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
   // and a masked username so the user can confirm which account is active.
 
   router.get('/api/config/connectivity', (req, res) => {
+    if (isDemoModeRequest(req)) {
+      return res.json(buildDemoConnectivityConfigResponse());
+    }
+
     const snowConfig      = configuration.snow      || {};
     const githubConfig    = configuration.github    || {};
     const confluenceConfig = configuration.confluence || {};
@@ -263,6 +272,10 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
   // submitted value is non-empty — masked placeholders won't erase saved credentials.
 
   router.post('/api/config/connectivity', (req, res) => {
+    if (isDemoModeRequest(req)) {
+      return res.json(buildDemoConnectivityConfigResponse());
+    }
+
     const body             = req.body || {};
     const snowUpdate       = body.snow       || {};
     const ghUpdate         = body.github     || {};
@@ -374,6 +387,14 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
   // settings before saving. Expects { system: 'snow' | 'github' } in the body.
 
   router.post('/api/config/connectivity/test', async (req, res) => {
+    if (isDemoModeRequest(req)) {
+      return res.json({
+        ok: false,
+        statusCode: 0,
+        message: 'Demo mode starts with blank connections and does not use saved server credentials.',
+      });
+    }
+
     const body   = req.body || {};
     // Normalise to lowercase so 'Snow', 'SNOW', 'snow' all work.
     const system = (body.system || '').toLowerCase();
@@ -596,6 +617,10 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
   });
 
   router.get('/api/proxy-config', (req, res) => {
+    if (isDemoModeRequest(req)) {
+      return res.json(buildDemoProxyConfigResponse(configuration));
+    }
+
     const confluenceConfig = configuration.confluence || {};
     res.json({
       port: configuration.port,
@@ -622,6 +647,10 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
   // Merges — does not overwrite. Missing fields in the request are left unchanged.
 
   router.post('/api/proxy-config', (req, res) => {
+    if (isDemoModeRequest(req)) {
+      return res.json({ success: true, demoMode: true });
+    }
+
     const incomingConfig = req.body;
 
     if (!incomingConfig || typeof incomingConfig !== 'object') {
@@ -863,6 +892,97 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
 }
 
 // ── Private Helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Builds proxy status for a first-install demo tab without exposing real config.
+ *
+ * @param {import('../config/loader').ProxyConfig} configuration
+ * @returns {object}
+ */
+function buildDemoProxyStatusResponse(configuration) {
+  return {
+    proxy:     true,
+    version:   APP_VERSION,
+    sslVerify: configuration.sslVerify !== false,
+    jira:       buildBlankServiceStatus(),
+    snow: {
+      ...buildBlankServiceStatus(),
+      sessionMode:      false,
+      sessionExpiresAt: null,
+    },
+    github: {
+      ...buildBlankServiceStatus(),
+      probeCheckedAt: null,
+    },
+    confluence: buildBlankServiceStatus(),
+  };
+}
+
+/**
+ * Builds Admin Hub connectivity config for a demo tab with all services blank.
+ *
+ * @returns {object}
+ */
+function buildDemoConnectivityConfigResponse() {
+  return {
+    snow: {
+      baseUrl: '',
+      hasCredentials: false,
+      usernameMasked: null,
+    },
+    github: {
+      baseUrl: '',
+      hasPat: false,
+      hasAppAuth: false,
+    },
+    confluence: {
+      baseUrl: '',
+      hasCredentials: false,
+      usernameMasked: null,
+    },
+  };
+}
+
+/**
+ * Builds legacy proxy-config response for a demo tab with all credentials hidden.
+ *
+ * @param {import('../config/loader').ProxyConfig} configuration
+ * @returns {object}
+ */
+function buildDemoProxyConfigResponse(configuration) {
+  return {
+    port: configuration.port,
+    jira: {
+      baseUrl: '',
+      hasCredentials: false,
+    },
+    snow: {
+      baseUrl: '',
+      hasCredentials: false,
+    },
+    github: {
+      hasCredentials: false,
+    },
+    confluence: {
+      baseUrl: '',
+      hasCredentials: false,
+    },
+  };
+}
+
+/**
+ * Creates the common blank status object used by first-install demo services.
+ *
+ * @returns {object}
+ */
+function buildBlankServiceStatus() {
+  return {
+    configured: false,
+    hasCredentials: false,
+    ready: false,
+    baseUrl: null,
+  };
+}
 
 /**
  * Appends the hidden restart-handoff flag so restarted processes fail fast if

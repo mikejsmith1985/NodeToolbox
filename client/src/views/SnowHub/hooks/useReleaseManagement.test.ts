@@ -11,12 +11,24 @@ vi.mock('../../../services/snowApi.ts', () => ({
   snowFetch: vi.fn(),
 }));
 
-const MOCK_CHANGE_REQUEST = {
+const MOCK_CHANGE_RECORD = {
+  sys_id: { value: 'change-1', display_value: 'change-1' },
+  number: { value: 'CHG0012345', display_value: 'CHG0012345' },
+  short_description: { value: 'Deploy checkout service fixes', display_value: 'Deploy checkout service fixes' },
+  state: { value: '-2', display_value: 'Scheduled' },
+  assigned_to: { value: 'user-1', display_value: 'Casey Engineer' },
+  planned_start_date: { value: '2025-02-01 08:00:00', display_value: '2025-02-01 08:00:00' },
+  planned_end_date: { value: '2025-02-01 09:00:00', display_value: '2025-02-01 09:00:00' },
+  risk: { value: 'moderate', display_value: 'Moderate' },
+  impact: { value: 'medium', display_value: 'Medium' },
+};
+
+const EXPECTED_CHANGE_REQUEST = {
   sysId: 'change-1',
   number: 'CHG0012345',
   shortDescription: 'Deploy checkout service fixes',
   state: 'Scheduled',
-  assignedTo: null,
+  assignedTo: { sysId: 'user-1', name: 'Casey Engineer', email: '' },
   plannedStartDate: '2025-02-01 08:00:00',
   plannedEndDate: '2025-02-01 09:00:00',
   risk: 'Moderate',
@@ -51,7 +63,7 @@ describe('useReleaseManagement', () => {
   });
 
   it('stores the loaded change request after a successful fetch', async () => {
-    vi.mocked(snowFetch).mockResolvedValue(MOCK_CHANGE_REQUEST);
+    vi.mocked(snowFetch).mockResolvedValue({ result: [MOCK_CHANGE_RECORD] });
     const { result } = renderHook(() => useReleaseManagement());
 
     act(() => {
@@ -63,7 +75,7 @@ describe('useReleaseManagement', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.state.loadedChg).toEqual(MOCK_CHANGE_REQUEST);
+      expect(result.current.state.loadedChg).toEqual(EXPECTED_CHANGE_REQUEST);
       expect(result.current.state.loadError).toBeNull();
     });
   });
@@ -115,7 +127,7 @@ describe('useReleaseManagement', () => {
 
   it('calls snowFetch when SNow is ready', async () => {
     useConnectionStore.setState({ isSnowReady: true });
-    vi.mocked(snowFetch).mockResolvedValue({ result: [] });
+    vi.mocked(snowFetch).mockResolvedValue({ result: [MOCK_CHANGE_RECORD] });
 
     const { result } = renderHook(() => useReleaseManagement());
 
@@ -124,6 +136,11 @@ describe('useReleaseManagement', () => {
     });
 
     expect(snowFetch).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain(
+      'sysparm_query=assigned_to%3Djavascript%3Ags.getUserID()%5Eactive%3Dtrue',
+    );
+    expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('sysparm_display_value=all');
     expect(result.current.state.myChangesError).toBeNull();
+    expect(result.current.state.myActiveChanges).toEqual([EXPECTED_CHANGE_REQUEST]);
   });
 });

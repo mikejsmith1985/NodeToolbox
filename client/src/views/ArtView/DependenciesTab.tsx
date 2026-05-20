@@ -1,6 +1,6 @@
 // DependenciesTab.tsx — Legacy-style ART dependency graph built from the Blueprint hierarchy query chain.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   DependencyDirectionFilter,
@@ -43,6 +43,11 @@ const JIRA_BROWSE_PREFIX = '/browse/';
 const NODE_WIDTH = 136;
 const NODE_HEIGHT = 40;
 const NODE_RADIUS = 10;
+const DONE_NODE_FILL_COLOR = '#64748b';
+const BUG_NODE_FILL_COLOR = '#ef4444';
+const PROGRAM_EPIC_NODE_FILL_COLOR = '#7c3aed';
+const FEATURE_NODE_FILL_COLOR = '#0ea5e9';
+const STORY_NODE_FILL_COLOR = '#22c55e';
 
 function readArtSettings(): ArtAdvancedSettings {
   try {
@@ -102,22 +107,22 @@ function readNodeStatusTone(statusName: string): { backgroundColor: string; colo
 
 function readNodeFillColor(node: DependencyGraphNode): string {
   if (['done', 'closed', 'resolved', 'complete', 'completed'].some((keyword) => node.status.toLowerCase().includes(keyword))) {
-    return '#64748b';
+    return DONE_NODE_FILL_COLOR;
   }
 
   if (node.issueType.toLowerCase().includes('bug') || node.issueType.toLowerCase().includes('defect')) {
-    return '#ef4444';
+    return BUG_NODE_FILL_COLOR;
   }
 
   if (node.nodeType === 'pe') {
-    return '#7c3aed';
+    return PROGRAM_EPIC_NODE_FILL_COLOR;
   }
 
   if (node.nodeType === 'feature') {
-    return '#0ea5e9';
+    return FEATURE_NODE_FILL_COLOR;
   }
 
-  return '#22c55e';
+  return STORY_NODE_FILL_COLOR;
 }
 
 function readEdgeStrokeColor(edge: DependencyGraphEdge): string {
@@ -282,6 +287,61 @@ function DependencyDetailDrawer({
   );
 }
 
+function DependencyGraphLegend() {
+  return (
+    <div aria-label="Dependency graph legend" className={styles.graphLegend} role="group">
+      <div className={styles.legendSection}>
+        <span className={styles.legendLabel}>Nodes</span>
+        <span className={styles.legendItem}>
+          <span className={styles.legendNodeSwatch} style={{ backgroundColor: PROGRAM_EPIC_NODE_FILL_COLOR }} />
+          Program Epic
+        </span>
+        <span className={styles.legendItem}>
+          <span className={styles.legendNodeSwatch} style={{ backgroundColor: FEATURE_NODE_FILL_COLOR }} />
+          Feature
+        </span>
+        <span className={styles.legendItem}>
+          <span className={styles.legendNodeSwatch} style={{ backgroundColor: STORY_NODE_FILL_COLOR }} />
+          Story
+        </span>
+        <span className={styles.legendItem}>
+          <span className={styles.legendNodeSwatch} style={{ backgroundColor: BUG_NODE_FILL_COLOR }} />
+          Bug / Defect
+        </span>
+        <span className={styles.legendItem}>
+          <span className={styles.legendNodeSwatch} style={{ backgroundColor: DONE_NODE_FILL_COLOR, opacity: 0.45 }} />
+          Done
+        </span>
+        <span className={styles.legendItem}>
+          <span className={`${styles.legendNodeSwatch} ${styles.legendOffTrainSwatch}`} />
+          Off-train
+        </span>
+      </div>
+      <div className={styles.legendSection}>
+        <span className={styles.legendLabel}>Lines</span>
+        <span className={styles.legendItem}>
+          <svg aria-hidden="true" className={styles.legendEdgeSample} viewBox="0 0 40 10">
+            <line stroke="var(--color-text-secondary)" strokeWidth="2.5" x1="2" x2="38" y1="5" y2="5" />
+          </svg>
+          Same-team
+        </span>
+        <span className={styles.legendItem}>
+          <svg aria-hidden="true" className={styles.legendEdgeSample} viewBox="0 0 40 10">
+            <line stroke="var(--color-warning)" strokeWidth="2.5" x1="2" x2="38" y1="5" y2="5" />
+          </svg>
+          Cross-team
+        </span>
+        <span className={styles.legendItem}>
+          <svg aria-hidden="true" className={styles.legendEdgeSample} viewBox="0 0 40 10">
+            <line stroke="var(--color-danger)" strokeDasharray="7 4" strokeWidth="2.5" x1="2" x2="38" y1="5" y2="5" />
+          </svg>
+          Blocking
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /** Renders the legacy dependency graph and filters using the Blueprint-backed issue hierarchy. */
 export default function DependenciesTab({ teams, selectedPiName }: DependenciesTabProps) {
   const [isLoading, setIsLoading] = useState(false);
@@ -289,6 +349,7 @@ export default function DependenciesTab({ teams, selectedPiName }: DependenciesT
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedNodeKey, setSelectedNodeKey] = useState<string | null>(null);
   const [filterState, setFilterState] = useState<DependencyFilterState>(readPersistedDependencyFilterState);
+  const lastAutoLoadKeyRef = useRef('');
 
   useEffect(() => {
     persistDependencyFilterState(filterState);
@@ -349,7 +410,7 @@ export default function DependenciesTab({ teams, selectedPiName }: DependenciesT
     };
   }, [dependencyGraphData, nodesByKey]);
 
-  async function handleLoadDependencies() {
+  const handleLoadDependencies = useCallback(async () => {
     if (hasNoPiSelected || hasNoTeams) {
       return;
     }
@@ -365,7 +426,21 @@ export default function DependenciesTab({ teams, selectedPiName }: DependenciesT
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [hasNoPiSelected, hasNoTeams, selectedPiName, teams]);
+
+  useEffect(() => {
+    if (hasNoPiSelected || hasNoTeams) {
+      return;
+    }
+
+    const autoLoadKey = `${selectedPiName}|${teams.map((team) => `${team.id}:${team.boardId}`).join(',')}`;
+    if (lastAutoLoadKeyRef.current === autoLoadKey) {
+      return;
+    }
+
+    lastAutoLoadKeyRef.current = autoLoadKey;
+    void handleLoadDependencies();
+  }, [handleLoadDependencies, hasNoPiSelected, hasNoTeams, selectedPiName, teams]);
 
   function handleChangeFilterState(patch: Partial<DependencyFilterState>) {
     setFilterState((currentFilterState) => createFilterStatePatch(currentFilterState, patch));
@@ -575,15 +650,7 @@ export default function DependenciesTab({ teams, selectedPiName }: DependenciesT
             </div>
           ) : (
             <div className={styles.graphShell}>
-              <div className={styles.graphLegend}>
-                <span>Program Epic</span>
-                <span>Feature</span>
-                <span>Story / Defect</span>
-                <span>Gray: same-team</span>
-                <span>Orange: cross-team</span>
-                <span>Red: blocking</span>
-                <span>Purple ring: off-train</span>
-              </div>
+              <DependencyGraphLegend />
 
               <svg
                 aria-label="Dependency Graph"
