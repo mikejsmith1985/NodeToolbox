@@ -15,10 +15,15 @@ const CONFIDENCE_VOTE_SECTION_TITLE = 'Confidence Vote Tracking';
 const PI_REVIEW_COMMITMENT_BOUNDARY_ATTRIBUTE = 'data-node-toolbox-pi-review-boundary';
 const PI_REVIEW_COMMITMENT_BOUNDARY_VALUE = 'hard-commit';
 const PI_REVIEW_COMMITMENT_BOUNDARY_LABEL = 'Hard commits above / Stretch goals below';
+const PI_REVIEW_GROUPING_LINE_ATTRIBUTE = 'data-node-toolbox-pi-review-grouping';
+const PI_REVIEW_GROUPING_LINE_PAYLOAD_ATTRIBUTE = 'data-node-toolbox-pi-review-grouping-payload';
+const PI_REVIEW_CUSTOM_GROUPING_LINE_VALUE = 'custom';
 const PI_REVIEW_CAPACITY_SECTION_ATTRIBUTE = 'data-node-toolbox-pi-review-capacity';
 const PI_REVIEW_CAPACITY_SECTION_VALUE = 'summary';
 const PI_REVIEW_CAPACITY_PAYLOAD_ATTRIBUTE = 'data-node-toolbox-pi-review-capacity-payload';
 const FULL_WIDTH_TABLE_STYLE = 'width: 100%; table-layout: fixed;';
+const STRETCH_GOALS_LINE_COLOR = '#f5c400';
+const CUSTOM_GROUPING_LINE_BACKGROUND_ALPHA = 0.18;
 
 export type PiReviewColumnKey =
   | 'carryOver'
@@ -73,6 +78,14 @@ export interface PiReviewTableParseResult {
   rows: PiReviewRow[];
   tableBinding: PiReviewTableBinding;
   commitmentBoundaryIndex: number | null;
+  customGroupingLines: PiReviewCustomGroupingLine[];
+}
+
+export interface PiReviewCustomGroupingLine {
+  lineId: string;
+  afterRowIndex: number;
+  label: string;
+  color: string;
 }
 
 export type ConfidenceVoteColumnKey = 'weekOf' | 'confidenceVote' | 'notes';
@@ -673,6 +686,19 @@ function readNormalizedBoundaryText(rowElement: HTMLTableRowElement): string {
   return (rowElement.textContent ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
+function normalizeHexColor(hexColor: string): string {
+  const trimmedHexColor = hexColor.trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(trimmedHexColor) ? trimmedHexColor : STRETCH_GOALS_LINE_COLOR;
+}
+
+function convertHexColorToRgba(hexColor: string, alphaValue: number): string {
+  const normalizedHexColor = normalizeHexColor(hexColor);
+  const redValue = Number.parseInt(normalizedHexColor.slice(1, 3), 16);
+  const greenValue = Number.parseInt(normalizedHexColor.slice(3, 5), 16);
+  const blueValue = Number.parseInt(normalizedHexColor.slice(5, 7), 16);
+  return `rgba(${redValue}, ${greenValue}, ${blueValue}, ${alphaValue})`;
+}
+
 function isPiReviewCommitmentBoundaryRow(rowElement: HTMLTableRowElement): boolean {
   const boundaryValue = rowElement.getAttribute(PI_REVIEW_COMMITMENT_BOUNDARY_ATTRIBUTE);
   if (boundaryValue === PI_REVIEW_COMMITMENT_BOUNDARY_VALUE) {
@@ -680,6 +706,38 @@ function isPiReviewCommitmentBoundaryRow(rowElement: HTMLTableRowElement): boole
   }
 
   return readNormalizedBoundaryText(rowElement) === PI_REVIEW_COMMITMENT_BOUNDARY_LABEL.toLowerCase();
+}
+
+function parsePiReviewCustomGroupingLineRow(
+  rowElement: HTMLTableRowElement,
+  afterRowIndex: number,
+  lineIndex: number,
+): PiReviewCustomGroupingLine | null {
+  if (rowElement.getAttribute(PI_REVIEW_GROUPING_LINE_ATTRIBUTE) !== PI_REVIEW_CUSTOM_GROUPING_LINE_VALUE) {
+    return null;
+  }
+
+  const rawPayload = rowElement.getAttribute(PI_REVIEW_GROUPING_LINE_PAYLOAD_ATTRIBUTE);
+  if (!rawPayload) {
+    return null;
+  }
+
+  try {
+    const parsedPayload = JSON.parse(rawPayload) as { lineId?: string; label?: string; color?: string };
+    const normalizedLabel = parsedPayload.label?.trim() ?? '';
+    if (normalizedLabel === '') {
+      return null;
+    }
+
+    return {
+      lineId: parsedPayload.lineId?.trim() || `grouping-line-${lineIndex}`,
+      afterRowIndex,
+      label: normalizedLabel,
+      color: normalizeHexColor(parsedPayload.color ?? STRETCH_GOALS_LINE_COLOR),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function normalizePiReviewCommitmentBoundaryIndex(
@@ -713,6 +771,52 @@ function createPiReviewCommitmentBoundaryRow(
   return rowElement;
 }
 
+function createPiReviewCustomGroupingRow(
+  documentNode: Document,
+  totalColumnCount: number,
+  groupingLine: PiReviewCustomGroupingLine,
+): HTMLTableRowElement {
+  const rowElement = documentNode.createElement('tr');
+  rowElement.setAttribute(PI_REVIEW_GROUPING_LINE_ATTRIBUTE, PI_REVIEW_CUSTOM_GROUPING_LINE_VALUE);
+  rowElement.setAttribute(
+    PI_REVIEW_GROUPING_LINE_PAYLOAD_ATTRIBUTE,
+    JSON.stringify({
+      lineId: groupingLine.lineId,
+      label: groupingLine.label,
+      color: normalizeHexColor(groupingLine.color),
+    }),
+  );
+  rowElement.setAttribute('class', 'node-toolbox-pi-review-grouping-line');
+  rowElement.setAttribute(
+    'style',
+    `background-color: ${convertHexColorToRgba(groupingLine.color, CUSTOM_GROUPING_LINE_BACKGROUND_ALPHA)}; color: ${normalizeHexColor(groupingLine.color)}; font-weight: 600;`,
+  );
+
+  const cellElement = documentNode.createElement('td');
+  cellElement.setAttribute('colspan', String(totalColumnCount));
+  cellElement.setAttribute(
+    'style',
+    `border-top: 3px solid ${normalizeHexColor(groupingLine.color)}; border-bottom: 3px solid ${normalizeHexColor(groupingLine.color)}; text-align: center;`,
+  );
+  cellElement.textContent = groupingLine.label;
+  rowElement.appendChild(cellElement);
+  return rowElement;
+}
+
+function normalizePiReviewCustomGroupingLines(
+  customGroupingLines: PiReviewCustomGroupingLine[],
+  rowCount: number,
+): PiReviewCustomGroupingLine[] {
+  return customGroupingLines
+    .filter((groupingLine) => groupingLine.afterRowIndex > 0 && groupingLine.afterRowIndex <= rowCount && groupingLine.label.trim() !== '')
+    .map((groupingLine, groupingLineIndex) => ({
+      lineId: groupingLine.lineId.trim() || `grouping-line-${groupingLineIndex + 1}`,
+      afterRowIndex: groupingLine.afterRowIndex,
+      label: groupingLine.label.trim(),
+      color: normalizeHexColor(groupingLine.color),
+    }));
+}
+
 /** Parses the first matching PI Review table from a Confluence storage body. */
 export function parsePiReviewTable(storageValue: string): PiReviewTableParseResult {
   const documentNode = buildStorageDocument(storageValue);
@@ -728,11 +832,22 @@ export function parsePiReviewTable(storageValue: string): PiReviewTableParseResu
 
   const rows: PiReviewRow[] = [];
   let commitmentBoundaryIndex: number | null = null;
+  const customGroupingLines: PiReviewCustomGroupingLine[] = [];
   for (const rowElement of readBodyRowsAfterHeader(tableElement, tableBinding.headerRowIndex)) {
     if (isPiReviewCommitmentBoundaryRow(rowElement)) {
       if (commitmentBoundaryIndex === null) {
         commitmentBoundaryIndex = rows.length;
       }
+      continue;
+    }
+
+    const customGroupingLine = parsePiReviewCustomGroupingLineRow(
+      rowElement,
+      rows.length,
+      customGroupingLines.length + 1,
+    );
+    if (customGroupingLine) {
+      customGroupingLines.push(customGroupingLine);
       continue;
     }
 
@@ -750,6 +865,7 @@ export function parsePiReviewTable(storageValue: string): PiReviewTableParseResu
     rows,
     tableBinding,
     commitmentBoundaryIndex: normalizePiReviewCommitmentBoundaryIndex(commitmentBoundaryIndex, rows.length),
+    customGroupingLines: normalizePiReviewCustomGroupingLines(customGroupingLines, rows.length),
   };
 }
 
@@ -762,6 +878,7 @@ function replaceRowsAfterHeader<RowType extends Record<string, string>>(
   columnLabels: Record<string, string>,
   rows: RowType[],
   commitmentBoundaryIndex?: number | null,
+  customGroupingLines: PiReviewCustomGroupingLine[] = [],
 ): void {
   const tableRows = readTableRows(tableElement);
   const headerRowElement = tableRows[headerRowIndex];
@@ -792,6 +909,7 @@ function replaceRowsAfterHeader<RowType extends Record<string, string>>(
     commitmentBoundaryIndex,
     rows.length,
   );
+  const normalizedCustomGroupingLines = normalizePiReviewCustomGroupingLines(customGroupingLines, rows.length);
 
   let insertAfterNode: ChildNode = headerRowElement;
   for (const [rowIndex, row] of rows.entries()) {
@@ -809,6 +927,14 @@ function replaceRowsAfterHeader<RowType extends Record<string, string>>(
     insertAfterNode = rowElement;
 
     const insertedRowCount = rowIndex + 1;
+    const linesAfterCurrentRow = normalizedCustomGroupingLines.filter(
+      (groupingLine) => groupingLine.afterRowIndex === insertedRowCount,
+    );
+    for (const groupingLine of linesAfterCurrentRow) {
+      const groupingRowElement = createPiReviewCustomGroupingRow(documentNode, totalColumnCount, groupingLine);
+      headerParentElement.insertBefore(groupingRowElement, insertAfterNode.nextSibling);
+      insertAfterNode = groupingRowElement;
+    }
     if (normalizedCommitmentBoundaryIndex === insertedRowCount) {
       const boundaryRowElement = createPiReviewCommitmentBoundaryRow(documentNode, totalColumnCount);
       headerParentElement.insertBefore(boundaryRowElement, insertAfterNode.nextSibling);
@@ -827,6 +953,7 @@ export function writePiReviewTable(
   tableBinding: PiReviewTableBinding,
   rows: PiReviewRow[],
   commitmentBoundaryIndex?: number | null,
+  customGroupingLines: PiReviewCustomGroupingLine[] = [],
 ): string {
   const documentNode = buildStorageDocument(storageValue);
   const tableElement = documentNode.querySelectorAll('table').item(tableBinding.tableIndex) as HTMLTableElement | null;
@@ -844,6 +971,7 @@ export function writePiReviewTable(
     PI_REVIEW_COLUMN_LABELS,
     rows as unknown as Record<string, string>[],
     commitmentBoundaryIndex,
+    customGroupingLines,
   );
   return readStorageWrapperElement(documentNode).innerHTML;
 }

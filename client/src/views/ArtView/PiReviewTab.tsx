@@ -1,6 +1,7 @@
 // PiReviewTab.tsx — Editable ART PI Review workspace that syncs one Confluence-backed section per team.
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 
 import { useToast } from '../../components/Toast/ToastProvider.tsx';
 import {
@@ -10,9 +11,11 @@ import {
 } from '../../services/confluenceApi.ts';
 import { buildCapacitySummary } from '../SprintDashboard/capacityModel.ts';
 import type { CapacitySummary } from '../SprintDashboard/capacityModel.ts';
+import type { JiraIssue } from '../../types/jira.ts';
 import type { ArtTeam } from './hooks/useArtData.ts';
 import { useArtCapacityStore } from './hooks/useArtCapacityStore.ts';
 import type { ArtCapacityTeamConfig } from './hooks/useArtCapacityStore.ts';
+import { downloadPiReviewPanelPdf } from './piReviewPdf.ts';
 import {
   CONFIDENCE_VOTE_COLUMN_LABELS,
   CORE_PI_REVIEW_COLUMN_KEYS,
@@ -28,6 +31,7 @@ import {
   parsePiReviewRowsFromSpreadsheetSheets,
   type OptionalPiReviewColumnKey,
   type PiReviewColumnKey,
+  type PiReviewCustomGroupingLine,
   type PiReviewRow,
   type PiReviewSpreadsheetCellValue,
   type PiReviewTableBinding,
@@ -37,6 +41,13 @@ import {
   writePiReviewCapacitySummary,
   writePiReviewTable,
 } from './piReviewTable.ts';
+import {
+  extractPiReviewFeatureKey,
+  fetchPiReviewFeatureIssues,
+  formatPiReviewFeatureDisplayValue,
+  reconcilePiReviewRowsWithJira,
+  savePiReviewFeatureEstimates,
+} from './piReviewJira.ts';
 import styles from './PiReviewTab.module.css';
 
 const LONG_TEXT_COLUMNS = new Set<PiReviewColumnKey>(['dependency', 'risks', 'notes']);
@@ -44,6 +55,27 @@ const CHECKBOX_COLUMNS = new Set<PiReviewColumnKey>(['committed', 'devWork', 'te
 const FEATURE_COLUMN_KEY = 'feature';
 const FIST_OF_FIVE_VALUES = ['1', '2', '3', '4', '5'] as const;
 const SPREADSHEET_IMPORT_ACCEPT = '.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
+const STRETCH_GOALS_LINE_COLOR = '#f5c400';
+const DEFAULT_CUSTOM_GROUPING_LINE_COLOR = '#0ea5e9';
+
+interface PiReviewLoadedSnapshot {
+  rows: PiReviewRow[];
+  confidenceRows: ConfidenceVoteRow[];
+  savedCapacitySummary: CapacitySummary | null;
+  tableBinding: PiReviewTableBinding | null;
+  confidenceTableBinding: ConfidenceVoteTableBinding | null;
+  visibleOptionalColumns: Set<OptionalPiReviewColumnKey>;
+  commitmentBoundaryIndex: number | null;
+  customGroupingLines: PiReviewCustomGroupingLine[];
+  jiraIssueMap: Record<string, JiraIssue>;
+  hasUnsavedChanges: boolean;
+}
+
+interface CustomGroupingLineDraft {
+  afterRowIndex: number;
+  label: string;
+  color: string;
+}
 
 interface PiReviewTabProps {
   selectedPiName: string;
@@ -80,14 +112,35 @@ function createTodayDateValue(): string {
   return `${today.getFullYear()}-${month}-${day}`;
 }
 
+function createPiReviewDownloadNameSegment(rawValue: string): string {
+  return rawValue.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
+
+function createPiReviewPdfFileName(selectedPiName: string, targetLabel: string): string {
+  const normalizedTargetLabel = createPiReviewDownloadNameSegment(targetLabel);
+  const normalizedPiName = createPiReviewDownloadNameSegment(selectedPiName);
+  return `pi-review-${normalizedTargetLabel || 'team'}-${normalizedPiName || 'export'}.pdf`;
+}
+
+async function waitForNextPaint(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => resolve());
+      return;
+    }
+
+    window.setTimeout(resolve, 0);
+  });
+}
+
 function downloadPiReviewCsv(rows: PiReviewRow[], selectedPiName: string, targetLabel: string): void {
   const csvContent = exportPiReviewRowsToCsv(rows);
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const objectUrl = URL.createObjectURL(blob);
   const downloadAnchor = document.createElement('a');
-  const normalizedTargetLabel = targetLabel.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const normalizedTargetLabel = createPiReviewDownloadNameSegment(targetLabel);
   downloadAnchor.href = objectUrl;
-  downloadAnchor.download = `pi-review-${normalizedTargetLabel || 'team'}-${selectedPiName.trim() || 'export'}.csv`;
+  downloadAnchor.download = `pi-review-${normalizedTargetLabel || 'team'}-${createPiReviewDownloadNameSegment(selectedPiName) || 'export'}.csv`;
   downloadAnchor.click();
   URL.revokeObjectURL(objectUrl);
 }
@@ -117,6 +170,14 @@ function readOptionalColumnsFromBinding(tableBinding: PiReviewTableBinding): Set
 
 function formatCapacityValue(capacityValue: number): string {
   return Number.isInteger(capacityValue) ? String(capacityValue) : String(Number(capacityValue.toFixed(1)));
+}
+
+function formatPiReviewCellValue(columnKey: PiReviewColumnKey, cellValue: string): string {
+  if (CHECKBOX_COLUMNS.has(columnKey)) {
+    return cellValue === 'Yes' ? 'Yes' : 'No';
+  }
+
+  return cellValue.trim() === '' ? '—' : cellValue;
 }
 
 function buildPiReviewTeamCapacitySummary(
@@ -175,6 +236,27 @@ function adjustCommitmentBoundaryAfterRowMove(
   return commitmentBoundaryIndex;
 }
 
+function normalizeHexColor(hexColor: string): string {
+  const trimmedHexColor = hexColor.trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(trimmedHexColor) ? trimmedHexColor : DEFAULT_CUSTOM_GROUPING_LINE_COLOR;
+}
+
+function convertHexColorToRgba(hexColor: string, alphaValue: number): string {
+  const normalizedHexColor = normalizeHexColor(hexColor);
+  const redValue = Number.parseInt(normalizedHexColor.slice(1, 3), 16);
+  const greenValue = Number.parseInt(normalizedHexColor.slice(3, 5), 16);
+  const blueValue = Number.parseInt(normalizedHexColor.slice(5, 7), 16);
+  return `rgba(${redValue}, ${greenValue}, ${blueValue}, ${alphaValue})`;
+}
+
+function adjustGroupingLineAfterRowMove(
+  afterRowIndex: number,
+  currentRowIndex: number,
+  nextRowIndex: number,
+): number {
+  return adjustCommitmentBoundaryAfterRowMove(afterRowIndex, currentRowIndex, nextRowIndex) ?? afterRowIndex;
+}
+
 function isPiReviewRowCommitted(row: PiReviewRow): boolean {
   return row.committed.trim().toLowerCase() === 'yes';
 }
@@ -208,6 +290,30 @@ function adjustCommitmentBoundaryAfterRowRemoval(
     : commitmentBoundaryIndex;
 
   return normalizeCommitmentBoundaryIndex(nextCommitmentBoundaryIndex, nextRowCount);
+}
+
+function adjustGroupingLineAfterRowRemoval(
+  afterRowIndex: number,
+  removedRowIndex: number,
+  nextRowCount: number,
+): number | null {
+  return adjustCommitmentBoundaryAfterRowRemoval(afterRowIndex, removedRowIndex, nextRowCount);
+}
+
+function cloneGroupingLines(customGroupingLines: PiReviewCustomGroupingLine[]): PiReviewCustomGroupingLine[] {
+  return customGroupingLines.map((groupingLine) => ({ ...groupingLine }));
+}
+
+function cloneRows<RowType extends { rowId: string }>(rows: RowType[]): RowType[] {
+  return rows.map((row) => ({ ...row }));
+}
+
+function createDefaultCustomGroupingLineDraft(rowCount: number): CustomGroupingLineDraft {
+  return {
+    afterRowIndex: Math.max(1, rowCount || 1),
+    label: '',
+    color: DEFAULT_CUSTOM_GROUPING_LINE_COLOR,
+  };
 }
 
 function createPiReviewTableBindingWithColumns(
@@ -298,12 +404,21 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isTemplateDraftConfirmationVisible, setIsTemplateDraftConfirmationVisible] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [visibleOptionalColumns, setVisibleOptionalColumns] = useState<Set<OptionalPiReviewColumnKey>>(new Set());
   const [commitmentBoundaryIndex, setCommitmentBoundaryIndex] = useState<number | null>(null);
+  const [customGroupingLines, setCustomGroupingLines] = useState<PiReviewCustomGroupingLine[]>([]);
+  const [jiraIssueMap, setJiraIssueMap] = useState<Record<string, JiraIssue>>({});
+  const [customGroupingLineDraft, setCustomGroupingLineDraft] = useState<CustomGroupingLineDraft>(() =>
+    createDefaultCustomGroupingLineDraft(0),
+  );
   const lastAutoLoadKeyRef = useRef('');
+  const loadedSnapshotRef = useRef<PiReviewLoadedSnapshot | null>(null);
   const importFileInputRef = useRef<HTMLInputElement>(null);
+  const pagePanelRef = useRef<HTMLElement>(null);
   const liveCapacitySummary = useMemo(
     () => buildPiReviewTeamCapacitySummary(target, teamConfigs),
     [target, teamConfigs],
@@ -323,6 +438,28 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
     ],
     [visibleOptionalColumns],
   );
+  const canExportPdf = rows.length > 0 || confidenceRows.length > 0 || displayedCapacitySummary !== null;
+
+  useEffect(() => {
+    setCustomGroupingLineDraft((currentDraft) => ({
+      ...currentDraft,
+      afterRowIndex: Math.min(Math.max(1, currentDraft.afterRowIndex), Math.max(1, rows.length || 1)),
+    }));
+  }, [rows.length]);
+
+  function applyLoadedSnapshot(loadedSnapshot: PiReviewLoadedSnapshot) {
+    setRows(cloneRows(loadedSnapshot.rows));
+    setConfidenceRows(cloneRows(loadedSnapshot.confidenceRows));
+    setSavedCapacitySummary(loadedSnapshot.savedCapacitySummary);
+    setTableBinding(loadedSnapshot.tableBinding);
+    setConfidenceTableBinding(loadedSnapshot.confidenceTableBinding);
+    setVisibleOptionalColumns(new Set(loadedSnapshot.visibleOptionalColumns));
+    setCommitmentBoundaryIndex(loadedSnapshot.commitmentBoundaryIndex);
+    setCustomGroupingLines(cloneGroupingLines(loadedSnapshot.customGroupingLines));
+    setJiraIssueMap(loadedSnapshot.jiraIssueMap);
+    setHasUnsavedChanges(loadedSnapshot.hasUnsavedChanges);
+    setCustomGroupingLineDraft(createDefaultCustomGroupingLineDraft(loadedSnapshot.rows.length));
+  }
 
   const loadPiReviewPage = useCallback(async () => {
     setIsLoading(true);
@@ -337,14 +474,24 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
       const parsedPiReviewTable = parsePiReviewTable(confluencePage.body.storage.value);
       const parsedConfidenceTable = parseConfidenceVoteTable(confluencePage.body.storage.value);
       const parsedCapacitySummary = parsePiReviewCapacitySummary(confluencePage.body.storage.value);
-      setRows(parsedPiReviewTable.rows);
-      setConfidenceRows(parsedConfidenceTable.rows);
-      setSavedCapacitySummary(parsedCapacitySummary);
-      setTableBinding(parsedPiReviewTable.tableBinding);
-      setConfidenceTableBinding(parsedConfidenceTable.tableBinding);
-      setVisibleOptionalColumns(readOptionalColumnsFromBinding(parsedPiReviewTable.tableBinding));
-      setCommitmentBoundaryIndex(parsedPiReviewTable.commitmentBoundaryIndex);
-      setHasUnsavedChanges(false);
+      const nextJiraIssueMap = await fetchPiReviewFeatureIssues(parsedPiReviewTable.rows);
+      const jiraReconciliationResult = reconcilePiReviewRowsWithJira(parsedPiReviewTable.rows, nextJiraIssueMap);
+      const nextVisibleOptionalColumns = readOptionalColumnsFromBinding(parsedPiReviewTable.tableBinding);
+      const nextLoadedSnapshot: PiReviewLoadedSnapshot = {
+        rows: jiraReconciliationResult.rows,
+        confidenceRows: parsedConfidenceTable.rows,
+        savedCapacitySummary: parsedCapacitySummary,
+        tableBinding: parsedPiReviewTable.tableBinding,
+        confidenceTableBinding: parsedConfidenceTable.tableBinding,
+        visibleOptionalColumns: nextVisibleOptionalColumns,
+        commitmentBoundaryIndex: parsedPiReviewTable.commitmentBoundaryIndex,
+        customGroupingLines: parsedPiReviewTable.customGroupingLines,
+        jiraIssueMap: nextJiraIssueMap,
+        hasUnsavedChanges: jiraReconciliationResult.hasChanges,
+      };
+      loadedSnapshotRef.current = nextLoadedSnapshot;
+      applyLoadedSnapshot(nextLoadedSnapshot);
+      setIsEditMode(false);
       setIsTemplateDraftConfirmationVisible(false);
     } catch (error) {
       setRows([]);
@@ -354,6 +501,10 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
       setSavedCapacitySummary(null);
       setVisibleOptionalColumns(new Set());
       setCommitmentBoundaryIndex(null);
+      setCustomGroupingLines([]);
+      setJiraIssueMap({});
+      setIsEditMode(false);
+      setHasUnsavedChanges(false);
       setLoadError(error instanceof Error ? error.message : 'Failed to load the PI Review page');
     } finally {
       setIsLoading(false);
@@ -400,7 +551,11 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
       setStorageValue(draftStorageValue);
       setVisibleOptionalColumns(new Set());
       setCommitmentBoundaryIndex(null);
+      setCustomGroupingLines([]);
+      setJiraIssueMap({});
+      setCustomGroupingLineDraft(createDefaultCustomGroupingLineDraft(1));
       setHasUnsavedChanges(true);
+      setIsEditMode(true);
       setIsTemplateDraftConfirmationVisible(false);
       showToast(`${target.targetLabel} PI Review template loaded locally. Save when ready.`, 'success');
     } catch (error) {
@@ -421,6 +576,12 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
       const nextRowIndex = currentRowIndex + directionOffset;
       setCommitmentBoundaryIndex((currentCommitmentBoundaryIndex) =>
         adjustCommitmentBoundaryAfterRowMove(currentCommitmentBoundaryIndex, currentRowIndex, nextRowIndex),
+      );
+      setCustomGroupingLines((currentGroupingLines) =>
+        currentGroupingLines.map((groupingLine) => ({
+          ...groupingLine,
+          afterRowIndex: adjustGroupingLineAfterRowMove(groupingLine.afterRowIndex, currentRowIndex, nextRowIndex),
+        })),
       );
       return moveItemInList(currentRows, currentRowIndex, nextRowIndex);
     });
@@ -475,6 +636,9 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
       setVisibleOptionalColumns(nextVisibleOptionalColumns);
       setTableBinding(createPiReviewTableBindingWithColumns(tableBinding, nextColumnOrder));
       setCommitmentBoundaryIndex(null);
+      setCustomGroupingLines([]);
+      setJiraIssueMap({});
+      setCustomGroupingLineDraft(createDefaultCustomGroupingLineDraft(importedTable.rows.length));
       setLoadError(null);
       setHasUnsavedChanges(true);
       showToast(`Imported ${importedTable.rows.length} PI Review row(s) from ${selectedFile.name}. Save to Confluence when ready.`, 'success');
@@ -494,6 +658,14 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
         rows.length - 1,
       ),
     );
+    setCustomGroupingLines((currentGroupingLines) =>
+      currentGroupingLines
+        .map((groupingLine) => ({
+          ...groupingLine,
+          afterRowIndex: adjustGroupingLineAfterRowRemoval(groupingLine.afterRowIndex, removedRowIndex, rows.length - 1),
+        }))
+        .filter((groupingLine): groupingLine is PiReviewCustomGroupingLine => groupingLine.afterRowIndex !== null),
+    );
     setHasUnsavedChanges(true);
   }
 
@@ -504,6 +676,64 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
 
   function handleClearCommitmentBoundary() {
     setCommitmentBoundaryIndex(null);
+    setHasUnsavedChanges(true);
+  }
+
+  function handleAddCustomGroupingLine() {
+    if (rows.length === 0) {
+      showToast('Add at least one PI Review row before inserting a custom grouping line.', 'error');
+      return;
+    }
+
+    const normalizedLabel = customGroupingLineDraft.label.trim();
+    if (normalizedLabel === '') {
+      showToast('Enter grouping line text before adding it.', 'error');
+      return;
+    }
+
+    const normalizedColor = normalizeHexColor(customGroupingLineDraft.color);
+    if (normalizedColor === STRETCH_GOALS_LINE_COLOR) {
+      showToast('Stretch Goals keeps the reserved highlight color. Choose a different custom line color.', 'error');
+      return;
+    }
+
+    setCustomGroupingLines((currentGroupingLines) => [
+      ...currentGroupingLines,
+      {
+        lineId: `custom-line-${Date.now()}-${currentGroupingLines.length + 1}`,
+        afterRowIndex: Math.min(Math.max(1, customGroupingLineDraft.afterRowIndex), rows.length),
+        label: normalizedLabel,
+        color: normalizedColor,
+      },
+    ]);
+    setCustomGroupingLineDraft(createDefaultCustomGroupingLineDraft(rows.length));
+    setHasUnsavedChanges(true);
+  }
+
+  function handleUpdateCustomGroupingLine(
+    lineId: string,
+    patch: Partial<Omit<PiReviewCustomGroupingLine, 'lineId'>>,
+  ) {
+    setCustomGroupingLines((currentGroupingLines) =>
+      currentGroupingLines.map((groupingLine) => {
+        if (groupingLine.lineId !== lineId) {
+          return groupingLine;
+        }
+
+        const nextColor = patch.color ? normalizeHexColor(patch.color) : groupingLine.color;
+        return {
+          ...groupingLine,
+          ...patch,
+          color: nextColor === STRETCH_GOALS_LINE_COLOR ? groupingLine.color : nextColor,
+          label: patch.label !== undefined ? patch.label : groupingLine.label,
+        };
+      }),
+    );
+    setHasUnsavedChanges(true);
+  }
+
+  function handleRemoveCustomGroupingLine(lineId: string) {
+    setCustomGroupingLines((currentGroupingLines) => currentGroupingLines.filter((groupingLine) => groupingLine.lineId !== lineId));
     setHasUnsavedChanges(true);
   }
 
@@ -530,16 +760,40 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
     setHasUnsavedChanges(true);
   }
 
+  function handleIgnoreEdits() {
+    const loadedSnapshot = loadedSnapshotRef.current;
+    if (!loadedSnapshot) {
+      showToast('Reload the Confluence page before discarding edits for this team.', 'error');
+      return;
+    }
+
+    applyLoadedSnapshot(loadedSnapshot);
+    setLoadError(null);
+    setIsTemplateDraftConfirmationVisible(false);
+    setIsEditMode(false);
+    showToast(`${target.targetLabel} PI Review edits were discarded.`, 'success');
+  }
+
   function buildNextPiReviewStorageValue(
     baseStorageValue: string,
     nextPiReviewTableBinding: PiReviewTableBinding,
     nextConfidenceTableBinding: ConfidenceVoteTableBinding | null,
     capacitySummaryForSave: CapacitySummary | null,
+    rowsForSave: PiReviewRow[],
+    confidenceRowsForSave: ConfidenceVoteRow[],
+    commitmentBoundaryIndexForSave: number | null,
+    customGroupingLinesForSave: PiReviewCustomGroupingLine[],
   ): string {
     let nextStorageValue = writePiReviewCapacitySummary(baseStorageValue, capacitySummaryForSave);
-    nextStorageValue = writePiReviewTable(nextStorageValue, nextPiReviewTableBinding, rows, commitmentBoundaryIndex);
-    if (confidenceRows.length > 0 || nextConfidenceTableBinding !== null) {
-      nextStorageValue = writeConfidenceVoteTable(nextStorageValue, nextConfidenceTableBinding, confidenceRows);
+    nextStorageValue = writePiReviewTable(
+      nextStorageValue,
+      nextPiReviewTableBinding,
+      rowsForSave,
+      commitmentBoundaryIndexForSave,
+      customGroupingLinesForSave,
+    );
+    if (confidenceRowsForSave.length > 0 || nextConfidenceTableBinding !== null) {
+      nextStorageValue = writeConfidenceVoteTable(nextStorageValue, nextConfidenceTableBinding, confidenceRowsForSave);
     }
     return nextStorageValue;
   }
@@ -553,12 +807,50 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
     setIsSaving(true);
     setLoadError(null);
     try {
+      const latestJiraIssueMap = await fetchPiReviewFeatureIssues(rows);
+      const saveReconciliationResult = reconcilePiReviewRowsWithJira(rows, latestJiraIssueMap, {
+        shouldQueueEstimateUpdates: true,
+      });
+      if (saveReconciliationResult.pendingEstimateUpdates.length > 0) {
+        await savePiReviewFeatureEstimates(saveReconciliationResult.pendingEstimateUpdates);
+      }
+
+      const finalJiraIssueMap = { ...latestJiraIssueMap };
+      for (const estimateUpdate of saveReconciliationResult.pendingEstimateUpdates) {
+        const currentIssue = finalJiraIssueMap[estimateUpdate.featureKey];
+        if (!currentIssue) {
+          continue;
+        }
+
+        finalJiraIssueMap[estimateUpdate.featureKey] = {
+          ...currentIssue,
+          fields: {
+            ...currentIssue.fields,
+            customfield_10111: estimateUpdate.estimate,
+          },
+        };
+      }
+      const finalReconciliationResult = reconcilePiReviewRowsWithJira(
+        saveReconciliationResult.rows,
+        finalJiraIssueMap,
+      );
+      const rowsForSave = finalReconciliationResult.rows;
+
       let updatedPage;
       try {
         updatedPage = await updateConfluencePage({
           pageId: resolvedPageId,
           pageTitle: pageTitle || target.targetLabel,
-          storageValue: buildNextPiReviewStorageValue(storageValue, tableBinding, confidenceTableBinding, capacitySummaryForSave),
+          storageValue: buildNextPiReviewStorageValue(
+            storageValue,
+            tableBinding,
+            confidenceTableBinding,
+            capacitySummaryForSave,
+            rowsForSave,
+            confidenceRows,
+            commitmentBoundaryIndex,
+            customGroupingLines,
+          ),
           nextVersionNumber: pageVersionNumber + 1,
         });
       } catch (error) {
@@ -577,6 +869,10 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
             latestPiReviewTable.tableBinding,
             latestConfidenceTable.tableBinding,
             capacitySummaryForSave,
+            rowsForSave,
+            confidenceRows,
+            commitmentBoundaryIndex,
+            customGroupingLines,
           ),
           nextVersionNumber: latestConfluencePage.version.number + 1,
         });
@@ -585,18 +881,27 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
       const parsedPiReviewTable = parsePiReviewTable(updatedPage.body.storage.value);
       const parsedConfidenceTable = parseConfidenceVoteTable(updatedPage.body.storage.value);
       const parsedCapacitySummary = parsePiReviewCapacitySummary(updatedPage.body.storage.value);
-      setRows(parsedPiReviewTable.rows);
-      setConfidenceRows(parsedConfidenceTable.rows);
-      setSavedCapacitySummary(parsedCapacitySummary);
-      setTableBinding(parsedPiReviewTable.tableBinding);
-      setConfidenceTableBinding(parsedConfidenceTable.tableBinding);
-      setVisibleOptionalColumns(readOptionalColumnsFromBinding(parsedPiReviewTable.tableBinding));
-      setCommitmentBoundaryIndex(parsedPiReviewTable.commitmentBoundaryIndex);
+      const refreshedJiraIssueMap = await fetchPiReviewFeatureIssues(parsedPiReviewTable.rows);
+      const refreshedReconciliationResult = reconcilePiReviewRowsWithJira(parsedPiReviewTable.rows, refreshedJiraIssueMap);
+      const refreshedSnapshot: PiReviewLoadedSnapshot = {
+        rows: refreshedReconciliationResult.rows,
+        confidenceRows: parsedConfidenceTable.rows,
+        savedCapacitySummary: parsedCapacitySummary,
+        tableBinding: parsedPiReviewTable.tableBinding,
+        confidenceTableBinding: parsedConfidenceTable.tableBinding,
+        visibleOptionalColumns: readOptionalColumnsFromBinding(parsedPiReviewTable.tableBinding),
+        commitmentBoundaryIndex: parsedPiReviewTable.commitmentBoundaryIndex,
+        customGroupingLines: parsedPiReviewTable.customGroupingLines,
+        jiraIssueMap: refreshedJiraIssueMap,
+        hasUnsavedChanges: refreshedReconciliationResult.hasChanges,
+      };
+      loadedSnapshotRef.current = refreshedSnapshot;
+      applyLoadedSnapshot(refreshedSnapshot);
       setStorageValue(updatedPage.body.storage.value);
       setPageTitle(updatedPage.title);
       setResolvedPageId(updatedPage.id);
       setPageVersionNumber(updatedPage.version.number);
-      setHasUnsavedChanges(false);
+      setIsEditMode(false);
       showToast(`${target.targetLabel} PI Review saved to Confluence ✓`, 'success');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to save the PI Review page';
@@ -607,11 +912,68 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
     }
   }
 
+  async function handleExportPdf() {
+    const pagePanelElement = pagePanelRef.current;
+    if (!pagePanelElement) {
+      showToast('Load the PI Review panel before exporting a PDF.', 'error');
+      return;
+    }
+
+    const wasEditMode = isEditMode;
+    setIsExportingPdf(true);
+
+    try {
+      // Export the clean document view so the PDF reads like the Confluence page rather than an editor.
+      if (wasEditMode) {
+        flushSync(() => {
+          setIsEditMode(false);
+        });
+        await waitForNextPaint();
+        await waitForNextPaint();
+      }
+
+      if (!pagePanelRef.current) {
+        throw new Error('The PI Review panel is no longer available to export.');
+      }
+
+      await downloadPiReviewPanelPdf(
+        pagePanelRef.current,
+        createPiReviewPdfFileName(selectedPiName, target.targetLabel),
+      );
+      showToast(`${target.targetLabel} PI Review PDF downloaded.`, 'success');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to export the PI Review PDF';
+      showToast(errorMessage, 'error');
+    } finally {
+      if (wasEditMode) {
+        flushSync(() => {
+          setIsEditMode(true);
+        });
+      }
+      setIsExportingPdf(false);
+    }
+  }
+
   return (
-    <section aria-label={`${target.targetLabel} PI Review`} className={styles.pagePanel}>
+    <section aria-label={`${target.targetLabel} PI Review`} className={styles.pagePanel} ref={pagePanelRef}>
       <div className={styles.statusRow}>
-        <h3>{target.targetLabel}</h3>
-        {hasUnsavedChanges && <span className={styles.dirtyBadge}>Unsaved changes</span>}
+        <div>
+          <h3>{target.targetLabel}</h3>
+          <p className={styles.summaryValue}>
+            {isEditMode ? 'Edit mode is on. Structural table tools are available below.' : 'View mode is on. Switch to Edit PI Review to change the document.'}
+          </p>
+        </div>
+        <div className={styles.panelStatusActions} data-pdf-exclude="true">
+          {hasUnsavedChanges && <span className={styles.dirtyBadge}>Unsaved changes</span>}
+          <button
+            aria-pressed={isEditMode}
+            disabled={isLoading || isSaving || isExportingPdf || !tableBinding}
+            onClick={() => setIsEditMode((currentIsEditMode) => !currentIsEditMode)}
+            type="button"
+          >
+            {isEditMode ? 'Done Editing' : 'Edit PI Review'}
+          </button>
+        </div>
       </div>
 
       <div className={styles.pageSummaryCard}>
@@ -637,40 +999,68 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
         </div>
       </div>
 
-      <div className={styles.toolbar}>
-        <button disabled={isLoading || isSaving} onClick={() => void loadPiReviewPage()} type="button">
+      <div className={styles.toolbar} data-pdf-exclude="true">
+        <button disabled={isLoading || isSaving || isExportingPdf} onClick={() => void loadPiReviewPage()} type="button">
           {isLoading ? 'Loading…' : 'Reload from Confluence'}
         </button>
-        <button disabled={isLoading || isSaving || !tableBinding} onClick={handleAddRow} type="button">Add PI Review Row</button>
-        <button disabled={rows.length === 0} onClick={() => downloadPiReviewCsv(rows, selectedPiName, target.targetLabel)} type="button">Export PI Review CSV</button>
-        <input
-          ref={importFileInputRef}
-          accept={SPREADSHEET_IMPORT_ACCEPT}
-          aria-label={`Import PI Review XLSX for ${target.targetLabel}`}
-          className={styles.hiddenFileInput}
-          disabled={isLoading || isSaving || !tableBinding}
-          onChange={(event) => void handleImportPiReviewFile(event)}
-          type="file"
-        />
         <button
-          disabled={isLoading || isSaving || !tableBinding}
-          onClick={() => importFileInputRef.current?.click()}
+          disabled={rows.length === 0 || isLoading || isSaving || isExportingPdf}
+          onClick={() => downloadPiReviewCsv(rows, selectedPiName, target.targetLabel)}
           type="button"
         >
-          Import PI Review XLSX
+          Export PI Review CSV
         </button>
-        <button disabled={isLoading || isSaving || !tableBinding} onClick={handleAddConfidenceRow} type="button">Add Confidence Week</button>
+        <button disabled={!canExportPdf || isLoading || isSaving || isExportingPdf} onClick={() => void handleExportPdf()} type="button">
+          {isExportingPdf ? 'Exporting PDF…' : 'Export PI Review PDF'}
+        </button>
         <button
-          disabled={isLoading || isSaving || !hasUnsavedChanges || pageVersionNumber === null || resolvedPageId === ''}
+          disabled={isLoading || isSaving || isExportingPdf || !hasUnsavedChanges || pageVersionNumber === null || resolvedPageId === ''}
           onClick={() => void handleSaveToConfluence()}
           type="button"
         >
           {isSaving ? 'Saving…' : 'Save to Confluence'}
         </button>
+        <button
+          disabled={isLoading || isSaving || isExportingPdf || !hasUnsavedChanges || loadedSnapshotRef.current === null}
+          onClick={handleIgnoreEdits}
+          type="button"
+        >
+          Ignore Edits
+        </button>
+        {isEditMode && (
+          <>
+            <button disabled={isLoading || isSaving || isExportingPdf || !tableBinding} onClick={handleAddRow} type="button">Add PI Review Row</button>
+            <input
+              ref={importFileInputRef}
+              accept={SPREADSHEET_IMPORT_ACCEPT}
+              aria-label={`Import PI Review XLSX for ${target.targetLabel}`}
+              className={styles.hiddenFileInput}
+              disabled={isLoading || isSaving || isExportingPdf || !tableBinding}
+              onChange={(event) => void handleImportPiReviewFile(event)}
+              type="file"
+            />
+            <button
+              disabled={isLoading || isSaving || isExportingPdf || !tableBinding}
+              onClick={() => importFileInputRef.current?.click()}
+              type="button"
+            >
+              Import PI Review XLSX
+            </button>
+            <button disabled={isLoading || isSaving || isExportingPdf || !tableBinding} onClick={handleAddConfidenceRow} type="button">Add Confidence Week</button>
+          </>
+        )}
       </div>
 
-      {tableBinding && (
-        <fieldset className={styles.tableTools}>
+      <div className={styles.documentStats}>
+        <span className={styles.statBadge}>
+          Stretch Goals line: {commitmentBoundaryIndex === null ? 'Not set' : `after row ${commitmentBoundaryIndex}`}
+        </span>
+        <span className={styles.statBadge}>Custom lines: {customGroupingLines.length}</span>
+        <span className={styles.statBadge}>Committed points: {formatCapacityValue(committedPointTotal)}</span>
+      </div>
+
+      {tableBinding && isEditMode && (
+        <fieldset className={styles.tableTools} data-pdf-exclude="true">
           <legend>Table tools</legend>
           <span className={styles.summaryValue}>Optional checkbox columns:</span>
           {OPTIONAL_PI_REVIEW_COLUMN_KEYS.map((columnKey) => {
@@ -688,18 +1078,109 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
               </button>
             );
           })}
-          <span className={styles.summaryValue}>
-            Commitment line: {commitmentBoundaryIndex === null ? 'Not set' : `after row ${commitmentBoundaryIndex}`}
-          </span>
-          <span className={styles.summaryValue}>Committed points: {formatCapacityValue(committedPointTotal)}</span>
           <button
             className={styles.columnToggleButton}
             disabled={isLoading || isSaving || commitmentBoundaryIndex === null}
             onClick={handleClearCommitmentBoundary}
             type="button"
           >
-            Clear commitment line
+            Clear Stretch Goals line
           </button>
+          {rows.length > 0 && (
+            <div className={styles.groupingLineEditor}>
+              <label className={styles.groupingLineField}>
+                After row
+                <select
+                  className={styles.groupingLineSelect}
+                  onChange={(event) =>
+                    setCustomGroupingLineDraft((currentDraft) => ({
+                      ...currentDraft,
+                      afterRowIndex: Number(event.target.value),
+                    }))}
+                  value={String(customGroupingLineDraft.afterRowIndex)}
+                >
+                  {rows.map((_row, rowIndex) => (
+                    <option key={rowIndex} value={rowIndex + 1}>
+                      Row {rowIndex + 1}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.groupingLineField}>
+                Custom line text
+                <input
+                  className={styles.cellInput}
+                  onChange={(event) =>
+                    setCustomGroupingLineDraft((currentDraft) => ({
+                      ...currentDraft,
+                      label: event.target.value,
+                    }))}
+                  type="text"
+                  value={customGroupingLineDraft.label}
+                />
+              </label>
+              <label className={styles.groupingLineField}>
+                Color
+                <input
+                  className={styles.groupingLineColorInput}
+                  onChange={(event) =>
+                    setCustomGroupingLineDraft((currentDraft) => ({
+                      ...currentDraft,
+                      color: event.target.value,
+                    }))}
+                  type="color"
+                  value={customGroupingLineDraft.color}
+                />
+              </label>
+              <button className={styles.rowToolButton} disabled={isLoading || isSaving} onClick={handleAddCustomGroupingLine} type="button">
+                Add custom line
+              </button>
+            </div>
+          )}
+          {customGroupingLines.length > 0 && (
+            <div className={styles.groupingLineList}>
+              {customGroupingLines.map((groupingLine) => (
+                <div className={styles.groupingLineCard} key={groupingLine.lineId}>
+                  <label className={styles.groupingLineField}>
+                    Line text
+                    <input
+                      className={styles.cellInput}
+                      onChange={(event) => handleUpdateCustomGroupingLine(groupingLine.lineId, { label: event.target.value })}
+                      type="text"
+                      value={groupingLine.label}
+                    />
+                  </label>
+                  <label className={styles.groupingLineField}>
+                    After row
+                    <select
+                      className={styles.groupingLineSelect}
+                      onChange={(event) =>
+                        handleUpdateCustomGroupingLine(groupingLine.lineId, { afterRowIndex: Number(event.target.value) })}
+                      value={String(groupingLine.afterRowIndex)}
+                    >
+                      {rows.map((_row, rowIndex) => (
+                        <option key={rowIndex} value={rowIndex + 1}>
+                          Row {rowIndex + 1}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className={styles.groupingLineField}>
+                    Color
+                    <input
+                      className={styles.groupingLineColorInput}
+                      onChange={(event) => handleUpdateCustomGroupingLine(groupingLine.lineId, { color: event.target.value })}
+                      type="color"
+                      value={groupingLine.color}
+                    />
+                  </label>
+                  <button className={styles.removeButton} disabled={isSaving} onClick={() => handleRemoveCustomGroupingLine(groupingLine.lineId)} type="button">
+                    Remove line
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </fieldset>
       )}
 
@@ -790,19 +1271,21 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
 
       {!isLoading && rows.length === 0 && !loadError && (
         <p className={styles.summaryValue}>
-          No PI Review rows have been added yet. Use Add PI Review Row to start building this page from Toolbox.
+          {isEditMode
+            ? 'No PI Review rows have been added yet. Use Add PI Review Row to start building this page from Toolbox.'
+            : 'No PI Review rows have been added yet. Switch to Edit PI Review to start building this page from Toolbox.'}
         </p>
       )}
 
       {rows.length > 0 && (
-        <div className={styles.tableShell}>
+        <div className={styles.tableShell} data-pdf-expand="true">
           <table className={styles.dataTable}>
             <thead>
               <tr>
                 {visiblePiReviewColumnKeys.map((columnKey) => (
                   <th key={columnKey} scope="col">{PI_REVIEW_COLUMN_LABELS[columnKey]}</th>
                 ))}
-                <th scope="col">Actions</th>
+                {isEditMode && <th scope="col">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -811,6 +1294,9 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
                 const canSetBoundaryBelowRow = rowIndex < rows.length;
                 const canMoveRowUp = rowIndex > 0;
                 const canMoveRowDown = rowIndex < rows.length - 1;
+                const featureKey = extractPiReviewFeatureKey(row.feature);
+                const jiraIssue = featureKey ? jiraIssueMap[featureKey] : undefined;
+                const customLinesBelowRow = customGroupingLines.filter((groupingLine) => groupingLine.afterRowIndex === rowIndex + 1);
 
                 return (
                   <Fragment key={row.rowId}>
@@ -818,6 +1304,7 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
                       {visiblePiReviewColumnKeys.map((columnKey) => {
                         const isLongTextColumn = LONG_TEXT_COLUMNS.has(columnKey);
                         const isCheckboxColumn = CHECKBOX_COLUMNS.has(columnKey);
+                        const isJiraSyncedColumn = columnKey === 'priority' || columnKey === 'dependency' || columnKey === 'risks';
                         const cellClassName = columnKey === FEATURE_COLUMN_KEY
                           ? styles.featureCell
                           : isLongTextColumn
@@ -826,7 +1313,7 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
 
                         return (
                           <td className={cellClassName} key={columnKey}>
-                            {isCheckboxColumn ? (
+                            {isEditMode && isCheckboxColumn ? (
                               <input
                                 aria-label={`${PI_REVIEW_COLUMN_LABELS[columnKey]} for ${target.targetLabel} row ${rowIndex + 1}`}
                                 checked={row[columnKey] === 'Yes'}
@@ -834,14 +1321,45 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
                                 onChange={(event) => handleCellChange(row.rowId, columnKey, event.target.checked ? 'Yes' : '')}
                                 type="checkbox"
                               />
-                            ) : isLongTextColumn ? (
+                            ) : isEditMode && columnKey === FEATURE_COLUMN_KEY ? (
+                              <div className={styles.featureEditor}>
+                                <input
+                                  aria-label={`${PI_REVIEW_COLUMN_LABELS[columnKey]} for ${target.targetLabel} row ${rowIndex + 1}`}
+                                  className={styles.cellInput}
+                                  onChange={(event) => handleCellChange(row.rowId, columnKey, event.target.value)}
+                                  type="text"
+                                  value={row[columnKey]}
+                                />
+                                {jiraIssue?.fields.summary && (
+                                  <span className={styles.syncedHelperText}>View mode will show: {jiraIssue.key} - {jiraIssue.fields.summary}</span>
+                                )}
+                              </div>
+                            ) : isEditMode && isJiraSyncedColumn ? (
+                              <div className={styles.syncedValueBox}>
+                                <div className={isLongTextColumn ? styles.readOnlyMultilineValue : styles.readOnlyValue}>
+                                  {formatPiReviewCellValue(columnKey, row[columnKey])}
+                                </div>
+                                <span className={styles.syncedHelperText}>Synced from Jira issue links and priority.</span>
+                              </div>
+                            ) : isEditMode && isLongTextColumn ? (
                               <textarea
                                 aria-label={`${PI_REVIEW_COLUMN_LABELS[columnKey]} for ${target.targetLabel} row ${rowIndex + 1}`}
                                 className={styles.cellTextarea}
                                 onChange={(event) => handleCellChange(row.rowId, columnKey, event.target.value)}
                                 value={row[columnKey]}
                               />
-                            ) : (
+                            ) : isEditMode && columnKey === 'pointEstimate' && jiraIssue?.fields.customfield_10111 !== null && jiraIssue?.fields.customfield_10111 !== undefined ? (
+                              <div className={styles.featureEditor}>
+                                <input
+                                  aria-label={`${PI_REVIEW_COLUMN_LABELS[columnKey]} for ${target.targetLabel} row ${rowIndex + 1}`}
+                                  className={styles.cellInput}
+                                  onChange={(event) => handleCellChange(row.rowId, columnKey, event.target.value)}
+                                  type="text"
+                                  value={row[columnKey]}
+                                />
+                                <span className={styles.syncedHelperText}>Jira already has the feature estimate and will remain the source of truth.</span>
+                              </div>
+                            ) : isEditMode ? (
                               <input
                                 aria-label={`${PI_REVIEW_COLUMN_LABELS[columnKey]} for ${target.targetLabel} row ${rowIndex + 1}`}
                                 className={styles.cellInput}
@@ -849,50 +1367,73 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
                                 type="text"
                                 value={row[columnKey]}
                               />
+                            ) : (
+                              <div className={isLongTextColumn ? styles.readOnlyMultilineValue : styles.readOnlyValue}>
+                                {columnKey === FEATURE_COLUMN_KEY
+                                  ? formatPiReviewFeatureDisplayValue(row.feature, jiraIssue)
+                                  : formatPiReviewCellValue(columnKey, row[columnKey])}
+                              </div>
                             )}
                           </td>
                         );
                       })}
-                      <td className={styles.rowActionCell}>
-                        <div className={styles.rowActionGroup}>
-                          <button
-                            className={styles.rowToolButton}
-                            disabled={isSaving || !canMoveRowUp}
-                            onClick={() => handleMoveRow(row.rowId, -1)}
-                            type="button"
-                          >
-                            Move up
-                          </button>
-                          <button
-                            className={styles.rowToolButton}
-                            disabled={isSaving || !canMoveRowDown}
-                            onClick={() => handleMoveRow(row.rowId, 1)}
-                            type="button"
-                          >
-                            Move down
-                          </button>
-                          {canSetBoundaryBelowRow && (
+                      {isEditMode && (
+                        <td className={styles.rowActionCell}>
+                          <div className={styles.rowActionGroup}>
                             <button
-                              aria-pressed={isBoundaryBelowRow}
-                              className={`${styles.boundaryButton} ${isBoundaryBelowRow ? styles.boundaryButtonActive : ''}`.trim()}
-                              disabled={isSaving}
-                              onClick={() => handleSetCommitmentBoundaryAfterRow(rowIndex)}
+                              className={styles.rowToolButton}
+                              disabled={isSaving || !canMoveRowUp}
+                              onClick={() => handleMoveRow(row.rowId, -1)}
                               type="button"
                             >
-                              {isBoundaryBelowRow ? 'Commit line below' : 'Set commit line below'}
+                              Move up
                             </button>
-                          )}
-                          <button className={styles.removeButton} disabled={isSaving} onClick={() => handleRemoveRow(row.rowId)} type="button">
-                            Remove
-                          </button>
-                        </div>
-                      </td>
+                            <button
+                              className={styles.rowToolButton}
+                              disabled={isSaving || !canMoveRowDown}
+                              onClick={() => handleMoveRow(row.rowId, 1)}
+                              type="button"
+                            >
+                              Move down
+                            </button>
+                            {canSetBoundaryBelowRow && (
+                              <button
+                                aria-pressed={isBoundaryBelowRow}
+                                className={`${styles.boundaryButton} ${isBoundaryBelowRow ? styles.boundaryButtonActive : ''}`.trim()}
+                                disabled={isSaving}
+                                onClick={() => handleSetCommitmentBoundaryAfterRow(rowIndex)}
+                                type="button"
+                              >
+                                {isBoundaryBelowRow ? 'Stretch Goals line below' : 'Set Stretch Goals line below'}
+                              </button>
+                            )}
+                            <button className={styles.removeButton} disabled={isSaving} onClick={() => handleRemoveRow(row.rowId)} type="button">
+                              Remove
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
+                    {customLinesBelowRow.map((groupingLine) => (
+                      <tr className={styles.customGroupingLineRow} key={groupingLine.lineId}>
+                        <td
+                          colSpan={visiblePiReviewColumnKeys.length + (isEditMode ? 1 : 0)}
+                          style={{
+                            borderTopColor: groupingLine.color,
+                            borderBottomColor: groupingLine.color,
+                            backgroundColor: convertHexColorToRgba(groupingLine.color, 0.18),
+                            color: groupingLine.color,
+                          }}
+                        >
+                          <strong>{groupingLine.label}</strong>
+                        </td>
+                      </tr>
+                    ))}
                     {isBoundaryBelowRow && (
                       <tr className={styles.commitmentBoundaryRow}>
-                        <td colSpan={visiblePiReviewColumnKeys.length + 1}>
+                        <td colSpan={visiblePiReviewColumnKeys.length + (isEditMode ? 1 : 0)}>
                           <span>Hard commits above</span>
-                          <strong>Stretch goals below</strong>
+                          <strong>Stretch Goals below</strong>
                         </td>
                       </tr>
                     )}
@@ -922,38 +1463,62 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
               <article className={styles.confidenceCard} key={row.rowId}>
                 <div className={styles.confidenceCardHeader}>
                   <strong>Week {rowIndex + 1}</strong>
-                  <button className={styles.removeButton} disabled={isSaving} onClick={() => handleRemoveConfidenceRow(row.rowId)} type="button">
-                    Remove
-                  </button>
+                  {isEditMode && (
+                    <button className={styles.removeButton} disabled={isSaving} onClick={() => handleRemoveConfidenceRow(row.rowId)} type="button">
+                      Remove
+                    </button>
+                  )}
                 </div>
-                <label className={styles.confidenceFieldLabel}>
-                  {CONFIDENCE_VOTE_COLUMN_LABELS.weekOf}
-                  <input
-                    aria-label={`${CONFIDENCE_VOTE_COLUMN_LABELS.weekOf} for ${target.targetLabel} confidence row ${rowIndex + 1}`}
-                    className={styles.cellInput}
-                    onChange={(event) => handleConfidenceRowChange(row.rowId, 'weekOf', event.target.value)}
-                    type="date"
-                    value={row.weekOf}
-                  />
-                </label>
-                <div className={styles.confidenceFieldLabel}>
-                  {CONFIDENCE_VOTE_COLUMN_LABELS.confidenceVote}
-                  <ConfidenceVoteSelector
-                    onChange={(nextValue) => handleConfidenceRowChange(row.rowId, 'confidenceVote', nextValue)}
-                    row={row}
-                    rowIndex={rowIndex}
-                    teamLabel={target.targetLabel}
-                  />
-                </div>
-                <label className={styles.confidenceFieldLabel}>
-                  {CONFIDENCE_VOTE_COLUMN_LABELS.notes}
-                  <textarea
-                    aria-label={`${CONFIDENCE_VOTE_COLUMN_LABELS.notes} for ${target.targetLabel} confidence row ${rowIndex + 1}`}
-                    className={styles.cellTextarea}
-                    onChange={(event) => handleConfidenceRowChange(row.rowId, 'notes', event.target.value)}
-                    value={row.notes}
-                  />
-                </label>
+                {isEditMode ? (
+                  <>
+                    <label className={styles.confidenceFieldLabel}>
+                      {CONFIDENCE_VOTE_COLUMN_LABELS.weekOf}
+                      <input
+                        aria-label={`${CONFIDENCE_VOTE_COLUMN_LABELS.weekOf} for ${target.targetLabel} confidence row ${rowIndex + 1}`}
+                        className={styles.cellInput}
+                        onChange={(event) => handleConfidenceRowChange(row.rowId, 'weekOf', event.target.value)}
+                        type="date"
+                        value={row.weekOf}
+                      />
+                    </label>
+                    <div className={styles.confidenceFieldLabel}>
+                      {CONFIDENCE_VOTE_COLUMN_LABELS.confidenceVote}
+                      <ConfidenceVoteSelector
+                        onChange={(nextValue) => handleConfidenceRowChange(row.rowId, 'confidenceVote', nextValue)}
+                        row={row}
+                        rowIndex={rowIndex}
+                        teamLabel={target.targetLabel}
+                      />
+                    </div>
+                    <label className={styles.confidenceFieldLabel}>
+                      {CONFIDENCE_VOTE_COLUMN_LABELS.notes}
+                      <textarea
+                        aria-label={`${CONFIDENCE_VOTE_COLUMN_LABELS.notes} for ${target.targetLabel} confidence row ${rowIndex + 1}`}
+                        className={styles.cellTextarea}
+                        onChange={(event) => handleConfidenceRowChange(row.rowId, 'notes', event.target.value)}
+                        value={row.notes}
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <div className={styles.confidenceReadOnlyGrid}>
+                    <div>
+                      <div className={styles.summaryLabel}>{CONFIDENCE_VOTE_COLUMN_LABELS.weekOf}</div>
+                      <div className={styles.readOnlyValue}>{row.weekOf || 'Not set'}</div>
+                    </div>
+                    <div>
+                      <div className={styles.summaryLabel}>{CONFIDENCE_VOTE_COLUMN_LABELS.confidenceVote}</div>
+                      <div className={styles.readOnlyVote}>
+                        <FistOfFiveIcon value={row.confidenceVote || '0'} />
+                        <span>{row.confidenceVote || 'Not set'}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className={styles.summaryLabel}>{CONFIDENCE_VOTE_COLUMN_LABELS.notes}</div>
+                      <div className={styles.readOnlyMultilineValue}>{row.notes.trim() === '' ? '—' : row.notes}</div>
+                    </div>
+                  </div>
+                )}
               </article>
             ))}
           </div>

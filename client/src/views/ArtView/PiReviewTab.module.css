@@ -59,6 +59,13 @@
   justify-content: space-between;
 }
 
+.panelStatusActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
 .dirtyBadge {
   padding: 4px 10px;
   border-radius: 999px;
@@ -73,6 +80,21 @@
   border: 1px solid var(--color-border);
   border-radius: 12px;
   background: var(--color-surface-1);
+}
+
+.documentStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.statBadge {
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  font-size: 13px;
 }
 
 .dataTable {
@@ -121,6 +143,15 @@
   min-width: 110px;
 }
 
+.readOnlyValue {
+  color: var(--color-text);
+}
+
+.readOnlyMultilineValue {
+  color: var(--color-text);
+  white-space: pre-wrap;
+}
+
 .featureCell {
   min-width: 220px;
 }
@@ -138,6 +169,17 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.featureEditor,
+.syncedValueBox {
+  display: grid;
+  gap: 6px;
+}
+
+.syncedHelperText {
+  font-size: 12px;
+  color: var(--color-text-secondary);
 }
 
 .boundaryButton {
@@ -198,6 +240,13 @@
   margin: 0 10px;
 }
 
+.customGroupingLineRow td {
+  padding: 8px 12px;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  text-align: center;
+}
+
 .recoveryCard,
 .confirmCard {
   display: grid;
@@ -220,10 +269,8 @@
 }
 
 .tableTools {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 10px;
-  align-items: center;
   padding: 12px 14px;
   border: 1px solid var(--color-border);
   border-radius: 12px;
@@ -252,6 +299,50 @@
   border-color: var(--color-primary);
   background: var(--color-primary-soft, rgba(59, 130, 246, 0.16));
   color: var(--color-primary);
+}
+
+.groupingLineEditor,
+.groupingLineList {
+  display: grid;
+  gap: 10px;
+}
+
+.groupingLineEditor {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+}
+
+.groupingLineCard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-1);
+  align-items: end;
+}
+
+.groupingLineField {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.groupingLineSelect,
+.groupingLineColorInput {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-1);
+  color: var(--color-text);
+  font: inherit;
+  min-height: 40px;
+}
+
+.groupingLineColorInput {
+  width: 100%;
+  padding: 4px;
 }
 
 .capacityPanel {
@@ -327,10 +418,23 @@
   color: var(--color-text-secondary);
 }
 
+.confidenceReadOnlyGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
 .fistSelector {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.readOnlyVote {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  color: var(--color-text);
 }
 
 .fistOption {

@@ -66,6 +66,7 @@ describe('parsePiReviewTable', () => {
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0].feature).toBe('Feature A');
     expect(result.rows[0].carryOver).toBe('Yes');
+    expect(result.customGroupingLines).toEqual([]);
   });
 
   it('finds the real header row when title rows appear above the PI Review headers', () => {
@@ -230,6 +231,51 @@ describe('parsePiReviewTable', () => {
       'No Confluence table was found with the required PI Review headers',
     );
   });
+
+  it('parses legacy Stretch Goals rows and new custom grouping rows from existing Confluence tables', () => {
+    const result = parsePiReviewTable(`
+      <table>
+        <tbody>
+          <tr>
+            <th>Carry-Over</th>
+            <th>Priority</th>
+            <th>Feature</th>
+            <th>Point Estimate</th>
+            <th>Dependency</th>
+            <th>Risks</th>
+            <th>Committed?</th>
+            <th>Notes</th>
+          </tr>
+          <tr>
+            <td>No</td>
+            <td>High</td>
+            <td>Feature A</td>
+            <td>8</td>
+            <td>None</td>
+            <td>Low</td>
+            <td>Yes</td>
+            <td>Ready</td>
+          </tr>
+          <tr data-node-toolbox-pi-review-grouping="custom" data-node-toolbox-pi-review-grouping-payload='{"lineId":"group-1","label":"Architecture Work","color":"#0ea5e9"}'>
+            <td colspan="8">Architecture Work</td>
+          </tr>
+          <tr data-node-toolbox-pi-review-boundary="hard-commit">
+            <td colspan="8">Hard commits above / Stretch goals below</td>
+          </tr>
+        </tbody>
+      </table>
+    `);
+
+    expect(result.commitmentBoundaryIndex).toBe(1);
+    expect(result.customGroupingLines).toEqual([
+      expect.objectContaining({
+        lineId: 'group-1',
+        afterRowIndex: 1,
+        label: 'Architecture Work',
+        color: '#0ea5e9',
+      }),
+    ]);
+  });
 });
 
 describe('parsePiReviewRowsFromSpreadsheetSheets', () => {
@@ -339,6 +385,31 @@ describe('createInitialPiReviewPageStorage', () => {
       'notes',
     ]);
     expect(parsedCapacitySummary).toBeNull();
+  });
+});
+
+describe('writePiReviewTable grouping lines', () => {
+  it('writes both custom grouping lines and the Stretch Goals row back into the PI Review table markup', () => {
+    const parsedPiReviewTable = parsePiReviewTable(MOCK_STORAGE_VALUE);
+    const rewrittenStorageValue = writePiReviewTable(
+      MOCK_STORAGE_VALUE,
+      parsedPiReviewTable.tableBinding,
+      parsedPiReviewTable.rows,
+      1,
+      [
+        {
+          lineId: 'group-1',
+          afterRowIndex: 1,
+          label: 'Architecture Work',
+          color: '#0ea5e9',
+        },
+      ],
+    );
+
+    expect(rewrittenStorageValue).toContain('data-node-toolbox-pi-review-boundary="hard-commit"');
+    expect(rewrittenStorageValue).toContain('data-node-toolbox-pi-review-grouping="custom"');
+    expect(rewrittenStorageValue).toContain('Architecture Work');
+    expect(rewrittenStorageValue).toContain('#0ea5e9');
   });
 });
 

@@ -18,8 +18,8 @@ export interface JiraTransition {
 /** Jira issue link metadata used by standup, blocker, and release workflows. */
 export interface JiraIssueLink {
   type?: { name?: string; inward?: string; outward?: string };
-  inwardIssue?: { key: string; fields?: { summary?: string; status?: { name: string } } };
-  outwardIssue?: { key: string; fields?: { summary?: string; status?: { name: string } } };
+  inwardIssue?: { key: string; fields?: { summary?: string; status?: { name: string }; labels?: string[] } };
+  outwardIssue?: { key: string; fields?: { summary?: string; status?: { name: string }; labels?: string[] } };
 }
 
 /** Jira comment metadata used by planning and issue detail workflows. */
@@ -54,6 +54,8 @@ export interface JiraIssue {
     customfield_10028?: number | null;
     /** Legacy impediment / flagged field used by some Team Dashboard parity views. */
     customfield_10021?: boolean | string | null;
+    /** Feature-level point estimate used by PI Review feature reconciliation. */
+    customfield_10111?: number | null;
     /** Program Increment field used by DSU and Team Dashboard scope filtering. */
     customfield_10301?: { value?: string; name?: string } | string | null;
     /** Legacy epic-link field variants used by planning grouping. */

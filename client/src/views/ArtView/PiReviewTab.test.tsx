@@ -9,8 +9,18 @@ import type { ArtTeam } from './hooks/useArtData.ts';
 import { useArtCapacityStore } from './hooks/useArtCapacityStore.ts';
 import { writePiReviewCapacitySummary } from './piReviewTable.ts';
 
-const { mockFetchConfluencePageByReference, mockResolveConfluencePageIdFromReference, mockUpdateConfluencePage } = vi.hoisted(() => ({
+const {
+  mockDownloadPiReviewPanelPdf,
+  mockFetchConfluencePageByReference,
+  mockJiraGet,
+  mockJiraPut,
+  mockResolveConfluencePageIdFromReference,
+  mockUpdateConfluencePage,
+} = vi.hoisted(() => ({
+  mockDownloadPiReviewPanelPdf: vi.fn(),
   mockFetchConfluencePageByReference: vi.fn(),
+  mockJiraGet: vi.fn(),
+  mockJiraPut: vi.fn(),
   mockResolveConfluencePageIdFromReference: vi.fn(),
   mockUpdateConfluencePage: vi.fn(),
 }));
@@ -19,6 +29,15 @@ vi.mock('../../services/confluenceApi.ts', () => ({
   fetchConfluencePageByReference: mockFetchConfluencePageByReference,
   resolveConfluencePageIdFromReference: mockResolveConfluencePageIdFromReference,
   updateConfluencePage: mockUpdateConfluencePage,
+}));
+
+vi.mock('../../services/jiraApi.ts', () => ({
+  jiraGet: mockJiraGet,
+  jiraPut: mockJiraPut,
+}));
+
+vi.mock('./piReviewPdf.ts', () => ({
+  downloadPiReviewPanelPdf: mockDownloadPiReviewPanelPdf,
 }));
 
 import PiReviewTab from './PiReviewTab.tsx';
@@ -107,6 +126,21 @@ const BETA_PAGE = {
   },
 };
 
+const ALPHA_PAGE_WITH_FEATURE_KEY = {
+  ...ALPHA_PAGE,
+  body: {
+    storage: {
+      value: ALPHA_PAGE.body.storage.value
+        .replace('Feature A', 'DENP-1352')
+        .replace('<td>P1</td>', '<td>Manual priority</td>')
+        .replace('<td>8</td>', '<td>5</td>')
+        .replace('<td>Platform</td>', '<td>Legacy dependency note</td>')
+        .replace('<td>Vendor delay</td>', '<td>Legacy risk note</td>'),
+      representation: 'storage',
+    },
+  },
+};
+
 const DEFAULT_TEAMS: ArtTeam[] = [
   {
     id: 'team-1',
@@ -134,6 +168,10 @@ function renderPiReviewTab(teams: ArtTeam[] = DEFAULT_TEAMS) {
       <PiReviewTab selectedPiName="PI 26.3" teams={teams} />
     </ToastProvider>,
   );
+}
+
+function enterEditMode(piReviewSection: HTMLElement) {
+  fireEvent.click(within(piReviewSection).getByRole('button', { name: /edit pi review/i }));
 }
 
 function createAlphaPageWithExtraPiReviewRows(extraRowsMarkup: string) {
@@ -166,6 +204,8 @@ describe('PiReviewTab', () => {
     vi.clearAllMocks();
     localStorage.clear();
     useArtCapacityStore.setState({ teamConfigs: {} });
+    mockJiraGet.mockResolvedValue({ issues: [] });
+    mockJiraPut.mockResolvedValue(undefined);
     mockResolveConfluencePageIdFromReference.mockImplementation((pageReference: string) => {
       if (pageReference.includes('12345')) {
         return '12345';
@@ -208,10 +248,242 @@ describe('PiReviewTab', () => {
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
     expect(alphaSection).toBeInTheDocument();
     expect(screen.getByRole('region', { name: /beta team pi review/i })).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Feature A')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Feature B')).toBeInTheDocument();
+    expect(screen.getByText('Feature A')).toBeInTheDocument();
+    expect(screen.getByText('Feature B')).toBeInTheDocument();
     expect(within(alphaSection).getByText(/committed points: 8/i)).toBeInTheDocument();
+    expect(within(alphaSection).queryByRole('button', { name: /add pi review row/i })).not.toBeInTheDocument();
     expect(mockFetchConfluencePageByReference).toHaveBeenCalledTimes(2);
+  });
+
+  it('defaults to a read-only view mode and only shows structural controls in edit mode', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    expect(within(alphaSection).getByText(/view mode is on/i)).toBeInTheDocument();
+    expect(within(alphaSection).getByText('Feature A')).toBeInTheDocument();
+    expect(within(alphaSection).getByRole('button', { name: /edit pi review/i })).toHaveAttribute('aria-pressed', 'false');
+    expect(within(alphaSection).queryByLabelText(/feature for alpha team row 1/i)).not.toBeInTheDocument();
+    expect(within(alphaSection).queryByRole('button', { name: /move up/i })).not.toBeInTheDocument();
+    expect(within(alphaSection).getByRole('button', { name: /save to confluence/i })).toBeDisabled();
+
+    enterEditMode(alphaSection);
+
+    expect(within(alphaSection).getByText(/edit mode is on/i)).toBeInTheDocument();
+    expect(within(alphaSection).getByRole('button', { name: /done editing/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(alphaSection).getByLabelText(/feature for alpha team row 1/i)).toBeInTheDocument();
+    expect(within(alphaSection).getByRole('button', { name: /save to confluence/i })).toBeInTheDocument();
+
+    fireEvent.change(within(alphaSection).getByLabelText(/feature for alpha team row 1/i), {
+      target: { value: 'Updated while editing' },
+    });
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /done editing/i }));
+    expect(within(alphaSection).queryByLabelText(/feature for alpha team row 1/i)).not.toBeInTheDocument();
+    expect(within(alphaSection).getByRole('button', { name: /save to confluence/i })).toBeEnabled();
+  });
+
+  it('loads Jira-enriched feature summaries, synced columns, and migrated notes in view mode', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE_WITH_FEATURE_KEY);
+    mockJiraGet.mockResolvedValue({
+      issues: [
+        {
+          id: '10001',
+          key: 'DENP-1352',
+          fields: {
+            summary: '26.3 Enrollment Support',
+            status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+            priority: { name: 'Highest', iconUrl: '' },
+            assignee: null,
+            reporter: null,
+            issuetype: { name: 'Feature', iconUrl: '' },
+            created: '',
+            updated: '',
+            description: null,
+            customfield_10111: 13,
+            issuelinks: [
+              {
+                type: { outward: 'blocks' },
+                outwardIssue: {
+                  key: 'PLAT-5',
+                  fields: {
+                    summary: 'Platform work',
+                    status: { name: 'Blocked' },
+                    labels: ['impediment'],
+                  },
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    expect(within(alphaSection).getByText('DENP-1352 - 26.3 Enrollment Support')).toBeInTheDocument();
+    expect(within(alphaSection).getByText('Highest')).toBeInTheDocument();
+    expect(within(alphaSection).getAllByText(/PLAT-5 - Platform work \(Blocked\)/i)).toHaveLength(2);
+    expect(within(alphaSection).getByText(/Dependency note: Legacy dependency note/i)).toBeInTheDocument();
+    expect(within(alphaSection).getByText(/Risk note: Legacy risk note/i)).toBeInTheDocument();
+    expect(within(alphaSection).getByText(/unsaved changes/i)).toBeInTheDocument();
+  });
+
+  it('exports a PI Review PDF for the current team panel', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+    mockDownloadPiReviewPanelPdf.mockResolvedValue(undefined);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /export pi review pdf/i }));
+
+    await waitFor(() => {
+      expect(mockDownloadPiReviewPanelPdf).toHaveBeenCalledTimes(1);
+    });
+
+    const [panelElement, fileName] = mockDownloadPiReviewPanelPdf.mock.calls[0];
+    expect(panelElement).toBe(alphaSection);
+    expect(fileName).toBe('pi-review-alpha-team-pi-26-3.pdf');
+  });
+
+  it('ignores edits for only the current team panel by restoring the last loaded state', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
+    fireEvent.change(within(alphaSection).getByLabelText(/notes for alpha team row 1/i), {
+      target: { value: 'Changed locally only' },
+    });
+    expect(within(alphaSection).getByText(/unsaved changes/i)).toBeInTheDocument();
+
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /ignore edits/i }));
+
+    expect(within(alphaSection).queryByLabelText(/notes for alpha team row 1/i)).not.toBeInTheDocument();
+    expect(within(alphaSection).getByText('Needs review')).toBeInTheDocument();
+    expect(within(alphaSection).queryByText(/unsaved changes/i)).not.toBeInTheDocument();
+  });
+
+  it('adds and saves custom grouping lines without reusing the Stretch Goals color', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+    mockUpdateConfluencePage.mockImplementation((savePayload: { storageValue: string }) =>
+      Promise.resolve({
+        ...ALPHA_PAGE,
+        version: { number: 8 },
+        body: {
+          storage: {
+            value: savePayload.storageValue,
+            representation: 'storage',
+          },
+        },
+      }));
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
+    fireEvent.change(within(alphaSection).getByLabelText(/custom line text/i), {
+      target: { value: 'Architecture Work' },
+    });
+    fireEvent.change(within(alphaSection).getByLabelText(/^color$/i), {
+      target: { value: '#0ea5e9' },
+    });
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /add custom line/i }));
+    expect(within(alphaSection).getByText('Architecture Work')).toBeInTheDocument();
+    fireEvent.change(within(alphaSection).getByLabelText(/notes for alpha team row 1/i), {
+      target: { value: 'Ready to save lines' },
+    });
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /save to confluence/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateConfluencePage).toHaveBeenCalledTimes(1);
+    });
+    expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).toContain('data-node-toolbox-pi-review-grouping="custom"');
+    expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).toContain('Architecture Work');
+    expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).toContain('#0ea5e9');
+  });
+
+  it('backfills the Jira feature estimate on save when Jira is blank and the PI Review already has a value', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE_WITH_FEATURE_KEY);
+    mockJiraGet.mockResolvedValue({
+      issues: [
+        {
+          id: '10001',
+          key: 'DENP-1352',
+          fields: {
+            summary: '26.3 Enrollment Support',
+            status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+            priority: { name: 'Highest', iconUrl: '' },
+            assignee: null,
+            reporter: null,
+            issuetype: { name: 'Feature', iconUrl: '' },
+            created: '',
+            updated: '',
+            description: null,
+            customfield_10111: null,
+            issuelinks: [],
+          },
+        },
+      ],
+    });
+    mockUpdateConfluencePage.mockImplementation((savePayload: { storageValue: string }) =>
+      Promise.resolve({
+        ...ALPHA_PAGE_WITH_FEATURE_KEY,
+        version: { number: 8 },
+        body: {
+          storage: {
+            value: savePayload.storageValue,
+            representation: 'storage',
+          },
+        },
+      }));
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
+    fireEvent.change(within(alphaSection).getByLabelText(/notes for alpha team row 1/i), {
+      target: { value: 'Save the estimate back to Jira' },
+    });
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /save to confluence/i }));
+
+    await waitFor(() => {
+      expect(mockJiraPut).toHaveBeenCalledTimes(1);
+      expect(mockUpdateConfluencePage).toHaveBeenCalledTimes(1);
+    });
+    expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/DENP-1352', {
+      fields: {
+        customfield_10111: 5,
+      },
+    });
+  });
+
+  it('exports the read-only document snapshot even when the user starts in edit mode', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+    let exportedHasEditableTextInput = true;
+    let exportedHasEditableTextarea = true;
+    mockDownloadPiReviewPanelPdf.mockImplementation(async (panelElement: HTMLElement) => {
+      exportedHasEditableTextInput = panelElement.querySelector('input[type="text"]') !== null;
+      exportedHasEditableTextarea = panelElement.querySelector('textarea') !== null;
+    });
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
+    expect(within(alphaSection).getByLabelText(/feature for alpha team row 1/i)).toBeInTheDocument();
+
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /export pi review pdf/i }));
+
+    await waitFor(() => {
+      expect(mockDownloadPiReviewPanelPdf).toHaveBeenCalledTimes(1);
+    });
+    expect(exportedHasEditableTextInput).toBe(false);
+    expect(exportedHasEditableTextarea).toBe(false);
+    expect(within(alphaSection).getByLabelText(/feature for alpha team row 1/i)).toBeInTheDocument();
   });
 
   it('saves edited rows and confidence votes back to the selected team page', async () => {
@@ -243,6 +515,7 @@ describe('PiReviewTab', () => {
     renderPiReviewTab([DEFAULT_TEAMS[0]]);
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
     fireEvent.change(
       within(alphaSection).getByLabelText(/notes for alpha team row 1/i),
       { target: { value: 'Ready to commit' } },
@@ -351,6 +624,7 @@ describe('PiReviewTab', () => {
     expect(within(alphaSection).getByText('Alpha Team Capacity')).toBeInTheDocument();
     expect(within(alphaSection).getByText('Dev: 10 pts')).toBeInTheDocument();
 
+    enterEditMode(alphaSection);
     fireEvent.change(within(alphaSection).getByLabelText(/notes for alpha team row 1/i), {
       target: { value: 'Keep saved capacity' },
     });
@@ -369,6 +643,7 @@ describe('PiReviewTab', () => {
     renderPiReviewTab([DEFAULT_TEAMS[0]]);
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
     const importFile = createPiReviewImportFile([
       [
         'YES - If this is a Carry-Over from a 26.2 Commit?',
@@ -401,12 +676,13 @@ describe('PiReviewTab', () => {
     expect(within(alphaSection).getByText(/unsaved changes/i)).toBeInTheDocument();
   });
 
-  it('renders fist-of-five hand-image options for each confidence vote row', async () => {
+  it('renders fist-of-five hand-image options in edit mode for each confidence vote row', async () => {
     mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
 
     renderPiReviewTab([DEFAULT_TEAMS[0]]);
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
     expect(
       within(alphaSection).getByRole('button', {
         name: /set fist of five vote to 5 for alpha team confidence row 1/i,
@@ -528,11 +804,12 @@ describe('PiReviewTab', () => {
     renderPiReviewTab([DEFAULT_TEAMS[0]]);
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
     fireEvent.click(within(alphaSection).getByRole('button', { name: /add pi review row/i }));
     fireEvent.change(within(alphaSection).getByLabelText(/feature for alpha team row 2/i), {
       target: { value: 'Stretch goal feature' },
     });
-    fireEvent.click(within(alphaSection).getAllByRole('button', { name: /set commit line below/i })[0]);
+    fireEvent.click(within(alphaSection).getAllByRole('button', { name: /set stretch goals line below/i })[0]);
     fireEvent.click(within(alphaSection).getByRole('button', { name: /save to confluence/i }));
 
     await waitFor(() => {
@@ -561,12 +838,13 @@ describe('PiReviewTab', () => {
     renderPiReviewTab([DEFAULT_TEAMS[0]]);
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
     fireEvent.click(within(alphaSection).getByRole('button', { name: /add pi review row/i }));
     fireEvent.change(within(alphaSection).getByLabelText(/feature for alpha team row 2/i), {
       target: { value: 'Committed feature' },
     });
     fireEvent.click(within(alphaSection).getAllByRole('button', { name: /move up/i })[1]);
-    fireEvent.click(within(alphaSection).getAllByRole('button', { name: /set commit line below/i })[0]);
+    fireEvent.click(within(alphaSection).getAllByRole('button', { name: /set stretch goals line below/i })[0]);
     fireEvent.click(within(alphaSection).getByRole('button', { name: /save to confluence/i }));
 
     await waitFor(() => {
@@ -620,6 +898,7 @@ describe('PiReviewTab', () => {
     renderPiReviewTab([DEFAULT_TEAMS[0]]);
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
     fireEvent.click(within(alphaSection).getAllByRole('button', { name: /move up/i })[2]);
     fireEvent.click(within(alphaSection).getByRole('button', { name: /save to confluence/i }));
 
@@ -657,6 +936,7 @@ describe('PiReviewTab', () => {
     renderPiReviewTab([DEFAULT_TEAMS[0]]);
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
     fireEvent.change(within(alphaSection).getByLabelText(/notes for alpha team row 1/i), {
       target: { value: 'Retry after conflict' },
     });
@@ -703,8 +983,9 @@ describe('PiReviewTab', () => {
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
     expect(within(alphaSection).getByText(/hard commits above/i)).toBeInTheDocument();
-    expect(within(alphaSection).getByText(/commitment line: after row 1/i)).toBeInTheDocument();
+    expect(within(alphaSection).getByText(/stretch goals line: after row 1/i)).toBeInTheDocument();
 
+    enterEditMode(alphaSection);
     fireEvent.change(within(alphaSection).getByLabelText(/notes for alpha team row 2/i), {
       target: { value: 'Still below the line' },
     });
@@ -750,6 +1031,7 @@ describe('PiReviewTab', () => {
     renderPiReviewTab([DEFAULT_TEAMS[0]]);
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
     fireEvent.click(within(alphaSection).getAllByRole('button', { name: /remove/i })[0]);
     fireEvent.click(within(alphaSection).getByRole('button', { name: /save to confluence/i }));
 
