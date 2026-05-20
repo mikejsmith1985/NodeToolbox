@@ -4,12 +4,11 @@ import { useCallback, useEffect, useMemo } from 'react';
 
 import {
   ALL_TEAM_ROLES,
+  buildCapacitySummary,
   calculateRecommendedCapacity,
-  calculateTotalCapacity,
-  countWorkDays,
   generateCapacityRowId,
 } from '../SprintDashboard/capacityModel.ts';
-import type { CapacityRow, TeamRole } from '../SprintDashboard/capacityModel.ts';
+import type { CapacityRow, CapacitySummary, TeamRole } from '../SprintDashboard/capacityModel.ts';
 import type { ArtTeam } from './hooks/useArtData.ts';
 import { useArtCapacityStore } from './hooks/useArtCapacityStore.ts';
 import styles from './ArtCapacityTab.module.css';
@@ -39,15 +38,6 @@ interface TeamCapacityResultsProps {
 
 interface ArtCapacityTabProps {
   teams: ArtTeam[];
-}
-
-interface TeamCapacitySummary {
-  teamId: string;
-  teamName: string;
-  workDayCount: number;
-  totalCapacityPoints: number;
-  recommendedCapacityPoints: number;
-  roleCapacities: Record<TeamRole, number>;
 }
 
 function CapacityRowEditor({ row, teamName, onUpdate, onRemove }: CapacityRowEditorProps) {
@@ -155,29 +145,6 @@ function TeamCapacityResults({ workDayCount, totalCapacityPoints, title }: TeamC
   );
 }
 
-function buildTeamCapacitySummary(team: ArtTeam, rows: CapacityRow[], startDate: string, endDate: string): TeamCapacitySummary {
-  const workDayCount = countWorkDays(startDate, endDate);
-  const totalCapacityPoints = calculateTotalCapacity(rows, workDayCount);
-  const roleCapacities = Object.fromEntries(
-    ALL_TEAM_ROLES.map((teamRole) => [
-      teamRole,
-      calculateTotalCapacity(
-        rows.filter((row) => row.role === teamRole),
-        workDayCount,
-      ),
-    ]),
-  ) as Record<TeamRole, number>;
-
-  return {
-    teamId: team.id,
-    teamName: team.name,
-    workDayCount,
-    totalCapacityPoints,
-    recommendedCapacityPoints: calculateRecommendedCapacity(totalCapacityPoints),
-    roleCapacities,
-  };
-}
-
 /** ART Capacity tab: manages capacity rows per ART team and shows cross-team role totals. */
 export default function ArtCapacityTab({ teams }: ArtCapacityTabProps) {
   const teamConfigs = useArtCapacityStore((state) => state.teamConfigs);
@@ -197,11 +164,15 @@ export default function ArtCapacityTab({ teams }: ArtCapacityTabProps) {
     pruneTeamConfigs(teams.map((team) => team.id));
   }, [ensureTeamConfig, pruneTeamConfigs, teams]);
 
-  const teamSummaries = useMemo(
+  const teamSummaries = useMemo<(CapacitySummary & { teamId: string; teamName: string })[]>(
     () =>
       teams.map((team) => {
         const teamConfig = teamConfigs[team.id] ?? { startDate: '', endDate: '', rows: [] };
-        return buildTeamCapacitySummary(team, teamConfig.rows, teamConfig.startDate, teamConfig.endDate);
+        return {
+          teamId: team.id,
+          teamName: team.name,
+          ...buildCapacitySummary(`${team.name} Capacity`, teamConfig.rows, teamConfig.startDate, teamConfig.endDate),
+        };
       }),
     [teamConfigs, teams],
   );

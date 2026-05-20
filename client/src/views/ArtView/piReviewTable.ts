@@ -1,15 +1,24 @@
 // piReviewTable.ts — Parsing and storage helpers for the Confluence-backed PI Review and confidence tracking tables.
 
+import type { CapacitySummary } from '../SprintDashboard/capacityModel.ts';
+
 const STORAGE_WRAPPER_ID = 'pi-review-storage-wrapper';
 const REQUIRED_PI_REVIEW_COLUMN_COUNT = 8;
 const REQUIRED_CONFIDENCE_VOTE_COLUMN_COUNT = 3;
 const MIN_SPREADSHEET_IMPORT_COLUMN_COUNT = 4;
 const TOOLBOX_PI_REVIEW_TITLE = 'NodeToolbox PI Review';
 const TOOLBOX_PI_REVIEW_DESCRIPTION = 'This page section is managed by NodeToolbox so PI Review data can sync reliably.';
+const TEAM_CAPACITY_SECTION_TITLE = 'Team Capacity';
+const TEAM_CAPACITY_SECTION_DESCRIPTION = 'Snapshot pulled from the NodeToolbox Capacity tab.';
+const TEAM_CAPACITY_EMPTY_MESSAGE = 'Capacity from the Toolbox Capacity tab appears here after you save from NodeToolbox.';
 const CONFIDENCE_VOTE_SECTION_TITLE = 'Confidence Vote Tracking';
 const PI_REVIEW_COMMITMENT_BOUNDARY_ATTRIBUTE = 'data-node-toolbox-pi-review-boundary';
 const PI_REVIEW_COMMITMENT_BOUNDARY_VALUE = 'hard-commit';
 const PI_REVIEW_COMMITMENT_BOUNDARY_LABEL = 'Hard commits above / Stretch goals below';
+const PI_REVIEW_CAPACITY_SECTION_ATTRIBUTE = 'data-node-toolbox-pi-review-capacity';
+const PI_REVIEW_CAPACITY_SECTION_VALUE = 'summary';
+const PI_REVIEW_CAPACITY_PAYLOAD_ATTRIBUTE = 'data-node-toolbox-pi-review-capacity-payload';
+const FULL_WIDTH_TABLE_STYLE = 'width: 100%; table-layout: fixed;';
 
 export type PiReviewColumnKey =
   | 'carryOver'
@@ -136,14 +145,65 @@ function createEmptyTableHtml<ColumnKey extends string>(
   columnLabels: Record<ColumnKey, string>,
 ): string {
   const headerRowHtml = createHeaderRowHtml(columnKeys, columnLabels);
-  return `<table><thead><tr>${headerRowHtml}</tr></thead><tbody></tbody></table>`;
+  return `<table style="${FULL_WIDTH_TABLE_STYLE}"><thead><tr>${headerRowHtml}</tr></thead><tbody></tbody></table>`;
+}
+
+function formatCapacityValue(capacityValue: number): string {
+  return Number.isInteger(capacityValue) ? String(capacityValue) : String(Number(capacityValue.toFixed(1)));
+}
+
+function encodeCapacitySummary(capacitySummary: CapacitySummary): string {
+  return encodeURIComponent(JSON.stringify(capacitySummary));
+}
+
+function decodeCapacitySummary(encodedCapacitySummary: string | null): CapacitySummary | null {
+  if (!encodedCapacitySummary) {
+    return null;
+  }
+
+  try {
+    const parsedCapacitySummary = JSON.parse(decodeURIComponent(encodedCapacitySummary)) as CapacitySummary;
+    return parsedCapacitySummary;
+  } catch {
+    return null;
+  }
+}
+
+function createPiReviewCapacitySectionHtml(capacitySummary: CapacitySummary | null): string {
+  if (!capacitySummary) {
+    return [
+      `<section ${PI_REVIEW_CAPACITY_SECTION_ATTRIBUTE}="${PI_REVIEW_CAPACITY_SECTION_VALUE}">`,
+      `<h2>${TEAM_CAPACITY_SECTION_TITLE}</h2>`,
+      `<p>${TEAM_CAPACITY_EMPTY_MESSAGE}</p>`,
+      '</section>',
+    ].join('');
+  }
+
+  const visibleRoleSummaries = Object.entries(capacitySummary.roleCapacities)
+    .filter(([, capacityValue]) => capacityValue > 0)
+    .map(([teamRole, capacityValue]) => `<li><strong>${teamRole}:</strong> ${formatCapacityValue(capacityValue)} pts</li>`)
+    .join('');
+
+  return [
+    `<section ${PI_REVIEW_CAPACITY_SECTION_ATTRIBUTE}="${PI_REVIEW_CAPACITY_SECTION_VALUE}" ${PI_REVIEW_CAPACITY_PAYLOAD_ATTRIBUTE}="${encodeCapacitySummary(capacitySummary)}">`,
+    `<h2>${TEAM_CAPACITY_SECTION_TITLE}</h2>`,
+    `<p>${TEAM_CAPACITY_SECTION_DESCRIPTION}</p>`,
+    `<p><strong>Plan:</strong> ${capacitySummary.summaryLabel}</p>`,
+    `<p><strong>Date Range:</strong> ${capacitySummary.startDate || 'Not set'} to ${capacitySummary.endDate || 'Not set'}</p>`,
+    `<p><strong>Work Days:</strong> ${capacitySummary.workDayCount}</p>`,
+    `<p><strong>100% Capacity (pts):</strong> ${formatCapacityValue(capacitySummary.totalCapacityPoints)}</p>`,
+    `<p><strong>80% Capacity (pts):</strong> ${formatCapacityValue(capacitySummary.recommendedCapacityPoints)}</p>`,
+    visibleRoleSummaries ? `<ul>${visibleRoleSummaries}</ul>` : '<p>No capacity role rows are planned yet.</p>',
+    '</section>',
+  ].join('');
 }
 
 /** Creates the canonical Confluence storage body used when Toolbox initializes a PI Review page. */
-export function createInitialPiReviewPageStorage(): string {
+export function createInitialPiReviewPageStorage(capacitySummary: CapacitySummary | null = null): string {
   return [
     `<h1>${TOOLBOX_PI_REVIEW_TITLE}</h1>`,
     `<p>${TOOLBOX_PI_REVIEW_DESCRIPTION}</p>`,
+    createPiReviewCapacitySectionHtml(capacitySummary),
     createEmptyTableHtml(CORE_PI_REVIEW_COLUMN_KEYS, PI_REVIEW_COLUMN_LABELS),
     `<h2>${CONFIDENCE_VOTE_SECTION_TITLE}</h2>`,
     createEmptyTableHtml(CONFIDENCE_VOTE_COLUMN_KEYS, CONFIDENCE_VOTE_COLUMN_LABELS),
@@ -179,6 +239,51 @@ export function createEmptyConfidenceVoteRow(): ConfidenceVoteRow {
     confidenceVote: '3',
     notes: '',
   };
+}
+
+/** Reads the saved Team Capacity snapshot from a Confluence PI Review page when one exists. */
+export function parsePiReviewCapacitySummary(storageValue: string): CapacitySummary | null {
+  const documentNode = buildStorageDocument(storageValue);
+  const capacitySectionElement = documentNode.querySelector(
+    `[${PI_REVIEW_CAPACITY_SECTION_ATTRIBUTE}="${PI_REVIEW_CAPACITY_SECTION_VALUE}"]`,
+  );
+  if (!(capacitySectionElement instanceof HTMLElement)) {
+    return null;
+  }
+
+  return decodeCapacitySummary(capacitySectionElement.getAttribute(PI_REVIEW_CAPACITY_PAYLOAD_ATTRIBUTE));
+}
+
+/** Writes the Team Capacity snapshot into the Confluence PI Review page above the PI Review table. */
+export function writePiReviewCapacitySummary(storageValue: string, capacitySummary: CapacitySummary | null): string {
+  const documentNode = buildStorageDocument(storageValue);
+  const storageWrapperElement = readStorageWrapperElement(documentNode);
+  const capacitySectionElement = readStorageWrapperElement(
+    buildStorageDocument(createPiReviewCapacitySectionHtml(capacitySummary)),
+  ).firstElementChild;
+  if (!(capacitySectionElement instanceof HTMLElement)) {
+    throw new Error('The PI Review capacity section could not be created');
+  }
+
+  const existingCapacitySectionElement = documentNode.querySelector(
+    `[${PI_REVIEW_CAPACITY_SECTION_ATTRIBUTE}="${PI_REVIEW_CAPACITY_SECTION_VALUE}"]`,
+  );
+  if (existingCapacitySectionElement instanceof HTMLElement) {
+    existingCapacitySectionElement.replaceWith(capacitySectionElement);
+    return storageWrapperElement.innerHTML;
+  }
+
+  const piReviewTableBinding = locatePiReviewTableBinding(documentNode);
+  const piReviewTableElement = piReviewTableBinding
+    ? documentNode.querySelectorAll('table').item(piReviewTableBinding.tableIndex)
+    : null;
+  if (piReviewTableElement instanceof HTMLElement) {
+    piReviewTableElement.parentElement?.insertBefore(capacitySectionElement, piReviewTableElement);
+  } else {
+    storageWrapperElement.appendChild(capacitySectionElement);
+  }
+
+  return storageWrapperElement.innerHTML;
 }
 
 function formatSpreadsheetCellValue(cellValue: PiReviewSpreadsheetCellValue): string {
@@ -585,7 +690,7 @@ function normalizePiReviewCommitmentBoundaryIndex(
     return null;
   }
 
-  return commitmentBoundaryIndex > 0 && commitmentBoundaryIndex < rowCount
+  return commitmentBoundaryIndex > 0 && commitmentBoundaryIndex <= rowCount
     ? commitmentBoundaryIndex
     : null;
 }
@@ -712,6 +817,10 @@ function replaceRowsAfterHeader<RowType extends Record<string, string>>(
   }
 }
 
+function applyFullWidthTableLayout(tableElement: HTMLTableElement): void {
+  tableElement.setAttribute('style', FULL_WIDTH_TABLE_STYLE);
+}
+
 /** Writes the current Toolbox PI Review rows back into the matched Confluence table. */
 export function writePiReviewTable(
   storageValue: string,
@@ -725,6 +834,7 @@ export function writePiReviewTable(
     throw new Error('The PI Review table could not be found while preparing the Confluence update');
   }
 
+  applyFullWidthTableLayout(tableElement);
   replaceRowsAfterHeader(
     documentNode,
     tableElement,

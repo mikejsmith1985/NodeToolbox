@@ -8,7 +8,11 @@ import {
   resolveConfluencePageIdFromReference,
   updateConfluencePage,
 } from '../../services/confluenceApi.ts';
+import { buildCapacitySummary } from '../SprintDashboard/capacityModel.ts';
+import type { CapacitySummary } from '../SprintDashboard/capacityModel.ts';
 import type { ArtTeam } from './hooks/useArtData.ts';
+import { useArtCapacityStore } from './hooks/useArtCapacityStore.ts';
+import type { ArtCapacityTeamConfig } from './hooks/useArtCapacityStore.ts';
 import {
   CONFIDENCE_VOTE_COLUMN_LABELS,
   CORE_PI_REVIEW_COLUMN_KEYS,
@@ -18,6 +22,7 @@ import {
   createEmptyConfidenceVoteRow,
   createEmptyPiReviewRow,
   exportPiReviewRowsToCsv,
+  parsePiReviewCapacitySummary,
   parseConfidenceVoteTable,
   parsePiReviewTable,
   parsePiReviewRowsFromSpreadsheetSheets,
@@ -29,6 +34,7 @@ import {
   type ConfidenceVoteRow,
   type ConfidenceVoteTableBinding,
   writeConfidenceVoteTable,
+  writePiReviewCapacitySummary,
   writePiReviewTable,
 } from './piReviewTable.ts';
 import styles from './PiReviewTab.module.css';
@@ -39,17 +45,13 @@ const FEATURE_COLUMN_KEY = 'feature';
 const FIST_OF_FIVE_VALUES = ['1', '2', '3', '4', '5'] as const;
 const SPREADSHEET_IMPORT_ACCEPT = '.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
 
-interface ArtAdvancedSettings {
-  piReviewPageId?: string;
-  piReviewPageUrl?: string;
-}
-
 interface PiReviewTabProps {
   selectedPiName: string;
   teams: ArtTeam[];
 }
 
 interface PiReviewLoadTarget {
+  teamId: string;
   targetKey: string;
   targetLabel: string;
   pageReference: string;
@@ -60,32 +62,15 @@ interface PiReviewPagePanelProps {
   selectedPiName: string;
 }
 
-function readSharedPiReviewPageReference(): string {
-  try {
-    const artAdvancedSettings = JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as ArtAdvancedSettings;
-    return artAdvancedSettings.piReviewPageUrl?.trim() || artAdvancedSettings.piReviewPageId?.trim() || '';
-  } catch {
-    return '';
-  }
-}
-
 function readConfiguredPiReviewTargets(teams: ArtTeam[]): PiReviewLoadTarget[] {
-  const teamTargets = teams
+  return teams
     .filter((team) => (team.piReviewPageUrl ?? '').trim() !== '')
     .map((team) => ({
+      teamId: team.id,
       targetKey: team.id,
       targetLabel: team.name,
       pageReference: team.piReviewPageUrl!.trim(),
     }));
-
-  if (teamTargets.length > 0) {
-    return teamTargets;
-  }
-
-  const sharedPageReference = readSharedPiReviewPageReference();
-  return sharedPageReference
-    ? [{ targetKey: 'shared-pi-review', targetLabel: 'Shared PI Review', pageReference: sharedPageReference }]
-    : [];
 }
 
 function createTodayDateValue(): string {
@@ -130,8 +115,81 @@ function readOptionalColumnsFromBinding(tableBinding: PiReviewTableBinding): Set
   );
 }
 
+function formatCapacityValue(capacityValue: number): string {
+  return Number.isInteger(capacityValue) ? String(capacityValue) : String(Number(capacityValue.toFixed(1)));
+}
+
+function buildPiReviewTeamCapacitySummary(
+  target: PiReviewLoadTarget,
+  teamConfigs: Record<string, ArtCapacityTeamConfig>,
+): CapacitySummary | null {
+  const selectedTeamConfig = teamConfigs[target.teamId];
+  if (!selectedTeamConfig) {
+    return null;
+  }
+
+  // Capacity points depend on workday math, so partial dates would produce a misleading zeroed summary.
+  const hasCompleteDateRange = selectedTeamConfig.startDate !== '' && selectedTeamConfig.endDate !== '';
+  if (!hasCompleteDateRange) {
+    return null;
+  }
+
+  return buildCapacitySummary(
+    `${target.targetLabel} Capacity`,
+    selectedTeamConfig.rows,
+    selectedTeamConfig.startDate,
+    selectedTeamConfig.endDate,
+  );
+}
+
+function moveItemInList<ItemType>(items: ItemType[], startIndex: number, endIndex: number): ItemType[] {
+  if (startIndex === endIndex || startIndex < 0 || endIndex < 0 || startIndex >= items.length || endIndex >= items.length) {
+    return items;
+  }
+
+  const reorderedItems = [...items];
+  const [movedItem] = reorderedItems.splice(startIndex, 1);
+  if (movedItem === undefined) {
+    return items;
+  }
+
+  reorderedItems.splice(endIndex, 0, movedItem);
+  return reorderedItems;
+}
+
+function adjustCommitmentBoundaryAfterRowMove(
+  commitmentBoundaryIndex: number | null,
+  currentRowIndex: number,
+  nextRowIndex: number,
+): number | null {
+  if (commitmentBoundaryIndex === null) {
+    return null;
+  }
+
+  if (nextRowIndex < commitmentBoundaryIndex && currentRowIndex >= commitmentBoundaryIndex) {
+    return commitmentBoundaryIndex + 1;
+  }
+  if (currentRowIndex < commitmentBoundaryIndex && nextRowIndex >= commitmentBoundaryIndex) {
+    return commitmentBoundaryIndex - 1;
+  }
+  return commitmentBoundaryIndex;
+}
+
+function isPiReviewRowCommitted(row: PiReviewRow): boolean {
+  return row.committed.trim().toLowerCase() === 'yes';
+}
+
+function parsePiReviewPointEstimate(pointEstimate: string): number {
+  const parsedPointEstimate = Number(pointEstimate);
+  return Number.isFinite(parsedPointEstimate) ? parsedPointEstimate : 0;
+}
+
+function isConfluenceVersionConflictError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('Version must be incremented on update');
+}
+
 function normalizeCommitmentBoundaryIndex(commitmentBoundaryIndex: number | null, rowCount: number): number | null {
-  return commitmentBoundaryIndex !== null && commitmentBoundaryIndex > 0 && commitmentBoundaryIndex < rowCount
+  return commitmentBoundaryIndex !== null && commitmentBoundaryIndex > 0 && commitmentBoundaryIndex <= rowCount
     ? commitmentBoundaryIndex
     : null;
 }
@@ -227,8 +285,10 @@ function ConfidenceVoteSelector({
 
 function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
   const { showToast } = useToast();
+  const teamConfigs = useArtCapacityStore((state) => state.teamConfigs);
   const [rows, setRows] = useState<PiReviewRow[]>([]);
   const [confidenceRows, setConfidenceRows] = useState<ConfidenceVoteRow[]>([]);
+  const [savedCapacitySummary, setSavedCapacitySummary] = useState<CapacitySummary | null>(null);
   const [pageTitle, setPageTitle] = useState('');
   const [resolvedPageId, setResolvedPageId] = useState('');
   const [pageVersionNumber, setPageVersionNumber] = useState<number | null>(null);
@@ -244,6 +304,18 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
   const [commitmentBoundaryIndex, setCommitmentBoundaryIndex] = useState<number | null>(null);
   const lastAutoLoadKeyRef = useRef('');
   const importFileInputRef = useRef<HTMLInputElement>(null);
+  const liveCapacitySummary = useMemo(
+    () => buildPiReviewTeamCapacitySummary(target, teamConfigs),
+    [target, teamConfigs],
+  );
+  const displayedCapacitySummary = liveCapacitySummary ?? savedCapacitySummary;
+  const committedPointTotal = useMemo(
+    () => rows.reduce(
+      (runningTotal, row) => runningTotal + (isPiReviewRowCommitted(row) ? parsePiReviewPointEstimate(row.pointEstimate) : 0),
+      0,
+    ),
+    [rows],
+  );
   const visiblePiReviewColumnKeys = useMemo<PiReviewColumnKey[]>(
     () => [
       ...CORE_PI_REVIEW_COLUMN_KEYS,
@@ -264,8 +336,10 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
 
       const parsedPiReviewTable = parsePiReviewTable(confluencePage.body.storage.value);
       const parsedConfidenceTable = parseConfidenceVoteTable(confluencePage.body.storage.value);
+      const parsedCapacitySummary = parsePiReviewCapacitySummary(confluencePage.body.storage.value);
       setRows(parsedPiReviewTable.rows);
       setConfidenceRows(parsedConfidenceTable.rows);
+      setSavedCapacitySummary(parsedCapacitySummary);
       setTableBinding(parsedPiReviewTable.tableBinding);
       setConfidenceTableBinding(parsedConfidenceTable.tableBinding);
       setVisibleOptionalColumns(readOptionalColumnsFromBinding(parsedPiReviewTable.tableBinding));
@@ -277,6 +351,7 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
       setConfidenceRows([]);
       setTableBinding(null);
       setConfidenceTableBinding(null);
+      setSavedCapacitySummary(null);
       setVisibleOptionalColumns(new Set());
       setCommitmentBoundaryIndex(null);
       setLoadError(error instanceof Error ? error.message : 'Failed to load the PI Review page');
@@ -314,11 +389,12 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
 
     setLoadError(null);
     try {
-      const draftStorageValue = createInitialPiReviewPageStorage();
+      const draftStorageValue = createInitialPiReviewPageStorage(liveCapacitySummary);
       const parsedPiReviewTable = parsePiReviewTable(draftStorageValue);
       const parsedConfidenceTable = parseConfidenceVoteTable(draftStorageValue);
       setRows([createEmptyPiReviewRow()]);
       setConfidenceRows(parsedConfidenceTable.rows);
+      setSavedCapacitySummary(liveCapacitySummary);
       setTableBinding(parsedPiReviewTable.tableBinding);
       setConfidenceTableBinding(parsedConfidenceTable.tableBinding);
       setStorageValue(draftStorageValue);
@@ -336,6 +412,18 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
 
   function handleAddRow() {
     setRows((currentRows) => [...currentRows, createEmptyPiReviewRow()]);
+    setHasUnsavedChanges(true);
+  }
+
+  function handleMoveRow(rowId: string, directionOffset: -1 | 1) {
+    setRows((currentRows) => {
+      const currentRowIndex = currentRows.findIndex((row) => row.rowId === rowId);
+      const nextRowIndex = currentRowIndex + directionOffset;
+      setCommitmentBoundaryIndex((currentCommitmentBoundaryIndex) =>
+        adjustCommitmentBoundaryAfterRowMove(currentCommitmentBoundaryIndex, currentRowIndex, nextRowIndex),
+      );
+      return moveItemInList(currentRows, currentRowIndex, nextRowIndex);
+    });
     setHasUnsavedChanges(true);
   }
 
@@ -442,29 +530,64 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
     setHasUnsavedChanges(true);
   }
 
+  function buildNextPiReviewStorageValue(
+    baseStorageValue: string,
+    nextPiReviewTableBinding: PiReviewTableBinding,
+    nextConfidenceTableBinding: ConfidenceVoteTableBinding | null,
+    capacitySummaryForSave: CapacitySummary | null,
+  ): string {
+    let nextStorageValue = writePiReviewCapacitySummary(baseStorageValue, capacitySummaryForSave);
+    nextStorageValue = writePiReviewTable(nextStorageValue, nextPiReviewTableBinding, rows, commitmentBoundaryIndex);
+    if (confidenceRows.length > 0 || nextConfidenceTableBinding !== null) {
+      nextStorageValue = writeConfidenceVoteTable(nextStorageValue, nextConfidenceTableBinding, confidenceRows);
+    }
+    return nextStorageValue;
+  }
+
   async function handleSaveToConfluence() {
     if (!tableBinding || pageVersionNumber === null || resolvedPageId === '') {
       return;
     }
 
+    const capacitySummaryForSave = liveCapacitySummary ?? savedCapacitySummary;
     setIsSaving(true);
     setLoadError(null);
     try {
-      let nextStorageValue = writePiReviewTable(storageValue, tableBinding, rows, commitmentBoundaryIndex);
-      if (confidenceRows.length > 0 || confidenceTableBinding !== null) {
-        nextStorageValue = writeConfidenceVoteTable(nextStorageValue, confidenceTableBinding, confidenceRows);
+      let updatedPage;
+      try {
+        updatedPage = await updateConfluencePage({
+          pageId: resolvedPageId,
+          pageTitle: pageTitle || target.targetLabel,
+          storageValue: buildNextPiReviewStorageValue(storageValue, tableBinding, confidenceTableBinding, capacitySummaryForSave),
+          nextVersionNumber: pageVersionNumber + 1,
+        });
+      } catch (error) {
+        if (!isConfluenceVersionConflictError(error)) {
+          throw error;
+        }
+
+        const latestConfluencePage = await fetchConfluencePageByReference(target.pageReference);
+        const latestPiReviewTable = parsePiReviewTable(latestConfluencePage.body.storage.value);
+        const latestConfidenceTable = parseConfidenceVoteTable(latestConfluencePage.body.storage.value);
+        updatedPage = await updateConfluencePage({
+          pageId: latestConfluencePage.id || resolvedPageId,
+          pageTitle: latestConfluencePage.title || pageTitle || target.targetLabel,
+          storageValue: buildNextPiReviewStorageValue(
+            latestConfluencePage.body.storage.value,
+            latestPiReviewTable.tableBinding,
+            latestConfidenceTable.tableBinding,
+            capacitySummaryForSave,
+          ),
+          nextVersionNumber: latestConfluencePage.version.number + 1,
+        });
       }
 
-      const updatedPage = await updateConfluencePage({
-        pageId: resolvedPageId,
-        pageTitle: pageTitle || target.targetLabel,
-        storageValue: nextStorageValue,
-        nextVersionNumber: pageVersionNumber + 1,
-      });
       const parsedPiReviewTable = parsePiReviewTable(updatedPage.body.storage.value);
       const parsedConfidenceTable = parseConfidenceVoteTable(updatedPage.body.storage.value);
+      const parsedCapacitySummary = parsePiReviewCapacitySummary(updatedPage.body.storage.value);
       setRows(parsedPiReviewTable.rows);
       setConfidenceRows(parsedConfidenceTable.rows);
+      setSavedCapacitySummary(parsedCapacitySummary);
       setTableBinding(parsedPiReviewTable.tableBinding);
       setConfidenceTableBinding(parsedConfidenceTable.tableBinding);
       setVisibleOptionalColumns(readOptionalColumnsFromBinding(parsedPiReviewTable.tableBinding));
@@ -568,6 +691,7 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
           <span className={styles.summaryValue}>
             Commitment line: {commitmentBoundaryIndex === null ? 'Not set' : `after row ${commitmentBoundaryIndex}`}
           </span>
+          <span className={styles.summaryValue}>Committed points: {formatCapacityValue(committedPointTotal)}</span>
           <button
             className={styles.columnToggleButton}
             disabled={isLoading || isSaving || commitmentBoundaryIndex === null}
@@ -578,6 +702,56 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
           </button>
         </fieldset>
       )}
+
+      <section className={styles.capacityPanel}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <h4 className={styles.capacityTitle}>Team Capacity</h4>
+            <p className={styles.summaryValue}>
+              This snapshot is pulled from the Capacity tab and will be saved into Confluence above the PI Review table.
+            </p>
+          </div>
+        </div>
+        {displayedCapacitySummary ? (
+          <>
+            <div className={styles.capacitySummaryGrid}>
+              <div className={styles.capacitySummaryCard}>
+                <span className={styles.summaryLabel}>Plan</span>
+                <strong>{displayedCapacitySummary.summaryLabel}</strong>
+              </div>
+              <div className={styles.capacitySummaryCard}>
+                <span className={styles.summaryLabel}>Date Range</span>
+                <strong>{displayedCapacitySummary.startDate || 'Not set'} to {displayedCapacitySummary.endDate || 'Not set'}</strong>
+              </div>
+              <div className={styles.capacitySummaryCard}>
+                <span className={styles.summaryLabel}>Work Days</span>
+                <strong>{formatCapacityValue(displayedCapacitySummary.workDayCount)}</strong>
+              </div>
+              <div className={styles.capacitySummaryCard}>
+                <span className={styles.summaryLabel}>100% Capacity (pts)</span>
+                <strong>{formatCapacityValue(displayedCapacitySummary.totalCapacityPoints)}</strong>
+              </div>
+              <div className={styles.capacitySummaryCard}>
+                <span className={styles.summaryLabel}>80% Capacity (pts)</span>
+                <strong>{formatCapacityValue(displayedCapacitySummary.recommendedCapacityPoints)}</strong>
+              </div>
+            </div>
+            <div className={styles.capacityRoleList}>
+              {Object.entries(displayedCapacitySummary.roleCapacities)
+                .filter(([, capacityValue]) => capacityValue > 0)
+                .map(([teamRole, capacityValue]) => (
+                  <span className={styles.capacityRoleBadge} key={teamRole}>
+                    {teamRole}: {formatCapacityValue(capacityValue)} pts
+                  </span>
+                ))}
+            </div>
+          </>
+        ) : (
+          <p className={styles.summaryValue}>
+            No capacity plan has been saved for {target.targetLabel} yet. Fill out the Capacity tab to publish it here.
+          </p>
+        )}
+      </section>
 
       {loadError && (
         <div className={styles.recoveryCard}>
@@ -634,7 +808,9 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
             <tbody>
               {rows.map((row, rowIndex) => {
                 const isBoundaryBelowRow = commitmentBoundaryIndex === rowIndex + 1;
-                const canSetBoundaryBelowRow = rowIndex < rows.length - 1;
+                const canSetBoundaryBelowRow = rowIndex < rows.length;
+                const canMoveRowUp = rowIndex > 0;
+                const canMoveRowDown = rowIndex < rows.length - 1;
 
                 return (
                   <Fragment key={row.rowId}>
@@ -679,6 +855,22 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
                       })}
                       <td className={styles.rowActionCell}>
                         <div className={styles.rowActionGroup}>
+                          <button
+                            className={styles.rowToolButton}
+                            disabled={isSaving || !canMoveRowUp}
+                            onClick={() => handleMoveRow(row.rowId, -1)}
+                            type="button"
+                          >
+                            Move up
+                          </button>
+                          <button
+                            className={styles.rowToolButton}
+                            disabled={isSaving || !canMoveRowDown}
+                            onClick={() => handleMoveRow(row.rowId, 1)}
+                            type="button"
+                          >
+                            Move down
+                          </button>
                           {canSetBoundaryBelowRow && (
                             <button
                               aria-pressed={isBoundaryBelowRow}
@@ -779,7 +971,7 @@ export default function PiReviewTab({ selectedPiName, teams }: PiReviewTabProps)
     return (
         <div className={styles.piReviewTab}>
           <p className={styles.summaryValue}>
-          Add a <strong>PI Review Page URL</strong> to one or more ART teams in Settings. If you are not using team-specific pages yet, set the shared default PI Review page URL or ID instead.
+            Add an explicit <strong>PI Review Page URL</strong> to each ART team in Settings. PI Review pages no longer fall back to a shared default page.
           </p>
         </div>
       );

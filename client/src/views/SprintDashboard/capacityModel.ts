@@ -10,6 +10,17 @@ export type TeamRole = 'Dev' | 'Dev Lead' | 'QE' | 'Test Lead' | 'BT' | 'SL' | '
 /** Ordered list of all supported team roles shown in the capacity role dropdowns. */
 export const ALL_TEAM_ROLES: TeamRole[] = ['Dev', 'Dev Lead', 'QE', 'Test Lead', 'BT', 'SL', 'SA', 'PO', 'TPO', 'SM'];
 
+/** A reusable capacity snapshot that can be shown in the UI or written into Confluence. */
+export interface CapacitySummary {
+  summaryLabel: string;
+  startDate: string;
+  endDate: string;
+  workDayCount: number;
+  totalCapacityPoints: number;
+  recommendedCapacityPoints: number;
+  roleCapacities: Record<TeamRole, number>;
+}
+
 /**
  * One row in a capacity table.
  * Each row represents a group of people in the same role working at the same weighted allocation.
@@ -70,6 +81,39 @@ export function calculateTotalCapacity(rows: CapacityRow[], workDayCount: number
 /** Returns the recommended commitment target by applying the standard 80% planning buffer. */
 export function calculateRecommendedCapacity(totalCapacityPoints: number): number {
   return Math.floor(totalCapacityPoints * EIGHTY_PERCENT_MULTIPLIER);
+}
+
+/**
+ * Builds a complete capacity snapshot for one team or summary group.
+ * This keeps every ART surface aligned on the same capacity math and labels.
+ */
+export function buildCapacitySummary(
+  summaryLabel: string,
+  rows: CapacityRow[],
+  startDate: string,
+  endDate: string,
+): CapacitySummary {
+  const workDayCount = countWorkDays(startDate, endDate);
+  const totalCapacityPoints = calculateTotalCapacity(rows, workDayCount);
+  const roleCapacities = Object.fromEntries(
+    ALL_TEAM_ROLES.map((teamRole) => [
+      teamRole,
+      calculateTotalCapacity(
+        rows.filter((row) => row.role === teamRole),
+        workDayCount,
+      ),
+    ]),
+  ) as Record<TeamRole, number>;
+
+  return {
+    summaryLabel,
+    startDate,
+    endDate,
+    workDayCount,
+    totalCapacityPoints,
+    recommendedCapacityPoints: calculateRecommendedCapacity(totalCapacityPoints),
+    roleCapacities,
+  };
 }
 
 /** Generate a simple time-based unique ID for a new capacity row. */
