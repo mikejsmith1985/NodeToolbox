@@ -6,6 +6,7 @@
   gap: var(--spacing-md);
   padding: var(--spacing-md);
   height: 100%;
+  overflow: hidden;
 }
 
 .pageHeader {
@@ -68,6 +69,13 @@
 .activeTab {
   color: var(--color-accent);
   border-bottom-color: var(--color-accent);
+}
+
+.tabPanelSection {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* Wrapper that strips top-level page padding when a standalone view is embedded as a tab */
@@ -1111,6 +1119,19 @@
   gap: var(--spacing-sm);
 }
 
+.rosterSelectionRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.rosterSelectionCheckbox {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
 .rosterMemberList {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -1135,6 +1156,8 @@
 }
 
 .rosterMemberHeaderText {
+  min-width: 0;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
@@ -1178,6 +1201,86 @@
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
   line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.rosterLinkedWorkPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+.rosterLinkFieldShell {
+  min-width: 0;
+}
+
+.rosterWorkloadGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.rosterWorkloadColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  padding: var(--spacing-sm);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.rosterWorkloadHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.rosterWorkloadTitle {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.rosterWorkItemList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rosterWorkItem {
+  display: grid;
+  gap: 2px;
+  padding: var(--spacing-xs) 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+}
+
+.rosterWorkItem:last-child {
+  border-bottom: none;
+}
+
+.rosterWorkItemKey {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.rosterWorkItemSummary {
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.rosterWorkItemMeta {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
 }
 
 .pointingShell {

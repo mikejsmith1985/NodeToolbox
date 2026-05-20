@@ -1,7 +1,7 @@
 // src/routes/setup.js — First-run guided credential setup wizard.
 //
 // Serves a friendly step-by-step HTML wizard on GET /setup that walks a brand-new
-// user through connecting Jira, GitHub, and ServiceNow in plain, jargon-free language.
+// user through connecting Jira, GitHub, Confluence, and ServiceNow in plain language.
 // On POST /api/setup, validates the submitted credentials, persists them to
 // toolbox-proxy.json, and redirects the browser to the main dashboard.
 // The entire wizard is self-contained — no CDN or external assets required.
@@ -10,14 +10,15 @@
 
 const express  = require('express');
 const { saveConfigToDisk, JIRA_URL_PLACEHOLDER_PATTERNS } = require('../config/loader');
+const { createDemoModePath, isDemoModeRequest } = require('../utils/demoMode');
 
 // ── Named Constants ───────────────────────────────────────────────────────────
 
 /** Number of service-connection steps shown in the progress indicator */
-const WIZARD_TOTAL_SERVICE_STEPS = 3;
+const WIZARD_TOTAL_SERVICE_STEPS = 4;
 
 /** Step name referenced in data-step attributes and JS navigation */
-const STEP_NAMES = ['welcome', 'jira', 'github', 'snow', 'done'];
+const STEP_NAMES = ['welcome', 'jira', 'github', 'confluence', 'snow', 'done'];
 
 /**
  * The organisation's Jira instance URL — pre-filled in the wizard so users
@@ -49,7 +50,7 @@ function createSetupRouter(configuration) {
 function handleGetSetup(req, res, configuration) {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
-  res.status(200).end(buildWizardHtml(configuration));
+  res.status(200).end(buildWizardHtml(configuration, isDemoModeRequest(req)));
 }
 
 /**
@@ -62,6 +63,9 @@ function handlePostSetup(req, res, configuration) {
     jiraBaseUrl  = '',
     jiraPat      = '',
     githubPat    = '',
+    confluenceBaseUrl = '',
+    confluenceUsername = '',
+    confluenceApiToken = '',
     snowBaseUrl  = '',
     snowUsername = '',
     snowPassword = '',
@@ -70,6 +74,9 @@ function handlePostSetup(req, res, configuration) {
   const cleanJiraBaseUrl  = jiraBaseUrl.trim().replace(/\/+$/, '');
   const cleanJiraPat      = jiraPat.trim();
   const cleanGithubPat    = githubPat.trim();
+  const cleanConfluenceBaseUrl = confluenceBaseUrl.trim().replace(/\/+$/, '');
+  const cleanConfluenceUsername = confluenceUsername.trim();
+  const cleanConfluenceApiToken = confluenceApiToken.trim();
   const cleanSnowBaseUrl  = snowBaseUrl.trim().replace(/\/+$/, '');
   const cleanSnowUsername = snowUsername.trim();
   const cleanSnowPassword = snowPassword.trim();
@@ -77,17 +84,27 @@ function handlePostSetup(req, res, configuration) {
   const hasJiraConfig   = !!(cleanJiraBaseUrl && cleanJiraPat &&
     !JIRA_URL_PLACEHOLDER_PATTERNS.some((p) => cleanJiraBaseUrl.indexOf(p) >= 0));
   const hasGithubConfig = !!cleanGithubPat;
+  const hasConfluenceConfig = !!(cleanConfluenceBaseUrl && cleanConfluenceUsername && cleanConfluenceApiToken);
   const hasSnowConfig   = !!(cleanSnowBaseUrl && cleanSnowUsername && cleanSnowPassword);
 
-  if (!hasJiraConfig && !hasGithubConfig && !hasSnowConfig) {
+  if (!hasJiraConfig && !hasGithubConfig && !hasConfluenceConfig && !hasSnowConfig) {
     return res.status(400).json({
       error: 'Please set up at least one service before continuing.',
     });
   }
 
+  if (isDemoModeRequest(req)) {
+    console.log('  🎬 Demo setup completed — real credentials were not changed');
+    return res.redirect(302, createDemoModePath('/'));
+  }
+
   if (cleanJiraBaseUrl)  configuration.jira.baseUrl  = cleanJiraBaseUrl;
   if (cleanJiraPat)      configuration.jira.pat       = cleanJiraPat;
   if (cleanGithubPat)    configuration.github.pat     = cleanGithubPat;
+  configuration.confluence = configuration.confluence || {};
+  if (cleanConfluenceBaseUrl) configuration.confluence.baseUrl = cleanConfluenceBaseUrl;
+  if (cleanConfluenceUsername) configuration.confluence.username = cleanConfluenceUsername;
+  if (cleanConfluenceApiToken) configuration.confluence.apiToken = cleanConfluenceApiToken;
   if (cleanSnowBaseUrl)  configuration.snow.baseUrl   = cleanSnowBaseUrl;
   if (cleanSnowUsername) configuration.snow.username  = cleanSnowUsername;
   if (cleanSnowPassword) configuration.snow.password  = cleanSnowPassword;
@@ -104,16 +121,20 @@ function handlePostSetup(req, res, configuration) {
  * Steps are rendered as hidden divs; JS shows one at a time.
  *
  * @param {object} configuration - Used to pre-fill base URLs already on disk
+ * @param {boolean} isDemoMode - True when existing saved URLs should be hidden.
  * @returns {string} Full HTML document
  */
-function buildWizardHtml(configuration) {
+function buildWizardHtml(configuration, isDemoMode) {
   // Replace placeholder URLs with the organisation default so users only need to enter a PAT.
   // This also prevents old installs that still have the template placeholder URL from causing
   // a redirect loop after setup (isServiceConfigured rejects placeholder URLs).
-  const rawJiraBaseUrl      = configuration.jira && configuration.jira.baseUrl || '';
+  const visibleConfiguration = isDemoMode ? buildBlankWizardConfiguration(configuration) : configuration;
+  const rawJiraBaseUrl      = visibleConfiguration.jira && visibleConfiguration.jira.baseUrl || '';
   const isPlaceholderJiraUrl = JIRA_URL_PLACEHOLDER_PATTERNS.some((p) => rawJiraBaseUrl.indexOf(p) >= 0);
   const prefillJiraBaseUrl  = escapeHtmlAttribute(isPlaceholderJiraUrl || !rawJiraBaseUrl ? DEFAULT_JIRA_BASE_URL : rawJiraBaseUrl);
-  const prefillSnowBaseUrl = escapeHtmlAttribute(configuration.snow && configuration.snow.baseUrl || '');
+  const prefillConfluenceBaseUrl = escapeHtmlAttribute(visibleConfiguration.confluence && visibleConfiguration.confluence.baseUrl || '');
+  const prefillSnowBaseUrl = escapeHtmlAttribute(visibleConfiguration.snow && visibleConfiguration.snow.baseUrl || '');
+  const demoModeScript = `window.__NODE_TOOLBOX_DEMO_MODE__ = ${isDemoMode ? 'true' : 'false'};`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -129,17 +150,19 @@ function buildWizardHtml(configuration) {
     <div class="progress-bar" id="progress-bar" aria-hidden="true">
       <div class="progress-dot" id="dot-1" title="Jira"></div>
       <div class="progress-dot" id="dot-2" title="GitHub"></div>
-      <div class="progress-dot" id="dot-3" title="ServiceNow"></div>
+      <div class="progress-dot" id="dot-3" title="Confluence"></div>
+      <div class="progress-dot" id="dot-4" title="ServiceNow"></div>
     </div>
 
     ${buildStepWelcome()}
     ${buildStepJira(prefillJiraBaseUrl)}
     ${buildStepGithub()}
+    ${buildStepConfluence(prefillConfluenceBaseUrl)}
     ${buildStepSnow(prefillSnowBaseUrl)}
     ${buildStepDone()}
 
   </div>
-  <script>${WIZARD_JS}</script>
+      <script>${demoModeScript}${WIZARD_JS}</script>
 </body>
 </html>`;
 }
@@ -153,11 +176,12 @@ function buildStepWelcome() {
       <div class="step-hero">👋</div>
       <h1 class="step-title">Hey there!</h1>
       <p class="step-subtitle">NodeToolbox is your personal helper that lives quietly on your computer.</p>
-      <p class="step-body">It acts like a bridge between your browser and your work tools — Jira, GitHub, and ServiceNow.</p>
+      <p class="step-body">It acts like a bridge between your browser and your work tools — Jira, GitHub, Confluence, and ServiceNow.</p>
 
       <div class="service-preview">
         <div class="service-chip">🎟 Jira</div>
         <div class="service-chip">🐙 GitHub</div>
+        <div class="service-chip">📚 Confluence</div>
         <div class="service-chip">☁️ ServiceNow</div>
       </div>
 
@@ -229,6 +253,44 @@ function buildStepGithub() {
 }
 
 /**
+ * Builds the Confluence connection step used by shared ART and PI Review features.
+ *
+ * @param {string} prefillConfluenceBaseUrl - HTML-escaped existing Confluence URL (may be empty)
+ */
+function buildStepConfluence(prefillConfluenceBaseUrl) {
+  return `
+    <div id="step-confluence" data-step="confluence" class="wizard-step">
+      <p class="step-counter">Step 3 of ${WIZARD_TOTAL_SERVICE_STEPS}</p>
+      <div class="step-hero">📚</div>
+      <h1 class="step-title">Connect Confluence</h1>
+      <p class="step-subtitle">Confluence powers shared ART setup, PI Review pages, and collaboration spaces. <strong>This step is optional</strong> if you only want local tools.</p>
+
+      <label class="field-label" for="confluence-base-url">Confluence address</label>
+      <input id="confluence-base-url" class="field-input" type="url"
+             placeholder="https://your-company.atlassian.net"
+             value="${prefillConfluenceBaseUrl}" autocomplete="off" />
+
+      <label class="field-label" for="confluence-username">Your Atlassian email</label>
+      <input id="confluence-username" class="field-input" type="email"
+             placeholder="your.name@company.com" autocomplete="off" />
+
+      <label class="field-label" for="confluence-api-token">Your Atlassian API token</label>
+      <input id="confluence-api-token" class="field-input" type="password"
+             placeholder="Paste your Cloud API token here"
+             autocomplete="new-password" />
+      <p class="field-hint">Use an Atlassian Cloud API token from id.atlassian.com. Jira on-prem PATs usually do not work for Confluence Cloud.</p>
+
+      <div class="btn-row btn-row--spread">
+        <button class="btn-ghost" onclick="goBack()">← Back</button>
+        <div class="btn-group">
+          <button class="btn-secondary" onclick="skipCurrentStep()">Skip Confluence</button>
+          <button class="btn-primary" onclick="goNext()">Next →</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+/**
  * Builds the ServiceNow connection step (optional service).
  * Pre-fills the base URL if already known.
  *
@@ -237,7 +299,7 @@ function buildStepGithub() {
 function buildStepSnow(prefillSnowBaseUrl) {
   return `
     <div id="step-snow" data-step="snow" class="wizard-step">
-      <p class="step-counter">Step 3 of ${WIZARD_TOTAL_SERVICE_STEPS}</p>
+      <p class="step-counter">Step 4 of ${WIZARD_TOTAL_SERVICE_STEPS}</p>
       <div class="step-hero">☁️</div>
       <h1 class="step-title">Connect ServiceNow</h1>
       <p class="step-subtitle">ServiceNow is where IT tickets and service requests live. <strong>Also optional</strong> — skip it if you don't need it.</p>
@@ -396,11 +458,13 @@ const WIZARD_THEME_CSS = `
 const WIZARD_JS = `
   /* All wizard state lives here */
   var STEP_NAMES = ${JSON.stringify(STEP_NAMES)};
+  var IS_DEMO_MODE = window.__NODE_TOOLBOX_DEMO_MODE__ === true;
 
   /* Accumulated credentials collected step-by-step */
   var wizardData = {
     jiraBaseUrl: '', jiraPat: '',
     githubPat: '',
+    confluenceBaseUrl: '', confluenceUsername: '', confluenceApiToken: '',
     snowBaseUrl: '', snowUsername: '', snowPassword: '',
   };
 
@@ -418,8 +482,8 @@ const WIZARD_JS = `
   }
 
   function updateProgressDots(stepIndex) {
-    /* Dots map to service steps: dot-1=jira(1), dot-2=github(2), dot-3=snow(3) */
-    for (var dotNumber = 1; dotNumber <= 3; dotNumber++) {
+    /* Dots map to service steps: Jira, GitHub, Confluence, then ServiceNow. */
+    for (var dotNumber = 1; dotNumber <= ${WIZARD_TOTAL_SERVICE_STEPS}; dotNumber++) {
       var dotElement = document.getElementById('dot-' + dotNumber);
       if (!dotElement) continue;
       dotElement.classList.remove('is-current', 'is-complete');
@@ -435,6 +499,10 @@ const WIZARD_JS = `
       wizardData.jiraPat     = getValue('jira-pat');
     } else if (stepName === 'github') {
       wizardData.githubPat = getValue('github-pat');
+    } else if (stepName === 'confluence') {
+      wizardData.confluenceBaseUrl  = (getValue('confluence-base-url') || '').replace(/\\/+$/, '');
+      wizardData.confluenceUsername = getValue('confluence-username');
+      wizardData.confluenceApiToken = getValue('confluence-api-token');
     } else if (stepName === 'snow') {
       wizardData.snowBaseUrl  = (getValue('snow-base-url') || '').replace(/\\/+$/, '');
       wizardData.snowUsername = getValue('snow-username');
@@ -467,6 +535,7 @@ const WIZARD_JS = `
     var stepName = STEP_NAMES[currentStepIndex];
     if (stepName === 'jira')   { wizardData.jiraBaseUrl = ''; wizardData.jiraPat = ''; }
     if (stepName === 'github') { wizardData.githubPat = ''; }
+    if (stepName === 'confluence') { wizardData.confluenceBaseUrl = ''; wizardData.confluenceUsername = ''; wizardData.confluenceApiToken = ''; }
     if (stepName === 'snow')   { wizardData.snowBaseUrl = ''; wizardData.snowUsername = ''; wizardData.snowPassword = ''; }
     if (currentStepIndex < STEP_NAMES.length - 1) {
       currentStepIndex++;
@@ -480,6 +549,7 @@ const WIZARD_JS = `
     var connectedServices = [];
     if (wizardData.jiraPat)      connectedServices.push('🎟 Jira connected');
     if (wizardData.githubPat)    connectedServices.push('🐙 GitHub connected');
+    if (wizardData.confluenceApiToken) connectedServices.push('📚 Confluence connected');
     if (wizardData.snowPassword) connectedServices.push('☁️ ServiceNow connected');
     if (connectedServices.length === 0) {
       summaryElement.innerHTML = '⚠️ No services were connected yet. Go back and fill in at least one.';
@@ -493,7 +563,7 @@ const WIZARD_JS = `
     var errorBanner  = document.getElementById('done-error');
     errorBanner.style.display = 'none';
 
-    var hasAnyCredential = wizardData.jiraPat || wizardData.githubPat || wizardData.snowPassword;
+    var hasAnyCredential = wizardData.jiraPat || wizardData.githubPat || wizardData.confluenceApiToken || wizardData.snowPassword;
     if (!hasAnyCredential) {
       errorBanner.textContent = 'Oops! Please go back and fill in at least one service.';
       errorBanner.style.display = 'block';
@@ -504,12 +574,14 @@ const WIZARD_JS = `
     submitButton.textContent = 'Saving…';
 
     try {
-      var response = await fetch('/api/setup', {
+      var setupEndpoint = IS_DEMO_MODE ? '/api/setup?demo=1' : '/api/setup';
+      var dashboardUrl = IS_DEMO_MODE ? '/?demo=1' : '/';
+      var response = await fetch(setupEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(wizardData),
       });
-      if (response.ok || response.redirected) { window.location.href = '/'; return; }
+      if (response.ok || response.redirected) { window.location.href = dashboardUrl; return; }
       var errorData = await response.json().catch(function() { return { error: 'Unknown error' }; });
       errorBanner.textContent = errorData.error || 'Something went wrong — please try again.';
       errorBanner.style.display = 'block';
@@ -524,6 +596,24 @@ const WIZARD_JS = `
 `;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Produces the blank server-backed configuration shown inside the demo wizard.
+ *
+ * Demo mode must feel like a first install even when the real server already has
+ * saved enterprise credentials, so only safe non-credential defaults are retained.
+ *
+ * @param {object} configuration - Live configuration, used only for safe defaults.
+ * @returns {object}
+ */
+function buildBlankWizardConfiguration(configuration) {
+  return {
+    jira: { baseUrl: '' },
+    github: { baseUrl: configuration.github && configuration.github.baseUrl || '' },
+    confluence: { baseUrl: '' },
+    snow: { baseUrl: '' },
+  };
+}
 
 /**
  * Escapes a string for safe use as an HTML attribute value.

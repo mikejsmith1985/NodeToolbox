@@ -48,6 +48,10 @@ const UPDATE_SHUTDOWN_TIMEOUT_MS = 30_000
 const UPDATE_RESTART_TIMEOUT_MS = 180_000
 const UPDATE_STATUS_POLL_INTERVAL_MS = 500
 const UPDATE_STATUS_REQUEST_TIMEOUT_MS = 2_000
+const UPDATE_INSTALL_PROGRESS_PREPARING = 15
+const UPDATE_INSTALL_PROGRESS_WAITING_FOR_SHUTDOWN = 45
+const UPDATE_INSTALL_PROGRESS_WAITING_FOR_STARTUP = 80
+const UPDATE_INSTALL_PROGRESS_RELOADING = 100
 const ADVANCED_UNLOCK_INCORRECT_PASSPHRASE_MESSAGE = 'Incorrect passphrase.'
 const ADVANCED_UNLOCK_EXISTING_PROMPT_MESSAGE = 'Enter the admin passphrase to unlock advanced settings:'
 const ADVANCED_UNLOCK_NEW_PROMPT_MESSAGE = 'Enter the admin passphrase to unlock advanced settings:'
@@ -168,6 +172,8 @@ export interface AdminHubState {
   updateCheckError: string | null
   isCheckingUpdate: boolean
   isInstallingUpdate: boolean
+  updateInstallPhaseMessage: string | null
+  updateInstallProgressPercent: number
   updateInstallError: string | null
   isUpdateSectionCollapsed: boolean
   // ── Advanced unlock (Feature Flags, Client Diagnostics, Backup/Restore) ──
@@ -407,10 +413,12 @@ async function waitForServerStartup(
 export async function pollUntilServerRestarts(options: {
   expectedVersion: string
   maxWaitMs?: number
+  onWaitingForStartup?(): void
 }): Promise<void> {
   const maxWaitMs = options.maxWaitMs ?? UPDATE_RESTART_TIMEOUT_MS
   const restartDeadlineTimestamp = Date.now() + maxWaitMs
   await waitForServerShutdown(restartDeadlineTimestamp)
+  options.onWaitingForStartup?.()
   await waitForServerStartup(restartDeadlineTimestamp, options.expectedVersion, maxWaitMs)
 }
 
@@ -453,6 +461,8 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
   const [updateCheckError, setUpdateCheckError] = useState<string | null>(null)
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
   const [isInstallingUpdate, setIsInstallingUpdate] = useState(false)
+  const [updateInstallPhaseMessage, setUpdateInstallPhaseMessage] = useState<string | null>(null)
+  const [updateInstallProgressPercent, setUpdateInstallProgressPercent] = useState(0)
   const [updateInstallError, setUpdateInstallError] = useState<string | null>(null)
   const [isUpdateSectionCollapsed, setIsUpdateSectionCollapsed] = useState(false)
 
@@ -501,6 +511,8 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     updateCheckError,
     isCheckingUpdate,
     isInstallingUpdate,
+    updateInstallPhaseMessage,
+    updateInstallProgressPercent,
     updateInstallError,
     isUpdateSectionCollapsed,
     isAdvancedUnlocked,
@@ -797,6 +809,8 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     if (updateCheckResult === null || !updateCheckResult.hasUpdate) return
     setIsInstallingUpdate(true)
     setUpdateInstallError(null)
+    setUpdateInstallPhaseMessage('Preparing the update package download…')
+    setUpdateInstallProgressPercent(UPDATE_INSTALL_PROGRESS_PREPARING)
     try {
       const updateResponse = await fetch('/api/update', {
         method: 'POST',
@@ -809,7 +823,17 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
         throw new Error(`Server returned ${updateResponse.status}: ${errorText}`)
       }
       // The server shuts down during the update — poll until it comes back.
-      await pollUntilServerRestarts({ expectedVersion: updateCheckResult.latestVersion })
+      setUpdateInstallPhaseMessage('Waiting for the current server to stop…')
+      setUpdateInstallProgressPercent(UPDATE_INSTALL_PROGRESS_WAITING_FOR_SHUTDOWN)
+      await pollUntilServerRestarts({
+        expectedVersion: updateCheckResult.latestVersion,
+        onWaitingForStartup: () => {
+          setUpdateInstallPhaseMessage('Waiting for the updated server to restart…')
+          setUpdateInstallProgressPercent(UPDATE_INSTALL_PROGRESS_WAITING_FOR_STARTUP)
+        },
+      })
+      setUpdateInstallPhaseMessage('Reloading the updated app…')
+      setUpdateInstallProgressPercent(UPDATE_INSTALL_PROGRESS_RELOADING)
       window.location.reload()
     } catch (installError) {
       const errorMessage = installError instanceof Error ? installError.message : 'Unknown error'
@@ -817,6 +841,8 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
         `Update failed: ${errorMessage}. Please restart NodeToolbox manually.`,
       )
       setIsInstallingUpdate(false)
+      setUpdateInstallPhaseMessage(null)
+      setUpdateInstallProgressPercent(0)
     }
   }, [updateCheckResult])
 

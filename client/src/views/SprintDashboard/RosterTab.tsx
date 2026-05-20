@@ -1,9 +1,14 @@
 // RosterTab.tsx — Team Dashboard roster settings used by roster-scoped standup workflows.
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
 
+import { jiraGet } from '../../services/jiraApi.ts';
+import { snowFetch } from '../../services/snowApi.ts';
+import { useConnectionStore } from '../../store/connectionStore.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
-import type { JiraIssue } from '../../types/jira.ts';
+import type { JiraIssue, JiraUser } from '../../types/jira.ts';
+import type { SnowIssueType, SnowMyIssue, SnowTableResponse } from '../../types/snow.ts';
+import { SnowLookupField } from '../SnowHub/components/SnowLookupField.tsx';
 import {
   filterRosterMembersByActiveTeam,
   readAvailableRosterTeamNames,
@@ -12,16 +17,45 @@ import {
   type StandupRosterMemberDraft,
   useStandupRosterStore,
 } from './hooks/useStandupRosterStore.ts';
-import { parseRosterMembersFromPasteText } from './hooks/rosterImport.ts';
 import styles from './SprintDashboardView.module.css';
+
+const MIN_JIRA_ROSTER_SEARCH_LENGTH = 2;
+const MAX_JIRA_ROSTER_SEARCH_RESULTS = 8;
+const JIRA_PROJECT_USER_PAGE_SIZE = 50;
+const MAX_JIRA_PROJECT_USER_PAGES = 20;
+const MAX_SNOW_RECORDS_PER_TYPE = 25;
+const SNOW_ROSTER_WORK_FIELDS =
+  'sys_id,number,short_description,state,priority,sys_class_name,opened_at,problem_statement';
+const SNOW_ROSTER_RECORD_TYPES: SnowIssueType[] = ['incident', 'problem', 'sc_task', 'change_request'];
+
+interface RosterSnowReference {
+  sysId: string;
+  displayName: string;
+}
 
 interface RosterTabProps {
   issues: JiraIssue[];
+  projectKey: string;
 }
 
 interface RosterSuggestion {
   displayName: string;
   assigneeQueryValue: string;
+  jiraAccountId?: string;
+  emailAddress?: string;
+}
+
+interface JiraRosterSearchResult {
+  displayName: string;
+  assigneeQueryValue: string;
+  jiraAccountId: string;
+  emailAddress?: string;
+}
+
+interface ProjectUserSelectionCardProps {
+  isSelected: boolean;
+  rosterMember: JiraRosterSearchResult;
+  onSelectionChange: (changeEvent: ChangeEvent<HTMLInputElement>) => void;
 }
 
 interface RosterCardProps {
@@ -29,6 +63,9 @@ interface RosterCardProps {
     StandupRosterMember | StandupRosterMemberDraft,
     | 'assigneeQueryValue'
     | 'displayName'
+    | 'jiraAccountId'
+    | 'snowUserDisplayName'
+    | 'snowUserSysId'
     | 'emailAddress'
     | 'lanId'
     | 'locationTimeZone'
@@ -36,7 +73,19 @@ interface RosterCardProps {
     | 'teamName'
     | 'workingHours'
   >;
-  onRemove?: () => void;
+  actionAriaLabel?: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  children?: ReactNode;
+}
+
+interface RosterLinkedWorkPanelProps {
+  rosterMember: StandupRosterMember;
+  jiraIssues: JiraIssue[];
+  snowIssues: SnowMyIssue[];
+  hasLoadedSnowWork: boolean;
+  isSnowRelayConnected: boolean;
+  onSnowUserChange: (nextReference: RosterSnowReference) => void;
 }
 
 function buildRosterSuggestions(issues: JiraIssue[], rosterAssigneeValues: Set<string>): RosterSuggestion[] {
@@ -55,6 +104,8 @@ function buildRosterSuggestions(issues: JiraIssue[], rosterAssigneeValues: Set<s
     suggestionsByValue.set(normalizedAssigneeValue, {
       displayName,
       assigneeQueryValue: displayName,
+      emailAddress: issue.fields.assignee?.emailAddress,
+      jiraAccountId: issue.fields.assignee?.accountId,
     });
   }
 
@@ -68,11 +119,132 @@ function buildRosterCardMetaLine(...metaParts: Array<string | undefined>): strin
   return populatedMetaParts.length > 0 ? populatedMetaParts.join(' · ') : null;
 }
 
-function RosterCard({ rosterMember, onRemove }: RosterCardProps) {
-  const primaryMetaLine = buildRosterCardMetaLine(
-    rosterMember.roleName,
-    rosterMember.emailAddress,
+function normalizeRosterMatchValue(value: string | undefined): string {
+  return value?.trim().toLowerCase() ?? '';
+}
+
+function doesIssueBelongToRosterMember(issue: JiraIssue, rosterMember: StandupRosterMember): boolean {
+  const issueAssignee = issue.fields.assignee;
+  if (issueAssignee === null) {
+    return false;
+  }
+
+  if (rosterMember.jiraAccountId && issueAssignee.accountId === rosterMember.jiraAccountId) {
+    return true;
+  }
+
+  const normalizedIssueAssigneeDisplayName = normalizeRosterMatchValue(issueAssignee.displayName);
+  return normalizedIssueAssigneeDisplayName === normalizeRosterMatchValue(rosterMember.assigneeQueryValue)
+    || normalizedIssueAssigneeDisplayName === normalizeRosterMatchValue(rosterMember.displayName);
+}
+
+function buildRosterSnowTablePath(recordType: SnowIssueType, snowUserSysId: string): string {
+  const encodedQuery = encodeURIComponent(`assigned_to=${snowUserSysId}^active=true`);
+  return (
+    `/api/now/table/${recordType}` +
+    `?sysparm_query=${encodedQuery}` +
+    `&sysparm_fields=${SNOW_ROSTER_WORK_FIELDS}` +
+    `&sysparm_limit=${MAX_SNOW_RECORDS_PER_TYPE}` +
+    '&sysparm_display_value=true'
+  );
+}
+
+async function fetchSnowWorkItemsForRosterMember(snowUserSysId: string): Promise<SnowMyIssue[]> {
+  const snowIssueGroups = await Promise.all(
+    SNOW_ROSTER_RECORD_TYPES.map(async (recordType) => {
+      const snowResponse = await snowFetch<SnowTableResponse<SnowMyIssue>>(buildRosterSnowTablePath(recordType, snowUserSysId));
+      return snowResponse.result.map((snowIssue) => ({ ...snowIssue, sys_class_name: recordType }));
+    }),
+  );
+
+  return snowIssueGroups
+    .flat()
+    .sort((firstIssue, secondIssue) => new Date(secondIssue.opened_at).getTime() - new Date(firstIssue.opened_at).getTime());
+}
+
+function mapJiraUsersToRosterSearchResults(
+  jiraUsers: JiraUser[],
+  rosterAssigneeValues: Set<string>,
+): JiraRosterSearchResult[] {
+  const searchResultsByAccountId = new Map<string, JiraRosterSearchResult>();
+  for (const jiraUser of jiraUsers) {
+    const displayName = jiraUser.displayName.trim();
+    if (!displayName || !jiraUser.accountId.trim()) {
+      continue;
+    }
+
+    const assigneeQueryValue = displayName;
+    const normalizedAssigneeValue = assigneeQueryValue.toLowerCase();
+    if (rosterAssigneeValues.has(normalizedAssigneeValue) || searchResultsByAccountId.has(jiraUser.accountId)) {
+      continue;
+    }
+
+    searchResultsByAccountId.set(jiraUser.accountId, {
+      displayName,
+      assigneeQueryValue,
+      jiraAccountId: jiraUser.accountId,
+      emailAddress: jiraUser.emailAddress?.trim() || undefined,
+    });
+  }
+
+  return [...searchResultsByAccountId.values()].sort((firstUser, secondUser) =>
+    firstUser.displayName.localeCompare(secondUser.displayName),
+  );
+}
+
+async function loadPaginatedProjectUsers(
+  requestPathBuilder: (startAt: number) => string,
+): Promise<JiraUser[]> {
+  const projectUsersByAccountId = new Map<string, JiraUser>();
+
+  for (let pageIndex = 0; pageIndex < MAX_JIRA_PROJECT_USER_PAGES; pageIndex += 1) {
+    const startAt = pageIndex * JIRA_PROJECT_USER_PAGE_SIZE;
+    const jiraUsers = await jiraGet<JiraUser[]>(requestPathBuilder(startAt));
+
+    for (const jiraUser of jiraUsers) {
+      if (jiraUser.accountId?.trim()) {
+        projectUsersByAccountId.set(jiraUser.accountId, jiraUser);
+      }
+    }
+
+    if (jiraUsers.length < JIRA_PROJECT_USER_PAGE_SIZE) {
+      break;
+    }
+  }
+
+  return [...projectUsersByAccountId.values()];
+}
+
+async function loadProjectUsersForRoster(
+  normalizedProjectKey: string,
+  rosterAssigneeValues: Set<string>,
+): Promise<JiraRosterSearchResult[]> {
+  const assignableProjectUsers = await loadPaginatedProjectUsers(
+    (startAt) =>
+      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
+  );
+
+  if (assignableProjectUsers.length > 0) {
+    return mapJiraUsersToRosterSearchResults(assignableProjectUsers, rosterAssigneeValues);
+  }
+
+  const multiProjectAssignableUsers = await loadPaginatedProjectUsers(
+    (startAt) =>
+      `/rest/api/3/user/assignable/multiProjectSearch?projectKeys=${encodeURIComponent(normalizedProjectKey)}&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
+  );
+
+  return mapJiraUsersToRosterSearchResults(multiProjectAssignableUsers, rosterAssigneeValues);
+}
+
+function RosterCard({ rosterMember, actionAriaLabel, actionLabel, onAction, children }: RosterCardProps) {
+  const primaryMetaLine = buildRosterCardMetaLine(rosterMember.emailAddress);
+  const jiraMetaLine = buildRosterCardMetaLine(
     `Jira: ${rosterMember.assigneeQueryValue}`,
+    rosterMember.jiraAccountId ? `Account: ${rosterMember.jiraAccountId}` : undefined,
+  );
+  const snowMetaLine = buildRosterCardMetaLine(
+    rosterMember.snowUserDisplayName ? `SNow: ${rosterMember.snowUserDisplayName}` : undefined,
+    rosterMember.snowUserSysId ? `User: ${rosterMember.snowUserSysId}` : undefined,
   );
   const secondaryMetaLine = buildRosterCardMetaLine(
     rosterMember.locationTimeZone,
@@ -92,40 +264,154 @@ function RosterCard({ rosterMember, onRemove }: RosterCardProps) {
               <span className={styles.rosterDetailChip}>Needs team</span>
             )}
             {rosterMember.roleName ? <span className={styles.rosterDetailChip}>{rosterMember.roleName}</span> : null}
+            {rosterMember.snowUserSysId ? <span className={styles.rosterDetailChip}>SNow linked</span> : null}
           </div>
         </div>
-        {onRemove ? (
+        {onAction && actionLabel ? (
           <button
-            aria-label={`Remove ${rosterMember.displayName}`}
+            aria-label={actionAriaLabel ?? `${actionLabel} ${rosterMember.displayName}`}
             className={styles.textActionButton}
-            onClick={onRemove}
+            onClick={onAction}
             type="button"
           >
-            Remove
+            {actionLabel}
           </button>
         ) : null}
       </div>
       {primaryMetaLine ? <p className={styles.rosterMemberPrimaryMeta}>{primaryMetaLine}</p> : null}
+      {jiraMetaLine ? <p className={styles.rosterMemberPrimaryMeta}>{jiraMetaLine}</p> : null}
+      {snowMetaLine ? <p className={styles.rosterMemberPrimaryMeta}>{snowMetaLine}</p> : null}
       {secondaryMetaLine ? <p className={styles.rosterMemberSecondaryMeta}>{secondaryMetaLine}</p> : null}
+      {children}
     </article>
   );
 }
 
+function ProjectUserSelectionCard({
+  isSelected,
+  rosterMember,
+  onSelectionChange,
+}: ProjectUserSelectionCardProps) {
+  return (
+    <RosterCard rosterMember={rosterMember}>
+      <label className={styles.rosterSelectionRow}>
+        <input
+          aria-label={`Select ${rosterMember.displayName} for roster`}
+          checked={isSelected}
+          className={styles.rosterSelectionCheckbox}
+          onChange={onSelectionChange}
+          type="checkbox"
+        />
+        <span>{isSelected ? 'Selected for roster' : 'Not selected'}</span>
+      </label>
+    </RosterCard>
+  );
+}
+
+function RosterLinkedWorkPanel({
+  rosterMember,
+  jiraIssues,
+  snowIssues,
+  hasLoadedSnowWork,
+  isSnowRelayConnected,
+  onSnowUserChange,
+}: RosterLinkedWorkPanelProps) {
+  const snowLookupValue: RosterSnowReference = {
+    sysId: rosterMember.snowUserSysId ?? '',
+    displayName: rosterMember.snowUserDisplayName ?? '',
+  };
+
+  return (
+    <div className={styles.rosterLinkedWorkPanel}>
+      <div className={styles.rosterLinkFieldShell}>
+        <SnowLookupField
+          isDisabled={!isSnowRelayConnected}
+          label={`Link ServiceNow person for ${rosterMember.displayName}`}
+          tableName="sys_user"
+          value={snowLookupValue}
+          onChange={onSnowUserChange}
+        />
+      </div>
+      {!isSnowRelayConnected ? (
+        <p className={styles.personWalkMeta}>
+          Connect the ServiceNow relay bookmarklet to search and link SNow users for this roster member.
+        </p>
+      ) : null}
+      <div className={styles.rosterWorkloadGrid}>
+        <section className={styles.rosterWorkloadColumn}>
+          <div className={styles.rosterWorkloadHeader}>
+            <h4 className={styles.rosterWorkloadTitle}>Jira sprint work</h4>
+            <span className={styles.columnCountBadge}>{jiraIssues.length}</span>
+          </div>
+          {jiraIssues.length === 0 ? (
+            <p className={styles.personWalkMeta}>No current sprint Jira issues match this roster member.</p>
+          ) : (
+            <ul className={styles.rosterWorkItemList}>
+              {jiraIssues.map((jiraIssue) => (
+                <li className={styles.rosterWorkItem} key={jiraIssue.key}>
+                  <span className={styles.rosterWorkItemKey}>{jiraIssue.key}</span>
+                  <span className={styles.rosterWorkItemSummary}>{jiraIssue.fields.summary}</span>
+                  <span className={styles.rosterWorkItemMeta}>{jiraIssue.fields.status.name}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        <section className={styles.rosterWorkloadColumn}>
+          <div className={styles.rosterWorkloadHeader}>
+            <h4 className={styles.rosterWorkloadTitle}>ServiceNow work</h4>
+            <span className={styles.columnCountBadge}>{snowIssues.length}</span>
+          </div>
+          {!rosterMember.snowUserSysId ? (
+            <p className={styles.personWalkMeta}>Link a ServiceNow user to show this person&apos;s SNow work.</p>
+          ) : !isSnowRelayConnected ? (
+            <p className={styles.personWalkMeta}>Reconnect the ServiceNow relay to load work items.</p>
+          ) : !hasLoadedSnowWork ? (
+            <p className={styles.personWalkMeta}>Use Refresh linked Jira + SNow work to load this person&apos;s SNow records.</p>
+          ) : snowIssues.length === 0 ? (
+            <p className={styles.personWalkMeta}>No active SNow work was found for the linked user.</p>
+          ) : (
+            <ul className={styles.rosterWorkItemList}>
+              {snowIssues.map((snowIssue) => (
+                <li className={styles.rosterWorkItem} key={snowIssue.sys_id}>
+                  <span className={styles.rosterWorkItemKey}>{snowIssue.number}</span>
+                  <span className={styles.rosterWorkItemSummary}>{snowIssue.short_description}</span>
+                  <span className={styles.rosterWorkItemMeta}>{snowIssue.state}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
 /** Renders the Team Dashboard roster editor so roster-scoped standup can be filtered by active team. */
-export default function RosterTab({ issues }: RosterTabProps) {
+export default function RosterTab({ issues, projectKey }: RosterTabProps) {
   const rosterMembers = useStandupRosterStore((state) => state.rosterMembers);
   const addRosterMember = useStandupRosterStore((state) => state.addRosterMember);
-  const replaceRosterMembers = useStandupRosterStore((state) => state.replaceRosterMembers);
   const removeRosterMember = useStandupRosterStore((state) => state.removeRosterMember);
   const upsertRosterMembers = useStandupRosterStore((state) => state.upsertRosterMembers);
+  const isSnowRelayConnected = useConnectionStore((state) => state.relayBridgeStatus?.isConnected ?? false);
   const storedActiveTeamName = useSettingsStore((state) => state.sprintDashboardActiveTeam);
   const setActiveTeamName = useSettingsStore((state) => state.setSprintDashboardActiveTeam);
   const [displayName, setDisplayName] = useState('');
   const [assigneeQueryValue, setAssigneeQueryValue] = useState('');
-  const [importErrorMessage, setImportErrorMessage] = useState<string | null>(null);
-  const [importStatusMessage, setImportStatusMessage] = useState<string | null>(null);
-  const [parsedRosterMembers, setParsedRosterMembers] = useState<StandupRosterMemberDraft[]>([]);
-  const [pastedRosterText, setPastedRosterText] = useState('');
+  const [jiraSearchQuery, setJiraSearchQuery] = useState('');
+  const [jiraSearchResults, setJiraSearchResults] = useState<JiraRosterSearchResult[]>([]);
+  const [jiraSearchErrorMessage, setJiraSearchErrorMessage] = useState<string | null>(null);
+  const [jiraSearchStatusMessage, setJiraSearchStatusMessage] = useState<string | null>(null);
+  const [isSearchingJiraUsers, setIsSearchingJiraUsers] = useState(false);
+  const [projectUserResults, setProjectUserResults] = useState<JiraRosterSearchResult[]>([]);
+  const [selectedProjectUserIds, setSelectedProjectUserIds] = useState<string[]>([]);
+  const [projectUserErrorMessage, setProjectUserErrorMessage] = useState<string | null>(null);
+  const [projectUserStatusMessage, setProjectUserStatusMessage] = useState<string | null>(null);
+  const [isLoadingProjectUsers, setIsLoadingProjectUsers] = useState(false);
+  const [snowWorkByRosterMemberId, setSnowWorkByRosterMemberId] = useState<Record<string, SnowMyIssue[]>>({});
+  const [snowWorkErrorMessage, setSnowWorkErrorMessage] = useState<string | null>(null);
+  const [snowWorkStatusMessage, setSnowWorkStatusMessage] = useState<string | null>(null);
+  const [isLoadingSnowWork, setIsLoadingSnowWork] = useState(false);
 
   const rosterAssigneeValues = useMemo(
     () => new Set(rosterMembers.map((rosterMember) => rosterMember.assigneeQueryValue.trim().toLowerCase())),
@@ -134,6 +420,18 @@ export default function RosterTab({ issues }: RosterTabProps) {
   const rosterSuggestions = useMemo(
     () => buildRosterSuggestions(issues, rosterAssigneeValues),
     [issues, rosterAssigneeValues],
+  );
+  const visibleJiraSearchResults = useMemo(
+    () => jiraSearchResults.filter(
+      (searchResult) => !rosterAssigneeValues.has(searchResult.assigneeQueryValue.trim().toLowerCase()),
+    ),
+    [jiraSearchResults, rosterAssigneeValues],
+  );
+  const visibleProjectUserResults = useMemo(
+    () => projectUserResults.filter(
+      (projectUserResult) => !rosterAssigneeValues.has(projectUserResult.assigneeQueryValue.trim().toLowerCase()),
+    ),
+    [projectUserResults, rosterAssigneeValues],
   );
   const availableRosterTeamNames = useMemo(
     () => readAvailableRosterTeamNames(rosterMembers),
@@ -147,6 +445,19 @@ export default function RosterTab({ issues }: RosterTabProps) {
     () => filterRosterMembersByActiveTeam(rosterMembers, activeRosterTeamName, { includeTeamlessMembers: true }),
     [activeRosterTeamName, rosterMembers],
   );
+  const jiraIssuesByRosterMemberId = useMemo(
+    () => new Map(
+      visibleRosterMembers.map((rosterMember) => [
+        rosterMember.id,
+        issues.filter((jiraIssue) => doesIssueBelongToRosterMember(jiraIssue, rosterMember)),
+      ]),
+    ),
+    [issues, visibleRosterMembers],
+  );
+  const linkedSnowRosterMemberCount = useMemo(
+    () => visibleRosterMembers.filter((rosterMember) => rosterMember.snowUserSysId).length,
+    [visibleRosterMembers],
+  );
 
   function handleAddManualMember() {
     addRosterMember({
@@ -158,42 +469,199 @@ export default function RosterTab({ issues }: RosterTabProps) {
     setAssigneeQueryValue('');
   }
 
-  function handlePreviewImport() {
-    try {
-      const nextParsedRosterMembers = parseRosterMembersFromPasteText(pastedRosterText);
-      setParsedRosterMembers(nextParsedRosterMembers);
-      setImportErrorMessage(null);
-      setImportStatusMessage(`Parsed ${nextParsedRosterMembers.length} roster members ready to import.`);
-    } catch (caughtError) {
-      setParsedRosterMembers([]);
-      setImportStatusMessage(null);
-      setImportErrorMessage(
-        caughtError instanceof Error ? caughtError.message : 'Failed to parse the pasted roster.',
+  function resetProjectUserSelection(nextProjectUsers: JiraRosterSearchResult[]) {
+    setProjectUserResults(nextProjectUsers);
+    setSelectedProjectUserIds(nextProjectUsers.map((projectUserResult) => projectUserResult.jiraAccountId));
+  }
+
+  async function handleSearchJiraUsers() {
+    const normalizedProjectKey = projectKey.trim().toUpperCase();
+    const normalizedSearchQuery = jiraSearchQuery.trim();
+    if (!normalizedProjectKey) {
+      setJiraSearchResults([]);
+      setJiraSearchStatusMessage(null);
+      setJiraSearchErrorMessage('Enter and load a Jira project before searching for project users.');
+      return;
+    }
+
+    if (normalizedSearchQuery.length < MIN_JIRA_ROSTER_SEARCH_LENGTH) {
+      setJiraSearchResults([]);
+      setJiraSearchStatusMessage(null);
+      setJiraSearchErrorMessage(
+        `Enter at least ${MIN_JIRA_ROSTER_SEARCH_LENGTH} characters before searching Jira project users.`,
       );
+      return;
+    }
+
+    setIsSearchingJiraUsers(true);
+    try {
+      const jiraUsers = await jiraGet<JiraUser[]>(
+        `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&query=${encodeURIComponent(normalizedSearchQuery)}&maxResults=${MAX_JIRA_ROSTER_SEARCH_RESULTS}`,
+      );
+      const nextSearchResults = mapJiraUsersToRosterSearchResults(jiraUsers, rosterAssigneeValues);
+      setJiraSearchResults(nextSearchResults);
+      setJiraSearchErrorMessage(null);
+      setJiraSearchStatusMessage(
+        nextSearchResults.length > 0
+          ? `Found ${nextSearchResults.length} Jira project users for ${normalizedProjectKey}.`
+          : `No Jira project users matched "${normalizedSearchQuery}" in ${normalizedProjectKey}.`,
+      );
+    } catch (caughtError) {
+      setJiraSearchResults([]);
+      setJiraSearchStatusMessage(null);
+      setJiraSearchErrorMessage(
+        caughtError instanceof Error ? caughtError.message : 'Failed to search Jira project users.',
+      );
+    } finally {
+      setIsSearchingJiraUsers(false);
     }
   }
 
-  function handleMergeImportedMembers() {
-    upsertRosterMembers(parsedRosterMembers);
-    setParsedRosterMembers([]);
-    setPastedRosterText('');
-    setImportErrorMessage(null);
-    setImportStatusMessage(`Merged ${parsedRosterMembers.length} roster members.`);
+  async function handleLoadProjectUsers() {
+    const normalizedProjectKey = projectKey.trim().toUpperCase();
+    if (!normalizedProjectKey) {
+      setProjectUserStatusMessage(null);
+      setProjectUserErrorMessage('Enter and load a Jira project before loading project users.');
+      resetProjectUserSelection([]);
+      return;
+    }
+
+    setIsLoadingProjectUsers(true);
+    try {
+      const nextProjectUsers = await loadProjectUsersForRoster(normalizedProjectKey, rosterAssigneeValues);
+      resetProjectUserSelection(nextProjectUsers);
+      setProjectUserErrorMessage(null);
+      setProjectUserStatusMessage(
+        nextProjectUsers.length > 0
+          ? `Loaded ${nextProjectUsers.length} Jira project users for ${normalizedProjectKey}.`
+          : `No Jira project users are currently available for ${normalizedProjectKey}.`,
+      );
+    } catch (caughtError) {
+      resetProjectUserSelection([]);
+      setProjectUserStatusMessage(null);
+      setProjectUserErrorMessage(
+        caughtError instanceof Error ? caughtError.message : 'Failed to load Jira project users.',
+      );
+    } finally {
+      setIsLoadingProjectUsers(false);
+    }
   }
 
-  function handleReplaceImportedMembers() {
-    replaceRosterMembers(parsedRosterMembers);
-    setParsedRosterMembers([]);
-    setPastedRosterText('');
-    setImportErrorMessage(null);
-    setImportStatusMessage(`Replaced the roster with ${parsedRosterMembers.length} imported members.`);
+  function handleAddJiraSearchResult(searchResult: JiraRosterSearchResult) {
+    addRosterMember({
+      displayName: searchResult.displayName,
+      assigneeQueryValue: searchResult.assigneeQueryValue,
+      jiraAccountId: searchResult.jiraAccountId,
+      emailAddress: searchResult.emailAddress,
+      teamName: activeRosterTeamName || undefined,
+    });
+    setJiraSearchStatusMessage(`Added ${searchResult.displayName} to the roster.`);
   }
 
-  function handleRosterPasteChange(nextValue: string) {
-    setPastedRosterText(nextValue);
-    setParsedRosterMembers([]);
-    setImportErrorMessage(null);
-    setImportStatusMessage(null);
+  function handleToggleProjectUserSelection(jiraAccountId: string, isSelected: boolean) {
+    setSelectedProjectUserIds((currentSelectedProjectUserIds) => {
+      if (isSelected) {
+        return currentSelectedProjectUserIds.includes(jiraAccountId)
+          ? currentSelectedProjectUserIds
+          : [...currentSelectedProjectUserIds, jiraAccountId];
+      }
+
+      return currentSelectedProjectUserIds.filter((selectedProjectUserId) => selectedProjectUserId !== jiraAccountId);
+    });
+  }
+
+  function handleSelectAllProjectUsers() {
+    setSelectedProjectUserIds(visibleProjectUserResults.map((projectUserResult) => projectUserResult.jiraAccountId));
+  }
+
+  function handleDeselectAllProjectUsers() {
+    setSelectedProjectUserIds([]);
+  }
+
+  function handleAddSelectedProjectUsers() {
+    const selectedProjectUsers = visibleProjectUserResults.filter((projectUserResult) =>
+      selectedProjectUserIds.includes(projectUserResult.jiraAccountId),
+    );
+
+    upsertRosterMembers(
+      selectedProjectUsers.map((projectUserResult) => ({
+        displayName: projectUserResult.displayName,
+        assigneeQueryValue: projectUserResult.assigneeQueryValue,
+        jiraAccountId: projectUserResult.jiraAccountId,
+        emailAddress: projectUserResult.emailAddress,
+        teamName: activeRosterTeamName || undefined,
+      })),
+    );
+
+    setProjectUserStatusMessage(
+      selectedProjectUsers.length > 0
+        ? `Added ${selectedProjectUsers.length} project users to the roster.`
+        : 'Select at least one project user before adding them to the roster.',
+    );
+    resetProjectUserSelection([]);
+  }
+
+  function handleSnowUserChange(rosterMember: StandupRosterMember, nextReference: RosterSnowReference) {
+    setSnowWorkByRosterMemberId((currentSnowWorkByRosterMemberId) => {
+      const nextSnowWorkByRosterMemberId = { ...currentSnowWorkByRosterMemberId };
+      delete nextSnowWorkByRosterMemberId[rosterMember.id];
+      return nextSnowWorkByRosterMemberId;
+    });
+    setSnowWorkStatusMessage(null);
+    setSnowWorkErrorMessage(null);
+    upsertRosterMembers([
+      {
+        displayName: rosterMember.displayName,
+        assigneeQueryValue: rosterMember.assigneeQueryValue,
+        jiraAccountId: rosterMember.jiraAccountId,
+        snowUserDisplayName: nextReference.displayName || undefined,
+        snowUserSysId: nextReference.sysId || undefined,
+        emailAddress: rosterMember.emailAddress,
+        lanId: rosterMember.lanId,
+        locationTimeZone: rosterMember.locationTimeZone,
+        roleName: rosterMember.roleName,
+        teamName: rosterMember.teamName,
+        workingHours: rosterMember.workingHours,
+      },
+    ]);
+  }
+
+  async function handleRefreshLinkedSnowWork() {
+    if (linkedSnowRosterMemberCount === 0) {
+      setSnowWorkErrorMessage('Link at least one ServiceNow user before refreshing linked work.');
+      setSnowWorkStatusMessage(null);
+      return;
+    }
+
+    if (!isSnowRelayConnected) {
+      setSnowWorkErrorMessage(
+        'Connect the ServiceNow relay bookmarklet before refreshing linked Jira + SNow work.',
+      );
+      setSnowWorkStatusMessage(null);
+      return;
+    }
+
+    setIsLoadingSnowWork(true);
+    setSnowWorkErrorMessage(null);
+    try {
+      const snowWorkEntries = await Promise.all(
+        visibleRosterMembers
+          .filter((rosterMember) => rosterMember.snowUserSysId)
+          .map(async (rosterMember) => [
+            rosterMember.id,
+            await fetchSnowWorkItemsForRosterMember(rosterMember.snowUserSysId ?? ''),
+          ] as const),
+      );
+      setSnowWorkByRosterMemberId(Object.fromEntries(snowWorkEntries));
+      setSnowWorkStatusMessage(`Loaded ServiceNow work for ${snowWorkEntries.length} linked roster members.`);
+    } catch (caughtError) {
+      setSnowWorkStatusMessage(null);
+      setSnowWorkErrorMessage(
+        caughtError instanceof Error ? caughtError.message : 'Failed to load linked ServiceNow work.',
+      );
+    } finally {
+      setIsLoadingSnowWork(false);
+    }
   }
 
   return (
@@ -224,9 +692,94 @@ export default function RosterTab({ issues }: RosterTabProps) {
           </label>
         ) : (
           <p className={styles.personWalkMeta}>
-            Import or add roster members with team names to enable active-team filtering.
+            Add roster members with team names to enable active-team filtering.
           </p>
         )}
+        <div className={styles.personWalkSectionHeader}>
+          <h3 className={styles.personWalkSectionTitle}>Find people in Jira project</h3>
+        </div>
+        <div className={styles.rosterInputGrid}>
+          <label className={styles.rosterFieldLabel}>
+            <span>Search Jira project users</span>
+            <input
+              className={styles.personWalkPostInput}
+              onChange={(event) => setJiraSearchQuery(event.target.value)}
+              value={jiraSearchQuery}
+            />
+          </label>
+          <button
+            className={styles.secondaryButton}
+            disabled={isSearchingJiraUsers}
+            onClick={() => void handleSearchJiraUsers()}
+            type="button"
+          >
+            {isSearchingJiraUsers ? 'Searching Jira project…' : 'Search project users'}
+          </button>
+        </div>
+        <p className={styles.personWalkMeta}>
+          Search the current Jira project for assignable users, then add only the people who belong in this roster.
+        </p>
+        {jiraSearchStatusMessage ? <p className={styles.personWalkMeta}>{jiraSearchStatusMessage}</p> : null}
+        {jiraSearchErrorMessage ? <p className={styles.errorMessage}>{jiraSearchErrorMessage}</p> : null}
+        {visibleJiraSearchResults.length > 0 ? (
+          <div className={styles.rosterImportPreviewGrid}>
+            {visibleJiraSearchResults.map((searchResult) => (
+              <RosterCard
+                actionLabel="Add"
+                key={searchResult.jiraAccountId}
+                onAction={() => handleAddJiraSearchResult(searchResult)}
+                rosterMember={searchResult}
+              />
+            ))}
+          </div>
+        ) : null}
+        <div className={styles.personWalkSectionHeader}>
+          <h3 className={styles.personWalkSectionTitle}>Load all project users</h3>
+        </div>
+        <div className={styles.rosterImportActionRow}>
+          <button
+            className={styles.secondaryButton}
+            disabled={isLoadingProjectUsers}
+            onClick={() => void handleLoadProjectUsers()}
+            type="button"
+          >
+            {isLoadingProjectUsers ? 'Loading Jira project users…' : `Load users for ${projectKey.trim().toUpperCase() || 'current project'}`}
+          </button>
+          {visibleProjectUserResults.length > 0 ? (
+            <>
+              <button className={styles.secondaryButton} onClick={handleSelectAllProjectUsers} type="button">
+                Select all
+              </button>
+              <button className={styles.secondaryButton} onClick={handleDeselectAllProjectUsers} type="button">
+                Deselect all
+              </button>
+              <button className={styles.secondaryButton} onClick={handleAddSelectedProjectUsers} type="button">
+                Add selected users to roster
+              </button>
+            </>
+          ) : null}
+        </div>
+        <p className={styles.personWalkMeta}>
+          Load the current Jira project&apos;s assignable users, then keep everyone selected or deselect the people who do not belong in this roster.
+        </p>
+        {projectUserStatusMessage ? <p className={styles.personWalkMeta}>{projectUserStatusMessage}</p> : null}
+        {projectUserErrorMessage ? <p className={styles.errorMessage}>{projectUserErrorMessage}</p> : null}
+        {visibleProjectUserResults.length > 0 ? (
+          <div className={styles.rosterImportPreviewGrid}>
+            {visibleProjectUserResults.map((projectUserResult) => (
+              <ProjectUserSelectionCard
+                isSelected={selectedProjectUserIds.includes(projectUserResult.jiraAccountId)}
+                key={projectUserResult.jiraAccountId}
+                onSelectionChange={(changeEvent) =>
+                  handleToggleProjectUserSelection(projectUserResult.jiraAccountId, changeEvent.target.checked)}
+                rosterMember={projectUserResult}
+              />
+            ))}
+          </div>
+        ) : null}
+        <div className={styles.personWalkSectionHeader}>
+          <h3 className={styles.personWalkSectionTitle}>Manual roster entry</h3>
+        </div>
         <div className={styles.rosterInputGrid}>
           <label className={styles.rosterFieldLabel}>
             <span>Display name</span>
@@ -252,53 +805,6 @@ export default function RosterTab({ issues }: RosterTabProps) {
           <p className={styles.personWalkMeta}>
             New manual entries and quick adds are assigned to <strong>{activeRosterTeamName}</strong>.
           </p>
-        ) : null}
-      </section>
-
-      <section className={styles.rosterSection}>
-        <div className={styles.personWalkSectionHeader}>
-          <h3 className={styles.personWalkSectionTitle}>Paste importer</h3>
-        </div>
-        <label className={styles.rosterFieldLabel}>
-          <span>Paste team roster</span>
-          <textarea
-            className={styles.rosterImportTextArea}
-            onChange={(event) => handleRosterPasteChange(event.target.value)}
-            value={pastedRosterText}
-          />
-        </label>
-        <div className={styles.rosterImportActionRow}>
-          <button className={styles.secondaryButton} onClick={handlePreviewImport} type="button">
-            Preview import
-          </button>
-          <button
-            className={styles.secondaryButton}
-            disabled={parsedRosterMembers.length === 0}
-            onClick={handleMergeImportedMembers}
-            type="button"
-          >
-            Merge imported members
-          </button>
-          <button
-            className={styles.secondaryButton}
-            disabled={parsedRosterMembers.length === 0}
-            onClick={handleReplaceImportedMembers}
-            type="button"
-          >
-            Replace current roster
-          </button>
-        </div>
-        {importStatusMessage ? <p className={styles.personWalkMeta}>{importStatusMessage}</p> : null}
-        {importErrorMessage ? <p className={styles.errorMessage}>{importErrorMessage}</p> : null}
-        {parsedRosterMembers.length > 0 ? (
-          <div className={styles.rosterImportPreviewGrid}>
-            {parsedRosterMembers.map((parsedRosterMember) => (
-              <RosterCard
-                key={`${parsedRosterMember.assigneeQueryValue}-${parsedRosterMember.displayName}`}
-                rosterMember={parsedRosterMember}
-              />
-            ))}
-          </div>
         ) : null}
       </section>
 
@@ -338,6 +844,21 @@ export default function RosterTab({ issues }: RosterTabProps) {
             Showing {visibleRosterMembers.length} of {rosterMembers.length} roster members for <strong>{activeRosterTeamName}</strong>.
           </p>
         ) : null}
+        <div className={styles.rosterImportActionRow}>
+          <button
+            className={styles.secondaryButton}
+            disabled={isLoadingSnowWork || visibleRosterMembers.length === 0}
+            onClick={() => void handleRefreshLinkedSnowWork()}
+            type="button"
+          >
+            {isLoadingSnowWork ? 'Refreshing linked work…' : 'Refresh linked Jira + SNow work'}
+          </button>
+        </div>
+        <p className={styles.personWalkMeta}>
+          Link each person to a ServiceNow user to compare their current sprint Jira issues and active ServiceNow work side by side.
+        </p>
+        {snowWorkStatusMessage ? <p className={styles.personWalkMeta}>{snowWorkStatusMessage}</p> : null}
+        {snowWorkErrorMessage ? <p className={styles.errorMessage}>{snowWorkErrorMessage}</p> : null}
         {rosterMembers.length === 0 ? (
           <p className={styles.personWalkMeta}>Add team members here to run standup outside the sprint.</p>
         ) : visibleRosterMembers.length === 0 ? (
@@ -346,10 +867,20 @@ export default function RosterTab({ issues }: RosterTabProps) {
           <div className={styles.rosterMemberList}>
             {visibleRosterMembers.map((rosterMember) => (
               <RosterCard
+                actionLabel="Remove"
                 key={rosterMember.id}
-                onRemove={() => removeRosterMember(rosterMember.id)}
+                onAction={() => removeRosterMember(rosterMember.id)}
                 rosterMember={rosterMember}
-              />
+              >
+                <RosterLinkedWorkPanel
+                  hasLoadedSnowWork={Object.prototype.hasOwnProperty.call(snowWorkByRosterMemberId, rosterMember.id)}
+                  isSnowRelayConnected={isSnowRelayConnected}
+                  jiraIssues={jiraIssuesByRosterMemberId.get(rosterMember.id) ?? []}
+                  onSnowUserChange={(nextReference) => handleSnowUserChange(rosterMember, nextReference)}
+                  rosterMember={rosterMember}
+                  snowIssues={snowWorkByRosterMemberId[rosterMember.id] ?? []}
+                />
+              </RosterCard>
             ))}
           </div>
         )}

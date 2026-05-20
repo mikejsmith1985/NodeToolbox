@@ -180,6 +180,10 @@ import SprintDashboardView from './SprintDashboardView.tsx';
 describe('SprintDashboardView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(window, 'scrollTo', {
+      value: vi.fn(),
+      writable: true,
+    });
     mockState.activeTab = 'overview';
     mockState.sprintIssues = [
       {
@@ -290,6 +294,12 @@ describe('SprintDashboardView', () => {
     expect(screen.getByRole('combobox', { name: 'Sprint' })).toBeInTheDocument();
   });
 
+  it('renders the tab panel as the scroll container', () => {
+    render(<SprintDashboardView />);
+
+    expect(screen.getByRole('tabpanel').className).toContain('tabPanelSection');
+  });
+
   it('shows board-friendly wording in the Settings tab before a board is selected', () => {
     mockState.activeTab = 'settings';
     render(<SprintDashboardView />);
@@ -318,6 +328,19 @@ describe('SprintDashboardView', () => {
     expect(screen.getByRole('heading', { name: 'Sprint 7' })).toBeInTheDocument();
     expect(screen.getByText('Transformers SCRUM')).toBeInTheDocument();
     expect(screen.queryByText('Board 333')).not.toBeInTheDocument();
+  });
+
+  it('resets the tab panel scroll position when the active tab changes', () => {
+    const { rerender } = render(<SprintDashboardView />);
+    const initialTabPanel = screen.getByRole('tabpanel');
+    initialTabPanel.scrollTop = 240;
+    vi.mocked(window.scrollTo).mockClear();
+
+    mockState.activeTab = 'settings';
+    rerender(<SprintDashboardView />);
+
+    expect(screen.getByRole('tabpanel').scrollTop).toBe(0);
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, left: 0, behavior: 'auto' });
   });
 
   it('shows a board-focused empty state in Overview when no team board data is loaded', () => {

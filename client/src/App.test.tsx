@@ -123,6 +123,7 @@ const REDIRECT_ROUTE_EXPECTATIONS = [
 
 describe('App shell', () => {
   beforeEach(() => {
+    window.sessionStorage.clear();
     window.localStorage.clear();
     useProxyStatusMock.mockReset();
     useRelayBridgeMock.mockReset();
@@ -150,6 +151,15 @@ describe('App shell', () => {
     renderApp(DEFAULT_PATH);
 
     expect(screen.getByLabelText('Connection status')).toBeInTheDocument();
+  });
+
+  it('shows a demo mode badge when the current tab is isolated for first-install demos', () => {
+    window.sessionStorage.setItem('ntbx-demo-mode-enabled', '1');
+
+    renderApp(DEFAULT_PATH);
+
+    expect(screen.getByText('Demo mode')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Exit' })).toBeInTheDocument();
   });
 
   it('shows a global theme toggle and switches the html theme attribute', async () => {

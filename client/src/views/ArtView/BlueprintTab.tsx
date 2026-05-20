@@ -1,6 +1,6 @@
 // BlueprintTab.tsx — React renderer for the legacy-style Program Epic → Feature → Story Blueprint hierarchy.
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ArtTeam } from './hooks/useArtData.ts';
 import {
@@ -345,6 +345,7 @@ export default function BlueprintTab({ teams, selectedPiName }: BlueprintTabProp
   const [loadError, setLoadError] = useState<string | null>(null);
   const [collapsedProgramEpicKeys, setCollapsedProgramEpicKeys] = useState<Set<string>>(new Set());
   const [collapsedFeatureKeys, setCollapsedFeatureKeys] = useState<Set<string>>(new Set());
+  const lastAutoLoadKeyRef = useRef('');
 
   const hasNoPiSelected = !selectedPiName.trim();
   const hasNoTeams = teams.length === 0;
@@ -352,7 +353,7 @@ export default function BlueprintTab({ teams, selectedPiName }: BlueprintTabProp
   const filteredProgramEpics = filterProgramEpicsBySearch(programEpics ?? [], searchTerm);
   const flattenedFeatures = flattenProgramEpicFeatures(filteredProgramEpics);
 
-  async function handleLoadBlueprint() {
+  const handleLoadBlueprint = useCallback(async () => {
     if (hasNoTeams) {
       return;
     }
@@ -367,7 +368,21 @@ export default function BlueprintTab({ teams, selectedPiName }: BlueprintTabProp
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [hasNoTeams, selectedPiName, teams]);
+
+  useEffect(() => {
+    if (hasNoPiSelected || hasNoTeams) {
+      return;
+    }
+
+    const autoLoadKey = `${selectedPiName}|${teams.map((team) => `${team.id}:${team.boardId}`).join(',')}`;
+    if (lastAutoLoadKeyRef.current === autoLoadKey) {
+      return;
+    }
+
+    lastAutoLoadKeyRef.current = autoLoadKey;
+    void handleLoadBlueprint();
+  }, [handleLoadBlueprint, hasNoPiSelected, hasNoTeams, selectedPiName, teams]);
 
   function toggleProgramEpicCollapse(programEpicKey: string) {
     setCollapsedProgramEpicKeys((previous) => {

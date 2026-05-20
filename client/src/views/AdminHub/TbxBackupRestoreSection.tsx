@@ -13,6 +13,11 @@ import {
   removePersistentSettingsLocalStorageData,
   restorePersistentSettingsLocalStorageData,
 } from '../../utils/persistentSettingsStorage.ts';
+import {
+  createDemoModeUrl,
+  disableDemoModeForCurrentTab,
+  isDemoModeEnabled,
+} from '../../utils/demoModeStorage.ts';
 import styles from './AdminHubView.module.css';
 
 /** Triggers a JSON file download with the given filename and content. */
@@ -33,6 +38,7 @@ export default function TbxBackupRestoreSection() {
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
+  const [isDemoModeActive, setIsDemoModeActive] = useState(() => isDemoModeEnabled());
 
   function handleExportSettings() {
     const exportData = collectPersistentSettingsLocalStorageData();
@@ -79,6 +85,24 @@ export default function TbxBackupRestoreSection() {
     window.location.reload();
   }
 
+  function handleOpenDemoMode() {
+    if (isDemoModeActive) {
+      disableDemoModeForCurrentTab();
+      setIsDemoModeActive(false);
+      showToast('Demo mode ended. Reloading your regular settings.', 'success');
+      window.location.reload();
+      return;
+    }
+
+    const firstInstallDemoUrl = createDemoModeUrl(new URL('/setup', window.location.href).toString());
+    const demoModeWindow = window.open(firstInstallDemoUrl, '_blank', 'noopener');
+    if (demoModeWindow) {
+      showToast('Opening a first-install demo in a new tab. Your saved settings stay untouched.', 'success');
+    } else {
+      showToast('Demo tab was blocked by the browser. Allow pop-ups or open the current URL with ?demo=1.', 'error');
+    }
+  }
+
   return (
     <section className={styles.sectionCard}>
       <h2 className={styles.sectionTitle}>💾 Backup / Restore Settings</h2>
@@ -89,6 +113,10 @@ export default function TbxBackupRestoreSection() {
       </p>
 
       <div className={styles.devUtilitiesRow}>
+        <button className={styles.actionButton} onClick={handleOpenDemoMode}>
+          {isDemoModeActive ? '🛑 Exit Demo Mode' : '🎬 Open First-Install Demo'}
+        </button>
+
         <button className={styles.actionButton} onClick={handleExportSettings}>
           ⬇ Export Settings
         </button>

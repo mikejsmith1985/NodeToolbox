@@ -24,6 +24,7 @@ const { startSchedulerLoop }                = require('./src/services/repoMonito
 const { isPortInUse, resolvePortConflict }  = require('./src/utils/portManager');
 const { installConsoleInterceptor }         = require('./src/utils/logBuffer');
 const { spawnDetachedProcess }              = require('./src/utils/updater');
+const { createDemoModePath, isDemoModeRequest } = require('./src/utils/demoMode');
 const {
   readCurrentVersion,
   resolveCurrentInstallRoot,
@@ -124,9 +125,14 @@ app.use(createSchedulerRouter(configuration));
 // Placed before the static file middleware so misconfigured instances always see
 // the wizard instead of a non-functional dashboard.
 app.get('/', (req, res, next) => {
+  if (isDemoModeRequest(req)) {
+    return res.redirect(302, createDemoModePath('/setup'));
+  }
+
   const isAnyServiceConfigured =
     isServiceConfigured(configuration.jira)   ||
     isServiceConfigured(configuration.snow)   ||
+    isServiceConfigured(configuration.confluence || {}) ||
     !!(configuration.github && configuration.github.pat);
 
   if (!isAnyServiceConfigured) {

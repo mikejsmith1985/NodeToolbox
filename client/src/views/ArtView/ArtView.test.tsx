@@ -1,15 +1,28 @@
 // ArtView.test.tsx — Unit tests for the ART View tabbed component (7 original + 2 new tabs + PI header + SoS drawer + Jira sync).
 
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArtTab, ArtTeam } from './hooks/useArtData.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import { ToastProvider } from '../../components/Toast/ToastProvider.tsx';
 
-const { mockJiraGet, mockJiraPost } = vi.hoisted(() => ({
+const {
+  mockCreateConfluenceDatabase,
+  mockJiraGet,
+  mockJiraPost,
+  mockFetchConfluencePage,
+  mockLoadSharedArtWorkspace,
+  mockSaveSharedArtWorkspace,
+  mockUpdateConfluencePage,
+} = vi.hoisted(() => ({
+  mockCreateConfluenceDatabase: vi.fn(),
   mockJiraGet: vi.fn(),
   // Hoisted so tests can assert on calls to the Jira comment post endpoint.
   mockJiraPost: vi.fn(),
+  mockFetchConfluencePage: vi.fn(),
+  mockLoadSharedArtWorkspace: vi.fn(),
+  mockSaveSharedArtWorkspace: vi.fn(),
+  mockUpdateConfluencePage: vi.fn(),
 }));
 
 const { mockState, mockActions } = vi.hoisted(() => ({
@@ -48,6 +61,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     setActiveTab: vi.fn(),
     setSelectedPiName: vi.fn(),
     addTeam: vi.fn(),
+    replaceTeams: vi.fn(),
     removeTeam: vi.fn(),
     saveTeams: vi.fn(),
     loadAllTeams: vi.fn().mockResolvedValue(undefined),
@@ -57,6 +71,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     loadBoardPrep: vi.fn().mockResolvedValue(undefined),
     setBoardPrepTeamFilter: vi.fn(),
     updateTeamSosKey: vi.fn(),
+    updateTeamPiReviewPageUrl: vi.fn(),
   },
 }));
 
@@ -68,6 +83,16 @@ vi.mock('../../services/jiraApi.ts', () => ({
   jiraGet: mockJiraGet,
   jiraPost: mockJiraPost,
   jiraPut: vi.fn(),
+}));
+
+vi.mock('../../services/confluenceApi.ts', () => ({
+  createConfluenceDatabase: mockCreateConfluenceDatabase,
+  fetchConfluencePage: mockFetchConfluencePage,
+  fetchConfluencePageByReference: mockFetchConfluencePage,
+  loadSharedArtWorkspace: mockLoadSharedArtWorkspace,
+  resolveConfluencePageIdFromReference: vi.fn(),
+  saveSharedArtWorkspace: mockSaveSharedArtWorkspace,
+  updateConfluencePage: mockUpdateConfluencePage,
 }));
 
 import ArtView from './ArtView.tsx';
@@ -103,6 +128,7 @@ function createLocalDateString(date: Date): string {
 describe('ArtView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     Object.defineProperty(window.navigator, 'clipboard', {
       value: {
         write: mockClipboardWrite,
@@ -132,6 +158,40 @@ describe('ArtView', () => {
     mockState.availablePiNames = ['PI-2025-Q2', 'PI-2025-Q1'];
     mockState.isLoadingPiOptions = false;
     mockState.boardPrepIssues = [];
+    mockCreateConfluenceDatabase.mockResolvedValue({
+      id: 'db-123',
+      type: 'database',
+      title: 'Systems Team',
+      spaceId: '77',
+    });
+    mockLoadSharedArtWorkspace.mockResolvedValue({
+      schemaVersion: 1,
+      artKey: 'S2E',
+      artName: 'Systems Team',
+      updatedAt: '2026-05-20T12:00:00.000Z',
+      teams: [
+        {
+          id: 'shared-team-1',
+          name: 'Shared Alpha',
+          boardId: '42',
+          boardName: 'Transformers Board',
+          projectKey: 'ALPHA',
+          sosIssueKey: 'ALPHA-1',
+        },
+      ],
+      settings: {
+        piFieldId: 'customfield_10301',
+        depLinkTypes: ['blocks'],
+        staleDays: 5,
+        sprintWindowDays: 10,
+      },
+    });
+    mockSaveSharedArtWorkspace.mockResolvedValue({
+      id: 'prop-1',
+      key: 'nodetoolbox-shared-art',
+      version: { number: 1 },
+      value: undefined,
+    });
     mockJiraGet.mockImplementation((path: string) => {
       if (path === '/rest/api/2/field') {
         return Promise.resolve([]);
@@ -160,15 +220,37 @@ describe('ArtView', () => {
     expect(screen.getByRole('tab', { name: /settings/i })).toBeInTheDocument();
   });
 
-  it('renders the 2 new tab buttons: Dependencies and Board Prep', () => {
+  it('renders the additional ART tab buttons including PI Review and Capacity', () => {
     renderArtView();
+    expect(screen.getByRole('tab', { name: /pi review/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /capacity/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /dependencies/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /board prep/i })).toBeInTheDocument();
   });
 
-  it('shows the Overview tab with Load All Teams button', () => {
+  it('auto-loads overview teams and shows a Refresh All Teams button', () => {
     renderArtView();
-    expect(screen.getByRole('button', { name: /load all teams/i })).toBeInTheDocument();
+    expect(mockActions.loadAllTeams).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: /refresh all teams/i })).toBeInTheDocument();
+  });
+
+  it('reloads ART data when the PI changes outside the Overview tab', () => {
+    mockState.activeTab = 'predictability';
+    const { rerender } = renderArtView();
+
+    expect(mockActions.loadAllTeams).toHaveBeenCalledTimes(1);
+    mockActions.loadAllTeams.mockClear();
+
+    mockState.selectedPiName = 'PI-2025-Q2';
+    rerender(
+      <ToastProvider>
+        <ArtView />
+      </ToastProvider>,
+    );
+
+    expect(mockActions.loadAllTeams).toHaveBeenCalledTimes(1);
+    mockState.activeTab = 'overview';
+    mockState.selectedPiName = 'PI-2025-Q1';
   });
 
   it('renders a project key filter input above the overview team list', () => {
@@ -317,10 +399,10 @@ describe('ArtView', () => {
 
   // ── Feature 1: Dependency Tab ──
 
-  it('shows the Dependencies tab panel with a Load Dependencies button when a PI is selected', () => {
+  it('shows the Dependencies tab panel with an available load action when a PI is selected', () => {
     mockState.activeTab = 'dependencies';
     renderArtView();
-    expect(screen.getByRole('button', { name: /load dependencies/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /loading|reload dependencies|load dependencies/i })).toBeInTheDocument();
   });
 
   it('shows the no-PI warning in the Dependencies tab when no PI is selected', () => {
@@ -443,11 +525,11 @@ describe('ArtView', () => {
     mockState.selectedPiName = 'PI-2025-Q1';
   });
 
-  it('shows the Load Blueprint button when a PI is selected', () => {
+  it('shows the Blueprint tab with an available load action when a PI is selected', () => {
     mockState.activeTab = 'blueprint';
     mockState.selectedPiName = 'PI-2025-Q1';
     renderArtView();
-    expect(screen.getByRole('button', { name: /load blueprint/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /loading|reload blueprint|load blueprint/i })).toBeInTheDocument();
   });
 
   // ── Feature: SoS Narrative Fields ──
@@ -933,6 +1015,55 @@ describe('ArtView', () => {
     mockState.activeTab = 'settings';
     renderArtView();
     expect(screen.getByRole('spinbutton', { name: /stale days threshold/i })).toBeInTheDocument();
+  });
+
+  it('shows the default PI Review page URL input in Settings tab', () => {
+    mockState.activeTab = 'settings';
+    renderArtView();
+    expect(screen.getByRole('textbox', { name: /default pi review confluence page url or id/i })).toBeInTheDocument();
+  });
+
+  it('renders dependency link types as pressed-state buttons and persists toggles', async () => {
+    mockState.activeTab = 'settings';
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/field') {
+        return Promise.resolve([]);
+      }
+      if (path === '/rest/api/2/project') {
+        return Promise.resolve([]);
+      }
+      if (path === '/rest/api/2/issueLinkType') {
+        return Promise.resolve({
+          issueLinkTypes: [
+            { name: 'blocks' },
+            { name: 'Cloners' },
+          ],
+        });
+      }
+
+      return Promise.resolve({ values: [] });
+    });
+
+    renderArtView();
+
+    const clonersButton = await screen.findByRole('button', { name: /dependency link type cloners/i });
+    expect(clonersButton).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(clonersButton);
+
+    expect(clonersButton).toHaveAttribute('aria-pressed', 'true');
+    const storedSettings = JSON.parse(localStorage.getItem('tbxARTSettings') ?? '{}') as { depLinkTypes?: string[] };
+    expect(storedSettings.depLinkTypes).toContain('Cloners');
+  });
+
+  it('shows the experimental shared ART workspace controls in Settings tab', () => {
+    mockState.activeTab = 'settings';
+    renderArtView();
+    expect(screen.getByRole('textbox', { name: /art short name/i })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /shared art database id/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create shared art workspace/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /publish local art settings/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /load shared art settings/i })).toBeInTheDocument();
   });
 
   it('shows Project picker in Settings add-team form', () => {
@@ -1567,6 +1698,30 @@ describe('ArtView', () => {
     mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
   });
 
+  it('shows active sprint name for Scrum teams in Predictability when a PI is selected', () => {
+    mockState.activeTab = 'predictability';
+    mockState.selectedPiName = 'PI-2025-Q2';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        boardType: 'scrum' as const,
+        activeSprintName: 'Sprint 9',
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+
+    renderArtView();
+
+    expect(screen.getByText('Sprint 9')).toBeInTheDocument();
+    mockState.activeTab = 'overview';
+    mockState.selectedPiName = 'PI-2025-Q1';
+    mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
+  });
+
   it('shows throughput column in the Predictability tab for Kanban teams', () => {
     mockState.activeTab = 'predictability';
     mockState.teams = [
@@ -1857,6 +2012,19 @@ describe('ArtView', () => {
     mockState.activeTab = 'overview';
   });
 
+  it('calls updateTeamPiReviewPageUrl when a team PI Review page URL input changes', () => {
+    mockState.activeTab = 'settings';
+    renderArtView();
+    fireEvent.change(screen.getByRole('textbox', { name: /pi review page url for alpha team/i }), {
+      target: { value: 'https://example.atlassian.net/wiki/pages/12345/Alpha' },
+    });
+    expect(mockActions.updateTeamPiReviewPageUrl).toHaveBeenCalledWith(
+      'team-1',
+      'https://example.atlassian.net/wiki/pages/12345/Alpha',
+    );
+    mockState.activeTab = 'overview';
+  });
+
   it('persists PI End Date to localStorage when the input value changes', () => {
     mockState.activeTab = 'settings';
     localStorage.removeItem('tbxARTSettings');
@@ -1886,6 +2054,117 @@ describe('ArtView', () => {
     expect(stored.sprintWindowDays).toBe(10);
 
     localStorage.removeItem('tbxARTSettings');
+    mockState.activeTab = 'overview';
+  });
+
+  it('persists the default PI Review page URL to localStorage when the input value changes', () => {
+    mockState.activeTab = 'settings';
+    localStorage.removeItem('tbxARTSettings');
+    renderArtView();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /default pi review confluence page url or id/i }), {
+      target: { value: 'https://example.atlassian.net/wiki/pages/12345/Shared' },
+    });
+
+    const stored = JSON.parse(localStorage.getItem('tbxARTSettings') ?? '{}') as { piReviewPageUrl?: string };
+    expect(stored.piReviewPageUrl).toBe('https://example.atlassian.net/wiki/pages/12345/Shared');
+
+    localStorage.removeItem('tbxARTSettings');
+    mockState.activeTab = 'overview';
+  });
+
+  it('creates a shared ART workspace and stores the returned database ID locally', async () => {
+    mockState.activeTab = 'settings';
+    renderArtView();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /shared art name/i }), {
+      target: { value: 'Systems Team' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /art short name/i }), {
+      target: { value: 'S2E' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /confluence space id/i }), {
+      target: { value: '77' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /create shared art workspace/i }));
+
+    await waitFor(() => {
+      expect(mockCreateConfluenceDatabase).toHaveBeenCalledWith({
+        spaceId: '77',
+        title: 'Systems Team',
+        parentId: undefined,
+      });
+    });
+    await waitFor(() => {
+      expect(mockSaveSharedArtWorkspace).toHaveBeenCalledWith(
+        'db-123',
+        expect.objectContaining({
+          artKey: 'S2E',
+          artName: 'Systems Team',
+        }),
+      );
+    });
+
+    const storedSettings = JSON.parse(localStorage.getItem('tbxARTSettings') ?? '{}') as {
+      sharedArtDatabaseId?: string;
+    };
+    expect(storedSettings.sharedArtDatabaseId).toBe('db-123');
+    mockState.activeTab = 'overview';
+  });
+
+  it('creates a shared ART workspace without an ART short name', async () => {
+    mockState.activeTab = 'settings';
+    renderArtView();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /shared art name/i }), {
+      target: { value: 'Systems Team' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /confluence space id/i }), {
+      target: { value: '77' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /create shared art workspace/i }));
+
+    await waitFor(() => {
+      expect(mockSaveSharedArtWorkspace).toHaveBeenCalledWith(
+        'db-123',
+        expect.objectContaining({
+          artKey: 'Systems Team',
+          artName: 'Systems Team',
+        }),
+      );
+    });
+
+    mockState.activeTab = 'overview';
+  });
+
+  it('loads shared ART settings and replaces the local ART roster', async () => {
+    mockState.activeTab = 'settings';
+    renderArtView();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /shared art database id/i }), {
+      target: { value: 'db-123' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /load shared art settings/i }));
+
+    await waitFor(() => {
+      expect(mockLoadSharedArtWorkspace).toHaveBeenCalledWith('db-123');
+    });
+    await waitFor(() => {
+      expect(mockActions.replaceTeams).toHaveBeenCalledWith([
+        expect.objectContaining({
+          id: 'shared-team-1',
+          name: 'Shared Alpha',
+          boardId: '42',
+        }),
+      ]);
+    });
+
+    const storedSettings = JSON.parse(localStorage.getItem('tbxARTSettings') ?? '{}') as {
+      sharedArtKey?: string;
+      sharedArtDatabaseId?: string;
+    };
+    expect(storedSettings.sharedArtKey).toBe('S2E');
+    expect(storedSettings.sharedArtDatabaseId).toBe('db-123');
     mockState.activeTab = 'overview';
   });
 

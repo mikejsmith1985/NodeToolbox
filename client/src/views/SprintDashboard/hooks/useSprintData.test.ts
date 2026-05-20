@@ -12,6 +12,7 @@ vi.mock('../../../services/jiraApi.ts', () => ({
 }));
 
 import { useSprintData } from './useSprintData.ts';
+import { useConnectionStore } from '../../../store/connectionStore.ts';
 import { useSettingsStore } from '../../../store/settingsStore.ts';
 
 function createMockSprint(sprintId: number) {
@@ -76,6 +77,16 @@ describe('useSprintData', () => {
       sprintDashboardSelectedPiValue: '',
       sprintDashboardActiveTeam: '',
     });
+    useConnectionStore.setState({
+      isJiraReady: false,
+      isSnowReady: false,
+      isJiraVerified: false,
+      isSnowVerified: false,
+      isConfluenceReady: false,
+      isGitHubReady: false,
+      proxyStatus: null,
+      relayBridgeStatus: null,
+    });
   });
 
   afterEach(() => {
@@ -92,13 +103,23 @@ describe('useSprintData', () => {
       sprintDashboardSelectedPiValue: '',
       sprintDashboardActiveTeam: '',
     });
+    useConnectionStore.setState({
+      isJiraReady: false,
+      isSnowReady: false,
+      isJiraVerified: false,
+      isSnowVerified: false,
+      isConfluenceReady: false,
+      isGitHubReady: false,
+      proxyStatus: null,
+      relayBridgeStatus: null,
+    });
   });
 
-  it('initialises with empty projectKey and overview tab', () => {
+  it('initialises with empty projectKey and settings tab while setup is incomplete', () => {
     const { result } = renderHook(() => useSprintData());
 
     expect(result.current.state.projectKey).toBe('');
-    expect(result.current.state.activeTab).toBe('overview');
+    expect(result.current.state.activeTab).toBe('settings');
     expect(result.current.state.scopeMode).toBe('sprint');
   });
 
@@ -132,7 +153,7 @@ describe('useSprintData', () => {
     expect(localStorage.getItem('tbxSprintDashboardActiveTab')).toBe('blockers');
   });
 
-  it('restores the persisted project key and active tab on first render', () => {
+  it('opens Settings by default until project, board, and Jira readiness are in place', () => {
     useSettingsStore.getState().setSprintDashboardProjectKey('ENFCT');
     useSettingsStore.getState().setSprintDashboardActiveTab('standup');
     useSettingsStore.getState().setSprintDashboardScopeMode('pi');
@@ -143,11 +164,24 @@ describe('useSprintData', () => {
     const { result } = renderHook(() => useSprintData());
 
     expect(result.current.state.projectKey).toBe('ENFCT');
-    expect(result.current.state.activeTab).toBe('standup');
+    expect(result.current.state.activeTab).toBe('settings');
     expect(result.current.state.scopeMode).toBe('pi');
     expect(result.current.state.selectedSprintId).toBe(13);
     expect(result.current.state.selectedFixVersionName).toBe('Release 24.1');
     expect(result.current.state.selectedPiValue).toBe('PI-24.1');
+  });
+
+  it('opens Overview by default once project, board, and Jira readiness are all configured', () => {
+    useSettingsStore.getState().setSprintDashboardProjectKey('ENFCT');
+    useSettingsStore.getState().setSprintDashboardBoardId('42');
+    useSettingsStore.getState().setSprintDashboardActiveTab('standup');
+    useConnectionStore.setState({ isJiraReady: true });
+
+    const { result } = renderHook(() => useSprintData());
+
+    expect(result.current.state.projectKey).toBe('ENFCT');
+    expect(result.current.state.boardId).toBe(42);
+    expect(result.current.state.activeTab).toBe('overview');
   });
 
   it('falls back to the DSU project key when Sprint Dashboard has not saved its own project yet', () => {

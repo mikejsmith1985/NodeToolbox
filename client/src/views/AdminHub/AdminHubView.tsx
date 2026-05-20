@@ -830,6 +830,8 @@ interface UpdateManagementSectionProps {
   updateCheckError: string | null
   isCheckingUpdate: boolean
   isInstallingUpdate: boolean
+  updateInstallPhaseMessage: string | null
+  updateInstallProgressPercent: number
   updateInstallError: string | null
   isUpdateSectionCollapsed: boolean
   onCheckForUpdates(): void
@@ -848,6 +850,8 @@ function UpdateManagementSection({
   updateCheckError,
   isCheckingUpdate,
   isInstallingUpdate,
+  updateInstallPhaseMessage,
+  updateInstallProgressPercent,
   updateInstallError,
   isUpdateSectionCollapsed,
   onCheckForUpdates,
@@ -905,6 +909,28 @@ function UpdateManagementSection({
             <p className={styles.updateStatusError} role="alert">
               ⚠️ {updateInstallError}
             </p>
+          )}
+
+          {isInstallingUpdate && updateInstallPhaseMessage !== null && (
+            <div aria-live="polite" className={styles.updateProgressCard}>
+              <div className={styles.updateProgressHeader}>
+                <span className={styles.updateStatusAvailable}>{updateInstallPhaseMessage}</span>
+                <span className={styles.updateProgressPercent}>{updateInstallProgressPercent}%</span>
+              </div>
+              <div
+                aria-label="Update install progress"
+                aria-valuemax={100}
+                aria-valuemin={0}
+                aria-valuenow={updateInstallProgressPercent}
+                className={styles.updateProgressTrack}
+                role="progressbar"
+              >
+                <div
+                  className={styles.updateProgressFill}
+                  style={{ width: `${updateInstallProgressPercent}%` }}
+                />
+              </div>
+            </div>
           )}
 
           {updateCheckResult !== null && (
@@ -1824,6 +1850,8 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
         updateCheckError={state.updateCheckError}
         isCheckingUpdate={state.isCheckingUpdate}
         isInstallingUpdate={state.isInstallingUpdate}
+        updateInstallPhaseMessage={state.updateInstallPhaseMessage}
+        updateInstallProgressPercent={state.updateInstallProgressPercent}
         updateInstallError={state.updateInstallError}
         isUpdateSectionCollapsed={state.isUpdateSectionCollapsed}
         onCheckForUpdates={actions.checkForUpdates}
@@ -1891,9 +1919,21 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
 export default function AdminHubView() {
   const { state, actions } = useAdminHubState()
   const [activeAdminTab, setActiveAdminTab] = useState<AdminHubTab>('main')
+  const adminHubRootRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const scrollContainer = adminHubRootRef.current?.closest('main')
+    if (scrollContainer instanceof HTMLElement) {
+      scrollContainer.scrollTop = 0
+    }
+
+    if (typeof window.scrollTo === 'function') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    }
+  }, [activeAdminTab])
 
   return (
-    <div className={styles.adminHubView}>
+    <div className={styles.adminHubView} ref={adminHubRootRef}>
       <header>
         <h1 className={styles.pageTitle}>{VIEW_TITLE}</h1>
         <p className={styles.pageSubtitle}>{VIEW_SUBTITLE}</p>

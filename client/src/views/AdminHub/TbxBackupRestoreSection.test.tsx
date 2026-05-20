@@ -16,15 +16,21 @@ function renderTbxBackupRestoreSection() {
 
 describe('TbxBackupRestoreSection', () => {
   beforeEach(() => {
+    sessionStorage.clear();
     localStorage.clear();
-    // Suppress URL.createObjectURL not available in jsdom.
-    vi.stubGlobal('URL', {
-      createObjectURL: vi.fn().mockReturnValue('blob:mock'),
-      revokeObjectURL: vi.fn(),
+    // Suppress URL.createObjectURL not available in jsdom without replacing the URL constructor.
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn().mockReturnValue('blob:mock'),
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn(),
     });
   });
 
   afterEach(() => {
+    sessionStorage.clear();
     localStorage.clear();
     vi.restoreAllMocks();
   });
@@ -49,6 +55,22 @@ describe('TbxBackupRestoreSection', () => {
   it('renders the Reset All Data button', () => {
     renderTbxBackupRestoreSection();
     expect(screen.getByRole('button', { name: /reset all data/i })).toBeInTheDocument();
+  });
+
+  it('opens first-install demo mode in a new tab without deleting saved settings', () => {
+    localStorage.setItem('tbxSomeSetting', 'value');
+    const openWindowMock = vi.fn().mockReturnValue({});
+    vi.stubGlobal('open', openWindowMock);
+    renderTbxBackupRestoreSection();
+
+    fireEvent.click(screen.getByRole('button', { name: /open first-install demo/i }));
+
+    expect(openWindowMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/setup\?demo=1$/),
+      '_blank',
+      'noopener',
+    );
+    expect(localStorage.getItem('tbxSomeSetting')).toBe('value');
   });
 
   it('does not clear localStorage if the user cancels the Reset All Data confirmation', () => {

@@ -2241,7 +2241,7 @@ function SettingsTab({
         </div>
       </div>
       <div className={styles.settingsDivider} />
-      <RosterTab issues={issues} />
+      <RosterTab issues={issues} projectKey={projectKey} />
     </div>
   );
 }
@@ -4767,6 +4767,7 @@ export default function SprintDashboardView() {
   const { config, actions: configActions } = useDashboardConfig();
   const { loadSprint } = actions;
   const hasAttemptedRestoreLoad = useRef(false);
+  const tabPanelRef = useRef<HTMLElement | null>(null);
 
   // Local state for the board picker search field — not persisted, just UI.
   const [boardSearchQuery, setBoardSearchQuery] = useState('');
@@ -4787,6 +4788,16 @@ export default function SprintDashboardView() {
     // Restored selections should reopen the dashboard immediately after a refresh.
     void loadSprint();
   }, [loadSprint, state.boardId, state.projectKey, state.sprintInfo, state.sprintIssues.length]);
+
+  useEffect(() => {
+    if (tabPanelRef.current) {
+      tabPanelRef.current.scrollTop = 0;
+    }
+
+    if (typeof window.scrollTo === 'function') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }
+  }, [state.activeTab]);
 
   function handleIssueUpdated() {
     void loadSprint();
@@ -4972,8 +4983,10 @@ export default function SprintDashboardView() {
       />
 
       <section
+        className={styles.tabPanelSection}
         aria-labelledby={`team-dashboard-${state.activeTab}-tab`}
         id={`team-dashboard-${state.activeTab}-panel`}
+        ref={tabPanelRef}
         role="tabpanel"
       >
         {renderActiveTabPanel(state.activeTab)}

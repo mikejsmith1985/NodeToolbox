@@ -735,6 +735,44 @@
   font-size: var(--font-size-sm);
 }
 
+.updateProgressCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin: var(--spacing-sm) 0;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+}
+
+.updateProgressHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.updateProgressPercent {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.updateProgressTrack {
+  overflow: hidden;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--color-border);
+}
+
+.updateProgressFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-tone-success-fg));
+  transition: width 0.2s ease;
+}
+
 /* Read-only textarea that displays the GitHub release notes. */
 .releaseNotesTextarea {
   width: 100%;

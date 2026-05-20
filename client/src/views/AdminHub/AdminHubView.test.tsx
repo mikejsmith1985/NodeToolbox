@@ -67,6 +67,8 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     updateCheckError: null as string | null,
     isCheckingUpdate: false,
     isInstallingUpdate: false,
+    updateInstallPhaseMessage: null as string | null,
+    updateInstallProgressPercent: 0,
     updateInstallError: null as string | null,
     isUpdateSectionCollapsed: false,
     // ── Service Connectivity ──
@@ -179,6 +181,10 @@ describe('AdminHubView', () => {
 
     // Mock global fetch so the server control buttons don't make real network calls.
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) }));
+    Object.defineProperty(window, 'scrollTo', {
+      value: vi.fn(),
+      writable: true,
+    });
     vi.spyOn(window, 'alert').mockImplementation(() => undefined);
   });
 
@@ -190,6 +196,18 @@ describe('AdminHubView', () => {
     renderAdminHubView();
     expect(screen.getByRole('tab', { name: /config/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /dev panel/i })).toBeInTheDocument();
+  });
+
+  it('scrolls the Admin Hub back to the top on initial render and tab changes', async () => {
+    const user = userEvent.setup();
+    renderAdminHubView();
+
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, left: 0, behavior: 'auto' });
+    vi.mocked(window.scrollTo).mockClear();
+
+    await user.click(screen.getByRole('tab', { name: /dev panel/i }));
+
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, left: 0, behavior: 'auto' });
   });
 
   it('renders the Proxy & Server Setup section', () => {
@@ -502,10 +520,16 @@ describe('Update Management section', () => {
       releaseNotes: '',
     };
     mockState.isInstallingUpdate = true;
+    mockState.updateInstallPhaseMessage = 'Waiting for the updated server to restart…';
+    mockState.updateInstallProgressPercent = 80;
     renderAdminHubView();
     expect(screen.getByText(/installing and restarting/i)).toBeInTheDocument();
+    expect(screen.getByText(/waiting for the updated server to restart/i)).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: /update install progress/i })).toHaveAttribute('aria-valuenow', '80');
     mockState.updateCheckResult = null;
     mockState.isInstallingUpdate = false;
+    mockState.updateInstallPhaseMessage = null;
+    mockState.updateInstallProgressPercent = 0;
   });
 
   it('shows install error message when updateInstallError is set', () => {

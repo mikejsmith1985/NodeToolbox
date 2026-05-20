@@ -3,7 +3,7 @@
 // This component owns the global layout, mounts the shared polling hooks, and
 // routes placeholder views until later migration phases replace them.
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 
 import { ConnectionBar } from './components/ConnectionBar/index.ts';
@@ -13,6 +13,7 @@ import { useRelayBridge } from './hooks/useRelayBridge.ts';
 import { parseRelayReturnRoute, RELAY_RETURN_ROUTE_KEY } from './services/browserRelay.ts';
 import { useSettingsStore } from './store/settingsStore.ts';
 import type { RelaySystem } from './types/relay.ts';
+import { disableDemoModeForCurrentTab, isDemoModeEnabled } from './utils/demoModeStorage.ts';
 import ArtView from './views/ArtView/ArtView.tsx';
 import AdminHubView from './views/AdminHub/AdminHubView.tsx';
 import CodeWalkthroughView from './views/CodeWalkthrough/CodeWalkthroughView.tsx';
@@ -48,6 +49,7 @@ const RELAY_SYSTEM: RelaySystem = 'snow';
 /** Root layout shell for the React migration, including live status hooks and route selection. */
 export default function App() {
   const navigate = useNavigate();
+  const [isDemoModeActive, setIsDemoModeActive] = useState(() => isDemoModeEnabled());
 
   useProxyStatus();
   useRelayBridge(RELAY_SYSTEM);
@@ -68,6 +70,12 @@ export default function App() {
   const theme = useSettingsStore((state) => state.theme);
   const setTheme = useSettingsStore((state) => state.setTheme);
 
+  function handleExitDemoMode() {
+    disableDemoModeForCurrentTab();
+    setIsDemoModeActive(false);
+    window.location.reload();
+  }
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
@@ -83,6 +91,14 @@ export default function App() {
             </Link>
           </div>
           <div className={styles.topBarRight}>
+            {isDemoModeActive && (
+              <div className={styles.demoModeBadge}>
+                <span>Demo mode</span>
+                <button onClick={handleExitDemoMode} type="button">
+                  Exit
+                </button>
+              </div>
+            )}
             <div aria-label="Theme selection" className={styles.themeToggleGroup} role="group">
               <button
                 aria-pressed={theme === 'dark'}

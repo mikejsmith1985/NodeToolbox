@@ -5,39 +5,9 @@
 // weighted allocation, with a shared PTO day pool for that group.
 
 import { create } from 'zustand';
-
-// ── Named constants ──
-
+import type { CapacityRow } from '../capacityModel.ts';
 /** localStorage key for persisting capacity configuration between sessions. */
 const CAPACITY_CONFIG_STORAGE_KEY = 'tbxCapacityConfig';
-
-// ── Type definitions ──
-
-/** Supported team roles in the capacity calculator. */
-export type TeamRole = 'Dev' | 'QE' | 'BT' | 'SL' | 'SA' | 'PO' | 'SM';
-
-/**
- * One row in the capacity table — represents a group of people sharing the same
- * role and weighted allocation percentage.
- */
-export interface CapacityRow {
-  /** Unique identifier for this row (used as React key and for targeted updates). */
-  id: string;
-  /** The team role this group fills (e.g. Dev, QE, PO). */
-  role: TeamRole;
-  /** How many people are in this group. */
-  memberCount: number;
-  /**
-   * Fraction of each work day these people dedicate to this team's work, expressed
-   * as a whole number (0–100). A dev lead orchestrating at 50% enters 50.
-   */
-  capacityPercentage: number;
-  /**
-   * Total PTO days across everyone in this row for the selected date range.
-   * These days are subtracted before the capacity multiplier is applied.
-   */
-  totalPtoDays: number;
-}
 
 /** The full persisted capacity configuration. */
 interface PersistedCapacityConfig {

@@ -8,13 +8,14 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { useCapacityStore } from './hooks/useCapacityStore.ts';
-import type { CapacityRow } from './hooks/useCapacityStore.ts';
-import CapacityTab, {
+import {
   calculateRowCapacity,
   calculateTotalCapacity,
   countWorkDays,
-} from './CapacityTab.tsx';
+} from './capacityModel.ts';
+import type { CapacityRow } from './capacityModel.ts';
+import { useCapacityStore } from './hooks/useCapacityStore.ts';
+import CapacityTab from './CapacityTab.tsx';
 
 // ── Helpers ──
 
@@ -185,6 +186,18 @@ describe('CapacityTab', () => {
     render(<CapacityTab />);
     await user.click(screen.getByRole('button', { name: '+ Add Row' }));
     expect(screen.getByRole('combobox', { name: 'Role' })).toBeInTheDocument();
+  });
+
+  it('shows the expanded ART role list in the dropdown', async () => {
+    const user = userEvent.setup();
+    render(<CapacityTab />);
+    await user.click(screen.getByRole('button', { name: '+ Add Row' }));
+    const roleSelect = screen.getByRole('combobox', { name: 'Role' });
+    expect(screen.getByRole('option', { name: 'Dev Lead' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'TPO' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Test Lead' })).toBeInTheDocument();
+    await user.selectOptions(roleSelect, 'Dev Lead');
+    expect(roleSelect).toHaveValue('Dev Lead');
   });
 
   it('removes a row when the remove button is clicked', async () => {
