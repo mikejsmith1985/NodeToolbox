@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   ALL_TEAM_ROLES,
+  buildCapacitySummary,
   calculateRecommendedCapacity,
   calculateRowCapacity,
   calculateTotalCapacity,
@@ -56,6 +57,20 @@ describe('capacityModel', () => {
     const totalCapacity = calculateTotalCapacity(capacityRows, 10);
     expect(totalCapacity).toBe(25);
     expect(calculateRecommendedCapacity(totalCapacity)).toBe(20);
+  });
+
+  it('builds a reusable capacity summary with per-role totals and date metadata', () => {
+    const capacitySummary = buildCapacitySummary('Alpha Team Capacity', [
+      buildCapacityRow({ id: 'dev', role: 'Dev', memberCount: 2, capacityPercentage: 100 }),
+      buildCapacityRow({ id: 'qe', role: 'QE', memberCount: 1, capacityPercentage: 50 }),
+    ], '2026-05-18', '2026-05-22');
+
+    expect(capacitySummary.summaryLabel).toBe('Alpha Team Capacity');
+    expect(capacitySummary.workDayCount).toBe(5);
+    expect(capacitySummary.totalCapacityPoints).toBe(12.5);
+    expect(capacitySummary.recommendedCapacityPoints).toBe(10);
+    expect(capacitySummary.roleCapacities.Dev).toBe(10);
+    expect(capacitySummary.roleCapacities.QE).toBe(2.5);
   });
 
   it('includes the expanded ART role set used by capacity planners', () => {

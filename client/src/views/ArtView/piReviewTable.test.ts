@@ -7,10 +7,12 @@ import {
   createEmptyConfidenceVoteRow,
   createEmptyPiReviewRow,
   exportPiReviewRowsToCsv,
+  parsePiReviewCapacitySummary,
   parsePiReviewRowsFromSpreadsheetSheets,
   parseConfidenceVoteTable,
   parsePiReviewTable,
   writeConfidenceVoteTable,
+  writePiReviewCapacitySummary,
   writePiReviewTable,
 } from './piReviewTable.ts';
 
@@ -315,8 +317,11 @@ describe('createInitialPiReviewPageStorage', () => {
     const storageValue = createInitialPiReviewPageStorage();
     const parsedPiReviewTable = parsePiReviewTable(storageValue);
     const parsedConfidenceVoteTable = parseConfidenceVoteTable(storageValue);
+    const parsedCapacitySummary = parsePiReviewCapacitySummary(storageValue);
 
     expect(storageValue).toContain('NodeToolbox PI Review');
+    expect(storageValue).toContain('Team Capacity');
+    expect(storageValue).toContain('style="width: 100%; table-layout: fixed;"');
     expect(parsedPiReviewTable.tableBinding.columnOrder).toEqual([
       'carryOver',
       'priority',
@@ -333,6 +338,57 @@ describe('createInitialPiReviewPageStorage', () => {
       'confidenceVote',
       'notes',
     ]);
+    expect(parsedCapacitySummary).toBeNull();
+  });
+});
+
+describe('writePiReviewCapacitySummary', () => {
+  it('writes a team capacity section above the PI Review table and can parse it back', () => {
+    const nextStorageValue = writePiReviewCapacitySummary(MOCK_STORAGE_VALUE, {
+      summaryLabel: 'Alpha Team Capacity',
+      startDate: '2026-05-18',
+      endDate: '2026-05-22',
+      workDayCount: 5,
+      totalCapacityPoints: 12.5,
+      recommendedCapacityPoints: 10,
+      roleCapacities: {
+        Dev: 10,
+        'Dev Lead': 0,
+        QE: 2.5,
+        'Test Lead': 0,
+        BT: 0,
+        SL: 0,
+        SA: 0,
+        PO: 0,
+        TPO: 0,
+        SM: 0,
+      },
+    });
+
+    expect(nextStorageValue).toContain('Team Capacity');
+    expect(nextStorageValue).toContain('Alpha Team Capacity');
+    expect(nextStorageValue.indexOf('Alpha Team Capacity')).toBeLessThan(nextStorageValue.indexOf('<th>YES - If this is a Carry-Over'));
+
+    expect(parsePiReviewCapacitySummary(nextStorageValue)).toEqual({
+      summaryLabel: 'Alpha Team Capacity',
+      startDate: '2026-05-18',
+      endDate: '2026-05-22',
+      workDayCount: 5,
+      totalCapacityPoints: 12.5,
+      recommendedCapacityPoints: 10,
+      roleCapacities: {
+        Dev: 10,
+        'Dev Lead': 0,
+        QE: 2.5,
+        'Test Lead': 0,
+        BT: 0,
+        SL: 0,
+        SA: 0,
+        PO: 0,
+        TPO: 0,
+        SM: 0,
+      },
+    });
   });
 });
 
@@ -348,6 +404,7 @@ describe('writePiReviewTable', () => {
 
     expect(nextStorageValue).toContain('<h1>PI Review</h1>');
     expect(nextStorageValue).toContain('Ready for PI planning');
+    expect(nextStorageValue).toContain('style="width: 100%; table-layout: fixed;"');
     expect(nextStorageValue).not.toContain('Needs review');
 
     const reloadedTable = parsePiReviewTable(nextStorageValue);

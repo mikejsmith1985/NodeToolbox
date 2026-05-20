@@ -6,13 +6,13 @@ import type { CapacityRow } from '../../SprintDashboard/capacityModel.ts';
 
 const ART_CAPACITY_CONFIG_STORAGE_KEY = 'tbxArtCapacityConfig';
 
-interface ArtCapacityTeamConfig {
+export interface ArtCapacityTeamConfig {
   startDate: string;
   endDate: string;
   rows: CapacityRow[];
 }
 
-interface PersistedArtCapacityConfig {
+export interface PersistedArtCapacityConfig {
   teamConfigs: Record<string, ArtCapacityTeamConfig>;
 }
 
