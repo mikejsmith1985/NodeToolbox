@@ -134,6 +134,27 @@
   white-space: nowrap;
 }
 
+.rowActionGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.boundaryButton {
+  border: 1px solid var(--color-warning, #f59e0b);
+  border-radius: 8px;
+  background: var(--color-warning-soft, rgba(245, 158, 11, 0.14));
+  color: var(--color-warning);
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.boundaryButtonActive {
+  background: #facc15;
+  color: #2f2500;
+  box-shadow: 0 0 0 1px #b7791f;
+}
+
 .removeButton {
   border: 1px solid var(--color-danger);
   border-radius: 8px;
@@ -146,6 +167,21 @@
 .removeButton:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+.commitmentBoundaryRow td {
+  padding: 8px 12px;
+  border-top: 4px solid #facc15;
+  border-bottom: 4px solid #facc15;
+  background: #fef3c7;
+  color: #5f4300;
+  text-align: center;
+}
+
+.commitmentBoundaryRow span,
+.commitmentBoundaryRow strong {
+  display: inline-flex;
+  margin: 0 10px;
 }
 
 .recoveryCard,

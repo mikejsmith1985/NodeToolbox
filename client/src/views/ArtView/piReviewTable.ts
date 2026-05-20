@@ -7,6 +7,9 @@ const MIN_SPREADSHEET_IMPORT_COLUMN_COUNT = 4;
 const TOOLBOX_PI_REVIEW_TITLE = 'NodeToolbox PI Review';
 const TOOLBOX_PI_REVIEW_DESCRIPTION = 'This page section is managed by NodeToolbox so PI Review data can sync reliably.';
 const CONFIDENCE_VOTE_SECTION_TITLE = 'Confidence Vote Tracking';
+const PI_REVIEW_COMMITMENT_BOUNDARY_ATTRIBUTE = 'data-node-toolbox-pi-review-boundary';
+const PI_REVIEW_COMMITMENT_BOUNDARY_VALUE = 'hard-commit';
+const PI_REVIEW_COMMITMENT_BOUNDARY_LABEL = 'Hard commits above / Stretch goals below';
 
 export type PiReviewColumnKey =
   | 'carryOver'
@@ -55,6 +58,12 @@ export interface PiReviewTableBinding {
   columnOrder: PiReviewColumnKey[];
   columnIndexes: number[];
   headerLabels: Record<PiReviewColumnKey, string>;
+}
+
+export interface PiReviewTableParseResult {
+  rows: PiReviewRow[];
+  tableBinding: PiReviewTableBinding;
+  commitmentBoundaryIndex: number | null;
 }
 
 export type ConfidenceVoteColumnKey = 'weekOf' | 'confidenceVote' | 'notes';
@@ -555,8 +564,52 @@ function locateConfidenceVoteTableBinding(documentNode: Document): ConfidenceVot
   return null;
 }
 
+function readNormalizedBoundaryText(rowElement: HTMLTableRowElement): string {
+  return (rowElement.textContent ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function isPiReviewCommitmentBoundaryRow(rowElement: HTMLTableRowElement): boolean {
+  const boundaryValue = rowElement.getAttribute(PI_REVIEW_COMMITMENT_BOUNDARY_ATTRIBUTE);
+  if (boundaryValue === PI_REVIEW_COMMITMENT_BOUNDARY_VALUE) {
+    return true;
+  }
+
+  return readNormalizedBoundaryText(rowElement) === PI_REVIEW_COMMITMENT_BOUNDARY_LABEL.toLowerCase();
+}
+
+function normalizePiReviewCommitmentBoundaryIndex(
+  commitmentBoundaryIndex: number | null | undefined,
+  rowCount: number,
+): number | null {
+  if (commitmentBoundaryIndex === null || commitmentBoundaryIndex === undefined) {
+    return null;
+  }
+
+  return commitmentBoundaryIndex > 0 && commitmentBoundaryIndex < rowCount
+    ? commitmentBoundaryIndex
+    : null;
+}
+
+function createPiReviewCommitmentBoundaryRow(
+  documentNode: Document,
+  totalColumnCount: number,
+): HTMLTableRowElement {
+  const rowElement = documentNode.createElement('tr');
+  rowElement.setAttribute(PI_REVIEW_COMMITMENT_BOUNDARY_ATTRIBUTE, PI_REVIEW_COMMITMENT_BOUNDARY_VALUE);
+  rowElement.setAttribute('class', 'node-toolbox-pi-review-boundary');
+  rowElement.setAttribute('style', 'background-color: #fff3bf; color: #7a4f00; font-weight: 700;');
+
+  const cellElement = documentNode.createElement('td');
+  cellElement.setAttribute('colspan', String(totalColumnCount));
+  cellElement.setAttribute('style', 'border-top: 4px solid #f5c400; border-bottom: 4px solid #f5c400; text-align: center;');
+  cellElement.textContent = PI_REVIEW_COMMITMENT_BOUNDARY_LABEL;
+  rowElement.appendChild(cellElement);
+
+  return rowElement;
+}
+
 /** Parses the first matching PI Review table from a Confluence storage body. */
-export function parsePiReviewTable(storageValue: string): { rows: PiReviewRow[]; tableBinding: PiReviewTableBinding } {
+export function parsePiReviewTable(storageValue: string): PiReviewTableParseResult {
   const documentNode = buildStorageDocument(storageValue);
   const tableBinding = locatePiReviewTableBinding(documentNode);
   if (!tableBinding) {
@@ -568,18 +621,31 @@ export function parsePiReviewTable(storageValue: string): { rows: PiReviewRow[];
     throw new Error('The PI Review table could not be reloaded from the Confluence page');
   }
 
-  const rows = readBodyRowsAfterHeader(tableElement, tableBinding.headerRowIndex)
-    .map((rowElement, rowIndex) => {
-      const row = createEmptyPiReviewRow();
-      row.rowId = `row-${rowIndex + 1}`;
-      tableBinding.columnOrder.forEach((columnKey, columnOrderIndex) => {
-        row[columnKey] = readRowCellValue(rowElement, tableBinding.columnIndexes[columnOrderIndex] ?? columnOrderIndex);
-      });
-      return row;
-    })
-    .filter((row) => tableBinding.columnOrder.some((columnKey) => row[columnKey].trim() !== ''));
+  const rows: PiReviewRow[] = [];
+  let commitmentBoundaryIndex: number | null = null;
+  for (const rowElement of readBodyRowsAfterHeader(tableElement, tableBinding.headerRowIndex)) {
+    if (isPiReviewCommitmentBoundaryRow(rowElement)) {
+      if (commitmentBoundaryIndex === null) {
+        commitmentBoundaryIndex = rows.length;
+      }
+      continue;
+    }
 
-  return { rows, tableBinding };
+    const row = createEmptyPiReviewRow();
+    row.rowId = `row-${rows.length + 1}`;
+    tableBinding.columnOrder.forEach((columnKey, columnOrderIndex) => {
+      row[columnKey] = readRowCellValue(rowElement, tableBinding.columnIndexes[columnOrderIndex] ?? columnOrderIndex);
+    });
+    if (tableBinding.columnOrder.some((columnKey) => row[columnKey].trim() !== '')) {
+      rows.push(row);
+    }
+  }
+
+  return {
+    rows,
+    tableBinding,
+    commitmentBoundaryIndex: normalizePiReviewCommitmentBoundaryIndex(commitmentBoundaryIndex, rows.length),
+  };
 }
 
 function replaceRowsAfterHeader<RowType extends Record<string, string>>(
@@ -590,6 +656,7 @@ function replaceRowsAfterHeader<RowType extends Record<string, string>>(
   columnIndexes: number[],
   columnLabels: Record<string, string>,
   rows: RowType[],
+  commitmentBoundaryIndex?: number | null,
 ): void {
   const tableRows = readTableRows(tableElement);
   const headerRowElement = tableRows[headerRowIndex];
@@ -616,8 +683,13 @@ function replaceRowsAfterHeader<RowType extends Record<string, string>>(
 
   tableRows.slice(headerRowIndex + 1).forEach((rowElement) => rowElement.remove());
 
+  const normalizedCommitmentBoundaryIndex = normalizePiReviewCommitmentBoundaryIndex(
+    commitmentBoundaryIndex,
+    rows.length,
+  );
+
   let insertAfterNode: ChildNode = headerRowElement;
-  for (const row of rows) {
+  for (const [rowIndex, row] of rows.entries()) {
     const rowElement = documentNode.createElement('tr');
     for (let cellIndex = 0; cellIndex < totalColumnCount; cellIndex += 1) {
       const cellElement = documentNode.createElement('td');
@@ -630,6 +702,13 @@ function replaceRowsAfterHeader<RowType extends Record<string, string>>(
     }
     headerParentElement.insertBefore(rowElement, insertAfterNode.nextSibling);
     insertAfterNode = rowElement;
+
+    const insertedRowCount = rowIndex + 1;
+    if (normalizedCommitmentBoundaryIndex === insertedRowCount) {
+      const boundaryRowElement = createPiReviewCommitmentBoundaryRow(documentNode, totalColumnCount);
+      headerParentElement.insertBefore(boundaryRowElement, insertAfterNode.nextSibling);
+      insertAfterNode = boundaryRowElement;
+    }
   }
 }
 
@@ -638,6 +717,7 @@ export function writePiReviewTable(
   storageValue: string,
   tableBinding: PiReviewTableBinding,
   rows: PiReviewRow[],
+  commitmentBoundaryIndex?: number | null,
 ): string {
   const documentNode = buildStorageDocument(storageValue);
   const tableElement = documentNode.querySelectorAll('table').item(tableBinding.tableIndex) as HTMLTableElement | null;
@@ -653,6 +733,7 @@ export function writePiReviewTable(
     tableBinding.columnIndexes,
     PI_REVIEW_COLUMN_LABELS,
     rows as unknown as Record<string, string>[],
+    commitmentBoundaryIndex,
   );
   return readStorageWrapperElement(documentNode).innerHTML;
 }

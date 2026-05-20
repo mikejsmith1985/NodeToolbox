@@ -1,6 +1,6 @@
 // PiReviewTab.tsx — Editable ART PI Review workspace that syncs one Confluence-backed section per team.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useToast } from '../../components/Toast/ToastProvider.tsx';
 import {
@@ -130,6 +130,28 @@ function readOptionalColumnsFromBinding(tableBinding: PiReviewTableBinding): Set
   );
 }
 
+function normalizeCommitmentBoundaryIndex(commitmentBoundaryIndex: number | null, rowCount: number): number | null {
+  return commitmentBoundaryIndex !== null && commitmentBoundaryIndex > 0 && commitmentBoundaryIndex < rowCount
+    ? commitmentBoundaryIndex
+    : null;
+}
+
+function adjustCommitmentBoundaryAfterRowRemoval(
+  commitmentBoundaryIndex: number | null,
+  removedRowIndex: number,
+  nextRowCount: number,
+): number | null {
+  if (commitmentBoundaryIndex === null || removedRowIndex < 0) {
+    return normalizeCommitmentBoundaryIndex(commitmentBoundaryIndex, nextRowCount);
+  }
+
+  const nextCommitmentBoundaryIndex = commitmentBoundaryIndex > removedRowIndex
+    ? commitmentBoundaryIndex - 1
+    : commitmentBoundaryIndex;
+
+  return normalizeCommitmentBoundaryIndex(nextCommitmentBoundaryIndex, nextRowCount);
+}
+
 function createPiReviewTableBindingWithColumns(
   currentTableBinding: PiReviewTableBinding,
   columnOrder: PiReviewColumnKey[],
@@ -219,6 +241,7 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
   const [isTemplateDraftConfirmationVisible, setIsTemplateDraftConfirmationVisible] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [visibleOptionalColumns, setVisibleOptionalColumns] = useState<Set<OptionalPiReviewColumnKey>>(new Set());
+  const [commitmentBoundaryIndex, setCommitmentBoundaryIndex] = useState<number | null>(null);
   const lastAutoLoadKeyRef = useRef('');
   const importFileInputRef = useRef<HTMLInputElement>(null);
   const visiblePiReviewColumnKeys = useMemo<PiReviewColumnKey[]>(
@@ -246,6 +269,7 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
       setTableBinding(parsedPiReviewTable.tableBinding);
       setConfidenceTableBinding(parsedConfidenceTable.tableBinding);
       setVisibleOptionalColumns(readOptionalColumnsFromBinding(parsedPiReviewTable.tableBinding));
+      setCommitmentBoundaryIndex(parsedPiReviewTable.commitmentBoundaryIndex);
       setHasUnsavedChanges(false);
       setIsTemplateDraftConfirmationVisible(false);
     } catch (error) {
@@ -254,6 +278,7 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
       setTableBinding(null);
       setConfidenceTableBinding(null);
       setVisibleOptionalColumns(new Set());
+      setCommitmentBoundaryIndex(null);
       setLoadError(error instanceof Error ? error.message : 'Failed to load the PI Review page');
     } finally {
       setIsLoading(false);
@@ -298,6 +323,7 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
       setConfidenceTableBinding(parsedConfidenceTable.tableBinding);
       setStorageValue(draftStorageValue);
       setVisibleOptionalColumns(new Set());
+      setCommitmentBoundaryIndex(null);
       setHasUnsavedChanges(true);
       setIsTemplateDraftConfirmationVisible(false);
       showToast(`${target.targetLabel} PI Review template loaded locally. Save when ready.`, 'success');
@@ -360,6 +386,7 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
       setRows(importedTable.rows);
       setVisibleOptionalColumns(nextVisibleOptionalColumns);
       setTableBinding(createPiReviewTableBindingWithColumns(tableBinding, nextColumnOrder));
+      setCommitmentBoundaryIndex(null);
       setLoadError(null);
       setHasUnsavedChanges(true);
       showToast(`Imported ${importedTable.rows.length} PI Review row(s) from ${selectedFile.name}. Save to Confluence when ready.`, 'success');
@@ -370,7 +397,25 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
   }
 
   function handleRemoveRow(rowId: string) {
+    const removedRowIndex = rows.findIndex((row) => row.rowId === rowId);
     setRows((currentRows) => currentRows.filter((row) => row.rowId !== rowId));
+    setCommitmentBoundaryIndex((currentCommitmentBoundaryIndex) =>
+      adjustCommitmentBoundaryAfterRowRemoval(
+        currentCommitmentBoundaryIndex,
+        removedRowIndex,
+        rows.length - 1,
+      ),
+    );
+    setHasUnsavedChanges(true);
+  }
+
+  function handleSetCommitmentBoundaryAfterRow(rowIndex: number) {
+    setCommitmentBoundaryIndex(normalizeCommitmentBoundaryIndex(rowIndex + 1, rows.length));
+    setHasUnsavedChanges(true);
+  }
+
+  function handleClearCommitmentBoundary() {
+    setCommitmentBoundaryIndex(null);
     setHasUnsavedChanges(true);
   }
 
@@ -405,7 +450,7 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
     setIsSaving(true);
     setLoadError(null);
     try {
-      let nextStorageValue = writePiReviewTable(storageValue, tableBinding, rows);
+      let nextStorageValue = writePiReviewTable(storageValue, tableBinding, rows, commitmentBoundaryIndex);
       if (confidenceRows.length > 0 || confidenceTableBinding !== null) {
         nextStorageValue = writeConfidenceVoteTable(nextStorageValue, confidenceTableBinding, confidenceRows);
       }
@@ -423,6 +468,7 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
       setTableBinding(parsedPiReviewTable.tableBinding);
       setConfidenceTableBinding(parsedConfidenceTable.tableBinding);
       setVisibleOptionalColumns(readOptionalColumnsFromBinding(parsedPiReviewTable.tableBinding));
+      setCommitmentBoundaryIndex(parsedPiReviewTable.commitmentBoundaryIndex);
       setStorageValue(updatedPage.body.storage.value);
       setPageTitle(updatedPage.title);
       setResolvedPageId(updatedPage.id);
@@ -519,6 +565,17 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
               </button>
             );
           })}
+          <span className={styles.summaryValue}>
+            Commitment line: {commitmentBoundaryIndex === null ? 'Not set' : `after row ${commitmentBoundaryIndex}`}
+          </span>
+          <button
+            className={styles.columnToggleButton}
+            disabled={isLoading || isSaving || commitmentBoundaryIndex === null}
+            onClick={handleClearCommitmentBoundary}
+            type="button"
+          >
+            Clear commitment line
+          </button>
         </fieldset>
       )}
 
@@ -575,53 +632,81 @@ function PiReviewPagePanel({ target, selectedPiName }: PiReviewPagePanelProps) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, rowIndex) => (
-                <tr key={row.rowId}>
-                  {visiblePiReviewColumnKeys.map((columnKey) => {
-                    const isLongTextColumn = LONG_TEXT_COLUMNS.has(columnKey);
-                    const isCheckboxColumn = CHECKBOX_COLUMNS.has(columnKey);
-                    const cellClassName = columnKey === FEATURE_COLUMN_KEY
-                      ? styles.featureCell
-                      : isLongTextColumn
-                        ? styles.longCell
-                        : styles.shortCell;
+              {rows.map((row, rowIndex) => {
+                const isBoundaryBelowRow = commitmentBoundaryIndex === rowIndex + 1;
+                const canSetBoundaryBelowRow = rowIndex < rows.length - 1;
 
-                    return (
-                      <td className={cellClassName} key={columnKey}>
-                        {isCheckboxColumn ? (
-                          <input
-                            aria-label={`${PI_REVIEW_COLUMN_LABELS[columnKey]} for ${target.targetLabel} row ${rowIndex + 1}`}
-                            checked={row[columnKey] === 'Yes'}
-                            className={styles.checkboxInput}
-                            onChange={(event) => handleCellChange(row.rowId, columnKey, event.target.checked ? 'Yes' : '')}
-                            type="checkbox"
-                          />
-                        ) : isLongTextColumn ? (
-                          <textarea
-                            aria-label={`${PI_REVIEW_COLUMN_LABELS[columnKey]} for ${target.targetLabel} row ${rowIndex + 1}`}
-                            className={styles.cellTextarea}
-                            onChange={(event) => handleCellChange(row.rowId, columnKey, event.target.value)}
-                            value={row[columnKey]}
-                          />
-                        ) : (
-                          <input
-                            aria-label={`${PI_REVIEW_COLUMN_LABELS[columnKey]} for ${target.targetLabel} row ${rowIndex + 1}`}
-                            className={styles.cellInput}
-                            onChange={(event) => handleCellChange(row.rowId, columnKey, event.target.value)}
-                            type="text"
-                            value={row[columnKey]}
-                          />
-                        )}
+                return (
+                  <Fragment key={row.rowId}>
+                    <tr>
+                      {visiblePiReviewColumnKeys.map((columnKey) => {
+                        const isLongTextColumn = LONG_TEXT_COLUMNS.has(columnKey);
+                        const isCheckboxColumn = CHECKBOX_COLUMNS.has(columnKey);
+                        const cellClassName = columnKey === FEATURE_COLUMN_KEY
+                          ? styles.featureCell
+                          : isLongTextColumn
+                            ? styles.longCell
+                            : styles.shortCell;
+
+                        return (
+                          <td className={cellClassName} key={columnKey}>
+                            {isCheckboxColumn ? (
+                              <input
+                                aria-label={`${PI_REVIEW_COLUMN_LABELS[columnKey]} for ${target.targetLabel} row ${rowIndex + 1}`}
+                                checked={row[columnKey] === 'Yes'}
+                                className={styles.checkboxInput}
+                                onChange={(event) => handleCellChange(row.rowId, columnKey, event.target.checked ? 'Yes' : '')}
+                                type="checkbox"
+                              />
+                            ) : isLongTextColumn ? (
+                              <textarea
+                                aria-label={`${PI_REVIEW_COLUMN_LABELS[columnKey]} for ${target.targetLabel} row ${rowIndex + 1}`}
+                                className={styles.cellTextarea}
+                                onChange={(event) => handleCellChange(row.rowId, columnKey, event.target.value)}
+                                value={row[columnKey]}
+                              />
+                            ) : (
+                              <input
+                                aria-label={`${PI_REVIEW_COLUMN_LABELS[columnKey]} for ${target.targetLabel} row ${rowIndex + 1}`}
+                                className={styles.cellInput}
+                                onChange={(event) => handleCellChange(row.rowId, columnKey, event.target.value)}
+                                type="text"
+                                value={row[columnKey]}
+                              />
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td className={styles.rowActionCell}>
+                        <div className={styles.rowActionGroup}>
+                          {canSetBoundaryBelowRow && (
+                            <button
+                              aria-pressed={isBoundaryBelowRow}
+                              className={`${styles.boundaryButton} ${isBoundaryBelowRow ? styles.boundaryButtonActive : ''}`.trim()}
+                              disabled={isSaving}
+                              onClick={() => handleSetCommitmentBoundaryAfterRow(rowIndex)}
+                              type="button"
+                            >
+                              {isBoundaryBelowRow ? 'Commit line below' : 'Set commit line below'}
+                            </button>
+                          )}
+                          <button className={styles.removeButton} disabled={isSaving} onClick={() => handleRemoveRow(row.rowId)} type="button">
+                            Remove
+                          </button>
+                        </div>
                       </td>
-                    );
-                  })}
-                  <td className={styles.rowActionCell}>
-                    <button className={styles.removeButton} disabled={isSaving} onClick={() => handleRemoveRow(row.rowId)} type="button">
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    </tr>
+                    {isBoundaryBelowRow && (
+                      <tr className={styles.commitmentBoundaryRow}>
+                        <td colSpan={visiblePiReviewColumnKeys.length + 1}>
+                          <span>Hard commits above</span>
+                          <strong>Stretch goals below</strong>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
