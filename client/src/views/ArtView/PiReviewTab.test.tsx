@@ -134,6 +134,21 @@ function renderPiReviewTab(teams: ArtTeam[] = DEFAULT_TEAMS) {
   );
 }
 
+function createAlphaPageWithExtraPiReviewRows(extraRowsMarkup: string) {
+  return {
+    ...ALPHA_PAGE,
+    body: {
+      storage: {
+        value: ALPHA_PAGE.body.storage.value.replace(
+          '            </tr>\n          </tbody>\n        </table>',
+          `            </tr>\n${extraRowsMarkup}\n          </tbody>\n        </table>`,
+        ),
+        representation: 'storage',
+      },
+    },
+  };
+}
+
 function createPiReviewImportFile(rows: unknown[][]): File {
   const workbook = XLSX.utils.book_new();
   const worksheet = XLSX.utils.aoa_to_sheet(rows);
@@ -377,5 +392,129 @@ describe('PiReviewTab', () => {
     expect(savedStorageValue).toContain('<th>Dev Work</th>');
     expect(savedStorageValue).toContain('<th>Test Support</th>');
     expect(savedStorageValue).toContain('<td>Yes</td>');
+  });
+
+  it('saves a single hard-commit boundary line between PI Review rows', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+    mockUpdateConfluencePage.mockImplementation((savePayload: { storageValue: string }) =>
+      Promise.resolve({
+        ...ALPHA_PAGE,
+        version: { number: 8 },
+        body: {
+          storage: {
+            value: savePayload.storageValue,
+            representation: 'storage',
+          },
+        },
+      }),
+    );
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /add pi review row/i }));
+    fireEvent.change(within(alphaSection).getByLabelText(/feature for alpha team row 2/i), {
+      target: { value: 'Stretch goal feature' },
+    });
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /set commit line below/i }));
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /save to confluence/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateConfluencePage).toHaveBeenCalledTimes(1);
+    });
+    const savedStorageValue = mockUpdateConfluencePage.mock.calls[0][0].storageValue;
+    expect(savedStorageValue).toContain('data-node-toolbox-pi-review-boundary="hard-commit"');
+    expect(savedStorageValue).toContain('Hard commits above / Stretch goals below');
+  });
+
+  it('reloads an existing hard-commit boundary and keeps it on the next save', async () => {
+    const alphaPageWithBoundary = createAlphaPageWithExtraPiReviewRows(`
+            <tr data-node-toolbox-pi-review-boundary="hard-commit">
+              <td colspan="8">Hard commits above / Stretch goals below</td>
+            </tr>
+            <tr>
+              <td>No</td>
+              <td>P2</td>
+              <td>Stretch Feature</td>
+              <td>5</td>
+              <td>None</td>
+              <td>Low</td>
+              <td></td>
+              <td>Stretch note</td>
+            </tr>`);
+    mockFetchConfluencePageByReference.mockResolvedValue(alphaPageWithBoundary);
+    mockUpdateConfluencePage.mockImplementation((savePayload: { storageValue: string }) =>
+      Promise.resolve({
+        ...alphaPageWithBoundary,
+        version: { number: 8 },
+        body: {
+          storage: {
+            value: savePayload.storageValue,
+            representation: 'storage',
+          },
+        },
+      }),
+    );
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    expect(within(alphaSection).getByText(/hard commits above/i)).toBeInTheDocument();
+    expect(within(alphaSection).getByText(/commitment line: after row 1/i)).toBeInTheDocument();
+
+    fireEvent.change(within(alphaSection).getByLabelText(/notes for alpha team row 2/i), {
+      target: { value: 'Still below the line' },
+    });
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /save to confluence/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateConfluencePage).toHaveBeenCalledTimes(1);
+    });
+    expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).toContain(
+      'data-node-toolbox-pi-review-boundary="hard-commit"',
+    );
+  });
+
+  it('clears the hard-commit boundary when row removal leaves no valid between-row position', async () => {
+    const alphaPageWithBoundary = createAlphaPageWithExtraPiReviewRows(`
+            <tr data-node-toolbox-pi-review-boundary="hard-commit">
+              <td colspan="8">Hard commits above / Stretch goals below</td>
+            </tr>
+            <tr>
+              <td>No</td>
+              <td>P2</td>
+              <td>Stretch Feature</td>
+              <td>5</td>
+              <td>None</td>
+              <td>Low</td>
+              <td></td>
+              <td>Stretch note</td>
+            </tr>`);
+    mockFetchConfluencePageByReference.mockResolvedValue(alphaPageWithBoundary);
+    mockUpdateConfluencePage.mockImplementation((savePayload: { storageValue: string }) =>
+      Promise.resolve({
+        ...alphaPageWithBoundary,
+        version: { number: 8 },
+        body: {
+          storage: {
+            value: savePayload.storageValue,
+            representation: 'storage',
+          },
+        },
+      }),
+    );
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    fireEvent.click(within(alphaSection).getAllByRole('button', { name: /remove/i })[0]);
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /save to confluence/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateConfluencePage).toHaveBeenCalledTimes(1);
+    });
+    expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).not.toContain(
+      'data-node-toolbox-pi-review-boundary="hard-commit"',
+    );
   });
 });

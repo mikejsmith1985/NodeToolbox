@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Art View — PI Review hard-commit boundary line**: PI Review tables can now place one yellow commitment line between rows so teams can separate hard commits above the line from stretch goals below it, with the marker saved back into the Confluence table.
 - **Art View — PI Review XLSX import for Confluence table exports**: each PI Review team section now includes **Import PI Review XLSX**, allowing a Confluence table export such as the issue #60 `26.3 Commit.xlsx` file to populate the editable PI Review rows as an unsaved draft before saving back to Confluence.
 - **Admin Hub — first-install demo mode without deleting real settings**: Backup / Restore Settings now includes **Open First-Install Demo**, which launches a separate demo tab via `?demo=1`. Demo mode redirects NodeToolbox localStorage reads and writes into sessionStorage for that tab, shows a visible **Demo mode** badge, and leaves the user's real saved settings untouched for repeat demos and setup testing.
 - **Art View — experimental shared ART workspace via Confluence Database**: ART Settings now includes an experimental **Shared ART Workspace** section that can create a real Confluence Database shell, store the ART team roster and advanced ART settings in supported database content properties, publish local changes back to that shared workspace, and load the shared ART into a fresh NodeToolbox instance so teams/settings do not need to be recreated by each user.

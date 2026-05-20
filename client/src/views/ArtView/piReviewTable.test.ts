@@ -455,6 +455,81 @@ describe('writePiReviewTable', () => {
     expect(nextStorageValue).toContain('Formatting column still preserved');
   });
 
+  it('skips the hard-commit boundary marker row while parsing PI Review data', () => {
+    const storageValueWithCommitmentBoundary = `
+      <table>
+        <tbody>
+          <tr>
+            <th>Carry-Over</th>
+            <th>Priority</th>
+            <th>Feature</th>
+            <th>Point Estimate</th>
+            <th>Dependency</th>
+            <th>Risks</th>
+            <th>Committed to PI?</th>
+            <th>Implementation Notes</th>
+          </tr>
+          <tr>
+            <td>No</td>
+            <td>1</td>
+            <td>Hard commit feature</td>
+            <td>8</td>
+            <td>None</td>
+            <td>Low</td>
+            <td>Yes</td>
+            <td>Above the line</td>
+          </tr>
+          <tr data-node-toolbox-pi-review-boundary="hard-commit">
+            <td colspan="8">Hard commits above / Stretch goals below</td>
+          </tr>
+          <tr>
+            <td>No</td>
+            <td>2</td>
+            <td>Stretch goal feature</td>
+            <td>5</td>
+            <td>None</td>
+            <td>Medium</td>
+            <td></td>
+            <td>Below the line</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+
+    const parsedTable = parsePiReviewTable(storageValueWithCommitmentBoundary);
+
+    expect(parsedTable.rows.map((row) => row.feature)).toEqual(['Hard commit feature', 'Stretch goal feature']);
+    expect(parsedTable.commitmentBoundaryIndex).toBe(1);
+  });
+
+  it('writes the hard-commit boundary marker between PI Review rows', () => {
+    const parsedTable = parsePiReviewTable(MOCK_STORAGE_VALUE);
+    const firstRow = {
+      ...parsedTable.rows[0],
+      feature: 'Hard commit feature',
+    };
+    const secondRow = {
+      ...createEmptyPiReviewRow(),
+      feature: 'Stretch goal feature',
+      notes: 'Below the line',
+    };
+
+    const nextStorageValue = writePiReviewTable(
+      MOCK_STORAGE_VALUE,
+      parsedTable.tableBinding,
+      [firstRow, secondRow],
+      1,
+    );
+
+    expect(nextStorageValue).toContain('data-node-toolbox-pi-review-boundary="hard-commit"');
+    expect(nextStorageValue.indexOf('Hard commit feature')).toBeLessThan(nextStorageValue.indexOf('Hard commits above / Stretch goals below'));
+    expect(nextStorageValue.indexOf('Hard commits above / Stretch goals below')).toBeLessThan(nextStorageValue.indexOf('Stretch goal feature'));
+
+    const reloadedTable = parsePiReviewTable(nextStorageValue);
+    expect(reloadedTable.commitmentBoundaryIndex).toBe(1);
+    expect(reloadedTable.rows.map((row) => row.feature)).toEqual(['Hard commit feature', 'Stretch goal feature']);
+  });
+
   it('writes optional checkbox columns when the table binding includes them', () => {
     const parsedTable = parsePiReviewTable(`
       <table>
