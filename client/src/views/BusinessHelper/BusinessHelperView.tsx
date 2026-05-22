@@ -4,12 +4,18 @@ import { useState } from 'react';
 
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import SimpleSearchTab from './tabs/SimpleSearchTab.tsx';
+import BusinessHelperSettingsTab from './tabs/BusinessHelperSettingsTab.tsx';
+import StablizationFundingTab from './tabs/StablizationFundingTab.tsx';
 import styles from './BusinessHelperView.module.css';
 
 const VIEW_TITLE = 'Business Helper';
 const VIEW_SUBTITLE =
-  'Use guided Jira tools built for business users, starting with a simple cross-project keyword search.';
-const TAB_OPTIONS = [{ key: 'simple-search', label: 'Simple Search' }] as const;
+  'Use guided Jira tools built for business users, including Simple Search, the stablization funding table, and table settings.';
+const TAB_OPTIONS = [
+  { key: 'simple-search', label: 'Simple Search' },
+  { key: 'stablization', label: 'Stablization' },
+  { key: 'settings', label: 'Settings' },
+] as const;
 
 type BusinessHelperTabKey = (typeof TAB_OPTIONS)[number]['key'];
 const DEFAULT_TAB_KEY: BusinessHelperTabKey = 'simple-search';
@@ -17,6 +23,14 @@ const DEFAULT_TAB_KEY: BusinessHelperTabKey = 'simple-search';
 function renderActiveTabPanel(activeTab: BusinessHelperTabKey) {
   if (activeTab === 'simple-search') {
     return <SimpleSearchTab />;
+  }
+
+  if (activeTab === 'stablization') {
+    return <StablizationFundingTab />;
+  }
+
+  if (activeTab === 'settings') {
+    return <BusinessHelperSettingsTab />;
   }
 
   return null;

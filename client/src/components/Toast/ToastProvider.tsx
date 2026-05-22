@@ -2,23 +2,16 @@
 //
 // Replaces browser alerts and other native notifications with shared app toasts.
 
-import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
+import { ToastContext, type ToastType } from './ToastContext.ts';
 import styles from './Toast.module.css';
-
-export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
 interface ToastMessage {
   id: string;
   message: string;
   type: ToastType;
 }
-
-interface ToastContextValue {
-  showToast(message: string, type?: ToastType): void;
-}
-
-const ToastContext = createContext<ToastContextValue | null>(null);
 const TOAST_DURATION_MS = 4_000;
 
 /** ToastProvider renders a shared toast stack so any screen can show in-app notifications. */
@@ -53,13 +46,4 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       </div>
     </ToastContext.Provider>
   );
-}
-
-/** useToast exposes the shared toast dispatcher for child components inside ToastProvider. */
-export function useToast(): ToastContextValue {
-  const toastContext = useContext(ToastContext);
-  if (!toastContext) {
-    throw new Error('useToast must be used inside ToastProvider');
-  }
-  return toastContext;
 }

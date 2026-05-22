@@ -76,10 +76,13 @@ export function useServerLog(): ServerLogHookResult {
 
   useEffect(() => {
     // Fetch immediately on mount, then on a fixed interval.
-    void pollLogs()
+    const initialPollTimeoutId = window.setTimeout(() => {
+      void pollLogs()
+    }, 0)
     pollIntervalRef.current = setInterval(() => void pollLogs(), SERVER_LOG_POLL_INTERVAL_MS)
 
     return () => {
+      window.clearTimeout(initialPollTimeoutId)
       if (pollIntervalRef.current !== null) {
         clearInterval(pollIntervalRef.current)
       }

@@ -1,7 +1,7 @@
 // SyncMonitorTab.tsx — PRB Sync Monitor tab for scheduling and observing Jira→SNow syncs.
 
 import type { ChangeEvent } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { SNOW_PROBLEM_STATES, useSnowSyncEngine } from '../hooks/useSnowSyncEngine.ts';
 import type { LogEntry, StatusMap, SyncSettings } from '../hooks/useSnowSyncEngine.ts';
@@ -297,26 +297,17 @@ function StatusMappingEditor({
   onFetchStatuses,
   onSaveMappings,
 }: StatusMappingEditorProps) {
-  const [localMapping, setLocalMapping] = useState<StatusMap>(() => {
-    const initialMap: StatusMap = {};
-    for (const jiraStatus of jiraStatuses) {
-      initialMap[jiraStatus] = resolveInitialStatusCode(jiraStatus, statusMap);
-    }
-    return initialMap;
-  });
-
-  // Rebuild local mapping when the available statuses change (e.g., after fetching)
-  useEffect(() => {
+  const [localOverrides, setLocalOverrides] = useState<StatusMap>({});
+  const localMapping = useMemo(() => {
     const rebuiltMap: StatusMap = {};
     for (const jiraStatus of jiraStatuses) {
-      rebuiltMap[jiraStatus] = localMapping[jiraStatus] ?? resolveInitialStatusCode(jiraStatus, statusMap);
+      rebuiltMap[jiraStatus] = localOverrides[jiraStatus] ?? resolveInitialStatusCode(jiraStatus, statusMap);
     }
-    setLocalMapping(rebuiltMap);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jiraStatuses]);
+    return rebuiltMap;
+  }, [jiraStatuses, localOverrides, statusMap]);
 
   function handleMappingChange(jiraStatus: string, snStateCode: string): void {
-    setLocalMapping((prev) => ({ ...prev, [jiraStatus]: snStateCode }));
+    setLocalOverrides((previousOverrides) => ({ ...previousOverrides, [jiraStatus]: snStateCode }));
   }
 
   return (

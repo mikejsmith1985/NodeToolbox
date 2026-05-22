@@ -7,17 +7,14 @@
 // This view also surfaces ServiceNow issues assigned to the current user alongside Jira
 // issues, and highlights linked Jira Defect/Story ↔ SNow Problem pairs with a health badge.
 
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
-import { jiraPost, jiraPut } from '../../services/jiraApi.ts';
-import { snowFetch } from '../../services/snowApi.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
-import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
+import type { JiraIssue } from '../../types/jira.ts';
 import { detectLinkedPairs, collectLinkedSnowSysIds } from '../../utils/issueLinkCalculator.ts';
-import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import HygieneView from '../Hygiene/HygieneView.tsx';
 import { LinkedIssuePair } from './LinkedIssuePair.tsx';
 import { SnowIssueRow } from './SnowIssueRow.tsx';
@@ -67,19 +64,6 @@ const AGING_WARN_DAYS = 5;
 const AGING_STALE_DAYS = 10;
 const MS_PER_DAY = 86_400_000;
 
-/** Maximum number of description characters to show before truncating. */
-const DESCRIPTION_TRUNCATE_LENGTH = 300;
-
-/** Maximum number of SNow incident tickets to load per issue search. */
-const SNOW_SEARCH_LIMIT = 5;
-
-const SNOW_INCIDENT_PATH = '/api/now/table/incident';
-const SUCCESS_MESSAGE_TIMEOUT_MS = 3_000;
-const COMMENT_POST_ERROR_MESSAGE = 'Failed to post comment';
-const STORY_POINTS_SAVE_ERROR_MESSAGE = 'Failed to save story points';
-const COMMENT_SUCCESS_LABEL = '✓ Posted';
-const STORY_POINTS_SUCCESS_LABEL = '✓ Saved';
-
 type MyIssuesTab = 'report' | 'hygiene' | 'settings';
 
 const MY_ISSUES_TABS: { key: MyIssuesTab; label: string }[] = [
@@ -87,321 +71,6 @@ const MY_ISSUES_TABS: { key: MyIssuesTab; label: string }[] = [
   { key: 'hygiene', label: 'Hygiene' },
   { key: 'settings', label: 'Settings' },
 ];
-
-/** Represents a single ServiceNow incident ticket returned from the SNow proxy. */
-interface SnowTicket {
-  sys_id: string;
-  number: string;
-  short_description: string;
-}
-
-// ── Detail panel component ──
-
-interface DetailPanelProps {
-  issue: JiraIssue;
-  isTransitioning: boolean;
-  transitionError: string | null;
-  availableTransitions: JiraTransition[];
-  isLoadingTransitions: boolean;
-  isSnowReady: boolean;
-  onClose: () => void;
-  onLoadTransitions: (issueKey: string) => void;
-  onTransition: (issueKey: string, transitionId: string) => Promise<void>;
-}
-
-/**
- * Slide-in detail panel showing full issue metadata, an optional status transition
- * dropdown, and a ServiceNow cross-reference section when SNow is connected.
- */
-function DetailPanel({
-  issue,
-  isTransitioning,
-  transitionError,
-  availableTransitions,
-  isLoadingTransitions,
-  isSnowReady,
-  onClose,
-  onLoadTransitions,
-  onTransition,
-}: DetailPanelProps) {
-  const [snowTickets, setSnowTickets] = useState<SnowTicket[]>([]);
-  const [isSnowLoading, setIsSnowLoading] = useState(false);
-  const [snowError, setSnowError] = useState<string | null>(null);
-  const [singleCommentText, setSingleCommentText] = useState('');
-  const [isPostingComment, setIsPostingComment] = useState(false);
-  const [commentError, setCommentError] = useState<string | null>(null);
-  const [commentSuccess, setCommentSuccess] = useState(false);
-  const [storyPointsInput, setStoryPointsInput] = useState(String(issue.fields.customfield_10016 ?? ''));
-  const [isSavingPoints, setIsSavingPoints] = useState(false);
-  const [pointsSaveError, setPointsSaveError] = useState<string | null>(null);
-  const [pointsSaveSuccess, setPointsSaveSuccess] = useState(false);
-
-  // Fetch transitions and SNow tickets whenever the selected issue changes.
-  useEffect(() => {
-    onLoadTransitions(issue.key);
-    setSingleCommentText('');
-    setCommentError(null);
-    setCommentSuccess(false);
-    setStoryPointsInput(String(issue.fields.customfield_10016 ?? ''));
-    setPointsSaveError(null);
-    setPointsSaveSuccess(false);
-    setSnowTickets([]);
-    setSnowError(null);
-
-    if (!isSnowReady) {
-      setIsSnowLoading(false);
-      return;
-    }
-
-    let isMounted = true;
-    setIsSnowLoading(true);
-
-    const snowQuery = encodeURIComponent(`short_descriptionLIKE${issue.key}`);
-    const snowPath = `${SNOW_INCIDENT_PATH}?sysparm_query=${snowQuery}&sysparm_limit=${SNOW_SEARCH_LIMIT}`;
-
-    snowFetch<{ result: SnowTicket[] }>(snowPath)
-      .then((response) => {
-        if (!isMounted) {
-          return;
-        }
-        setSnowTickets(response.result);
-        setIsSnowLoading(false);
-      })
-      .catch((fetchError: unknown) => {
-        if (!isMounted) {
-          return;
-        }
-        const message = fetchError instanceof Error ? fetchError.message : 'Failed to search SNow';
-        setSnowError(message);
-        setIsSnowLoading(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [issue.fields.customfield_10016, issue.key, isSnowReady, onLoadTransitions]);
-
-  useEffect(() => {
-    if (!commentSuccess) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setCommentSuccess(false);
-    }, SUCCESS_MESSAGE_TIMEOUT_MS);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [commentSuccess]);
-
-  useEffect(() => {
-    if (!pointsSaveSuccess) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setPointsSaveSuccess(false);
-    }, SUCCESS_MESSAGE_TIMEOUT_MS);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [pointsSaveSuccess]);
-
-  async function handlePostComment() {
-    if (!singleCommentText.trim()) {
-      return;
-    }
-
-    setIsPostingComment(true);
-    setCommentError(null);
-    try {
-      await jiraPost(`/rest/api/2/issue/${issue.key}/comment`, { body: singleCommentText });
-      setSingleCommentText('');
-      setCommentSuccess(true);
-    } catch (error) {
-      setCommentError(error instanceof Error ? error.message : COMMENT_POST_ERROR_MESSAGE);
-    } finally {
-      setIsPostingComment(false);
-    }
-  }
-
-  const hasValidStoryPointsInput = storyPointsInput.trim() !== '' && !Number.isNaN(Number(storyPointsInput));
-
-  async function handleSaveStoryPoints() {
-    if (!hasValidStoryPointsInput) {
-      return;
-    }
-
-    setIsSavingPoints(true);
-    setPointsSaveError(null);
-
-    try {
-      await jiraPut(`/rest/api/2/issue/${issue.key}`, {
-        fields: { customfield_10016: Number(storyPointsInput) },
-      });
-      setPointsSaveSuccess(true);
-    } catch (error) {
-      setPointsSaveError(error instanceof Error ? error.message : STORY_POINTS_SAVE_ERROR_MESSAGE);
-    } finally {
-      setIsSavingPoints(false);
-    }
-  }
-
-  const normalizedDescription = normalizeRichTextToPlainText(issue.fields.description);
-  const isDescriptionLong = normalizedDescription.length > DESCRIPTION_TRUNCATE_LENGTH;
-  const truncatedDescription = normalizedDescription
-    ? normalizedDescription.slice(0, DESCRIPTION_TRUNCATE_LENGTH)
-    : null;
-
-  return (
-    <aside aria-label="Issue detail panel" className={styles.detailPanel}>
-      <button
-        aria-label="Close detail panel"
-        className={styles.detailPanelClose}
-        onClick={onClose}
-        type="button"
-      >
-        ✕ Close
-      </button>
-
-      <span className={styles.detailPanelKey}>{issue.key}</span>
-      <p className={styles.detailPanelSummary}>{issue.fields.summary}</p>
-
-      <dl className={styles.detailMeta}>
-        <dt>Status</dt>
-        <dd>{issue.fields.status.name}</dd>
-        <dt>Priority</dt>
-        <dd>{issue.fields.priority?.name ?? '—'}</dd>
-        <dt>Assignee</dt>
-        <dd>{issue.fields.assignee?.displayName ?? 'Unassigned'}</dd>
-        <dt>Reporter</dt>
-        <dd>{issue.fields.reporter?.displayName ?? '—'}</dd>
-        <dt>Created</dt>
-        <dd>{issue.fields.created.slice(0, 10)}</dd>
-        <dt>Updated</dt>
-        <dd>{issue.fields.updated.slice(0, 10)}</dd>
-      </dl>
-
-      {truncatedDescription && (
-        <div className={styles.detailDescription}>
-          <p>
-            {truncatedDescription}
-            {isDescriptionLong ? '…' : ''}
-          </p>
-          {isDescriptionLong && (
-            <a href={`#${issue.key}-desc`} className={styles.issueKeyLink}>
-              ...more
-            </a>
-          )}
-        </div>
-      )}
-
-      {/* Status transition dropdown */}
-      <div className={styles.detailTransitions}>
-        {isLoadingTransitions ? (
-          <span>Loading transitions…</span>
-        ) : availableTransitions.length > 0 ? (
-          <>
-            <label htmlFor="transition-select">Change status</label>
-            <select
-              disabled={isTransitioning}
-              id="transition-select"
-              onChange={(changeEvent) => {
-                void onTransition(issue.key, changeEvent.target.value);
-              }}
-              value=""
-            >
-              <option disabled value="">
-                Transition to…
-              </option>
-              {availableTransitions.map((transition) => (
-                <option key={transition.id} value={transition.id}>
-                  {transition.name}
-                </option>
-              ))}
-            </select>
-            {isTransitioning && <span>Transitioning…</span>}
-          </>
-        ) : null}
-        {transitionError && (
-          <p className={styles.errorMessage}>{transitionError}</p>
-        )}
-      </div>
-
-      <div className={styles.detailActionSection}>
-        <label htmlFor="single-issue-comment">Add Comment</label>
-        <textarea
-          className={styles.detailTextarea}
-          id="single-issue-comment"
-          onChange={(changeEvent) => setSingleCommentText(changeEvent.target.value)}
-          rows={3}
-          value={singleCommentText}
-        />
-        <div className={styles.detailActionRow}>
-          <button
-            className={styles.detailActionButton}
-            disabled={!singleCommentText.trim() || isPostingComment}
-            onClick={() => void handlePostComment()}
-            type="button"
-          >
-            {isPostingComment ? 'Posting…' : 'Post Comment'}
-          </button>
-          {commentSuccess && <span className={styles.successMessage}>{COMMENT_SUCCESS_LABEL}</span>}
-        </div>
-        {commentError && <p className={styles.errorMessage}>{commentError}</p>}
-      </div>
-
-      <div className={styles.detailActionSection}>
-        <label htmlFor="story-points-input">Story Points</label>
-        <div className={styles.detailActionRow}>
-          <input
-            className={styles.detailPointsInput}
-            id="story-points-input"
-            onChange={(changeEvent) => setStoryPointsInput(changeEvent.target.value)}
-            type="number"
-            value={storyPointsInput}
-          />
-          <button
-            className={styles.detailActionButton}
-            disabled={isSavingPoints || !hasValidStoryPointsInput}
-            onClick={() => void handleSaveStoryPoints()}
-            type="button"
-          >
-            {isSavingPoints ? 'Saving…' : 'Save'}
-          </button>
-          {pointsSaveSuccess && <span className={styles.successMessage}>{STORY_POINTS_SUCCESS_LABEL}</span>}
-        </div>
-        {pointsSaveError && <p className={styles.errorMessage}>{pointsSaveError}</p>}
-      </div>
-
-      {/* ServiceNow cross-reference section */}
-      {isSnowReady && (
-        <div className={styles.detailSnow}>
-          <h3>SNow Tickets</h3>
-          {isSnowLoading ? (
-            <span>Searching SNow…</span>
-          ) : snowError ? (
-            <p className={styles.errorMessage}>{snowError}</p>
-          ) : snowTickets.length > 0 ? (
-            <ul>
-              {snowTickets.map((ticket) => (
-                <li key={ticket.sys_id}>
-                  <strong>{ticket.number}</strong> — {ticket.short_description}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p>No SNow tickets found</p>
-          )}
-        </div>
-      )}
-    </aside>
-  );
-}
-
-void DetailPanel;
 
 // ── Helper functions ──
 
@@ -889,7 +558,7 @@ export default function MyIssuesView() {
   const { isSnowReady } = useConnectionStore();
   void isSnowReady;
   const [activeTab, setActiveTab] = useState<MyIssuesTab>('report');
-  const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
+  const [requestedExpandedIssueKey, setRequestedExpandedIssueKey] = useState<string | null>(null);
   const [isSnowSectionCollapsed, setIsSnowSectionCollapsed] = useState(false);
 
   // SNow issues hook — fetches all 4 record types assigned to the current user.
@@ -930,14 +599,13 @@ export default function MyIssuesView() {
   // Collect bulk-selected issue keys for display in the panel
   const bulkSelectedKeysList = Object.keys(state.bulkSelectedKeys);
 
-  useEffect(() => {
-    if (!state.issues.some((issue) => issue.key === expandedIssueKey)) {
-      setExpandedIssueKey(null);
-    }
-  }, [expandedIssueKey, state.issues]);
+  const expandedIssueKey = useMemo(
+    () => (state.issues.some((issue) => issue.key === requestedExpandedIssueKey) ? requestedExpandedIssueKey : null),
+    [requestedExpandedIssueKey, state.issues],
+  );
 
   function handleToggleIssueExpand(issueKey: string) {
-    setExpandedIssueKey((previousIssueKey) =>
+    setRequestedExpandedIssueKey((previousIssueKey) =>
       previousIssueKey === issueKey ? null : issueKey,
     );
   }

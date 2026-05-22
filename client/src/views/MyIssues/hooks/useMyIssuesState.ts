@@ -689,7 +689,8 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
     setState((previousState) => {
       const isCurrentlySelected = !!previousState.bulkSelectedKeys[issueKey];
       if (isCurrentlySelected) {
-        const { [issueKey]: _removed, ...remainingKeys } = previousState.bulkSelectedKeys;
+        const remainingKeys = { ...previousState.bulkSelectedKeys };
+        delete remainingKeys[issueKey];
         return { ...previousState, bulkSelectedKeys: remainingKeys };
       }
       return {
@@ -761,7 +762,8 @@ export function useMyIssuesState(): { state: MyIssuesState; actions: MyIssuesAct
     setState((previousState) => {
       const isCurrentlyActive = !!previousState.activeQuickFilterIds[filterId];
       if (isCurrentlyActive) {
-        const { [filterId]: _removed, ...remainingIds } = previousState.activeQuickFilterIds;
+        const remainingIds = { ...previousState.activeQuickFilterIds };
+        delete remainingIds[filterId];
         return { ...previousState, activeQuickFilterIds: remainingIds };
       }
       return {

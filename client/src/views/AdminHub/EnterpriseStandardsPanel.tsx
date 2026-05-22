@@ -12,7 +12,7 @@ import styles from './AdminHubView.module.css';
 // ── Types ──
 
 /** A single enterprise standards hygiene rule. */
-export interface EnterpriseRule {
+interface EnterpriseRule {
   id: string;
   name: string;
   description: string;
@@ -38,7 +38,7 @@ const SAVE_STATUS_RESET = '✓ Reset to defaults';
 const SAVE_STATUS_CLEAR_MS = 2000;
 
 /** Factory default rules bundled with NodeToolbox. */
-export const DEFAULT_ENTERPRISE_RULES: EnterpriseRule[] = [
+const DEFAULT_ENTERPRISE_RULES: EnterpriseRule[] = [
   {
     id: 'rule-missing-assignee',
     name: 'Missing Assignee',

@@ -466,7 +466,7 @@ function Update-SnowProblem([string]$SysId, [hashtable]$Body) {
 
 function Sync-Now {
   $lastCheck = (Get-Date).AddMinutes(-$IntervalMin).ToString('yyyy-MM-dd HH:mm')
-  $jql = $JqlTemplate -replace '\{lastCheck\}', $lastCheck
+  $jql = $JqlTemplate -replace '{lastCheck}', $lastCheck
   $encoded = [Uri]::EscapeDataString($jql)
   $uri = "$JiraBase/rest/api/2/search?jql=$encoded&fields=summary,status,comment,updated&maxResults=100"
   $headers = Get-BasicAuthHeader $JiraUser $JiraToken
@@ -474,7 +474,7 @@ function Sync-Now {
   $searchResult = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get
 
   foreach ($issue in $searchResult.issues) {
-    $prbMatch = [regex]::Match($issue.fields.summary, '\bPRB\d{7,10}\b', 'IgnoreCase')
+    $prbMatch = [regex]::Match($issue.fields.summary, '\\bPRB\\d{7,10}\\b', 'IgnoreCase')
     if (-not $prbMatch.Success) { continue }
     $prbNumber = $prbMatch.Value.ToUpper()
 

@@ -4,7 +4,8 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ToastProvider, useToast } from './ToastProvider.tsx';
+import { useToast } from './ToastContext.ts';
+import { ToastProvider } from './ToastProvider.tsx';
 
 function ToastHarness() {
   const { showToast } = useToast();

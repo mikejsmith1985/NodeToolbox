@@ -1139,8 +1139,9 @@ function ChangeDetailsStep({
   shouldShowNavigation = true,
   shouldShowSaveButtons = false,
 }: CrgStepProps & ChangeDetailsExtras & StepRenderOptions) {
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(defaultTemplateId ?? '');
+  const [selectedTemplateIdOverride, setSelectedTemplateIdOverride] = useState<string | null>(null);
   const hasAutoAppliedDefaultTemplateRef = useRef<boolean>(false);
+  const selectedTemplateId = selectedTemplateIdOverride ?? defaultTemplateId ?? '';
 
   useEffect(() => {
     if (!shouldShowNavigation) {
@@ -1159,16 +1160,8 @@ function ChangeDetailsStep({
     }
 
     actions.applyTemplate(defaultTemplate);
-    setSelectedTemplateId(defaultTemplate.id);
     hasAutoAppliedDefaultTemplateRef.current = true;
   }, [actions, defaultTemplateId, shouldShowNavigation, templates]);
-
-  useEffect(() => {
-    if (!defaultTemplateId) {
-      return;
-    }
-    setSelectedTemplateId(defaultTemplateId);
-  }, [defaultTemplateId]);
 
   function handleBasicInfoChange<K extends keyof ChgBasicInfo>(
     fieldKey: K,
@@ -1278,7 +1271,7 @@ function ChangeDetailsStep({
               <select
                 aria-label="Step 3 template"
                 className={styles.input}
-                onChange={(event) => setSelectedTemplateId(event.target.value)}
+                onChange={(event) => setSelectedTemplateIdOverride(event.target.value)}
                 value={selectedTemplateId}
               >
                 <option value="">Select a template…</option>

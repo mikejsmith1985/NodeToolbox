@@ -3,6 +3,8 @@
 import type { FormEvent } from 'react';
 import { Fragment, useMemo, useState } from 'react';
 
+import { useToast } from '../../../components/Toast/ToastContext.ts';
+import { appendSimpleSearchResultToStablization } from '../hooks/useStablizationFundingTable.ts';
 import type {
   SimpleSearchHierarchyLevel,
   SimpleSearchIssueDetail,
@@ -21,7 +23,7 @@ const KEYWORD_PLACEHOLDER = 'Enter a business keyword';
 const EMPTY_STATE_MESSAGE =
   'Enter a keyword and run the search to look across all accessible Jira projects.';
 const EMPTY_RESULT_MESSAGE = 'No matching issues were found for the current keyword.';
-const TABLE_COLUMN_LABELS = ['Key', 'Summary', 'Match', 'Type', 'Status', 'Assignee', 'Updated'];
+const TABLE_COLUMN_LABELS = ['Key', 'Summary', 'Match', 'Type', 'Status', 'Assignee', 'Updated', 'Actions'];
 const GROUP_ORDER: SimpleSearchHierarchyLevel[] = ['portfolio', 'art', 'team'];
 const GROUP_LABELS: Record<SimpleSearchHierarchyLevel, string> = {
   portfolio: 'Portfolio',
@@ -39,6 +41,9 @@ const NO_VALUE_LABEL = '—';
 const JIRA_BROWSE_PREFIX = '/browse/';
 const CHILD_SECTION_TITLE = 'Child Records';
 const LINKED_SECTION_TITLE = 'Linked Issues';
+const SEND_TO_STABLIZATION_BUTTON_LABEL = 'Send to Stablization';
+const SEND_TO_STABLIZATION_EMPTY_MAPPING_MESSAGE =
+  'No Stablization mapping could be applied. Review the Business Helper Settings tab.';
 
 interface SearchResultGroup {
   hierarchyLevel: SimpleSearchHierarchyLevel;
@@ -68,6 +73,18 @@ function formatDateLabel(dateText: string): string {
 
 function buildBrowseUrl(issueKey: string): string {
   return `${JIRA_BROWSE_PREFIX}${encodeURIComponent(issueKey)}`;
+}
+
+function formatColumnLabelList(columnLabels: string[]): string {
+  if (columnLabels.length <= 1) {
+    return columnLabels[0] ?? '';
+  }
+
+  if (columnLabels.length === 2) {
+    return `${columnLabels[0]} and ${columnLabels[1]}`;
+  }
+
+  return `${columnLabels.slice(0, -1).join(', ')}, and ${columnLabels[columnLabels.length - 1]}`;
 }
 
 function groupSearchResults(searchResults: SimpleSearchResult[]): SearchResultGroup[] {
@@ -232,6 +249,7 @@ function renderDetailPanel(
 /** Renders the business-friendly Jira keyword search tab while keeping the underlying JQL hidden. */
 export default function SimpleSearchTab() {
   const simpleSearchState = useSimpleSearchState();
+  const { showToast } = useToast();
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
   const [expandedRelationshipIssueKeys, setExpandedRelationshipIssueKeys] = useState<string[]>([]);
   const groupedResults = useMemo(
@@ -273,6 +291,25 @@ export default function SimpleSearchTab() {
     ) {
       void simpleSearchState.loadIssueDetail(issueKey);
     }
+  }
+
+  function handleSendToStablization(searchResult: SimpleSearchResult): void {
+    const transferResult = appendSimpleSearchResultToStablization(searchResult);
+    if (!transferResult.didCreateRow) {
+      showToast(SEND_TO_STABLIZATION_EMPTY_MAPPING_MESSAGE, 'warning');
+      return;
+    }
+
+    const successMessage = `Added ${searchResult.key} to Stablization using ${formatColumnLabelList(transferResult.appliedColumnLabels)}.`;
+    if (transferResult.skippedColumnLabels.length > 0) {
+      showToast(
+        `${successMessage} ${formatColumnLabelList(transferResult.skippedColumnLabels)} were skipped because the dropdown list does not include that value.`,
+        'warning',
+      );
+      return;
+    }
+
+    showToast(successMessage, 'success');
   }
 
   return (
@@ -392,6 +429,16 @@ export default function SimpleSearchTab() {
                             <td className={styles.tableCell}>{searchResult.status || NO_VALUE_LABEL}</td>
                             <td className={styles.tableCell}>{searchResult.assigneeName || NO_VALUE_LABEL}</td>
                             <td className={styles.tableCell}>{formatDateLabel(searchResult.updated)}</td>
+                            <td className={styles.tableCell}>
+                              <button
+                                aria-label={`Send ${searchResult.key} to Stablization`}
+                                className={styles.rowActionButton}
+                                onClick={() => handleSendToStablization(searchResult)}
+                                type="button"
+                              >
+                                {SEND_TO_STABLIZATION_BUTTON_LABEL}
+                              </button>
+                            </td>
                           </tr>
                           {isExpanded && (
                             <tr className={styles.detailRow}>

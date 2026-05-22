@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { flushSync } from 'react-dom';
 
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
-import { useToast } from '../../components/Toast/ToastProvider.tsx';
+import { useToast } from '../../components/Toast/ToastContext.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import {
   fetchConfluencePageByReference,
@@ -578,6 +578,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
   const [expandedCustomGroupingLineId, setExpandedCustomGroupingLineId] = useState<string | null>(null);
   const lastAutoLoadKeyRef = useRef('');
   const loadedSnapshotRef = useRef<PiReviewLoadedSnapshot | null>(null);
+  const [hasLoadedSnapshot, setHasLoadedSnapshot] = useState(false);
   const importFileInputRef = useRef<HTMLInputElement>(null);
   const pagePanelRef = useRef<HTMLElement>(null);
   const liveCapacitySummary = capacitySummaryOverride;
@@ -650,6 +651,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
         hasUnsavedChanges: jiraReconciliationResult.hasChanges,
       };
       loadedSnapshotRef.current = nextLoadedSnapshot;
+      setHasLoadedSnapshot(true);
       applyLoadedSnapshot(nextLoadedSnapshot);
       setIsEditMode(false);
       setIsTemplateDraftConfirmationVisible(false);
@@ -1065,6 +1067,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
         hasUnsavedChanges: refreshedReconciliationResult.hasChanges,
       };
       loadedSnapshotRef.current = refreshedSnapshot;
+      setHasLoadedSnapshot(true);
       applyLoadedSnapshot(refreshedSnapshot);
       setStorageValue(updatedPage.body.storage.value);
       setPageTitle(updatedPage.title);
@@ -1230,7 +1233,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
             </button>
             <button
               className={joinClassNames(styles.actionButton, styles.actionButtonDanger)}
-              disabled={isLoading || isSaving || isExportingPanel || !hasUnsavedChanges || loadedSnapshotRef.current === null}
+              disabled={isLoading || isSaving || isExportingPanel || !hasUnsavedChanges || !hasLoadedSnapshot}
               onClick={handleIgnoreEdits}
               type="button"
             >
@@ -1760,15 +1763,15 @@ export default function PiReviewTab({
   teamCapacitySummaries = {},
 }: PiReviewTabProps) {
   const configuredTargets = useMemo(() => readConfiguredPiReviewTargets(teams), [teams]);
-  const [activeTargetKey, setActiveTargetKey] = useState<string>(() => readDefaultPiReviewTargetKey(configuredTargets));
+  const [requestedActiveTargetKey, setRequestedActiveTargetKey] = useState<string>(() => readDefaultPiReviewTargetKey(configuredTargets));
   const teamTabOptions = useMemo(
     () => configuredTargets.map((target) => ({ key: target.targetKey, label: target.targetLabel })),
     [configuredTargets],
   );
-
-  useEffect(() => {
-    setActiveTargetKey((previousTargetKey) => readActivePiReviewTargetKey(previousTargetKey, configuredTargets));
-  }, [configuredTargets]);
+  const activeTargetKey = useMemo(
+    () => readActivePiReviewTargetKey(requestedActiveTargetKey, configuredTargets),
+    [configuredTargets, requestedActiveTargetKey],
+  );
 
   if (configuredTargets.length === 0) {
     return (
@@ -1794,7 +1797,7 @@ export default function PiReviewTab({
             activeTab={activeTargetKey}
             ariaLabel="PI Review team tabs"
             idPrefix={PI_REVIEW_TEAM_TABS_ID_PREFIX}
-            onChange={setActiveTargetKey}
+            onChange={setRequestedActiveTargetKey}
             tabs={teamTabOptions}
           />
         </div>

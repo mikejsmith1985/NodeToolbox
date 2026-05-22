@@ -10,7 +10,7 @@ import {
   saveSharedArtWorkspace,
 } from '../../services/confluenceApi.ts';
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
-import { useToast } from '../../components/Toast/ToastProvider.tsx';
+import { useToast } from '../../components/Toast/ToastContext.ts';
 import JiraBoardPicker from '../../components/JiraBoardPicker/index.tsx';
 import JiraFieldPicker from '../../components/JiraFieldPicker/index.tsx';
 import JiraProjectPicker from '../../components/JiraProjectPicker/index.tsx';

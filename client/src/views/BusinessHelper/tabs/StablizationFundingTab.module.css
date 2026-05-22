@@ -1,0 +1,182 @@
+/* StablizationFundingTab.module.css — Styles for the Business Helper stablization funding table workflow. */
+
+.stablizationTab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.sectionHeader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.sectionTitle {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+}
+
+.sectionSubtitle {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  align-items: center;
+}
+
+.toolbarMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.infoBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.autosaveNote {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.addRowButton {
+  min-height: calc(var(--spacing-xl) + var(--spacing-md));
+  padding: 0 var(--spacing-lg);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-accent) 18%, var(--color-surface-1));
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tableWrapper {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.fundingTable {
+  width: 100%;
+  min-width: calc(var(--spacing-xl) * 32);
+  border-collapse: collapse;
+  background: var(--color-surface-1);
+}
+
+.tableHeaderCell,
+.tableCell,
+.footerCell,
+.footerLabelCell {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.tableHeaderCell {
+  background: var(--color-table-header-bg, var(--color-surface-2));
+  color: var(--color-text-secondary);
+  text-align: left;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.tableRow {
+  background: var(--color-surface-1);
+}
+
+.tableRow:last-of-type .tableCell {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.textInput,
+.selectInput,
+.currencyInput,
+.dateInput {
+  width: 100%;
+  min-height: calc(var(--spacing-xl) + var(--spacing-sm));
+  padding: 0 var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-field-bg, var(--color-surface-2));
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.textInput:focus,
+.selectInput:focus,
+.currencyInput:focus,
+.dateInput:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.currencyInput {
+  text-align: right;
+}
+
+.dateInput {
+  color-scheme: inherit;
+}
+
+.calculatedValue {
+  display: inline-flex;
+  min-height: calc(var(--spacing-xl) + var(--spacing-sm));
+  width: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-2));
+  color: var(--color-text-primary);
+  font-family: var(--font-family-mono, 'Consolas', monospace);
+}
+
+.removeRowButton {
+  min-height: calc(var(--spacing-xl) + var(--spacing-sm));
+  padding: 0 var(--spacing-md);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.removeRowButton:hover {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.footerRow {
+  background: color-mix(in srgb, var(--color-accent) 6%, var(--color-surface-2));
+}
+
+.footerLabelCell {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.footerCell {
+  color: var(--color-text-primary);
+  text-align: right;
+  font-family: var(--font-family-mono, 'Consolas', monospace);
+}

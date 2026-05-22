@@ -1282,10 +1282,16 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
 
   useEffect(() => {
     let isCancelled = false;
+    let resetFixVersionsTimeoutId: number | null = null;
 
     if (!state.projectKey) {
-      setState((previousState) => ({ ...previousState, availableFixVersions: [] }));
+      resetFixVersionsTimeoutId = window.setTimeout(() => {
+        setState((previousState) => ({ ...previousState, availableFixVersions: [] }));
+      }, 0);
       return () => {
+        if (resetFixVersionsTimeoutId !== null) {
+          window.clearTimeout(resetFixVersionsTimeoutId);
+        }
         isCancelled = true;
       };
     }
@@ -1310,6 +1316,9 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       });
 
     return () => {
+      if (resetFixVersionsTimeoutId !== null) {
+        window.clearTimeout(resetFixVersionsTimeoutId);
+      }
       isCancelled = true;
     };
   }, [state.projectKey]);
@@ -1697,9 +1706,11 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     } catch (unknownError) {
       const errorMessage = unknownError instanceof Error ? unknownError.message : 'CTASK clone failed';
       if (errorMessage.includes('401')) {
-        throw new Error('SNow returned 401 while cloning the CTASK. Refresh a full ServiceNow form or list page, click the latest NodeToolbox SNow Relay bookmarklet, then try again.');
+        throw new Error('SNow returned 401 while cloning the CTASK. Refresh a full ServiceNow form or list page, click the latest NodeToolbox SNow Relay bookmarklet, then try again.', {
+          cause: unknownError,
+        });
       }
-      throw new Error(errorMessage);
+      throw new Error(errorMessage, { cause: unknownError });
     }
 
     if (!ctaskRecord) {
@@ -1776,7 +1787,9 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
           await updateAutoCreatedChangeTasks(changeSysId, state, changeSubmissionTarget.environmentKey);
         } catch (unknownError) {
           const errorMessage = unknownError instanceof Error ? unknownError.message : 'Auto-created CTASK updates failed';
-          throw new Error(`${changeNumber} created, but auto-created CTASK updates failed. Check ServiceNow before retrying: ${errorMessage}`);
+          throw new Error(`${changeNumber} created, but auto-created CTASK updates failed. Check ServiceNow before retrying: ${errorMessage}`, {
+            cause: unknownError,
+          });
         }
 
         if (state.changeTasks.length > 0) {
@@ -1785,7 +1798,9 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
           } catch (unknownError) {
             const errorMessage = unknownError instanceof Error ? unknownError.message : 'CTASK creation failed';
             const taskLabel = formatCtaskCount(state.changeTasks.length);
-            throw new Error(`${changeNumber} created, but ${taskLabel} did not fully complete. Check ServiceNow before retrying: ${errorMessage}`);
+            throw new Error(`${changeNumber} created, but ${taskLabel} did not fully complete. Check ServiceNow before retrying: ${errorMessage}`, {
+              cause: unknownError,
+            });
           }
         }
 
@@ -1824,12 +1839,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
         submissionDebug: latestSubmissionDebug,
       }));
     }
-  }, [
-    state.generatedShortDescription, state.generatedDescription,
-    state.generatedJustification, state.generatedRiskImpact,
-    state.chgBasicInfo, state.chgPlanningAssessment, state.chgPlanningContent,
-    state.customSnowFields, state.changeTasks, state.relEnvironment, state.prdEnvironment, state.pfixEnvironment,
-  ]);
+  }, [state]);
 
   const actions = useMemo<CrgActions>(() => {
     return {

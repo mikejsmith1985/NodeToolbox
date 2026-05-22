@@ -89,10 +89,16 @@ export default function DevPanelView() {
   }, [])
 
   useEffect(() => {
-    if (activeTab === 'repo-monitor-validation') {
-      void refreshRepoMonitorValidation()
-    } else if (activeTab === 'github-debug') {
-      void fetchGitHubDebug()
+    const deferredFetchHandle = window.setTimeout(() => {
+      if (activeTab === 'repo-monitor-validation') {
+        void refreshRepoMonitorValidation()
+      } else if (activeTab === 'github-debug') {
+        void fetchGitHubDebug()
+      }
+    }, 0)
+
+    return () => {
+      window.clearTimeout(deferredFetchHandle)
     }
   }, [activeTab, refreshRepoMonitorValidation, fetchGitHubDebug])
 

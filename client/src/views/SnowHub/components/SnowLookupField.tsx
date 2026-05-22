@@ -83,17 +83,28 @@ export function SnowLookupField({
   // Keep the input text in sync if a parent clones a CHG and fills the value externally.
   useEffect(() => {
     let isCancelled = false;
+    let syncInputTimeoutId: number | null = null;
 
     if (value.displayName) {
-      setInputText(value.displayName);
+      syncInputTimeoutId = window.setTimeout(() => {
+        setInputText(value.displayName);
+      }, 0);
       return () => {
+        if (syncInputTimeoutId !== null) {
+          window.clearTimeout(syncInputTimeoutId);
+        }
         isCancelled = true;
       };
     }
 
     if (!value.sysId) {
-      setInputText('');
+      syncInputTimeoutId = window.setTimeout(() => {
+        setInputText('');
+      }, 0);
       return () => {
+        if (syncInputTimeoutId !== null) {
+          window.clearTimeout(syncInputTimeoutId);
+        }
         isCancelled = true;
       };
     }
@@ -120,6 +131,9 @@ export function SnowLookupField({
     void resolveDisplayNameBySysId();
 
     return () => {
+      if (syncInputTimeoutId !== null) {
+        window.clearTimeout(syncInputTimeoutId);
+      }
       isCancelled = true;
     };
   }, [tableName, value.displayName, value.sysId]);
