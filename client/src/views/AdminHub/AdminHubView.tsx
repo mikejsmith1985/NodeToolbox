@@ -1048,6 +1048,61 @@ function ServiceConnectivitySection({
   onTestGitHub,
   onTestConfluence,
 }: ServiceConnectivitySectionProps) {
+  const connectivityConfigKey = connectivityConfig === null
+    ? 'connectivity-empty'
+    : `${connectivityConfig.snow.baseUrl}|${connectivityConfig.github.baseUrl}|${connectivityConfig.confluence.baseUrl}`
+
+  return (
+    <ServiceConnectivitySectionContent
+      key={connectivityConfigKey}
+      connectivityConfig={connectivityConfig}
+      connectivityConfigError={connectivityConfigError}
+      connectivitySaveStatus={connectivitySaveStatus}
+      confluenceTestResult={confluenceTestResult}
+      githubTestResult={githubTestResult}
+      isAdminUnlocked={isAdminUnlocked}
+      isConfluenceTesting={isConfluenceTesting}
+      isConnectivityConfigLoading={isConnectivityConfigLoading}
+      isGitHubTesting={isGitHubTesting}
+      isSnowTesting={isSnowTesting}
+      onLoad={onLoad}
+      onSaveConfluence={onSaveConfluence}
+      onSaveGitHub={onSaveGitHub}
+      onSaveGitHubApp={onSaveGitHubApp}
+      onSaveSnow={onSaveSnow}
+      onTestConfluence={onTestConfluence}
+      onTestGitHub={onTestGitHub}
+      onTestSnow={onTestSnow}
+      snowTestResult={snowTestResult}
+    />
+  )
+}
+
+/**
+ * ServiceConnectivitySectionContent owns the local draft fields for one loaded connectivity snapshot.
+ * Remounting this keyed component resets the form only when the saved server config changes.
+ */
+function ServiceConnectivitySectionContent({
+  connectivityConfig,
+  isConnectivityConfigLoading,
+  connectivityConfigError,
+  connectivitySaveStatus,
+  snowTestResult,
+  isSnowTesting,
+  githubTestResult,
+  isGitHubTesting,
+  confluenceTestResult,
+  isConfluenceTesting,
+  isAdminUnlocked,
+  onLoad,
+  onSaveSnow,
+  onSaveGitHub,
+  onSaveGitHubApp,
+  onSaveConfluence,
+  onTestSnow,
+  onTestGitHub,
+  onTestConfluence,
+}: ServiceConnectivitySectionProps) {
   const CREDENTIAL_PLACEHOLDER = '••••••••'
 
   const [snowBaseUrl, setSnowBaseUrl] = useState(connectivityConfig?.snow.baseUrl ?? '')
@@ -1073,15 +1128,6 @@ function ServiceConnectivitySection({
   const [confluenceBaseUrl, setConfluenceBaseUrl] = useState(connectivityConfig?.confluence.baseUrl ?? '')
   const [confluenceUsername, setConfluenceUsername] = useState('')
   const [confluenceApiToken, setConfluenceApiToken] = useState('')
-
-  // Sync local URL fields when the server config loads for the first time.
-  useEffect(() => {
-    if (connectivityConfig !== null) {
-      setSnowBaseUrl(connectivityConfig.snow.baseUrl)
-      setGithubBaseUrl(connectivityConfig.github.baseUrl)
-      setConfluenceBaseUrl(connectivityConfig.confluence.baseUrl)
-    }
-  }, [connectivityConfig])
 
   // Load config from server when admin unlocks (lazy load on first open).
   useEffect(() => {

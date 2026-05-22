@@ -7,7 +7,7 @@
 import { useRef, useState } from 'react';
 
 import ConfirmDialog from '../../components/ConfirmDialog/index.tsx';
-import { useToast } from '../../components/Toast/ToastProvider.tsx';
+import { useToast } from '../../components/Toast/ToastContext.ts';
 import {
   collectPersistentSettingsLocalStorageData,
   removePersistentSettingsLocalStorageData,

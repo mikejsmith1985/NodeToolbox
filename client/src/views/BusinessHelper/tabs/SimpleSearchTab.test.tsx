@@ -4,6 +4,10 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { mockShowToast } = vi.hoisted(() => ({
+  mockShowToast: vi.fn(),
+}));
+
 vi.mock('../hooks/useSimpleSearchState.ts', async () => {
   const actualModule = await vi.importActual<typeof import('../hooks/useSimpleSearchState.ts')>(
     '../hooks/useSimpleSearchState.ts',
@@ -13,6 +17,12 @@ vi.mock('../hooks/useSimpleSearchState.ts', async () => {
     useSimpleSearchState: vi.fn(),
   };
 });
+
+vi.mock('../../../components/Toast/ToastContext.ts', () => ({
+  useToast: () => ({
+    showToast: mockShowToast,
+  }),
+}));
 
 import SimpleSearchTab from './SimpleSearchTab.tsx';
 import {
@@ -87,6 +97,8 @@ function buildIssueDetail(
 
 beforeEach(() => {
   mockUseSimpleSearchState.mockReset();
+  mockShowToast.mockReset();
+  window.localStorage.clear();
 });
 
 describe('SimpleSearchTab', () => {
@@ -293,5 +305,64 @@ describe('SimpleSearchTab', () => {
     await user.click(screen.getByRole('button', { name: 'Toggle description for TBX-401' }));
 
     expect(loadIssueDetail).toHaveBeenCalledWith('TBX-401');
+  });
+
+  it('sends a Simple Search result into the Stablization table using the configured mapping', async () => {
+    const user = userEvent.setup();
+    mockUseSimpleSearchState.mockReturnValue(
+      buildViewState({
+        keyword: 'business',
+        hasSearched: true,
+        rawResultCount: 1,
+        results: [buildSearchResult()],
+      }),
+    );
+
+    render(<SimpleSearchTab />);
+
+    await user.click(screen.getByRole('button', { name: 'Send TBX-101 to Stablization' }));
+
+    const storedRows = JSON.parse(window.localStorage.getItem('tbxBusinessHelperStablizationTable') ?? '[]');
+    expect(storedRows[0].name).toBe('TBX-101 - Business summary match');
+    expect(mockShowToast).toHaveBeenCalledWith(
+      'Added TBX-101 to Stablization using Name.',
+      'success',
+    );
+  });
+
+  it('warns instead of populating a dropdown-mapped column when the mapped value is not in the option list', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(
+      'tbxBusinessHelperSettings',
+      JSON.stringify({
+        stablizationColumns: {
+          grouping: { inputKind: 'text', dropdownOptions: [] },
+          name: { inputKind: 'dropdown', dropdownOptions: ['Allowed Value'] },
+          justification: { inputKind: 'text', dropdownOptions: [] },
+        },
+        simpleSearchMapping: {
+          grouping: 'none',
+          name: 'jira-key-summary',
+          justification: 'none',
+        },
+      }),
+    );
+    mockUseSimpleSearchState.mockReturnValue(
+      buildViewState({
+        keyword: 'business',
+        hasSearched: true,
+        rawResultCount: 1,
+        results: [buildSearchResult()],
+      }),
+    );
+
+    render(<SimpleSearchTab />);
+
+    await user.click(screen.getByRole('button', { name: 'Send TBX-101 to Stablization' }));
+
+    expect(mockShowToast).toHaveBeenCalledWith(
+      'No Stablization mapping could be applied. Review the Business Helper Settings tab.',
+      'warning',
+    );
   });
 });

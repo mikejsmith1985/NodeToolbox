@@ -35,6 +35,27 @@ export default function IssueDetailPanel({
   onIssueUpdated,
   isEmbedded = false,
 }: IssueDetailPanelProps) {
+  const issuePanelStateKey = `${issue.key}:${issue.fields.customfield_10016 ?? ''}`;
+
+  return (
+    <IssueDetailPanelContent
+      key={issuePanelStateKey}
+      isEmbedded={isEmbedded}
+      issue={issue}
+      onIssueUpdated={onIssueUpdated}
+    />
+  );
+}
+
+/**
+ * IssueDetailPanelContent owns the live editing state for one specific issue snapshot.
+ * Remounting this keyed component resets transient form state when the viewed issue changes.
+ */
+function IssueDetailPanelContent({
+  issue,
+  onIssueUpdated,
+  isEmbedded = false,
+}: IssueDetailPanelProps) {
   const [isPanelOpen, setIsPanelOpen] = useState(true);
   const [isLoadingTransitions, setIsLoadingTransitions] = useState(true);
   const [availableTransitions, setAvailableTransitions] = useState<JiraTransition[]>([]);
@@ -51,17 +72,9 @@ export default function IssueDetailPanel({
   const [storyPointsSaveSuccess, setStoryPointsSaveSuccess] = useState(false);
 
   useEffect(() => {
-    setIsPanelOpen(true);
-  }, [issue.key]);
-
-  useEffect(() => {
     let isMounted = true;
 
     async function loadTransitions() {
-      setIsLoadingTransitions(true);
-      setTransitionError(null);
-      setSelectedTransitionId('');
-
       try {
         const response = await jiraGet<{ transitions: JiraTransition[] }>(`/rest/api/2/issue/${issue.key}/transitions`);
         if (!isMounted) {
@@ -82,18 +95,12 @@ export default function IssueDetailPanel({
       }
     }
 
-    setCommentText('');
-    setCommentPostError(null);
-    setCommentPostSuccess(false);
-    setStoryPointsInput(String(issue.fields.customfield_10016 ?? ''));
-    setStoryPointsSaveError(null);
-    setStoryPointsSaveSuccess(false);
     void loadTransitions();
 
     return () => {
       isMounted = false;
     };
-  }, [issue.fields.customfield_10016, issue.key]);
+  }, [issue.key]);
 
   useEffect(() => {
     if (!commentPostSuccess) {
