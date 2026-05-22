@@ -99,6 +99,7 @@ import ArtView from './ArtView.tsx';
 
 const mockClipboardWrite = vi.fn().mockResolvedValue(undefined);
 const mockClipboardWriteText = vi.fn().mockResolvedValue(undefined);
+const SHARED_ART_SYNC_SNAPSHOTS_STORAGE_KEY = 'tbxSharedArtSyncSnapshots';
 
 class MockClipboardItem {
   items: Record<string, Blob>;
@@ -220,10 +221,10 @@ describe('ArtView', () => {
     expect(screen.getByRole('tab', { name: /settings/i })).toBeInTheDocument();
   });
 
-  it('renders the additional ART tab buttons including PI Review and Capacity', () => {
+  it('renders the additional ART tab buttons with PI Review as the capacity planning home', () => {
     renderArtView();
     expect(screen.getByRole('tab', { name: /pi review/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /capacity/i })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /capacity/i })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /dependencies/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /board prep/i })).toBeInTheDocument();
   });
@@ -1011,6 +1012,29 @@ describe('ArtView', () => {
     expect(screen.getByRole('combobox', { name: /feature link field/i })).toBeInTheDocument();
   });
 
+  it('shows PI Review target date field pickers in Settings tab', () => {
+    mockState.activeTab = 'settings';
+    renderArtView();
+    expect(screen.getByRole('combobox', { name: /pi review target start field/i })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /pi review target end field/i })).toBeInTheDocument();
+  });
+
+  it('falls back to the default PI Review target date field IDs when settings are blank', async () => {
+    mockState.activeTab = 'settings';
+    localStorage.removeItem('tbxARTSettings');
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/field') {
+        return Promise.reject(new Error('Jira unavailable'));
+      }
+
+      return Promise.resolve({ values: [] });
+    });
+    renderArtView();
+
+    expect(await screen.findByRole('textbox', { name: /pi review target start field/i })).toHaveValue('customfield_10101');
+    expect(screen.getByRole('textbox', { name: /pi review target end field/i })).toHaveValue('customfield_10102');
+  });
+
   it('shows Stale Days Threshold input in Settings tab', () => {
     mockState.activeTab = 'settings';
     renderArtView();
@@ -1056,14 +1080,58 @@ describe('ArtView', () => {
     expect(storedSettings.depLinkTypes).toContain('Cloners');
   });
 
-  it('shows the experimental shared ART workspace controls in Settings tab', () => {
+  it('shows separate shared ART setup and sync guidance in Settings tab', () => {
     mockState.activeTab = 'settings';
     renderArtView();
-    expect(screen.getByRole('textbox', { name: /art short name/i })).toBeInTheDocument();
+
+    expect(screen.getByRole('heading', { name: /1\. first-time setup/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/toolbox creates the workspace and fills in the shared art database id for future sync/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /2\. sync an existing workspace/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/load pulls shared settings into this browser, while push publishes your local art settings/i),
+    ).toBeInTheDocument();
+
     expect(screen.getByRole('textbox', { name: /shared art database id/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /create shared art workspace/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /publish local art settings/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /load shared art settings/i })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /art short name/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create new shared art workspace/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /push local settings to workspace/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /load shared settings from workspace/i })).toBeInTheDocument();
+  });
+
+  it('prefills first-install Shared ART workspace defaults in Settings tab', () => {
+    mockState.activeTab = 'settings';
+    localStorage.removeItem('tbxARTSettings');
+    renderArtView();
+
+    expect(screen.getByDisplayValue('Sales to Enrollment')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('S2E')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('684163133')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('256344064')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('685473797')).toBeInTheDocument();
+  });
+
+  it('uses saved Shared ART workspace settings instead of first-install defaults', () => {
+    mockState.activeTab = 'settings';
+    localStorage.setItem(
+      'tbxARTSettings',
+      JSON.stringify({
+        sharedArtName: 'Platform ART',
+        sharedArtKey: 'PLAT',
+        sharedArtDatabaseId: 'db-999',
+        sharedArtSpaceId: 'space-888',
+        sharedArtParentId: 'parent-777',
+      }),
+    );
+    renderArtView();
+
+    expect(screen.getByDisplayValue('Platform ART')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('PLAT')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('db-999')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('space-888')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('parent-777')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Sales to Enrollment')).not.toBeInTheDocument();
   });
 
   it('shows Project picker in Settings add-team form', () => {
@@ -2073,6 +2141,36 @@ describe('ArtView', () => {
     mockState.activeTab = 'overview';
   });
 
+  it('persists PI Review target date field IDs to localStorage when the picker values change', async () => {
+    mockState.activeTab = 'settings';
+    localStorage.removeItem('tbxARTSettings');
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/field') {
+        return Promise.reject(new Error('Jira unavailable'));
+      }
+
+      return Promise.resolve({ values: [] });
+    });
+    renderArtView();
+
+    fireEvent.change(await screen.findByRole('textbox', { name: /pi review target start field/i }), {
+      target: { value: 'customfield_12345' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /pi review target end field/i }), {
+      target: { value: 'customfield_12346' },
+    });
+
+    const stored = JSON.parse(localStorage.getItem('tbxARTSettings') ?? '{}') as {
+      piReviewTargetStartFieldId?: string;
+      piReviewTargetEndFieldId?: string;
+    };
+    expect(stored.piReviewTargetStartFieldId).toBe('customfield_12345');
+    expect(stored.piReviewTargetEndFieldId).toBe('customfield_12346');
+
+    localStorage.removeItem('tbxARTSettings');
+    mockState.activeTab = 'overview';
+  });
+
   it('creates a shared ART workspace and stores the returned database ID locally', async () => {
     mockState.activeTab = 'settings';
     renderArtView();
@@ -2086,7 +2184,10 @@ describe('ArtView', () => {
     fireEvent.change(screen.getByRole('textbox', { name: /confluence space id/i }), {
       target: { value: '77' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /create shared art workspace/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: /parent content id/i }), {
+      target: { value: '' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /create new shared art workspace/i }));
 
     await waitFor(() => {
       expect(mockCreateConfluenceDatabase).toHaveBeenCalledWith({
@@ -2119,10 +2220,16 @@ describe('ArtView', () => {
     fireEvent.change(screen.getByRole('textbox', { name: /shared art name/i }), {
       target: { value: 'Systems Team' },
     });
+    fireEvent.change(screen.getByRole('textbox', { name: /art short name/i }), {
+      target: { value: '' },
+    });
     fireEvent.change(screen.getByRole('textbox', { name: /confluence space id/i }), {
       target: { value: '77' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /create shared art workspace/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: /parent content id/i }), {
+      target: { value: '' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /create new shared art workspace/i }));
 
     await waitFor(() => {
       expect(mockSaveSharedArtWorkspace).toHaveBeenCalledWith(
@@ -2144,7 +2251,7 @@ describe('ArtView', () => {
     fireEvent.change(screen.getByRole('textbox', { name: /shared art database id/i }), {
       target: { value: 'db-123' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /load shared art settings/i }));
+    fireEvent.click(screen.getByRole('button', { name: /load shared settings from workspace/i }));
 
     await waitFor(() => {
       expect(mockLoadSharedArtWorkspace).toHaveBeenCalledWith('db-123');
@@ -2166,6 +2273,204 @@ describe('ArtView', () => {
     expect(storedSettings.sharedArtKey).toBe('S2E');
     expect(storedSettings.sharedArtDatabaseId).toBe('db-123');
     mockState.activeTab = 'overview';
+  });
+
+  it('stores the loaded shared ART snapshot for future merge-aware push', async () => {
+    mockState.activeTab = 'settings';
+    renderArtView();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /shared art database id/i }), {
+      target: { value: 'db-123' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /load shared settings from workspace/i }));
+
+    await waitFor(() => {
+      const storedSnapshots = JSON.parse(localStorage.getItem(SHARED_ART_SYNC_SNAPSHOTS_STORAGE_KEY) ?? '{}') as Record<
+        string,
+        { artName: string; artKey: string; updatedAt: string }
+      >;
+      expect(storedSnapshots['db-123']).toEqual(
+        expect.objectContaining({
+          artName: 'Systems Team',
+          artKey: 'S2E',
+          updatedAt: '2026-05-20T12:00:00.000Z',
+        }),
+      );
+    });
+  });
+
+  it('merges non-conflicting local and remote shared ART changes on publish', async () => {
+    mockState.activeTab = 'settings';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Local Alpha',
+        boardId: '42',
+        boardName: 'Transformers Board',
+        projectKey: 'ALPHA',
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+
+    localStorage.setItem(
+      SHARED_ART_SYNC_SNAPSHOTS_STORAGE_KEY,
+      JSON.stringify({
+        'db-123': {
+          schemaVersion: 1,
+          artKey: 'S2E',
+          artName: 'Systems Team',
+          updatedAt: '2026-05-20T12:00:00.000Z',
+          teams: [
+            {
+              id: 'team-1',
+              name: 'Shared Alpha',
+              boardId: '42',
+              boardName: 'Transformers Board',
+              projectKey: 'ALPHA',
+            },
+          ],
+          settings: {
+            piFieldId: 'customfield_10301',
+            depLinkTypes: ['blocks'],
+            staleDays: 5,
+            sprintWindowDays: 10,
+          },
+        },
+      }),
+    );
+
+    mockLoadSharedArtWorkspace.mockResolvedValueOnce({
+      schemaVersion: 1,
+      artKey: 'S2E',
+      artName: 'Systems Team',
+      updatedAt: '2026-05-21T12:00:00.000Z',
+      teams: [
+        {
+          id: 'team-1',
+          name: 'Shared Alpha',
+          boardId: '84',
+          boardName: 'Transformers Board',
+          projectKey: 'ALPHA',
+        },
+      ],
+      settings: {
+        piFieldId: 'customfield_10301',
+        depLinkTypes: ['blocks'],
+        staleDays: 5,
+        sprintWindowDays: 10,
+      },
+    });
+
+    renderArtView();
+    fireEvent.change(screen.getByRole('textbox', { name: /shared art database id/i }), {
+      target: { value: 'db-123' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /shared art name/i }), {
+      target: { value: 'Systems Team' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /art short name/i }), {
+      target: { value: 'S2E' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /push local settings to workspace/i }));
+
+    await waitFor(() => {
+      expect(mockSaveSharedArtWorkspace).toHaveBeenCalledWith(
+        'db-123',
+        expect.objectContaining({
+          teams: [
+            expect.objectContaining({
+              id: 'team-1',
+              name: 'Local Alpha',
+              boardId: '84',
+            }),
+          ],
+        }),
+      );
+    });
+  });
+
+  it('stops publish when local and remote shared ART changes conflict', async () => {
+    mockState.activeTab = 'settings';
+    mockState.teams = [
+      {
+        id: 'team-1',
+        name: 'Shared Alpha',
+        boardId: '77',
+        boardName: 'Transformers Board',
+        projectKey: 'ALPHA',
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ];
+
+    localStorage.setItem(
+      SHARED_ART_SYNC_SNAPSHOTS_STORAGE_KEY,
+      JSON.stringify({
+        'db-123': {
+          schemaVersion: 1,
+          artKey: 'S2E',
+          artName: 'Systems Team',
+          updatedAt: '2026-05-20T12:00:00.000Z',
+          teams: [
+            {
+              id: 'team-1',
+              name: 'Shared Alpha',
+              boardId: '42',
+              boardName: 'Transformers Board',
+              projectKey: 'ALPHA',
+            },
+          ],
+          settings: {
+            piFieldId: 'customfield_10301',
+            depLinkTypes: ['blocks'],
+            staleDays: 5,
+            sprintWindowDays: 10,
+          },
+        },
+      }),
+    );
+
+    mockLoadSharedArtWorkspace.mockResolvedValueOnce({
+      schemaVersion: 1,
+      artKey: 'S2E',
+      artName: 'Systems Team',
+      updatedAt: '2026-05-21T12:00:00.000Z',
+      teams: [
+        {
+          id: 'team-1',
+          name: 'Shared Alpha',
+          boardId: '84',
+          boardName: 'Transformers Board',
+          projectKey: 'ALPHA',
+        },
+      ],
+      settings: {
+        piFieldId: 'customfield_10301',
+        depLinkTypes: ['blocks'],
+        staleDays: 5,
+        sprintWindowDays: 10,
+      },
+    });
+
+    renderArtView();
+    fireEvent.change(screen.getByRole('textbox', { name: /shared art database id/i }), {
+      target: { value: 'db-123' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /shared art name/i }), {
+      target: { value: 'Systems Team' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /art short name/i }), {
+      target: { value: 'S2E' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /push local settings to workspace/i }));
+
+    await waitFor(() => {
+      expect(mockSaveSharedArtWorkspace).not.toHaveBeenCalled();
+      expect(screen.getAllByText(/shared art push found conflicts/i)).toHaveLength(2);
+    });
   });
 
   // ── art-overview-advanced: ART Summary Bar ──
@@ -3160,5 +3465,3 @@ describe('ArtView', () => {
     mockState.teams = [{ id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '', sprintIssues: [], isLoading: false, loadError: null }];
   });
 });
-
-

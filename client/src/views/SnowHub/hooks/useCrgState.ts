@@ -13,6 +13,7 @@ type CrgStep = 1 | 2 | 3 | 4 | 5 | 6;
 type FetchMode = 'project' | 'jql';
 type GeneratedFieldKey = 'shortDescription' | 'description' | 'justification' | 'riskImpact';
 type EnvironmentKey = 'rel' | 'prd' | 'pfix';
+export type EnvironmentValueByKey = Partial<Record<EnvironmentKey, string>>;
 
 interface EnvironmentConfig {
   isEnabled: boolean;
@@ -104,6 +105,7 @@ const ISSUE_FIELD_LIST = 'summary,status,priority,issuetype,assignee,description
 const CTASK_DEFAULT_SHORT_DESCRIPTION = 'Change task';
 const AUTO_IMPLEMENTATION_CTASK_PREFIX = 'Enrollment - AWS';
 const AUTO_TECHNICAL_CHECKOUT_CTASK_SHORT_DESCRIPTION = 'Technical Checkout';
+const ENVIRONMENT_SUBMISSION_ORDER: EnvironmentKey[] = ['rel', 'prd', 'pfix'];
 const AUTO_TECHNICAL_CHECKOUT_CTASK_DESCRIPTION = [
   'Objective:',
   'Validate the technical integrity and health of the live environment following a code promotion using CLI tools and GitHub deployment history.',
@@ -400,12 +402,27 @@ interface CrgActions {
   goToStep: (step: CrgStep) => void;
   reset: () => void;
   /** POSTs all CHG fields to ServiceNow and stores the resulting CHG number. */
-  createChg: () => Promise<void>;
+  createChg: (environmentValueByKey?: EnvironmentValueByKey) => Promise<void>;
 }
 
 interface AutoCreatedChangeTaskRecord {
   sys_id: unknown;
   number?: unknown;
+}
+
+interface ChangeSubmissionTarget {
+  environmentKey: EnvironmentKey | null;
+  environmentLabel: string | null;
+  environmentValue: string;
+  configItem: SnowReference;
+  impactedPersonsAware: string;
+  plannedStartDate: string;
+  plannedEndDate: string;
+}
+
+interface CreatedChangeRecord {
+  environmentLabel: string | null;
+  changeNumber: string;
 }
 
 /**
@@ -671,7 +688,10 @@ async function fetchChangeSysIdByNumber(changeNumber: string): Promise<string> {
   return changeSysId;
 }
 
-function buildChangeRequestPayload(state: CrgState): Record<string, unknown> {
+function buildChangeRequestPayload(
+  state: CrgState,
+  changeSubmissionTarget: ChangeSubmissionTarget,
+): Record<string, unknown> {
   const changeRequestPayload: Record<string, unknown> = {
     ...state.customSnowFields,
     short_description:    state.generatedShortDescription,
@@ -682,22 +702,22 @@ function buildChangeRequestPayload(state: CrgState): Record<string, unknown> {
 
   if (state.chgBasicInfo.category)     changeRequestPayload.category      = state.chgBasicInfo.category;
   if (state.chgBasicInfo.changeType)   changeRequestPayload.type          = state.chgBasicInfo.changeType;
-  if (state.chgBasicInfo.environment)  changeRequestPayload.u_environment = state.chgBasicInfo.environment;
+  if (changeSubmissionTarget.environmentValue)  changeRequestPayload.u_environment = changeSubmissionTarget.environmentValue;
   if (state.chgBasicInfo.isExpedited)  changeRequestPayload.u_expedited   = true;
 
-  const mappedConfigItem = resolveMappedConfigItem(state);
   if (state.chgBasicInfo.requestedBy.sysId)     changeRequestPayload.requested_by      = state.chgBasicInfo.requestedBy.sysId;
-  if (mappedConfigItem.sysId)                   changeRequestPayload.cmdb_ci           = mappedConfigItem.sysId;
+  if (changeSubmissionTarget.configItem.sysId)  changeRequestPayload.cmdb_ci           = changeSubmissionTarget.configItem.sysId;
   if (state.chgBasicInfo.assignmentGroup.sysId) changeRequestPayload.assignment_group  = state.chgBasicInfo.assignmentGroup.sysId;
   if (state.chgBasicInfo.assignedTo.sysId)      changeRequestPayload.assigned_to       = state.chgBasicInfo.assignedTo.sysId;
   if (state.chgBasicInfo.tester.sysId)          changeRequestPayload.u_tester          = state.chgBasicInfo.tester.sysId;
   if (state.chgBasicInfo.serviceManager.sysId)  changeRequestPayload.u_service_manager = state.chgBasicInfo.serviceManager.sysId;
+  if (changeSubmissionTarget.plannedStartDate)  changeRequestPayload.planned_start_date = changeSubmissionTarget.plannedStartDate;
+  if (changeSubmissionTarget.plannedEndDate)    changeRequestPayload.planned_end_date   = changeSubmissionTarget.plannedEndDate;
 
   if (state.chgPlanningAssessment.impact)                        changeRequestPayload.impact                  = state.chgPlanningAssessment.impact;
   if (state.chgPlanningAssessment.systemAvailabilityImplication) changeRequestPayload.u_availability_impact   = state.chgPlanningAssessment.systemAvailabilityImplication;
   if (state.chgPlanningAssessment.hasBeenTested)                 changeRequestPayload.u_change_tested         = state.chgPlanningAssessment.hasBeenTested;
-  const mappedImpactedPersonsAware = resolveMappedImpactedPersonsAware(state);
-  if (mappedImpactedPersonsAware)                                changeRequestPayload.u_impacted_persons_aware = mappedImpactedPersonsAware;
+  if (changeSubmissionTarget.impactedPersonsAware)               changeRequestPayload.u_impacted_persons_aware = changeSubmissionTarget.impactedPersonsAware;
   if (state.chgPlanningAssessment.hasBeenPerformedPreviously)    changeRequestPayload.u_performed_previously  = state.chgPlanningAssessment.hasBeenPerformedPreviously;
   if (state.chgPlanningAssessment.successProbability)            changeRequestPayload.u_success_probability    = state.chgPlanningAssessment.successProbability;
   if (state.chgPlanningAssessment.canBeBackedOut)                changeRequestPayload.u_can_be_backed_out     = state.chgPlanningAssessment.canBeBackedOut;
@@ -705,7 +725,7 @@ function buildChangeRequestPayload(state: CrgState): Record<string, unknown> {
   if (state.chgPlanningContent.implementationPlan) changeRequestPayload.implementation_plan = state.chgPlanningContent.implementationPlan;
   if (state.chgPlanningContent.backoutPlan)        changeRequestPayload.backout_plan        = state.chgPlanningContent.backoutPlan;
   if (state.chgPlanningContent.testPlan)           changeRequestPayload.test_plan           = state.chgPlanningContent.testPlan;
-  applyDynamicPlanningAliasValues(changeRequestPayload, state);
+  applyDynamicPlanningAliasValues(changeRequestPayload, state, changeSubmissionTarget.impactedPersonsAware);
 
   return changeRequestPayload;
 }
@@ -754,7 +774,7 @@ function buildSubmissionMismatchMessages(state: CrgState, verifiedChangeRecord: 
     impact: state.chgPlanningAssessment.impact,
     systemAvailabilityImplication: state.chgPlanningAssessment.systemAvailabilityImplication,
     hasBeenTested: state.chgPlanningAssessment.hasBeenTested,
-    impactedPersonsAware: resolveMappedImpactedPersonsAware(state),
+    impactedPersonsAware: readPrimaryChangeSubmissionTarget(state).impactedPersonsAware,
     hasBeenPerformedPreviously: state.chgPlanningAssessment.hasBeenPerformedPreviously,
     successProbability: state.chgPlanningAssessment.successProbability,
     canBeBackedOut: state.chgPlanningAssessment.canBeBackedOut,
@@ -838,8 +858,12 @@ async function resolveChangeManagerSubmissionValue(changeManager: SnowReference)
  * aliases is safe and guarantees the correct field is populated regardless
  * of which non-standard column name the target instance happens to use.
  */
-function applyDynamicPlanningAliasValues(changeRequestPayload: Record<string, unknown>, state: CrgState): void {
-  const mappedImpactedPersonsAware = resolveMappedImpactedPersonsAware(state).trim();
+function applyDynamicPlanningAliasValues(
+  changeRequestPayload: Record<string, unknown>,
+  state: CrgState,
+  impactedPersonsAwareOverride?: string,
+): void {
+  const mappedImpactedPersonsAware = (impactedPersonsAwareOverride ?? readPrimaryChangeSubmissionTarget(state).impactedPersonsAware).trim();
   const planningAssessmentValueByKey: Record<keyof ChgPlanningAssessment, string> = {
     impact: state.chgPlanningAssessment.impact,
     systemAvailabilityImplication: state.chgPlanningAssessment.systemAvailabilityImplication,
@@ -873,10 +897,36 @@ function formatCtaskCount(count: number): string {
   return count === 1 ? '1 CTASK' : `${count} CTASKs`;
 }
 
-function resolveAutoCreatedCtaskEnvironmentLabel(state: CrgState): string {
-  if (state.pfixEnvironment.isEnabled) return 'PFIX';
-  if (state.prdEnvironment.isEnabled) return 'PRD';
-  if (state.relEnvironment.isEnabled) return 'REL';
+function formatCreatedChangeSummary(
+  createdChangeRecords: CreatedChangeRecord[],
+  queuedTaskCount: number,
+): string {
+  if (createdChangeRecords.length === 1) {
+    const onlyCreatedChange = createdChangeRecords[0];
+    if (!onlyCreatedChange) {
+      return 'CHG created';
+    }
+    return queuedTaskCount > 0
+      ? `${onlyCreatedChange.changeNumber} created with ${formatCtaskCount(queuedTaskCount)}`
+      : `${onlyCreatedChange.changeNumber} created`;
+  }
+
+  const createdChangeList = createdChangeRecords
+    .map((createdChangeRecord) =>
+      createdChangeRecord.environmentLabel
+        ? `${createdChangeRecord.environmentLabel} ${createdChangeRecord.changeNumber}`
+        : createdChangeRecord.changeNumber)
+    .join(', ');
+
+  return queuedTaskCount > 0
+    ? `${createdChangeRecords.length} CHGs created with ${formatCtaskCount(queuedTaskCount)} each: ${createdChangeList}`
+    : `${createdChangeRecords.length} CHGs created: ${createdChangeList}`;
+}
+
+function resolveAutoCreatedCtaskEnvironmentLabel(state: CrgState, environmentKey: EnvironmentKey | null): string {
+  if (environmentKey) {
+    return readEnvironmentLabel(environmentKey);
+  }
 
   const normalizedEnvironmentValue = state.chgBasicInfo.environment.trim().toUpperCase();
   if (normalizedEnvironmentValue.includes('PFIX')) return 'PFIX';
@@ -911,7 +961,11 @@ async function patchChangeTaskBySysId(changeTaskSysId: string, patchBody: Record
   );
 }
 
-async function updateAutoCreatedChangeTasks(changeSysId: string, state: CrgState): Promise<void> {
+async function updateAutoCreatedChangeTasks(
+  changeSysId: string,
+  state: CrgState,
+  environmentKey: EnvironmentKey | null,
+): Promise<void> {
   const autoCreatedTasks = await fetchAutoCreatedChangeTasks(changeSysId);
   if (autoCreatedTasks.length === 0) {
     return;
@@ -919,7 +973,7 @@ async function updateAutoCreatedChangeTasks(changeSysId: string, state: CrgState
 
   const implementationTaskSysId = extractReferenceSysId(autoCreatedTasks[0]?.sys_id);
   if (implementationTaskSysId) {
-    const environmentLabel = resolveAutoCreatedCtaskEnvironmentLabel(state);
+    const environmentLabel = resolveAutoCreatedCtaskEnvironmentLabel(state, environmentKey);
     const implementationTaskPrefix = resolveImplementationCtaskPrefix(state);
     await patchChangeTaskBySysId(implementationTaskSysId, {
       short_description: `${implementationTaskPrefix} - ${environmentLabel}`,
@@ -1060,30 +1114,60 @@ function inferEnvironmentKeyFromValue(environmentValue: string): EnvironmentKey 
   return null;
 }
 
-function resolveMappedConfigItem(state: CrgState): SnowReference {
-  const environmentPriority: EnvironmentKey[] = ['pfix', 'prd', 'rel'];
-
-  for (const environmentKey of environmentPriority) {
-    const environmentState = state[getEnvironmentStateKey(environmentKey)];
-    if (environmentState.isEnabled && environmentState.configItem.sysId) {
-      return environmentState.configItem;
-    }
-  }
-
-  return state.chgBasicInfo.configItem;
+function readEnabledEnvironmentKeys(state: CrgState): EnvironmentKey[] {
+  return ENVIRONMENT_SUBMISSION_ORDER.filter((environmentKey) => state[getEnvironmentStateKey(environmentKey)].isEnabled);
 }
 
-function resolveMappedImpactedPersonsAware(state: CrgState): string {
-  const environmentPriority: EnvironmentKey[] = ['pfix', 'prd', 'rel'];
+function readEnvironmentLabel(environmentKey: EnvironmentKey): string {
+  return environmentKey.toUpperCase();
+}
 
-  for (const environmentKey of environmentPriority) {
-    const environmentState = state[getEnvironmentStateKey(environmentKey)];
-    if (environmentState.isEnabled && environmentState.impactedPersonsAware.trim()) {
-      return environmentState.impactedPersonsAware;
-    }
+function buildChangeSubmissionTargets(
+  state: CrgState,
+  environmentValueByKey: EnvironmentValueByKey = {},
+): ChangeSubmissionTarget[] {
+  const enabledEnvironmentKeys = readEnabledEnvironmentKeys(state);
+  if (enabledEnvironmentKeys.length === 0) {
+    return [{
+      environmentKey: null,
+      environmentLabel: null,
+      environmentValue: state.chgBasicInfo.environment,
+      configItem: state.chgBasicInfo.configItem,
+      impactedPersonsAware: state.chgPlanningAssessment.impactedPersonsAware,
+      plannedStartDate: EMPTY_VALUE,
+      plannedEndDate: EMPTY_VALUE,
+    }];
   }
 
-  return state.chgPlanningAssessment.impactedPersonsAware;
+  return enabledEnvironmentKeys.map((environmentKey) => {
+    const environmentState = state[getEnvironmentStateKey(environmentKey)];
+    return {
+      environmentKey,
+      environmentLabel: readEnvironmentLabel(environmentKey),
+      environmentValue: environmentValueByKey[environmentKey]?.trim() || state.chgBasicInfo.environment,
+      configItem: environmentState.configItem.sysId ? environmentState.configItem : state.chgBasicInfo.configItem,
+      impactedPersonsAware: environmentState.impactedPersonsAware.trim() || state.chgPlanningAssessment.impactedPersonsAware,
+      plannedStartDate: environmentState.plannedStartDate,
+      plannedEndDate: environmentState.plannedEndDate,
+    };
+  });
+}
+
+function readPrimaryChangeSubmissionTarget(state: CrgState): ChangeSubmissionTarget {
+  const primaryChangeSubmissionTarget = buildChangeSubmissionTargets(state)[0];
+  if (!primaryChangeSubmissionTarget) {
+    return {
+      environmentKey: null,
+      environmentLabel: null,
+      environmentValue: state.chgBasicInfo.environment,
+      configItem: state.chgBasicInfo.configItem,
+      impactedPersonsAware: state.chgPlanningAssessment.impactedPersonsAware,
+      plannedStartDate: EMPTY_VALUE,
+      plannedEndDate: EMPTY_VALUE,
+    };
+  }
+
+  return primaryChangeSubmissionTarget;
 }
 
 function buildClonedEnvironmentState(
@@ -1545,7 +1629,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
 
     try {
       const changeSysId = await fetchChangeSysIdByNumber(normalizedChangeNumber);
-      const changeRequestPayload = buildChangeRequestPayload(state);
+      const changeRequestPayload = buildChangeRequestPayload(state, readPrimaryChangeSubmissionTarget(state));
       const resolvedChangeManagerSysId = await resolveChangeManagerSubmissionValue(state.chgBasicInfo.changeManager);
       if (resolvedChangeManagerSysId) {
         // Write to both canonical and instance-specific alias so either field name is populated
@@ -1651,100 +1735,100 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
    * Optional fields (empty strings, unselected refs) are omitted from the
    * payload to avoid SNow validation errors on non-required fields.
    */
-  const createChg = useCallback(async () => {
+  const createChg = useCallback(async (environmentValueByKey: EnvironmentValueByKey = {}) => {
     setState((previousState) => ({
       ...previousState,
       isSubmitting: true,
       submitResult: null,
       submissionDebug: null,
     }));
-    const chgPayload = buildChangeRequestPayload(state);
+    const changeSubmissionTargets = buildChangeSubmissionTargets(state, environmentValueByKey);
+    const createdChangeRecords: CreatedChangeRecord[] = [];
+    let latestSubmissionDebug: ChgSubmissionDebug | null = null;
 
     try {
       const resolvedChangeManagerSysId = await resolveChangeManagerSubmissionValue(state.chgBasicInfo.changeManager);
-      if (resolvedChangeManagerSysId) {
-        // Write to both canonical and instance-specific alias so either field name is populated
-        chgPayload.change_manager   = resolvedChangeManagerSysId;
-        chgPayload.u_change_manager = resolvedChangeManagerSysId;
-      }
-
-      const responseData = await snowFetch<{ result: { number: string; sys_id?: unknown } }>(
-        '/api/now/table/change_request',
-        {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify(chgPayload),
-        },
-      );
-
-      const changeNumber = responseData.result.number;
-      const changeSysId = extractReferenceSysId(responseData.result.sys_id) || await fetchChangeSysIdByNumber(changeNumber);
-
-      try {
-        await updateAutoCreatedChangeTasks(changeSysId, state);
-      } catch (unknownError) {
-        const errorMessage = unknownError instanceof Error ? unknownError.message : 'Auto-created CTASK updates failed';
-        setState((previousState) => ({
-          ...previousState,
-          isSubmitting: false,
-          currentStep:  6,
-          submitResult: `${changeNumber} created, but auto-created CTASK updates failed. Check ServiceNow before retrying: ${errorMessage}`,
-        }));
-        return;
-      }
-
-      if (state.changeTasks.length > 0) {
-        try {
-          await createChangeTasks(changeSysId, state.changeTasks);
-        } catch (unknownError) {
-          const errorMessage = unknownError instanceof Error ? unknownError.message : 'CTASK creation failed';
-          const taskLabel = formatCtaskCount(state.changeTasks.length);
-          setState((previousState) => ({
-            ...previousState,
-            isSubmitting: false,
-            currentStep:  6,
-            submitResult: `${changeNumber} created, but ${taskLabel} did not fully complete. Check ServiceNow before retrying: ${errorMessage}`,
-          }));
-          return;
+      for (const changeSubmissionTarget of changeSubmissionTargets) {
+        const chgPayload = buildChangeRequestPayload(state, changeSubmissionTarget);
+        if (resolvedChangeManagerSysId) {
+          // Write to both canonical and instance-specific alias so either field name is populated
+          chgPayload.change_manager   = resolvedChangeManagerSysId;
+          chgPayload.u_change_manager = resolvedChangeManagerSysId;
         }
+
+        const responseData = await snowFetch<{ result: { number: string; sys_id?: unknown } }>(
+          '/api/now/table/change_request',
+          {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(chgPayload),
+          },
+        );
+
+        const changeNumber = responseData.result.number;
+        const changeSysId = extractReferenceSysId(responseData.result.sys_id) || await fetchChangeSysIdByNumber(changeNumber);
+        createdChangeRecords.push({
+          environmentLabel: changeSubmissionTarget.environmentLabel,
+          changeNumber,
+        });
+
+        try {
+          await updateAutoCreatedChangeTasks(changeSysId, state, changeSubmissionTarget.environmentKey);
+        } catch (unknownError) {
+          const errorMessage = unknownError instanceof Error ? unknownError.message : 'Auto-created CTASK updates failed';
+          throw new Error(`${changeNumber} created, but auto-created CTASK updates failed. Check ServiceNow before retrying: ${errorMessage}`);
+        }
+
+        if (state.changeTasks.length > 0) {
+          try {
+            await createChangeTasks(changeSysId, state.changeTasks);
+          } catch (unknownError) {
+            const errorMessage = unknownError instanceof Error ? unknownError.message : 'CTASK creation failed';
+            const taskLabel = formatCtaskCount(state.changeTasks.length);
+            throw new Error(`${changeNumber} created, but ${taskLabel} did not fully complete. Check ServiceNow before retrying: ${errorMessage}`);
+          }
+        }
+
+        latestSubmissionDebug = buildSubmissionDebugData(
+          'create',
+          changeNumber,
+          chgPayload,
+          responseData,
+          null,
+          [],
+        );
       }
 
-      const creationSummary = state.changeTasks.length > 0
-        ? `${changeNumber} created with ${formatCtaskCount(state.changeTasks.length)}`
-        : `${changeNumber} created`;
+      const creationSummary = formatCreatedChangeSummary(createdChangeRecords, state.changeTasks.length);
       // Clear persisted progress after a successful submission — the next change starts fresh.
       justResetRef.current = true;
       try { localStorage.removeItem(CRG_STATE_STORAGE_KEY); } catch { /* non-fatal */ }
-      const submissionDebug = buildSubmissionDebugData(
-        'create',
-        changeNumber,
-        chgPayload,
-        responseData,
-        null,
-        [],
-      );
-      useCrgSubmissionDebugStore.getState().updateLastSubmissionDebug(submissionDebug);
+      useCrgSubmissionDebugStore.getState().updateLastSubmissionDebug(latestSubmissionDebug);
       setState(() => ({
         ...createDefaultCrgState(),
         isSubmitting: false,
         submitResult: creationSummary,
         currentStep:  6 as CrgStep,
-        submissionDebug,
+        submissionDebug: latestSubmissionDebug,
       }));
     } catch (unknownError) {
       const errorMessage = unknownError instanceof Error ? unknownError.message : 'CHG creation failed';
-      useCrgSubmissionDebugStore.getState().updateLastSubmissionDebug(null);
+      useCrgSubmissionDebugStore.getState().updateLastSubmissionDebug(latestSubmissionDebug);
+      const partialFailureSummary = createdChangeRecords.length === 1 && changeSubmissionTargets.length === 1
+        ? errorMessage
+        : `${formatCreatedChangeSummary(createdChangeRecords, state.changeTasks.length)}; then a later submission failed: ${errorMessage}`;
       setState((previousState) => ({
         ...previousState,
         isSubmitting: false,
-        submitResult: 'Error: ' + errorMessage,
-        submissionDebug: null,
+        submitResult: createdChangeRecords.length > 0 ? partialFailureSummary : 'Error: ' + errorMessage,
+        submissionDebug: latestSubmissionDebug,
       }));
     }
   }, [
     state.generatedShortDescription, state.generatedDescription,
     state.generatedJustification, state.generatedRiskImpact,
-    state.chgBasicInfo, state.chgPlanningAssessment, state.chgPlanningContent, state.customSnowFields, state.changeTasks,
+    state.chgBasicInfo, state.chgPlanningAssessment, state.chgPlanningContent,
+    state.customSnowFields, state.changeTasks, state.relEnvironment, state.prdEnvironment, state.pfixEnvironment,
   ]);
 
   const actions = useMemo<CrgActions>(() => {

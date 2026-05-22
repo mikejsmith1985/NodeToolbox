@@ -83,6 +83,214 @@
   padding: 0;
 }
 
+.piReviewAuthoringCard {
+  display: grid;
+  gap: var(--spacing-sm);
+  width: min(100%, 720px);
+  padding: var(--spacing-md);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 16%, var(--color-border));
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+}
+
+.piReviewAuthoringText {
+  margin: 0;
+  color: var(--color-text-primary);
+}
+
+.piReviewAuthoringLink {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid var(--color-accent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.piReviewWorkspace {
+  display: grid;
+  gap: var(--spacing-md);
+}
+
+.piReviewCapacitySection {
+  display: grid;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 14%, var(--color-border));
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 7%, var(--color-surface-1)) 0%, var(--color-surface-1) 100%);
+}
+
+.piReviewCapacityHeader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.piReviewCapacityBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px var(--spacing-sm);
+  border: 1px solid var(--color-accent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.piReviewCapacityText {
+  margin: 0;
+  color: var(--color-text-primary);
+}
+
+.piReviewCapacityStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+}
+
+.piReviewCapacityStatCard {
+  display: grid;
+  gap: var(--spacing-xs);
+  min-width: 150px;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  justify-items: center;
+  text-align: center;
+}
+
+.piReviewCapacityStatCardHighlight {
+  border-color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 10%, var(--color-surface-2));
+}
+
+.piReviewCapacityStatCardAccent {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-2));
+}
+
+.piReviewCapacityStatIcon {
+  font-size: 1.4rem;
+}
+
+.piReviewCapacityStatValue {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.piReviewCapacityStatLabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.piReviewCapacityMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.piReviewCapacityMetaPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.piReviewCapacityRoleList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.piReviewCapacityRolePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.piReviewCapacityRoleDev {
+  border-color: color-mix(in srgb, #2563eb 40%, var(--color-border));
+  background: color-mix(in srgb, #2563eb 10%, var(--color-surface-2));
+}
+
+.piReviewCapacityRoleDevLead {
+  border-color: color-mix(in srgb, #1d4ed8 45%, var(--color-border));
+  background: color-mix(in srgb, #1d4ed8 12%, var(--color-surface-2));
+}
+
+.piReviewCapacityRoleQe {
+  border-color: color-mix(in srgb, #059669 45%, var(--color-border));
+  background: color-mix(in srgb, #059669 12%, var(--color-surface-2));
+}
+
+.piReviewCapacityRoleTestLead {
+  border-color: color-mix(in srgb, #10b981 45%, var(--color-border));
+  background: color-mix(in srgb, #10b981 12%, var(--color-surface-2));
+}
+
+.piReviewCapacityRoleBt {
+  border-color: color-mix(in srgb, #7c3aed 45%, var(--color-border));
+  background: color-mix(in srgb, #7c3aed 12%, var(--color-surface-2));
+}
+
+.piReviewCapacityRoleSl {
+  border-color: color-mix(in srgb, #9333ea 45%, var(--color-border));
+  background: color-mix(in srgb, #9333ea 12%, var(--color-surface-2));
+}
+
+.piReviewCapacityRoleSa {
+  border-color: color-mix(in srgb, #ea580c 45%, var(--color-border));
+  background: color-mix(in srgb, #ea580c 12%, var(--color-surface-2));
+}
+
+.piReviewCapacityRolePo {
+  border-color: color-mix(in srgb, #d97706 45%, var(--color-border));
+  background: color-mix(in srgb, #d97706 12%, var(--color-surface-2));
+}
+
+.piReviewCapacityRoleTpo {
+  border-color: color-mix(in srgb, #db2777 45%, var(--color-border));
+  background: color-mix(in srgb, #db2777 12%, var(--color-surface-2));
+}
+
+.piReviewCapacityRoleSm {
+  border-color: color-mix(in srgb, #0891b2 45%, var(--color-border));
+  background: color-mix(in srgb, #0891b2 12%, var(--color-surface-2));
+}
+
+.piReviewCapacityEmptyState {
+  display: grid;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-surface-2) 82%, transparent);
+}
+
 /* ── Settings panel ── */
 
 .settingsPanel {
@@ -762,6 +970,208 @@
   flex-shrink: 0;
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
+}
+
+.releaseAiActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.releaseNotesSection {
+  display: grid;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-accent) 6%, var(--color-surface-2)),
+    var(--color-surface-1)
+  );
+  box-shadow: var(--shadow-surface);
+}
+
+.releaseNotesHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  align-items: flex-start;
+}
+
+.releaseNotesHeaderActions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.releaseNotesExportButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 38%, var(--color-border));
+  border-radius: 999px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-accent) 18%, var(--color-surface-2)),
+    color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-1))
+  );
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--color-accent) 12%, transparent);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+
+.releaseNotesExportButton:hover {
+  border-color: var(--color-accent);
+  transform: translateY(-1px);
+}
+
+.releaseNotesTitle {
+  margin: 0 0 4px;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+}
+
+.releaseNotesSummary {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+}
+
+.releaseNotesBadge {
+  padding: 4px var(--spacing-sm);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.releaseNotesTableShell {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+}
+
+.releaseNotesTable {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 960px;
+}
+
+.releaseNotesTable th,
+.releaseNotesTable td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+  text-align: left;
+  font-size: var(--font-size-sm);
+}
+
+.releaseNotesTable th {
+  position: sticky;
+  top: 0;
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+
+.releaseNotesTable tbody tr:nth-child(odd) td {
+  background: color-mix(in srgb, var(--color-accent) 3%, var(--color-surface-1));
+}
+
+.releaseNotesItemCell {
+  display: grid;
+  gap: 6px;
+}
+
+.releaseNotesMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.releasePromptOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-lg);
+  background: rgb(0 0 0 / 60%);
+}
+
+.releasePromptModal,
+.releasePromptWideModal {
+  display: grid;
+  gap: var(--spacing-md);
+  width: min(720px, 92vw);
+  padding: var(--spacing-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  box-shadow: var(--shadow-floating);
+}
+
+.releasePromptModal {
+  width: min(360px, 92vw);
+}
+
+.releasePromptTitle {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+}
+
+.releasePromptInstructions {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.releasePromptInput,
+.releasePromptTextArea {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+
+.releasePromptInput {
+  padding: 10px 12px;
+}
+
+.releasePromptTextArea {
+  min-height: 280px;
+  padding: 12px;
+  resize: vertical;
+  font-family: monospace;
+  font-size: 13px;
+}
+
+.releasePromptActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
 }
 
 /* ── Standup tab ── */

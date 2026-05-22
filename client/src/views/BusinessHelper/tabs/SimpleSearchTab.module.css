@@ -1,0 +1,202 @@
+/* SimpleSearchTab.module.css — Styles for the Business Helper Simple Search business workflow. */
+
+.simpleSearchTab { display: flex; flex-direction: column; gap: var(--spacing-lg); }
+.sectionHeader { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+.sectionTitle { margin: 0; color: var(--color-text-primary); font-size: var(--font-size-lg); }
+.sectionSubtitle { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-md); }
+.controlsPanel { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(var(--spacing-xl) * 6), 1fr)); gap: var(--spacing-md); align-items: end; }
+.controlGroup { display: flex; flex-direction: column; gap: var(--spacing-xs); color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.controlInput,
+.controlSelect {
+  min-height: calc(var(--spacing-xl) + var(--spacing-md));
+  padding: 0 var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+}
+.buttonPrimary {
+  min-height: calc(var(--spacing-xl) + var(--spacing-md));
+  padding: 0 var(--spacing-lg);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-accent) 18%, var(--color-surface-1));
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  cursor: pointer;
+}
+.buttonPrimary:disabled { opacity: 0.6; cursor: wait; }
+.summaryBar {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+.statusMessage,
+.errorMessage {
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+}
+.statusMessage {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+}
+.errorMessage {
+  border: 1px solid color-mix(in srgb, var(--color-danger, #ef4444) 50%, var(--color-border));
+  background: color-mix(in srgb, var(--color-danger, #ef4444) 10%, var(--color-surface-1));
+  color: var(--color-text-primary);
+}
+.groupStack { display: flex; flex-direction: column; gap: var(--spacing-md); }
+.groupCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
+}
+.groupHeader { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-md); }
+.groupTitle { margin: 0; color: var(--color-text-primary); font-size: var(--font-size-md); }
+.tableScroll { overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius-lg); }
+.table { width: 100%; border-collapse: collapse; min-width: calc(var(--spacing-xl) * 26); background: var(--color-surface-1); }
+.tableHeader { background: var(--color-surface-2); color: var(--color-text-secondary); text-align: left; }
+.tableHeader th,
+.tableCell,
+.cellSummary,
+.cellMonospace,
+.emptyState,
+.detailCell { padding: var(--spacing-sm) var(--spacing-md); border-bottom: 1px solid var(--color-border); }
+.tableRow { background: var(--color-surface-1); }
+.tableRowExpanded { background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-1)); }
+.detailRow { background: color-mix(in srgb, var(--color-surface-2) 70%, var(--color-surface-1)); }
+.detailCell { padding: var(--spacing-md); }
+.cellSummary { min-width: calc(var(--spacing-xl) * 10); color: var(--color-text-primary); }
+.cellMonospace { font-family: var(--font-family-mono, 'Consolas', monospace); }
+.tableCell { color: var(--color-text-primary); }
+.expandButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-accent);
+  font: inherit;
+  cursor: pointer;
+}
+.expandIcon { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.infoBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+.detailPanel { display: flex; flex-direction: column; gap: var(--spacing-md); }
+.descriptionSection {
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+}
+.descriptionText {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.relationshipGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(var(--spacing-xl) * 9), 1fr)); gap: var(--spacing-md); }
+.relationshipSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+}
+.childSection { border-left: 3px solid var(--color-accent); }
+.linkedSection { border-left: 3px solid var(--color-cyan, #22d3ee); }
+.relationshipHeader { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); }
+.relationshipTitle { margin: 0; color: var(--color-text-primary); font-size: var(--font-size-sm); }
+.relationshipList { display: flex; flex-direction: column; gap: var(--spacing-sm); margin: 0; padding: 0; list-style: none; }
+.relationshipItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+}
+.relationshipRow {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  align-items: center;
+}
+.relationshipBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
+  border-radius: var(--radius-pill, 999px);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.relationshipExpandButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-accent);
+  font: inherit;
+  cursor: pointer;
+}
+.childBadge {
+  background: color-mix(in srgb, var(--color-accent) 18%, var(--color-surface-1));
+  color: var(--color-text-primary);
+}
+.linkedBadge {
+  background: color-mix(in srgb, var(--color-cyan, #22d3ee) 18%, var(--color-surface-1));
+  color: var(--color-text-primary);
+}
+.relationshipKey { color: var(--color-accent); text-decoration: none; font-family: var(--font-family-mono, 'Consolas', monospace); }
+.relationshipKey:hover { text-decoration: underline; }
+.relationshipBrowseLink {
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  font-size: var(--font-size-sm);
+}
+.relationshipBrowseLink:hover {
+  text-decoration: underline;
+}
+.relationshipSummary { color: var(--color-text-primary); }
+.relationshipMeta { grid-column: 2 / span 3; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.relationshipEmptyState { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.relationshipDetailPanel {
+  margin-left: calc(var(--spacing-lg) + var(--spacing-sm));
+  padding-left: var(--spacing-md);
+  border-left: 2px solid var(--color-border);
+}
+.relationshipDescription {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.emptyState { color: var(--color-text-secondary); text-align: center; }

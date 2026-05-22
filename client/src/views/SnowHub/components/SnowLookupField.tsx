@@ -11,6 +11,8 @@ import styles from './SnowLookupField.module.css';
 const DEBOUNCE_DELAY_MS = 300;
 // Maximum number of suggestions shown beneath the input at one time.
 const MAX_LOOKUP_RESULTS = 10;
+// Start searching as soon as the user types one meaningful character so CI lookups feel responsive.
+const MIN_LOOKUP_SEARCH_LENGTH = 1;
 
 /** Names of SNow tables that this component can search. */
 export type SnowLookupTable = 'sys_user' | 'sys_user_group' | 'cmdb_ci';
@@ -137,7 +139,7 @@ export function SnowLookupField({
 
   const searchSnow = useCallback(
     async (searchText: string) => {
-      if (searchText.trim().length < 2) {
+      if (searchText.trim().length < MIN_LOOKUP_SEARCH_LENGTH) {
         setSuggestions([]);
         setIsOpen(false);
         return;

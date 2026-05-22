@@ -72,6 +72,16 @@
   background: var(--color-surface-2);
 }
 
+.toolTextSizeGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-2);
+}
+
 .demoModeBadge {
   display: inline-flex;
   align-items: center;
@@ -117,11 +127,41 @@
   color: var(--color-text-on-accent);
 }
 
+.toolTextSizeButton {
+  min-width: 40px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.toolTextSizeButton:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.toolTextSizeButtonActive {
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
 .mainContent {
   flex: 1;
   /* Allow the shared app body to become the real scroll container for sticky tool tabs. */
   min-height: 0;
   overflow: auto;
+}
+
+.toolContent {
+  width: var(--tool-text-width);
+  min-height: var(--tool-text-min-height);
+  /* Keep sticky tab bars anchored to the shared scroll container when users enlarge tool text. */
+  zoom: var(--tool-text-zoom);
 }
 
 .placeholderView {

@@ -79,6 +79,13 @@ describe('fetchConfluencePage', () => {
     mockFetchOnce({ message: 'Unauthorized' }, false, 401);
     await expect(fetchConfluencePage('12345')).rejects.toThrow('Confluence GET page 12345 failed: Unauthorized');
   });
+
+  it('surfaces actionable guidance when the configured Confluence host cannot be resolved', async () => {
+    mockFetchOnce({ message: 'getaddrinfo ENOTFOUND zilverton.atlassian.net' }, false, 502);
+    await expect(fetchConfluencePage('12345')).rejects.toThrow(
+      'Confluence GET page 12345 failed: Could not resolve the configured Confluence host. Check the Confluence base URL, VPN/DNS access, and Atlassian tenant name. Original error: getaddrinfo ENOTFOUND zilverton.atlassian.net',
+    );
+  });
 });
 
 describe('resolveConfluencePageIdFromReference', () => {

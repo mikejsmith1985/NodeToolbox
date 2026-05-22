@@ -74,6 +74,16 @@ export const APP_CARDS: AppCardDef[] = [
     sectionKey: 'agile',
   },
   {
+    id: 'business-helper',
+    route: '/business-helper',
+    icon: '💼',
+    title: 'Business Helper',
+    description:
+      'Business-friendly Jira utilities — start with a simple keyword search across supported Jira levels.',
+    tags: ['Jira', 'Search', 'Business'],
+    sectionKey: 'agile',
+  },
+  {
     id: 'dev-workspace',
     route: '/dev-workspace',
     icon: '🏗',
@@ -149,6 +159,7 @@ export const RECENT_VIEW_LABELS: Record<string, string> = {
   art: '🚂 ART View',
   'my-issues': '📊 My Issues',
   'personal-toolbox': '🧰 Personal Toolbox',
+  'business-helper': '💼 Business Helper',
   'dev-workspace': '🏗 Dev Workspace',
   'snow-hub': '❄️ SNow Hub',
   'text-tools': '🛠 Text Tools',

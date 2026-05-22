@@ -1,4 +1,4 @@
-// useRovoAssist.test.ts — Unit tests for the Rovo AI prompt generator hook.
+// useRovoAssist.test.ts — Unit tests for the hidden Rovo prompt generator hook.
 
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
@@ -92,7 +92,7 @@ describe('useRovoAssist', () => {
     expect(result.current.isUnlocked).toBe(false);
   });
 
-  it('buildPrompt returns a non-empty string containing the expected AI instruction', () => {
+  it('buildPrompt returns a non-empty string containing the expected prompt instruction', () => {
     const { result } = renderHook(() => useRovoAssist());
     const selectedIssues = [createMockJiraIssue('TOOL-1', 'Fix critical bug')];
 

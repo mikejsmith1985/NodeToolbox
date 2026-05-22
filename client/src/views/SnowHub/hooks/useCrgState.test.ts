@@ -742,6 +742,81 @@ describe('useCrgState', () => {
       expect(result.current.state.isSubmitting).toBe(false);
     });
 
+    it('creates one CHG per enabled environment using that environment configuration', async () => {
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({ result: { number: 'CHG0002001', sys_id: 'chg-rel-001' } } as never)
+        .mockResolvedValueOnce({ result: [] } as never)
+        .mockResolvedValueOnce({ result: { number: 'CHG0002002', sys_id: 'chg-prd-001' } } as never)
+        .mockResolvedValueOnce({ result: [] } as never)
+        .mockResolvedValueOnce({ result: { number: 'CHG0002003', sys_id: 'chg-pfix-001' } } as never)
+        .mockResolvedValueOnce({ result: [] } as never);
+
+      const { result } = await advanceToChangeDetailsStep();
+
+      act(() => {
+        result.current.actions.updateEnvironment('rel', {
+          isEnabled: true,
+          configItem: { sysId: 'ci-rel-001', displayName: 'REL CI' },
+          impactedPersonsAware: 'rel-aware',
+          plannedStartDate: '2025-02-01T08:00',
+          plannedEndDate: '2025-02-01T09:00',
+        });
+        result.current.actions.updateEnvironment('prd', {
+          isEnabled: true,
+          configItem: { sysId: 'ci-prd-001', displayName: 'PRD CI' },
+          impactedPersonsAware: 'prd-aware',
+          plannedStartDate: '2025-02-02T08:00',
+          plannedEndDate: '2025-02-02T09:00',
+        });
+        result.current.actions.updateEnvironment('pfix', {
+          isEnabled: true,
+          configItem: { sysId: 'ci-pfix-001', displayName: 'PFIX CI' },
+          impactedPersonsAware: 'pfix-aware',
+          plannedStartDate: '2025-02-03T08:00',
+          plannedEndDate: '2025-02-03T09:00',
+        });
+      });
+
+      await act(async () => {
+        await result.current.actions.createChg({
+          rel: 'rel-env',
+          prd: 'prd-env',
+          pfix: 'pfix-env',
+        });
+      });
+
+      const createCalls = vi.mocked(snowFetch).mock.calls.filter(
+        ([requestPath]) => requestPath === '/api/now/table/change_request',
+      );
+
+      expect(createCalls).toHaveLength(3);
+
+      const relPayload = JSON.parse((createCalls[0]?.[1] as RequestInit).body as string) as Record<string, unknown>;
+      const prdPayload = JSON.parse((createCalls[1]?.[1] as RequestInit).body as string) as Record<string, unknown>;
+      const pfixPayload = JSON.parse((createCalls[2]?.[1] as RequestInit).body as string) as Record<string, unknown>;
+
+      expect(relPayload.u_environment).toBe('rel-env');
+      expect(relPayload.cmdb_ci).toBe('ci-rel-001');
+      expect(relPayload.u_impacted_persons_aware).toBe('rel-aware');
+      expect(relPayload.planned_start_date).toBe('2025-02-01T08:00');
+      expect(relPayload.planned_end_date).toBe('2025-02-01T09:00');
+
+      expect(prdPayload.u_environment).toBe('prd-env');
+      expect(prdPayload.cmdb_ci).toBe('ci-prd-001');
+      expect(prdPayload.u_impacted_persons_aware).toBe('prd-aware');
+      expect(prdPayload.planned_start_date).toBe('2025-02-02T08:00');
+      expect(prdPayload.planned_end_date).toBe('2025-02-02T09:00');
+
+      expect(pfixPayload.u_environment).toBe('pfix-env');
+      expect(pfixPayload.cmdb_ci).toBe('ci-pfix-001');
+      expect(pfixPayload.u_impacted_persons_aware).toBe('pfix-aware');
+      expect(pfixPayload.planned_start_date).toBe('2025-02-03T08:00');
+      expect(pfixPayload.planned_end_date).toBe('2025-02-03T09:00');
+      expect(result.current.state.submitResult).toBe(
+        '3 CHGs created: REL CHG0002001, PRD CHG0002002, PFIX CHG0002003',
+      );
+    });
+
     it('creates selected CTASKs after the CHG is created', async () => {
       vi.mocked(snowFetch)
         .mockResolvedValueOnce({ result: { number: 'CHG0001234', sys_id: 'chg-sys-001' } } as never)

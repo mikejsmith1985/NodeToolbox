@@ -16,6 +16,19 @@
   background: var(--color-surface-1);
 }
 
+.teamTabsSection {
+  display: grid;
+  gap: 12px;
+}
+
+.teamPanelShell {
+  display: grid;
+}
+
+.teamPanelShell[hidden] {
+  display: none;
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -66,6 +79,87 @@
   align-items: center;
 }
 
+.authoringLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid rgba(56, 189, 248, 0.7);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.18), rgba(56, 189, 248, 0.16));
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.16), 0 10px 24px rgba(14, 165, 233, 0.14);
+  color: #38bdf8;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.actionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.actionButton:hover:not(:disabled),
+.authoringLink:hover {
+  transform: translateY(-1px);
+}
+
+.actionButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+
+.actionButtonPrimary {
+  border-color: rgba(56, 189, 248, 0.72);
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(14, 165, 233, 0.16));
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.14), 0 10px 24px rgba(14, 165, 233, 0.14);
+  color: #38bdf8;
+}
+
+.actionButtonSecondary {
+  border-color: rgba(148, 163, 184, 0.45);
+  background: linear-gradient(135deg, rgba(148, 163, 184, 0.14), rgba(100, 116, 139, 0.08));
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.1);
+  color: var(--color-text);
+}
+
+.actionButtonExport {
+  border-color: rgba(168, 85, 247, 0.48);
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.16), rgba(99, 102, 241, 0.12));
+  box-shadow: 0 10px 22px rgba(99, 102, 241, 0.12);
+  color: #a855f7;
+}
+
+.actionButtonSuccess {
+  border-color: rgba(34, 197, 94, 0.58);
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.18), rgba(16, 185, 129, 0.14));
+  box-shadow: 0 10px 22px rgba(16, 185, 129, 0.12);
+  color: #22c55e;
+}
+
+.actionButtonDanger {
+  border-color: rgba(244, 63, 94, 0.52);
+  background: linear-gradient(135deg, rgba(244, 63, 94, 0.16), rgba(251, 113, 133, 0.12));
+  box-shadow: 0 10px 22px rgba(244, 63, 94, 0.12);
+  color: #f43f5e;
+}
+
 .dirtyBadge {
   padding: 4px 10px;
   border-radius: 999px;
@@ -80,6 +174,7 @@
   border: 1px solid var(--color-border);
   border-radius: 12px;
   background: var(--color-surface-1);
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.08);
 }
 
 .documentStats {
@@ -111,11 +206,19 @@
 }
 
 .dataTable th {
-  background: var(--color-surface-2);
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(168, 85, 247, 0.1));
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--color-text-secondary);
+}
+
+.dataTable tbody tr:nth-child(odd) td {
+  background: rgba(56, 189, 248, 0.03);
+}
+
+.dataTable tbody tr:hover td {
+  background: rgba(168, 85, 247, 0.06);
 }
 
 .cellInput,
@@ -145,6 +248,28 @@
 
 .readOnlyValue {
   color: var(--color-text);
+}
+
+.checkboxDisplayValue {
+  display: inline-flex;
+  min-width: 24px;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-tone-neutral-bg);
+  box-shadow: inset 0 1px 0 var(--color-surface-highlight);
+  font-size: 18px;
+  font-weight: 800;
+  color: transparent;
+}
+
+.checkboxDisplayValueChecked {
+  border-color: var(--color-success);
+  background: linear-gradient(135deg, var(--color-tone-success-bg), var(--color-surface-2));
+  box-shadow: var(--glow-success);
+  color: var(--color-success);
 }
 
 .readOnlyMultilineValue {
@@ -177,6 +302,62 @@
   gap: 6px;
 }
 
+.featureDisplayValue {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.1), rgba(168, 85, 247, 0.06));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.featureDatePillList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.featureDatePill {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: var(--color-surface-2);
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.12);
+  color: var(--color-text);
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+.featureDatePillStart {
+  border-color: rgba(56, 189, 248, 0.42);
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(14, 165, 233, 0.08));
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.14);
+  color: #38bdf8;
+}
+
+.featureDatePillEnd {
+  border-color: rgba(168, 85, 247, 0.42);
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.16), rgba(139, 92, 246, 0.08));
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.14);
+  color: #a855f7;
+}
+
+.featureDatePillDue {
+  border-color: rgba(245, 158, 11, 0.42);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(234, 179, 8, 0.08));
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.14);
+  color: #f59e0b;
+}
+
+.featureDatePillFixVersion {
+  border-color: rgba(34, 197, 94, 0.42);
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.18), rgba(22, 163, 74, 0.08));
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.14);
+  color: #22c55e;
+}
+
 .syncedHelperText {
   font-size: 12px;
   color: var(--color-text-secondary);
@@ -206,6 +387,12 @@
   cursor: pointer;
 }
 
+.rowToolButtonActive {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft, rgba(59, 130, 246, 0.16));
+  color: var(--color-primary);
+}
+
 .rowToolButton:disabled {
   opacity: 0.6;
   cursor: default;
@@ -225,19 +412,23 @@
   cursor: default;
 }
 
-.commitmentBoundaryRow td {
+.dataTable tbody .commitmentBoundaryRow td {
   padding: 8px 12px;
-  border-top: 4px solid #facc15;
-  border-bottom: 4px solid #facc15;
-  background: #fef3c7;
-  color: #5f4300;
+  border-top: 3px solid #facc15;
+  border-bottom: 3px solid #facc15;
+  background: rgba(250, 204, 21, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.2);
+  color: #facc15;
   text-align: center;
+  font-weight: 700;
+  text-shadow: 0 1px 0 rgba(15, 23, 42, 0.55);
 }
 
 .commitmentBoundaryRow span,
 .commitmentBoundaryRow strong {
   display: inline-flex;
   margin: 0 10px;
+  align-items: center;
 }
 
 .customGroupingLineRow td {
@@ -245,6 +436,84 @@
   border-top: 3px solid transparent;
   border-bottom: 3px solid transparent;
   text-align: center;
+}
+
+.inlineGroupingLineEditor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+}
+
+.inlineGroupingLineInput {
+  min-width: 220px;
+  max-width: 420px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-1);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.inlineGroupingLineMenu {
+  position: relative;
+}
+
+.inlineGroupingLineMenuButton {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-1);
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.inlineGroupingLinePalette {
+  position: absolute;
+  right: 0;
+  z-index: 2;
+  display: grid;
+  gap: 8px;
+  min-width: 170px;
+  margin-top: 6px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-1);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
+}
+
+.inlineGroupingLineColorOption {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-1);
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.inlineGroupingLineColorOptionActive {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft, rgba(59, 130, 246, 0.16));
+  color: var(--color-primary);
+}
+
+.inlineGroupingLineSwatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
 }
 
 .recoveryCard,
@@ -255,11 +524,13 @@
   border: 1px solid var(--color-warning, #f59e0b);
   border-radius: 12px;
   background: var(--color-warning-soft, rgba(245, 158, 11, 0.12));
+  box-shadow: 0 14px 28px rgba(245, 158, 11, 0.1);
 }
 
 .confirmCard {
   border-color: var(--color-danger);
   background: var(--color-danger-soft, rgba(239, 68, 68, 0.12));
+  box-shadow: 0 14px 28px rgba(239, 68, 68, 0.1);
 }
 
 .confirmActions {
@@ -299,50 +570,6 @@
   border-color: var(--color-primary);
   background: var(--color-primary-soft, rgba(59, 130, 246, 0.16));
   color: var(--color-primary);
-}
-
-.groupingLineEditor,
-.groupingLineList {
-  display: grid;
-  gap: 10px;
-}
-
-.groupingLineEditor {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  align-items: end;
-}
-
-.groupingLineCard {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  background: var(--color-surface-1);
-  align-items: end;
-}
-
-.groupingLineField {
-  display: grid;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--color-text-secondary);
-}
-
-.groupingLineSelect,
-.groupingLineColorInput {
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-surface-1);
-  color: var(--color-text);
-  font: inherit;
-  min-height: 40px;
-}
-
-.groupingLineColorInput {
-  width: 100%;
-  padding: 4px;
 }
 
 .capacityPanel {
@@ -430,6 +657,28 @@
   gap: 10px;
 }
 
+.confidenceVoteEditor {
+  display: grid;
+  gap: 10px;
+}
+
+.confidenceVoteInputLabel {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.confidenceVoteNumberInput {
+  width: 140px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-1);
+  color: var(--color-text);
+  font: inherit;
+  padding: 8px 10px;
+}
+
 .readOnlyVote {
   display: inline-flex;
   gap: 10px;
@@ -438,45 +687,61 @@
 }
 
 .fistOption {
+  --fist-rest-fill: var(--color-text-secondary);
+  --fist-rest-stroke: var(--color-text-primary);
+  --fist-raised-fill: var(--color-cyan);
+  --fist-raised-stroke: var(--color-bg-top);
   display: grid;
   justify-items: center;
   gap: 6px;
   min-width: 72px;
   padding: 10px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: 10px;
-  background: var(--color-surface-1);
+  background: linear-gradient(135deg, var(--color-surface-3), var(--color-surface-1));
   color: var(--color-text);
   cursor: pointer;
+  box-shadow: var(--shadow-surface);
 }
 
 .fistOptionSelected {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px var(--color-primary);
+  border-color: var(--color-cyan);
+  box-shadow: var(--glow-cyan), var(--shadow-surface);
+  background: linear-gradient(135deg, var(--color-icon-bg), var(--color-surface-2));
 }
 
 .fistIcon {
-  width: 42px;
-  height: 42px;
+  width: 48px;
+  height: 48px;
+  filter: drop-shadow(0 0 8px var(--color-accent-soft)) drop-shadow(0 3px 4px rgba(15, 23, 42, 0.24));
 }
 
 .palmShape,
 .thumbShape {
-  fill: var(--color-surface-3, #d6dbe6);
-  stroke: var(--color-border-strong, var(--color-border));
-  stroke-width: 2;
+  fill: var(--fist-rest-fill);
+  stroke: var(--fist-rest-stroke);
+  stroke-width: 2.5;
+  opacity: 1;
 }
 
 .fingerRaised {
-  fill: var(--color-primary);
-  stroke: var(--color-primary);
-  stroke-width: 1;
+  fill: var(--fist-raised-fill);
+  stroke: var(--fist-raised-stroke);
+  stroke-width: 1.75;
+}
+
+.fingerPartialBase {
+  fill: var(--fist-rest-fill);
+  stroke: var(--fist-rest-stroke);
+  stroke-width: 1.25;
+  opacity: 1;
 }
 
 .fingerFolded {
-  fill: var(--color-surface-3, #b9c0cf);
-  stroke: var(--color-border-strong, var(--color-border));
-  stroke-width: 1;
+  fill: var(--fist-rest-fill);
+  stroke: var(--fist-rest-stroke);
+  stroke-width: 1.25;
+  opacity: 1;
 }
 
 .fistOptionLabel {

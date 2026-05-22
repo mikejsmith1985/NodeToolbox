@@ -10,7 +10,9 @@ const FEATURE_QUERY_BATCH_SIZE = 50;
 const FEATURE_KEY_PATTERN = /\b[A-Z][A-Z0-9]+-\d+\b/i;
 const BLANKISH_TEXT_VALUES = new Set(['', 'n/a', 'na', 'none', 'no', '-', '--']);
 const BLOCKED_RISK_KEYWORDS = ['block', 'impediment', 'risk'];
-const LINK_FIELDS = [
+const DEFAULT_PI_REVIEW_TARGET_START_FIELD_ID = 'customfield_10101';
+const DEFAULT_PI_REVIEW_TARGET_END_FIELD_ID = 'customfield_10102';
+const DEFAULT_LINK_FIELDS = [
   'summary',
   'priority',
   'updated',
@@ -18,15 +20,28 @@ const LINK_FIELDS = [
   'labels',
   'issuelinks',
   'customfield_10111',
-].join(',');
+  'duedate',
+  'fixVersions',
+];
+const TARGET_START_LABEL = 'Target Start';
+const TARGET_END_LABEL = 'Target End';
+const DUE_DATE_LABEL = 'Due Date';
+const FIX_VERSION_LABEL = 'Fix Version';
 
 interface ArtAdvancedSettings {
   depLinkTypes?: string[];
+  piReviewTargetStartFieldId?: string;
+  piReviewTargetEndFieldId?: string;
 }
 
 export interface PiReviewEstimateUpdate {
   featureKey: string;
   estimate: number;
+}
+
+export interface PiReviewFeatureDatePill {
+  label: string;
+  value: string;
 }
 
 export interface PiReviewJiraReconciliationResult {
@@ -51,8 +66,38 @@ function readArtSettings(): ArtAdvancedSettings {
   }
 }
 
+function readConfiguredFieldId(fieldValue: string | undefined): string | null {
+  const trimmedFieldValue = fieldValue?.trim() ?? '';
+  return trimmedFieldValue === '' ? null : trimmedFieldValue;
+}
+
+function readDefaultedFieldId(fieldValue: string | undefined, defaultFieldId: string): string {
+  return readConfiguredFieldId(fieldValue) ?? defaultFieldId;
+}
+
+function readPiReviewDateFieldIds(): { targetStartFieldId: string | null; targetEndFieldId: string | null } {
+  const artSettings = readArtSettings();
+  return {
+    targetStartFieldId: readDefaultedFieldId(
+      artSettings.piReviewTargetStartFieldId,
+      DEFAULT_PI_REVIEW_TARGET_START_FIELD_ID,
+    ),
+    targetEndFieldId: readDefaultedFieldId(
+      artSettings.piReviewTargetEndFieldId,
+      DEFAULT_PI_REVIEW_TARGET_END_FIELD_ID,
+    ),
+  };
+}
+
+function createFeatureQueryFields(): string {
+  const { targetStartFieldId, targetEndFieldId } = readPiReviewDateFieldIds();
+  return Array.from(
+    new Set([...DEFAULT_LINK_FIELDS, targetStartFieldId, targetEndFieldId].filter((fieldName): fieldName is string => Boolean(fieldName))),
+  ).join(',');
+}
+
 function createIssueSearchPath(issueKeys: string[]): string {
-  return `/rest/api/2/search?jql=${encodeURIComponent(`key in (${issueKeys.join(',')})`)}&fields=${encodeURIComponent(LINK_FIELDS)}&maxResults=${Math.max(200, issueKeys.length)}`;
+  return `/rest/api/2/search?jql=${encodeURIComponent(`key in (${issueKeys.join(',')})`)}&fields=${encodeURIComponent(createFeatureQueryFields())}&maxResults=${Math.max(200, issueKeys.length)}`;
 }
 
 function normalizeLinkTypeNames(issueLink: JiraIssueLink): string[] {
@@ -67,6 +112,28 @@ function readLinkedIssue(issueLink: JiraIssueLink): JiraIssueLink['inwardIssue']
 
 function formatEstimateValue(estimateValue: number): string {
   return Number.isInteger(estimateValue) ? String(estimateValue) : String(Number(estimateValue.toFixed(2)));
+}
+
+function normalizeJiraDateValue(rawDateValue: unknown): string | null {
+  if (typeof rawDateValue !== 'string') {
+    return null;
+  }
+
+  const trimmedDateValue = rawDateValue.trim();
+  if (trimmedDateValue === '') {
+    return null;
+  }
+
+  const matchedIsoDate = trimmedDateValue.match(/^\d{4}-\d{2}-\d{2}/);
+  return matchedIsoDate ? matchedIsoDate[0] : trimmedDateValue;
+}
+
+function readConfiguredDateFieldValue(jiraIssue: JiraIssue, fieldId: string | null): string | null {
+  if (!fieldId) {
+    return null;
+  }
+
+  return normalizeJiraDateValue((jiraIssue.fields as Record<string, unknown>)[fieldId]);
 }
 
 function formatLinkedIssue(issueLink: JiraIssueLink): string | null {
@@ -200,6 +267,24 @@ export function formatPiReviewFeatureDisplayValue(featureCellValue: string, jira
 
   const jiraSummary = jiraIssue?.fields.summary?.trim();
   return jiraSummary ? `${featureKey} - ${jiraSummary}` : featureKey;
+}
+
+/** Builds the Feature-column date pills from Jira so PI Review can surface planned dates without extra board-hopping. */
+export function readPiReviewFeatureDatePills(jiraIssue: JiraIssue | undefined): PiReviewFeatureDatePill[] {
+  if (!jiraIssue) {
+    return [];
+  }
+
+  const { targetStartFieldId, targetEndFieldId } = readPiReviewDateFieldIds();
+  const firstFixVersionName = jiraIssue.fields.fixVersions?.find((fixVersion) => fixVersion.name.trim() !== '')?.name ?? null;
+  const datePills = [
+    { label: TARGET_START_LABEL, value: readConfiguredDateFieldValue(jiraIssue, targetStartFieldId) },
+    { label: TARGET_END_LABEL, value: readConfiguredDateFieldValue(jiraIssue, targetEndFieldId) },
+    { label: DUE_DATE_LABEL, value: normalizeJiraDateValue(jiraIssue.fields.duedate) },
+    { label: FIX_VERSION_LABEL, value: firstFixVersionName },
+  ];
+
+  return datePills.filter((datePill): datePill is PiReviewFeatureDatePill => datePill.value !== null);
 }
 
 /** Fetches the Jira feature issues referenced by the current PI Review rows in small search batches. */

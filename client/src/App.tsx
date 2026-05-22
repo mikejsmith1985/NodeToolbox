@@ -12,10 +12,12 @@ import { useProxyStatus } from './hooks/useProxyStatus.ts';
 import { useRelayBridge } from './hooks/useRelayBridge.ts';
 import { parseRelayReturnRoute, RELAY_RETURN_ROUTE_KEY } from './services/browserRelay.ts';
 import { useSettingsStore } from './store/settingsStore.ts';
+import type { ToolTextSize } from './store/settingsStore.ts';
 import type { RelaySystem } from './types/relay.ts';
 import { disableDemoModeForCurrentTab, isDemoModeEnabled } from './utils/demoModeStorage.ts';
 import ArtView from './views/ArtView/ArtView.tsx';
 import AdminHubView from './views/AdminHub/AdminHubView.tsx';
+import BusinessHelperView from './views/BusinessHelper/BusinessHelperView.tsx';
 import CodeWalkthroughView from './views/CodeWalkthrough/CodeWalkthroughView.tsx';
 import DevWorkspaceView from './views/DevWorkspace/DevWorkspaceView.tsx';
 import DsuBoardView from './views/DsuBoard/DsuBoardView.tsx';
@@ -43,8 +45,24 @@ const CODE_WALKTHROUGH_ROUTE = '/code-walkthrough';
 const TEXT_TOOLS_ROUTE = '/text-tools';
 const REPORTS_HUB_ROUTE = '/reports-hub';
 const ADMIN_HUB_ROUTE = '/admin-hub';
+const BUSINESS_HELPER_ROUTE = '/business-helper';
 const DEFAULT_ROUTE = HOME_ROUTE;
 const RELAY_SYSTEM: RelaySystem = 'snow';
+const DEFAULT_TOOL_TEXT_SIZE: ToolTextSize = 'default';
+const LARGE_TOOL_TEXT_SIZE: ToolTextSize = 'large';
+const EXTRA_LARGE_TOOL_TEXT_SIZE: ToolTextSize = 'extra-large';
+
+interface ToolTextSizeButtonConfig {
+  ariaLabel: string;
+  label: string;
+  toolTextSize: ToolTextSize;
+}
+
+const TOOL_TEXT_SIZE_BUTTONS: readonly ToolTextSizeButtonConfig[] = [
+  { ariaLabel: 'Default text size', label: 'A', toolTextSize: DEFAULT_TOOL_TEXT_SIZE },
+  { ariaLabel: 'Large text size', label: 'A+', toolTextSize: LARGE_TOOL_TEXT_SIZE },
+  { ariaLabel: 'Extra large text size', label: 'A++', toolTextSize: EXTRA_LARGE_TOOL_TEXT_SIZE },
+];
 
 /** Root layout shell for the React migration, including live status hooks and route selection. */
 export default function App() {
@@ -68,7 +86,9 @@ export default function App() {
   }, [navigate]);
 
   const theme = useSettingsStore((state) => state.theme);
+  const toolTextSize = useSettingsStore((state) => state.toolTextSize);
   const setTheme = useSettingsStore((state) => state.setTheme);
+  const setToolTextSize = useSettingsStore((state) => state.setToolTextSize);
 
   function handleExitDemoMode() {
     disableDemoModeForCurrentTab();
@@ -79,6 +99,10 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-tool-text-size', toolTextSize);
+  }, [toolTextSize]);
 
   return (
     <ToastProvider>
@@ -117,12 +141,27 @@ export default function App() {
                 Light
               </button>
             </div>
+            <div aria-label="Tool text size" className={styles.toolTextSizeGroup} role="group">
+              {TOOL_TEXT_SIZE_BUTTONS.map(({ ariaLabel, label, toolTextSize: buttonToolTextSize }) => (
+                <button
+                  key={buttonToolTextSize}
+                  aria-label={ariaLabel}
+                  aria-pressed={toolTextSize === buttonToolTextSize}
+                  className={`${styles.toolTextSizeButton} ${toolTextSize === buttonToolTextSize ? styles.toolTextSizeButtonActive : ''}`}
+                  onClick={() => setToolTextSize(buttonToolTextSize)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <ConnectionBar />
           </div>
         </header>
 
         <main className={styles.mainContent}>
-          <Routes>
+          <div className={styles.toolContent}>
+            <Routes>
           <Route path={HOME_ROUTE} element={<HomeView />} />
           <Route path={SETTINGS_ROUTE} element={<SettingsView />} />
           <Route path={SNOW_HUB_ROUTE} element={<SnowHubView />} />
@@ -136,6 +175,7 @@ export default function App() {
           <Route path={TEXT_TOOLS_ROUTE} element={<TextToolsView />} />
           <Route path={REPORTS_HUB_ROUTE} element={<ReportsHubView />} />
           <Route path={ADMIN_HUB_ROUTE} element={<AdminHubView />} />
+          <Route path={BUSINESS_HELPER_ROUTE} element={<BusinessHelperView />} />
           <Route path="/sprint-planning" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
           <Route path="/pointing" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
           <Route path="/standup" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
@@ -151,7 +191,8 @@ export default function App() {
           <Route path="/impact-analysis" element={<Navigate to={REPORTS_HUB_ROUTE} replace />} />
           <Route path="/dev-panel" element={<Navigate to={ADMIN_HUB_ROUTE} replace />} />
             <Route path="*" element={<Navigate to={DEFAULT_ROUTE} replace />} />
-          </Routes>
+            </Routes>
+          </div>
         </main>
       </div>
     </ToastProvider>

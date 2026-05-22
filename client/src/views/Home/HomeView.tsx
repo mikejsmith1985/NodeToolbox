@@ -71,7 +71,7 @@ function SortableCard({ cardDef, handleCardSelection }: SortableCardProps) {
   } as HTMLAttributes<HTMLDivElement>;
 
   return (
-    <div ref={setNodeRef} style={sortableStyle} onClickCapture={() => handleCardSelection(cardDef.id)}>
+    <div className={styles.cardSlot} ref={setNodeRef} style={sortableStyle} onClickCapture={() => handleCardSelection(cardDef.id)}>
       <AppCard
         id={cardDef.id}
         icon={cardDef.icon}

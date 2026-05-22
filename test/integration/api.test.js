@@ -5,6 +5,7 @@
 
 const request = require('supertest');
 const express = require('express');
+const nock = require('nock');
 const { applyCorsHeaders }  = require('../../src/middleware/cors');
 const createApiRouter        = require('../../src/routes/api');
 const snowSession            = require('../../src/services/snowSession');
@@ -225,6 +226,84 @@ describe('GET /api/proxy-status — version accuracy', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.version).toBe(expectedVersion);
+  });
+});
+
+// ── /api/version-check ────────────────────────────────────────────────────────
+
+describe('GET /api/version-check', () => {
+  const minimalConfiguration = {
+    jira: { baseUrl: '', pat: '' },
+    snow: { baseUrl: '', username: '', password: '' },
+    github: { pat: '' },
+    sslVerify: true,
+  };
+
+  afterEach(() => nock.cleanAll());
+
+  it('returns the latest version and release notes from the GitHub API when the API responds', async () => {
+    nock('https://api.github.com')
+      .get('/repos/mikejsmith1985/NodeToolbox/releases/latest')
+      .reply(200, {
+        tag_name: 'v9.9.9',
+        body: 'Release notes from the API.',
+      });
+
+    nock('https://github.com')
+      .head('/mikejsmith1985/NodeToolbox/releases/latest')
+      .reply(302, undefined, {
+        Location: 'https://github.com/mikejsmith1985/NodeToolbox/releases/tag/v9.9.9',
+      });
+
+    const response = await request(buildTestApp(minimalConfiguration))
+      .get('/api/version-check');
+
+    expect(response.status).toBe(200);
+    expect(response.body.latestVersion).toBe('9.9.9');
+    expect(response.body.hasUpdate).toBe(true);
+    expect(response.body.releaseNotes).toBe('Release notes from the API.');
+  });
+
+  it('falls back to the public GitHub release redirect when the API request fails', async () => {
+    nock('https://api.github.com')
+      .get('/repos/mikejsmith1985/NodeToolbox/releases/latest')
+      .replyWithError('socket hang up');
+
+    nock('https://github.com')
+      .head('/mikejsmith1985/NodeToolbox/releases/latest')
+      .reply(302, undefined, {
+        Location: 'https://github.com/mikejsmith1985/NodeToolbox/releases/tag/v9.9.9',
+      });
+
+    const response = await request(buildTestApp(minimalConfiguration))
+      .get('/api/version-check');
+
+    expect(response.status).toBe(200);
+    expect(response.body.latestVersion).toBe('9.9.9');
+    expect(response.body.hasUpdate).toBe(true);
+    expect(response.body.releaseNotes).toContain('Version detected from the public GitHub release page');
+  });
+
+  it('returns a clear fallback message when both GitHub version-check paths fail', async () => {
+    const { version: expectedVersion } = require('../../package.json');
+
+    nock('https://api.github.com')
+      .get('/repos/mikejsmith1985/NodeToolbox/releases/latest')
+      .replyWithError('api unavailable');
+
+    nock('https://github.com')
+      .head('/mikejsmith1985/NodeToolbox/releases/latest')
+      .replyWithError('redirect unavailable');
+
+    const response = await request(buildTestApp(minimalConfiguration))
+      .get('/api/version-check');
+
+    expect(response.status).toBe(200);
+    expect(response.body.latestVersion).toBe(expectedVersion);
+    expect(response.body.hasUpdate).toBe(false);
+    expect(response.body.releaseNotes).toContain('Could not reach GitHub to check for updates.');
+    expect(response.body.releaseNotes).toContain('API:');
+    expect(response.body.releaseNotes).toContain('Fallback:');
   });
 });
 
@@ -572,8 +651,6 @@ describe('GET /api/download/launcher-bat', () => {
 // ── GET /api/config/github-app/installations ─────────────────────────────────
 
 describe('GET /api/config/github-app/installations', () => {
-  const nock = require('nock');
-
   afterEach(() => nock.cleanAll());
 
   it('returns 400 when App credentials are not configured', async () => {

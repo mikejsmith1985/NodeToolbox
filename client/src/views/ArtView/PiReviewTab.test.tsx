@@ -5,19 +5,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as XLSX from 'xlsx';
 
 import { ToastProvider } from '../../components/Toast/ToastProvider.tsx';
+import type { CapacitySummary } from '../SprintDashboard/capacityModel.ts';
 import type { ArtTeam } from './hooks/useArtData.ts';
-import { useArtCapacityStore } from './hooks/useArtCapacityStore.ts';
 import { writePiReviewCapacitySummary } from './piReviewTable.ts';
+import styles from './PiReviewTab.module.css';
 
 const {
-  mockDownloadPiReviewPanelPdf,
+  mockDownloadPiReviewPanelImage,
   mockFetchConfluencePageByReference,
   mockJiraGet,
   mockJiraPut,
   mockResolveConfluencePageIdFromReference,
   mockUpdateConfluencePage,
 } = vi.hoisted(() => ({
-  mockDownloadPiReviewPanelPdf: vi.fn(),
+  mockDownloadPiReviewPanelImage: vi.fn(),
   mockFetchConfluencePageByReference: vi.fn(),
   mockJiraGet: vi.fn(),
   mockJiraPut: vi.fn(),
@@ -37,7 +38,7 @@ vi.mock('../../services/jiraApi.ts', () => ({
 }));
 
 vi.mock('./piReviewPdf.ts', () => ({
-  downloadPiReviewPanelPdf: mockDownloadPiReviewPanelPdf,
+  downloadPiReviewPanelImage: mockDownloadPiReviewPanelImage,
 }));
 
 import PiReviewTab from './PiReviewTab.tsx';
@@ -141,6 +142,16 @@ const ALPHA_PAGE_WITH_FEATURE_KEY = {
   },
 };
 
+const ALPHA_PAGE_WITH_DECIMAL_CONFIDENCE = {
+  ...ALPHA_PAGE,
+  body: {
+    storage: {
+      value: ALPHA_PAGE.body.storage.value.replace('<td>4</td>', '<td>3.7</td>'),
+      representation: 'storage',
+    },
+  },
+};
+
 const DEFAULT_TEAMS: ArtTeam[] = [
   {
     id: 'team-1',
@@ -162,10 +173,42 @@ const DEFAULT_TEAMS: ArtTeam[] = [
   },
 ];
 
-function renderPiReviewTab(teams: ArtTeam[] = DEFAULT_TEAMS) {
+function createTeamCapacitySummary(): CapacitySummary {
+  return {
+    summaryLabel: 'Alpha Team Capacity',
+    startDate: '2026-05-18',
+    endDate: '2026-05-22',
+    workDayCount: 5,
+    totalCapacityPoints: 12.5,
+    recommendedCapacityPoints: 10,
+    roleCapacities: {
+      Dev: 10,
+      'Dev Lead': 0,
+      QE: 2.5,
+      'Test Lead': 0,
+      BT: 0,
+      SL: 0,
+      SA: 0,
+      PO: 0,
+      TPO: 0,
+      SM: 0,
+    },
+  };
+}
+
+function renderPiReviewTab(
+  teams: ArtTeam[] = DEFAULT_TEAMS,
+  mode: 'authoring' | 'readout' = 'authoring',
+  teamCapacitySummaries?: Record<string, CapacitySummary | null>,
+) {
   return render(
     <ToastProvider>
-      <PiReviewTab selectedPiName="PI 26.3" teams={teams} />
+      <PiReviewTab
+        mode={mode}
+        selectedPiName="PI 26.3"
+        teamCapacitySummaries={teamCapacitySummaries}
+        teams={teams}
+      />
     </ToastProvider>,
   );
 }
@@ -203,7 +246,6 @@ describe('PiReviewTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
-    useArtCapacityStore.setState({ teamConfigs: {} });
     mockJiraGet.mockResolvedValue({ issues: [] });
     mockJiraPut.mockResolvedValue(undefined);
     mockResolveConfluencePageIdFromReference.mockImplementation((pageReference: string) => {
@@ -235,7 +277,7 @@ describe('PiReviewTab', () => {
     expect(para).not.toHaveTextContent(/shared default pi review page url or id/i);
   });
 
-  it('auto-loads one Confluence page per configured team and renders both sections', async () => {
+  it('auto-loads one Confluence page per configured team and switches between team tabs', async () => {
     mockFetchConfluencePageByReference.mockImplementation((pageReference: string) => {
       if (pageReference.includes('12345')) {
         return Promise.resolve(ALPHA_PAGE);
@@ -246,13 +288,23 @@ describe('PiReviewTab', () => {
     renderPiReviewTab();
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
-    expect(alphaSection).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: /beta team pi review/i })).toBeInTheDocument();
+    const betaSection = screen.getByRole('region', { name: /beta team pi review/i, hidden: true });
+    expect(screen.getByRole('tab', { name: /alpha team/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /beta team/i })).toHaveAttribute('aria-selected', 'false');
+    expect(alphaSection).toBeVisible();
+    expect(betaSection).not.toBeVisible();
     expect(screen.getByText('Feature A')).toBeInTheDocument();
-    expect(screen.getByText('Feature B')).toBeInTheDocument();
     expect(within(alphaSection).getByText(/committed points: 8/i)).toBeInTheDocument();
     expect(within(alphaSection).queryByRole('button', { name: /add pi review row/i })).not.toBeInTheDocument();
     expect(mockFetchConfluencePageByReference).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole('tab', { name: /beta team/i }));
+
+    expect(screen.getByRole('tab', { name: /alpha team/i })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('tab', { name: /beta team/i })).toHaveAttribute('aria-selected', 'true');
+    expect(alphaSection).not.toBeVisible();
+    expect(betaSection).toBeVisible();
+    expect(within(betaSection).getByText('Feature B')).toBeInTheDocument();
   });
 
   it('defaults to a read-only view mode and only shows structural controls in edit mode', async () => {
@@ -283,8 +335,25 @@ describe('PiReviewTab', () => {
     expect(within(alphaSection).getByRole('button', { name: /save to confluence/i })).toBeEnabled();
   });
 
+  it('uses Team Dashboard as the authoring handoff in readout mode', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]], 'readout');
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    expect(within(alphaSection).getByText(/readout mode is on/i)).toBeInTheDocument();
+    expect(within(alphaSection).queryByRole('button', { name: /edit pi review/i })).not.toBeInTheDocument();
+    const teamDashboardLink = within(alphaSection).getByRole('link', { name: /open in team dashboard/i });
+    expect(teamDashboardLink).toHaveAttribute('href', '/sprint-dashboard');
+    expect(within(alphaSection).queryByRole('button', { name: /save to confluence/i })).not.toBeInTheDocument();
+  });
+
   it('loads Jira-enriched feature summaries, synced columns, and migrated notes in view mode', async () => {
     mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE_WITH_FEATURE_KEY);
+    localStorage.setItem('tbxARTSettings', JSON.stringify({
+      piReviewTargetStartFieldId: 'customfield_12345',
+      piReviewTargetEndFieldId: 'customfield_12346',
+    }));
     mockJiraGet.mockResolvedValue({
       issues: [
         {
@@ -299,8 +368,12 @@ describe('PiReviewTab', () => {
             issuetype: { name: 'Feature', iconUrl: '' },
             created: '',
             updated: '',
+            duedate: '2026-06-12',
             description: null,
             customfield_10111: 13,
+            customfield_12345: '2026-05-30',
+            customfield_12346: '2026-06-10',
+            fixVersions: [{ id: '301', name: '26.3' }],
             issuelinks: [
               {
                 type: { outward: 'blocks' },
@@ -327,25 +400,53 @@ describe('PiReviewTab', () => {
     expect(within(alphaSection).getAllByText(/PLAT-5 - Platform work \(Blocked\)/i)).toHaveLength(2);
     expect(within(alphaSection).getByText(/Dependency note: Legacy dependency note/i)).toBeInTheDocument();
     expect(within(alphaSection).getByText(/Risk note: Legacy risk note/i)).toBeInTheDocument();
+    expect(within(alphaSection).getByText('Target Start: 2026-05-30')).toHaveClass(styles.featureDatePill, styles.featureDatePillStart);
+    expect(within(alphaSection).getByText('Target End: 2026-06-10')).toHaveClass(styles.featureDatePill, styles.featureDatePillEnd);
+    expect(within(alphaSection).getByText('Due Date: 2026-06-12')).toHaveClass(styles.featureDatePill, styles.featureDatePillDue);
+    expect(within(alphaSection).getByText('Fix Version: 26.3')).toHaveClass(styles.featureDatePill, styles.featureDatePillFixVersion);
     expect(within(alphaSection).getByText(/unsaved changes/i)).toBeInTheDocument();
   });
 
-  it('exports a PI Review PDF for the current team panel', async () => {
-    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
-    mockDownloadPiReviewPanelPdf.mockResolvedValue(undefined);
+  it('renders checkbox columns as visual readout icons instead of literal yes or no text', async () => {
+    const alphaPageWithUncheckedCheckboxes = createAlphaPageWithExtraPiReviewRows(`
+            <tr>
+              <td>No</td>
+              <td>P2</td>
+              <td>Stretch Feature</td>
+              <td>5</td>
+              <td>None</td>
+              <td>Low</td>
+              <td></td>
+              <td>Stretch note</td>
+            </tr>`);
+    mockFetchConfluencePageByReference.mockResolvedValue(alphaPageWithUncheckedCheckboxes);
 
     renderPiReviewTab([DEFAULT_TEAMS[0]]);
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
-    fireEvent.click(within(alphaSection).getByRole('button', { name: /export pi review pdf/i }));
+    expect(within(alphaSection).getByRole('img', { name: /committed to pi\?: yes/i })).toHaveTextContent('✓');
+    expect(within(alphaSection).getByRole('img', { name: /carry-over: no/i })).toHaveTextContent('');
+    expect(within(alphaSection).queryByText(/^Yes$/)).not.toBeInTheDocument();
+    expect(within(alphaSection).queryByText(/^No$/)).not.toBeInTheDocument();
+  });
+
+  it('exports a high-resolution PI Review PNG for the current team panel', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+    mockDownloadPiReviewPanelImage.mockResolvedValue(undefined);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    expect(within(alphaSection).queryByRole('button', { name: /export pi review pdf/i })).not.toBeInTheDocument();
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /export pi review png/i }));
 
     await waitFor(() => {
-      expect(mockDownloadPiReviewPanelPdf).toHaveBeenCalledTimes(1);
+      expect(mockDownloadPiReviewPanelImage).toHaveBeenCalledTimes(1);
     });
 
-    const [panelElement, fileName] = mockDownloadPiReviewPanelPdf.mock.calls[0];
+    const [panelElement, fileName] = mockDownloadPiReviewPanelImage.mock.calls[0];
     expect(panelElement).toBe(alphaSection);
-    expect(fileName).toBe('pi-review-alpha-team-pi-26-3.pdf');
+    expect(fileName).toBe('pi-review-alpha-team-pi-26-3.png');
   });
 
   it('ignores edits for only the current team panel by restoring the last loaded state', async () => {
@@ -367,7 +468,7 @@ describe('PiReviewTab', () => {
     expect(within(alphaSection).queryByText(/unsaved changes/i)).not.toBeInTheDocument();
   });
 
-  it('adds and saves custom grouping lines without reusing the Stretch Goals color', async () => {
+  it('adds and saves custom grouping lines inline below the selected row', async () => {
     mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
     mockUpdateConfluencePage.mockImplementation((savePayload: { storageValue: string }) =>
       Promise.resolve({
@@ -385,14 +486,11 @@ describe('PiReviewTab', () => {
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
     enterEditMode(alphaSection);
-    fireEvent.change(within(alphaSection).getByLabelText(/custom line text/i), {
+    fireEvent.click(within(alphaSection).getAllByRole('button', { name: /add custom line below/i })[0]);
+    fireEvent.change(within(alphaSection).getByLabelText(/custom line text for alpha team row 1/i), {
       target: { value: 'Architecture Work' },
     });
-    fireEvent.change(within(alphaSection).getByLabelText(/^color$/i), {
-      target: { value: '#0ea5e9' },
-    });
-    fireEvent.click(within(alphaSection).getByRole('button', { name: /add custom line/i }));
-    expect(within(alphaSection).getByText('Architecture Work')).toBeInTheDocument();
+    fireEvent.click(await within(alphaSection).findByRole('button', { name: /purple/i }));
     fireEvent.change(within(alphaSection).getByLabelText(/notes for alpha team row 1/i), {
       target: { value: 'Ready to save lines' },
     });
@@ -403,7 +501,61 @@ describe('PiReviewTab', () => {
     });
     expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).toContain('data-node-toolbox-pi-review-grouping="custom"');
     expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).toContain('Architecture Work');
-    expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).toContain('#0ea5e9');
+    expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).toContain('#8b5cf6');
+  });
+
+  it('keeps one custom grouping line with its color after a save when Confluence strips the private markers', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+    mockUpdateConfluencePage.mockImplementation((savePayload: { storageValue: string }) =>
+      Promise.resolve({
+        ...ALPHA_PAGE,
+        version: { number: 8 },
+        body: {
+          storage: {
+            value: savePayload.storageValue
+              .replace(/\sdata-node-toolbox-pi-review-grouping="custom"/g, '')
+              .replace(/\sdata-node-toolbox-pi-review-grouping-payload='[^']*'/g, '')
+              .replace(/\sdata-node-toolbox-pi-review-capacity="summary"/g, '')
+              .replace(/\sdata-node-toolbox-pi-review-capacity-payload="[^"]*"/g, ''),
+            representation: 'storage',
+          },
+        },
+      }));
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
+    fireEvent.click(within(alphaSection).getAllByRole('button', { name: /add custom line below/i })[0]);
+    fireEvent.change(within(alphaSection).getByLabelText(/custom line text for alpha team row 1/i), {
+      target: { value: 'Architecture Work' },
+    });
+    fireEvent.click(await within(alphaSection).findByRole('button', { name: /purple/i }));
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /save to confluence/i }));
+
+    await waitFor(() => {
+      expect(within(alphaSection).getByRole('button', { name: /edit pi review/i })).toBeInTheDocument();
+    });
+
+    const renderedGroupingLines = within(alphaSection).getAllByText('Architecture Work');
+    expect(renderedGroupingLines).toHaveLength(1);
+    expect(renderedGroupingLines[0].closest('td')).toHaveStyle('border-top-color: rgb(139, 92, 246)');
+
+    enterEditMode(alphaSection);
+    expect(within(alphaSection).getByLabelText(/custom line text for alpha team row 1/i)).toHaveValue('Architecture Work');
+  });
+
+  it('toggles the Stretch Goals line off when the same row button is clicked again', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
+    fireEvent.click(within(alphaSection).getAllByRole('button', { name: /set stretch goals line below/i })[0]);
+    expect(within(alphaSection).getByText(/stretch goals below/i)).toBeInTheDocument();
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /remove stretch goals line/i }));
+    expect(within(alphaSection).queryByText(/stretch goals below/i)).not.toBeInTheDocument();
   });
 
   it('backfills the Jira feature estimate on save when Jira is blank and the PI Review already has a value', async () => {
@@ -465,7 +617,7 @@ describe('PiReviewTab', () => {
     mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
     let exportedHasEditableTextInput = true;
     let exportedHasEditableTextarea = true;
-    mockDownloadPiReviewPanelPdf.mockImplementation(async (panelElement: HTMLElement) => {
+    mockDownloadPiReviewPanelImage.mockImplementation(async (panelElement: HTMLElement) => {
       exportedHasEditableTextInput = panelElement.querySelector('input[type="text"]') !== null;
       exportedHasEditableTextarea = panelElement.querySelector('textarea') !== null;
     });
@@ -476,10 +628,10 @@ describe('PiReviewTab', () => {
     enterEditMode(alphaSection);
     expect(within(alphaSection).getByLabelText(/feature for alpha team row 1/i)).toBeInTheDocument();
 
-    fireEvent.click(within(alphaSection).getByRole('button', { name: /export pi review pdf/i }));
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /export pi review png/i }));
 
     await waitFor(() => {
-      expect(mockDownloadPiReviewPanelPdf).toHaveBeenCalledTimes(1);
+      expect(mockDownloadPiReviewPanelImage).toHaveBeenCalledTimes(1);
     });
     expect(exportedHasEditableTextInput).toBe(false);
     expect(exportedHasEditableTextarea).toBe(false);
@@ -487,17 +639,6 @@ describe('PiReviewTab', () => {
   });
 
   it('saves edited rows and confidence votes back to the selected team page', async () => {
-    useArtCapacityStore.setState({
-      teamConfigs: {
-        'team-1': {
-          startDate: '2026-05-18',
-          endDate: '2026-05-22',
-          rows: [
-            { id: 'capacity-dev', role: 'Dev', memberCount: 2, capacityPercentage: 100, totalPtoDays: 0 },
-          ],
-        },
-      },
-    });
     mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
     mockUpdateConfluencePage.mockResolvedValue({
       ...ALPHA_PAGE,
@@ -512,7 +653,7 @@ describe('PiReviewTab', () => {
       },
     });
 
-    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+    renderPiReviewTab([DEFAULT_TEAMS[0]], 'authoring', { 'team-1': createTeamCapacitySummary() });
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
     enterEditMode(alphaSection);
@@ -523,6 +664,10 @@ describe('PiReviewTab', () => {
     fireEvent.change(
       within(alphaSection).getByLabelText(/notes for alpha team confidence row 1/i),
       { target: { value: 'Still confident' } },
+    );
+    fireEvent.change(
+      within(alphaSection).getByLabelText(/exact fist of five vote for alpha team confidence row 1/i),
+      { target: { value: '3.7' } },
     );
     fireEvent.click(within(alphaSection).getByRole('button', { name: /save to confluence/i }));
 
@@ -536,25 +681,14 @@ describe('PiReviewTab', () => {
     expect(savePayload.storageValue).toContain('Alpha Team Capacity');
     expect(savePayload.storageValue).toContain('100% Capacity (pts)');
     expect(savePayload.storageValue).toContain('Ready to commit');
+    expect(savePayload.storageValue).toContain('3.7');
     expect(savePayload.storageValue).toContain('Still confident');
   });
 
   it('renders the current team capacity above the PI Review table', async () => {
-    useArtCapacityStore.setState({
-      teamConfigs: {
-        'team-1': {
-          startDate: '2026-05-18',
-          endDate: '2026-05-22',
-          rows: [
-            { id: 'capacity-dev', role: 'Dev', memberCount: 2, capacityPercentage: 100, totalPtoDays: 0 },
-            { id: 'capacity-qe', role: 'QE', memberCount: 1, capacityPercentage: 50, totalPtoDays: 0 },
-          ],
-        },
-      },
-    });
     mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
 
-    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+    renderPiReviewTab([DEFAULT_TEAMS[0]], 'authoring', { 'team-1': createTeamCapacitySummary() });
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
     expect(within(alphaSection).getByRole('heading', { name: /team capacity/i })).toBeInTheDocument();
@@ -564,42 +698,12 @@ describe('PiReviewTab', () => {
     expect(within(alphaSection).getByText('QE: 2.5 pts')).toBeInTheDocument();
   });
 
-  it('falls back to the saved Confluence capacity snapshot when local capacity is incomplete', async () => {
-    useArtCapacityStore.setState({
-      teamConfigs: {
-        'team-1': {
-          startDate: '',
-          endDate: '',
-          rows: [
-            { id: 'capacity-dev', role: 'Dev', memberCount: 2, capacityPercentage: 100, totalPtoDays: 0 },
-          ],
-        },
-      },
-    });
+  it('falls back to the saved Confluence capacity snapshot when no live capacity override is provided', async () => {
     const alphaPageWithSavedCapacity = {
       ...ALPHA_PAGE,
       body: {
         storage: {
-          value: writePiReviewCapacitySummary(ALPHA_PAGE.body.storage.value, {
-            summaryLabel: 'Alpha Team Capacity',
-            startDate: '2026-05-18',
-            endDate: '2026-05-22',
-            workDayCount: 5,
-            totalCapacityPoints: 12.5,
-            recommendedCapacityPoints: 10,
-            roleCapacities: {
-              Dev: 10,
-              'Dev Lead': 0,
-              QE: 2.5,
-              'Test Lead': 0,
-              BT: 0,
-              SL: 0,
-              SA: 0,
-              PO: 0,
-              TPO: 0,
-              SM: 0,
-            },
-          }),
+          value: writePiReviewCapacitySummary(ALPHA_PAGE.body.storage.value, createTeamCapacitySummary()),
           representation: 'storage',
         },
       },
@@ -690,6 +794,75 @@ describe('PiReviewTab', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows a confidence-specific edit action in authoring mode', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /edit confidence votes/i }));
+
+    expect(
+      within(alphaSection).getByLabelText(/exact fist of five vote for alpha team confidence row 1/i),
+    ).toBeInTheDocument();
+    expect(
+      within(alphaSection).getByRole('button', { name: /add weekly confidence vote/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('adds a weekly confidence vote from the confidence section', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /edit confidence votes/i }));
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /add weekly confidence vote/i }));
+
+    const secondWeekInput = within(alphaSection).getByLabelText(/week of for alpha team confidence row 2/i) as HTMLInputElement;
+    const secondVoteInput = within(alphaSection).getByLabelText(/exact fist of five vote for alpha team confidence row 2/i) as HTMLInputElement;
+
+    expect(secondWeekInput.value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(secondVoteInput.value).toBe('3');
+  });
+
+  it('renders vote 4 with four raised fingers and one folded finger', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
+
+    const voteFourButton = within(alphaSection).getByRole('button', {
+      name: /set fist of five vote to 4 for alpha team confidence row 1/i,
+    });
+    const fingerRectangles = Array.from(voteFourButton.querySelectorAll('svg rect')).slice(1, 6);
+
+    expect(fingerRectangles).toHaveLength(5);
+    expect(fingerRectangles.slice(0, 4).every((fingerRectangle) => (
+      fingerRectangle.classList.contains(styles.fingerRaised)
+    ))).toBe(true);
+    expect(fingerRectangles[4]).toHaveClass(styles.fingerFolded);
+  });
+
+  it('renders a decimal vote with a partially filled next finger and shows the exact value', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE_WITH_DECIMAL_CONFIDENCE);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]], 'readout');
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    expect(within(alphaSection).getByText('3.7')).toBeInTheDocument();
+    const readOnlyVote = alphaSection.querySelector(`.${styles.readOnlyVote}`);
+    expect(readOnlyVote).not.toBeNull();
+
+    const voteIcon = readOnlyVote!.querySelector('svg');
+    expect(voteIcon).not.toBeNull();
+    expect(voteIcon!.querySelectorAll(`rect.${styles.fingerRaised}`)).toHaveLength(4);
+    expect(voteIcon!.querySelectorAll(`rect.${styles.fingerPartialBase}`)).toHaveLength(1);
+    expect(voteIcon!.querySelectorAll(`rect.${styles.fingerFolded}`)).toHaveLength(1);
+  });
+
   it('loads the Toolbox-owned template locally before overwriting Confluence on save', async () => {
     mockFetchConfluencePageByReference.mockResolvedValue({
       ...ALPHA_PAGE,
@@ -717,6 +890,10 @@ describe('PiReviewTab', () => {
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
     expect(await within(alphaSection).findByText(/No Confluence table was found/i)).toBeInTheDocument();
+    expect(
+      within(alphaSection).getByText(/load the toolbox pi review template locally before saving because this page does not contain a recognized pi review table yet/i),
+    ).toBeInTheDocument();
+    expect(within(alphaSection).getByRole('button', { name: /save to confluence/i })).toBeDisabled();
 
     fireEvent.click(within(alphaSection).getByRole('button', { name: /load toolbox pi review template locally/i }));
     fireEvent.click(within(alphaSection).getByRole('button', { name: /start local draft/i }));
@@ -741,6 +918,18 @@ describe('PiReviewTab', () => {
       ),
     );
     expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).toContain('Drafted in Toolbox first');
+  });
+
+  it('keeps the resolved page ID visible when the Confluence fetch fails', async () => {
+    mockFetchConfluencePageByReference.mockRejectedValue(
+      new Error('Confluence GET page 12345 failed: Could not resolve the configured Confluence host.'),
+    );
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    expect(await within(alphaSection).findByText(/Could not resolve the configured Confluence host/i)).toBeInTheDocument();
+    expect(within(alphaSection).getByText('12345')).toBeInTheDocument();
   });
 
   it('adds optional dev work and test support checkbox columns to the saved Toolbox table', async () => {

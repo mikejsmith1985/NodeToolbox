@@ -46,7 +46,7 @@ export type DashboardTab =
   | 'planning'
   | 'releases'
   | 'pointing'
-  | 'capacity';
+  | 'pireview';
 
 export type DashboardScopeMode =
   | typeof DASHBOARD_SCOPE_MODE_SPRINT

@@ -9,7 +9,7 @@ import { BrowserRouter } from 'react-router-dom';
 import './styles/global.css';
 import './utils/demoModeStorage.ts';
 import App from './App.tsx';
-import { resolveStoredTheme } from './store/settingsStore.ts';
+import { resolveStoredTheme, resolveStoredToolTextSize } from './store/settingsStore.ts';
 
 const rootElement = document.getElementById('root');
 
@@ -18,6 +18,7 @@ if (!rootElement) {
 }
 
 document.documentElement.setAttribute('data-theme', resolveStoredTheme());
+document.documentElement.setAttribute('data-tool-text-size', resolveStoredToolTextSize());
 
 // Match the original ToolBox relay contract: the bookmarklet finds the app by
 // calling window.open('', 'toolbox') after activation.

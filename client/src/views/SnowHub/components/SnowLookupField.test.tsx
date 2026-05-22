@@ -121,7 +121,7 @@ describe('SnowLookupField', () => {
     expect(screen.queryByLabelText('resolved')).not.toBeInTheDocument();
   });
 
-  it('does not fire the SNow search when fewer than 2 characters are typed', async () => {
+  it('does not fire the SNow search when the input is blank or whitespace only', async () => {
     // fireEvent.change is used here (instead of userEvent.type) to avoid internal
     // setTimeout delays in userEvent that conflict with vi.useFakeTimers().
     render(
@@ -133,13 +133,13 @@ describe('SnowLookupField', () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText('Assignment Group'), { target: { value: 'P' } });
+    fireEvent.change(screen.getByLabelText('Assignment Group'), { target: { value: ' ' } });
     await act(async () => { vi.runAllTimers(); });
 
     expect(vi.mocked(snowFetch)).not.toHaveBeenCalled();
   });
 
-  it('fires a debounced SNow search after the user types at least 2 characters', async () => {
+  it('fires a debounced SNow search after the user types one character', async () => {
     vi.mocked(snowFetch).mockResolvedValueOnce(
       makeSuggestionResponse([{ sys_id: 'grp-001', name: 'Platform Team' }]) as never,
     );
@@ -153,8 +153,7 @@ describe('SnowLookupField', () => {
       />,
     );
 
-    // Typing 'Pl' via fireEvent to avoid userEvent internal timer conflicts.
-    fireEvent.change(screen.getByLabelText('Assignment Group'), { target: { value: 'Pl' } });
+    fireEvent.change(screen.getByLabelText('Assignment Group'), { target: { value: 'P' } });
     // act(async) flushes the debounce timer AND awaits the resulting snowFetch promise.
     await act(async () => { vi.runAllTimers(); });
 

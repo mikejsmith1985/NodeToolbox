@@ -276,6 +276,48 @@ describe('parsePiReviewTable', () => {
       }),
     ]);
   });
+
+  it('parses custom grouping rows after Confluence strips the private data attributes', () => {
+    const result = parsePiReviewTable(`
+      <table>
+        <tbody>
+          <tr>
+            <th>Carry-Over</th>
+            <th>Priority</th>
+            <th>Feature</th>
+            <th>Point Estimate</th>
+            <th>Dependency</th>
+            <th>Risks</th>
+            <th>Committed?</th>
+            <th>Notes</th>
+          </tr>
+          <tr>
+            <td>No</td>
+            <td>High</td>
+            <td>Feature A</td>
+            <td>8</td>
+            <td>None</td>
+            <td>Low</td>
+            <td>Yes</td>
+            <td>Ready</td>
+          </tr>
+          <tr>
+            <td colspan="8" style="text-align: center; font-weight: 700; border-top: 3px solid rgb(139, 92, 246); border-bottom: 3px solid rgb(139, 92, 246); background: rgba(139, 92, 246, 0.18); color: rgb(91, 33, 182);">
+              Architecture Work
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    `);
+
+    expect(result.customGroupingLines).toEqual([
+      expect.objectContaining({
+        afterRowIndex: 1,
+        label: 'Architecture Work',
+        color: '#8b5cf6',
+      }),
+    ]);
+  });
 });
 
 describe('parsePiReviewRowsFromSpreadsheetSheets', () => {
@@ -460,6 +502,75 @@ describe('writePiReviewCapacitySummary', () => {
         SM: 0,
       },
     });
+  });
+
+  it('replaces a rendered Team Capacity block when Confluence strips the section data attributes', () => {
+    const legacyRenderedStorageValue = `
+      <h1>NodeToolbox PI Review</h1>
+      <p>This page section is managed by NodeToolbox so PI Review data can sync reliably.</p>
+      <h2>Team Capacity</h2>
+      <p>Snapshot pulled from the NodeToolbox Capacity tab.</p>
+      <p><strong>Plan:</strong> Previous Capacity</p>
+      <p><strong>Date Range:</strong> 2026-05-01 to 2026-05-05</p>
+      <p><strong>Work Days:</strong> 4</p>
+      <p><strong>100% Capacity (pts):</strong> 9</p>
+      <p><strong>80% Capacity (pts):</strong> 7.2</p>
+      <ul>
+        <li><strong>Dev:</strong> 9 pts</li>
+      </ul>
+      <table>
+        <tbody>
+          <tr>
+            <th>YES - If this is a Carry-Over</th>
+            <th>Priority</th>
+            <th>Feature</th>
+            <th>Point Estimate</th>
+            <th>Dependency</th>
+            <th>Risks</th>
+            <th>Committed to PI?</th>
+            <th>Implementation Notes</th>
+          </tr>
+        </tbody>
+      </table>
+    `;
+
+    expect(parsePiReviewCapacitySummary(legacyRenderedStorageValue)).toEqual({
+      summaryLabel: 'Previous Capacity',
+      startDate: '2026-05-01',
+      endDate: '2026-05-05',
+      workDayCount: 4,
+      totalCapacityPoints: 9,
+      recommendedCapacityPoints: 7.2,
+      roleCapacities: {
+        Dev: 9,
+      },
+    });
+
+    const nextStorageValue = writePiReviewCapacitySummary(legacyRenderedStorageValue, {
+      summaryLabel: 'Updated Capacity',
+      startDate: '2026-06-02',
+      endDate: '2026-06-06',
+      workDayCount: 5,
+      totalCapacityPoints: 12,
+      recommendedCapacityPoints: 9.5,
+      roleCapacities: {
+        Dev: 8,
+        QE: 4,
+        'Dev Lead': 0,
+        'Test Lead': 0,
+        BT: 0,
+        SL: 0,
+        SA: 0,
+        PO: 0,
+        TPO: 0,
+        SM: 0,
+      },
+    });
+
+    expect(nextStorageValue.match(/Team Capacity/g)).toHaveLength(1);
+    expect(nextStorageValue).toContain('Updated Capacity');
+    expect(nextStorageValue).not.toContain('Previous Capacity');
+    expect(nextStorageValue).toContain('data-node-toolbox-pi-review-capacity="summary"');
   });
 });
 
@@ -728,14 +839,14 @@ describe('writeConfidenceVoteTable', () => {
   it('creates a new confidence vote section when the page does not have one yet', () => {
     const row = createEmptyConfidenceVoteRow();
     row.weekOf = '2026-05-26';
-    row.confidenceVote = '5';
+    row.confidenceVote = '3.7';
     row.notes = 'Strong plan confidence';
 
     const nextStorageValue = writeConfidenceVoteTable('<h1>PI Review</h1>', null, [row]);
 
     expect(nextStorageValue).toContain('Confidence Vote Tracking');
     expect(nextStorageValue).toContain('Strong plan confidence');
-    expect(parseConfidenceVoteTable(nextStorageValue).rows[0].confidenceVote).toBe('5');
+    expect(parseConfidenceVoteTable(nextStorageValue).rows[0].confidenceVote).toBe('3.7');
   });
 });
 

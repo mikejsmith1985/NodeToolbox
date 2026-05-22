@@ -1,4 +1,4 @@
-// ArtView.tsx — Tabbed ART (Agile Release Train) view for multi-team PI planning and health dashboards.
+// ArtView.tsx — Tabbed ART (Agile Release Train) view for multi-team PI reporting and planning dashboards.
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -14,7 +14,6 @@ import { useToast } from '../../components/Toast/ToastProvider.tsx';
 import JiraBoardPicker from '../../components/JiraBoardPicker/index.tsx';
 import JiraFieldPicker from '../../components/JiraFieldPicker/index.tsx';
 import JiraProjectPicker from '../../components/JiraProjectPicker/index.tsx';
-import ArtCapacityTab from './ArtCapacityTab.tsx';
 import BlueprintTab from './BlueprintTab.tsx';
 import DependenciesTab from './DependenciesTab.tsx';
 import PiReviewTab from './PiReviewTab.tsx';
@@ -40,7 +39,6 @@ const ART_TAB_DEFINITIONS: { key: ArtTab; label: string }[] = [
   { key: 'predictability', label: 'Predictability' },
   { key: 'releases', label: 'Releases' },
   { key: 'pireview', label: 'PI Review' },
-  { key: 'capacity', label: 'Capacity' },
   { key: 'blueprint', label: 'Blueprint' },
   { key: 'dependencies', label: 'Dependencies' },
   { key: 'boardprep', label: 'Board Prep' },
@@ -51,7 +49,7 @@ const ART_TAB_DEFINITIONS: { key: ArtTab; label: string }[] = [
 
 // ── Main ArtView component ──
 
-/** Main ART View with 12 tabs for tracking multi-team PI health across the Agile Release Train. */
+/** Main ART View with 11 tabs for tracking multi-team PI health across the Agile Release Train. */
 export default function ArtView() {
   const { state, actions } = useArtData();
   const [teamProjectKeyFilter, setTeamProjectKeyFilter] = useState('');
@@ -128,10 +126,7 @@ export default function ArtView() {
           <ReleasesPanel teams={state.teams} />
         )}
         {state.activeTab === 'pireview' && (
-          <PiReviewTab selectedPiName={state.selectedPiName} teams={state.teams} />
-        )}
-        {state.activeTab === 'capacity' && (
-          <ArtCapacityTab teams={state.teams} />
+          <PiReviewTab mode="readout" selectedPiName={state.selectedPiName} teams={state.teams} />
         )}
         {state.activeTab === 'blueprint' && (
           <BlueprintTab teams={state.teams} selectedPiName={state.selectedPiName} />
@@ -2871,6 +2866,8 @@ interface ArtAdvancedSettings {
   isSpAutoDetect?: boolean;
   featureLinkField?: string;
   pCodeField?: string;
+  piReviewTargetStartFieldId?: string;
+  piReviewTargetEndFieldId?: string;
   depLinkTypes?: string[];
   staleDays?: number;
   /** ISO date string (YYYY-MM-DD) for the end of the current Program Increment. */
@@ -2899,9 +2896,13 @@ interface ArtAdvancedSettings {
 /** Reads ART advanced settings from localStorage or returns an empty object. */
 function readArtAdvancedSettings(): ArtAdvancedSettings {
   try {
-    return JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as ArtAdvancedSettings;
+    const storedSettings = JSON.parse(localStorage.getItem('tbxARTSettings') || '{}') as ArtAdvancedSettings;
+    return {
+      ...DEFAULT_SHARED_ART_SETTINGS,
+      ...storedSettings,
+    };
   } catch {
-    return {};
+    return { ...DEFAULT_SHARED_ART_SETTINGS };
   }
 }
 
@@ -2910,14 +2911,51 @@ function writeArtAdvancedSettings(settings: ArtAdvancedSettings): void {
   localStorage.setItem('tbxARTSettings', JSON.stringify(settings));
 }
 
+const DEFAULT_SHARED_ART_SETTINGS: Pick<
+  ArtAdvancedSettings,
+  'sharedArtName' | 'sharedArtKey' | 'sharedArtDatabaseId' | 'sharedArtSpaceId' | 'sharedArtParentId'
+> = {
+  sharedArtName: 'Sales to Enrollment',
+  sharedArtKey: 'S2E',
+  sharedArtDatabaseId: '684163133',
+  sharedArtSpaceId: '256344064',
+  sharedArtParentId: '685473797',
+};
+
 const DEFAULT_STALE_DAYS_SETTING = 5;
 /** Default sprint length in calendar days (2-week sprint). Used by stale-issue and sprint-window calculations. */
 const DEFAULT_SPRINT_WINDOW_DAYS = 14;
 const DEFAULT_DEPENDENCY_LINK_TYPES = ['blocks', 'is blocked by', 'depends on', 'is depended on by', 'relates to'];
+const DEFAULT_PI_REVIEW_TARGET_START_FIELD_ID = 'customfield_10101';
+const DEFAULT_PI_REVIEW_TARGET_END_FIELD_ID = 'customfield_10102';
 const SHARED_ART_RECENT_WORKSPACES_STORAGE_KEY = 'tbxSharedArtRecentWorkspaces';
+const SHARED_ART_SYNC_SNAPSHOTS_STORAGE_KEY = 'tbxSharedArtSyncSnapshots';
 const MAX_RECENT_SHARED_ARTS = 10;
 const PI_REVIEW_PAGE_ID_SETTING_KEY: keyof ArtAdvancedSettings = 'piReviewPageId';
 const PI_REVIEW_PAGE_URL_SETTING_KEY: keyof ArtAdvancedSettings = 'piReviewPageUrl';
+const SHARED_ART_TOP_LEVEL_FIELD_NAMES = ['artKey', 'artName'] as const;
+const SHARED_ART_SETTINGS_FIELD_NAMES = [
+  'piFieldId',
+  'spFieldId',
+  'isSpAutoDetect',
+  'featureLinkField',
+  'pCodeField',
+  'piReviewTargetStartFieldId',
+  'piReviewTargetEndFieldId',
+  'depLinkTypes',
+  'staleDays',
+  'piEndDate',
+  'sprintWindowDays',
+  'piReviewPageUrl',
+] as const;
+const SHARED_ART_TEAM_FIELD_NAMES = [
+  'name',
+  'boardId',
+  'boardName',
+  'projectKey',
+  'piReviewPageUrl',
+  'sosIssueKey',
+] as const;
 /**
  * Matches a fully-formed Jira custom field ID (e.g. "customfield_10301").
  * Requires at least 4 digits after the prefix because Jira's generated IDs
@@ -2926,6 +2964,14 @@ const PI_REVIEW_PAGE_URL_SETTING_KEY: keyof ArtAdvancedSettings = 'piReviewPageU
  * keystroke in the fallback text input.
  */
 const VALID_CUSTOM_FIELD_ID_PATTERN = /^customfield_\d{4,}$/;
+
+function readDefaultedPiReviewTargetStartFieldId(fieldValue: string | undefined): string {
+  return fieldValue?.trim() || DEFAULT_PI_REVIEW_TARGET_START_FIELD_ID;
+}
+
+function readDefaultedPiReviewTargetEndFieldId(fieldValue: string | undefined): string {
+  return fieldValue?.trim() || DEFAULT_PI_REVIEW_TARGET_END_FIELD_ID;
+}
 
 interface JiraIssueLinkTypeOption {
   name?: string;
@@ -2959,12 +3005,25 @@ interface SharedArtWorkspacePayload {
     isSpAutoDetect?: boolean;
     featureLinkField?: string;
     pCodeField?: string;
+    piReviewTargetStartFieldId?: string;
+    piReviewTargetEndFieldId?: string;
     depLinkTypes?: string[];
     staleDays?: number;
     piEndDate?: string;
     sprintWindowDays?: number;
     piReviewPageUrl?: string;
   };
+}
+
+interface SharedArtMergeConflict {
+  path: string;
+  localValue: unknown;
+  remoteValue: unknown;
+}
+
+interface SharedArtMergeResult {
+  conflicts: SharedArtMergeConflict[];
+  mergedWorkspace: SharedArtWorkspacePayload;
 }
 
 function loadRecentSharedArtWorkspaces(): SharedArtRecentWorkspace[] {
@@ -3040,6 +3099,8 @@ function buildSharedArtWorkspacePayload(
       isSpAutoDetect: settings.isSpAutoDetect ?? false,
       featureLinkField: settings.featureLinkField?.trim() || undefined,
       pCodeField: settings.pCodeField?.trim() || undefined,
+      piReviewTargetStartFieldId: settings.piReviewTargetStartFieldId?.trim() || undefined,
+      piReviewTargetEndFieldId: settings.piReviewTargetEndFieldId?.trim() || undefined,
       depLinkTypes: settings.depLinkTypes ?? DEFAULT_DEPENDENCY_LINK_TYPES,
       staleDays: settings.staleDays ?? DEFAULT_STALE_DAYS_SETTING,
       piEndDate: settings.piEndDate?.trim() || undefined,
@@ -3047,6 +3108,192 @@ function buildSharedArtWorkspacePayload(
       piReviewPageUrl: settings.piReviewPageUrl?.trim() || undefined,
     },
   };
+}
+
+function cloneSharedArtWorkspacePayload(payload: SharedArtWorkspacePayload): SharedArtWorkspacePayload {
+  return JSON.parse(JSON.stringify(payload)) as SharedArtWorkspacePayload;
+}
+
+function readSharedArtSyncSnapshots(): Record<string, SharedArtWorkspacePayload> {
+  try {
+    const storedSnapshots = JSON.parse(localStorage.getItem(SHARED_ART_SYNC_SNAPSHOTS_STORAGE_KEY) || '{}') as
+      | Record<string, SharedArtWorkspacePayload>
+      | null;
+    return storedSnapshots ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function readSharedArtSyncSnapshot(databaseId: string): SharedArtWorkspacePayload | null {
+  const storedSnapshot = readSharedArtSyncSnapshots()[databaseId];
+  return storedSnapshot ? cloneSharedArtWorkspacePayload(storedSnapshot) : null;
+}
+
+function writeSharedArtSyncSnapshot(databaseId: string, payload: SharedArtWorkspacePayload): void {
+  const storedSnapshots = readSharedArtSyncSnapshots();
+  storedSnapshots[databaseId] = cloneSharedArtWorkspacePayload(payload);
+  localStorage.setItem(SHARED_ART_SYNC_SNAPSHOTS_STORAGE_KEY, JSON.stringify(storedSnapshots));
+}
+
+function areSharedArtValuesEqual(leftValue: unknown, rightValue: unknown): boolean {
+  return JSON.stringify(leftValue ?? null) === JSON.stringify(rightValue ?? null);
+}
+
+function mergeSharedArtField(
+  baseValue: unknown,
+  localValue: unknown,
+  remoteValue: unknown,
+): { mergedValue: unknown; isConflict: boolean } {
+  if (areSharedArtValuesEqual(localValue, remoteValue)) {
+    return { mergedValue: localValue, isConflict: false };
+  }
+  if (areSharedArtValuesEqual(baseValue, localValue)) {
+    return { mergedValue: remoteValue, isConflict: false };
+  }
+  if (areSharedArtValuesEqual(baseValue, remoteValue)) {
+    return { mergedValue: localValue, isConflict: false };
+  }
+  return { mergedValue: localValue, isConflict: true };
+}
+
+function buildSharedArtTeamOrder(
+  baseTeams: SharedArtWorkspacePayload['teams'],
+  localTeams: SharedArtWorkspacePayload['teams'],
+  remoteTeams: SharedArtWorkspacePayload['teams'],
+): string[] {
+  const orderedTeamIds: string[] = [];
+  const seenTeamIds = new Set<string>();
+  for (const teamRecord of [...localTeams, ...remoteTeams, ...baseTeams]) {
+    if (!seenTeamIds.has(teamRecord.id)) {
+      seenTeamIds.add(teamRecord.id);
+      orderedTeamIds.push(teamRecord.id);
+    }
+  }
+  return orderedTeamIds;
+}
+
+function mergeSharedArtTeamRecord(
+  teamId: string,
+  baseTeam: SharedArtWorkspacePayload['teams'][number] | undefined,
+  localTeam: SharedArtWorkspacePayload['teams'][number] | undefined,
+  remoteTeam: SharedArtWorkspacePayload['teams'][number] | undefined,
+): { conflicts: SharedArtMergeConflict[]; mergedTeam?: SharedArtWorkspacePayload['teams'][number] } {
+  if (!baseTeam && !localTeam && !remoteTeam) {
+    return { conflicts: [] };
+  }
+  if (!baseTeam && !localTeam && remoteTeam) {
+    return { conflicts: [], mergedTeam: remoteTeam };
+  }
+  if (!baseTeam && localTeam && !remoteTeam) {
+    return { conflicts: [], mergedTeam: localTeam };
+  }
+  if (baseTeam && !localTeam && !remoteTeam) {
+    return { conflicts: [] };
+  }
+  if (baseTeam && !localTeam && remoteTeam) {
+    if (areSharedArtValuesEqual(baseTeam, remoteTeam)) {
+      return { conflicts: [] };
+    }
+    return {
+      conflicts: [{ path: `teams.${teamId}`, localValue: undefined, remoteValue: remoteTeam }],
+    };
+  }
+  if (baseTeam && localTeam && !remoteTeam) {
+    if (areSharedArtValuesEqual(baseTeam, localTeam)) {
+      return { conflicts: [] };
+    }
+    return {
+      conflicts: [{ path: `teams.${teamId}`, localValue: localTeam, remoteValue: undefined }],
+    };
+  }
+
+  const mergedTeam = { id: teamId } as SharedArtWorkspacePayload['teams'][number];
+  const conflicts: SharedArtMergeConflict[] = [];
+  for (const fieldName of SHARED_ART_TEAM_FIELD_NAMES) {
+    const fieldMerge = mergeSharedArtField(baseTeam?.[fieldName], localTeam?.[fieldName], remoteTeam?.[fieldName]);
+    if (fieldMerge.isConflict) {
+      conflicts.push({
+        path: `teams.${teamId}.${fieldName}`,
+        localValue: localTeam?.[fieldName],
+        remoteValue: remoteTeam?.[fieldName],
+      });
+      continue;
+    }
+    mergedTeam[fieldName] = fieldMerge.mergedValue as never;
+  }
+  return { conflicts, mergedTeam };
+}
+
+function mergeSharedArtWorkspacePayload(
+  baseWorkspace: SharedArtWorkspacePayload,
+  localWorkspace: SharedArtWorkspacePayload,
+  remoteWorkspace: SharedArtWorkspacePayload,
+): SharedArtMergeResult {
+  const conflicts: SharedArtMergeConflict[] = [];
+  const mergedSettings = {} as SharedArtWorkspacePayload['settings'];
+  for (const fieldName of SHARED_ART_SETTINGS_FIELD_NAMES) {
+    const fieldMerge = mergeSharedArtField(
+      baseWorkspace.settings[fieldName],
+      localWorkspace.settings[fieldName],
+      remoteWorkspace.settings[fieldName],
+    );
+    if (fieldMerge.isConflict) {
+      conflicts.push({
+        path: `settings.${fieldName}`,
+        localValue: localWorkspace.settings[fieldName],
+        remoteValue: remoteWorkspace.settings[fieldName],
+      });
+      continue;
+    }
+    mergedSettings[fieldName] = fieldMerge.mergedValue as never;
+  }
+
+  const mergedWorkspace = {
+    schemaVersion: remoteWorkspace.schemaVersion,
+    artKey: localWorkspace.artKey,
+    artName: localWorkspace.artName,
+    updatedAt: new Date().toISOString(),
+    teams: [] as SharedArtWorkspacePayload['teams'],
+    settings: mergedSettings,
+  };
+
+  for (const fieldName of SHARED_ART_TOP_LEVEL_FIELD_NAMES) {
+    const fieldMerge = mergeSharedArtField(baseWorkspace[fieldName], localWorkspace[fieldName], remoteWorkspace[fieldName]);
+    if (fieldMerge.isConflict) {
+      conflicts.push({
+        path: `workspace.${fieldName}`,
+        localValue: localWorkspace[fieldName],
+        remoteValue: remoteWorkspace[fieldName],
+      });
+      continue;
+    }
+    mergedWorkspace[fieldName] = fieldMerge.mergedValue as never;
+  }
+
+  const baseTeamsById = new Map(baseWorkspace.teams.map((teamRecord) => [teamRecord.id, teamRecord]));
+  const localTeamsById = new Map(localWorkspace.teams.map((teamRecord) => [teamRecord.id, teamRecord]));
+  const remoteTeamsById = new Map(remoteWorkspace.teams.map((teamRecord) => [teamRecord.id, teamRecord]));
+  for (const teamId of buildSharedArtTeamOrder(baseWorkspace.teams, localWorkspace.teams, remoteWorkspace.teams)) {
+    const teamMerge = mergeSharedArtTeamRecord(
+      teamId,
+      baseTeamsById.get(teamId),
+      localTeamsById.get(teamId),
+      remoteTeamsById.get(teamId),
+    );
+    conflicts.push(...teamMerge.conflicts);
+    if (teamMerge.mergedTeam) {
+      mergedWorkspace.teams.push(teamMerge.mergedTeam);
+    }
+  }
+
+  return { conflicts, mergedWorkspace };
+}
+
+function formatSharedArtMergeConflictMessage(conflicts: SharedArtMergeConflict[]): string {
+  const summarizedPaths = conflicts.slice(0, 3).map((conflict) => conflict.path).join(', ');
+  const remainingConflictSuffix = conflicts.length > 3 ? ` and ${conflicts.length - 3} more` : '';
+  return `Shared ART push found conflicts with newer workspace changes. Load shared settings to review before pushing again. Conflicts: ${summarizedPaths}${remainingConflictSuffix}.`;
 }
 
 function readDependencyLinkTypeNames(issueLinkTypes: JiraIssueLinkTypeOption[]): string[] {
@@ -3085,6 +3332,12 @@ function SettingsPanel({
   const [spFieldId, setSpFieldId] = useState(storedSettings.spFieldId ?? '');
   const [featureLinkField, setFeatureLinkField] = useState(storedSettings.featureLinkField ?? '');
   const [pCodeField, setPCodeField] = useState(storedSettings.pCodeField ?? '');
+  const [piReviewTargetStartFieldId, setPiReviewTargetStartFieldId] = useState(
+    readDefaultedPiReviewTargetStartFieldId(storedSettings.piReviewTargetStartFieldId),
+  );
+  const [piReviewTargetEndFieldId, setPiReviewTargetEndFieldId] = useState(
+    readDefaultedPiReviewTargetEndFieldId(storedSettings.piReviewTargetEndFieldId),
+  );
   const [staleDaysInput, setStaleDaysInput] = useState(
     String(storedSettings.staleDays ?? DEFAULT_STALE_DAYS_SETTING),
   );
@@ -3167,6 +3420,16 @@ function SettingsPanel({
     saveSettingField('featureLinkField', value);
   }
 
+  function handlePiReviewTargetStartFieldChange(value: string) {
+    setPiReviewTargetStartFieldId(value);
+    saveSettingField('piReviewTargetStartFieldId', value);
+  }
+
+  function handlePiReviewTargetEndFieldChange(value: string) {
+    setPiReviewTargetEndFieldId(value);
+    saveSettingField('piReviewTargetEndFieldId', value);
+  }
+
   function handleStaleDaysChange(value: string) {
     setStaleDaysInput(value);
     const parsedDays = parseInt(value, 10);
@@ -3218,6 +3481,8 @@ function SettingsPanel({
       isSpAutoDetect,
       featureLinkField,
       pCodeField,
+      piReviewTargetStartFieldId,
+      piReviewTargetEndFieldId,
       depLinkTypes: selectedDependencyLinkTypes,
       staleDays: Number.parseInt(staleDaysInput, 10) || DEFAULT_STALE_DAYS_SETTING,
       piEndDate,
@@ -3251,6 +3516,12 @@ function SettingsPanel({
     const nextSpFieldId = sharedWorkspace.settings.spFieldId ?? '';
     const nextFeatureLinkField = sharedWorkspace.settings.featureLinkField ?? '';
     const nextPCodeField = sharedWorkspace.settings.pCodeField ?? '';
+    const nextPiReviewTargetStartFieldId = readDefaultedPiReviewTargetStartFieldId(
+      sharedWorkspace.settings.piReviewTargetStartFieldId,
+    );
+    const nextPiReviewTargetEndFieldId = readDefaultedPiReviewTargetEndFieldId(
+      sharedWorkspace.settings.piReviewTargetEndFieldId,
+    );
     const nextStaleDays = sharedWorkspace.settings.staleDays ?? DEFAULT_STALE_DAYS_SETTING;
     const nextSprintWindowDays = sharedWorkspace.settings.sprintWindowDays ?? DEFAULT_SPRINT_WINDOW_DAYS;
     const nextPiEndDate = sharedWorkspace.settings.piEndDate ?? '';
@@ -3266,6 +3537,8 @@ function SettingsPanel({
     setSpFieldId(nextSpFieldId);
     setFeatureLinkField(nextFeatureLinkField);
     setPCodeField(nextPCodeField);
+    setPiReviewTargetStartFieldId(nextPiReviewTargetStartFieldId);
+    setPiReviewTargetEndFieldId(nextPiReviewTargetEndFieldId);
     setStaleDaysInput(String(nextStaleDays));
     setSprintWindowDaysInput(String(nextSprintWindowDays));
     setPiEndDate(nextPiEndDate);
@@ -3280,6 +3553,8 @@ function SettingsPanel({
       isSpAutoDetect: nextIsSpAutoDetect,
       featureLinkField: nextFeatureLinkField,
       pCodeField: nextPCodeField,
+      piReviewTargetStartFieldId: nextPiReviewTargetStartFieldId,
+      piReviewTargetEndFieldId: nextPiReviewTargetEndFieldId,
       depLinkTypes: nextDependencyLinkTypes,
       staleDays: nextStaleDays,
       piEndDate: nextPiEndDate,
@@ -3324,6 +3599,7 @@ function SettingsPanel({
         getCurrentAdvancedSettingsSnapshot(),
       );
       await saveSharedArtWorkspace(createdDatabase.id, sharedWorkspacePayload);
+      writeSharedArtSyncSnapshot(createdDatabase.id, sharedWorkspacePayload);
 
       setSharedArtName(normalizedSharedArtName);
       setSharedArtDatabaseId(createdDatabase.id);
@@ -3361,23 +3637,53 @@ function SettingsPanel({
     setSharedArtError(null);
     setSharedArtStatus('');
     try {
-      await saveSharedArtWorkspace(
-        normalizedDatabaseId,
-        buildSharedArtWorkspacePayload(
-          normalizedSharedArtName,
-          normalizedArtShortName,
-          teams,
-          getCurrentAdvancedSettingsSnapshot(),
-        ),
-      );
-      saveSharedArtWorkspaceReference(
+      const localWorkspacePayload = buildSharedArtWorkspacePayload(
         normalizedSharedArtName,
         normalizedArtShortName,
+        teams,
+        getCurrentAdvancedSettingsSnapshot(),
+      );
+      let workspacePayloadToSave = localWorkspacePayload;
+      try {
+        const remoteWorkspacePayload = await loadSharedArtWorkspace(normalizedDatabaseId);
+        const baseWorkspaceSnapshot = readSharedArtSyncSnapshot(normalizedDatabaseId);
+        if (!baseWorkspaceSnapshot) {
+          const missingSnapshotMessage = 'Load shared settings from workspace once before pushing so Toolbox can merge safely.';
+          setSharedArtError(missingSnapshotMessage);
+          showToast(missingSnapshotMessage, 'error');
+          return;
+        }
+
+        const mergeResult = mergeSharedArtWorkspacePayload(
+          baseWorkspaceSnapshot,
+          localWorkspacePayload,
+          remoteWorkspacePayload,
+        );
+        if (mergeResult.conflicts.length > 0) {
+          const conflictMessage = formatSharedArtMergeConflictMessage(mergeResult.conflicts);
+          setSharedArtError(conflictMessage);
+          showToast(conflictMessage, 'error');
+          return;
+        }
+        workspacePayloadToSave = mergeResult.mergedWorkspace;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to load the shared ART workspace before publishing.';
+        if (!errorMessage.includes('does not contain a NodeToolbox shared ART workspace yet')) {
+          throw error;
+        }
+      }
+
+      await saveSharedArtWorkspace(normalizedDatabaseId, workspacePayloadToSave);
+      writeSharedArtSyncSnapshot(normalizedDatabaseId, workspacePayloadToSave);
+      applyLoadedSharedArtWorkspace(workspacePayloadToSave, normalizedDatabaseId);
+      saveSharedArtWorkspaceReference(
+        workspacePayloadToSave.artName,
+        workspacePayloadToSave.artKey,
         normalizedDatabaseId,
         sharedArtSpaceId,
         sharedArtParentId,
       );
-      rememberSharedArtWorkspace(normalizedSharedArtName, normalizedArtShortName, normalizedDatabaseId);
+      rememberSharedArtWorkspace(workspacePayloadToSave.artName, workspacePayloadToSave.artKey, normalizedDatabaseId);
       setSharedArtStatus(`Published local ART settings to shared workspace ${normalizedDatabaseId}.`);
       showToast('Shared ART published ✓', 'success');
     } catch (error) {
@@ -3402,6 +3708,7 @@ function SettingsPanel({
     try {
       const sharedWorkspace = await loadSharedArtWorkspace(normalizedDatabaseId);
       applyLoadedSharedArtWorkspace(sharedWorkspace, normalizedDatabaseId);
+      writeSharedArtSyncSnapshot(normalizedDatabaseId, sharedWorkspace);
       saveSharedArtWorkspaceReference(
         sharedWorkspace.artName,
         sharedWorkspace.artKey,
@@ -3610,6 +3917,26 @@ function SettingsPanel({
         </div>
 
         <div className={styles.settingsFieldRow}>
+          <JiraFieldPicker
+            id="art-pi-review-target-start-field"
+            label="PI Review Target Start Field"
+            onChange={handlePiReviewTargetStartFieldChange}
+            placeholder="Target start field"
+            value={piReviewTargetStartFieldId}
+          />
+        </div>
+
+        <div className={styles.settingsFieldRow}>
+          <JiraFieldPicker
+            id="art-pi-review-target-end-field"
+            label="PI Review Target End Field"
+            onChange={handlePiReviewTargetEndFieldChange}
+            placeholder="Target end field"
+            value={piReviewTargetEndFieldId}
+          />
+        </div>
+
+        <div className={styles.settingsFieldRow}>
           <div className={styles.settingsFieldBlock}>
             <div className={styles.settingsFieldHeader}>
               <label className={styles.settingsFieldLabel}>Dependency Link Types</label>
@@ -3730,131 +4057,173 @@ function SettingsPanel({
             It shares team roster and ART settings across NodeToolbox instances without requiring a separate server.
           </p>
 
-          {recentSharedArtWorkspaces.length > 0 && (
+          <div className={styles.sharedArtWorkflowSection}>
+            <h5 className={styles.sharedArtWorkflowTitle}>1. First-Time Setup</h5>
+            <p className={styles.sharedArtWorkflowHint}>
+              Create the Confluence workspace once. Toolbox creates the workspace and fills in the Shared ART Database ID for future sync.
+            </p>
+
             <div className={styles.settingsFieldRow}>
-              <label className={styles.settingsFieldLabel} htmlFor="art-shared-recent">Recent Shared ARTs</label>
-              <select
-                aria-label="Recent Shared ARTs"
-                className={styles.textInput}
-                id="art-shared-recent"
-                onChange={(event) => handleRecentSharedArtChange(event.target.value)}
-                value={sharedArtDatabaseId}
+              <div className={styles.settingsFieldBlock}>
+                <label className={styles.settingsFieldLabel}>Shared ART Name</label>
+                <input
+                  aria-label="Shared ART Name"
+                  className={styles.textInput}
+                  onChange={(event) => {
+                    setSharedArtName(event.target.value);
+                    saveSettingField('sharedArtName', event.target.value.trim());
+                  }}
+                  placeholder="Platform Engineering ART"
+                  type="text"
+                  value={sharedArtName}
+                />
+                <p className={styles.settingsFieldHint}>
+                  Required for setup. This becomes the workspace title that Toolbox creates in Confluence.
+                </p>
+              </div>
+            </div>
+
+            <div className={styles.settingsFieldRow}>
+              <div className={styles.settingsFieldBlock}>
+                <label className={styles.settingsFieldLabel}>ART Short Name (optional)</label>
+                <input
+                  aria-label="ART Short Name"
+                  className={styles.textInput}
+                  onChange={(event) => {
+                    setSharedArtKey(event.target.value);
+                    saveSettingField('sharedArtKey', event.target.value.trim());
+                  }}
+                  placeholder="S2E"
+                  type="text"
+                  value={sharedArtKey}
+                />
+                <p className={styles.settingsFieldHint}>
+                  Optional short label for the ART workspace. This is only a friendly NodeToolbox label and is not tied to Jira.
+                </p>
+              </div>
+            </div>
+
+            <div className={styles.settingsFieldRow}>
+              <div className={styles.settingsFieldBlock}>
+                <label className={styles.settingsFieldLabel}>Confluence Space ID</label>
+                <input
+                  aria-label="Confluence Space ID"
+                  className={styles.textInput}
+                  onChange={(event) => {
+                    setSharedArtSpaceId(event.target.value);
+                    saveSettingField('sharedArtSpaceId', event.target.value.trim());
+                  }}
+                  placeholder="Required for setup only"
+                  type="text"
+                  value={sharedArtSpaceId}
+                />
+                <p className={styles.settingsFieldHint}>
+                  Required only when creating a new workspace. Toolbox does not need this for later push or load actions.
+                </p>
+              </div>
+            </div>
+
+            <div className={styles.settingsFieldRow}>
+              <div className={styles.settingsFieldBlock}>
+                <label className={styles.settingsFieldLabel}>Parent Content ID (optional)</label>
+                <input
+                  aria-label="Parent Content ID"
+                  className={styles.textInput}
+                  onChange={(event) => {
+                    setSharedArtParentId(event.target.value);
+                    saveSettingField('sharedArtParentId', event.target.value.trim());
+                  }}
+                  placeholder="Optional page or folder ID"
+                  type="text"
+                  value={sharedArtParentId}
+                />
+                <p className={styles.settingsFieldHint}>
+                  Use this only if the new Confluence workspace should be created under a specific parent page or folder.
+                </p>
+              </div>
+            </div>
+
+            <div className={styles.settingsButtonRow}>
+              <button
+                className={styles.primaryBtn}
+                disabled={isCreatingSharedArt}
+                onClick={() => void handleCreateSharedArtWorkspace()}
+                type="button"
               >
-                <option value="">Select a recent shared ART</option>
-                {recentSharedArtWorkspaces.map((workspace) => (
-                  <option key={workspace.databaseId} value={workspace.databaseId}>
-                    {workspace.artKey} — {workspace.artName}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div className={styles.settingsFieldRow}>
-            <label className={styles.settingsFieldLabel}>Shared ART Name</label>
-            <input
-              aria-label="Shared ART Name"
-              className={styles.textInput}
-              onChange={(event) => {
-                setSharedArtName(event.target.value);
-                saveSettingField('sharedArtName', event.target.value.trim());
-              }}
-              placeholder="ART display name"
-              type="text"
-              value={sharedArtName}
-            />
-          </div>
-
-          <div className={styles.settingsFieldRow}>
-            <div className={styles.settingsFieldBlock}>
-              <label className={styles.settingsFieldLabel}>ART Short Name (optional)</label>
-              <input
-                aria-label="ART Short Name"
-                className={styles.textInput}
-                onChange={(event) => {
-                  setSharedArtKey(event.target.value);
-                  saveSettingField('sharedArtKey', event.target.value.trim());
-                }}
-                placeholder="S2E"
-                type="text"
-                value={sharedArtKey}
-              />
-              <p className={styles.settingsFieldHint}>
-                Optional short label for the ART workspace. This is only a friendly NodeToolbox label and is not tied to Jira.
-              </p>
+                {isCreatingSharedArt ? 'Creating…' : 'Create New Shared ART Workspace'}
+              </button>
             </div>
           </div>
 
-          <div className={styles.settingsFieldRow}>
-            <label className={styles.settingsFieldLabel}>Shared ART Database ID</label>
-            <input
-              aria-label="Shared ART Database ID"
-              className={styles.textInput}
-              onChange={(event) => {
-                setSharedArtDatabaseId(event.target.value);
-                saveSettingField('sharedArtDatabaseId', event.target.value.trim());
-              }}
-              placeholder="Confluence database ID"
-              type="text"
-              value={sharedArtDatabaseId}
-            />
-          </div>
+          <div className={styles.sharedArtWorkflowSection}>
+            <h5 className={styles.sharedArtWorkflowTitle}>2. Sync an Existing Workspace</h5>
+            <p className={styles.sharedArtWorkflowHint}>
+              Use this after a workspace already exists. Load pulls shared settings into this browser, while Push publishes your local ART settings back to Confluence.
+            </p>
 
-          <div className={styles.settingsFieldRow}>
-            <label className={styles.settingsFieldLabel}>Confluence Space ID</label>
-            <input
-              aria-label="Confluence Space ID"
-              className={styles.textInput}
-              onChange={(event) => {
-                setSharedArtSpaceId(event.target.value);
-                saveSettingField('sharedArtSpaceId', event.target.value.trim());
-              }}
-              placeholder="Required when creating"
-              type="text"
-              value={sharedArtSpaceId}
-            />
-          </div>
+            {recentSharedArtWorkspaces.length > 0 && (
+              <div className={styles.settingsFieldRow}>
+                <div className={styles.settingsFieldBlock}>
+                  <label className={styles.settingsFieldLabel} htmlFor="art-shared-recent">Recent Shared ARTs</label>
+                  <select
+                    aria-label="Recent Shared ARTs"
+                    className={styles.textInput}
+                    id="art-shared-recent"
+                    onChange={(event) => handleRecentSharedArtChange(event.target.value)}
+                    value={sharedArtDatabaseId}
+                  >
+                    <option value="">Select a recent shared ART</option>
+                    {recentSharedArtWorkspaces.map((workspace) => (
+                      <option key={workspace.databaseId} value={workspace.databaseId}>
+                        {workspace.artKey} — {workspace.artName}
+                      </option>
+                    ))}
+                  </select>
+                  <p className={styles.settingsFieldHint}>
+                    Pick a recent workspace to refill the database ID and friendly labels on this device.
+                  </p>
+                </div>
+              </div>
+            )}
 
-          <div className={styles.settingsFieldRow}>
-            <label className={styles.settingsFieldLabel}>Parent Content ID (optional)</label>
-            <input
-              aria-label="Parent Content ID"
-              className={styles.textInput}
-              onChange={(event) => {
-                setSharedArtParentId(event.target.value);
-                saveSettingField('sharedArtParentId', event.target.value.trim());
-              }}
-              placeholder="Optional page or folder ID"
-              type="text"
-              value={sharedArtParentId}
-            />
-          </div>
+            <div className={styles.settingsFieldRow}>
+              <div className={styles.settingsFieldBlock}>
+                <label className={styles.settingsFieldLabel}>Shared ART Database ID</label>
+                <input
+                  aria-label="Shared ART Database ID"
+                  className={styles.textInput}
+                  onChange={(event) => {
+                    setSharedArtDatabaseId(event.target.value);
+                    saveSettingField('sharedArtDatabaseId', event.target.value.trim());
+                  }}
+                  placeholder="Paste an existing Confluence database ID"
+                  type="text"
+                  value={sharedArtDatabaseId}
+                />
+                <p className={styles.settingsFieldHint}>
+                  Required for sync. Toolbox fills this in after Create, or you can paste an existing database ID to connect to a shared workspace.
+                </p>
+              </div>
+            </div>
 
-          <div className={styles.settingsButtonRow}>
-            <button
-              className={styles.primaryBtn}
-              disabled={isCreatingSharedArt}
-              onClick={() => void handleCreateSharedArtWorkspace()}
-              type="button"
-            >
-              {isCreatingSharedArt ? 'Creating…' : 'Create Shared ART Workspace'}
-            </button>
-            <button
-              className={styles.secondaryBtn}
-              disabled={isPublishingSharedArt}
-              onClick={() => void handlePublishSharedArtWorkspace()}
-              type="button"
-            >
-              {isPublishingSharedArt ? 'Publishing…' : 'Publish Local ART Settings'}
-            </button>
-            <button
-              className={styles.secondaryBtn}
-              disabled={isLoadingSharedArt}
-              onClick={() => void handleLoadSharedArtWorkspace()}
-              type="button"
-            >
-              {isLoadingSharedArt ? 'Loading…' : 'Load Shared ART Settings'}
-            </button>
+            <div className={styles.settingsButtonRow}>
+              <button
+                className={styles.secondaryBtn}
+                disabled={isPublishingSharedArt}
+                onClick={() => void handlePublishSharedArtWorkspace()}
+                type="button"
+              >
+                {isPublishingSharedArt ? 'Publishing…' : 'Push Local Settings to Workspace'}
+              </button>
+              <button
+                className={styles.secondaryBtn}
+                disabled={isLoadingSharedArt}
+                onClick={() => void handleLoadSharedArtWorkspace()}
+                type="button"
+              >
+                {isLoadingSharedArt ? 'Loading…' : 'Load Shared Settings from Workspace'}
+              </button>
+            </div>
           </div>
 
           {sharedArtStatus && <p className={styles.metricSummary}>{sharedArtStatus}</p>}
@@ -3864,4 +4233,3 @@ function SettingsPanel({
     </div>
   );
 }
-
