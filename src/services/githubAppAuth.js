@@ -336,6 +336,57 @@ async function listGitHubAppInstallations(configuration) {
   });
 }
 
+// ── Token resolution — PAT fallback ──────────────────────────────────────────
+
+/**
+ * Resolves the effective GitHub authentication token for the current configuration.
+ *
+ * Priority order:
+ *   1. GitHub App installation token — when appId, installationId, and appPrivateKey are all set.
+ *   2. Personal Access Token (PAT)   — when configuration.github.pat is set.
+ *
+ * Callers should use this function instead of reading configuration.github.pat directly
+ * so that GitHub App credentials are transparently preferred without changing the
+ * call sites for each polling or proxy operation.
+ *
+ * @param {import('../config/loader').ProxyConfig} configuration
+ * @returns {Promise<{ token: string, authType: 'github-app' | 'pat' }>}
+ * @throws {Error} When neither GitHub App credentials nor a PAT are configured
+ */
+async function resolveEffectiveGitHubToken(configuration) {
+  // GitHub App credentials take priority — they provide scoped, short-lived tokens
+  // that are more secure and don't require a user to create a personal token.
+  if (hasGitHubAppCredentials(configuration)) {
+    const installationToken = await getValidInstallationToken(configuration);
+    return { token: installationToken, authType: 'github-app' };
+  }
+
+  const personalAccessToken = configuration.github && configuration.github.pat;
+  if (personalAccessToken) {
+    return { token: personalAccessToken, authType: 'pat' };
+  }
+
+  throw new Error(
+    'GitHub not configured: provide either a Personal Access Token (PAT) ' +
+    'or GitHub App credentials (appId, installationId, appPrivateKey).'
+  );
+}
+
+/**
+ * Returns true when the configuration has at least one valid GitHub auth method —
+ * either a GitHub App (appId + installationId + appPrivateKey) or a PAT.
+ *
+ * This is a fast, synchronous check — no network calls are made.
+ * Use resolveEffectiveGitHubToken() when you actually need the token value.
+ *
+ * @param {import('../config/loader').ProxyConfig} configuration
+ * @returns {boolean}
+ */
+function hasAnyGitHubAuth(configuration) {
+  const githubConfig = configuration.github || {};
+  return !!(githubConfig.pat) || hasGitHubAppCredentials(configuration);
+}
+
 // ── Exports ───────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -344,5 +395,7 @@ module.exports = {
   getValidInstallationToken,
   clearInstallationTokenCache,
   hasGitHubAppCredentials,
+  hasAnyGitHubAuth,
+  resolveEffectiveGitHubToken,
   listGitHubAppInstallations,
 };

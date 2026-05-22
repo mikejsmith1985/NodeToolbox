@@ -9,6 +9,7 @@
 const express    = require('express');
 const { proxyRequest } = require('../utils/httpClient');
 const snowSession      = require('../services/snowSession');
+const { hasAnyGitHubAuth, resolveEffectiveGitHubToken } = require('../services/githubAppAuth');
 
 // ── Router Factory ────────────────────────────────────────────────────────────
 
@@ -50,20 +51,40 @@ function createProxyRouter(configuration) {
   });
 
   // ── GitHub Proxy ────────────────────────────────────────────────────────────
-  // Strips the /github-proxy prefix and injects the server-side GitHub PAT as
-  // a Bearer token. The browser never stores or transmits the PAT directly.
+  // Strips the /github-proxy prefix and injects a server-side GitHub token.
+  // Supports both PAT and GitHub App installation tokens.
+  // The browser never stores or transmits the token directly.
 
-  router.all('/github-proxy/*', (req, res) => {
-    if (!configuration.github.pat) {
+  router.all('/github-proxy/*', async (req, res) => {
+    // Reject immediately when no GitHub auth method is configured at all
+    if (!hasAnyGitHubAuth(configuration)) {
       return res.status(502).json({
-        error:   'GitHub PAT not configured',
-        message: 'Set GITHUB_TOKEN environment variable or configure via the setup wizard.',
+        error:   'GitHub not configured',
+        message: 'Set GITHUB_TOKEN environment variable or configure GitHub App credentials via the setup wizard.',
       });
     }
 
+    let resolvedToken;
+    try {
+      // Resolve the effective token — GitHub App installation token takes priority over PAT.
+      // This call is fast when the cache is warm (no network round-trip needed).
+      const authResult = await resolveEffectiveGitHubToken(configuration);
+      resolvedToken = authResult.token;
+    } catch (tokenError) {
+      console.error('  [GitHub Proxy] Token resolution failed: ' + tokenError.message);
+      return res.status(502).json({
+        error:   'GitHub authentication failed',
+        message: tokenError.message,
+      });
+    }
+
+    // Build an effective config with the resolved token so proxyRequest injects it.
+    // We override only the pat field — all other settings (baseUrl, etc.) come from config.
+    const effectiveGithubConfig = Object.assign({}, configuration.github, { pat: resolvedToken });
+
     // Use req.url (not req.path) so query strings are preserved and forwarded downstream.
     const githubPath = buildDownstreamPath(req.url, '/github-proxy');
-    proxyRequest(req, res, configuration.github, githubPath, null, configuration.sslVerify);
+    proxyRequest(req, res, effectiveGithubConfig, githubPath, null, configuration.sslVerify);
   });
 
   // ── Confluence Proxy ─────────────────────────────────────────────────────────

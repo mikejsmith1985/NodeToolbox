@@ -137,7 +137,9 @@ describe('runRepoMonitor', () => {
     await expect(repoMonitor.runRepoMonitor(configuration)).resolves.toBeUndefined();
   });
 
-  it('resolves without throwing when GitHub PAT is missing', async () => {
+  it('resolves without throwing when neither PAT nor GitHub App credentials are configured', async () => {
+    // Simulates a fresh install with no GitHub auth at all — the scheduler
+    // should silently skip rather than throw, so the server stays healthy.
     const configuration = buildTestConfig();
     configuration.github.pat = '';
     await expect(repoMonitor.runRepoMonitor(configuration)).resolves.toBeUndefined();
@@ -149,7 +151,7 @@ describe('runRepoMonitor', () => {
 describe('testGitHubConnectivity', () => {
   afterEach(() => nock.cleanAll());
 
-  it('returns success=true with authenticatedAs when GitHub returns HTTP 200', async () => {
+  it('returns success=true with authenticatedAs and authType=pat when using a PAT', async () => {
     nock('https://api.github.com')
       .get('/user')
       .reply(200, { login: 'mikejsmith1985', name: 'Mike Smith' });
@@ -163,6 +165,7 @@ describe('testGitHubConnectivity', () => {
     expect(probeResult.method).toBe('GET');
     expect(probeResult.endpoint).toMatch(/\/user/);
     expect(probeResult.authenticatedAs).toBe('mikejsmith1985');
+    expect(probeResult.authType).toBe('pat');
     expect(probeResult.errorMessage).toBeUndefined();
     expect(typeof probeResult.responseTime).toBe('number');
   });
@@ -243,5 +246,36 @@ describe('validateRepoMonitorConnectivity — probeErrorMessage from GitHub API 
     const repoResult = result.repoMonitor.repos[0];
     expect(repoResult.isReachable).toBe(true);
     expect(repoResult.probeErrorMessage).toBeNull();
+  });
+
+  it('reports isGitHubConfigured=false and authType=none when no GitHub auth is set', async () => {
+    const configuration = buildTestConfig();
+    // Remove the PAT so no auth method is available
+    configuration.github.pat = '';
+    configuration.scheduler.repoMonitor.repos = ['zilvertonz/test-repo'];
+
+    const result = await repoMonitor.validateRepoMonitorConnectivity(configuration);
+
+    expect(result.repoMonitor.isGitHubConfigured).toBe(false);
+    expect(result.repoMonitor.authType).toBe('none');
+    expect(result.repoMonitor.probeErrorMessage).toMatch(/credentials not configured/i);
+  });
+
+  it('reports authType=pat when using a PAT and probe succeeds', async () => {
+    nock('https://api.github.com')
+      .get('/repos/zilvertonz/test-repo/branches')
+      .query(true)
+      .reply(200, [])
+      .get('/repos/zilvertonz/test-repo/pulls')
+      .query(true)
+      .reply(200, []);
+
+    const configuration = buildTestConfig();
+    configuration.scheduler.repoMonitor.repos = ['zilvertonz/test-repo'];
+
+    const result = await repoMonitor.validateRepoMonitorConnectivity(configuration);
+
+    expect(result.repoMonitor.isGitHubConfigured).toBe(true);
+    expect(result.repoMonitor.authType).toBe('pat');
   });
 });
