@@ -5,8 +5,9 @@
   flex-direction: column;
   gap: var(--spacing-md);
   padding: var(--spacing-md);
-  height: 100%;
-  overflow: hidden;
+  flex: 1 1 auto;
+  min-height: 100%;
+  min-width: 0;
 }
 
 .pageHeader {
@@ -33,7 +34,7 @@
 .scopeSelectorField {
   display: grid;
   gap: var(--spacing-xs);
-  min-width: 180px;
+  min-width: var(--layout-control-min-width);
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
 }
@@ -72,10 +73,15 @@
 }
 
 .tabPanelSection {
-  flex: 1 1 0;
+  /*
+   * Use an auto basis so the tab content still receives natural height when the
+   * surrounding shell does not provide a strict viewport-sized flex height.
+   * This keeps the panel visible instead of collapsing to zero under the tab row.
+   */
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 /* Wrapper that strips top-level page padding when a standalone view is embedded as a tab */
@@ -549,7 +555,7 @@
 
 .laneIssueRow {
   display: grid;
-  grid-template-columns: 90px 1fr 120px auto auto;
+  grid-template-columns: clamp(88px, 12vw, 104px) minmax(0, 1fr) clamp(96px, 14vw, 120px) auto auto;
   gap: var(--spacing-sm);
   align-items: center;
   padding: var(--spacing-xs) 0;
@@ -1071,7 +1077,7 @@
 .releaseNotesTable {
   width: 100%;
   border-collapse: collapse;
-  min-width: 960px;
+  min-width: var(--layout-release-table-min-width);
 }
 
 .releaseNotesTable th,
@@ -2603,13 +2609,36 @@
 
 /* ── Issue card grid with 5 columns (key / summary / status / action / expand) ── */
 
-.laneIssueRow {
-  display: grid;
-  grid-template-columns: 90px 1fr 120px auto auto;
-  gap: var(--spacing-sm);
-  align-items: center;
-  padding: var(--spacing-xs) 0;
-  border-bottom: 1px solid var(--color-border);
-  font-size: var(--font-size-sm);
-  color: var(--color-text-primary);
+@media (max-width: 960px) {
+  .laneIssueRow {
+    grid-template-columns: clamp(88px, 12vw, 104px) minmax(0, 1fr) auto auto;
+  }
+
+  .laneIssueRow > :nth-child(3) {
+    display: none;
+  }
+
+  .releaseNotesTable th,
+  .releaseNotesTable td {
+    padding: var(--spacing-sm);
+  }
+}
+
+@media (max-width: 760px) {
+  .scopeSelectorField {
+    flex: 1 1 var(--layout-control-min-width);
+    min-width: min(100%, var(--layout-control-min-width));
+  }
+
+  .laneIssueRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .laneIssueRow > :nth-child(2) {
+    grid-column: 1 / -1;
+  }
+
+  .laneIssueRow > :nth-child(3) {
+    display: none;
+  }
 }

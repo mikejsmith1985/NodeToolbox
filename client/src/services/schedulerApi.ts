@@ -82,7 +82,20 @@ export interface SchedulerValidationResponse {
 }
 
 export interface GitHubDebugInfo {
+  /**
+   * Masked PAT token when PAT auth is active, or null when GitHub App handles
+   * authentication server-side (in which case no token is exposed to this endpoint).
+   */
   pat: string | null;
+  /**
+   * Backward-compatible auth method field used by older client mocks.
+   * Newer servers report authType at the top level instead.
+   */
+  authMethod?: string;
+  /** GitHub App ID shown in diagnostics when GitHub App auth is active. */
+  appId?: string | number;
+  /** GitHub App installation ID shown in diagnostics when GitHub App auth is active. */
+  installationId?: string | number;
   baseUrl: string;
   authHeaderFormat: string;
   expectedHeader?: string;
@@ -103,6 +116,8 @@ export interface GitHubProbeResult {
 
 export interface GitHubDebugResponse {
   isConfigured: boolean;
+  /** "pat", "github-app", or "none" when the server reports the active auth mode. */
+  authType?: string;
   message?: string;
   timestamp?: string;
   debugInfo: GitHubDebugInfo;
@@ -170,4 +185,3 @@ export async function fetchGitHubDebugInfo(): Promise<GitHubDebugResponse> {
   assertSuccessfulResponse(response, 'github debug fetch failed');
   return parseJsonResponse<GitHubDebugResponse>(response);
 }
-

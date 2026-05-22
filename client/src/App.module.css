@@ -14,7 +14,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--layout-page-inline-padding);
   background: linear-gradient(180deg, var(--color-header-bg-start), var(--color-header-bg-end));
   position: sticky;
   top: 0;
@@ -30,13 +31,16 @@
 .topBarLeft {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--spacing-sm);
+  min-width: 0;
 }
 
 .topBarRight {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
   min-width: 0;
 }
 
@@ -48,7 +52,7 @@
 
 /* Overrides browser anchor defaults so the title looks like a header element, not a blue link. */
 .homeLink {
-  font-size: 14px;
+  font-size: var(--font-size-md);
   font-weight: 600;
   color: var(--color-text-primary);
   text-decoration: none;
@@ -91,7 +95,7 @@
   border-radius: 999px;
   background: var(--color-warning-soft, rgba(245, 158, 11, 0.16));
   color: var(--color-warning, #f59e0b);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 700;
 }
 
@@ -106,13 +110,13 @@
 }
 
 .themeToggleButton {
-  padding: 6px 12px;
+  padding: var(--spacing-sm) var(--spacing-md);
   border: none;
   border-radius: 999px;
   background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   transition: background 0.15s ease, color 0.15s ease;
 }
@@ -129,13 +133,13 @@
 
 .toolTextSizeButton {
   min-width: 40px;
-  padding: 6px 10px;
+  padding: var(--spacing-sm) var(--spacing-sm);
   border: none;
   border-radius: 999px;
   background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   transition: background 0.15s ease, color 0.15s ease;
 }
@@ -162,6 +166,27 @@
   min-height: var(--tool-text-min-height);
   /* Keep sticky tab bars anchored to the shared scroll container when users enlarge tool text. */
   zoom: var(--tool-text-zoom);
+}
+
+@media (max-width: 960px) {
+  .topBar {
+    align-items: flex-start;
+  }
+
+  .topBarRight {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .topBar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .topBarRight {
+    justify-content: flex-start;
+  }
 }
 
 .placeholderView {

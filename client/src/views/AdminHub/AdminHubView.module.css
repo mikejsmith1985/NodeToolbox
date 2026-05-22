@@ -1,27 +1,15 @@
 /* AdminHubView.module.css — Styles for the Admin Hub configuration and developer tools view. */
 
 .adminHubView {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg);
-  padding: var(--spacing-md);
-  max-width: 800px;
+  min-width: 0;
   /* No overflow here — the scroll container must be .mainContent (App.module.css)
      so that position:sticky on PrimaryTabs sticks below the connection bar. */
 }
 
-/* ── Page header ── */
-
-.pageTitle {
-  font-size: var(--font-size-lg);
-  color: var(--color-text-primary);
-  margin: 0 0 var(--spacing-xs);
-}
-
-.pageSubtitle {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-  margin: 0;
+.adminHubBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--layout-section-gap);
 }
 
 /* ── Tab bar ── */

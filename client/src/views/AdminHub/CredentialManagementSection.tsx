@@ -1,8 +1,12 @@
-// CredentialManagementSection.tsx — Credential display and GitHub PAT management.
+// CredentialManagementSection.tsx — Credential display and GitHub personal access token management.
 //
 // Shows the Jira base URL and ServiceNow instance URL from the settings store (read-only,
 // with links to the Settings view for editing). Provides a masked input for storing a
-// GitHub Personal Access Token in localStorage.
+// GitHub Personal Access Token in localStorage for direct browser-to-GitHub API calls.
+//
+// Note: Server-backed operations (e.g. the repo monitor) use the GitHub credential
+// configured in the Admin Hub Connectivity section, which supports both PAT and
+// GitHub App authentication.
 
 import { useState } from 'react';
 
@@ -160,7 +164,9 @@ function GithubPatRow({
 
       {saveStatus !== null && <span className={styles.saveStatus}>{saveStatus}</span>}
       <p className={styles.adminDescription}>
-        GitHub PAT is stored in localStorage. Requires <code>repo</code> read scope.
+        This token is stored in browser localStorage for client-side GitHub access only. Requires{' '}
+        <code>repo</code> read scope. The server-backed repo monitor uses the GitHub credential
+        configured in Admin Hub and supports GitHub App authentication.
       </p>
     </div>
   );
@@ -212,8 +218,10 @@ export default function CredentialManagementSection() {
     <section className={styles.sectionCard}>
       <h2 className={styles.sectionTitle}>🔑 Credential Management</h2>
       <p className={styles.adminDescription}>
-        Jira and ServiceNow URLs are configured in Settings. GitHub PAT is stored locally for
-        direct API access.
+        Jira and ServiceNow URLs are configured in Settings. A Personal Access Token stored here
+        enables direct browser-to-GitHub access. For server-backed operations (such as the repo
+        monitor), configure GitHub credentials in the Connectivity section — both PAT and GitHub
+        App authentication are supported there.
       </p>
 
       <ServiceUrlRow

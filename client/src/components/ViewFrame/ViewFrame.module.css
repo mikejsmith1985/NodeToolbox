@@ -1,0 +1,63 @@
+/* ViewFrame.module.css — Shared page-frame styles for consistent responsive view shells. */
+
+.viewFrame {
+  display: flex;
+  flex-direction: column;
+  gap: var(--layout-section-gap);
+  width: 100%;
+  min-width: 0;
+  margin: 0 auto;
+  padding: var(--layout-page-block-padding) var(--layout-page-inline-padding);
+  max-width: var(--layout-view-max-width-standard);
+}
+
+.widthNarrow {
+  max-width: var(--layout-view-max-width-narrow);
+}
+
+.widthStandard {
+  max-width: var(--layout-view-max-width-standard);
+}
+
+.widthWide {
+  max-width: var(--layout-view-max-width-wide);
+}
+
+.widthFull {
+  max-width: none;
+}
+
+.header {
+  display: grid;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
+.headerCenter {
+  justify-items: center;
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xl);
+}
+
+.subtitle {
+  margin: 0;
+  max-width: 72ch;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--layout-section-gap);
+  min-width: 0;
+}
+
+.body > * {
+  min-width: 0;
+}

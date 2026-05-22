@@ -3,11 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { useLocalStorage } from '../../../hooks/useLocalStorage.ts';
+import { useSettingsStore } from '../../../store/settingsStore.ts';
 import type { SimpleSearchResult } from './useSimpleSearchState.ts';
 import {
   buildMappedStablizationValues,
+  STABLIZATION_CONFIGURABLE_COLUMNS,
   readBusinessHelperSettings,
   STABLIZATION_COLUMN_LABELS,
+  type BusinessHelperSettingsState,
   type StablizationConfigurableColumn,
 } from './useBusinessHelperSettings.ts';
 
@@ -19,6 +22,8 @@ const DEFAULT_ROW_COUNT = 1;
 const TESTING_RATE = 0.25;
 const CURRENCY_ROUNDING_PRECISION = 100;
 const ROW_ID_RANDOM_SUFFIX_LENGTH = 8;
+const JIRA_BASE_URL_STORAGE_KEY = 'tbxCRGenJiraUrl';
+const JIRA_BROWSE_PATH_PREFIX = '/browse/';
 const USD_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
@@ -34,6 +39,9 @@ export interface StablizationFundingRow {
   justification: string;
   timing: string;
   cost: string;
+  sourceJiraBrowseUrl: string;
+  sourceJiraIssueKey: string;
+  sourceJiraLinkedColumns: StablizationConfigurableColumn[];
 }
 
 export interface StablizationFundingComputedRow extends StablizationFundingRow {
@@ -68,20 +76,29 @@ export interface AppendSimpleSearchToStablizationResult {
   skippedColumnLabels: string[];
 }
 
+type StablizationSingleOptionDefaults = Partial<Record<StablizationConfigurableColumn, string>>;
+
 /**
  * Creates a blank stablization funding row so business users always have a ready-to-edit line item.
  */
-export function createStablizationFundingRow(): StablizationFundingRow {
+export function createStablizationFundingRow(
+  businessHelperSettings?: BusinessHelperSettingsState,
+): StablizationFundingRow {
+  const stablizationSingleOptionDefaults = buildStablizationSingleOptionDefaults(businessHelperSettings);
+
   return {
     id: createStablizationFundingRowId(),
-    grouping: DEFAULT_TEXT_INPUT,
-    name: DEFAULT_TEXT_INPUT,
+    grouping: stablizationSingleOptionDefaults.grouping ?? DEFAULT_TEXT_INPUT,
+    name: stablizationSingleOptionDefaults.name ?? DEFAULT_TEXT_INPUT,
     fulfillmentCost: DEFAULT_CURRENCY_INPUT,
     enrollmentCost: DEFAULT_CURRENCY_INPUT,
     billing: DEFAULT_CURRENCY_INPUT,
-    justification: DEFAULT_TEXT_INPUT,
+    justification: stablizationSingleOptionDefaults.justification ?? DEFAULT_TEXT_INPUT,
     timing: DEFAULT_DATE_INPUT,
     cost: DEFAULT_CURRENCY_INPUT,
+    sourceJiraBrowseUrl: DEFAULT_TEXT_INPUT,
+    sourceJiraIssueKey: DEFAULT_TEXT_INPUT,
+    sourceJiraLinkedColumns: [],
   };
 }
 
@@ -174,12 +191,18 @@ export function appendSimpleSearchResultToStablization(
     };
   }
 
-  const stablizationRows = readStoredStablizationRows();
+  const stablizationRows = readStoredStablizationRows(businessHelperSettings);
+  const sourceJiraBrowseUrl = buildJiraBrowseUrl(simpleSearchResult.key);
   const mappedRow = {
-    ...createStablizationFundingRow(),
+    ...createStablizationFundingRow(businessHelperSettings),
     ...mappedValues,
+    sourceJiraBrowseUrl,
+    sourceJiraIssueKey: simpleSearchResult.key,
+    sourceJiraLinkedColumns: appliedColumns,
   };
-  const nextRows = shouldReplaceStarterRow(stablizationRows) ? [mappedRow] : [...stablizationRows, mappedRow];
+  const nextRows = shouldReplaceStarterRow(stablizationRows, businessHelperSettings)
+    ? [mappedRow]
+    : [...stablizationRows, mappedRow];
 
   writeStoredStablizationRows(nextRows);
 
@@ -193,13 +216,17 @@ export function appendSimpleSearchResultToStablization(
 /**
  * Persists and manages the editable stablization funding table while exposing read-only calculated values.
  */
-export function useStablizationFundingTable(): UseStablizationFundingTableResult {
+export function useStablizationFundingTable(
+  businessHelperSettings: BusinessHelperSettingsState = readBusinessHelperSettings(),
+): UseStablizationFundingTableResult {
   const [storedRows, setStoredRows] = useLocalStorage<StablizationFundingRow[]>(
     STABLIZATION_STORAGE_KEY,
-    createDefaultStablizationRows(),
+    createDefaultStablizationRows(businessHelperSettings),
   );
-
-  const stablizationRows = useMemo(() => sanitizeStoredRows(storedRows), [storedRows]);
+  const stablizationRows = useMemo(
+    () => applySingleOptionDefaultsToStarterRows(sanitizeStoredRows(storedRows), businessHelperSettings),
+    [businessHelperSettings, storedRows],
+  );
   const stablizationRowsRef = useRef(stablizationRows);
   const computedRows = useMemo(
     () => stablizationRows.map((stablizationRow) => buildComputedRow(stablizationRow)),
@@ -214,20 +241,28 @@ export function useStablizationFundingTable(): UseStablizationFundingTableResult
     stablizationRowsRef.current = stablizationRows;
   }, [stablizationRows]);
 
+  useEffect(() => {
+    if (areStablizationRowsEqual(storedRows, stablizationRows)) {
+      return;
+    }
+
+    setStoredRows(stablizationRows);
+  }, [setStoredRows, stablizationRows, storedRows]);
+
   const addRow = useCallback(() => {
-    const nextRows = [...stablizationRowsRef.current, createStablizationFundingRow()];
+    const nextRows = [...stablizationRowsRef.current, createStablizationFundingRow(businessHelperSettings)];
     stablizationRowsRef.current = nextRows;
     setStoredRows(nextRows);
-  }, [setStoredRows]);
+  }, [businessHelperSettings, setStoredRows]);
 
   const removeRow = useCallback(
     (rowId: string) => {
       const remainingRows = stablizationRowsRef.current.filter((stablizationRow) => stablizationRow.id !== rowId);
-      const nextRows = remainingRows.length > 0 ? remainingRows : createDefaultStablizationRows();
+      const nextRows = remainingRows.length > 0 ? remainingRows : createDefaultStablizationRows(businessHelperSettings);
       stablizationRowsRef.current = nextRows;
       setStoredRows(nextRows);
     },
-    [setStoredRows],
+    [businessHelperSettings, setStoredRows],
   );
 
   const updateTextField = useCallback(
@@ -262,8 +297,10 @@ export function useStablizationFundingTable(): UseStablizationFundingTableResult
   };
 }
 
-function createDefaultStablizationRows(): StablizationFundingRow[] {
-  return Array.from({ length: DEFAULT_ROW_COUNT }, () => createStablizationFundingRow());
+function createDefaultStablizationRows(
+  businessHelperSettings?: BusinessHelperSettingsState,
+): StablizationFundingRow[] {
+  return Array.from({ length: DEFAULT_ROW_COUNT }, () => createStablizationFundingRow(businessHelperSettings));
 }
 
 function createStablizationFundingRowId(): string {
@@ -284,20 +321,25 @@ function calculateStablizationBaseAmount(stablizationRow: StablizationFundingRow
     + parseUsdCurrencyInput(stablizationRow.billing);
 }
 
-function readStoredStablizationRows(): StablizationFundingRow[] {
+function readStoredStablizationRows(
+  businessHelperSettings?: BusinessHelperSettingsState,
+): StablizationFundingRow[] {
   if (typeof window === 'undefined') {
-    return createDefaultStablizationRows();
+    return createDefaultStablizationRows(businessHelperSettings);
   }
 
   try {
     const rawStoredRows = window.localStorage.getItem(STABLIZATION_STORAGE_KEY);
     if (!rawStoredRows) {
-      return createDefaultStablizationRows();
+      return createDefaultStablizationRows(businessHelperSettings);
     }
 
-    return sanitizeStoredRows(JSON.parse(rawStoredRows) as StablizationFundingRow[]);
+    return applySingleOptionDefaultsToStarterRows(
+      sanitizeStoredRows(JSON.parse(rawStoredRows) as StablizationFundingRow[]),
+      businessHelperSettings,
+    );
   } catch {
-    return createDefaultStablizationRows();
+    return createDefaultStablizationRows(businessHelperSettings);
   }
 }
 
@@ -313,7 +355,9 @@ function writeStoredStablizationRows(stablizationRows: StablizationFundingRow[])
   }
 }
 
-function sanitizeStoredRows(candidateRows: StablizationFundingRow[]): StablizationFundingRow[] {
+function sanitizeStoredRows(
+  candidateRows: StablizationFundingRow[],
+): StablizationFundingRow[] {
   if (!Array.isArray(candidateRows) || candidateRows.length === 0) {
     return createDefaultStablizationRows();
   }
@@ -332,26 +376,44 @@ function sanitizeStoredRow(candidateRow: StablizationFundingRow): StablizationFu
     justification: sanitizeStoredText(candidateRow?.justification),
     timing: sanitizeStoredText(candidateRow?.timing),
     cost: sanitizeStoredText(candidateRow?.cost),
+    sourceJiraBrowseUrl: sanitizeStoredText(candidateRow?.sourceJiraBrowseUrl),
+    sourceJiraIssueKey: sanitizeStoredText(candidateRow?.sourceJiraIssueKey),
+    sourceJiraLinkedColumns: sanitizeStoredLinkedColumns(candidateRow?.sourceJiraLinkedColumns),
   };
 }
 
-function sanitizeStoredText(candidateValue: string): string {
-  return typeof candidateValue === 'string' ? candidateValue : DEFAULT_TEXT_INPUT;
+function sanitizeStoredText(candidateValue: string, fallbackValue = DEFAULT_TEXT_INPUT): string {
+  if (typeof candidateValue !== 'string') {
+    return fallbackValue;
+  }
+
+  return candidateValue;
 }
 
-function shouldReplaceStarterRow(stablizationRows: StablizationFundingRow[]): boolean {
-  return stablizationRows.length === 1 && isBlankStablizationRow(stablizationRows[0]);
+function shouldReplaceStarterRow(
+  stablizationRows: StablizationFundingRow[],
+  businessHelperSettings?: BusinessHelperSettingsState,
+): boolean {
+  return stablizationRows.length === 1 && isBlankStablizationRow(stablizationRows[0], businessHelperSettings);
 }
 
-function isBlankStablizationRow(stablizationRow: StablizationFundingRow): boolean {
-  return !stablizationRow.grouping
-    && !stablizationRow.name
+function isBlankStablizationRow(
+  stablizationRow: StablizationFundingRow,
+  businessHelperSettings?: BusinessHelperSettingsState,
+): boolean {
+  const stablizationSingleOptionDefaults = buildStablizationSingleOptionDefaults(businessHelperSettings);
+
+  return isBlankOrDefaultTextValue(stablizationRow.grouping, stablizationSingleOptionDefaults.grouping)
+    && isBlankOrDefaultTextValue(stablizationRow.name, stablizationSingleOptionDefaults.name)
     && !stablizationRow.fulfillmentCost
     && !stablizationRow.enrollmentCost
     && !stablizationRow.billing
-    && !stablizationRow.justification
+    && isBlankOrDefaultTextValue(stablizationRow.justification, stablizationSingleOptionDefaults.justification)
     && !stablizationRow.timing
-    && !stablizationRow.cost;
+    && !stablizationRow.cost
+    && !stablizationRow.sourceJiraBrowseUrl
+    && !stablizationRow.sourceJiraIssueKey
+    && stablizationRow.sourceJiraLinkedColumns.length === 0;
 }
 
 function buildComputedRow(stablizationRow: StablizationFundingRow): StablizationFundingComputedRow {
@@ -360,4 +422,154 @@ function buildComputedRow(stablizationRow: StablizationFundingRow): Stablization
     testingAmount: calculateStablizationTestingAmount(stablizationRow),
     totalAmount: calculateStablizationTotalAmount(stablizationRow),
   };
+}
+
+function buildStablizationSingleOptionDefaults(
+  businessHelperSettings?: BusinessHelperSettingsState,
+): StablizationSingleOptionDefaults {
+  if (!businessHelperSettings) {
+    return {};
+  }
+
+  return STABLIZATION_CONFIGURABLE_COLUMNS.reduce<StablizationSingleOptionDefaults>((runningDefaults, { key }) => {
+    const columnSetting = businessHelperSettings.stablizationColumns[key];
+    const defaultDropdownOption = columnSetting.inputKind === 'dropdown' && columnSetting.dropdownOptions.length === 1
+      ? columnSetting.dropdownOptions[0]
+      : undefined;
+
+    return defaultDropdownOption ? { ...runningDefaults, [key]: defaultDropdownOption } : runningDefaults;
+  }, {});
+}
+
+function applySingleOptionDefaultsToStarterRows(
+  stablizationRows: readonly StablizationFundingRow[],
+  businessHelperSettings?: BusinessHelperSettingsState,
+): StablizationFundingRow[] {
+  const stablizationSingleOptionDefaults = buildStablizationSingleOptionDefaults(businessHelperSettings);
+  if (Object.keys(stablizationSingleOptionDefaults).length === 0) {
+    return [...stablizationRows];
+  }
+
+  return stablizationRows.map((stablizationRow) =>
+    shouldApplySingleOptionDefaultsToRow(stablizationRow, stablizationSingleOptionDefaults)
+      ? applySingleOptionDefaultsToRow(stablizationRow, stablizationSingleOptionDefaults)
+      : stablizationRow,
+  );
+}
+
+function isBlankOrDefaultTextValue(candidateValue: string, defaultValue?: string): boolean {
+  return !candidateValue || candidateValue === defaultValue;
+}
+
+function areStablizationRowsEqual(
+  previousRows: readonly StablizationFundingRow[],
+  nextRows: readonly StablizationFundingRow[],
+): boolean {
+  if (previousRows.length !== nextRows.length) {
+    return false;
+  }
+
+  return previousRows.every((previousRow, rowIndex) => {
+    const nextRow = nextRows[rowIndex];
+    return previousRow.id === nextRow.id
+      && previousRow.grouping === nextRow.grouping
+      && previousRow.name === nextRow.name
+      && previousRow.fulfillmentCost === nextRow.fulfillmentCost
+      && previousRow.enrollmentCost === nextRow.enrollmentCost
+      && previousRow.billing === nextRow.billing
+      && previousRow.justification === nextRow.justification
+      && previousRow.timing === nextRow.timing
+      && previousRow.cost === nextRow.cost
+      && previousRow.sourceJiraBrowseUrl === nextRow.sourceJiraBrowseUrl
+      && previousRow.sourceJiraIssueKey === nextRow.sourceJiraIssueKey
+      && areLinkedColumnListsEqual(previousRow.sourceJiraLinkedColumns, nextRow.sourceJiraLinkedColumns);
+  });
+}
+
+function sanitizeStoredLinkedColumns(
+  candidateLinkedColumns: unknown,
+): StablizationConfigurableColumn[] {
+  if (!Array.isArray(candidateLinkedColumns)) {
+    return [];
+  }
+
+  return candidateLinkedColumns.filter(isStablizationConfigurableColumn);
+}
+
+function isStablizationConfigurableColumn(
+  candidateColumnKey: unknown,
+): candidateColumnKey is StablizationConfigurableColumn {
+  return candidateColumnKey === 'grouping'
+    || candidateColumnKey === 'name'
+    || candidateColumnKey === 'justification';
+}
+
+function areLinkedColumnListsEqual(
+  previousLinkedColumns: readonly StablizationConfigurableColumn[],
+  nextLinkedColumns: readonly StablizationConfigurableColumn[],
+): boolean {
+  if (previousLinkedColumns.length !== nextLinkedColumns.length) {
+    return false;
+  }
+
+  return previousLinkedColumns.every((previousLinkedColumn, linkedColumnIndex) =>
+    previousLinkedColumn === nextLinkedColumns[linkedColumnIndex]
+  );
+}
+
+function shouldApplySingleOptionDefaultsToRow(
+  stablizationRow: StablizationFundingRow,
+  stablizationSingleOptionDefaults: StablizationSingleOptionDefaults,
+): boolean {
+  return isBlankOrDefaultTextValue(stablizationRow.grouping, stablizationSingleOptionDefaults.grouping)
+    && isBlankOrDefaultTextValue(stablizationRow.name, stablizationSingleOptionDefaults.name)
+    && isBlankOrDefaultTextValue(stablizationRow.justification, stablizationSingleOptionDefaults.justification)
+    && !stablizationRow.fulfillmentCost
+    && !stablizationRow.enrollmentCost
+    && !stablizationRow.billing
+    && !stablizationRow.timing
+    && !stablizationRow.cost
+    && !stablizationRow.sourceJiraBrowseUrl
+    && !stablizationRow.sourceJiraIssueKey
+    && stablizationRow.sourceJiraLinkedColumns.length === 0;
+}
+
+function applySingleOptionDefaultsToRow(
+  stablizationRow: StablizationFundingRow,
+  stablizationSingleOptionDefaults: StablizationSingleOptionDefaults,
+): StablizationFundingRow {
+  return {
+    ...stablizationRow,
+    grouping: stablizationRow.grouping || stablizationSingleOptionDefaults.grouping || DEFAULT_TEXT_INPUT,
+    name: stablizationRow.name || stablizationSingleOptionDefaults.name || DEFAULT_TEXT_INPUT,
+    justification: stablizationRow.justification || stablizationSingleOptionDefaults.justification || DEFAULT_TEXT_INPUT,
+  };
+}
+
+function buildJiraBrowseUrl(issueKey: string): string {
+  const jiraBaseUrl = readConfiguredJiraBaseUrl();
+  const normalizedIssuePath = `${JIRA_BROWSE_PATH_PREFIX}${encodeURIComponent(issueKey)}`;
+
+  if (!jiraBaseUrl) {
+    return normalizedIssuePath;
+  }
+
+  return `${jiraBaseUrl.replace(/\/+$/, '')}${normalizedIssuePath}`;
+}
+
+function readConfiguredJiraBaseUrl(): string {
+  const jiraBaseUrlFromStore = useSettingsStore.getState().changeRequestGeneratorJiraUrl.trim();
+  if (jiraBaseUrlFromStore) {
+    return jiraBaseUrlFromStore;
+  }
+
+  if (typeof window === 'undefined') {
+    return DEFAULT_TEXT_INPUT;
+  }
+
+  try {
+    return window.localStorage.getItem(JIRA_BASE_URL_STORAGE_KEY)?.trim() ?? DEFAULT_TEXT_INPUT;
+  } catch {
+    return DEFAULT_TEXT_INPUT;
+  }
 }

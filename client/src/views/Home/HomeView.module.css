@@ -1,28 +1,7 @@
 /* HomeView.module.css — Styles for the Home view layout. */
 
-.homeView {
-  padding: 24px;
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.heading {
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--color-text-primary);
-  margin: 0 0 4px;
-  text-align: center;
-}
-
-.subheading {
-  font-size: 14px;
-  color: var(--color-text-secondary);
-  margin: 0 0 20px;
-  text-align: center;
-}
-
 .recentSection {
-  margin-bottom: 24px;
+  margin-bottom: var(--layout-section-gap);
 }
 
 .recentLabel {
@@ -65,8 +44,8 @@
 .sectionDivider {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 20px 0 12px;
+  gap: var(--spacing-sm);
+  margin: var(--layout-section-gap) 0 var(--layout-grid-gap);
 }
 
 .sectionLabel {
@@ -89,9 +68,9 @@
 
 .cardGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 12px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--layout-card-min-width)), 1fr));
+  gap: var(--layout-grid-gap);
+  margin-bottom: var(--layout-section-gap);
 }
 
 .cardSlot {

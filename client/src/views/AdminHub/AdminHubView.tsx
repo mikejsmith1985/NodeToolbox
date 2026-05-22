@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, useCallback, type ChangeEvent, type MouseE
 import { BookmarkletInstallLink } from '../../components/BookmarkletInstallLink/index.tsx'
 import ConfirmDialog from '../../components/ConfirmDialog/index.tsx'
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx'
+import ViewFrame from '../../components/ViewFrame/ViewFrame.tsx'
 import { SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts'
 import { listGitHubAppInstallations, type GitHubAppInstallation } from '../../services/connectivityConfigApi.ts'
 import { fetchSchedulerValidation, type SchedulerValidationRepoResult } from '../../services/schedulerApi.ts'
@@ -1979,12 +1980,14 @@ export default function AdminHubView() {
   }, [activeAdminTab])
 
   return (
-    <div className={styles.adminHubView} ref={adminHubRootRef}>
-      <header>
-        <h1 className={styles.pageTitle}>{VIEW_TITLE}</h1>
-        <p className={styles.pageSubtitle}>{VIEW_SUBTITLE}</p>
-      </header>
-
+    <ViewFrame
+      bodyClassName={styles.adminHubBody}
+      className={styles.adminHubView}
+      ref={adminHubRootRef}
+      title={VIEW_TITLE}
+      subtitle={VIEW_SUBTITLE}
+      width="narrow"
+    >
       {state.isResetAllSettingsConfirmOpen && (
         <ConfirmDialog
           cancelLabel="Cancel"
@@ -2061,6 +2064,6 @@ export default function AdminHubView() {
           <ToolVisibilitySection />
         </section>
       )}
-    </div>
+    </ViewFrame>
   )
 }

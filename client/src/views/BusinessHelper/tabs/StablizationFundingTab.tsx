@@ -1,5 +1,7 @@
 // StablizationFundingTab.tsx — Business Helper funding table for rebuilding the stablization spreadsheet workflow.
 
+import { useCallback, useEffect, useRef, useState } from 'react';
+
 import {
   formatUsdCurrencyAmount,
   useStablizationFundingTable,
@@ -8,9 +10,11 @@ import {
   type StablizationTextField,
 } from '../hooks/useStablizationFundingTable.ts';
 import {
+  DEFAULT_STABLIZATION_COLUMN_WIDTHS,
   useBusinessHelperSettings,
   type StablizationColumnInputKind,
   type StablizationConfigurableColumn,
+  type StablizationTableColumn,
 } from '../hooks/useBusinessHelperSettings.ts';
 import styles from './StablizationFundingTab.module.css';
 
@@ -21,6 +25,22 @@ const AUTO_SAVE_MESSAGE = 'Rows save automatically in this browser while the bus
 const ROW_COUNT_LABEL = 'Funding rows';
 const ADD_ROW_BUTTON_LABEL = '+ Add Funding Row';
 const FOOTER_LABEL = 'Totals';
+const MIN_TEXTAREA_HEIGHT_PX = 44;
+const RESIZE_HANDLE_LABEL_PREFIX = 'Resize';
+const MIN_COLUMN_WIDTH_PX = 96;
+const TABLE_COLUMNS = [
+  { key: 'grouping', label: 'Grouping', className: 'groupingColumn', canResize: true },
+  { key: 'name', label: 'Name', className: 'nameColumn', canResize: true },
+  { key: 'fulfillmentCost', label: 'Fulfillment Cost', className: 'currencyColumn', canResize: true },
+  { key: 'enrollmentCost', label: 'Enrollment Cost', className: 'currencyColumn', canResize: true },
+  { key: 'billing', label: 'Billing', className: 'currencyColumn', canResize: true },
+  { key: 'testing', label: 'Testing', className: 'calculatedCurrencyColumn', canResize: true },
+  { key: 'total', label: 'Total', className: 'calculatedCurrencyColumn', canResize: true },
+  { key: 'justification', label: 'Justification', className: 'justificationColumn', canResize: true },
+  { key: 'timing', label: 'Timing', className: 'timingColumn', canResize: true },
+  { key: 'cost', label: 'Cost', className: 'currencyColumn', canResize: true },
+  { key: 'actions', label: 'Actions', className: 'actionsColumn', canResize: false },
+] as const;
 
 interface EditableTextCellProps {
   ariaLabel: string;
@@ -51,15 +71,54 @@ interface FundingTableRowProps {
   onCurrencyChange: (rowId: string, fieldName: StablizationCurrencyField, value: string) => void;
 }
 
+interface SourceJiraLinkProps {
+  browseUrl: string;
+  issueKey: string;
+}
+
+interface ColumnResizeSession {
+  columnKey: StablizationTableColumn;
+  startingClientX: number;
+  startingWidthPx: number;
+}
+
+const SOURCE_JIRA_LINK_LABEL = 'Open source Jira issue';
+
 function EditableTextCell({ ariaLabel, inputValue, onChange }: EditableTextCellProps) {
+  const textAreaElementRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    resizeTextAreaToContent(textAreaElementRef.current);
+  }, [inputValue]);
+
   return (
-    <input
+    <textarea
       aria-label={ariaLabel}
       className={styles.textInput}
       onChange={(changeEvent) => onChange(changeEvent.target.value)}
-      type="text"
+      onInput={() => resizeTextAreaToContent(textAreaElementRef.current)}
+      ref={textAreaElementRef}
+      rows={1}
       value={inputValue}
     />
+  );
+}
+
+function SourceJiraLink({ browseUrl, issueKey }: SourceJiraLinkProps) {
+  if (!browseUrl || !issueKey) {
+    return null;
+  }
+
+  return (
+    <a
+      aria-label={`${SOURCE_JIRA_LINK_LABEL} ${issueKey}`}
+      className={styles.sourceJiraLink}
+      href={browseUrl}
+      rel="noreferrer"
+      target="_blank"
+    >
+      {issueKey}
+    </a>
   );
 }
 
@@ -140,6 +199,9 @@ function FundingTableRow({
 }: FundingTableRowProps) {
   const rowNumber = rowIndex + 1;
   const removeButtonLabel = row.name ? `Remove ${row.name}` : `Remove row ${rowNumber}`;
+  const hasGroupingJiraLink = row.sourceJiraLinkedColumns.includes('grouping');
+  const hasNameJiraLink = row.sourceJiraLinkedColumns.includes('name');
+  const hasJustificationJiraLink = row.sourceJiraLinkedColumns.includes('justification');
 
   return (
     <tr className={styles.tableRow}>
@@ -151,6 +213,9 @@ function FundingTableRow({
           inputValue={row.grouping}
           onChange={(value) => onTextChange(row.id, 'grouping', value)}
         />
+        {hasGroupingJiraLink && (
+          <SourceJiraLink browseUrl={row.sourceJiraBrowseUrl} issueKey={row.sourceJiraIssueKey} />
+        )}
       </td>
       <td className={styles.tableCell}>
         <ConfiguredTextCell
@@ -160,6 +225,9 @@ function FundingTableRow({
           inputValue={row.name}
           onChange={(value) => onTextChange(row.id, 'name', value)}
         />
+        {hasNameJiraLink && (
+          <SourceJiraLink browseUrl={row.sourceJiraBrowseUrl} issueKey={row.sourceJiraIssueKey} />
+        )}
       </td>
       <td className={styles.tableCell}>
         <EditableCurrencyCell
@@ -196,6 +264,9 @@ function FundingTableRow({
           inputValue={row.justification}
           onChange={(value) => onTextChange(row.id, 'justification', value)}
         />
+        {hasJustificationJiraLink && (
+          <SourceJiraLink browseUrl={row.sourceJiraBrowseUrl} issueKey={row.sourceJiraIssueKey} />
+        )}
       </td>
       <td className={styles.tableCell}>
         <EditableDateCell
@@ -227,8 +298,81 @@ function FundingTableRow({
 
 /** Renders the first Business Helper funding table so a partner can rebuild the stablization spreadsheet in-app. */
 export default function StablizationFundingTab() {
-  const stablizationFundingTable = useStablizationFundingTable();
   const businessHelperSettings = useBusinessHelperSettings();
+  const stablizationFundingTable = useStablizationFundingTable(businessHelperSettings.settings);
+  const [columnWidthsByKey, setColumnWidthsByKey] = useState(
+    businessHelperSettings.settings.stablizationColumnWidths,
+  );
+  const columnWidthsRef = useRef(columnWidthsByKey);
+  const resizeSessionRef = useRef<ColumnResizeSession | null>(null);
+  columnWidthsRef.current = columnWidthsByKey;
+
+  const handleColumnResizeMove = useCallback((moveEvent: MouseEvent) => {
+    const resizeSession = resizeSessionRef.current;
+    if (!resizeSession) {
+      return;
+    }
+
+    const nextWidthPx = calculateNextColumnWidth(
+      resizeSession.startingWidthPx,
+      resizeSession.startingClientX,
+      moveEvent.clientX,
+    );
+    if (columnWidthsRef.current[resizeSession.columnKey] === nextWidthPx) {
+      return;
+    }
+
+    const nextColumnWidths = {
+      ...columnWidthsRef.current,
+      [resizeSession.columnKey]: nextWidthPx,
+    };
+    columnWidthsRef.current = nextColumnWidths;
+    setColumnWidthsByKey(nextColumnWidths);
+  }, []);
+  const stopColumnResize = useCallback(function stopColumnResizeCallback() {
+    const resizeSession = resizeSessionRef.current;
+    window.removeEventListener('mousemove', handleColumnResizeMove);
+    window.removeEventListener('mouseup', stopColumnResizeCallback);
+    document.body.classList.remove(styles.isResizingColumns);
+
+    if (!resizeSession) {
+      return;
+    }
+
+    businessHelperSettings.updateStablizationColumnWidth(
+      resizeSession.columnKey,
+      columnWidthsRef.current[resizeSession.columnKey],
+    );
+    resizeSessionRef.current = null;
+  }, [businessHelperSettings, handleColumnResizeMove]);
+  const handleBeginColumnResize = useCallback(
+    (columnKey: StablizationTableColumn, startingClientX: number) => {
+      resizeSessionRef.current = {
+        columnKey,
+        startingClientX,
+        startingWidthPx: columnWidthsRef.current[columnKey],
+      };
+      document.body.classList.add(styles.isResizingColumns);
+      window.addEventListener('mousemove', handleColumnResizeMove);
+      window.addEventListener('mouseup', stopColumnResize);
+    },
+    [handleColumnResizeMove, stopColumnResize],
+  );
+  const handleResetColumnWidth = useCallback(
+    (columnKey: StablizationTableColumn) => {
+      const defaultColumnWidth = DEFAULT_STABLIZATION_COLUMN_WIDTHS[columnKey];
+      const nextColumnWidths = {
+        ...columnWidthsRef.current,
+        [columnKey]: defaultColumnWidth,
+      };
+      columnWidthsRef.current = nextColumnWidths;
+      setColumnWidthsByKey(nextColumnWidths);
+      businessHelperSettings.updateStablizationColumnWidth(columnKey, defaultColumnWidth);
+    },
+    [businessHelperSettings],
+  );
+
+  useEffect(() => () => stopColumnResize(), [stopColumnResize]);
 
   return (
     <div className={styles.stablizationTab}>
@@ -251,19 +395,42 @@ export default function StablizationFundingTab() {
 
       <div className={styles.tableWrapper}>
         <table className={styles.fundingTable}>
+          <colgroup>
+            {TABLE_COLUMNS.map((tableColumn) => (
+              <col
+                key={tableColumn.key}
+                className={styles[tableColumn.className]}
+                data-column-key={tableColumn.key}
+                style={{ width: `${columnWidthsByKey[tableColumn.key]}px` }}
+              />
+            ))}
+          </colgroup>
           <thead>
             <tr>
-              <th className={styles.tableHeaderCell} scope="col">Grouping</th>
-              <th className={styles.tableHeaderCell} scope="col">Name</th>
-              <th className={styles.tableHeaderCell} scope="col">Fulfillment Cost</th>
-              <th className={styles.tableHeaderCell} scope="col">Enrollment Cost</th>
-              <th className={styles.tableHeaderCell} scope="col">Billing</th>
-              <th className={styles.tableHeaderCell} scope="col">Testing</th>
-              <th className={styles.tableHeaderCell} scope="col">Total</th>
-              <th className={styles.tableHeaderCell} scope="col">Justification</th>
-              <th className={styles.tableHeaderCell} scope="col">Timing</th>
-              <th className={styles.tableHeaderCell} scope="col">Cost</th>
-              <th className={styles.tableHeaderCell} scope="col">Actions</th>
+              {TABLE_COLUMNS.map((tableColumn) => (
+                <th
+                  key={tableColumn.key}
+                  className={`${styles.tableHeaderCell} ${styles[tableColumn.className]}`}
+                  data-column-key={tableColumn.key}
+                  scope="col"
+                >
+                  <div className={styles.headerCellContent}>
+                    <span>{tableColumn.label}</span>
+                    {tableColumn.canResize && (
+                      <button
+                        aria-label={`${RESIZE_HANDLE_LABEL_PREFIX} ${tableColumn.label} column`}
+                        className={styles.resizeHandle}
+                        onDoubleClick={() => handleResetColumnWidth(tableColumn.key)}
+                        onMouseDown={(mouseDownEvent) => {
+                          mouseDownEvent.preventDefault();
+                          handleBeginColumnResize(tableColumn.key, mouseDownEvent.clientX);
+                        }}
+                        type="button"
+                      />
+                    )}
+                  </div>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -309,6 +476,23 @@ export default function StablizationFundingTab() {
       </div>
     </div>
   );
+}
+
+function resizeTextAreaToContent(textAreaElement: HTMLTextAreaElement | null): void {
+  if (!textAreaElement) {
+    return;
+  }
+
+  textAreaElement.style.height = '0px';
+  textAreaElement.style.height = `${Math.max(textAreaElement.scrollHeight, MIN_TEXTAREA_HEIGHT_PX)}px`;
+}
+
+function calculateNextColumnWidth(
+  startingWidthPx: number,
+  startingClientX: number,
+  currentClientX: number,
+): number {
+  return Math.max(MIN_COLUMN_WIDTH_PX, startingWidthPx + (currentClientX - startingClientX));
 }
 function buildRenderedDropdownOptions(currentValue: string, dropdownOptions: string[]): string[] {
   if (!currentValue || dropdownOptions.includes(currentValue)) {

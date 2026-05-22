@@ -64,4 +64,69 @@ describe('StablizationFundingTab', () => {
     expect(screen.getByRole('combobox', { name: 'Grouping for row 1' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Portfolio' })).toBeInTheDocument();
   });
+
+  it('selects the only configured dropdown value automatically for new blank rows', () => {
+    window.localStorage.setItem(
+      'tbxBusinessHelperSettings',
+      JSON.stringify({
+        stablizationColumns: {
+          grouping: { inputKind: 'dropdown', dropdownOptions: ['Portfolio'] },
+          name: { inputKind: 'text', dropdownOptions: [] },
+          justification: { inputKind: 'dropdown', dropdownOptions: ['Operational Need'] },
+        },
+        simpleSearchMapping: {
+          grouping: 'none',
+          name: 'jira-key-summary',
+          justification: 'none',
+        },
+      }),
+    );
+
+    render(<StablizationFundingTab />);
+
+    expect(screen.getByRole('combobox', { name: 'Grouping for row 1' })).toHaveValue('Portfolio');
+    expect(screen.getByRole('combobox', { name: 'Justification for row 1' })).toHaveValue('Operational Need');
+  });
+
+  it('renders a source Jira hyperlink beneath mapped table values', () => {
+    window.localStorage.setItem(
+      'tbxBusinessHelperStablizationTable',
+      JSON.stringify([
+        {
+          id: 'row-1',
+          grouping: 'Portfolio',
+          name: 'TBX-101 - Business summary match',
+          fulfillmentCost: '',
+          enrollmentCost: '',
+          billing: '',
+          justification: '',
+          timing: '',
+          cost: '',
+          sourceJiraBrowseUrl: 'https://jira.example.com/browse/TBX-101',
+          sourceJiraIssueKey: 'TBX-101',
+          sourceJiraLinkedColumns: ['name'],
+        },
+      ]),
+    );
+
+    render(<StablizationFundingTab />);
+
+    expect(screen.getByRole('link', { name: 'Open source Jira issue TBX-101' })).toHaveAttribute(
+      'href',
+      'https://jira.example.com/browse/TBX-101',
+    );
+  });
+
+  it('persists a resized Name column width from the header handle', () => {
+    render(<StablizationFundingTab />);
+
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Resize Name column' }), {
+      clientX: 280,
+    });
+    fireEvent.mouseMove(window, { clientX: 360 });
+    fireEvent.mouseUp(window);
+
+    const storedSettings = JSON.parse(window.localStorage.getItem('tbxBusinessHelperSettings') ?? '{}');
+    expect(storedSettings.stablizationColumnWidths.name).toBeGreaterThan(280);
+  });
 });
