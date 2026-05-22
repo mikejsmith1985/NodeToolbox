@@ -1,6 +1,7 @@
 // piReviewJira.test.ts — Unit tests for Jira-backed PI Review reconciliation helpers.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { JiraIssue } from '../../types/jira.ts';
 
 const { mockJiraGet, mockJiraPut } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
@@ -16,6 +17,7 @@ import {
   extractPiReviewFeatureKey,
   fetchPiReviewFeatureIssues,
   formatPiReviewFeatureDisplayValue,
+  readPiReviewFeatureDatePills,
   reconcilePiReviewRowsWithJira,
   savePiReviewFeatureEstimates,
 } from './piReviewJira.ts';
@@ -47,6 +49,70 @@ describe('piReviewJira', () => {
         description: null,
       },
     })).toBe('DENP-1352 - 26.3 Enrollment Support');
+  });
+
+  it('reads configured target-date pills plus Jira due date for the feature cell', () => {
+    localStorage.setItem('tbxARTSettings', JSON.stringify({
+      piReviewTargetStartFieldId: 'customfield_12345',
+      piReviewTargetEndFieldId: 'customfield_12346',
+    }));
+
+    const jiraIssue = {
+      id: '10001',
+      key: 'DENP-1352',
+      fields: {
+        summary: '26.3 Enrollment Support',
+        status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+        priority: null,
+        assignee: null,
+        reporter: null,
+        issuetype: { name: 'Feature', iconUrl: '' },
+        created: '',
+        updated: '',
+        duedate: '2026-06-12',
+        description: null,
+        customfield_12345: '2026-05-30',
+        customfield_12346: '2026-06-10T00:00:00.000Z',
+        fixVersions: [
+          { id: '301', name: '26.3' },
+          { id: '302', name: '26.4' },
+        ],
+      },
+    } as unknown as JiraIssue;
+
+    expect(readPiReviewFeatureDatePills(jiraIssue)).toEqual([
+      { label: 'Target Start', value: '2026-05-30' },
+      { label: 'Target End', value: '2026-06-10' },
+      { label: 'Due Date', value: '2026-06-12' },
+      { label: 'Fix Version', value: '26.3' },
+    ]);
+  });
+
+  it('reads the default target-date field IDs when ART settings are blank', () => {
+    const jiraIssue = {
+      id: '10001',
+      key: 'DENP-1352',
+      fields: {
+        summary: '26.3 Enrollment Support',
+        status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+        priority: null,
+        assignee: null,
+        reporter: null,
+        issuetype: { name: 'Feature', iconUrl: '' },
+        created: '',
+        updated: '',
+        duedate: '2026-06-12',
+        description: null,
+        customfield_10101: '2026-05-30',
+        customfield_10102: '2026-06-10T00:00:00.000Z',
+      },
+    } as unknown as JiraIssue;
+
+    expect(readPiReviewFeatureDatePills(jiraIssue)).toEqual([
+      { label: 'Target Start', value: '2026-05-30' },
+      { label: 'Target End', value: '2026-06-10' },
+      { label: 'Due Date', value: '2026-06-12' },
+    ]);
   });
 
   it('reconciles priority, estimate, dependencies, risks, and migrated notes from Jira', () => {
@@ -166,6 +232,10 @@ describe('piReviewJira', () => {
     ]);
 
     expect(mockJiraGet).toHaveBeenCalledTimes(1);
+    expect(mockJiraGet.mock.calls[0][0]).toContain('duedate');
+    expect(mockJiraGet.mock.calls[0][0]).toContain('fixVersions');
+    expect(mockJiraGet.mock.calls[0][0]).toContain('customfield_10101');
+    expect(mockJiraGet.mock.calls[0][0]).toContain('customfield_10102');
     expect(issueMap['DENP-1352'].fields.summary).toBe('26.3 Enrollment Support');
   });
 

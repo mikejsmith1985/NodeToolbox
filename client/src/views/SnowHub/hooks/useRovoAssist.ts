@@ -1,4 +1,4 @@
-// useRovoAssist.ts — Hidden AI-prompt generator for CHG field population.
+// useRovoAssist.ts — Hidden prompt generator for CHG field population.
 // Activated through a keyboard shortcut and a passphrase gate.
 // No external documentation — internal capability only.
 
@@ -45,7 +45,7 @@ async function computeSha256Hex(input: string): Promise<string> {
 
 /**
  * Formats the selected issues into a compact "[KEY] Summary" list
- * suitable for inclusion in an AI prompt.
+ * suitable for inclusion in a hidden prompt.
  */
 function buildIssueListText(selectedIssues: JiraIssue[]): string {
   if (selectedIssues.length === 0) {

@@ -47,6 +47,7 @@ const LOAD_MY_CHANGES_FAILURE_MESSAGE = 'Failed to load active changes';
 const SNOW_NOT_CONFIGURED_MESSAGE =
   'SNow is not configured or credentials are invalid. Configure SNow credentials in Admin Hub or activate the relay bridge.';
 const CHANGE_NUMBER_REQUIRED_MESSAGE = 'Change number is required.';
+const RELEASE_MANAGEMENT_FETCH_OPTIONS = { forceDirectProxy: true } as const;
 
 type ServiceNowFieldValue = string | { value?: unknown; display_value?: unknown };
 type ServiceNowChangeRecord = Record<string, ServiceNowFieldValue | undefined>;
@@ -182,6 +183,7 @@ export function useReleaseManagement(): {
     try {
       const changeResponse = await snowFetch<ServiceNowChangeQueryResponse>(
         buildChangeLookupPath(normalizedChangeNumber),
+        RELEASE_MANAGEMENT_FETCH_OPTIONS,
       );
       const loadedChg = changeResponse.result[0] ? mapChangeRecord(changeResponse.result[0]) : null;
       setState((previousState) => ({
@@ -219,7 +221,10 @@ export function useReleaseManagement(): {
     setState((previousState) => ({ ...previousState, isLoadingMyChanges: true, myChangesError: null }));
 
     try {
-      const myChangesResponse = await snowFetch<ServiceNowChangeQueryResponse>(buildMyActiveChangesPath());
+      const myChangesResponse = await snowFetch<ServiceNowChangeQueryResponse>(
+        buildMyActiveChangesPath(),
+        RELEASE_MANAGEMENT_FETCH_OPTIONS,
+      );
       setState((previousState) => ({
         ...previousState,
         myActiveChanges: myChangesResponse.result.map((changeRecord) => mapChangeRecord(changeRecord)),

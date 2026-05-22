@@ -1,6 +1,6 @@
 // SprintDashboardView.test.tsx — Unit tests for the Sprint Dashboard tabbed view component.
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 
@@ -9,6 +9,10 @@ import type { DashboardTab } from './hooks/useSprintData.ts';
 
 const { mockJiraGet } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
+}));
+
+const { mockDownloadElementImage } = vi.hoisted(() => ({
+  mockDownloadElementImage: vi.fn(),
 }));
 
 // Mock recharts so the LineChart renders without canvas/SVG issues in jsdom.
@@ -169,10 +173,18 @@ vi.mock('./RosterTab.tsx', () => ({
   default: () => <div>Mock Roster Workspace</div>,
 }));
 
+vi.mock('./SprintDashboardPiReviewTab.tsx', () => ({
+  default: () => <div>Mock Team Dashboard PI Review</div>,
+}));
+
 vi.mock('../../services/jiraApi.ts', () => ({
   jiraGet: mockJiraGet,
   jiraPost: vi.fn(),
   jiraPut: vi.fn(),
+}));
+
+vi.mock('../../utils/downloadElementImage.ts', () => ({
+  downloadElementImage: mockDownloadElementImage,
 }));
 
 import SprintDashboardView from './SprintDashboardView.tsx';
@@ -180,6 +192,7 @@ import SprintDashboardView from './SprintDashboardView.tsx';
 describe('SprintDashboardView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
     Object.defineProperty(window, 'scrollTo', {
       value: vi.fn(),
       writable: true,
@@ -408,14 +421,16 @@ describe('SprintDashboardView', () => {
     expect(screen.getByTestId('responsive-container')).toBeInTheDocument();
   });
 
-  it('renders the extended tab buttons including Pointing', () => {
+  it('renders the extended tab buttons with PI Review replacing the separate capacity workspace', () => {
     render(<SprintDashboardView />);
 
     expect(screen.getByRole('tab', { name: 'Metrics' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Pipeline' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Planning' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'PI Review' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Pointing' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Releases' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Capacity' })).not.toBeInTheDocument();
   });
 
   it('renders the Metrics tab with sprint completion statistics', () => {
@@ -448,6 +463,13 @@ describe('SprintDashboardView', () => {
 
     expect(screen.getByRole('heading', { name: 'Story Pointing' })).toBeInTheDocument();
     expect(screen.getByText('Wire up the backend')).toBeInTheDocument();
+  });
+
+  it('renders the PI Review tab with the Team Dashboard authoring workspace', () => {
+    mockState.activeTab = 'pireview';
+    render(<SprintDashboardView />);
+
+    expect(screen.getByText('Mock Team Dashboard PI Review')).toBeInTheDocument();
   });
 
   it('renders the Release Radar using project versions', async () => {
@@ -483,6 +505,228 @@ describe('SprintDashboardView', () => {
     expect(screen.getByRole('heading', { name: 'Release Radar' })).toBeInTheDocument();
     expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
     expect(screen.getByText(/1 release/i)).toBeInTheDocument();
+  });
+
+  it('unlocks the hidden Rovo release prompt flow and builds a structured prompt', async () => {
+    mockState.activeTab = 'releases';
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/project/TBX/versions') {
+        return Promise.resolve([
+          { id: 'rel-1', name: 'Release 24.1', releaseDate: '2099-01-15', released: false, archived: false },
+        ]);
+      }
+      if (path.startsWith('/rest/api/2/search?jql=')) {
+        return Promise.resolve({
+          issues: [
+            {
+              id: 'TBX-99',
+              key: 'TBX-99',
+              fields: {
+                summary: 'Prepare production deploy',
+                status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+                assignee: { displayName: 'Alice' },
+                issuetype: { name: 'Story', iconUrl: 'story.png' },
+                priority: { name: 'High', iconUrl: 'priority.png' },
+                description: '<p>Deploy the production-ready release workflow.</p>',
+                customfield_10200: 'Given the release is ready, when it is deployed, then users can consume the new flow.',
+              },
+            },
+          ],
+        });
+      }
+
+      return Promise.resolve({ values: [] });
+    });
+
+    render(<SprintDashboardView />);
+
+    expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: true });
+    const passphraseInput = screen.getByLabelText('Protected tools passphrase');
+    fireEvent.change(passphraseInput, { target: { value: 'rovonow' } });
+    fireEvent.keyDown(passphraseInput, { key: 'Enter' });
+
+    const buildPromptButton = await screen.findByRole('button', { name: /build rovo prompt/i });
+    fireEvent.click(buildPromptButton);
+
+    const promptTextArea = await screen.findByLabelText('Rovo release prompt');
+    expect((promptTextArea as HTMLTextAreaElement).value).toContain('Respond ONLY with valid JSON.');
+    expect((promptTextArea as HTMLTextAreaElement).value).toContain('"items": [');
+    expect((promptTextArea as HTMLTextAreaElement).value).toContain('TBX-99');
+  });
+
+  it('does not expose a visible unlock control for the hidden release flow', async () => {
+    mockState.activeTab = 'releases';
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/project/TBX/versions') {
+        return Promise.resolve([
+          { id: 'rel-1', name: 'Release 24.1', releaseDate: '2099-01-15', released: false, archived: false },
+        ]);
+      }
+      if (path.startsWith('/rest/api/2/search?jql=')) {
+        return Promise.resolve({ issues: [] });
+      }
+
+      return Promise.resolve({ values: [] });
+    });
+
+    render(<SprintDashboardView />);
+
+    expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /unlock hidden prompt/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Protected tools passphrase')).not.toBeInTheDocument();
+  });
+
+  it('renders a release-notes table from a pasted Rovo response', async () => {
+    mockState.activeTab = 'releases';
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/project/TBX/versions') {
+        return Promise.resolve([
+          { id: 'rel-1', name: 'Release 24.1', releaseDate: '2099-01-15', released: false, archived: false },
+        ]);
+      }
+      if (path.startsWith('/rest/api/2/search?jql=')) {
+        return Promise.resolve({
+          issues: [
+            {
+              id: 'TBX-99',
+              key: 'TBX-99',
+              fields: {
+                summary: 'Prepare production deploy',
+                status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+                assignee: { displayName: 'Alice Johnson' },
+                issuetype: { name: 'Story', iconUrl: 'story.png' },
+                priority: { name: 'High', iconUrl: 'priority.png' },
+                description: 'Release details',
+                customfield_10200: 'Validation notes',
+              },
+            },
+          ],
+        });
+      }
+
+      return Promise.resolve({ values: [] });
+    });
+
+    const { rerender } = render(<SprintDashboardView />);
+
+    expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: true });
+    const passphraseInput = screen.getByLabelText('Protected tools passphrase');
+    fireEvent.change(passphraseInput, { target: { value: 'rovonow' } });
+    fireEvent.keyDown(passphraseInput, { key: 'Enter' });
+
+    fireEvent.click(await screen.findByRole('button', { name: /paste rovo response/i }));
+
+    const responseTextArea = await screen.findByLabelText('Rovo release response');
+    fireEvent.change(responseTextArea, {
+      target: {
+        value: JSON.stringify({
+          releaseName: 'Release 24.1',
+          releaseSummary: 'Delivers the hidden Rovo workflow for release notes.',
+          items: [
+            {
+              issueKey: 'TBX-99',
+              title: 'Rovo release note workflow',
+              releaseNote: 'Adds a prompt-and-import workflow for release notes.',
+              customerImpact: 'Release managers can draft release notes faster.',
+              technicalDetails: 'Toolbox parses the JSON response and renders a table.',
+              risks: 'None.',
+              validation: 'Validated with unit and UI tests.',
+            },
+          ],
+        }),
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /render release notes table/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Rovo Release Notes Draft' })).toBeInTheDocument();
+    expect(screen.getByText('Delivers the hidden Rovo workflow for release notes.')).toBeInTheDocument();
+    expect(screen.getByText('Rovo release note workflow')).toBeInTheDocument();
+    expect(screen.getByText('Release managers can draft release notes faster.')).toBeInTheDocument();
+    expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+
+    mockState.activeTab = 'overview';
+    rerender(<SprintDashboardView />);
+    mockState.activeTab = 'releases';
+    rerender(<SprintDashboardView />);
+
+    expect(await screen.findByRole('button', { name: /paste rovo response/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Rovo Release Notes Draft' })).toBeInTheDocument();
+    expect(screen.getByText('Delivers the hidden Rovo workflow for release notes.')).toBeInTheDocument();
+  });
+
+  it('exports rendered release notes as a PNG image', async () => {
+    mockState.activeTab = 'releases';
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/project/TBX/versions') {
+        return Promise.resolve([
+          { id: 'rel-1', name: 'Release 24.1', releaseDate: '2099-01-15', released: false, archived: false },
+        ]);
+      }
+      if (path.startsWith('/rest/api/2/search?jql=')) {
+        return Promise.resolve({
+          issues: [
+            {
+              id: 'TBX-99',
+              key: 'TBX-99',
+              fields: {
+                summary: 'Prepare production deploy',
+                status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+                assignee: { displayName: 'Alice Johnson' },
+                issuetype: { name: 'Story', iconUrl: 'story.png' },
+                priority: { name: 'High', iconUrl: 'priority.png' },
+                description: 'Release details',
+                customfield_10200: 'Validation notes',
+              },
+            },
+          ],
+        });
+      }
+
+      return Promise.resolve({ values: [] });
+    });
+    mockDownloadElementImage.mockResolvedValue(undefined);
+
+    render(<SprintDashboardView />);
+
+    expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: true });
+    const passphraseInput = screen.getByLabelText('Protected tools passphrase');
+    fireEvent.change(passphraseInput, { target: { value: 'rovonow' } });
+    fireEvent.keyDown(passphraseInput, { key: 'Enter' });
+
+    fireEvent.click(await screen.findByRole('button', { name: /paste rovo response/i }));
+
+    const responseTextArea = await screen.findByLabelText('Rovo release response');
+    fireEvent.change(responseTextArea, {
+      target: {
+        value: JSON.stringify({
+          releaseName: 'Release 24.1',
+          releaseSummary: 'Delivers the hidden Rovo workflow for release notes.',
+          items: [
+            {
+              issueKey: 'TBX-99',
+              title: 'Rovo release note workflow',
+              releaseNote: 'Adds a prompt-and-import workflow for release notes.',
+              customerImpact: 'Release managers can draft release notes faster.',
+              technicalDetails: 'Toolbox parses the JSON response and renders a table.',
+              risks: 'None.',
+              validation: 'Validated with unit and UI tests.',
+            },
+          ],
+        }),
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /render release notes table/i }));
+    expect(screen.getByRole('table').parentElement).toHaveAttribute('data-export-expand', 'true');
+    fireEvent.click(await screen.findByRole('button', { name: /export release notes png/i }));
+
+    expect(mockDownloadElementImage).toHaveBeenCalledTimes(1);
+    expect(mockDownloadElementImage.mock.calls[0][1]).toBe('release-notes-release-24-1.png');
   });
 
   // ── New feature tests ──

@@ -481,10 +481,10 @@ function AdminAccessSection({
               type="checkbox"
               checked={isAiEnabled}
               onChange={() => onToggleFeatureFlag('isAiEnabled')}
-              aria-label="AI Features"
+              aria-label="Hidden prompt tools"
             />
             <label htmlFor="flag-ai-features" className={styles.fieldLabel}>
-              AI Features
+              Hidden prompt tools
             </label>
           </div>
 

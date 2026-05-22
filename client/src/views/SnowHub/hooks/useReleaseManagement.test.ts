@@ -78,6 +78,10 @@ describe('useReleaseManagement', () => {
       expect(result.current.state.loadedChg).toEqual(EXPECTED_CHANGE_REQUEST);
       expect(result.current.state.loadError).toBeNull();
     });
+    expect(vi.mocked(snowFetch)).toHaveBeenCalledWith(
+      expect.stringContaining('/api/now/table/change_request?'),
+      { forceDirectProxy: true },
+    );
   });
 
   it('stores a load error when loading a change request fails', async () => {
@@ -136,6 +140,10 @@ describe('useReleaseManagement', () => {
     });
 
     expect(snowFetch).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(snowFetch).mock.calls[0]).toEqual([
+      expect.stringContaining('sysparm_query=assigned_to%3Djavascript%3Ags.getUserID()%5Eactive%3Dtrue'),
+      { forceDirectProxy: true },
+    ]);
     expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain(
       'sysparm_query=assigned_to%3Djavascript%3Ags.getUserID()%5Eactive%3Dtrue',
     );

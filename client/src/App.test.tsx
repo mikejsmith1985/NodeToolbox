@@ -65,6 +65,10 @@ vi.mock('./views/PersonalToolbox/PersonalToolboxView.tsx', () => ({
   default: () => <h1>Personal Toolbox Mock</h1>,
 }));
 
+vi.mock('./views/BusinessHelper/BusinessHelperView.tsx', () => ({
+  default: () => <h1>Business Helper Mock</h1>,
+}));
+
 vi.mock('./views/ReportsHub/ReportsHubView.tsx', () => ({
   default: () => <h1>Reports Hub Mock</h1>,
 }));
@@ -129,7 +133,7 @@ describe('App shell', () => {
     useRelayBridgeMock.mockReset();
     useProxyStatusMock.mockImplementation(() => undefined);
     useRelayBridgeMock.mockImplementation(() => undefined);
-    useSettingsStore.setState({ cardOrder: [], recentViews: [], theme: 'dark' });
+    useSettingsStore.setState({ cardOrder: [], recentViews: [], theme: 'dark', toolTextSize: 'default' });
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -178,6 +182,27 @@ describe('App shell', () => {
       expect(document.documentElement).toHaveAttribute('data-theme', 'light');
       expect(lightThemeButton).toHaveAttribute('aria-pressed', 'true');
       expect(darkThemeButton).toHaveAttribute('aria-pressed', 'false');
+    });
+  });
+
+  it('shows a global tool text size toggle and switches the html text size attribute', async () => {
+    renderApp(DEFAULT_PATH);
+
+    const defaultTextSizeButton = screen.getByRole('button', { name: 'Default text size' });
+    const largeTextSizeButton = screen.getByRole('button', { name: 'Large text size' });
+    const extraLargeTextSizeButton = screen.getByRole('button', { name: 'Extra large text size' });
+
+    expect(defaultTextSizeButton).toHaveAttribute('aria-pressed', 'true');
+    expect(largeTextSizeButton).toHaveAttribute('aria-pressed', 'false');
+    expect(extraLargeTextSizeButton).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(largeTextSizeButton);
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().toolTextSize).toBe('large');
+      expect(document.documentElement).toHaveAttribute('data-tool-text-size', 'large');
+      expect(defaultTextSizeButton).toHaveAttribute('aria-pressed', 'false');
+      expect(largeTextSizeButton).toHaveAttribute('aria-pressed', 'true');
     });
   });
 
@@ -237,6 +262,14 @@ describe('App shell', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Personal Toolbox Mock' })).toBeInTheDocument();
+    });
+  });
+
+  it('keeps the business helper route accessible', async () => {
+    renderApp('/business-helper');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Business Helper Mock' })).toBeInTheDocument();
     });
   });
 

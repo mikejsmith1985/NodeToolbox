@@ -23,7 +23,9 @@ const PI_REVIEW_CAPACITY_SECTION_VALUE = 'summary';
 const PI_REVIEW_CAPACITY_PAYLOAD_ATTRIBUTE = 'data-node-toolbox-pi-review-capacity-payload';
 const FULL_WIDTH_TABLE_STYLE = 'width: 100%; table-layout: fixed;';
 const STRETCH_GOALS_LINE_COLOR = '#f5c400';
+const DEFAULT_CUSTOM_GROUPING_LINE_COLOR = '#0ea5e9';
 const CUSTOM_GROUPING_LINE_BACKGROUND_ALPHA = 0.18;
+const RGB_COLOR_PATTERN = /rgb\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)/i;
 
 export type PiReviewColumnKey =
   | 'carryOver'
@@ -254,17 +256,91 @@ export function createEmptyConfidenceVoteRow(): ConfidenceVoteRow {
   };
 }
 
+function locateFallbackCapacityElements(documentNode: Document): HTMLElement[] {
+  const storageWrapperElement = readStorageWrapperElement(documentNode);
+  const wrapperChildren = Array.from(storageWrapperElement.children) as HTMLElement[];
+  const teamCapacityHeadingIndex = wrapperChildren.findIndex((childElement) =>
+    childElement.tagName.toLowerCase().startsWith('h')
+    && childElement.textContent?.trim().toLowerCase() === TEAM_CAPACITY_SECTION_TITLE.toLowerCase());
+  if (teamCapacityHeadingIndex < 0) {
+    return [];
+  }
+
+  const fallbackCapacityElements: HTMLElement[] = [wrapperChildren[teamCapacityHeadingIndex]];
+  for (let childIndex = teamCapacityHeadingIndex + 1; childIndex < wrapperChildren.length; childIndex += 1) {
+    const childElement = wrapperChildren[childIndex];
+    const childTagName = childElement.tagName.toLowerCase();
+    if (childTagName === 'table' || childTagName.startsWith('h')) {
+      break;
+    }
+
+    fallbackCapacityElements.push(childElement);
+  }
+
+  return fallbackCapacityElements;
+}
+
+function parseCapacityNumber(paragraphText: string): number {
+  const matchedNumber = paragraphText.match(/:\s*(-?\d+(\.\d+)?)\s*(pts)?\s*$/i);
+  return matchedNumber ? Number(matchedNumber[1]) : 0;
+}
+
+function parseFallbackCapacitySummary(fallbackCapacityElements: HTMLElement[]): CapacitySummary | null {
+  if (fallbackCapacityElements.length === 0) {
+    return null;
+  }
+
+  const paragraphTexts = fallbackCapacityElements
+    .filter((element) => element.tagName.toLowerCase() === 'p')
+    .map((element) => element.textContent?.trim() ?? '');
+  if (paragraphTexts.some((paragraphText) => paragraphText === TEAM_CAPACITY_EMPTY_MESSAGE)) {
+    return null;
+  }
+
+  const planParagraph = paragraphTexts.find((paragraphText) => paragraphText.startsWith('Plan:'));
+  const dateRangeParagraph = paragraphTexts.find((paragraphText) => paragraphText.startsWith('Date Range:'));
+  const workDaysParagraph = paragraphTexts.find((paragraphText) => paragraphText.startsWith('Work Days:'));
+  const fullCapacityParagraph = paragraphTexts.find((paragraphText) => paragraphText.startsWith('100% Capacity'));
+  const recommendedCapacityParagraph = paragraphTexts.find((paragraphText) => paragraphText.startsWith('80% Capacity'));
+  if (!planParagraph || !dateRangeParagraph || !workDaysParagraph || !fullCapacityParagraph || !recommendedCapacityParagraph) {
+    return null;
+  }
+
+  const matchedDateRange = dateRangeParagraph.match(/Date Range:\s*(.+?)\s+to\s+(.+)$/i);
+  const roleCapacities: Record<string, number> = {};
+  const roleListElement = fallbackCapacityElements.find((element) => element.tagName.toLowerCase() === 'ul');
+  for (const roleElement of Array.from(roleListElement?.querySelectorAll('li') ?? [])) {
+    const roleText = roleElement.textContent?.trim() ?? '';
+    const matchedRole = roleText.match(/^(.+?):\s*(-?\d+(\.\d+)?)\s*pts$/i);
+    if (!matchedRole) {
+      continue;
+    }
+
+    roleCapacities[matchedRole[1].trim()] = Number(matchedRole[2]);
+  }
+
+  return {
+    summaryLabel: planParagraph.replace(/^Plan:\s*/i, '').trim(),
+    startDate: matchedDateRange?.[1]?.trim() ?? '',
+    endDate: matchedDateRange?.[2]?.trim() ?? '',
+    workDayCount: parseCapacityNumber(workDaysParagraph),
+    totalCapacityPoints: parseCapacityNumber(fullCapacityParagraph),
+    recommendedCapacityPoints: parseCapacityNumber(recommendedCapacityParagraph),
+    roleCapacities,
+  };
+}
+
 /** Reads the saved Team Capacity snapshot from a Confluence PI Review page when one exists. */
 export function parsePiReviewCapacitySummary(storageValue: string): CapacitySummary | null {
   const documentNode = buildStorageDocument(storageValue);
   const capacitySectionElement = documentNode.querySelector(
     `[${PI_REVIEW_CAPACITY_SECTION_ATTRIBUTE}="${PI_REVIEW_CAPACITY_SECTION_VALUE}"]`,
   );
-  if (!(capacitySectionElement instanceof HTMLElement)) {
-    return null;
+  if (capacitySectionElement instanceof HTMLElement) {
+    return decodeCapacitySummary(capacitySectionElement.getAttribute(PI_REVIEW_CAPACITY_PAYLOAD_ATTRIBUTE));
   }
 
-  return decodeCapacitySummary(capacitySectionElement.getAttribute(PI_REVIEW_CAPACITY_PAYLOAD_ATTRIBUTE));
+  return parseFallbackCapacitySummary(locateFallbackCapacityElements(documentNode));
 }
 
 /** Writes the Team Capacity snapshot into the Confluence PI Review page above the PI Review table. */
@@ -283,6 +359,13 @@ export function writePiReviewCapacitySummary(storageValue: string, capacitySumma
   );
   if (existingCapacitySectionElement instanceof HTMLElement) {
     existingCapacitySectionElement.replaceWith(capacitySectionElement);
+    return storageWrapperElement.innerHTML;
+  }
+
+  const fallbackCapacityElements = locateFallbackCapacityElements(documentNode);
+  if (fallbackCapacityElements.length > 0) {
+    fallbackCapacityElements[0].replaceWith(capacitySectionElement);
+    fallbackCapacityElements.slice(1).forEach((fallbackElement) => fallbackElement.remove());
     return storageWrapperElement.innerHTML;
   }
 
@@ -691,6 +774,34 @@ function normalizeHexColor(hexColor: string): string {
   return /^#[0-9a-f]{6}$/.test(trimmedHexColor) ? trimmedHexColor : STRETCH_GOALS_LINE_COLOR;
 }
 
+function convertRgbColorToHex(redValue: number, greenValue: number, blueValue: number): string {
+  return `#${[redValue, greenValue, blueValue]
+    .map((colorChannelValue) => Math.max(0, Math.min(255, colorChannelValue)).toString(16).padStart(2, '0'))
+    .join('')}`;
+}
+
+function readNormalizedColorFromStyle(styleValue: string | null): string | null {
+  if (!styleValue) {
+    return null;
+  }
+
+  const matchedHexColor = styleValue.match(/#[0-9a-f]{6}/i);
+  if (matchedHexColor) {
+    return normalizeHexColor(matchedHexColor[0]);
+  }
+
+  const matchedRgbColor = styleValue.match(RGB_COLOR_PATTERN);
+  if (!matchedRgbColor) {
+    return null;
+  }
+
+  return convertRgbColorToHex(
+    Number.parseInt(matchedRgbColor[1], 10),
+    Number.parseInt(matchedRgbColor[2], 10),
+    Number.parseInt(matchedRgbColor[3], 10),
+  );
+}
+
 function convertHexColorToRgba(hexColor: string, alphaValue: number): string {
   const normalizedHexColor = normalizeHexColor(hexColor);
   const redValue = Number.parseInt(normalizedHexColor.slice(1, 3), 16);
@@ -713,31 +824,54 @@ function parsePiReviewCustomGroupingLineRow(
   afterRowIndex: number,
   lineIndex: number,
 ): PiReviewCustomGroupingLine | null {
-  if (rowElement.getAttribute(PI_REVIEW_GROUPING_LINE_ATTRIBUTE) !== PI_REVIEW_CUSTOM_GROUPING_LINE_VALUE) {
-    return null;
-  }
-
   const rawPayload = rowElement.getAttribute(PI_REVIEW_GROUPING_LINE_PAYLOAD_ATTRIBUTE);
-  if (!rawPayload) {
-    return null;
-  }
+  if (rowElement.getAttribute(PI_REVIEW_GROUPING_LINE_ATTRIBUTE) === PI_REVIEW_CUSTOM_GROUPING_LINE_VALUE && rawPayload) {
+    try {
+      const parsedPayload = JSON.parse(rawPayload) as { lineId?: string; label?: string; color?: string };
+      const normalizedLabel = parsedPayload.label?.trim() ?? '';
+      if (normalizedLabel === '') {
+        return null;
+      }
 
-  try {
-    const parsedPayload = JSON.parse(rawPayload) as { lineId?: string; label?: string; color?: string };
-    const normalizedLabel = parsedPayload.label?.trim() ?? '';
-    if (normalizedLabel === '') {
+      return {
+        lineId: parsedPayload.lineId?.trim() || `grouping-line-${lineIndex}`,
+        afterRowIndex,
+        label: normalizedLabel,
+        color: normalizeHexColor(parsedPayload.color ?? STRETCH_GOALS_LINE_COLOR),
+      };
+    } catch {
       return null;
     }
+  }
 
-    return {
-      lineId: parsedPayload.lineId?.trim() || `grouping-line-${lineIndex}`,
-      afterRowIndex,
-      label: normalizedLabel,
-      color: normalizeHexColor(parsedPayload.color ?? STRETCH_GOALS_LINE_COLOR),
-    };
-  } catch {
+  const rowCells = rowElement.querySelectorAll('td,th');
+  if (rowCells.length !== 1) {
     return null;
   }
+
+  const groupingLineCell = rowCells.item(0);
+  if (!(groupingLineCell instanceof HTMLTableCellElement)) {
+    return null;
+  }
+
+  const colspanValue = Number.parseInt(groupingLineCell.getAttribute('colspan') ?? '1', 10);
+  const groupingLineLabel = groupingLineCell.textContent?.trim() ?? '';
+  if (groupingLineLabel === '' || colspanValue < REQUIRED_PI_REVIEW_COLUMN_COUNT) {
+    return null;
+  }
+
+  if (readNormalizedBoundaryText(rowElement) === PI_REVIEW_COMMITMENT_BOUNDARY_LABEL.toLowerCase()) {
+    return null;
+  }
+
+  return {
+    lineId: `grouping-line-${lineIndex}`,
+    afterRowIndex,
+    label: groupingLineLabel,
+    color: readNormalizedColorFromStyle(groupingLineCell.getAttribute('style'))
+      ?? readNormalizedColorFromStyle(rowElement.getAttribute('style'))
+      ?? DEFAULT_CUSTOM_GROUPING_LINE_COLOR,
+  };
 }
 
 function normalizePiReviewCommitmentBoundaryIndex(

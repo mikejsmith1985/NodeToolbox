@@ -738,7 +738,7 @@ describe('CrgTab', () => {
     expect(screen.queryByPlaceholderText('Enter passphrase')).not.toBeInTheDocument();
   });
 
-  it('unlocks Rovo and shows the Enhance button after correct passphrase on step 4', async () => {
+  it('unlocks Rovo and shows the hidden prompt button after correct passphrase on step 4', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 4;
     render(<CrgTab />);
@@ -747,10 +747,10 @@ describe('CrgTab', () => {
     await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
     await user.click(screen.getByRole('button', { name: 'Unlock' }));
 
-    expect(await screen.findByRole('button', { name: '✦ Enhance with AI' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '✦ Enhance with prompt' })).toBeInTheDocument();
   });
 
-  it('shows the prompt modal with a textarea when Enhance with AI is clicked', async () => {
+  it('shows the prompt modal with a textarea when the hidden prompt button is clicked', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 4;
     render(<CrgTab />);
@@ -761,7 +761,7 @@ describe('CrgTab', () => {
     await user.click(screen.getByRole('button', { name: 'Unlock' }));
 
     // Click enhance
-    await user.click(await screen.findByRole('button', { name: '✦ Enhance with AI' }));
+    await user.click(await screen.findByRole('button', { name: '✦ Enhance with prompt' }));
 
     // Prompt modal should appear
     expect(await screen.findByText(/Copy this prompt and paste it into Rovo/)).toBeInTheDocument();
@@ -776,7 +776,7 @@ describe('CrgTab', () => {
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
     await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
     await user.click(screen.getByRole('button', { name: 'Unlock' }));
-    await user.click(await screen.findByRole('button', { name: '✦ Enhance with AI' }));
+    await user.click(await screen.findByRole('button', { name: '✦ Enhance with prompt' }));
 
     // Close prompt modal
     await user.click(await screen.findByRole('button', { name: 'Close' }));

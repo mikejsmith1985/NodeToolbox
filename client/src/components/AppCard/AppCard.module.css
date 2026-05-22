@@ -4,6 +4,7 @@
   background: var(--color-card-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  height: 100%;
   padding: 16px;
   cursor: pointer;
   transition:

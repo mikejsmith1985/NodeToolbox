@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 
 import { fetchProxyConfig, fetchProxyStatus, updateProxyConfig } from '@/services/proxyApi.ts';
 import { useSettingsStore } from '@/store/settingsStore.ts';
+import type { ToolTextSize } from '@/store/settingsStore.ts';
 import type { ProxyConfig, Theme } from '@/types/config.ts';
 import styles from './SettingsView.module.css';
 
@@ -19,8 +20,13 @@ const JIRA_SECTION_TITLE = 'Jira Connection';
 const SNOW_SECTION_TITLE = 'ServiceNow Connection';
 const CONFLUENCE_SECTION_TITLE = 'Confluence';
 const APPEARANCE_SECTION_TITLE = 'Appearance';
+const THEME_CONTROL_LABEL = 'Theme';
+const TOOL_TEXT_SIZE_CONTROL_LABEL = 'Tool text size';
 const VERSION_SECTION_TITLE = 'Version';
 const CHECK_FOR_UPDATES_LABEL = 'Check for updates';
+const DEFAULT_TOOL_TEXT_SIZE: ToolTextSize = 'default';
+const LARGE_TOOL_TEXT_SIZE: ToolTextSize = 'large';
+const EXTRA_LARGE_TOOL_TEXT_SIZE: ToolTextSize = 'extra-large';
 
 type EditableProxyFieldKey = 'jiraBaseUrl' | 'snowBaseUrl' | 'confluenceBaseUrl';
 
@@ -34,9 +40,11 @@ interface SettingsInputCardProps {
   saveStatusMessage: string;
 }
 
-interface ThemeCardProps {
+interface AppearanceCardProps {
   activeTheme: Theme;
+  activeToolTextSize: ToolTextSize;
   handleThemeSelection: (theme: Theme) => void;
+  handleToolTextSizeSelection: (toolTextSize: ToolTextSize) => void;
 }
 
 interface VersionCardProps {
@@ -83,10 +91,24 @@ function SettingsInputCard({
   );
 }
 
-function ThemeCard({ activeTheme, handleThemeSelection }: ThemeCardProps) {
+function AppearanceCard({
+  activeTheme,
+  activeToolTextSize,
+  handleThemeSelection,
+  handleToolTextSizeSelection,
+}: AppearanceCardProps) {
   const isDarkTheme = activeTheme === 'dark';
   const darkButtonClassName = isDarkTheme ? `${styles.themeBtn} ${styles.active}` : styles.themeBtn;
   const lightButtonClassName = isDarkTheme ? styles.themeBtn : `${styles.themeBtn} ${styles.active}`;
+  const defaultTextSizeButtonClassName = activeToolTextSize === DEFAULT_TOOL_TEXT_SIZE
+    ? `${styles.themeBtn} ${styles.active}`
+    : styles.themeBtn;
+  const largeTextSizeButtonClassName = activeToolTextSize === LARGE_TOOL_TEXT_SIZE
+    ? `${styles.themeBtn} ${styles.active}`
+    : styles.themeBtn;
+  const extraLargeTextSizeButtonClassName = activeToolTextSize === EXTRA_LARGE_TOOL_TEXT_SIZE
+    ? `${styles.themeBtn} ${styles.active}`
+    : styles.themeBtn;
 
   return (
     <section className={styles.card}>
@@ -94,6 +116,8 @@ function ThemeCard({ activeTheme, handleThemeSelection }: ThemeCardProps) {
         <h2 className={styles.cardTitle}>{APPEARANCE_SECTION_TITLE}</h2>
       </div>
       <div className={styles.cardBody}>
+        <div className={styles.controlGroup}>
+          <span className={styles.label}>{THEME_CONTROL_LABEL}</span>
         <div className={styles.themeToggle}>
           <button className={darkButtonClassName} onClick={() => handleThemeSelection('dark')} type="button">
             Dark
@@ -101,6 +125,36 @@ function ThemeCard({ activeTheme, handleThemeSelection }: ThemeCardProps) {
           <button className={lightButtonClassName} onClick={() => handleThemeSelection('light')} type="button">
             Light
           </button>
+        </div>
+        </div>
+        <div className={styles.controlGroup}>
+          <span className={styles.label}>{TOOL_TEXT_SIZE_CONTROL_LABEL}</span>
+          <div className={styles.themeToggle}>
+            <button
+              aria-label="Default text size"
+              className={defaultTextSizeButtonClassName}
+              onClick={() => handleToolTextSizeSelection(DEFAULT_TOOL_TEXT_SIZE)}
+              type="button"
+            >
+              Default
+            </button>
+            <button
+              aria-label="Large text size"
+              className={largeTextSizeButtonClassName}
+              onClick={() => handleToolTextSizeSelection(LARGE_TOOL_TEXT_SIZE)}
+              type="button"
+            >
+              Large
+            </button>
+            <button
+              aria-label="Extra large text size"
+              className={extraLargeTextSizeButtonClassName}
+              onClick={() => handleToolTextSizeSelection(EXTRA_LARGE_TOOL_TEXT_SIZE)}
+              type="button"
+            >
+              Extra Large
+            </button>
+          </div>
         </div>
       </div>
     </section>
@@ -178,7 +232,9 @@ async function saveProxyField({
 /** Renders the Settings view for service URL configuration, theme selection, and version checks. */
 export default function SettingsView() {
   const theme = useSettingsStore((state) => state.theme);
+  const toolTextSize = useSettingsStore((state) => state.toolTextSize);
   const setTheme = useSettingsStore((state) => state.setTheme);
+  const setToolTextSize = useSettingsStore((state) => state.setToolTextSize);
   const storedJiraBaseUrl = useSettingsStore((state) => state.changeRequestGeneratorJiraUrl);
   const storedSnowBaseUrl = useSettingsStore((state) => state.changeRequestGeneratorSnowUrl);
   const storedConfluenceBaseUrl = useSettingsStore((state) => state.confluenceUrl);
@@ -290,7 +346,12 @@ export default function SettingsView() {
         }}
         saveStatusMessage={saveStatusMessage}
       />
-      <ThemeCard activeTheme={theme} handleThemeSelection={handleThemeSelection} />
+      <AppearanceCard
+        activeTheme={theme}
+        activeToolTextSize={toolTextSize}
+        handleThemeSelection={handleThemeSelection}
+        handleToolTextSizeSelection={setToolTextSize}
+      />
       <VersionCard handleVersionRefresh={() => void refreshProxyVersion(setProxyVersion)} proxyVersion={proxyVersion} />
     </div>
   );

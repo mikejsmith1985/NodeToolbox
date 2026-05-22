@@ -1,13 +1,14 @@
 // SprintDashboardView.tsx — Sprint Dashboard view with 12 tabs for sprint health, delivery tracking, and story pointing.
 //
-// Provides twelve tabs: Overview (sprint info + burn-down chart), By Assignee (swim lanes),
+// Provides thirteen tabs: Overview (sprint info + burn-down chart), By Assignee (swim lanes),
 // Blockers (wall of blocked/stale issues), Defects (bug radar by priority),
 // Standup (board walk + 15-min timer), Settings (project key + board picker + roster settings),
 // Metrics (velocity/burn stats),
 // Pipeline (kanban WIP by status), Planning (unestimated work), Pointing (embedded planning poker),
-// and Releases (readiness by fix version).
+// PI Review (team-level Confluence authoring), and Releases (readiness by fix version).
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 import {
   CartesianGrid,
@@ -24,11 +25,13 @@ import JiraFieldPicker from '../../components/JiraFieldPicker/index.tsx';
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import { jiraGet, jiraPost, jiraPut } from '../../services/jiraApi.ts';
 import type { JiraComment, JiraIssue, JiraTransition, JiraVersion } from '../../types/jira.ts';
+import { downloadElementImage } from '../../utils/downloadElementImage.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
+import { useRovoAssist } from '../SnowHub/hooks/useRovoAssist.ts';
 import BoardPicker from './BoardPicker.tsx';
-import CapacityTab from './CapacityTab.tsx';
 import MoveToSprintButton from './MoveToSprintButton.tsx';
 import RosterTab from './RosterTab.tsx';
+import SprintDashboardPiReviewTab from './SprintDashboardPiReviewTab.tsx';
 import StandupTab from './StandupTab.tsx';
 import type { DashboardConfig } from './hooks/useDashboardConfig.ts';
 import { useDashboardConfig } from './hooks/useDashboardConfig.ts';
@@ -40,6 +43,12 @@ import {
   readStoryPoints,
   readStoryPointsValue,
 } from './hooks/sprintDashboardIssueUtils.ts';
+import {
+  buildReleaseRovoPrompt,
+  parseReleaseRovoResponse,
+  type ReleaseRovoPromptInput,
+  type ReleaseRovoTableDocument,
+} from './hooks/releaseRovoNotes.ts';
 import { useSprintData } from './hooks/useSprintData.ts';
 import type { DashboardScopeMode, DashboardTab } from './hooks/useSprintData.ts';
 import styles from './SprintDashboardView.module.css';
@@ -70,8 +79,8 @@ const TAB_OPTIONS: { key: DashboardTab; label: string }[] = [
   { key: 'pipeline', label: 'Pipeline' },
   { key: 'planning', label: 'Planning' },
   { key: 'pointing', label: 'Pointing' },
+  { key: 'pireview', label: 'PI Review' },
   { key: 'releases', label: 'Releases' },
-  { key: 'capacity', label: 'Capacity' },
   { key: 'settings', label: 'Settings' },
 ];
 
@@ -100,8 +109,16 @@ const OVERVIEW_TO_DO_STATUS_TOKENS = ['to do', 'open', 'backlog', 'new'];
 const BLOCKERS_FILTER_LABEL = 'Show:';
 
 const RELEASE_FIELDS =
-  'summary,status,assignee,priority,issuetype,fixVersions';
+  'summary,status,assignee,priority,issuetype,fixVersions,description,customfield_10200';
 const RELEASE_MAX_RESULTS = 50;
+const HIDDEN_ROVO_SHORTCUT_KEY = 'z';
+const RELEASE_ROVO_UNLOCK_STORAGE_KEY = 'tbx-release-rovo-unlocked';
+const RELEASE_ROVO_NOTES_STORAGE_KEY_PREFIX = 'tbx-release-rovo-notes';
+const RELEASE_PROMPT_BUTTON_LABEL = '✦ Build Rovo Prompt';
+const RELEASE_IMPORT_BUTTON_LABEL = '↩ Paste Rovo Response';
+const COPY_RELEASE_PROMPT_BUTTON_LABEL = '📋 Copy Prompt';
+const RENDER_RELEASE_TABLE_BUTTON_LABEL = 'Render Release Notes Table';
+const EXPORT_RELEASE_NOTES_BUTTON_LABEL = '🖼 Export Release Notes PNG';
 const RELEASE_BUCKETS = [
   { id: 'overdue', label: 'Overdue', emoji: '🚨' },
   { id: 'critical', label: 'Due This Week', emoji: '🔴' },
@@ -674,6 +691,19 @@ interface ReleaseRadarEntry {
   bucket: ReleaseBucketId;
 }
 
+interface ReleasePromptModalState {
+  versionId: string;
+  versionName: string;
+  promptText: string;
+}
+
+interface ReleaseImportModalState {
+  versionId: string;
+  versionName: string;
+  responseText: string;
+  errorMessage: string | null;
+}
+
 /** Mirrors the legacy release radar status classification for done / progress / to-do. */
 function classifyReleaseIssueStatus(issue: JiraIssue): 'done' | 'progress' | 'todo' {
   if (isDoneIssue(issue)) {
@@ -782,6 +812,69 @@ function getReleaseCompletionClassName(completionPercentage: number): string {
     return styles.releaseCompletionWatch;
   }
   return styles.releaseCompletionMuted;
+}
+
+function buildReleasePromptInput(projectKey: string, releaseEntry: ReleaseRadarEntry): ReleaseRovoPromptInput {
+  return {
+    projectKey,
+    releaseName: releaseEntry.version.name,
+    releaseDate: releaseEntry.releaseDate,
+    daysLeft: releaseEntry.daysLeft,
+    completionPercentage: releaseEntry.completionPercentage,
+    doneCount: releaseEntry.doneCount,
+    progressCount: releaseEntry.progressCount,
+    todoCount: releaseEntry.todoCount,
+    issues: releaseEntry.issues.map((issue) => ({
+      issueKey: issue.key,
+      summary: issue.fields.summary,
+      statusName: readIssueStatusName(issue),
+      assigneeName: issue.fields.assignee?.displayName ?? null,
+      priorityName: issue.fields.priority?.name ?? null,
+      issueTypeName: issue.fields.issuetype?.name ?? null,
+      description: issue.fields.description,
+      acceptanceCriteria: issue.fields.customfield_10200,
+    })),
+  };
+}
+
+function readStoredReleaseRovoUnlockState(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.sessionStorage.getItem(RELEASE_ROVO_UNLOCK_STORAGE_KEY) === 'true';
+}
+
+function buildReleaseNotesStorageKey(projectKey: string): string {
+  const normalizedProjectKey = projectKey.trim().toUpperCase() || 'default';
+  return `${RELEASE_ROVO_NOTES_STORAGE_KEY_PREFIX}:${normalizedProjectKey}`;
+}
+
+function createReleaseNotesExportFileName(releaseName: string): string {
+  const normalizedReleaseName = releaseName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  return `release-notes-${normalizedReleaseName || 'draft'}.png`;
+}
+
+function readStoredReleaseNotes(projectKey: string): Record<string, ReleaseRovoTableDocument> {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  try {
+    const storedValue = window.sessionStorage.getItem(buildReleaseNotesStorageKey(projectKey));
+    if (!storedValue) {
+      return {};
+    }
+
+    const parsedValue = JSON.parse(storedValue);
+    if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) {
+      return {};
+    }
+
+    return parsedValue as Record<string, ReleaseRovoTableDocument>;
+  } catch {
+    return {};
+  }
 }
 
 interface PredictabilityRow {
@@ -4464,10 +4557,52 @@ function ReleasesTab({
   selectedFixVersionName: string;
   selectedPiValue: string;
 }) {
+  const { verifyPassphrase } = useRovoAssist();
   const [releaseEntries, setReleaseEntries] = useState<ReleaseRadarEntry[]>([]);
   const [isLoadingReleaseRadar, setIsLoadingReleaseRadar] = useState(false);
   const [releaseRadarError, setReleaseRadarError] = useState<string | null>(null);
   const [expandedReleaseIds, setExpandedReleaseIds] = useState<Record<string, boolean>>({});
+  const [isReleaseRovoUnlocked, setIsReleaseRovoUnlocked] = useState<boolean>(() => readStoredReleaseRovoUnlockState());
+  const [releaseNotesByVersionId, setReleaseNotesByVersionId] = useState<Record<string, ReleaseRovoTableDocument>>(
+    () => readStoredReleaseNotes(projectKey),
+  );
+  const [isPassphraseModalVisible, setIsPassphraseModalVisible] = useState(false);
+  const [passphraseInput, setPassphraseInput] = useState('');
+  const [passphraseError, setPassphraseError] = useState<string | null>(null);
+  const [releasePromptModalState, setReleasePromptModalState] = useState<ReleasePromptModalState | null>(null);
+  const [releaseImportModalState, setReleaseImportModalState] = useState<ReleaseImportModalState | null>(null);
+  const [releaseExportErrorByVersionId, setReleaseExportErrorByVersionId] = useState<Record<string, string>>({});
+  const passphraseInputRef = useRef<HTMLInputElement | null>(null);
+  const releaseNotesSectionRefs = useRef<Record<string, HTMLElement | null>>({});
+
+  useEffect(() => {
+    setReleaseNotesByVersionId(readStoredReleaseNotes(projectKey));
+    setReleaseExportErrorByVersionId({});
+    setReleasePromptModalState(null);
+    setReleaseImportModalState(null);
+  }, [projectKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      RELEASE_ROVO_UNLOCK_STORAGE_KEY,
+      isReleaseRovoUnlocked ? 'true' : 'false',
+    );
+  }, [isReleaseRovoUnlocked]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      buildReleaseNotesStorageKey(projectKey),
+      JSON.stringify(releaseNotesByVersionId),
+    );
+  }, [projectKey, releaseNotesByVersionId]);
 
   useEffect(() => {
     const normalizedProjectKey = projectKey.trim().toUpperCase();
@@ -4610,12 +4745,171 @@ function ReleasesTab({
     };
   }, [projectKey, scopeMode, selectedSprintId, selectedFixVersionName, selectedPiValue]);
 
+  useEffect(() => {
+    function handleGlobalKeyDown(keyboardEvent: globalThis.KeyboardEvent): void {
+      const isHiddenShortcutPressed = keyboardEvent.ctrlKey
+        && keyboardEvent.altKey
+        && (
+          keyboardEvent.key.toLowerCase() === HIDDEN_ROVO_SHORTCUT_KEY
+          || keyboardEvent.code === 'KeyZ'
+        );
+
+      if (!isHiddenShortcutPressed || isReleaseRovoUnlocked) {
+        return;
+      }
+
+      keyboardEvent.preventDefault();
+      openReleaseUnlockModal();
+    }
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [isReleaseRovoUnlocked]);
+
+  useEffect(() => {
+    if (isPassphraseModalVisible) {
+      passphraseInputRef.current?.focus();
+    }
+  }, [isPassphraseModalVisible]);
+
   const atRiskCount = releaseEntries.filter(
     (entry) => entry.bucket === 'overdue' || entry.bucket === 'critical',
   ).length;
   const watchCount = releaseEntries.filter((entry) => entry.bucket === 'watch').length;
   const onTrackCount = releaseEntries.filter((entry) => entry.bucket === 'ontrack').length;
   const unscheduledCount = releaseEntries.filter((entry) => entry.bucket === 'nodate').length;
+
+  function openReleaseUnlockModal(): void {
+    setIsPassphraseModalVisible(true);
+    setPassphraseInput('');
+    setPassphraseError(null);
+  }
+
+  const handlePassphraseSubmit = useCallback(async () => {
+    const isPassphraseAccepted = await verifyPassphrase(passphraseInput);
+
+    if (isPassphraseAccepted) {
+      setIsReleaseRovoUnlocked(true);
+      setIsPassphraseModalVisible(false);
+      setPassphraseInput('');
+      setPassphraseError(null);
+      return;
+    }
+
+    setPassphraseError('Incorrect passphrase');
+  }, [passphraseInput, verifyPassphrase]);
+
+  const handlePassphraseKeyDown = useCallback((keyboardEvent: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (keyboardEvent.key === 'Enter') {
+      void handlePassphraseSubmit();
+      return;
+    }
+
+    if (keyboardEvent.key === 'Escape') {
+      setIsPassphraseModalVisible(false);
+    }
+  }, [handlePassphraseSubmit]);
+
+  const handleBuildReleasePrompt = useCallback((releaseEntry: ReleaseRadarEntry) => {
+    const normalizedProjectKey = projectKey.trim().toUpperCase();
+    const promptInput = buildReleasePromptInput(normalizedProjectKey, releaseEntry);
+    const promptText = buildReleaseRovoPrompt(promptInput);
+
+    setReleasePromptModalState({
+      versionId: releaseEntry.version.id,
+      versionName: releaseEntry.version.name,
+      promptText,
+    });
+  }, [projectKey]);
+
+  const handleOpenReleaseImportModal = useCallback((releaseEntry: ReleaseRadarEntry) => {
+    setReleaseImportModalState({
+      versionId: releaseEntry.version.id,
+      versionName: releaseEntry.version.name,
+      responseText: '',
+      errorMessage: null,
+    });
+  }, []);
+
+  const handleReleaseImportTextChange = useCallback((responseText: string) => {
+    setReleaseImportModalState((previousModalState) => {
+      if (!previousModalState) {
+        return previousModalState;
+      }
+
+      return {
+        ...previousModalState,
+        responseText,
+        errorMessage: null,
+      };
+    });
+  }, []);
+
+  const handleImportReleaseResponse = useCallback(() => {
+    if (!releaseImportModalState) {
+      return;
+    }
+
+    try {
+      const parsedReleaseNotes = parseReleaseRovoResponse(releaseImportModalState.responseText);
+      setReleaseNotesByVersionId((previousReleaseNotesByVersionId) => ({
+        ...previousReleaseNotesByVersionId,
+        [releaseImportModalState.versionId]: parsedReleaseNotes,
+      }));
+      setReleaseImportModalState(null);
+    } catch (caughtError) {
+      const errorMessage = caughtError instanceof Error ? caughtError.message : 'Unable to parse the Rovo response.';
+      setReleaseImportModalState((previousModalState) => {
+        if (!previousModalState) {
+          return previousModalState;
+        }
+
+        return {
+          ...previousModalState,
+          errorMessage,
+        };
+      });
+    }
+  }, [releaseImportModalState]);
+
+  const handleReleaseNotesSectionRef = useCallback((versionId: string, releaseNotesSectionElement: HTMLElement | null) => {
+    if (releaseNotesSectionElement) {
+      releaseNotesSectionRefs.current[versionId] = releaseNotesSectionElement;
+      return;
+    }
+
+    delete releaseNotesSectionRefs.current[versionId];
+  }, []);
+
+  const handleExportReleaseNotes = useCallback(async (versionId: string, releaseName: string) => {
+    const releaseNotesSectionElement = releaseNotesSectionRefs.current[versionId];
+    if (!releaseNotesSectionElement) {
+      setReleaseExportErrorByVersionId((previousExportErrors) => ({
+        ...previousExportErrors,
+        [versionId]: 'Render the release notes before exporting the PNG.',
+      }));
+      return;
+    }
+
+    try {
+      setReleaseExportErrorByVersionId((previousExportErrors) => ({
+        ...previousExportErrors,
+        [versionId]: '',
+      }));
+      await downloadElementImage(
+        releaseNotesSectionElement,
+        createReleaseNotesExportFileName(releaseName),
+        'The release notes section is no longer available to export.',
+      );
+    } catch (caughtError) {
+      setReleaseExportErrorByVersionId((previousExportErrors) => ({
+        ...previousExportErrors,
+        [versionId]: caughtError instanceof Error ? caughtError.message : 'Unable to export the release notes PNG.',
+      }));
+    }
+  }, []);
 
   if (!projectKey.trim()) {
     return (
@@ -4671,6 +4965,9 @@ function ReleasesTab({
                   const progressWidth = entry.totalCount === 0
                     ? 0
                     : Math.round((entry.progressCount / entry.totalCount) * 100);
+                  const importedReleaseNotes = releaseNotesByVersionId[entry.version.id] ?? null;
+                  const releaseExportError = releaseExportErrorByVersionId[entry.version.id] ?? '';
+                  const issueByKey = new Map(entry.issues.map((issue) => [issue.key, issue]));
 
                   return (
                     <article className={styles.releaseCard} key={entry.version.id}>
@@ -4705,6 +5002,25 @@ function ReleasesTab({
                         </>
                       ) : (
                         <div className={styles.releaseCountsLine}>No issues linked to this release.</div>
+                      )}
+
+                      {isReleaseRovoUnlocked && (
+                        <div className={styles.releaseAiActions}>
+                          <button
+                            className={styles.secondaryButton}
+                            onClick={() => handleBuildReleasePrompt(entry)}
+                            type="button"
+                          >
+                            {RELEASE_PROMPT_BUTTON_LABEL}
+                          </button>
+                          <button
+                            className={styles.secondaryButton}
+                            onClick={() => handleOpenReleaseImportModal(entry)}
+                            type="button"
+                          >
+                            {RELEASE_IMPORT_BUTTON_LABEL}
+                          </button>
+                        </div>
                       )}
 
                       {entry.totalCount > 0 && (
@@ -4743,6 +5059,78 @@ function ReleasesTab({
                           )}
                         </>
                       )}
+
+                      {importedReleaseNotes && (
+                        <section
+                          className={styles.releaseNotesSection}
+                          ref={(releaseNotesSectionElement) =>
+                            handleReleaseNotesSectionRef(entry.version.id, releaseNotesSectionElement)}
+                        >
+                          <div className={styles.releaseNotesHeader}>
+                            <div>
+                              <h4 className={styles.releaseNotesTitle}>Rovo Release Notes Draft</h4>
+                              <p className={styles.releaseNotesSummary}>
+                                {importedReleaseNotes.releaseSummary}
+                              </p>
+                            </div>
+                            <div className={styles.releaseNotesHeaderActions}>
+                              <span className={styles.releaseNotesBadge}>
+                                {importedReleaseNotes.items.length} item{importedReleaseNotes.items.length === 1 ? '' : 's'}
+                              </span>
+                              <button
+                                className={styles.releaseNotesExportButton}
+                                data-export-exclude="true"
+                                onClick={() => void handleExportReleaseNotes(entry.version.id, importedReleaseNotes.releaseName)}
+                                type="button"
+                              >
+                                {EXPORT_RELEASE_NOTES_BUTTON_LABEL}
+                              </button>
+                            </div>
+                          </div>
+                          {releaseExportError ? <p className={styles.errorMessage}>{releaseExportError}</p> : null}
+                          <div className={styles.releaseNotesTableShell} data-export-expand="true">
+                            <table className={styles.releaseNotesTable}>
+                              <thead>
+                                <tr>
+                                  <th scope="col">Release Item</th>
+                                  <th scope="col">Release Note</th>
+                                  <th scope="col">Customer Impact</th>
+                                  <th scope="col">Technical Details</th>
+                                  <th scope="col">Risks</th>
+                                  <th scope="col">Validation</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {importedReleaseNotes.items.map((releaseItem) => {
+                                  const matchingIssue = issueByKey.get(releaseItem.issueKey) ?? null;
+
+                                  return (
+                                    <tr key={`${entry.version.id}-${releaseItem.issueKey}`}>
+                                      <td>
+                                        <div className={styles.releaseNotesItemCell}>
+                                          <strong>{releaseItem.issueKey}</strong>
+                                          <span>{releaseItem.title}</span>
+                                          {matchingIssue ? (
+                                            <div className={styles.releaseNotesMetaRow}>
+                                              <span className={styles.statusBadge}>{readIssueStatusName(matchingIssue)}</span>
+                                              <span className={styles.statusBadge}>{readAssigneeName(matchingIssue)}</span>
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      </td>
+                                      <td>{releaseItem.releaseNote}</td>
+                                      <td>{releaseItem.customerImpact}</td>
+                                      <td>{releaseItem.technicalDetails}</td>
+                                      <td>{releaseItem.risks}</td>
+                                      <td>{releaseItem.validation}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </section>
+                      )}
                     </article>
                   );
                 })}
@@ -4751,6 +5139,126 @@ function ReleasesTab({
           })}
         </>
       )}
+
+      {isPassphraseModalVisible ? (
+        <div
+          aria-modal="true"
+          className={styles.releasePromptOverlay}
+          role="dialog"
+        >
+          <div className={styles.releasePromptModal}>
+            <h3 className={styles.releasePromptTitle}>Unlock protected tools</h3>
+            <input
+              aria-label="Protected tools passphrase"
+              className={styles.releasePromptInput}
+              onChange={(changeEvent) => setPassphraseInput(changeEvent.target.value)}
+              onKeyDown={handlePassphraseKeyDown}
+              placeholder="Enter passphrase"
+              ref={passphraseInputRef}
+              type="password"
+              value={passphraseInput}
+            />
+            {passphraseError ? <p className={styles.errorMessage}>{passphraseError}</p> : null}
+            <div className={styles.releasePromptActions}>
+              <button
+                className={styles.secondaryButton}
+                onClick={() => void handlePassphraseSubmit()}
+                type="button"
+              >
+                Unlock
+              </button>
+              <button
+                className={styles.textActionButton}
+                onClick={() => setIsPassphraseModalVisible(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {releasePromptModalState ? (
+        <div
+          aria-modal="true"
+          className={styles.releasePromptOverlay}
+          role="dialog"
+        >
+          <div className={styles.releasePromptWideModal}>
+            <h3 className={styles.releasePromptTitle}>
+              Rovo prompt for {releasePromptModalState.versionName}
+            </h3>
+            <p className={styles.releasePromptInstructions}>
+              Copy this prompt into Rovo, then paste the JSON response back into Toolbox to render the release-notes table.
+            </p>
+            <textarea
+              aria-label="Rovo release prompt"
+              className={styles.releasePromptTextArea}
+              readOnly
+              value={releasePromptModalState.promptText}
+            />
+            <div className={styles.releasePromptActions}>
+              <button
+                className={styles.secondaryButton}
+                onClick={() => void navigator.clipboard.writeText(releasePromptModalState.promptText)}
+                type="button"
+              >
+                {COPY_RELEASE_PROMPT_BUTTON_LABEL}
+              </button>
+              <button
+                className={styles.textActionButton}
+                onClick={() => setReleasePromptModalState(null)}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {releaseImportModalState ? (
+        <div
+          aria-modal="true"
+          className={styles.releasePromptOverlay}
+          role="dialog"
+        >
+          <div className={styles.releasePromptWideModal}>
+            <h3 className={styles.releasePromptTitle}>
+              Paste Rovo response for {releaseImportModalState.versionName}
+            </h3>
+            <p className={styles.releasePromptInstructions}>
+              Paste the JSON response from Rovo. Toolbox will parse it and render a release-notes table for this release.
+            </p>
+            <textarea
+              aria-label="Rovo release response"
+              className={styles.releasePromptTextArea}
+              onChange={(changeEvent) => handleReleaseImportTextChange(changeEvent.target.value)}
+              value={releaseImportModalState.responseText}
+            />
+            {releaseImportModalState.errorMessage ? (
+              <p className={styles.errorMessage}>{releaseImportModalState.errorMessage}</p>
+            ) : null}
+            <div className={styles.releasePromptActions}>
+              <button
+                className={styles.secondaryButton}
+                onClick={handleImportReleaseResponse}
+                type="button"
+              >
+                {RENDER_RELEASE_TABLE_BUTTON_LABEL}
+              </button>
+              <button
+                className={styles.textActionButton}
+                onClick={() => setReleaseImportModalState(null)}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -4923,6 +5431,18 @@ export default function SprintDashboardView() {
       );
     }
 
+    if (activeTab === 'pireview') {
+      return (
+        <SprintDashboardPiReviewTab
+          boardId={state.boardId}
+          boardName={state.selectedBoardName}
+          projectKey={state.projectKey}
+          selectedPiName={state.selectedPiValue}
+          sprintIssues={state.sprintIssues}
+        />
+      );
+    }
+
     if (activeTab === 'releases') {
       return (
         <ReleasesTab
@@ -4933,10 +5453,6 @@ export default function SprintDashboardView() {
           selectedSprintId={state.selectedSprintId}
         />
       );
-    }
-
-    if (activeTab === 'capacity') {
-      return <CapacityTab />;
     }
 
     return (

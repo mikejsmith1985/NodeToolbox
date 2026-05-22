@@ -7,14 +7,23 @@ import type { StatusMapping } from '../types/issueLinking.ts';
 
 const DARK_THEME: Theme = 'dark';
 const LIGHT_THEME: Theme = 'light';
+const DEFAULT_TOOL_TEXT_SIZE = 'default';
+const LARGE_TOOL_TEXT_SIZE = 'large';
+const EXTRA_LARGE_TOOL_TEXT_SIZE = 'extra-large';
 const DEFAULT_SNOW_HUB_TAB = 'crg';
 const DEFAULT_TEXT_TOOLS_TAB = 'case';
 const DEFAULT_SPRINT_DASHBOARD_ACTIVE_TAB = 'overview';
 const EMPTY_STRING = '';
 const EMPTY_STRING_LIST: string[] = [];
 const MAX_RECENT_VIEW_COUNT = 5;
+const TOOL_TEXT_SIZE_OPTIONS: readonly string[] = [
+  DEFAULT_TOOL_TEXT_SIZE,
+  LARGE_TOOL_TEXT_SIZE,
+  EXTRA_LARGE_TOOL_TEXT_SIZE,
+];
 
 export const THEME_STORAGE_KEY = 'tbx-theme';
+export const TOOL_TEXT_SIZE_STORAGE_KEY = 'tbxToolTextSize';
 const CARD_ORDER_STORAGE_KEY = 'tbxCardOrder';
 const CHANGE_REQUEST_GENERATOR_JIRA_URL_STORAGE_KEY = 'tbxCRGenJiraUrl';
 const CHANGE_REQUEST_GENERATOR_SNOW_URL_STORAGE_KEY = 'tbxCRGenSnowUrl';
@@ -37,8 +46,14 @@ const RECENT_VIEWS_STORAGE_KEY = 'tbxRecentViews';
 const STATUS_MAPPINGS_STORAGE_KEY = 'tbxStatusMappings';
 const PERSONAL_TOOLBOX_MODULE_IDS_STORAGE_KEY = 'tbxPersonalToolboxModuleIds';
 
+export type ToolTextSize =
+  | typeof DEFAULT_TOOL_TEXT_SIZE
+  | typeof LARGE_TOOL_TEXT_SIZE
+  | typeof EXTRA_LARGE_TOOL_TEXT_SIZE;
+
 interface SettingsState {
   theme: Theme;
+  toolTextSize: ToolTextSize;
   cardOrder: string[];
   changeRequestGeneratorJiraUrl: string;
   changeRequestGeneratorSnowUrl: string;
@@ -66,6 +81,7 @@ interface SettingsState {
   statusMappings: StatusMapping[];
   personalToolboxModuleIds: string[];
   setTheme: (theme: Theme) => void;
+  setToolTextSize: (toolTextSize: ToolTextSize) => void;
   toggleTheme: () => void;
   setCardOrder: (cardOrder: string[]) => void;
   setChangeRequestGeneratorJiraUrl: (url: string) => void;
@@ -137,6 +153,14 @@ export function resolveStoredTheme(): Theme {
   return storedTheme === LIGHT_THEME ? LIGHT_THEME : DARK_THEME;
 }
 
+/** Resolves the persisted tool text size and falls back to the standard size when storage is unavailable or invalid. */
+export function resolveStoredToolTextSize(): ToolTextSize {
+  const storedToolTextSize = readStoredString(TOOL_TEXT_SIZE_STORAGE_KEY, DEFAULT_TOOL_TEXT_SIZE);
+  return TOOL_TEXT_SIZE_OPTIONS.includes(storedToolTextSize)
+    ? storedToolTextSize as ToolTextSize
+    : DEFAULT_TOOL_TEXT_SIZE;
+}
+
 function buildRecentViews(viewId: string, currentRecentViews: string[]): string[] {
   const deduplicatedRecentViews = currentRecentViews.filter(
     (recentViewId) => recentViewId !== viewId,
@@ -204,6 +228,7 @@ function writeStoredStringArray(storageKey: string, value: string[]): void {
 /** Zustand store for React SPA settings backed by legacy localStorage keys. */
 export const useSettingsStore = create<SettingsState>((setState) => ({
   theme: resolveStoredTheme(),
+  toolTextSize: resolveStoredToolTextSize(),
   cardOrder: readStoredStringArray(CARD_ORDER_STORAGE_KEY),
   changeRequestGeneratorJiraUrl: readStoredString(
     CHANGE_REQUEST_GENERATOR_JIRA_URL_STORAGE_KEY,
@@ -247,6 +272,10 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
   setTheme: (theme) => {
     writeStoredString(THEME_STORAGE_KEY, theme);
     setState({ theme });
+  },
+  setToolTextSize: (toolTextSize) => {
+    writeStoredString(TOOL_TEXT_SIZE_STORAGE_KEY, toolTextSize);
+    setState({ toolTextSize });
   },
   toggleTheme: () =>
     setState((currentState) => {

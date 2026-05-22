@@ -43,6 +43,8 @@ export interface JiraIssue {
     issuetype: { name: string; iconUrl: string };
     created: string;
     updated: string;
+    /** Jira due date used by PI Review and release tracking views. */
+    duedate?: string | null;
     description: string | null;
     /** Acceptance Criteria custom field content (instance-specific payload shape). */
     customfield_10200?: unknown;

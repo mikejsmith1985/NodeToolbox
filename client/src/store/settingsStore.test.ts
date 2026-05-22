@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const THEME_STORAGE_KEY = 'tbx-theme';
+const TOOL_TEXT_SIZE_STORAGE_KEY = 'tbxToolTextSize';
 const CARD_ORDER_STORAGE_KEY = 'tbxCardOrder';
 const RECENT_VIEWS_STORAGE_KEY = 'tbxRecentViews';
 const PERSONAL_TOOLBOX_MODULE_IDS_STORAGE_KEY = 'tbxPersonalToolboxModuleIds';
@@ -27,12 +28,14 @@ beforeEach(() => {
 describe('useSettingsStore', () => {
   it('reads initial state from localStorage', async () => {
     window.localStorage.setItem(THEME_STORAGE_KEY, 'light');
+    window.localStorage.setItem(TOOL_TEXT_SIZE_STORAGE_KEY, 'large');
     window.localStorage.setItem(CARD_ORDER_STORAGE_KEY, JSON.stringify(['settings', 'home']));
 
     const { useSettingsStore } = await loadSettingsStoreModule();
     const settingsState = useSettingsStore.getState();
 
     expect(settingsState.theme).toBe('light');
+    expect(settingsState.toolTextSize).toBe('large');
     expect(settingsState.cardOrder).toEqual(['settings', 'home']);
   });
 
@@ -54,6 +57,15 @@ describe('useSettingsStore', () => {
 
     expect(useSettingsStore.getState().theme).toBe('light');
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
+  });
+
+  it('persists tool text size changes back to localStorage and state', async () => {
+    const { useSettingsStore } = await loadSettingsStoreModule();
+
+    useSettingsStore.getState().setToolTextSize('extra-large');
+
+    expect(useSettingsStore.getState().toolTextSize).toBe('extra-large');
+    expect(window.localStorage.getItem(TOOL_TEXT_SIZE_STORAGE_KEY)).toBe('extra-large');
   });
 
   it('resolves the stored theme safely before React mounts', async () => {

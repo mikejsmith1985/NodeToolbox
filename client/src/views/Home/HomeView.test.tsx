@@ -31,6 +31,7 @@ vi.mock('@dnd-kit/sortable', () => ({
 import { useSettingsStore } from '@/store/settingsStore.ts';
 import HomeView from './HomeView.tsx';
 import { APP_CARDS } from './homeCardData.ts';
+import styles from './HomeView.module.css';
 
 function renderHomeView() {
   render(
@@ -85,5 +86,12 @@ describe('HomeView', () => {
       'href',
       '/sprint-dashboard',
     );
+  });
+
+  it('wraps each home card in a full-height grid slot so card sizes stay uniform', () => {
+    renderHomeView();
+
+    const myIssuesCardLink = screen.getByRole('link', { name: /my issues/i });
+    expect(myIssuesCardLink.parentElement).toHaveClass(styles.cardSlot);
   });
 });

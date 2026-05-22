@@ -497,6 +497,19 @@ function resolveSuggestedEnvironmentValue(
   return matchingChoice?.value ?? null;
 }
 
+function resolveEnvironmentOptionValue(
+  options: { value: string; label: string }[],
+  environmentKey: EnvironmentKey,
+): string {
+  const matchingChoice = resolveSuggestedEnvironmentValue(options, {
+    rel: environmentKey === 'rel',
+    prd: environmentKey === 'prd',
+    pfix: environmentKey === 'pfix',
+  });
+
+  return matchingChoice ?? '';
+}
+
 interface StepIndicatorProps {
   currentStep: CrgStateData['currentStep'];
   onStepSelect: (step: CrgStateData['currentStep']) => void;
@@ -589,6 +602,7 @@ interface CtaskTemplateExtras {
 
 interface ResultsStepExtras {
   ctaskTemplates: CtaskTemplate[];
+  environmentValueByKey: Partial<Record<EnvironmentKey, string>>;
 }
 
 interface StepRenderOptions {
@@ -1572,10 +1586,10 @@ function PlanningStep({
           <button
             className={styles.rovoButton}
             onClick={onEnhanceWithRovo}
-            title="Generate a prompt to enhance content with Rovo AI"
+            title="Generate a hidden prompt to enhance content with Rovo"
             type="button"
           >
-            ✦ Enhance with AI
+            ✦ Enhance with prompt
           </button>
         </div>
       ) : null}
@@ -2043,7 +2057,7 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
   );
 }
 
-function ResultsStep({ state, actions, ctaskTemplates }: CrgStepProps & ResultsStepExtras) {
+function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey }: CrgStepProps & ResultsStepExtras) {
   const [selectedCtaskTemplateId, setSelectedCtaskTemplateId] = useState('');
   const [existingChgNumber, setExistingChgNumber] = useState('');
   const selectedCtaskTemplate = ctaskTemplates.find((template) => template.id === selectedCtaskTemplateId) ?? null;
@@ -2147,7 +2161,7 @@ function ResultsStep({ state, actions, ctaskTemplates }: CrgStepProps & ResultsS
         <button
           className={styles.primaryButton}
           disabled={state.isSubmitting || !hasGeneratedContent}
-          onClick={() => void actions.createChg()}
+          onClick={() => void actions.createChg(environmentValueByKey)}
           type="button"
         >
           {state.isSubmitting ? 'Creating CHG…' : 'Create CHG'}
@@ -2206,7 +2220,7 @@ export interface CrgTabProps {
 /**
  * Renders the Change Request Generator so release managers can turn Jira release scope into a
  * comprehensive six-step ServiceNow Change Request with all required fields.
- * A hidden AI assist mode is available via keyboard shortcut for enhanced content generation.
+ * A hidden prompt assist mode is available via keyboard shortcut for enhanced content generation.
  */
 export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
   const { state, actions } = useCrgState();
@@ -2449,6 +2463,11 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
 
   const resultsExtras: ResultsStepExtras = {
     ctaskTemplates: ctaskTemplates.templates,
+    environmentValueByKey: {
+      rel: resolveEnvironmentOptionValue(choiceOptions['u_environment'] ?? [], 'rel'),
+      prd: resolveEnvironmentOptionValue(choiceOptions['u_environment'] ?? [], 'prd'),
+      pfix: resolveEnvironmentOptionValue(choiceOptions['u_environment'] ?? [], 'pfix'),
+    },
   };
 
   const tabTitle = mode === 'configuration' ? CONFIGURATION_TAB_TITLE : TAB_TITLE;

@@ -5,6 +5,7 @@
 .cardHeader { padding: 12px 16px; border-bottom: 1px solid var(--color-border); }
 .cardTitle { font-size: 14px; font-weight: 600; color: var(--color-text-primary); margin: 0; }
 .cardBody { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.controlGroup { display: flex; flex-direction: column; gap: 8px; }
 .field { display: flex; flex-direction: column; gap: 4px; }
 .label { font-size: 12px; font-weight: 500; color: var(--color-text-secondary); }
 .input { background: var(--color-surface-2); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-primary); font-size: 13px; padding: 8px 10px; width: 100%; box-sizing: border-box; outline: none; }

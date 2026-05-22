@@ -5,6 +5,7 @@ const CONFLUENCE_V2_BASE = `${CONFLUENCE_PROXY_BASE}/wiki/api/v2`;
 const JSON_CONTENT_TYPE = 'application/json';
 const PAGE_EXPAND_QUERY = 'body.storage,version';
 const CONFLUENCE_PAGE_ID_PATTERN = /^\d+$/;
+const DNS_LOOKUP_FAILURE_PATTERN = /\b(?:getaddrinfo\s+)?ENOTFOUND\b/i;
 const SHARED_ART_WORKSPACE_SCHEMA_VERSION = 1;
 export const SHARED_ART_DATABASE_PROPERTY_KEY = 'nodetoolbox-shared-art';
 
@@ -102,6 +103,14 @@ interface ConfluenceMultiEntityResult<TResult> {
   results?: TResult[];
 }
 
+function formatConfluenceErrorDetail(errorDetail: string): string {
+  if (!DNS_LOOKUP_FAILURE_PATTERN.test(errorDetail)) {
+    return errorDetail;
+  }
+
+  return `Could not resolve the configured Confluence host. Check the Confluence base URL, VPN/DNS access, and Atlassian tenant name. Original error: ${errorDetail}`;
+}
+
 /** Throws a descriptive error when Confluence returns a non-success response. */
 async function assertSuccessfulResponse(response: Response, messagePrefix: string): Promise<void> {
   if (!response.ok) {
@@ -113,7 +122,7 @@ async function assertSuccessfulResponse(response: Response, messagePrefix: strin
       // The HTTP status is still enough to surface the failure meaningfully.
     }
 
-    throw new Error(`${messagePrefix}: ${errorDetail}`);
+    throw new Error(`${messagePrefix}: ${formatConfluenceErrorDetail(errorDetail)}`);
   }
 }
 

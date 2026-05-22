@@ -4,6 +4,7 @@ import type { ComponentType } from 'react';
 
 import AdminHubView from '../AdminHub/AdminHubView.tsx';
 import ArtView from '../ArtView/ArtView.tsx';
+import BusinessHelperView from '../BusinessHelper/BusinessHelperView.tsx';
 import CodeWalkthroughView from '../CodeWalkthrough/CodeWalkthroughView.tsx';
 import DevWorkspaceView from '../DevWorkspace/DevWorkspaceView.tsx';
 import MyIssuesView from '../MyIssues/MyIssuesView.tsx';
@@ -38,6 +39,12 @@ export const PERSONAL_TOOLBOX_MODULES: readonly PersonalToolboxModuleDefinition[
     title: 'My Issues',
     description: 'Personal Jira work queue, hygiene, and status actions.',
     component: MyIssuesView,
+  },
+  {
+    id: 'business-helper',
+    title: 'Business Helper',
+    description: 'Business-friendly Jira search and other guided utility workflows.',
+    component: BusinessHelperView,
   },
   {
     id: 'dev-workspace',
@@ -76,4 +83,3 @@ export const PERSONAL_TOOLBOX_MODULES: readonly PersonalToolboxModuleDefinition[
     component: AdminHubView,
   },
 ] as const;
-

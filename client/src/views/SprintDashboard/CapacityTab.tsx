@@ -1,4 +1,4 @@
-// CapacityTab.tsx — Team capacity calculator for the Sprint Dashboard.
+// CapacityTab.tsx — Reusable team capacity planning panel for the PI Review workspace.
 //
 // Lets the user model sprint capacity by specifying a date range and a set of
 // team role rows (each with a headcount, weighted allocation %, and PTO days).
@@ -161,14 +161,14 @@ function CapacityResults({ workDayCount, totalCapacityPoints }: CapacityResultsP
 // ── Main component ──
 
 /**
- * Capacity tab for the Team Dashboard.
+ * Reusable capacity planning panel for Team Dashboard PI Review.
  *
  * Workflow:
  * 1. Pick a start and end date — work days (Mon–Fri) are calculated automatically.
  * 2. Add team rows: choose a role, headcount, allocation %, and any PTO days.
  * 3. Read off the 100% and 80% capacity totals to set sprint point targets.
  *
- * Configuration is persisted to localStorage so it survives tab switches and refreshes.
+ * Configuration is persisted to localStorage so it survives refreshes and stays in sync with PI Review saves.
  */
 export default function CapacityTab() {
   const startDate = useCapacityStore((state) => state.startDate);

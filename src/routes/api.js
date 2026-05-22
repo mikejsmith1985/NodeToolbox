@@ -6,6 +6,7 @@
 
 'use strict';
 
+const https      = require('https');
 const path       = require('path');
 const crypto     = require('crypto');
 const express    = require('express');
@@ -33,6 +34,18 @@ const UPDATE_RESPONSE_DELAY_MS = 3000;
 
 /** Hidden launch flag used to identify updater-driven restart handoffs. */
 const RESTART_HANDOFF_ARGUMENT = '--restart-handoff';
+
+/** Public GitHub API endpoint for the latest NodeToolbox release metadata. */
+const VERSION_CHECK_API_URL = 'https://api.github.com/repos/mikejsmith1985/NodeToolbox/releases/latest';
+
+/** Public GitHub release redirect used as a lightweight fallback when the API is slow. */
+const VERSION_CHECK_REDIRECT_URL = 'https://github.com/mikejsmith1985/NodeToolbox/releases/latest';
+
+/** Timeout budget for each outbound GitHub version-check request. */
+const VERSION_CHECK_TIMEOUT_MS = 6000;
+
+/** Fallback note shown when the release version comes from the redirect instead of the API. */
+const VERSION_CHECK_REDIRECT_RELEASE_NOTES = 'Version detected from the public GitHub release page because the GitHub API request did not complete. Release notes are unavailable right now.';
 
 // ── GitHub Connectivity Probe Cache ──────────────────────────────────────────
 //
@@ -482,80 +495,12 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
 
   // ── GET /api/version-check ────────────────────────────────────────────────
   // Compares the running version against the latest GitHub release.
-  // Fetches https://api.github.com/repos/mikejsmith1985/NodeToolbox/releases/latest
-  // and compares tag_name to APP_VERSION. Fails gracefully on network error.
+  // Prefers the GitHub API for release notes, but also probes the public release
+  // redirect in parallel so API-specific slowdowns do not look like a full outage.
 
-  router.get('/api/version-check', (req, res) => {
-    const https = require('https');
-    const GITHUB_RELEASES_URL = 'https://api.github.com/repos/mikejsmith1985/NodeToolbox/releases/latest';
-
-    /** Compares two semver strings — returns true when versionA > versionB. */
-    function isSemverGreaterThan(versionA, versionB) {
-      const partsA = versionA.split('.').map(Number);
-      const partsB = versionB.split('.').map(Number);
-      for (let partIndex = 0; partIndex < 3; partIndex++) {
-        const partA = partsA[partIndex] || 0;
-        const partB = partsB[partIndex] || 0;
-        if (partA > partB) return true;
-        if (partA < partB) return false;
-      }
-      return false;
-    }
-
-    const githubRequest = https.get(
-      GITHUB_RELEASES_URL,
-      {
-        headers: {
-          'User-Agent': 'NodeToolbox/' + APP_VERSION,
-          'Accept':     'application/vnd.github.v3+json',
-        },
-      },
-      (githubResponse) => {
-        let responseBody = '';
-        githubResponse.on('data', (chunk) => { responseBody += chunk; });
-        githubResponse.on('end', () => {
-          try {
-            const releaseData = JSON.parse(responseBody);
-            // tag_name is typically 'v0.7.0' — strip the leading 'v' for comparison.
-            const latestVersion = (releaseData.tag_name || APP_VERSION).replace(/^v/, '');
-            const hasUpdate = isSemverGreaterThan(latestVersion, APP_VERSION);
-            res.json({
-              currentVersion: APP_VERSION,
-              latestVersion,
-              hasUpdate,
-              releaseNotes: releaseData.body || '',
-            });
-          } catch {
-            res.json({
-              currentVersion: APP_VERSION,
-              latestVersion:  APP_VERSION,
-              hasUpdate:      false,
-              releaseNotes:   'Could not parse GitHub release data.',
-            });
-          }
-        });
-      },
-    );
-
-    githubRequest.on('error', () => {
-      res.json({
-        currentVersion: APP_VERSION,
-        latestVersion:  APP_VERSION,
-        hasUpdate:      false,
-        releaseNotes:   'Could not reach GitHub to check for updates.',
-      });
-    });
-
-    // Abort after 8 seconds so the UI does not hang on slow networks.
-    githubRequest.setTimeout(8000, () => {
-      githubRequest.destroy();
-      res.json({
-        currentVersion: APP_VERSION,
-        latestVersion:  APP_VERSION,
-        hasUpdate:      false,
-        releaseNotes:   'Version check timed out.',
-      });
-    });
+  router.get('/api/version-check', async (_req, res) => {
+    const versionCheckResult = await resolveVersionCheckResult();
+    res.json(versionCheckResult);
   });
 
   // ── GET /api/logs ─────────────────────────────────────────────────────────
@@ -1141,6 +1086,185 @@ function mergeConfluenceConfig(configuration, incomingConfluence) {
   if (incomingConfluence.baseUrl  !== undefined) configuration.confluence.baseUrl  = incomingConfluence.baseUrl;
   if (incomingConfluence.username !== undefined) configuration.confluence.username = incomingConfluence.username;
   if (incomingConfluence.apiToken !== undefined) configuration.confluence.apiToken = incomingConfluence.apiToken;
+}
+
+// ── Version Check Helpers ──────────────────────────────────────────────────────
+
+/**
+ * Compares two semver strings and returns true when versionA is newer.
+ *
+ * @param {string} versionA - Candidate version.
+ * @param {string} versionB - Current version.
+ * @returns {boolean}
+ */
+function isSemverGreaterThan(versionA, versionB) {
+  const versionAParts = versionA.split('.').map(Number);
+  const versionBParts = versionB.split('.').map(Number);
+
+  for (let partIndex = 0; partIndex < 3; partIndex += 1) {
+    const candidatePart = versionAParts[partIndex] || 0;
+    const currentPart = versionBParts[partIndex] || 0;
+    if (candidatePart > currentPart) return true;
+    if (candidatePart < currentPart) return false;
+  }
+
+  return false;
+}
+
+/**
+ * Creates the UI response shape used by the Admin Hub update section.
+ *
+ * @param {string} latestVersion - Most recent version that could be resolved.
+ * @param {string} releaseNotes - Release notes or a human-readable status message.
+ * @returns {{ currentVersion: string, latestVersion: string, hasUpdate: boolean, releaseNotes: string }}
+ */
+function buildVersionCheckResponse(latestVersion, releaseNotes) {
+  return {
+    currentVersion: APP_VERSION,
+    latestVersion,
+    hasUpdate: isSemverGreaterThan(latestVersion, APP_VERSION),
+    releaseNotes,
+  };
+}
+
+/**
+ * Wraps HTTPS requests so version checks can apply a consistent timeout and
+ * produce plain-English failures instead of leaving the UI spinning.
+ *
+ * @param {string} url - Full HTTPS URL to request.
+ * @param {{ method?: string, requestLabel: string, timeoutMs?: number }} options
+ * @returns {Promise<{ statusCode: number, headers: import('http').IncomingHttpHeaders, body: string }>}
+ */
+function requestHttpsText(url, options) {
+  const requestMethod = options.method || 'GET';
+  const timeoutMs = options.timeoutMs || VERSION_CHECK_TIMEOUT_MS;
+
+  return new Promise((resolve, reject) => {
+    let hasSettled = false;
+    function resolveOnce(value) {
+      if (hasSettled) return;
+      hasSettled = true;
+      resolve(value);
+    }
+    function rejectOnce(error) {
+      if (hasSettled) return;
+      hasSettled = true;
+      reject(error);
+    }
+
+    const outgoingRequest = https.request(url, {
+      method: requestMethod,
+      headers: {
+        'User-Agent': 'NodeToolbox/' + APP_VERSION,
+        'Accept': 'application/vnd.github.v3+json',
+      },
+    }, (incomingResponse) => {
+      let responseBody = '';
+      incomingResponse.on('data', (responseChunk) => {
+        responseBody += responseChunk;
+      });
+      incomingResponse.on('end', () => {
+        resolveOnce({
+          statusCode: incomingResponse.statusCode || 0,
+          headers: incomingResponse.headers,
+          body: responseBody,
+        });
+      });
+    });
+
+    outgoingRequest.on('error', rejectOnce);
+    outgoingRequest.setTimeout(timeoutMs, () => {
+      outgoingRequest.destroy(new Error(`${options.requestLabel} timed out after ${timeoutMs} ms.`));
+    });
+    outgoingRequest.end();
+  });
+}
+
+/**
+ * Reads the latest version and release notes from GitHub's JSON release API.
+ *
+ * @returns {Promise<{ latestVersion: string, releaseNotes: string }>}
+ */
+async function fetchLatestReleaseFromApi() {
+  const apiResponse = await requestHttpsText(VERSION_CHECK_API_URL, {
+    requestLabel: 'GitHub API version check',
+  });
+
+  if (apiResponse.statusCode < 200 || apiResponse.statusCode >= 300) {
+    throw new Error(`GitHub API returned HTTP ${apiResponse.statusCode}.`);
+  }
+
+  let releasePayload;
+  try {
+    releasePayload = JSON.parse(apiResponse.body);
+  } catch {
+    throw new Error('Could not parse GitHub release data.');
+  }
+
+  const latestVersion = String(releasePayload.tag_name || '').replace(/^v/, '');
+  if (!latestVersion) {
+    throw new Error('GitHub release data did not include a tag name.');
+  }
+
+  return {
+    latestVersion,
+    releaseNotes: releasePayload.body || '',
+  };
+}
+
+/**
+ * Extracts the latest release version from GitHub's public latest-release redirect.
+ *
+ * @returns {Promise<{ latestVersion: string, releaseNotes: string }>}
+ */
+async function fetchLatestReleaseFromRedirect() {
+  const redirectResponse = await requestHttpsText(VERSION_CHECK_REDIRECT_URL, {
+    method: 'HEAD',
+    requestLabel: 'GitHub release redirect check',
+  });
+
+  const redirectLocationHeader = Array.isArray(redirectResponse.headers.location)
+    ? redirectResponse.headers.location[0]
+    : redirectResponse.headers.location || '';
+  const locationMatch = /\/releases\/tag\/v?([^/?#]+)/.exec(redirectLocationHeader);
+  const latestVersion = locationMatch ? locationMatch[1] : '';
+
+  if (redirectResponse.statusCode >= 300 && redirectResponse.statusCode < 400 && latestVersion) {
+    return {
+      latestVersion,
+      releaseNotes: VERSION_CHECK_REDIRECT_RELEASE_NOTES,
+    };
+  }
+
+  throw new Error(`GitHub release redirect returned HTTP ${redirectResponse.statusCode}.`);
+}
+
+/**
+ * Runs both public GitHub version-check paths and returns the best available result.
+ *
+ * @returns {Promise<{ currentVersion: string, latestVersion: string, hasUpdate: boolean, releaseNotes: string }>}
+ */
+async function resolveVersionCheckResult() {
+  const [apiResult, redirectResult] = await Promise.allSettled([
+    fetchLatestReleaseFromApi(),
+    fetchLatestReleaseFromRedirect(),
+  ]);
+
+  if (apiResult.status === 'fulfilled') {
+    return buildVersionCheckResponse(apiResult.value.latestVersion, apiResult.value.releaseNotes);
+  }
+
+  if (redirectResult.status === 'fulfilled') {
+    return buildVersionCheckResponse(redirectResult.value.latestVersion, redirectResult.value.releaseNotes);
+  }
+
+  const apiErrorMessage = apiResult.reason instanceof Error ? apiResult.reason.message : 'Unknown GitHub API error.';
+  const redirectErrorMessage = redirectResult.reason instanceof Error ? redirectResult.reason.message : 'Unknown GitHub redirect error.';
+
+  return buildVersionCheckResponse(
+    APP_VERSION,
+    `Could not reach GitHub to check for updates. API: ${apiErrorMessage} Fallback: ${redirectErrorMessage}`,
+  );
 }
 
 // ── Exports ───────────────────────────────────────────────────────────────────

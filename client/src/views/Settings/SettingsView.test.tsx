@@ -79,4 +79,16 @@ describe('SettingsView', () => {
     expect(screen.getByRole('button', { name: 'Dark' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Light' })).toBeInTheDocument();
   });
+
+  it('shows the tool text size controls', async () => {
+    render(<SettingsView />);
+
+    await waitFor(() => {
+      expect(fetchProxyConfigMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(screen.getByRole('button', { name: 'Default text size' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Large text size' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Extra large text size' })).toBeInTheDocument();
+  });
 });

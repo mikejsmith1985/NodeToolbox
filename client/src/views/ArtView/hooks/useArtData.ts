@@ -315,7 +315,6 @@ export type ArtTab =
   | 'predictability'
   | 'releases'
   | 'pireview'
-  | 'capacity'
   | 'blueprint'
   | 'dependencies'
   | 'boardprep'
