@@ -125,7 +125,9 @@ describe('GET /github-proxy/*', () => {
     expect(response.body.login).toBe('testuser');
   });
 
-  it('returns 502 with helpful message when GitHub PAT is not configured', async () => {
+  it('returns 502 with helpful message when no GitHub credentials are configured', async () => {
+    // Neither PAT nor GitHub App credentials — the proxy must reject the request
+    // so the browser receives an actionable error instead of a silent 401 from GitHub.
     const configuration = {
       jira:   { baseUrl: '', pat: '' },
       snow:   { baseUrl: '' },
@@ -137,7 +139,7 @@ describe('GET /github-proxy/*', () => {
       .get('/github-proxy/user');
 
     expect(response.status).toBe(502);
-    expect(response.body.error).toMatch(/PAT/i);
+    expect(response.body.error).toMatch(/not configured/i);
   });
 });
 

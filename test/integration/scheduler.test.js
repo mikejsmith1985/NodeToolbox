@@ -109,7 +109,7 @@ describe('POST /api/scheduler/config', () => {
 // ── POST /api/scheduler/run-now ───────────────────────────────────────────────
 
 describe('POST /api/scheduler/run-now', () => {
-  it('returns 400 when GitHub PAT is not configured', async () => {
+  it('returns 400 when neither GitHub PAT nor App credentials are configured', async () => {
     const configuration = buildBaseConfig();
     const response = await request(buildTestApp(configuration))
       .post('/api/scheduler/run-now');
@@ -119,6 +119,25 @@ describe('POST /api/scheduler/run-now', () => {
 
   it('returns ok:true when GitHub PAT is configured', async () => {
     const configuration = buildBaseConfig({ github: { pat: 'ghp_test', baseUrl: 'https://api.github.com' } });
+    const response = await request(buildTestApp(configuration))
+      .post('/api/scheduler/run-now');
+    expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
+  });
+
+  it('returns ok:true when GitHub App credentials are configured (no PAT required)', async () => {
+    // GitHub App credentials are present — run-now should accept them
+    // without requiring a PAT. The actual repo poll is fire-and-forget so
+    // the token fetch itself does not happen during this request.
+    const configuration = buildBaseConfig({
+      github: {
+        baseUrl:        'https://api.github.com',
+        pat:            '',
+        appId:          '42',
+        installationId: '999',
+        appPrivateKey:  'pem-placeholder',
+      },
+    });
     const response = await request(buildTestApp(configuration))
       .post('/api/scheduler/run-now');
     expect(response.status).toBe(200);
@@ -135,5 +154,18 @@ describe('GET /api/scheduler/results', () => {
     expect(response.status).toBe(200);
     expect(response.body.repoMonitor).toBeDefined();
     expect(Array.isArray(response.body.repoMonitor.events)).toBe(true);
+  });
+});
+
+// ── GET /api/scheduler/github-debug ──────────────────────────────────────────
+
+describe('GET /api/scheduler/github-debug', () => {
+  it('returns isConfigured=false and authType=none when no GitHub credentials exist', async () => {
+    const configuration = buildBaseConfig();
+    const response = await request(buildTestApp(configuration)).get('/api/scheduler/github-debug');
+    expect(response.status).toBe(200);
+    expect(response.body.isConfigured).toBe(false);
+    expect(response.body.authType).toBe('none');
+    expect(response.body.message).toMatch(/no github credentials/i);
   });
 });

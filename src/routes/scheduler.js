@@ -9,6 +9,7 @@
 const express     = require('express');
 const repoMonitor = require('../services/repoMonitor');
 const { saveConfigToDisk } = require('../config/loader');
+const { hasAnyGitHubAuth, hasGitHubAppCredentials, resolveEffectiveGitHubToken } = require('../services/githubAppAuth');
 
 // ── Router Factory ────────────────────────────────────────────────────────────
 
@@ -74,13 +75,13 @@ function createSchedulerRouter(configuration) {
 
   // ── POST /api/scheduler/run-now ────────────────────────────────────────────
   // Triggers an immediate scheduler run outside the normal interval.
-  // Returns 409 if a run is already in progress (not currently tracked, so always 200).
+  // Accepts either a PAT or GitHub App credentials — returns 400 when neither is set.
 
   router.post('/api/scheduler/run-now', (req, res) => {
-    if (!configuration.github || !configuration.github.pat) {
+    if (!hasAnyGitHubAuth(configuration)) {
       return res.status(400).json({
         error:   'GitHub not configured',
-        message: 'Configure a GitHub PAT before triggering the scheduler.',
+        message: 'Configure a GitHub PAT or GitHub App credentials (appId, installationId, appPrivateKey) before triggering the scheduler.',
       });
     }
 
@@ -117,48 +118,54 @@ function createSchedulerRouter(configuration) {
 
   // ── GET /api/scheduler/github-debug ───────────────────────────────────────
   // Debug endpoint to test raw GitHub API connectivity with request/response logging.
-  // Shows exact headers, PAT configuration, and GitHub's response for troubleshooting.
+  // Reports whether auth is via PAT or GitHub App, and shows GitHub's actual response.
   router.get('/api/scheduler/github-debug', (req, res) => {
-    const githubPat = configuration.github && configuration.github.pat;
-    const githubBaseUrl = (configuration.github && configuration.github.baseUrl) || 'https://api.github.com';
+    const githubBaseUrl   = (configuration.github && configuration.github.baseUrl) || 'https://api.github.com';
+    const isGitHubAppMode = hasGitHubAppCredentials(configuration);
+    const githubPat       = configuration.github && configuration.github.pat;
 
-    if (!githubPat) {
+    // Respond early when no auth is configured at all
+    if (!isGitHubAppMode && !githubPat) {
       return res.json({
         isConfigured: false,
-        message: 'GitHub PAT not configured in Admin Hub',
+        authType:     'none',
+        message:      'No GitHub credentials configured in Admin Hub. Set a PAT or GitHub App credentials.',
         debugInfo: {
-          pat: null,
-          baseUrl: githubBaseUrl,
-          authHeaderFormat: 'token <PAT>',
-          expectedHeader: 'Authorization: token ghp_*** (masked for security)',
+          baseUrl:          githubBaseUrl,
+          authHeaderFormat: '(none)',
         },
       });
     }
 
-    const maskedPat = githubPat.substring(0, 4) + '...' + githubPat.substring(githubPat.length - 4);
+    // Build a masked credential summary for the diagnostics response.
+    // For GitHub App we show the App ID (not the private key).
+    const credentialSummary = isGitHubAppMode
+      ? { appId: configuration.github.appId, installationId: configuration.github.installationId }
+      : { pat: githubPat.substring(0, 4) + '...' + githubPat.substring(githubPat.length - 4) };
 
     repoMonitor.testGitHubConnectivity(configuration)
       .then((debugResult) => {
         res.json({
           isConfigured: true,
-          timestamp: new Date().toISOString(),
+          authType:     debugResult.authType,
+          timestamp:    new Date().toISOString(),
           debugInfo: {
-            pat: maskedPat,
-            baseUrl: githubBaseUrl,
-            authHeaderFormat: 'token <PAT>',
-            sentHeader: 'Authorization: token ' + maskedPat,
+            ...credentialSummary,
+            baseUrl:          githubBaseUrl,
+            authHeaderFormat: isGitHubAppMode ? 'token <installation-token>' : 'token <PAT>',
           },
           probeResult: debugResult,
         });
       })
       .catch((debugError) => {
         res.status(500).json({
-          error: 'GitHub debug probe failed',
-          message: debugError.message,
+          error:    'GitHub debug probe failed',
+          authType: isGitHubAppMode ? 'github-app' : 'pat',
+          message:  debugError.message,
           debugInfo: {
-            pat: maskedPat,
-            baseUrl: githubBaseUrl,
-            authHeaderFormat: 'token <PAT>',
+            ...credentialSummary,
+            baseUrl:          githubBaseUrl,
+            authHeaderFormat: isGitHubAppMode ? 'token <installation-token>' : 'token <PAT>',
           },
         });
       });

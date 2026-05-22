@@ -7,6 +7,7 @@
 'use strict';
 
 const { makeGithubApiRequest, makeJiraApiRequest } = require('../utils/httpClient');
+const { resolveEffectiveGitHubToken, hasAnyGitHubAuth } = require('./githubAppAuth');
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -100,8 +101,9 @@ function runRepoMonitor(configuration) {
     return Promise.resolve();
   }
 
-  if (!configuration.github || !configuration.github.pat) {
-    console.log('  [Scheduler] GitHub PAT not configured — skipping run');
+  // Accept either a PAT or GitHub App credentials — skip only when neither is configured
+  if (!hasAnyGitHubAuth(configuration)) {
+    console.log('  [Scheduler] No GitHub credentials configured (PAT or GitHub App) — skipping run');
     return Promise.resolve();
   }
 
@@ -112,48 +114,56 @@ function runRepoMonitor(configuration) {
     compiledBranchRegex = /feature\/[A-Z]+-\d+/;
   }
 
-  // Deep-copy the seen-state to detect changes atomically before persisting
-  const workingSeenBranches = JSON.parse(JSON.stringify(repoMonitor.seenBranches || {}));
-  const workingSeenCommits  = JSON.parse(JSON.stringify(repoMonitor.seenCommits  || {}));
-  const workingSeenPrs      = JSON.parse(JSON.stringify(repoMonitor.seenPrs      || {}));
+  // Resolve the effective GitHub token once upfront, then share it across all
+  // repo polls in this run. This avoids redundant token refresh calls when
+  // multiple repos are monitored and the GitHub App cache is not yet warm.
+  return resolveEffectiveGitHubToken(configuration)
+    .then(({ token: resolvedGitHubToken, authType }) => {
+      console.log('  [Scheduler] Repo Monitor starting — ' + repos.length + ' repo(s) [auth: ' + authType + ']');
 
-  console.log('  [Scheduler] Repo Monitor starting — ' + repos.length + ' repo(s)');
-  let eventsPostedThisRun = 0;
+      // Deep-copy the seen-state to detect changes atomically before persisting
+      const workingSeenBranches = JSON.parse(JSON.stringify(repoMonitor.seenBranches || {}));
+      const workingSeenCommits  = JSON.parse(JSON.stringify(repoMonitor.seenCommits  || {}));
+      const workingSeenPrs      = JSON.parse(JSON.stringify(repoMonitor.seenPrs      || {}));
 
-  // Chain repos sequentially to avoid hammering GitHub API rate limits
-  let processingChain = Promise.resolve();
-  repos.forEach((repoFullPath) => {
-    processingChain = processingChain.then(() =>
-      pollSingleRepo(
-        repoFullPath,
-        compiledBranchRegex,
-        transitions,
-        workingSeenBranches,
-        workingSeenCommits,
-        workingSeenPrs,
-        configuration,
-        (eventCount) => { eventsPostedThisRun += eventCount; }
-      )
-    );
-  });
+      let eventsPostedThisRun = 0;
 
-  return processingChain.then(() => {
-    // Persist updated state back to config so it survives server restarts
-    repoMonitor.seenBranches = workingSeenBranches;
-    repoMonitor.seenCommits  = workingSeenCommits;
-    repoMonitor.seenPrs      = workingSeenPrs;
+      // Chain repos sequentially to avoid hammering GitHub API rate limits
+      let processingChain = Promise.resolve();
+      repos.forEach((repoFullPath) => {
+        processingChain = processingChain.then(() =>
+          pollSingleRepo(
+            repoFullPath,
+            compiledBranchRegex,
+            transitions,
+            workingSeenBranches,
+            workingSeenCommits,
+            workingSeenPrs,
+            resolvedGitHubToken,
+            configuration,
+            (eventCount) => { eventsPostedThisRun += eventCount; }
+          )
+        );
+      });
 
-    const nowIso  = new Date().toISOString();
-    const nextIso = new Date(Date.now() + (intervalMin || 15) * 60 * 1000).toISOString();
-    schedulerRuntimeStats.repoMonitor.lastRunAt = nowIso;
-    schedulerRuntimeStats.repoMonitor.nextRunAt = nextIso;
+      return processingChain.then(() => {
+        // Persist updated state back to config so it survives server restarts
+        repoMonitor.seenBranches = workingSeenBranches;
+        repoMonitor.seenCommits  = workingSeenCommits;
+        repoMonitor.seenPrs      = workingSeenPrs;
 
-    // Lazy-load saveConfigToDisk to avoid a circular dependency at module load time
-    const { saveConfigToDisk } = require('../config/loader');
-    saveConfigToDisk(configuration);
+        const nowIso  = new Date().toISOString();
+        const nextIso = new Date(Date.now() + (intervalMin || 15) * 60 * 1000).toISOString();
+        schedulerRuntimeStats.repoMonitor.lastRunAt = nowIso;
+        schedulerRuntimeStats.repoMonitor.nextRunAt = nextIso;
 
-    console.log('  [Scheduler] Run complete — ' + eventsPostedThisRun + ' event(s) posted');
-  });
+        // Lazy-load saveConfigToDisk to avoid a circular dependency at module load time
+        const { saveConfigToDisk } = require('../config/loader');
+        saveConfigToDisk(configuration);
+
+        console.log('  [Scheduler] Run complete — ' + eventsPostedThisRun + ' event(s) posted');
+      });
+    });
 }
 
 /**
@@ -202,37 +212,43 @@ function getSchedulerResults() {
 function validateRepoMonitorConnectivity(configuration) {
   const repoMonitor = (configuration.scheduler && configuration.scheduler.repoMonitor) || {};
   const configuredRepos = Array.isArray(repoMonitor.repos) ? repoMonitor.repos : [];
-  const hasGitHubPat = !!(configuration.github && configuration.github.pat);
   const githubBaseUrl = (configuration.github && configuration.github.baseUrl) || 'https://api.github.com';
   const isTlsVerified = configuration.sslVerify !== false;
+  const isGitHubAuthConfigured = hasAnyGitHubAuth(configuration);
 
-  if (!hasGitHubPat) {
+  if (!isGitHubAuthConfigured) {
     return Promise.resolve(buildConnectivityValidationResult(configuredRepos, [], {
       isGitHubConfigured: false,
       isGitHubReachable: false,
-      probeErrorMessage: 'GitHub PAT not configured',
+      probeErrorMessage: 'GitHub credentials not configured (set a PAT or GitHub App credentials)',
+      authType: 'none',
     }));
   }
 
-  let probeChain = Promise.resolve();
-  const repoProbeResults = [];
+  // Resolve the effective token (PAT or GitHub App installation token) before probing
+  return resolveEffectiveGitHubToken(configuration)
+    .then(({ token: resolvedToken, authType }) => {
+      let probeChain = Promise.resolve();
+      const repoProbeResults = [];
 
-  configuredRepos.forEach((repoFullPath) => {
-    probeChain = probeChain.then(() => probeSingleRepoConnectivity(
-      repoFullPath,
-      configuration.github.pat,
-      githubBaseUrl,
-      isTlsVerified,
-    ).then((probeResult) => {
-      repoProbeResults.push(probeResult);
-    }));
-  });
+      configuredRepos.forEach((repoFullPath) => {
+        probeChain = probeChain.then(() => probeSingleRepoConnectivity(
+          repoFullPath,
+          resolvedToken,
+          githubBaseUrl,
+          isTlsVerified,
+        ).then((probeResult) => {
+          repoProbeResults.push(probeResult);
+        }));
+      });
 
-  return probeChain.then(() => buildConnectivityValidationResult(configuredRepos, repoProbeResults, {
-    isGitHubConfigured: true,
-    isGitHubReachable: repoProbeResults.every((repoProbeResult) => repoProbeResult.isReachable),
-    probeErrorMessage: null,
-  }));
+      return probeChain.then(() => buildConnectivityValidationResult(configuredRepos, repoProbeResults, {
+        isGitHubConfigured: true,
+        isGitHubReachable: repoProbeResults.every((repoProbeResult) => repoProbeResult.isReachable),
+        probeErrorMessage: null,
+        authType,
+      }));
+    });
 }
 
 /**
@@ -289,16 +305,16 @@ function pollSingleRepo(
   workingSeenBranches,
   workingSeenCommits,
   workingSeenPrs,
+  resolvedGitHubToken,
   configuration,
   onEventsPosted
 ) {
-  const githubPat     = configuration.github.pat;
   const githubBaseUrl = configuration.github.baseUrl;
   const isTlsVerified = configuration.sslVerify !== false;
 
   return Promise.all([
-    makeGithubApiRequest('/repos/' + repoFullPath + '/branches?per_page=100', githubPat, githubBaseUrl, isTlsVerified),
-    makeGithubApiRequest('/repos/' + repoFullPath + '/pulls?state=all&per_page=50&sort=updated&direction=desc', githubPat, githubBaseUrl, isTlsVerified),
+    makeGithubApiRequest('/repos/' + repoFullPath + '/branches?per_page=100', resolvedGitHubToken, githubBaseUrl, isTlsVerified),
+    makeGithubApiRequest('/repos/' + repoFullPath + '/pulls?state=all&per_page=50&sort=updated&direction=desc', resolvedGitHubToken, githubBaseUrl, isTlsVerified),
   ])
     .then(([branchesResult, pullRequestsResult]) => {
       const branchList     = Array.isArray(branchesResult.body)     ? branchesResult.body     : [];
@@ -656,6 +672,8 @@ function buildConnectivityValidationResult(configuredRepos, repoProbeResults, op
       checkedAt: new Date().toISOString(),
       isGitHubConfigured: options.isGitHubConfigured,
       isGitHubReachable: options.isGitHubReachable,
+      // authType tells the UI whether authentication used a PAT, GitHub App, or nothing.
+      authType: options.authType || 'none',
       configuredRepoCount,
       reachableRepoCount,
       unreachableRepoCount,
@@ -694,7 +712,8 @@ function resolveHttpStatusText(statusCode) {
 }
 
 /**
- * Tests raw GitHub API connectivity by calling the /user endpoint with the configured PAT.
+ * Tests raw GitHub API connectivity by calling the /user endpoint with the configured token.
+ * Supports both PAT and GitHub App installation tokens — whichever is configured.
  * Returns a GitHubProbeResult-shaped object whose field names match the TypeScript interface
  * in client/src/services/schedulerApi.ts so the debug panel can render them directly.
  *
@@ -707,46 +726,51 @@ function resolveHttpStatusText(statusCode) {
  *   success       — true when GitHub returned HTTP 200
  *   authenticatedAs — GitHub login of the authenticated user, or null on failure
  *   errorMessage  — Populated when success is false; contains the HTTP status + GitHub message
+ *   authType      — 'pat' or 'github-app', indicating which auth method was used
  *
  * @param {import('../config/loader').ProxyConfig} configuration
  * @returns {Promise<object>}
  */
 function testGitHubConnectivity(configuration) {
-  const githubPat    = configuration.github && configuration.github.pat;
   const githubBaseUrl = (configuration.github && configuration.github.baseUrl) || 'https://api.github.com';
   const isTlsVerified = configuration.sslVerify !== false;
 
   const requestStartTime = Date.now();
 
-  return makeGithubApiRequest(
-    '/user',
-    githubPat,
-    githubBaseUrl,
-    isTlsVerified
-  ).then((userResponse) => {
-    const elapsedMs       = Date.now() - requestStartTime;
-    const isSuccess       = userResponse.status === 200;
-    const userLogin       = userResponse.body && userResponse.body.login ? userResponse.body.login : null;
-    const githubMessage   = userResponse.body && userResponse.body.message ? userResponse.body.message : null;
+  // Resolve whichever auth method is configured before probing the /user endpoint
+  return resolveEffectiveGitHubToken(configuration)
+    .then(({ token: resolvedToken, authType }) => {
+      return makeGithubApiRequest(
+        '/user',
+        resolvedToken,
+        githubBaseUrl,
+        isTlsVerified
+      ).then((userResponse) => {
+        const elapsedMs       = Date.now() - requestStartTime;
+        const isSuccess       = userResponse.status === 200;
+        const userLogin       = userResponse.body && userResponse.body.login ? userResponse.body.login : null;
+        const githubMessage   = userResponse.body && userResponse.body.message ? userResponse.body.message : null;
 
-    // Build a human-readable error when the probe fails so the UI shows the actual
-    // reason (e.g. "HTTP 401 Unauthorized — Bad credentials") instead of generic tips.
-    const errorMessage = isSuccess
-      ? undefined
-      : 'HTTP ' + userResponse.status + ' ' + resolveHttpStatusText(userResponse.status) +
-        (githubMessage ? ' — ' + githubMessage : '');
+        // Build a human-readable error when the probe fails so the UI shows the actual
+        // reason (e.g. "HTTP 401 Unauthorized — Bad credentials") instead of generic tips.
+        const errorMessage = isSuccess
+          ? undefined
+          : 'HTTP ' + userResponse.status + ' ' + resolveHttpStatusText(userResponse.status) +
+            (githubMessage ? ' — ' + githubMessage : '');
 
-    return {
-      endpoint:        '/user (authenticated user info)',
-      method:          'GET',
-      statusCode:      userResponse.status,
-      statusText:      resolveHttpStatusText(userResponse.status),
-      responseTime:    elapsedMs,
-      success:         isSuccess,
-      authenticatedAs: isSuccess ? userLogin : null,
-      errorMessage,
-    };
-  });
+        return {
+          endpoint:        '/user (authenticated user info)',
+          method:          'GET',
+          statusCode:      userResponse.status,
+          statusText:      resolveHttpStatusText(userResponse.status),
+          responseTime:    elapsedMs,
+          success:         isSuccess,
+          authenticatedAs: isSuccess ? userLogin : null,
+          authType,
+          errorMessage,
+        };
+      });
+    });
 }
 
 // ── Exports ───────────────────────────────────────────────────────────────────

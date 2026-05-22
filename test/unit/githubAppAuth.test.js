@@ -13,6 +13,8 @@ const {
   getValidInstallationToken,
   clearInstallationTokenCache,
   hasGitHubAppCredentials,
+  hasAnyGitHubAuth,
+  resolveEffectiveGitHubToken,
   listGitHubAppInstallations,
 } = require('../../src/services/githubAppAuth');
 
@@ -191,6 +193,98 @@ describe('getValidInstallationToken', () => {
   it('rejects with an "incomplete" error when any credential is missing', async () => {
     const configuration = { github: {}, sslVerify: true };
     await expect(getValidInstallationToken(configuration)).rejects.toThrow(/incomplete/i);
+  });
+});
+
+// ── hasAnyGitHubAuth ──────────────────────────────────────────────────────────
+
+describe('hasAnyGitHubAuth', () => {
+  it('returns false when neither PAT nor GitHub App credentials are present', () => {
+    expect(hasAnyGitHubAuth({ github: {} })).toBe(false);
+  });
+
+  it('returns true when a PAT is present', () => {
+    expect(hasAnyGitHubAuth({ github: { pat: 'ghp_test' } })).toBe(true);
+  });
+
+  it('returns true when GitHub App credentials are present (no PAT needed)', () => {
+    const configuration = { github: { appId: '1', installationId: '2', appPrivateKey: 'pem' } };
+    expect(hasAnyGitHubAuth(configuration)).toBe(true);
+  });
+
+  it('returns true when both PAT and GitHub App credentials are present', () => {
+    const configuration = {
+      github: { pat: 'ghp_x', appId: '1', installationId: '2', appPrivateKey: 'pem' },
+    };
+    expect(hasAnyGitHubAuth(configuration)).toBe(true);
+  });
+});
+
+// ── resolveEffectiveGitHubToken ───────────────────────────────────────────────
+
+describe('resolveEffectiveGitHubToken', () => {
+  beforeEach(() => clearInstallationTokenCache());
+  afterEach(() => nock.cleanAll());
+
+  it('returns the PAT with authType=pat when only a PAT is configured', async () => {
+    const configuration = {
+      github: { pat: 'ghp_mytoken', baseUrl: 'https://api.github.com' },
+      sslVerify: true,
+    };
+    const result = await resolveEffectiveGitHubToken(configuration);
+    expect(result.token).toBe('ghp_mytoken');
+    expect(result.authType).toBe('pat');
+  });
+
+  it('returns an installation token with authType=github-app when GitHub App credentials are present', async () => {
+    const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
+    nock('https://api.github.com')
+      .post('/app/installations/999/access_tokens')
+      .reply(201, { token: 'ghs_app_token', expires_at: expiresAt });
+
+    const configuration = {
+      github: {
+        appId:          '42',
+        installationId: '999',
+        appPrivateKey:  testPrivateKeyPem,
+        baseUrl:        'https://api.github.com',
+      },
+      sslVerify: true,
+    };
+
+    const result = await resolveEffectiveGitHubToken(configuration);
+    expect(result.token).toBe('ghs_app_token');
+    expect(result.authType).toBe('github-app');
+  });
+
+  it('prefers GitHub App over PAT when both are configured', async () => {
+    // Only registers a GitHub App token nock — if PAT were used instead,
+    // the nock would not be consumed and nock.isDone() would be false.
+    const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
+    nock('https://api.github.com')
+      .post('/app/installations/999/access_tokens')
+      .reply(201, { token: 'ghs_preferred', expires_at: expiresAt });
+
+    const configuration = {
+      github: {
+        pat:            'ghp_fallback',
+        appId:          '42',
+        installationId: '999',
+        appPrivateKey:  testPrivateKeyPem,
+        baseUrl:        'https://api.github.com',
+      },
+      sslVerify: true,
+    };
+
+    const result = await resolveEffectiveGitHubToken(configuration);
+    expect(result.token).toBe('ghs_preferred');
+    expect(result.authType).toBe('github-app');
+    expect(nock.isDone()).toBe(true);
+  });
+
+  it('rejects when neither PAT nor GitHub App credentials are configured', async () => {
+    const configuration = { github: {}, sslVerify: true };
+    await expect(resolveEffectiveGitHubToken(configuration)).rejects.toThrow(/not configured/i);
   });
 });
 
