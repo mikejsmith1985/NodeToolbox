@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  fetchGitHubDebugInfo,
   fetchSchedulerConfig,
   fetchSchedulerResults,
   fetchSchedulerStatus,
@@ -80,6 +81,63 @@ const MOCK_VALIDATION_RESPONSE = {
   },
 };
 
+const MOCK_GITHUB_DEBUG_PAT_RESPONSE = {
+  isConfigured: true,
+  authType: 'pat',
+  timestamp: '2026-01-01T00:00:00.000Z',
+  debugInfo: {
+    pat: 'ghp_...****',
+    baseUrl: 'https://api.github.com',
+    authHeaderFormat: 'token <PAT>',
+    sentHeader: 'Authorization: token ghp_...****',
+  },
+  probeResult: {
+    endpoint: '/user',
+    method: 'GET',
+    statusCode: 200,
+    statusText: 'OK',
+    responseTime: 150,
+    success: true,
+    authenticatedAs: 'test-user',
+  },
+};
+
+const MOCK_GITHUB_DEBUG_APP_RESPONSE = {
+  isConfigured: true,
+  authType: 'github-app',
+  timestamp: '2026-01-01T00:00:00.000Z',
+  debugInfo: {
+    // GitHub App tokens are never exposed — pat is null when App auth is active.
+    pat: null,
+    appId: '12345',
+    installationId: '67890',
+    baseUrl: 'https://api.github.com',
+    authHeaderFormat: 'token <installation-token>',
+    sentHeader: 'Authorization: token ghs_*** (installation token — masked)',
+  },
+  probeResult: {
+    endpoint: '/user',
+    method: 'GET',
+    statusCode: 200,
+    statusText: 'OK',
+    responseTime: 120,
+    success: true,
+    authenticatedAs: 'github-app[bot]',
+  },
+};
+
+const MOCK_GITHUB_DEBUG_UNCONFIGURED_RESPONSE = {
+  isConfigured: false,
+  authType: 'none',
+  message: 'No GitHub credential configured',
+  debugInfo: {
+    pat: null,
+    baseUrl: 'https://api.github.com',
+    authHeaderFormat: 'token <PAT>',
+    expectedHeader: 'Authorization: token ghp_*** (masked for security)',
+  },
+};
+
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn());
 });
@@ -154,3 +212,47 @@ describe('schedulerApi', () => {
   });
 });
 
+describe('fetchGitHubDebugInfo', () => {
+  it('requests the github-debug endpoint', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue(MOCK_GITHUB_DEBUG_PAT_RESPONSE),
+    } as unknown as Response);
+
+    await expect(fetchGitHubDebugInfo()).resolves.toEqual(MOCK_GITHUB_DEBUG_PAT_RESPONSE);
+    expect(fetch).toHaveBeenCalledWith('/api/scheduler/github-debug');
+  });
+
+  it('returns isConfigured=false and a null pat when no credential is configured', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue(MOCK_GITHUB_DEBUG_UNCONFIGURED_RESPONSE),
+    } as unknown as Response);
+
+    const result = await fetchGitHubDebugInfo();
+    expect(result.isConfigured).toBe(false);
+    expect(result.debugInfo.pat).toBeNull();
+  });
+
+  it('represents GitHub App auth with null pat and authType "github-app"', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue(MOCK_GITHUB_DEBUG_APP_RESPONSE),
+    } as unknown as Response);
+
+    const result = await fetchGitHubDebugInfo();
+    expect(result.isConfigured).toBe(true);
+    expect(result.authType).toBe('github-app');
+    expect(result.debugInfo.pat).toBeNull();
+    expect(result.debugInfo.appId).toBe('12345');
+    expect(result.debugInfo.installationId).toBe('67890');
+    expect(result.probeResult?.success).toBe(true);
+    expect(result.probeResult?.authenticatedAs).toBe('github-app[bot]');
+  });
+
+  it('throws a descriptive error for non-ok responses from the github-debug endpoint', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 503 } as Response);
+
+    await expect(fetchGitHubDebugInfo()).rejects.toThrow('github debug fetch failed: 503');
+  });
+});

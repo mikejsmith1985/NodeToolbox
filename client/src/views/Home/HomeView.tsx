@@ -14,6 +14,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Link } from 'react-router-dom';
 
 import { AppCard } from '@/components/AppCard/index.ts';
+import ViewFrame from '@/components/ViewFrame/ViewFrame.tsx';
 import { useSettingsStore } from '@/store/settingsStore.ts';
 import styles from './HomeView.module.css';
 import {
@@ -214,15 +215,13 @@ export default function HomeView() {
   }
 
   return (
-    <div className={styles.homeView}>
-      <h1 className={styles.heading}>{HOME_HEADING}</h1>
-      <p className={styles.subheading}>{HOME_SUBHEADING}</p>
+    <ViewFrame headerAlign="center" title={HOME_HEADING} subtitle={HOME_SUBHEADING} width="wide">
       <RecentViewSection recentViewIds={recentViews} handleCardSelection={addRecentView} />
       <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={sortedCards.map((cardDef) => cardDef.id)} strategy={rectSortingStrategy}>
           <SectionedHomeGrid sortedCards={sortedCards} handleCardSelection={addRecentView} />
         </SortableContext>
       </DndContext>
-    </div>
+    </ViewFrame>
   );
 }

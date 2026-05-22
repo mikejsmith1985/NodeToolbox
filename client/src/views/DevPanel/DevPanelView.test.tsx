@@ -311,6 +311,7 @@ describe('DevPanelView — GitHub Debug tab', () => {
           ok: true,
           json: async () => ({
             isConfigured: true,
+            authType: 'pat',
             timestamp: '2026-01-01T00:00:00.000Z',
             debugInfo: {
               pat: 'ghp_...***',
@@ -368,7 +369,7 @@ describe('DevPanelView — GitHub Debug tab', () => {
     expect(await screen.findByText(/GitHub debug fetch failed/i)).toBeInTheDocument();
   });
 
-  it('displays unconfigured status when GitHub PAT is not configured', async () => {
+  it('displays unconfigured status when no GitHub credential is configured', async () => {
     vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
       const endpointUrl = String(input);
       if (endpointUrl.includes('/api/scheduler/github-debug')) {
@@ -376,6 +377,7 @@ describe('DevPanelView — GitHub Debug tab', () => {
           ok: true,
           json: async () => ({
             isConfigured: false,
+            authType: 'none',
             message: 'GitHub PAT not configured in Admin Hub',
             debugInfo: {
               pat: null,
@@ -411,6 +413,7 @@ describe('DevPanelView — GitHub Debug tab', () => {
           ok: true,
           json: async () => ({
             isConfigured: true,
+            authType: 'pat',
             timestamp: '2026-01-01T12:00:00.000Z',
             debugInfo: {
               pat: 'ghp_...tDg3',
@@ -457,6 +460,7 @@ describe('DevPanelView — GitHub Debug tab', () => {
           ok: true,
           json: async () => ({
             isConfigured: true,
+            authType: 'pat',
             timestamp: '2026-01-01T12:00:00.000Z',
             debugInfo: {
               pat: 'ghp_...tDg3',
@@ -485,7 +489,7 @@ describe('DevPanelView — GitHub Debug tab', () => {
     await user.click(screen.getByRole('button', { name: /Fetch GitHub Debug Info/i }));
 
     // Status header must say "failed" — not the misleading green "Configured"
-    expect(await screen.findByText('✗ PAT configured but probe failed')).toBeInTheDocument();
+    expect(await screen.findByText('✗ Configured but probe failed')).toBeInTheDocument();
     // The actual error must appear at least once (it shows in both the prominent banner
     // and the probe result table — both rendering it is correct behaviour)
     expect(screen.getAllByText(/HTTP 401 Unauthorized — Bad credentials/).length).toBeGreaterThan(0);
@@ -493,5 +497,54 @@ describe('DevPanelView — GitHub Debug tab', () => {
     expect(screen.getAllByText(/401.*Unauthorized/).length).toBeGreaterThan(0);
     // Success flag shows ✗
     expect(screen.getByText('✗ No')).toBeInTheDocument();
+  });
+
+  it('shows auth method and GitHub App identifiers when GitHub App is the active auth method', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const endpointUrl = String(input);
+      if (endpointUrl.includes('/api/scheduler/github-debug')) {
+        return {
+          ok: true,
+          json: async () => ({
+            isConfigured: true,
+            authType: 'github-app',
+            timestamp: '2026-01-01T12:00:00.000Z',
+            debugInfo: {
+              // GitHub App installation tokens are never exposed; pat is null.
+              pat: null,
+              appId: '12345',
+              installationId: '67890',
+              baseUrl: 'https://api.github.com',
+              authHeaderFormat: 'token <installation-token>',
+              sentHeader: 'Authorization: token ghs_*** (installation token — masked)',
+            },
+            probeResult: {
+              endpoint: '/user (authenticated user info)',
+              method: 'GET',
+              statusCode: 200,
+              statusText: 'OK',
+              responseTime: 98,
+              success: true,
+              authenticatedAs: 'github-app[bot]',
+            },
+          }),
+        } as Response;
+      }
+      return { ok: true, json: async () => ({}) } as Response;
+    });
+
+    const user = userEvent.setup();
+    renderDevPanelView();
+    await user.click(screen.getByRole('tab', { name: /GitHub Debug/i }));
+    await user.click(screen.getByRole('button', { name: /Fetch GitHub Debug Info/i }));
+
+    // Should show connected — GitHub App auth succeeded
+    expect(await screen.findByText('✓ Connected')).toBeInTheDocument();
+    // Auth method row should identify this as a GitHub App
+    expect(screen.getByText('github-app')).toBeInTheDocument();
+    // Credential row should summarize the configured App identifiers.
+    expect(screen.getByText('App 12345 · Installation 67890')).toBeInTheDocument();
+    // Authenticated user reflects the App installation identity
+    expect(screen.getByText('github-app[bot]')).toBeInTheDocument();
   });
 });

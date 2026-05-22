@@ -243,7 +243,7 @@
 }
 
 .shortCell {
-  min-width: 110px;
+  min-width: clamp(88px, 12vw, 110px);
 }
 
 .readOnlyValue {
@@ -278,11 +278,11 @@
 }
 
 .featureCell {
-  min-width: 220px;
+  min-width: clamp(180px, 24vw, 220px);
 }
 
 .longCell {
-  min-width: 180px;
+  min-width: clamp(140px, 20vw, 180px);
 }
 
 .rowActionCell {
@@ -670,7 +670,7 @@
 }
 
 .confidenceVoteNumberInput {
-  width: 140px;
+  width: min(100%, 140px);
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-surface-1);
@@ -694,7 +694,7 @@
   display: grid;
   justify-items: center;
   gap: 6px;
-  min-width: 72px;
+  min-width: clamp(64px, 10vw, 72px);
   padding: 10px;
   border: 1px solid var(--color-border-strong);
   border-radius: 10px;
@@ -711,8 +711,8 @@
 }
 
 .fistIcon {
-  width: 48px;
-  height: 48px;
+  width: clamp(40px, 6vw, 48px);
+  height: clamp(40px, 6vw, 48px);
   filter: drop-shadow(0 0 8px var(--color-accent-soft)) drop-shadow(0 3px 4px rgba(15, 23, 42, 0.24));
 }
 
@@ -745,8 +745,26 @@
 }
 
 .fistOptionLabel {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .featureCell {
+    min-width: 160px;
+  }
+
+  .longCell {
+    min-width: 128px;
+  }
+
+  .confidenceVoteNumberInput {
+    width: 100%;
+  }
+
+  .fistOption {
+    padding: var(--spacing-sm);
+  }
 }
 
 .errorText {

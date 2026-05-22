@@ -10,9 +10,23 @@ const DEFAULT_SIMPLE_SEARCH_MAPPING_SOURCE = 'none';
 const DEFAULT_STABLIZATION_NAME_MAPPING_SOURCE = 'jira-key-summary';
 const DEFAULT_DROPDOWN_OPTION_INPUT = '';
 const MAX_DROPDOWN_OPTIONS_PER_COLUMN = 50;
+const MIN_STABLIZATION_COLUMN_WIDTH_PX = 96;
+const MAX_STABLIZATION_COLUMN_WIDTH_PX = 520;
 
 export type StablizationConfigurableColumn = 'grouping' | 'name' | 'justification';
 export type StablizationColumnInputKind = 'text' | 'dropdown';
+export type StablizationTableColumn =
+  | 'grouping'
+  | 'name'
+  | 'fulfillmentCost'
+  | 'enrollmentCost'
+  | 'billing'
+  | 'testing'
+  | 'total'
+  | 'justification'
+  | 'timing'
+  | 'cost'
+  | 'actions';
 export type SimpleSearchMappingSource =
   | 'none'
   | 'jira-key'
@@ -30,6 +44,7 @@ export interface StablizationColumnSetting {
 
 export interface BusinessHelperSettingsState {
   stablizationColumns: Record<StablizationConfigurableColumn, StablizationColumnSetting>;
+  stablizationColumnWidths: Record<StablizationTableColumn, number>;
   simpleSearchMapping: Record<StablizationConfigurableColumn, SimpleSearchMappingSource>;
 }
 
@@ -42,6 +57,7 @@ export interface UseBusinessHelperSettingsResult {
     columnKey: StablizationConfigurableColumn,
     mappingSource: SimpleSearchMappingSource,
   ) => void;
+  updateStablizationColumnWidth: (columnKey: StablizationTableColumn, columnWidthPx: number) => void;
 }
 
 interface MappedStablizationValuesResult {
@@ -76,6 +92,20 @@ export const STABLIZATION_COLUMN_LABELS: Record<StablizationConfigurableColumn, 
   grouping: 'Grouping',
   name: 'Name',
   justification: 'Justification',
+};
+
+export const DEFAULT_STABLIZATION_COLUMN_WIDTHS: Record<StablizationTableColumn, number> = {
+  grouping: 160,
+  name: 280,
+  fulfillmentCost: 132,
+  enrollmentCost: 132,
+  billing: 132,
+  testing: 148,
+  total: 148,
+  justification: 220,
+  timing: 148,
+  cost: 132,
+  actions: 120,
 };
 
 /**
@@ -274,12 +304,28 @@ export function useBusinessHelperSettings(): UseBusinessHelperSettingsResult {
     [setStoredSettings],
   );
 
+  const updateStablizationColumnWidth = useCallback(
+    (columnKey: StablizationTableColumn, columnWidthPx: number) => {
+      const nextSettings = {
+        ...businessHelperSettingsRef.current,
+        stablizationColumnWidths: {
+          ...businessHelperSettingsRef.current.stablizationColumnWidths,
+          [columnKey]: sanitizeColumnWidth(columnWidthPx),
+        },
+      };
+      businessHelperSettingsRef.current = nextSettings;
+      setStoredSettings(nextSettings);
+    },
+    [setStoredSettings],
+  );
+
   return {
     settings: businessHelperSettings,
     updateColumnInputKind,
     addDropdownOption,
     removeDropdownOption,
     updateSimpleSearchMapping,
+    updateStablizationColumnWidth,
   };
 }
 
@@ -290,6 +336,7 @@ function createDefaultBusinessHelperSettings(): BusinessHelperSettingsState {
       name: { inputKind: 'text', dropdownOptions: [] },
       justification: { inputKind: 'text', dropdownOptions: [] },
     },
+    stablizationColumnWidths: DEFAULT_STABLIZATION_COLUMN_WIDTHS,
     simpleSearchMapping: {
       grouping: DEFAULT_SIMPLE_SEARCH_MAPPING_SOURCE,
       name: DEFAULT_STABLIZATION_NAME_MAPPING_SOURCE,
@@ -307,6 +354,7 @@ function sanitizeBusinessHelperSettings(
       name: sanitizeColumnSetting(candidateSettings.stablizationColumns?.name),
       justification: sanitizeColumnSetting(candidateSettings.stablizationColumns?.justification),
     },
+    stablizationColumnWidths: sanitizeStablizationColumnWidths(candidateSettings.stablizationColumnWidths),
     simpleSearchMapping: {
       grouping: sanitizeMappingSource(candidateSettings.simpleSearchMapping?.grouping),
       name: sanitizeMappingSource(candidateSettings.simpleSearchMapping?.name, DEFAULT_STABLIZATION_NAME_MAPPING_SOURCE),
@@ -343,4 +391,42 @@ function isValidColumnInputKind(candidateInputKind: unknown): candidateInputKind
 
 function isValidMappingSource(candidateMappingSource: unknown): candidateMappingSource is SimpleSearchMappingSource {
   return SIMPLE_SEARCH_MAPPING_SOURCE_OPTIONS.some((mappingOption) => mappingOption.value === candidateMappingSource);
+}
+
+function sanitizeStablizationColumnWidths(
+  candidateColumnWidths: Partial<Record<StablizationTableColumn, number>> | undefined,
+): Record<StablizationTableColumn, number> {
+  return {
+    grouping: sanitizeColumnWidth(candidateColumnWidths?.grouping, DEFAULT_STABLIZATION_COLUMN_WIDTHS.grouping),
+    name: sanitizeColumnWidth(candidateColumnWidths?.name, DEFAULT_STABLIZATION_COLUMN_WIDTHS.name),
+    fulfillmentCost: sanitizeColumnWidth(
+      candidateColumnWidths?.fulfillmentCost,
+      DEFAULT_STABLIZATION_COLUMN_WIDTHS.fulfillmentCost,
+    ),
+    enrollmentCost: sanitizeColumnWidth(
+      candidateColumnWidths?.enrollmentCost,
+      DEFAULT_STABLIZATION_COLUMN_WIDTHS.enrollmentCost,
+    ),
+    billing: sanitizeColumnWidth(candidateColumnWidths?.billing, DEFAULT_STABLIZATION_COLUMN_WIDTHS.billing),
+    testing: sanitizeColumnWidth(candidateColumnWidths?.testing, DEFAULT_STABLIZATION_COLUMN_WIDTHS.testing),
+    total: sanitizeColumnWidth(candidateColumnWidths?.total, DEFAULT_STABLIZATION_COLUMN_WIDTHS.total),
+    justification: sanitizeColumnWidth(
+      candidateColumnWidths?.justification,
+      DEFAULT_STABLIZATION_COLUMN_WIDTHS.justification,
+    ),
+    timing: sanitizeColumnWidth(candidateColumnWidths?.timing, DEFAULT_STABLIZATION_COLUMN_WIDTHS.timing),
+    cost: sanitizeColumnWidth(candidateColumnWidths?.cost, DEFAULT_STABLIZATION_COLUMN_WIDTHS.cost),
+    actions: sanitizeColumnWidth(candidateColumnWidths?.actions, DEFAULT_STABLIZATION_COLUMN_WIDTHS.actions),
+  };
+}
+
+function sanitizeColumnWidth(candidateColumnWidth: unknown, fallbackWidth = MIN_STABLIZATION_COLUMN_WIDTH_PX): number {
+  if (typeof candidateColumnWidth !== 'number' || !Number.isFinite(candidateColumnWidth)) {
+    return fallbackWidth;
+  }
+
+  return Math.min(
+    MAX_STABLIZATION_COLUMN_WIDTH_PX,
+    Math.max(MIN_STABLIZATION_COLUMN_WIDTH_PX, Math.round(candidateColumnWidth)),
+  );
 }

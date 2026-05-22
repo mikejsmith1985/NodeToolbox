@@ -324,6 +324,9 @@ describe('SimpleSearchTab', () => {
 
     const storedRows = JSON.parse(window.localStorage.getItem('tbxBusinessHelperStablizationTable') ?? '[]');
     expect(storedRows[0].name).toBe('TBX-101 - Business summary match');
+    expect(storedRows[0].sourceJiraBrowseUrl).toBe('/browse/TBX-101');
+    expect(storedRows[0].sourceJiraIssueKey).toBe('TBX-101');
+    expect(storedRows[0].sourceJiraLinkedColumns).toEqual(['name']);
     expect(mockShowToast).toHaveBeenCalledWith(
       'Added TBX-101 to Stablization using Name.',
       'success',

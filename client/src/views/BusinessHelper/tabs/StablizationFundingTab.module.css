@@ -75,10 +75,11 @@
 }
 
 .fundingTable {
-  width: 100%;
-  min-width: calc(var(--spacing-xl) * 32);
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   background: var(--color-surface-1);
+  table-layout: auto;
 }
 
 .tableHeaderCell,
@@ -88,6 +89,8 @@
   padding: var(--spacing-sm) var(--spacing-md);
   border-bottom: 1px solid var(--color-border);
   vertical-align: top;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .tableHeaderCell {
@@ -96,6 +99,14 @@
   text-align: left;
   font-size: var(--font-size-sm);
   font-weight: 600;
+  line-height: 1.4;
+}
+
+.headerCellContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
 }
 
 .tableRow {
@@ -111,13 +122,26 @@
 .currencyInput,
 .dateInput {
   width: 100%;
+  min-width: 0;
   min-height: calc(var(--spacing-xl) + var(--spacing-sm));
-  padding: 0 var(--spacing-sm);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-field-bg, var(--color-surface-2));
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
+}
+
+.textInput {
+  resize: none;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  line-height: 1.4;
+  overflow: hidden;
+}
+
+.selectInput,
+.currencyInput,
+.dateInput {
+  padding: 0 var(--spacing-sm);
 }
 
 .textInput:focus,
@@ -166,6 +190,44 @@
   color: var(--color-danger);
 }
 
+.sourceJiraLink {
+  display: inline-flex;
+  margin-top: var(--spacing-xs);
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
+  text-decoration: underline;
+  text-underline-offset: 0.1em;
+}
+
+.resizeHandle {
+  flex: 0 0 auto;
+  width: calc(var(--spacing-md) + var(--spacing-xs));
+  min-width: calc(var(--spacing-md) + var(--spacing-xs));
+  min-height: calc(var(--spacing-lg) + var(--spacing-xs));
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: col-resize;
+  position: relative;
+}
+
+.resizeHandle::before {
+  content: '';
+  position: absolute;
+  inset-block: 20%;
+  inset-inline: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: color-mix(in srgb, var(--color-text-secondary) 65%, transparent);
+  box-shadow: -4px 0 0 color-mix(in srgb, var(--color-text-secondary) 35%, transparent);
+}
+
+.resizeHandle:hover,
+.resizeHandle:focus-visible {
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  outline: none;
+}
+
 .footerRow {
   background: color-mix(in srgb, var(--color-accent) 6%, var(--color-surface-2));
 }
@@ -180,3 +242,22 @@
   text-align: right;
   font-family: var(--font-family-mono, 'Consolas', monospace);
 }
+
+.isResizingColumns {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.groupingColumn {}
+
+.nameColumn {}
+
+.currencyColumn {}
+
+.calculatedCurrencyColumn {}
+
+.justificationColumn {}
+
+.timingColumn {}
+
+.actionsColumn {}

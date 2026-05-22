@@ -315,7 +315,7 @@
   color: var(--color-text-primary);
   font-size: var(--font-size-md);
   flex: 1;
-  min-width: 150px;
+  min-width: min(150px, 100%);
 }
 
 .settingsButtonRow {
@@ -373,13 +373,13 @@
   font-weight: bold;
   font-size: var(--font-size-sm);
   color: var(--color-text-primary);
-  min-width: 120px;
+  min-width: clamp(96px, 14vw, 120px);
 }
 
 .piProgressBarTrack {
   flex: 1;
-  min-width: 100px;
-  max-width: 300px;
+  min-width: clamp(96px, 16vw, 140px);
+  max-width: min(100%, 300px);
   height: 8px;
   background: var(--color-surface-2);
   border-radius: 4px;
@@ -430,6 +430,18 @@
 .piProgressPillCritical {
   background: var(--color-tone-danger-bg);
   color: var(--color-tone-danger-fg);
+}
+
+@media (max-width: 760px) {
+  .piProgressHeader {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .piProgressBarTrack {
+    max-width: none;
+    width: 100%;
+  }
 }
 
 /* ── ART Summary Bar ── */

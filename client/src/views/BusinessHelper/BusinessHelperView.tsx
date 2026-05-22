@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
+import ViewFrame from '../../components/ViewFrame/ViewFrame.tsx';
 import SimpleSearchTab from './tabs/SimpleSearchTab.tsx';
 import BusinessHelperSettingsTab from './tabs/BusinessHelperSettingsTab.tsx';
 import StablizationFundingTab from './tabs/StablizationFundingTab.tsx';
@@ -41,11 +42,7 @@ export default function BusinessHelperView() {
   const [activeTab, setActiveTab] = useState<BusinessHelperTabKey>(DEFAULT_TAB_KEY);
 
   return (
-    <div className={styles.businessHelperView}>
-      <header className={styles.pageHeader}>
-        <h1 className={styles.pageTitle}>{VIEW_TITLE}</h1>
-        <p className={styles.pageSubtitle}>{VIEW_SUBTITLE}</p>
-      </header>
+    <ViewFrame title={VIEW_TITLE} subtitle={VIEW_SUBTITLE}>
       <PrimaryTabs
         ariaLabel="Business Helper tabs"
         idPrefix="business-helper"
@@ -61,6 +58,6 @@ export default function BusinessHelperView() {
       >
         {renderActiveTabPanel(activeTab)}
       </section>
-    </div>
+    </ViewFrame>
   );
 }

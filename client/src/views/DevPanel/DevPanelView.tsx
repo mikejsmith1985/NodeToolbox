@@ -448,7 +448,7 @@ function renderGitHubDebugInfo(debugInfo: GitHubDebugResponse) {
   }
 
   // Connectivity is "working" only when a probe ran and succeeded.
-  // isConfigured=true only means a PAT is stored — not that it works.
+  // isConfigured=true means a GitHub credential is active (PAT or GitHub App) — not that it works.
   const hasProbeResult        = !!debugInfo.probeResult;
   const isProbeSuccess        = hasProbeResult && debugInfo.probeResult!.success;
   const isConfiguredButFailed = debugInfo.isConfigured && hasProbeResult && !isProbeSuccess;
@@ -458,8 +458,15 @@ function renderGitHubDebugInfo(debugInfo: GitHubDebugResponse) {
     : isProbeSuccess
       ? '✓ Connected'
       : isConfiguredButFailed
-        ? '✗ PAT configured but probe failed'
+        ? '✗ Configured but probe failed'
         : '✓ Configured (probe not yet run)';
+
+  // Newer servers report authType at the top level, while older mocks may still use
+  // debugInfo.authMethod. Support both so the panel stays accurate across versions.
+  const activeAuthMethod = debugInfo.authType ?? debugInfo.debugInfo.authMethod;
+  const credentialSummary = activeAuthMethod === 'github-app'
+    ? buildGitHubAppCredentialSummary(debugInfo.debugInfo)
+    : debugInfo.debugInfo.pat || 'Not configured';
 
   return (
     <>
@@ -484,7 +491,10 @@ function renderGitHubDebugInfo(debugInfo: GitHubDebugResponse) {
       <div className={styles.emptyState}>
         <div><strong>Debug Info:</strong></div>
         <div style={{ paddingLeft: '1rem', fontFamily: 'monospace', fontSize: '0.9rem' }}>
-          <div><strong>PAT:</strong> {debugInfo.debugInfo.pat || 'Not configured'}</div>
+          {activeAuthMethod && (
+            <div><strong>Auth Method:</strong> {activeAuthMethod}</div>
+          )}
+          <div><strong>Credential:</strong> {credentialSummary}</div>
           <div><strong>Base URL:</strong> {debugInfo.debugInfo.baseUrl}</div>
           <div><strong>Auth Header Format:</strong> {debugInfo.debugInfo.authHeaderFormat}</div>
           {debugInfo.debugInfo.expectedHeader && (
@@ -530,14 +540,23 @@ function renderGitHubDebugInfo(debugInfo: GitHubDebugResponse) {
           <>
             <p><strong>Common issues:</strong></p>
             <ul style={{ marginLeft: '1rem' }}>
-              <li>HTTP 401: Invalid or expired GitHub PAT token</li>
-              <li>HTTP 403: Valid token but insufficient scopes (needs <code>repo</code> or <code>read:user</code>)</li>
+              <li>HTTP 401: Invalid or expired GitHub credential (PAT or GitHub App installation token)</li>
+              <li>HTTP 403: Valid credential but insufficient scopes (needs <code>repo</code> or <code>read:user</code>)</li>
               <li>Network error: GitHub is unreachable or firewall/proxy blocking</li>
-              <li>If PAT shows &quot;Not configured&quot;: Add your GitHub PAT in Admin Hub settings</li>
+              <li>If Credential shows &quot;Not configured&quot;: Add a GitHub PAT or GitHub App credential in Admin Hub</li>
             </ul>
           </>
         )}
       </div>
     </>
   )
+}
+
+function buildGitHubAppCredentialSummary(debugInfo: GitHubDebugResponse['debugInfo']): string {
+  const appIdLabel = debugInfo.appId ? `App ${String(debugInfo.appId)}` : null;
+  const installationIdLabel = debugInfo.installationId
+    ? `Installation ${String(debugInfo.installationId)}`
+    : null;
+
+  return [appIdLabel, installationIdLabel].filter(Boolean).join(' · ') || 'GitHub App credential configured';
 }

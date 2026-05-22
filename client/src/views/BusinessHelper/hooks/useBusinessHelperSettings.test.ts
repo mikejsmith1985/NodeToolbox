@@ -4,6 +4,7 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  DEFAULT_STABLIZATION_COLUMN_WIDTHS,
   buildMappedStablizationValues,
   readBusinessHelperSettings,
   useBusinessHelperSettings,
@@ -28,6 +29,20 @@ describe('useBusinessHelperSettings', () => {
     expect(storedSettings.stablizationColumns.name.dropdownOptions).toContain('Funding Candidate');
     expect(storedSettings.simpleSearchMapping.name).toBe('summary');
   });
+
+  it('persists stablization column width changes within the supported range', () => {
+    const { result } = renderHook(() => useBusinessHelperSettings());
+
+    act(() => {
+      result.current.updateStablizationColumnWidth('name', 412);
+      result.current.updateStablizationColumnWidth('actions', 40);
+    });
+
+    const storedSettings = readBusinessHelperSettings();
+    expect(storedSettings.stablizationColumnWidths.name).toBe(412);
+    expect(storedSettings.stablizationColumnWidths.actions).toBeGreaterThanOrEqual(96);
+    expect(storedSettings.stablizationColumnWidths.grouping).toBe(DEFAULT_STABLIZATION_COLUMN_WIDTHS.grouping);
+  });
 });
 
 describe('buildMappedStablizationValues', () => {
@@ -51,6 +66,7 @@ describe('buildMappedStablizationValues', () => {
           name: { inputKind: 'dropdown', dropdownOptions: ['Allowed Value'] },
           justification: { inputKind: 'text', dropdownOptions: [] },
         },
+        stablizationColumnWidths: DEFAULT_STABLIZATION_COLUMN_WIDTHS,
         simpleSearchMapping: {
           grouping: 'jira-key',
           name: 'jira-key-summary',

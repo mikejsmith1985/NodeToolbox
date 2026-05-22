@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
+import ViewFrame from '../../components/ViewFrame/ViewFrame.tsx';
 import ConfigurationTab from './tabs/ConfigurationTab.tsx';
 import CrgTab from './tabs/CrgTab.tsx';
 import PrbTab from './tabs/PrbTab.tsx';
@@ -50,11 +51,7 @@ export default function SnowHubView() {
   const [activeTab, setActiveTab] = useState<SnowHubTabKey>(DEFAULT_TAB_KEY);
 
   return (
-    <div className={styles.snowHubView}>
-      <header className={styles.pageHeader}>
-        <h1 className={styles.pageTitle}>{VIEW_TITLE}</h1>
-        <p className={styles.pageSubtitle}>{VIEW_SUBTITLE}</p>
-      </header>
+    <ViewFrame title={VIEW_TITLE} subtitle={VIEW_SUBTITLE}>
       <PrimaryTabs
         ariaLabel="SNow Hub tabs"
         idPrefix="snow-hub"
@@ -70,6 +67,6 @@ export default function SnowHubView() {
       >
         {renderActiveTabPanel(activeTab)}
       </section>
-    </div>
+    </ViewFrame>
   );
 }

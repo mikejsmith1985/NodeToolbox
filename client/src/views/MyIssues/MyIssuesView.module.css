@@ -257,6 +257,15 @@
   flex-direction: column;
   gap: var(--spacing-sm);
   overflow-y: auto;
+  overflow-x: auto;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.compactList {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 /* ── Card view ── */
@@ -431,6 +440,7 @@
 .issueCardWrapper {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .issueKeyCell {
@@ -447,7 +457,12 @@
 
 .compactRow {
   display: grid;
-  grid-template-columns: 100px 1fr 120px 120px 100px;
+  grid-template-columns:
+    clamp(92px, 12vw, 108px)
+    minmax(0, 1fr)
+    clamp(96px, 12vw, 120px)
+    minmax(112px, 0.85fr)
+    clamp(96px, 12vw, 112px);
   gap: var(--spacing-sm);
   align-items: center;
   padding: var(--spacing-xs) var(--spacing-sm);
@@ -465,7 +480,7 @@
 /* ── Table view ── */
 
 .issueTable {
-  width: 100%;
+  width: max(100%, var(--layout-release-table-min-width));
   border-collapse: collapse;
   font-size: var(--font-size-sm);
 }
@@ -521,7 +536,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-lg);
-  max-width: 640px;
+  max-width: min(100%, 640px);
 }
 
 .settingsSection {
@@ -594,17 +609,19 @@
   position: fixed;
   top: 0;
   right: 0;
-  width: 420px;
+  width: var(--layout-drawer-width);
+  max-width: 100vw;
   height: 100%;
   background: var(--color-card-bg);
   border-left: 1px solid var(--color-border);
   box-shadow: -8px 0 24px rgba(15, 23, 42, 0.14);
   overflow-y: auto;
-  padding: var(--spacing-lg);
+  padding: var(--layout-panel-padding);
   z-index: 100;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+  box-sizing: border-box;
 }
 
 .detailPanelClose {
@@ -696,7 +713,7 @@
 }
 
 .detailPointsInput {
-  width: 96px;
+  width: min(100%, 96px);
   padding: var(--spacing-xs) var(--spacing-sm);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -813,3 +830,44 @@
   gap: var(--spacing-sm);
 }
 
+@media (max-width: 960px) {
+  .countLabel {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .compactRow {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr) auto;
+  }
+
+  .compactRow > :nth-child(4),
+  .compactRow > :nth-child(5) {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .compactRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--spacing-xs);
+  }
+
+  .compactRow > :nth-child(3),
+  .compactRow > :nth-child(4),
+  .compactRow > :nth-child(5) {
+    display: none;
+  }
+
+  .detailPanel {
+    width: 100vw;
+  }
+
+  .detailActionRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .detailPointsInput {
+    width: 100%;
+  }
+}
