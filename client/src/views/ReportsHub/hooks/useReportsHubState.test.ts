@@ -24,9 +24,9 @@ describe('useReportsHubState', () => {
     localStorage.clear();
   });
 
-  it('initialises with features tab and empty data', () => {
+  it('initialises with the dashboard tab and empty data', () => {
     const { result } = renderHook(() => useReportsHubState());
-    expect(result.current.state.activeTab).toBe('features');
+    expect(result.current.state.activeTab).toBe('dashboard');
     expect(result.current.state.features).toHaveLength(0);
     expect(result.current.state.defects).toHaveLength(0);
     expect(result.current.state.risks).toHaveLength(0);
@@ -191,6 +191,65 @@ describe('useReportsHubState', () => {
     await waitFor(() => {
       expect(result.current.state.features.length).toBeGreaterThan(0);
     });
+  });
+
+  it('loadFeatures falls back to ART feature-scope projects when team projects return no features', async () => {
+    localStorage.setItem(
+      ART_TEAMS_STORAGE_KEY,
+      JSON.stringify([{ name: 'Team A', projectKey: 'TEAM' }]),
+    );
+    localStorage.setItem(
+      'tbxARTSettings',
+      JSON.stringify({ featureProjectKeys: ['FEAT'] }),
+    );
+
+    mockJiraGet.mockImplementation(async (requestPath: string) => {
+      const decodedRequestPath = decodeURIComponent(requestPath);
+
+      if (decodedRequestPath.includes('project="TEAM"') && decodedRequestPath.includes('issuetype in ("Epic", "Feature")')) {
+        return { issues: [] };
+      }
+
+      if (decodedRequestPath.includes('project="FEAT"') && decodedRequestPath.includes('issuetype in ("Epic", "Feature")')) {
+        return {
+          issues: [
+            {
+              key: 'FEAT-101',
+              fields: {
+                summary: 'Shared feature project issue',
+                status: { name: 'In Progress', statusCategory: { name: 'indeterminate' } },
+                fixVersions: [],
+                assignee: { displayName: 'Feature Owner' },
+                customfield_10301: 'PI 26.3',
+                priority: { name: 'High' },
+                issuetype: { name: 'Feature' },
+              },
+            },
+          ],
+        };
+      }
+
+      throw new Error(`Unexpected Jira request: ${requestPath}`);
+    });
+
+    const { result } = renderHook(() => useReportsHubState());
+
+    await act(async () => {
+      await result.current.actions.loadFeatures();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.features).toHaveLength(1);
+    });
+
+    expect(result.current.state.features[0]?.key).toBe('FEAT-101');
+    expect(result.current.state.features[0]?.teamName).toBe('FEAT');
+    expect(mockJiraGet).toHaveBeenCalledWith(
+      expect.stringContaining(encodeURIComponent('project="TEAM" AND issuetype in ("Epic", "Feature") ORDER BY status ASC, updated DESC')),
+    );
+    expect(mockJiraGet).toHaveBeenCalledWith(
+      expect.stringContaining(encodeURIComponent('project="FEAT" AND issuetype in ("Epic", "Feature") ORDER BY status ASC, updated DESC')),
+    );
   });
 
   it('normalizes object-shaped PI field values into report-ready strings', async () => {
