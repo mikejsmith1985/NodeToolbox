@@ -31,6 +31,7 @@ const PLAN_SHIFTED_LABEL = 'Plan shifted';
 interface StandupTabProps {
   issues: JiraIssue[];
   projectKey: string;
+  dashboardTeamProfileId?: string;
   timerSecondsRemaining: number;
   isTimerRunning: boolean;
   onStart: () => void;
@@ -400,6 +401,7 @@ function PersonWalkIssueRow({
 export default function StandupTab({
   issues,
   projectKey,
+  dashboardTeamProfileId = '',
   timerSecondsRemaining,
   isTimerRunning,
   onStart,
@@ -409,7 +411,7 @@ export default function StandupTab({
   onRefreshIssues,
 }: StandupTabProps) {
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
-  const { state, actions } = useSprintStandupState(issues, projectKey);
+  const { state, actions } = useSprintStandupState(issues, projectKey, dashboardTeamProfileId);
   const standupIssues = state.scopeMode === 'roster' ? state.scopeIssues : state.scopeIssues.length > 0 ? state.scopeIssues : issues;
 
   useEffect(() => {

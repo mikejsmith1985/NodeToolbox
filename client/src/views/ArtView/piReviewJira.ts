@@ -10,6 +10,7 @@ const FEATURE_QUERY_BATCH_SIZE = 50;
 const FEATURE_KEY_PATTERN = /\b[A-Z][A-Z0-9]+-\d+\b/i;
 const BLANKISH_TEXT_VALUES = new Set(['', 'n/a', 'na', 'none', 'no', '-', '--']);
 const BLOCKED_RISK_KEYWORDS = ['block', 'impediment', 'risk'];
+const MARKDOWN_SEPARATOR_CELL_PATTERN = /^:?-{2,}:?$/;
 const DEFAULT_PI_REVIEW_TARGET_START_FIELD_ID = 'customfield_10101';
 const DEFAULT_PI_REVIEW_TARGET_END_FIELD_ID = 'customfield_10102';
 const DEFAULT_LINK_FIELDS = [
@@ -37,6 +38,13 @@ interface ArtAdvancedSettings {
 export interface PiReviewEstimateUpdate {
   featureKey: string;
   estimate: number;
+}
+
+export interface PiReviewFeatureDateUpdate {
+  featureKey: string;
+  targetStart: string | null;
+  targetEnd: string | null;
+  dueDate: string | null;
 }
 
 export interface PiReviewFeatureDatePill {
@@ -73,6 +81,10 @@ function readConfiguredFieldId(fieldValue: string | undefined): string | null {
 
 function readDefaultedFieldId(fieldValue: string | undefined, defaultFieldId: string): string {
   return readConfiguredFieldId(fieldValue) ?? defaultFieldId;
+}
+
+function normalizeTableHeaderText(headerValue: string): string {
+  return headerValue.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
 function readPiReviewDateFieldIds(): { targetStartFieldId: string | null; targetEndFieldId: string | null } {
@@ -128,6 +140,25 @@ function normalizeJiraDateValue(rawDateValue: unknown): string | null {
   return matchedIsoDate ? matchedIsoDate[0] : trimmedDateValue;
 }
 
+function normalizeImportedDateValue(rawDateValue: string, rowNumber: number, columnLabel: string): string | null {
+  const normalizedDateValue = normalizeJiraDateValue(rawDateValue);
+  if (normalizedDateValue === null) {
+    return null;
+  }
+
+  const matchedSlashDate = normalizedDateValue.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (matchedSlashDate) {
+    const [, monthValue, dayValue, yearValue] = matchedSlashDate;
+    return `${yearValue}-${monthValue.padStart(2, '0')}-${dayValue.padStart(2, '0')}`;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalizedDateValue)) {
+    return normalizedDateValue;
+  }
+
+  throw new Error(`Row ${rowNumber}: ${columnLabel} must use M/D/YYYY or YYYY-MM-DD.`);
+}
+
 function readConfiguredDateFieldValue(jiraIssue: JiraIssue, fieldId: string | null): string | null {
   if (!fieldId) {
     return null;
@@ -161,6 +192,68 @@ function appendUniqueNoteLine(existingNotes: string, prefixLabel: string, source
   }
 
   return existingNotes.trim() === '' ? nextLine : `${existingNotes.trim()}\n${nextLine}`;
+}
+
+function parseDateImportLine(rawLine: string): string[] {
+  const trimmedLine = rawLine.trim();
+  if (trimmedLine === '') {
+    return [];
+  }
+
+  if (trimmedLine.includes('\t')) {
+    return trimmedLine.split('\t').map((cellValue) => cellValue.trim());
+  }
+
+  const normalizedPipeLine = trimmedLine.replace(/^\|/, '').replace(/\|$/, '');
+  return normalizedPipeLine.split('|').map((cellValue) => cellValue.trim());
+}
+
+function isMarkdownSeparatorRow(cellValues: string[]): boolean {
+  return cellValues.length > 0
+    && cellValues.every((cellValue) => cellValue === '' || MARKDOWN_SEPARATOR_CELL_PATTERN.test(cellValue.replace(/\s+/g, '')));
+}
+
+function readMappedDateImportColumns(headerRow: string[]): {
+  jiraKeyColumnIndex: number;
+  targetStartColumnIndex: number | null;
+  targetEndColumnIndex: number | null;
+  dueDateColumnIndex: number | null;
+} {
+  const normalizedHeaderMap = headerRow.reduce<Record<string, number>>((headerMap, headerValue, columnIndex) => {
+    const normalizedHeaderValue = normalizeTableHeaderText(headerValue);
+    if (normalizedHeaderValue !== '') {
+      headerMap[normalizedHeaderValue] = columnIndex;
+    }
+    return headerMap;
+  }, {});
+
+  const jiraKeyColumnIndex = normalizedHeaderMap.jirakey
+    ?? normalizedHeaderMap.issuekey
+    ?? normalizedHeaderMap.key
+    ?? normalizedHeaderMap.featurekey
+    ?? -1;
+  const targetStartColumnIndex = normalizedHeaderMap.targetstart ?? null;
+  const targetEndColumnIndex = normalizedHeaderMap.targetend ?? null;
+  const dueDateColumnIndex = normalizedHeaderMap.duedate ?? null;
+
+  if (jiraKeyColumnIndex < 0) {
+    throw new Error('Paste a table with a Jira Key column.');
+  }
+
+  if (targetStartColumnIndex === null && targetEndColumnIndex === null && dueDateColumnIndex === null) {
+    throw new Error('Paste a table with at least one of Target Start, Target End, or Due Date.');
+  }
+
+  return {
+    jiraKeyColumnIndex,
+    targetStartColumnIndex,
+    targetEndColumnIndex,
+    dueDateColumnIndex,
+  };
+}
+
+function readImportedCellValue(cellValues: string[], columnIndex: number | null): string {
+  return columnIndex === null ? '' : cellValues[columnIndex] ?? '';
 }
 
 function readConfiguredDependencyLinkTypes(): Set<string> {
@@ -287,6 +380,59 @@ export function readPiReviewFeatureDatePills(jiraIssue: JiraIssue | undefined): 
   return datePills.filter((datePill): datePill is PiReviewFeatureDatePill => datePill.value !== null);
 }
 
+/** Parses pasted markdown or tab-separated Jira date tables into normalized issue updates. */
+export function parsePiReviewFeatureDateUpdates(pastedText: string): PiReviewFeatureDateUpdate[] {
+  const parsedRows = pastedText
+    .split(/\r?\n/)
+    .map(parseDateImportLine)
+    .filter((cellValues) => cellValues.length > 0);
+  if (parsedRows.length === 0) {
+    throw new Error('Paste a Jira date table before applying updates.');
+  }
+
+  const [headerRow, ...dataRows] = parsedRows;
+  const {
+    jiraKeyColumnIndex,
+    targetStartColumnIndex,
+    targetEndColumnIndex,
+    dueDateColumnIndex,
+  } = readMappedDateImportColumns(headerRow);
+  const uniqueDateUpdates = new Map<string, PiReviewFeatureDateUpdate>();
+  let parsedRowNumber = 1;
+
+  for (const cellValues of dataRows) {
+    if (isMarkdownSeparatorRow(cellValues)) {
+      continue;
+    }
+
+    parsedRowNumber += 1;
+    const rowNumber = parsedRowNumber;
+    const featureKey = extractPiReviewFeatureKey(readImportedCellValue(cellValues, jiraKeyColumnIndex));
+    if (!featureKey) {
+      throw new Error(`Row ${rowNumber}: Jira Key is required.`);
+    }
+
+    const nextDateUpdate: PiReviewFeatureDateUpdate = {
+      featureKey,
+      targetStart: normalizeImportedDateValue(readImportedCellValue(cellValues, targetStartColumnIndex), rowNumber, TARGET_START_LABEL),
+      targetEnd: normalizeImportedDateValue(readImportedCellValue(cellValues, targetEndColumnIndex), rowNumber, TARGET_END_LABEL),
+      dueDate: normalizeImportedDateValue(readImportedCellValue(cellValues, dueDateColumnIndex), rowNumber, DUE_DATE_LABEL),
+    };
+
+    if (nextDateUpdate.targetStart === null && nextDateUpdate.targetEnd === null && nextDateUpdate.dueDate === null) {
+      continue;
+    }
+
+    uniqueDateUpdates.set(featureKey, nextDateUpdate);
+  }
+
+  if (uniqueDateUpdates.size === 0) {
+    throw new Error('Paste at least one Jira row with a Target Start, Target End, or Due Date value.');
+  }
+
+  return Array.from(uniqueDateUpdates.values());
+}
+
 /** Fetches the Jira feature issues referenced by the current PI Review rows in small search batches. */
 export async function fetchPiReviewFeatureIssues(rows: PiReviewRow[]): Promise<Record<string, JiraIssue>> {
   const featureKeys = Array.from(new Set(
@@ -359,5 +505,38 @@ export async function savePiReviewFeatureEstimates(estimateUpdates: PiReviewEsti
         customfield_10111: estimateUpdate.estimate,
       },
     });
+  }
+}
+
+/** Saves pasted PI Review target dates back into Jira using the configured PI Review date fields. */
+export async function savePiReviewFeatureDates(dateUpdates: PiReviewFeatureDateUpdate[]): Promise<void> {
+  const { targetStartFieldId, targetEndFieldId } = readPiReviewDateFieldIds();
+  const uniqueDateUpdates = new Map<string, PiReviewFeatureDateUpdate>();
+  for (const dateUpdate of dateUpdates) {
+    uniqueDateUpdates.set(dateUpdate.featureKey, dateUpdate);
+  }
+
+  for (const dateUpdate of uniqueDateUpdates.values()) {
+    const fields: Record<string, string> = {};
+    if (dateUpdate.targetStart !== null) {
+      if (!targetStartFieldId) {
+        throw new Error('Set the PI Review Target Start field ID before saving Target Start updates.');
+      }
+      fields[targetStartFieldId] = dateUpdate.targetStart;
+    }
+    if (dateUpdate.targetEnd !== null) {
+      if (!targetEndFieldId) {
+        throw new Error('Set the PI Review Target End field ID before saving Target End updates.');
+      }
+      fields[targetEndFieldId] = dateUpdate.targetEnd;
+    }
+    if (dateUpdate.dueDate !== null) {
+      fields.duedate = dateUpdate.dueDate;
+    }
+    if (Object.keys(fields).length === 0) {
+      continue;
+    }
+
+    await jiraPut(`/rest/api/2/issue/${encodeURIComponent(dateUpdate.featureKey)}`, { fields });
   }
 }

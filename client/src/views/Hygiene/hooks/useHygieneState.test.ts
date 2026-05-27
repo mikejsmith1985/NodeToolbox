@@ -19,6 +19,13 @@ vi.mock('../../../services/jiraApi.ts', () => ({
 import { jiraGet } from '../../../services/jiraApi.ts';
 
 const mockJiraGet = vi.mocked(jiraGet);
+const EMPTY_FIELD_METADATA = [
+  { id: 'customfield_10200', name: 'Acceptance Criteria' },
+  { id: 'customfield_10108', name: 'Feature Link' },
+  { id: 'customfield_10301', name: 'Program Increment' },
+  { id: 'customfield_10101', name: 'Target Start' },
+  { id: 'customfield_10102', name: 'Target End' },
+];
 const ACTIVE_STATUS = { name: 'In Progress', statusCategory: { key: 'indeterminate' } };
 const TODO_STATUS = { name: 'To Do', statusCategory: { key: 'new' } };
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -38,6 +45,7 @@ function buildJiraIssue(overrides: Partial<JiraIssue['fields']> = {}, issueKey =
       created: buildDateDaysAgo(4),
       updated: buildDateDaysAgo(1),
       description: 'Given a team opens Hygiene, when data loads, then they can see flags.',
+      customfield_10108: 'FEAT-10',
       customfield_10028: 3,
       customfield_10016: null,
       customfield_10020: [],
@@ -58,6 +66,7 @@ describe('useHygieneState helpers', () => {
 
     expect(decodedSearchPath).toContain('jql=project=TBX AND statusCategory != Done AND assignee = currentUser() AND labels = hygiene');
     expect(decodedSearchPath).toContain('fields=summary,status,assignee,issuetype,priority,created,updated,description');
+    expect(decodedSearchPath).toContain('fixVersions');
     expect(decodedSearchPath).toContain('maxResults=200');
   });
 
@@ -116,6 +125,9 @@ describe('useHygieneState', () => {
 
   it('calls jiraGet with project JQL, extra JQL, and maps only flagged issues', async () => {
     mockJiraGet.mockResolvedValue({
+      issues: [],
+    });
+    mockJiraGet.mockResolvedValueOnce(EMPTY_FIELD_METADATA).mockResolvedValueOnce({
       issues: [
         buildJiraIssue({ customfield_10028: null, customfield_10016: null }),
         buildJiraIssue({}, 'TBX-102'),
@@ -129,14 +141,14 @@ describe('useHygieneState', () => {
       await result.current.loadHygiene();
     });
 
-    const searchPath = String(mockJiraGet.mock.calls[0][0]);
+    const searchPath = String(mockJiraGet.mock.calls[1][0]);
     expect(decodeURIComponent(searchPath)).toContain('project=TBX AND statusCategory != Done AND assignee = currentUser() AND labels = hygiene');
     expect(result.current.findings).toHaveLength(1);
     expect(result.current.summary.totalFlags).toBe(1);
   });
 
   it('filters findings to the selected check type', async () => {
-    mockJiraGet.mockResolvedValue({
+    mockJiraGet.mockResolvedValueOnce(EMPTY_FIELD_METADATA).mockResolvedValueOnce({
       issues: [
         buildJiraIssue({ customfield_10028: null, customfield_10016: null }, 'TBX-101'),
         buildJiraIssue({ status: ACTIVE_STATUS, assignee: null }, 'TBX-102'),
@@ -154,8 +166,52 @@ describe('useHygieneState', () => {
     expect(result.current.filteredFindings[0].flags.map((flag) => flag.checkId)).toContain('no-assignee');
   });
 
+  it('loads enabled enterprise rules, requests custom fields, and filters disabled built-in flags', async () => {
+    window.localStorage.setItem('tbxEnterpriseStandards', JSON.stringify([
+      {
+        id: 'no-assignee',
+        name: 'Missing Assignee',
+        description: 'Built-in',
+        isBuiltIn: true,
+        isEnabled: false,
+        severity: 'error',
+        ruleType: 'built-in',
+        checkId: 'no-assignee',
+      },
+      {
+        id: 'custom-1',
+        name: 'Missing Business Owner',
+        description: 'Business Owner is required.',
+        isBuiltIn: false,
+        isEnabled: true,
+        severity: 'error',
+        ruleType: 'required-field',
+        fieldId: 'customfield_12345',
+        fieldLabel: 'Business Owner',
+        issueTypeNames: ['Story'],
+      },
+    ]));
+    mockJiraGet.mockResolvedValueOnce(EMPTY_FIELD_METADATA).mockResolvedValueOnce({
+      issues: [
+        buildJiraIssue({ assignee: null, customfield_12345: null }, 'TBX-101'),
+      ],
+    });
+    const { result } = renderHook(() => useHygieneState());
+
+    act(() => result.current.setProjectKey('TBX'));
+    await act(async () => {
+      await result.current.loadHygiene();
+    });
+
+    const searchPath = String(mockJiraGet.mock.calls[1][0]);
+    expect(decodeURIComponent(searchPath)).toContain('customfield_12345');
+    expect(result.current.availableCheckIds).toContain('custom-1');
+    expect(result.current.findings[0].flags.map((flag) => flag.checkId)).toContain('custom-1');
+    expect(result.current.findings[0].flags.map((flag) => flag.checkId)).not.toContain('no-assignee');
+  });
+
   it('reports Jira load errors without retaining stale findings', async () => {
-    mockJiraGet.mockRejectedValue(new Error('Jira down'));
+    mockJiraGet.mockResolvedValueOnce(EMPTY_FIELD_METADATA).mockRejectedValueOnce(new Error('Jira down'));
     const { result } = renderHook(() => useHygieneState());
 
     act(() => result.current.setProjectKey('TBX'));

@@ -39,7 +39,7 @@ export const APP_CARDS: AppCardDef[] = [
     icon: '🏃',
     title: 'Team Dashboard',
     description:
-      'Live sprint/Kanban view — burndown, assignee breakdown, blockers, standup, metrics & story pointing.',
+      'Team execution hub for sprint health, blockers, defects, standup, planning, Feature Review, PI Review, and release readiness.',
     tags: ['Sprint', 'Kanban', 'Standup', 'DSU'],
     sectionKey: 'agile',
   },
@@ -49,7 +49,7 @@ export const APP_CARDS: AppCardDef[] = [
     icon: '🚂',
     title: 'ART View',
     description:
-      'Release Train Engineer dashboard — team health, predictability vs goals, and release radar.',
+      'Release-train workspace for PI health, dependencies, blueprint rollups, PI Review readouts, release visibility, and ART settings.',
     tags: ['ART', 'RTE', 'Release Radar'],
     sectionKey: 'agile',
   },
@@ -59,7 +59,7 @@ export const APP_CARDS: AppCardDef[] = [
     icon: '📊',
     title: 'My Issues',
     description:
-      'Jira issues, custom JQL, saved filters, boards — filterable, color-coded, with export.',
+      'Personal Jira and linked ServiceNow work queue with saved views, hygiene checks, swimlanes, and bulk actions.',
     tags: ['Jira', 'My Work', 'Report'],
     sectionKey: 'agile',
   },
@@ -69,7 +69,7 @@ export const APP_CARDS: AppCardDef[] = [
     icon: '🧰',
     title: 'Personal Toolbox',
     description:
-      'Build one workspace from all major tools by selecting only the modules you want in your tab bar.',
+      'Build your own workspace by choosing, reordering, and reusing the major NodeToolbox modules you need most.',
     tags: ['Workspace', 'Personalization', 'Tabs'],
     sectionKey: 'agile',
   },
@@ -79,7 +79,7 @@ export const APP_CARDS: AppCardDef[] = [
     icon: '💼',
     title: 'Business Helper',
     description:
-      'Business-friendly Jira utilities — start with a simple keyword search across supported Jira levels.',
+      'Business-friendly Jira search plus the Stablization funding workflow with mappings, custom columns, and local draft support.',
     tags: ['Jira', 'Search', 'Business'],
     sectionKey: 'agile',
   },
@@ -89,7 +89,7 @@ export const APP_CARDS: AppCardDef[] = [
     icon: '🏗',
     title: 'Dev Workspace',
     description:
-      'Time tracking with Jira work-log posting, git commit sync, and integration settings.',
+      'Developer workspace for hygiene, Jira time tracking, Git sync, repo monitoring, and automation settings.',
     tags: ['Jira', 'Time Tracking', 'Git', 'Automation'],
     sectionKey: 'agile',
   },
@@ -99,7 +99,7 @@ export const APP_CARDS: AppCardDef[] = [
     icon: '📈',
     title: 'Reports Hub',
     description:
-      'Director and RTE reporting dashboard — portfolio snapshots, delivery health, flow, quality, and dashboard summaries.',
+      'Leadership reporting hub for delivery, defects, risks, flow, quality, sprint health, throughput, and individual workload views.',
     tags: ['Reports', 'Director', 'RTE', 'Dashboard'],
     sectionKey: 'admin',
   },
@@ -109,7 +109,7 @@ export const APP_CARDS: AppCardDef[] = [
     icon: '❄️',
     title: 'SNow Hub',
     description:
-      'ServiceNow tooling: generate Change Requests from Jira fix versions, or create Jira Defect+Story pairs from Problem Records.',
+      'ServiceNow workspace for change generation, PRB conversion, release management, configuration, and Jira-SNow sync monitoring.',
     tags: ['ServiceNow', 'Jira', 'Change Request', 'PRB'],
     sectionKey: 'snow',
   },
@@ -119,7 +119,7 @@ export const APP_CARDS: AppCardDef[] = [
     icon: '🛠',
     title: 'Text Tools',
     description:
-      'Smart Formatter, JSON Formatter, Case Converter, URL Encoder/Decoder, Base64, and Element Extractor.',
+      'Utility suite for smart formatting, JSON cleanup, case conversion, URL and Base64 transforms, and element extraction.',
     tags: ['JSON', 'Markdown', 'Encode', 'Base64'],
     sectionKey: 'text',
   },
@@ -129,7 +129,7 @@ export const APP_CARDS: AppCardDef[] = [
     icon: '📖',
     title: 'Code Walkthrough',
     description:
-      'Technical transparency report — architecture, security model, data flow, and API usage breakdown.',
+      'In-app technical reference for architecture, workspace map, security model, data flow, and Jira/ServiceNow write paths.',
     tags: ['Security', 'Architecture', 'Audit'],
     sectionKey: 'docs',
   },
@@ -139,7 +139,7 @@ export const APP_CARDS: AppCardDef[] = [
     icon: '🛡️',
     title: 'Admin Hub',
     description:
-      'POC leadership tools — team oversight, reporting dashboards, and administrative configuration.',
+      'Platform controls for integrations, ART settings, enterprise standards, diagnostics, backup and restore, and tool visibility.',
     tags: ['Admin', 'Leadership', 'Reports'],
     sectionKey: 'admin',
   },

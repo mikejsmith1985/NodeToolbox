@@ -122,7 +122,7 @@ describe('blueprintHierarchy', () => {
             key: 'BETA-1',
             fields: {
               summary: 'Off-train dependency story',
-              status: { name: 'To Do', statusCategory: { key: 'new' } },
+              status: { name: 'Blocked', statusCategory: { key: 'indeterminate' } },
               issuetype: { name: 'Story' },
               assignee: { displayName: 'Bob Builder' },
               parent: { key: 'FEAT-10' },
@@ -157,6 +157,10 @@ describe('blueprintHierarchy', () => {
     expect(programEpics[0].features[0].key).toBe('FEAT-10');
     expect(programEpics[0].features[0].children).toHaveLength(2);
     expect(programEpics[0].features[0].offTrain).toHaveLength(1);
+    expect(programEpics[0].features[0].health).toBe('yellow');
+    expect(programEpics[0].features[0].completionPercent).toBe(44);
+    expect(programEpics[0].health).toBe('yellow');
+    expect(programEpics[0].completionPercent).toBe(44);
     expect(programEpics[0].features[0].offTrain[0].offTrainReasons).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: 'UNKNOWN_PROJECT' }),
@@ -233,6 +237,173 @@ describe('blueprintHierarchy', () => {
     expect(programEpics[0].features[0].key).toBe('FEAT-77');
   });
 
+  it('weights completion by status and includes off-train children in the feature percent', async () => {
+    localStorage.setItem('tbxARTSettings', JSON.stringify({
+      featureLinkField: 'customfield_10108',
+      parentLinkField: 'customfield_10100',
+      piFieldId: 'customfield_10301',
+    }));
+
+    mockJiraGet
+      .mockResolvedValueOnce({
+        issues: [
+          {
+            id: 'ALPHA-10',
+            key: 'ALPHA-10',
+            fields: {
+              summary: 'Build workflow',
+              status: { name: 'Implementing', statusCategory: { key: 'indeterminate' } },
+              issuetype: { name: 'Story' },
+              assignee: null,
+              customfield_10108: 'FEAT-55',
+              project: { key: 'ALPHA' },
+            },
+          },
+          {
+            id: 'ALPHA-11',
+            key: 'ALPHA-11',
+            fields: {
+              summary: 'Prepare business review',
+              status: { name: 'Ready to Accept', statusCategory: { key: 'indeterminate' } },
+              issuetype: { name: 'Story' },
+              assignee: null,
+              customfield_10108: 'FEAT-55',
+              project: { key: 'ALPHA' },
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        issues: [
+          {
+            id: 'FEAT-55',
+            key: 'FEAT-55',
+            fields: {
+              summary: 'Feature Fifty Five',
+              status: { name: 'Implementing', statusCategory: { key: 'indeterminate' } },
+              issuetype: { name: 'Feature' },
+              customfield_10100: 'PE-55',
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        issues: [
+          {
+            id: 'PE-55',
+            key: 'PE-55',
+            fields: {
+              summary: 'Program Epic Fifty Five',
+              status: { name: 'Implementing', statusCategory: { key: 'indeterminate' } },
+              issuetype: { name: 'Program Epic' },
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ issues: [] })
+      .mockResolvedValueOnce({ issues: [] })
+      .mockResolvedValueOnce({
+        issues: [
+          {
+            id: 'BETA-55',
+            key: 'BETA-55',
+            fields: {
+              summary: 'Cross-team test execution',
+              status: { name: 'Integrated Testing', statusCategory: { key: 'indeterminate' } },
+              issuetype: { name: 'Story' },
+              assignee: null,
+              parent: { key: 'FEAT-55' },
+              project: { key: 'BETA' },
+              customfield_10016: 8,
+              customfield_10301: 'PI 25.2',
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ issues: [] });
+
+    const programEpics = await fetchBlueprintHierarchy(MOCK_TEAMS, 'PI 25.1');
+
+    expect(programEpics[0].features[0].completionPercent).toBe(51);
+    expect(programEpics[0].completionPercent).toBe(51);
+  });
+
+  it('weights completion by story points instead of treating every child equally', async () => {
+    localStorage.setItem('tbxARTSettings', JSON.stringify({
+      featureLinkField: 'customfield_10108',
+      parentLinkField: 'customfield_10100',
+      piFieldId: 'customfield_10301',
+    }));
+
+    mockJiraGet
+      .mockResolvedValueOnce({
+        issues: [
+          {
+            id: 'ALPHA-20',
+            key: 'ALPHA-20',
+            fields: {
+              summary: 'Large completed story',
+              status: { name: 'Done', statusCategory: { key: 'done' } },
+              issuetype: { name: 'Story' },
+              assignee: null,
+              customfield_10108: 'FEAT-88',
+              customfield_10016: 8,
+              project: { key: 'ALPHA' },
+            },
+          },
+          {
+            id: 'ALPHA-21',
+            key: 'ALPHA-21',
+            fields: {
+              summary: 'Small working story',
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              issuetype: { name: 'Story' },
+              assignee: null,
+              customfield_10108: 'FEAT-88',
+              customfield_10016: 2,
+              project: { key: 'ALPHA' },
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        issues: [
+          {
+            id: 'FEAT-88',
+            key: 'FEAT-88',
+            fields: {
+              summary: 'Feature Eighty Eight',
+              status: { name: 'Implementing', statusCategory: { key: 'indeterminate' } },
+              issuetype: { name: 'Feature' },
+              customfield_10100: 'PE-88',
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        issues: [
+          {
+            id: 'PE-88',
+            key: 'PE-88',
+            fields: {
+              summary: 'Program Epic Eighty Eight',
+              status: { name: 'Implementing', statusCategory: { key: 'indeterminate' } },
+              issuetype: { name: 'Program Epic' },
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ issues: [] })
+      .mockResolvedValueOnce({ issues: [] })
+      .mockResolvedValueOnce({ issues: [] })
+      .mockResolvedValueOnce({ issues: [] });
+
+    const programEpics = await fetchBlueprintHierarchy(MOCK_TEAMS, 'PI 25.1');
+
+    expect(programEpics[0].features[0].completionPercent).toBe(84);
+    expect(programEpics[0].completionPercent).toBe(84);
+  });
+
   it('returns an empty hierarchy when no feature links are found on the team issues', async () => {
     mockJiraGet.mockResolvedValueOnce({
       issues: [
@@ -254,6 +425,32 @@ describe('blueprintHierarchy', () => {
 
     expect(programEpics).toEqual([]);
     expect(mockJiraGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('queries open sprint issues by project key when no PI is selected', async () => {
+    mockJiraGet.mockResolvedValueOnce({ issues: [] });
+
+    const programEpics = await fetchBlueprintHierarchy(MOCK_TEAMS, '');
+
+    expect(programEpics).toEqual([]);
+    expect(mockJiraGet).toHaveBeenCalledTimes(1);
+    const firstRequestPath = String(mockJiraGet.mock.calls[0][0]);
+    expect(decodeURIComponent(firstRequestPath)).toContain('project = "ALPHA" AND sprint in openSprints()');
+    expect(decodeURIComponent(firstRequestPath)).not.toContain('board =');
+  });
+
+  it('falls back to board issue endpoint when the team project key is missing', async () => {
+    const teamWithoutProjectKey: ArtTeam = {
+      ...MOCK_TEAMS[0],
+      projectKey: '',
+    };
+    mockJiraGet.mockResolvedValueOnce({ issues: [] });
+
+    const programEpics = await fetchBlueprintHierarchy([teamWithoutProjectKey], '');
+
+    expect(programEpics).toEqual([]);
+    expect(mockJiraGet).toHaveBeenCalledTimes(1);
+    expect(String(mockJiraGet.mock.calls[0][0])).toContain('/rest/agile/1.0/board/42/issue?');
   });
 
   it('filters program epics by feature or story search matches', () => {

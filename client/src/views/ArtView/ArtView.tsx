@@ -17,6 +17,7 @@ import JiraProjectPicker from '../../components/JiraProjectPicker/index.tsx';
 import BlueprintTab from './BlueprintTab.tsx';
 import DependenciesTab from './DependenciesTab.tsx';
 import PiReviewTab from './PiReviewTab.tsx';
+import { formatFeatureProjectKeysInput, parseFeatureProjectKeysInput } from './artFeatureScopeSettings.ts';
 import type { ArtTab, ArtTeam, ArtBoardPrepIssue, PiProgressStats } from './hooks/useArtData.ts';
 import { useArtData } from './hooks/useArtData.ts';
 import type { ImpedimentReason, ImpedimentStaleTier } from './hooks/artHelpers.ts';
@@ -2865,6 +2866,7 @@ interface ArtAdvancedSettings {
   spFieldId?: string;
   isSpAutoDetect?: boolean;
   featureLinkField?: string;
+  featureProjectKeys?: string[];
   pCodeField?: string;
   piReviewTargetStartFieldId?: string;
   piReviewTargetEndFieldId?: string;
@@ -2939,6 +2941,7 @@ const SHARED_ART_SETTINGS_FIELD_NAMES = [
   'spFieldId',
   'isSpAutoDetect',
   'featureLinkField',
+  'featureProjectKeys',
   'pCodeField',
   'piReviewTargetStartFieldId',
   'piReviewTargetEndFieldId',
@@ -3004,6 +3007,7 @@ interface SharedArtWorkspacePayload {
     spFieldId?: string;
     isSpAutoDetect?: boolean;
     featureLinkField?: string;
+    featureProjectKeys?: string[];
     pCodeField?: string;
     piReviewTargetStartFieldId?: string;
     piReviewTargetEndFieldId?: string;
@@ -3098,6 +3102,7 @@ function buildSharedArtWorkspacePayload(
       spFieldId: settings.spFieldId?.trim() || undefined,
       isSpAutoDetect: settings.isSpAutoDetect ?? false,
       featureLinkField: settings.featureLinkField?.trim() || undefined,
+      featureProjectKeys: settings.featureProjectKeys?.map((featureProjectKey) => featureProjectKey.trim().toUpperCase()).filter(Boolean) ?? [],
       pCodeField: settings.pCodeField?.trim() || undefined,
       piReviewTargetStartFieldId: settings.piReviewTargetStartFieldId?.trim() || undefined,
       piReviewTargetEndFieldId: settings.piReviewTargetEndFieldId?.trim() || undefined,
@@ -3331,6 +3336,9 @@ function SettingsPanel({
   const [piFieldId, setPiFieldId] = useState(storedSettings.piFieldId ?? '');
   const [spFieldId, setSpFieldId] = useState(storedSettings.spFieldId ?? '');
   const [featureLinkField, setFeatureLinkField] = useState(storedSettings.featureLinkField ?? '');
+  const [featureProjectKeysInput, setFeatureProjectKeysInput] = useState(
+    formatFeatureProjectKeysInput(storedSettings.featureProjectKeys),
+  );
   const [pCodeField, setPCodeField] = useState(storedSettings.pCodeField ?? '');
   const [piReviewTargetStartFieldId, setPiReviewTargetStartFieldId] = useState(
     readDefaultedPiReviewTargetStartFieldId(storedSettings.piReviewTargetStartFieldId),
@@ -3420,6 +3428,11 @@ function SettingsPanel({
     saveSettingField('featureLinkField', value);
   }
 
+  function handleFeatureProjectKeysChange(value: string) {
+    setFeatureProjectKeysInput(value);
+    saveSettingField('featureProjectKeys', parseFeatureProjectKeysInput(value));
+  }
+
   function handlePiReviewTargetStartFieldChange(value: string) {
     setPiReviewTargetStartFieldId(value);
     saveSettingField('piReviewTargetStartFieldId', value);
@@ -3480,6 +3493,7 @@ function SettingsPanel({
       spFieldId,
       isSpAutoDetect,
       featureLinkField,
+      featureProjectKeys: parseFeatureProjectKeysInput(featureProjectKeysInput),
       pCodeField,
       piReviewTargetStartFieldId,
       piReviewTargetEndFieldId,
@@ -3515,6 +3529,7 @@ function SettingsPanel({
     const nextPiFieldId = sharedWorkspace.settings.piFieldId ?? '';
     const nextSpFieldId = sharedWorkspace.settings.spFieldId ?? '';
     const nextFeatureLinkField = sharedWorkspace.settings.featureLinkField ?? '';
+    const nextFeatureProjectKeys = sharedWorkspace.settings.featureProjectKeys ?? [];
     const nextPCodeField = sharedWorkspace.settings.pCodeField ?? '';
     const nextPiReviewTargetStartFieldId = readDefaultedPiReviewTargetStartFieldId(
       sharedWorkspace.settings.piReviewTargetStartFieldId,
@@ -3536,6 +3551,7 @@ function SettingsPanel({
     setPiFieldId(nextPiFieldId);
     setSpFieldId(nextSpFieldId);
     setFeatureLinkField(nextFeatureLinkField);
+    setFeatureProjectKeysInput(formatFeatureProjectKeysInput(nextFeatureProjectKeys));
     setPCodeField(nextPCodeField);
     setPiReviewTargetStartFieldId(nextPiReviewTargetStartFieldId);
     setPiReviewTargetEndFieldId(nextPiReviewTargetEndFieldId);
@@ -3552,6 +3568,7 @@ function SettingsPanel({
       spFieldId: nextSpFieldId,
       isSpAutoDetect: nextIsSpAutoDetect,
       featureLinkField: nextFeatureLinkField,
+      featureProjectKeys: nextFeatureProjectKeys,
       pCodeField: nextPCodeField,
       piReviewTargetStartFieldId: nextPiReviewTargetStartFieldId,
       piReviewTargetEndFieldId: nextPiReviewTargetEndFieldId,
@@ -3914,6 +3931,21 @@ function SettingsPanel({
             placeholder="Feature link field"
             value={featureLinkField}
           />
+        </div>
+
+        <div className={styles.settingsFieldRow}>
+          <label className={styles.settingsFieldLabel}>Feature Project Filter</label>
+          <input
+            aria-label="Feature Project Filter"
+            className={styles.textInput}
+            onChange={(event) => handleFeatureProjectKeysChange(event.target.value)}
+            placeholder="DENP, ENFCT"
+            type="text"
+            value={featureProjectKeysInput}
+          />
+          <p className={styles.settingsFieldHint}>
+            Optional comma-separated feature project keys for Team Dashboard carryover remap and Feature Review.
+          </p>
         </div>
 
         <div className={styles.settingsFieldRow}>

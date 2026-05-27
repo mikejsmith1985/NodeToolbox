@@ -37,6 +37,7 @@ export function PrimaryTabs<TTabKey extends string>({
             id={tabId}
             aria-controls={panelId}
             aria-selected={isActiveTab}
+            data-testid={tabId}
             className={`${styles.tabButton} ${isActiveTab ? styles.activeTab : ''}`}
             onClick={() => onChange(tabOption.key)}
           >

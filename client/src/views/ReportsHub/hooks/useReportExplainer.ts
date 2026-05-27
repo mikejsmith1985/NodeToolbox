@@ -21,7 +21,11 @@ function loadExplainerStates(): Record<string, boolean> {
   try {
     const raw = localStorage.getItem(EXPLAINER_STORAGE_KEY)
     if (raw === null) return {}
-    return JSON.parse(raw) as Record<string, boolean>
+    const parsedExplainerStates = JSON.parse(raw) as unknown
+    if (typeof parsedExplainerStates !== 'object' || parsedExplainerStates === null || Array.isArray(parsedExplainerStates)) {
+      return {}
+    }
+    return parsedExplainerStates as Record<string, boolean>
   } catch {
     return {}
   }
@@ -29,7 +33,12 @@ function loadExplainerStates(): Record<string, boolean> {
 
 /** Writes the full collapsed state map to localStorage. */
 function persistExplainerStates(states: Record<string, boolean>): void {
-  localStorage.setItem(EXPLAINER_STORAGE_KEY, JSON.stringify(states))
+  try {
+    localStorage.setItem(EXPLAINER_STORAGE_KEY, JSON.stringify(states))
+  } catch {
+    // If browser storage is unavailable/full, keep the in-memory state change and
+    // avoid crashing the current report view.
+  }
 }
 
 // ── Hook ──

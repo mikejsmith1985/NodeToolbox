@@ -11,9 +11,12 @@ describe('CodeWalkthroughView', () => {
     expect(screen.getByRole('heading', { name: /code walkthrough/i })).toBeInTheDocument();
   });
 
-  it('renders all 8 TOC sidebar links', () => {
+  it('renders the workflow and technical sections in the sidebar', () => {
     render(<CodeWalkthroughView />);
     expect(screen.getByRole('link', { name: /architecture/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /team dashboard features/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /art view features/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /operations features/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /security model/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /data flow/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /api usage/i })).toBeInTheDocument();
@@ -29,11 +32,20 @@ describe('CodeWalkthroughView', () => {
     expect(screen.getAllByRole('heading', { name: /security model/i }).length).toBeGreaterThan(0);
   });
 
+  it('renders workflow playbooks and troubleshooting guidance for feature-heavy sections', () => {
+    render(<CodeWalkthroughView />);
+
+    expect(screen.getAllByRole('heading', { name: /workflow playbooks/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('heading', { name: /troubleshooting/i }).length).toBeGreaterThan(0);
+    expect(screen.getByText(/open team dashboard and confirm the correct board and scope are loaded/i)).toBeInTheDocument();
+    expect(screen.getByText(/if a pi review page does not appear, check that the team board is mapped in art settings/i)).toBeInTheDocument();
+  });
+
   it('filters sections when a search query matches', () => {
     render(<CodeWalkthroughView />);
     const searchInput = screen.getByPlaceholderText(/search/i);
-    fireEvent.change(searchInput, { target: { value: 'relay' } });
-    expect(screen.getAllByRole('heading', { name: /relay/i }).length).toBeGreaterThan(0);
+    fireEvent.change(searchInput, { target: { value: 'feature review' } });
+    expect(screen.getAllByRole('heading', { name: /team dashboard features/i }).length).toBeGreaterThan(0);
   });
 
   it('shows no-results message when search query matches nothing', () => {

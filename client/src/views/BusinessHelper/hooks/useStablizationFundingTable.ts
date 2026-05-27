@@ -7,11 +7,10 @@ import { useSettingsStore } from '../../../store/settingsStore.ts';
 import type { SimpleSearchResult } from './useSimpleSearchState.ts';
 import {
   buildMappedStablizationValues,
-  STABLIZATION_CONFIGURABLE_COLUMNS,
   readBusinessHelperSettings,
-  STABLIZATION_COLUMN_LABELS,
   type BusinessHelperSettingsState,
   type StablizationConfigurableColumn,
+  type StablizationUserColumn,
 } from './useBusinessHelperSettings.ts';
 
 const STABLIZATION_STORAGE_KEY = 'tbxBusinessHelperStablizationTable';
@@ -39,9 +38,10 @@ export interface StablizationFundingRow {
   justification: string;
   timing: string;
   cost: string;
+  userColumnValues: Record<string, string>;
   sourceJiraBrowseUrl: string;
   sourceJiraIssueKey: string;
-  sourceJiraLinkedColumns: StablizationConfigurableColumn[];
+  sourceJiraLinkedColumns: string[];
 }
 
 export interface StablizationFundingComputedRow extends StablizationFundingRow {
@@ -56,6 +56,7 @@ export interface StablizationFundingTotals {
   testing: number;
   total: number;
   cost: number;
+  userColumnCurrencyTotals: Record<string, number>;
 }
 
 export type StablizationTextField = 'grouping' | 'name' | 'justification' | 'timing';
@@ -68,6 +69,7 @@ export interface UseStablizationFundingTableResult {
   removeRow: (rowId: string) => void;
   updateTextField: (rowId: string, fieldName: StablizationTextField, value: string) => void;
   updateCurrencyField: (rowId: string, fieldName: StablizationCurrencyField, value: string) => void;
+  updateUserColumnValue: (rowId: string, columnId: string, value: string) => void;
 }
 
 export interface AppendSimpleSearchToStablizationResult {
@@ -76,7 +78,10 @@ export interface AppendSimpleSearchToStablizationResult {
   skippedColumnLabels: string[];
 }
 
-type StablizationSingleOptionDefaults = Partial<Record<StablizationConfigurableColumn, string>>;
+interface StablizationSingleOptionDefaults {
+  builtInColumnValues: Partial<Record<StablizationConfigurableColumn, string>>;
+  userColumnValues: Record<string, string>;
+}
 
 /**
  * Creates a blank stablization funding row so business users always have a ready-to-edit line item.
@@ -88,14 +93,15 @@ export function createStablizationFundingRow(
 
   return {
     id: createStablizationFundingRowId(),
-    grouping: stablizationSingleOptionDefaults.grouping ?? DEFAULT_TEXT_INPUT,
-    name: stablizationSingleOptionDefaults.name ?? DEFAULT_TEXT_INPUT,
+    grouping: stablizationSingleOptionDefaults.builtInColumnValues.grouping ?? DEFAULT_TEXT_INPUT,
+    name: stablizationSingleOptionDefaults.builtInColumnValues.name ?? DEFAULT_TEXT_INPUT,
     fulfillmentCost: DEFAULT_CURRENCY_INPUT,
     enrollmentCost: DEFAULT_CURRENCY_INPUT,
     billing: DEFAULT_CURRENCY_INPUT,
-    justification: stablizationSingleOptionDefaults.justification ?? DEFAULT_TEXT_INPUT,
+    justification: stablizationSingleOptionDefaults.builtInColumnValues.justification ?? DEFAULT_TEXT_INPUT,
     timing: DEFAULT_DATE_INPUT,
     cost: DEFAULT_CURRENCY_INPUT,
+    userColumnValues: stablizationSingleOptionDefaults.userColumnValues,
     sourceJiraBrowseUrl: DEFAULT_TEXT_INPUT,
     sourceJiraIssueKey: DEFAULT_TEXT_INPUT,
     sourceJiraLinkedColumns: [],
@@ -148,7 +154,10 @@ export function calculateStablizationTotalAmount(stablizationRow: StablizationFu
  */
 export function calculateStablizationFooterTotals(
   stablizationRows: readonly StablizationFundingRow[],
+  stablizationUserColumns: readonly StablizationUserColumn[] = [],
 ): StablizationFundingTotals {
+  const initialUserColumnCurrencyTotals = buildEmptyUserColumnCurrencyTotals(stablizationUserColumns);
+
   return stablizationRows.reduce<StablizationFundingTotals>(
     (runningTotals, stablizationRow) => ({
       fulfillmentCost: roundCurrencyAmount(
@@ -161,6 +170,11 @@ export function calculateStablizationFooterTotals(
       testing: roundCurrencyAmount(runningTotals.testing + calculateStablizationTestingAmount(stablizationRow)),
       total: roundCurrencyAmount(runningTotals.total + calculateStablizationTotalAmount(stablizationRow)),
       cost: roundCurrencyAmount(runningTotals.cost + parseUsdCurrencyInput(stablizationRow.cost)),
+      userColumnCurrencyTotals: buildNextUserColumnCurrencyTotals(
+        runningTotals.userColumnCurrencyTotals,
+        stablizationRow,
+        stablizationUserColumns,
+      ),
     }),
     {
       fulfillmentCost: 0,
@@ -169,6 +183,7 @@ export function calculateStablizationFooterTotals(
       testing: 0,
       total: 0,
       cost: 0,
+      userColumnCurrencyTotals: initialUserColumnCurrencyTotals,
     },
   );
 }
@@ -180,25 +195,34 @@ export function appendSimpleSearchResultToStablization(
   simpleSearchResult: SimpleSearchResult,
 ): AppendSimpleSearchToStablizationResult {
   const businessHelperSettings = readBusinessHelperSettings();
-  const { mappedValues, skippedColumns } = buildMappedStablizationValues(simpleSearchResult, businessHelperSettings);
-  const appliedColumns = Object.keys(mappedValues) as StablizationConfigurableColumn[];
+  const {
+    mappedValues,
+    mappedUserColumnValues,
+    appliedColumnLabels,
+    skippedColumnLabels,
+  } = buildMappedStablizationValues(simpleSearchResult, businessHelperSettings);
 
-  if (appliedColumns.length === 0) {
+  if (appliedColumnLabels.length === 0) {
     return {
       didCreateRow: false,
       appliedColumnLabels: [],
-      skippedColumnLabels: skippedColumns.map((columnKey) => STABLIZATION_COLUMN_LABELS[columnKey]),
+      skippedColumnLabels,
     };
   }
 
   const stablizationRows = readStoredStablizationRows(businessHelperSettings);
   const sourceJiraBrowseUrl = buildJiraBrowseUrl(simpleSearchResult.key);
+  const starterRow = createStablizationFundingRow(businessHelperSettings);
   const mappedRow = {
-    ...createStablizationFundingRow(businessHelperSettings),
+    ...starterRow,
     ...mappedValues,
+    userColumnValues: {
+      ...starterRow.userColumnValues,
+      ...mappedUserColumnValues,
+    },
     sourceJiraBrowseUrl,
     sourceJiraIssueKey: simpleSearchResult.key,
-    sourceJiraLinkedColumns: appliedColumns,
+    sourceJiraLinkedColumns: [...Object.keys(mappedValues), ...Object.keys(mappedUserColumnValues)],
   };
   const nextRows = shouldReplaceStarterRow(stablizationRows, businessHelperSettings)
     ? [mappedRow]
@@ -208,8 +232,8 @@ export function appendSimpleSearchResultToStablization(
 
   return {
     didCreateRow: true,
-    appliedColumnLabels: appliedColumns.map((columnKey) => STABLIZATION_COLUMN_LABELS[columnKey]),
-    skippedColumnLabels: skippedColumns.map((columnKey) => STABLIZATION_COLUMN_LABELS[columnKey]),
+    appliedColumnLabels,
+    skippedColumnLabels,
   };
 }
 
@@ -233,8 +257,8 @@ export function useStablizationFundingTable(
     [stablizationRows],
   );
   const footerTotals = useMemo(
-    () => calculateStablizationFooterTotals(stablizationRows),
-    [stablizationRows],
+    () => calculateStablizationFooterTotals(stablizationRows, businessHelperSettings.stablizationUserColumns),
+    [businessHelperSettings.stablizationUserColumns, stablizationRows],
   );
 
   useEffect(() => {
@@ -287,6 +311,27 @@ export function useStablizationFundingTable(
     [setStoredRows],
   );
 
+  const updateUserColumnValue = useCallback(
+    (rowId: string, columnId: string, value: string) => {
+      const nextRows = stablizationRowsRef.current.map((stablizationRow) => {
+        if (stablizationRow.id !== rowId) {
+          return stablizationRow;
+        }
+
+        return {
+          ...stablizationRow,
+          userColumnValues: {
+            ...stablizationRow.userColumnValues,
+            [columnId]: value,
+          },
+        };
+      });
+      stablizationRowsRef.current = nextRows;
+      setStoredRows(nextRows);
+    },
+    [setStoredRows],
+  );
+
   return {
     rows: computedRows,
     totals: footerTotals,
@@ -294,6 +339,7 @@ export function useStablizationFundingTable(
     removeRow,
     updateTextField,
     updateCurrencyField,
+    updateUserColumnValue,
   };
 }
 
@@ -376,6 +422,7 @@ function sanitizeStoredRow(candidateRow: StablizationFundingRow): StablizationFu
     justification: sanitizeStoredText(candidateRow?.justification),
     timing: sanitizeStoredText(candidateRow?.timing),
     cost: sanitizeStoredText(candidateRow?.cost),
+    userColumnValues: sanitizeStoredUserColumnValues(candidateRow?.userColumnValues),
     sourceJiraBrowseUrl: sanitizeStoredText(candidateRow?.sourceJiraBrowseUrl),
     sourceJiraIssueKey: sanitizeStoredText(candidateRow?.sourceJiraIssueKey),
     sourceJiraLinkedColumns: sanitizeStoredLinkedColumns(candidateRow?.sourceJiraLinkedColumns),
@@ -388,6 +435,19 @@ function sanitizeStoredText(candidateValue: string, fallbackValue = DEFAULT_TEXT
   }
 
   return candidateValue;
+}
+
+function sanitizeStoredUserColumnValues(candidateUserColumnValues: unknown): Record<string, string> {
+  if (!candidateUserColumnValues || typeof candidateUserColumnValues !== 'object') {
+    return {};
+  }
+
+  return Object.entries(candidateUserColumnValues).reduce<Record<string, string>>(
+    (sanitizedUserColumnValues, [columnId, columnValue]) => (typeof columnValue === 'string'
+      ? { ...sanitizedUserColumnValues, [columnId]: columnValue }
+      : sanitizedUserColumnValues),
+    {},
+  );
 }
 
 function shouldReplaceStarterRow(
@@ -403,14 +463,18 @@ function isBlankStablizationRow(
 ): boolean {
   const stablizationSingleOptionDefaults = buildStablizationSingleOptionDefaults(businessHelperSettings);
 
-  return isBlankOrDefaultTextValue(stablizationRow.grouping, stablizationSingleOptionDefaults.grouping)
-    && isBlankOrDefaultTextValue(stablizationRow.name, stablizationSingleOptionDefaults.name)
+  return isBlankOrDefaultTextValue(stablizationRow.grouping, stablizationSingleOptionDefaults.builtInColumnValues.grouping)
+    && isBlankOrDefaultTextValue(stablizationRow.name, stablizationSingleOptionDefaults.builtInColumnValues.name)
     && !stablizationRow.fulfillmentCost
     && !stablizationRow.enrollmentCost
     && !stablizationRow.billing
-    && isBlankOrDefaultTextValue(stablizationRow.justification, stablizationSingleOptionDefaults.justification)
+    && isBlankOrDefaultTextValue(
+      stablizationRow.justification,
+      stablizationSingleOptionDefaults.builtInColumnValues.justification,
+    )
     && !stablizationRow.timing
     && !stablizationRow.cost
+    && areAllUserColumnValuesBlank(stablizationRow.userColumnValues, stablizationSingleOptionDefaults.userColumnValues)
     && !stablizationRow.sourceJiraBrowseUrl
     && !stablizationRow.sourceJiraIssueKey
     && stablizationRow.sourceJiraLinkedColumns.length === 0;
@@ -428,17 +492,50 @@ function buildStablizationSingleOptionDefaults(
   businessHelperSettings?: BusinessHelperSettingsState,
 ): StablizationSingleOptionDefaults {
   if (!businessHelperSettings) {
-    return {};
+    return {
+      builtInColumnValues: {},
+      userColumnValues: {},
+    };
   }
 
-  return STABLIZATION_CONFIGURABLE_COLUMNS.reduce<StablizationSingleOptionDefaults>((runningDefaults, { key }) => {
-    const columnSetting = businessHelperSettings.stablizationColumns[key];
-    const defaultDropdownOption = columnSetting.inputKind === 'dropdown' && columnSetting.dropdownOptions.length === 1
-      ? columnSetting.dropdownOptions[0]
-      : undefined;
+  return {
+    builtInColumnValues: {
+      grouping: resolveBuiltInSingleOptionDefault(
+        businessHelperSettings.stablizationColumns.grouping.inputKind,
+        businessHelperSettings.stablizationColumns.grouping.dropdownOptions,
+      ),
+      name: resolveBuiltInSingleOptionDefault(
+        businessHelperSettings.stablizationColumns.name.inputKind,
+        businessHelperSettings.stablizationColumns.name.dropdownOptions,
+      ),
+      justification: resolveBuiltInSingleOptionDefault(
+        businessHelperSettings.stablizationColumns.justification.inputKind,
+        businessHelperSettings.stablizationColumns.justification.dropdownOptions,
+      ),
+    },
+    userColumnValues: businessHelperSettings.stablizationUserColumns.reduce<Record<string, string>>(
+      (defaultUserColumnValues, stablizationUserColumn) => {
+        if (stablizationUserColumn.dataType !== 'dropdown' || stablizationUserColumn.dropdownOptions.length !== 1) {
+          return defaultUserColumnValues;
+        }
 
-    return defaultDropdownOption ? { ...runningDefaults, [key]: defaultDropdownOption } : runningDefaults;
-  }, {});
+        return {
+          ...defaultUserColumnValues,
+          [stablizationUserColumn.id]: stablizationUserColumn.dropdownOptions[0],
+        };
+      },
+      {},
+    ),
+  };
+}
+
+function resolveBuiltInSingleOptionDefault(
+  inputKind: 'text' | 'dropdown',
+  dropdownOptions: readonly string[],
+): string | undefined {
+  return inputKind === 'dropdown' && dropdownOptions.length === 1
+    ? dropdownOptions[0]
+    : undefined;
 }
 
 function applySingleOptionDefaultsToStarterRows(
@@ -446,7 +543,10 @@ function applySingleOptionDefaultsToStarterRows(
   businessHelperSettings?: BusinessHelperSettingsState,
 ): StablizationFundingRow[] {
   const stablizationSingleOptionDefaults = buildStablizationSingleOptionDefaults(businessHelperSettings);
-  if (Object.keys(stablizationSingleOptionDefaults).length === 0) {
+  if (
+    Object.keys(stablizationSingleOptionDefaults.builtInColumnValues).length === 0
+    && Object.keys(stablizationSingleOptionDefaults.userColumnValues).length === 0
+  ) {
     return [...stablizationRows];
   }
 
@@ -480,33 +580,26 @@ function areStablizationRowsEqual(
       && previousRow.justification === nextRow.justification
       && previousRow.timing === nextRow.timing
       && previousRow.cost === nextRow.cost
+      && areUserColumnValueMapsEqual(previousRow.userColumnValues, nextRow.userColumnValues)
       && previousRow.sourceJiraBrowseUrl === nextRow.sourceJiraBrowseUrl
       && previousRow.sourceJiraIssueKey === nextRow.sourceJiraIssueKey
       && areLinkedColumnListsEqual(previousRow.sourceJiraLinkedColumns, nextRow.sourceJiraLinkedColumns);
   });
 }
 
-function sanitizeStoredLinkedColumns(
-  candidateLinkedColumns: unknown,
-): StablizationConfigurableColumn[] {
+function sanitizeStoredLinkedColumns(candidateLinkedColumns: unknown): string[] {
   if (!Array.isArray(candidateLinkedColumns)) {
     return [];
   }
 
-  return candidateLinkedColumns.filter(isStablizationConfigurableColumn);
-}
-
-function isStablizationConfigurableColumn(
-  candidateColumnKey: unknown,
-): candidateColumnKey is StablizationConfigurableColumn {
-  return candidateColumnKey === 'grouping'
-    || candidateColumnKey === 'name'
-    || candidateColumnKey === 'justification';
+  return candidateLinkedColumns.filter((candidateLinkedColumn): candidateLinkedColumn is string =>
+    typeof candidateLinkedColumn === 'string' && Boolean(candidateLinkedColumn.trim())
+  );
 }
 
 function areLinkedColumnListsEqual(
-  previousLinkedColumns: readonly StablizationConfigurableColumn[],
-  nextLinkedColumns: readonly StablizationConfigurableColumn[],
+  previousLinkedColumns: readonly string[],
+  nextLinkedColumns: readonly string[],
 ): boolean {
   if (previousLinkedColumns.length !== nextLinkedColumns.length) {
     return false;
@@ -521,14 +614,18 @@ function shouldApplySingleOptionDefaultsToRow(
   stablizationRow: StablizationFundingRow,
   stablizationSingleOptionDefaults: StablizationSingleOptionDefaults,
 ): boolean {
-  return isBlankOrDefaultTextValue(stablizationRow.grouping, stablizationSingleOptionDefaults.grouping)
-    && isBlankOrDefaultTextValue(stablizationRow.name, stablizationSingleOptionDefaults.name)
-    && isBlankOrDefaultTextValue(stablizationRow.justification, stablizationSingleOptionDefaults.justification)
+  return isBlankOrDefaultTextValue(stablizationRow.grouping, stablizationSingleOptionDefaults.builtInColumnValues.grouping)
+    && isBlankOrDefaultTextValue(stablizationRow.name, stablizationSingleOptionDefaults.builtInColumnValues.name)
+    && isBlankOrDefaultTextValue(
+      stablizationRow.justification,
+      stablizationSingleOptionDefaults.builtInColumnValues.justification,
+    )
     && !stablizationRow.fulfillmentCost
     && !stablizationRow.enrollmentCost
     && !stablizationRow.billing
     && !stablizationRow.timing
     && !stablizationRow.cost
+    && areAllUserColumnValuesBlank(stablizationRow.userColumnValues, stablizationSingleOptionDefaults.userColumnValues)
     && !stablizationRow.sourceJiraBrowseUrl
     && !stablizationRow.sourceJiraIssueKey
     && stablizationRow.sourceJiraLinkedColumns.length === 0;
@@ -540,9 +637,15 @@ function applySingleOptionDefaultsToRow(
 ): StablizationFundingRow {
   return {
     ...stablizationRow,
-    grouping: stablizationRow.grouping || stablizationSingleOptionDefaults.grouping || DEFAULT_TEXT_INPUT,
-    name: stablizationRow.name || stablizationSingleOptionDefaults.name || DEFAULT_TEXT_INPUT,
-    justification: stablizationRow.justification || stablizationSingleOptionDefaults.justification || DEFAULT_TEXT_INPUT,
+    grouping: stablizationRow.grouping || stablizationSingleOptionDefaults.builtInColumnValues.grouping || DEFAULT_TEXT_INPUT,
+    name: stablizationRow.name || stablizationSingleOptionDefaults.builtInColumnValues.name || DEFAULT_TEXT_INPUT,
+    justification: stablizationRow.justification
+      || stablizationSingleOptionDefaults.builtInColumnValues.justification
+      || DEFAULT_TEXT_INPUT,
+    userColumnValues: {
+      ...stablizationSingleOptionDefaults.userColumnValues,
+      ...stablizationRow.userColumnValues,
+    },
   };
 }
 
@@ -572,4 +675,64 @@ function readConfiguredJiraBaseUrl(): string {
   } catch {
     return DEFAULT_TEXT_INPUT;
   }
+}
+
+function buildEmptyUserColumnCurrencyTotals(
+  stablizationUserColumns: readonly StablizationUserColumn[],
+): Record<string, number> {
+  return stablizationUserColumns.reduce<Record<string, number>>(
+    (userColumnCurrencyTotals, stablizationUserColumn) => (stablizationUserColumn.dataType === 'currency'
+      ? { ...userColumnCurrencyTotals, [stablizationUserColumn.id]: 0 }
+      : userColumnCurrencyTotals),
+    {},
+  );
+}
+
+function buildNextUserColumnCurrencyTotals(
+  userColumnCurrencyTotals: Record<string, number>,
+  stablizationRow: StablizationFundingRow,
+  stablizationUserColumns: readonly StablizationUserColumn[],
+): Record<string, number> {
+  return stablizationUserColumns.reduce<Record<string, number>>(
+    (nextUserColumnCurrencyTotals, stablizationUserColumn) => {
+      if (stablizationUserColumn.dataType !== 'currency') {
+        return nextUserColumnCurrencyTotals;
+      }
+
+      return {
+        ...nextUserColumnCurrencyTotals,
+        [stablizationUserColumn.id]: roundCurrencyAmount(
+          (nextUserColumnCurrencyTotals[stablizationUserColumn.id] ?? 0)
+          + parseUsdCurrencyInput(stablizationRow.userColumnValues[stablizationUserColumn.id] ?? DEFAULT_CURRENCY_INPUT),
+        ),
+      };
+    },
+    userColumnCurrencyTotals,
+  );
+}
+
+function areAllUserColumnValuesBlank(
+  userColumnValues: Record<string, string>,
+  defaultUserColumnValues: Record<string, string>,
+): boolean {
+  return Object.entries({ ...defaultUserColumnValues, ...userColumnValues }).every(
+    ([columnId, columnValue]) => !columnValue || columnValue === defaultUserColumnValues[columnId],
+  );
+}
+
+function areUserColumnValueMapsEqual(
+  previousUserColumnValues: Record<string, string> | undefined,
+  nextUserColumnValues: Record<string, string> | undefined,
+): boolean {
+  const safePreviousUserColumnValues = previousUserColumnValues ?? {};
+  const safeNextUserColumnValues = nextUserColumnValues ?? {};
+  const previousUserColumnIds = Object.keys(safePreviousUserColumnValues);
+  const nextUserColumnIds = Object.keys(safeNextUserColumnValues);
+  if (previousUserColumnIds.length !== nextUserColumnIds.length) {
+    return false;
+  }
+
+  return previousUserColumnIds.every(
+    (columnId) => safePreviousUserColumnValues[columnId] === safeNextUserColumnValues[columnId],
+  );
 }

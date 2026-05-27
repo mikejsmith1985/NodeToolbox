@@ -10,6 +10,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--layout-section-gap);
+  width: 100%;
 }
 
 /* ── Tab bar ── */
@@ -150,6 +151,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--spacing-sm);
   background: var(--color-card-bg-subtle);
   border: 1px solid var(--color-border);
@@ -159,6 +161,8 @@
 }
 
 .codeText {
+  flex: 1 1 24rem;
+  min-width: 0;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: var(--font-size-sm);
   color: var(--color-text-primary);
@@ -182,7 +186,17 @@
 .inputRow {
   display: flex;
   gap: var(--spacing-sm);
-  align-items: center;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.inputRow > * {
+  min-width: 0;
+}
+
+.inputRow > .fieldRow {
+  flex: 1 1 var(--layout-panel-min-width);
+  min-width: min(100%, var(--layout-panel-min-width));
 }
 
 .textInput {
@@ -267,6 +281,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--spacing-md);
   padding: var(--spacing-sm) var(--spacing-md);
   background: var(--color-tone-success-bg);
@@ -283,6 +298,7 @@
   display: flex;
   gap: var(--spacing-sm);
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .pinInput {
@@ -473,7 +489,20 @@
 .headerActions {
   display: flex;
   gap: var(--spacing-sm);
+  flex-wrap: wrap;
   margin-top: var(--spacing-xs);
+}
+
+@media (max-width: 760px) {
+  .codeBlock {
+    align-items: flex-start;
+  }
+
+  .actionButton,
+  .saveButton {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 .advancedLockButton {

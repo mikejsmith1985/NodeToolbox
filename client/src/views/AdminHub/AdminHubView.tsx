@@ -992,7 +992,7 @@ interface ServiceConnectivitySectionProps {
   onLoad(): void
   onSaveSnow(snow: { baseUrl: string; username: string; password: string }): void
   onSaveGitHub(github: { baseUrl: string; pat: string }): void
-  onSaveGitHubApp(appCredentials: { appId: string; installationId: string; appPrivateKey: string }): void
+  onSaveGitHubApp(appCredentials: { appId: string; installationId: string; appPrivateKey: string }): Promise<void>
   onSaveConfluence(confluence: { baseUrl: string; username: string; apiToken: string }): void
   onTestSnow(): void
   onTestGitHub(): void
@@ -1152,8 +1152,12 @@ function ServiceConnectivitySectionContent({
   }
 
   /** Submits the GitHub App credentials and clears all three fields after save. */
-  function handleSaveGitHubApp() {
-    onSaveGitHubApp({ appId: githubAppId, installationId: githubInstallationId, appPrivateKey: githubAppPrivateKey })
+  async function handleSaveGitHubApp() {
+    await onSaveGitHubApp({
+      appId: githubAppId,
+      installationId: githubInstallationId,
+      appPrivateKey: githubAppPrivateKey,
+    })
     setGithubAppId('')
     setGithubInstallationId('')
     setGithubAppPrivateKey('')
@@ -1184,11 +1188,22 @@ function ServiceConnectivitySectionContent({
     setFoundInstallations(null)
     setInstallationsError(null)
     try {
+      const hasDraftLookupInputs = githubAppId.trim() !== '' && githubAppPrivateKey.trim() !== ''
+      if (hasDraftLookupInputs) {
+        await onSaveGitHubApp({
+          appId: githubAppId,
+          installationId: githubInstallationId,
+          appPrivateKey: githubAppPrivateKey,
+        })
+      }
+
       const result = await listGitHubAppInstallations()
       if (result.ok) {
         setFoundInstallations(result.installations)
         if (result.installations.length === 0) {
           setInstallationsError('No installations found. The app may not be installed on any org yet. Go to your GitHub App settings → Install App tab → click Install.')
+        } else if (result.installations.length === 1) {
+          setGithubInstallationId(String(result.installations[0].id))
         }
       } else {
         setInstallationsError(result.message ?? 'Failed to list installations.')
@@ -1229,6 +1244,10 @@ function ServiceConnectivitySectionContent({
     setConfluenceUsername('')
     setConfluenceApiToken('')
   }
+
+  const hasDraftGitHubAppLookupInputs = githubAppId.trim() !== '' && githubAppPrivateKey.trim() !== ''
+  const hasSavedGitHubAppLookupInputs = !!connectivityConfig?.github.hasAppLookupReady
+  const canFindGitHubAppInstallations = hasDraftGitHubAppLookupInputs || hasSavedGitHubAppLookupInputs
 
   return (
     <section className={styles.sectionCard}>
@@ -1521,8 +1540,10 @@ function ServiceConnectivitySectionContent({
               type="button"
               className={styles.actionButton}
               onClick={() => void handleFindInstallations()}
-              disabled={isInstallationsLoading || !connectivityConfig?.github.hasAppAuth}
-              title={connectivityConfig?.github.hasAppAuth ? 'Query GitHub for all installations of this app' : 'Save App ID and Private Key first'}
+              disabled={isInstallationsLoading || !canFindGitHubAppInstallations}
+              title={canFindGitHubAppInstallations
+                ? 'Query GitHub for all installations of this app'
+                : 'Enter or save the App ID and Private Key first'}
             >
               {isInstallationsLoading ? '⏳ Looking up…' : '🔍 Find my Installation ID'}
             </button>
@@ -1931,7 +1952,7 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
         onLoad={() => void actions.loadConnectivityConfig()}
         onSaveSnow={(snow) => void actions.saveSnowConfig(snow)}
         onSaveGitHub={(github) => void actions.saveGitHubConfig(github)}
-        onSaveGitHubApp={(appCredentials) => void actions.saveGitHubAppConfig(appCredentials)}
+        onSaveGitHubApp={(appCredentials) => actions.saveGitHubAppConfig(appCredentials)}
         onSaveConfluence={(confluence) => void actions.saveConfluenceConfig(confluence)}
         onTestSnow={() => void actions.testSnowConfig()}
         onTestGitHub={() => void actions.testGitHubConfig()}
@@ -1986,7 +2007,7 @@ export default function AdminHubView() {
       ref={adminHubRootRef}
       title={VIEW_TITLE}
       subtitle={VIEW_SUBTITLE}
-      width="narrow"
+      width="full"
     >
       {state.isResetAllSettingsConfirmOpen && (
         <ConfirmDialog

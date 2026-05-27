@@ -25,6 +25,7 @@ import HomeView from './views/Home/HomeView.tsx';
 import MyIssuesView from './views/MyIssues/MyIssuesView.tsx';
 import PersonalToolboxView from './views/PersonalToolbox/PersonalToolboxView.tsx';
 import ReportsHubView from './views/ReportsHub/ReportsHubView.tsx';
+import { ReportsHubRuntimeBoundary } from './views/ReportsHub/ReportsHubRuntimeBoundary.tsx';
 import SettingsView from './views/Settings/SettingsView.tsx';
 import SnowHubView from './views/SnowHub/SnowHubView.tsx';
 import SprintDashboardView from './views/SprintDashboard/SprintDashboardView.tsx';
@@ -173,7 +174,12 @@ export default function App() {
           <Route path={DSU_BOARD_ROUTE} element={<DsuBoardView />} />
           <Route path={CODE_WALKTHROUGH_ROUTE} element={<CodeWalkthroughView />} />
           <Route path={TEXT_TOOLS_ROUTE} element={<TextToolsView />} />
-          <Route path={REPORTS_HUB_ROUTE} element={<ReportsHubView />} />
+          <Route path={REPORTS_HUB_ROUTE} element={(
+            <ReportsHubRuntimeBoundary>
+              <ReportsHubView />
+            </ReportsHubRuntimeBoundary>
+          )}
+          />
           <Route path={ADMIN_HUB_ROUTE} element={<AdminHubView />} />
           <Route path={BUSINESS_HELPER_ROUTE} element={<BusinessHelperView />} />
           <Route path="/sprint-planning" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />

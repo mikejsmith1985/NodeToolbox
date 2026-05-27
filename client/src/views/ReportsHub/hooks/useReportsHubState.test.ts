@@ -36,6 +36,23 @@ describe('useReportsHubState', () => {
     expect(result.current.state.activeTab).toBe('defects');
   });
 
+  it('ignores malformed ART team entries loaded from localStorage', () => {
+    localStorage.setItem(
+      'tbxARTSettings',
+      JSON.stringify({
+        teams: [
+          null,
+          { name: '', projectKey: 'TBX' },
+          { name: 'Team Missing Key', projectKey: '' },
+          { name: '  Team A  ', projectKey: '  TBX  ' },
+        ],
+      }),
+    );
+
+    const { result } = renderHook(() => useReportsHubState());
+    expect(result.current.state.artTeams).toEqual([{ name: 'Team A', projectKey: 'TBX' }]);
+  });
+
   it('loadFeatures sets isLoadingFeatures to true then false', async () => {
     mockJiraGet.mockResolvedValue({ issues: [] });
     const { result } = renderHook(() => useReportsHubState());

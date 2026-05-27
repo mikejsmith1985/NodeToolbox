@@ -39,6 +39,56 @@
   flex-wrap: wrap;
 }
 
+.dateModeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+  margin-bottom: var(--spacing-sm);
+}
+
+.dateModeLabel {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.dateModeToggle {
+  display: inline-flex;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+}
+
+.dateModeButton {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+.dateModeButtonActive {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-accent);
+  border-radius: 999px;
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-2));
+  color: var(--color-accent);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+.dateModeHint {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  margin: 0 0 var(--spacing-sm);
+}
+
 .dateLabel {
   display: flex;
   flex-direction: column;
@@ -61,6 +111,11 @@
 .dateInput:focus {
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;
+}
+
+.dateInput:disabled {
+  opacity: 0.8;
+  cursor: not-allowed;
 }
 
 .workDaysBadge {

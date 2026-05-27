@@ -81,6 +81,14 @@ export interface ConnectivityConfigResult {
     hasPat: boolean;
     /** True when all three GitHub App credentials (appId, installationId, appPrivateKey) are stored. */
     hasAppAuth: boolean;
+    /** True when the App ID or Client ID is already stored server-side. */
+    hasAppId: boolean;
+    /** True when the GitHub App private key PEM is already stored server-side. */
+    hasAppPrivateKey: boolean;
+    /** True when the Installation ID is already stored server-side. */
+    hasInstallationId: boolean;
+    /** True when the server has enough saved App credentials to look up installations. */
+    hasAppLookupReady: boolean;
   };
   confluence: {
     /** The Confluence Cloud base URL (e.g. https://yoursite.atlassian.net). */

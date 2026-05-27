@@ -16,6 +16,10 @@ import {
   useStandupRosterStore,
 } from './useStandupRosterStore.ts';
 import { hasBlockingLink as hasSharedBlockingLink } from './sprintDashboardIssueUtils.ts';
+import {
+  buildTeamScopedStorageKey,
+  readTeamScopedStorageValue,
+} from './teamScopedStorage.ts';
 
 const STANDUP_UI_STORAGE_KEY = 'tbxSprintDashboardStandupUi';
 const CURRENT_USER_PATH = '/rest/api/2/myself';
@@ -113,9 +117,13 @@ function createDefaultPersonWalkDraft(): PersonWalkDraft {
   };
 }
 
-function readStoredStandupUiState(): StoredStandupUiState {
+function buildStandupUiStorageKey(dashboardTeamProfileId: string): string {
+  return buildTeamScopedStorageKey(STANDUP_UI_STORAGE_KEY, dashboardTeamProfileId);
+}
+
+function readStoredStandupUiState(dashboardTeamProfileId = ''): StoredStandupUiState {
   try {
-    const storedValue = window.localStorage.getItem(STANDUP_UI_STORAGE_KEY);
+    const storedValue = readTeamScopedStorageValue(STANDUP_UI_STORAGE_KEY, dashboardTeamProfileId);
     if (!storedValue) {
       return {};
     }
@@ -137,9 +145,15 @@ function readStoredStandupUiState(): StoredStandupUiState {
   }
 }
 
-function persistStandupUiState(storedState: StoredStandupUiState): void {
+function persistStandupUiState(
+  storedState: StoredStandupUiState,
+  dashboardTeamProfileId: string,
+): void {
   try {
-    window.localStorage.setItem(STANDUP_UI_STORAGE_KEY, JSON.stringify(storedState));
+    window.localStorage.setItem(
+      buildStandupUiStorageKey(dashboardTeamProfileId),
+      JSON.stringify(storedState),
+    );
   } catch {
     // Standup mode persistence should not break the dashboard when browser storage is unavailable.
   }
@@ -310,8 +324,9 @@ export function classifyIssueAge(ageDays: number): 'ok' | 'warn' | 'old' {
 export function useSprintStandupState(
   sprintIssues: JiraIssue[],
   projectKey: string,
+  dashboardTeamProfileId = '',
 ): { state: SprintStandupState; actions: SprintStandupActions } {
-  const storedUiState = readStoredStandupUiState();
+  const storedUiState = readStoredStandupUiState(dashboardTeamProfileId);
   const rosterMembers = useStandupRosterStore((state) => state.rosterMembers);
   const storedActiveRosterTeamName = useSettingsStore((state) => state.sprintDashboardActiveTeam);
   const activeRosterTeamName = useMemo(
@@ -351,8 +366,11 @@ export function useSprintStandupState(
   const [scopeLoadErrorMessage, setScopeLoadErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    persistStandupUiState({ mode: standupMode, scopeMode, shouldShowDoneColumn });
-  }, [scopeMode, shouldShowDoneColumn, standupMode]);
+    persistStandupUiState(
+      { mode: standupMode, scopeMode, shouldShowDoneColumn },
+      dashboardTeamProfileId,
+    );
+  }, [dashboardTeamProfileId, scopeMode, shouldShowDoneColumn, standupMode]);
 
   const scopeIssues = useMemo(
     () => (scopeMode === 'roster' ? rosterScopeIssues : sprintIssues),

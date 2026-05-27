@@ -10,7 +10,7 @@ import {
   useDashboardConfig,
 } from './useDashboardConfig.ts';
 
-const TEST_STORAGE_KEY = 'tbxSprintDashboardConfig';
+const TEST_STORAGE_KEY = 'tbxSprintDashboardConfig:legacy-default';
 
 describe('loadDashboardConfigFromStorage', () => {
   beforeEach(() => {
@@ -36,6 +36,26 @@ describe('loadDashboardConfigFromStorage', () => {
   it('returns defaults when the stored value is malformed JSON', () => {
     localStorage.setItem(TEST_STORAGE_KEY, '{ broken json >>>');
     const config = loadDashboardConfigFromStorage();
+    expect(config).toEqual(DEFAULT_DASHBOARD_CONFIG);
+  });
+
+  it('migrates the bare legacy config into the first scoped team key', () => {
+    localStorage.setItem('tbxSprintDashboardConfig', JSON.stringify({ staleDaysThreshold: 10 }));
+
+    const config = loadDashboardConfigFromStorage('team-alpha');
+
+    expect(config.staleDaysThreshold).toBe(10);
+    expect(localStorage.getItem('tbxSprintDashboardConfig:team-alpha')).toBe(
+      JSON.stringify({ staleDaysThreshold: 10 }),
+    );
+  });
+
+  it('does not let a new team keep reading the bare legacy config after scoped data exists', () => {
+    localStorage.setItem('tbxSprintDashboardConfig', JSON.stringify({ staleDaysThreshold: 10 }));
+    localStorage.setItem('tbxSprintDashboardConfig:team-alpha', JSON.stringify({ staleDaysThreshold: 8 }));
+
+    const config = loadDashboardConfigFromStorage('team-beta');
+
     expect(config).toEqual(DEFAULT_DASHBOARD_CONFIG);
   });
 });

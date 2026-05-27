@@ -11,6 +11,7 @@ import {
   createStablizationFundingRow,
   useStablizationFundingTable,
 } from './useStablizationFundingTable.ts';
+import type { BusinessHelperSettingsState } from './useBusinessHelperSettings.ts';
 
 describe('useStablizationFundingTable', () => {
   beforeEach(() => {
@@ -65,6 +66,7 @@ describe('useStablizationFundingTable', () => {
           name: 'jira-key-summary',
           justification: 'none',
         },
+        stablizationUserColumns: [],
       }),
     );
 
@@ -83,6 +85,52 @@ describe('useStablizationFundingTable', () => {
     expect(result.current.rows[1].justification).toBe('Operational Need');
   });
 
+  it('stores values for user-defined columns', () => {
+    const userColumnSettings: BusinessHelperSettingsState = {
+      stablizationColumns: {
+        grouping: { inputKind: 'text', dropdownOptions: [] },
+        name: { inputKind: 'text', dropdownOptions: [] },
+        justification: { inputKind: 'text', dropdownOptions: [] },
+      },
+      stablizationColumnWidths: {
+        grouping: 160,
+        name: 280,
+        fulfillmentCost: 132,
+        enrollmentCost: 132,
+        billing: 132,
+        testing: 148,
+        total: 148,
+        justification: 220,
+        timing: 148,
+        cost: 132,
+        actions: 120,
+      },
+      simpleSearchMapping: {
+        grouping: 'none',
+        name: 'jira-key-summary',
+        justification: 'none',
+      },
+      stablizationUserColumns: [
+        {
+          id: 'owner-notes',
+          label: 'Owner Notes',
+          dataType: 'text',
+          dropdownOptions: [],
+          widthPx: 180,
+          simpleSearchMapping: 'none',
+        },
+      ],
+    };
+    const { result } = renderHook(() => useStablizationFundingTable(userColumnSettings));
+    const firstRowId = result.current.rows[0].id;
+
+    act(() => {
+      result.current.updateUserColumnValue(firstRowId, 'owner-notes', 'Follow up with finance');
+    });
+
+    expect(result.current.rows[0].userColumnValues['owner-notes']).toBe('Follow up with finance');
+  });
+
   it('replaces the starter row and stores a Jira browse link when Simple Search sends a result', () => {
     window.localStorage.setItem(
       'tbxBusinessHelperSettings',
@@ -97,6 +145,16 @@ describe('useStablizationFundingTable', () => {
           name: 'jira-key-summary',
           justification: 'none',
         },
+        stablizationUserColumns: [
+          {
+            id: 'owner-notes',
+            label: 'Owner Notes',
+            dataType: 'text',
+            dropdownOptions: [],
+            widthPx: 180,
+            simpleSearchMapping: 'summary',
+          },
+        ],
       }),
     );
     window.localStorage.setItem('tbxCRGenJiraUrl', 'https://jira.example.com/');
@@ -120,9 +178,10 @@ describe('useStablizationFundingTable', () => {
     expect(storedRows).toHaveLength(1);
     expect(storedRows[0].grouping).toBe('Portfolio');
     expect(storedRows[0].name).toBe('TBX-101 - Business summary match');
+    expect(storedRows[0].userColumnValues['owner-notes']).toBe('Business summary match');
     expect(storedRows[0].sourceJiraBrowseUrl).toBe('https://jira.example.com/browse/TBX-101');
     expect(storedRows[0].sourceJiraIssueKey).toBe('TBX-101');
-    expect(storedRows[0].sourceJiraLinkedColumns).toEqual(['name']);
+    expect(storedRows[0].sourceJiraLinkedColumns).toEqual(['name', 'owner-notes']);
   });
 });
 
@@ -153,6 +212,7 @@ describe('stablization funding formulas', () => {
       testing: 70,
       total: 350,
       cost: 20,
+      userColumnCurrencyTotals: {},
     });
   });
 });

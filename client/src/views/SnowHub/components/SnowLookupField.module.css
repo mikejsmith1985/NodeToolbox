@@ -74,22 +74,27 @@
   pointer-events: none;
 }
 
-/* Dropdown suggestion list. */
-.suggestionList {
+/* Dropdown container keeps the scroll hint anchored under the list. */
+.suggestionDropdown {
   position: absolute;
   top: calc(100% + 2px);
   left: 0;
   right: 0;
   z-index: 100;
-  margin: 0;
-  padding: 4px 0;
   background: var(--color-card-bg-subtle);
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  list-style: none;
-  max-height: 200px;
-  overflow-y: auto;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+/* Dropdown suggestion list. */
+.suggestionList {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  max-height: 180px;
+  overflow-y: auto;
 }
 
 .suggestionItem {
@@ -104,4 +109,13 @@
 .suggestionItem[aria-selected='true'] {
   background: var(--color-surface-hover);
   color: var(--color-accent);
+}
+
+.scrollHint {
+  margin: 0;
+  padding: 6px 12px;
+  border-top: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface-2) 80%, transparent);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs, 11px);
 }

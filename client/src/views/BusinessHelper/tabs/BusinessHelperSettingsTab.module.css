@@ -60,6 +60,13 @@
   background: var(--color-surface-1);
 }
 
+.customColumnCreator {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(12rem, 1fr) auto;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
 .tableHeaderCell,
 .tableCell {
   padding: var(--spacing-sm) var(--spacing-md);
@@ -152,4 +159,15 @@
   margin: 0;
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
+}
+
+@media (max-width: 960px) {
+  .customColumnCreator {
+    grid-template-columns: 1fr;
+  }
+
+  .optionInputRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }

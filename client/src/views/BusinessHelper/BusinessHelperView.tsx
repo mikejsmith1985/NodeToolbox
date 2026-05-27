@@ -42,7 +42,7 @@ export default function BusinessHelperView() {
   const [activeTab, setActiveTab] = useState<BusinessHelperTabKey>(DEFAULT_TAB_KEY);
 
   return (
-    <ViewFrame title={VIEW_TITLE} subtitle={VIEW_SUBTITLE}>
+    <ViewFrame title={VIEW_TITLE} subtitle={VIEW_SUBTITLE} width="full">
       <PrimaryTabs
         ariaLabel="Business Helper tabs"
         idPrefix="business-helper"

@@ -1012,6 +1012,12 @@ describe('ArtView', () => {
     expect(screen.getByRole('combobox', { name: /feature link field/i })).toBeInTheDocument();
   });
 
+  it('shows the optional Feature Project Filter input in Settings tab', () => {
+    mockState.activeTab = 'settings';
+    renderArtView();
+    expect(screen.getByRole('textbox', { name: /feature project filter/i })).toBeInTheDocument();
+  });
+
   it('shows PI Review target date field pickers in Settings tab', () => {
     mockState.activeTab = 'settings';
     renderArtView();
@@ -2136,6 +2142,22 @@ describe('ArtView', () => {
 
     const stored = JSON.parse(localStorage.getItem('tbxARTSettings') ?? '{}') as { piReviewPageUrl?: string };
     expect(stored.piReviewPageUrl).toBe('https://example.atlassian.net/wiki/pages/12345/Shared');
+
+    localStorage.removeItem('tbxARTSettings');
+    mockState.activeTab = 'overview';
+  });
+
+  it('persists normalized feature project filters to localStorage when the input value changes', () => {
+    mockState.activeTab = 'settings';
+    localStorage.removeItem('tbxARTSettings');
+    renderArtView();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /feature project filter/i }), {
+      target: { value: ' denp, enfct , denp ' },
+    });
+
+    const stored = JSON.parse(localStorage.getItem('tbxARTSettings') ?? '{}') as { featureProjectKeys?: string[] };
+    expect(stored.featureProjectKeys).toEqual(['DENP', 'ENFCT']);
 
     localStorage.removeItem('tbxARTSettings');
     mockState.activeTab = 'overview';

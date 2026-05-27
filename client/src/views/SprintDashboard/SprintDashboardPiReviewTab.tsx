@@ -6,14 +6,17 @@ import type { JiraIssue } from '../../types/jira.ts';
 import PiReviewTab from '../ArtView/PiReviewTab.tsx';
 import type { ArtTeam } from '../ArtView/hooks/useArtData.ts';
 import CapacityTab from './CapacityTab.tsx';
+import PiFeatureRemapPanel from './PiFeatureRemapPanel.tsx';
 import { buildCapacitySummary } from './capacityModel.ts';
 import { useCapacityStore } from './hooks/useCapacityStore.ts';
+import {
+  findMatchingArtTeam,
+  readFallbackSelectedPiName,
+  readStoredArtTeams,
+} from './sprintDashboardArtContext.ts';
 import styles from './SprintDashboardView.module.css';
 
-const ART_TEAMS_STORAGE_KEY = 'nodetoolbox-art-teams';
-const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
 const ART_VIEW_ROUTE = '/art';
-const EMPTY_PI_NAME = '';
 const EMPTY_CONTEXT_LABEL = 'Not selected';
 const PI_REVIEW_CAPACITY_INTRO =
   'Plan capacity here first so the same snapshot feeds Feature Scope, Confidence, and the Confluence PI Review save.';
@@ -24,87 +27,6 @@ interface SprintDashboardPiReviewTabProps {
   projectKey: string;
   selectedPiName: string;
   sprintIssues: JiraIssue[];
-}
-
-interface StoredArtSettings {
-  piName?: string;
-}
-
-function normalizeStoredArtTeam(team: Partial<ArtTeam>): ArtTeam | null {
-  const teamName = typeof team.name === 'string' ? team.name.trim() : '';
-  const teamBoardId = typeof team.boardId === 'string' ? team.boardId.trim() : '';
-  if (teamName === '' || teamBoardId === '') {
-    return null;
-  }
-
-  return {
-    id: typeof team.id === 'string' && team.id.trim() !== '' ? team.id.trim() : `${teamBoardId}-${teamName}`,
-    name: teamName,
-    boardId: teamBoardId,
-    boardName: typeof team.boardName === 'string' && team.boardName.trim() !== '' ? team.boardName.trim() : undefined,
-    projectKey: typeof team.projectKey === 'string' && team.projectKey.trim() !== '' ? team.projectKey.trim() : undefined,
-    piReviewPageUrl: typeof team.piReviewPageUrl === 'string' && team.piReviewPageUrl.trim() !== '' ? team.piReviewPageUrl.trim() : undefined,
-    sprintIssues: [],
-    isLoading: false,
-    loadError: null,
-  };
-}
-
-function readStoredArtTeams(): ArtTeam[] {
-  try {
-    const storedTeams = localStorage.getItem(ART_TEAMS_STORAGE_KEY);
-    if (!storedTeams) {
-      return [];
-    }
-
-    const parsedTeams = JSON.parse(storedTeams) as unknown;
-    if (!Array.isArray(parsedTeams)) {
-      return [];
-    }
-
-    return parsedTeams
-      .filter((team): team is Partial<ArtTeam> => typeof team === 'object' && team !== null)
-      .map((team) => normalizeStoredArtTeam(team))
-      .filter((team): team is ArtTeam => team !== null);
-  } catch {
-    return [];
-  }
-}
-
-function readFallbackSelectedPiName(): string {
-  try {
-    const storedSettings = JSON.parse(localStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as StoredArtSettings;
-    return storedSettings.piName?.trim() || EMPTY_PI_NAME;
-  } catch {
-    return EMPTY_PI_NAME;
-  }
-}
-
-function findMatchingArtTeam(artTeams: ArtTeam[], boardId: number | null, projectKey: string): ArtTeam | null {
-  const normalizedBoardId = boardId === null ? '' : String(boardId);
-  const normalizedProjectKey = projectKey.trim().toUpperCase();
-
-  if (normalizedBoardId !== '' && normalizedProjectKey !== '') {
-    const exactMatch = artTeams.find((team) =>
-      team.boardId === normalizedBoardId
-      && (team.projectKey?.trim().toUpperCase() ?? '') === normalizedProjectKey);
-    if (exactMatch) {
-      return exactMatch;
-    }
-  }
-
-  if (normalizedBoardId !== '') {
-    const boardMatch = artTeams.find((team) => team.boardId === normalizedBoardId);
-    if (boardMatch) {
-      return boardMatch;
-    }
-  }
-
-  if (normalizedProjectKey === '') {
-    return null;
-  }
-
-  return artTeams.find((team) => (team.projectKey?.trim().toUpperCase() ?? '') === normalizedProjectKey) ?? null;
 }
 
 function readCapacityBoardLabel(boardName: string | null, boardId: number | null): string {
@@ -184,13 +106,17 @@ export default function SprintDashboardPiReviewTab({
             Confluence sync: <strong>{hasCapacityContext ? 'Live snapshot ready' : 'Waiting for a complete plan'}</strong>
           </span>
         </div>
-        <CapacityTab />
+        <CapacityTab selectedPiName={effectiveSelectedPiName} />
       </section>
       <PiReviewTab
         mode="authoring"
         selectedPiName={effectiveSelectedPiName}
         teamCapacitySummaries={{ [piReviewTeam.id]: hasCapacityContext ? teamDashboardCapacitySummary : null }}
         teams={[piReviewTeam]}
+      />
+      <PiFeatureRemapPanel
+        projectKey={projectKey}
+        selectedPiName={effectiveSelectedPiName}
       />
     </div>
   );

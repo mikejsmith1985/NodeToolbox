@@ -134,6 +134,36 @@ describe('GET /api/proxy-config', () => {
   });
 });
 
+// ── /api/config/connectivity ───────────────────────────────────────────────────
+
+describe('GET /api/config/connectivity', () => {
+  it('reports GitHub App lookup readiness before Installation ID is known', async () => {
+    const configuration = {
+      jira:       { baseUrl: '', pat: '' },
+      snow:       { baseUrl: '', username: '', password: '' },
+      github:     {
+        baseUrl: 'https://api.github.com',
+        pat: '',
+        appId: '123456',
+        installationId: '',
+        appPrivateKey: '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----',
+      },
+      confluence: { baseUrl: '', username: '', apiToken: '' },
+      sslVerify:  true,
+    };
+
+    const response = await request(buildTestApp(configuration))
+      .get('/api/config/connectivity');
+
+    expect(response.status).toBe(200);
+    expect(response.body.github.hasAppAuth).toBe(false);
+    expect(response.body.github.hasAppId).toBe(true);
+    expect(response.body.github.hasAppPrivateKey).toBe(true);
+    expect(response.body.github.hasInstallationId).toBe(false);
+    expect(response.body.github.hasAppLookupReady).toBe(true);
+  });
+});
+
 // ── /api/snow-session ─────────────────────────────────────────────────────────
 
 describe('/api/snow-session', () => {

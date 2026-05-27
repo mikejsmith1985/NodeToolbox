@@ -117,6 +117,40 @@ describe('StablizationFundingTab', () => {
     );
   });
 
+  it('renders and totals a user-defined currency column', () => {
+    window.localStorage.setItem(
+      'tbxBusinessHelperSettings',
+      JSON.stringify({
+        stablizationColumns: {
+          grouping: { inputKind: 'text', dropdownOptions: [] },
+          name: { inputKind: 'text', dropdownOptions: [] },
+          justification: { inputKind: 'text', dropdownOptions: [] },
+        },
+        simpleSearchMapping: {
+          grouping: 'none',
+          name: 'jira-key-summary',
+          justification: 'none',
+        },
+        stablizationUserColumns: [
+          {
+            id: 'owner-cost',
+            label: 'Owner Cost',
+            dataType: 'currency',
+            dropdownOptions: [],
+            widthPx: 180,
+            simpleSearchMapping: 'none',
+          },
+        ],
+      }),
+    );
+
+    render(<StablizationFundingTab />);
+
+    fireEvent.change(screen.getByLabelText('Owner Cost for row 1'), { target: { value: '75' } });
+
+    expect(screen.getByLabelText('Owner Cost footer total')).toHaveTextContent('$75.00');
+  });
+
   it('persists a resized Name column width from the header handle', () => {
     render(<StablizationFundingTab />);
 
@@ -128,5 +162,48 @@ describe('StablizationFundingTab', () => {
 
     const storedSettings = JSON.parse(window.localStorage.getItem('tbxBusinessHelperSettings') ?? '{}');
     expect(storedSettings.stablizationColumnWidths.name).toBeGreaterThan(280);
+  });
+
+  it('keeps resizing across multiple mousemove events instead of stopping after the first drag step', () => {
+    render(<StablizationFundingTab />);
+
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Resize Name column' }), {
+      clientX: 280,
+    });
+    fireEvent.mouseMove(window, { clientX: 320 });
+    fireEvent.mouseMove(window, { clientX: 420 });
+    fireEvent.mouseUp(window);
+
+    const storedSettings = JSON.parse(window.localStorage.getItem('tbxBusinessHelperSettings') ?? '{}');
+    expect(storedSettings.stablizationColumnWidths.name).toBe(420);
+  });
+
+  it('caps resized column widths at the supported maximum', () => {
+    render(<StablizationFundingTab />);
+
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Resize Name column' }), {
+      clientX: 280,
+    });
+    fireEvent.mouseMove(window, { clientX: 900 });
+    fireEvent.mouseUp(window);
+
+    const storedSettings = JSON.parse(window.localStorage.getItem('tbxBusinessHelperSettings') ?? '{}');
+    expect(storedSettings.stablizationColumnWidths.name).toBe(520);
+  });
+
+  it('grows the table width when a column is widened so the user sees a real resize change', () => {
+    render(<StablizationFundingTab />);
+
+    const fundingTableElement = screen.getByRole('table');
+    const startingTableWidth = fundingTableElement.style.width;
+
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Resize Name column' }), {
+      clientX: 280,
+    });
+    fireEvent.mouseMove(window, { clientX: 420 });
+    fireEvent.mouseUp(window);
+
+    expect(fundingTableElement.style.width).not.toBe(startingTableWidth);
+    expect(fundingTableElement.style.width).toBe('1892px');
   });
 });

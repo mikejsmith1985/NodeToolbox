@@ -25,8 +25,10 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     isLoadingSprintData: false,
     sprintDataError: null as string | null,
     storyCount: 0,
+    storyIssues: [] as JiraFeatureIssue[],
     isLoadingQuality: false,
     qualityError: null as string | null,
+    throughputIssues: [] as SprintIssue[],
     throughputData: [] as ThroughputEntry[],
     isLoadingThroughput: false,
     throughputError: null as string | null,
@@ -55,10 +57,14 @@ import ReportsHubView from './ReportsHubView.tsx';
 describe('ReportsHubView', () => {
   beforeEach(() => {
     mockState.activeTab = 'features';
+    mockState.piFilter = '';
+    mockState.teamFilter = '';
     mockState.features = [];
     mockState.defects = [];
     mockState.risks = [];
     mockState.sprintIssues = [];
+    mockState.storyIssues = [];
+    mockState.throughputIssues = [];
     mockState.throughputData = [];
     mockState.storyCount = 0;
     mockState.artTeams = [{ name: 'Team A', projectKey: 'TBX' }];
@@ -127,6 +133,7 @@ describe('ReportsHubView', () => {
         teamName: 'Team A',
         assigneeName: 'Bob',
         priority: 'High',
+        piName: null,
         isBlocked: true,
         updatedDate: '2026-05-15T00:00:00.000Z',
         sprintName: 'Sprint 42',
@@ -157,6 +164,7 @@ describe('ReportsHubView', () => {
       teamName: 'Team A',
       assigneeName: null,
       priority: 'High',
+      piName: null,
       isBlocked: true,
       updatedDate: '2026-05-15T00:00:00.000Z',
       sprintName: 'Sprint 42',
@@ -189,6 +197,40 @@ describe('ReportsHubView', () => {
     ];
     render(<ReportsHubView />);
     expect(screen.getByText('TBX-100')).toBeInTheDocument();
+  });
+
+  it('applies global team parameters to dashboard data', () => {
+    mockState.activeTab = 'dashboard';
+    mockState.teamFilter = 'Team A';
+    mockState.defects = [
+      {
+        key: 'TBX-210',
+        summary: 'Team A defect',
+        statusName: 'Open',
+        statusCategory: 'new',
+        teamName: 'Team A',
+        fixVersions: [],
+        assigneeName: 'Alice',
+        piName: 'PI 26.2',
+        priority: 'High',
+      },
+      {
+        key: 'TBX-211',
+        summary: 'Team B defect',
+        statusName: 'Open',
+        statusCategory: 'new',
+        teamName: 'Team B',
+        fixVersions: [],
+        assigneeName: 'Bob',
+        piName: 'PI 26.2',
+        priority: 'High',
+      },
+    ];
+
+    render(<ReportsHubView />);
+
+    expect(screen.getByText('TBX-210')).toBeInTheDocument();
+    expect(screen.queryByText('TBX-211')).not.toBeInTheDocument();
   });
 
   it('shows the defect tracker table when defects tab is active', () => {

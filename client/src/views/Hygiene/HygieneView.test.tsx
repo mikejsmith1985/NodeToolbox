@@ -25,6 +25,8 @@ interface OverrideHookState {
   filteredFindings?: HygieneFinding[];
   summary?: HygieneSummary;
   selectedFilter?: ReturnType<typeof useHygieneState>['selectedFilter'];
+  availableCheckIds?: string[];
+  checkLabelsById?: Record<string, string>;
   isLoading?: boolean;
   loadError?: string | null;
 }
@@ -38,6 +40,21 @@ function buildSummary(overrides: Partial<HygieneSummary> = {}): HygieneSummary {
     totalIssues: 0,
     totalFlags: 0,
     countByCheck: {
+      'missing-summary': 0,
+      'missing-feature-link': 0,
+      'missing-parent-link': 0,
+      'missing-product-owner': 0,
+      'missing-initiative-type': 0,
+      'missing-pi': 0,
+      'missing-target-start': 0,
+      'missing-target-end': 0,
+      'missing-application': 0,
+      'missing-fix-version': 0,
+      'missing-due-date': 0,
+      'target-start-ready': 0,
+      'target-end-overdue': 0,
+      'due-date-overdue': 0,
+      'missing-child-story-points': 0,
       'missing-sp': 0,
       stale: 0,
       'no-assignee': 0,
@@ -74,6 +91,8 @@ function buildHookState(overrides: OverrideHookState = {}): ReturnType<typeof us
     filteredFindings: overrides.filteredFindings ?? findings,
     summary: overrides.summary ?? buildSummary(),
     selectedFilter: overrides.selectedFilter ?? null,
+    availableCheckIds: overrides.availableCheckIds ?? Object.keys((overrides.summary ?? buildSummary()).countByCheck),
+    checkLabelsById: overrides.checkLabelsById ?? {},
     isLoading: overrides.isLoading ?? false,
     loadError: overrides.loadError ?? null,
     setProjectKey: vi.fn(),
@@ -146,8 +165,34 @@ describe('HygieneView', () => {
         summary: buildSummary({
           totalIssues: 3,
           totalFlags: 5,
-          countByCheck: { 'missing-sp': 2, stale: 1, 'no-assignee': 1, 'no-ac': 1, 'old-in-sprint': 0 },
+          countByCheck: {
+            'missing-summary': 0,
+            'missing-feature-link': 1,
+            'missing-parent-link': 0,
+            'missing-product-owner': 0,
+            'missing-initiative-type': 0,
+            'missing-pi': 0,
+            'missing-target-start': 0,
+            'missing-target-end': 0,
+            'missing-application': 0,
+            'missing-fix-version': 0,
+            'missing-due-date': 0,
+            'target-start-ready': 0,
+            'target-end-overdue': 0,
+            'due-date-overdue': 0,
+            'missing-child-story-points': 0,
+            'missing-sp': 2,
+            stale: 1,
+            'no-assignee': 1,
+            'no-ac': 1,
+            'old-in-sprint': 0,
+          },
         }),
+        checkLabelsById: {
+          'missing-feature-link': 'Missing Feature Link',
+          'old-in-sprint': 'Old in sprint',
+        },
+        availableCheckIds: ['missing-feature-link', 'old-in-sprint'],
       }),
     );
 
@@ -155,7 +200,7 @@ describe('HygieneView', () => {
 
     expect(screen.getByText('3 issues')).toBeInTheDocument();
     expect(screen.getByText('5 flags total')).toBeInTheDocument();
-    expect(screen.getByText('Missing SP')).toBeInTheDocument();
+    expect(screen.getByText('Missing Feature Link')).toBeInTheDocument();
     expect(screen.getByText('Old in sprint')).toBeInTheDocument();
   });
 
@@ -165,7 +210,37 @@ describe('HygieneView', () => {
       buildHookState({
         projectKey: 'TBX',
         findings: [finding],
-        summary: buildSummary({ totalIssues: 1, totalFlags: 2, countByCheck: { 'missing-sp': 1, stale: 0, 'no-assignee': 1, 'no-ac': 0, 'old-in-sprint': 0 } }),
+        summary: buildSummary({
+          totalIssues: 1,
+          totalFlags: 2,
+          countByCheck: {
+            'missing-summary': 0,
+            'missing-feature-link': 1,
+            'missing-parent-link': 0,
+            'missing-product-owner': 0,
+            'missing-initiative-type': 0,
+            'missing-pi': 0,
+            'missing-target-start': 0,
+            'missing-target-end': 0,
+            'missing-application': 0,
+            'missing-fix-version': 0,
+            'missing-due-date': 0,
+            'target-start-ready': 0,
+            'target-end-overdue': 0,
+            'due-date-overdue': 0,
+            'missing-child-story-points': 0,
+            'missing-sp': 1,
+            stale: 0,
+            'no-assignee': 1,
+            'no-ac': 0,
+            'old-in-sprint': 0,
+          },
+        }),
+        checkLabelsById: {
+          'missing-sp': 'Missing SP',
+          'no-assignee': 'No assignee',
+        },
+        availableCheckIds: ['missing-sp', 'no-assignee'],
       }),
     );
 
@@ -184,7 +259,7 @@ describe('HygieneView', () => {
     mockUseHygieneState.mockReturnValue(hookState);
 
     render(<HygieneView />);
-    fireEvent.click(screen.getByRole('button', { name: /Missing SP/ }));
+    fireEvent.click(screen.getByRole('button', { name: /missing-sp/i }));
     fireEvent.click(screen.getByRole('button', { name: /issues/ }));
 
     expect(hookState.selectFilter).toHaveBeenCalledWith('missing-sp');

@@ -1,7 +1,7 @@
 // useReportExplainer.test.ts — Tests for the per-tab explainer card collapsible state hook.
 
 import { act, renderHook } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { useReportExplainer } from './useReportExplainer.ts'
 
@@ -57,5 +57,25 @@ describe('useReportExplainer', () => {
     localStorage.setItem(EXPLAINER_STORAGE_KEY, 'not{valid}json')
     const { result } = renderHook(() => useReportExplainer())
     expect(result.current.isTabExplainerCollapsed('features')).toBe(true)
+  })
+
+  it('defaults to collapsed=true when localStorage contains valid JSON that is not an object map', () => {
+    localStorage.setItem(EXPLAINER_STORAGE_KEY, 'null')
+    const { result } = renderHook(() => useReportExplainer())
+    expect(result.current.isTabExplainerCollapsed('features')).toBe(true)
+  })
+
+  it('does not throw when localStorage.setItem fails while toggling', () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('Quota exceeded')
+    })
+    const { result } = renderHook(() => useReportExplainer())
+
+    expect(() => {
+      act(() => { result.current.toggleTabExplainer('features') })
+    }).not.toThrow()
+    expect(result.current.isTabExplainerCollapsed('features')).toBe(false)
+
+    setItemSpy.mockRestore()
   })
 })

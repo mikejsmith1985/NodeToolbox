@@ -9,6 +9,7 @@ import CrgTab from './tabs/CrgTab.tsx';
 import PrbTab from './tabs/PrbTab.tsx';
 import ReleaseManagementTab from './tabs/ReleaseManagementTab.tsx';
 import SyncMonitorTab from './tabs/SyncMonitorTab.tsx';
+import UserAssignmentGroupsTab from './tabs/UserAssignmentGroupsTab.tsx';
 import styles from './SnowHubView.module.css';
 
 const VIEW_TITLE = 'SNow Hub';
@@ -17,6 +18,7 @@ const TAB_OPTIONS = [
   { key: 'crg', label: 'CHG' },
   { key: 'config', label: 'Configuration' },
   { key: 'prb', label: 'PRB Generator' },
+  { key: 'assignment-groups', label: 'Assignment Groups' },
   { key: 'release', label: 'Release Management' },
   { key: 'sync', label: 'Sync Monitor' },
 ] as const;
@@ -31,6 +33,10 @@ function renderActiveTabPanel(activeTab: SnowHubTabKey) {
 
   if (activeTab === 'prb') {
     return <PrbTab />;
+  }
+
+  if (activeTab === 'assignment-groups') {
+    return <UserAssignmentGroupsTab />;
   }
 
   if (activeTab === 'config') {
@@ -51,7 +57,7 @@ export default function SnowHubView() {
   const [activeTab, setActiveTab] = useState<SnowHubTabKey>(DEFAULT_TAB_KEY);
 
   return (
-    <ViewFrame title={VIEW_TITLE} subtitle={VIEW_SUBTITLE}>
+    <ViewFrame title={VIEW_TITLE} subtitle={VIEW_SUBTITLE} width="full">
       <PrimaryTabs
         ariaLabel="SNow Hub tabs"
         idPrefix="snow-hub"

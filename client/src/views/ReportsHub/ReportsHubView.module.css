@@ -136,6 +136,12 @@
   font-size: var(--font-size-sm);
 }
 
+.reportCaptureSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
 /* ── Table ── */
 
 .tableWrapper {
@@ -354,6 +360,48 @@
 .deltaNegative {
   color: #f87171;
   font-weight: 600;
+}
+
+/* ── Runtime diagnostics fallback ── */
+
+.runtimeDiagnosticsPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-danger, #f87171);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-danger, #f87171) 8%, var(--color-surface));
+}
+
+.runtimeDiagnosticsTitle {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+}
+
+.runtimeDiagnosticsBody {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.runtimeDiagnosticsActions {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.runtimeDiagnosticsPre {
+  margin: 0;
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  overflow: auto;
+  max-height: 320px;
 }
 
 /* ── Dashboard tab ── */

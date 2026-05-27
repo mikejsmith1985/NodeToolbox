@@ -4,11 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   mockHtml2Canvas,
+  mockClipboardWrite,
+  mockClipboardItemConstructor,
   mockCreateObjectUrl,
   mockDownloadClick,
   mockRevokeObjectUrl,
 } = vi.hoisted(() => ({
   mockHtml2Canvas: vi.fn(),
+  mockClipboardWrite: vi.fn(),
+  mockClipboardItemConstructor: vi.fn(),
   mockCreateObjectUrl: vi.fn(),
   mockDownloadClick: vi.fn(),
   mockRevokeObjectUrl: vi.fn(),
@@ -18,7 +22,7 @@ vi.mock('html2canvas', () => ({
   default: mockHtml2Canvas,
 }));
 
-import { downloadElementImage } from './downloadElementImage.ts';
+import { copyElementImageToClipboard, downloadElementImage } from './downloadElementImage.ts';
 
 function createMockCanvas(width: number, height: number): HTMLCanvasElement {
   return {
@@ -26,6 +30,21 @@ function createMockCanvas(width: number, height: number): HTMLCanvasElement {
     toBlob: vi.fn((callback: BlobCallback) => callback(new Blob(['panel'], { type: 'image/png' }))),
     width,
   } as unknown as HTMLCanvasElement;
+}
+
+function installClipboardStubs(): void {
+  class MockClipboardItem {
+    constructor(clipboardItems: Record<string, Blob>) {
+      mockClipboardItemConstructor(clipboardItems);
+    }
+  }
+
+  vi.stubGlobal('ClipboardItem', MockClipboardItem);
+  vi.stubGlobal('navigator', {
+    clipboard: {
+      write: mockClipboardWrite,
+    },
+  });
 }
 
 describe('downloadElementImage', () => {
@@ -42,10 +61,47 @@ describe('downloadElementImage', () => {
       createObjectURL: mockCreateObjectUrl,
       revokeObjectURL: mockRevokeObjectUrl,
     });
+    installClipboardStubs();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  describe('copyElementImageToClipboard', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      vi.stubGlobal('requestAnimationFrame', (frameRequestCallback: FrameRequestCallback) => {
+        frameRequestCallback(0);
+        return 1;
+      });
+      installClipboardStubs();
+    });
+
+    it('copies the captured PNG image to the clipboard when ClipboardItem is available', async () => {
+      mockHtml2Canvas.mockResolvedValue(createMockCanvas(1400, 900));
+      const panelElement = document.createElement('section');
+      panelElement.textContent = 'Snapshot report';
+      document.body.appendChild(panelElement);
+
+      await copyElementImageToClipboard(panelElement, 'The export section is no longer available.');
+
+      expect(mockClipboardItemConstructor).toHaveBeenCalledTimes(1);
+      expect(mockClipboardWrite).toHaveBeenCalledTimes(1);
+    });
+
+    it('throws a clear error when clipboard image copy is not supported', async () => {
+      mockHtml2Canvas.mockResolvedValue(createMockCanvas(1400, 900));
+      vi.stubGlobal('ClipboardItem', undefined);
+
+      const panelElement = document.createElement('section');
+      panelElement.textContent = 'Snapshot report';
+      document.body.appendChild(panelElement);
+
+      await expect(
+        copyElementImageToClipboard(panelElement, 'The export section is no longer available.'),
+      ).rejects.toThrow('Image copy is not supported in this browser.');
+    });
   });
 
   it('throws the caller-provided message when the export element is no longer connected', async () => {

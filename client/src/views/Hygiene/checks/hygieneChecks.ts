@@ -1,10 +1,11 @@
 // hygieneChecks.ts — Pure Jira issue health checks for the Hygiene view.
 //
-// The legacy Hygiene screen mixed Jira parsing, rule evaluation, and rendering in one
-// browser file. This module keeps the rule predicates small and deterministic so the
-// React hook can compose them and tests can prove each health signal independently.
+// The Hygiene screen evaluates issue health from Jira data only. This module keeps the
+// rule predicates small and deterministic so the state hook can compose them and tests
+// can prove each default hygiene signal independently.
 
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
+import type { EnterpriseRequiredFieldRule } from '../../AdminHub/enterpriseRules.ts';
 
 const STALE_THRESHOLD_DAYS = 14;
 const OLD_IN_SPRINT_THRESHOLD_DAYS = 30;
@@ -14,14 +15,57 @@ const MODERN_STORY_POINTS_FIELD = 'customfield_10028';
 const LEGACY_STORY_POINTS_FIELD = 'customfield_10016';
 const SPRINT_FIELD = 'customfield_10020';
 const ACCEPTANCE_CRITERIA_PATTERN = /given|when|then|acceptance|criteria/i;
+const IMPLEMENTING_STATUS_NAME = 'implementing';
+const FEATURE_ISSUE_TYPE_NAMES = new Set(['feature', 'epic']);
+const FEATURE_LINK_REQUIRED_ISSUE_TYPE_NAMES = new Set(['story', 'task', 'bug', 'defect', 'spike']);
 
-export type HygieneCheckId = 'missing-sp' | 'stale' | 'no-assignee' | 'no-ac' | 'old-in-sprint';
+type BuiltInHygieneCheckId =
+  | 'missing-summary'
+  | 'missing-feature-link'
+  | 'missing-parent-link'
+  | 'missing-product-owner'
+  | 'missing-initiative-type'
+  | 'missing-pi'
+  | 'missing-target-start'
+  | 'missing-target-end'
+  | 'missing-application'
+  | 'missing-fix-version'
+  | 'missing-due-date'
+  | 'target-start-ready'
+  | 'target-end-overdue'
+  | 'due-date-overdue'
+  | 'missing-child-story-points'
+  | 'missing-sp'
+  | 'stale'
+  | 'no-assignee'
+  | 'no-ac'
+  | 'old-in-sprint';
+export type HygieneCheckId = BuiltInHygieneCheckId | `custom-${string}`;
 export type HygieneSeverity = 'warn' | 'error';
 
 export interface HygieneFlag {
   checkId: HygieneCheckId;
   label: string;
   severity: HygieneSeverity;
+}
+
+export interface HygieneFieldConfig {
+  acceptanceCriteriaFieldIds: string[];
+  applicationFieldIds: string[];
+  featureLinkFieldIds: string[];
+  initiativeTypeFieldIds: string[];
+  parentLinkFieldIds: string[];
+  productOwnerFieldIds: string[];
+  programIncrementFieldIds: string[];
+  targetEndFieldIds: string[];
+  targetStartFieldIds: string[];
+}
+
+export interface HygieneEvaluationContext {
+  featureKeysWithPointedStories?: ReadonlySet<string>;
+  fieldConfig?: Partial<HygieneFieldConfig>;
+  enabledBuiltInCheckIds?: ReadonlySet<string>;
+  customRules?: readonly EnterpriseRequiredFieldRule[];
 }
 
 export interface HygieneFinding {
@@ -32,7 +76,7 @@ export interface HygieneFinding {
 export interface HygieneSummary {
   totalIssues: number;
   totalFlags: number;
-  countByCheck: Record<HygieneCheckId, number>;
+  countByCheck: Record<string, number>;
 }
 
 export interface JiraIssue {
@@ -47,6 +91,9 @@ export interface JiraIssue {
     created?: string;
     updated?: string;
     description?: unknown;
+    duedate?: string | null;
+    fixVersions?: Array<{ name?: string }> | null;
+    parent?: { key?: string } | null;
     customfield_10028?: unknown;
     customfield_10016?: unknown;
     customfield_10020?: unknown;
@@ -74,26 +121,208 @@ export interface JiraStatus {
   } | null;
 }
 
-const HYGIENE_FLAGS: Record<HygieneCheckId, HygieneFlag> = {
+const DEFAULT_HYGIENE_FIELD_CONFIG: HygieneFieldConfig = {
+  acceptanceCriteriaFieldIds: ['customfield_10200', 'description'],
+  applicationFieldIds: [],
+  featureLinkFieldIds: ['customfield_10108', 'customfield_10014'],
+  initiativeTypeFieldIds: [],
+  parentLinkFieldIds: ['parent', 'customfield_10100'],
+  productOwnerFieldIds: [],
+  programIncrementFieldIds: ['customfield_10301'],
+  targetEndFieldIds: ['customfield_10102'],
+  targetStartFieldIds: ['customfield_10101'],
+};
+
+const BUILT_IN_HYGIENE_FLAGS: Record<BuiltInHygieneCheckId, HygieneFlag> = {
+  'missing-summary': { checkId: 'missing-summary', label: 'Missing Feature Name / Summary', severity: 'error' },
+  'missing-feature-link': { checkId: 'missing-feature-link', label: 'Missing Feature Link', severity: 'error' },
+  'missing-parent-link': { checkId: 'missing-parent-link', label: 'Missing Parent Link', severity: 'warn' },
+  'missing-product-owner': { checkId: 'missing-product-owner', label: 'Missing Product Owner', severity: 'warn' },
+  'missing-initiative-type': { checkId: 'missing-initiative-type', label: 'Missing Initiative Type', severity: 'warn' },
+  'missing-pi': { checkId: 'missing-pi', label: 'Missing PI', severity: 'warn' },
+  'missing-target-start': { checkId: 'missing-target-start', label: 'Missing Target Start', severity: 'warn' },
+  'missing-target-end': { checkId: 'missing-target-end', label: 'Missing Target End', severity: 'warn' },
+  'missing-application': { checkId: 'missing-application', label: 'Missing Application', severity: 'warn' },
+  'missing-fix-version': { checkId: 'missing-fix-version', label: 'Missing Fix Version', severity: 'warn' },
+  'missing-due-date': { checkId: 'missing-due-date', label: 'Missing Due Date', severity: 'warn' },
+  'target-start-ready': { checkId: 'target-start-ready', label: 'Target Start reached while still To Do', severity: 'warn' },
+  'target-end-overdue': { checkId: 'target-end-overdue', label: 'Target End reached before testing transition', severity: 'warn' },
+  'due-date-overdue': { checkId: 'due-date-overdue', label: 'Due Date reached before completion', severity: 'warn' },
+  'missing-child-story-points': { checkId: 'missing-child-story-points', label: 'Missing Pointed Child Story', severity: 'warn' },
   'missing-sp': { checkId: 'missing-sp', label: 'Missing SP', severity: 'warn' },
   stale: { checkId: 'stale', label: 'Stale', severity: 'warn' },
   'no-assignee': { checkId: 'no-assignee', label: 'No assignee', severity: 'error' },
-  'no-ac': { checkId: 'no-ac', label: 'No AC', severity: 'warn' },
+  'no-ac': { checkId: 'no-ac', label: 'Missing AC', severity: 'warn' },
   'old-in-sprint': { checkId: 'old-in-sprint', label: 'Old in sprint', severity: 'warn' },
 };
 
-export const HYGIENE_CHECK_IDS: HygieneCheckId[] = [
-  'missing-sp',
-  'stale',
+export const HYGIENE_CHECK_IDS: BuiltInHygieneCheckId[] = [
+  'missing-feature-link',
+  'missing-parent-link',
+  'missing-product-owner',
+  'missing-initiative-type',
+  'missing-pi',
+  'missing-target-start',
+  'missing-target-end',
+  'missing-application',
+  'missing-fix-version',
+  'missing-due-date',
+  'target-start-ready',
+  'target-end-overdue',
+  'due-date-overdue',
+  'missing-child-story-points',
+  'missing-summary',
   'no-assignee',
   'no-ac',
+  'missing-sp',
+  'stale',
   'old-in-sprint',
 ];
 
-export const HYGIENE_CHECK_LABELS: Record<HygieneCheckId, string> = HYGIENE_CHECK_IDS.reduce(
-  (labelLookup, checkId) => ({ ...labelLookup, [checkId]: HYGIENE_FLAGS[checkId].label }),
-  {} as Record<HygieneCheckId, string>,
+export const HYGIENE_CHECK_LABELS: Record<string, string> = HYGIENE_CHECK_IDS.reduce(
+  (labelLookup, checkId) => ({ ...labelLookup, [checkId]: BUILT_IN_HYGIENE_FLAGS[checkId].label }),
+  {} as Record<string, string>,
 );
+
+/** Flags issues that are missing the Jira summary users rely on as the feature name. */
+export function checkMissingSummary(issue: JiraIssue): HygieneFlag | null {
+  return issue.fields.summary?.trim() ? null : BUILT_IN_HYGIENE_FLAGS['missing-summary'];
+}
+
+/** Flags delivery issues that are missing the feature link required for roll-up and planning. */
+export function checkMissingFeatureLink(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
+  if (!FEATURE_LINK_REQUIRED_ISSUE_TYPE_NAMES.has(readIssueTypeName(issue))) {
+    return null;
+  }
+
+  return hasMeaningfulValueForAnyField(issue, fieldConfig.featureLinkFieldIds) ? null : BUILT_IN_HYGIENE_FLAGS['missing-feature-link'];
+}
+
+/** Flags feature issues that are missing the parent link required by the enterprise workflow. */
+export function checkMissingParentLink(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
+  if (!isFeatureLikeIssue(issue)) {
+    return null;
+  }
+
+  return hasMeaningfulValueForAnyField(issue, fieldConfig.parentLinkFieldIds) ? null : BUILT_IN_HYGIENE_FLAGS['missing-parent-link'];
+}
+
+/** Flags feature issues that are missing an accountable product owner value. */
+export function checkMissingProductOwner(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
+  if (!isFeatureLikeIssue(issue) || fieldConfig.productOwnerFieldIds.length === 0) {
+    return null;
+  }
+
+  return hasMeaningfulValueForAnyField(issue, fieldConfig.productOwnerFieldIds) ? null : BUILT_IN_HYGIENE_FLAGS['missing-product-owner'];
+}
+
+/** Flags feature issues that are missing the initiative type required by the workflow. */
+export function checkMissingInitiativeType(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
+  if (!isFeatureLikeIssue(issue) || fieldConfig.initiativeTypeFieldIds.length === 0) {
+    return null;
+  }
+
+  return hasMeaningfulValueForAnyField(issue, fieldConfig.initiativeTypeFieldIds)
+    ? null
+    : BUILT_IN_HYGIENE_FLAGS['missing-initiative-type'];
+}
+
+/** Flags feature issues that are missing their Program Increment assignment. */
+export function checkMissingProgramIncrement(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
+  if (!isFeatureLikeIssue(issue)) {
+    return null;
+  }
+
+  return hasMeaningfulValueForAnyField(issue, fieldConfig.programIncrementFieldIds) ? null : BUILT_IN_HYGIENE_FLAGS['missing-pi'];
+}
+
+/** Flags feature issues that are missing the target start date required by the rollout standard. */
+export function checkMissingTargetStart(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
+  if (!isFeatureLikeIssue(issue)) {
+    return null;
+  }
+
+  return hasMeaningfulValueForAnyField(issue, fieldConfig.targetStartFieldIds)
+    ? null
+    : BUILT_IN_HYGIENE_FLAGS['missing-target-start'];
+}
+
+/** Flags feature issues that are missing the target end date required by the rollout standard. */
+export function checkMissingTargetEnd(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
+  if (!isFeatureLikeIssue(issue)) {
+    return null;
+  }
+
+  return hasMeaningfulValueForAnyField(issue, fieldConfig.targetEndFieldIds) ? null : BUILT_IN_HYGIENE_FLAGS['missing-target-end'];
+}
+
+/** Flags feature issues that are missing their application / CMDB identifier. */
+export function checkMissingApplication(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
+  if (!isFeatureLikeIssue(issue) || fieldConfig.applicationFieldIds.length === 0) {
+    return null;
+  }
+
+  return hasMeaningfulValueForAnyField(issue, fieldConfig.applicationFieldIds) ? null : BUILT_IN_HYGIENE_FLAGS['missing-application'];
+}
+
+/** Flags feature issues that are missing the release fix version. */
+export function checkMissingFixVersion(issue: JiraIssue): HygieneFlag | null {
+  if (!isFeatureLikeIssue(issue)) {
+    return null;
+  }
+
+  return issue.fields.fixVersions?.length ? null : BUILT_IN_HYGIENE_FLAGS['missing-fix-version'];
+}
+
+/** Flags feature issues that are missing the committed due date. */
+export function checkMissingDueDate(issue: JiraIssue): HygieneFlag | null {
+  if (!isFeatureLikeIssue(issue)) {
+    return null;
+  }
+
+  return hasMeaningfulValue(issue.fields.duedate) ? null : BUILT_IN_HYGIENE_FLAGS['missing-due-date'];
+}
+
+/** Flags features that should have started implementation because Target Start has arrived. */
+export function checkTargetStartReady(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
+  if (!isFeatureLikeIssue(issue) || !isTodoIssue(issue)) {
+    return null;
+  }
+
+  const targetStartValue = readFirstConfiguredFieldValue(issue, fieldConfig.targetStartFieldIds);
+  return isDateTodayOrPast(targetStartValue) ? BUILT_IN_HYGIENE_FLAGS['target-start-ready'] : null;
+}
+
+/** Flags features whose Target End has arrived before they progressed beyond To Do or Implementing. */
+export function checkTargetEndOverdue(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
+  if (!isFeatureLikeIssue(issue) || (!isTodoIssue(issue) && !isImplementingIssue(issue))) {
+    return null;
+  }
+
+  const targetEndValue = readFirstConfiguredFieldValue(issue, fieldConfig.targetEndFieldIds);
+  return isDateTodayOrPast(targetEndValue) ? BUILT_IN_HYGIENE_FLAGS['target-end-overdue'] : null;
+}
+
+/** Flags features whose Due Date has arrived before the issue reached a done state. */
+export function checkDueDateOverdue(issue: JiraIssue): HygieneFlag | null {
+  if (!isFeatureLikeIssue(issue) || isDoneIssue(issue)) {
+    return null;
+  }
+
+  return isDateTodayOrPast(issue.fields.duedate) ? BUILT_IN_HYGIENE_FLAGS['due-date-overdue'] : null;
+}
+
+/** Flags feature issues that have no child Story with positive story points. */
+export function checkMissingChildStoryPoints(
+  issue: JiraIssue,
+  featureKeysWithPointedStories: ReadonlySet<string>,
+): HygieneFlag | null {
+  if (!isFeatureLikeIssue(issue)) {
+    return null;
+  }
+
+  return featureKeysWithPointedStories.has(issue.key) ? null : BUILT_IN_HYGIENE_FLAGS['missing-child-story-points'];
+}
 
 /** Flags Story and Task issues that have neither known Jira story-points field populated. */
 export function checkMissingStoryPoints(issue: JiraIssue): HygieneFlag | null {
@@ -104,30 +333,36 @@ export function checkMissingStoryPoints(issue: JiraIssue): HygieneFlag | null {
   const modernStoryPoints = issue.fields[MODERN_STORY_POINTS_FIELD];
   const legacyStoryPoints = issue.fields[LEGACY_STORY_POINTS_FIELD];
   return hasEmptyStoryPoints(modernStoryPoints) && hasEmptyStoryPoints(legacyStoryPoints)
-    ? HYGIENE_FLAGS['missing-sp']
+    ? BUILT_IN_HYGIENE_FLAGS['missing-sp']
     : null;
 }
 
 /** Flags in-progress issues that have not been updated within the active-work threshold. */
 export function checkStaleIssue(issue: JiraIssue): HygieneFlag | null {
   if (!isInProgressIssue(issue)) return null;
-  return calculateAgeInDays(issue.fields.updated) > STALE_THRESHOLD_DAYS ? HYGIENE_FLAGS.stale : null;
+  return calculateAgeInDays(issue.fields.updated) > STALE_THRESHOLD_DAYS ? BUILT_IN_HYGIENE_FLAGS.stale : null;
 }
 
-/** Flags in-progress issues that are actively moving but have no accountable assignee. */
+/** Flags non-done issues that still have no accountable assignee. */
 export function checkNoAssignee(issue: JiraIssue): HygieneFlag | null {
   const hasAssignee = issue.fields.assignee !== null && issue.fields.assignee !== undefined;
-  return !hasAssignee && isInProgressIssue(issue) ? HYGIENE_FLAGS['no-assignee'] : null;
+  return !hasAssignee && !isDoneIssue(issue) ? BUILT_IN_HYGIENE_FLAGS['no-assignee'] : null;
 }
 
-/** Flags stories whose description does not provide recognizable acceptance criteria. */
-export function checkNoAcceptanceCriteria(issue: JiraIssue): HygieneFlag | null {
-  if (readIssueTypeName(issue) !== 'story') return null;
+/** Flags stories and features whose acceptance criteria field does not contain useful guidance. */
+export function checkNoAcceptanceCriteria(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
+  const issueTypeName = readIssueTypeName(issue);
+  if (issueTypeName !== 'story' && !isFeatureLikeIssue(issue)) {
+    return null;
+  }
 
-  const descriptionText = readPlainTextDescription(issue.fields.description).trim();
-  const hasUsefulAcceptanceCriteria = descriptionText.length >= ACCEPTANCE_CRITERIA_MINIMUM_LENGTH
-    && ACCEPTANCE_CRITERIA_PATTERN.test(descriptionText);
-  return hasUsefulAcceptanceCriteria ? null : HYGIENE_FLAGS['no-ac'];
+  const acceptanceCriteriaText = fieldConfig.acceptanceCriteriaFieldIds
+    .map((fieldId) => readIssueFieldText(issue, fieldId))
+    .find((fieldText) => fieldText.trim() !== '')
+    ?? '';
+  const hasUsefulAcceptanceCriteria = acceptanceCriteriaText.length >= ACCEPTANCE_CRITERIA_MINIMUM_LENGTH
+    && ACCEPTANCE_CRITERIA_PATTERN.test(acceptanceCriteriaText);
+  return hasUsefulAcceptanceCriteria ? null : BUILT_IN_HYGIENE_FLAGS['no-ac'];
 }
 
 /** Flags active-sprint issues that have been open long enough to deserve team review. */
@@ -135,27 +370,91 @@ export function checkOldInSprint(issue: JiraIssue): HygieneFlag | null {
   const isOldActiveSprintIssue = hasActiveSprint(issue.fields[SPRINT_FIELD])
     && !isDoneIssue(issue)
     && calculateAgeInDays(issue.fields.created) > OLD_IN_SPRINT_THRESHOLD_DAYS;
-  return isOldActiveSprintIssue ? HYGIENE_FLAGS['old-in-sprint'] : null;
+  return isOldActiveSprintIssue ? BUILT_IN_HYGIENE_FLAGS['old-in-sprint'] : null;
 }
 
-/** Runs every Hygiene predicate and returns only the flags that apply to the issue. */
-export function evaluateHygieneIssue(issue: JiraIssue): HygieneFlag[] {
-  return [
+/** Identifies the feature-like Jira issue types that the enterprise rule set applies to. */
+export function isFeatureLikeIssue(issue: JiraIssue): boolean {
+  return FEATURE_ISSUE_TYPE_NAMES.has(readIssueTypeName(issue));
+}
+
+/** Reads the configured field config with defaults applied so checks can stay deterministic. */
+export function resolveHygieneFieldConfig(fieldConfig?: Partial<HygieneFieldConfig>): HygieneFieldConfig {
+  return {
+    acceptanceCriteriaFieldIds: buildUniqueFieldIds([
+      ...DEFAULT_HYGIENE_FIELD_CONFIG.acceptanceCriteriaFieldIds,
+      ...(fieldConfig?.acceptanceCriteriaFieldIds ?? []),
+    ]),
+    applicationFieldIds: buildUniqueFieldIds(fieldConfig?.applicationFieldIds ?? []),
+    featureLinkFieldIds: buildUniqueFieldIds([
+      ...DEFAULT_HYGIENE_FIELD_CONFIG.featureLinkFieldIds,
+      ...(fieldConfig?.featureLinkFieldIds ?? []),
+    ]),
+    initiativeTypeFieldIds: buildUniqueFieldIds(fieldConfig?.initiativeTypeFieldIds ?? []),
+    parentLinkFieldIds: buildUniqueFieldIds([
+      ...DEFAULT_HYGIENE_FIELD_CONFIG.parentLinkFieldIds,
+      ...(fieldConfig?.parentLinkFieldIds ?? []),
+    ]),
+    productOwnerFieldIds: buildUniqueFieldIds(fieldConfig?.productOwnerFieldIds ?? []),
+    programIncrementFieldIds: buildUniqueFieldIds([
+      ...DEFAULT_HYGIENE_FIELD_CONFIG.programIncrementFieldIds,
+      ...(fieldConfig?.programIncrementFieldIds ?? []),
+    ]),
+    targetEndFieldIds: buildUniqueFieldIds([
+      ...DEFAULT_HYGIENE_FIELD_CONFIG.targetEndFieldIds,
+      ...(fieldConfig?.targetEndFieldIds ?? []),
+    ]),
+    targetStartFieldIds: buildUniqueFieldIds([
+      ...DEFAULT_HYGIENE_FIELD_CONFIG.targetStartFieldIds,
+      ...(fieldConfig?.targetStartFieldIds ?? []),
+    ]),
+  };
+}
+
+/** Runs every default Hygiene predicate and returns only the flags that apply to the issue. */
+export function evaluateHygieneIssue(issue: JiraIssue, evaluationContext: HygieneEvaluationContext = {}): HygieneFlag[] {
+  const fieldConfig = resolveHygieneFieldConfig(evaluationContext.fieldConfig);
+  const featureKeysWithPointedStories = evaluationContext.featureKeysWithPointedStories ?? new Set<string>();
+  const enabledBuiltInCheckIds = evaluationContext.enabledBuiltInCheckIds ?? new Set(HYGIENE_CHECK_IDS);
+  const builtInFlags = [
+    checkMissingSummary(issue),
+    checkMissingFeatureLink(issue, fieldConfig),
+    checkMissingParentLink(issue, fieldConfig),
+    checkMissingProductOwner(issue, fieldConfig),
+    checkMissingInitiativeType(issue, fieldConfig),
+    checkMissingProgramIncrement(issue, fieldConfig),
+    checkMissingTargetStart(issue, fieldConfig),
+    checkMissingTargetEnd(issue, fieldConfig),
+    checkMissingApplication(issue, fieldConfig),
+    checkMissingFixVersion(issue),
+    checkMissingDueDate(issue),
+    checkTargetStartReady(issue, fieldConfig),
+    checkTargetEndOverdue(issue, fieldConfig),
+    checkDueDateOverdue(issue),
+    checkMissingChildStoryPoints(issue, featureKeysWithPointedStories),
     checkMissingStoryPoints(issue),
     checkStaleIssue(issue),
     checkNoAssignee(issue),
-    checkNoAcceptanceCriteria(issue),
+    checkNoAcceptanceCriteria(issue, fieldConfig),
     checkOldInSprint(issue),
-  ].filter((flag): flag is HygieneFlag => flag !== null);
+  ]
+    .filter((flag): flag is HygieneFlag => flag !== null)
+    .filter((flag) => enabledBuiltInCheckIds.has(flag.checkId as BuiltInHygieneCheckId));
+  const customRuleFlags = (evaluationContext.customRules ?? [])
+    .map((customRule) => checkRequiredFieldRule(issue, customRule))
+    .filter((flag): flag is HygieneFlag => flag !== null);
+
+  return [...builtInFlags, ...customRuleFlags];
 }
 
 /** Aggregates per-issue findings into the summary tiles shown at the top of the view. */
-export function summarizeHygieneFindings(findings: HygieneFinding[]): HygieneSummary {
-  const countByCheck = createEmptyCheckCounts();
+export function summarizeHygieneFindings(findings: HygieneFinding[], checkIds: readonly string[] = HYGIENE_CHECK_IDS): HygieneSummary {
+  const countByCheck = createEmptyCheckCounts(checkIds);
   let totalFlags = 0;
 
   findings.forEach((finding) => {
     finding.flags.forEach((flag) => {
+      countByCheck[flag.checkId] ??= 0;
       countByCheck[flag.checkId] += 1;
       totalFlags += 1;
     });
@@ -168,11 +467,47 @@ export function summarizeHygieneFindings(findings: HygieneFinding[]): HygieneSum
   };
 }
 
-function createEmptyCheckCounts(): Record<HygieneCheckId, number> {
-  return HYGIENE_CHECK_IDS.reduce(
+function createEmptyCheckCounts(checkIds: readonly string[]): Record<string, number> {
+  return checkIds.reduce(
     (countLookup, checkId) => ({ ...countLookup, [checkId]: 0 }),
-    {} as Record<HygieneCheckId, number>,
+    {} as Record<string, number>,
   );
+}
+
+function checkRequiredFieldRule(issue: JiraIssue, customRule: EnterpriseRequiredFieldRule): HygieneFlag | null {
+  if (!shouldApplyCustomRuleToIssue(issue, customRule.issueTypeNames) || hasMeaningfulValue(readIssueFieldValue(issue, customRule.fieldId))) {
+    return null;
+  }
+
+  return {
+    checkId: customRule.id as HygieneCheckId,
+    label: customRule.name,
+    severity: customRule.severity,
+  };
+}
+
+function shouldApplyCustomRuleToIssue(issue: JiraIssue, issueTypeNames: readonly string[]): boolean {
+  if (issueTypeNames.length === 0) {
+    return true;
+  }
+
+  const normalizedIssueTypeName = readIssueTypeName(issue);
+  return issueTypeNames.some((issueTypeName) => issueTypeName.trim().toLowerCase() === normalizedIssueTypeName);
+}
+
+function readFirstConfiguredFieldValue(issue: JiraIssue, fieldIds: readonly string[]): unknown {
+  for (const fieldId of fieldIds) {
+    const fieldValue = readIssueFieldValue(issue, fieldId);
+    if (fieldValue !== undefined) {
+      return fieldValue;
+    }
+  }
+
+  return null;
+}
+
+function buildUniqueFieldIds(fieldIds: readonly string[]): string[] {
+  return Array.from(new Set(fieldIds.filter(Boolean)));
 }
 
 function readIssueTypeName(issue: JiraIssue): string {
@@ -185,10 +520,95 @@ function isInProgressIssue(issue: JiraIssue): boolean {
   return statusName === 'in progress' || statusCategoryKey === 'indeterminate';
 }
 
+function isTodoIssue(issue: JiraIssue): boolean {
+  const statusCategoryKey = issue.fields.status?.statusCategory?.key?.toLowerCase() ?? '';
+  const statusCategoryName = issue.fields.status?.statusCategory?.name?.toLowerCase() ?? '';
+  return statusCategoryKey === 'new' || statusCategoryName === 'to do';
+}
+
+function isImplementingIssue(issue: JiraIssue): boolean {
+  return (issue.fields.status?.name?.toLowerCase() ?? '') === IMPLEMENTING_STATUS_NAME;
+}
+
 function isDoneIssue(issue: JiraIssue): boolean {
   const statusName = issue.fields.status?.name?.toLowerCase() ?? '';
   const statusCategoryKey = issue.fields.status?.statusCategory?.key?.toLowerCase() ?? '';
   return statusCategoryKey === 'done' || ['done', 'closed', 'resolved', 'complete'].includes(statusName);
+}
+
+function hasMeaningfulValueForAnyField(issue: JiraIssue, fieldIds: readonly string[]): boolean {
+  return fieldIds.some((fieldId) => hasMeaningfulValue(readIssueFieldValue(issue, fieldId)));
+}
+
+function readIssueFieldValue(issue: JiraIssue, fieldId: string): unknown {
+  if (fieldId === 'parent') {
+    return issue.fields.parent;
+  }
+
+  return issue.fields[fieldId];
+}
+
+function readIssueFieldText(issue: JiraIssue, fieldId: string): string {
+  return normalizeRichTextToPlainText(readIssueFieldValue(issue, fieldId)).trim();
+}
+
+function hasMeaningfulValue(fieldValue: unknown): boolean {
+  if (fieldValue === null || fieldValue === undefined) {
+    return false;
+  }
+
+  if (typeof fieldValue === 'string') {
+    return fieldValue.trim() !== '';
+  }
+
+  if (typeof fieldValue === 'number') {
+    return fieldValue > 0;
+  }
+
+  if (typeof fieldValue === 'boolean') {
+    return fieldValue;
+  }
+
+  if (Array.isArray(fieldValue)) {
+    return fieldValue.length > 0;
+  }
+
+  if (!isRecord(fieldValue)) {
+    return false;
+  }
+
+  return Object.values(fieldValue).some((nestedValue) => hasMeaningfulValue(nestedValue));
+}
+
+function isDateTodayOrPast(fieldValue: unknown): boolean {
+  if (typeof fieldValue !== 'string' || fieldValue.trim() === '') {
+    return false;
+  }
+
+  const trimmedDateValue = fieldValue.trim();
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmedDateValue);
+  if (dateOnlyMatch) {
+    return trimmedDateValue <= buildTodayDateOnlyText();
+  }
+
+  const parsedDate = new Date(trimmedDateValue);
+  if (!Number.isFinite(parsedDate.getTime())) {
+    return false;
+  }
+
+  const today = new Date();
+  const normalizedToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const normalizedFieldDate = new Date(Date.UTC(parsedDate.getUTCFullYear(), parsedDate.getUTCMonth(), parsedDate.getUTCDate()));
+  return normalizedFieldDate.getTime() <= normalizedToday.getTime();
+}
+
+function buildTodayDateOnlyText(): string {
+  const today = new Date();
+  return [
+    String(today.getFullYear()),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-');
 }
 
 function hasEmptyStoryPoints(fieldValue: unknown): boolean {
@@ -215,10 +635,6 @@ function isActiveSprintEntry(sprintEntry: unknown): boolean {
   if (!isRecord(sprintEntry)) return false;
   const sprintState = typeof sprintEntry.state === 'string' ? sprintEntry.state.toLowerCase() : '';
   return sprintState === 'active';
-}
-
-function readPlainTextDescription(descriptionValue: unknown): string {
-  return normalizeRichTextToPlainText(descriptionValue);
 }
 
 function isRecord(candidateValue: unknown): candidateValue is Record<string, unknown> {

@@ -165,12 +165,59 @@
   margin: 0 0 var(--spacing-md) 0;
 }
 
-.sectionContent {
+.sectionSummary {
   color: var(--color-text-secondary);
   font-size: var(--font-size-md);
   line-height: 1.6;
-  white-space: pre-line;
   margin: 0;
+}
+
+.sectionBlock {
+  margin-top: var(--spacing-lg);
+}
+
+.sectionSubheading {
+  font-size: var(--font-size-md);
+  margin: 0 0 var(--spacing-sm) 0;
+  color: var(--color-text-primary);
+}
+
+.detailList {
+  margin: 0;
+  padding-left: calc(var(--spacing-md) + var(--spacing-xs));
+  color: var(--color-text-secondary);
+  display: grid;
+  gap: var(--spacing-sm);
+}
+
+.detailListItem {
+  line-height: 1.6;
+}
+
+.playbookList {
+  display: grid;
+  gap: var(--spacing-md);
+}
+
+.playbookCard {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-md);
+  background: var(--color-surface-2);
+}
+
+.playbookHeading {
+  margin: 0 0 var(--spacing-sm) 0;
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+}
+
+.playbookSteps {
+  margin: 0;
+  padding-left: calc(var(--spacing-md) + var(--spacing-xs));
+  color: var(--color-text-secondary);
+  display: grid;
+  gap: var(--spacing-sm);
 }
 
 .noResults {

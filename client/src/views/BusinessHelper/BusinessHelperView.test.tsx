@@ -2,6 +2,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import viewFrameStyles from '../../components/ViewFrame/ViewFrame.module.css';
 
 vi.mock('./tabs/SimpleSearchTab.tsx', () => ({
   default: () => <div>Simple Search Tab Content</div>,
@@ -34,5 +35,11 @@ describe('BusinessHelperView', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
 
     expect(screen.getByText('Settings Tab Content')).toBeInTheDocument();
+  });
+
+  it('uses the full-width shared view frame so responsive sizing can expand the workspace', () => {
+    const { container } = render(<BusinessHelperView />);
+
+    expect(container.firstElementChild?.className).toContain(viewFrameStyles.widthFull);
   });
 });
