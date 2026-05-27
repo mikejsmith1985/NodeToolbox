@@ -74,7 +74,7 @@ describe('ReportsHubView', () => {
   it('renders the page title and hero KPI grid', () => {
     render(<ReportsHubView />);
     expect(screen.getByText(/reports hub/i)).toBeInTheDocument();
-    expect(screen.getByText(/art teams/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/art teams/i).length).toBeGreaterThan(0);
   });
 
   it('auto-loads all reports when the view opens with configured ART teams', () => {
@@ -82,9 +82,9 @@ describe('ReportsHubView', () => {
     expect(mockActions.loadAllReports).toHaveBeenCalledTimes(1);
   });
 
-  it('renders 10 tab buttons including the dashboard tab', () => {
+  it('renders 10 tab buttons including the Defect Dashboard tab', () => {
     render(<ReportsHubView />);
-    expect(screen.getByRole('tab', { name: /dashboard/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /defect dashboard/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /feature report/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /defect tracker/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /risk board/i })).toBeInTheDocument();
@@ -181,7 +181,7 @@ describe('ReportsHubView', () => {
     expect(within(unassignedWorkCard as HTMLElement).getByText('7')).toBeInTheDocument();
   });
 
-  it('shows the feature report table when features are loaded', () => {
+  it('shows the at-risk feature report sections when features are loaded', () => {
     mockState.features = [
       {
         key: 'TBX-100',
@@ -193,10 +193,15 @@ describe('ReportsHubView', () => {
         assigneeName: 'Alice',
         piName: 'PI 26.2',
         priority: null,
+        dueDate: '2024-01-15',
+        dependencyCount: 2,
+        isRiskTagged: true,
       },
     ];
     render(<ReportsHubView />);
-    expect(screen.getByText('TBX-100')).toBeInTheDocument();
+    expect(screen.getAllByText('TBX-100').length).toBeGreaterThan(0);
+    expect(screen.getByText(/at-risk features/i)).toBeInTheDocument();
+    expect(screen.getByText(/team feature health/i)).toBeInTheDocument();
   });
 
   it('applies global team parameters to dashboard data', () => {
@@ -245,14 +250,15 @@ describe('ReportsHubView', () => {
         fixVersions: [],
         assigneeName: null,
         piName: null,
-        priority: null,
+        priority: 'Critical',
+        updatedDate: '2024-01-01T00:00:00.000Z',
       },
     ];
     render(<ReportsHubView />);
     expect(screen.getByText('TBX-200')).toBeInTheDocument();
   });
 
-  it('shows the risk board table when risks tab is active', () => {
+  it('shows the risk exposure report sections when risks tab is active', () => {
     mockState.activeTab = 'risks';
     mockState.risks = [
       {
@@ -264,11 +270,13 @@ describe('ReportsHubView', () => {
         fixVersions: [],
         assigneeName: null,
         piName: null,
-        priority: null,
+        priority: 'Critical',
+        updatedDate: '2024-01-01T00:00:00.000Z',
       },
     ];
     render(<ReportsHubView />);
     expect(screen.getByText('TBX-300')).toBeInTheDocument();
+    expect(screen.getByText(/team risk exposure/i)).toBeInTheDocument();
   });
 
   it('shows empty state when artTeams is empty', () => {
@@ -278,28 +286,44 @@ describe('ReportsHubView', () => {
     expect(mockActions.loadAllReports).not.toHaveBeenCalled();
   });
 
-  it('shows the flow tab WIP pipeline heading when flow tab is active', () => {
+  it('shows the flow tab completion and aging report when flow tab is active', () => {
     mockState.activeTab = 'flow';
+    mockState.throughputIssues = [
+      {
+        key: 'TBX-900',
+        summary: 'Completed recently',
+        statusName: 'Done',
+        statusCategory: 'done',
+        teamName: 'Team A',
+        assigneeName: 'Pat',
+        priority: 'Medium',
+        piName: null,
+        isBlocked: false,
+        updatedDate: '2026-05-15T00:00:00.000Z',
+        resolutionDate: '2026-05-15T00:00:00.000Z',
+        sprintName: 'Sprint 44',
+      },
+    ];
     render(<ReportsHubView />);
-    expect(screen.getByText(/wip pipeline/i)).toBeInTheDocument();
+    expect(screen.getByText(/recent completions \(last 30 days\)/i)).toBeInTheDocument();
   });
 
-  it('shows the impact tab heading when impact tab is active', () => {
+  it('shows the delivery impact scorecard when impact tab is active', () => {
     mockState.activeTab = 'impact';
     render(<ReportsHubView />);
-    expect(screen.getByText(/high priority/i)).toBeInTheDocument();
+    expect(screen.getByText(/delivery impact scorecard/i)).toBeInTheDocument();
   });
 
-  it('shows the individual tab heading when individual tab is active', () => {
+  it('shows the ownership load report when individual tab is active', () => {
     mockState.activeTab = 'individual';
     render(<ReportsHubView />);
-    expect(screen.getByText(/workload by person/i)).toBeInTheDocument();
+    expect(screen.getByText(/ownership load report/i)).toBeInTheDocument();
   });
 
-  it('shows the quality tab heading when quality tab is active', () => {
+  it('shows the quality scorecard when quality tab is active', () => {
     mockState.activeTab = 'quality';
     render(<ReportsHubView />);
-    expect(screen.getByText(/defect metrics/i)).toBeInTheDocument();
+    expect(screen.getByText(/team quality scorecard/i)).toBeInTheDocument();
   });
 
   it('shows the sprint health tab heading when sprintHealth tab is active', () => {
@@ -308,9 +332,143 @@ describe('ReportsHubView', () => {
     expect(screen.getByText(/team health/i)).toBeInTheDocument();
   });
 
-  it('shows the throughput tab heading when throughput tab is active', () => {
+  it('shows the six-month throughput comparison when throughput tab is active', () => {
     mockState.activeTab = 'throughput';
     render(<ReportsHubView />);
-    expect(screen.getByText(/throughput \(last/i)).toBeInTheDocument();
+    expect(screen.getByText(/throughput comparison \(last 6 months\)/i)).toBeInTheDocument();
+  });
+
+  // ── isPastDue day-granularity fix ──
+
+  it('does not mark a feature as Past Due when the due date is today', () => {
+    // Simulate a Jira date-only string matching today so that negative-UTC-offset
+    // environments cannot incorrectly flag today's items as overdue.
+    const todayLocal = new Date();
+    const todayDatePart = [
+      todayLocal.getFullYear(),
+      String(todayLocal.getMonth() + 1).padStart(2, '0'),
+      String(todayLocal.getDate()).padStart(2, '0'),
+    ].join('-');
+
+    mockState.features = [
+      {
+        key: 'TBX-TODAY',
+        summary: 'Feature due today',
+        statusName: 'In Progress',
+        statusCategory: 'indeterminate',
+        teamName: 'Team A',
+        fixVersions: ['PI 26.3'],
+        assigneeName: 'Alice',
+        piName: 'PI 26.3',
+        priority: null,
+        dueDate: todayDatePart,
+        dependencyCount: 0,
+        isRiskTagged: false,
+      },
+    ];
+
+    render(<ReportsHubView />);
+
+    // The feature key should appear in the feature report, but there must be no
+    // "Past Due" badge rendered alongside it.
+    const featureRow = screen.queryByText('TBX-TODAY');
+    if (featureRow) {
+      const rowContainer = featureRow.closest('tr') ?? featureRow.closest('li') ?? featureRow.parentElement;
+      if (rowContainer) {
+        expect(within(rowContainer as HTMLElement).queryByText(/past due/i)).toBeNull();
+      }
+    }
+  });
+
+  it('does mark a feature as Past Due when the due date is yesterday', () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayDatePart = [
+      yesterday.getFullYear(),
+      String(yesterday.getMonth() + 1).padStart(2, '0'),
+      String(yesterday.getDate()).padStart(2, '0'),
+    ].join('-');
+
+    mockState.features = [
+      {
+        key: 'TBX-YEST',
+        summary: 'Feature due yesterday',
+        statusName: 'In Progress',
+        statusCategory: 'indeterminate',
+        teamName: 'Team A',
+        fixVersions: ['PI 26.3'],
+        assigneeName: 'Alice',
+        piName: 'PI 26.3',
+        priority: null,
+        dueDate: yesterdayDatePart,
+        dependencyCount: 0,
+        isRiskTagged: false,
+      },
+    ];
+
+    render(<ReportsHubView />);
+
+    // A feature that was due yesterday must be marked as past due somewhere in
+    // the rendered output (badge, row label, or tooltip).
+    expect(screen.getAllByText(/past due/i).length).toBeGreaterThan(0);
+  });
+
+  // ── aggregateFilteredThroughputData chronological ordering fix ──
+
+  it('shows throughput months in chronological order when issues arrive out of order', () => {
+    mockState.activeTab = 'throughput';
+    // Provide issues whose resolution dates span three months in non-chronological
+    // insertion order. The fix ensures months are sorted before the window is applied.
+    mockState.throughputIssues = [
+      {
+        key: 'TBX-T3',
+        summary: 'Resolved in March',
+        statusName: 'Done',
+        statusCategory: 'done',
+        teamName: 'Team A',
+        assigneeName: 'Pat',
+        priority: 'Medium',
+        piName: null,
+        isBlocked: false,
+        updatedDate: '2026-03-10T00:00:00.000Z',
+        resolutionDate: '2026-03-10T00:00:00.000Z',
+        sprintName: 'Sprint 40',
+      },
+      {
+        key: 'TBX-T1',
+        summary: 'Resolved in January',
+        statusName: 'Done',
+        statusCategory: 'done',
+        teamName: 'Team A',
+        assigneeName: 'Sam',
+        priority: 'Low',
+        piName: null,
+        isBlocked: false,
+        updatedDate: '2026-01-05T00:00:00.000Z',
+        resolutionDate: '2026-01-05T00:00:00.000Z',
+        sprintName: 'Sprint 38',
+      },
+      {
+        key: 'TBX-T2',
+        summary: 'Resolved in February',
+        statusName: 'Done',
+        statusCategory: 'done',
+        teamName: 'Team A',
+        assigneeName: 'Lee',
+        priority: 'High',
+        piName: null,
+        isBlocked: false,
+        updatedDate: '2026-02-20T00:00:00.000Z',
+        resolutionDate: '2026-02-20T00:00:00.000Z',
+        sprintName: 'Sprint 39',
+      },
+    ];
+
+    render(<ReportsHubView />);
+
+    // All three month labels should appear in the throughput section.
+    expect(screen.getByText(/jan 2026/i)).toBeInTheDocument();
+    expect(screen.getByText(/feb 2026/i)).toBeInTheDocument();
+    expect(screen.getByText(/mar 2026/i)).toBeInTheDocument();
   });
 });

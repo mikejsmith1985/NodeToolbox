@@ -16,6 +16,34 @@ vi.mock('../hooks/useCtaskTemplates.ts', () => ({
   }),
 }));
 
+const mockSnowChoiceOptionsState = vi.hoisted(() => ({
+  choiceOptions: {
+    impact: [{ value: '', label: '' }, { value: '3', label: '3 - Low' }],
+    u_availability_impact: [{ value: '', label: '' }, { value: 'none', label: 'None' }],
+    u_change_tested: [{ value: '', label: '' }, { value: 'yes', label: 'Yes' }],
+    u_impacted_persons_aware: [{ value: '', label: '' }, { value: 'yes', label: 'Yes' }],
+    u_performed_previously: [{ value: '', label: '' }, { value: 'no', label: 'No' }],
+    u_success_probability: [{ value: '', label: '' }, { value: 'high', label: 'High' }],
+    u_can_be_backed_out: [{ value: '', label: '' }, { value: 'yes', label: 'Yes' }],
+    u_environment: [
+      { value: '', label: '' },
+      { value: 'rel', label: 'Release' },
+      { value: 'prod', label: 'Production' },
+      { value: 'pfix', label: 'Production Fix' },
+    ],
+  },
+  isLoadingChoices: false,
+  isRelayConnected: true,
+  hasRelaySessionToken: true,
+  isFetchFailed: false,
+  fetchErrorMessage: null,
+  retryFetch: vi.fn(),
+}));
+
+vi.mock('../hooks/useSnowChoiceOptions.ts', () => ({
+  useSnowChoiceOptions: () => mockSnowChoiceOptionsState,
+}));
+
 // Mock snowFetch service (used for relay-based ServiceNow queries)
 const mockSnowFetch = vi.fn();
 vi.mock('../../../services/snowApi.ts', () => ({
@@ -51,6 +79,7 @@ describe('ModifyChgTab - My Open Changes Feature', () => {
 
   beforeEach(() => {
     mockSnowFetch.mockReset();
+    mockSnowChoiceOptionsState.retryFetch.mockReset();
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   });
@@ -86,6 +115,107 @@ describe('ModifyChgTab - My Open Changes Feature', () => {
     expect(mockSnowFetch).toHaveBeenCalledWith(
       expect.stringContaining('sysparm_query=number%3DCHG0001234'),
     );
+  });
+
+  it('TestFetchChange_PreloadsPlanningChoiceValuesUsingStoredCodes', async () => {
+    const user = userEvent.setup();
+    mockSnowFetch.mockResolvedValueOnce({
+      result: [MOCK_CHANGE_RECORD],
+    });
+
+    render(<ModifyChgTab />);
+
+    await user.type(screen.getByLabelText(/Change Request number/i), 'chg0001234');
+    await user.click(getFetchChangeActionButton());
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Update network infrastructure')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /Next: Planning/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Impact')).toHaveValue('3');
+      expect(screen.getByLabelText('System Availability Implication')).toHaveValue('none');
+      expect(screen.getByLabelText('Has Been Tested')).toHaveValue('yes');
+      expect(screen.getByLabelText('Has Been Performed Previously')).toHaveValue('no');
+      expect(screen.getByLabelText('Success Probability')).toHaveValue('high');
+      expect(screen.getByLabelText('Can Be Backed Out')).toHaveValue('yes');
+    });
+  });
+
+  it('TestFetchChange_LoadsPlanningValuesFromPrimaryAliasFields', async () => {
+    const user = userEvent.setup();
+    mockSnowFetch.mockResolvedValueOnce({
+      result: [{
+        ...MOCK_CHANGE_RECORD,
+        u_availability_impact: undefined,
+        u_change_tested: undefined,
+        u_impacted_persons_aware: undefined,
+        u_performed_previously: undefined,
+        u_success_probability: undefined,
+        u_can_be_backed_out: undefined,
+        u_implications_of_system_availability: { value: 'none', display_value: 'None' },
+        u_has_this_change_been_tested: { value: 'yes', display_value: 'Yes' },
+        u_are_impacted_persons_aware_prepared_for_test_checkout: { value: 'yes', display_value: 'Yes' },
+        u_has_change_been_performed_previously: { value: 'no', display_value: 'No' },
+        u_assessment_of_success_probability: { value: 'high', display_value: 'High' },
+        u_can_change_be_backed_out: { value: 'yes', display_value: 'Yes' },
+      }],
+    });
+
+    render(<ModifyChgTab />);
+
+    await user.type(screen.getByLabelText(/Change Request number/i), 'chg0001234');
+    await user.click(getFetchChangeActionButton());
+
+    await waitFor(() => {
+      expect(mockSnowFetch).toHaveBeenCalledWith(expect.stringContaining('u_has_this_change_been_tested'));
+      expect(mockSnowFetch).toHaveBeenCalledWith(expect.stringContaining('u_implications_of_system_availability'));
+    });
+
+    await user.click(screen.getByRole('button', { name: /Next: Planning/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Has Been Tested')).toHaveValue('yes');
+      expect(screen.getByLabelText('System Availability Implication')).toHaveValue('none');
+      expect(screen.getByLabelText('Success Probability')).toHaveValue('high');
+    });
+  });
+
+  it('TestFetchChange_RendersEnvironmentEditorWithLoadedValues', async () => {
+    const user = userEvent.setup();
+    mockSnowFetch.mockResolvedValueOnce({
+      result: [{
+        ...MOCK_CHANGE_RECORD,
+        u_environment: { value: 'prod', display_value: 'Production' },
+        cmdb_ci: { value: 'ci-123', display_value: 'Payroll Production Cluster' },
+        planned_start_date: { value: '2026-06-01 10:00:00', display_value: '2026-06-01 10:00:00' },
+        planned_end_date: { value: '2026-06-01 11:00:00', display_value: '2026-06-01 11:00:00' },
+      }],
+    });
+
+    render(<ModifyChgTab />);
+
+    await user.type(screen.getByLabelText(/Change Request number/i), 'chg0001234');
+    await user.click(getFetchChangeActionButton());
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Update network infrastructure')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /Next: Planning/i }));
+    await user.click(screen.getByRole('button', { name: /Next: Environments/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Environment configuration to be displayed here/i)).not.toBeInTheDocument();
+      expect(screen.getByLabelText('ServiceNow Environment')).toHaveValue('prod');
+      expect(screen.getByRole('checkbox', { name: 'PRD enabled' })).toBeChecked();
+      expect(screen.getByLabelText('PRD Config Item')).toHaveValue('Payroll Production Cluster');
+      expect(screen.getByLabelText('PRD Impacted Persons Aware')).toHaveValue('yes');
+      expect(screen.getByLabelText('PRD Planned Start')).toHaveValue('2026-06-01T10:00');
+      expect(screen.getByLabelText('PRD Planned End')).toHaveValue('2026-06-01T11:00');
+    });
   });
 
   it('TestFetchChange_DisplaysErrorAndLogsDiagnosticsWhenLookupFails', async () => {

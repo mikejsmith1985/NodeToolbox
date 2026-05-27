@@ -14,6 +14,10 @@ vi.mock('../../../services/jiraApi.ts', () => ({
 
 import { useReportsHubState } from './useReportsHubState.ts';
 
+const ART_TEAMS_STORAGE_KEY = 'nodetoolbox-art-teams';
+const ART_BOARD_ID = '684163133';
+const ART_PROJECT_KEY = 'STE';
+
 describe('useReportsHubState', () => {
   afterEach(() => {
     vi.clearAllMocks();
@@ -51,6 +55,106 @@ describe('useReportsHubState', () => {
 
     const { result } = renderHook(() => useReportsHubState());
     expect(result.current.state.artTeams).toEqual([{ name: 'Team A', projectKey: 'TBX' }]);
+  });
+
+  it('loads the shared ART roster key and resolves a missing project key from the Jira board', async () => {
+    localStorage.setItem(
+      ART_TEAMS_STORAGE_KEY,
+      JSON.stringify([
+        {
+          name: 'Sales To Enrollment ART',
+          boardId: ART_BOARD_ID,
+        },
+      ]),
+    );
+
+    mockJiraGet.mockImplementation(async (requestPath: string) => {
+      if (requestPath === `/rest/agile/1.0/board/${ART_BOARD_ID}/project`) {
+        return { values: [{ key: ART_PROJECT_KEY }] };
+      }
+
+      if (requestPath.startsWith('/rest/api/2/search?jql=')) {
+        return {
+          issues: [
+            {
+              key: 'STE-101',
+              fields: {
+                summary: 'Modernize enrollment automation',
+                status: { name: 'In Progress', statusCategory: { name: 'indeterminate' } },
+                fixVersions: [{ name: 'PI 26.2' }],
+                assignee: { displayName: 'Pat Owner' },
+                customfield_10301: 'PI 26.2',
+                priority: { name: 'High' },
+                issuetype: { name: 'Epic' },
+              },
+            },
+          ],
+        };
+      }
+
+      throw new Error(`Unexpected Jira request: ${requestPath}`);
+    });
+
+    const { result } = renderHook(() => useReportsHubState());
+
+    expect(result.current.state.artTeams).toEqual([
+      {
+        name: 'Sales To Enrollment ART',
+        boardId: ART_BOARD_ID,
+      },
+    ]);
+
+    await act(async () => {
+      await result.current.actions.loadFeatures();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.features).toHaveLength(1);
+    });
+
+    expect(mockJiraGet).toHaveBeenNthCalledWith(1, `/rest/agile/1.0/board/${ART_BOARD_ID}/project`);
+    expect(mockJiraGet).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining(encodeURIComponent(`project="${ART_PROJECT_KEY}" AND issuetype in ("Epic", "Feature") ORDER BY status ASC, updated DESC`)),
+    );
+  });
+
+  it('reuses one board project lookup when loadAllReports runs all report loaders in parallel', async () => {
+    const allReportsBoardId = '684163134';
+
+    localStorage.setItem(
+      ART_TEAMS_STORAGE_KEY,
+      JSON.stringify([
+        {
+          name: 'Sales To Enrollment ART',
+          boardId: allReportsBoardId,
+        },
+      ]),
+    );
+
+    mockJiraGet.mockImplementation(async (requestPath: string) => {
+      if (requestPath === `/rest/agile/1.0/board/${allReportsBoardId}/project`) {
+        return { values: [{ key: ART_PROJECT_KEY }] };
+      }
+
+      if (requestPath.startsWith('/rest/api/2/search?jql=')) {
+        return { issues: [] };
+      }
+
+      throw new Error(`Unexpected Jira request: ${requestPath}`);
+    });
+
+    const { result } = renderHook(() => useReportsHubState());
+
+    await act(async () => {
+      await result.current.actions.loadAllReports();
+    });
+
+    expect(
+      mockJiraGet.mock.calls.filter(
+        ([requestPath]) => requestPath === `/rest/agile/1.0/board/${allReportsBoardId}/project`,
+      ),
+    ).toHaveLength(1);
   });
 
   it('loadFeatures sets isLoadingFeatures to true then false', async () => {
@@ -102,6 +206,22 @@ describe('useReportsHubState', () => {
     await waitFor(() => {
       expect(result.current.state.featuresError).not.toBeNull();
     });
+  });
+
+  it('loadRisks uses a query that includes risk-labeled issues, not only issuetype Risk', async () => {
+    localStorage.setItem(
+      'tbxARTSettings',
+      JSON.stringify({ teams: [{ name: 'Team A', projectKey: 'TBX' }] }),
+    );
+    mockJiraGet.mockResolvedValue({ issues: [] });
+    const { result } = renderHook(() => useReportsHubState());
+
+    await act(async () => {
+      await result.current.actions.loadRisks();
+    });
+
+    const requestPath = mockJiraGet.mock.calls[0][0] as string;
+    expect(decodeURIComponent(requestPath)).toContain('labels in (risk, risks)');
   });
 
   it('setPiFilter updates piFilter', () => {
@@ -317,6 +437,7 @@ describe('Throughput data', () => {
         priority: null,
         labels: [],
         updated: '2024-01-01T00:00:00.000Z',
+        resolutiondate: '2024-01-01T00:00:00.000Z',
         customfield_10020: [{ name: 'Sprint 10', state: 'closed' }],
       },
     };
@@ -349,7 +470,7 @@ describe('Throughput data', () => {
     });
   });
 
-  it('loadThroughput groups resolved issues by sprint name', async () => {
+  it('loadThroughput groups resolved issues by month label', async () => {
     const mockIssues = [
       {
         key: 'TBX-301',
@@ -360,6 +481,7 @@ describe('Throughput data', () => {
           priority: null,
           labels: [],
           updated: '2024-01-01T00:00:00.000Z',
+          resolutiondate: '2024-01-04T00:00:00.000Z',
           customfield_10020: [{ name: 'Sprint Alpha', state: 'closed' }],
         },
       },
@@ -372,6 +494,7 @@ describe('Throughput data', () => {
           priority: null,
           labels: [],
           updated: '2024-01-01T00:00:00.000Z',
+          resolutiondate: '2024-01-20T00:00:00.000Z',
           customfield_10020: [{ name: 'Sprint Alpha', state: 'closed' }],
         },
       },
@@ -387,10 +510,27 @@ describe('Throughput data', () => {
     });
     await waitFor(() => {
       const sprintEntry = result.current.state.throughputData.find(
-        (entry) => entry.sprintName === 'Sprint Alpha',
+        (entry) => entry.periodLabel === 'Jan 2024',
       );
       expect(sprintEntry?.resolvedCount).toBe(2);
     });
+  });
+
+  it('loadThroughput uses a six-month resolution-date query instead of closed sprint names only', async () => {
+    localStorage.setItem(
+      'tbxARTSettings',
+      JSON.stringify({ teams: [{ name: 'Team A', projectKey: 'TBX' }] }),
+    );
+    mockJiraGet.mockResolvedValue({ issues: [] });
+    const { result } = renderHook(() => useReportsHubState());
+
+    await act(async () => {
+      await result.current.actions.loadThroughput();
+    });
+
+    const requestPath = mockJiraGet.mock.calls[0][0] as string;
+    expect(decodeURIComponent(requestPath)).toContain('resolutiondate >= startOfMonth(-5)');
+    expect(decodeURIComponent(requestPath)).toContain('resolutiondate is not EMPTY');
   });
 });
 
