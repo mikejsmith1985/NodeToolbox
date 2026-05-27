@@ -97,11 +97,18 @@ describe('GET /setup', () => {
     expect(response.text).toContain('https://prefilled.atlassian.net');
   });
 
-  it('pre-fills the ServiceNow base URL when already configured', async () => {
+  it('shows relay-only ServiceNow guidance instead of credential fields', async () => {
     const configuration = buildBlankConfig();
     configuration.snow.baseUrl = 'https://myinstance.service-now.com';
     const response = await request(buildTestApp(configuration)).get('/setup');
-    expect(response.text).toContain('https://myinstance.service-now.com');
+    expect(response.text).not.toContain('id="snow-base-url"');
+    expect(response.text).not.toContain('id="snow-username"');
+    expect(response.text).not.toContain('id="snow-password"');
+    expect(response.text).not.toContain('https://myinstance.service-now.com');
+    expect(response.text).toContain('ServiceNow not reachable');
+    expect(response.text).toContain('Method: Not connected — relay bridge inactive');
+    expect(response.text).toContain('Open ServiceNow');
+    expect(response.text).toContain('NodeToolbox SNow Relay');
   });
 
   it('does not pre-fill saved service URLs in demo mode', async () => {
