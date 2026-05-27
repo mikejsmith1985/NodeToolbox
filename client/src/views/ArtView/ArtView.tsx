@@ -2930,6 +2930,8 @@ const DEFAULT_SPRINT_WINDOW_DAYS = 14;
 const DEFAULT_DEPENDENCY_LINK_TYPES = ['blocks', 'is blocked by', 'depends on', 'is depended on by', 'relates to'];
 const DEFAULT_PI_REVIEW_TARGET_START_FIELD_ID = 'customfield_10101';
 const DEFAULT_PI_REVIEW_TARGET_END_FIELD_ID = 'customfield_10102';
+const LOCKED_SHARED_ART_WORKSPACE_LABEL = 'Sales To Enrollment ART';
+const IS_SHARED_ART_WORKSPACE_SELECTION_LOCKED = true;
 const SHARED_ART_RECENT_WORKSPACES_STORAGE_KEY = 'tbxSharedArtRecentWorkspaces';
 const SHARED_ART_SYNC_SNAPSHOTS_STORAGE_KEY = 'tbxSharedArtSyncSnapshots';
 const MAX_RECENT_SHARED_ARTS = 10;
@@ -2974,6 +2976,31 @@ function readDefaultedPiReviewTargetStartFieldId(fieldValue: string | undefined)
 
 function readDefaultedPiReviewTargetEndFieldId(fieldValue: string | undefined): string {
   return fieldValue?.trim() || DEFAULT_PI_REVIEW_TARGET_END_FIELD_ID;
+}
+
+/**
+ * Shows the shared workspace as a friendly label while the published ART
+ * workspace remains fixed during the current rollout.
+ */
+function formatSharedArtWorkspaceDisplayValue(sharedArtName: string, sharedArtDatabaseId: string): string {
+  const normalizedDatabaseId = sharedArtDatabaseId.trim();
+  if (normalizedDatabaseId === '') {
+    return '';
+  }
+
+  if (normalizedDatabaseId === DEFAULT_SHARED_ART_SETTINGS.sharedArtDatabaseId) {
+    return `${LOCKED_SHARED_ART_WORKSPACE_LABEL} (${normalizedDatabaseId})`;
+  }
+
+  const normalizedSharedArtName = sharedArtName.trim();
+  if (normalizedSharedArtName === '') {
+    return normalizedDatabaseId;
+  }
+
+  const normalizedSharedArtLabel = /art$/i.test(normalizedSharedArtName)
+    ? normalizedSharedArtName
+    : `${normalizedSharedArtName} ART`;
+  return `${normalizedSharedArtLabel} (${normalizedDatabaseId})`;
 }
 
 interface JiraIssueLinkTypeOption {
@@ -3374,6 +3401,9 @@ function SettingsPanel({
   const [isCreatingSharedArt, setIsCreatingSharedArt] = useState(false);
   const [isPublishingSharedArt, setIsPublishingSharedArt] = useState(false);
   const [isLoadingSharedArt, setIsLoadingSharedArt] = useState(false);
+  const sharedArtWorkspaceDisplayValue = IS_SHARED_ART_WORKSPACE_SELECTION_LOCKED
+    ? formatSharedArtWorkspaceDisplayValue(sharedArtName, sharedArtDatabaseId)
+    : sharedArtDatabaseId;
 
   useEffect(() => {
     void loadDependencyLinkTypes();
@@ -4193,7 +4223,7 @@ function SettingsPanel({
               Use this after a workspace already exists. Load pulls shared settings into this browser, while Push publishes your local ART settings back to Confluence.
             </p>
 
-            {recentSharedArtWorkspaces.length > 0 && (
+            {recentSharedArtWorkspaces.length > 0 && !IS_SHARED_ART_WORKSPACE_SELECTION_LOCKED && (
               <div className={styles.settingsFieldRow}>
                 <div className={styles.settingsFieldBlock}>
                   <label className={styles.settingsFieldLabel} htmlFor="art-shared-recent">Recent Shared ARTs</label>
@@ -4224,16 +4254,23 @@ function SettingsPanel({
                 <input
                   aria-label="Shared ART Database ID"
                   className={styles.textInput}
-                  onChange={(event) => {
-                    setSharedArtDatabaseId(event.target.value);
-                    saveSettingField('sharedArtDatabaseId', event.target.value.trim());
-                  }}
-                  placeholder="Paste an existing Confluence database ID"
+                  onChange={
+                    IS_SHARED_ART_WORKSPACE_SELECTION_LOCKED
+                      ? undefined
+                      : (event) => {
+                          setSharedArtDatabaseId(event.target.value);
+                          saveSettingField('sharedArtDatabaseId', event.target.value.trim());
+                        }
+                  }
+                  placeholder={IS_SHARED_ART_WORKSPACE_SELECTION_LOCKED ? undefined : 'Paste an existing Confluence database ID'}
+                  readOnly={IS_SHARED_ART_WORKSPACE_SELECTION_LOCKED}
                   type="text"
-                  value={sharedArtDatabaseId}
+                  value={sharedArtWorkspaceDisplayValue}
                 />
                 <p className={styles.settingsFieldHint}>
-                  Required for sync. Toolbox fills this in after Create, or you can paste an existing database ID to connect to a shared workspace.
+                  {IS_SHARED_ART_WORKSPACE_SELECTION_LOCKED
+                    ? 'Toolbox is currently locked to the published Sales To Enrollment shared ART workspace, so this reference is shown for visibility only.'
+                    : 'Required for sync. Toolbox fills this in after Create, or you can paste an existing database ID to connect to a shared workspace.'}
                 </p>
               </div>
             </div>

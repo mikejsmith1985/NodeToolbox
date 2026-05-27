@@ -14,6 +14,10 @@ vi.mock('../../../services/jiraApi.ts', () => ({
 
 import { useReportsHubState } from './useReportsHubState.ts';
 
+const ART_TEAMS_STORAGE_KEY = 'nodetoolbox-art-teams';
+const ART_BOARD_ID = '684163133';
+const ART_PROJECT_KEY = 'STE';
+
 describe('useReportsHubState', () => {
   afterEach(() => {
     vi.clearAllMocks();
@@ -51,6 +55,106 @@ describe('useReportsHubState', () => {
 
     const { result } = renderHook(() => useReportsHubState());
     expect(result.current.state.artTeams).toEqual([{ name: 'Team A', projectKey: 'TBX' }]);
+  });
+
+  it('loads the shared ART roster key and resolves a missing project key from the Jira board', async () => {
+    localStorage.setItem(
+      ART_TEAMS_STORAGE_KEY,
+      JSON.stringify([
+        {
+          name: 'Sales To Enrollment ART',
+          boardId: ART_BOARD_ID,
+        },
+      ]),
+    );
+
+    mockJiraGet.mockImplementation(async (requestPath: string) => {
+      if (requestPath === `/rest/agile/1.0/board/${ART_BOARD_ID}/project`) {
+        return { values: [{ key: ART_PROJECT_KEY }] };
+      }
+
+      if (requestPath.startsWith('/rest/api/2/search?jql=')) {
+        return {
+          issues: [
+            {
+              key: 'STE-101',
+              fields: {
+                summary: 'Modernize enrollment automation',
+                status: { name: 'In Progress', statusCategory: { name: 'indeterminate' } },
+                fixVersions: [{ name: 'PI 26.2' }],
+                assignee: { displayName: 'Pat Owner' },
+                customfield_10301: 'PI 26.2',
+                priority: { name: 'High' },
+                issuetype: { name: 'Epic' },
+              },
+            },
+          ],
+        };
+      }
+
+      throw new Error(`Unexpected Jira request: ${requestPath}`);
+    });
+
+    const { result } = renderHook(() => useReportsHubState());
+
+    expect(result.current.state.artTeams).toEqual([
+      {
+        name: 'Sales To Enrollment ART',
+        boardId: ART_BOARD_ID,
+      },
+    ]);
+
+    await act(async () => {
+      await result.current.actions.loadFeatures();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.features).toHaveLength(1);
+    });
+
+    expect(mockJiraGet).toHaveBeenNthCalledWith(1, `/rest/agile/1.0/board/${ART_BOARD_ID}/project`);
+    expect(mockJiraGet).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining(encodeURIComponent(`project="${ART_PROJECT_KEY}" AND issuetype = Epic ORDER BY status ASC`)),
+    );
+  });
+
+  it('reuses one board project lookup when loadAllReports runs all report loaders in parallel', async () => {
+    const allReportsBoardId = '684163134';
+
+    localStorage.setItem(
+      ART_TEAMS_STORAGE_KEY,
+      JSON.stringify([
+        {
+          name: 'Sales To Enrollment ART',
+          boardId: allReportsBoardId,
+        },
+      ]),
+    );
+
+    mockJiraGet.mockImplementation(async (requestPath: string) => {
+      if (requestPath === `/rest/agile/1.0/board/${allReportsBoardId}/project`) {
+        return { values: [{ key: ART_PROJECT_KEY }] };
+      }
+
+      if (requestPath.startsWith('/rest/api/2/search?jql=')) {
+        return { issues: [] };
+      }
+
+      throw new Error(`Unexpected Jira request: ${requestPath}`);
+    });
+
+    const { result } = renderHook(() => useReportsHubState());
+
+    await act(async () => {
+      await result.current.actions.loadAllReports();
+    });
+
+    expect(
+      mockJiraGet.mock.calls.filter(
+        ([requestPath]) => requestPath === `/rest/agile/1.0/board/${allReportsBoardId}/project`,
+      ),
+    ).toHaveLength(1);
   });
 
   it('loadFeatures sets isLoadingFeatures to true then false', async () => {
