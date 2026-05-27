@@ -252,6 +252,145 @@ describe('useReportsHubState', () => {
     );
   });
 
+  it('loadFeatures merges team-project and ART feature-scope results when both sources return features', async () => {
+    localStorage.setItem(
+      ART_TEAMS_STORAGE_KEY,
+      JSON.stringify([{ name: 'Team A', projectKey: 'TEAM' }]),
+    );
+    localStorage.setItem(
+      'tbxARTSettings',
+      JSON.stringify({ featureProjectKeys: ['FEAT'] }),
+    );
+
+    mockJiraGet.mockImplementation(async (requestPath: string) => {
+      const decodedRequestPath = decodeURIComponent(requestPath);
+
+      if (decodedRequestPath.includes('project="TEAM"') && decodedRequestPath.includes('issuetype in ("Epic", "Feature")')) {
+        return {
+          issues: [
+            {
+              key: 'TEAM-101',
+              fields: {
+                summary: 'Team-owned feature',
+                status: { name: 'In Progress', statusCategory: { name: 'indeterminate' } },
+                fixVersions: [],
+                assignee: { displayName: 'Team Owner' },
+                customfield_10301: 'PI 26.3',
+                priority: { name: 'High' },
+                issuetype: { name: 'Feature' },
+              },
+            },
+          ],
+        };
+      }
+
+      if (decodedRequestPath.includes('project="FEAT"') && decodedRequestPath.includes('issuetype in ("Epic", "Feature")')) {
+        return {
+          issues: [
+            {
+              key: 'FEAT-101',
+              fields: {
+                summary: 'Shared feature project issue',
+                status: { name: 'In Progress', statusCategory: { name: 'indeterminate' } },
+                fixVersions: [],
+                assignee: { displayName: 'Feature Owner' },
+                customfield_10301: 'PI 26.3',
+                priority: { name: 'High' },
+                issuetype: { name: 'Feature' },
+              },
+            },
+          ],
+        };
+      }
+
+      throw new Error(`Unexpected Jira request: ${requestPath}`);
+    });
+
+    const { result } = renderHook(() => useReportsHubState());
+
+    await act(async () => {
+      await result.current.actions.loadFeatures();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.features).toHaveLength(2);
+    });
+
+    expect(result.current.state.features.map((featureIssue) => featureIssue.key).sort()).toEqual(['FEAT-101', 'TEAM-101']);
+  });
+
+  it('loadFeatures keeps the team-scoped record when both sources return the same feature key', async () => {
+    localStorage.setItem(
+      ART_TEAMS_STORAGE_KEY,
+      JSON.stringify([{ name: 'Team A', projectKey: 'TEAM' }]),
+    );
+    localStorage.setItem(
+      'tbxARTSettings',
+      JSON.stringify({ featureProjectKeys: ['FEAT'] }),
+    );
+
+    mockJiraGet.mockImplementation(async (requestPath: string) => {
+      const decodedRequestPath = decodeURIComponent(requestPath);
+
+      if (decodedRequestPath.includes('project="TEAM"') && decodedRequestPath.includes('issuetype in ("Epic", "Feature")')) {
+        return {
+          issues: [
+            {
+              key: 'TEAM-101',
+              fields: {
+                summary: 'Team-owned feature',
+                status: { name: 'In Progress', statusCategory: { name: 'indeterminate' } },
+                fixVersions: [],
+                assignee: { displayName: 'Team Owner' },
+                customfield_10301: 'PI 26.3',
+                priority: { name: 'High' },
+                issuetype: { name: 'Feature' },
+              },
+            },
+          ],
+        };
+      }
+
+      if (decodedRequestPath.includes('project="FEAT"') && decodedRequestPath.includes('issuetype in ("Epic", "Feature")')) {
+        return {
+          issues: [
+            {
+              key: 'TEAM-101',
+              fields: {
+                summary: 'Shared feature project duplicate',
+                status: { name: 'To Do', statusCategory: { name: 'new' } },
+                fixVersions: [],
+                assignee: { displayName: 'Shared Owner' },
+                customfield_10301: 'PI 26.3',
+                priority: { name: 'Low' },
+                issuetype: { name: 'Epic' },
+              },
+            },
+          ],
+        };
+      }
+
+      throw new Error(`Unexpected Jira request: ${requestPath}`);
+    });
+
+    const { result } = renderHook(() => useReportsHubState());
+
+    await act(async () => {
+      await result.current.actions.loadFeatures();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.features).toHaveLength(1);
+    });
+
+    expect(result.current.state.features[0]).toMatchObject({
+      key: 'TEAM-101',
+      summary: 'Team-owned feature',
+      assigneeName: 'Team Owner',
+      issueTypeName: 'Feature',
+    });
+  });
+
   it('normalizes object-shaped PI field values into report-ready strings', async () => {
     const piRangeLabel = 'PI 26.3 (05/21/26 - 07/29/26)';
 
@@ -302,6 +441,59 @@ describe('useReportsHubState', () => {
     await waitFor(() => {
       expect(result.current.state.featuresError).not.toBeNull();
     });
+  });
+
+  it('loadFeatures keeps team features when the ART feature-scope query fails', async () => {
+    localStorage.setItem(
+      ART_TEAMS_STORAGE_KEY,
+      JSON.stringify([{ name: 'Team A', projectKey: 'TEAM' }]),
+    );
+    localStorage.setItem(
+      'tbxARTSettings',
+      JSON.stringify({ featureProjectKeys: ['FEAT'] }),
+    );
+
+    mockJiraGet.mockImplementation(async (requestPath: string) => {
+      const decodedRequestPath = decodeURIComponent(requestPath);
+
+      if (decodedRequestPath.includes('project="TEAM"') && decodedRequestPath.includes('issuetype in ("Epic", "Feature")')) {
+        return {
+          issues: [
+            {
+              key: 'TEAM-101',
+              fields: {
+                summary: 'Team-owned feature',
+                status: { name: 'In Progress', statusCategory: { name: 'indeterminate' } },
+                fixVersions: [],
+                assignee: { displayName: 'Team Owner' },
+                customfield_10301: 'PI 26.3',
+                priority: { name: 'High' },
+                issuetype: { name: 'Feature' },
+              },
+            },
+          ],
+        };
+      }
+
+      if (decodedRequestPath.includes('project="FEAT"') && decodedRequestPath.includes('issuetype in ("Epic", "Feature")')) {
+        throw new Error('Feature scope unavailable');
+      }
+
+      throw new Error(`Unexpected Jira request: ${requestPath}`);
+    });
+
+    const { result } = renderHook(() => useReportsHubState());
+
+    await act(async () => {
+      await result.current.actions.loadFeatures();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.features).toHaveLength(1);
+    });
+
+    expect(result.current.state.features[0]?.key).toBe('TEAM-101');
+    expect(result.current.state.featuresError).toContain('Feature scope unavailable');
   });
 
   it('loadRisks uses a query that includes risk-labeled issues, not only issuetype Risk', async () => {

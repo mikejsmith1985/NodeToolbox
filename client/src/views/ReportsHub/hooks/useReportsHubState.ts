@@ -494,6 +494,40 @@ async function fetchIssuesAcrossProjectKeys(
   return allProjectResults.flat()
 }
 
+/** Merges feature issue collections by key so shared feature-scope queries do not duplicate team-owned records. */
+function mergeFeatureIssuesByKey(
+  preferredIssues: JiraFeatureIssue[],
+  secondaryIssues: JiraFeatureIssue[],
+): JiraFeatureIssue[] {
+  const mergedIssuesByKey = new Map<string, JiraFeatureIssue>()
+
+  for (const featureIssue of secondaryIssues) {
+    mergedIssuesByKey.set(featureIssue.key, featureIssue)
+  }
+
+  for (const featureIssue of preferredIssues) {
+    mergedIssuesByKey.set(featureIssue.key, featureIssue)
+  }
+
+  return Array.from(mergedIssuesByKey.values())
+}
+
+/** Extracts readable loader errors from settled promise results without losing partial success data. */
+function extractRejectedMessages(
+  settledResults: PromiseSettledResult<unknown>[],
+  fallbackMessage: string,
+): string[] {
+  return settledResults
+    .filter((settledResult): settledResult is PromiseRejectedResult => settledResult.status === 'rejected')
+    .map((settledResult) => {
+      if (settledResult.reason instanceof Error && settledResult.reason.message.trim() !== '') {
+        return settledResult.reason.message
+      }
+
+      return fallbackMessage
+    })
+}
+
 // ── Helper: sprint issue helpers ──
 
 /** Extracts the most recent closed sprint name from the Jira sprint custom field array. */
@@ -680,26 +714,31 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
   async function loadFeatures(): Promise<void> {
     setIsLoadingFeatures(true)
     setFeaturesError(null)
-    try {
-      const teamScopedFeatures = await fetchIssuesAcrossTeams(
+    const featureScopeProjectKeys = readArtFeatureScopeSettings().featureProjectKeys
+    const featureResultSet = await Promise.allSettled([
+      fetchIssuesAcrossTeams(
         currentArtTeams,
         buildFeatureReportJql,
-      )
-      if (teamScopedFeatures.length > 0) {
-        setFeatures(teamScopedFeatures)
-        return
-      }
-
-      const featureScopeProjectKeys = readArtFeatureScopeSettings().featureProjectKeys
-      const scopedProjectFeatures = await fetchIssuesAcrossProjectKeys(
+      ),
+      fetchIssuesAcrossProjectKeys(
         featureScopeProjectKeys,
         buildFeatureReportJql,
-      )
-      setFeatures(scopedProjectFeatures)
-    } catch (fetchError) {
-      const errorMessage =
-        fetchError instanceof Error ? fetchError.message : LOAD_FEATURES_FAILURE
-      setFeaturesError(errorMessage)
+      ),
+    ])
+    try {
+      const [teamScopedFeatureResult, scopedProjectFeatureResult] = featureResultSet
+      const teamScopedFeatures = teamScopedFeatureResult.status === 'fulfilled'
+        ? teamScopedFeatureResult.value
+        : []
+      const scopedProjectFeatures = scopedProjectFeatureResult.status === 'fulfilled'
+        ? scopedProjectFeatureResult.value
+        : []
+      setFeatures(mergeFeatureIssuesByKey(teamScopedFeatures, scopedProjectFeatures))
+
+      const rejectedMessages = extractRejectedMessages(featureResultSet, LOAD_FEATURES_FAILURE)
+      if (rejectedMessages.length > 0) {
+        setFeaturesError(rejectedMessages.join('; '))
+      }
     } finally {
       setIsLoadingFeatures(false)
     }
