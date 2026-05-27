@@ -44,8 +44,10 @@ import {
   extractPiReviewFeatureKey,
   fetchPiReviewFeatureIssues,
   formatPiReviewFeatureDisplayValue,
+  parsePiReviewFeatureDateUpdates,
   readPiReviewFeatureDatePills,
   reconcilePiReviewRowsWithJira,
+  savePiReviewFeatureDates,
   savePiReviewFeatureEstimates,
 } from './piReviewJira.ts';
 import styles from './PiReviewTab.module.css';
@@ -67,9 +69,14 @@ const DEFAULT_CUSTOM_GROUPING_LINE_COLOR = '#0ea5e9';
 const DEFAULT_CUSTOM_GROUPING_LINE_LABEL = 'New grouping';
 const CHECKBOX_YES_SYMBOL = '✓';
 const EMPTY_TARGET_KEY = '';
+const JIRA_DATE_PASTE_PLACEHOLDER = [
+  'Jira Key | Target Start | Target End | Due Date',
+  'DASP-966 | 5/21/2026 | 6/3/2026 | 6/25/2026',
+].join('\n');
 const TEAM_DASHBOARD_ROUTE = '/sprint-dashboard';
 const TEAM_DASHBOARD_PI_REVIEW_TAB = 'pireview';
 const PI_REVIEW_TEAM_TABS_ID_PREFIX = 'art-pi-review-team';
+const SAVE_CONFIDENCE_VOTES_BUTTON_LABEL = 'Save Confidence Votes';
 const PI_REVIEW_TEMPLATE_REQUIRED_MESSAGE =
   'Load the Toolbox PI Review template locally before saving because this page does not contain a recognized PI Review table yet.';
 const CUSTOM_GROUPING_LINE_COLOR_OPTIONS = [
@@ -433,6 +440,7 @@ function FistOfFiveIcon({ value }: { value: string }) {
       <rect className={styles.palmShape} height="26" rx="8" width="34" x="15" y="28" />
       {[0, 1, 2, 3, 4].map((fingerIndex) => {
         const fingerFillAmount = readFingerFillAmount(fingerIndex);
+        const fingerXPosition = 18 + fingerIndex * 7;
 
         return (
           <Fragment key={fingerIndex}>
@@ -442,7 +450,7 @@ function FistOfFiveIcon({ value }: { value: string }) {
                 height={FINGER_FOLDED_HEIGHT}
                 rx="3"
                 width="5"
-                x={18 + fingerIndex * 7}
+                x={fingerXPosition}
                 y={FINGER_FOLDED_Y}
               />
             ) : fingerFillAmount >= 1 ? (
@@ -451,7 +459,7 @@ function FistOfFiveIcon({ value }: { value: string }) {
                 height={FINGER_FULL_HEIGHT}
                 rx="3"
                 width="5"
-                x={18 + fingerIndex * 7}
+                x={fingerXPosition}
                 y={FINGER_RAISED_Y}
               />
             ) : (
@@ -461,7 +469,7 @@ function FistOfFiveIcon({ value }: { value: string }) {
                   height={FINGER_FULL_HEIGHT}
                   rx="3"
                   width="5"
-                  x={18 + fingerIndex * 7}
+                  x={fingerXPosition}
                   y={FINGER_RAISED_Y}
                 />
                 <rect
@@ -469,8 +477,15 @@ function FistOfFiveIcon({ value }: { value: string }) {
                   height={FINGER_FULL_HEIGHT * fingerFillAmount}
                   rx="3"
                   width="5"
-                  x={18 + fingerIndex * 7}
+                  x={fingerXPosition}
                   y={FINGER_RAISED_Y + (FINGER_FULL_HEIGHT * (1 - fingerFillAmount))}
+                />
+                <line
+                  className={styles.fingerPartialDivider}
+                  x1={fingerXPosition}
+                  x2={fingerXPosition + 5}
+                  y1={FINGER_RAISED_Y + (FINGER_FULL_HEIGHT * (1 - fingerFillAmount))}
+                  y2={FINGER_RAISED_Y + (FINGER_FULL_HEIGHT * (1 - fingerFillAmount))}
                 />
               </>
             )}
@@ -568,6 +583,9 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
   const [isSaving, setIsSaving] = useState(false);
   const [isExportingImage, setIsExportingImage] = useState(false);
   const [isTemplateDraftConfirmationVisible, setIsTemplateDraftConfirmationVisible] = useState(false);
+  const [isJiraDatePasteVisible, setIsJiraDatePasteVisible] = useState(false);
+  const [jiraDatePasteValue, setJiraDatePasteValue] = useState('');
+  const [isUpdatingJiraDates, setIsUpdatingJiraDates] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [visibleOptionalColumns, setVisibleOptionalColumns] = useState<Set<OptionalPiReviewColumnKey>>(new Set());
@@ -938,6 +956,28 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
     showToast(`${target.targetLabel} PI Review edits were discarded.`, 'success');
   }
 
+  function handleToggleJiraDatePasteCard() {
+    setIsJiraDatePasteVisible((currentIsJiraDatePasteVisible) => !currentIsJiraDatePasteVisible);
+  }
+
+  function updateLoadedSnapshotJiraIssueMap(nextJiraIssueMap: Record<string, JiraIssue>) {
+    const loadedSnapshot = loadedSnapshotRef.current;
+    if (!loadedSnapshot) {
+      return;
+    }
+
+    loadedSnapshotRef.current = {
+      ...loadedSnapshot,
+      jiraIssueMap: nextJiraIssueMap,
+    };
+  }
+
+  async function refreshVisibleJiraIssueMap() {
+    const nextJiraIssueMap = await fetchPiReviewFeatureIssues(rows);
+    setJiraIssueMap(nextJiraIssueMap);
+    updateLoadedSnapshotJiraIssueMap(nextJiraIssueMap);
+  }
+
   function buildNextPiReviewStorageValue(
     baseStorageValue: string,
     nextPiReviewTableBinding: PiReviewTableBinding,
@@ -1084,7 +1124,69 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
     }
   }
 
+  async function handleApplyPastedJiraDates() {
+    if (jiraDatePasteValue.trim() === '') {
+      showToast('Paste a Jira date table before applying updates.', 'error');
+      return;
+    }
+
+    setIsUpdatingJiraDates(true);
+    try {
+      const dateUpdates = parsePiReviewFeatureDateUpdates(jiraDatePasteValue);
+      await savePiReviewFeatureDates(dateUpdates);
+      await refreshVisibleJiraIssueMap();
+      setIsJiraDatePasteVisible(false);
+      setJiraDatePasteValue('');
+      showToast(`Updated Jira dates for ${dateUpdates.length} feature(s).`, 'success');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update Jira dates';
+      showToast(errorMessage, 'error');
+    } finally {
+      setIsUpdatingJiraDates(false);
+    }
+  }
+
   const isExportingPanel = isExportingImage;
+  const isToolbarBusy = isLoading || isSaving || isExportingPanel || isUpdatingJiraDates;
+  const hasPendingConfluenceRewrite = useMemo(() => {
+    if (!tableBinding || pageVersionNumber === null || resolvedPageId === '') {
+      return false;
+    }
+
+    try {
+      return buildNextPiReviewStorageValue(
+        storageValue,
+        tableBinding,
+        confidenceTableBinding,
+        liveCapacitySummary ?? savedCapacitySummary,
+        rows,
+        confidenceRows,
+        commitmentBoundaryIndex,
+        customGroupingLines,
+      ) !== storageValue;
+    } catch {
+      return false;
+    }
+  }, [
+    commitmentBoundaryIndex,
+    confidenceRows,
+    confidenceTableBinding,
+    customGroupingLines,
+    liveCapacitySummary,
+    pageVersionNumber,
+    resolvedPageId,
+    rows,
+    savedCapacitySummary,
+    storageValue,
+    tableBinding,
+  ]);
+  const canSaveToConfluence = hasUnsavedChanges || (isEditMode && hasPendingConfluenceRewrite);
+  const isSaveToConfluenceDisabled =
+    isToolbarBusy
+    || !canSaveToConfluence
+    || pageVersionNumber === null
+    || resolvedPageId === ''
+    || !tableBinding;
 
   async function handleExportPanelImage() {
     const pagePanelElement = pagePanelRef.current;
@@ -1147,8 +1249,11 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
             <button
               aria-pressed={isEditMode}
               className={joinClassNames(styles.actionButton, styles.actionButtonPrimary)}
-              disabled={isLoading || isSaving || isExportingPanel || !tableBinding}
-              onClick={() => setIsEditMode((currentIsEditMode) => !currentIsEditMode)}
+              disabled={isToolbarBusy || !tableBinding}
+              onClick={() => {
+                setIsEditMode((currentIsEditMode) => !currentIsEditMode);
+                setIsJiraDatePasteVisible(false);
+              }}
               type="button"
             >
               {isEditMode ? 'Done Editing' : 'Edit PI Review'}
@@ -1191,7 +1296,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
         <div className={styles.toolbar} data-export-exclude="true">
           <button
             className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
-            disabled={isLoading || isSaving || isExportingPanel}
+            disabled={isToolbarBusy}
             onClick={() => void loadPiReviewPage()}
             type="button"
           >
@@ -1199,7 +1304,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
           </button>
           <button
             className={joinClassNames(styles.actionButton, styles.actionButtonExport)}
-            disabled={rows.length === 0 || isLoading || isSaving || isExportingPanel}
+            disabled={rows.length === 0 || isToolbarBusy}
             onClick={() => downloadPiReviewCsv(rows, selectedPiName, target.targetLabel)}
             type="button"
           >
@@ -1207,7 +1312,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
           </button>
           <button
             className={joinClassNames(styles.actionButton, styles.actionButtonExport)}
-            disabled={!canExportPanelImage || isLoading || isSaving || isExportingPanel}
+            disabled={!canExportPanelImage || isToolbarBusy}
             onClick={() => void handleExportPanelImage()}
             type="button"
           >
@@ -1217,15 +1322,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
           <>
             <button
               className={joinClassNames(styles.actionButton, styles.actionButtonSuccess)}
-              disabled={
-                isLoading
-                || isSaving
-                || isExportingPanel
-                || !hasUnsavedChanges
-                || pageVersionNumber === null
-                || resolvedPageId === ''
-                || !tableBinding
-              }
+              disabled={isSaveToConfluenceDisabled}
               onClick={() => void handleSaveToConfluence()}
               type="button"
             >
@@ -1233,7 +1330,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
             </button>
             <button
               className={joinClassNames(styles.actionButton, styles.actionButtonDanger)}
-              disabled={isLoading || isSaving || isExportingPanel || !hasUnsavedChanges || !hasLoadedSnapshot}
+              disabled={isToolbarBusy || !hasUnsavedChanges || !hasLoadedSnapshot}
               onClick={handleIgnoreEdits}
               type="button"
             >
@@ -1245,7 +1342,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
           <>
             <button
               className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
-              disabled={isLoading || isSaving || isExportingPanel || !tableBinding}
+              disabled={isToolbarBusy || !tableBinding}
               onClick={handleAddRow}
               type="button"
             >
@@ -1256,13 +1353,13 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
               accept={SPREADSHEET_IMPORT_ACCEPT}
               aria-label={`Import PI Review XLSX for ${target.targetLabel}`}
               className={styles.hiddenFileInput}
-              disabled={isLoading || isSaving || isExportingPanel || !tableBinding}
+              disabled={isToolbarBusy || !tableBinding}
               onChange={(event) => void handleImportPiReviewFile(event)}
               type="file"
             />
             <button
               className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
-              disabled={isLoading || isSaving || isExportingPanel || !tableBinding}
+              disabled={isToolbarBusy || !tableBinding}
               onClick={() => importFileInputRef.current?.click()}
               type="button"
             >
@@ -1270,7 +1367,15 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
             </button>
             <button
               className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
-              disabled={isLoading || isSaving || isExportingPanel || !tableBinding}
+              disabled={isToolbarBusy || !tableBinding}
+              onClick={handleToggleJiraDatePasteCard}
+              type="button"
+            >
+              {isJiraDatePasteVisible ? 'Hide Jira Date Paste' : 'Paste & Update Jira Dates'}
+            </button>
+            <button
+              className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
+              disabled={isToolbarBusy || !tableBinding}
               onClick={handleAddConfidenceRow}
               type="button"
             >
@@ -1279,6 +1384,43 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
           </>
         )}
       </div>
+      {tableBinding && canEditContent && isJiraDatePasteVisible && (
+        <fieldset className={styles.tableTools} data-export-exclude="true">
+          <legend>Jira date updates</legend>
+          <p className={styles.summaryValue}>
+            Paste a markdown table or a direct Excel tab paste with Jira Key, Target Start, Target End, and Due Date.
+            Toolbox will update Jira immediately using the PI Review date field IDs already configured in ART Settings.
+          </p>
+          <textarea
+            aria-label={`Jira date paste for ${target.targetLabel}`}
+            className={styles.cellTextarea}
+            onChange={(event) => setJiraDatePasteValue(event.target.value)}
+            placeholder={JIRA_DATE_PASTE_PLACEHOLDER}
+            value={jiraDatePasteValue}
+          />
+          <div className={styles.confirmActions}>
+            <button
+              className={joinClassNames(styles.actionButton, styles.actionButtonSuccess)}
+              disabled={isToolbarBusy}
+              onClick={() => void handleApplyPastedJiraDates()}
+              type="button"
+            >
+              {isUpdatingJiraDates ? 'Updating Jira Dates…' : 'Apply Jira Date Updates'}
+            </button>
+            <button
+              className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
+              disabled={isToolbarBusy}
+              onClick={() => {
+                setJiraDatePasteValue('');
+                setIsJiraDatePasteVisible(false);
+              }}
+              type="button"
+            >
+              Cancel
+            </button>
+          </div>
+        </fieldset>
+      )}
       {isPiReviewTemplateRequired ? (
         <p className={styles.syncedHelperText}>{PI_REVIEW_TEMPLATE_REQUIRED_MESSAGE}</p>
       ) : null}
@@ -1660,14 +1802,24 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
           {canShowAuthoringToolbar ? (
             <div className={styles.panelStatusActions} data-export-exclude="true">
               {canEditContent ? (
-                <button
-                  className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
-                  disabled={isLoading || isSaving || isExportingPanel || !confidenceTableBinding}
-                  onClick={handleAddConfidenceRow}
-                  type="button"
-                >
-                  Add Weekly Confidence Vote
-                </button>
+                <>
+                  <button
+                    className={joinClassNames(styles.actionButton, styles.actionButtonSuccess)}
+                    disabled={isSaveToConfluenceDisabled}
+                    onClick={() => void handleSaveToConfluence()}
+                    type="button"
+                  >
+                    {isSaving ? 'Saving…' : SAVE_CONFIDENCE_VOTES_BUTTON_LABEL}
+                  </button>
+                  <button
+                    className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
+                    disabled={isLoading || isSaving || isExportingPanel || !confidenceTableBinding}
+                    onClick={handleAddConfidenceRow}
+                    type="button"
+                  >
+                    Add Weekly Confidence Vote
+                  </button>
+                </>
               ) : (
                 <button
                   className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}

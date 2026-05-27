@@ -48,6 +48,7 @@ describe('EnterpriseStandardsPanel', () => {
     render(<EnterpriseStandardsPanel />);
     fireEvent.click(screen.getByRole('button', { name: /add custom rule/i }));
     expect(screen.getByLabelText(/rule name/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/jira field id/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/description/i)).toBeInTheDocument();
   });
 
@@ -56,6 +57,9 @@ describe('EnterpriseStandardsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /add custom rule/i }));
     fireEvent.change(screen.getByLabelText(/rule name/i), {
       target: { value: 'My Custom Rule' },
+    });
+    fireEvent.change(screen.getByLabelText(/jira field id/i), {
+      target: { value: 'customfield_12345' },
     });
     fireEvent.click(screen.getByRole('button', { name: /^add rule$/i }));
     expect(screen.getByText('My Custom Rule')).toBeInTheDocument();
@@ -72,9 +76,29 @@ describe('EnterpriseStandardsPanel', () => {
 
   it('persists rules to localStorage when Save Changes is clicked', () => {
     render(<EnterpriseStandardsPanel />);
+    fireEvent.click(screen.getByRole('button', { name: /add custom rule/i }));
+    fireEvent.change(screen.getByLabelText(/rule name/i), {
+      target: { value: 'Persisted Rule' },
+    });
+    fireEvent.change(screen.getByLabelText(/jira field id/i), {
+      target: { value: 'customfield_12345' },
+    });
+    fireEvent.change(screen.getByLabelText(/field label/i), {
+      target: { value: 'Business Owner' },
+    });
+    fireEvent.change(screen.getByLabelText(/applies to issue types/i), {
+      target: { value: 'Feature, Story' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^add rule$/i }));
     fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
-    const stored = localStorage.getItem('tbxEnterpriseStandards');
-    expect(stored).not.toBeNull();
+    const storedRules = JSON.parse(localStorage.getItem('tbxEnterpriseStandards') || '[]') as Array<Record<string, unknown>>;
+    const persistedCustomRule = storedRules.find((storedRule) => storedRule.name === 'Persisted Rule');
+    expect(persistedCustomRule).toEqual(expect.objectContaining({
+      fieldId: 'customfield_12345',
+      fieldLabel: 'Business Owner',
+      issueTypeNames: ['Feature', 'Story'],
+      ruleType: 'required-field',
+    }));
   });
 
   it('shows a saved confirmation after Save Changes', () => {
@@ -91,6 +115,9 @@ describe('EnterpriseStandardsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /add custom rule/i }));
     fireEvent.change(screen.getByLabelText(/rule name/i), {
       target: { value: 'Custom Temp Rule' },
+    });
+    fireEvent.change(screen.getByLabelText(/jira field id/i), {
+      target: { value: 'customfield_12345' },
     });
     fireEvent.click(screen.getByRole('button', { name: /^add rule$/i }));
     expect(screen.getByText('Custom Temp Rule')).toBeInTheDocument();
@@ -110,6 +137,9 @@ describe('EnterpriseStandardsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /add custom rule/i }));
     fireEvent.change(screen.getByLabelText(/rule name/i), {
       target: { value: 'Deletable Rule' },
+    });
+    fireEvent.change(screen.getByLabelText(/jira field id/i), {
+      target: { value: 'customfield_12345' },
     });
     fireEvent.click(screen.getByRole('button', { name: /^add rule$/i }));
     expect(screen.getAllByRole('button', { name: /delete deletable rule/i })).toHaveLength(1);

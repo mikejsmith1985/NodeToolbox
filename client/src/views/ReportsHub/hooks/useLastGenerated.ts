@@ -22,7 +22,11 @@ function loadTimestamps(): Record<string, string> {
   try {
     const raw = localStorage.getItem(LAST_GENERATED_STORAGE_KEY)
     if (raw === null) return {}
-    return JSON.parse(raw) as Record<string, string>
+    const parsedTimestamps = JSON.parse(raw) as unknown
+    if (typeof parsedTimestamps !== 'object' || parsedTimestamps === null || Array.isArray(parsedTimestamps)) {
+      return {}
+    }
+    return parsedTimestamps as Record<string, string>
   } catch {
     return {}
   }
@@ -30,7 +34,12 @@ function loadTimestamps(): Record<string, string> {
 
 /** Writes the full timestamp map to localStorage. */
 function persistTimestamps(timestamps: Record<string, string>): void {
-  localStorage.setItem(LAST_GENERATED_STORAGE_KEY, JSON.stringify(timestamps))
+  try {
+    localStorage.setItem(LAST_GENERATED_STORAGE_KEY, JSON.stringify(timestamps))
+  } catch {
+    // If browser storage is unavailable/full, keep the in-memory timestamp state
+    // so Reports Hub remains usable instead of crashing during a refresh cycle.
+  }
 }
 
 // ── Exported pure helper ──

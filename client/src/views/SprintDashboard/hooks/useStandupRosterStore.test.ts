@@ -13,7 +13,7 @@ import {
 describe('useStandupRosterStore', () => {
   beforeEach(() => {
     localStorage.clear();
-    useStandupRosterStore.setState({ rosterMembers: [] });
+    useStandupRosterStore.setState({ dashboardTeamProfileId: 'legacy-default', rosterMembers: [] });
   });
 
   it('adds and persists roster members without duplicate assignee values', () => {
@@ -196,5 +196,62 @@ describe('useStandupRosterStore', () => {
         id: 'roster-member:john-smith',
       },
     ]);
+  });
+
+  it('migrates the bare legacy roster into the first scoped team key', () => {
+    localStorage.setItem('tbxSprintDashboardRoster', JSON.stringify({
+      rosterMembers: [
+        {
+          id: 'roster-member:legacy person',
+          displayName: 'Legacy Person',
+          assigneeQueryValue: 'Legacy Person',
+        },
+      ],
+    }));
+
+    useStandupRosterStore.getState().setDashboardTeamProfileId('team-alpha');
+
+    expect(useStandupRosterStore.getState().rosterMembers).toEqual([
+      {
+        id: 'roster-member:legacy person',
+        displayName: 'Legacy Person',
+        assigneeQueryValue: 'Legacy Person',
+      },
+    ]);
+    expect(localStorage.getItem('tbxSprintDashboardRoster:team-alpha')).toBe(JSON.stringify({
+      rosterMembers: [
+        {
+          id: 'roster-member:legacy person',
+          displayName: 'Legacy Person',
+          assigneeQueryValue: 'Legacy Person',
+        },
+      ],
+    }));
+  });
+
+  it('does not let a new team inherit the bare legacy roster after scoped data exists', () => {
+    localStorage.setItem('tbxSprintDashboardRoster', JSON.stringify({
+      rosterMembers: [
+        {
+          id: 'roster-member:legacy person',
+          displayName: 'Legacy Person',
+          assigneeQueryValue: 'Legacy Person',
+        },
+      ],
+    }));
+    localStorage.setItem('tbxSprintDashboardRoster:team-alpha', JSON.stringify({
+      rosterMembers: [
+        {
+          id: 'roster-member:alpha person',
+          displayName: 'Alpha Person',
+          assigneeQueryValue: 'Alpha Person',
+        },
+      ],
+    }));
+
+    useStandupRosterStore.getState().setDashboardTeamProfileId('team-beta');
+
+    expect(useStandupRosterStore.getState().rosterMembers).toEqual([]);
+    expect(buildStandupRosterAssigneeClause()).toBeNull();
   });
 });

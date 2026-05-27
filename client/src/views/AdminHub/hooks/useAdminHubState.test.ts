@@ -149,7 +149,15 @@ import {
 
 const MOCK_CONNECTIVITY_CONFIG = {
   snow:       { baseUrl: 'https://acme.service-now.com', hasCredentials: true, usernameMasked: 'svc_****x' },
-  github:     { baseUrl: 'https://api.github.com', hasPat: true, hasAppAuth: false },
+  github:     {
+    baseUrl: 'https://api.github.com',
+    hasPat: true,
+    hasAppAuth: false,
+    hasAppId: false,
+    hasAppPrivateKey: false,
+    hasInstallationId: false,
+    hasAppLookupReady: false,
+  },
   confluence: { baseUrl: 'https://acme.atlassian.net', hasCredentials: true, usernameMasked: 'yo****m' },
 };
 

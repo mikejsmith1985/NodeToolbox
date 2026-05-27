@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Cell, Pie, PieChart, Tooltip } from 'recharts'
 
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx'
+import { copyElementImageToClipboard } from '../../utils/downloadElementImage.ts'
 import type {
   IndividualEntry,
   JiraFeatureIssue,
@@ -62,6 +63,7 @@ const DASHBOARD_PIE_HEIGHT = 220
 const DASHBOARD_PIE_OUTER_RADIUS = 72
 const DASHBOARD_PIE_INNER_RADIUS = 42
 const DASHBOARD_CHART_COLORS = ['#60a5fa', '#34d399', '#fbbf24', '#f87171', '#c084fc', '#38bdf8']
+const THROUGHPUT_FILTERED_WINDOW_SPRINTS = 4
 
 // Per-tab explainer bullet texts sourced from legacy rhReportPitch() in 20-reports-hub.js
 const TAB_DESCRIPTIONS: Record<ReportsHubTab, string[]> = {
@@ -189,23 +191,41 @@ function AboutReportCard({ tabKey, isCollapsed, onToggle }: AboutReportCardProps
 // ── Copy Report Button ──
 
 interface CopyReportButtonProps {
-  textToCopy: string
+  onCopyReport(): Promise<void>
 }
 
-/** Button that writes the given text to the clipboard and briefly shows a "Copied!" confirmation. */
-function CopyReportButton({ textToCopy }: CopyReportButtonProps) {
+/** Button that copies the active report panel as a PNG image and briefly shows status feedback. */
+function CopyReportButton({ onCopyReport }: CopyReportButtonProps) {
+  const [isCopying, setIsCopying] = useState(false)
   const [isCopied, setIsCopied] = useState(false)
+  const [hasCopyFailed, setHasCopyFailed] = useState(false)
 
   const handleCopyClick = useCallback((): void => {
-    void navigator.clipboard.writeText(textToCopy).then(() => {
+    setIsCopying(true)
+    setHasCopyFailed(false)
+    void onCopyReport().then(() => {
       setIsCopied(true)
       setTimeout(() => { setIsCopied(false) }, COPY_FEEDBACK_DURATION_MS)
+    }).catch(() => {
+      setHasCopyFailed(true)
+    }).finally(() => {
+      setIsCopying(false)
     })
-  }, [textToCopy])
+  }, [onCopyReport])
+
+  let buttonLabel = '📋 Copy Report PNG'
+  if (isCopying) buttonLabel = 'Copying…'
+  else if (isCopied) buttonLabel = '✓ Copied PNG'
+  else if (hasCopyFailed) buttonLabel = '⚠ Copy failed'
 
   return (
-    <button className={styles.actionButton} onClick={handleCopyClick}>
-      {isCopied ? '✓ Copied!' : '📋 Copy Report'}
+    <button
+      className={styles.actionButton}
+      onClick={handleCopyClick}
+      data-export-exclude="true"
+      disabled={isCopying}
+    >
+      {buttonLabel}
     </button>
   )
 }
@@ -217,7 +237,7 @@ interface TabPreambleProps {
   isCollapsed: boolean
   onToggleExplainer(): void
   lastGeneratedAt: string | null
-  reportText: string
+  onCopyReport(): Promise<void>
 }
 
 /** Wraps every tab with an "About" card, last-generated timestamp, and a copy button. */
@@ -226,7 +246,7 @@ function TabPreamble({
   isCollapsed,
   onToggleExplainer,
   lastGeneratedAt,
-  reportText,
+  onCopyReport,
 }: TabPreambleProps) {
   return (
     <div className={styles.tabPreamble}>
@@ -236,9 +256,69 @@ function TabPreamble({
             Last generated: {formatRelativeTime(lastGeneratedAt)}
           </span>
         )}
-        <CopyReportButton textToCopy={reportText} />
+        <CopyReportButton onCopyReport={onCopyReport} />
       </div>
       <AboutReportCard tabKey={tabKey} isCollapsed={isCollapsed} onToggle={onToggleExplainer} />
+    </div>
+  )
+}
+
+interface GlobalReportFiltersProps {
+  piFilter: string
+  teamFilter: string
+  piOptions: string[]
+  teamOptions: string[]
+  onPiFilterChange(value: string): void
+  onTeamFilterChange(value: string): void
+}
+
+/** Ensures all option values are valid strings; filters out non-strings to prevent render crashes. */
+function sanitizeFilterOptions(options: unknown[]): string[] {
+  return options
+    .filter((opt): opt is string => typeof opt === 'string' && opt.trim().length > 0)
+    .sort()
+}
+
+/** Global PI + Team parameters shown for every report tab. */
+function GlobalReportFilters({
+  piFilter,
+  teamFilter,
+  piOptions,
+  teamOptions,
+  onPiFilterChange,
+  onTeamFilterChange,
+}: GlobalReportFiltersProps) {
+  const sanitizedPiOptions = sanitizeFilterOptions(piOptions)
+  const sanitizedTeamOptions = sanitizeFilterOptions(teamOptions)
+
+  return (
+    <div className={styles.filterBar}>
+      <select
+        className={styles.filterSelect}
+        value={piFilter}
+        onChange={(changeEvent) => onPiFilterChange(changeEvent.target.value)}
+        aria-label="PI filter"
+      >
+        <option value="">{ALL_PIS_LABEL}</option>
+        {sanitizedPiOptions.map((piName) => (
+          <option key={piName} value={piName}>
+            {piName}
+          </option>
+        ))}
+      </select>
+      <select
+        className={styles.filterSelect}
+        value={teamFilter}
+        onChange={(changeEvent) => onTeamFilterChange(changeEvent.target.value)}
+        aria-label="Team filter"
+      >
+        <option value="">{ALL_TEAMS_LABEL}</option>
+        {sanitizedTeamOptions.map((teamName) => (
+          <option key={teamName} value={teamName}>
+            {teamName}
+          </option>
+        ))}
+      </select>
     </div>
   )
 }
@@ -513,38 +593,12 @@ function DashboardTab({
 interface FeatureReportTabProps {
   features: JiraFeatureIssue[]
   artTeamCount: number
-  piFilter: string
-  teamFilter: string
-  onPiFilterChange(value: string): void
-  onTeamFilterChange(value: string): void
 }
 
-/** Extracts unique non-null PI names from the features list. */
-function extractUniquePiNames(featureList: JiraFeatureIssue[]): string[] {
-  const piNameSet = new Set<string>()
-  for (const feature of featureList) {
-    if (feature.piName !== null) piNameSet.add(feature.piName)
-  }
-  return Array.from(piNameSet).sort()
-}
-
-/** Extracts unique team names from the features list. */
-function extractUniqueTeamNames(featureList: JiraFeatureIssue[]): string[] {
-  const teamNameSet = new Set<string>()
-  for (const feature of featureList) {
-    teamNameSet.add(feature.teamName)
-  }
-  return Array.from(teamNameSet).sort()
-}
-
-/** Feature Report with PI + team filters and a sortable table. */
+/** Feature Report table filtered by the global report parameters. */
 function FeatureReportTab({
   features,
   artTeamCount,
-  piFilter,
-  teamFilter,
-  onPiFilterChange,
-  onTeamFilterChange,
 }: FeatureReportTabProps) {
   if (artTeamCount === 0) {
     return (
@@ -554,46 +608,8 @@ function FeatureReportTab({
     )
   }
 
-  const uniquePiNames = extractUniquePiNames(features)
-  const uniqueTeamNames = extractUniqueTeamNames(features)
-
-  const filteredFeatures = features.filter((feature) => {
-    const matchesPi = piFilter === '' || feature.piName === piFilter
-    const matchesTeam = teamFilter === '' || feature.teamName === teamFilter
-    return matchesPi && matchesTeam
-  })
-
   return (
     <div>
-      <div className={styles.filterBar}>
-        <select
-          className={styles.filterSelect}
-          value={piFilter}
-          onChange={(changeEvent) => onPiFilterChange(changeEvent.target.value)}
-          aria-label="PI filter"
-        >
-          <option value="">{ALL_PIS_LABEL}</option>
-          {uniquePiNames.map((piName) => (
-            <option key={piName} value={piName}>
-              {piName}
-            </option>
-          ))}
-        </select>
-        <select
-          className={styles.filterSelect}
-          value={teamFilter}
-          onChange={(changeEvent) => onTeamFilterChange(changeEvent.target.value)}
-          aria-label="Team filter"
-        >
-          <option value="">{ALL_TEAMS_LABEL}</option>
-          {uniqueTeamNames.map((teamName) => (
-            <option key={teamName} value={teamName}>
-              {teamName}
-            </option>
-          ))}
-        </select>
-      </div>
-
       <div className={styles.tableWrapper}>
         <table className={styles.reportTable}>
           <thead>
@@ -608,7 +624,7 @@ function FeatureReportTab({
             </tr>
           </thead>
           <tbody>
-            {filteredFeatures.map((feature) => (
+            {features.map((feature) => (
               <tr key={feature.key}>
                 <td>{feature.key}</td>
                 <td>{feature.summary}</td>
@@ -626,12 +642,88 @@ function FeatureReportTab({
             ))}
           </tbody>
         </table>
-        {filteredFeatures.length === 0 && (
-          <p className={styles.emptyState}>No features match the selected filters.</p>
+        {features.length === 0 && (
+          <p className={styles.emptyState}>No features match the selected parameters.</p>
         )}
       </div>
     </div>
   )
+}
+
+function matchesSharedIssueFilters(
+  issue: { piName: string | null; teamName: string },
+  piFilter: string,
+  teamFilter: string,
+): boolean {
+  const matchesPi = piFilter === '' || issue.piName === piFilter
+  const matchesTeam = teamFilter === '' || issue.teamName === teamFilter
+  return matchesPi && matchesTeam
+}
+
+function filterFeatureIssuesByParameters(
+  issueList: JiraFeatureIssue[],
+  piFilter: string,
+  teamFilter: string,
+): JiraFeatureIssue[] {
+  return issueList.filter((issue) => matchesSharedIssueFilters(issue, piFilter, teamFilter))
+}
+
+function filterSprintIssuesByParameters(
+  issueList: SprintIssue[],
+  piFilter: string,
+  teamFilter: string,
+): SprintIssue[] {
+  return issueList.filter((issue) => matchesSharedIssueFilters(issue, piFilter, teamFilter))
+}
+
+function extractPiFilterOptions(
+  features: JiraFeatureIssue[],
+  defects: JiraFeatureIssue[],
+  risks: JiraFeatureIssue[],
+  storyIssues: JiraFeatureIssue[],
+  sprintIssues: SprintIssue[],
+  throughputIssues: SprintIssue[],
+): string[] {
+  const piNameSet = new Set<string>()
+  const allIssuesWithPi = [...features, ...defects, ...risks, ...storyIssues, ...sprintIssues, ...throughputIssues]
+  for (const issue of allIssuesWithPi) {
+    if (issue.piName !== null) {
+      piNameSet.add(issue.piName)
+    }
+  }
+  return Array.from(piNameSet).sort()
+}
+
+function extractTeamFilterOptions(
+  artTeams: ReturnType<typeof useReportsHubState>['state']['artTeams'],
+  features: JiraFeatureIssue[],
+  defects: JiraFeatureIssue[],
+  risks: JiraFeatureIssue[],
+  sprintIssues: SprintIssue[],
+  throughputIssues: SprintIssue[],
+): string[] {
+  const teamNameSet = new Set<string>()
+  for (const artTeam of artTeams) {
+    teamNameSet.add(artTeam.name)
+  }
+  for (const issue of [...features, ...defects, ...risks, ...sprintIssues, ...throughputIssues]) {
+    teamNameSet.add(issue.teamName)
+  }
+  return Array.from(teamNameSet).sort()
+}
+
+function aggregateFilteredThroughputData(throughputIssues: SprintIssue[]): ThroughputEntry[] {
+  const countBySprintName = new Map<string, number>()
+  for (const issue of throughputIssues) {
+    if (issue.sprintName !== null) {
+      countBySprintName.set(issue.sprintName, (countBySprintName.get(issue.sprintName) ?? 0) + 1)
+    }
+  }
+
+  return Array.from(countBySprintName.entries())
+    .map(([sprintName, resolvedCount]) => ({ sprintName, resolvedCount }))
+    .sort((firstEntry, secondEntry) => firstEntry.sprintName.localeCompare(secondEntry.sprintName))
+    .slice(-THROUGHPUT_FILTERED_WINDOW_SPRINTS)
 }
 
 // ── Defect Tracker tab ──
@@ -1189,42 +1281,6 @@ function ThroughputTab({ throughputData, isLoading, error }: ThroughputTabProps)
   )
 }
 
-/** Builds a plain-text copy of the active tab's data for clipboard export. */
-function buildTabReportText(tabKey: ReportsHubTab, state: ReturnType<typeof useReportsHubState>['state']): string {
-  const timestamp = new Date().toLocaleString()
-  const lines: string[] = [`Reports Hub — ${tabKey} — ${timestamp}`]
-  if (tabKey === 'dashboard') {
-    const openDefectCount = state.defects.filter((defect) => defect.statusCategory !== 'done').length
-    const openRiskCount = state.risks.filter((risk) => risk.statusCategory !== 'done').length
-    const blockedIssueCount = state.sprintIssues.filter((issue) => issue.isBlocked).length
-    lines.push('', 'Dashboard Snapshot:')
-    lines.push(`  Open Defects: ${openDefectCount}`)
-    lines.push(`  Open Risks: ${openRiskCount}`)
-    lines.push(`  Blocked Work: ${blockedIssueCount}`)
-  } else if (tabKey === 'features') {
-    lines.push('', 'Features:')
-    for (const feature of state.features) {
-      lines.push(`  ${feature.key}  ${feature.summary}  [${feature.statusName}]`)
-    }
-  } else if (tabKey === 'defects') {
-    lines.push('', 'Defects:')
-    for (const defect of state.defects) {
-      lines.push(`  ${defect.key}  ${defect.summary}  [${defect.statusName}]`)
-    }
-  } else if (tabKey === 'risks') {
-    lines.push('', 'Risks:')
-    for (const risk of state.risks) {
-      lines.push(`  ${risk.key}  ${risk.summary}  [${risk.statusName}]`)
-    }
-  } else if (tabKey === 'throughput') {
-    lines.push('', 'Throughput:')
-    for (const entry of state.throughputData) {
-      lines.push(`  ${entry.sprintName}: ${entry.resolvedCount} resolved`)
-    }
-  }
-  return lines.join('\n')
-}
-
 // ── Root component ──
 
 /** Reports Hub — director-level PI reporting dashboard across all ART teams. */
@@ -1233,6 +1289,7 @@ export default function ReportsHubView() {
   const { isTabExplainerCollapsed, toggleTabExplainer } = useReportExplainer()
   const { markGenerated, getTabTimestamp } = useLastGenerated()
   const hasTriggeredInitialReportLoadRef = useRef(false)
+  const reportCaptureSectionRef = useRef<HTMLElement | null>(null)
 
   const hasNoArtTeams = state.artTeams.length === 0
 
@@ -1255,16 +1312,48 @@ export default function ReportsHubView() {
   }, [state.lastGeneratedAt]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeTabTimestamp = getTabTimestamp(state.activeTab)
-  const activeTabReportText = buildTabReportText(state.activeTab, state)
+  const filteredFeatures = filterFeatureIssuesByParameters(state.features, state.piFilter, state.teamFilter)
+  const filteredDefects = filterFeatureIssuesByParameters(state.defects, state.piFilter, state.teamFilter)
+  const filteredRisks = filterFeatureIssuesByParameters(state.risks, state.piFilter, state.teamFilter)
+  const filteredSprintIssues = filterSprintIssuesByParameters(state.sprintIssues, state.piFilter, state.teamFilter)
+  const filteredStoryIssues = filterFeatureIssuesByParameters(state.storyIssues, state.piFilter, state.teamFilter)
+  const filteredThroughputIssues = filterSprintIssuesByParameters(state.throughputIssues, state.piFilter, state.teamFilter)
+  const filteredThroughputData = aggregateFilteredThroughputData(filteredThroughputIssues)
+  const piFilterOptions = extractPiFilterOptions(
+    state.features,
+    state.defects,
+    state.risks,
+    state.storyIssues,
+    state.sprintIssues,
+    state.throughputIssues,
+  )
+  const teamFilterOptions = extractTeamFilterOptions(
+    state.artTeams,
+    state.features,
+    state.defects,
+    state.risks,
+    state.sprintIssues,
+    state.throughputIssues,
+  )
+  const handleCopyReportImage = useCallback(async (): Promise<void> => {
+    const reportCaptureSection = reportCaptureSectionRef.current
+    if (!reportCaptureSection) {
+      throw new Error('The active report is not ready to copy yet.')
+    }
+    await copyElementImageToClipboard(
+      reportCaptureSection,
+      'The active report is no longer available to copy.',
+    )
+  }, [])
 
   function renderActiveTab() {
     switch (state.activeTab) {
       case 'dashboard':
         return (
           <DashboardTab
-            defects={state.defects}
-            risks={state.risks}
-            sprintIssues={state.sprintIssues}
+            defects={filteredDefects}
+            risks={filteredRisks}
+            sprintIssues={filteredSprintIssues}
             isLoading={state.isLoadingDefects || state.isLoadingRisks || state.isLoadingSprintData}
             error={state.defectsError ?? state.risksError ?? state.sprintDataError}
           />
@@ -1272,22 +1361,18 @@ export default function ReportsHubView() {
       case 'features':
         return (
           <FeatureReportTab
-            features={state.features}
+            features={filteredFeatures}
             artTeamCount={state.artTeams.length}
-            piFilter={state.piFilter}
-            teamFilter={state.teamFilter}
-            onPiFilterChange={actions.setPiFilter}
-            onTeamFilterChange={actions.setTeamFilter}
           />
         )
       case 'defects':
-        return <DefectTrackerTab defects={state.defects} />
+        return <DefectTrackerTab defects={filteredDefects} />
       case 'risks':
-        return <RiskBoardTab risks={state.risks} />
+        return <RiskBoardTab risks={filteredRisks} />
       case 'flow':
         return (
           <FlowTab
-            sprintIssues={state.sprintIssues}
+            sprintIssues={filteredSprintIssues}
             isLoading={state.isLoadingSprintData}
             error={state.sprintDataError}
           />
@@ -1295,7 +1380,7 @@ export default function ReportsHubView() {
       case 'impact':
         return (
           <ImpactTab
-            sprintIssues={state.sprintIssues}
+            sprintIssues={filteredSprintIssues}
             isLoading={state.isLoadingSprintData}
             error={state.sprintDataError}
           />
@@ -1303,7 +1388,7 @@ export default function ReportsHubView() {
       case 'individual':
         return (
           <IndividualTab
-            sprintIssues={state.sprintIssues}
+            sprintIssues={filteredSprintIssues}
             isLoading={state.isLoadingSprintData}
             error={state.sprintDataError}
           />
@@ -1311,8 +1396,8 @@ export default function ReportsHubView() {
       case 'quality':
         return (
           <QualityTab
-            defects={state.defects}
-            storyCount={state.storyCount}
+            defects={filteredDefects}
+            storyCount={filteredStoryIssues.length}
             isLoading={state.isLoadingQuality}
             error={state.qualityError}
           />
@@ -1320,7 +1405,7 @@ export default function ReportsHubView() {
       case 'sprintHealth':
         return (
           <SprintHealthTab
-            sprintIssues={state.sprintIssues}
+            sprintIssues={filteredSprintIssues}
             isLoading={state.isLoadingSprintData}
             error={state.sprintDataError}
           />
@@ -1328,7 +1413,7 @@ export default function ReportsHubView() {
       case 'throughput':
         return (
           <ThroughputTab
-            throughputData={state.throughputData}
+            throughputData={filteredThroughputData}
             isLoading={state.isLoadingThroughput}
             error={state.throughputError}
           />
@@ -1400,23 +1485,34 @@ export default function ReportsHubView() {
         onChange={actions.setActiveTab}
       />
 
-      {/* Tab preamble (explainer card + timestamp + copy button) */}
-      <TabPreamble
-        tabKey={state.activeTab}
-        isCollapsed={isTabExplainerCollapsed(state.activeTab)}
-        onToggleExplainer={() => { toggleTabExplainer(state.activeTab) }}
-        lastGeneratedAt={activeTabTimestamp}
-        reportText={activeTabReportText}
-      />
+      <section ref={reportCaptureSectionRef} className={styles.reportCaptureSection}>
+        <GlobalReportFilters
+          piFilter={state.piFilter}
+          teamFilter={state.teamFilter}
+          piOptions={piFilterOptions}
+          teamOptions={teamFilterOptions}
+          onPiFilterChange={actions.setPiFilter}
+          onTeamFilterChange={actions.setTeamFilter}
+        />
 
-      {/* Tab content — dashboard and reports need ART team configuration before Jira queries can load. */}
-      {hasNoArtTeams && (state.activeTab === 'dashboard' || state.activeTab === 'features') ? (
-        <p className={styles.emptyState}>
-          No ART teams configured — add them in ART View Settings or run a Refresh.
-        </p>
-      ) : (
-        renderActiveTab()
-      )}
+        {/* Tab preamble (explainer card + timestamp + copy button) */}
+        <TabPreamble
+          tabKey={state.activeTab}
+          isCollapsed={isTabExplainerCollapsed(state.activeTab)}
+          onToggleExplainer={() => { toggleTabExplainer(state.activeTab) }}
+          lastGeneratedAt={activeTabTimestamp}
+          onCopyReport={handleCopyReportImage}
+        />
+
+        {/* Tab content — dashboard and reports need ART team configuration before Jira queries can load. */}
+        {hasNoArtTeams && (state.activeTab === 'dashboard' || state.activeTab === 'features') ? (
+          <p className={styles.emptyState}>
+            No ART teams configured — add them in ART View Settings or run a Refresh.
+          </p>
+        ) : (
+          renderActiveTab()
+        )}
+      </section>
     </div>
   )
 }

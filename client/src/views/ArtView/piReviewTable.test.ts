@@ -799,6 +799,18 @@ describe('writePiReviewTable', () => {
     expect(nextStorageValue).toContain('<th>Test Support</th>');
     expect(nextStorageValue).toContain('Feature with optional flags');
   });
+
+  it('writes Jira browse links for Feature cells that contain an issue key', () => {
+    const parsedTable = parsePiReviewTable(MOCK_STORAGE_VALUE);
+    const nextRow = createEmptyPiReviewRow();
+    nextRow.feature = 'DENP-1370';
+
+    const nextStorageValue = writePiReviewTable(MOCK_STORAGE_VALUE, parsedTable.tableBinding, [nextRow]);
+
+    expect(nextStorageValue).toContain(
+      '<a href="https://jira.healthspring-jira-prod.aws.zilverton.com/browse/DENP-1370">DENP-1370</a>',
+    );
+  });
 });
 
 describe('parseConfidenceVoteTable', () => {

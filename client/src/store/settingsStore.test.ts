@@ -15,6 +15,8 @@ const SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY = 'tbxSprintDashboardSelec
 const SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY = 'tbxSprintDashboardSelectedFixVersion';
 const SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY = 'tbxSprintDashboardSelectedPiValue';
 const SPRINT_DASHBOARD_ACTIVE_TEAM_STORAGE_KEY = 'tbxSprintDashboardActiveTeam';
+const SPRINT_DASHBOARD_TEAM_PROFILES_STORAGE_KEY = 'tbxSprintDashboardTeams';
+const SPRINT_DASHBOARD_ACTIVE_TEAM_PROFILE_ID_STORAGE_KEY = 'tbxSprintDashboardActiveTeamProfileId';
 
 async function loadSettingsStoreModule() {
   vi.resetModules();
@@ -138,6 +140,21 @@ describe('useSettingsStore', () => {
     expect(settingsState.sprintDashboardSelectedFixVersion).toBe('Release 24.1');
     expect(settingsState.sprintDashboardSelectedPiValue).toBe('PI-24.1');
     expect(settingsState.sprintDashboardActiveTeam).toBe('Transformers');
+    expect(settingsState.sprintDashboardTeamProfiles).toEqual([
+      {
+        id: 'dashboard-team:TBX:42',
+        name: 'TBX',
+        projectKey: 'TBX',
+        boardId: '42',
+        boardName: '',
+        boardType: '',
+        scopeMode: 'fixVersion',
+        selectedSprintId: '12',
+        selectedFixVersion: 'Release 24.1',
+        selectedPiValue: 'PI-24.1',
+      },
+    ]);
+    expect(settingsState.sprintDashboardActiveTeamProfileId).toBe('dashboard-team:TBX:42');
   });
 
   it('persists Sprint Dashboard setters back to localStorage', async () => {
@@ -160,5 +177,159 @@ describe('useSettingsStore', () => {
     expect(window.localStorage.getItem(SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY)).toBe('Release 25.1');
     expect(window.localStorage.getItem(SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY)).toBe('PI-25.1');
     expect(window.localStorage.getItem(SPRINT_DASHBOARD_ACTIVE_TEAM_STORAGE_KEY)).toBe('Clean Up Crew');
+  });
+
+  it('activates a saved dashboard team and syncs the legacy Sprint Dashboard fields', async () => {
+    const { useSettingsStore } = await loadSettingsStoreModule();
+
+    useSettingsStore.getState().setSprintDashboardTeamProfiles([
+      {
+        id: 'team-alpha',
+        name: 'Alpha',
+        projectKey: 'ALPHA',
+        boardId: '11',
+        boardName: 'Alpha Board',
+        boardType: 'scrum',
+        scopeMode: 'sprint',
+        selectedSprintId: '101',
+        selectedFixVersion: '',
+        selectedPiValue: '',
+      },
+      {
+        id: 'team-beta',
+        name: 'Beta',
+        projectKey: 'BETA',
+        boardId: '22',
+        boardName: 'Beta Board',
+        boardType: 'kanban',
+        scopeMode: 'pi',
+        selectedSprintId: '',
+        selectedFixVersion: 'Release 25.2',
+        selectedPiValue: 'PI-25.2',
+      },
+    ]);
+
+    useSettingsStore.getState().setSprintDashboardActiveTeamProfileId('team-beta');
+
+    expect(useSettingsStore.getState().sprintDashboardProjectKey).toBe('BETA');
+    expect(useSettingsStore.getState().sprintDashboardBoardId).toBe('22');
+    expect(useSettingsStore.getState().sprintDashboardScopeMode).toBe('pi');
+    expect(window.localStorage.getItem(SPRINT_DASHBOARD_ACTIVE_TEAM_PROFILE_ID_STORAGE_KEY)).toBe('team-beta');
+    expect(window.localStorage.getItem(SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY)).toBe('BETA');
+  });
+
+  it('updates the active dashboard team profile when Sprint Dashboard setters change', async () => {
+    const { useSettingsStore } = await loadSettingsStoreModule();
+
+    useSettingsStore.getState().setSprintDashboardTeamProfiles([
+      {
+        id: 'team-alpha',
+        name: 'Alpha',
+        projectKey: 'ALPHA',
+        boardId: '11',
+        boardName: 'Alpha Board',
+        boardType: 'scrum',
+        scopeMode: 'sprint',
+        selectedSprintId: '101',
+        selectedFixVersion: '',
+        selectedPiValue: '',
+      },
+    ]);
+
+    useSettingsStore.getState().setSprintDashboardProjectKey('OMEGA');
+    useSettingsStore.getState().setSprintDashboardBoardId('44');
+    useSettingsStore.getState().setSprintDashboardSelectedPiValue('PI-26.1');
+
+    expect(useSettingsStore.getState().sprintDashboardTeamProfiles).toEqual([
+      {
+        id: 'team-alpha',
+        name: 'Alpha',
+        projectKey: 'OMEGA',
+        boardId: '44',
+        boardName: 'Alpha Board',
+        boardType: 'scrum',
+        scopeMode: 'sprint',
+        selectedSprintId: '101',
+        selectedFixVersion: '',
+        selectedPiValue: 'PI-26.1',
+      },
+    ]);
+    expect(window.localStorage.getItem(SPRINT_DASHBOARD_TEAM_PROFILES_STORAGE_KEY)).toBe(
+      JSON.stringify(useSettingsStore.getState().sprintDashboardTeamProfiles),
+    );
+  });
+
+  it('keeps the current active team profile when a different saved team is removed', async () => {
+    const { useSettingsStore } = await loadSettingsStoreModule();
+
+    useSettingsStore.getState().setSprintDashboardTeamProfiles([
+      {
+        id: 'team-alpha',
+        name: 'Alpha',
+        projectKey: 'ALPHA',
+        boardId: '11',
+        boardName: 'Alpha Board',
+        boardType: 'scrum',
+        scopeMode: 'sprint',
+        selectedSprintId: '101',
+        selectedFixVersion: '',
+        selectedPiValue: '',
+      },
+      {
+        id: 'team-beta',
+        name: 'Beta',
+        projectKey: 'BETA',
+        boardId: '22',
+        boardName: 'Beta Board',
+        boardType: 'kanban',
+        scopeMode: 'pi',
+        selectedSprintId: '',
+        selectedFixVersion: 'Release 25.2',
+        selectedPiValue: 'PI-25.2',
+      },
+      {
+        id: 'team-gamma',
+        name: 'Gamma',
+        projectKey: 'GAMMA',
+        boardId: '33',
+        boardName: 'Gamma Board',
+        boardType: 'scrum',
+        scopeMode: 'fixVersion',
+        selectedSprintId: '',
+        selectedFixVersion: 'Release 25.3',
+        selectedPiValue: '',
+      },
+    ]);
+    useSettingsStore.getState().setSprintDashboardActiveTeamProfileId('team-beta');
+
+    useSettingsStore.getState().setSprintDashboardTeamProfiles([
+      {
+        id: 'team-alpha',
+        name: 'Alpha',
+        projectKey: 'ALPHA',
+        boardId: '11',
+        boardName: 'Alpha Board',
+        boardType: 'scrum',
+        scopeMode: 'sprint',
+        selectedSprintId: '101',
+        selectedFixVersion: '',
+        selectedPiValue: '',
+      },
+      {
+        id: 'team-beta',
+        name: 'Beta',
+        projectKey: 'BETA',
+        boardId: '22',
+        boardName: 'Beta Board',
+        boardType: 'kanban',
+        scopeMode: 'pi',
+        selectedSprintId: '',
+        selectedFixVersion: 'Release 25.2',
+        selectedPiValue: 'PI-25.2',
+      },
+    ]);
+
+    expect(useSettingsStore.getState().sprintDashboardActiveTeamProfileId).toBe('team-beta');
+    expect(window.localStorage.getItem(SPRINT_DASHBOARD_ACTIVE_TEAM_PROFILE_ID_STORAGE_KEY)).toBe('team-beta');
   });
 });

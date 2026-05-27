@@ -267,9 +267,13 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
         usernameMasked: maskCredentialUsername(snowConfig.username || ''),
       },
       github: {
-        baseUrl:    githubConfig.baseUrl || '',
-        hasPat:     !!(githubConfig.pat),
-        hasAppAuth: hasGitHubAppCredentials(configuration),
+        baseUrl:          githubConfig.baseUrl || '',
+        hasPat:           !!(githubConfig.pat),
+        hasAppAuth:       hasGitHubAppCredentials(configuration),
+        hasAppId:         !!(githubConfig.appId),
+        hasAppPrivateKey: !!(githubConfig.appPrivateKey),
+        hasInstallationId: !!(githubConfig.installationId),
+        hasAppLookupReady: !!(githubConfig.appId && githubConfig.appPrivateKey),
       },
       confluence: {
         baseUrl:        confluenceConfig.baseUrl || '',
@@ -360,9 +364,13 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
         usernameMasked: maskCredentialUsername(configuration.snow.username || ''),
       },
       github: {
-        baseUrl:    configuration.github.baseUrl || '',
-        hasPat:     !!(configuration.github.pat),
-        hasAppAuth: hasGitHubAppCredentials(configuration),
+        baseUrl:           configuration.github.baseUrl || '',
+        hasPat:            !!(configuration.github.pat),
+        hasAppAuth:        hasGitHubAppCredentials(configuration),
+        hasAppId:          !!(configuration.github.appId),
+        hasAppPrivateKey:  !!(configuration.github.appPrivateKey),
+        hasInstallationId: !!(configuration.github.installationId),
+        hasAppLookupReady: !!(configuration.github.appId && configuration.github.appPrivateKey),
       },
       confluence: {
         baseUrl:        savedConfluenceConfig.baseUrl || '',

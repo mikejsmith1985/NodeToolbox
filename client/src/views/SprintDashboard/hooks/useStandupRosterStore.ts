@@ -2,6 +2,13 @@
 
 import { create } from 'zustand';
 
+import { useSettingsStore } from '../../../store/settingsStore.ts';
+import {
+  buildTeamScopedStorageKey,
+  readTeamScopedStorageValue,
+  resolveTeamScopedStorageProfileId,
+} from './teamScopedStorage.ts';
+
 const STANDUP_ROSTER_STORAGE_KEY = 'tbxSprintDashboardRoster';
 
 export interface StandupRosterMember {
@@ -38,6 +45,8 @@ interface PersistedStandupRosterState {
 }
 
 interface StandupRosterState extends PersistedStandupRosterState {
+  dashboardTeamProfileId: string;
+  setDashboardTeamProfileId: (dashboardTeamProfileId: string) => void;
   addRosterMember: (memberDraft: StandupRosterMemberDraft) => void;
   upsertRosterMembers: (memberDrafts: StandupRosterMemberDraft[]) => void;
   replaceRosterMembers: (memberDrafts: StandupRosterMemberDraft[]) => void;
@@ -50,6 +59,14 @@ interface RosterTeamFilterOptions {
 
 function canUseLocalStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+}
+
+function resolveDashboardTeamProfileId(dashboardTeamProfileId: string): string {
+  return resolveTeamScopedStorageProfileId(dashboardTeamProfileId);
+}
+
+function buildStandupRosterStorageKey(dashboardTeamProfileId: string): string {
+  return buildTeamScopedStorageKey(STANDUP_ROSTER_STORAGE_KEY, dashboardTeamProfileId);
 }
 
 function normalizeWhitespace(value: string): string {
@@ -87,13 +104,13 @@ function isStandupRosterMember(value: unknown): value is StandupRosterMember {
 }
 
 /** Reads the persisted Team Dashboard roster members from localStorage. */
-export function readStoredStandupRosterMembers(): StandupRosterMember[] {
+export function readStoredStandupRosterMembers(dashboardTeamProfileId = ''): StandupRosterMember[] {
   if (!canUseLocalStorage()) {
     return [];
   }
 
   try {
-    const storedValue = window.localStorage.getItem(STANDUP_ROSTER_STORAGE_KEY);
+    const storedValue = readTeamScopedStorageValue(STANDUP_ROSTER_STORAGE_KEY, dashboardTeamProfileId);
     if (storedValue === null) {
       return [];
     }
@@ -110,13 +127,19 @@ export function readStoredStandupRosterMembers(): StandupRosterMember[] {
   }
 }
 
-function writeStoredStandupRosterMembers(rosterMembers: StandupRosterMember[]): void {
+function writeStoredStandupRosterMembers(
+  rosterMembers: StandupRosterMember[],
+  dashboardTeamProfileId: string,
+): void {
   if (!canUseLocalStorage()) {
     return;
   }
 
   try {
-    window.localStorage.setItem(STANDUP_ROSTER_STORAGE_KEY, JSON.stringify({ rosterMembers }));
+    window.localStorage.setItem(
+      buildStandupRosterStorageKey(dashboardTeamProfileId),
+      JSON.stringify({ rosterMembers }),
+    );
   } catch {
     // Storage failures are non-fatal because the in-memory roster remains usable.
   }
@@ -290,25 +313,37 @@ export function filterRosterMembersByActiveTeam(
 
 /** Zustand store for the Team Dashboard roster shared by standup and DSU workflows. */
 export const useStandupRosterStore = create<StandupRosterState>((setState, getState) => ({
-  rosterMembers: readStoredStandupRosterMembers(),
+  dashboardTeamProfileId: resolveDashboardTeamProfileId(
+    useSettingsStore.getState().sprintDashboardActiveTeamProfileId,
+  ),
+  rosterMembers: readStoredStandupRosterMembers(
+    useSettingsStore.getState().sprintDashboardActiveTeamProfileId,
+  ),
+  setDashboardTeamProfileId: (dashboardTeamProfileId) => {
+    const resolvedTeamProfileId = resolveDashboardTeamProfileId(dashboardTeamProfileId);
+    setState({
+      dashboardTeamProfileId: resolvedTeamProfileId,
+      rosterMembers: readStoredStandupRosterMembers(resolvedTeamProfileId),
+    });
+  },
   addRosterMember: (memberDraft) => {
     const rosterMembers = addRosterMemberToList(getState().rosterMembers, memberDraft);
     setState({ rosterMembers });
-    writeStoredStandupRosterMembers(rosterMembers);
+    writeStoredStandupRosterMembers(rosterMembers, getState().dashboardTeamProfileId);
   },
   upsertRosterMembers: (memberDrafts) => {
     const rosterMembers = upsertRosterMembersInList(getState().rosterMembers, memberDrafts);
     setState({ rosterMembers });
-    writeStoredStandupRosterMembers(rosterMembers);
+    writeStoredStandupRosterMembers(rosterMembers, getState().dashboardTeamProfileId);
   },
   replaceRosterMembers: (memberDrafts) => {
     const rosterMembers = replaceRosterMembersInList(memberDrafts);
     setState({ rosterMembers });
-    writeStoredStandupRosterMembers(rosterMembers);
+    writeStoredStandupRosterMembers(rosterMembers, getState().dashboardTeamProfileId);
   },
   removeRosterMember: (memberId) => {
     const rosterMembers = getState().rosterMembers.filter((rosterMember) => rosterMember.id !== memberId);
     setState({ rosterMembers });
-    writeStoredStandupRosterMembers(rosterMembers);
+    writeStoredStandupRosterMembers(rosterMembers, getState().dashboardTeamProfileId);
   },
 }));

@@ -17,8 +17,10 @@ import {
   extractPiReviewFeatureKey,
   fetchPiReviewFeatureIssues,
   formatPiReviewFeatureDisplayValue,
+  parsePiReviewFeatureDateUpdates,
   readPiReviewFeatureDatePills,
   reconcilePiReviewRowsWithJira,
+  savePiReviewFeatureDates,
   savePiReviewFeatureEstimates,
 } from './piReviewJira.ts';
 import { createEmptyPiReviewRow } from './piReviewTable.ts';
@@ -113,6 +115,51 @@ describe('piReviewJira', () => {
       { label: 'Target End', value: '2026-06-10' },
       { label: 'Due Date', value: '2026-06-12' },
     ]);
+  });
+
+  it('parses pasted markdown date tables into normalized Jira updates', () => {
+    expect(parsePiReviewFeatureDateUpdates(`
+| Jira Key | Target Start | Target End | Due Date |
+| -- | -- | -- | -- |
+| DASP-966 | 5/21/2026 | 6/3/2026 | 6/25/2026 |
+| DASP-824 | 2026-05-21 | 2026-06-03 | 2026-06-25 |
+    `)).toEqual([
+      {
+        featureKey: 'DASP-966',
+        targetStart: '2026-05-21',
+        targetEnd: '2026-06-03',
+        dueDate: '2026-06-25',
+      },
+      {
+        featureKey: 'DASP-824',
+        targetStart: '2026-05-21',
+        targetEnd: '2026-06-03',
+        dueDate: '2026-06-25',
+      },
+    ]);
+  });
+
+  it('parses pasted tab-separated date tables and keeps the last update for duplicate Jira keys', () => {
+    expect(parsePiReviewFeatureDateUpdates([
+      'Jira Key\tTarget Start\tTarget End\tDue Date',
+      'DASP-966\t5/21/2026\t6/3/2026\t6/25/2026',
+      'DASP-966\t6/4/2026\t6/17/2026\t7/30/2026',
+    ].join('\n'))).toEqual([
+      {
+        featureKey: 'DASP-966',
+        targetStart: '2026-06-04',
+        targetEnd: '2026-06-17',
+        dueDate: '2026-07-30',
+      },
+    ]);
+  });
+
+  it('rejects pasted date rows with unsupported date formats', () => {
+    expect(() => parsePiReviewFeatureDateUpdates(`
+| Jira Key | Target Start | Target End | Due Date |
+| -- | -- | -- | -- |
+| DASP-966 | May 21 2026 | 6/3/2026 | 6/25/2026 |
+    `)).toThrow('Row 2: Target Start must use M/D/YYYY or YYYY-MM-DD.');
   });
 
   it('reconciles priority, estimate, dependencies, risks, and migrated notes from Jira', () => {
@@ -251,6 +298,38 @@ describe('piReviewJira', () => {
     expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/DENP-1352', {
       fields: {
         customfield_10111: 8,
+      },
+    });
+  });
+
+  it('writes pasted PI Review target dates back to Jira using the configured field IDs', async () => {
+    localStorage.setItem('tbxARTSettings', JSON.stringify({
+      piReviewTargetStartFieldId: 'customfield_12345',
+      piReviewTargetEndFieldId: 'customfield_12346',
+    }));
+    mockJiraPut.mockResolvedValue(undefined);
+
+    await savePiReviewFeatureDates([
+      {
+        featureKey: 'DASP-966',
+        targetStart: '2026-05-21',
+        targetEnd: '2026-06-03',
+        dueDate: '2026-06-25',
+      },
+      {
+        featureKey: 'DASP-966',
+        targetStart: '2026-06-04',
+        targetEnd: '2026-06-17',
+        dueDate: '2026-07-30',
+      },
+    ]);
+
+    expect(mockJiraPut).toHaveBeenCalledTimes(1);
+    expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/DASP-966', {
+      fields: {
+        customfield_12345: '2026-06-04',
+        customfield_12346: '2026-06-17',
+        duedate: '2026-07-30',
       },
     });
   });

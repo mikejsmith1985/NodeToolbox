@@ -186,6 +186,33 @@ describe('SnowLookupField', () => {
     expect(screen.getByText('Platform Ops')).toBeInTheDocument();
   });
 
+  it('shows a scroll cue when many suggestions are returned', async () => {
+    vi.mocked(snowFetch).mockResolvedValueOnce(
+      makeSuggestionResponse([
+        { sys_id: 'grp-001', name: 'Platform Team' },
+        { sys_id: 'grp-002', name: 'Platform Ops' },
+        { sys_id: 'grp-003', name: 'Platform Security' },
+        { sys_id: 'grp-004', name: 'Platform Reliability' },
+        { sys_id: 'grp-005', name: 'Platform SRE' },
+        { sys_id: 'grp-006', name: 'Platform Architecture' },
+      ]) as never,
+    );
+
+    render(
+      <SnowLookupField
+        label="Assignment Group"
+        tableName="sys_user_group"
+        value={buildEmptyReference()}
+        onChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Assignment Group'), { target: { value: 'Pl' } });
+    await act(async () => { vi.runAllTimers(); });
+
+    expect(screen.getByText('Scroll for more results')).toBeInTheDocument();
+  });
+
   it('calls onChange with the selected reference when a suggestion is clicked', async () => {
     const handleChange = vi.fn();
     vi.mocked(snowFetch).mockResolvedValueOnce(

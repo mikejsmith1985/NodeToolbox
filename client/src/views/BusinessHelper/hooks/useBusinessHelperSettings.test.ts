@@ -43,6 +43,32 @@ describe('useBusinessHelperSettings', () => {
     expect(storedSettings.stablizationColumnWidths.actions).toBeGreaterThanOrEqual(96);
     expect(storedSettings.stablizationColumnWidths.grouping).toBe(DEFAULT_STABLIZATION_COLUMN_WIDTHS.grouping);
   });
+
+  it('persists user-defined columns and their data types', () => {
+    const { result } = renderHook(() => useBusinessHelperSettings());
+
+    act(() => {
+      result.current.addUserColumn('Owner Notes', 'text');
+    });
+
+    const addedUserColumnId = result.current.settings.stablizationUserColumns[0]?.id;
+    expect(addedUserColumnId).toBeTruthy();
+
+    act(() => {
+      result.current.updateUserColumnDataType(addedUserColumnId, 'dropdown');
+      result.current.addUserColumnDropdownOption(addedUserColumnId, 'Needs follow-up');
+      result.current.updateUserColumnSimpleSearchMapping(addedUserColumnId, 'summary');
+    });
+
+    const storedSettings = readBusinessHelperSettings();
+    expect(storedSettings.stablizationUserColumns).toHaveLength(1);
+    expect(storedSettings.stablizationUserColumns[0]).toMatchObject({
+      label: 'Owner Notes',
+      dataType: 'dropdown',
+      simpleSearchMapping: 'summary',
+      dropdownOptions: ['Needs follow-up'],
+    });
+  });
 });
 
 describe('buildMappedStablizationValues', () => {
@@ -72,6 +98,7 @@ describe('buildMappedStablizationValues', () => {
           name: 'jira-key-summary',
           justification: 'status',
         },
+        stablizationUserColumns: [],
       },
     );
 
@@ -79,6 +106,61 @@ describe('buildMappedStablizationValues', () => {
       grouping: 'TBX-101',
       justification: 'In Progress',
     });
-    expect(mappedValuesResult.skippedColumns).toEqual(['name']);
+    expect(mappedValuesResult.appliedColumnLabels).toEqual(['Grouping', 'Justification']);
+    expect(mappedValuesResult.skippedColumnLabels).toEqual(['Name']);
+  });
+
+  it('maps supported user-defined columns and skips unsupported dropdown values', () => {
+    const mappedValuesResult = buildMappedStablizationValues(
+      {
+        key: 'TBX-101',
+        summary: 'Funding summary',
+        issueType: 'Story',
+        status: 'In Progress',
+        assigneeName: 'Alex Analyst',
+        created: '2026-05-01T00:00:00.000Z',
+        updated: '2026-05-20T00:00:00.000Z',
+        hierarchyLevel: 'team',
+        matchLocation: 'summary',
+        projectKey: 'TBX',
+      },
+      {
+        stablizationColumns: {
+          grouping: { inputKind: 'text', dropdownOptions: [] },
+          name: { inputKind: 'text', dropdownOptions: [] },
+          justification: { inputKind: 'text', dropdownOptions: [] },
+        },
+        stablizationColumnWidths: DEFAULT_STABLIZATION_COLUMN_WIDTHS,
+        simpleSearchMapping: {
+          grouping: 'none',
+          name: 'jira-key-summary',
+          justification: 'none',
+        },
+        stablizationUserColumns: [
+          {
+            id: 'owner-notes',
+            label: 'Owner Notes',
+            dataType: 'text',
+            dropdownOptions: [],
+            widthPx: 180,
+            simpleSearchMapping: 'summary',
+          },
+          {
+            id: 'phase',
+            label: 'Phase',
+            dataType: 'dropdown',
+            dropdownOptions: ['Discovery'],
+            widthPx: 180,
+            simpleSearchMapping: 'status',
+          },
+        ],
+      },
+    );
+
+    expect(mappedValuesResult.mappedUserColumnValues).toEqual({
+      'owner-notes': 'Funding summary',
+    });
+    expect(mappedValuesResult.appliedColumnLabels).toContain('Owner Notes');
+    expect(mappedValuesResult.skippedColumnLabels).toContain('Phase');
   });
 });

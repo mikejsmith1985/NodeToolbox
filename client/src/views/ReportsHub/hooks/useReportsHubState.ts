@@ -21,7 +21,7 @@ const REPORT_FIELDS =
 const LOAD_FEATURES_FAILURE = 'Failed to load features'
 const LOAD_DEFECTS_FAILURE = 'Failed to load defects'
 const LOAD_RISKS_FAILURE = 'Failed to load risks'
-const SPRINT_ISSUE_FIELDS = 'summary,status,assignee,priority,labels,updated,customfield_10020'
+const SPRINT_ISSUE_FIELDS = 'summary,status,assignee,priority,labels,updated,customfield_10020,customfield_10301'
 const STORY_ISSUE_TYPE = 'Story'
 const SPRINT_MAX_RESULTS = 200
 const THROUGHPUT_MAX_RESULTS = 200
@@ -74,6 +74,7 @@ export interface SprintIssue {
   teamName: string
   assigneeName: string | null
   priority: string
+  piName: string | null
   isBlocked: boolean
   updatedDate: string
   sprintName: string | null  // extracted from customfield_10020 for throughput grouping
@@ -131,8 +132,10 @@ export interface ReportsHubState {
   isLoadingSprintData: boolean
   sprintDataError: string | null
   storyCount: number
+  storyIssues: JiraFeatureIssue[]
   isLoadingQuality: boolean
   qualityError: string | null
+  throughputIssues: SprintIssue[]
   throughputData: ThroughputEntry[]
   isLoadingThroughput: boolean
   throughputError: string | null
@@ -185,6 +188,7 @@ interface JiraSprintIssueResponse {
       labels: string[]
       updated: string
       customfield_10020: Array<{ name: string; state: string }> | null
+      [PI_CUSTOM_FIELD]?: string | null
     }
   }>
 }
@@ -192,12 +196,43 @@ interface JiraSprintIssueResponse {
 // ── Helper: localStorage team loader ──
 
 /** Reads the ART teams from localStorage, returning an empty array on failure. */
+function normalizeArtTeamConfig(rawTeamConfig: unknown): ArtTeamConfig | null {
+  if (typeof rawTeamConfig !== 'object' || rawTeamConfig === null) {
+    return null
+  }
+
+  const teamCandidate = rawTeamConfig as { name?: unknown; projectKey?: unknown; boardId?: unknown }
+  if (typeof teamCandidate.name !== 'string' || typeof teamCandidate.projectKey !== 'string') {
+    return null
+  }
+
+  const trimmedTeamName = teamCandidate.name.trim()
+  const trimmedProjectKey = teamCandidate.projectKey.trim()
+  if (trimmedTeamName === '' || trimmedProjectKey === '') {
+    return null
+  }
+
+  const normalizedTeamConfig: ArtTeamConfig = {
+    name: trimmedTeamName,
+    projectKey: trimmedProjectKey,
+  }
+  if (typeof teamCandidate.boardId === 'string' && teamCandidate.boardId.trim() !== '') {
+    normalizedTeamConfig.boardId = teamCandidate.boardId.trim()
+  }
+  return normalizedTeamConfig
+}
+
+/** Reads and sanitizes ART team settings from localStorage to avoid render-time crashes. */
 function loadArtTeamsFromStorage(): ArtTeamConfig[] {
   try {
     const rawSettings = localStorage.getItem(ART_SETTINGS_STORAGE_KEY)
     if (rawSettings === null) return []
-    const parsedSettings = JSON.parse(rawSettings) as { teams?: ArtTeamConfig[] }
-    return Array.isArray(parsedSettings.teams) ? parsedSettings.teams : []
+    const parsedSettings = JSON.parse(rawSettings) as { teams?: unknown[] }
+    if (!Array.isArray(parsedSettings.teams)) return []
+
+    return parsedSettings.teams
+      .map((rawTeamConfig) => normalizeArtTeamConfig(rawTeamConfig))
+      .filter((teamConfig): teamConfig is ArtTeamConfig => teamConfig !== null)
   } catch {
     return []
   }
@@ -282,6 +317,7 @@ function mapJiraIssueToSprintIssue(
     teamName,
     assigneeName: rawIssue.fields.assignee?.displayName ?? null,
     priority: issuePriority,
+    piName: (rawIssue.fields[PI_CUSTOM_FIELD] as string | null | undefined) ?? null,
     isBlocked,
     updatedDate: rawIssue.fields.updated,
     sprintName: extractClosedSprintName(rawIssue.fields.customfield_10020),
@@ -366,8 +402,10 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
   const [isLoadingSprintData, setIsLoadingSprintData] = useState(false)
   const [sprintDataError, setSprintDataError] = useState<string | null>(null)
   const [storyCount, setStoryCount] = useState(0)
+  const [storyIssues, setStoryIssues] = useState<JiraFeatureIssue[]>([])
   const [isLoadingQuality, setIsLoadingQuality] = useState(false)
   const [qualityError, setQualityError] = useState<string | null>(null)
+  const [throughputIssues, setThroughputIssues] = useState<SprintIssue[]>([])
   const [throughputData, setThroughputData] = useState<ThroughputEntry[]>([])
   const [isLoadingThroughput, setIsLoadingThroughput] = useState(false)
   const [throughputError, setThroughputError] = useState<string | null>(null)
@@ -393,8 +431,10 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
     isLoadingSprintData,
     sprintDataError,
     storyCount,
+    storyIssues,
     isLoadingQuality,
     qualityError,
+    throughputIssues,
     throughputData,
     isLoadingThroughput,
     throughputError,
@@ -476,6 +516,7 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
     try {
       // Fetch story count across all teams (numerator for defect-density ratio)
       const storyResults = await fetchIssuesAcrossTeams(currentArtTeams, STORY_ISSUE_TYPE, 'created')
+      setStoryIssues(storyResults)
       setStoryCount(storyResults.length)
     } catch (fetchError) {
       const errorMessage = fetchError instanceof Error ? fetchError.message : LOAD_QUALITY_FAILURE
@@ -490,6 +531,7 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
     setThroughputError(null)
     try {
       const resolvedIssues = await fetchThroughputIssuesAcrossTeams(currentArtTeams)
+      setThroughputIssues(resolvedIssues)
       const aggregatedThroughputData = aggregateThroughputData(resolvedIssues)
       setThroughputData(aggregatedThroughputData)
     } catch (fetchError) {
@@ -502,7 +544,7 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
 
   async function loadAllReports(): Promise<void> {
     setLastGeneratedAt(new Date().toISOString())
-    await Promise.all([
+    await Promise.allSettled([
       loadFeatures(),
       loadDefects(),
       loadRisks(),

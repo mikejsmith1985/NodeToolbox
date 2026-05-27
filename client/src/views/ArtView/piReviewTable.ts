@@ -22,6 +22,8 @@ const PI_REVIEW_CAPACITY_SECTION_ATTRIBUTE = 'data-node-toolbox-pi-review-capaci
 const PI_REVIEW_CAPACITY_SECTION_VALUE = 'summary';
 const PI_REVIEW_CAPACITY_PAYLOAD_ATTRIBUTE = 'data-node-toolbox-pi-review-capacity-payload';
 const FULL_WIDTH_TABLE_STYLE = 'width: 100%; table-layout: fixed;';
+const JIRA_BROWSE_URL_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/';
+const JIRA_ISSUE_KEY_PATTERN = /\b[A-Z][A-Z0-9]+-\d+\b/;
 const STRETCH_GOALS_LINE_COLOR = '#f5c400';
 const DEFAULT_CUSTOM_GROUPING_LINE_COLOR = '#0ea5e9';
 const CUSTOM_GROUPING_LINE_BACKGROUND_ALPHA = 0.18;
@@ -951,6 +953,34 @@ function normalizePiReviewCustomGroupingLines(
     }));
 }
 
+function readJiraIssueKeyFromFeatureValue(featureValue: string): string | null {
+  return featureValue.trim().match(JIRA_ISSUE_KEY_PATTERN)?.[0] ?? null;
+}
+
+function appendPiReviewCellValue(
+  documentNode: Document,
+  cellElement: HTMLTableCellElement,
+  columnKey: string,
+  cellValue: string,
+): void {
+  if (columnKey !== 'feature') {
+    cellElement.textContent = cellValue;
+    return;
+  }
+
+  const featureIssueKey = readJiraIssueKeyFromFeatureValue(cellValue);
+  if (!featureIssueKey) {
+    cellElement.textContent = cellValue;
+    return;
+  }
+
+  // Confluence should keep the feature text readable while letting teams jump straight into Jira from the saved page.
+  const linkElement = documentNode.createElement('a');
+  linkElement.setAttribute('href', `${JIRA_BROWSE_URL_PREFIX}${featureIssueKey}`);
+  linkElement.textContent = cellValue;
+  cellElement.appendChild(linkElement);
+}
+
 /** Parses the first matching PI Review table from a Confluence storage body. */
 export function parsePiReviewTable(storageValue: string): PiReviewTableParseResult {
   const documentNode = buildStorageDocument(storageValue);
@@ -1053,7 +1083,7 @@ function replaceRowsAfterHeader<RowType extends Record<string, string>>(
       const columnOrderIndex = columnIndexes.indexOf(cellIndex);
       if (columnOrderIndex >= 0) {
         const columnKey = columnOrder[columnOrderIndex];
-        cellElement.textContent = row[columnKey] ?? '';
+        appendPiReviewCellValue(documentNode, cellElement, columnKey, row[columnKey] ?? '');
       }
       rowElement.appendChild(cellElement);
     }

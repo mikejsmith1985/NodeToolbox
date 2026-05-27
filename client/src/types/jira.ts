@@ -63,6 +63,7 @@ export interface JiraIssue {
     /** Legacy epic-link field variants used by planning grouping. */
     customfield_10014?: string | { key?: string } | null;
     customfield_10008?: string | { key?: string } | null;
+    customfield_10108?: string | { key?: string } | null;
     /** Fix versions this issue is scheduled for; empty when not assigned to a release. */
     fixVersions?: Array<{ id?: string; name: string; releaseDate?: string; released?: boolean; archived?: boolean }>;
     /** Linked Jira issues used for blocker detection and DSU / standup context. */

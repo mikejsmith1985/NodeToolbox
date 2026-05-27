@@ -77,6 +77,12 @@ describe('useLastGenerated', () => {
     expect(result.current.getTabTimestamp('features')).toBeNull()
   })
 
+  it('returns null for all tabs when localStorage contains valid JSON that is not an object map', () => {
+    localStorage.setItem(LAST_GENERATED_STORAGE_KEY, 'null')
+    const { result } = renderHook(() => useLastGenerated())
+    expect(result.current.getTabTimestamp('features')).toBeNull()
+  })
+
   it('marking one tab does not overwrite another tab timestamp', () => {
     const { result } = renderHook(() => useLastGenerated())
     act(() => { result.current.markGenerated('flow') })
@@ -84,5 +90,19 @@ describe('useLastGenerated', () => {
     act(() => { result.current.markGenerated('impact') })
     expect(result.current.getTabTimestamp('flow')).toBe(timestampAfterFlow)
     expect(result.current.getTabTimestamp('impact')).not.toBeNull()
+  })
+
+  it('does not throw when localStorage.setItem fails while recording timestamps', () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('Quota exceeded')
+    })
+
+    const { result } = renderHook(() => useLastGenerated())
+    expect(() => {
+      act(() => { result.current.markGenerated('features') })
+    }).not.toThrow()
+    expect(result.current.getTabTimestamp('features')).not.toBeNull()
+
+    setItemSpy.mockRestore()
   })
 })

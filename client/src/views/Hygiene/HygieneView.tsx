@@ -5,9 +5,6 @@
 // drill into flagged issues by check type without depending on legacy ToolBox state.
 
 import {
-  HYGIENE_CHECK_IDS,
-  HYGIENE_CHECK_LABELS,
-  type HygieneCheckId,
   type HygieneFinding,
   type HygieneFlag,
 } from './checks/hygieneChecks.ts';
@@ -109,7 +106,7 @@ export default function HygieneView() {
           <strong>{hygieneState.summary.totalIssues} issues</strong>
           <span>{hygieneState.summary.totalFlags} flags total</span>
         </button>
-        {HYGIENE_CHECK_IDS.map((checkId) => renderSummaryTile(checkId, hygieneState))}
+        {hygieneState.availableCheckIds.map((checkId) => renderSummaryTile(checkId, hygieneState))}
       </div>
 
       {hygieneState.isLoading && <div className={styles.emptyState}>Loading Hygiene results…</div>}
@@ -126,7 +123,7 @@ export default function HygieneView() {
   );
 }
 
-function renderSummaryTile(checkId: HygieneCheckId, hygieneState: ReturnType<typeof useHygieneState>) {
+function renderSummaryTile(checkId: string, hygieneState: ReturnType<typeof useHygieneState>) {
   const isTileSelected = hygieneState.selectedFilter === checkId;
   return (
     <button
@@ -137,7 +134,7 @@ function renderSummaryTile(checkId: HygieneCheckId, hygieneState: ReturnType<typ
       onClick={() => hygieneState.selectFilter(checkId)}
     >
       <strong>{hygieneState.summary.countByCheck[checkId]}</strong>
-      <span>{HYGIENE_CHECK_LABELS[checkId]}</span>
+      <span>{hygieneState.checkLabelsById[checkId] ?? checkId}</span>
     </button>
   );
 }

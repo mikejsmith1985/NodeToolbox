@@ -26,6 +26,8 @@ import { useStandupPlanningStore } from './useStandupPlanningStore.ts';
 import { useStandupRosterStore } from './useStandupRosterStore.ts';
 import { useSettingsStore } from '../../../store/settingsStore.ts';
 
+const STANDUP_UI_STORAGE_KEY = 'tbxSprintDashboardStandupUi:legacy-default';
+
 function buildIssue(
   issueKey: string,
   summary: string,
@@ -73,8 +75,8 @@ describe('useSprintStandupState', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
-    useStandupPlanningStore.setState({ planEntries: [] });
-    useStandupRosterStore.setState({ rosterMembers: [] });
+    useStandupPlanningStore.setState({ dashboardTeamProfileId: 'legacy-default', planEntries: [] });
+    useStandupRosterStore.setState({ dashboardTeamProfileId: 'legacy-default', rosterMembers: [] });
     useSettingsStore.setState({ sprintDashboardActiveTeam: '' });
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
@@ -86,8 +88,8 @@ describe('useSprintStandupState', () => {
   afterEach(() => {
     vi.useRealTimers();
     localStorage.clear();
-    useStandupPlanningStore.setState({ planEntries: [] });
-    useStandupRosterStore.setState({ rosterMembers: [] });
+    useStandupPlanningStore.setState({ dashboardTeamProfileId: 'legacy-default', planEntries: [] });
+    useStandupRosterStore.setState({ dashboardTeamProfileId: 'legacy-default', rosterMembers: [] });
     useSettingsStore.setState({ sprintDashboardActiveTeam: '' });
   });
 
@@ -144,7 +146,7 @@ describe('useSprintStandupState', () => {
       await result.current.actions.postPersonWalkComment();
     });
 
-    expect(JSON.parse(localStorage.getItem('tbxSprintDashboardStandupUi') ?? '{}')).toMatchObject({
+    expect(JSON.parse(localStorage.getItem(STANDUP_UI_STORAGE_KEY) ?? '{}')).toMatchObject({
       mode: 'personwalk',
     });
     expect(mockJiraPost).toHaveBeenCalledWith('/rest/api/2/issue/TBX-99/comment', {
@@ -189,7 +191,7 @@ describe('useSprintStandupState', () => {
     });
 
     expect(result.current.state.scopeMode).toBe('roster');
-    expect(JSON.parse(localStorage.getItem('tbxSprintDashboardStandupUi') ?? '{}')).toMatchObject({
+    expect(JSON.parse(localStorage.getItem(STANDUP_UI_STORAGE_KEY) ?? '{}')).toMatchObject({
       scopeMode: 'roster',
     });
   });
@@ -289,5 +291,43 @@ describe('useSprintStandupState', () => {
 
     expect(mockJiraGet).toHaveBeenCalledWith(expect.stringContaining('Taylor%20Teammate'));
     expect(mockJiraGet).not.toHaveBeenCalledWith(expect.stringContaining('Jordan%20Joiner'));
+  });
+
+  it('does not let a new team inherit bare-key standup ui state after scoped data exists', () => {
+    localStorage.setItem('tbxSprintDashboardStandupUi', JSON.stringify({
+      mode: 'personwalk',
+      scopeMode: 'roster',
+      shouldShowDoneColumn: true,
+    }));
+    localStorage.setItem('tbxSprintDashboardStandupUi:team-alpha', JSON.stringify({
+      mode: 'boardwalk',
+      scopeMode: 'sprint',
+      shouldShowDoneColumn: false,
+    }));
+
+    const { result } = renderHook(() => useSprintStandupState([], 'TBX', 'team-beta'));
+
+    expect(result.current.state.standupMode).toBe('boardwalk');
+    expect(result.current.state.scopeMode).toBe('sprint');
+    expect(result.current.state.shouldShowDoneColumn).toBe(false);
+  });
+
+  it('migrates bare-key standup ui state into the first scoped team key', () => {
+    localStorage.setItem('tbxSprintDashboardStandupUi', JSON.stringify({
+      mode: 'personwalk',
+      scopeMode: 'roster',
+      shouldShowDoneColumn: true,
+    }));
+
+    const { result } = renderHook(() => useSprintStandupState([], 'TBX', 'team-alpha'));
+
+    expect(result.current.state.standupMode).toBe('personwalk');
+    expect(result.current.state.scopeMode).toBe('roster');
+    expect(result.current.state.shouldShowDoneColumn).toBe(true);
+    expect(localStorage.getItem('tbxSprintDashboardStandupUi:team-alpha')).toBe(JSON.stringify({
+      mode: 'personwalk',
+      scopeMode: 'roster',
+      shouldShowDoneColumn: true,
+    }));
   });
 });

@@ -5,8 +5,9 @@
 // Results show total work days, 100% capacity, and 80% capacity in story points,
 // where 1 point = 1 person-day of fully-dedicated work.
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 
+import { parsePiDateRange } from '../ArtView/hooks/artHelpers.ts';
 import { useCapacityStore } from './hooks/useCapacityStore.ts';
 import {
   ALL_TEAM_ROLES,
@@ -30,6 +31,13 @@ const MAX_MEMBER_COUNT = 99;
 const MIN_CAPACITY_PERCENTAGE = 1;
 const MAX_CAPACITY_PERCENTAGE = 100;
 const MIN_PTO_DAYS = 0;
+
+function formatDateForInput(localDate: Date): string {
+  const yearNumber = localDate.getFullYear();
+  const monthNumber = String(localDate.getMonth() + 1).padStart(2, '0');
+  const dayNumber = String(localDate.getDate()).padStart(2, '0');
+  return `${yearNumber}-${monthNumber}-${dayNumber}`;
+}
 
 // ── Sub-components ──
 
@@ -170,18 +178,37 @@ function CapacityResults({ workDayCount, totalCapacityPoints }: CapacityResultsP
  *
  * Configuration is persisted to localStorage so it survives refreshes and stays in sync with PI Review saves.
  */
-export default function CapacityTab() {
+export default function CapacityTab({ selectedPiName }: { selectedPiName: string }) {
+  const dateMode = useCapacityStore((state) => state.dateMode);
   const startDate = useCapacityStore((state) => state.startDate);
   const endDate = useCapacityStore((state) => state.endDate);
   const rows = useCapacityStore((state) => state.rows);
+  const setDateMode = useCapacityStore((state) => state.setDateMode);
   const setStartDate = useCapacityStore((state) => state.setStartDate);
   const setEndDate = useCapacityStore((state) => state.setEndDate);
   const addRow = useCapacityStore((state) => state.addRow);
   const updateRow = useCapacityStore((state) => state.updateRow);
   const removeRow = useCapacityStore((state) => state.removeRow);
+  const parsedPiDateRange = useMemo(() => parsePiDateRange(selectedPiName.trim()), [selectedPiName]);
+  const piRangeStartDate = parsedPiDateRange ? formatDateForInput(parsedPiDateRange.startDate) : '';
+  const piRangeEndDate = parsedPiDateRange ? formatDateForInput(parsedPiDateRange.endDate) : '';
 
   const workDayCount = countWorkDays(startDate, endDate);
   const totalCapacityPoints = calculateTotalCapacity(rows, workDayCount);
+
+  useEffect(() => {
+    if (dateMode !== 'pi' || !parsedPiDateRange) {
+      return;
+    }
+
+    if (startDate !== piRangeStartDate) {
+      setStartDate(piRangeStartDate);
+    }
+
+    if (endDate !== piRangeEndDate) {
+      setEndDate(piRangeEndDate);
+    }
+  }, [dateMode, endDate, parsedPiDateRange, piRangeEndDate, piRangeStartDate, setEndDate, setStartDate, startDate]);
 
   const handleAddRow = useCallback(() => {
     addRow({
@@ -199,13 +226,42 @@ export default function CapacityTab() {
       <section className={styles.dateRangeSection}>
         <h2 className={styles.sectionTitle}>Planning Window</h2>
         <p className={styles.sectionDescription}>
-          Set the start and end dates for this planning period. Only Monday–Friday days are counted.
+          Default the planning window from the selected PI label, or switch to custom dates when you need a different range.
+        </p>
+        <div className={styles.dateModeRow}>
+          <span className={styles.dateModeLabel}>Date source</span>
+          <div className={styles.dateModeToggle}>
+            <button
+              aria-pressed={dateMode === 'pi'}
+              className={dateMode === 'pi' ? styles.dateModeButtonActive : styles.dateModeButton}
+              onClick={() => setDateMode('pi')}
+              type="button"
+            >
+              PI Dates
+            </button>
+            <button
+              aria-pressed={dateMode === 'custom'}
+              className={dateMode === 'custom' ? styles.dateModeButtonActive : styles.dateModeButton}
+              onClick={() => setDateMode('custom')}
+              type="button"
+            >
+              Custom Dates
+            </button>
+          </div>
+        </div>
+        <p className={styles.dateModeHint}>
+          {dateMode === 'pi'
+            ? parsedPiDateRange
+              ? `Using ${selectedPiName} for the planning window.`
+              : 'The selected PI name does not include a parsable date range. Switch to Custom Dates to enter your own window.'
+            : 'Custom Dates mode keeps your manual start and end dates unchanged until you switch back to PI Dates.'}
         </p>
         <div className={styles.dateInputRow}>
           <label className={styles.dateLabel} htmlFor="capacity-start-date">
             Start Date
             <input
               className={styles.dateInput}
+              disabled={dateMode === 'pi'}
               id="capacity-start-date"
               onChange={(changeEvent) => setStartDate(changeEvent.target.value)}
               type="date"
@@ -216,6 +272,7 @@ export default function CapacityTab() {
             End Date
             <input
               className={styles.dateInput}
+              disabled={dateMode === 'pi'}
               id="capacity-end-date"
               onChange={(changeEvent) => setEndDate(changeEvent.target.value)}
               type="date"

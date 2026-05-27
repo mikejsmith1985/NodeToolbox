@@ -6,6 +6,11 @@
 
 import { useCallback, useMemo, useState } from 'react';
 
+import {
+  buildTeamScopedStorageKey,
+  readTeamScopedStorageValue,
+} from './teamScopedStorage.ts';
+
 // ── Storage key & defaults ──
 
 const DASHBOARD_CONFIG_STORAGE_KEY = 'tbxSprintDashboardConfig';
@@ -64,9 +69,16 @@ export const DEFAULT_DASHBOARD_CONFIG: DashboardConfig = {
 // ── Storage helpers ──
 
 /** Reads the config blob from localStorage, merging with defaults so new fields never go missing. */
-export function loadDashboardConfigFromStorage(): DashboardConfig {
+function buildDashboardConfigStorageKey(dashboardTeamProfileId: string): string {
+  return buildTeamScopedStorageKey(DASHBOARD_CONFIG_STORAGE_KEY, dashboardTeamProfileId);
+}
+
+/** Reads the config blob from localStorage, merging with defaults so new fields never go missing. */
+export function loadDashboardConfigFromStorage(
+  dashboardTeamProfileId = '',
+): DashboardConfig {
   try {
-    const stored = localStorage.getItem(DASHBOARD_CONFIG_STORAGE_KEY);
+    const stored = readTeamScopedStorageValue(DASHBOARD_CONFIG_STORAGE_KEY, dashboardTeamProfileId);
     if (!stored) return { ...DEFAULT_DASHBOARD_CONFIG };
     return { ...DEFAULT_DASHBOARD_CONFIG, ...(JSON.parse(stored) as Partial<DashboardConfig>) };
   } catch {
@@ -75,9 +87,15 @@ export function loadDashboardConfigFromStorage(): DashboardConfig {
 }
 
 /** Serialises the config blob to localStorage; swallows write failures silently. */
-export function saveDashboardConfigToStorage(config: DashboardConfig): void {
+export function saveDashboardConfigToStorage(
+  config: DashboardConfig,
+  dashboardTeamProfileId = '',
+): void {
   try {
-    localStorage.setItem(DASHBOARD_CONFIG_STORAGE_KEY, JSON.stringify(config));
+    localStorage.setItem(
+      buildDashboardConfigStorageKey(dashboardTeamProfileId),
+      JSON.stringify(config),
+    );
   } catch {
     // localStorage may be unavailable in private-browsing mode; ignore.
   }
@@ -90,22 +108,32 @@ export function saveDashboardConfigToStorage(config: DashboardConfig): void {
  * Reads from localStorage on mount and writes back on every update.
  * Returns a stable `{ config, actions }` tuple.
  */
-export function useDashboardConfig(): { config: DashboardConfig; actions: DashboardConfigActions } {
-  const [config, setConfig] = useState<DashboardConfig>(() => loadDashboardConfigFromStorage());
+export function useDashboardConfig(
+  dashboardTeamProfileId = '',
+): { config: DashboardConfig; actions: DashboardConfigActions } {
+  const [configVersion, setConfigVersion] = useState(0);
+  const config = useMemo(
+    () => {
+      void configVersion;
+      return loadDashboardConfigFromStorage(dashboardTeamProfileId);
+    },
+    [configVersion, dashboardTeamProfileId],
+  );
 
   const updateConfig = useCallback((partialUpdate: Partial<DashboardConfig>) => {
-    setConfig((previousConfig) => {
-      const nextConfig = { ...previousConfig, ...partialUpdate };
-      saveDashboardConfigToStorage(nextConfig);
-      return nextConfig;
-    });
-  }, []);
+    const nextConfig = {
+      ...loadDashboardConfigFromStorage(dashboardTeamProfileId),
+      ...partialUpdate,
+    };
+    saveDashboardConfigToStorage(nextConfig, dashboardTeamProfileId);
+    setConfigVersion((previousVersion) => previousVersion + 1);
+  }, [dashboardTeamProfileId]);
 
   const resetConfig = useCallback(() => {
     const freshConfig = { ...DEFAULT_DASHBOARD_CONFIG };
-    saveDashboardConfigToStorage(freshConfig);
-    setConfig(freshConfig);
-  }, []);
+    saveDashboardConfigToStorage(freshConfig, dashboardTeamProfileId);
+    setConfigVersion((previousVersion) => previousVersion + 1);
+  }, [dashboardTeamProfileId]);
 
   const actions = useMemo<DashboardConfigActions>(
     () => ({ updateConfig, resetConfig }),

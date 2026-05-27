@@ -100,6 +100,21 @@ function scheduleDownloadCleanup(downloadLink: HTMLAnchorElement, imageObjectUrl
   }, DOWNLOAD_LINK_CLEANUP_DELAY_MS);
 }
 
+async function writeImageBlobToClipboard(imageBlob: Blob): Promise<void> {
+  if (!navigator.clipboard || typeof navigator.clipboard.write !== 'function') {
+    throw new Error('Image copy is not supported in this browser.');
+  }
+
+  if (typeof ClipboardItem === 'undefined') {
+    throw new Error('Image copy is not supported in this browser.');
+  }
+
+  const clipboardItem = new ClipboardItem({
+    [PNG_MIME_TYPE]: imageBlob,
+  });
+  await navigator.clipboard.write([clipboardItem]);
+}
+
 /** Downloads a rendered UI section as a readable PNG so exported reports match the in-app layout. */
 export async function downloadElementImage(
   elementToExport: HTMLElement,
@@ -124,4 +139,18 @@ export async function downloadElementImage(
   } finally {
     scheduleDownloadCleanup(downloadLink, imageObjectUrl);
   }
+}
+
+/** Copies a rendered UI section as a PNG image so it can be pasted into email and chat tools. */
+export async function copyElementImageToClipboard(
+  elementToExport: HTMLElement,
+  unavailableMessage: string,
+): Promise<void> {
+  if (!elementToExport.isConnected) {
+    throw new Error(unavailableMessage);
+  }
+
+  const panelCanvas = await capturePanelCanvas(elementToExport, IMAGE_EXPORT_RENDER_SCALE);
+  const imageBlob = await createCanvasBlob(panelCanvas);
+  await writeImageBlobToClipboard(imageBlob);
 }

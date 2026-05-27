@@ -5,18 +5,31 @@
 // weighted allocation, with a shared PTO day pool for that group.
 
 import { create } from 'zustand';
+
+import { useSettingsStore } from '../../../store/settingsStore.ts';
 import type { CapacityRow } from '../capacityModel.ts';
+import {
+  buildTeamScopedStorageKey,
+  readTeamScopedStorageValue,
+  resolveTeamScopedStorageProfileId,
+} from './teamScopedStorage.ts';
 /** localStorage key for persisting capacity configuration between sessions. */
 const CAPACITY_CONFIG_STORAGE_KEY = 'tbxCapacityConfig';
 
 /** The full persisted capacity configuration. */
 interface PersistedCapacityConfig {
+  dateMode: 'pi' | 'custom';
   startDate: string;
   endDate: string;
   rows: CapacityRow[];
 }
 
 interface CapacityState extends PersistedCapacityConfig {
+  dashboardTeamProfileId: string;
+  /** Reload persisted capacity data for the active Team Dashboard team. */
+  setDashboardTeamProfileId: (dashboardTeamProfileId: string) => void;
+  /** Switch between PI-derived dates and a manual custom date range. */
+  setDateMode: (dateMode: 'pi' | 'custom') => void;
   /** Replace the start date of the planning window. */
   setStartDate: (startDate: string) => void;
   /** Replace the end date of the planning window. */
@@ -35,6 +48,14 @@ function canUseLocalStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
 
+function resolveDashboardTeamProfileId(dashboardTeamProfileId: string): string {
+  return resolveTeamScopedStorageProfileId(dashboardTeamProfileId);
+}
+
+function buildCapacityConfigStorageKey(dashboardTeamProfileId: string): string {
+  return buildTeamScopedStorageKey(CAPACITY_CONFIG_STORAGE_KEY, dashboardTeamProfileId);
+}
+
 /** Validate that a parsed JSON value has the shape of PersistedCapacityConfig. */
 function isPersistedCapacityConfig(value: unknown): value is PersistedCapacityConfig {
   if (typeof value !== 'object' || value === null) {
@@ -50,19 +71,28 @@ function isPersistedCapacityConfig(value: unknown): value is PersistedCapacityCo
 }
 
 /** Read the persisted capacity config from localStorage, returning null if absent or corrupt. */
-function readPersistedConfig(): PersistedCapacityConfig | null {
+function readPersistedConfig(dashboardTeamProfileId = ''): PersistedCapacityConfig | null {
   if (!canUseLocalStorage()) {
     return null;
   }
 
   try {
-    const rawValue = window.localStorage.getItem(CAPACITY_CONFIG_STORAGE_KEY);
+    const rawValue = readTeamScopedStorageValue(CAPACITY_CONFIG_STORAGE_KEY, dashboardTeamProfileId);
     if (rawValue === null) {
       return null;
     }
 
     const parsedValue: unknown = JSON.parse(rawValue);
-    return isPersistedCapacityConfig(parsedValue) ? parsedValue : null;
+    if (!isPersistedCapacityConfig(parsedValue)) {
+      return null;
+    }
+
+    return {
+      dateMode: parsedValue.dateMode === 'custom' ? 'custom' : INITIAL_DATE_MODE,
+      startDate: parsedValue.startDate,
+      endDate: parsedValue.endDate,
+      rows: parsedValue.rows,
+    };
   } catch {
     // Corrupted storage — fall back to defaults.
     return null;
@@ -70,13 +100,19 @@ function readPersistedConfig(): PersistedCapacityConfig | null {
 }
 
 /** Write the current capacity config to localStorage. */
-function writePersistedConfig(config: PersistedCapacityConfig): void {
+function writePersistedConfig(
+  config: PersistedCapacityConfig,
+  dashboardTeamProfileId: string,
+): void {
   if (!canUseLocalStorage()) {
     return;
   }
 
   try {
-    window.localStorage.setItem(CAPACITY_CONFIG_STORAGE_KEY, JSON.stringify(config));
+    window.localStorage.setItem(
+      buildCapacityConfigStorageKey(dashboardTeamProfileId),
+      JSON.stringify(config),
+    );
   } catch {
     // Storage write can fail in private-browsing modes; in-memory state remains authoritative.
   }
@@ -87,14 +123,16 @@ function writePersistedConfig(config: PersistedCapacityConfig): void {
 const INITIAL_START_DATE = '';
 const INITIAL_END_DATE = '';
 const INITIAL_ROWS: CapacityRow[] = [];
+const INITIAL_DATE_MODE: PersistedCapacityConfig['dateMode'] = 'pi';
 
-function buildInitialState(): PersistedCapacityConfig {
-  const persistedConfig = readPersistedConfig();
+function buildInitialState(dashboardTeamProfileId = ''): PersistedCapacityConfig {
+  const persistedConfig = readPersistedConfig(dashboardTeamProfileId);
   if (persistedConfig !== null) {
     return persistedConfig;
   }
 
   return {
+    dateMode: INITIAL_DATE_MODE,
     startDate: INITIAL_START_DATE,
     endDate: INITIAL_END_DATE,
     rows: INITIAL_ROWS,
@@ -109,22 +147,38 @@ function buildInitialState(): PersistedCapacityConfig {
  * survives page refreshes and tab switches.
  */
 export const useCapacityStore = create<CapacityState>((setState, getState) => ({
-  ...buildInitialState(),
+  dashboardTeamProfileId: resolveDashboardTeamProfileId(
+    useSettingsStore.getState().sprintDashboardActiveTeamProfileId,
+  ),
+  ...buildInitialState(useSettingsStore.getState().sprintDashboardActiveTeamProfileId),
+
+  setDashboardTeamProfileId: (dashboardTeamProfileId) => {
+    const resolvedTeamProfileId = resolveDashboardTeamProfileId(dashboardTeamProfileId);
+    setState({
+      dashboardTeamProfileId: resolvedTeamProfileId,
+      ...buildInitialState(resolvedTeamProfileId),
+    });
+  },
+
+  setDateMode: (dateMode) => {
+    setState({ dateMode });
+    writePersistedConfig({ ...getState(), dateMode }, getState().dashboardTeamProfileId);
+  },
 
   setStartDate: (startDate) => {
     setState({ startDate });
-    writePersistedConfig({ ...getState(), startDate });
+    writePersistedConfig({ ...getState(), startDate }, getState().dashboardTeamProfileId);
   },
 
   setEndDate: (endDate) => {
     setState({ endDate });
-    writePersistedConfig({ ...getState(), endDate });
+    writePersistedConfig({ ...getState(), endDate }, getState().dashboardTeamProfileId);
   },
 
   addRow: (newRow) => {
     const updatedRows = [...getState().rows, newRow];
     setState({ rows: updatedRows });
-    writePersistedConfig({ ...getState(), rows: updatedRows });
+    writePersistedConfig({ ...getState(), rows: updatedRows }, getState().dashboardTeamProfileId);
   },
 
   updateRow: (rowId, rowUpdates) => {
@@ -132,12 +186,12 @@ export const useCapacityStore = create<CapacityState>((setState, getState) => ({
       existingRow.id === rowId ? { ...existingRow, ...rowUpdates } : existingRow,
     );
     setState({ rows: updatedRows });
-    writePersistedConfig({ ...getState(), rows: updatedRows });
+    writePersistedConfig({ ...getState(), rows: updatedRows }, getState().dashboardTeamProfileId);
   },
 
   removeRow: (rowId) => {
     const updatedRows = getState().rows.filter((existingRow) => existingRow.id !== rowId);
     setState({ rows: updatedRows });
-    writePersistedConfig({ ...getState(), rows: updatedRows });
+    writePersistedConfig({ ...getState(), rows: updatedRows }, getState().dashboardTeamProfileId);
   },
 }));

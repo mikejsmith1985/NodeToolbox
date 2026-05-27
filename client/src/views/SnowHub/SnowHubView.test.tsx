@@ -3,6 +3,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import viewFrameStyles from '../../components/ViewFrame/ViewFrame.module.css';
 
 const { mockCrgState, mockCrgActions, mockPrbState, mockPrbActions, mockReleaseState, mockReleaseActions, mockSyncEngineState, mockSyncEngineActions } = vi.hoisted(() => ({
   mockCrgState: {
@@ -186,6 +187,22 @@ const { mockCrgState, mockCrgActions, mockPrbState, mockPrbActions, mockReleaseS
   },
 }));
 
+const { mockUserAssignmentGroupsState, mockUserAssignmentGroupsActions } = vi.hoisted(() => ({
+  mockUserAssignmentGroupsState: {
+    assignmentGroupMemberships: [] as Array<{
+      membershipSysId: string;
+      groupSysId: string;
+      groupDisplayName: string;
+    }>,
+    isLoadingAssignmentGroups: false,
+    lookupErrorMessage: null as string | null,
+  },
+  mockUserAssignmentGroupsActions: {
+    lookupAssignmentGroupsForUser: vi.fn().mockResolvedValue(undefined),
+    clearAssignmentGroupResults: vi.fn(),
+  },
+}));
+
 vi.mock('./hooks/useCrgState.ts', () => ({
   useCrgState: () => ({ state: mockCrgState, actions: mockCrgActions }),
 }));
@@ -210,6 +227,13 @@ vi.mock('./hooks/useSnowSyncEngine.ts', () => ({
   },
 }));
 
+vi.mock('./hooks/useUserAssignmentGroups.ts', () => ({
+  useUserAssignmentGroups: () => ({
+    ...mockUserAssignmentGroupsState,
+    ...mockUserAssignmentGroupsActions,
+  }),
+}));
+
 import SnowHubView from './SnowHubView.tsx';
 
 function resetMockState(): void {
@@ -226,8 +250,10 @@ describe('SnowHubView', () => {
     Object.values(mockPrbActions).forEach((mockAction) => mockAction.mockReset());
     Object.values(mockReleaseActions).forEach((mockAction) => mockAction.mockReset());
     Object.values(mockSyncEngineActions).forEach((mockAction) => mockAction.mockReset());
+    Object.values(mockUserAssignmentGroupsActions).forEach((mockAction) => mockAction.mockReset());
     mockSyncEngineActions.runNow.mockResolvedValue(undefined);
     mockSyncEngineActions.fetchJiraStatuses.mockResolvedValue(undefined);
+    mockUserAssignmentGroupsActions.lookupAssignmentGroupsForUser.mockResolvedValue(undefined);
   });
 
   it('renders the SNow Hub heading', () => {
@@ -236,12 +262,13 @@ describe('SnowHubView', () => {
     expect(screen.getByRole('heading', { name: 'SNow Hub' })).toBeInTheDocument();
   });
 
-  it('renders the five tab buttons', () => {
+  it('renders the six tab buttons', () => {
     render(<SnowHubView />);
 
     expect(screen.getByRole('tab', { name: 'CHG' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Configuration' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'PRB Generator' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Assignment Groups' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Release Management' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Sync Monitor' })).toBeInTheDocument();
   });
@@ -283,6 +310,16 @@ describe('SnowHubView', () => {
     expect(screen.getByRole('button', { name: 'Load Change' })).toBeInTheDocument();
   });
 
+  it('switches to the Assignment Groups tab', async () => {
+    const user = userEvent.setup();
+    render(<SnowHubView />);
+
+    await user.click(screen.getByRole('tab', { name: 'Assignment Groups' }));
+
+    expect(screen.getByRole('heading', { name: 'User Assignment Groups' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Find Assignment Groups' })).toBeInTheDocument();
+  });
+
   it('switches to the Sync Monitor tab', async () => {
     const user = userEvent.setup();
     render(<SnowHubView />);
@@ -290,5 +327,11 @@ describe('SnowHubView', () => {
     await user.click(screen.getByRole('tab', { name: 'Sync Monitor' }));
 
     expect(screen.getByRole('heading', { name: 'PRB Sync Monitor' })).toBeInTheDocument();
+  });
+
+  it('uses the full-width shared view frame so responsive sizing can expand the workspace', () => {
+    const { container } = render(<SnowHubView />);
+
+    expect(container.firstElementChild?.className).toContain(viewFrameStyles.widthFull);
   });
 });

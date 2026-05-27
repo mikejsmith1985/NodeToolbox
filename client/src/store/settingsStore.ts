@@ -39,6 +39,8 @@ const SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY = 'tbxSprintDashboardSelec
 const SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY = 'tbxSprintDashboardSelectedFixVersion';
 const SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY = 'tbxSprintDashboardSelectedPiValue';
 const SPRINT_DASHBOARD_ACTIVE_TEAM_STORAGE_KEY = 'tbxSprintDashboardActiveTeam';
+const SPRINT_DASHBOARD_TEAM_PROFILES_STORAGE_KEY = 'tbxSprintDashboardTeams';
+const SPRINT_DASHBOARD_ACTIVE_TEAM_PROFILE_ID_STORAGE_KEY = 'tbxSprintDashboardActiveTeamProfileId';
 const MY_ISSUES_JQL_STORAGE_KEY = 'tbxMIJql';
 const MY_ISSUES_BOARD_ID_STORAGE_KEY = 'tbxMIBoardId';
 const MY_ISSUES_JQL_HISTORY_STORAGE_KEY = 'tbxMIJqlHistory';
@@ -50,6 +52,30 @@ export type ToolTextSize =
   | typeof DEFAULT_TOOL_TEXT_SIZE
   | typeof LARGE_TOOL_TEXT_SIZE
   | typeof EXTRA_LARGE_TOOL_TEXT_SIZE;
+
+export interface SprintDashboardTeamProfile {
+  id: string;
+  name: string;
+  projectKey: string;
+  boardId: string;
+  boardName: string;
+  boardType: string;
+  scopeMode: string;
+  selectedSprintId: string;
+  selectedFixVersion: string;
+  selectedPiValue: string;
+}
+
+const EMPTY_TEAM_PROFILE_LIST: SprintDashboardTeamProfile[] = [];
+
+interface SprintDashboardLegacySelections {
+  projectKey: string;
+  boardId: string;
+  scopeMode: string;
+  selectedSprintId: string;
+  selectedFixVersion: string;
+  selectedPiValue: string;
+}
 
 interface SettingsState {
   theme: Theme;
@@ -69,6 +95,8 @@ interface SettingsState {
   sprintDashboardSelectedFixVersion: string;
   sprintDashboardSelectedPiValue: string;
   sprintDashboardActiveTeam: string;
+  sprintDashboardTeamProfiles: SprintDashboardTeamProfile[];
+  sprintDashboardActiveTeamProfileId: string;
   myIssuesJql: string;
   myIssuesBoardId: string;
   myIssuesJqlHistory: string[];
@@ -98,6 +126,11 @@ interface SettingsState {
   setSprintDashboardSelectedFixVersion: (fixVersionName: string) => void;
   setSprintDashboardSelectedPiValue: (piValue: string) => void;
   setSprintDashboardActiveTeam: (teamName: string) => void;
+  setSprintDashboardTeamProfiles: (teamProfiles: SprintDashboardTeamProfile[]) => void;
+  setSprintDashboardActiveTeamProfileId: (teamProfileId: string) => void;
+  updateActiveSprintDashboardTeamProfile: (
+    profileUpdates: Partial<Omit<SprintDashboardTeamProfile, 'id'>>,
+  ) => void;
   setMyIssuesJql: (jql: string) => void;
   setMyIssuesBoardId: (boardId: string) => void;
   setMyIssuesJqlHistory: (jqlHistory: string[]) => void;
@@ -127,6 +160,208 @@ function readStoredString(storageKey: string, fallbackValue: string): string {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((arrayItem) => typeof arrayItem === 'string');
+}
+
+function normalizeSprintDashboardTeamProfile(
+  profileCandidate: Partial<SprintDashboardTeamProfile>,
+): SprintDashboardTeamProfile | null {
+  const profileId = typeof profileCandidate.id === 'string' ? profileCandidate.id.trim() : '';
+  if (!profileId) {
+    return null;
+  }
+
+  return {
+    id: profileId,
+    name: typeof profileCandidate.name === 'string' ? profileCandidate.name.trim() : '',
+    projectKey:
+      typeof profileCandidate.projectKey === 'string' ? profileCandidate.projectKey.trim() : '',
+    boardId: typeof profileCandidate.boardId === 'string' ? profileCandidate.boardId.trim() : '',
+    boardName: typeof profileCandidate.boardName === 'string' ? profileCandidate.boardName.trim() : '',
+    boardType: typeof profileCandidate.boardType === 'string' ? profileCandidate.boardType.trim() : '',
+    scopeMode:
+      typeof profileCandidate.scopeMode === 'string'
+        ? profileCandidate.scopeMode.trim()
+        : 'sprint',
+    selectedSprintId:
+      typeof profileCandidate.selectedSprintId === 'string'
+        ? profileCandidate.selectedSprintId.trim()
+        : '',
+    selectedFixVersion:
+      typeof profileCandidate.selectedFixVersion === 'string'
+        ? profileCandidate.selectedFixVersion.trim()
+        : '',
+    selectedPiValue:
+      typeof profileCandidate.selectedPiValue === 'string'
+        ? profileCandidate.selectedPiValue.trim()
+        : '',
+  };
+}
+
+function readSprintDashboardLegacySelections(): SprintDashboardLegacySelections {
+  return {
+    projectKey: readStoredString(SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY, EMPTY_STRING),
+    boardId: readStoredString(SPRINT_DASHBOARD_BOARD_ID_STORAGE_KEY, EMPTY_STRING),
+    scopeMode: readStoredString(SPRINT_DASHBOARD_SCOPE_MODE_STORAGE_KEY, 'sprint'),
+    selectedSprintId: readStoredString(SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY, EMPTY_STRING),
+    selectedFixVersion: readStoredString(
+      SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY,
+      EMPTY_STRING,
+    ),
+    selectedPiValue: readStoredString(SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY, EMPTY_STRING),
+  };
+}
+
+function createMigratedSprintDashboardTeamProfile(
+  legacySelections: SprintDashboardLegacySelections,
+): SprintDashboardTeamProfile | null {
+  const hasSavedTeamSelection =
+    legacySelections.projectKey.trim() !== '' || legacySelections.boardId.trim() !== '';
+  if (!hasSavedTeamSelection) {
+    return null;
+  }
+
+  const fallbackTeamName =
+    legacySelections.projectKey.trim() !== ''
+      ? legacySelections.projectKey.trim().toUpperCase()
+      : `Board ${legacySelections.boardId.trim()}`;
+  return {
+    id: `dashboard-team:${legacySelections.projectKey.trim().toUpperCase() || 'board'}:${legacySelections.boardId.trim() || 'saved'}`,
+    name: fallbackTeamName,
+    projectKey: legacySelections.projectKey.trim(),
+    boardId: legacySelections.boardId.trim(),
+    boardName: EMPTY_STRING,
+    boardType: EMPTY_STRING,
+    scopeMode: legacySelections.scopeMode.trim() || 'sprint',
+    selectedSprintId: legacySelections.selectedSprintId.trim(),
+    selectedFixVersion: legacySelections.selectedFixVersion.trim(),
+    selectedPiValue: legacySelections.selectedPiValue.trim(),
+  };
+}
+
+function readStoredSprintDashboardTeamProfiles(): SprintDashboardTeamProfile[] {
+  if (!canUseLocalStorage()) {
+    return EMPTY_TEAM_PROFILE_LIST;
+  }
+
+  try {
+    const rawStoredValue = window.localStorage.getItem(
+      SPRINT_DASHBOARD_TEAM_PROFILES_STORAGE_KEY,
+    );
+    if (rawStoredValue !== null) {
+      const parsedValue: unknown = JSON.parse(rawStoredValue);
+      if (Array.isArray(parsedValue)) {
+        return parsedValue
+          .map((profileCandidate) =>
+            typeof profileCandidate === 'object' && profileCandidate !== null
+              ? normalizeSprintDashboardTeamProfile(profileCandidate as Partial<SprintDashboardTeamProfile>)
+              : null,
+          )
+          .filter((teamProfile): teamProfile is SprintDashboardTeamProfile => teamProfile !== null);
+      }
+    }
+  } catch {
+    return EMPTY_TEAM_PROFILE_LIST;
+  }
+
+  const migratedTeamProfile = createMigratedSprintDashboardTeamProfile(
+    readSprintDashboardLegacySelections(),
+  );
+  return migratedTeamProfile === null ? EMPTY_TEAM_PROFILE_LIST : [migratedTeamProfile];
+}
+
+function writeStoredSprintDashboardTeamProfiles(
+  teamProfiles: SprintDashboardTeamProfile[],
+): void {
+  writeStoredString(
+    SPRINT_DASHBOARD_TEAM_PROFILES_STORAGE_KEY,
+    JSON.stringify(teamProfiles),
+  );
+}
+
+function readResolvedSprintDashboardTeamProfiles(): SprintDashboardTeamProfile[] {
+  const storedTeamProfiles = readStoredSprintDashboardTeamProfiles();
+  return storedTeamProfiles.length > 0 ? storedTeamProfiles : EMPTY_TEAM_PROFILE_LIST;
+}
+
+function readResolvedSprintDashboardActiveTeamProfileId(
+  teamProfiles: SprintDashboardTeamProfile[],
+): string {
+  const storedProfileId = readStoredString(
+    SPRINT_DASHBOARD_ACTIVE_TEAM_PROFILE_ID_STORAGE_KEY,
+    EMPTY_STRING,
+  ).trim();
+  if (storedProfileId !== '' && teamProfiles.some((teamProfile) => teamProfile.id === storedProfileId)) {
+    return storedProfileId;
+  }
+
+  return teamProfiles[0]?.id ?? EMPTY_STRING;
+}
+
+function writeSprintDashboardLegacySelections(
+  teamProfile: SprintDashboardTeamProfile | null,
+): void {
+  writeStoredString(
+    SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY,
+    teamProfile?.projectKey ?? EMPTY_STRING,
+  );
+  writeStoredString(
+    SPRINT_DASHBOARD_BOARD_ID_STORAGE_KEY,
+    teamProfile?.boardId ?? EMPTY_STRING,
+  );
+  writeStoredString(
+    SPRINT_DASHBOARD_SCOPE_MODE_STORAGE_KEY,
+    teamProfile?.scopeMode || 'sprint',
+  );
+  writeStoredString(
+    SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY,
+    teamProfile?.selectedSprintId ?? EMPTY_STRING,
+  );
+  writeStoredString(
+    SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY,
+    teamProfile?.selectedFixVersion ?? EMPTY_STRING,
+  );
+  writeStoredString(
+    SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY,
+    teamProfile?.selectedPiValue ?? EMPTY_STRING,
+  );
+}
+
+function readActiveSprintDashboardTeamProfile(
+  currentState: Pick<
+    SettingsState,
+    | 'sprintDashboardActiveTeamProfileId'
+    | 'sprintDashboardTeamProfiles'
+  >,
+): SprintDashboardTeamProfile | null {
+  return (
+    currentState.sprintDashboardTeamProfiles.find(
+      (teamProfile) => teamProfile.id === currentState.sprintDashboardActiveTeamProfileId,
+    ) ?? null
+  );
+}
+
+function createSprintDashboardTeamStatePatch(
+  teamProfiles: SprintDashboardTeamProfile[],
+  activeTeamProfileId: string,
+) {
+  const activeTeamProfile =
+    teamProfiles.find((teamProfile) => teamProfile.id === activeTeamProfileId) ?? null;
+  writeStoredSprintDashboardTeamProfiles(teamProfiles);
+  writeStoredString(
+    SPRINT_DASHBOARD_ACTIVE_TEAM_PROFILE_ID_STORAGE_KEY,
+    activeTeamProfile?.id ?? EMPTY_STRING,
+  );
+  writeSprintDashboardLegacySelections(activeTeamProfile);
+  return {
+    sprintDashboardTeamProfiles: teamProfiles,
+    sprintDashboardActiveTeamProfileId: activeTeamProfile?.id ?? EMPTY_STRING,
+    sprintDashboardProjectKey: activeTeamProfile?.projectKey ?? EMPTY_STRING,
+    sprintDashboardBoardId: activeTeamProfile?.boardId ?? EMPTY_STRING,
+    sprintDashboardScopeMode: activeTeamProfile?.scopeMode || 'sprint',
+    sprintDashboardSelectedSprintId: activeTeamProfile?.selectedSprintId ?? EMPTY_STRING,
+    sprintDashboardSelectedFixVersion: activeTeamProfile?.selectedFixVersion ?? EMPTY_STRING,
+    sprintDashboardSelectedPiValue: activeTeamProfile?.selectedPiValue ?? EMPTY_STRING,
+  };
 }
 
 function readStoredStringArray(storageKey: string): string[] {
@@ -225,6 +460,14 @@ function writeStoredStringArray(storageKey: string, value: string[]): void {
   }
 }
 
+const INITIAL_SPRINT_DASHBOARD_TEAM_PROFILES = readResolvedSprintDashboardTeamProfiles();
+const INITIAL_SPRINT_DASHBOARD_ACTIVE_TEAM_PROFILE_ID =
+  readResolvedSprintDashboardActiveTeamProfileId(INITIAL_SPRINT_DASHBOARD_TEAM_PROFILES);
+const INITIAL_ACTIVE_SPRINT_DASHBOARD_TEAM_PROFILE =
+  INITIAL_SPRINT_DASHBOARD_TEAM_PROFILES.find(
+    (teamProfile) => teamProfile.id === INITIAL_SPRINT_DASHBOARD_ACTIVE_TEAM_PROFILE_ID,
+  ) ?? null;
+
 /** Zustand store for React SPA settings backed by legacy localStorage keys. */
 export const useSettingsStore = create<SettingsState>((setState) => ({
   theme: resolveStoredTheme(),
@@ -242,29 +485,31 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
   snowHubTab: readStoredString(SNOW_HUB_TAB_STORAGE_KEY, DEFAULT_SNOW_HUB_TAB),
   textToolsTab: readStoredString(TEXT_TOOLS_TAB_STORAGE_KEY, DEFAULT_TEXT_TOOLS_TAB),
   dsuProjectKey: readStoredString(DSU_PROJECT_KEY_STORAGE_KEY, EMPTY_STRING),
-  sprintDashboardProjectKey: readStoredString(
-    SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY,
-    EMPTY_STRING,
-  ),
-  sprintDashboardBoardId: readStoredString(SPRINT_DASHBOARD_BOARD_ID_STORAGE_KEY, EMPTY_STRING),
+  sprintDashboardProjectKey:
+    INITIAL_ACTIVE_SPRINT_DASHBOARD_TEAM_PROFILE?.projectKey ??
+    readStoredString(SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY, EMPTY_STRING),
+  sprintDashboardBoardId:
+    INITIAL_ACTIVE_SPRINT_DASHBOARD_TEAM_PROFILE?.boardId ??
+    readStoredString(SPRINT_DASHBOARD_BOARD_ID_STORAGE_KEY, EMPTY_STRING),
   sprintDashboardActiveTab: readStoredString(
     SPRINT_DASHBOARD_ACTIVE_TAB_STORAGE_KEY,
     DEFAULT_SPRINT_DASHBOARD_ACTIVE_TAB,
   ),
-  sprintDashboardScopeMode: readStoredString(SPRINT_DASHBOARD_SCOPE_MODE_STORAGE_KEY, 'sprint'),
-  sprintDashboardSelectedSprintId: readStoredString(
-    SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY,
-    EMPTY_STRING,
-  ),
-  sprintDashboardSelectedFixVersion: readStoredString(
-    SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY,
-    EMPTY_STRING,
-  ),
-  sprintDashboardSelectedPiValue: readStoredString(
-    SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY,
-    EMPTY_STRING,
-  ),
+  sprintDashboardScopeMode:
+    INITIAL_ACTIVE_SPRINT_DASHBOARD_TEAM_PROFILE?.scopeMode ??
+    readStoredString(SPRINT_DASHBOARD_SCOPE_MODE_STORAGE_KEY, 'sprint'),
+  sprintDashboardSelectedSprintId:
+    INITIAL_ACTIVE_SPRINT_DASHBOARD_TEAM_PROFILE?.selectedSprintId ??
+    readStoredString(SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY, EMPTY_STRING),
+  sprintDashboardSelectedFixVersion:
+    INITIAL_ACTIVE_SPRINT_DASHBOARD_TEAM_PROFILE?.selectedFixVersion ??
+    readStoredString(SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY, EMPTY_STRING),
+  sprintDashboardSelectedPiValue:
+    INITIAL_ACTIVE_SPRINT_DASHBOARD_TEAM_PROFILE?.selectedPiValue ??
+    readStoredString(SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY, EMPTY_STRING),
   sprintDashboardActiveTeam: readStoredString(SPRINT_DASHBOARD_ACTIVE_TEAM_STORAGE_KEY, EMPTY_STRING),
+  sprintDashboardTeamProfiles: INITIAL_SPRINT_DASHBOARD_TEAM_PROFILES,
+  sprintDashboardActiveTeamProfileId: INITIAL_SPRINT_DASHBOARD_ACTIVE_TEAM_PROFILE_ID,
   myIssuesJql: readStoredString(MY_ISSUES_JQL_STORAGE_KEY, EMPTY_STRING),
   myIssuesBoardId: readStoredString(MY_ISSUES_BOARD_ID_STORAGE_KEY, EMPTY_STRING),
   myIssuesJqlHistory: readStoredStringArray(MY_ISSUES_JQL_HISTORY_STORAGE_KEY),
@@ -311,38 +556,163 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
     writeStoredString(DSU_PROJECT_KEY_STORAGE_KEY, projectKey);
     setState({ dsuProjectKey: projectKey });
   },
-  setSprintDashboardProjectKey: (projectKey) => {
-    writeStoredString(SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY, projectKey);
-    setState({ sprintDashboardProjectKey: projectKey });
-  },
-  setSprintDashboardBoardId: (boardId) => {
-    writeStoredString(SPRINT_DASHBOARD_BOARD_ID_STORAGE_KEY, boardId);
-    setState({ sprintDashboardBoardId: boardId });
-  },
+  setSprintDashboardProjectKey: (projectKey) =>
+    setState((currentState) => {
+      const activeTeamProfile = readActiveSprintDashboardTeamProfile(currentState);
+      if (activeTeamProfile === null) {
+        writeStoredString(SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY, projectKey);
+        return { sprintDashboardProjectKey: projectKey };
+      }
+
+      const teamProfiles = currentState.sprintDashboardTeamProfiles.map((teamProfile) =>
+        teamProfile.id === activeTeamProfile.id ? { ...teamProfile, projectKey } : teamProfile,
+      );
+      return createSprintDashboardTeamStatePatch(
+        teamProfiles,
+        currentState.sprintDashboardActiveTeamProfileId,
+      );
+    }),
+  setSprintDashboardBoardId: (boardId) =>
+    setState((currentState) => {
+      const activeTeamProfile = readActiveSprintDashboardTeamProfile(currentState);
+      if (activeTeamProfile === null) {
+        writeStoredString(SPRINT_DASHBOARD_BOARD_ID_STORAGE_KEY, boardId);
+        return { sprintDashboardBoardId: boardId };
+      }
+
+      const teamProfiles = currentState.sprintDashboardTeamProfiles.map((teamProfile) =>
+        teamProfile.id === activeTeamProfile.id ? { ...teamProfile, boardId } : teamProfile,
+      );
+      return createSprintDashboardTeamStatePatch(
+        teamProfiles,
+        currentState.sprintDashboardActiveTeamProfileId,
+      );
+    }),
   setSprintDashboardActiveTab: (activeTab) => {
     writeStoredString(SPRINT_DASHBOARD_ACTIVE_TAB_STORAGE_KEY, activeTab);
     setState({ sprintDashboardActiveTab: activeTab });
   },
-  setSprintDashboardScopeMode: (scopeMode) => {
-    writeStoredString(SPRINT_DASHBOARD_SCOPE_MODE_STORAGE_KEY, scopeMode);
-    setState({ sprintDashboardScopeMode: scopeMode });
-  },
-  setSprintDashboardSelectedSprintId: (sprintId) => {
-    writeStoredString(SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY, sprintId);
-    setState({ sprintDashboardSelectedSprintId: sprintId });
-  },
-  setSprintDashboardSelectedFixVersion: (fixVersionName) => {
-    writeStoredString(SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY, fixVersionName);
-    setState({ sprintDashboardSelectedFixVersion: fixVersionName });
-  },
-  setSprintDashboardSelectedPiValue: (piValue) => {
-    writeStoredString(SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY, piValue);
-    setState({ sprintDashboardSelectedPiValue: piValue });
-  },
+  setSprintDashboardScopeMode: (scopeMode) =>
+    setState((currentState) => {
+      const activeTeamProfile = readActiveSprintDashboardTeamProfile(currentState);
+      if (activeTeamProfile === null) {
+        writeStoredString(SPRINT_DASHBOARD_SCOPE_MODE_STORAGE_KEY, scopeMode);
+        return { sprintDashboardScopeMode: scopeMode };
+      }
+
+      const teamProfiles = currentState.sprintDashboardTeamProfiles.map((teamProfile) =>
+        teamProfile.id === activeTeamProfile.id ? { ...teamProfile, scopeMode } : teamProfile,
+      );
+      return createSprintDashboardTeamStatePatch(
+        teamProfiles,
+        currentState.sprintDashboardActiveTeamProfileId,
+      );
+    }),
+  setSprintDashboardSelectedSprintId: (sprintId) =>
+    setState((currentState) => {
+      const activeTeamProfile = readActiveSprintDashboardTeamProfile(currentState);
+      if (activeTeamProfile === null) {
+        writeStoredString(SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY, sprintId);
+        return { sprintDashboardSelectedSprintId: sprintId };
+      }
+
+      const teamProfiles = currentState.sprintDashboardTeamProfiles.map((teamProfile) =>
+        teamProfile.id === activeTeamProfile.id ? { ...teamProfile, selectedSprintId: sprintId } : teamProfile,
+      );
+      return createSprintDashboardTeamStatePatch(
+        teamProfiles,
+        currentState.sprintDashboardActiveTeamProfileId,
+      );
+    }),
+  setSprintDashboardSelectedFixVersion: (fixVersionName) =>
+    setState((currentState) => {
+      const activeTeamProfile = readActiveSprintDashboardTeamProfile(currentState);
+      if (activeTeamProfile === null) {
+        writeStoredString(SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY, fixVersionName);
+        return { sprintDashboardSelectedFixVersion: fixVersionName };
+      }
+
+      const teamProfiles = currentState.sprintDashboardTeamProfiles.map((teamProfile) =>
+        teamProfile.id === activeTeamProfile.id
+          ? { ...teamProfile, selectedFixVersion: fixVersionName }
+          : teamProfile,
+      );
+      return createSprintDashboardTeamStatePatch(
+        teamProfiles,
+        currentState.sprintDashboardActiveTeamProfileId,
+      );
+    }),
+  setSprintDashboardSelectedPiValue: (piValue) =>
+    setState((currentState) => {
+      const activeTeamProfile = readActiveSprintDashboardTeamProfile(currentState);
+      if (activeTeamProfile === null) {
+        writeStoredString(SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY, piValue);
+        return { sprintDashboardSelectedPiValue: piValue };
+      }
+
+      const teamProfiles = currentState.sprintDashboardTeamProfiles.map((teamProfile) =>
+        teamProfile.id === activeTeamProfile.id ? { ...teamProfile, selectedPiValue: piValue } : teamProfile,
+      );
+      return createSprintDashboardTeamStatePatch(
+        teamProfiles,
+        currentState.sprintDashboardActiveTeamProfileId,
+      );
+    }),
   setSprintDashboardActiveTeam: (teamName) => {
     writeStoredString(SPRINT_DASHBOARD_ACTIVE_TEAM_STORAGE_KEY, teamName);
     setState({ sprintDashboardActiveTeam: teamName });
   },
+  setSprintDashboardTeamProfiles: (teamProfiles) =>
+    setState((currentState) => {
+      const normalizedTeamProfiles = teamProfiles
+        .map((teamProfile) => normalizeSprintDashboardTeamProfile(teamProfile))
+        .filter((teamProfile): teamProfile is SprintDashboardTeamProfile => teamProfile !== null);
+      const activeTeamProfileId = normalizedTeamProfiles.some(
+        (teamProfile) => teamProfile.id === currentState.sprintDashboardActiveTeamProfileId,
+      )
+        ? currentState.sprintDashboardActiveTeamProfileId
+        : normalizedTeamProfiles[0]?.id ?? EMPTY_STRING;
+      return createSprintDashboardTeamStatePatch(normalizedTeamProfiles, activeTeamProfileId);
+    }),
+  setSprintDashboardActiveTeamProfileId: (teamProfileId) =>
+    setState((currentState) =>
+      createSprintDashboardTeamStatePatch(
+        currentState.sprintDashboardTeamProfiles,
+        teamProfileId.trim(),
+      ),
+    ),
+  updateActiveSprintDashboardTeamProfile: (profileUpdates) =>
+    setState((currentState) => {
+      const activeTeamProfile = readActiveSprintDashboardTeamProfile(currentState);
+      if (activeTeamProfile === null) {
+        return {};
+      }
+
+      const normalizedTeamProfiles = currentState.sprintDashboardTeamProfiles.map((teamProfile) =>
+        teamProfile.id === activeTeamProfile.id
+          ? {
+              ...teamProfile,
+              ...profileUpdates,
+              name: profileUpdates.name?.trim() ?? teamProfile.name,
+              projectKey: profileUpdates.projectKey?.trim() ?? teamProfile.projectKey,
+              boardId: profileUpdates.boardId?.trim() ?? teamProfile.boardId,
+              boardName: profileUpdates.boardName?.trim() ?? teamProfile.boardName,
+              boardType: profileUpdates.boardType?.trim() ?? teamProfile.boardType,
+              scopeMode: profileUpdates.scopeMode?.trim() ?? teamProfile.scopeMode,
+              selectedSprintId:
+                profileUpdates.selectedSprintId?.trim() ?? teamProfile.selectedSprintId,
+              selectedFixVersion:
+                profileUpdates.selectedFixVersion?.trim() ?? teamProfile.selectedFixVersion,
+              selectedPiValue:
+                profileUpdates.selectedPiValue?.trim() ?? teamProfile.selectedPiValue,
+            }
+          : teamProfile,
+      );
+      return createSprintDashboardTeamStatePatch(
+        normalizedTeamProfiles,
+        currentState.sprintDashboardActiveTeamProfileId,
+      );
+    }),
   setMyIssuesJql: (jql) => {
     writeStoredString(MY_ISSUES_JQL_STORAGE_KEY, jql);
     setState({ myIssuesJql: jql });

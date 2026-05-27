@@ -31,7 +31,7 @@ function buildCapacityRow(overrides: Partial<CapacityRow> = {}): CapacityRow {
 }
 
 function resetStore(): void {
-  useCapacityStore.setState({ startDate: '', endDate: '', rows: [] });
+  useCapacityStore.setState({ dateMode: 'pi', startDate: '', endDate: '', rows: [] });
 }
 
 beforeEach(() => {
@@ -163,18 +163,18 @@ describe('calculateTotalCapacity', () => {
 
 describe('CapacityTab', () => {
   it('renders the date range section and results panel', () => {
-    render(<CapacityTab />);
+    render(<CapacityTab selectedPiName="" />);
     expect(screen.getByText('Planning Window')).toBeInTheDocument();
     expect(screen.getByText('Capacity Results')).toBeInTheDocument();
   });
 
   it('shows the empty-state message when no rows are present', () => {
-    render(<CapacityTab />);
+    render(<CapacityTab selectedPiName="" />);
     expect(screen.getByText(/No team members added yet/)).toBeInTheDocument();
   });
 
   it('shows 0 capacity results when no dates or rows are set', () => {
-    render(<CapacityTab />);
+    render(<CapacityTab selectedPiName="" />);
     // Work days, 100% capacity, and 80% capacity are all 0
     expect(screen.getByText('Work Days')).toBeInTheDocument();
     expect(screen.getByText('100% Capacity (pts)')).toBeInTheDocument();
@@ -183,14 +183,14 @@ describe('CapacityTab', () => {
 
   it('adds a new row when Add Row is clicked', async () => {
     const user = userEvent.setup();
-    render(<CapacityTab />);
+    render(<CapacityTab selectedPiName="" />);
     await user.click(screen.getByRole('button', { name: '+ Add Row' }));
     expect(screen.getByRole('combobox', { name: 'Role' })).toBeInTheDocument();
   });
 
   it('shows the expanded ART role list in the dropdown', async () => {
     const user = userEvent.setup();
-    render(<CapacityTab />);
+    render(<CapacityTab selectedPiName="" />);
     await user.click(screen.getByRole('button', { name: '+ Add Row' }));
     const roleSelect = screen.getByRole('combobox', { name: 'Role' });
     expect(screen.getByRole('option', { name: 'Dev Lead' })).toBeInTheDocument();
@@ -202,7 +202,7 @@ describe('CapacityTab', () => {
 
   it('removes a row when the remove button is clicked', async () => {
     const user = userEvent.setup();
-    render(<CapacityTab />);
+    render(<CapacityTab selectedPiName="" />);
     await user.click(screen.getByRole('button', { name: '+ Add Row' }));
     expect(screen.queryByRole('combobox', { name: 'Role' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Remove Dev row/ }));
@@ -211,11 +211,36 @@ describe('CapacityTab', () => {
 
   it('displays the work days badge when a valid date range is entered', async () => {
     const user = userEvent.setup();
-    render(<CapacityTab />);
+    render(<CapacityTab selectedPiName="" />);
+    await user.click(screen.getByRole('button', { name: 'Custom Dates' }));
     const startInput = screen.getByLabelText('Start Date');
     const endInput = screen.getByLabelText('End Date');
     await user.type(startInput, '2025-01-06');
     await user.type(endInput, '2025-01-10');
     expect(await screen.findByText(/5 work days/)).toBeInTheDocument();
+  });
+
+  it('defaults the planning window from the selected PI date range', () => {
+    render(<CapacityTab selectedPiName="PI 26.3 (05/21/26 - 07/29/26)" />);
+
+    expect(screen.getByLabelText('Start Date')).toHaveValue('2026-05-21');
+    expect(screen.getByLabelText('End Date')).toHaveValue('2026-07-29');
+    expect(screen.getByRole('button', { name: 'PI Dates' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('allows switching to custom dates without overwriting the manual range', async () => {
+    const user = userEvent.setup();
+    render(<CapacityTab selectedPiName="PI 26.3 (05/21/26 - 07/29/26)" />);
+
+    await user.click(screen.getByRole('button', { name: 'Custom Dates' }));
+    const startInput = screen.getByLabelText('Start Date');
+    const endInput = screen.getByLabelText('End Date');
+    await user.clear(startInput);
+    await user.type(startInput, '2026-06-01');
+    await user.clear(endInput);
+    await user.type(endInput, '2026-06-13');
+
+    expect(startInput).toHaveValue('2026-06-01');
+    expect(endInput).toHaveValue('2026-06-13');
   });
 });

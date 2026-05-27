@@ -11,6 +11,8 @@ import styles from './SnowLookupField.module.css';
 const DEBOUNCE_DELAY_MS = 300;
 // Maximum number of suggestions shown beneath the input at one time.
 const MAX_LOOKUP_RESULTS = 10;
+// Show a persistent cue when enough results are present that the list likely needs scrolling.
+const SCROLL_HINT_MIN_RESULTS = 6;
 // Start searching as soon as the user types one meaningful character so CI lookups feel responsive.
 const MIN_LOOKUP_SEARCH_LENGTH = 1;
 
@@ -208,6 +210,7 @@ export function SnowLookupField({
   }
 
   const isResolved = Boolean(value.sysId);
+  const shouldShowScrollHint = suggestions.length >= SCROLL_HINT_MIN_RESULTS;
 
   return (
     <div className={styles.lookupContainer} ref={containerRef}>
@@ -231,19 +234,24 @@ export function SnowLookupField({
         )}
       </div>
       {isOpen && suggestions.length > 0 && (
-        <ul className={styles.suggestionList} role="listbox" aria-label={`${label} suggestions`}>
-          {suggestions.map((suggestion) => (
-            <li
-              key={suggestion.sysId}
-              className={styles.suggestionItem}
-              role="option"
-              aria-selected={suggestion.sysId === value.sysId}
-              onMouseDown={() => { handleSuggestionClick(suggestion); }}
-            >
-              {suggestion.displayName}
-            </li>
-          ))}
-        </ul>
+        <div className={styles.suggestionDropdown}>
+          <ul className={styles.suggestionList} role="listbox" aria-label={`${label} suggestions`}>
+            {suggestions.map((suggestion) => (
+              <li
+                key={suggestion.sysId}
+                className={styles.suggestionItem}
+                role="option"
+                aria-selected={suggestion.sysId === value.sysId}
+                onMouseDown={() => { handleSuggestionClick(suggestion); }}
+              >
+                {suggestion.displayName}
+              </li>
+            ))}
+          </ul>
+          {shouldShowScrollHint ? (
+            <p className={styles.scrollHint}>Scroll for more results</p>
+          ) : null}
+        </div>
       )}
     </div>
   );

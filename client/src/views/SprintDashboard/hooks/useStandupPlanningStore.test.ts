@@ -4,10 +4,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useStandupPlanningStore } from './useStandupPlanningStore.ts';
 
+const TEST_STORAGE_KEY = 'tbxSprintDashboardStandupPlanning:legacy-default';
+
 describe('useStandupPlanningStore', () => {
   beforeEach(() => {
     localStorage.clear();
-    useStandupPlanningStore.setState({ planEntries: [] });
+    useStandupPlanningStore.setState({
+      dashboardTeamProfileId: 'legacy-default',
+      planEntries: [],
+    });
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-05-18T12:00:00.000Z'));
   });
@@ -33,6 +38,59 @@ describe('useStandupPlanningStore', () => {
     useStandupPlanningStore.getState().togglePlannedIssueKey('2026-05-18', 'roster', 'TBX', 'Alice Adams', 'TBX-1');
 
     expect(useStandupPlanningStore.getState().planEntries).toEqual([]);
-    expect(localStorage.getItem('tbxSprintDashboardStandupPlanning')).toBe('{"planEntries":[]}');
+    expect(localStorage.getItem(TEST_STORAGE_KEY)).toBe('{"planEntries":[]}');
+  });
+
+  it('migrates the bare legacy standup plan entries into the first scoped team key', () => {
+    localStorage.setItem('tbxSprintDashboardStandupPlanning', JSON.stringify({
+      planEntries: [
+        {
+          date: '2026-05-18',
+          scopeMode: 'sprint',
+          projectKey: 'TBX',
+          personName: 'Legacy Person',
+          plannedIssueKeys: ['TBX-1'],
+          updatedAtIso: '2026-05-17T12:00:00.000Z',
+        },
+      ],
+    }));
+
+    useStandupPlanningStore.getState().setDashboardTeamProfileId('team-alpha');
+
+    expect(useStandupPlanningStore.getState().planEntries).toHaveLength(1);
+    expect(localStorage.getItem('tbxSprintDashboardStandupPlanning:team-alpha')).toBe(JSON.stringify({
+      planEntries: [
+        {
+          date: '2026-05-18',
+          scopeMode: 'sprint',
+          projectKey: 'TBX',
+          personName: 'Legacy Person',
+          plannedIssueKeys: ['TBX-1'],
+          updatedAtIso: '2026-05-17T12:00:00.000Z',
+        },
+      ],
+    }));
+  });
+
+  it('does not let a new team inherit the bare legacy standup plan entries after scoped data exists', () => {
+    localStorage.setItem('tbxSprintDashboardStandupPlanning', JSON.stringify({
+      planEntries: [
+        {
+          date: '2026-05-18',
+          scopeMode: 'sprint',
+          projectKey: 'TBX',
+          personName: 'Legacy Person',
+          plannedIssueKeys: ['TBX-1'],
+          updatedAtIso: '2026-05-17T12:00:00.000Z',
+        },
+      ],
+    }));
+    localStorage.setItem('tbxSprintDashboardStandupPlanning:team-alpha', JSON.stringify({
+      planEntries: [],
+    }));
+
+    useStandupPlanningStore.getState().setDashboardTeamProfileId('team-beta');
+
+    expect(useStandupPlanningStore.getState().planEntries).toEqual([]);
   });
 });

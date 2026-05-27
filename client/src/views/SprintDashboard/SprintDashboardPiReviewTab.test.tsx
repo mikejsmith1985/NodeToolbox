@@ -5,8 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useCapacityStore } from './hooks/useCapacityStore.ts';
 
-const { mockPiReviewTab } = vi.hoisted(() => ({
+const { mockPiReviewTab, mockPiFeatureRemapPanel } = vi.hoisted(() => ({
   mockPiReviewTab: vi.fn(),
+  mockPiFeatureRemapPanel: vi.fn(),
 }));
 
 vi.mock('../ArtView/PiReviewTab.tsx', () => ({
@@ -26,6 +27,19 @@ vi.mock('../ArtView/PiReviewTab.tsx', () => ({
   },
 }));
 
+vi.mock('./PiFeatureRemapPanel.tsx', () => ({
+  default: ({
+    projectKey,
+    selectedPiName,
+  }: {
+    projectKey: string;
+    selectedPiName: string;
+  }) => {
+    mockPiFeatureRemapPanel({ projectKey, selectedPiName });
+    return <div>Mock PI Carryover Remap</div>;
+  },
+}));
+
 import SprintDashboardPiReviewTab from './SprintDashboardPiReviewTab.tsx';
 
 describe('SprintDashboardPiReviewTab', () => {
@@ -33,6 +47,7 @@ describe('SprintDashboardPiReviewTab', () => {
     vi.clearAllMocks();
     localStorage.clear();
     useCapacityStore.setState({
+      dateMode: 'pi',
       startDate: '',
       endDate: '',
       rows: [],
@@ -61,6 +76,7 @@ describe('SprintDashboardPiReviewTab', () => {
     );
 
     expect(screen.getByText('Mock Embedded PI Review')).toBeInTheDocument();
+    expect(screen.getByText('Mock PI Carryover Remap')).toBeInTheDocument();
     expect(screen.getByText('Planning Window')).toBeInTheDocument();
     expect(screen.getByText('Team Composition')).toBeInTheDocument();
     expect(mockPiReviewTab).toHaveBeenCalledWith(expect.objectContaining({
@@ -80,6 +96,7 @@ describe('SprintDashboardPiReviewTab', () => {
 
   it('renders the Team Dashboard capacity summary above PI Review when capacity is configured', () => {
     useCapacityStore.setState({
+      dateMode: 'pi',
       startDate: '2026-05-18',
       endDate: '2026-05-22',
       rows: [
@@ -109,6 +126,7 @@ describe('SprintDashboardPiReviewTab', () => {
     );
 
     expect(screen.getByText('Capacity')).toBeInTheDocument();
+    expect(screen.getByText('Mock PI Carryover Remap')).toBeInTheDocument();
     expect(screen.getByText('Planning Window')).toBeInTheDocument();
     expect(screen.getByText('Team Composition')).toBeInTheDocument();
     expect(screen.getByText('100% Capacity (pts)')).toBeInTheDocument();
@@ -139,5 +157,6 @@ describe('SprintDashboardPiReviewTab', () => {
 
     expect(screen.getByText(/does not yet match an art team with a configured pi review page url/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /open art settings/i })).toHaveAttribute('href', '/art');
+    expect(mockPiFeatureRemapPanel).not.toHaveBeenCalled();
   });
 });

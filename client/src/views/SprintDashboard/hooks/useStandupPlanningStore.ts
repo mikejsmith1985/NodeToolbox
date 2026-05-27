@@ -2,6 +2,13 @@
 
 import { create } from 'zustand';
 
+import { useSettingsStore } from '../../../store/settingsStore.ts';
+import {
+  buildTeamScopedStorageKey,
+  readTeamScopedStorageValue,
+  resolveTeamScopedStorageProfileId,
+} from './teamScopedStorage.ts';
+
 const STANDUP_PLANNING_STORAGE_KEY = 'tbxSprintDashboardStandupPlanning';
 const MAX_STANDUP_PLAN_ENTRY_COUNT = 400;
 
@@ -21,6 +28,8 @@ interface PersistedStandupPlanningState {
 }
 
 interface StandupPlanningState extends PersistedStandupPlanningState {
+  dashboardTeamProfileId: string;
+  setDashboardTeamProfileId: (dashboardTeamProfileId: string) => void;
   setPlannedIssueKeys: (
     date: string,
     scopeMode: StandupScopeMode,
@@ -39,6 +48,14 @@ interface StandupPlanningState extends PersistedStandupPlanningState {
 
 function canUseLocalStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+}
+
+function resolveDashboardTeamProfileId(dashboardTeamProfileId: string): string {
+  return resolveTeamScopedStorageProfileId(dashboardTeamProfileId);
+}
+
+function buildStandupPlanningStorageKey(dashboardTeamProfileId: string): string {
+  return buildTeamScopedStorageKey(STANDUP_PLANNING_STORAGE_KEY, dashboardTeamProfileId);
 }
 
 function normalizeProjectKey(projectKey: string): string {
@@ -74,13 +91,13 @@ function isStandupPlanEntry(value: unknown): value is StandupPlanEntry {
   );
 }
 
-function readStoredStandupPlanEntries(): StandupPlanEntry[] {
+function readStoredStandupPlanEntries(dashboardTeamProfileId = ''): StandupPlanEntry[] {
   if (!canUseLocalStorage()) {
     return [];
   }
 
   try {
-    const storedValue = window.localStorage.getItem(STANDUP_PLANNING_STORAGE_KEY);
+    const storedValue = readTeamScopedStorageValue(STANDUP_PLANNING_STORAGE_KEY, dashboardTeamProfileId);
     if (storedValue === null) {
       return [];
     }
@@ -97,13 +114,19 @@ function readStoredStandupPlanEntries(): StandupPlanEntry[] {
   }
 }
 
-function writeStoredStandupPlanEntries(planEntries: StandupPlanEntry[]): void {
+function writeStoredStandupPlanEntries(
+  planEntries: StandupPlanEntry[],
+  dashboardTeamProfileId: string,
+): void {
   if (!canUseLocalStorage()) {
     return;
   }
 
   try {
-    window.localStorage.setItem(STANDUP_PLANNING_STORAGE_KEY, JSON.stringify({ planEntries }));
+    window.localStorage.setItem(
+      buildStandupPlanningStorageKey(dashboardTeamProfileId),
+      JSON.stringify({ planEntries }),
+    );
   } catch {
     // Storage failures are non-fatal because the in-memory plan remains usable.
   }
@@ -150,7 +173,19 @@ function upsertStandupPlanEntry(
 
 /** Zustand store for persisted daily standup plans across Sprint and Roster scopes. */
 export const useStandupPlanningStore = create<StandupPlanningState>((setState, getState) => ({
-  planEntries: readStoredStandupPlanEntries(),
+  dashboardTeamProfileId: resolveDashboardTeamProfileId(
+    useSettingsStore.getState().sprintDashboardActiveTeamProfileId,
+  ),
+  planEntries: readStoredStandupPlanEntries(
+    useSettingsStore.getState().sprintDashboardActiveTeamProfileId,
+  ),
+  setDashboardTeamProfileId: (dashboardTeamProfileId) => {
+    const resolvedTeamProfileId = resolveDashboardTeamProfileId(dashboardTeamProfileId);
+    setState({
+      dashboardTeamProfileId: resolvedTeamProfileId,
+      planEntries: readStoredStandupPlanEntries(resolvedTeamProfileId),
+    });
+  },
   setPlannedIssueKeys: (date, scopeMode, projectKey, personName, plannedIssueKeys) => {
     const planEntries = upsertStandupPlanEntry(getState().planEntries, {
       date,
@@ -160,7 +195,7 @@ export const useStandupPlanningStore = create<StandupPlanningState>((setState, g
       plannedIssueKeys,
     });
     setState({ planEntries });
-    writeStoredStandupPlanEntries(planEntries);
+    writeStoredStandupPlanEntries(planEntries, getState().dashboardTeamProfileId);
   },
   togglePlannedIssueKey: (date, scopeMode, projectKey, personName, issueKey) => {
     const currentEntry = getState().planEntries.find(
@@ -179,6 +214,6 @@ export const useStandupPlanningStore = create<StandupPlanningState>((setState, g
       plannedIssueKeys,
     });
     setState({ planEntries });
-    writeStoredStandupPlanEntries(planEntries);
+    writeStoredStandupPlanEntries(planEntries, getState().dashboardTeamProfileId);
   },
 }));

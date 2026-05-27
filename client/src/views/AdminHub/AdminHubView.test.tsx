@@ -74,7 +74,15 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     // ── Service Connectivity ──
     connectivityConfig: null as null | {
       snow:       { baseUrl: string; hasCredentials: boolean; usernameMasked: string }
-      github:     { baseUrl: string; hasPat: boolean }
+      github:     {
+        baseUrl: string
+        hasPat: boolean
+        hasAppAuth: boolean
+        hasAppId: boolean
+        hasAppPrivateKey: boolean
+        hasInstallationId: boolean
+        hasAppLookupReady: boolean
+      }
       confluence: { baseUrl: string; hasCredentials: boolean; usernameMasked: string }
     },
     isConnectivityConfigLoading: false,
@@ -124,6 +132,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     loadConnectivityConfig: vi.fn(),
     saveSnowConfig: vi.fn(),
     saveGitHubConfig: vi.fn(),
+    saveGitHubAppConfig: vi.fn().mockResolvedValue(undefined),
     saveConfluenceConfig: vi.fn(),
     testSnowConfig: vi.fn(),
     testGitHubConfig: vi.fn(),
@@ -639,6 +648,33 @@ describe('Service Connectivity section', () => {
     renderAdminHubView();
     expect(screen.getByRole('button', { name: /save snow config/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /save github config/i })).toBeInTheDocument();
+    mockState.isAdminUnlocked = false;
+  });
+
+  it('enables Installation ID lookup when App ID and PEM are available before Installation ID is known', async () => {
+    const user = userEvent.setup();
+    mockState.isAdminUnlocked = true;
+    mockState.connectivityConfig = {
+      snow: { baseUrl: '', hasCredentials: false, usernameMasked: '' },
+      github: {
+        baseUrl: 'https://api.github.com',
+        hasPat: false,
+        hasAppAuth: false,
+        hasAppId: true,
+        hasAppPrivateKey: true,
+        hasInstallationId: false,
+        hasAppLookupReady: true,
+      },
+      confluence: { baseUrl: '', hasCredentials: false, usernameMasked: '' },
+    };
+
+    renderAdminHubView();
+    await user.click(screen.getByText(/gitHub app credentials/i));
+    await user.click(screen.getAllByText(/^🔍 Find my Installation ID$/)[0]);
+
+    expect(screen.getByRole('button', { name: /find my installation id/i })).toBeEnabled();
+
+    mockState.connectivityConfig = null;
     mockState.isAdminUnlocked = false;
   });
 

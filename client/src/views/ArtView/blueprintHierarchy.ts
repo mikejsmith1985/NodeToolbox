@@ -71,6 +71,7 @@ export interface BlueprintStoryNode {
   key: string;
   summary: string;
   status: string;
+  statusCategoryKey?: string | null;
   issueType: string;
   assignee: string | null;
   assigneeAvatar: string | null;
@@ -126,6 +127,7 @@ const DEFAULT_EPIC_LINK_FIELD = 'customfield_10014';
 const DEFAULT_PI_FIELD_ID = 'customfield_10301';
 const PI_ISSUE_MAX_RESULTS = 500;
 const OPEN_SPRINT_MAX_RESULTS = 200;
+const OPEN_SPRINT_JQL = 'sprint in openSprints()';
 const FEATURE_BATCH_SIZE = 50;
 const FEATURE_CHILD_BATCH_SIZE = 20;
 const SUBTASK_BATCH_SIZE = 50;
@@ -133,6 +135,10 @@ const SEARCH_BATCH_MAX_RESULTS = 200;
 const PROGRAM_EPIC_EMPTY_BUCKET_KEY = '_none_';
 const DONE_STATUS_KEYWORDS = ['done', 'closed', 'resolved', 'complete'];
 const BLOCKED_STATUS_KEYWORDS = ['blocked', 'impediment'];
+const WORKING_STATUS_KEYWORDS = ['work', 'working', 'in progress', 'implementing'];
+const TESTING_STATUS_KEYWORDS = ['test', 'testing'];
+const READY_TO_ACCEPT_KEYWORD = 'ready to accept';
+const DEFAULT_UNPOINTED_STORY_WEIGHT = 1;
 
 function loadArtSettings(): ArtAdvancedSettings {
   try {
@@ -221,6 +227,51 @@ function computeBlueprintHealth(storyNodes: BlueprintStoryNode[]): BlueprintHeal
   }
 
   return 'blue';
+}
+
+function readStoryCompletionWeight(storyNode: BlueprintStoryNode): number {
+  const normalizedStatusName = storyNode.status.toLowerCase();
+  const normalizedStatusCategoryKey = storyNode.statusCategoryKey?.toLowerCase() ?? '';
+
+  if (normalizedStatusCategoryKey === 'done') {
+    return 1;
+  }
+
+  if (normalizedStatusName.includes(READY_TO_ACCEPT_KEYWORD)) {
+    return 0.9;
+  }
+
+  if (TESTING_STATUS_KEYWORDS.some((statusKeyword) => normalizedStatusName.includes(statusKeyword))) {
+    return 0.5;
+  }
+
+  if (WORKING_STATUS_KEYWORDS.some((statusKeyword) => normalizedStatusName.includes(statusKeyword))) {
+    return 0.2;
+  }
+
+  return 0;
+}
+
+function computeCompletionPercent(storyNodes: BlueprintStoryNode[]): number {
+  if (storyNodes.length === 0) {
+    return 0;
+  }
+
+  const completionWeightTotal = storyNodes.reduce(
+    (runningTotal, storyNode) => runningTotal + (readStoryCompletionWeight(storyNode) * readStoryPointWeight(storyNode)),
+    0,
+  );
+  const storyPointWeightTotal = storyNodes.reduce(
+    (runningTotal, storyNode) => runningTotal + readStoryPointWeight(storyNode),
+    0,
+  );
+  return storyPointWeightTotal > 0 ? Math.round((completionWeightTotal / storyPointWeightTotal) * 100) : 0;
+}
+
+function readStoryPointWeight(storyNode: BlueprintStoryNode): number {
+  return typeof storyNode.storyPoints === 'number' && storyNode.storyPoints > 0
+    ? storyNode.storyPoints
+    : DEFAULT_UNPOINTED_STORY_WEIGHT;
 }
 
 function detectOffTrainReasons(
@@ -334,6 +385,8 @@ function createChildIssueFields(featureLinkField: string, piFieldId: string): st
     'labels',
     'issuelinks',
     'parent',
+    'customfield_10016',
+    'customfield_10028',
     piFieldId,
     DEFAULT_PI_FIELD_ID,
     DEFAULT_EPIC_LINK_FIELD,
@@ -344,6 +397,10 @@ function createChildIssueFields(featureLinkField: string, piFieldId: string): st
 
 function createIssueSearchPath(jql: string, fields: string, maxResults: number): string {
   return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(fields)}&maxResults=${maxResults}`;
+}
+
+function createBoardIssueSearchPath(boardId: string, jql: string, fields: string, maxResults: number): string {
+  return `/rest/agile/1.0/board/${boardId}/issue?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(fields)}&maxResults=${maxResults}`;
 }
 
 function createAnnotatedTeamIssues(teams: ArtTeam[], teamIssueResults: Array<{ issues?: BlueprintIssueRecord[] }>): BlueprintIssueRecord[] {
@@ -369,12 +426,23 @@ async function fetchTeamIssuesForBlueprint(
 
   const teamIssueResults = await Promise.all(
     teams.map((team) => {
-      const hasPiScopedQuery = Boolean(trimmedPiName) && Boolean(team.projectKey?.trim());
-      const jql = hasPiScopedQuery
-        ? `project = "${team.projectKey!.trim()}" AND cf[${piFieldNumber}] = "${trimmedPiName}"`
-        : `board = ${team.boardId} AND sprint in openSprints()`;
-      const maxResults = hasPiScopedQuery ? PI_ISSUE_MAX_RESULTS : OPEN_SPRINT_MAX_RESULTS;
-      return jiraGet<{ issues?: BlueprintIssueRecord[] }>(createIssueSearchPath(jql, issueFields, maxResults));
+      const trimmedProjectKey = team.projectKey?.trim();
+      const hasPiScopedQuery = Boolean(trimmedPiName) && Boolean(trimmedProjectKey);
+      const hasProjectScopedOpenSprintQuery = !hasPiScopedQuery && Boolean(trimmedProjectKey);
+
+      if (hasPiScopedQuery) {
+        const jql = `project = "${trimmedProjectKey!}" AND cf[${piFieldNumber}] = "${trimmedPiName}"`;
+        return jiraGet<{ issues?: BlueprintIssueRecord[] }>(createIssueSearchPath(jql, issueFields, PI_ISSUE_MAX_RESULTS));
+      }
+
+      if (hasProjectScopedOpenSprintQuery) {
+        const jql = `project = "${trimmedProjectKey!}" AND ${OPEN_SPRINT_JQL}`;
+        return jiraGet<{ issues?: BlueprintIssueRecord[] }>(createIssueSearchPath(jql, issueFields, OPEN_SPRINT_MAX_RESULTS));
+      }
+
+      return jiraGet<{ issues?: BlueprintIssueRecord[] }>(
+        createBoardIssueSearchPath(team.boardId, OPEN_SPRINT_JQL, issueFields, OPEN_SPRINT_MAX_RESULTS),
+      );
     }),
   );
 
@@ -585,6 +653,7 @@ function createBlueprintStoryNode(
     key: issue.key,
     summary: issue.fields.summary ?? issue.key,
     status: issue.fields.status?.name ?? 'Unknown',
+    statusCategoryKey: issue.fields.status?.statusCategory?.key ?? null,
     issueType: issue.fields.issuetype?.name ?? 'Story',
     assignee: issue.fields.assignee?.displayName ?? null,
     assigneeAvatar: issue.fields.assignee?.avatarUrls?.['24x24']
@@ -625,14 +694,14 @@ function createBlueprintFeatureNode(
     .filter((issue) => !inTrainStoryKeys.has(issue.key))
     .map((issue) => createBlueprintStoryNode(issue, [], true, artProjectKeys, piName, piFieldId));
 
-  const doneStoryCount = childStories.filter((storyNode) => isStatusDone(storyNode.status)).length;
+  const allFeatureStories = [...childStories, ...offTrainStories];
   return {
     type: 'feature',
     key: featureKey,
     summary: featureIssue?.fields.summary ?? featureKey,
     status: featureIssue?.fields.status?.name ?? 'Unknown',
     health: computeBlueprintHealth(childStories),
-    completionPercent: childStories.length > 0 ? Math.round((doneStoryCount / childStories.length) * 100) : 0,
+    completionPercent: computeCompletionPercent(allFeatureStories),
     children: childStories,
     offTrain: offTrainStories,
     isExternal: Boolean(featureIssue?._isExternal),
@@ -682,16 +751,16 @@ function createBlueprintProgramEpicNodes(
           piName,
           piFieldId,
         ));
-      const allProgramEpicStories = featureNodes.flatMap((featureNode) => featureNode.children);
-      const doneStoryCount = allProgramEpicStories.filter((storyNode) => isStatusDone(storyNode.status)).length;
+      const inTrainProgramEpicStories = featureNodes.flatMap((featureNode) => featureNode.children);
+      const allProgramEpicStories = featureNodes.flatMap((featureNode) => [...featureNode.children, ...featureNode.offTrain]);
       const programEpicIssue = programEpicIssueMap.get(programEpicKey);
       return {
         type: 'pe' as const,
         key: programEpicKey,
         summary: programEpicIssue?.fields.summary ?? 'No Program Epic',
         status: programEpicIssue?.fields.status?.name ?? null,
-        health: computeBlueprintHealth(allProgramEpicStories),
-        completionPercent: allProgramEpicStories.length > 0 ? Math.round((doneStoryCount / allProgramEpicStories.length) * 100) : 0,
+        health: computeBlueprintHealth(inTrainProgramEpicStories),
+        completionPercent: computeCompletionPercent(allProgramEpicStories),
         features: featureNodes,
       };
     })

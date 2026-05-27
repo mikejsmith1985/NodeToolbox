@@ -1,6 +1,9 @@
 /* BusinessHelperView.module.css — Styles for the top-level Business Helper page shell. */
 
 .panelSurface {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: var(--layout-panel-padding);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);

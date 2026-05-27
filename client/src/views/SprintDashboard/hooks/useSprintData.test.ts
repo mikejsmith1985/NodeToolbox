@@ -202,6 +202,28 @@ describe('useSprintData', () => {
     expect(result.current.state.activeTab).toBe('pointing');
   });
 
+  it('supports the Team Dashboard feature review tab', () => {
+    const { result } = renderHook(() => useSprintData());
+
+    act(() => {
+      result.current.actions.setActiveTab('featurereview');
+    });
+
+    expect(result.current.state.activeTab).toBe('featurereview');
+    expect(localStorage.getItem('tbxSprintDashboardActiveTab')).toBe('featurereview');
+  });
+
+  it('supports the Team Dashboard hygiene tab', () => {
+    const { result } = renderHook(() => useSprintData());
+
+    act(() => {
+      result.current.actions.setActiveTab('hygiene');
+    });
+
+    expect(result.current.state.activeTab).toBe('hygiene');
+    expect(localStorage.getItem('tbxSprintDashboardActiveTab')).toBe('hygiene');
+  });
+
   it('falls back to Settings when the stored active tab still points at the removed roster tab', () => {
     useSettingsStore.getState().setSprintDashboardActiveTab('roster');
 

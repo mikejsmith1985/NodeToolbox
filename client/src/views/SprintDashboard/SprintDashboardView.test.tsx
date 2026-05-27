@@ -1,6 +1,6 @@
 // SprintDashboardView.test.tsx — Unit tests for the Sprint Dashboard tabbed view component.
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 
@@ -169,12 +169,20 @@ vi.mock('./StandupTab.tsx', () => ({
   default: () => <div>Mock Standup Workspace</div>,
 }));
 
+vi.mock('./FeatureReviewTab.tsx', () => ({
+  default: () => <div>Mock Team Dashboard Feature Review</div>,
+}));
+
 vi.mock('./RosterTab.tsx', () => ({
   default: () => <div>Mock Roster Workspace</div>,
 }));
 
 vi.mock('./SprintDashboardPiReviewTab.tsx', () => ({
   default: () => <div>Mock Team Dashboard PI Review</div>,
+}));
+
+vi.mock('./TeamDashboardHygieneTab.tsx', () => ({
+  default: ({ projectKey }: { projectKey: string }) => <div>Mock Team Dashboard Hygiene ({projectKey})</div>,
 }));
 
 vi.mock('../../services/jiraApi.ts', () => ({
@@ -188,11 +196,16 @@ vi.mock('../../utils/downloadElementImage.ts', () => ({
 }));
 
 import SprintDashboardView from './SprintDashboardView.tsx';
+import { useSettingsStore } from '../../store/settingsStore.ts';
 
 describe('SprintDashboardView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
+    useSettingsStore.setState({
+      sprintDashboardTeamProfiles: [],
+      sprintDashboardActiveTeamProfileId: '',
+    });
     Object.defineProperty(window, 'scrollTo', {
       value: vi.fn(),
       writable: true,
@@ -301,6 +314,8 @@ describe('SprintDashboardView', () => {
     expect(screen.getByRole('tab', { name: 'Blockers' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Defects' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Standup' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Hygiene' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Feature Review' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Settings' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Roster' })).not.toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'View Work By' })).toBeInTheDocument();
@@ -379,6 +394,201 @@ describe('SprintDashboardView', () => {
     expect(mockActions.loadSprint).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the active saved team unchanged when another saved team is removed', () => {
+    mockState.activeTab = 'settings';
+    useSettingsStore.getState().setSprintDashboardTeamProfiles([
+      {
+        id: 'team-alpha',
+        name: 'Alpha',
+        projectKey: 'ALPHA',
+        boardId: '11',
+        boardName: 'Alpha Board',
+        boardType: 'scrum',
+        scopeMode: 'sprint',
+        selectedSprintId: '101',
+        selectedFixVersion: '',
+        selectedPiValue: '',
+      },
+      {
+        id: 'team-beta',
+        name: 'Beta',
+        projectKey: 'BETA',
+        boardId: '22',
+        boardName: 'Beta Board',
+        boardType: 'scrum',
+        scopeMode: 'sprint',
+        selectedSprintId: '202',
+        selectedFixVersion: '',
+        selectedPiValue: '',
+      },
+      {
+        id: 'team-gamma',
+        name: 'Gamma',
+        projectKey: 'GAMMA',
+        boardId: '33',
+        boardName: 'Gamma Board',
+        boardType: 'kanban',
+        scopeMode: 'pi',
+        selectedSprintId: '',
+        selectedFixVersion: '',
+        selectedPiValue: 'PI-25.3',
+      },
+    ]);
+    useSettingsStore.getState().setSprintDashboardActiveTeamProfileId('team-gamma');
+
+    render(<SprintDashboardView />);
+
+    const removeActiveTeamButton = screen.getByRole('button', { name: 'Remove Active Team' });
+
+    act(() => {
+      useSettingsStore.getState().setSprintDashboardActiveTeamProfileId('team-beta');
+      fireEvent.click(removeActiveTeamButton);
+    });
+
+    expect(useSettingsStore.getState().sprintDashboardActiveTeamProfileId).toBe('team-beta');
+    expect(useSettingsStore.getState().sprintDashboardTeamProfiles.map((teamProfile) => teamProfile.id)).toEqual([
+      'team-alpha',
+      'team-beta',
+    ]);
+  });
+
+  it('does not autosave the previous team selection into the newly active team during a switch', () => {
+    useSettingsStore.getState().setSprintDashboardTeamProfiles([
+      {
+        id: 'team-alpha',
+        name: 'Alpha',
+        projectKey: 'ALPHA',
+        boardId: '11',
+        boardName: 'Alpha Board',
+        boardType: 'scrum',
+        scopeMode: 'sprint',
+        selectedSprintId: '101',
+        selectedFixVersion: '',
+        selectedPiValue: '',
+      },
+      {
+        id: 'team-beta',
+        name: 'Beta',
+        projectKey: 'BETA',
+        boardId: '22',
+        boardName: 'Beta Board',
+        boardType: 'kanban',
+        scopeMode: 'pi',
+        selectedSprintId: '',
+        selectedFixVersion: 'Release 25.2',
+        selectedPiValue: 'PI-25.2',
+      },
+    ]);
+    useSettingsStore.getState().setSprintDashboardActiveTeamProfileId('team-alpha');
+    mockState.projectKey = 'ALPHA';
+    mockState.boardId = 11;
+    mockState.selectedBoardName = 'Alpha Board';
+    mockState.boardType = 'scrum';
+    mockState.scopeMode = 'sprint';
+    mockState.selectedSprintId = 101;
+    mockState.selectedFixVersionName = '';
+    mockState.selectedPiValue = '';
+
+    render(<SprintDashboardView />);
+
+    act(() => {
+      useSettingsStore.getState().setSprintDashboardActiveTeamProfileId('team-beta');
+    });
+
+    expect(
+      useSettingsStore
+        .getState()
+        .sprintDashboardTeamProfiles.find((teamProfile) => teamProfile.id === 'team-beta'),
+    ).toEqual({
+      id: 'team-beta',
+      name: 'Beta',
+      projectKey: 'BETA',
+      boardId: '22',
+      boardName: 'Beta Board',
+      boardType: 'kanban',
+      scopeMode: 'pi',
+      selectedSprintId: '',
+      selectedFixVersion: 'Release 25.2',
+      selectedPiValue: 'PI-25.2',
+    });
+  });
+
+  it('shows a team board name when a legacy profile label only mirrors the project key', () => {
+    mockState.projectKey = 'ALPHA';
+    mockState.boardId = 11;
+    mockState.selectedBoardName = 'Payments Team Board';
+    mockState.boardType = 'scrum';
+    mockState.scopeMode = 'sprint';
+    mockState.selectedSprintId = 101;
+    mockState.selectedFixVersionName = '';
+    mockState.selectedPiValue = '';
+    useSettingsStore.getState().setSprintDashboardTeamProfiles([
+      {
+        id: 'team-alpha',
+        name: 'ALPHA',
+        projectKey: 'ALPHA',
+        boardId: '11',
+        boardName: 'Payments Team Board',
+        boardType: 'scrum',
+        scopeMode: 'sprint',
+        selectedSprintId: '101',
+        selectedFixVersion: '',
+        selectedPiValue: '',
+      },
+    ]);
+    useSettingsStore.getState().setSprintDashboardActiveTeamProfileId('team-alpha');
+
+    render(<SprintDashboardView />);
+
+    expect(
+      screen.getByRole('option', { name: 'Payments Team Board' }),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the Team Name / Alias field in sync with the active saved team', () => {
+    mockState.activeTab = 'settings';
+    useSettingsStore.getState().setSprintDashboardTeamProfiles([
+      {
+        id: 'team-alpha',
+        name: 'Payments Team',
+        projectKey: 'ALPHA',
+        boardId: '11',
+        boardName: 'Payments Team Board',
+        boardType: 'scrum',
+        scopeMode: 'sprint',
+        selectedSprintId: '101',
+        selectedFixVersion: '',
+        selectedPiValue: '',
+      },
+      {
+        id: 'team-beta',
+        name: 'Platform Team',
+        projectKey: 'BETA',
+        boardId: '22',
+        boardName: 'Platform Team Board',
+        boardType: 'kanban',
+        scopeMode: 'pi',
+        selectedSprintId: '',
+        selectedFixVersion: 'Release 25.2',
+        selectedPiValue: 'PI-25.2',
+      },
+    ]);
+    useSettingsStore.getState().setSprintDashboardActiveTeamProfileId('team-alpha');
+
+    render(<SprintDashboardView />);
+
+    const teamAliasInput = screen.getByRole('textbox', { name: 'Team Name / Alias' });
+    expect(teamAliasInput).toHaveValue('Payments Team');
+
+    fireEvent.change(screen.getByLabelText('Dashboard Team'), {
+      target: { value: 'team-beta' },
+    });
+
+    expect(screen.getByRole('textbox', { name: 'Team Name / Alias' })).toHaveValue(
+      'Platform Team',
+    );
+  });
+
   it('does not auto-load when no dashboard selection has been saved yet', () => {
     mockState.activeTab = 'overview';
     mockState.projectKey = '';
@@ -427,6 +637,7 @@ describe('SprintDashboardView', () => {
     expect(screen.getByRole('tab', { name: 'Metrics' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Pipeline' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Planning' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Feature Review' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'PI Review' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Pointing' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Releases' })).toBeInTheDocument();
@@ -470,6 +681,21 @@ describe('SprintDashboardView', () => {
     render(<SprintDashboardView />);
 
     expect(screen.getByText('Mock Team Dashboard PI Review')).toBeInTheDocument();
+  });
+
+  it('renders the Feature Review tab with the Team Dashboard feature workspace', () => {
+    mockState.activeTab = 'featurereview';
+    render(<SprintDashboardView />);
+
+    expect(screen.getByText('Mock Team Dashboard Feature Review')).toBeInTheDocument();
+  });
+
+  it('renders the Hygiene tab with the Team Dashboard hygiene workspace', () => {
+    mockState.activeTab = 'hygiene';
+    mockState.projectKey = 'TBX';
+    render(<SprintDashboardView />);
+
+    expect(screen.getByText('Mock Team Dashboard Hygiene (TBX)')).toBeInTheDocument();
   });
 
   it('renders the Release Radar using project versions', async () => {
@@ -742,6 +968,20 @@ describe('SprintDashboardView', () => {
     expect(screen.getByPlaceholderText(/search boards/i)).toBeInTheDocument();
     expect(screen.getByText('Team Alpha Board')).toBeInTheDocument();
     expect(screen.getByText('Team Beta Board')).toBeInTheDocument();
+  });
+
+  it('places project and board selection before the team save controls in Settings', () => {
+    mockState.activeTab = 'settings';
+    mockState.availableBoards = [
+      { id: 1, name: 'Team Alpha Board', type: 'scrum', projectKey: 'TBX' },
+    ];
+    render(<SprintDashboardView />);
+
+    const projectKeyInput = screen.getByLabelText('Project Key');
+    const teamAliasInput = screen.getByLabelText('Team Name / Alias');
+    expect(
+      projectKeyInput.compareDocumentPosition(teamAliasInput) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('shows the advanced config fields in Settings tab', () => {

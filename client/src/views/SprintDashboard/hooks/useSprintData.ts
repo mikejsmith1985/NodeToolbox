@@ -8,7 +8,7 @@
 //      For kanban boards: fetches board issues directly (no sprint required).
 // Also manages the standup timer countdown, move-to-sprint, and available-sprints caching.
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
@@ -39,6 +39,7 @@ export type DashboardTab =
   | 'assignee'
   | 'blockers'
   | 'defects'
+  | 'hygiene'
   | 'standup'
   | 'settings'
   | 'metrics'
@@ -46,7 +47,8 @@ export type DashboardTab =
   | 'planning'
   | 'releases'
   | 'pointing'
-  | 'pireview';
+  | 'pireview'
+  | 'featurereview';
 
 export type DashboardScopeMode =
   | typeof DASHBOARD_SCOPE_MODE_SPRINT
@@ -336,8 +338,14 @@ function sortScopeVersions(scopeVersions: JiraVersion[]): JiraVersion[] {
  * Manages sprint data and standup timer state for the Sprint Dashboard view.
  * Returns a stable `{ state, actions }` tuple so the view remains a thin consumer.
  */
-export function useSprintData(): { state: SprintDataState; actions: SprintDataActions } {
+export function useSprintData(
+  activeDashboardTeamProfileId = '',
+): { state: SprintDataState; actions: SprintDataActions } {
   const [state, setState] = useState<SprintDataState>(() => createInitialSprintDataState());
+
+  useEffect(() => {
+    setState(createInitialSprintDataState());
+  }, [activeDashboardTeamProfileId]);
 
   // ── Synchronous setters ──
 
