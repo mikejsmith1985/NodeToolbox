@@ -21,6 +21,7 @@ import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
 import { useRovoAssist } from '../hooks/useRovoAssist.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
+import { CtaskEditForm } from '../components/CtaskEditForm.tsx';
 import { SnowLookupField } from '../components/SnowLookupField.tsx';
 import styles from './CrgTab.module.css';
 
@@ -1877,16 +1878,6 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
   const [ctaskCloneStatus, setCtaskCloneStatus] = useState<string | null>(null);
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId);
 
-  function handleStringFieldChange(
-    fieldName: keyof Pick<
-      CtaskTemplateData,
-      'shortDescription' | 'description' | 'plannedStartDate' | 'plannedEndDate' | 'closeNotes'
-    >,
-    value: string,
-  ): void {
-    setCtaskDraft((previousDraft) => ({ ...previousDraft, [fieldName]: value }));
-  }
-
   function handleSelectedCtaskTemplateChange(event: ChangeEvent<HTMLSelectElement>): void {
     const nextTemplateId = event.target.value;
     setSelectedTemplateId(nextTemplateId);
@@ -1898,6 +1889,10 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
   }
 
   function handleSaveTemplate(): void {
+    if (!templateName) {
+      console.warn('Template name is required to save');
+      return;
+    }
     saveTemplate(templateName, ctaskDraft);
     setTemplateName('');
     setCtaskDraft(createEmptyCtaskTemplateData());
@@ -1992,34 +1987,24 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
         + Create CTASK template
       </button>
       {isEditorVisible ? (
-        <div className={styles.ctaskEditorGrid}>
+        <div>
           <label className={styles.fieldGroup}>
             <span className={styles.fieldLabel}>CTASK template name</span>
-            <input aria-label="CTASK template name" className={styles.input} onChange={(event) => setTemplateName(event.target.value)} value={templateName} />
+            <input
+              aria-label="CTASK template name"
+              className={styles.input}
+              onChange={(event) => setTemplateName(event.target.value)}
+              value={templateName}
+            />
           </label>
-          <label className={styles.fieldGroup}>
-            <span className={styles.fieldLabel}>CTASK short description</span>
-            <input aria-label="CTASK short description" className={styles.input} onChange={(event) => handleStringFieldChange('shortDescription', event.target.value)} value={ctaskDraft.shortDescription} />
-          </label>
-          <label className={styles.fieldGroup}>
-            <span className={styles.fieldLabel}>CTASK description</span>
-            <textarea className={styles.textArea} onChange={(event) => handleStringFieldChange('description', event.target.value)} value={ctaskDraft.description} />
-          </label>
-          <SnowLookupField label="CTASK Assignment Group" tableName="sys_user_group" value={ctaskDraft.assignmentGroup} onChange={(assignmentGroup) => setCtaskDraft((previousDraft) => ({ ...previousDraft, assignmentGroup }))} />
-          <SnowLookupField label="CTASK Assigned To" tableName="sys_user" value={ctaskDraft.assignedTo} onChange={(assignedTo) => setCtaskDraft((previousDraft) => ({ ...previousDraft, assignedTo }))} />
-          <label className={styles.fieldGroup}>
-            <span className={styles.fieldLabel}>CTASK planned start</span>
-            <input className={styles.input} onChange={(event) => handleStringFieldChange('plannedStartDate', event.target.value)} type="datetime-local" value={ctaskDraft.plannedStartDate} />
-          </label>
-          <label className={styles.fieldGroup}>
-            <span className={styles.fieldLabel}>CTASK planned end</span>
-            <input className={styles.input} onChange={(event) => handleStringFieldChange('plannedEndDate', event.target.value)} type="datetime-local" value={ctaskDraft.plannedEndDate} />
-          </label>
-          <label className={styles.fieldGroup}>
-            <span className={styles.fieldLabel}>CTASK close notes</span>
-            <textarea className={styles.textArea} onChange={(event) => handleStringFieldChange('closeNotes', event.target.value)} value={ctaskDraft.closeNotes} />
-          </label>
-          <button className={styles.primaryButton} onClick={handleSaveTemplate} type="button">Save CTASK Template</button>
+          <CtaskEditForm
+            ctaskData={ctaskDraft}
+            templates={[]}
+            onDataChange={setCtaskDraft}
+          />
+          <button className={styles.primaryButton} onClick={handleSaveTemplate} type="button">
+            Save CTASK Template
+          </button>
         </div>
       ) : null}
 
