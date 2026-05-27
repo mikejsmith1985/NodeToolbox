@@ -6,11 +6,13 @@
 import { useState, useCallback } from 'react';
 
 import { snowFetch } from '../../../services/snowApi.ts';
+import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 import type {
   ChgBasicInfo,
   ChgPlanningAssessment,
   ChgPlanningContent,
   CtaskTemplate,
+  SnowReference,
 } from '../hooks/useCrgState.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 
@@ -18,6 +20,34 @@ import styles from './CreateChgTab.module.css';
 
 const TAB_TITLE = 'Modify Change';
 const TAB_SUBTITLE = 'Fetch an existing ServiceNow CHG, edit all fields with full CTASK template support, save changes.';
+const CHANGE_TABLE_PATH = '/api/now/table/change_request';
+const CHANGE_LOOKUP_FIELDS = [
+  'sys_id',
+  'number',
+  'short_description',
+  'description',
+  'justification',
+  'risk_impact_analysis',
+  'category',
+  'type',
+  'requested_by',
+  'assignment_group',
+  'impact',
+  'u_availability_impact',
+  'u_change_tested',
+  'u_impacted_persons_aware',
+  'u_performed_previously',
+  'u_success_probability',
+  'u_can_be_backed_out',
+  'implementation_plan',
+  'backout_plan',
+  'test_plan',
+].join(',');
+const MY_ACTIVE_CHANGE_QUERY = 'assigned_to=javascript:gs.getUserID()^active=true';
+const MY_ACTIVE_CHANGE_FIELDS = 'number,short_description';
+const MY_ACTIVE_CHANGE_LIMIT = 100;
+const MODIFY_CHG_LOG_PREFIX = '[CRG Modify CHG]';
+const EMPTY_SNOW_REFERENCE: SnowReference = { sysId: '', displayName: '' };
 
 const STEP_DEFINITIONS = [
   { step: 1, label: 'Fetch Change' },
@@ -32,20 +62,27 @@ interface MyOpenChange {
   summary: string;
 }
 
+type ServiceNowFieldValue = string | number | boolean | { value?: unknown; display_value?: unknown };
+type ServiceNowChangeRecord = Record<string, ServiceNowFieldValue | undefined>;
+
+interface EditableChange {
+  sysId: string;
+  number: string;
+  shortDescription: string;
+  description: string;
+  justification: string;
+  riskImpactAnalysis: string;
+  chgBasicInfo: ChgBasicInfo;
+  chgPlanningAssessment: ChgPlanningAssessment;
+  chgPlanningContent: ChgPlanningContent;
+}
+
 interface ModifyChgState {
   currentStep: 1 | 2 | 3 | 4 | 5;
   changeKey: string;
   isFetching: boolean;
   fetchError: string | null;
-  change: {
-    shortDescription: string;
-    description: string;
-    justification: string;
-    riskImpactAnalysis: string;
-    chgBasicInfo: ChgBasicInfo;
-    chgPlanningAssessment: ChgPlanningAssessment;
-    chgPlanningContent: ChgPlanningContent;
-  } | null;
+  change: EditableChange | null;
   changeTasks: CtaskTemplate[];
   isSaving: boolean;
   saveError: string | null;
@@ -55,81 +92,211 @@ interface ModifyChgState {
   myChangesError: string | null;
 }
 
+interface ServiceNowChangeQueryResponse {
+  result: ServiceNowChangeRecord[];
+}
+
+function createEmptyChgBasicInfo(): ChgBasicInfo {
+  return {
+    category: '',
+    changeType: '',
+    environment: '',
+    requestedBy: { ...EMPTY_SNOW_REFERENCE },
+    configItem: { ...EMPTY_SNOW_REFERENCE },
+    assignmentGroup: { ...EMPTY_SNOW_REFERENCE },
+    assignedTo: { ...EMPTY_SNOW_REFERENCE },
+    changeManager: { ...EMPTY_SNOW_REFERENCE },
+    tester: { ...EMPTY_SNOW_REFERENCE },
+    serviceManager: { ...EMPTY_SNOW_REFERENCE },
+    isExpedited: false,
+  };
+}
+
+function createEmptyChgPlanningAssessment(): ChgPlanningAssessment {
+  return {
+    impact: '',
+    systemAvailabilityImplication: '',
+    hasBeenTested: '',
+    impactedPersonsAware: '',
+    hasBeenPerformedPreviously: '',
+    successProbability: '',
+    canBeBackedOut: '',
+  };
+}
+
+function createEmptyChgPlanningContent(): ChgPlanningContent {
+  return {
+    implementationPlan: '',
+    backoutPlan: '',
+    testPlan: '',
+  };
+}
+
+function extractServiceNowTextValue(fieldValue: ServiceNowFieldValue | undefined): string {
+  if (fieldValue === undefined) {
+    return '';
+  }
+
+  if (typeof fieldValue === 'object') {
+    return normalizeRichTextToPlainText(fieldValue.display_value ?? fieldValue.value ?? '');
+  }
+
+  return normalizeRichTextToPlainText(String(fieldValue));
+}
+
+function extractServiceNowReference(fieldValue: ServiceNowFieldValue | undefined): SnowReference {
+  if (fieldValue === undefined) {
+    return { ...EMPTY_SNOW_REFERENCE };
+  }
+
+  if (typeof fieldValue !== 'object') {
+    const displayName = normalizeRichTextToPlainText(String(fieldValue));
+    return displayName ? { sysId: '', displayName } : { ...EMPTY_SNOW_REFERENCE };
+  }
+
+  return {
+    sysId: fieldValue.value === undefined ? '' : String(fieldValue.value),
+    displayName: normalizeRichTextToPlainText(fieldValue.display_value ?? fieldValue.value ?? ''),
+  };
+}
+
+function isRecord(candidateValue: unknown): candidateValue is Record<string, unknown> {
+  return typeof candidateValue === 'object' && candidateValue !== null;
+}
+
+function buildChangeLookupPath(changeKey: string): string {
+  const encodedQuery = encodeURIComponent(`number=${changeKey}`);
+  return (
+    `${CHANGE_TABLE_PATH}?sysparm_query=${encodedQuery}` +
+    '&sysparm_limit=1' +
+    `&sysparm_fields=${CHANGE_LOOKUP_FIELDS}` +
+    '&sysparm_display_value=all'
+  );
+}
+
+function buildMyActiveChangesPath(): string {
+  const encodedQuery = encodeURIComponent(MY_ACTIVE_CHANGE_QUERY);
+  return (
+    `${CHANGE_TABLE_PATH}?sysparm_query=${encodedQuery}` +
+    `&sysparm_limit=${MY_ACTIVE_CHANGE_LIMIT}` +
+    `&sysparm_fields=${MY_ACTIVE_CHANGE_FIELDS}` +
+    '&sysparm_display_value=all'
+  );
+}
+
+function mapServiceNowChangeRecord(changeRecord: ServiceNowChangeRecord): EditableChange {
+  return {
+    sysId: extractServiceNowTextValue(changeRecord.sys_id),
+    number: extractServiceNowTextValue(changeRecord.number),
+    shortDescription: extractServiceNowTextValue(changeRecord.short_description),
+    description: extractServiceNowTextValue(changeRecord.description),
+    justification: extractServiceNowTextValue(changeRecord.justification),
+    riskImpactAnalysis: extractServiceNowTextValue(changeRecord.risk_impact_analysis),
+    chgBasicInfo: {
+      ...createEmptyChgBasicInfo(),
+      category: extractServiceNowTextValue(changeRecord.category),
+      changeType: extractServiceNowTextValue(changeRecord.type),
+      requestedBy: extractServiceNowReference(changeRecord.requested_by),
+      assignmentGroup: extractServiceNowReference(changeRecord.assignment_group),
+    },
+    chgPlanningAssessment: {
+      ...createEmptyChgPlanningAssessment(),
+      impact: extractServiceNowTextValue(changeRecord.impact),
+      systemAvailabilityImplication: extractServiceNowTextValue(changeRecord.u_availability_impact),
+      hasBeenTested: extractServiceNowTextValue(changeRecord.u_change_tested),
+      impactedPersonsAware: extractServiceNowTextValue(changeRecord.u_impacted_persons_aware),
+      hasBeenPerformedPreviously: extractServiceNowTextValue(changeRecord.u_performed_previously),
+      successProbability: extractServiceNowTextValue(changeRecord.u_success_probability),
+      canBeBackedOut: extractServiceNowTextValue(changeRecord.u_can_be_backed_out),
+    },
+    chgPlanningContent: {
+      ...createEmptyChgPlanningContent(),
+      implementationPlan: extractServiceNowTextValue(changeRecord.implementation_plan),
+      backoutPlan: extractServiceNowTextValue(changeRecord.backout_plan),
+      testPlan: extractServiceNowTextValue(changeRecord.test_plan),
+    },
+  };
+}
+
 /**
  * Fetches a CHG from ServiceNow relay by change key.
  * Logs diagnostics to browser console for debugging.
  */
-async function fetchChangeFromSnow(changeKey: string): Promise<any> {
-  const apiUrl = `/api/snow-relay/change/${encodeURIComponent(changeKey.toUpperCase())}`;
-  console.log('  📋 Fetching change from ServiceNow:', { changeKey, apiUrl });
-  const response = await fetch(apiUrl);
-  
-  if (!response.ok) {
-    let errorBody = '(unable to read response body)';
-    try {
-      if (response.text && typeof response.text === 'function') {
-        errorBody = await response.text();
-      }
-    } catch (textError) {
-      // Continue with default error message
+async function fetchChangeFromSnow(changeKey: string): Promise<EditableChange> {
+  const normalizedChangeKey = changeKey.trim().toUpperCase();
+  const path = buildChangeLookupPath(normalizedChangeKey);
+  console.log(`${MODIFY_CHG_LOG_PREFIX} Fetching change from ServiceNow`, { changeKey: normalizedChangeKey, path });
+
+  try {
+    const response = await snowFetch<ServiceNowChangeQueryResponse>(path);
+    const matchedChangeRecord = response.result?.[0];
+
+    if (!matchedChangeRecord) {
+      throw new Error(`${normalizedChangeKey} was not found in ServiceNow.`);
     }
-    
-    console.error('  ❌ API error fetching change:', {
-      status: response.status,
-      statusText: response.statusText,
-      changeKey,
-      responseBody: errorBody.substring ? errorBody.substring(0, 200) : String(errorBody),
+
+    console.log(`${MODIFY_CHG_LOG_PREFIX} Successfully fetched change`, {
+      changeKey: normalizedChangeKey,
+      fieldCount: Object.keys(matchedChangeRecord).length,
     });
-    throw new Error(`Failed to fetch change: ${response.statusText} (${response.status})`);
+    return mapServiceNowChangeRecord(matchedChangeRecord);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`${MODIFY_CHG_LOG_PREFIX} Failed to fetch change`, {
+      changeKey: normalizedChangeKey,
+      path,
+      error: errorMessage,
+      cause: error,
+    });
+    throw error instanceof Error ? error : new Error(errorMessage);
   }
-  
-  const data = await response.json();
-  console.log('  ✅ Successfully fetched change:', { changeKey, fields: Object.keys(data || {}).length });
-  return data;
 }
 
 /**
  * Saves a modified CHG back to ServiceNow.
  * Logs diagnostics to browser console for debugging.
  */
-async function saveChangeToSnow(changeKey: string, changeData: any): Promise<void> {
+async function saveChangeToSnow(changeKey: string, changeData: EditableChange): Promise<void> {
   const apiUrl = `/api/snow-relay/change/${encodeURIComponent(changeKey.toUpperCase())}`;
-  console.log('  💾 Saving change to ServiceNow:', { changeKey, apiUrl });
-  const response = await fetch(apiUrl, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(changeData),
-  });
-  
-  if (!response.ok) {
-    let errorBody = '(unable to read response body)';
-    try {
-      if (response.text && typeof response.text === 'function') {
-        errorBody = await response.text();
-      }
-    } catch (textError) {
-      // Continue with default error message
-    }
-    
-    console.error('  ❌ API error saving change:', {
-      status: response.status,
-      statusText: response.statusText,
-      changeKey,
-      responseBody: errorBody.substring ? errorBody.substring(0, 200) : String(errorBody),
+  console.log(`${MODIFY_CHG_LOG_PREFIX} Saving change to ServiceNow`, { changeKey, apiUrl });
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(changeData),
     });
-    throw new Error(`Failed to save change: ${response.statusText} (${response.status})`);
+
+    if (!response.ok) {
+      let errorBody = '(unable to read response body)';
+      try {
+        if (response.text && typeof response.text === 'function') {
+          errorBody = await response.text();
+        }
+      } catch {
+        // Preserve the main response error even when the body cannot be read.
+      }
+
+      console.error(`${MODIFY_CHG_LOG_PREFIX} API error saving change`, {
+        status: response.status,
+        statusText: response.statusText,
+        changeKey,
+        responseBody: errorBody.substring ? errorBody.substring(0, 200) : String(errorBody),
+      });
+      throw new Error(`Failed to save change: ${response.statusText} (${response.status})`);
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to save change';
+    console.error(`${MODIFY_CHG_LOG_PREFIX} Save request failed`, {
+      changeKey,
+      apiUrl,
+      error: errorMessage,
+      cause: error,
+    });
+    throw error instanceof Error ? error : new Error(errorMessage);
   }
-  
-  console.log('  ✅ Successfully saved change:', { changeKey });
-}
 
-interface SnowChangeRecord {
-  number?: string;
-  short_description?: string;
-}
-
-interface ServiceNowChangeQueryResponse {
-  result: SnowChangeRecord[];
+  console.log(`${MODIFY_CHG_LOG_PREFIX} Successfully saved change`, { changeKey });
 }
 
 /**
@@ -138,29 +305,31 @@ interface ServiceNowChangeQueryResponse {
  * Reuses the same proven snowFetch pattern as the PRB loader.
  */
 async function fetchMyOpenChanges(): Promise<MyOpenChange[]> {
-  console.log('  📋 Fetching my open changes from ServiceNow...');
-  
-  // Build query for changes assigned to current user in active states
-  // States 1,2,3 = Open, Pending, In Progress
-  const encodedQuery = encodeURIComponent('state=1^state=2^state=3^ORassigned_to=javascript:gs.getUserID()');
-  const path = `/api/now/table/change_request?sysparm_query=${encodedQuery}&sysparm_fields=number,short_description&sysparm_limit=100&sysparm_display_value=all`;
-  
+  const path = buildMyActiveChangesPath();
+  console.log(`${MODIFY_CHG_LOG_PREFIX} Loading my active changes`, {
+    path,
+    filter: MY_ACTIVE_CHANGE_QUERY,
+  });
+
   try {
     const response = await snowFetch<ServiceNowChangeQueryResponse>(path);
-    const changes = (response.result || []).map((changeRecord) => ({
-      key: changeRecord.number || '',
-      summary: changeRecord.short_description || '',
-    })).filter((change) => change.key && change.summary);
-    
-    console.log('  ✅ Successfully fetched my changes:', { count: changes.length });
+    const changes = (response.result || [])
+      .map((changeRecord) => ({
+        key: extractServiceNowTextValue(changeRecord.number),
+        summary: extractServiceNowTextValue(changeRecord.short_description),
+      }))
+      .filter((change) => change.key && change.summary);
+
+    console.log(`${MODIFY_CHG_LOG_PREFIX} Successfully loaded my active changes`, { count: changes.length });
     return changes;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to load my changes';
-    console.error('  ❌ Error loading my open changes:', {
+    console.error(`${MODIFY_CHG_LOG_PREFIX} Failed to load my active changes`, {
       error: errorMessage,
-      endpoint: '/api/now/table/change_request',
+      path,
+      cause: error,
     });
-    throw error;
+    throw error instanceof Error ? error : new Error(errorMessage);
   }
 }
 
@@ -245,7 +414,7 @@ function FetchChangeStep({ state, onChangeKeyChange, onFetchClick, onLoadMyChang
   onChangeKeyChange: (key: string) => void;
   onFetchClick: () => void;
   onLoadMyChangesClick: () => void;
-  onMyChangeSelect: (key: string) => void;
+  onMyChangeSelect: (key: string) => Promise<void> | void;
 }) {
   return (
     <section className={styles.section}>
@@ -295,7 +464,7 @@ function FetchChangeStep({ state, onChangeKeyChange, onFetchClick, onLoadMyChang
             disabled={state.isFetching}
             onChange={(event) => {
               if (event.target.value) {
-                onMyChangeSelect(event.target.value);
+                void onMyChangeSelect(event.target.value);
               }
             }}
             value=""
@@ -490,11 +659,11 @@ function ReviewSaveStep({ state, ctaskTemplates, onAddCtask, onRemoveCtask, onSa
   onSaveClick: () => void;
   onCtaskFieldChange: (ctaskId: string, field: string, value: string) => void;
 }) {
-  if (!state.change) return null;
-
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [editingCtaskId, setEditingCtaskId] = useState<string | null>(null);
   const selectedTemplate = ctaskTemplates.find((t) => t.id === selectedTemplateId);
+
+  if (!state.change) return null;
 
   return (
     <section className={styles.section}>
@@ -520,7 +689,9 @@ function ReviewSaveStep({ state, ctaskTemplates, onAddCtask, onRemoveCtask, onSa
               className={styles.secondaryButton}
               disabled={!selectedTemplate}
               onClick={() => {
-                selectedTemplate && onAddCtask(selectedTemplate);
+                if (selectedTemplate) {
+                  onAddCtask(selectedTemplate);
+                }
                 setSelectedTemplateId('');
               }}
               type="button"
@@ -685,6 +856,11 @@ export default function ModifyChgTab(): React.ReactElement {
       }));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`${MODIFY_CHG_LOG_PREFIX} Fetch Change action failed`, {
+        changeKey: modifyState.changeKey.trim().toUpperCase(),
+        error: errorMessage,
+        cause: error,
+      });
       setModifyState((prev) => ({ ...prev, isFetching: false, fetchError: errorMessage }));
     }
   }, [modifyState.changeKey]);
@@ -693,13 +869,22 @@ export default function ModifyChgTab(): React.ReactElement {
     setModifyState((prev) => {
       if (!prev.change) return prev;
 
-      const updateNestedField = (obj: any, path: string, val: string): any => {
+      const updateNestedField = <T extends object>(
+        currentValue: T,
+        path: string,
+        nextValue: string,
+      ): T => {
+        const currentRecord = currentValue as Record<string, unknown>;
         const keys = path.split('.');
         if (keys.length === 1) {
-          return { ...obj, [path]: val };
+          return { ...currentRecord, [path]: nextValue } as T;
         }
-        const [first, ...rest] = keys;
-        return { ...obj, [first]: updateNestedField(obj[first] || {}, rest.join('.'), val) };
+        const [firstKey, ...remainingKeys] = keys;
+        const nestedValue = isRecord(currentRecord[firstKey]) ? currentRecord[firstKey] : {};
+        return {
+          ...currentRecord,
+          [firstKey]: updateNestedField(nestedValue, remainingKeys.join('.'), nextValue),
+        } as T;
       };
 
       return {
@@ -751,6 +936,11 @@ export default function ModifyChgTab(): React.ReactElement {
       }));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to save change';
+      console.error(`${MODIFY_CHG_LOG_PREFIX} Save Change action failed`, {
+        changeKey: modifyState.changeKey.trim().toUpperCase(),
+        error: errorMessage,
+        cause: error,
+      });
       setModifyState((prev) => ({ ...prev, isSaving: false, saveError: errorMessage }));
     }
   }, [modifyState]);
@@ -772,34 +962,37 @@ export default function ModifyChgTab(): React.ReactElement {
       }));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to load my changes';
-      console.error('  ❌ Error loading my open changes:', {
+      console.error(`${MODIFY_CHG_LOG_PREFIX} Load My Open Changes action failed`, {
         message: errorMessage,
         error,
-        endpoint: '/api/snow-relay/my-changes',
       });
       setModifyState((prev) => ({ ...prev, isLoadingMyChanges: false, myChangesError: errorMessage }));
     }
   }, []);
 
-  const handleMyChangeSelect = useCallback((changeKey: string) => {
+  const handleMyChangeSelect = useCallback(async (changeKey: string) => {
     // Populate the change key field
     setModifyState((prev) => ({ ...prev, changeKey, fetchError: null }));
     // Auto-trigger the fetch
     setModifyState((prev) => ({ ...prev, isFetching: true, fetchError: null }));
-    // Fetch the change
-    fetchChangeFromSnow(changeKey)
-      .then((data) => {
-        setModifyState((prev) => ({
-          ...prev,
-          isFetching: false,
-          change: data,
-          currentStep: 2,
-        }));
-      })
-      .catch((error) => {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        setModifyState((prev) => ({ ...prev, isFetching: false, fetchError: errorMessage }));
+
+    try {
+      const data = await fetchChangeFromSnow(changeKey);
+      setModifyState((prev) => ({
+        ...prev,
+        isFetching: false,
+        change: data,
+        currentStep: 2,
+      }));
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`${MODIFY_CHG_LOG_PREFIX} Dropdown change selection failed`, {
+        changeKey: changeKey.trim().toUpperCase(),
+        error: errorMessage,
+        cause: error,
       });
+      setModifyState((prev) => ({ ...prev, isFetching: false, fetchError: errorMessage }));
+    }
   }, []);
 
   return (
