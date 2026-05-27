@@ -193,6 +193,43 @@ describe('useReportsHubState', () => {
     });
   });
 
+  it('normalizes object-shaped PI field values into report-ready strings', async () => {
+    const piRangeLabel = 'PI 26.3 (05/21/26 - 07/29/26)';
+
+    localStorage.setItem(
+      'tbxARTSettings',
+      JSON.stringify({ teams: [{ name: 'Team A', projectKey: 'TBX' }] }),
+    );
+    mockJiraGet.mockResolvedValue({
+      issues: [
+        {
+          key: 'TBX-110',
+          fields: {
+            summary: 'Range-based PI feature',
+            status: { name: 'In Progress', statusCategory: { name: 'In Progress' } },
+            fixVersions: [],
+            assignee: { displayName: 'Alice' },
+            customfield_10301: { value: piRangeLabel },
+            priority: { name: 'High' },
+            issuetype: { name: 'Epic' },
+          },
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useReportsHubState());
+
+    await act(async () => {
+      await result.current.actions.loadFeatures();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.features).toHaveLength(1);
+    });
+
+    expect(result.current.state.features[0]?.piName).toBe(piRangeLabel);
+  });
+
   it('loadFeatures sets featuresError on failure', async () => {
     localStorage.setItem(
       'tbxARTSettings',
@@ -359,6 +396,43 @@ describe('Sprint data (shared by Flow/Impact/Individual/SprintHealth)', () => {
     await waitFor(() => {
       expect(result.current.state.sprintIssues[0]?.isBlocked).toBe(true);
     });
+  });
+
+  it('loadSprintData falls back to a PI-like fix version when the Jira PI field is blank', async () => {
+    localStorage.setItem(
+      'tbxARTSettings',
+      JSON.stringify({ teams: [{ name: 'Team A', projectKey: 'TBX' }] }),
+    );
+    mockJiraGet.mockResolvedValue({
+      issues: [
+        {
+          key: 'TBX-103',
+          fields: {
+            summary: 'Sprint story with PI fix version',
+            status: { name: 'In Progress', statusCategory: { name: 'indeterminate' } },
+            assignee: { displayName: 'Taylor' },
+            priority: { name: 'High' },
+            labels: [],
+            updated: '2026-05-27T00:00:00.000Z',
+            customfield_10020: null,
+            customfield_10301: null,
+            fixVersions: [{ name: 'PI 26.3' }],
+          },
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useReportsHubState());
+
+    await act(async () => {
+      await result.current.actions.loadSprintData();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.sprintIssues).toHaveLength(1);
+    });
+
+    expect(result.current.state.sprintIssues[0]?.piName).toBe('PI 26.3');
   });
 });
 
