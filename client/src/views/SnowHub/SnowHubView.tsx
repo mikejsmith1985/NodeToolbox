@@ -15,7 +15,7 @@ import styles from './SnowHubView.module.css';
 const VIEW_TITLE = 'SNow Hub';
 const VIEW_SUBTITLE = 'Manage change generation, PRB conversion, and release coordination from one ServiceNow-focused workspace.';
 const TAB_OPTIONS = [
-  { key: 'chg', label: 'CHG' },
+  { key: 'chg', label: 'CHG Generator' },
   { key: 'config', label: 'Configuration' },
   { key: 'prb', label: 'PRB Generator' },
   { key: 'assignment-groups', label: 'Assignment Groups' },
