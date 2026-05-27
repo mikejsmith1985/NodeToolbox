@@ -105,8 +105,8 @@ describe('hygiene check predicates', () => {
     expect(hygieneFlag?.checkId).toBe('missing-feature-link');
   });
 
-  it('flags stories whose description does not resemble acceptance criteria', () => {
-    const hygieneFlag = checkNoAcceptanceCriteria(buildIssue({ description: 'Needs work.' }), resolveHygieneFieldConfig());
+  it('flags stories whose acceptance criteria is blank', () => {
+    const hygieneFlag = checkNoAcceptanceCriteria(buildIssue({ description: '   ' }), resolveHygieneFieldConfig());
 
     expect(hygieneFlag?.checkId).toBe('no-ac');
   });
@@ -118,6 +118,26 @@ describe('hygiene check predicates', () => {
     );
 
     expect(hygieneFlag).toBeNull();
+  });
+
+  it('does not flag stories with descriptive acceptance criteria text that does not use Given When Then wording', () => {
+    const hygieneFlag = checkNoAcceptanceCriteria(
+      buildIssue({
+        description: 'Demonstrate the ability to correctly determine whether the member identifier already exists and use that result to distinguish new enrollment from an update.',
+      }),
+      resolveHygieneFieldConfig(),
+    );
+
+    expect(hygieneFlag).toBeNull();
+  });
+
+  it('flags stories whose acceptance criteria is only a TBD placeholder', () => {
+    const hygieneFlag = checkNoAcceptanceCriteria(
+      buildIssue({ description: 'TBD' }),
+      resolveHygieneFieldConfig(),
+    );
+
+    expect(hygieneFlag?.checkId).toBe('no-ac');
   });
 
   it('flags active-sprint issues created more than thirty days ago', () => {
