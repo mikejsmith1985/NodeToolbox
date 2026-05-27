@@ -1,12 +1,12 @@
 // CtaskEditForm — Reusable CTASK form component for creating and modifying CTASKs
-// Used in both CrgTab (create flow) and ChangeModifierTab (modify flow).
+// Used in both CreateChgTab (create flow) and ModifyChgTab (modify flow).
 
 import type { ChangeEvent } from 'react';
 import { useState } from 'react';
 
 import type { CtaskTemplateData, SnowReference } from '../hooks/useCrgState.ts';
 import { SnowLookupField } from './SnowLookupField.tsx';
-import styles from '../tabs/CrgTab.module.css';
+import styles from '../tabs/CreateChgTab.module.css';
 
 /** Template type — a saved CTASK form that can be loaded and applied. */
 export interface CtaskTemplate {

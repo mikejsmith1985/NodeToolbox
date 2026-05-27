@@ -1,4 +1,4 @@
-// CrgTab.tsx — Six-step Change Request Generator for building comprehensive SNow CHG records from Jira issues.
+// CreateChgTab.tsx — Create CHG workflow: Six-step Change Request Generator for building comprehensive ServiceNow CHG records from Jira issues.
 // Steps: 1-Fetch Issues → 2-Review Issues → 3-Change Details → 4-Planning & Content → 5-Environments → 6-Review & Create
 
 import type { ChangeEvent, KeyboardEvent } from 'react';
@@ -23,7 +23,7 @@ import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 import { CtaskEditForm } from '../components/CtaskEditForm.tsx';
 import { SnowLookupField } from '../components/SnowLookupField.tsx';
-import styles from './CrgTab.module.css';
+import styles from './CreateChgTab.module.css';
 
 const TAB_TITLE = 'Change Request Generator';
 const TAB_SUBTITLE = 'Guide a release from Jira issue lookup through a complete ServiceNow Change Request.';
