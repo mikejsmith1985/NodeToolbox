@@ -54,6 +54,12 @@ vi.mock('./hooks/useReportsHubState.ts', () => ({
 
 import ReportsHubView from './ReportsHubView.tsx';
 
+function expectKpiCardValue(labelText: string, valueText: string): void {
+  const kpiCard = screen.getAllByText(labelText, { selector: 'span' })[0]?.closest('div');
+  expect(kpiCard).not.toBeNull();
+  expect(within(kpiCard as HTMLElement).getByText(valueText)).toBeInTheDocument();
+}
+
 describe('ReportsHubView', () => {
   beforeEach(() => {
     mockState.activeTab = 'features';
@@ -236,6 +242,132 @@ describe('ReportsHubView', () => {
 
     expect(screen.getByText('TBX-210')).toBeInTheDocument();
     expect(screen.queryByText('TBX-211')).not.toBeInTheDocument();
+  });
+
+  it('updates the hero KPI cards to match the selected PI filter', () => {
+    mockState.artTeams = [
+      { name: 'Team A', projectKey: 'TMA' },
+      { name: 'Team B', projectKey: 'TMB' },
+      { name: 'Team C', projectKey: 'TMC' },
+    ];
+    mockState.piFilter = 'PI 26.3 (05/21/26 - 07/29/26)';
+    mockState.features = [
+      {
+        key: 'TMA-100',
+        summary: 'Team A feature',
+        statusName: 'In Progress',
+        statusCategory: 'indeterminate',
+        teamName: 'Team A',
+        fixVersions: [],
+        assigneeName: 'Alice',
+        piName: 'PI 26.3',
+        priority: 'High',
+      },
+      {
+        key: 'TMB-100',
+        summary: 'Team B feature',
+        statusName: 'In Progress',
+        statusCategory: 'indeterminate',
+        teamName: 'Team B',
+        fixVersions: [],
+        assigneeName: 'Bob',
+        piName: 'PI 26.2',
+        priority: 'High',
+      },
+    ];
+    mockState.defects = [
+      {
+        key: 'TMA-200',
+        summary: 'Team A defect',
+        statusName: 'Open',
+        statusCategory: 'new',
+        teamName: 'Team A',
+        fixVersions: [],
+        assigneeName: 'Alice',
+        piName: 'PI 26.3',
+        priority: 'Critical',
+      },
+      {
+        key: 'TMC-200',
+        summary: 'Team C defect',
+        statusName: 'Open',
+        statusCategory: 'new',
+        teamName: 'Team C',
+        fixVersions: [],
+        assigneeName: 'Casey',
+        piName: 'PI 26.2',
+        priority: 'High',
+      },
+    ];
+    mockState.risks = [
+      {
+        key: 'TMA-300',
+        summary: 'Team A risk',
+        statusName: 'Open',
+        statusCategory: 'new',
+        teamName: 'Team A',
+        fixVersions: [],
+        assigneeName: null,
+        piName: 'PI 26.3',
+        priority: 'High',
+      },
+      {
+        key: 'TMB-300',
+        summary: 'Team B risk',
+        statusName: 'Open',
+        statusCategory: 'new',
+        teamName: 'Team B',
+        fixVersions: [],
+        assigneeName: null,
+        piName: 'PI 26.2',
+        priority: 'High',
+      },
+    ];
+
+    render(<ReportsHubView />);
+
+    expectKpiCardValue('ART Teams', '1');
+    expectKpiCardValue('Features', '1');
+    expectKpiCardValue('Defects', '1');
+    expectKpiCardValue('Risks', '1');
+  });
+
+  it('defaults the PI filter to the current date-range PI when none is selected', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-27T12:00:00.000-04:00'));
+
+    try {
+      mockState.features = [
+        {
+          key: 'TMA-400',
+          summary: 'Prior PI feature',
+          statusName: 'In Progress',
+          statusCategory: 'indeterminate',
+          teamName: 'Team A',
+          fixVersions: [],
+          assigneeName: 'Alice',
+          piName: 'PI 26.2 (02/26/26 - 04/29/26)',
+          priority: 'High',
+        },
+        {
+          key: 'TMA-401',
+          summary: 'Current PI feature',
+          statusName: 'In Progress',
+          statusCategory: 'indeterminate',
+          teamName: 'Team A',
+          fixVersions: [],
+          assigneeName: 'Alice',
+          piName: 'PI 26.3 (05/21/26 - 07/29/26)',
+          priority: 'High',
+        },
+      ];
+
+      render(<ReportsHubView />);
+
+      expect(mockActions.setPiFilter).toHaveBeenCalledWith('PI 26.3 (05/21/26 - 07/29/26)');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('treats equivalent PI labels as the same filter when the selected PI includes a date range', () => {
