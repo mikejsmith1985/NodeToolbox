@@ -7,7 +7,7 @@ import type { JiraFeatureIssue, ReportsHubTab, SprintIssue, ThroughputEntry } fr
 
 const { mockState, mockActions } = vi.hoisted(() => ({
   mockState: {
-    activeTab: 'features' as ReportsHubTab,
+    activeTab: 'dashboard' as ReportsHubTab,
     artTeams: [{ name: 'Team A', projectKey: 'TBX' }],
     piFilter: '',
     teamFilter: '',
@@ -62,7 +62,7 @@ function expectKpiCardValue(labelText: string, valueText: string): void {
 
 describe('ReportsHubView', () => {
   beforeEach(() => {
-    mockState.activeTab = 'features';
+    mockState.activeTab = 'dashboard';
     mockState.piFilter = '';
     mockState.teamFilter = '';
     mockState.features = [];
@@ -188,6 +188,7 @@ describe('ReportsHubView', () => {
   });
 
   it('shows the at-risk feature report sections when features are loaded', () => {
+    mockState.activeTab = 'features';
     mockState.features = [
       {
         key: 'TBX-100',
@@ -507,6 +508,7 @@ describe('ReportsHubView', () => {
   // ── isPastDue day-granularity fix ──
 
   it('does not mark a feature as Past Due when the due date is today', () => {
+    mockState.activeTab = 'features';
     // Simulate a Jira date-only string matching today so that negative-UTC-offset
     // environments cannot incorrectly flag today's items as overdue.
     const todayLocal = new Date();
@@ -547,6 +549,7 @@ describe('ReportsHubView', () => {
   });
 
   it('does mark a feature as Past Due when the due date is yesterday', () => {
+    mockState.activeTab = 'features';
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayDatePart = [

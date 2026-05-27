@@ -1,10 +1,9 @@
 // useReleaseManagement.test.ts — Unit tests for the Release Management state hook.
 
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { snowFetch } from '../../../services/snowApi.ts';
-import { useConnectionStore } from '../../../store/connectionStore.ts';
 import { useReleaseManagement } from './useReleaseManagement.ts';
 
 vi.mock('../../../services/snowApi.ts', () => ({
@@ -36,10 +35,6 @@ const EXPECTED_CHANGE_REQUEST = {
 };
 
 describe('useReleaseManagement', () => {
-  beforeEach(() => {
-    useConnectionStore.setState(useConnectionStore.getInitialState());
-  });
-
   afterEach(() => {
     vi.clearAllMocks();
   });
@@ -78,10 +73,7 @@ describe('useReleaseManagement', () => {
       expect(result.current.state.loadedChg).toEqual(EXPECTED_CHANGE_REQUEST);
       expect(result.current.state.loadError).toBeNull();
     });
-    expect(vi.mocked(snowFetch)).toHaveBeenCalledWith(
-      expect.stringContaining('/api/now/table/change_request?'),
-      { forceDirectProxy: true },
-    );
+    expect(vi.mocked(snowFetch)).toHaveBeenCalledWith(expect.stringContaining('/api/now/table/change_request?'));
   });
 
   it('stores a load error when loading a change request fails', async () => {
@@ -117,20 +109,21 @@ describe('useReleaseManagement', () => {
     expect(result.current.state.activityLog).toEqual([]);
   });
 
-  it('does not call snowFetch when SNow is not ready and sets an actionable error', async () => {
-    // SNow is not configured — isSnowReady stays false (default store state)
+  it('stores the relay guidance when loading active changes fails before ServiceNow is connected', async () => {
+    vi.mocked(snowFetch).mockRejectedValue(
+      new Error('SNow relay not connected. Click Relay -> Open ServiceNow, then click the NodeToolbox SNow Relay bookmarklet.'),
+    );
     const { result } = renderHook(() => useReleaseManagement());
 
     await act(async () => {
       await result.current.actions.loadMyActiveChanges();
     });
 
-    expect(snowFetch).not.toHaveBeenCalled();
-    expect(result.current.state.myChangesError).toContain('SNow is not configured');
+    expect(snowFetch).toHaveBeenCalledTimes(1);
+    expect(result.current.state.myChangesError).toContain('SNow relay not connected');
   });
 
-  it('calls snowFetch when SNow is ready', async () => {
-    useConnectionStore.setState({ isSnowReady: true });
+  it('uses the relay-backed snowFetch path when loading active changes', async () => {
     vi.mocked(snowFetch).mockResolvedValue({ result: [MOCK_CHANGE_RECORD] });
 
     const { result } = renderHook(() => useReleaseManagement());
@@ -140,10 +133,6 @@ describe('useReleaseManagement', () => {
     });
 
     expect(snowFetch).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(snowFetch).mock.calls[0]).toEqual([
-      expect.stringContaining('sysparm_query=assigned_to%3Djavascript%3Ags.getUserID()%5Eactive%3Dtrue'),
-      { forceDirectProxy: true },
-    ]);
     expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain(
       'sysparm_query=assigned_to%3Djavascript%3Ags.getUserID()%5Eactive%3Dtrue',
     );

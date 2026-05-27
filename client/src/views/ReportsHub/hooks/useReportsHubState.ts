@@ -6,6 +6,7 @@
 import { useState } from 'react'
 
 import { jiraGet } from '../../../services/jiraApi.ts'
+import { readArtFeatureScopeSettings } from '../../ArtView/artFeatureScopeSettings.ts'
 
 // ── Named constants ──
 
@@ -473,6 +474,60 @@ async function fetchIssuesAcrossTeams(
   return allTeamResults.flat()
 }
 
+/** Fetches feature issues from ART-wide feature-scope projects when team projects do not own the feature records. */
+async function fetchIssuesAcrossProjectKeys(
+  projectKeys: string[],
+  createProjectJql: (projectKey: string) => string,
+): Promise<JiraFeatureIssue[]> {
+  if (projectKeys.length === 0) return []
+
+  const projectFetches = projectKeys.map(async (projectKey) => {
+    const normalizedProjectKey = projectKey.trim().toUpperCase()
+    const responseIssues = await fetchAllSearchIssues<JiraIssueListResponse['issues'][number]>(
+      createProjectJql(normalizedProjectKey),
+      REPORT_FIELDS,
+    )
+    return responseIssues.map((rawIssue) => mapJiraIssueToFeature(rawIssue, normalizedProjectKey))
+  })
+
+  const allProjectResults = await Promise.all(projectFetches)
+  return allProjectResults.flat()
+}
+
+/** Merges feature issue collections by key so shared feature-scope queries do not duplicate team-owned records. */
+function mergeFeatureIssuesByKey(
+  preferredIssues: JiraFeatureIssue[],
+  secondaryIssues: JiraFeatureIssue[],
+): JiraFeatureIssue[] {
+  const mergedIssuesByKey = new Map<string, JiraFeatureIssue>()
+
+  for (const featureIssue of secondaryIssues) {
+    mergedIssuesByKey.set(featureIssue.key, featureIssue)
+  }
+
+  for (const featureIssue of preferredIssues) {
+    mergedIssuesByKey.set(featureIssue.key, featureIssue)
+  }
+
+  return Array.from(mergedIssuesByKey.values())
+}
+
+/** Extracts readable loader errors from settled promise results without losing partial success data. */
+function extractRejectedMessages(
+  settledResults: PromiseSettledResult<unknown>[],
+  fallbackMessage: string,
+): string[] {
+  return settledResults
+    .filter((settledResult): settledResult is PromiseRejectedResult => settledResult.status === 'rejected')
+    .map((settledResult) => {
+      if (settledResult.reason instanceof Error && settledResult.reason.message.trim() !== '') {
+        return settledResult.reason.message
+      }
+
+      return fallbackMessage
+    })
+}
+
 // ── Helper: sprint issue helpers ──
 
 /** Extracts the most recent closed sprint name from the Jira sprint custom field array. */
@@ -600,7 +655,7 @@ function aggregateThroughputData(resolvedIssues: SprintIssue[]): ThroughputEntry
 
 /** Provides all reactive state and action callbacks for the Reports Hub view. */
 export function useReportsHubState(): { state: ReportsHubState; actions: ReportsHubActions } {
-  const [activeTab, setActiveTab] = useState<ReportsHubTab>('features')
+  const [activeTab, setActiveTab] = useState<ReportsHubTab>('dashboard')
   const [artTeams] = useState<ArtTeamConfig[]>(() => loadArtTeamsFromStorage())
   const [piFilter, setPiFilter] = useState('')
   const [teamFilter, setTeamFilter] = useState('')
@@ -659,16 +714,31 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
   async function loadFeatures(): Promise<void> {
     setIsLoadingFeatures(true)
     setFeaturesError(null)
-    try {
-      const loadedFeatures = await fetchIssuesAcrossTeams(
+    const featureScopeProjectKeys = readArtFeatureScopeSettings().featureProjectKeys
+    const featureResultSet = await Promise.allSettled([
+      fetchIssuesAcrossTeams(
         currentArtTeams,
         buildFeatureReportJql,
-      )
-      setFeatures(loadedFeatures)
-    } catch (fetchError) {
-      const errorMessage =
-        fetchError instanceof Error ? fetchError.message : LOAD_FEATURES_FAILURE
-      setFeaturesError(errorMessage)
+      ),
+      fetchIssuesAcrossProjectKeys(
+        featureScopeProjectKeys,
+        buildFeatureReportJql,
+      ),
+    ])
+    try {
+      const [teamScopedFeatureResult, scopedProjectFeatureResult] = featureResultSet
+      const teamScopedFeatures = teamScopedFeatureResult.status === 'fulfilled'
+        ? teamScopedFeatureResult.value
+        : []
+      const scopedProjectFeatures = scopedProjectFeatureResult.status === 'fulfilled'
+        ? scopedProjectFeatureResult.value
+        : []
+      setFeatures(mergeFeatureIssuesByKey(teamScopedFeatures, scopedProjectFeatures))
+
+      const rejectedMessages = extractRejectedMessages(featureResultSet, LOAD_FEATURES_FAILURE)
+      if (rejectedMessages.length > 0) {
+        setFeaturesError(rejectedMessages.join('; '))
+      }
     } finally {
       setIsLoadingFeatures(false)
     }
