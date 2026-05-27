@@ -3,7 +3,6 @@
 import { useCallback, useMemo, useState } from 'react';
 
 import { snowFetch } from '../../../services/snowApi.ts';
-import { useConnectionStore } from '../../../store/connectionStore.ts';
 import type { ChangeRequest, SnowUser } from '../../../types/snow.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 
@@ -44,10 +43,7 @@ const ACTIVE_CHANGE_LIMIT = 20;
 const ACTIVE_CHANGE_QUERY = 'assigned_to=javascript:gs.getUserID()^active=true';
 const LOAD_CHANGE_FAILURE_MESSAGE = 'Failed to load change request';
 const LOAD_MY_CHANGES_FAILURE_MESSAGE = 'Failed to load active changes';
-const SNOW_NOT_CONFIGURED_MESSAGE =
-  'SNow is not configured or credentials are invalid. Configure SNow credentials in Admin Hub or activate the relay bridge.';
 const CHANGE_NUMBER_REQUIRED_MESSAGE = 'Change number is required.';
-const RELEASE_MANAGEMENT_FETCH_OPTIONS = { forceDirectProxy: true } as const;
 
 type ServiceNowFieldValue = string | { value?: unknown; display_value?: unknown };
 type ServiceNowChangeRecord = Record<string, ServiceNowFieldValue | undefined>;
@@ -146,18 +142,14 @@ function mapChangeRecord(changeRecord: ServiceNowChangeRecord): ChangeRequest {
 
 /**
  * Manages Release Management state so the tab can load a single change, list active work,
- * and keep an operator-friendly activity log. All SNow fetches are guarded behind the
- * connection store's isSnowReady flag to prevent 401 errors from firing blindly.
+ * and keep an operator-friendly activity log. Release Management uses the same relay-backed
+ * SNow fetch path as the other CHG tools so browser-authenticated sessions can load data.
  */
 export function useReleaseManagement(): {
   state: ReleaseManagementState;
   actions: ReleaseManagementActions;
 } {
   const [state, setState] = useState<ReleaseManagementState>(() => createInitialReleaseManagementState());
-
-  // Read SNow readiness from the global connection store. Using a selector keeps
-  // this component from re-rendering on every unrelated store update.
-  const isSnowReady = useConnectionStore((connectionState) => connectionState.isSnowReady);
 
   const appendLogEntry = useCallback((message: string, level: ActivityLogLevel) => {
     const nextLogEntry = createLogEntry(message, level);
@@ -181,10 +173,7 @@ export function useReleaseManagement(): {
     setState((previousState) => ({ ...previousState, isLoadingChg: true, loadError: null }));
 
     try {
-      const changeResponse = await snowFetch<ServiceNowChangeQueryResponse>(
-        buildChangeLookupPath(normalizedChangeNumber),
-        RELEASE_MANAGEMENT_FETCH_OPTIONS,
-      );
+      const changeResponse = await snowFetch<ServiceNowChangeQueryResponse>(buildChangeLookupPath(normalizedChangeNumber));
       const loadedChg = changeResponse.result[0] ? mapChangeRecord(changeResponse.result[0]) : null;
       setState((previousState) => ({
         ...previousState,
@@ -207,24 +196,10 @@ export function useReleaseManagement(): {
   }, [state.chgNumber]);
 
   const loadMyActiveChanges = useCallback(async () => {
-    // Guard: only fetch if SNow credentials are configured. Firing the request without
-    // credentials always results in a 401, which is confusing and produces an unhelpful error.
-    if (!isSnowReady) {
-      setState((previousState) => ({
-        ...previousState,
-        myChangesError: SNOW_NOT_CONFIGURED_MESSAGE,
-        isLoadingMyChanges: false,
-      }));
-      return;
-    }
-
     setState((previousState) => ({ ...previousState, isLoadingMyChanges: true, myChangesError: null }));
 
     try {
-      const myChangesResponse = await snowFetch<ServiceNowChangeQueryResponse>(
-        buildMyActiveChangesPath(),
-        RELEASE_MANAGEMENT_FETCH_OPTIONS,
-      );
+      const myChangesResponse = await snowFetch<ServiceNowChangeQueryResponse>(buildMyActiveChangesPath());
       setState((previousState) => ({
         ...previousState,
         myActiveChanges: myChangesResponse.result.map((changeRecord) => mapChangeRecord(changeRecord)),
@@ -241,7 +216,7 @@ export function useReleaseManagement(): {
         activityLog: [createLogEntry(myChangesError, 'error'), ...previousState.activityLog],
       }));
     }
-  }, [isSnowReady]);
+  }, []);
 
   const clearLog = useCallback(() => {
     setState((previousState) => ({ ...previousState, activityLog: [] }));
