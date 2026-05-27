@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **SNow Hub — reusable CtaskEditForm component**: Extracted CTASK form logic into a reusable `CtaskEditForm` component that supports both create (CrgTab) and modify workflows. Component includes template loading via dropdown picker, inline save-as-template option, and full field validation via parent callbacks.
 - **SNow Hub — user assignment-group reverse lookup**: SNow Hub now includes an **Assignment Groups** tab where users can search for a person and return all related ServiceNow assignment groups, including the group name and membership record ID for quick auditing.
 - **Team Dashboard — dedicated Hygiene tab with ART-style checks**: Team Dashboard now includes a first-class **Hygiene** tab that embeds the same Hygiene workspace behavior used elsewhere in Toolbox, including summary score tiles, per-check flag drill-down, and issue-level hygiene findings. The Team Dashboard tab now also seeds Hygiene with the active team project key so teams land in a scoped hygiene view without manual re-entry.
 - **Team Dashboard — saved multi-team switching**: Team Dashboard now supports multiple saved team profiles instead of one global board setup. Users can save the current project and board as named dashboard teams, switch the active team from the dashboard header, and keep team-specific board selection, scope filters, advanced dashboard config, standup planning, roster data, standup UI state, and PI capacity data isolated per saved team.
