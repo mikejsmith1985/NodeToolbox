@@ -11,14 +11,18 @@
 const express  = require('express');
 const { saveConfigToDisk, JIRA_URL_PLACEHOLDER_PATTERNS } = require('../config/loader');
 const { createDemoModePath, isDemoModeRequest } = require('../utils/demoMode');
+const { buildBasicAuthHeader } = require('../utils/httpClient');
 
 // ── Named Constants ───────────────────────────────────────────────────────────
 
 /** Number of service-connection steps shown in the progress indicator */
-const WIZARD_TOTAL_SERVICE_STEPS = 4;
+const WIZARD_TOTAL_SERVICE_STEPS = 5;
 
 /** Step name referenced in data-step attributes and JS navigation */
-const STEP_NAMES = ['welcome', 'jira', 'github', 'confluence', 'snow', 'done'];
+const STEP_NAMES = ['welcome', 'jira', 'github', 'confluence', 'workspace', 'snow', 'done'];
+
+/** Confluence Database property key that stores the published shared ART payload. */
+const SHARED_ART_WORKSPACE_PROPERTY_KEY = 'nodetoolbox-shared-art';
 
 /**
  * The organisation's Jira instance URL — pre-filled in the wizard so users
@@ -37,6 +41,7 @@ const DEFAULT_JIRA_BASE_URL = 'https://jira.healthspring-jira-prod.aws.zilverton
 function createSetupRouter(configuration) {
   const router = express.Router();
   router.get('/setup',     (req, res) => handleGetSetup(req, res, configuration));
+  router.post('/api/setup/shared-art-workspace', (req, res) => handlePostSharedArtWorkspace(req, res));
   router.post('/api/setup', (req, res) => handlePostSetup(req, res, configuration));
   return router;
 }
@@ -51,6 +56,47 @@ function handleGetSetup(req, res, configuration) {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
   res.status(200).end(buildWizardHtml(configuration, isDemoModeRequest(req)));
+}
+
+/**
+ * Loads a published Shared ART Workspace during setup without persisting the
+ * Confluence credentials until the full wizard is submitted.
+ */
+async function handlePostSharedArtWorkspace(req, res) {
+  const {
+    confluenceBaseUrl = '',
+    confluenceUsername = '',
+    confluenceApiToken = '',
+    sharedArtDatabaseId = '',
+  } = req.body || {};
+
+  const cleanConfluenceBaseUrl = confluenceBaseUrl.trim().replace(/\/+$/, '');
+  const cleanConfluenceUsername = confluenceUsername.trim();
+  const cleanConfluenceApiToken = confluenceApiToken.trim();
+  const cleanSharedArtDatabaseId = sharedArtDatabaseId.trim();
+
+  if (!cleanConfluenceBaseUrl || !cleanConfluenceUsername || !cleanConfluenceApiToken || !cleanSharedArtDatabaseId) {
+    return res.status(400).json({
+      error: 'Confluence base URL, Atlassian email, Cloud API token, and Shared ART Database ID are required.',
+    });
+  }
+
+  try {
+    const sharedArtWorkspace = await loadSharedArtWorkspaceFromConfluence({
+      baseUrl: cleanConfluenceBaseUrl,
+      username: cleanConfluenceUsername,
+      apiToken: cleanConfluenceApiToken,
+      databaseId: cleanSharedArtDatabaseId,
+    });
+    res.status(200).json({ workspace: sharedArtWorkspace });
+  } catch (workspaceLoadError) {
+    const statusCode = Number.isInteger(workspaceLoadError && workspaceLoadError.statusCode)
+      ? workspaceLoadError.statusCode
+      : 502;
+    res.status(statusCode).json({
+      error: workspaceLoadError.message || 'Failed to load the shared ART workspace.',
+    });
+  }
 }
 
 /**
@@ -150,13 +196,15 @@ function buildWizardHtml(configuration, isDemoMode) {
       <div class="progress-dot" id="dot-1" title="Jira"></div>
       <div class="progress-dot" id="dot-2" title="GitHub"></div>
       <div class="progress-dot" id="dot-3" title="Confluence"></div>
-      <div class="progress-dot" id="dot-4" title="ServiceNow"></div>
+      <div class="progress-dot" id="dot-4" title="Shared ART Workspace"></div>
+      <div class="progress-dot" id="dot-5" title="ServiceNow"></div>
     </div>
 
     ${buildStepWelcome()}
     ${buildStepJira(prefillJiraBaseUrl)}
     ${buildStepGithub()}
     ${buildStepConfluence(prefillConfluenceBaseUrl)}
+    ${buildStepWorkspace()}
     ${buildStepSnow()}
     ${buildStepDone()}
 
@@ -319,6 +367,45 @@ function buildStepConfluence(prefillConfluenceBaseUrl) {
     </div>`;
 }
 
+/** Builds the shared ART workspace preload step for teams that publish from Confluence. */
+function buildStepWorkspace() {
+  return `
+    <div id="step-workspace" data-step="workspace" class="wizard-step">
+      <p class="step-counter">Step 4 of ${WIZARD_TOTAL_SERVICE_STEPS}</p>
+      <div class="step-hero">🧭</div>
+      <h1 class="step-title">Load Shared ART Workspace</h1>
+      <p class="step-subtitle">If your team already published an ART workspace in Confluence, load it now so ART View, Sprint Dashboard, and Reports Hub are ready on first launch.</p>
+
+      <label class="field-label" for="shared-art-database-id">Shared ART Database ID</label>
+      <input id="shared-art-database-id" class="field-input" type="text"
+             placeholder="Paste the Confluence database ID"
+             autocomplete="off" />
+      <p class="field-hint">This is the Confluence Database ID used by the existing Shared ART Workspace flow. If you do not have one yet, skip this step for now.</p>
+
+      <div class="token-instruction">
+        <div class="token-instruction-icon">📦</div>
+        <div class="token-instruction-content">
+          <strong>What happens when you load it:</strong>
+          <p style="margin-top: 8px;">NodeToolbox will pull the published workspace from Confluence and preload your ART teams, advanced settings, and shared-workspace sync snapshot into this browser before you enter the app.</p>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button id="load-shared-art-workspace-btn" class="btn-secondary" onclick="loadSharedArtWorkspace()">Load Workspace from Confluence</button>
+      </div>
+
+      <div id="shared-art-workspace-status" class="status-panel" style="display:none;"></div>
+
+      <div class="btn-row btn-row--spread">
+        <button class="btn-ghost" onclick="goBack()">← Back</button>
+        <div class="btn-group">
+          <button class="btn-secondary" onclick="skipCurrentStep()">Skip workspace</button>
+          <button class="btn-primary" onclick="goNext()">Next →</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 /**
  * Builds the ServiceNow setup guidance step.
  * This step is intentionally relay-only so the user learns the post-setup flow
@@ -327,7 +414,7 @@ function buildStepConfluence(prefillConfluenceBaseUrl) {
 function buildStepSnow() {
   return `
     <div id="step-snow" data-step="snow" class="wizard-step">
-      <p class="step-counter">Step 4 of ${WIZARD_TOTAL_SERVICE_STEPS}</p>
+      <p class="step-counter">Step 5 of ${WIZARD_TOTAL_SERVICE_STEPS}</p>
       <div class="step-hero">☁️</div>
       <h1 class="step-title">Connect ServiceNow</h1>
       <p class="step-subtitle">ServiceNow is where IT tickets and service requests live. <strong>Also optional</strong> — this step shows the relay flow you will use after the wizard.</p>
@@ -525,6 +612,21 @@ const WIZARD_THEME_CSS = `
                   font-size: 14px; line-height: 1.8; }
   .done-summary:empty { display: none; }
   .done-back-btn { align-self: center; }
+  /* Async workspace load status */
+  .status-panel {
+    margin-top: 18px; padding: 14px 16px;
+    border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); font-size: 13px; line-height: 1.65;
+  }
+  .status-panel--success {
+    border-color: rgba(63,185,80,.65);
+    background: rgba(63,185,80,.09);
+  }
+  .status-panel--error {
+    border-color: rgba(248,81,73,.7);
+    background: rgba(248,81,73,.09);
+  }
+  .status-panel strong { color: var(--text); }
   /* Error */
   .error-banner {
     margin-top: 16px; padding: 12px 16px;
@@ -546,6 +648,7 @@ const WIZARD_JS = `
     jiraBaseUrl: '', jiraPat: '',
     githubPat: '',
     confluenceBaseUrl: '', confluenceUsername: '', confluenceApiToken: '',
+    sharedArtDatabaseId: '', sharedArtWorkspace: null,
   };
 
   var currentStepIndex = 0;
@@ -562,7 +665,7 @@ const WIZARD_JS = `
   }
 
   function updateProgressDots(stepIndex) {
-    /* Dots map to service steps: Jira, GitHub, Confluence, then ServiceNow. */
+    /* Dots map to service steps: Jira, GitHub, Confluence, Shared ART, and ServiceNow. */
     for (var dotNumber = 1; dotNumber <= ${WIZARD_TOTAL_SERVICE_STEPS}; dotNumber++) {
       var dotElement = document.getElementById('dot-' + dotNumber);
       if (!dotElement) continue;
@@ -583,6 +686,8 @@ const WIZARD_JS = `
       wizardData.confluenceBaseUrl  = (getValue('confluence-base-url') || '').replace(/\\/+$/, '');
       wizardData.confluenceUsername = getValue('confluence-username');
       wizardData.confluenceApiToken = getValue('confluence-api-token');
+    } else if (stepName === 'workspace') {
+      wizardData.sharedArtDatabaseId = getValue('shared-art-database-id');
     }
   }
 
@@ -612,6 +717,7 @@ const WIZARD_JS = `
     if (stepName === 'jira')   { wizardData.jiraBaseUrl = ''; wizardData.jiraPat = ''; }
     if (stepName === 'github') { wizardData.githubPat = ''; }
     if (stepName === 'confluence') { wizardData.confluenceBaseUrl = ''; wizardData.confluenceUsername = ''; wizardData.confluenceApiToken = ''; }
+    if (stepName === 'workspace') { wizardData.sharedArtDatabaseId = ''; wizardData.sharedArtWorkspace = null; }
     if (currentStepIndex < STEP_NAMES.length - 1) {
       currentStepIndex++;
       showStep(currentStepIndex);
@@ -625,10 +731,118 @@ const WIZARD_JS = `
     if (wizardData.jiraPat)      connectedServices.push('🎟 Jira connected');
     if (wizardData.githubPat)    connectedServices.push('🐙 GitHub connected');
     if (wizardData.confluenceApiToken) connectedServices.push('📚 Confluence connected');
+    if (wizardData.sharedArtWorkspace) {
+      connectedServices.push('🧭 Shared ART loaded: ' + wizardData.sharedArtWorkspace.artName + ' (' + wizardData.sharedArtWorkspace.teamCount + ' teams)');
+    }
     if (connectedServices.length === 0) {
       summaryElement.innerHTML = '⚠️ No services were connected yet. Go back and fill in at least one.';
     } else {
       summaryElement.innerHTML = connectedServices.join('<br>');
+    }
+  }
+
+  function readStoredJson(storageKey, fallbackValue) {
+    try {
+      var rawValue = localStorage.getItem(storageKey);
+      return rawValue ? JSON.parse(rawValue) : fallbackValue;
+    } catch (_storageParseError) {
+      return fallbackValue;
+    }
+  }
+
+  function persistLoadedSharedArtWorkspace(workspace, databaseId) {
+    var nextArtName = String(workspace.artName || workspace.artKey || 'Shared ART Workspace').trim();
+    var nextArtKey = String(workspace.artKey || '').trim();
+    var nextTeams = Array.isArray(workspace.teams) ? workspace.teams : [];
+    var nextSettings = Object.assign(
+      {},
+      readStoredJson('tbxARTSettings', {}),
+      workspace.settings || {},
+      {
+        sharedArtName: nextArtName,
+        sharedArtKey: nextArtKey,
+        sharedArtDatabaseId: databaseId,
+      }
+    );
+    localStorage.setItem('tbxARTSettings', JSON.stringify(nextSettings));
+    localStorage.setItem('nodetoolbox-art-teams', JSON.stringify(nextTeams));
+
+    var storedSnapshots = readStoredJson('tbxSharedArtSyncSnapshots', {});
+    storedSnapshots[databaseId] = workspace;
+    localStorage.setItem('tbxSharedArtSyncSnapshots', JSON.stringify(storedSnapshots));
+
+    var recentWorkspaces = readStoredJson('tbxSharedArtRecentWorkspaces', []);
+    if (!Array.isArray(recentWorkspaces)) recentWorkspaces = [];
+    var nextRecentWorkspaces = [{
+      artName: nextArtName,
+      artKey: nextArtKey,
+      databaseId: databaseId,
+    }].concat(recentWorkspaces.filter(function(workspaceEntry) {
+      return workspaceEntry && workspaceEntry.databaseId !== databaseId;
+    })).slice(0, 10);
+    localStorage.setItem('tbxSharedArtRecentWorkspaces', JSON.stringify(nextRecentWorkspaces));
+  }
+
+  function renderSharedArtWorkspaceStatus(statusType, messageHtml) {
+    var statusElement = document.getElementById('shared-art-workspace-status');
+    if (!statusElement) return;
+    statusElement.className = 'status-panel status-panel--' + statusType;
+    statusElement.innerHTML = messageHtml;
+    statusElement.style.display = 'block';
+  }
+
+  async function loadSharedArtWorkspace() {
+    collectCurrentStepData();
+    var loadButton = document.getElementById('load-shared-art-workspace-btn');
+    if (!wizardData.confluenceBaseUrl || !wizardData.confluenceUsername || !wizardData.confluenceApiToken) {
+      renderSharedArtWorkspaceStatus('error', 'Connect Confluence on the previous step first so the workspace can be loaded with your Atlassian credentials.');
+      return;
+    }
+    if (!wizardData.sharedArtDatabaseId) {
+      renderSharedArtWorkspaceStatus('error', 'Shared ART Database ID is required before loading the workspace.');
+      return;
+    }
+
+    loadButton.disabled = true;
+    loadButton.textContent = 'Loading…';
+    renderSharedArtWorkspaceStatus('success', 'Loading shared ART workspace from Confluence…');
+
+    try {
+      var response = await fetch('/api/setup/shared-art-workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          confluenceBaseUrl: wizardData.confluenceBaseUrl,
+          confluenceUsername: wizardData.confluenceUsername,
+          confluenceApiToken: wizardData.confluenceApiToken,
+          sharedArtDatabaseId: wizardData.sharedArtDatabaseId,
+        }),
+      });
+      var responseData = await response.json().catch(function() { return {}; });
+      if (!response.ok) {
+        throw new Error(responseData.error || 'Failed to load the shared ART workspace.');
+      }
+
+      persistLoadedSharedArtWorkspace(responseData.workspace, wizardData.sharedArtDatabaseId);
+      wizardData.sharedArtWorkspace = {
+        artName: String(responseData.workspace.artName || responseData.workspace.artKey || 'Shared ART Workspace').trim(),
+        artKey: String(responseData.workspace.artKey || '').trim(),
+        teamCount: Array.isArray(responseData.workspace.teams) ? responseData.workspace.teams.length : 0,
+      };
+      renderSharedArtWorkspaceStatus(
+        'success',
+        '<strong>Loaded shared ART workspace.</strong><br>' +
+          wizardData.sharedArtWorkspace.artName + ' • ' +
+          wizardData.sharedArtWorkspace.teamCount + ' team(s) preloaded for this browser.'
+      );
+    } catch (workspaceLoadError) {
+      renderSharedArtWorkspaceStatus(
+        'error',
+        workspaceLoadError.message || 'Failed to load the shared ART workspace.'
+      );
+    } finally {
+      loadButton.disabled = false;
+      loadButton.textContent = 'Load Workspace from Confluence';
     }
   }
 
@@ -703,6 +917,82 @@ function escapeHtmlAttribute(value) {
     .replace(/'/g, '&#39;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+/** Creates a structured error object so setup routes can return appropriate status codes. */
+function createSetupRouteError(statusCode, message) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+/** Builds the Basic Auth header used for setup-time Confluence workspace loading. */
+function buildSetupConfluenceHeaders(username, apiToken) {
+  const authorizationHeader = buildBasicAuthHeader(username, apiToken);
+  return {
+    'Accept': 'application/json',
+    'Authorization': authorizationHeader,
+  };
+}
+
+/** Reads and validates a JSON response from the Confluence v2 API. */
+async function fetchSetupConfluenceJson(baseUrl, headers, apiPath, defaultErrorMessage) {
+  const response = await fetch(baseUrl + apiPath, {
+    method: 'GET',
+    headers,
+  });
+
+  let responseBody = {};
+  try {
+    responseBody = await response.json();
+  } catch (_responseParseError) {
+    responseBody = {};
+  }
+
+  if (!response.ok) {
+    const responseMessage = responseBody.message || responseBody.reason || defaultErrorMessage || `HTTP ${response.status}`;
+    throw createSetupRouteError(response.status, responseMessage);
+  }
+
+  return responseBody;
+}
+
+/** Loads the published Shared ART Workspace payload from a Confluence Database. */
+async function loadSharedArtWorkspaceFromConfluence(confluenceConfiguration) {
+  const headers = buildSetupConfluenceHeaders(confluenceConfiguration.username, confluenceConfiguration.apiToken);
+  const encodedDatabaseId = encodeURIComponent(confluenceConfiguration.databaseId);
+  const propertyList = await fetchSetupConfluenceJson(
+    confluenceConfiguration.baseUrl,
+    headers,
+    `/wiki/api/v2/databases/${encodedDatabaseId}/properties?key=${encodeURIComponent(SHARED_ART_WORKSPACE_PROPERTY_KEY)}`,
+    `Failed to inspect Confluence Database ${confluenceConfiguration.databaseId}.`,
+  );
+  const matchingProperty = Array.isArray(propertyList.results)
+    ? propertyList.results.find((property) => property && property.key === SHARED_ART_WORKSPACE_PROPERTY_KEY)
+    : null;
+
+  if (!matchingProperty || !matchingProperty.id) {
+    throw createSetupRouteError(
+      404,
+      `Database ${confluenceConfiguration.databaseId} does not contain a NodeToolbox shared ART workspace yet. Ask a teammate to publish it from Art View first.`,
+    );
+  }
+
+  const propertyRecord = await fetchSetupConfluenceJson(
+    confluenceConfiguration.baseUrl,
+    headers,
+    `/wiki/api/v2/databases/${encodedDatabaseId}/properties/${encodeURIComponent(String(matchingProperty.id))}`,
+    `Failed to load the shared ART workspace from database ${confluenceConfiguration.databaseId}.`,
+  );
+  const workspaceValue = propertyRecord && propertyRecord.value;
+  if (!workspaceValue || typeof workspaceValue !== 'object') {
+    throw createSetupRouteError(
+      502,
+      `Database ${confluenceConfiguration.databaseId} returned an invalid NodeToolbox shared ART workspace payload.`,
+    );
+  }
+
+  return workspaceValue;
 }
 
 // ── Exports ───────────────────────────────────────────────────────────────────
