@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import ViewFrame from '../../components/ViewFrame/ViewFrame.tsx';
+import { ChangeModifierTab } from './tabs/ChangeModifierTab.tsx';
 import ConfigurationTab from './tabs/ConfigurationTab.tsx';
 import CrgTab from './tabs/CrgTab.tsx';
 import PrbTab from './tabs/PrbTab.tsx';
@@ -16,6 +17,7 @@ const VIEW_TITLE = 'SNow Hub';
 const VIEW_SUBTITLE = 'Manage change generation, PRB conversion, and release coordination from one ServiceNow-focused workspace.';
 const TAB_OPTIONS = [
   { key: 'crg', label: 'CHG' },
+  { key: 'change-modifier', label: 'CHG Modify' },
   { key: 'config', label: 'Configuration' },
   { key: 'prb', label: 'PRB Generator' },
   { key: 'assignment-groups', label: 'Assignment Groups' },
@@ -29,6 +31,10 @@ const DEFAULT_TAB_KEY: SnowHubTabKey = 'crg';
 function renderActiveTabPanel(activeTab: SnowHubTabKey) {
   if (activeTab === 'crg') {
     return <CrgTab />;
+  }
+
+  if (activeTab === 'change-modifier') {
+    return <ChangeModifierTab />;
   }
 
   if (activeTab === 'prb') {

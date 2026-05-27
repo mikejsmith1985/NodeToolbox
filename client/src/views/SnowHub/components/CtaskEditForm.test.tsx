@@ -1,24 +1,18 @@
 // CtaskEditForm.test.tsx — Tests for the reusable CTASK edit form component.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { CtaskEditForm } from './CtaskEditForm';
 import type { CtaskEditFormProps } from './CtaskEditForm';
 import type { CtaskTemplateData, SnowReference } from '../hooks/useCrgState';
-import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions';
 
 // Test fixtures — reusable data structures for tests.
 
 const emptySnowReference: SnowReference = {
   sysId: '',
   displayName: '',
-};
-
-const resolvedSnowReference: SnowReference = {
-  sysId: 'sys123',
-  displayName: 'Test User Group',
 };
 
 const defaultCtaskData: CtaskTemplateData = {
@@ -68,19 +62,10 @@ const mockTemplates = [
   },
 ];
 
-const mockChoiceOptions: SnowChoiceOptionMap = {
-  impact: [
-    { value: '1', label: '1 - High' },
-    { value: '2', label: '2 - Medium' },
-    { value: '3', label: '3 - Low' },
-  ],
-};
-
 function createDefaultProps(): CtaskEditFormProps {
   return {
     ctaskData: defaultCtaskData,
     templates: mockTemplates,
-    choiceOptions: mockChoiceOptions,
     onDataChange: vi.fn(),
   };
 }

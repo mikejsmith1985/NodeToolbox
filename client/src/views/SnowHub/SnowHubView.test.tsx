@@ -234,6 +234,48 @@ vi.mock('./hooks/useUserAssignmentGroups.ts', () => ({
   }),
 }));
 
+const mockChangeModifierState = {
+  change: null as {
+    number: string;
+    shortDescription: string;
+    description: string;
+    justification: string;
+    riskImpactAnalysis: string;
+    chgBasicInfo: { category: string; changeType: string; environment: string };
+    chgPlanningAssessment: Record<string, string>;
+    chgPlanningContent: Record<string, string>;
+  } | null,
+  ctasks: [] as Array<{
+    sysId: string;
+    number: string;
+    shortDescription: string;
+    description: string;
+    assignmentGroup: { sysId: string; displayName: string };
+    assignedTo: { sysId: string; displayName: string };
+    plannedStartDate: string;
+    plannedEndDate: string;
+  }>,
+  isLoading: false,
+  isSaving: false,
+  isDirty: false,
+  error: null as string | null,
+  isSavingSuccess: false,
+};
+
+const mockChangeModifierActions = {
+  fetchChangeByKey: vi.fn().mockResolvedValue(undefined),
+  updateChangeField: vi.fn(),
+  removeCtask: vi.fn(),
+  saveChange: vi.fn().mockResolvedValue(undefined),
+};
+
+vi.mock('./hooks/useChangeModifier.ts', () => ({
+  useChangeModifier: () => ({
+    state: mockChangeModifierState,
+    actions: mockChangeModifierActions,
+  }),
+}));
+
 import SnowHubView from './SnowHubView.tsx';
 
 function resetMockState(): void {
@@ -241,6 +283,13 @@ function resetMockState(): void {
   mockPrbState.prbData = null;
   mockReleaseState.loadedChg = null;
   mockReleaseState.activityLog = [];
+  mockChangeModifierState.change = null;
+  mockChangeModifierState.ctasks = [];
+  mockChangeModifierState.isLoading = false;
+  mockChangeModifierState.isSaving = false;
+  mockChangeModifierState.isDirty = false;
+  mockChangeModifierState.error = null;
+  mockChangeModifierState.isSavingSuccess = false;
 }
 
 describe('SnowHubView', () => {
@@ -251,6 +300,7 @@ describe('SnowHubView', () => {
     Object.values(mockReleaseActions).forEach((mockAction) => mockAction.mockReset());
     Object.values(mockSyncEngineActions).forEach((mockAction) => mockAction.mockReset());
     Object.values(mockUserAssignmentGroupsActions).forEach((mockAction) => mockAction.mockReset());
+    Object.values(mockChangeModifierActions).forEach((mockAction) => mockAction.mockReset());
     mockSyncEngineActions.runNow.mockResolvedValue(undefined);
     mockSyncEngineActions.fetchJiraStatuses.mockResolvedValue(undefined);
     mockUserAssignmentGroupsActions.lookupAssignmentGroupsForUser.mockResolvedValue(undefined);
@@ -262,10 +312,11 @@ describe('SnowHubView', () => {
     expect(screen.getByRole('heading', { name: 'SNow Hub' })).toBeInTheDocument();
   });
 
-  it('renders the six tab buttons', () => {
+  it('renders the seven tab buttons', () => {
     render(<SnowHubView />);
 
     expect(screen.getByRole('tab', { name: 'CHG' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'CHG Modify' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Configuration' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'PRB Generator' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Assignment Groups' })).toBeInTheDocument();
@@ -278,6 +329,16 @@ describe('SnowHubView', () => {
 
     expect(screen.getByLabelText('Project Key')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Fetch Issues' })).toBeInTheDocument();
+  });
+
+  it('switches to the CHG Modify tab when CHG Modify is clicked', async () => {
+    const user = userEvent.setup();
+    render(<SnowHubView />);
+
+    await user.click(screen.getByRole('tab', { name: 'CHG Modify' }));
+
+    expect(screen.getByRole('heading', { name: 'Modify Change' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Fetch Change' })).toBeInTheDocument();
   });
 
   it('switches to the PRB tab when PRB Generator is clicked', async () => {
