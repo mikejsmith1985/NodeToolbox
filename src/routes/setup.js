@@ -23,6 +23,8 @@ const STEP_NAMES = ['welcome', 'jira', 'github', 'confluence', 'workspace', 'sno
 
 /** Confluence Database property key that stores the published shared ART payload. */
 const SHARED_ART_WORKSPACE_PROPERTY_KEY = 'nodetoolbox-shared-art';
+const DEFAULT_SHARED_ART_WORKSPACE_NAME = 'Sales to Enrollment';
+const DEFAULT_SHARED_ART_WORKSPACE_DATABASE_ID = '684163133';
 
 /**
  * The organisation's Jira instance URL — pre-filled in the wizard so users
@@ -179,6 +181,7 @@ function buildWizardHtml(configuration, isDemoMode) {
   const isPlaceholderJiraUrl = JIRA_URL_PLACEHOLDER_PATTERNS.some((p) => rawJiraBaseUrl.indexOf(p) >= 0);
   const prefillJiraBaseUrl  = escapeHtmlAttribute(isPlaceholderJiraUrl || !rawJiraBaseUrl ? DEFAULT_JIRA_BASE_URL : rawJiraBaseUrl);
   const prefillConfluenceBaseUrl = escapeHtmlAttribute(visibleConfiguration.confluence && visibleConfiguration.confluence.baseUrl || '');
+  const prefillSharedArtWorkspaceDatabaseId = escapeHtmlAttribute(DEFAULT_SHARED_ART_WORKSPACE_DATABASE_ID);
   const demoModeScript = `window.__NODE_TOOLBOX_DEMO_MODE__ = ${isDemoMode ? 'true' : 'false'};`;
 
   return `<!DOCTYPE html>
@@ -204,7 +207,7 @@ function buildWizardHtml(configuration, isDemoMode) {
     ${buildStepJira(prefillJiraBaseUrl)}
     ${buildStepGithub()}
     ${buildStepConfluence(prefillConfluenceBaseUrl)}
-    ${buildStepWorkspace()}
+    ${buildStepWorkspace(prefillSharedArtWorkspaceDatabaseId)}
     ${buildStepSnow()}
     ${buildStepDone()}
 
@@ -368,7 +371,7 @@ function buildStepConfluence(prefillConfluenceBaseUrl) {
 }
 
 /** Builds the shared ART workspace preload step for teams that publish from Confluence. */
-function buildStepWorkspace() {
+function buildStepWorkspace(prefillSharedArtWorkspaceDatabaseId) {
   return `
     <div id="step-workspace" data-step="workspace" class="wizard-step">
       <p class="step-counter">Step 4 of ${WIZARD_TOTAL_SERVICE_STEPS}</p>
@@ -379,8 +382,9 @@ function buildStepWorkspace() {
       <label class="field-label" for="shared-art-database-id">Shared ART Database ID</label>
       <input id="shared-art-database-id" class="field-input" type="text"
              placeholder="Paste the Confluence database ID"
+             value="${prefillSharedArtWorkspaceDatabaseId}"
              autocomplete="off" />
-      <p class="field-hint">This is the Confluence Database ID used by the existing Shared ART Workspace flow. If you do not have one yet, skip this step for now.</p>
+      <p class="field-hint">This currently defaults to <strong>${DEFAULT_SHARED_ART_WORKSPACE_NAME}</strong> (${DEFAULT_SHARED_ART_WORKSPACE_DATABASE_ID}). If you do not want to preload that ART yet, you can still skip this step for now.</p>
 
       <div class="token-instruction">
         <div class="token-instruction-icon">📦</div>
