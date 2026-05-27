@@ -133,7 +133,6 @@ function buildWizardHtml(configuration, isDemoMode) {
   const isPlaceholderJiraUrl = JIRA_URL_PLACEHOLDER_PATTERNS.some((p) => rawJiraBaseUrl.indexOf(p) >= 0);
   const prefillJiraBaseUrl  = escapeHtmlAttribute(isPlaceholderJiraUrl || !rawJiraBaseUrl ? DEFAULT_JIRA_BASE_URL : rawJiraBaseUrl);
   const prefillConfluenceBaseUrl = escapeHtmlAttribute(visibleConfiguration.confluence && visibleConfiguration.confluence.baseUrl || '');
-  const prefillSnowBaseUrl = escapeHtmlAttribute(visibleConfiguration.snow && visibleConfiguration.snow.baseUrl || '');
   const demoModeScript = `window.__NODE_TOOLBOX_DEMO_MODE__ = ${isDemoMode ? 'true' : 'false'};`;
 
   return `<!DOCTYPE html>
@@ -158,7 +157,7 @@ function buildWizardHtml(configuration, isDemoMode) {
     ${buildStepJira(prefillJiraBaseUrl)}
     ${buildStepGithub()}
     ${buildStepConfluence(prefillConfluenceBaseUrl)}
-    ${buildStepSnow(prefillSnowBaseUrl)}
+    ${buildStepSnow()}
     ${buildStepDone()}
 
   </div>
@@ -321,42 +320,43 @@ function buildStepConfluence(prefillConfluenceBaseUrl) {
 }
 
 /**
- * Builds the ServiceNow connection step (optional service).
- * Pre-fills the base URL if already known.
- * Explains the relay requirement and how to establish the browser-based relay connection.
- *
- * @param {string} prefillSnowBaseUrl - HTML-escaped existing SNow URL (may be empty)
+ * Builds the ServiceNow setup guidance step.
+ * This step is intentionally relay-only so the user learns the post-setup flow
+ * without being asked for URL, username, or password fields in the wizard.
  */
-function buildStepSnow(prefillSnowBaseUrl) {
+function buildStepSnow() {
   return `
     <div id="step-snow" data-step="snow" class="wizard-step">
       <p class="step-counter">Step 4 of ${WIZARD_TOTAL_SERVICE_STEPS}</p>
       <div class="step-hero">☁️</div>
       <h1 class="step-title">Connect ServiceNow</h1>
-      <p class="step-subtitle">ServiceNow is where IT tickets and service requests live. <strong>Also optional</strong> — skip it if you don't need it.</p>
-
-      <label class="field-label" for="snow-base-url">ServiceNow address</label>
-      <input id="snow-base-url" class="field-input" type="url"
-             placeholder="https://your-instance.service-now.com"
-             value="${prefillSnowBaseUrl}" autocomplete="off" />
+      <p class="step-subtitle">ServiceNow is where IT tickets and service requests live. <strong>Also optional</strong> — this step shows the relay flow you will use after the wizard.</p>
 
       <div class="token-instruction">
         <div class="token-instruction-icon">🔗</div>
         <div class="token-instruction-content">
-          <strong>Important: SNow Hub requires a browser-based relay connection</strong>
-          <p style="margin-top: 8px;">After you save these settings, click the <strong>SNow</strong> button in the connection bar at the top of the Toolbox. This will walk you through setting up the <strong>NodeToolbox SNow Relay</strong> bookmarklet, which runs in your browser and securely connects Toolbox to your ServiceNow instance with your current session credentials.</p>
+          <strong>Important: SNow Hub uses a browser-based relay, not wizard fields</strong>
+          <p style="margin-top: 8px;">After setup, click the <strong>SNow</strong> button in the Toolbox connection bar. That flow opens the relay instructions, helps you add the <strong>NodeToolbox SNow Relay</strong> bookmarklet, and connects Toolbox through your active ServiceNow browser session.</p>
         </div>
       </div>
 
-      <label class="field-label" for="snow-username">Your username (optional)</label>
-      <input id="snow-username" class="field-input" type="text"
-             placeholder="your.name@company.com" autocomplete="off" />
+      <p class="field-hint">This is the relay screen you will see after setup when you open the SNow connection flow:</p>
 
-      <label class="field-label" for="snow-password">Your password (optional)</label>
-      <input id="snow-password" class="field-input" type="password"
-             placeholder="Your service account password"
-             autocomplete="new-password" />
-      <p class="field-hint">The ServiceNow address and relay connection are what matter most. Username and password can be left blank if you plan to use the relay bookmarklet exclusively.</p>
+      <div class="relay-preview-card" aria-label="ServiceNow relay setup preview" role="img">
+        <div class="relay-preview-title">✕ ServiceNow not reachable</div>
+        <p class="relay-preview-method">Method: Not connected — relay bridge inactive</p>
+        <p class="relay-preview-label">To activate the relay bridge:</p>
+        <ol class="relay-preview-list">
+          <li>Click <strong>Open ServiceNow</strong> below, or navigate to any SNow page while logged in</li>
+          <li>Click <strong>NodeToolbox SNow Relay</strong> in your bookmarks bar</li>
+          <li>The relay will activate and return focus to this tab automatically</li>
+        </ol>
+        <div class="relay-preview-actions">
+          <span class="relay-preview-button">🔗 Open ServiceNow</span>
+          <span class="relay-preview-button relay-preview-button--bookmark">🚀 Drag to bookmarks: NodeToolbox SNow Relay</span>
+        </div>
+        <p class="relay-preview-warning">⚠ Do not click the bookmarklet here. Drag it to the bookmarks bar, then click it from the ServiceNow tab.</p>
+      </div>
 
       <div class="btn-row btn-row--spread">
         <button class="btn-ghost" onclick="goBack()">← Back</button>
@@ -461,6 +461,41 @@ const WIZARD_THEME_CSS = `
                       display: flex; gap: 12px; align-items: flex-start; }
   .token-instruction-icon { font-size: 18px; flex-shrink: 0; line-height: 1.4; }
   .token-instruction-content { flex: 1; }
+  .relay-preview-card {
+    margin-top: 16px; padding: 18px 18px 14px;
+    background: linear-gradient(180deg, #0f1724 0%, #101826 100%);
+    border: 1px solid #2c3a55; border-radius: 12px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+  }
+  .relay-preview-title {
+    color: #f3f4f6; font-size: 22px; font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .relay-preview-method {
+    color: #aeb7c6; font-size: 14px; margin-bottom: 16px;
+  }
+  .relay-preview-label {
+    color: #dce3ee; font-size: 14px; font-weight: 600; margin-bottom: 10px;
+  }
+  .relay-preview-list {
+    margin: 0 0 16px 20px; color: #e6edf3; line-height: 1.7; font-size: 14px;
+  }
+  .relay-preview-list li + li { margin-top: 6px; }
+  .relay-preview-actions {
+    display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;
+  }
+  .relay-preview-button {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 10px 14px; min-height: 40px;
+    border-radius: 8px; border: 1px solid #405173;
+    background: #162238; color: #dbe7ff; font-size: 13px; font-weight: 600;
+  }
+  .relay-preview-button--bookmark {
+    background: #233557; border-color: #4667a4;
+  }
+  .relay-preview-warning {
+    color: #c9b36a; font-size: 12px; line-height: 1.5;
+  }
   /* Buttons */
   .btn-row { display: flex; justify-content: center; margin-top: 32px; gap: 10px; flex-wrap: wrap; }
   .btn-row--spread { justify-content: space-between; }
@@ -511,7 +546,6 @@ const WIZARD_JS = `
     jiraBaseUrl: '', jiraPat: '',
     githubPat: '',
     confluenceBaseUrl: '', confluenceUsername: '', confluenceApiToken: '',
-    snowBaseUrl: '', snowUsername: '', snowPassword: '',
   };
 
   var currentStepIndex = 0;
@@ -549,10 +583,6 @@ const WIZARD_JS = `
       wizardData.confluenceBaseUrl  = (getValue('confluence-base-url') || '').replace(/\\/+$/, '');
       wizardData.confluenceUsername = getValue('confluence-username');
       wizardData.confluenceApiToken = getValue('confluence-api-token');
-    } else if (stepName === 'snow') {
-      wizardData.snowBaseUrl  = (getValue('snow-base-url') || '').replace(/\\/+$/, '');
-      wizardData.snowUsername = getValue('snow-username');
-      wizardData.snowPassword = getValue('snow-password');
     }
   }
 
@@ -582,7 +612,6 @@ const WIZARD_JS = `
     if (stepName === 'jira')   { wizardData.jiraBaseUrl = ''; wizardData.jiraPat = ''; }
     if (stepName === 'github') { wizardData.githubPat = ''; }
     if (stepName === 'confluence') { wizardData.confluenceBaseUrl = ''; wizardData.confluenceUsername = ''; wizardData.confluenceApiToken = ''; }
-    if (stepName === 'snow')   { wizardData.snowBaseUrl = ''; wizardData.snowUsername = ''; wizardData.snowPassword = ''; }
     if (currentStepIndex < STEP_NAMES.length - 1) {
       currentStepIndex++;
       showStep(currentStepIndex);
@@ -596,7 +625,6 @@ const WIZARD_JS = `
     if (wizardData.jiraPat)      connectedServices.push('🎟 Jira connected');
     if (wizardData.githubPat)    connectedServices.push('🐙 GitHub connected');
     if (wizardData.confluenceApiToken) connectedServices.push('📚 Confluence connected');
-    if (wizardData.snowPassword) connectedServices.push('☁️ ServiceNow connected');
     if (connectedServices.length === 0) {
       summaryElement.innerHTML = '⚠️ No services were connected yet. Go back and fill in at least one.';
     } else {
@@ -609,7 +637,7 @@ const WIZARD_JS = `
     var errorBanner  = document.getElementById('done-error');
     errorBanner.style.display = 'none';
 
-    var hasAnyCredential = wizardData.jiraPat || wizardData.githubPat || wizardData.confluenceApiToken || wizardData.snowPassword;
+    var hasAnyCredential = wizardData.jiraPat || wizardData.githubPat || wizardData.confluenceApiToken;
     if (!hasAnyCredential) {
       errorBanner.textContent = 'Oops! Please go back and fill in at least one service.';
       errorBanner.style.display = 'block';
