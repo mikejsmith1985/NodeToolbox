@@ -24,8 +24,6 @@ const { mockState, mockActions } = vi.hoisted(() => ({
       sysId: string;
       number: string;
       shortDescription: string;
-      state: string;
-      plannedStartDate: string;
     }>,
     isLoadingMyChanges: false,
     myChangesError: null as string | null,
@@ -127,5 +125,24 @@ describe('ReleaseManagementTab', () => {
     await user.click(screen.getByRole('button', { name: 'Clear Log' }));
 
     expect(mockActions.clearLog).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the active changes summary table when change summaries are present', () => {
+    mockState.myActiveChanges = [
+      {
+        sysId: 'change-1',
+        number: 'CHG0001234',
+        shortDescription: 'Release the payment patch',
+      },
+    ];
+
+    render(<ReleaseManagementTab />);
+
+    expect(screen.getByRole('columnheader', { name: 'Number' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Short Description' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'State' })).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: 'Planned Start' })).toBeNull();
+    expect(screen.getByText('CHG0001234')).toBeInTheDocument();
+    expect(screen.getByText('Release the payment patch')).toBeInTheDocument();
   });
 });

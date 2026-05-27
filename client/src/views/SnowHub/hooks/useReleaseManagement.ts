@@ -14,12 +14,18 @@ interface ActivityLogEntry {
   level: ActivityLogLevel;
 }
 
+interface ActiveChangeSummary {
+  sysId: string;
+  number: string;
+  shortDescription: string;
+}
+
 interface ReleaseManagementState {
   chgNumber: string;
   loadedChg: ChangeRequest | null;
   isLoadingChg: boolean;
   loadError: string | null;
-  myActiveChanges: ChangeRequest[];
+  myActiveChanges: ActiveChangeSummary[];
   isLoadingMyChanges: boolean;
   myChangesError: string | null;
   activityLog: ActivityLogEntry[];
@@ -38,6 +44,7 @@ const EMPTY_VALUE = '';
 const CHANGE_TABLE_PATH = '/api/now/table/change_request';
 const CHANGE_LOOKUP_FIELDS =
   'sys_id,number,short_description,state,assigned_to,planned_start_date,planned_end_date,risk,impact';
+const ACTIVE_CHANGE_FIELDS = 'sys_id,number,short_description';
 const CHANGE_LOOKUP_LIMIT = 1;
 const ACTIVE_CHANGE_LIMIT = 20;
 const ACTIVE_CHANGE_QUERY = 'assigned_to=javascript:gs.getUserID()^active=true';
@@ -88,7 +95,7 @@ function buildMyActiveChangesPath(): string {
   return (
     `${CHANGE_TABLE_PATH}?sysparm_query=${encodedQuery}` +
     `&sysparm_limit=${ACTIVE_CHANGE_LIMIT}` +
-    `&sysparm_fields=${CHANGE_LOOKUP_FIELDS}` +
+    `&sysparm_fields=${ACTIVE_CHANGE_FIELDS}` +
     '&sysparm_display_value=all'
   );
 }
@@ -137,6 +144,14 @@ function mapChangeRecord(changeRecord: ServiceNowChangeRecord): ChangeRequest {
     plannedEndDate: extractServiceNowFieldValue(changeRecord.planned_end_date),
     risk: extractServiceNowFieldValue(changeRecord.risk),
     impact: extractServiceNowFieldValue(changeRecord.impact),
+  };
+}
+
+function mapActiveChangeSummary(changeRecord: ServiceNowChangeRecord): ActiveChangeSummary {
+  return {
+    sysId: extractServiceNowFieldValue(changeRecord.sys_id),
+    number: extractServiceNowFieldValue(changeRecord.number),
+    shortDescription: extractServiceNowFieldValue(changeRecord.short_description),
   };
 }
 
@@ -202,7 +217,13 @@ export function useReleaseManagement(): {
       const myChangesResponse = await snowFetch<ServiceNowChangeQueryResponse>(buildMyActiveChangesPath());
       setState((previousState) => ({
         ...previousState,
-        myActiveChanges: myChangesResponse.result.map((changeRecord) => mapChangeRecord(changeRecord)),
+        myActiveChanges: myChangesResponse.result
+          .map((changeRecord) => mapActiveChangeSummary(changeRecord))
+          .filter((changeSummary) => (
+            changeSummary.sysId !== ''
+            && changeSummary.number !== ''
+            && changeSummary.shortDescription !== ''
+          )),
         isLoadingMyChanges: false,
         myChangesError: null,
         activityLog: [createLogEntry('Loaded My Active Changes.', 'info'), ...previousState.activityLog],
