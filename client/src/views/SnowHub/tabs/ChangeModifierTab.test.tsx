@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { ChangeModifierTab } from './ChangeModifierTab.tsx';
+import ChangeModifierTab from './ChangeModifierTab.tsx';
 import * as useChangeModifierModule from '../hooks/useChangeModifier.ts';
 
 // Mock the useChangeModifier hook
