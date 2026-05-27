@@ -1,4 +1,4 @@
-// CrgTab.test.tsx — Unit tests for the Change Request Generator tab.
+// CreateChgTab.test.tsx — Unit tests for the Create CHG tab (Change Request Generator).
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -288,7 +288,7 @@ vi.mock('../hooks/useSnowChoiceOptions.ts', () => ({
   }),
 }));
 
-import CrgTab from './CrgTab.tsx';
+import CreateChgTab from './CreateChgTab.tsx';
 
 function resetMockState(): void {
   Object.assign(mockState, {
@@ -329,7 +329,7 @@ function resetMockState(): void {
   });
 }
 
-describe('CrgTab', () => {
+describe('CreateChgTab', () => {
   beforeEach(() => {
     resetMockState();
     Object.values(mockActions).forEach((mockAction) => mockAction.mockReset());
@@ -381,7 +381,7 @@ describe('CrgTab', () => {
   });
 
   it('renders step 1 with the project key input and fetch button', () => {
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('heading', { name: 'Change Request Generator' })).toBeInTheDocument();
     expect(screen.getByLabelText('Project Key')).toBeInTheDocument();
@@ -392,7 +392,7 @@ describe('CrgTab', () => {
     const user = userEvent.setup();
     mockState.currentStep = 4;
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     await user.click(screen.getByRole('button', { name: '2. Review Issues' }));
 
@@ -401,7 +401,7 @@ describe('CrgTab', () => {
 
   it('renders a fix version dropdown when fix versions are available', () => {
     mockState.availableFixVersions = ['1.2.3', '1.2.4'] as never[];
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('combobox', { name: 'Fix Version' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: '1.2.3' })).toBeInTheDocument();
@@ -411,7 +411,7 @@ describe('CrgTab', () => {
   it('shows an error message when fetchError is set', () => {
     mockState.fetchError = 'Project key and fix version are required.';
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('alert')).toHaveTextContent('Project key and fix version are required.');
     mockState.fetchError = null;
@@ -427,14 +427,14 @@ describe('CrgTab', () => {
       });
     });
 
-    const { rerender } = render(<CrgTab />);
+    const { rerender } = render(<CreateChgTab />);
 
     await user.click(screen.getByRole('button', { name: 'Fetch Issues' }));
     await waitFor(() => {
       expect(mockActions.fetchIssues).toHaveBeenCalledTimes(1);
     });
 
-    rerender(<CrgTab />);
+    rerender(<CreateChgTab />);
 
     expect(screen.getByRole('checkbox', { name: 'Select All' })).toBeInTheDocument();
     expect(screen.getByText('ABC-123')).toBeInTheDocument();
@@ -450,7 +450,7 @@ describe('CrgTab', () => {
       generatedRiskImpact: 'Standard deployment risk',
     });
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByLabelText('Short Description')).toBeInTheDocument();
     expect(screen.getByLabelText('Description')).toBeInTheDocument();
@@ -461,7 +461,7 @@ describe('CrgTab', () => {
   it('renders the environment mapping cards on step 5', () => {
     mockState.currentStep = 5;
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('combobox', { name: 'ServiceNow Environment' })).toBeInTheDocument();
     expect(screen.getByText('REL')).toBeInTheDocument();
@@ -472,7 +472,7 @@ describe('CrgTab', () => {
 
   it('renders impacted persons aware in each environment card on step 5', () => {
     mockState.currentStep = 5;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('combobox', { name: 'REL Impacted Persons Aware' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'PRD Impacted Persons Aware' })).toBeInTheDocument();
@@ -481,7 +481,7 @@ describe('CrgTab', () => {
 
   it('removes impacted persons aware from the planning step', () => {
     mockState.currentStep = 4;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.queryByRole('combobox', { name: 'Impacted Persons Aware' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Impacted Persons Aware' })).not.toBeInTheDocument();
@@ -490,7 +490,7 @@ describe('CrgTab', () => {
   it('updates the selected environment impacted persons aware value on step 5', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 5;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'PRD Impacted Persons Aware' }), 'yes');
 
@@ -500,7 +500,7 @@ describe('CrgTab', () => {
   it('allows all environment rows to be selected or unselected on step 5', () => {
     mockState.currentStep = 5;
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('checkbox', { name: 'REL enabled' })).not.toBeDisabled();
     expect(screen.getByRole('checkbox', { name: 'PRD enabled' })).not.toBeDisabled();
@@ -511,7 +511,7 @@ describe('CrgTab', () => {
     const user = userEvent.setup();
     mockState.currentStep = 5;
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     await user.click(screen.getByRole('checkbox', { name: 'PRD enabled' }));
 
@@ -520,7 +520,7 @@ describe('CrgTab', () => {
   });
 
   it('renders fetch mode radio buttons on step 1', () => {
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('radio', { name: 'By Project & Version' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Custom JQL' })).toBeInTheDocument();
@@ -528,7 +528,7 @@ describe('CrgTab', () => {
 
   it('shows project key and fix version fields when fetch mode is project', () => {
     mockState.fetchMode = 'project';
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByLabelText('Project Key')).toBeInTheDocument();
     expect(screen.getByLabelText('Fix Version')).toBeInTheDocument();
@@ -537,7 +537,7 @@ describe('CrgTab', () => {
 
   it('shows the JQL textarea and hides project fields when fetch mode is jql', () => {
     mockState.fetchMode = 'jql';
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByLabelText('JQL Query')).toBeInTheDocument();
     expect(screen.queryByLabelText('Project Key')).not.toBeInTheDocument();
@@ -546,7 +546,7 @@ describe('CrgTab', () => {
 
   it('calls setFetchMode with jql when the Custom JQL radio is selected', async () => {
     const user = userEvent.setup();
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     await user.click(screen.getByRole('radio', { name: 'Custom JQL' }));
 
@@ -556,7 +556,7 @@ describe('CrgTab', () => {
   it('calls setCustomJql when the JQL textarea value changes', async () => {
     const user = userEvent.setup();
     mockState.fetchMode = 'jql';
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     await user.type(screen.getByLabelText('JQL Query'), 'project = TEST');
 
@@ -567,7 +567,7 @@ describe('CrgTab', () => {
     mockState.fetchMode = 'jql';
     mockState.fetchError = 'A JQL query is required.';
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('alert')).toHaveTextContent('A JQL query is required.');
   });
@@ -576,7 +576,7 @@ describe('CrgTab', () => {
     mockState.currentStep = 6;
     mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('button', { name: 'Create CHG' })).toBeInTheDocument();
   });
@@ -586,7 +586,7 @@ describe('CrgTab', () => {
     mockState.currentStep = 6;
     mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     await user.click(screen.getByRole('button', { name: 'Create CHG' }));
 
@@ -598,7 +598,7 @@ describe('CrgTab', () => {
     mockState.currentStep = 6;
     mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     await user.type(screen.getByRole('textbox', { name: 'Existing CHG number' }), 'chg0001234');
     await user.click(screen.getByRole('button', { name: 'Update Existing CHG' }));
@@ -612,7 +612,7 @@ describe('CrgTab', () => {
     mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
     mockCtaskTemplates.push(DEFAULT_CTASK_TEMPLATE);
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select CTASK template for review' }), 'ctask-template-001');
     await user.click(screen.getByRole('button', { name: 'Add CTASK to Change' }));
@@ -625,7 +625,7 @@ describe('CrgTab', () => {
     mockState.isSubmitting = true;
     mockState.generatedShortDescription = 'Deploy TOOL 1.0.0';
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('button', { name: 'Creating CHG…' })).toBeDisabled();
   });
@@ -634,7 +634,7 @@ describe('CrgTab', () => {
     mockState.currentStep = 6;
     // All generated fields empty (default mock state)
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('button', { name: 'Create CHG' })).toBeDisabled();
   });
@@ -643,7 +643,7 @@ describe('CrgTab', () => {
     const user = userEvent.setup();
     mockCtaskTemplates.push(DEFAULT_CTASK_TEMPLATE);
 
-    render(<CrgTab mode="configuration" />);
+    render(<CreateChgTab mode="configuration" />);
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select CTASK template' }), 'ctask-template-001');
     await user.click(screen.getByRole('button', { name: 'Add CTASK to Change' }));
@@ -654,7 +654,7 @@ describe('CrgTab', () => {
   it('saves the current CTASK editor values as a reusable template from configuration mode', async () => {
     const user = userEvent.setup();
 
-    render(<CrgTab mode="configuration" />);
+    render(<CreateChgTab mode="configuration" />);
 
     await user.click(screen.getByRole('button', { name: '+ Create CTASK template' }));
     await user.type(screen.getByRole('textbox', { name: 'CTASK template name' }), 'Smoke Test');
@@ -671,7 +671,7 @@ describe('CrgTab', () => {
     const user = userEvent.setup();
     mockState.changeTasks = [DEFAULT_CTASK_TEMPLATE];
 
-    render(<CrgTab mode="configuration" />);
+    render(<CreateChgTab mode="configuration" />);
 
     expect(screen.getByText('Validate production deployment')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Remove CTASK Validate production deployment' }));
@@ -683,7 +683,7 @@ describe('CrgTab', () => {
     const user = userEvent.setup();
     mockState.changeTasks = [DEFAULT_CTASK_TEMPLATE];
 
-    render(<CrgTab mode="configuration" />);
+    render(<CreateChgTab mode="configuration" />);
 
     await user.type(screen.getByRole('textbox', { name: 'Existing CHG for CTASK append' }), 'chg0001234');
     await user.click(screen.getByRole('button', { name: 'Append CTASKs to Existing CHG' }));
@@ -694,7 +694,7 @@ describe('CrgTab', () => {
   it('creates a CTASK template draft by cloning an existing CTASK in configuration mode', async () => {
     const user = userEvent.setup();
 
-    render(<CrgTab mode="configuration" />);
+    render(<CreateChgTab mode="configuration" />);
 
     await user.type(screen.getByRole('textbox', { name: 'Existing CTASK for template clone' }), 'ctask0001234');
     await user.click(screen.getByRole('button', { name: 'Load CTASK as Template' }));
@@ -720,7 +720,7 @@ describe('CrgTab', () => {
   it('shows the passphrase modal when Ctrl+Alt+Z is pressed', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 4;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
 
@@ -730,7 +730,7 @@ describe('CrgTab', () => {
   it('closes the passphrase modal when Cancel is clicked', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 4;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -741,7 +741,7 @@ describe('CrgTab', () => {
   it('unlocks Rovo and shows the hidden prompt button after correct passphrase on step 4', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 4;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
     await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
@@ -753,7 +753,7 @@ describe('CrgTab', () => {
   it('shows the prompt modal with a textarea when the hidden prompt button is clicked', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 4;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     // Unlock
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
@@ -771,7 +771,7 @@ describe('CrgTab', () => {
   it('closes the prompt modal when Close is clicked', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 4;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
     await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
@@ -787,14 +787,14 @@ describe('CrgTab', () => {
   // ── Step 3: Change Details ──
 
   it('renders the clone-from-CHG input and Load CHG button in configuration mode', () => {
-    render(<CrgTab mode="configuration" />);
+    render(<CreateChgTab mode="configuration" />);
 
     expect(screen.getByRole('textbox', { name: 'Existing CHG number' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Load CHG' })).toBeInTheDocument();
   });
 
   it('shows the shared clone/template/defaults workspace in configuration mode', () => {
-    render(<CrgTab mode="configuration" />);
+    render(<CreateChgTab mode="configuration" />);
 
     expect(screen.getByRole('heading', { name: 'Clone, Templates & Defaults' })).toBeInTheDocument();
     expect(screen.getByText('No CHG templates saved yet.')).toBeInTheDocument();
@@ -803,7 +803,7 @@ describe('CrgTab', () => {
   });
 
   it('updates short description defaults from configuration mode', () => {
-    render(<CrgTab mode="configuration" />);
+    render(<CreateChgTab mode="configuration" />);
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Short description application' }), { target: { value: 'Enrollment' } });
     fireEvent.change(screen.getByRole('textbox', { name: 'Short description team' }), { target: { value: 'Transformers' } });
@@ -816,7 +816,7 @@ describe('CrgTab', () => {
 
   it('does not show the configuration workspace inside the wizard flow', () => {
     mockState.currentStep = 4;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.queryByRole('heading', { name: 'Clone, Templates & Defaults' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '+ Save current CRG defaults as template' })).not.toBeInTheDocument();
@@ -824,7 +824,7 @@ describe('CrgTab', () => {
 
   it('reveals the template name input when "Save as template" is clicked', async () => {
     const user = userEvent.setup();
-    render(<CrgTab mode="configuration" />);
+    render(<CreateChgTab mode="configuration" />);
 
     await user.click(screen.getByRole('button', { name: '+ Save current CRG defaults as template' }));
 
@@ -838,7 +838,7 @@ describe('CrgTab', () => {
     mockState.chgBasicInfo = { ...mockState.chgBasicInfo, category: 'software', environment: 'prod' };
     mockState.relEnvironment = { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' };
 
-    render(<CrgTab mode="configuration" />);
+    render(<CreateChgTab mode="configuration" />);
 
     await user.click(screen.getByRole('button', { name: '+ Save current CRG defaults as template' }));
     await user.type(screen.getByRole('textbox', { name: 'CHG template name' }), 'Release Defaults');
@@ -866,7 +866,7 @@ describe('CrgTab', () => {
       chgPlanningContent: DEFAULT_PLANNING_CONTENT,
     });
 
-    render(<CrgTab mode="configuration" />);
+    render(<CreateChgTab mode="configuration" />);
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select CHG template' }), 'tpl-001');
     await user.click(screen.getAllByRole('button', { name: 'Update selected' })[0]);
@@ -882,7 +882,7 @@ describe('CrgTab', () => {
 
   it('shows the Category dropdown on step 3', () => {
     mockState.currentStep = 3;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('combobox', { name: 'Category' })).toBeInTheDocument();
   });
@@ -898,7 +898,7 @@ describe('CrgTab', () => {
       chgPlanningContent: DEFAULT_PLANNING_CONTENT,
     });
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     const templateHeading = screen.getByRole('heading', { name: 'Step 3 Template Defaults' });
     const categoryLabel = screen.getByText('Category');
@@ -918,7 +918,7 @@ describe('CrgTab', () => {
     };
     mockTemplates.push(stepTemplate);
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Step 3 template' }), 'tpl-001');
     await user.click(screen.getByRole('button', { name: 'Apply template' }));
@@ -939,7 +939,7 @@ describe('CrgTab', () => {
     });
     mockTemplatePreference.defaultTemplateId = 'tpl-001';
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Step 3 template' }), 'tpl-001');
     await user.click(screen.getByRole('button', { name: 'Set as default' }));
@@ -962,14 +962,14 @@ describe('CrgTab', () => {
     mockTemplates.push(stepTemplate);
     mockTemplatePreference.defaultTemplateId = 'tpl-001';
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(mockActions.applyTemplate).toHaveBeenCalledWith(stepTemplate);
   });
 
   it('does not show the ServiceNow Environment mapping on step 3', () => {
     mockState.currentStep = 3;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.queryByRole('combobox', { name: 'ServiceNow Environment' })).not.toBeInTheDocument();
   });
@@ -987,7 +987,7 @@ describe('CrgTab', () => {
       impact: '3 - Low',
     };
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     await waitFor(() => {
       expect(mockActions.setChgBasicInfo).toHaveBeenCalledWith({
@@ -1001,7 +1001,7 @@ describe('CrgTab', () => {
 
   it('renders SnowLookupField stubs for reference fields on step 3', () => {
     mockState.currentStep = 3;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByTestId('lookup-requested-by')).toBeInTheDocument();
     expect(screen.getByTestId('lookup-assignment-group')).toBeInTheDocument();
@@ -1010,7 +1010,7 @@ describe('CrgTab', () => {
 
   it('renders implementation, backout, and test plan textareas on step 4', () => {
     mockState.currentStep = 4;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByLabelText('Implementation Plan')).toBeInTheDocument();
     expect(screen.getByLabelText('Backout Plan')).toBeInTheDocument();
@@ -1022,7 +1022,7 @@ describe('CrgTab', () => {
     mockSnowChoiceConfig.isRelayConnected = true;
     mockSnowChoiceConfig.hasChoiceOptions = false;
     mockState.currentStep = 3;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     // Warning must describe the fetch failure (not a "relay not connected" message).
     expect(screen.getByRole('alert')).toHaveTextContent(/Failed to load dropdown options/);
@@ -1041,7 +1041,7 @@ describe('CrgTab', () => {
     mockSnowChoiceConfig.isRelayConnected = false;
     mockSnowChoiceConfig.hasChoiceOptions = false;
     mockState.currentStep = 3;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('alert')).toHaveTextContent(/SNow relay not connected/);
     expect(screen.getByRole('textbox', { name: 'Category' })).toBeEnabled();
@@ -1052,7 +1052,7 @@ describe('CrgTab', () => {
     mockSnowChoiceConfig.hasChoiceOptions = false;
     mockState.currentStep = 4;
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     const impactInput = screen.getByRole('textbox', { name: 'Impact' });
     expect(impactInput).toBeEnabled();
@@ -1068,7 +1068,7 @@ describe('CrgTab', () => {
     mockSnowChoiceConfig.isRelayConnected = true;
     mockSnowChoiceConfig.hasChoiceOptions = false;
     mockState.currentStep = 4;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('alert')).toHaveTextContent(/Failed to load dropdown options/);
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
@@ -1080,7 +1080,7 @@ describe('CrgTab', () => {
     mockSnowChoiceConfig.isRelayConnected = false;
     mockSnowChoiceConfig.hasChoiceOptions = false;
     mockState.currentStep = 4;
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('alert')).toHaveTextContent(/SNow relay not connected/);
     expect(screen.getByRole('textbox', { name: 'Impact' })).toBeEnabled();
@@ -1091,7 +1091,7 @@ describe('CrgTab', () => {
     mockState.currentStep = 5;
     mockState.chgBasicInfo.environment = '';
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     const environmentInput = screen.getByRole('textbox', { name: 'ServiceNow Environment' });
     expect(environmentInput).toBeEnabled();
@@ -1112,14 +1112,14 @@ describe('CrgTab', () => {
       value: '1',
     });
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.queryByRole('combobox', { name: 'Pinned Impact values' })).not.toBeInTheDocument();
     expect(screen.queryByText('Use a saved value…')).not.toBeInTheDocument();
   });
 
   it('does not expose save-option pinning actions in configuration mode', () => {
-    render(<CrgTab mode="configuration" />);
+    render(<CreateChgTab mode="configuration" />);
 
     expect(screen.queryByRole('button', { name: /Save Assignment Group/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Save Expedited Change/i })).not.toBeInTheDocument();
@@ -1127,7 +1127,7 @@ describe('CrgTab', () => {
 
   it('applies extractor JSON choices from configuration mode', async () => {
     const user = userEvent.setup();
-    render(<CrgTab mode="configuration" />);
+    render(<CreateChgTab mode="configuration" />);
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Extractor JSON input' }), {
       target: { value: '{"fields":{"impact":[{"value":"3","label":"3 - Low"}]}}' },
@@ -1140,7 +1140,7 @@ describe('CrgTab', () => {
 
   it('applies issue 55 extractor values to planning fields from configuration mode', async () => {
     const user = userEvent.setup();
-    render(<CrgTab mode="configuration" />);
+    render(<CreateChgTab mode="configuration" />);
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Extractor JSON input' }), {
       target: {
@@ -1182,7 +1182,7 @@ describe('CrgTab', () => {
 
   it('clears extractor JSON choices from configuration mode', async () => {
     const user = userEvent.setup();
-    render(<CrgTab mode="configuration" />);
+    render(<CreateChgTab mode="configuration" />);
 
     await user.click(screen.getByRole('button', { name: 'Clear extractor choices' }));
 
@@ -1197,7 +1197,7 @@ describe('CrgTab', () => {
     mockSnowChoiceConfig.hasChoiceOptions = true;
     mockState.currentStep = 4;
 
-    render(<CrgTab />);
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('combobox', { name: 'Impact' })).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Impact' })).not.toBeInTheDocument();

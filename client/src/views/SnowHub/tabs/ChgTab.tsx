@@ -3,9 +3,9 @@
 
 import { useState } from 'react';
 
-import CrgTab from './CrgTab.tsx';
+import CreateChgTab from './CreateChgTab.tsx';
 import ModifyChgTab from './ModifyChgTab.tsx';
-import styles from './CrgTab.module.css';
+import styles from './CreateChgTab.module.css';
 
 type ChgMode = 'create' | 'modify';
 
@@ -45,7 +45,7 @@ export default function ChgTab(): React.ReactElement {
   return (
     <div>
       <ModeToggle mode={mode} onModeChange={setMode} />
-      {mode === 'create' ? <CrgTab /> : <ModifyChgTab />}
+      {mode === 'create' ? <CreateChgTab /> : <ModifyChgTab />}
     </div>
   );
 }

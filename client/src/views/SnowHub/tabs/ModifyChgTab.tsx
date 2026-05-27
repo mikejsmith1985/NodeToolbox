@@ -13,7 +13,7 @@ import type {
 } from '../hooks/useCrgState.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 
-import styles from './CrgTab.module.css';
+import styles from './CreateChgTab.module.css';
 
 const TAB_TITLE = 'Modify Change';
 const TAB_SUBTITLE = 'Fetch an existing ServiceNow CHG, edit all fields with full CTASK template support, save changes.';
