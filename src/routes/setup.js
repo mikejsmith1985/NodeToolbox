@@ -323,6 +323,7 @@ function buildStepConfluence(prefillConfluenceBaseUrl) {
 /**
  * Builds the ServiceNow connection step (optional service).
  * Pre-fills the base URL if already known.
+ * Explains the relay requirement and how to establish the browser-based relay connection.
  *
  * @param {string} prefillSnowBaseUrl - HTML-escaped existing SNow URL (may be empty)
  */
@@ -339,15 +340,23 @@ function buildStepSnow(prefillSnowBaseUrl) {
              placeholder="https://your-instance.service-now.com"
              value="${prefillSnowBaseUrl}" autocomplete="off" />
 
-      <label class="field-label" for="snow-username">Your username</label>
+      <div class="token-instruction">
+        <div class="token-instruction-icon">🔗</div>
+        <div class="token-instruction-content">
+          <strong>Important: SNow Hub requires a browser-based relay connection</strong>
+          <p style="margin-top: 8px;">After you save these settings, click the <strong>SNow</strong> button in the connection bar at the top of the Toolbox. This will walk you through setting up the <strong>NodeToolbox SNow Relay</strong> bookmarklet, which runs in your browser and securely connects Toolbox to your ServiceNow instance with your current session credentials.</p>
+        </div>
+      </div>
+
+      <label class="field-label" for="snow-username">Your username (optional)</label>
       <input id="snow-username" class="field-input" type="text"
              placeholder="your.name@company.com" autocomplete="off" />
 
-      <label class="field-label" for="snow-password">Your password</label>
+      <label class="field-label" for="snow-password">Your password (optional)</label>
       <input id="snow-password" class="field-input" type="password"
              placeholder="Your service account password"
              autocomplete="new-password" />
-      <p class="field-hint">All three fields are needed to connect to ServiceNow. Leave them blank to skip.</p>
+      <p class="field-hint">The ServiceNow address and relay connection are what matter most. Username and password can be left blank if you plan to use the relay bookmarklet exclusively.</p>
 
       <div class="btn-row btn-row--spread">
         <button class="btn-ghost" onclick="goBack()">← Back</button>
