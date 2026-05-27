@@ -7,8 +7,8 @@ import { describe, it, expect, vi } from 'vitest';
 import ChgTab from './ChgTab.tsx';
 
 // Mock the child tabs
-vi.mock('./CrgTab.tsx', () => ({
-  default: () => <div data-testid="crg-tab">Create CHG Tab</div>,
+vi.mock('./CreateChgTab.tsx', () => ({
+  default: () => <div data-testid="create-chg-tab">Create CHG Tab</div>,
 }));
 
 vi.mock('./ModifyChgTab.tsx', () => ({
@@ -24,7 +24,7 @@ describe('ChgTab', () => {
 
   it('displays the Create tab by default', () => {
     render(<ChgTab />);
-    expect(screen.getByTestId('crg-tab')).toBeInTheDocument();
+    expect(screen.getByTestId('create-chg-tab')).toBeInTheDocument();
     expect(screen.queryByTestId('modify-chg-tab')).not.toBeInTheDocument();
   });
 
@@ -36,7 +36,7 @@ describe('ChgTab', () => {
     await user.click(modifyButton);
 
     expect(screen.getByTestId('modify-chg-tab')).toBeInTheDocument();
-    expect(screen.queryByTestId('crg-tab')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('create-chg-tab')).not.toBeInTheDocument();
   });
 
   it('switches back to Create mode when Create button is clicked', async () => {
@@ -49,7 +49,7 @@ describe('ChgTab', () => {
     const createButton = screen.getByRole('button', { name: /Create CHG/i });
     await user.click(createButton);
 
-    expect(screen.getByTestId('crg-tab')).toBeInTheDocument();
+    expect(screen.getByTestId('create-chg-tab')).toBeInTheDocument();
     expect(screen.queryByTestId('modify-chg-tab')).not.toBeInTheDocument();
   });
 

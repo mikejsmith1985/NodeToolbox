@@ -3,19 +3,19 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('./CrgTab.tsx', () => ({
+vi.mock('./CreateChgTab.tsx', () => ({
   default: ({ mode }: { mode?: 'wizard' | 'configuration' }) => (
-    <div data-mode={mode} data-testid="mock-crg-tab">CRG Tab</div>
+    <div data-mode={mode} data-testid="mock-create-chg-tab">Create CHG Tab</div>
   ),
 }));
 
 import ConfigurationTab from './ConfigurationTab.tsx';
 
 describe('ConfigurationTab', () => {
-  it('renders the CRG tab in configuration mode', () => {
+  it('renders the Create CHG tab in configuration mode', () => {
     render(<ConfigurationTab />);
 
-    expect(screen.getByTestId('mock-crg-tab')).toBeInTheDocument();
-    expect(screen.getByTestId('mock-crg-tab')).toHaveAttribute('data-mode', 'configuration');
+    expect(screen.getByTestId('mock-create-chg-tab')).toBeInTheDocument();
+    expect(screen.getByTestId('mock-create-chg-tab')).toHaveAttribute('data-mode', 'configuration');
   });
 });
