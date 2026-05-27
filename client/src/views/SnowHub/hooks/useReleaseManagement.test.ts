@@ -34,6 +34,12 @@ const EXPECTED_CHANGE_REQUEST = {
   impact: 'Medium',
 };
 
+const EXPECTED_ACTIVE_CHANGE_SUMMARY = {
+  sysId: 'change-1',
+  number: 'CHG0012345',
+  shortDescription: 'Deploy checkout service fixes',
+};
+
 describe('useReleaseManagement', () => {
   afterEach(() => {
     vi.clearAllMocks();
@@ -136,8 +142,9 @@ describe('useReleaseManagement', () => {
     expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain(
       'sysparm_query=assigned_to%3Djavascript%3Ags.getUserID()%5Eactive%3Dtrue',
     );
+    expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('sysparm_fields=sys_id,number,short_description');
     expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('sysparm_display_value=all');
     expect(result.current.state.myChangesError).toBeNull();
-    expect(result.current.state.myActiveChanges).toEqual([EXPECTED_CHANGE_REQUEST]);
+    expect(result.current.state.myActiveChanges).toEqual([EXPECTED_ACTIVE_CHANGE_SUMMARY]);
   });
 });
