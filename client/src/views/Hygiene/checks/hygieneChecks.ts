@@ -9,15 +9,14 @@ import type { EnterpriseRequiredFieldRule } from '../../AdminHub/enterpriseRules
 
 const STALE_THRESHOLD_DAYS = 14;
 const OLD_IN_SPRINT_THRESHOLD_DAYS = 30;
-const ACCEPTANCE_CRITERIA_MINIMUM_LENGTH = 30;
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 const MODERN_STORY_POINTS_FIELD = 'customfield_10028';
 const LEGACY_STORY_POINTS_FIELD = 'customfield_10016';
 const SPRINT_FIELD = 'customfield_10020';
-const ACCEPTANCE_CRITERIA_PATTERN = /given|when|then|acceptance|criteria/i;
 const IMPLEMENTING_STATUS_NAME = 'implementing';
 const FEATURE_ISSUE_TYPE_NAMES = new Set(['feature', 'epic']);
 const FEATURE_LINK_REQUIRED_ISSUE_TYPE_NAMES = new Set(['story', 'task', 'bug', 'defect', 'spike']);
+const ACCEPTANCE_CRITERIA_PLACEHOLDER_VALUES = new Set(['tbd', 'to be determined']);
 
 type BuiltInHygieneCheckId =
   | 'missing-summary'
@@ -349,20 +348,22 @@ export function checkNoAssignee(issue: JiraIssue): HygieneFlag | null {
   return !hasAssignee && !isDoneIssue(issue) ? BUILT_IN_HYGIENE_FLAGS['no-assignee'] : null;
 }
 
-/** Flags stories and features whose acceptance criteria field does not contain useful guidance. */
+/** Flags stories and features whose acceptance criteria field is blank or only contains a placeholder. */
 export function checkNoAcceptanceCriteria(issue: JiraIssue, fieldConfig: HygieneFieldConfig): HygieneFlag | null {
   const issueTypeName = readIssueTypeName(issue);
   if (issueTypeName !== 'story' && !isFeatureLikeIssue(issue)) {
     return null;
   }
 
-  const acceptanceCriteriaText = fieldConfig.acceptanceCriteriaFieldIds
+  const acceptanceCriteriaTexts = fieldConfig.acceptanceCriteriaFieldIds
     .map((fieldId) => readIssueFieldText(issue, fieldId))
-    .find((fieldText) => fieldText.trim() !== '')
-    ?? '';
-  const hasUsefulAcceptanceCriteria = acceptanceCriteriaText.length >= ACCEPTANCE_CRITERIA_MINIMUM_LENGTH
-    && ACCEPTANCE_CRITERIA_PATTERN.test(acceptanceCriteriaText);
-  return hasUsefulAcceptanceCriteria ? null : BUILT_IN_HYGIENE_FLAGS['no-ac'];
+    .filter((fieldText) => fieldText !== '');
+  if (acceptanceCriteriaTexts.length === 0) {
+    return BUILT_IN_HYGIENE_FLAGS['no-ac'];
+  }
+
+  const hasRealAcceptanceCriteria = acceptanceCriteriaTexts.some((fieldText) => !isAcceptanceCriteriaPlaceholder(fieldText));
+  return hasRealAcceptanceCriteria ? null : BUILT_IN_HYGIENE_FLAGS['no-ac'];
 }
 
 /** Flags active-sprint issues that have been open long enough to deserve team review. */
@@ -550,6 +551,11 @@ function readIssueFieldValue(issue: JiraIssue, fieldId: string): unknown {
 
 function readIssueFieldText(issue: JiraIssue, fieldId: string): string {
   return normalizeRichTextToPlainText(readIssueFieldValue(issue, fieldId)).trim();
+}
+
+function isAcceptanceCriteriaPlaceholder(fieldText: string): boolean {
+  const normalizedFieldText = fieldText.trim().toLowerCase().replace(/[.!?]+$/g, '');
+  return ACCEPTANCE_CRITERIA_PLACEHOLDER_VALUES.has(normalizedFieldText);
 }
 
 function hasMeaningfulValue(fieldValue: unknown): boolean {
