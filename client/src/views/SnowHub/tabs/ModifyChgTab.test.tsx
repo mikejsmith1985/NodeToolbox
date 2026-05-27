@@ -1,5 +1,5 @@
-// ModifyChgTab.test.tsx — Tests for the Modify Change tab with "My Open Changes" feature.
-// Tests dropdown rendering, selection, loading states, error handling, and empty states.
+// ModifyChgTab.test.tsx — Tests for the Modify Change tab fetch and "My Open Changes" flows.
+// Covers relay-backed CHG lookup, active-user change loading, and key error states.
 
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -19,16 +19,93 @@ vi.mock('../hooks/useCtaskTemplates.ts', () => ({
 // Mock snowFetch service (used for relay-based ServiceNow queries)
 const mockSnowFetch = vi.fn();
 vi.mock('../../../services/snowApi.ts', () => ({
-  snowFetch: (...args: any[]) => mockSnowFetch(...args),
+  snowFetch: (...args: unknown[]) => mockSnowFetch(...args),
 }));
 
+const MOCK_CHANGE_RECORD = {
+  sys_id: { value: 'change-1', display_value: 'change-1' },
+  number: { value: 'CHG0001234', display_value: 'CHG0001234' },
+  short_description: { value: 'Update network infrastructure', display_value: 'Update network infrastructure' },
+  description: { value: 'Detailed rollout plan', display_value: 'Detailed rollout plan' },
+  justification: { value: 'Required for customer launch', display_value: 'Required for customer launch' },
+  risk_impact_analysis: { value: 'Low user impact', display_value: 'Low user impact' },
+  category: { value: 'software', display_value: 'Software' },
+  type: { value: 'normal', display_value: 'Normal' },
+  requested_by: { value: 'user-1', display_value: 'Pat Requester' },
+  assignment_group: { value: 'group-1', display_value: 'Cloud Team' },
+  impact: { value: '3', display_value: '3 - Low' },
+  u_availability_impact: { value: 'none', display_value: 'None' },
+  u_change_tested: { value: 'yes', display_value: 'Yes' },
+  u_impacted_persons_aware: { value: 'yes', display_value: 'Yes' },
+  u_performed_previously: { value: 'no', display_value: 'No' },
+  u_success_probability: { value: 'high', display_value: 'High' },
+  u_can_be_backed_out: { value: 'yes', display_value: 'Yes' },
+  implementation_plan: { value: 'Implement plan', display_value: 'Implement plan' },
+  backout_plan: { value: 'Backout plan', display_value: 'Backout plan' },
+  test_plan: { value: 'Test plan', display_value: 'Test plan' },
+};
+
 describe('ModifyChgTab - My Open Changes Feature', () => {
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
-    mockSnowFetch.mockClear();
+    mockSnowFetch.mockReset();
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
   afterEach(() => {
     vi.clearAllMocks();
+    consoleErrorSpy.mockRestore();
+    consoleLogSpy.mockRestore();
+  });
+
+  function getFetchChangeActionButton(): HTMLElement {
+    return screen.getAllByRole('button', { name: /Fetch Change/i })[1];
+  }
+
+  // ── Fetch Change Button ───────────────────────────────────────────────────
+
+  it('TestFetchChange_LoadsChangeDetailsWhenChangeExists', async () => {
+    const user = userEvent.setup();
+    mockSnowFetch.mockResolvedValueOnce({
+      result: [MOCK_CHANGE_RECORD],
+    });
+
+    render(<ModifyChgTab />);
+
+    await user.type(screen.getByLabelText(/Change Request number/i), 'chg0001234');
+    await user.click(getFetchChangeActionButton());
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Update network infrastructure')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Detailed rollout plan')).toBeInTheDocument();
+    });
+
+    expect(mockSnowFetch).toHaveBeenCalledWith(
+      expect.stringContaining('sysparm_query=number%3DCHG0001234'),
+    );
+  });
+
+  it('TestFetchChange_DisplaysErrorAndLogsDiagnosticsWhenLookupFails', async () => {
+    const user = userEvent.setup();
+    mockSnowFetch.mockRejectedValueOnce(new Error('SNow relay fetch failed: 404'));
+
+    render(<ModifyChgTab />);
+
+    await user.type(screen.getByLabelText(/Change Request number/i), 'CHG0001234');
+    await user.click(getFetchChangeActionButton());
+
+    await waitFor(() => {
+      expect(screen.getByText(/SNow relay fetch failed: 404/i)).toBeInTheDocument();
+    });
+
+    expect(
+      consoleErrorSpy.mock.calls.some(([message]: unknown[]) =>
+        typeof message === 'string' && message.includes('[CRG Modify CHG]'),
+      ),
+    ).toBe(true);
   });
 
   // ── Load My Open Changes Button ──────────────────────────────────────────
@@ -173,9 +250,8 @@ describe('ModifyChgTab - My Open Changes Feature', () => {
     await user.click(loadButton);
 
     await waitFor(() => {
-      // Verify snowFetch was called with the change_request endpoint
       expect(mockSnowFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/api/now/table/change_request'),
+        expect.stringContaining('sysparm_query=assigned_to%3Djavascript%3Ags.getUserID()%5Eactive%3Dtrue'),
       );
     });
   });
