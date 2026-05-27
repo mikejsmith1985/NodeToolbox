@@ -1002,3 +1002,156 @@ describe('GET /api/snow-relay/my-changes', () => {
     expect(change.summary).toBe('Full field test');
   });
 });
+
+// ── PATCH /api/snow-relay/change/:changeKey ────────────────────────────────
+
+describe('PATCH /api/snow-relay/change/:changeKey', () => {
+  const minimalConfig = {
+    jira: { baseUrl: '', pat: '' },
+    snow: { baseUrl: 'https://acme.service-now.com', username: 'svc_toolbox', password: 'secret' },
+    github: { pat: '' },
+    sslVerify: true,
+  };
+
+  afterEach(() => {
+    jest.clearAllMocks();
+    nock.cleanAll();
+  });
+
+  it('TestPatchChange_MapsSelectedEnvironmentFieldsIntoTheRelayPayload', async () => {
+    const relayBridge = require('../../src/routes/relayBridge');
+    let capturedPatchRequest = null;
+
+    jest.spyOn(relayBridge, 'submitRelayRequest').mockImplementation((system, request) => {
+      if (request.method === 'GET' && request.url.includes('change_request?sysparm_query=number=')) {
+        return Promise.resolve({
+          result: [{ sys_id: 'change-sys-id-1' }],
+        });
+      }
+
+      if (request.method === 'PATCH' && request.url.includes('/api/now/v2/table/change_request/change-sys-id-1')) {
+        capturedPatchRequest = request;
+        return Promise.resolve({});
+      }
+
+      return Promise.reject(new Error('Unexpected request'));
+    });
+
+    const response = await request(buildTestApp(minimalConfig))
+      .patch('/api/snow-relay/change/CHG0001234')
+      .send({
+        shortDescription: 'Update network infrastructure',
+        description: 'Detailed rollout plan',
+        chgBasicInfo: {
+          category: 'software',
+          changeType: 'normal',
+          environment: 'prod',
+          assignmentGroup: { sysId: 'group-1', displayName: 'Cloud Team' },
+        },
+        chgPlanningAssessment: {
+          impact: '3',
+          systemAvailabilityImplication: 'none',
+          hasBeenTested: 'yes',
+          hasBeenPerformedPreviously: 'no',
+          successProbability: 'high',
+          canBeBackedOut: 'yes',
+        },
+        chgPlanningContent: {
+          implementationPlan: 'Implement plan',
+          backoutPlan: 'Backout plan',
+          testPlan: 'Test plan',
+        },
+        relEnvironment: {
+          isEnabled: false,
+          plannedStartDate: '',
+          plannedEndDate: '',
+          configItem: { sysId: '', displayName: '' },
+          impactedPersonsAware: '',
+        },
+        prdEnvironment: {
+          isEnabled: true,
+          plannedStartDate: '2026-06-01T10:00',
+          plannedEndDate: '2026-06-01T11:00',
+          configItem: { sysId: 'ci-123', displayName: 'Payroll Production Cluster' },
+          impactedPersonsAware: 'yes',
+        },
+        pfixEnvironment: {
+          isEnabled: false,
+          plannedStartDate: '',
+          plannedEndDate: '',
+          configItem: { sysId: '', displayName: '' },
+          impactedPersonsAware: '',
+        },
+      });
+
+    expect(response.status).toBe(204);
+    expect(capturedPatchRequest.body.u_environment).toBe('prod');
+    expect(capturedPatchRequest.body.cmdb_ci).toBe('ci-123');
+    expect(capturedPatchRequest.body.u_impacted_persons_aware).toBe('yes');
+    expect(capturedPatchRequest.body.planned_start_date).toBe('2026-06-01T10:00');
+    expect(capturedPatchRequest.body.planned_end_date).toBe('2026-06-01T11:00');
+    expect(capturedPatchRequest.body.u_change_tested).toBe('yes');
+    expect(capturedPatchRequest.body.implementation_plan).toBe('Implement plan');
+  });
+
+  it('TestPatchChange_AllowsClearingSelectedEnvironmentFields', async () => {
+    const relayBridge = require('../../src/routes/relayBridge');
+    let capturedPatchRequest = null;
+
+    jest.spyOn(relayBridge, 'submitRelayRequest').mockImplementation((system, request) => {
+      if (request.method === 'GET' && request.url.includes('change_request?sysparm_query=number=')) {
+        return Promise.resolve({
+          result: [{ sys_id: 'change-sys-id-2' }],
+        });
+      }
+
+      if (request.method === 'PATCH' && request.url.includes('/api/now/v2/table/change_request/change-sys-id-2')) {
+        capturedPatchRequest = request;
+        return Promise.resolve({});
+      }
+
+      return Promise.reject(new Error('Unexpected request'));
+    });
+
+    const response = await request(buildTestApp(minimalConfig))
+      .patch('/api/snow-relay/change/CHG0001235')
+      .send({
+        shortDescription: 'Update network infrastructure',
+        chgBasicInfo: {
+          environment: 'prod',
+          assignmentGroup: { sysId: 'group-1', displayName: 'Cloud Team' },
+          configItem: { sysId: 'stale-ci', displayName: 'Old Config Item' },
+        },
+        chgPlanningAssessment: {
+          impactedPersonsAware: 'stale-aware',
+        },
+        relEnvironment: {
+          isEnabled: false,
+          plannedStartDate: '',
+          plannedEndDate: '',
+          configItem: { sysId: '', displayName: '' },
+          impactedPersonsAware: '',
+        },
+        prdEnvironment: {
+          isEnabled: true,
+          plannedStartDate: '',
+          plannedEndDate: '',
+          configItem: { sysId: '', displayName: '' },
+          impactedPersonsAware: '',
+        },
+        pfixEnvironment: {
+          isEnabled: false,
+          plannedStartDate: '',
+          plannedEndDate: '',
+          configItem: { sysId: '', displayName: '' },
+          impactedPersonsAware: '',
+        },
+      });
+
+    expect(response.status).toBe(204);
+    expect(capturedPatchRequest.body.cmdb_ci).toBe('');
+    expect(capturedPatchRequest.body.u_impacted_persons_aware).toBe('');
+    expect(capturedPatchRequest.body.planned_start_date).toBe('');
+    expect(capturedPatchRequest.body.planned_end_date).toBe('');
+  });
+});

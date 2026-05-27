@@ -9,7 +9,8 @@ import { jiraGet } from '../../../services/jiraApi.ts'
 
 // ── Named constants ──
 
-const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings'
+const ART_TEAMS_STORAGE_KEY = 'nodetoolbox-art-teams'
+const LEGACY_ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings'
 const EPIC_ISSUE_TYPE = 'Epic'
 const DEFECT_ISSUE_TYPE = 'Defect'
 const RISK_ISSUE_TYPE = 'Risk'
@@ -29,6 +30,7 @@ const THROUGHPUT_MAX_SPRINTS = 4
 const LOAD_SPRINT_DATA_FAILURE = 'Failed to load sprint data'
 const LOAD_QUALITY_FAILURE = 'Failed to load quality data'
 const LOAD_THROUGHPUT_FAILURE = 'Failed to load throughput data'
+const BOARD_PROJECT_CACHE_PREFIX = 'board:'
 
 // ── Type definitions ──
 
@@ -48,7 +50,7 @@ export type ReportsHubTab =
 /** A single ART team configuration loaded from localStorage. */
 export interface ArtTeamConfig {
   name: string
-  projectKey: string
+  projectKey?: string
   boardId?: string
 }
 
@@ -193,6 +195,12 @@ interface JiraSprintIssueResponse {
   }>
 }
 
+interface JiraBoardProjectResponse {
+  values?: Array<{ key?: string }>
+}
+
+const boardProjectKeyPromiseCache = new Map<string, Promise<string>>()
+
 // ── Helper: localStorage team loader ──
 
 /** Reads the ART teams from localStorage, returning an empty array on failure. */
@@ -202,37 +210,61 @@ function normalizeArtTeamConfig(rawTeamConfig: unknown): ArtTeamConfig | null {
   }
 
   const teamCandidate = rawTeamConfig as { name?: unknown; projectKey?: unknown; boardId?: unknown }
-  if (typeof teamCandidate.name !== 'string' || typeof teamCandidate.projectKey !== 'string') {
+  if (typeof teamCandidate.name !== 'string') {
     return null
   }
 
   const trimmedTeamName = teamCandidate.name.trim()
-  const trimmedProjectKey = teamCandidate.projectKey.trim()
-  if (trimmedTeamName === '' || trimmedProjectKey === '') {
+  const trimmedProjectKey =
+    typeof teamCandidate.projectKey === 'string' ? teamCandidate.projectKey.trim() : ''
+  const trimmedBoardId =
+    typeof teamCandidate.boardId === 'string' ? teamCandidate.boardId.trim() : ''
+  if (trimmedTeamName === '' || (trimmedProjectKey === '' && trimmedBoardId === '')) {
     return null
   }
 
   const normalizedTeamConfig: ArtTeamConfig = {
     name: trimmedTeamName,
-    projectKey: trimmedProjectKey,
   }
-  if (typeof teamCandidate.boardId === 'string' && teamCandidate.boardId.trim() !== '') {
-    normalizedTeamConfig.boardId = teamCandidate.boardId.trim()
+
+  if (trimmedProjectKey !== '') {
+    normalizedTeamConfig.projectKey = trimmedProjectKey
   }
+
+  if (trimmedBoardId !== '') {
+    normalizedTeamConfig.boardId = trimmedBoardId
+  }
+
   return normalizedTeamConfig
+}
+
+/** Normalises a stored ART team array so bad localStorage data never breaks report rendering. */
+function parseStoredArtTeams(rawStoredTeams: unknown): ArtTeamConfig[] {
+  if (!Array.isArray(rawStoredTeams)) {
+    return []
+  }
+
+  return rawStoredTeams
+    .map((rawTeamConfig) => normalizeArtTeamConfig(rawTeamConfig))
+    .filter((teamConfig): teamConfig is ArtTeamConfig => teamConfig !== null)
 }
 
 /** Reads and sanitizes ART team settings from localStorage to avoid render-time crashes. */
 function loadArtTeamsFromStorage(): ArtTeamConfig[] {
   try {
-    const rawSettings = localStorage.getItem(ART_SETTINGS_STORAGE_KEY)
-    if (rawSettings === null) return []
-    const parsedSettings = JSON.parse(rawSettings) as { teams?: unknown[] }
-    if (!Array.isArray(parsedSettings.teams)) return []
+    const rawStoredTeams = localStorage.getItem(ART_TEAMS_STORAGE_KEY)
+    if (rawStoredTeams !== null) {
+      const parsedStoredTeams = parseStoredArtTeams(JSON.parse(rawStoredTeams) as unknown)
+      if (parsedStoredTeams.length > 0) {
+        return parsedStoredTeams
+      }
+    }
 
-    return parsedSettings.teams
-      .map((rawTeamConfig) => normalizeArtTeamConfig(rawTeamConfig))
-      .filter((teamConfig): teamConfig is ArtTeamConfig => teamConfig !== null)
+    const rawLegacySettings = localStorage.getItem(LEGACY_ART_SETTINGS_STORAGE_KEY)
+    if (rawLegacySettings === null) return []
+
+    const parsedLegacySettings = JSON.parse(rawLegacySettings) as { teams?: unknown[] }
+    return parseStoredArtTeams(parsedLegacySettings.teams)
   } catch {
     return []
   }
@@ -265,6 +297,48 @@ function buildReportJql(projectKey: string, issueType: string, orderField: strin
   return `project="${projectKey}" AND issuetype = ${issueType} ORDER BY ${orderField} ASC`
 }
 
+/** Builds a Jira search request path so every Reports Hub loader calls the same endpoint shape. */
+function buildIssueSearchPath(jql: string, maxResults: number, fields: string): string {
+  return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=${maxResults}&fields=${fields}`
+}
+
+/** Resolves a Jira project key from saved team data so board-only ART teams still load reports. */
+async function resolveArtTeamProjectKey(teamConfig: ArtTeamConfig): Promise<string> {
+  if (teamConfig.projectKey?.trim()) {
+    return teamConfig.projectKey.trim()
+  }
+
+  if (!teamConfig.boardId?.trim()) {
+    throw new Error(`Reports Hub could not determine a Jira project key for ${teamConfig.name}.`)
+  }
+
+  const boardProjectCacheKey = `${BOARD_PROJECT_CACHE_PREFIX}${teamConfig.boardId}`
+  const cachedProjectKeyPromise = boardProjectKeyPromiseCache.get(boardProjectCacheKey)
+  if (cachedProjectKeyPromise) {
+    return cachedProjectKeyPromise
+  }
+
+  const projectLookupPromise = jiraGet<JiraBoardProjectResponse>(
+    `/rest/agile/1.0/board/${teamConfig.boardId}/project`,
+  )
+    .then((projectResponse) => {
+      const resolvedProjectKey = projectResponse.values?.[0]?.key?.trim()
+
+      if (!resolvedProjectKey) {
+        throw new Error(`Reports Hub could not determine a Jira project key for ${teamConfig.name}.`)
+      }
+
+      return resolvedProjectKey
+    })
+    .catch((projectLookupError) => {
+      boardProjectKeyPromiseCache.delete(boardProjectCacheKey)
+      throw projectLookupError
+    })
+
+  boardProjectKeyPromiseCache.set(boardProjectCacheKey, projectLookupPromise)
+  return projectLookupPromise
+}
+
 // ── Helper: fetch issues for all teams ──
 
 /** Fetches issues of a given type across all configured ART teams. */
@@ -276,9 +350,10 @@ async function fetchIssuesAcrossTeams(
   if (artTeams.length === 0) return []
 
   const teamFetches = artTeams.map(async (teamConfig) => {
-    const jql = buildReportJql(teamConfig.projectKey, issueType, orderField)
+    const resolvedProjectKey = await resolveArtTeamProjectKey(teamConfig)
+    const jql = buildReportJql(resolvedProjectKey, issueType, orderField)
     const response = await jiraGet<JiraIssueListResponse>(
-      `/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=${REPORT_MAX_RESULTS}&fields=${REPORT_FIELDS}`,
+      buildIssueSearchPath(jql, REPORT_MAX_RESULTS, REPORT_FIELDS),
     )
     return response.issues.map((rawIssue) => mapJiraIssueToFeature(rawIssue, teamConfig.name))
   })
@@ -341,9 +416,10 @@ function buildThroughputJql(projectKey: string): string {
 async function fetchSprintIssuesAcrossTeams(artTeams: ArtTeamConfig[]): Promise<SprintIssue[]> {
   if (artTeams.length === 0) return []
   const teamFetches = artTeams.map(async (teamConfig) => {
-    const jql = buildSprintDataJql(teamConfig.projectKey)
+    const resolvedProjectKey = await resolveArtTeamProjectKey(teamConfig)
+    const jql = buildSprintDataJql(resolvedProjectKey)
     const response = await jiraGet<JiraSprintIssueResponse>(
-      `/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=${SPRINT_MAX_RESULTS}&fields=${SPRINT_ISSUE_FIELDS}`,
+      buildIssueSearchPath(jql, SPRINT_MAX_RESULTS, SPRINT_ISSUE_FIELDS),
     )
     return response.issues.map((rawIssue) => mapJiraIssueToSprintIssue(rawIssue, teamConfig.name))
   })
@@ -355,9 +431,10 @@ async function fetchSprintIssuesAcrossTeams(artTeams: ArtTeamConfig[]): Promise<
 async function fetchThroughputIssuesAcrossTeams(artTeams: ArtTeamConfig[]): Promise<SprintIssue[]> {
   if (artTeams.length === 0) return []
   const teamFetches = artTeams.map(async (teamConfig) => {
-    const jql = buildThroughputJql(teamConfig.projectKey)
+    const resolvedProjectKey = await resolveArtTeamProjectKey(teamConfig)
+    const jql = buildThroughputJql(resolvedProjectKey)
     const response = await jiraGet<JiraSprintIssueResponse>(
-      `/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=${THROUGHPUT_MAX_RESULTS}&fields=${SPRINT_ISSUE_FIELDS}`,
+      buildIssueSearchPath(jql, THROUGHPUT_MAX_RESULTS, SPRINT_ISSUE_FIELDS),
     )
     return response.issues.map((rawIssue) => mapJiraIssueToSprintIssue(rawIssue, teamConfig.name))
   })

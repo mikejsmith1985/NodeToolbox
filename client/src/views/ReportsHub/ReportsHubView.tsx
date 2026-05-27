@@ -1,6 +1,6 @@
 // ReportsHubView.tsx — Director & RTE-level PI reporting dashboard across all ART teams.
 //
-// Ten tabs: Dashboard, Feature Report, Defect Tracker, Risk Board, Flow, Impact, Individual,
+// Ten tabs: Defect Dashboard, Feature Report, Defect Tracker, Risk Board, Flow, Impact, Individual,
 // Quality, Sprint Health, and Throughput. Hero KPI grid provides at-a-glance counts. All data
 // loaded via useReportsHubState. Each tab also includes an "About this report" explainer
 // card, a per-tab copy-to-clipboard button, and a "Last generated" relative timestamp.
@@ -30,7 +30,7 @@ const VIEW_TITLE = '📈 Reports Hub'
 const VIEW_SUBTITLE = 'Director & RTE reporting dashboard for PI planning.'
 
 const TAB_OPTIONS: { key: ReportsHubTab; label: string }[] = [
-  { key: 'dashboard', label: '🧭 Dashboard' },
+  { key: 'dashboard', label: '🧭 Defect Dashboard' },
   { key: 'features', label: '🏛️ Feature Report' },
   { key: 'defects', label: '🔴 Defect Tracker' },
   { key: 'risks', label: '⚠️ Risk Board' },

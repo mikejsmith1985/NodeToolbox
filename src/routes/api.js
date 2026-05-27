@@ -842,6 +842,39 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
   // Returns: 404 if the change does not exist
   // Returns: 502 if the relay bridge is not active or ServiceNow is unreachable
 
+  function inferModifyEnvironmentKeyFromValue(environmentValue) {
+    const normalizedEnvironmentValue = String(environmentValue || '').trim().toLowerCase();
+    if (!normalizedEnvironmentValue) return null;
+    if (normalizedEnvironmentValue.includes('pfix') || normalizedEnvironmentValue.includes('fix')) return 'pfix';
+    if (normalizedEnvironmentValue.includes('prd') || normalizedEnvironmentValue.includes('prod')) return 'prd';
+    if (normalizedEnvironmentValue.includes('rel') || normalizedEnvironmentValue.includes('release')) return 'rel';
+    return null;
+  }
+
+  function readModifySnowReferenceSysId(referenceValue) {
+    if (!referenceValue) return '';
+    if (typeof referenceValue === 'string') return referenceValue;
+    if (typeof referenceValue === 'object') return referenceValue.sysId || referenceValue.value || '';
+    return '';
+  }
+
+  function readModifyEnvironmentState(changeData, environmentKey) {
+    const environmentState = changeData?.[`${environmentKey}Environment`];
+    return environmentState && typeof environmentState === 'object' ? environmentState : null;
+  }
+
+  function readSelectedModifyEnvironmentState(changeData) {
+    const selectedEnvironmentKey = inferModifyEnvironmentKeyFromValue(changeData?.chgBasicInfo?.environment);
+    if (selectedEnvironmentKey) {
+      return readModifyEnvironmentState(changeData, selectedEnvironmentKey);
+    }
+
+    const enabledEnvironmentKey = ['rel', 'prd', 'pfix'].find((environmentKey) => (
+      readModifyEnvironmentState(changeData, environmentKey)?.isEnabled
+    ));
+    return enabledEnvironmentKey ? readModifyEnvironmentState(changeData, enabledEnvironmentKey) : null;
+  }
+
   router.get('/api/snow-relay/change/:changeKey', async (req, res) => {
     const changeKey = (req.params.changeKey || '').trim().toUpperCase();
 
@@ -937,6 +970,7 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
       }
 
       const sysId = fetchResult.result[0].sys_id;
+      const selectedEnvironmentState = readSelectedModifyEnvironmentState(changeData);
 
       // Build the update payload with ServiceNow field names
       const updatePayload = {
@@ -949,10 +983,18 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
       if (changeData.chgBasicInfo) {
         if (changeData.chgBasicInfo.category) updatePayload.category = changeData.chgBasicInfo.category;
         if (changeData.chgBasicInfo.changeType) updatePayload.type = changeData.chgBasicInfo.changeType;
+        if (changeData.chgBasicInfo.environment) updatePayload.u_environment = changeData.chgBasicInfo.environment;
         if (changeData.chgBasicInfo.assignmentGroup) {
           updatePayload.assignment_group = typeof changeData.chgBasicInfo.assignmentGroup === 'string' 
             ? changeData.chgBasicInfo.assignmentGroup 
             : changeData.chgBasicInfo.assignmentGroup.sysId;
+        }
+
+        if (selectedEnvironmentState) {
+          updatePayload.cmdb_ci = readModifySnowReferenceSysId(selectedEnvironmentState.configItem);
+        } else {
+          const configItemSysId = readModifySnowReferenceSysId(changeData.chgBasicInfo.configItem);
+          if (configItemSysId) updatePayload.cmdb_ci = configItemSysId;
         }
       }
 
@@ -960,6 +1002,11 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
         if (changeData.chgPlanningAssessment.impact) updatePayload.impact = changeData.chgPlanningAssessment.impact;
         if (changeData.chgPlanningAssessment.systemAvailabilityImplication) updatePayload.u_availability_impact = changeData.chgPlanningAssessment.systemAvailabilityImplication;
         if (changeData.chgPlanningAssessment.hasBeenTested) updatePayload.u_change_tested = changeData.chgPlanningAssessment.hasBeenTested;
+        if (selectedEnvironmentState) {
+          updatePayload.u_impacted_persons_aware = selectedEnvironmentState.impactedPersonsAware || '';
+        } else if (changeData.chgPlanningAssessment.impactedPersonsAware) {
+          updatePayload.u_impacted_persons_aware = changeData.chgPlanningAssessment.impactedPersonsAware;
+        }
         if (changeData.chgPlanningAssessment.hasBeenPerformedPreviously) updatePayload.u_performed_previously = changeData.chgPlanningAssessment.hasBeenPerformedPreviously;
         if (changeData.chgPlanningAssessment.successProbability) updatePayload.u_success_probability = changeData.chgPlanningAssessment.successProbability;
         if (changeData.chgPlanningAssessment.canBeBackedOut) updatePayload.u_can_be_backed_out = changeData.chgPlanningAssessment.canBeBackedOut;
@@ -969,6 +1016,11 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
         if (changeData.chgPlanningContent.implementationPlan) updatePayload.implementation_plan = changeData.chgPlanningContent.implementationPlan;
         if (changeData.chgPlanningContent.backoutPlan) updatePayload.backout_plan = changeData.chgPlanningContent.backoutPlan;
         if (changeData.chgPlanningContent.testPlan) updatePayload.test_plan = changeData.chgPlanningContent.testPlan;
+      }
+
+      if (selectedEnvironmentState) {
+        updatePayload.planned_start_date = selectedEnvironmentState.plannedStartDate || '';
+        updatePayload.planned_end_date = selectedEnvironmentState.plannedEndDate || '';
       }
 
       // Submit the PATCH request via relay

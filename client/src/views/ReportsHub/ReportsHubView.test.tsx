@@ -82,9 +82,9 @@ describe('ReportsHubView', () => {
     expect(mockActions.loadAllReports).toHaveBeenCalledTimes(1);
   });
 
-  it('renders 10 tab buttons including the dashboard tab', () => {
+  it('renders 10 tab buttons including the Defect Dashboard tab', () => {
     render(<ReportsHubView />);
-    expect(screen.getByRole('tab', { name: /dashboard/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /defect dashboard/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /feature report/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /defect tracker/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /risk board/i })).toBeInTheDocument();
