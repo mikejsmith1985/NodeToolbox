@@ -432,7 +432,7 @@ module.exports.getBridgeDiag = function getBridgeDiag(sys) {
  * @param {string} request.url - API endpoint (e.g., '/api/now/v2/table/change_request?...')
  * @param {Object} [request.body] - Request body for POST/PATCH
  * @param {number} [timeoutMs] - Timeout in milliseconds (default: 30000)
- * @returns {Promise} Resolves to { ok: boolean, data: any, error?: string, status?: number }
+ * @returns {Promise} Resolves to { result: any }
  * @throws {Error} If relay is not active or request times out
  */
 module.exports.submitRelayRequest = async function submitRelayRequest(sys, request, timeoutMs = 30000) {
@@ -442,27 +442,41 @@ module.exports.submitRelayRequest = async function submitRelayRequest(sys, reque
   }
 
   // Generate a unique request ID
-  const requestId = 'req-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+  const requestId = 'srv-req-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
 
-  // Queue the request so the bookmarklet can fetch it
-  if (!channel.pendingRequests[requestId]) {
-    channel.pendingRequests[requestId] = request;
+  // Queue the request via the standard mechanism (same as frontend)
+  const entry = {
+    id: requestId,
+    sys: sys || 'snow',
+    method: request.method || 'GET',
+    path: request.url,
+    body: request.body || null,
+    authHeader: null,  // Server requests don't need authHeader
+  };
+
+  if (channel.pollWaiters.length > 0) {
+    // Bookmarklet is already waiting — deliver the request immediately
+    const waiter = channel.pollWaiters.shift();
+    clearTimeout(waiter.timer);
+    waiter.res.json({ request: entry });
+  } else {
+    // Queue it for the bookmarklet to fetch next
+    channel.pendingRequests.push(entry);
   }
 
   // Wait for the bookmarklet to post the result
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      delete channel.pendingRequests[requestId];
-      reject(new Error('Relay request timed out after ' + timeoutMs + 'ms. Ensure the bookmarklet is active.'));
+      reject(new Error('Relay request timed out after ' + timeoutMs + 'ms. Ensure the bookmarklet is active and ServiceNow is accessible.'));
     }, timeoutMs);
 
+    // Check for result frequently since the bookmarklet may be slow
     const checkResult = setInterval(() => {
       if (channel.pendingResults[requestId]) {
         clearTimeout(timer);
         clearInterval(checkResult);
         const result = channel.pendingResults[requestId];
         delete channel.pendingResults[requestId];
-        delete channel.pendingRequests[requestId];
 
         if (result.ok) {
           resolve(result.data || {});
