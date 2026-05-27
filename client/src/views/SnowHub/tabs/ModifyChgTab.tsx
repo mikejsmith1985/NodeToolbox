@@ -5,6 +5,7 @@
 
 import { useState, useCallback } from 'react';
 
+import { snowFetch } from '../../../services/snowApi.ts';
 import type {
   ChgBasicInfo,
   ChgPlanningAssessment,
@@ -56,44 +57,111 @@ interface ModifyChgState {
 
 /**
  * Fetches a CHG from ServiceNow relay by change key.
+ * Logs diagnostics to browser console for debugging.
  */
 async function fetchChangeFromSnow(changeKey: string): Promise<any> {
-  const response = await fetch(`/api/snow-relay/change/${encodeURIComponent(changeKey.toUpperCase())}`);
+  const apiUrl = `/api/snow-relay/change/${encodeURIComponent(changeKey.toUpperCase())}`;
+  console.log('  📋 Fetching change from ServiceNow:', { changeKey, apiUrl });
+  const response = await fetch(apiUrl);
+  
   if (!response.ok) {
-    throw new Error(`Failed to fetch change: ${response.statusText}`);
+    let errorBody = '(unable to read response body)';
+    try {
+      if (response.text && typeof response.text === 'function') {
+        errorBody = await response.text();
+      }
+    } catch (textError) {
+      // Continue with default error message
+    }
+    
+    console.error('  ❌ API error fetching change:', {
+      status: response.status,
+      statusText: response.statusText,
+      changeKey,
+      responseBody: errorBody.substring ? errorBody.substring(0, 200) : String(errorBody),
+    });
+    throw new Error(`Failed to fetch change: ${response.statusText} (${response.status})`);
   }
-  return response.json();
+  
+  const data = await response.json();
+  console.log('  ✅ Successfully fetched change:', { changeKey, fields: Object.keys(data || {}).length });
+  return data;
 }
 
 /**
  * Saves a modified CHG back to ServiceNow.
+ * Logs diagnostics to browser console for debugging.
  */
 async function saveChangeToSnow(changeKey: string, changeData: any): Promise<void> {
-  const response = await fetch(`/api/snow-relay/change/${encodeURIComponent(changeKey.toUpperCase())}`, {
+  const apiUrl = `/api/snow-relay/change/${encodeURIComponent(changeKey.toUpperCase())}`;
+  console.log('  💾 Saving change to ServiceNow:', { changeKey, apiUrl });
+  const response = await fetch(apiUrl, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(changeData),
   });
+  
   if (!response.ok) {
-    throw new Error(`Failed to save change: ${response.statusText}`);
+    let errorBody = '(unable to read response body)';
+    try {
+      if (response.text && typeof response.text === 'function') {
+        errorBody = await response.text();
+      }
+    } catch (textError) {
+      // Continue with default error message
+    }
+    
+    console.error('  ❌ API error saving change:', {
+      status: response.status,
+      statusText: response.statusText,
+      changeKey,
+      responseBody: errorBody.substring ? errorBody.substring(0, 200) : String(errorBody),
+    });
+    throw new Error(`Failed to save change: ${response.statusText} (${response.status})`);
   }
+  
+  console.log('  ✅ Successfully saved change:', { changeKey });
+}
+
+interface SnowChangeRecord {
+  number?: string;
+  short_description?: string;
+}
+
+interface ServiceNowChangeQueryResponse {
+  result: SnowChangeRecord[];
 }
 
 /**
- * Fetches user's open changes from ServiceNow relay.
+ * Fetches user's open changes from ServiceNow using the relay bridge.
  * Returns array of changes with key and summary.
+ * Reuses the same proven snowFetch pattern as the PRB loader.
  */
 async function fetchMyOpenChanges(): Promise<MyOpenChange[]> {
-  const response = await fetch('/api/snow-relay/my-changes');
-  if (!response.ok) {
-    throw new Error(`Failed to fetch my changes: ${response.statusText}`);
+  console.log('  📋 Fetching my open changes from ServiceNow...');
+  
+  // Build query for changes assigned to current user in active states
+  // States 1,2,3 = Open, Pending, In Progress
+  const encodedQuery = encodeURIComponent('state=1^state=2^state=3^ORassigned_to=javascript:gs.getUserID()');
+  const path = `/api/now/table/change_request?sysparm_query=${encodedQuery}&sysparm_fields=number,short_description&sysparm_limit=100&sysparm_display_value=all`;
+  
+  try {
+    const response = await snowFetch<ServiceNowChangeQueryResponse>(path);
+    const changes = (response.result || []).map((changeRecord) => ({
+      key: changeRecord.number || '',
+      summary: changeRecord.short_description || '',
+    })).filter((change) => change.key && change.summary);
+    
+    console.log('  ✅ Successfully fetched my changes:', { count: changes.length });
+    return changes;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to load my changes';
+    console.error('  ❌ Error loading my open changes:', {
+      error: errorMessage,
+      endpoint: '/api/now/table/change_request',
+    });
+    throw error;
   }
-  const data = await response.json();
-  // Ensure data is an array, filter out any invalid entries
-  if (!Array.isArray(data)) {
-    throw new Error('Invalid response format: expected array of changes');
-  }
-  return data.filter((change) => change.key && change.summary) as MyOpenChange[];
 }
 
 /**
@@ -704,6 +772,11 @@ export default function ModifyChgTab(): React.ReactElement {
       }));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to load my changes';
+      console.error('  ❌ Error loading my open changes:', {
+        message: errorMessage,
+        error,
+        endpoint: '/api/snow-relay/my-changes',
+      });
       setModifyState((prev) => ({ ...prev, isLoadingMyChanges: false, myChangesError: errorMessage }));
     }
   }, []);
