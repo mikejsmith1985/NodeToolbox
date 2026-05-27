@@ -26,6 +26,11 @@ const STEP_DEFINITIONS = [
   { step: 5, label: 'Review & Save' },
 ] as const;
 
+interface MyOpenChange {
+  key: string;
+  summary: string;
+}
+
 interface ModifyChgState {
   currentStep: 1 | 2 | 3 | 4 | 5;
   changeKey: string;
@@ -44,6 +49,9 @@ interface ModifyChgState {
   isSaving: boolean;
   saveError: string | null;
   saveSuccess: string | null;
+  myOpenChanges: MyOpenChange[];
+  isLoadingMyChanges: boolean;
+  myChangesError: string | null;
 }
 
 /**
@@ -69,6 +77,23 @@ async function saveChangeToSnow(changeKey: string, changeData: any): Promise<voi
   if (!response.ok) {
     throw new Error(`Failed to save change: ${response.statusText}`);
   }
+}
+
+/**
+ * Fetches user's open changes from ServiceNow relay.
+ * Returns array of changes with key and summary.
+ */
+async function fetchMyOpenChanges(): Promise<MyOpenChange[]> {
+  const response = await fetch('/api/snow-relay/my-changes');
+  if (!response.ok) {
+    throw new Error(`Failed to fetch my changes: ${response.statusText}`);
+  }
+  const data = await response.json();
+  // Ensure data is an array, filter out any invalid entries
+  if (!Array.isArray(data)) {
+    throw new Error('Invalid response format: expected array of changes');
+  }
+  return data.filter((change) => change.key && change.summary) as MyOpenChange[];
 }
 
 /**
@@ -147,10 +172,12 @@ function StepHeading({ currentStep }: { currentStep: number }) {
 /**
  * Step 1: Fetch Change — User enters CHG key and fetches from ServiceNow
  */
-function FetchChangeStep({ state, onChangeKeyChange, onFetchClick }: {
+function FetchChangeStep({ state, onChangeKeyChange, onFetchClick, onLoadMyChangesClick, onMyChangeSelect }: {
   state: ModifyChgState;
   onChangeKeyChange: (key: string) => void;
   onFetchClick: () => void;
+  onLoadMyChangesClick: () => void;
+  onMyChangeSelect: (key: string) => void;
 }) {
   return (
     <section className={styles.section}>
@@ -177,6 +204,47 @@ function FetchChangeStep({ state, onChangeKeyChange, onFetchClick }: {
         </div>
       </div>
       {state.fetchError && <p className={styles.errorText} role="alert">{state.fetchError}</p>}
+
+      {/* My Open Changes section */}
+      <div className={styles.fieldGroup}>
+        <label className={styles.fieldLabel}>📋 Load My Changes</label>
+        <div className={styles.cloneInputRow}>
+          <button
+            className={styles.secondaryButton}
+            disabled={state.isLoadingMyChanges}
+            onClick={onLoadMyChangesClick}
+            type="button"
+          >
+            {state.isLoadingMyChanges ? 'Loading…' : 'Load My Open Changes'}
+          </button>
+        </div>
+        {state.myChangesError && <p className={styles.errorText} role="alert">{state.myChangesError}</p>}
+
+        {state.myOpenChanges.length > 0 && (
+          <select
+            aria-label="Select from my open changes"
+            className={styles.select}
+            disabled={state.isFetching}
+            onChange={(event) => {
+              if (event.target.value) {
+                onMyChangeSelect(event.target.value);
+              }
+            }}
+            value=""
+          >
+            <option value="">Select a change…</option>
+            {state.myOpenChanges.map((change) => (
+              <option key={change.key} value={change.key}>
+                {change.key} - {change.summary}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {state.isLoadingMyChanges === false && state.myOpenChanges.length === 0 && !state.myChangesError && (
+          <p className={styles.loadingText}>No open changes found.</p>
+        )}
+      </div>
     </section>
   );
 }
@@ -528,6 +596,9 @@ export default function ModifyChgTab(): React.ReactElement {
     isSaving: false,
     saveError: null,
     saveSuccess: null,
+    myOpenChanges: [],
+    isLoadingMyChanges: false,
+    myChangesError: null,
   });
 
   const handleChangeKeyChange = useCallback((key: string) => {
@@ -622,6 +693,42 @@ export default function ModifyChgTab(): React.ReactElement {
     }
   }, [modifyState.change]);
 
+  const handleLoadMyChanges = useCallback(async () => {
+    setModifyState((prev) => ({ ...prev, isLoadingMyChanges: true, myChangesError: null }));
+    try {
+      const changes = await fetchMyOpenChanges();
+      setModifyState((prev) => ({
+        ...prev,
+        isLoadingMyChanges: false,
+        myOpenChanges: changes,
+      }));
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load my changes';
+      setModifyState((prev) => ({ ...prev, isLoadingMyChanges: false, myChangesError: errorMessage }));
+    }
+  }, []);
+
+  const handleMyChangeSelect = useCallback((changeKey: string) => {
+    // Populate the change key field
+    setModifyState((prev) => ({ ...prev, changeKey, fetchError: null }));
+    // Auto-trigger the fetch
+    setModifyState((prev) => ({ ...prev, isFetching: true, fetchError: null }));
+    // Fetch the change
+    fetchChangeFromSnow(changeKey)
+      .then((data) => {
+        setModifyState((prev) => ({
+          ...prev,
+          isFetching: false,
+          change: data,
+          currentStep: 2,
+        }));
+      })
+      .catch((error) => {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        setModifyState((prev) => ({ ...prev, isFetching: false, fetchError: errorMessage }));
+      });
+  }, []);
+
   return (
     <div className={styles.container}>
       <header className={styles.header}>
@@ -632,7 +739,13 @@ export default function ModifyChgTab(): React.ReactElement {
       <StepIndicator currentStep={modifyState.currentStep} onStepSelect={handleStepSelect} />
 
       {modifyState.currentStep === 1 && (
-        <FetchChangeStep state={modifyState} onChangeKeyChange={handleChangeKeyChange} onFetchClick={handleFetchChange} />
+        <FetchChangeStep
+          state={modifyState}
+          onChangeKeyChange={handleChangeKeyChange}
+          onFetchClick={handleFetchChange}
+          onLoadMyChangesClick={handleLoadMyChanges}
+          onMyChangeSelect={handleMyChangeSelect}
+        />
       )}
 
       {modifyState.currentStep === 2 && (
