@@ -139,8 +139,6 @@ const { mockCrgState, mockCrgActions, mockPrbState, mockPrbActions, mockReleaseS
       sysId: string;
       number: string;
       shortDescription: string;
-      state: string;
-      plannedStartDate: string;
     }>,
     isLoadingMyChanges: false,
     myChangesError: null as string | null,

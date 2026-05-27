@@ -74,8 +74,8 @@ function ActiveChangesSection({ state }: { state: ReleaseStateData }) {
         {!state.isLoadingMyChanges && !state.myChangesError && state.myActiveChanges.length === 0 ? <p className={styles.mutedText}>{EMPTY_MY_CHANGES_MESSAGE}</p> : null}
         {state.myActiveChanges.length > 0 ? (
           <table className={styles.dataTable}>
-            <thead><tr><th scope="col">Number</th><th scope="col">Short Description</th><th scope="col">State</th><th scope="col">Planned Start</th></tr></thead>
-            <tbody>{state.myActiveChanges.map((changeRequest) => <tr key={changeRequest.sysId}><td>{changeRequest.number}</td><td>{changeRequest.shortDescription}</td><td>{changeRequest.state}</td><td>{changeRequest.plannedStartDate}</td></tr>)}</tbody>
+            <thead><tr><th scope="col">Number</th><th scope="col">Short Description</th></tr></thead>
+            <tbody>{state.myActiveChanges.map((changeRequest) => <tr key={changeRequest.sysId}><td>{changeRequest.number}</td><td>{changeRequest.shortDescription}</td></tr>)}</tbody>
           </table>
         ) : null}
       </div>
