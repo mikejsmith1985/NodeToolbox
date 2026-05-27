@@ -1,14 +1,13 @@
 // ChangeModifierTab.tsx — Modify existing ServiceNow Change Requests and CTASKs
 // Lets users fetch CHG by key, edit fields, manage CTASKs, and save changes back to ServiceNow.
 
-import { type ChangeEvent, useCallback, useMemo, useState } from 'react';
-import type { CtaskEditForm, ChangeModifierRecord, ChangeModifierState } from '../hooks/useChangeModifier.ts';
+import { type ChangeEvent, useCallback, useState } from 'react';
+import type { ChangeModifierRecord } from '../hooks/useChangeModifier.ts';
 import { useChangeModifier } from '../hooks/useChangeModifier.ts';
 import type {
   ChgBasicInfo,
   ChgPlanningAssessment,
   ChgPlanningContent,
-  SnowReference,
 } from '../hooks/useCrgState.ts';
 
 const TAB_TITLE = 'Modify Change';
@@ -68,7 +67,7 @@ const CONTENT_FIELDS: ContentFieldDefinition[] = [
  * ChangeModifierTab — Modify existing ServiceNow CHG records and their CTASKs.
  * Lets users fetch by key, edit all fields, manage CTASKs, and save back to SNow.
  */
-export function ChangeModifierTab(): JSX.Element {
+export default function ChangeModifierTab(): React.ReactElement {
   const { state, actions } = useChangeModifier();
   const [inputChangeKey, setInputChangeKey] = useState(EMPTY_VALUE);
 
@@ -175,46 +174,55 @@ export function ChangeModifierTab(): JSX.Element {
             {/* Generated Fields */}
             <div className="form-section">
               <h3>Summary & Description</h3>
-              {CHANGE_FIELD_DEFINITIONS.map((fieldDef) => (
-                <div key={fieldDef.key} className="form-group">
-                  <label htmlFor={fieldDef.key}>{fieldDef.label}</label>
-                  {fieldDef.type === 'textarea' ? (
-                    <textarea
-                      id={fieldDef.key}
-                      value={state.change[fieldDef.key] || EMPTY_VALUE}
-                      onChange={(event) => handleChangeFieldChange(fieldDef.key, event.target.value)}
-                      className="field-textarea"
-                      rows={4}
-                    />
-                  ) : (
-                    <input
-                      id={fieldDef.key}
-                      type="text"
-                      value={state.change[fieldDef.key] || EMPTY_VALUE}
-                      onChange={(event) => handleChangeFieldChange(fieldDef.key, event.target.value)}
-                      className="field-input"
-                    />
-                  )}
-                </div>
-              ))}
+              {CHANGE_FIELD_DEFINITIONS.map((fieldDef) => {
+                const fieldValue = state.change?.[fieldDef.key];
+                const displayValue = typeof fieldValue === 'string' ? fieldValue : '';
+                return (
+                  <div key={fieldDef.key} className="form-group">
+                    <label htmlFor={fieldDef.key}>{fieldDef.label}</label>
+                    {fieldDef.type === 'textarea' ? (
+                      <textarea
+                        id={fieldDef.key}
+                        value={displayValue}
+                        onChange={(event) => handleChangeFieldChange(fieldDef.key, event.target.value)}
+                        className="field-textarea"
+                        rows={4}
+                      />
+                    ) : (
+                      <input
+                        id={fieldDef.key}
+                        type="text"
+                        value={displayValue}
+                        onChange={(event) => handleChangeFieldChange(fieldDef.key, event.target.value)}
+                        className="field-input"
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             {/* Basic Info Fields */}
             <div className="form-section">
               <h3>Basic Information</h3>
               <div className="field-grid">
-                {BASIC_INFO_FIELDS.map((fieldDef) => (
-                  <div key={fieldDef.fieldKey} className="form-group">
-                    <label htmlFor={`basic-${fieldDef.fieldKey}`}>{fieldDef.label}</label>
-                    <input
-                      id={`basic-${fieldDef.fieldKey}`}
-                      type="text"
-                      value={state.change.chgBasicInfo[fieldDef.fieldKey] || EMPTY_VALUE}
-                      onChange={(event) => handleBasicInfoFieldChange(fieldDef.fieldKey, event.target.value)}
-                      className="field-input"
-                    />
-                  </div>
-                ))}
+                {BASIC_INFO_FIELDS.map((fieldDef) => {
+                  const basicInfo = state.change?.chgBasicInfo;
+                  const fieldValue = basicInfo?.[fieldDef.fieldKey];
+                  const displayValue = typeof fieldValue === 'string' ? fieldValue : '';
+                  return (
+                    <div key={fieldDef.fieldKey} className="form-group">
+                      <label htmlFor={`basic-${fieldDef.fieldKey}`}>{fieldDef.label}</label>
+                      <input
+                        id={`basic-${fieldDef.fieldKey}`}
+                        type="text"
+                        value={displayValue}
+                        onChange={(event) => handleBasicInfoFieldChange(fieldDef.fieldKey, event.target.value)}
+                        className="field-input"
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -222,36 +230,46 @@ export function ChangeModifierTab(): JSX.Element {
             <div className="form-section">
               <h3>Planning Assessment</h3>
               <div className="field-grid">
-                {ASSESSMENT_FIELDS.map((fieldDef) => (
-                  <div key={fieldDef.fieldKey} className="form-group">
-                    <label htmlFor={`assess-${fieldDef.fieldKey}`}>{fieldDef.label}</label>
-                    <input
-                      id={`assess-${fieldDef.fieldKey}`}
-                      type="text"
-                      value={state.change.chgPlanningAssessment[fieldDef.fieldKey] || EMPTY_VALUE}
-                      onChange={(event) => handleAssessmentFieldChange(fieldDef.fieldKey, event.target.value)}
-                      className="field-input"
-                    />
-                  </div>
-                ))}
+                {ASSESSMENT_FIELDS.map((fieldDef) => {
+                  const assessment = state.change?.chgPlanningAssessment;
+                  const fieldValue = assessment?.[fieldDef.fieldKey];
+                  const displayValue = typeof fieldValue === 'string' ? fieldValue : '';
+                  return (
+                    <div key={fieldDef.fieldKey} className="form-group">
+                      <label htmlFor={`assess-${fieldDef.fieldKey}`}>{fieldDef.label}</label>
+                      <input
+                        id={`assess-${fieldDef.fieldKey}`}
+                        type="text"
+                        value={displayValue}
+                        onChange={(event) => handleAssessmentFieldChange(fieldDef.fieldKey, event.target.value)}
+                        className="field-input"
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
             {/* Planning Content Fields */}
             <div className="form-section">
               <h3>Planning Content</h3>
-              {CONTENT_FIELDS.map((fieldDef) => (
-                <div key={fieldDef.fieldKey} className="form-group">
-                  <label htmlFor={`content-${fieldDef.fieldKey}`}>{fieldDef.label}</label>
-                  <textarea
-                    id={`content-${fieldDef.fieldKey}`}
-                    value={state.change.chgPlanningContent[fieldDef.fieldKey] || EMPTY_VALUE}
-                    onChange={(event) => handleContentFieldChange(fieldDef.fieldKey, event.target.value)}
-                    className="field-textarea"
-                    rows={3}
-                  />
-                </div>
-              ))}
+              {CONTENT_FIELDS.map((fieldDef) => {
+                const content = state.change?.chgPlanningContent;
+                const fieldValue = content?.[fieldDef.fieldKey];
+                const displayValue = typeof fieldValue === 'string' ? fieldValue : '';
+                return (
+                  <div key={fieldDef.fieldKey} className="form-group">
+                    <label htmlFor={`content-${fieldDef.fieldKey}`}>{fieldDef.label}</label>
+                    <textarea
+                      id={`content-${fieldDef.fieldKey}`}
+                      value={displayValue}
+                      onChange={(event) => handleContentFieldChange(fieldDef.fieldKey, event.target.value)}
+                      className="field-textarea"
+                      rows={3}
+                    />
+                  </div>
+                );
+              })}
             </div>
           </section>
 

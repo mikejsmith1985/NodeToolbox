@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import ViewFrame from '../../components/ViewFrame/ViewFrame.tsx';
-import { ChangeModifierTab } from './tabs/ChangeModifierTab.tsx';
+import ChangeModifierTab from './tabs/ChangeModifierTab.tsx';
 import ConfigurationTab from './tabs/ConfigurationTab.tsx';
 import CrgTab from './tabs/CrgTab.tsx';
 import PrbTab from './tabs/PrbTab.tsx';
