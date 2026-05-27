@@ -11,26 +11,24 @@ import { jiraGet } from '../../../services/jiraApi.ts'
 
 const ART_TEAMS_STORAGE_KEY = 'nodetoolbox-art-teams'
 const LEGACY_ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings'
-const EPIC_ISSUE_TYPE = 'Epic'
+const SEARCH_PAGE_SIZE = 100
+const FEATURE_ISSUE_TYPE_JQL = '("Epic", "Feature")'
 const DEFECT_ISSUE_TYPE = 'Defect'
-const RISK_ISSUE_TYPE = 'Risk'
-const REPORT_MAX_RESULTS = 100
 const PI_CUSTOM_FIELD = 'customfield_10301'
 const REPORT_FIELDS =
-  'summary,status,fixVersions,assignee,customfield_10301,priority,issuetype'
+  'summary,status,fixVersions,assignee,customfield_10301,priority,issuetype,created,updated,duedate,labels,issuelinks,resolutiondate'
 
 const LOAD_FEATURES_FAILURE = 'Failed to load features'
 const LOAD_DEFECTS_FAILURE = 'Failed to load defects'
 const LOAD_RISKS_FAILURE = 'Failed to load risks'
-const SPRINT_ISSUE_FIELDS = 'summary,status,assignee,priority,labels,updated,customfield_10020,customfield_10301'
-const STORY_ISSUE_TYPE = 'Story'
+const SPRINT_ISSUE_FIELDS = 'summary,status,assignee,priority,labels,updated,created,resolutiondate,issuetype,customfield_10020,customfield_10301'
 const SPRINT_MAX_RESULTS = 200
-const THROUGHPUT_MAX_RESULTS = 200
-const THROUGHPUT_MAX_SPRINTS = 4
+const THROUGHPUT_HISTORY_MONTH_LOOKBACK = 5
 const LOAD_SPRINT_DATA_FAILURE = 'Failed to load sprint data'
 const LOAD_QUALITY_FAILURE = 'Failed to load quality data'
 const LOAD_THROUGHPUT_FAILURE = 'Failed to load throughput data'
 const BOARD_PROJECT_CACHE_PREFIX = 'board:'
+const RISK_LABELS_JQL = 'risk, risks'
 
 // ── Type definitions ──
 
@@ -65,6 +63,14 @@ export interface JiraFeatureIssue {
   assigneeName: string | null
   piName: string | null
   priority: string | null
+  issueTypeName?: string
+  createdDate?: string
+  updatedDate?: string
+  dueDate?: string | null
+  resolutionDate?: string | null
+  labelNames?: string[]
+  dependencyCount?: number
+  isRiskTagged?: boolean
 }
 
 /** A normalised active-sprint Jira issue — shared data source for Flow, Impact, Individual, and Sprint Health tabs. */
@@ -80,6 +86,9 @@ export interface SprintIssue {
   isBlocked: boolean
   updatedDate: string
   sprintName: string | null  // extracted from customfield_10020 for throughput grouping
+  createdDate?: string
+  resolutionDate?: string | null
+  issueTypeName?: string
 }
 
 /** Per-assignee workload summary for the Individual tab. */
@@ -110,7 +119,7 @@ export interface SprintHealthEntry {
 
 /** Per-sprint resolved issue count for the Throughput tab. */
 export interface ThroughputEntry {
-  sprintName: string
+  periodLabel: string
   resolvedCount: number
 }
 
@@ -173,9 +182,18 @@ interface JiraIssueListResponse {
       assignee: { displayName: string } | null
       priority: { name: string } | null
       issuetype: { name: string } | null
+      created?: string
+      updated?: string
+      duedate?: string | null
+      labels?: string[]
+      issuelinks?: unknown[]
+      resolutiondate?: string | null
       [PI_CUSTOM_FIELD]?: string | null
     }
   }>
+  total?: number
+  startAt?: number
+  maxResults?: number
 }
 
 /** API response for sprint issue searches (different field set from report issues). */
@@ -189,10 +207,16 @@ interface JiraSprintIssueResponse {
       priority: { name: string } | null
       labels: string[]
       updated: string
+      created?: string
+      resolutiondate?: string | null
+      issuetype?: { name: string } | null
       customfield_10020: Array<{ name: string; state: string }> | null
       [PI_CUSTOM_FIELD]?: string | null
     }
   }>
+  total?: number
+  startAt?: number
+  maxResults?: number
 }
 
 interface JiraBoardProjectResponse {
@@ -277,6 +301,8 @@ function mapJiraIssueToFeature(
   rawIssue: JiraIssueListResponse['issues'][number],
   teamName: string,
 ): JiraFeatureIssue {
+  const issueLabels = rawIssue.fields.labels ?? []
+
   return {
     key: rawIssue.key,
     summary: rawIssue.fields.summary,
@@ -287,19 +313,68 @@ function mapJiraIssueToFeature(
     assigneeName: rawIssue.fields.assignee?.displayName ?? null,
     piName: (rawIssue.fields[PI_CUSTOM_FIELD] as string | null | undefined) ?? null,
     priority: rawIssue.fields.priority?.name ?? null,
+    issueTypeName: rawIssue.fields.issuetype?.name ?? undefined,
+    createdDate: rawIssue.fields.created,
+    updatedDate: rawIssue.fields.updated,
+    dueDate: rawIssue.fields.duedate ?? null,
+    resolutionDate: rawIssue.fields.resolutiondate ?? null,
+    labelNames: issueLabels,
+    dependencyCount: rawIssue.fields.issuelinks?.length ?? 0,
+    isRiskTagged: issueLabels.some((issueLabel) => issueLabel.toLowerCase().includes('risk')),
   }
 }
 
 // ── Helper: report JQL builder ──
 
-/** Builds the JQL query for a given issue type and project key. */
-function buildReportJql(projectKey: string, issueType: string, orderField: string): string {
-  return `project="${projectKey}" AND issuetype = ${issueType} ORDER BY ${orderField} ASC`
+/** Builds the feature-report JQL so the report includes both Epic and Feature work where available. */
+function buildFeatureReportJql(projectKey: string): string {
+  return `project="${projectKey}" AND issuetype in ${FEATURE_ISSUE_TYPE_JQL} ORDER BY status ASC, updated DESC`
+}
+
+/** Builds the defect-report JQL ordered by newest and most severe quality debt first. */
+function buildDefectReportJql(projectKey: string): string {
+  return `project="${projectKey}" AND issuetype = ${DEFECT_ISSUE_TYPE} ORDER BY priority DESC, updated DESC`
+}
+
+/** Builds the risk-report JQL so labeled risk items are included alongside formal Risk issues. */
+function buildRiskReportJql(projectKey: string): string {
+  return `project="${projectKey}" AND (issuetype = Risk OR labels in (${RISK_LABELS_JQL})) ORDER BY priority DESC, updated DESC`
+}
+
+/** Builds the story-report JQL used as the denominator for quality reporting. */
+function buildStoryReportJql(projectKey: string): string {
+  return `project="${projectKey}" AND issuetype = Story ORDER BY created DESC`
 }
 
 /** Builds a Jira search request path so every Reports Hub loader calls the same endpoint shape. */
-function buildIssueSearchPath(jql: string, maxResults: number, fields: string): string {
-  return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&maxResults=${maxResults}&fields=${fields}`
+function buildIssueSearchPath(jql: string, maxResults: number, fields: string, startAt = 0): string {
+  return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&startAt=${startAt}&maxResults=${maxResults}&fields=${fields}`
+}
+
+/** Fetches every page for a Jira search so Reports Hub totals are not silently truncated. */
+async function fetchAllSearchIssues<TIssue>(
+  jql: string,
+  fields: string,
+): Promise<TIssue[]> {
+  const collectedIssues: TIssue[] = []
+  let currentStartAt = 0
+
+  while (true) {
+    const searchResponse = await jiraGet<{ issues?: TIssue[]; total?: number }>(
+      buildIssueSearchPath(jql, SEARCH_PAGE_SIZE, fields, currentStartAt),
+    )
+    const currentPageIssues = searchResponse.issues ?? []
+    collectedIssues.push(...currentPageIssues)
+
+    if (currentPageIssues.length < SEARCH_PAGE_SIZE) {
+      return collectedIssues
+    }
+
+    currentStartAt += currentPageIssues.length
+    if (typeof searchResponse.total === 'number' && currentStartAt >= searchResponse.total) {
+      return collectedIssues
+    }
+  }
 }
 
 /** Resolves a Jira project key from saved team data so board-only ART teams still load reports. */
@@ -344,18 +419,18 @@ async function resolveArtTeamProjectKey(teamConfig: ArtTeamConfig): Promise<stri
 /** Fetches issues of a given type across all configured ART teams. */
 async function fetchIssuesAcrossTeams(
   artTeams: ArtTeamConfig[],
-  issueType: string,
-  orderField: string,
+  createTeamJql: (projectKey: string) => string,
 ): Promise<JiraFeatureIssue[]> {
   if (artTeams.length === 0) return []
 
   const teamFetches = artTeams.map(async (teamConfig) => {
     const resolvedProjectKey = await resolveArtTeamProjectKey(teamConfig)
-    const jql = buildReportJql(resolvedProjectKey, issueType, orderField)
-    const response = await jiraGet<JiraIssueListResponse>(
-      buildIssueSearchPath(jql, REPORT_MAX_RESULTS, REPORT_FIELDS),
+    const jql = createTeamJql(resolvedProjectKey)
+    const responseIssues = await fetchAllSearchIssues<JiraIssueListResponse['issues'][number]>(
+      jql,
+      REPORT_FIELDS,
     )
-    return response.issues.map((rawIssue) => mapJiraIssueToFeature(rawIssue, teamConfig.name))
+    return responseIssues.map((rawIssue) => mapJiraIssueToFeature(rawIssue, teamConfig.name))
   })
 
   const allTeamResults = await Promise.all(teamFetches)
@@ -396,6 +471,9 @@ function mapJiraIssueToSprintIssue(
     isBlocked,
     updatedDate: rawIssue.fields.updated,
     sprintName: extractClosedSprintName(rawIssue.fields.customfield_10020),
+    createdDate: rawIssue.fields.created,
+    resolutionDate: rawIssue.fields.resolutiondate ?? null,
+    issueTypeName: rawIssue.fields.issuetype?.name ?? undefined,
   }
 }
 
@@ -407,9 +485,9 @@ function buildSprintDataJql(projectKey: string): string {
   return `project="${projectKey}" AND sprint in openSprints() ORDER BY status ASC`
 }
 
-/** JQL for resolved issues in closed sprints (used by Throughput). */
+/** JQL for resolved work over the last six months so throughput can compare trends across teams. */
 function buildThroughputJql(projectKey: string): string {
-  return `project="${projectKey}" AND status = Done AND sprint in closedSprints() ORDER BY updated DESC`
+  return `project="${projectKey}" AND resolutiondate >= startOfMonth(-${THROUGHPUT_HISTORY_MONTH_LOOKBACK}) AND resolutiondate is not EMPTY ORDER BY resolutiondate ASC`
 }
 
 /** Fetches active-sprint issues across all configured teams. */
@@ -418,10 +496,13 @@ async function fetchSprintIssuesAcrossTeams(artTeams: ArtTeamConfig[]): Promise<
   const teamFetches = artTeams.map(async (teamConfig) => {
     const resolvedProjectKey = await resolveArtTeamProjectKey(teamConfig)
     const jql = buildSprintDataJql(resolvedProjectKey)
-    const response = await jiraGet<JiraSprintIssueResponse>(
-      buildIssueSearchPath(jql, SPRINT_MAX_RESULTS, SPRINT_ISSUE_FIELDS),
+    const responseIssues = await fetchAllSearchIssues<JiraSprintIssueResponse['issues'][number]>(
+      jql,
+      SPRINT_ISSUE_FIELDS,
     )
-    return response.issues.map((rawIssue) => mapJiraIssueToSprintIssue(rawIssue, teamConfig.name))
+    return responseIssues
+      .slice(0, SPRINT_MAX_RESULTS)
+      .map((rawIssue) => mapJiraIssueToSprintIssue(rawIssue, teamConfig.name))
   })
   const allTeamResults = await Promise.all(teamFetches)
   return allTeamResults.flat()
@@ -433,28 +514,50 @@ async function fetchThroughputIssuesAcrossTeams(artTeams: ArtTeamConfig[]): Prom
   const teamFetches = artTeams.map(async (teamConfig) => {
     const resolvedProjectKey = await resolveArtTeamProjectKey(teamConfig)
     const jql = buildThroughputJql(resolvedProjectKey)
-    const response = await jiraGet<JiraSprintIssueResponse>(
-      buildIssueSearchPath(jql, THROUGHPUT_MAX_RESULTS, SPRINT_ISSUE_FIELDS),
+    const responseIssues = await fetchAllSearchIssues<JiraSprintIssueResponse['issues'][number]>(
+      jql,
+      SPRINT_ISSUE_FIELDS,
     )
-    return response.issues.map((rawIssue) => mapJiraIssueToSprintIssue(rawIssue, teamConfig.name))
+    return responseIssues.map((rawIssue) => mapJiraIssueToSprintIssue(rawIssue, teamConfig.name))
   })
   const allTeamResults = await Promise.all(teamFetches)
   return allTeamResults.flat()
 }
 
-/** Aggregates resolved issues by sprint name, returning the most recent THROUGHPUT_MAX_SPRINTS entries. */
+function createThroughputPeriodKey(resolutionDate: string): string | null {
+  const resolutionTimestamp = new Date(resolutionDate)
+  if (Number.isNaN(resolutionTimestamp.getTime())) {
+    return null
+  }
+
+  return `${resolutionTimestamp.getUTCFullYear()}-${String(resolutionTimestamp.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+function formatThroughputPeriodLabel(periodKey: string): string {
+  const [yearPart, monthPart] = periodKey.split('-')
+  const periodDate = new Date(Date.UTC(Number(yearPart), Number(monthPart) - 1, 1))
+  return periodDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+}
+
+/** Aggregates resolved issues by month so throughput can compare a real six-month history. */
 function aggregateThroughputData(resolvedIssues: SprintIssue[]): ThroughputEntry[] {
-  const countBySprintName = new Map<string, number>()
+  const countByPeriodKey = new Map<string, number>()
   for (const issue of resolvedIssues) {
-    const sprintName = issue.sprintName
-    if (sprintName !== null) {
-      countBySprintName.set(sprintName, (countBySprintName.get(sprintName) ?? 0) + 1)
+    const resolutionDate = issue.resolutionDate
+    if (typeof resolutionDate === 'string' && resolutionDate.trim() !== '') {
+      const periodKey = createThroughputPeriodKey(resolutionDate)
+      if (periodKey !== null) {
+        countByPeriodKey.set(periodKey, (countByPeriodKey.get(periodKey) ?? 0) + 1)
+      }
     }
   }
-  return Array.from(countBySprintName.entries())
-    .map(([sprintName, resolvedCount]) => ({ sprintName, resolvedCount }))
-    .sort((a, b) => a.sprintName.localeCompare(b.sprintName))
-    .slice(-THROUGHPUT_MAX_SPRINTS)
+
+  return Array.from(countByPeriodKey.entries())
+    .sort(([firstPeriodKey], [secondPeriodKey]) => firstPeriodKey.localeCompare(secondPeriodKey))
+    .map(([periodKey, resolvedCount]) => ({
+      periodLabel: formatThroughputPeriodLabel(periodKey),
+      resolvedCount,
+    }))
 }
 
 // ── Hook ──
@@ -523,8 +626,7 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
     try {
       const loadedFeatures = await fetchIssuesAcrossTeams(
         currentArtTeams,
-        EPIC_ISSUE_TYPE,
-        'status',
+        buildFeatureReportJql,
       )
       setFeatures(loadedFeatures)
     } catch (fetchError) {
@@ -542,8 +644,7 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
     try {
       const loadedDefects = await fetchIssuesAcrossTeams(
         currentArtTeams,
-        DEFECT_ISSUE_TYPE,
-        'priority',
+        buildDefectReportJql,
       )
       setDefects(loadedDefects)
     } catch (fetchError) {
@@ -561,8 +662,7 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
     try {
       const loadedRisks = await fetchIssuesAcrossTeams(
         currentArtTeams,
-        RISK_ISSUE_TYPE,
-        'priority',
+        buildRiskReportJql,
       )
       setRisks(loadedRisks)
     } catch (fetchError) {
@@ -592,7 +692,7 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
     setQualityError(null)
     try {
       // Fetch story count across all teams (numerator for defect-density ratio)
-      const storyResults = await fetchIssuesAcrossTeams(currentArtTeams, STORY_ISSUE_TYPE, 'created')
+      const storyResults = await fetchIssuesAcrossTeams(currentArtTeams, buildStoryReportJql)
       setStoryIssues(storyResults)
       setStoryCount(storyResults.length)
     } catch (fetchError) {

@@ -115,7 +115,7 @@ describe('useReportsHubState', () => {
     expect(mockJiraGet).toHaveBeenNthCalledWith(1, `/rest/agile/1.0/board/${ART_BOARD_ID}/project`);
     expect(mockJiraGet).toHaveBeenNthCalledWith(
       2,
-      expect.stringContaining(encodeURIComponent(`project="${ART_PROJECT_KEY}" AND issuetype = Epic ORDER BY status ASC`)),
+      expect.stringContaining(encodeURIComponent(`project="${ART_PROJECT_KEY}" AND issuetype in ("Epic", "Feature") ORDER BY status ASC, updated DESC`)),
     );
   });
 
@@ -206,6 +206,22 @@ describe('useReportsHubState', () => {
     await waitFor(() => {
       expect(result.current.state.featuresError).not.toBeNull();
     });
+  });
+
+  it('loadRisks uses a query that includes risk-labeled issues, not only issuetype Risk', async () => {
+    localStorage.setItem(
+      'tbxARTSettings',
+      JSON.stringify({ teams: [{ name: 'Team A', projectKey: 'TBX' }] }),
+    );
+    mockJiraGet.mockResolvedValue({ issues: [] });
+    const { result } = renderHook(() => useReportsHubState());
+
+    await act(async () => {
+      await result.current.actions.loadRisks();
+    });
+
+    const requestPath = mockJiraGet.mock.calls[0][0] as string;
+    expect(decodeURIComponent(requestPath)).toContain('labels in (risk, risks)');
   });
 
   it('setPiFilter updates piFilter', () => {
@@ -421,6 +437,7 @@ describe('Throughput data', () => {
         priority: null,
         labels: [],
         updated: '2024-01-01T00:00:00.000Z',
+        resolutiondate: '2024-01-01T00:00:00.000Z',
         customfield_10020: [{ name: 'Sprint 10', state: 'closed' }],
       },
     };
@@ -453,7 +470,7 @@ describe('Throughput data', () => {
     });
   });
 
-  it('loadThroughput groups resolved issues by sprint name', async () => {
+  it('loadThroughput groups resolved issues by month label', async () => {
     const mockIssues = [
       {
         key: 'TBX-301',
@@ -464,6 +481,7 @@ describe('Throughput data', () => {
           priority: null,
           labels: [],
           updated: '2024-01-01T00:00:00.000Z',
+          resolutiondate: '2024-01-04T00:00:00.000Z',
           customfield_10020: [{ name: 'Sprint Alpha', state: 'closed' }],
         },
       },
@@ -476,6 +494,7 @@ describe('Throughput data', () => {
           priority: null,
           labels: [],
           updated: '2024-01-01T00:00:00.000Z',
+          resolutiondate: '2024-01-20T00:00:00.000Z',
           customfield_10020: [{ name: 'Sprint Alpha', state: 'closed' }],
         },
       },
@@ -491,10 +510,27 @@ describe('Throughput data', () => {
     });
     await waitFor(() => {
       const sprintEntry = result.current.state.throughputData.find(
-        (entry) => entry.sprintName === 'Sprint Alpha',
+        (entry) => entry.periodLabel === 'Jan 2024',
       );
       expect(sprintEntry?.resolvedCount).toBe(2);
     });
+  });
+
+  it('loadThroughput uses a six-month resolution-date query instead of closed sprint names only', async () => {
+    localStorage.setItem(
+      'tbxARTSettings',
+      JSON.stringify({ teams: [{ name: 'Team A', projectKey: 'TBX' }] }),
+    );
+    mockJiraGet.mockResolvedValue({ issues: [] });
+    const { result } = renderHook(() => useReportsHubState());
+
+    await act(async () => {
+      await result.current.actions.loadThroughput();
+    });
+
+    const requestPath = mockJiraGet.mock.calls[0][0] as string;
+    expect(decodeURIComponent(requestPath)).toContain('resolutiondate >= startOfMonth(-5)');
+    expect(decodeURIComponent(requestPath)).toContain('resolutiondate is not EMPTY');
   });
 });
 
