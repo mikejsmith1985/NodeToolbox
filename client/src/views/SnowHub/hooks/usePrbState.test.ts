@@ -217,12 +217,14 @@ describe('usePrbState', () => {
       fields: {
         summary: 'INC0012345: PRB0001234: "Checkout flow fails under load"',
         issuetype: { name: 'Defect' },
+        priority: { name: 'High' },
       },
     });
     expect(vi.mocked(jiraPost).mock.calls[1][1]).toMatchObject({
       fields: {
         summary: '[SL] INC0012345: PRB0001234: "Checkout flow fails under load"',
         issuetype: { name: 'Story' },
+        priority: { name: 'High' },
       },
     });
   });
