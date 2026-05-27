@@ -204,19 +204,31 @@ function buildStepJira(prefillJiraBaseUrl) {
       <div class="step-hero">🎟</div>
       <h1 class="step-title">Let's connect Jira</h1>
       <p class="step-subtitle">Jira is where your team tracks tasks and tickets.</p>
-
+ 
       <label class="field-label" for="jira-base-url">Your Jira address</label>
       <input id="jira-base-url" class="field-input" type="url"
              placeholder="https://your-company.atlassian.net"
              value="${prefillJiraBaseUrl}" autocomplete="off" />
       <p class="field-hint">Open Jira in your browser and copy the address from the top — just up to and including ".net" or ".com"</p>
-
+ 
       <label class="field-label" for="jira-pat">Your Jira API token</label>
       <input id="jira-pat" class="field-input" type="password"
              placeholder="Paste your token here"
              autocomplete="new-password" />
-      <p class="field-hint">In Jira: click your profile picture → Account Settings → Security → API tokens → Create new token. Then copy and paste it here.</p>
-
+      <div class="token-instruction">
+        <div class="token-instruction-icon">🔑</div>
+        <div class="token-instruction-content">
+          <strong>How to get your API token:</strong>
+          <ol style="margin-top: 8px; margin-left: 20px; color: var(--text);">
+            <li>Click your <strong>profile picture</strong> in Jira (top right)</li>
+            <li>Select <strong>Account Settings</strong></li>
+            <li>Go to <strong>Security</strong> → <strong>API tokens</strong></li>
+            <li>Click <strong>Create new token</strong> and give it a name like "NodeToolbox"</li>
+            <li>Copy the token and paste it here</li>
+          </ol>
+        </div>
+      </div>
+ 
       <div class="btn-row btn-row--spread">
         <button class="btn-ghost" onclick="goBack()">← Back</button>
         <div class="btn-group">
@@ -235,13 +247,25 @@ function buildStepGithub() {
       <div class="step-hero">🐙</div>
       <h1 class="step-title">Connect GitHub</h1>
       <p class="step-subtitle">GitHub is where your team's code lives. <strong>This step is completely optional</strong> — skip it if you don't use GitHub with this tool.</p>
-
+ 
       <label class="field-label" for="github-pat">Your GitHub access token</label>
       <input id="github-pat" class="field-input" type="password"
              placeholder="ghp_your_token_here"
              autocomplete="new-password" />
-      <p class="field-hint">In GitHub: click your profile picture → Settings → Developer settings → Personal access tokens → Generate new token. It should start with "ghp_".</p>
-
+      <div class="token-instruction">
+        <div class="token-instruction-icon">🔑</div>
+        <div class="token-instruction-content">
+          <strong>How to get your access token:</strong>
+          <ol style="margin-top: 8px; margin-left: 20px; color: var(--text);">
+            <li>Click your <strong>profile picture</strong> in GitHub (top right)</li>
+            <li>Select <strong>Settings</strong></li>
+            <li>Go to <strong>Developer settings</strong> → <strong>Personal access tokens</strong></li>
+            <li>Click <strong>Generate new token</strong> and select the scopes you need</li>
+            <li>Copy the token (starts with "ghp_") and paste it here</li>
+          </ol>
+        </div>
+      </div>
+ 
       <div class="btn-row btn-row--spread">
         <button class="btn-ghost" onclick="goBack()">← Back</button>
         <div class="btn-group">
@@ -264,22 +288,28 @@ function buildStepConfluence(prefillConfluenceBaseUrl) {
       <div class="step-hero">📚</div>
       <h1 class="step-title">Connect Confluence</h1>
       <p class="step-subtitle">Confluence powers shared ART setup, PI Review pages, and collaboration spaces. <strong>This step is optional</strong> if you only want local tools.</p>
-
+ 
       <label class="field-label" for="confluence-base-url">Confluence address</label>
       <input id="confluence-base-url" class="field-input" type="url"
              placeholder="https://your-company.atlassian.net"
              value="${prefillConfluenceBaseUrl}" autocomplete="off" />
-
+ 
       <label class="field-label" for="confluence-username">Your Atlassian email</label>
       <input id="confluence-username" class="field-input" type="email"
              placeholder="your.name@company.com" autocomplete="off" />
-
+ 
       <label class="field-label" for="confluence-api-token">Your Atlassian API token</label>
       <input id="confluence-api-token" class="field-input" type="password"
              placeholder="Paste your Cloud API token here"
              autocomplete="new-password" />
-      <p class="field-hint">Use an Atlassian Cloud API token from id.atlassian.com. Jira on-prem PATs usually do not work for Confluence Cloud.</p>
-
+      <div class="token-instruction">
+        <div class="token-instruction-icon">🔐</div>
+        <div class="token-instruction-content">
+          <strong>Important: Get a Cloud API token from Atlassian</strong>
+          <p style="margin-top: 8px;">Go to <strong>id.atlassian.com → Security → API tokens</strong> and create a new token. <strong>Jira on-prem PATs will not work</strong> — you must use a Cloud API token from your Atlassian account page.</p>
+        </div>
+      </div>
+ 
       <div class="btn-row btn-row--spread">
         <button class="btn-ghost" onclick="goBack()">← Back</button>
         <div class="btn-group">
@@ -415,6 +445,13 @@ const WIZARD_THEME_CSS = `
   .field-input:focus { border-color: var(--accent); }
   .field-hint { font-size: 12px; color: var(--text-muted); margin-top: 7px;
                 line-height: 1.55; }
+  /* Token instruction callout — stands out visually to ensure users read it */
+  .token-instruction { background: var(--surface2); border: 2px solid var(--accent);
+                      border-radius: 8px; padding: 14px 16px; margin-top: 10px;
+                      font-size: 13px; line-height: 1.6; color: var(--text);
+                      display: flex; gap: 12px; align-items: flex-start; }
+  .token-instruction-icon { font-size: 18px; flex-shrink: 0; line-height: 1.4; }
+  .token-instruction-content { flex: 1; }
   /* Buttons */
   .btn-row { display: flex; justify-content: center; margin-top: 32px; gap: 10px; flex-wrap: wrap; }
   .btn-row--spread { justify-content: space-between; }
