@@ -833,6 +833,194 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
     });
   });
 
+  // ── GET /api/snow-relay/change/:changeKey ──────────────────────────────────
+  // Fetches an existing ServiceNow CHG (Change Request) record by key.
+  // Uses the relayBridge to communicate with ServiceNow via the browser session or proxy credentials.
+  //
+  // Params: changeKey (e.g., "CHG0046897")
+  // Returns: 200 { shortDescription, description, justification, ... } on success
+  // Returns: 404 if the change does not exist
+  // Returns: 502 if the relay bridge is not active or ServiceNow is unreachable
+
+  router.get('/api/snow-relay/change/:changeKey', async (req, res) => {
+    const changeKey = (req.params.changeKey || '').trim().toUpperCase();
+
+    if (!changeKey) {
+      return res.status(400).json({ error: 'Missing changeKey', message: 'Change key is required in the URL path.' });
+    }
+
+    try {
+      // Use the relay bridge to fetch the change from ServiceNow.
+      // The bookmarklet will make a fetch() call to ServiceNow's /api/now/v2/table/change_request?sysparm_query=number={changeKey}
+      const relayRequest = {
+        method: 'GET',
+        url: `/api/now/v2/table/change_request?sysparm_query=number=${encodeURIComponent(changeKey)}`,
+      };
+
+      const changeData = await relayBridge.submitRelayRequest('snow', relayRequest, 30000);
+
+      if (!changeData || !changeData.result || changeData.result.length === 0) {
+        return res.status(404).json({ error: 'Not found', message: `Change ${changeKey} not found in ServiceNow.` });
+      }
+
+      // ServiceNow returns an array of matches — take the first one
+      const change = changeData.result[0];
+
+      // Map ServiceNow field names to our internal schema
+      res.json({
+        sysId: change.sys_id || '',
+        number: change.number || '',
+        shortDescription: change.short_description || '',
+        description: change.description || '',
+        justification: change.justification || '',
+        riskImpactAnalysis: change.risk_impact_analysis || '',
+        chgBasicInfo: {
+          category: change.category || '',
+          changeType: change.type || '',
+          requestedBy: change.requested_by ? { sysId: change.requested_by.value, displayName: change.requested_by.display_value } : { sysId: '', displayName: '' },
+          assignmentGroup: change.assignment_group ? { sysId: change.assignment_group.value, displayName: change.assignment_group.display_value } : { sysId: '', displayName: '' },
+        },
+        chgPlanningAssessment: {
+          impact: change.impact || '',
+          systemAvailabilityImplication: change.u_availability_impact || '',
+          hasBeenTested: change.u_change_tested || '',
+          impactedPersonsAware: change.u_impacted_persons_aware || '',
+          hasBeenPerformedPreviously: change.u_performed_previously || '',
+          successProbability: change.u_success_probability || '',
+          canBeBackedOut: change.u_can_be_backed_out || '',
+        },
+        chgPlanningContent: {
+          implementationPlan: change.implementation_plan || '',
+          backoutPlan: change.backout_plan || '',
+          testPlan: change.test_plan || '',
+        },
+      });
+    } catch (error) {
+      console.error('  ❌ Error fetching change ' + changeKey + ':', error.message);
+      res.status(502).json({
+        error: 'Relay error',
+        message: 'Failed to fetch change from ServiceNow. Ensure the relay bookmarklet is active and ServiceNow is accessible.',
+        details: error.message,
+      });
+    }
+  });
+
+  // ── PATCH /api/snow-relay/change/:changeKey ────────────────────────────────
+  // Updates an existing ServiceNow CHG (Change Request) record.
+  // Uses the relayBridge to communicate with ServiceNow via the browser session or proxy credentials.
+  //
+  // Params: changeKey (e.g., "CHG0046897")
+  // Body: { shortDescription, description, chgBasicInfo, chgPlanningAssessment, chgPlanningContent, changeTasks }
+  // Returns: 204 No Content on success
+  // Returns: 404 if the change does not exist
+  // Returns: 502 if the relay bridge is not active or ServiceNow is unreachable
+
+  router.patch('/api/snow-relay/change/:changeKey', async (req, res) => {
+    const changeKey = (req.params.changeKey || '').trim().toUpperCase();
+    const changeData = req.body || {};
+
+    if (!changeKey) {
+      return res.status(400).json({ error: 'Missing changeKey', message: 'Change key is required in the URL path.' });
+    }
+
+    try {
+      // First, fetch the current change to get its sys_id
+      const fetchRelayRequest = {
+        method: 'GET',
+        url: `/api/now/v2/table/change_request?sysparm_query=number=${encodeURIComponent(changeKey)}`,
+      };
+
+      const fetchResult = await relayBridge.submitRelayRequest('snow', fetchRelayRequest, 30000);
+
+      if (!fetchResult || !fetchResult.result || fetchResult.result.length === 0) {
+        return res.status(404).json({ error: 'Not found', message: `Change ${changeKey} not found in ServiceNow.` });
+      }
+
+      const sysId = fetchResult.result[0].sys_id;
+
+      // Build the update payload with ServiceNow field names
+      const updatePayload = {
+        short_description: changeData.shortDescription || '',
+        description: changeData.description || '',
+        justification: changeData.justification || '',
+        risk_impact_analysis: changeData.riskImpactAnalysis || '',
+      };
+
+      if (changeData.chgBasicInfo) {
+        if (changeData.chgBasicInfo.category) updatePayload.category = changeData.chgBasicInfo.category;
+        if (changeData.chgBasicInfo.changeType) updatePayload.type = changeData.chgBasicInfo.changeType;
+        if (changeData.chgBasicInfo.assignmentGroup) {
+          updatePayload.assignment_group = typeof changeData.chgBasicInfo.assignmentGroup === 'string' 
+            ? changeData.chgBasicInfo.assignmentGroup 
+            : changeData.chgBasicInfo.assignmentGroup.sysId;
+        }
+      }
+
+      if (changeData.chgPlanningAssessment) {
+        if (changeData.chgPlanningAssessment.impact) updatePayload.impact = changeData.chgPlanningAssessment.impact;
+        if (changeData.chgPlanningAssessment.systemAvailabilityImplication) updatePayload.u_availability_impact = changeData.chgPlanningAssessment.systemAvailabilityImplication;
+        if (changeData.chgPlanningAssessment.hasBeenTested) updatePayload.u_change_tested = changeData.chgPlanningAssessment.hasBeenTested;
+        if (changeData.chgPlanningAssessment.hasBeenPerformedPreviously) updatePayload.u_performed_previously = changeData.chgPlanningAssessment.hasBeenPerformedPreviously;
+        if (changeData.chgPlanningAssessment.successProbability) updatePayload.u_success_probability = changeData.chgPlanningAssessment.successProbability;
+        if (changeData.chgPlanningAssessment.canBeBackedOut) updatePayload.u_can_be_backed_out = changeData.chgPlanningAssessment.canBeBackedOut;
+      }
+
+      if (changeData.chgPlanningContent) {
+        if (changeData.chgPlanningContent.implementationPlan) updatePayload.implementation_plan = changeData.chgPlanningContent.implementationPlan;
+        if (changeData.chgPlanningContent.backoutPlan) updatePayload.backout_plan = changeData.chgPlanningContent.backoutPlan;
+        if (changeData.chgPlanningContent.testPlan) updatePayload.test_plan = changeData.chgPlanningContent.testPlan;
+      }
+
+      // Submit the PATCH request via relay
+      const updateRelayRequest = {
+        method: 'PATCH',
+        url: `/api/now/v2/table/change_request/${sysId}`,
+        body: updatePayload,
+      };
+
+      await relayBridge.submitRelayRequest('snow', updateRelayRequest, 30000);
+
+      // Also handle CTASKs if provided
+      if (changeData.changeTasks && Array.isArray(changeData.changeTasks) && changeData.changeTasks.length > 0) {
+        for (const ctask of changeData.changeTasks) {
+          // Create new CTASK records linked to this change
+          const ctaskPayload = {
+            change_request: sysId,
+            short_description: ctask.shortDescription || '',
+            description: ctask.description || '',
+            assignment_group: typeof ctask.assignmentGroup === 'string' ? ctask.assignmentGroup : (ctask.assignmentGroup?.sysId || ''),
+            assigned_to: typeof ctask.assignedTo === 'string' ? ctask.assignedTo : (ctask.assignedTo?.sysId || ''),
+            planned_start_date: ctask.plannedStartDate || '',
+            planned_end_date: ctask.plannedEndDate || '',
+          };
+
+          const ctaskRelayRequest = {
+            method: 'POST',
+            url: '/api/now/v2/table/change_task',
+            body: ctaskPayload,
+          };
+
+          try {
+            await relayBridge.submitRelayRequest('snow', ctaskRelayRequest, 30000);
+          } catch (ctaskError) {
+            // Log CTASK creation failures but don't fail the entire update
+            console.warn('  ⚠ Failed to create CTASK:', ctaskError.message);
+          }
+        }
+      }
+
+      console.log('  ✅ Change ' + changeKey + ' updated successfully');
+      res.status(204).send();
+    } catch (error) {
+      console.error('  ❌ Error updating change ' + changeKey + ':', error.message);
+      res.status(502).json({
+        error: 'Relay error',
+        message: 'Failed to update change in ServiceNow. Ensure the relay bookmarklet is active and ServiceNow is accessible.',
+        details: error.message,
+      });
+    }
+  });
+
   // ── Startup GitHub probe ─────────────────────────────────────────────────────
   // Run a background connectivity check once at startup so the connection bar
   // reflects real status immediately — not just "credentials are present".

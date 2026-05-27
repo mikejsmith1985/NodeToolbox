@@ -312,11 +312,10 @@ describe('SnowHubView', () => {
     expect(screen.getByRole('heading', { name: 'SNow Hub' })).toBeInTheDocument();
   });
 
-  it('renders the seven tab buttons', () => {
+  it('renders the six tab buttons (CHG tabs consolidated)', () => {
     render(<SnowHubView />);
 
-    expect(screen.getByRole('tab', { name: 'CHG' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'CHG Modify' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'CHG Generator' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Configuration' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'PRB Generator' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Assignment Groups' })).toBeInTheDocument();
@@ -327,18 +326,22 @@ describe('SnowHubView', () => {
   it('shows the CRG tab content by default', () => {
     render(<SnowHubView />);
 
-    expect(screen.getByLabelText('Project Key')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Fetch Issues' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create CHG' })).toBeInTheDocument();
   });
 
-  it('switches to the CHG Modify tab when CHG Modify is clicked', async () => {
+  it('switches to the Modify mode when Modify CHG button is clicked', async () => {
     const user = userEvent.setup();
     render(<SnowHubView />);
 
-    await user.click(screen.getByRole('tab', { name: 'CHG Modify' }));
+    // Click on CHG Generator tab first (should already be selected by default)
+    const chgTab = screen.getByRole('tab', { name: 'CHG Generator' });
+    expect(chgTab).toBeInTheDocument();
 
-    expect(screen.getByRole('heading', { name: 'Modify Change' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Fetch Change' })).toBeInTheDocument();
+    // Click on Modify CHG button to switch modes
+    const modifyButton = screen.getByRole('button', { name: 'Modify CHG' });
+    await user.click(modifyButton);
+
+    expect(screen.getByRole('button', { name: 'Fetch Change' })).toBeInTheDocument();
   });
 
   it('switches to the PRB tab when PRB Generator is clicked', async () => {

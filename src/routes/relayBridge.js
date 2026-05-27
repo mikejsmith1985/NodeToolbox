@@ -421,6 +421,61 @@ module.exports.getBridgeDiag = function getBridgeDiag(sys) {
   };
 };
 
+/**
+ * Submits a relay request and waits for the bookmarklet to complete it.
+ * This is used by the server to fetch/update data from ServiceNow without
+ * requiring the frontend to issue the request.
+ *
+ * @param {string} sys - System identifier: 'snow', 'jira', or 'conf'
+ * @param {Object} request - The request object
+ * @param {string} request.method - HTTP method: GET, POST, PATCH, DELETE
+ * @param {string} request.url - API endpoint (e.g., '/api/now/v2/table/change_request?...')
+ * @param {Object} [request.body] - Request body for POST/PATCH
+ * @param {number} [timeoutMs] - Timeout in milliseconds (default: 30000)
+ * @returns {Promise} Resolves to { ok: boolean, data: any, error?: string, status?: number }
+ * @throws {Error} If relay is not active or request times out
+ */
+module.exports.submitRelayRequest = async function submitRelayRequest(sys, request, timeoutMs = 30000) {
+  const channel = bridgeState[sys || 'snow'];
+  if (!channel || !isRelayReady(channel)) {
+    throw new Error('Relay bridge is not active for ' + (sys || 'snow') + '. Ensure the bookmarklet is registered.');
+  }
+
+  // Generate a unique request ID
+  const requestId = 'req-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+
+  // Queue the request so the bookmarklet can fetch it
+  if (!channel.pendingRequests[requestId]) {
+    channel.pendingRequests[requestId] = request;
+  }
+
+  // Wait for the bookmarklet to post the result
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      delete channel.pendingRequests[requestId];
+      reject(new Error('Relay request timed out after ' + timeoutMs + 'ms. Ensure the bookmarklet is active.'));
+    }, timeoutMs);
+
+    const checkResult = setInterval(() => {
+      if (channel.pendingResults[requestId]) {
+        clearTimeout(timer);
+        clearInterval(checkResult);
+        const result = channel.pendingResults[requestId];
+        delete channel.pendingResults[requestId];
+        delete channel.pendingRequests[requestId];
+
+        if (result.ok) {
+          resolve(result.data || {});
+        } else {
+          const error = new Error(result.error || 'Relay request failed');
+          error.status = result.status;
+          reject(error);
+        }
+      }
+    }, 100);
+  });
+};
+
 // Exposed only for unit testing — resets all bridge channels to a clean state.
 // Never call this in production code.
 module.exports._resetBridgeStateForTests = function() {
