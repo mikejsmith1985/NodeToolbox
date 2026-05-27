@@ -1,12 +1,13 @@
 // ModifyChgTab.tsx — Modify existing ServiceNow Changes using a 5-step wizard UI.
 // Step 1: Fetch CHG by key
-// Steps 2-4: Edit change details, planning, and environments  
+// Steps 2-4: Edit change details, planning, and environments
 // Step 5: Review, add CTASKs via templates, and save
 
 import { useState, useCallback } from 'react';
 
 import { snowFetch } from '../../../services/snowApi.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
+import { SnowLookupField } from '../components/SnowLookupField.tsx';
 import type {
   ChgBasicInfo,
   ChgPlanningAssessment,
@@ -15,13 +16,59 @@ import type {
   SnowReference,
 } from '../hooks/useCrgState.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
+import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
+import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 
 import styles from './CreateChgTab.module.css';
 
 const TAB_TITLE = 'Modify Change';
 const TAB_SUBTITLE = 'Fetch an existing ServiceNow CHG, edit all fields with full CTASK template support, save changes.';
 const CHANGE_TABLE_PATH = '/api/now/table/change_request';
-const CHANGE_LOOKUP_FIELDS = [
+const MY_ACTIVE_CHANGE_QUERY = 'assigned_to=javascript:gs.getUserID()^active=true';
+const MY_ACTIVE_CHANGE_FIELDS = 'number,short_description';
+const MY_ACTIVE_CHANGE_LIMIT = 100;
+const MODIFY_CHG_LOG_PREFIX = '[CRG Modify CHG]';
+const EMPTY_SNOW_REFERENCE: SnowReference = { sysId: '', displayName: '' };
+const SNOW_DATE_TIME_INPUT_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::\d{2})?/;
+
+type EnvironmentKey = 'rel' | 'prd' | 'pfix';
+
+interface EnvironmentConfig {
+  isEnabled: boolean;
+  plannedStartDate: string;
+  plannedEndDate: string;
+  configItem: SnowReference;
+  impactedPersonsAware: string;
+}
+
+const PLANNING_ASSESSMENT_ROWS = [
+  { label: 'Impact', fieldKey: 'impact', snowFieldName: 'impact' },
+  { label: 'System Availability Implication', fieldKey: 'systemAvailabilityImplication', snowFieldName: 'u_availability_impact' },
+  { label: 'Has Been Tested', fieldKey: 'hasBeenTested', snowFieldName: 'u_change_tested' },
+  { label: 'Has Been Performed Previously', fieldKey: 'hasBeenPerformedPreviously', snowFieldName: 'u_performed_previously' },
+  { label: 'Success Probability', fieldKey: 'successProbability', snowFieldName: 'u_success_probability' },
+  { label: 'Can Be Backed Out', fieldKey: 'canBeBackedOut', snowFieldName: 'u_can_be_backed_out' },
+] as const;
+const PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY: Record<keyof ChgPlanningAssessment, readonly string[]> = {
+  impact: ['u_impact', 'impact'],
+  systemAvailabilityImplication: ['u_implications_of_system_availability', 'u_availability_impact'],
+  hasBeenTested: ['u_has_this_change_been_tested', 'u_change_tested'],
+  impactedPersonsAware: ['u_are_impacted_persons_aware_prepared_for_test_checkout', 'u_impacted_persons_aware'],
+  hasBeenPerformedPreviously: ['u_has_change_been_performed_previously', 'u_performed_previously'],
+  successProbability: ['u_assessment_of_success_probability', 'u_success_probability'],
+  canBeBackedOut: ['u_can_change_be_backed_out', 'u_can_be_backed_out'],
+};
+const PLANNING_CONTENT_ALIAS_FIELD_NAMES_BY_STATE_KEY: Record<keyof ChgPlanningContent, readonly string[]> = {
+  implementationPlan: ['implementation_plan'],
+  backoutPlan: ['backout_plan'],
+  testPlan: ['test_plan'],
+};
+const ENVIRONMENT_ROW_DEFINITIONS = [
+  { key: 'rel', label: 'REL', stateKey: 'relEnvironment' },
+  { key: 'prd', label: 'PRD', stateKey: 'prdEnvironment' },
+  { key: 'pfix', label: 'PFIX', stateKey: 'pfixEnvironment' },
+] as const;
+const CHANGE_LOOKUP_FIELDS = Array.from(new Set([
   'sys_id',
   'number',
   'short_description',
@@ -32,22 +79,13 @@ const CHANGE_LOOKUP_FIELDS = [
   'type',
   'requested_by',
   'assignment_group',
-  'impact',
-  'u_availability_impact',
-  'u_change_tested',
-  'u_impacted_persons_aware',
-  'u_performed_previously',
-  'u_success_probability',
-  'u_can_be_backed_out',
-  'implementation_plan',
-  'backout_plan',
-  'test_plan',
-].join(',');
-const MY_ACTIVE_CHANGE_QUERY = 'assigned_to=javascript:gs.getUserID()^active=true';
-const MY_ACTIVE_CHANGE_FIELDS = 'number,short_description';
-const MY_ACTIVE_CHANGE_LIMIT = 100;
-const MODIFY_CHG_LOG_PREFIX = '[CRG Modify CHG]';
-const EMPTY_SNOW_REFERENCE: SnowReference = { sysId: '', displayName: '' };
+  'u_environment',
+  'cmdb_ci',
+  'planned_start_date',
+  'planned_end_date',
+  ...Object.values(PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY).flat(),
+  ...Object.values(PLANNING_CONTENT_ALIAS_FIELD_NAMES_BY_STATE_KEY).flat(),
+])).join(',');
 
 const STEP_DEFINITIONS = [
   { step: 1, label: 'Fetch Change' },
@@ -75,6 +113,9 @@ interface EditableChange {
   chgBasicInfo: ChgBasicInfo;
   chgPlanningAssessment: ChgPlanningAssessment;
   chgPlanningContent: ChgPlanningContent;
+  relEnvironment: EnvironmentConfig;
+  prdEnvironment: EnvironmentConfig;
+  pfixEnvironment: EnvironmentConfig;
 }
 
 interface ModifyChgState {
@@ -132,6 +173,16 @@ function createEmptyChgPlanningContent(): ChgPlanningContent {
   };
 }
 
+function createEmptyEnvironmentConfig(): EnvironmentConfig {
+  return {
+    isEnabled: false,
+    plannedStartDate: '',
+    plannedEndDate: '',
+    configItem: { ...EMPTY_SNOW_REFERENCE },
+    impactedPersonsAware: '',
+  };
+}
+
 function extractServiceNowTextValue(fieldValue: ServiceNowFieldValue | undefined): string {
   if (fieldValue === undefined) {
     return '';
@@ -139,6 +190,22 @@ function extractServiceNowTextValue(fieldValue: ServiceNowFieldValue | undefined
 
   if (typeof fieldValue === 'object') {
     return normalizeRichTextToPlainText(fieldValue.display_value ?? fieldValue.value ?? '');
+  }
+
+  return normalizeRichTextToPlainText(String(fieldValue));
+}
+
+function extractServiceNowChoiceValue(fieldValue: ServiceNowFieldValue | undefined): string {
+  if (fieldValue === undefined) {
+    return '';
+  }
+
+  if (typeof fieldValue === 'object') {
+    const storedValue = normalizeRichTextToPlainText(fieldValue.value ?? '');
+    if (storedValue !== '') {
+      return storedValue;
+    }
+    return normalizeRichTextToPlainText(fieldValue.display_value ?? '');
   }
 
   return normalizeRichTextToPlainText(String(fieldValue));
@@ -158,6 +225,160 @@ function extractServiceNowReference(fieldValue: ServiceNowFieldValue | undefined
     sysId: fieldValue.value === undefined ? '' : String(fieldValue.value),
     displayName: normalizeRichTextToPlainText(fieldValue.display_value ?? fieldValue.value ?? ''),
   };
+}
+
+function extractServiceNowTextValueFromAliases(
+  changeRecord: ServiceNowChangeRecord,
+  fieldNames: readonly string[],
+): string {
+  for (const fieldName of fieldNames) {
+    const extractedValue = extractServiceNowTextValue(changeRecord[fieldName]);
+    if (extractedValue !== '') {
+      return extractedValue;
+    }
+  }
+  return '';
+}
+
+function extractServiceNowChoiceValueFromAliases(
+  changeRecord: ServiceNowChangeRecord,
+  fieldNames: readonly string[],
+): string {
+  for (const fieldName of fieldNames) {
+    const extractedValue = extractServiceNowChoiceValue(changeRecord[fieldName]);
+    if (extractedValue !== '') {
+      return extractedValue;
+    }
+  }
+  return '';
+}
+
+function normalizeSnowDateTimeForInput(fieldValue: ServiceNowFieldValue | undefined): string {
+  const snowDateTime = extractServiceNowChoiceValue(fieldValue) || extractServiceNowTextValue(fieldValue);
+  if (!snowDateTime) {
+    return '';
+  }
+
+  const dateTimeMatch = SNOW_DATE_TIME_INPUT_PATTERN.exec(snowDateTime);
+  return dateTimeMatch ? `${dateTimeMatch[1]}T${dateTimeMatch[2]}` : snowDateTime;
+}
+
+function inferEnvironmentKeyFromValue(environmentValue: string): EnvironmentKey | null {
+  const normalizedEnvironmentValue = environmentValue.trim().toLowerCase();
+  if (!normalizedEnvironmentValue) {
+    return null;
+  }
+
+  if (normalizedEnvironmentValue.includes('pfix') || normalizedEnvironmentValue.includes('fix')) {
+    return 'pfix';
+  }
+  if (normalizedEnvironmentValue.includes('prd') || normalizedEnvironmentValue.includes('prod')) {
+    return 'prd';
+  }
+  if (normalizedEnvironmentValue.includes('rel') || normalizedEnvironmentValue.includes('release')) {
+    return 'rel';
+  }
+
+  return null;
+}
+
+function getEnvironmentStateKey(environmentKey: EnvironmentKey): keyof Pick<EditableChange, 'relEnvironment' | 'prdEnvironment' | 'pfixEnvironment'> {
+  return environmentKey === 'rel'
+    ? 'relEnvironment'
+    : environmentKey === 'prd'
+      ? 'prdEnvironment'
+      : 'pfixEnvironment';
+}
+
+function buildLoadedEnvironmentState(
+  environmentValue: string,
+  configItem: SnowReference,
+  impactedPersonsAware: string,
+  plannedStartDate: string,
+  plannedEndDate: string,
+): Pick<EditableChange, 'relEnvironment' | 'prdEnvironment' | 'pfixEnvironment'> {
+  const nextEnvironmentState = {
+    relEnvironment: createEmptyEnvironmentConfig(),
+    prdEnvironment: createEmptyEnvironmentConfig(),
+    pfixEnvironment: createEmptyEnvironmentConfig(),
+  };
+  const matchedEnvironmentKey = inferEnvironmentKeyFromValue(environmentValue);
+
+  if (!matchedEnvironmentKey) {
+    return nextEnvironmentState;
+  }
+
+  nextEnvironmentState[getEnvironmentStateKey(matchedEnvironmentKey)] = {
+    isEnabled: true,
+    plannedStartDate,
+    plannedEndDate,
+    configItem,
+    impactedPersonsAware,
+  };
+  return nextEnvironmentState;
+}
+
+function hasSelectableChoiceOptions(options: { value: string; label: string }[]): boolean {
+  return options.some((option) => option.value !== '');
+}
+
+function buildRenderedChoiceOptions(
+  options: { value: string; label: string }[],
+  currentValue: string,
+): { value: string; label: string }[] {
+  const hasCurrentValue = currentValue !== '' && options.every((option) => option.value !== currentValue);
+  return hasCurrentValue
+    ? [{ value: currentValue, label: currentValue }, ...options.filter((option) => option.value !== '')]
+    : options;
+}
+
+function resolveStoredChoiceValue(currentValue: string, options: { value: string; label: string }[]): string {
+  if (!currentValue) {
+    return currentValue;
+  }
+
+  const valueMatch = options.find((option) => option.value === currentValue);
+  if (valueMatch) {
+    return currentValue;
+  }
+
+  const labelMatch = options.find((option) => option.label === currentValue);
+  return labelMatch?.value ?? currentValue;
+}
+
+function shouldRenderManualChoiceInput({
+  options,
+  isLoadingChoices,
+}: {
+  options: { value: string; label: string }[];
+  isLoadingChoices: boolean;
+}): boolean {
+  if (isLoadingChoices) {
+    return false;
+  }
+
+  return !hasSelectableChoiceOptions(options);
+}
+
+function resolveSuggestedEnvironmentValue(
+  options: { value: string; label: string }[],
+  selectedEnvironmentKey: EnvironmentKey,
+): string {
+  const matchingChoice = options.find((option) => {
+    const normalizedChoiceText = `${option.value} ${option.label}`.toLowerCase();
+    const isFixOption = normalizedChoiceText.includes('fix') || normalizedChoiceText.includes('pfix');
+    const isProductionOption = normalizedChoiceText.includes('prd') || normalizedChoiceText.includes('prod');
+
+    if (selectedEnvironmentKey === 'pfix') {
+      return normalizedChoiceText.includes('pfix') || (isProductionOption && isFixOption);
+    }
+    if (selectedEnvironmentKey === 'prd') {
+      return isProductionOption && !isFixOption;
+    }
+    return normalizedChoiceText.includes('rel') || normalizedChoiceText.includes('release');
+  });
+
+  return matchingChoice?.value ?? '';
 }
 
 function isRecord(candidateValue: unknown): candidateValue is Record<string, unknown> {
@@ -185,6 +406,15 @@ function buildMyActiveChangesPath(): string {
 }
 
 function mapServiceNowChangeRecord(changeRecord: ServiceNowChangeRecord): EditableChange {
+  const loadedEnvironmentValue = extractServiceNowChoiceValue(changeRecord.u_environment);
+  const loadedConfigItem = extractServiceNowReference(changeRecord.cmdb_ci);
+  const loadedImpactedPersonsAware = extractServiceNowChoiceValueFromAliases(
+    changeRecord,
+    PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY.impactedPersonsAware,
+  );
+  const loadedPlannedStartDate = normalizeSnowDateTimeForInput(changeRecord.planned_start_date);
+  const loadedPlannedEndDate = normalizeSnowDateTimeForInput(changeRecord.planned_end_date);
+
   return {
     sysId: extractServiceNowTextValue(changeRecord.sys_id),
     number: extractServiceNowTextValue(changeRecord.number),
@@ -194,27 +424,63 @@ function mapServiceNowChangeRecord(changeRecord: ServiceNowChangeRecord): Editab
     riskImpactAnalysis: extractServiceNowTextValue(changeRecord.risk_impact_analysis),
     chgBasicInfo: {
       ...createEmptyChgBasicInfo(),
-      category: extractServiceNowTextValue(changeRecord.category),
-      changeType: extractServiceNowTextValue(changeRecord.type),
+      category: extractServiceNowChoiceValue(changeRecord.category),
+      changeType: extractServiceNowChoiceValue(changeRecord.type),
+      environment: loadedEnvironmentValue,
       requestedBy: extractServiceNowReference(changeRecord.requested_by),
+      configItem: loadedConfigItem,
       assignmentGroup: extractServiceNowReference(changeRecord.assignment_group),
     },
     chgPlanningAssessment: {
       ...createEmptyChgPlanningAssessment(),
-      impact: extractServiceNowTextValue(changeRecord.impact),
-      systemAvailabilityImplication: extractServiceNowTextValue(changeRecord.u_availability_impact),
-      hasBeenTested: extractServiceNowTextValue(changeRecord.u_change_tested),
-      impactedPersonsAware: extractServiceNowTextValue(changeRecord.u_impacted_persons_aware),
-      hasBeenPerformedPreviously: extractServiceNowTextValue(changeRecord.u_performed_previously),
-      successProbability: extractServiceNowTextValue(changeRecord.u_success_probability),
-      canBeBackedOut: extractServiceNowTextValue(changeRecord.u_can_be_backed_out),
+      impact: extractServiceNowChoiceValueFromAliases(
+        changeRecord,
+        PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY.impact,
+      ),
+      systemAvailabilityImplication: extractServiceNowChoiceValueFromAliases(
+        changeRecord,
+        PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY.systemAvailabilityImplication,
+      ),
+      hasBeenTested: extractServiceNowChoiceValueFromAliases(
+        changeRecord,
+        PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY.hasBeenTested,
+      ),
+      impactedPersonsAware: loadedImpactedPersonsAware,
+      hasBeenPerformedPreviously: extractServiceNowChoiceValueFromAliases(
+        changeRecord,
+        PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY.hasBeenPerformedPreviously,
+      ),
+      successProbability: extractServiceNowChoiceValueFromAliases(
+        changeRecord,
+        PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY.successProbability,
+      ),
+      canBeBackedOut: extractServiceNowChoiceValueFromAliases(
+        changeRecord,
+        PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY.canBeBackedOut,
+      ),
     },
     chgPlanningContent: {
       ...createEmptyChgPlanningContent(),
-      implementationPlan: extractServiceNowTextValue(changeRecord.implementation_plan),
-      backoutPlan: extractServiceNowTextValue(changeRecord.backout_plan),
-      testPlan: extractServiceNowTextValue(changeRecord.test_plan),
+      implementationPlan: extractServiceNowTextValueFromAliases(
+        changeRecord,
+        PLANNING_CONTENT_ALIAS_FIELD_NAMES_BY_STATE_KEY.implementationPlan,
+      ),
+      backoutPlan: extractServiceNowTextValueFromAliases(
+        changeRecord,
+        PLANNING_CONTENT_ALIAS_FIELD_NAMES_BY_STATE_KEY.backoutPlan,
+      ),
+      testPlan: extractServiceNowTextValueFromAliases(
+        changeRecord,
+        PLANNING_CONTENT_ALIAS_FIELD_NAMES_BY_STATE_KEY.testPlan,
+      ),
     },
+    ...buildLoadedEnvironmentState(
+      loadedEnvironmentValue,
+      loadedConfigItem,
+      loadedImpactedPersonsAware,
+      loadedPlannedStartDate,
+      loadedPlannedEndDate,
+    ),
   };
 }
 
@@ -539,66 +805,72 @@ function ChangeDetailsStep({ state, onFieldChange }: {
 /**
  * Step 3: Planning Assessment — Edit planning fields
  */
-function PlanningStep({ state, onFieldChange }: {
+function PlanningStep({ state, onFieldChange, choiceOptions, isLoadingChoices }: {
   state: ModifyChgState;
   onFieldChange: (field: string, value: string) => void;
+  choiceOptions: SnowChoiceOptionMap;
+  isLoadingChoices: boolean;
 }) {
   if (!state.change) return null;
 
   const assessment = state.change.chgPlanningAssessment;
+  const shouldUseManualPlanningInputs = PLANNING_ASSESSMENT_ROWS.some((row) => (
+    shouldRenderManualChoiceInput({
+      options: choiceOptions[row.snowFieldName] ?? [],
+      isLoadingChoices,
+    })
+  ));
 
   return (
     <section className={styles.section}>
       <StepHeading currentStep={3} />
       <div className={styles.assessmentGrid}>
-        <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>Impact</span>
-          <input
-            className={styles.input}
-            onChange={(event) => onFieldChange('chgPlanningAssessment.impact', event.target.value)}
-            value={assessment.impact}
-          />
-        </label>
-        <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>System Availability Implication</span>
-          <input
-            className={styles.input}
-            onChange={(event) => onFieldChange('chgPlanningAssessment.systemAvailabilityImplication', event.target.value)}
-            value={assessment.systemAvailabilityImplication}
-          />
-        </label>
-        <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>Has Been Tested</span>
-          <input
-            className={styles.input}
-            onChange={(event) => onFieldChange('chgPlanningAssessment.hasBeenTested', event.target.value)}
-            value={assessment.hasBeenTested}
-          />
-        </label>
-        <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>Has Been Performed Previously</span>
-          <input
-            className={styles.input}
-            onChange={(event) => onFieldChange('chgPlanningAssessment.hasBeenPerformedPreviously', event.target.value)}
-            value={assessment.hasBeenPerformedPreviously}
-          />
-        </label>
-        <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>Success Probability</span>
-          <input
-            className={styles.input}
-            onChange={(event) => onFieldChange('chgPlanningAssessment.successProbability', event.target.value)}
-            value={assessment.successProbability}
-          />
-        </label>
-        <label className={styles.fieldGroup}>
-          <span className={styles.fieldLabel}>Can Be Backed Out</span>
-          <input
-            className={styles.input}
-            onChange={(event) => onFieldChange('chgPlanningAssessment.canBeBackedOut', event.target.value)}
-            value={assessment.canBeBackedOut}
-          />
-        </label>
+        {shouldUseManualPlanningInputs ? (
+          <p className={styles.panelHint}>
+            Live planning choices are unavailable. Type the internal ServiceNow values for this change.
+          </p>
+        ) : null}
+        {PLANNING_ASSESSMENT_ROWS.map((planningAssessmentRow) => {
+          const rowOptions = choiceOptions[planningAssessmentRow.snowFieldName] ?? [];
+          const currentAssessmentValue = assessment[planningAssessmentRow.fieldKey];
+          const renderedRowOptions = buildRenderedChoiceOptions(rowOptions, currentAssessmentValue);
+          const shouldUseManualInput = shouldRenderManualChoiceInput({
+            options: rowOptions,
+            isLoadingChoices,
+          });
+
+          return (
+            <label className={styles.fieldGroup} key={planningAssessmentRow.fieldKey}>
+              <span className={styles.fieldLabel}>{planningAssessmentRow.label}</span>
+              {shouldUseManualInput ? (
+                <input
+                  aria-label={planningAssessmentRow.label}
+                  className={styles.input}
+                  onChange={(event) => onFieldChange(`chgPlanningAssessment.${planningAssessmentRow.fieldKey}`, event.target.value)}
+                  value={currentAssessmentValue}
+                />
+              ) : (
+                <select
+                  aria-label={planningAssessmentRow.label}
+                  className={styles.input}
+                  disabled={isLoadingChoices}
+                  onChange={(event) => onFieldChange(`chgPlanningAssessment.${planningAssessmentRow.fieldKey}`, event.target.value)}
+                  value={resolveStoredChoiceValue(currentAssessmentValue, renderedRowOptions)}
+                >
+                  {isLoadingChoices ? (
+                    <option disabled value="">Loading options…</option>
+                  ) : (
+                    renderedRowOptions.map((option) => (
+                      <option key={`${planningAssessmentRow.fieldKey}-${option.value}-${option.label}`} value={option.value}>
+                        {option.label || 'Select…'}
+                      </option>
+                    ))
+                  )}
+                </select>
+              )}
+            </label>
+          );
+        })}
       </div>
       <div className={styles.editorGrid}>
         <label className={styles.fieldGroup}>
@@ -631,19 +903,154 @@ function PlanningStep({ state, onFieldChange }: {
 }
 
 /**
- * Step 4: Environments — Edit environment-specific fields (placeholder)
+ * Step 4: Environments — Edit environment-specific fields for the selected CHG.
  */
-function EnvironmentsStep({ state }: {
+function EnvironmentsStep({ state, onFieldChange, onEnvironmentToggle, onEnvironmentConfigItemChange, choiceOptions, isLoadingChoices }: {
   state: ModifyChgState;
+  onFieldChange: (field: string, value: string) => void;
+  onEnvironmentToggle: (environmentKey: EnvironmentKey, isEnabled: boolean) => void;
+  onEnvironmentConfigItemChange: (environmentKey: EnvironmentKey, configItem: SnowReference) => void;
+  choiceOptions: SnowChoiceOptionMap;
+  isLoadingChoices: boolean;
 }) {
   if (!state.change) return null;
+
+  const loadedChange = state.change;
+  const environmentOptions = choiceOptions.u_environment ?? [];
+  const impactedPersonsAwareOptions = choiceOptions.u_impacted_persons_aware ?? [];
+  const shouldUseManualEnvironmentInput = shouldRenderManualChoiceInput({
+    options: environmentOptions,
+    isLoadingChoices,
+  });
+  const shouldUseManualImpactedPersonsAwareInput = shouldRenderManualChoiceInput({
+    options: impactedPersonsAwareOptions,
+    isLoadingChoices,
+  });
 
   return (
     <section className={styles.section}>
       <StepHeading currentStep={4} />
       <p className={styles.panelHint}>Edit environment-specific details for REL, PRD, and PFIX.</p>
-      {/* Placeholder for environment-specific fields */}
-      <p>Environment configuration to be displayed here.</p>
+      <div className={styles.environmentMappingPanel}>
+        <label className={styles.fieldGroup}>
+          <span className={styles.fieldLabel}>ServiceNow Environment</span>
+          {shouldUseManualEnvironmentInput ? (
+            <input
+              aria-label="ServiceNow Environment"
+              className={styles.input}
+              onChange={(event) => onFieldChange('chgBasicInfo.environment', event.target.value)}
+              value={loadedChange.chgBasicInfo.environment}
+            />
+          ) : (
+            <select
+              aria-label="ServiceNow Environment"
+              className={styles.input}
+              disabled={isLoadingChoices}
+              onChange={(event) => onFieldChange('chgBasicInfo.environment', event.target.value)}
+              value={resolveStoredChoiceValue(
+                loadedChange.chgBasicInfo.environment,
+                buildRenderedChoiceOptions(environmentOptions, loadedChange.chgBasicInfo.environment),
+              )}
+            >
+              {isLoadingChoices ? (
+                <option disabled value="">Loading options…</option>
+              ) : (
+                buildRenderedChoiceOptions(environmentOptions, loadedChange.chgBasicInfo.environment).map((option) => (
+                  <option key={`environment-${option.value}-${option.label}`} value={option.value}>{option.label || 'Select…'}</option>
+                ))
+              )}
+            </select>
+          )}
+        </label>
+      </div>
+      <div className={styles.environmentCardGrid}>
+        {ENVIRONMENT_ROW_DEFINITIONS.map((environmentRow) => {
+          const environmentState = loadedChange[environmentRow.stateKey];
+
+          return (
+            <section className={styles.environmentCard} key={environmentRow.key}>
+              <div className={styles.environmentCardHeader}>
+                <h4 className={styles.panelSectionTitle}>{environmentRow.label}</h4>
+                <label className={styles.inlineCheckbox}>
+                  <input
+                    aria-label={`${environmentRow.label} enabled`}
+                    checked={environmentState.isEnabled}
+                    disabled={isLoadingChoices}
+                    onChange={(event) => onEnvironmentToggle(environmentRow.key, event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>Enabled</span>
+                </label>
+              </div>
+
+              <SnowLookupField
+                label={`${environmentRow.label} Config Item`}
+                tableName="cmdb_ci"
+                value={environmentState.configItem}
+                onChange={(configItem) => onEnvironmentConfigItemChange(environmentRow.key, configItem)}
+                isDisabled={!environmentState.isEnabled}
+              />
+
+              <label className={styles.fieldGroup}>
+                <span className={styles.fieldLabel}>{environmentRow.label} Impacted Persons Aware</span>
+                {shouldUseManualImpactedPersonsAwareInput ? (
+                  <input
+                    aria-label={`${environmentRow.label} Impacted Persons Aware`}
+                    className={styles.input}
+                    disabled={!environmentState.isEnabled}
+                    onChange={(event) => onFieldChange(`${environmentRow.stateKey}.impactedPersonsAware`, event.target.value)}
+                    value={environmentState.impactedPersonsAware}
+                  />
+                ) : (
+                  <select
+                    aria-label={`${environmentRow.label} Impacted Persons Aware`}
+                    className={styles.input}
+                    disabled={!environmentState.isEnabled || isLoadingChoices}
+                    onChange={(event) => onFieldChange(`${environmentRow.stateKey}.impactedPersonsAware`, event.target.value)}
+                    value={resolveStoredChoiceValue(
+                      environmentState.impactedPersonsAware,
+                      buildRenderedChoiceOptions(impactedPersonsAwareOptions, environmentState.impactedPersonsAware),
+                    )}
+                  >
+                    {isLoadingChoices ? (
+                      <option disabled value="">Loading options…</option>
+                    ) : (
+                      buildRenderedChoiceOptions(impactedPersonsAwareOptions, environmentState.impactedPersonsAware).map((option) => (
+                        <option key={`${environmentRow.key}-${option.value}-${option.label}`} value={option.value}>{option.label || 'Select…'}</option>
+                      ))
+                    )}
+                  </select>
+                )}
+              </label>
+
+              <div className={styles.fieldGrid}>
+                <label className={styles.fieldGroup}>
+                  <span className={styles.fieldLabel}>Planned Start</span>
+                  <input
+                    aria-label={`${environmentRow.label} Planned Start`}
+                    className={styles.input}
+                    disabled={!environmentState.isEnabled}
+                    onChange={(event) => onFieldChange(`${environmentRow.stateKey}.plannedStartDate`, event.target.value)}
+                    type="datetime-local"
+                    value={environmentState.plannedStartDate}
+                  />
+                </label>
+                <label className={styles.fieldGroup}>
+                  <span className={styles.fieldLabel}>Planned End</span>
+                  <input
+                    aria-label={`${environmentRow.label} Planned End`}
+                    className={styles.input}
+                    disabled={!environmentState.isEnabled}
+                    onChange={(event) => onFieldChange(`${environmentRow.stateKey}.plannedEndDate`, event.target.value)}
+                    type="datetime-local"
+                    value={environmentState.plannedEndDate}
+                  />
+                </label>
+              </div>
+            </section>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -824,6 +1231,7 @@ function ReviewSaveStep({ state, ctaskTemplates, onAddCtask, onRemoveCtask, onSa
  */
 export default function ModifyChgTab(): React.ReactElement {
   const ctaskTemplates = useCtaskTemplates();
+  const { choiceOptions, isLoadingChoices } = useSnowChoiceOptions();
 
   const [modifyState, setModifyState] = useState<ModifyChgState>({
     currentStep: 1,
@@ -865,14 +1273,14 @@ export default function ModifyChgTab(): React.ReactElement {
     }
   }, [modifyState.changeKey]);
 
-  const handleFieldChange = useCallback((field: string, value: string) => {
+  const handleFieldChange = useCallback((field: string, value: string | SnowReference) => {
     setModifyState((prev) => {
       if (!prev.change) return prev;
 
       const updateNestedField = <T extends object>(
         currentValue: T,
         path: string,
-        nextValue: string,
+        nextValue: string | SnowReference,
       ): T => {
         const currentRecord = currentValue as Record<string, unknown>;
         const keys = path.split('.');
@@ -893,6 +1301,41 @@ export default function ModifyChgTab(): React.ReactElement {
       };
     });
   }, []);
+
+  const handleEnvironmentToggle = useCallback((environmentKey: EnvironmentKey, isEnabled: boolean) => {
+    setModifyState((previousState) => {
+      if (!previousState.change) {
+        return previousState;
+      }
+
+      const nextEnvironmentState = {
+        relEnvironment: { ...previousState.change.relEnvironment, isEnabled: environmentKey === 'rel' ? isEnabled : false },
+        prdEnvironment: { ...previousState.change.prdEnvironment, isEnabled: environmentKey === 'prd' ? isEnabled : false },
+        pfixEnvironment: { ...previousState.change.pfixEnvironment, isEnabled: environmentKey === 'pfix' ? isEnabled : false },
+      };
+      const nextEnvironmentValue = isEnabled
+        ? resolveSuggestedEnvironmentValue(choiceOptions.u_environment ?? [], environmentKey)
+        : inferEnvironmentKeyFromValue(previousState.change.chgBasicInfo.environment) === environmentKey
+          ? ''
+          : previousState.change.chgBasicInfo.environment;
+
+      return {
+        ...previousState,
+        change: {
+          ...previousState.change,
+          ...nextEnvironmentState,
+          chgBasicInfo: {
+            ...previousState.change.chgBasicInfo,
+            environment: nextEnvironmentValue,
+          },
+        },
+      };
+    });
+  }, [choiceOptions]);
+
+  const handleEnvironmentConfigItemChange = useCallback((environmentKey: EnvironmentKey, configItem: SnowReference) => {
+    handleFieldChange(`${getEnvironmentStateKey(environmentKey)}.configItem`, configItem);
+  }, [handleFieldChange]);
 
   const handleAddCtask = useCallback((template: CtaskTemplate) => {
     setModifyState((prev) => ({
@@ -1030,7 +1473,12 @@ export default function ModifyChgTab(): React.ReactElement {
 
       {modifyState.currentStep === 3 && (
         <>
-          <PlanningStep state={modifyState} onFieldChange={handleFieldChange} />
+          <PlanningStep
+            state={modifyState}
+            onFieldChange={handleFieldChange}
+            choiceOptions={choiceOptions}
+            isLoadingChoices={isLoadingChoices}
+          />
           <div className={styles.buttonRow}>
             <button className={styles.linkButton} onClick={() => handleStepSelect(2)} type="button">
               Back
@@ -1044,7 +1492,14 @@ export default function ModifyChgTab(): React.ReactElement {
 
       {modifyState.currentStep === 4 && (
         <>
-          <EnvironmentsStep state={modifyState} />
+          <EnvironmentsStep
+            state={modifyState}
+            onFieldChange={handleFieldChange}
+            onEnvironmentToggle={handleEnvironmentToggle}
+            onEnvironmentConfigItemChange={handleEnvironmentConfigItemChange}
+            choiceOptions={choiceOptions}
+            isLoadingChoices={isLoadingChoices}
+          />
           <div className={styles.buttonRow}>
             <button className={styles.linkButton} onClick={() => handleStepSelect(3)} type="button">
               Back

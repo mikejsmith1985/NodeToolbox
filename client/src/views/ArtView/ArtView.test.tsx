@@ -117,6 +117,16 @@ function renderArtView() {
   );
 }
 
+function seedSharedArtWorkspaceSettings(sharedArtSettings: {
+  sharedArtName?: string;
+  sharedArtKey?: string;
+  sharedArtDatabaseId?: string;
+  sharedArtSpaceId?: string;
+  sharedArtParentId?: string;
+}) {
+  localStorage.setItem('tbxARTSettings', JSON.stringify(sharedArtSettings));
+}
+
 function createLocalYearMonth(): string {
   const currentDate = new Date();
   return `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
@@ -1113,28 +1123,26 @@ describe('ArtView', () => {
 
     expect(screen.getByDisplayValue('Sales to Enrollment')).toBeInTheDocument();
     expect(screen.getByDisplayValue('S2E')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('684163133')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Sales To Enrollment ART (684163133)')).toBeInTheDocument();
     expect(screen.getByDisplayValue('256344064')).toBeInTheDocument();
     expect(screen.getByDisplayValue('685473797')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /shared art database id/i })).toHaveAttribute('readonly');
   });
 
   it('uses saved Shared ART workspace settings instead of first-install defaults', () => {
     mockState.activeTab = 'settings';
-    localStorage.setItem(
-      'tbxARTSettings',
-      JSON.stringify({
-        sharedArtName: 'Platform ART',
-        sharedArtKey: 'PLAT',
-        sharedArtDatabaseId: 'db-999',
-        sharedArtSpaceId: 'space-888',
-        sharedArtParentId: 'parent-777',
-      }),
-    );
+    seedSharedArtWorkspaceSettings({
+      sharedArtName: 'Platform ART',
+      sharedArtKey: 'PLAT',
+      sharedArtDatabaseId: 'db-999',
+      sharedArtSpaceId: 'space-888',
+      sharedArtParentId: 'parent-777',
+    });
     renderArtView();
 
     expect(screen.getByDisplayValue('Platform ART')).toBeInTheDocument();
     expect(screen.getByDisplayValue('PLAT')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('db-999')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Platform ART (db-999)')).toBeInTheDocument();
     expect(screen.getByDisplayValue('space-888')).toBeInTheDocument();
     expect(screen.getByDisplayValue('parent-777')).toBeInTheDocument();
     expect(screen.queryByDisplayValue('Sales to Enrollment')).not.toBeInTheDocument();
@@ -2268,11 +2276,13 @@ describe('ArtView', () => {
 
   it('loads shared ART settings and replaces the local ART roster', async () => {
     mockState.activeTab = 'settings';
+    seedSharedArtWorkspaceSettings({
+      sharedArtName: 'Systems Team',
+      sharedArtKey: 'S2E',
+      sharedArtDatabaseId: 'db-123',
+    });
     renderArtView();
 
-    fireEvent.change(screen.getByRole('textbox', { name: /shared art database id/i }), {
-      target: { value: 'db-123' },
-    });
     fireEvent.click(screen.getByRole('button', { name: /load shared settings from workspace/i }));
 
     await waitFor(() => {
@@ -2299,11 +2309,13 @@ describe('ArtView', () => {
 
   it('stores the loaded shared ART snapshot for future merge-aware push', async () => {
     mockState.activeTab = 'settings';
+    seedSharedArtWorkspaceSettings({
+      sharedArtName: 'Systems Team',
+      sharedArtKey: 'S2E',
+      sharedArtDatabaseId: 'db-123',
+    });
     renderArtView();
 
-    fireEvent.change(screen.getByRole('textbox', { name: /shared art database id/i }), {
-      target: { value: 'db-123' },
-    });
     fireEvent.click(screen.getByRole('button', { name: /load shared settings from workspace/i }));
 
     await waitFor(() => {
@@ -2385,10 +2397,12 @@ describe('ArtView', () => {
       },
     });
 
-    renderArtView();
-    fireEvent.change(screen.getByRole('textbox', { name: /shared art database id/i }), {
-      target: { value: 'db-123' },
+    seedSharedArtWorkspaceSettings({
+      sharedArtName: 'Systems Team',
+      sharedArtKey: 'S2E',
+      sharedArtDatabaseId: 'db-123',
     });
+    renderArtView();
     fireEvent.change(screen.getByRole('textbox', { name: /shared art name/i }), {
       target: { value: 'Systems Team' },
     });
@@ -2477,10 +2491,12 @@ describe('ArtView', () => {
       },
     });
 
-    renderArtView();
-    fireEvent.change(screen.getByRole('textbox', { name: /shared art database id/i }), {
-      target: { value: 'db-123' },
+    seedSharedArtWorkspaceSettings({
+      sharedArtName: 'Systems Team',
+      sharedArtKey: 'S2E',
+      sharedArtDatabaseId: 'db-123',
     });
+    renderArtView();
     fireEvent.change(screen.getByRole('textbox', { name: /shared art name/i }), {
       target: { value: 'Systems Team' },
     });
