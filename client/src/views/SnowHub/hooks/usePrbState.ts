@@ -73,6 +73,11 @@ const PRB_FETCH_FAILURE_MESSAGE = 'Failed to fetch PRB details';
 const ISSUE_CREATE_FAILURE_MESSAGE = 'Failed to create Jira issues';
 const PRB_NOT_FOUND_PREFIX = 'No PRB found with number:';
 const INCIDENT_FETCH_WARNING_PREFIX = 'PRB loaded, but the related incident number could not be read';
+const HIGHEST_PRIORITY_NAME = 'Highest';
+const HIGH_PRIORITY_NAME = 'High';
+const MEDIUM_PRIORITY_NAME = 'Medium';
+const LOW_PRIORITY_NAME = 'Low';
+const LOWEST_PRIORITY_NAME = 'Lowest';
 
 function createInitialPrbState(): PrbState {
   return {
@@ -131,8 +136,33 @@ function buildIssuePayload(
       summary,
       issuetype: { name: issueTypeName },
       description: `${problemRecord.number}\n\n${problemRecord.description}`,
+      priority: { name: mapServiceNowSeverityToJiraPriorityName(problemRecord.severity) },
     },
   };
+}
+
+/**
+ * Converts the ServiceNow PRB severity into a Jira priority so generated issues
+ * carry the same urgency signal teams already use to triage the underlying problem.
+ */
+function mapServiceNowSeverityToJiraPriorityName(serviceNowSeverity: string): string {
+  const normalizedSeverity = serviceNowSeverity.trim().toLowerCase();
+  if (normalizedSeverity.startsWith('1')) {
+    return HIGHEST_PRIORITY_NAME;
+  }
+  if (normalizedSeverity.startsWith('2')) {
+    return HIGH_PRIORITY_NAME;
+  }
+  if (normalizedSeverity.startsWith('3')) {
+    return MEDIUM_PRIORITY_NAME;
+  }
+  if (normalizedSeverity.startsWith('4')) {
+    return LOW_PRIORITY_NAME;
+  }
+  if (normalizedSeverity.startsWith('5')) {
+    return LOWEST_PRIORITY_NAME;
+  }
+  return MEDIUM_PRIORITY_NAME;
 }
 
 function buildProblemLookupPath(prbNumber: string): string {

@@ -145,6 +145,41 @@ describe('featureReview', () => {
     expect(featureReviewItems[0].hygieneFlags.some((hygieneFlag) => hygieneFlag.checkId === 'no-assignee')).toBe(false);
   });
 
+  it('does not flag missing AC when the loaded feature issue has descriptive acceptance criteria text', async () => {
+    const fieldConfig = {
+      acceptanceCriteriaFieldIds: ['customfield_10200'],
+      applicationFieldIds: [],
+      featureLinkFieldIds: ['customfield_10108'],
+      initiativeTypeFieldIds: [],
+      parentLinkFieldIds: ['parent'],
+      productOwnerFieldIds: [],
+      programIncrementFieldIds: ['customfield_10301'],
+      targetEndFieldIds: ['customfield_10102'],
+      targetStartFieldIds: ['customfield_10101'],
+    };
+    const featureIssue = createFeatureIssueWithAssignee();
+    (featureIssue.fields as Record<string, unknown>).customfield_10200 =
+      'Demonstrate the ability to correctly determine whether the member identifier exists and distinguish a new enrollment from an update.';
+    mockFetchScopedTeamFeatures.mockResolvedValue([
+      {
+        feature: createFeatureNode(),
+        featureIssue,
+      },
+    ]);
+
+    const featureReviewItems = await fetchFeatureReviewItems({
+      id: 'team-1',
+      name: 'Alpha Team',
+      boardId: '42',
+      sprintIssues: [],
+      isLoading: false,
+      loadError: null,
+    } as ArtTeam, 'PI 26.3', fieldConfig);
+
+    expect(featureReviewItems).toHaveLength(1);
+    expect(featureReviewItems[0].hygieneFlags.some((hygieneFlag) => hygieneFlag.checkId === 'no-ac')).toBe(false);
+  });
+
   it('requests custom enterprise-rule fields and applies the custom feature flag', async () => {
     window.localStorage.setItem('tbxEnterpriseStandards', JSON.stringify([
       {
