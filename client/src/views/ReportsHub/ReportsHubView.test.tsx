@@ -238,6 +238,40 @@ describe('ReportsHubView', () => {
     expect(screen.queryByText('TBX-211')).not.toBeInTheDocument();
   });
 
+  it('treats equivalent PI labels as the same filter when the selected PI includes a date range', () => {
+    mockState.activeTab = 'features';
+    mockState.piFilter = 'PI 26.3 (05/21/26 - 07/29/26)';
+    mockState.features = [
+      {
+        key: 'TBX-220',
+        summary: 'Short PI label feature',
+        statusName: 'In Progress',
+        statusCategory: 'indeterminate',
+        teamName: 'Team A',
+        fixVersions: [],
+        assigneeName: 'Alice',
+        piName: 'PI 26.3',
+        priority: 'High',
+      },
+      {
+        key: 'TBX-221',
+        summary: 'Different PI feature',
+        statusName: 'In Progress',
+        statusCategory: 'indeterminate',
+        teamName: 'Team A',
+        fixVersions: [],
+        assigneeName: 'Bob',
+        piName: 'PI 26.2',
+        priority: 'High',
+      },
+    ];
+
+    render(<ReportsHubView />);
+
+    expect(screen.getByText('TBX-220')).toBeInTheDocument();
+    expect(screen.queryByText('TBX-221')).not.toBeInTheDocument();
+  });
+
   it('shows the defect tracker table when defects tab is active', () => {
     mockState.activeTab = 'defects';
     mockState.defects = [

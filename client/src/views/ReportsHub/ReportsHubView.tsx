@@ -44,6 +44,7 @@ const TAB_OPTIONS: { key: ReportsHubTab; label: string }[] = [
 
 const ALL_PIS_LABEL = 'All PIs'
 const ALL_TEAMS_LABEL = 'All Teams'
+const PI_FILTER_KEY_PATTERN = /\bPI\s+\d+(?:\.\d+)?\b/i
 
 const CRITICAL_RISK_PRIORITIES = new Set(['Highest', 'High', 'Critical', 'Blocker'])
 
@@ -790,9 +791,37 @@ function matchesSharedIssueFilters(
   piFilter: string,
   teamFilter: string,
 ): boolean {
-  const matchesPi = piFilter === '' || issue.piName === piFilter
+  const normalizedPiFilter = createPiFilterKey(piFilter)
+  const matchesPi =
+    normalizedPiFilter === null || createPiFilterKey(issue.piName) === normalizedPiFilter
   const matchesTeam = teamFilter === '' || issue.teamName === teamFilter
   return matchesPi && matchesTeam
+}
+
+function createPiFilterKey(piName: string | null): string | null {
+  if (typeof piName !== 'string') {
+    return null
+  }
+
+  const trimmedPiName = piName.trim()
+  if (trimmedPiName === '') {
+    return null
+  }
+
+  const matchedPiKey = trimmedPiName.match(PI_FILTER_KEY_PATTERN)?.[0]
+  return (matchedPiKey ?? trimmedPiName).replace(/\s+/g, ' ').trim().toUpperCase()
+}
+
+function resolvePreferredPiOptionLabel(currentLabel: string, candidateLabel: string): string {
+  if (candidateLabel.length > currentLabel.length) {
+    return candidateLabel
+  }
+
+  if (candidateLabel.length < currentLabel.length) {
+    return currentLabel
+  }
+
+  return candidateLabel.localeCompare(currentLabel) < 0 ? candidateLabel : currentLabel
 }
 
 function filterFeatureIssuesByParameters(
@@ -819,14 +848,20 @@ function extractPiFilterOptions(
   sprintIssues: SprintIssue[],
   throughputIssues: SprintIssue[],
 ): string[] {
-  const piNameSet = new Set<string>()
+  const piLabelByKey = new Map<string, string>()
   const allIssuesWithPi = [...features, ...defects, ...risks, ...storyIssues, ...sprintIssues, ...throughputIssues]
   for (const issue of allIssuesWithPi) {
-    if (issue.piName !== null) {
-      piNameSet.add(issue.piName)
-    }
+    const trimmedPiName = issue.piName?.trim()
+    const piFilterKey = createPiFilterKey(trimmedPiName ?? null)
+    if (!trimmedPiName || piFilterKey === null) continue
+
+    const currentPiLabel = piLabelByKey.get(piFilterKey)
+    piLabelByKey.set(
+      piFilterKey,
+      currentPiLabel ? resolvePreferredPiOptionLabel(currentPiLabel, trimmedPiName) : trimmedPiName,
+    )
   }
-  return Array.from(piNameSet).sort()
+  return Array.from(piLabelByKey.values()).sort()
 }
 
 function extractTeamFilterOptions(

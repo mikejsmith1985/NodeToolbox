@@ -15,13 +15,14 @@ const SEARCH_PAGE_SIZE = 100
 const FEATURE_ISSUE_TYPE_JQL = '("Epic", "Feature")'
 const DEFECT_ISSUE_TYPE = 'Defect'
 const PI_CUSTOM_FIELD = 'customfield_10301'
+const PI_LIKE_FIX_VERSION_PATTERN = /^PI\s+\d+(?:\.\d+)?(?:\s*\(.+\))?$/i
 const REPORT_FIELDS =
   'summary,status,fixVersions,assignee,customfield_10301,priority,issuetype,created,updated,duedate,labels,issuelinks,resolutiondate'
 
 const LOAD_FEATURES_FAILURE = 'Failed to load features'
 const LOAD_DEFECTS_FAILURE = 'Failed to load defects'
 const LOAD_RISKS_FAILURE = 'Failed to load risks'
-const SPRINT_ISSUE_FIELDS = 'summary,status,assignee,priority,labels,updated,created,resolutiondate,issuetype,customfield_10020,customfield_10301'
+const SPRINT_ISSUE_FIELDS = 'summary,status,assignee,priority,labels,updated,created,resolutiondate,issuetype,fixVersions,customfield_10020,customfield_10301'
 const SPRINT_MAX_RESULTS = 200
 const THROUGHPUT_HISTORY_MONTH_LOOKBACK = 5
 const LOAD_SPRINT_DATA_FAILURE = 'Failed to load sprint data'
@@ -188,7 +189,7 @@ interface JiraIssueListResponse {
       labels?: string[]
       issuelinks?: unknown[]
       resolutiondate?: string | null
-      [PI_CUSTOM_FIELD]?: string | null
+      [PI_CUSTOM_FIELD]?: JiraPiFieldValue
     }
   }>
   total?: number
@@ -210,8 +211,9 @@ interface JiraSprintIssueResponse {
       created?: string
       resolutiondate?: string | null
       issuetype?: { name: string } | null
+      fixVersions?: Array<{ name: string }>
       customfield_10020: Array<{ name: string; state: string }> | null
-      [PI_CUSTOM_FIELD]?: string | null
+      [PI_CUSTOM_FIELD]?: JiraPiFieldValue
     }
   }>
   total?: number
@@ -222,6 +224,8 @@ interface JiraSprintIssueResponse {
 interface JiraBoardProjectResponse {
   values?: Array<{ key?: string }>
 }
+
+type JiraPiFieldValue = { value?: string | null; name?: string | null } | string | null
 
 const boardProjectKeyPromiseCache = new Map<string, Promise<string>>()
 
@@ -294,6 +298,38 @@ function loadArtTeamsFromStorage(): ArtTeamConfig[] {
   }
 }
 
+/** Normalizes the Jira PI field so Reports Hub can work with both string and option-object values. */
+function extractPiNameFromFieldValue(fieldValue: JiraPiFieldValue | undefined): string | null {
+  if (typeof fieldValue === 'string') {
+    const trimmedPiName = fieldValue.trim()
+    return trimmedPiName === '' ? null : trimmedPiName
+  }
+
+  if (typeof fieldValue === 'object' && fieldValue !== null) {
+    const preferredPiName = fieldValue.value?.trim() || fieldValue.name?.trim() || ''
+    return preferredPiName === '' ? null : preferredPiName
+  }
+
+  return null
+}
+
+/** Falls back to PI-like fix versions for Jira projects that do not populate the dedicated PI field. */
+function extractPiNameFromFixVersions(fixVersions: Array<{ name: string }> | undefined): string | null {
+  const matchingFixVersion = fixVersions?.find((fixVersion) =>
+    PI_LIKE_FIX_VERSION_PATTERN.test(fixVersion.name.trim()),
+  )
+  const trimmedPiName = matchingFixVersion?.name.trim() ?? ''
+  return trimmedPiName === '' ? null : trimmedPiName
+}
+
+/** Picks the best available PI label for a report issue so every tab can share the same filter. */
+function resolveIssuePiName(
+  piFieldValue: JiraPiFieldValue | undefined,
+  fixVersions?: Array<{ name: string }>,
+): string | null {
+  return extractPiNameFromFieldValue(piFieldValue) ?? extractPiNameFromFixVersions(fixVersions)
+}
+
 // ── Helper: issue mapper ──
 
 /** Maps a raw Jira issue API response to the normalised JiraFeatureIssue shape. */
@@ -311,7 +347,7 @@ function mapJiraIssueToFeature(
     teamName,
     fixVersions: rawIssue.fields.fixVersions.map((fixVersion) => fixVersion.name),
     assigneeName: rawIssue.fields.assignee?.displayName ?? null,
-    piName: (rawIssue.fields[PI_CUSTOM_FIELD] as string | null | undefined) ?? null,
+    piName: resolveIssuePiName(rawIssue.fields[PI_CUSTOM_FIELD], rawIssue.fields.fixVersions),
     priority: rawIssue.fields.priority?.name ?? null,
     issueTypeName: rawIssue.fields.issuetype?.name ?? undefined,
     createdDate: rawIssue.fields.created,
@@ -467,7 +503,7 @@ function mapJiraIssueToSprintIssue(
     teamName,
     assigneeName: rawIssue.fields.assignee?.displayName ?? null,
     priority: issuePriority,
-    piName: (rawIssue.fields[PI_CUSTOM_FIELD] as string | null | undefined) ?? null,
+    piName: resolveIssuePiName(rawIssue.fields[PI_CUSTOM_FIELD], rawIssue.fields.fixVersions),
     isBlocked,
     updatedDate: rawIssue.fields.updated,
     sprintName: extractClosedSprintName(rawIssue.fields.customfield_10020),
