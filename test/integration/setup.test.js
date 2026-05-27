@@ -77,6 +77,16 @@ describe('GET /setup', () => {
     expect(response.text).toContain('Load Workspace from Confluence');
   });
 
+  it('defaults the shared workspace step to the Sales to Enrollment ART in normal and demo mode', async () => {
+    const standardResponse = await request(buildTestApp(buildBlankConfig())).get('/setup');
+    const demoResponse = await request(buildTestApp(buildBlankConfig())).get('/setup?demo=1');
+
+    expect(standardResponse.text).toContain('Sales to Enrollment');
+    expect(standardResponse.text).toContain('value="684163133"');
+    expect(demoResponse.text).toContain('Sales to Enrollment');
+    expect(demoResponse.text).toContain('value="684163133"');
+  });
+
   it('has a completion/done step', async () => {
     const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
     expect(response.text).toMatch(/data-step="done"|id="step-done"/i);
