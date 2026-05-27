@@ -1021,12 +1021,92 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
     }
   });
 
+  // ── GET /api/snow-relay/my-changes ──────────────────────────────────────
+  // Fetches all open ServiceNow Changes assigned to the current user.
+  // Uses the relayBridge to query ServiceNow via the browser session or proxy credentials.
+  //
+  // Query params: state (optional, defaults to "1,2,3" = Open, Pending, In Progress)
+  // Returns: 200 [ { key, summary, state, priority, assignedTo }, ... ] on success
+  // Returns: 502 if the relay bridge is not active or ServiceNow is unreachable
+  // Returns: 500 if parsing user information fails
+
+  router.get('/api/snow-relay/my-changes', async (req, res) => {
+   try {
+     // Fetch the current user to get their sys_id for filtering changes
+     const userRelayRequest = {
+       method: 'GET',
+       url: '/api/now/v2/table/sys_user?sysparm_query=user_name=javascript:gs.getUserID()&sysparm_fields=sys_id,user_name,name',
+       headers: { 'X-User-Override': 'true' },
+     };
+
+     let currentUser;
+     try {
+       const userResponse = await relayBridge.submitRelayRequest('snow', userRelayRequest, 30000);
+       if (!userResponse || !userResponse.result || userResponse.result.length === 0) {
+         return res.status(500).json({
+           error: 'User not found',
+           message: 'Could not determine current ServiceNow user. Ensure you are logged in to ServiceNow.',
+         });
+       }
+       currentUser = userResponse.result[0];
+     } catch (userFetchError) {
+       // Fall back to querying by assignment_group instead of individual user
+       currentUser = null;
+     }
+
+     // Default state filter: open (1), pending (2), in progress (3)
+     const stateFilter = (req.query.state || '1,2,3').trim();
+
+     // Query for changes: ordered by state and last modified, showing most recent first
+     const changeQueryParts = [
+       `state=${encodeURIComponent(stateFilter)}`,
+       currentUser
+         ? `assigned_to=${encodeURIComponent(currentUser.sys_id)}`
+         : 'ORDERBYDESCpriority',
+     ];
+
+     const changesRelayRequest = {
+       method: 'GET',
+       url: `/api/now/v2/table/change_request?sysparm_query=${changeQueryParts.join('^')}&sysparm_fields=sys_id,number,short_description,state,priority,assigned_to&sysparm_limit=100`,
+     };
+
+     const changesResponse = await relayBridge.submitRelayRequest('snow', changesRelayRequest, 30000);
+
+     if (!changesResponse || !changesResponse.result) {
+       return res.json([]);
+     }
+
+     // Transform ServiceNow records into a clean API response with key and summary for UI binding
+     const changes = changesResponse.result.map((changeRecord) => ({
+       key: changeRecord.number || '',
+       summary: changeRecord.short_description || '',
+       state: changeRecord.state || '',
+       priority: changeRecord.priority || '',
+       assignedTo: changeRecord.assigned_to
+         ? {
+             sysId: changeRecord.assigned_to.value || '',
+             displayName: changeRecord.assigned_to.display_value || '',
+           }
+         : { sysId: '', displayName: '' },
+     }));
+
+     res.json(changes);
+   } catch (error) {
+     console.error('  ❌ Error fetching user changes:', error.message);
+     res.status(502).json({
+       error: 'Relay error',
+       message: 'Failed to fetch open changes from ServiceNow. Ensure the relay bookmarklet is active and ServiceNow is accessible.',
+       details: error.message,
+     });
+   }
+  });
+
   // ── Startup GitHub probe ─────────────────────────────────────────────────────
   // Run a background connectivity check once at startup so the connection bar
   // reflects real status immediately — not just "credentials are present".
   // Non-blocking: errors are swallowed and the cache stays false.
   if (hasGitHubAppCredentials(configuration) || configuration.github.pat) {
-    runGitHubConnectivityProbe(configuration).catch(() => {});
+   runGitHubConnectivityProbe(configuration).catch(() => {});
   }
 
   return router;

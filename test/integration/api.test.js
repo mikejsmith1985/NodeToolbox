@@ -725,3 +725,280 @@ describe('GET /api/config/github-app/installations', () => {
     expect(response.body.installations[0].account).toBe('test-org');
   });
 });
+
+// ── GET /api/snow-relay/my-changes ────────────────────────────────────────
+// Fetches all open ServiceNow Changes assigned to the current user.
+
+describe('GET /api/snow-relay/my-changes', () => {
+  const minimalConfig = {
+    jira: { baseUrl: '', pat: '' },
+    snow: { baseUrl: 'https://acme.service-now.com', username: 'svc_toolbox', password: 'secret' },
+    github: { pat: '' },
+    sslVerify: true,
+  };
+
+  afterEach(() => {
+    // Clean up mocks and nock interceptors
+    jest.clearAllMocks();
+    nock.cleanAll();
+  });
+
+  it('TestFetchMyChanges_ReturnsUserAssignedChanges', async () => {
+    // Mock the relay bridge for user lookup
+    const relayBridge = require('../../src/routes/relayBridge');
+    jest.spyOn(relayBridge, 'submitRelayRequest').mockImplementation((system, request, timeout) => {
+      if (request.url.includes('sys_user')) {
+        return Promise.resolve({
+          result: [
+            { sys_id: 'user-123', user_name: 'john.doe', name: 'John Doe' },
+          ],
+        });
+      }
+      // Mock changes query
+      if (request.url.includes('change_request')) {
+        return Promise.resolve({
+          result: [
+            {
+              sys_id: 'chg-001',
+              number: 'CHG0046897',
+              short_description: 'Update network infrastructure',
+              state: '2',
+              priority: '2',
+              assigned_to: { value: 'user-123', display_value: 'John Doe' },
+            },
+            {
+              sys_id: 'chg-002',
+              number: 'CHG0046898',
+              short_description: 'Database migration',
+              state: '1',
+              priority: '3',
+              assigned_to: { value: 'user-123', display_value: 'John Doe' },
+            },
+          ],
+        });
+      }
+      return Promise.reject(new Error('Unexpected request'));
+    });
+
+    const response = await request(buildTestApp(minimalConfig))
+      .get('/api/snow-relay/my-changes');
+
+    expect(response.status).toBe(200);
+    expect(Array.isArray(response.body)).toBe(true);
+    expect(response.body).toHaveLength(2);
+
+    // Verify first change structure and mapping
+    const firstChange = response.body[0];
+    expect(firstChange.key).toBe('CHG0046897');
+    expect(firstChange.summary).toBe('Update network infrastructure');
+    expect(firstChange.state).toBe('2');
+    expect(firstChange.priority).toBe('2');
+    expect(firstChange.assignedTo.displayName).toBe('John Doe');
+  });
+
+  it('TestFetchMyChanges_ReturnsEmptyResultsWhenUserHasNoOpenChanges', async () => {
+    const relayBridge = require('../../src/routes/relayBridge');
+    jest.spyOn(relayBridge, 'submitRelayRequest').mockImplementation((system, request, timeout) => {
+      if (request.url.includes('sys_user')) {
+        return Promise.resolve({
+          result: [
+            { sys_id: 'user-123', user_name: 'john.doe', name: 'John Doe' },
+          ],
+        });
+      }
+      // Mock empty changes query result
+      if (request.url.includes('change_request')) {
+        return Promise.resolve({ result: [] });
+      }
+      return Promise.reject(new Error('Unexpected request'));
+    });
+
+    const response = await request(buildTestApp(minimalConfig))
+      .get('/api/snow-relay/my-changes');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([]);
+  });
+
+  it('TestFetchMyChanges_ReturnsErrorWhenRelayBridgeIsInactive', async () => {
+    const relayBridge = require('../../src/routes/relayBridge');
+    jest.spyOn(relayBridge, 'submitRelayRequest').mockRejectedValue(
+      new Error('Relay bridge is not active. Ensure the ServiceNow bookmarklet is open and registered.')
+    );
+
+    const response = await request(buildTestApp(minimalConfig))
+      .get('/api/snow-relay/my-changes');
+
+    expect(response.status).toBe(502);
+    expect(response.body.error).toBe('Relay error');
+    expect(response.body.message).toContain('relay bookmarklet is active');
+    expect(response.body.details).toContain('Relay bridge is not active');
+  });
+
+  it('TestFetchMyChanges_SetsDefaultStateFilterWhenNotProvided', async () => {
+    const relayBridge = require('../../src/routes/relayBridge');
+    let capturedRequest;
+
+    jest.spyOn(relayBridge, 'submitRelayRequest').mockImplementation((system, request, timeout) => {
+      if (request.url.includes('sys_user')) {
+        return Promise.resolve({
+          result: [{ sys_id: 'user-123', user_name: 'john.doe', name: 'John Doe' }],
+        });
+      }
+      if (request.url.includes('change_request')) {
+        capturedRequest = request;
+        return Promise.resolve({ result: [] });
+      }
+      return Promise.reject(new Error('Unexpected request'));
+    });
+
+    await request(buildTestApp(minimalConfig))
+      .get('/api/snow-relay/my-changes');
+
+    // Verify default state filter (1,2,3) is in the query
+    expect(capturedRequest.url).toContain('state=1%2C2%2C3');
+  });
+
+  it('TestFetchMyChanges_UsesCustomStateFilterWhenProvided', async () => {
+    const relayBridge = require('../../src/routes/relayBridge');
+    let capturedRequest;
+
+    jest.spyOn(relayBridge, 'submitRelayRequest').mockImplementation((system, request, timeout) => {
+      if (request.url.includes('sys_user')) {
+        return Promise.resolve({
+          result: [{ sys_id: 'user-123', user_name: 'john.doe', name: 'John Doe' }],
+        });
+      }
+      if (request.url.includes('change_request')) {
+        capturedRequest = request;
+        return Promise.resolve({ result: [] });
+      }
+      return Promise.reject(new Error('Unexpected request'));
+    });
+
+    await request(buildTestApp(minimalConfig))
+      .get('/api/snow-relay/my-changes?state=1,2');
+
+    // Verify custom state filter is used
+    expect(capturedRequest.url).toContain('state=1%2C2');
+  });
+
+  it('TestFetchMyChanges_HandlesMissingUserFieldsGracefully', async () => {
+    const relayBridge = require('../../src/routes/relayBridge');
+    jest.spyOn(relayBridge, 'submitRelayRequest').mockImplementation((system, request, timeout) => {
+      if (request.url.includes('sys_user')) {
+        return Promise.resolve({
+          result: [{ sys_id: 'user-123', user_name: 'john.doe', name: 'John Doe' }],
+        });
+      }
+      if (request.url.includes('change_request')) {
+        return Promise.resolve({
+          result: [
+            {
+              sys_id: 'chg-001',
+              number: 'CHG0046897',
+              short_description: 'Partial data change',
+              // Intentionally omit optional fields
+            },
+          ],
+        });
+      }
+      return Promise.reject(new Error('Unexpected request'));
+    });
+
+    const response = await request(buildTestApp(minimalConfig))
+      .get('/api/snow-relay/my-changes');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveLength(1);
+    const change = response.body[0];
+    expect(change.key).toBe('CHG0046897');
+    expect(change.summary).toBe('Partial data change');
+    expect(change.state).toBe('');
+    expect(change.assignedTo.sysId).toBe('');
+  });
+
+  it('TestFetchMyChanges_SkipsUserLookupWhenUserQueryFails', async () => {
+    const relayBridge = require('../../src/routes/relayBridge');
+    let changeRequestAttempted = false;
+
+    jest.spyOn(relayBridge, 'submitRelayRequest').mockImplementation((system, request, timeout) => {
+      if (request.url.includes('sys_user')) {
+        // Simulate user lookup failure
+        return Promise.reject(new Error('User lookup failed'));
+      }
+      if (request.url.includes('change_request')) {
+        changeRequestAttempted = true;
+        return Promise.resolve({ result: [] });
+      }
+      return Promise.reject(new Error('Unexpected request'));
+    });
+
+    const response = await request(buildTestApp(minimalConfig))
+      .get('/api/snow-relay/my-changes');
+
+    expect(response.status).toBe(200);
+    expect(changeRequestAttempted).toBe(true);
+  });
+
+  it('TestFetchMyChanges_ReturnsEmptyArrayWhenServiceNowReturnsNull', async () => {
+    const relayBridge = require('../../src/routes/relayBridge');
+    jest.spyOn(relayBridge, 'submitRelayRequest').mockImplementation((system, request, timeout) => {
+      if (request.url.includes('sys_user')) {
+        return Promise.resolve({
+          result: [{ sys_id: 'user-123', user_name: 'john.doe', name: 'John Doe' }],
+        });
+      }
+      if (request.url.includes('change_request')) {
+        // Simulate ServiceNow returning null result
+        return Promise.resolve({ result: null });
+      }
+      return Promise.reject(new Error('Unexpected request'));
+    });
+
+    const response = await request(buildTestApp(minimalConfig))
+      .get('/api/snow-relay/my-changes');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([]);
+  });
+
+  it('TestFetchMyChanges_IncludesAllChangeFieldsInResponse', async () => {
+    const relayBridge = require('../../src/routes/relayBridge');
+    jest.spyOn(relayBridge, 'submitRelayRequest').mockImplementation((system, request, timeout) => {
+      if (request.url.includes('sys_user')) {
+        return Promise.resolve({
+          result: [{ sys_id: 'user-123', user_name: 'john.doe', name: 'John Doe' }],
+        });
+      }
+      if (request.url.includes('change_request')) {
+        return Promise.resolve({
+          result: [
+            {
+              sys_id: 'chg-full',
+              number: 'CHG0000001',
+              short_description: 'Full field test',
+              state: '1',
+              priority: '1',
+              assigned_to: { value: 'user-001', display_value: 'User One' },
+            },
+          ],
+        });
+      }
+      return Promise.reject(new Error('Unexpected request'));
+    });
+
+    const response = await request(buildTestApp(minimalConfig))
+      .get('/api/snow-relay/my-changes');
+
+    const change = response.body[0];
+    // Verify all expected fields are present and correctly mapped
+    expect(change).toHaveProperty('key');
+    expect(change).toHaveProperty('summary');
+    expect(change).toHaveProperty('state');
+    expect(change).toHaveProperty('priority');
+    expect(change).toHaveProperty('assignedTo');
+    expect(change.key).toBe('CHG0000001');
+    expect(change.summary).toBe('Full field test');
+  });
+});
