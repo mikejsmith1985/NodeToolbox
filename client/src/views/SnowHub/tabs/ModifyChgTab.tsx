@@ -71,6 +71,43 @@ async function saveChangeToSnow(changeKey: string, changeData: any): Promise<voi
   }
 }
 
+/**
+ * Validates that all required fields are present before saving.
+ * Returns error message if validation fails, null if valid.
+ */
+function validateChangeBeforeSave(state: ModifyChgState): string | null {
+  if (!state.change) {
+    return 'Change data not loaded';
+  }
+
+  // Check required change fields
+  const requiredChangeFields = {
+    shortDescription: 'Summary is required',
+    'chgBasicInfo.assignmentGroup': 'Assignment Group is required',
+  };
+
+  if (!state.change.shortDescription?.trim()) {
+    return requiredChangeFields.shortDescription;
+  }
+
+  if (!state.change.chgBasicInfo?.assignmentGroup) {
+    return requiredChangeFields['chgBasicInfo.assignmentGroup'];
+  }
+
+  // Check CTASKs are valid if present
+  if (state.changeTasks && state.changeTasks.length > 0) {
+    for (let i = 0; i < state.changeTasks.length; i += 1) {
+      const ctask = state.changeTasks[i];
+      if (!ctask.shortDescription?.trim()) {
+        return `CTASK ${i + 1}: Short Description is required`;
+      }
+    }
+  }
+
+  return null;
+}
+
+
 function StepIndicator({ currentStep, onStepSelect }: { currentStep: number; onStepSelect: (step: 1 | 2 | 3 | 4 | 5) => void }) {
   return (
     <ol className={styles.stepIndicator}>
@@ -309,16 +346,18 @@ function EnvironmentsStep({ state }: {
 /**
  * Step 5: Review & Save — Show summary and CTASK template picker
  */
-function ReviewSaveStep({ state, ctaskTemplates, onAddCtask, onRemoveCtask, onSaveClick }: {
+function ReviewSaveStep({ state, ctaskTemplates, onAddCtask, onRemoveCtask, onSaveClick, onCtaskFieldChange }: {
   state: ModifyChgState;
   ctaskTemplates: CtaskTemplate[];
   onAddCtask: (template: CtaskTemplate) => void;
   onRemoveCtask: (id: string) => void;
   onSaveClick: () => void;
+  onCtaskFieldChange: (ctaskId: string, field: string, value: string) => void;
 }) {
   if (!state.change) return null;
 
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [editingCtaskId, setEditingCtaskId] = useState<string | null>(null);
   const selectedTemplate = ctaskTemplates.find((t) => t.id === selectedTemplateId);
 
   return (
@@ -344,7 +383,10 @@ function ReviewSaveStep({ state, ctaskTemplates, onAddCtask, onRemoveCtask, onSa
             <button
               className={styles.secondaryButton}
               disabled={!selectedTemplate}
-              onClick={() => selectedTemplate && onAddCtask(selectedTemplate)}
+              onClick={() => {
+                selectedTemplate && onAddCtask(selectedTemplate);
+                setSelectedTemplateId('');
+              }}
               type="button"
             >
               Add CTASK
@@ -357,22 +399,99 @@ function ReviewSaveStep({ state, ctaskTemplates, onAddCtask, onRemoveCtask, onSa
 
       {state.changeTasks.length > 0 && (
         <div className={styles.clonePanel}>
-          <h4 className={styles.panelSectionTitle}>Change Tasks</h4>
-          <ul className={styles.summaryText}>
+          <h4 className={styles.panelSectionTitle}>Change Tasks ({state.changeTasks.length})</h4>
+          <div>
             {state.changeTasks.map((ctask) => (
-              <li key={ctask.id}>
-                {ctask.name}: {ctask.shortDescription}
-                <button
-                  className={styles.linkButton}
-                  onClick={() => onRemoveCtask(ctask.id)}
-                  type="button"
-                  aria-label={`Remove CTASK ${ctask.shortDescription || ctask.name}`}
-                >
-                  Remove
-                </button>
-              </li>
+              <div key={ctask.id} className={styles.environmentCard}>
+                <div className={styles.environmentCardHeader}>
+                  <h5 className={styles.panelSectionTitle}>{ctask.name}</h5>
+                  <div>
+                    <button
+                      className={styles.linkButton}
+                      onClick={() => setEditingCtaskId(editingCtaskId === ctask.id ? null : ctask.id)}
+                      type="button"
+                      title={editingCtaskId === ctask.id ? 'Collapse' : 'Edit'}
+                    >
+                      {editingCtaskId === ctask.id ? '▼ Collapse' : '▶ Edit'}
+                    </button>
+                    <button
+                      className={styles.linkButton}
+                      onClick={() => onRemoveCtask(ctask.id)}
+                      type="button"
+                      aria-label={`Remove CTASK ${ctask.shortDescription || ctask.name}`}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+
+                {editingCtaskId === ctask.id ? (
+                  <div className={styles.fieldGrid}>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>Short Description</span>
+                      <input
+                        className={styles.input}
+                        onChange={(event) => onCtaskFieldChange(ctask.id, 'shortDescription', event.target.value)}
+                        value={ctask.shortDescription || ''}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>Description</span>
+                      <textarea
+                        className={styles.textArea}
+                        onChange={(event) => onCtaskFieldChange(ctask.id, 'description', event.target.value)}
+                        value={ctask.description || ''}
+                        rows={3}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>Assignment Group</span>
+                      <input
+                        className={styles.input}
+                        onChange={(event) => onCtaskFieldChange(ctask.id, 'assignmentGroup', event.target.value)}
+                        value={typeof ctask.assignmentGroup === 'string' ? ctask.assignmentGroup : (ctask.assignmentGroup?.displayName || '')}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>Assigned To</span>
+                      <input
+                        className={styles.input}
+                        onChange={(event) => onCtaskFieldChange(ctask.id, 'assignedTo', event.target.value)}
+                        value={typeof ctask.assignedTo === 'string' ? ctask.assignedTo : (ctask.assignedTo?.displayName || '')}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>Planned Start Date</span>
+                      <input
+                        className={styles.input}
+                        type="date"
+                        onChange={(event) => onCtaskFieldChange(ctask.id, 'plannedStartDate', event.target.value)}
+                        value={ctask.plannedStartDate || ''}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>Planned End Date</span>
+                      <input
+                        className={styles.input}
+                        type="date"
+                        onChange={(event) => onCtaskFieldChange(ctask.id, 'plannedEndDate', event.target.value)}
+                        value={ctask.plannedEndDate || ''}
+                      />
+                    </label>
+                  </div>
+                ) : (
+                  <div className={styles.summaryText}>
+                    <p><strong>Short Description:</strong> {ctask.shortDescription || '(none)'}</p>
+                    {ctask.description && <p><strong>Description:</strong> {ctask.description}</p>}
+                    {ctask.assignmentGroup && <p><strong>Assignment Group:</strong> {typeof ctask.assignmentGroup === 'string' ? ctask.assignmentGroup : ctask.assignmentGroup.displayName}</p>}
+                    {ctask.assignedTo && <p><strong>Assigned To:</strong> {typeof ctask.assignedTo === 'string' ? ctask.assignedTo : ctask.assignedTo.displayName}</p>}
+                    {ctask.plannedStartDate && <p><strong>Planned Start:</strong> {ctask.plannedStartDate}</p>}
+                    {ctask.plannedEndDate && <p><strong>Planned End:</strong> {ctask.plannedEndDate}</p>}
+                  </div>
+                )}
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
       )}
 
@@ -465,7 +584,23 @@ export default function ModifyChgTab(): React.ReactElement {
     }));
   }, []);
 
+  const handleCtaskFieldChange = useCallback((ctaskId: string, field: string, value: string) => {
+    setModifyState((prev) => ({
+      ...prev,
+      changeTasks: prev.changeTasks.map((ctask) =>
+        ctask.id === ctaskId ? { ...ctask, [field]: value } : ctask,
+      ),
+    }));
+  }, []);
+
   const handleSaveChange = useCallback(async () => {
+    // Validate before attempting save
+    const validationError = validateChangeBeforeSave(modifyState);
+    if (validationError) {
+      setModifyState((prev) => ({ ...prev, saveError: validationError }));
+      return;
+    }
+
     setModifyState((prev) => ({ ...prev, isSaving: true, saveError: null, saveSuccess: null }));
     try {
       if (!modifyState.change) throw new Error('No change data to save');
@@ -550,6 +685,7 @@ export default function ModifyChgTab(): React.ReactElement {
             onAddCtask={handleAddCtask}
             onRemoveCtask={handleRemoveCtask}
             onSaveClick={handleSaveChange}
+            onCtaskFieldChange={handleCtaskFieldChange}
           />
           <div className={styles.buttonRow}>
             <button className={styles.linkButton} onClick={() => handleStepSelect(4)} type="button">
