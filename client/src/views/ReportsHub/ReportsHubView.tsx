@@ -10,6 +10,7 @@ import { Cell, Pie, PieChart, Tooltip } from 'recharts'
 
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx'
 import { copyElementImageToClipboard } from '../../utils/downloadElementImage.ts'
+import { findPiNameForDate } from '../ArtView/hooks/artHelpers.ts'
 import type {
   IndividualEntry,
   JiraFeatureIssue,
@@ -1960,6 +1961,7 @@ export default function ReportsHubView() {
   const { isTabExplainerCollapsed, toggleTabExplainer } = useReportExplainer()
   const { markGenerated, getTabTimestamp } = useLastGenerated()
   const hasTriggeredInitialReportLoadRef = useRef(false)
+  const hasAppliedCurrentPiDefaultRef = useRef(false)
   const reportCaptureSectionRef = useRef<HTMLElement | null>(null)
 
   const hasNoArtTeams = state.artTeams.length === 0
@@ -2006,6 +2008,30 @@ export default function ReportsHubView() {
     state.sprintIssues,
     state.throughputIssues,
   )
+  const visibleTeamNames = extractTeamFilterOptions(
+    [],
+    filteredFeatures,
+    filteredDefects,
+    filteredRisks,
+    filteredSprintIssues,
+    filteredThroughputIssues,
+  )
+  const hasLoadedAnyReportData =
+    state.features.length > 0
+    || state.defects.length > 0
+    || state.risks.length > 0
+    || state.sprintIssues.length > 0
+    || state.storyIssues.length > 0
+    || state.throughputIssues.length > 0
+  const shouldShowScopedTeamCount =
+    state.teamFilter !== ''
+    || state.piFilter !== ''
+    || hasLoadedAnyReportData
+  const visibleArtTeamCount = state.teamFilter !== ''
+    ? 1
+    : shouldShowScopedTeamCount
+      ? visibleTeamNames.length
+      : state.artTeams.length
   const handleCopyReportImage = useCallback(async (): Promise<void> => {
     const reportCaptureSection = reportCaptureSectionRef.current
     if (!reportCaptureSection) {
@@ -2016,6 +2042,22 @@ export default function ReportsHubView() {
       'The active report is no longer available to copy.',
     )
   }, [])
+
+  // Once the report data exposes date-range PI labels, default the dropdown to the
+  // current PI so Reports Hub opens in the same scoped view as the other PI-aware tools.
+  useEffect(() => {
+    if (hasNoArtTeams || hasAppliedCurrentPiDefaultRef.current || state.piFilter !== '') {
+      return
+    }
+
+    const currentPiName = findPiNameForDate(piFilterOptions)
+    if (currentPiName === null) {
+      return
+    }
+
+    hasAppliedCurrentPiDefaultRef.current = true
+    actions.setPiFilter(currentPiName)
+  }, [actions, hasNoArtTeams, piFilterOptions, state.piFilter])
 
   function renderActiveTab() {
     switch (state.activeTab) {
@@ -2033,7 +2075,7 @@ export default function ReportsHubView() {
         return (
           <FeatureReportTab
             features={filteredFeatures}
-            artTeamCount={state.artTeams.length}
+            artTeamCount={visibleArtTeamCount}
           />
         )
       case 'defects':
@@ -2130,27 +2172,27 @@ export default function ReportsHubView() {
         <div className={styles.kpiCard}>
           <span className={styles.kpiLabel}>ART Teams</span>
           <span className={styles.kpiValue}>
-            {state.artTeams.length > 0 ? state.artTeams.length : '—'}
+            {state.artTeams.length > 0 ? visibleArtTeamCount : '—'}
           </span>
         </div>
         <div className={styles.kpiCard}>
           <span className={styles.kpiLabel}>Features</span>
-          <span className={styles.kpiValue}>{state.features.length}</span>
+          <span className={styles.kpiValue}>{filteredFeatures.length}</span>
         </div>
         <div className={styles.kpiCard}>
           <span className={styles.kpiLabel}>Defects</span>
           <span
-            className={`${styles.kpiValue} ${state.defects.length > 0 ? styles.kpiValueRed : ''}`}
+            className={`${styles.kpiValue} ${filteredDefects.length > 0 ? styles.kpiValueRed : ''}`}
           >
-            {state.defects.length}
+            {filteredDefects.length}
           </span>
         </div>
         <div className={styles.kpiCard}>
           <span className={styles.kpiLabel}>Risks</span>
           <span
-            className={`${styles.kpiValue} ${state.risks.length > 0 ? styles.kpiValueAmber : ''}`}
+            className={`${styles.kpiValue} ${filteredRisks.length > 0 ? styles.kpiValueAmber : ''}`}
           >
-            {state.risks.length}
+            {filteredRisks.length}
           </span>
         </div>
       </div>
