@@ -5,7 +5,6 @@ import type { ChangeEvent } from 'react';
 import { useState } from 'react';
 
 import type { CtaskTemplateData, SnowReference } from '../hooks/useCrgState.ts';
-import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { SnowLookupField } from './SnowLookupField.tsx';
 import styles from '../tabs/CrgTab.module.css';
 
@@ -29,8 +28,6 @@ export interface CtaskEditFormProps {
   ctaskData: CtaskTemplateData;
   /** Available CTASK templates to pick from and load. */
   templates: CtaskTemplate[];
-  /** ServiceNow choice options for dropdowns (unused in current form but provided for future extensions). */
-  choiceOptions: SnowChoiceOptionMap;
   /** Called when any field changes — passes the updated form state. */
   onDataChange: (updatedData: CtaskTemplateData) => void;
   /** Optional callback to save the current form state as a new template. */
@@ -59,7 +56,6 @@ export interface CtaskEditFormProps {
 export function CtaskEditForm({
   ctaskData,
   templates,
-  choiceOptions,
   onDataChange,
   onSaveAsTemplate,
   isCompact = false,
