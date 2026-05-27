@@ -69,6 +69,14 @@ describe('GET /setup', () => {
     expect(response.text).toMatch(/data-step="confluence"|id="step-confluence"/i);
   });
 
+  it('has a shared workspace setup step', async () => {
+    const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
+    expect(response.text).toMatch(/data-step="workspace"|id="step-workspace"/i);
+    expect(response.text).toContain('Load Shared ART Workspace');
+    expect(response.text).toContain('Shared ART Database ID');
+    expect(response.text).toContain('Load Workspace from Confluence');
+  });
+
   it('has a completion/done step', async () => {
     const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
     expect(response.text).toMatch(/data-step="done"|id="step-done"/i);
@@ -97,11 +105,18 @@ describe('GET /setup', () => {
     expect(response.text).toContain('https://prefilled.atlassian.net');
   });
 
-  it('pre-fills the ServiceNow base URL when already configured', async () => {
+  it('shows relay-only ServiceNow guidance instead of credential fields', async () => {
     const configuration = buildBlankConfig();
     configuration.snow.baseUrl = 'https://myinstance.service-now.com';
     const response = await request(buildTestApp(configuration)).get('/setup');
-    expect(response.text).toContain('https://myinstance.service-now.com');
+    expect(response.text).not.toContain('id="snow-base-url"');
+    expect(response.text).not.toContain('id="snow-username"');
+    expect(response.text).not.toContain('id="snow-password"');
+    expect(response.text).not.toContain('https://myinstance.service-now.com');
+    expect(response.text).toContain('ServiceNow not reachable');
+    expect(response.text).toContain('Method: Not connected — relay bridge inactive');
+    expect(response.text).toContain('Open ServiceNow');
+    expect(response.text).toContain('NodeToolbox SNow Relay');
   });
 
   it('does not pre-fill saved service URLs in demo mode', async () => {
@@ -122,6 +137,81 @@ describe('GET /setup', () => {
     // Must not load any CDN resources — all CSS/JS must be inline
     expect(response.text).not.toMatch(/src="https?:\/\//);
     expect(response.text).not.toMatch(/href="https?:\/\//);
+  });
+});
+
+// ── POST /api/setup/shared-art-workspace ───────────────────────────────────────
+
+describe('POST /api/setup/shared-art-workspace', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    jest.restoreAllMocks();
+  });
+
+  it('loads a shared ART workspace from Confluence using the submitted wizard credentials', async () => {
+    const configuration = buildBlankConfig();
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          results: [
+            { id: 'property-1', key: 'nodetoolbox-shared-art', version: { number: 1 } },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: 'property-1',
+          key: 'nodetoolbox-shared-art',
+          version: { number: 1 },
+          value: {
+            schemaVersion: 1,
+            artName: 'Shared Alpha',
+            artKey: 'ALPHA',
+            updatedAt: '2026-05-27T15:00:00.000Z',
+            teams: [{ id: 'team-1', name: 'Alpha Team', boardId: '42' }],
+            settings: { piFieldId: 'customfield_10301' },
+          },
+        }),
+      });
+
+    const response = await request(buildTestApp(configuration))
+      .post('/api/setup/shared-art-workspace')
+      .send({
+        confluenceBaseUrl: 'https://acme.atlassian.net',
+        confluenceUsername: 'person@example.com',
+        confluenceApiToken: 'cloud-token',
+        sharedArtDatabaseId: 'db-123',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.workspace).toEqual(
+      expect.objectContaining({
+        artName: 'Shared Alpha',
+        artKey: 'ALPHA',
+      }),
+    );
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns 400 when the Confluence credentials or shared workspace database id are missing', async () => {
+    const response = await request(buildTestApp(buildBlankConfig()))
+      .post('/api/setup/shared-art-workspace')
+      .send({
+        confluenceBaseUrl: 'https://acme.atlassian.net',
+        confluenceUsername: '',
+        confluenceApiToken: '',
+        sharedArtDatabaseId: '',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/Confluence.*required|database id/i);
   });
 });
 
