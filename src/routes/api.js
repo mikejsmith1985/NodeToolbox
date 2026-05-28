@@ -987,7 +987,7 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
           backoutPlan: change.backout_plan || '',
           testPlan: change.test_plan || '',
         },
-        ...buildEnvironmentState(change.u_environment, change.cmdb_ci, change.u_impacted_persons_aware, change.planned_start_date, change.planned_end_date),
+        ...buildEnvironmentState(change.u_environment, change.cmdb_ci, change.u_impacted_persons_aware, change.start_date, change.end_date),
       });
     } catch (error) {
       console.error('  ❌ Error fetching change ' + changeKey + ':', error.message);
@@ -1080,8 +1080,8 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
       }
 
       if (selectedEnvironmentState) {
-        updatePayload.planned_start_date = selectedEnvironmentState.plannedStartDate || '';
-        updatePayload.planned_end_date = selectedEnvironmentState.plannedEndDate || '';
+        updatePayload.start_date = selectedEnvironmentState.plannedStartDate || '';
+        updatePayload.end_date = selectedEnvironmentState.plannedEndDate || '';
       }
 
       // Submit the PATCH request via relay

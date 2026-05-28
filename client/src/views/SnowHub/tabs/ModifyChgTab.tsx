@@ -81,8 +81,8 @@ const CHANGE_LOOKUP_FIELDS = Array.from(new Set([
   'assignment_group',
   'u_environment',
   'cmdb_ci',
-  'planned_start_date',
-  'planned_end_date',
+  'start_date',
+  'end_date',
   ...Object.values(PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY).flat(),
   ...Object.values(PLANNING_CONTENT_ALIAS_FIELD_NAMES_BY_STATE_KEY).flat(),
 ])).join(',');
