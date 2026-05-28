@@ -14,6 +14,7 @@ const {
   mockDownloadPiReviewPanelImage,
   mockFetchConfluencePageByReference,
   mockJiraGet,
+  mockJiraPost,
   mockJiraPut,
   mockResolveConfluencePageIdFromReference,
   mockUpdateConfluencePage,
@@ -21,6 +22,7 @@ const {
   mockDownloadPiReviewPanelImage: vi.fn(),
   mockFetchConfluencePageByReference: vi.fn(),
   mockJiraGet: vi.fn(),
+  mockJiraPost: vi.fn(),
   mockJiraPut: vi.fn(),
   mockResolveConfluencePageIdFromReference: vi.fn(),
   mockUpdateConfluencePage: vi.fn(),
@@ -34,6 +36,7 @@ vi.mock('../../services/confluenceApi.ts', () => ({
 
 vi.mock('../../services/jiraApi.ts', () => ({
   jiraGet: mockJiraGet,
+  jiraPost: mockJiraPost,
   jiraPut: mockJiraPut,
 }));
 
@@ -257,6 +260,7 @@ describe('PiReviewTab', () => {
     vi.clearAllMocks();
     localStorage.clear();
     mockJiraGet.mockResolvedValue({ issues: [] });
+    mockJiraPost.mockResolvedValue(undefined);
     mockJiraPut.mockResolvedValue(undefined);
     mockResolveConfluencePageIdFromReference.mockImplementation((pageReference: string) => {
       if (pageReference.includes('12345')) {
@@ -405,7 +409,11 @@ describe('PiReviewTab', () => {
     renderPiReviewTab([DEFAULT_TEAMS[0]]);
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
-    expect(within(alphaSection).getByText('DENP-1352 - 26.3 Enrollment Support')).toBeInTheDocument();
+    expect(within(alphaSection).getByText(/26\.3 Enrollment Support/i)).toBeInTheDocument();
+    expect(within(alphaSection).getByRole('link', { name: 'DENP-1352' })).toHaveAttribute(
+      'href',
+      'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/DENP-1352',
+    );
     expect(within(alphaSection).getByText('Highest')).toBeInTheDocument();
     expect(within(alphaSection).getAllByText(/PLAT-5 - Platform work \(Blocked\)/i)).toHaveLength(2);
     expect(within(alphaSection).getByText(/Dependency note: Legacy dependency note/i)).toBeInTheDocument();
@@ -415,6 +423,175 @@ describe('PiReviewTab', () => {
     expect(within(alphaSection).getByText('Due Date: 2026-06-12')).toHaveClass(styles.featureDatePill, styles.featureDatePillDue);
     expect(within(alphaSection).getByText('Fix Version: 26.3')).toHaveClass(styles.featureDatePill, styles.featureDatePillFixVersion);
     expect(within(alphaSection).getByText(/unsaved changes/i)).toBeInTheDocument();
+  });
+
+  it('updates Jira feature status directly from the PI Review feature row in view mode', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE_WITH_FEATURE_KEY);
+    let searchCallCount = 0;
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      if (requestPath.includes('/transitions')) {
+        return Promise.resolve({
+          transitions: [
+            { id: '41', name: 'Done' },
+          ],
+        });
+      }
+      if (requestPath.includes('/search')) {
+        searchCallCount += 1;
+        return Promise.resolve({
+          issues: [
+            {
+              id: '10001',
+              key: 'DENP-1352',
+              fields: {
+                summary: '26.3 Enrollment Support',
+                status: {
+                  name: searchCallCount > 1 ? 'Done' : 'In Progress',
+                  statusCategory: { key: searchCallCount > 1 ? 'done' : 'indeterminate' },
+                },
+                priority: { name: 'Highest', iconUrl: '' },
+                assignee: null,
+                reporter: null,
+                issuetype: { name: 'Feature', iconUrl: '' },
+                created: '',
+                updated: '',
+                description: null,
+                customfield_10111: 13,
+                issuelinks: [],
+              },
+            },
+          ],
+        });
+      }
+      return Promise.resolve({ issues: [] });
+    });
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /status: in progress/i }));
+    const statusSelect = await within(alphaSection).findByRole('combobox', { name: /change jira status for denp-1352/i });
+    await waitFor(() => {
+      expect(within(alphaSection).getByRole('option', { name: 'Done' })).toBeInTheDocument();
+    });
+    fireEvent.change(statusSelect, {
+      target: { value: '41' },
+    });
+
+    await waitFor(() => {
+      expect(mockJiraPost).toHaveBeenCalledWith('/rest/api/2/issue/DENP-1352/transitions', {
+        transition: { id: '41' },
+      });
+    });
+    await waitFor(() => {
+      expect(within(alphaSection).getByText('Status: Done')).toBeInTheDocument();
+    });
+  });
+
+  it('prompts for missing Jira fields when a transition requires them and retries after applying values', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE_WITH_FEATURE_KEY);
+    let searchCallCount = 0;
+    let transitionPostAttemptCount = 0;
+    mockJiraGet.mockImplementation((requestPath: string) => {
+      if (requestPath.includes('/transitions?expand=transitions.fields')) {
+        return Promise.resolve({
+          transitions: [
+            {
+              id: '41',
+              fields: {
+                customfield_12345: {
+                  name: 'Product Owner',
+                  required: true,
+                  schema: { type: 'user' },
+                  allowedValues: [{ accountId: 'abc-123', displayName: 'Taylor Owner' }],
+                },
+                parent: {
+                  name: 'Parent Link',
+                  required: true,
+                },
+              },
+            },
+          ],
+        });
+      }
+      if (requestPath.includes('/transitions')) {
+        return Promise.resolve({
+          transitions: [{ id: '41', name: 'Done' }],
+        });
+      }
+      if (requestPath.includes('/search')) {
+        searchCallCount += 1;
+        return Promise.resolve({
+          issues: [
+            {
+              id: '10001',
+              key: 'DENP-1352',
+              fields: {
+                summary: '26.3 Enrollment Support',
+                status: {
+                  name: searchCallCount > 1 ? 'Done' : 'In Progress',
+                  statusCategory: { key: searchCallCount > 1 ? 'done' : 'indeterminate' },
+                },
+                priority: { name: 'Highest', iconUrl: '' },
+                assignee: null,
+                reporter: null,
+                issuetype: { name: 'Feature', iconUrl: '' },
+                created: '',
+                updated: '',
+                description: null,
+                customfield_10111: 13,
+                issuelinks: [],
+              },
+            },
+          ],
+        });
+      }
+      return Promise.resolve({ issues: [] });
+    });
+    mockJiraPost.mockImplementation((requestPath: string) => {
+      if (!requestPath.includes('/transitions')) {
+        return Promise.resolve(undefined);
+      }
+      transitionPostAttemptCount += 1;
+      if (transitionPostAttemptCount === 1) {
+        return Promise.reject(
+          new Error('Jira POST /rest/api/2/issue/DENP-1370/transitions failed: 400 — The following fields are required: Product Owner, Parent Link'),
+        );
+      }
+      return Promise.resolve(undefined);
+    });
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /status: in progress/i }));
+    fireEvent.change(
+      await within(alphaSection).findByRole('combobox', { name: /change jira status for denp-1352/i }),
+      { target: { value: '41' } },
+    );
+
+    await waitFor(() => {
+      expect(within(alphaSection).getByText(/jira missing required fields/i)).toBeInTheDocument();
+    });
+    fireEvent.change(within(alphaSection).getByLabelText(/Product Owner for DENP-1352/i), {
+      target: { value: 'abc-123' },
+    });
+    fireEvent.change(within(alphaSection).getByLabelText(/Parent Link for DENP-1352/i), {
+      target: { value: 'ART-999' },
+    });
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /apply fields & retry/i }));
+
+    await waitFor(() => {
+      expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/DENP-1352', {
+        fields: {
+          customfield_12345: { accountId: 'abc-123' },
+          parent: { key: 'ART-999' },
+        },
+      });
+    });
+    await waitFor(() => {
+      expect(within(alphaSection).getByText('Status: Done')).toBeInTheDocument();
+    });
   });
 
   it('renders checkbox columns as visual readout icons instead of literal yes or no text', async () => {
