@@ -1,8 +1,9 @@
 // ReleaseManagementTab.tsx — ServiceNow release management tab for loading changes, active work, and operator activity.
 
 import type { ChangeEvent } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
+import { ALL_CHG_STATES, CHG_STATE_TRANSITIONS } from '../hooks/useReleaseManagement.ts';
 import { useReleaseManagement } from '../hooks/useReleaseManagement.ts';
 import styles from './ReleaseManagementTab.module.css';
 
@@ -62,6 +63,87 @@ function resolveAlertBadgeLabel(alertSeverity: ReleaseStateData['myActiveChanges
   return 'Healthy';
 }
 
+/**
+ * Resolves the list of valid next states from the current raw state value.
+ * Falls back to showing all states when the current state is not in the transition map
+ * (handles custom or non-standard SNow instances gracefully).
+ */
+function resolveAvailableTransitions(currentStateValue: string) {
+  return CHG_STATE_TRANSITIONS[currentStateValue] ?? ALL_CHG_STATES;
+}
+
+/**
+ * Inline dropdown that shows valid next SNow workflow states for a change.
+ * Renders as a plain text label when no transitions are available (terminal state).
+ */
+function StateTransitionCell({
+  changeKey,
+  stateLabel,
+  stateValue,
+  onTransition,
+}: {
+  changeKey: string;
+  stateLabel: string;
+  stateValue: string;
+  onTransition: (changeKey: string, newStateValue: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const availableTransitions = resolveAvailableTransitions(stateValue);
+  const hasAvailableTransitions = availableTransitions.length > 0;
+
+  // Close the dropdown when the user clicks outside of it
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    function handleOutsideClick(event: MouseEvent): void {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [isOpen]);
+
+  if (!hasAvailableTransitions) {
+    return <span>{stateLabel}</span>;
+  }
+
+  return (
+    <div className={styles.stateCell} ref={containerRef}>
+      <button
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        className={styles.stateButton}
+        onClick={() => setIsOpen((previous) => !previous)}
+        title="Click to transition state"
+        type="button"
+      >
+        {stateLabel} ▾
+      </button>
+      {isOpen ? (
+        <ul className={styles.stateDropdown} role="listbox">
+          {availableTransitions.map((transition) => (
+            <li key={transition.value} role="option" aria-selected={false}>
+              <button
+                className={styles.stateOption}
+                onClick={() => {
+                  setIsOpen(false);
+                  onTransition(changeKey, transition.value);
+                }}
+                type="button"
+              >
+                {transition.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 function calculateAlertSummary(state: ReleaseStateData): AlertSummary {
   return state.myActiveChanges.reduce<AlertSummary>((summary, activeChange) => {
     if (activeChange.alertSeverity === 'error') {
@@ -90,7 +172,17 @@ function LoadedChangeCard({ state, actions }: LoadedChangeCardProps) {
     <article className={styles.detailCard}>
       <div className={styles.detailGrid}>
         <div><span className={styles.detailLabel}>Number</span><p className={styles.detailValue}>{state.loadedChg.number}</p></div>
-        <div><span className={styles.detailLabel}>State</span><p className={styles.detailValue}>{state.loadedChg.state}</p></div>
+        <div>
+          <span className={styles.detailLabel}>State</span>
+          <p className={styles.detailValue}>
+            <StateTransitionCell
+              changeKey={state.loadedChg.number}
+              onTransition={actions.updateChangeState}
+              stateLabel={state.loadedChg.state}
+              stateValue={state.loadedChg.stateValue}
+            />
+          </p>
+        </div>
         <div><span className={styles.detailLabel}>Risk</span><p className={styles.detailValue}>{state.loadedChg.risk}</p></div>
         <div><span className={styles.detailLabel}>Impact</span><p className={styles.detailValue}>{state.loadedChg.impact}</p></div>
         <div><span className={styles.detailLabel}>Planned Start</span><p className={styles.detailValue}>{state.loadedChg.plannedStartDate}</p></div>
@@ -143,7 +235,14 @@ function ActiveChangesSection({ state, actions }: { state: ReleaseStateData; act
                 <tr key={changeRequest.sysId}>
                   <td>{changeRequest.number}</td>
                   <td>{changeRequest.shortDescription}</td>
-                  <td>{changeRequest.state || '—'}</td>
+                  <td>
+                    <StateTransitionCell
+                      changeKey={changeRequest.number}
+                      onTransition={actions.updateChangeState}
+                      stateLabel={changeRequest.state || '—'}
+                      stateValue={changeRequest.stateValue}
+                    />
+                  </td>
                   <td>{changeRequest.plannedStartDate || '—'}</td>
                   <td>{changeRequest.plannedEndDate || '—'}</td>
                   <td>
