@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Hygiene score tile now shows a ℹ info button that explains how the score is calculated (100 − flags × 5, min 0; both warn and error flags count equally)
+
 ### Fixed
 - **PI Review — Confluence→Toolbox sync now transparent**: When loading a PI Review page, any field that Jira overwrote during reconciliation (Priority, Points, Dependencies, Risks, Notes) is now surfaced in a collapsible delta banner beneath the toolbar, so users can immediately see what Jira changed and know whether to Save to Confluence. Previously these silent overwrites could make manual Confluence edits look like they "didn't stick."
 
@@ -1274,7 +1277,10 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 
 ### Fixed
 - **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
- (v0.0.12 / previous [Unreleased])
+ (v0.0.12 / previous [Unreleased]
+
+### Added
+- Hygiene score tile now shows a ℹ info button that explains how the score is calculated (100 − flags × 5, min 0; both warn and error flags count equally))
 - **Root cause of "HTML not found" on corporate PCs** — The `resolvePortConflict`
   function previously detected an existing NodeToolbox on port 5555 and redirected the
   browser to it, then called `process.exit(0)`. If that old stuck session was a
@@ -1618,3 +1624,4 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 
 ### Changed
 - Forge Workflow initialized with Forge Terminal Workflow Architect
+
