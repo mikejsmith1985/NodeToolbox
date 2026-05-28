@@ -12,7 +12,7 @@ import {
   updateConfluencePage,
 } from '../../services/confluenceApi.ts';
 import type { CapacitySummary } from '../SprintDashboard/capacityModel.ts';
-import type { JiraIssue } from '../../types/jira.ts';
+import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
 import type { ArtTeam } from './hooks/useArtData.ts';
 import { downloadPiReviewPanelImage } from './piReviewPdf.ts';
 import {
@@ -42,13 +42,19 @@ import {
 } from './piReviewTable.ts';
 import {
   extractPiReviewFeatureKey,
+  fetchPiReviewFeatureTransitions,
+  fetchPiReviewTransitionFields,
   fetchPiReviewFeatureIssues,
   formatPiReviewFeatureDisplayValue,
   parsePiReviewFeatureDateUpdates,
+  type PiReviewTransitionAllowedValue,
+  type PiReviewTransitionField,
   readPiReviewFeatureDatePills,
   reconcilePiReviewRowsWithJira,
   savePiReviewFeatureDates,
   savePiReviewFeatureEstimates,
+  savePiReviewFeatureTransition,
+  savePiReviewTransitionRequiredFields,
 } from './piReviewJira.ts';
 import styles from './PiReviewTab.module.css';
 
@@ -77,6 +83,7 @@ const TEAM_DASHBOARD_ROUTE = '/sprint-dashboard';
 const TEAM_DASHBOARD_PI_REVIEW_TAB = 'pireview';
 const PI_REVIEW_TEAM_TABS_ID_PREFIX = 'art-pi-review-team';
 const SAVE_CONFIDENCE_VOTES_BUTTON_LABEL = 'Save Confidence Votes';
+const JIRA_BROWSE_URL_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/';
 const PI_REVIEW_TEMPLATE_REQUIRED_MESSAGE =
   'Load the Toolbox PI Review template locally before saving because this page does not contain a recognized PI Review table yet.';
 const CUSTOM_GROUPING_LINE_COLOR_OPTIONS = [
@@ -164,6 +171,53 @@ function createPiReviewExportFileName(selectedPiName: string, targetLabel: strin
   const normalizedTargetLabel = createPiReviewDownloadNameSegment(targetLabel);
   const normalizedPiName = createPiReviewDownloadNameSegment(selectedPiName);
   return `pi-review-${normalizedTargetLabel || 'team'}-${normalizedPiName || 'export'}.png`;
+}
+
+function createPiReviewIssueBrowseUrl(issueKey: string): string {
+  return `${JIRA_BROWSE_URL_PREFIX}${encodeURIComponent(issueKey)}`;
+}
+
+function normalizeTransitionFieldLabel(rawLabel: string): string {
+  return rawLabel.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function readMissingFieldLabelsFromTransitionError(errorMessage: string): string[] {
+  // Match "fields are required: ..." patterns, allowing for various endings (newline, period, semicolon, etc.)
+  const missingFieldMatch = errorMessage.match(/fields are required:\s*([^;.\n]+)/i);
+  if (!missingFieldMatch) {
+    return [];
+  }
+
+  return missingFieldMatch[1]
+    .split(/[,;]/)
+    .map((fieldLabel) => fieldLabel.trim())
+    .filter((fieldLabel) => fieldLabel.length > 0)
+    .filter((fieldLabel) => fieldLabel !== '');
+}
+
+function readTransitionAllowedValueOption(
+  allowedValue: PiReviewTransitionAllowedValue,
+): { label: string; value: string } | null {
+  const optionValue = allowedValue.id
+    ?? allowedValue.value
+    ?? allowedValue.name
+    ?? allowedValue.key
+    ?? allowedValue.accountId
+    ?? '';
+  const optionLabel = allowedValue.displayName
+    ?? allowedValue.value
+    ?? allowedValue.name
+    ?? allowedValue.key
+    ?? allowedValue.accountId
+    ?? optionValue;
+  if (optionValue.trim() === '' || optionLabel.trim() === '') {
+    return null;
+  }
+
+  return {
+    label: optionLabel,
+    value: optionValue,
+  };
 }
 
 async function waitForNextPaint(): Promise<void> {
@@ -588,6 +642,15 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
   const [isUpdatingJiraDates, setIsUpdatingJiraDates] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [transitionOptionsByFeatureKey, setTransitionOptionsByFeatureKey] = useState<Record<string, JiraTransition[]>>({});
+  const [isStatusPickerOpenByFeatureKey, setIsStatusPickerOpenByFeatureKey] = useState<Record<string, boolean>>({});
+  const [isLoadingTransitionByFeatureKey, setIsLoadingTransitionByFeatureKey] = useState<Record<string, boolean>>({});
+  const [isSavingTransitionByFeatureKey, setIsSavingTransitionByFeatureKey] = useState<Record<string, boolean>>({});
+  const [pendingTransitionIdByFeatureKey, setPendingTransitionIdByFeatureKey] = useState<Record<string, string>>({});
+  const [requiredTransitionFieldsByFeatureKey, setRequiredTransitionFieldsByFeatureKey] = useState<Record<string, Record<string, PiReviewTransitionField>>>({});
+  const [requiredTransitionFieldIdsByFeatureKey, setRequiredTransitionFieldIdsByFeatureKey] = useState<Record<string, string[]>>({});
+  const [requiredTransitionFieldValuesByFeatureKey, setRequiredTransitionFieldValuesByFeatureKey] = useState<Record<string, Record<string, string>>>({});
+  const [isRetryingTransitionByFeatureKey, setIsRetryingTransitionByFeatureKey] = useState<Record<string, boolean>>({});
   const [visibleOptionalColumns, setVisibleOptionalColumns] = useState<Set<OptionalPiReviewColumnKey>>(new Set());
   const [commitmentBoundaryIndex, setCommitmentBoundaryIndex] = useState<number | null>(null);
   const [customGroupingLines, setCustomGroupingLines] = useState<PiReviewCustomGroupingLine[]>([]);
@@ -631,6 +694,15 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
     setCommitmentBoundaryIndex(loadedSnapshot.commitmentBoundaryIndex);
     setCustomGroupingLines(cloneGroupingLines(loadedSnapshot.customGroupingLines));
     setJiraIssueMap(loadedSnapshot.jiraIssueMap);
+    setTransitionOptionsByFeatureKey({});
+    setIsStatusPickerOpenByFeatureKey({});
+    setPendingTransitionIdByFeatureKey({});
+    setRequiredTransitionFieldsByFeatureKey({});
+    setRequiredTransitionFieldIdsByFeatureKey({});
+    setRequiredTransitionFieldValuesByFeatureKey({});
+    setIsLoadingTransitionByFeatureKey({});
+    setIsSavingTransitionByFeatureKey({});
+    setIsRetryingTransitionByFeatureKey({});
     setHasUnsavedChanges(loadedSnapshot.hasUnsavedChanges);
     setFocusedCustomGroupingLineId(null);
     setExpandedCustomGroupingLineId(null);
@@ -683,6 +755,15 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
       setCommitmentBoundaryIndex(null);
       setCustomGroupingLines([]);
       setJiraIssueMap({});
+      setTransitionOptionsByFeatureKey({});
+      setIsStatusPickerOpenByFeatureKey({});
+      setPendingTransitionIdByFeatureKey({});
+      setRequiredTransitionFieldsByFeatureKey({});
+      setRequiredTransitionFieldIdsByFeatureKey({});
+      setRequiredTransitionFieldValuesByFeatureKey({});
+      setIsLoadingTransitionByFeatureKey({});
+      setIsSavingTransitionByFeatureKey({});
+      setIsRetryingTransitionByFeatureKey({});
       setIsEditMode(false);
       setHasUnsavedChanges(false);
       if (!hasLoadedConfluencePage) {
@@ -737,6 +818,15 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
       setCommitmentBoundaryIndex(null);
       setCustomGroupingLines([]);
       setJiraIssueMap({});
+      setTransitionOptionsByFeatureKey({});
+      setIsStatusPickerOpenByFeatureKey({});
+      setPendingTransitionIdByFeatureKey({});
+      setRequiredTransitionFieldsByFeatureKey({});
+      setRequiredTransitionFieldIdsByFeatureKey({});
+      setRequiredTransitionFieldValuesByFeatureKey({});
+      setIsLoadingTransitionByFeatureKey({});
+      setIsSavingTransitionByFeatureKey({});
+      setIsRetryingTransitionByFeatureKey({});
       setFocusedCustomGroupingLineId(null);
       setExpandedCustomGroupingLineId(null);
       setHasUnsavedChanges(true);
@@ -976,6 +1066,232 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
     const nextJiraIssueMap = await fetchPiReviewFeatureIssues(rows);
     setJiraIssueMap(nextJiraIssueMap);
     updateLoadedSnapshotJiraIssueMap(nextJiraIssueMap);
+  }
+
+  async function loadPiReviewFeatureTransitions(featureKey: string) {
+    if (
+      (transitionOptionsByFeatureKey[featureKey]?.length ?? 0) > 0
+      || isLoadingTransitionByFeatureKey[featureKey]
+    ) {
+      return;
+    }
+
+    setIsLoadingTransitionByFeatureKey((currentLoadingMap) => ({
+      ...currentLoadingMap,
+      [featureKey]: true,
+    }));
+    try {
+      const transitions = await fetchPiReviewFeatureTransitions(featureKey);
+      setTransitionOptionsByFeatureKey((currentTransitionMap) => ({
+        ...currentTransitionMap,
+        [featureKey]: transitions,
+      }));
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load Jira transitions';
+      showToast(errorMessage, 'error');
+    } finally {
+      setIsLoadingTransitionByFeatureKey((currentLoadingMap) => ({
+        ...currentLoadingMap,
+        [featureKey]: false,
+      }));
+    }
+  }
+
+  function readMatchingRequiredTransitionFieldIds(
+    transitionFields: Record<string, PiReviewTransitionField>,
+    missingFieldLabels: string[],
+  ): string[] {
+    const normalizedMissingLabels = new Set(missingFieldLabels.map((fieldLabel) => normalizeTransitionFieldLabel(fieldLabel)));
+    const matchedFieldIds = Object.entries(transitionFields)
+      .filter(([, transitionField]) => transitionField.required)
+      .filter(([fieldId, transitionField]) =>
+        normalizedMissingLabels.has(normalizeTransitionFieldLabel(transitionField.name ?? ''))
+        || normalizedMissingLabels.has(normalizeTransitionFieldLabel(fieldId)))
+      .map(([fieldId]) => fieldId);
+    
+    // If no specific matches found, fall back to showing all required fields
+    // This handles cases where field name normalization doesn't match Jira's metadata
+    if (matchedFieldIds.length === 0) {
+      return Object.entries(transitionFields)
+        .filter(([, transitionField]) => transitionField.required)
+        .map(([fieldId]) => fieldId);
+    }
+    
+    return matchedFieldIds;
+  }
+
+  async function refreshFeatureIssueAfterStatusUpdate(featureKey: string) {
+    const refreshedIssueMap = await fetchPiReviewFeatureIssues([{ ...createEmptyPiReviewRow(), feature: featureKey }]);
+    const refreshedIssue = refreshedIssueMap[featureKey];
+    if (!refreshedIssue) {
+      return;
+    }
+
+    setJiraIssueMap((currentIssueMap) => {
+      const nextIssueMap = {
+        ...currentIssueMap,
+        [featureKey]: refreshedIssue,
+      };
+      updateLoadedSnapshotJiraIssueMap(nextIssueMap);
+      return nextIssueMap;
+    });
+  }
+
+  function handleToggleStatusPicker(featureKey: string) {
+    setIsStatusPickerOpenByFeatureKey((currentOpenState) => {
+      const isNextOpen = !currentOpenState[featureKey];
+      if (isNextOpen) {
+        void loadPiReviewFeatureTransitions(featureKey);
+      }
+
+      return {
+        ...currentOpenState,
+        [featureKey]: isNextOpen,
+      };
+    });
+  }
+
+  function handleRequiredTransitionFieldValueChange(featureKey: string, fieldId: string, nextValue: string) {
+    setRequiredTransitionFieldValuesByFeatureKey((currentFieldValuesByFeatureKey) => ({
+      ...currentFieldValuesByFeatureKey,
+      [featureKey]: {
+        ...(currentFieldValuesByFeatureKey[featureKey] ?? {}),
+        [fieldId]: nextValue,
+      },
+    }));
+  }
+
+  async function handleTransitionSelection(featureKey: string, transitionId: string) {
+    if (transitionId.trim() === '') {
+      return;
+    }
+
+    setIsSavingTransitionByFeatureKey((currentSavingMap) => ({
+      ...currentSavingMap,
+      [featureKey]: true,
+    }));
+    setPendingTransitionIdByFeatureKey((currentPendingMap) => ({
+      ...currentPendingMap,
+      [featureKey]: transitionId,
+    }));
+    setRequiredTransitionFieldIdsByFeatureKey((currentFieldIdMap) => ({
+      ...currentFieldIdMap,
+      [featureKey]: [],
+    }));
+    setRequiredTransitionFieldValuesByFeatureKey((currentFieldValueMap) => ({
+      ...currentFieldValueMap,
+      [featureKey]: {},
+    }));
+
+    try {
+      await savePiReviewFeatureTransition(featureKey, transitionId);
+      await refreshFeatureIssueAfterStatusUpdate(featureKey);
+      const refreshedTransitions = await fetchPiReviewFeatureTransitions(featureKey);
+      setTransitionOptionsByFeatureKey((currentTransitionMap) => ({
+        ...currentTransitionMap,
+        [featureKey]: refreshedTransitions,
+      }));
+      setPendingTransitionIdByFeatureKey((currentPendingMap) => ({
+        ...currentPendingMap,
+        [featureKey]: '',
+      }));
+      showToast(`${featureKey} status updated.`, 'success');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update Jira status';
+      const missingFieldLabels = readMissingFieldLabelsFromTransitionError(errorMessage);
+      console.error(`[PiReview] Transition error for ${featureKey}:`, { errorMessage, missingFieldLabels });
+      if (missingFieldLabels.length === 0) {
+        showToast(errorMessage, 'error');
+        return;
+      }
+
+      let transitionFields: Record<string, PiReviewTransitionField> = {};
+      try {
+        transitionFields = await fetchPiReviewTransitionFields(featureKey, transitionId);
+        console.error(`[PiReview] Fetched transition fields for ${featureKey}:`, Object.keys(transitionFields));
+      } catch (fetchError) {
+        console.error(`[PiReview] Failed to fetch transition fields for ${featureKey}:`, fetchError);
+        showToast(errorMessage, 'error');
+        return;
+      }
+      const requiredTransitionFieldIds = readMatchingRequiredTransitionFieldIds(transitionFields, missingFieldLabels);
+      console.error(`[PiReview] Required field IDs for ${featureKey}:`, requiredTransitionFieldIds);
+      if (requiredTransitionFieldIds.length === 0) {
+        showToast(errorMessage, 'error');
+        return;
+      }
+
+      setRequiredTransitionFieldsByFeatureKey((currentTransitionFieldMap) => ({
+        ...currentTransitionFieldMap,
+        [featureKey]: transitionFields,
+      }));
+      setRequiredTransitionFieldIdsByFeatureKey((currentFieldIdMap) => ({
+        ...currentFieldIdMap,
+        [featureKey]: requiredTransitionFieldIds,
+      }));
+      showToast(`Jira requires ${missingFieldLabels.join(', ')} before moving ${featureKey}.`, 'error');
+    } finally {
+      setIsSavingTransitionByFeatureKey((currentSavingMap) => ({
+        ...currentSavingMap,
+        [featureKey]: false,
+      }));
+    }
+  }
+
+  async function handleApplyMissingTransitionFields(featureKey: string) {
+    const pendingTransitionId = pendingTransitionIdByFeatureKey[featureKey] ?? '';
+    if (pendingTransitionId.trim() === '') {
+      showToast('Choose a status before applying required Jira fields.', 'error');
+      return;
+    }
+
+    const requiredFieldIds = requiredTransitionFieldIdsByFeatureKey[featureKey] ?? [];
+    const fieldValuesForFeature = requiredTransitionFieldValuesByFeatureKey[featureKey] ?? {};
+    const hasMissingInput = requiredFieldIds.some((fieldId) => (fieldValuesForFeature[fieldId] ?? '').trim() === '');
+    if (hasMissingInput) {
+      showToast('Fill each required Jira field before retrying the status move.', 'error');
+      return;
+    }
+
+    setIsRetryingTransitionByFeatureKey((currentRetryState) => ({
+      ...currentRetryState,
+      [featureKey]: true,
+    }));
+    try {
+      await savePiReviewTransitionRequiredFields(
+        featureKey,
+        fieldValuesForFeature,
+        requiredTransitionFieldsByFeatureKey[featureKey] ?? {},
+      );
+      await savePiReviewFeatureTransition(featureKey, pendingTransitionId);
+      await refreshFeatureIssueAfterStatusUpdate(featureKey);
+      const refreshedTransitions = await fetchPiReviewFeatureTransitions(featureKey);
+      setTransitionOptionsByFeatureKey((currentTransitionMap) => ({
+        ...currentTransitionMap,
+        [featureKey]: refreshedTransitions,
+      }));
+      setRequiredTransitionFieldIdsByFeatureKey((currentFieldIdMap) => ({
+        ...currentFieldIdMap,
+        [featureKey]: [],
+      }));
+      setRequiredTransitionFieldValuesByFeatureKey((currentFieldValueMap) => ({
+        ...currentFieldValueMap,
+        [featureKey]: {},
+      }));
+      setPendingTransitionIdByFeatureKey((currentPendingMap) => ({
+        ...currentPendingMap,
+        [featureKey]: '',
+      }));
+      showToast(`${featureKey} status updated.`, 'success');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update Jira status';
+      showToast(errorMessage, 'error');
+    } finally {
+      setIsRetryingTransitionByFeatureKey((currentRetryState) => ({
+        ...currentRetryState,
+        [featureKey]: false,
+      }));
+    }
   }
 
   function buildNextPiReviewStorageValue(
@@ -1650,9 +1966,109 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
                               columnKey === FEATURE_COLUMN_KEY ? (
                                 <div className={styles.featureDisplayValue}>
                                   <div className={styles.readOnlyValue}>
-                                    {formatPiReviewFeatureDisplayValue(row.feature, jiraIssue)}
+                                    {featureKey ? (
+                                      <span>
+                                        <a
+                                          className={styles.featureIssueLink}
+                                          href={createPiReviewIssueBrowseUrl(featureKey)}
+                                          rel="noreferrer"
+                                          target="_blank"
+                                        >
+                                          {featureKey}
+                                        </a>
+                                        {jiraIssue?.fields.summary ? ` - ${jiraIssue.fields.summary}` : ''}
+                                      </span>
+                                    ) : (
+                                      formatPiReviewFeatureDisplayValue(row.feature, jiraIssue)
+                                    )}
                                   </div>
                                   <PiReviewFeatureDatePills jiraIssue={jiraIssue} />
+                                  {featureKey && jiraIssue ? (
+                                    <div className={styles.featureStatusActions} data-export-exclude="true">
+                                      <button
+                                        className={styles.featureStatusPillButton}
+                                        disabled={isToolbarBusy || isSavingTransitionByFeatureKey[featureKey]}
+                                        onClick={() => handleToggleStatusPicker(featureKey)}
+                                        type="button"
+                                      >
+                                        Status: {jiraIssue.fields.status.name}
+                                      </button>
+                                      {isStatusPickerOpenByFeatureKey[featureKey] ? (
+                                        <div className={styles.featureStatusControlRow}>
+                                          <label className={styles.featureStatusLabel}>
+                                            <span>Change Status</span>
+                                            <select
+                                              aria-label={`Change Jira status for ${featureKey} in ${target.targetLabel} row ${rowIndex + 1}`}
+                                              className={styles.featureStatusSelect}
+                                              disabled={isToolbarBusy || isSavingTransitionByFeatureKey[featureKey] || isLoadingTransitionByFeatureKey[featureKey]}
+                                              onChange={(event) => void handleTransitionSelection(featureKey, event.target.value)}
+                                              onFocus={() => void loadPiReviewFeatureTransitions(featureKey)}
+                                              value=""
+                                            >
+                                              <option value="">{isLoadingTransitionByFeatureKey[featureKey] ? 'Loading transitions…' : 'Select transition…'}</option>
+                                              {(transitionOptionsByFeatureKey[featureKey] ?? []).map((jiraTransition) => (
+                                                <option key={jiraTransition.id} value={jiraTransition.id}>
+                                                  {jiraTransition.name}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </label>
+                                        </div>
+                                      ) : null}
+                                      {(requiredTransitionFieldIdsByFeatureKey[featureKey] ?? []).length > 0 ? (
+                                        <div className={styles.requiredTransitionFieldCard}>
+                                          <strong className={styles.requiredTransitionTitle}>Jira missing required fields</strong>
+                                          {(requiredTransitionFieldIdsByFeatureKey[featureKey] ?? []).map((fieldId) => {
+                                            const transitionField = requiredTransitionFieldsByFeatureKey[featureKey]?.[fieldId];
+                                            const fieldLabel = transitionField?.name ?? fieldId;
+                                            const allowedValueOptions = (transitionField?.allowedValues ?? [])
+                                              .map((allowedValue) => readTransitionAllowedValueOption(allowedValue))
+                                              .filter((option): option is { label: string; value: string } => option !== null);
+                                            const currentValue = requiredTransitionFieldValuesByFeatureKey[featureKey]?.[fieldId] ?? '';
+                                            return (
+                                              <label className={styles.featureStatusLabel} key={fieldId}>
+                                                <span>{fieldLabel}</span>
+                                                {allowedValueOptions.length > 0 ? (
+                                                  <select
+                                                    aria-label={`${fieldLabel} for ${featureKey}`}
+                                                    className={styles.featureStatusSelect}
+                                                    disabled={isToolbarBusy || isRetryingTransitionByFeatureKey[featureKey]}
+                                                    onChange={(event) => handleRequiredTransitionFieldValueChange(featureKey, fieldId, event.target.value)}
+                                                    value={currentValue}
+                                                  >
+                                                    <option value="">Select {fieldLabel}…</option>
+                                                    {allowedValueOptions.map((option) => (
+                                                      <option key={option.value} value={option.value}>
+                                                        {option.label}
+                                                      </option>
+                                                    ))}
+                                                  </select>
+                                                ) : (
+                                                  <input
+                                                    aria-label={`${fieldLabel} for ${featureKey}`}
+                                                    className={styles.featureStatusInput}
+                                                    disabled={isToolbarBusy || isRetryingTransitionByFeatureKey[featureKey]}
+                                                    onChange={(event) => handleRequiredTransitionFieldValueChange(featureKey, fieldId, event.target.value)}
+                                                    placeholder={fieldId === 'parent' ? 'Issue key (for example ART-1234)' : `Enter ${fieldLabel}`}
+                                                    type="text"
+                                                    value={currentValue}
+                                                  />
+                                                )}
+                                              </label>
+                                            );
+                                          })}
+                                          <button
+                                            className={styles.rowToolButton}
+                                            disabled={isToolbarBusy || isRetryingTransitionByFeatureKey[featureKey]}
+                                            onClick={() => void handleApplyMissingTransitionFields(featureKey)}
+                                            type="button"
+                                          >
+                                            {isRetryingTransitionByFeatureKey[featureKey] ? 'Applying…' : 'Apply Fields & Retry'}
+                                          </button>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
                                 </div>
                               ) : isCheckboxColumn ? (
                                 renderPiReviewCheckboxDisplay(columnKey, row[columnKey])

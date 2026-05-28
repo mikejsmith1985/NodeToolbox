@@ -312,6 +312,84 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
+.featureStatusActions {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.featureIssueLink {
+  color: #38bdf8;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.featureStatusPillButton {
+  justify-self: start;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.16), rgba(14, 165, 233, 0.1));
+  color: #38bdf8;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.featureStatusValue {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.featureStatusControlRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+
+.featureStatusLabel {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.featureStatusSelect {
+  min-width: 180px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-1);
+  color: var(--color-text);
+  font: inherit;
+  padding: 8px 10px;
+}
+
+.featureStatusInput {
+  min-width: 220px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-1);
+  color: var(--color-text);
+  font: inherit;
+  padding: 8px 10px;
+}
+
+.requiredTransitionFieldCard {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  border-radius: 10px;
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.requiredTransitionTitle {
+  color: var(--color-danger);
+  font-size: 12px;
+}
+
 .featureDatePillList {
   display: flex;
   flex-wrap: wrap;

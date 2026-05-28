@@ -1,7 +1,7 @@
 // piReviewJira.ts — Jira-backed PI Review reconciliation helpers for feature summaries, links, and estimates.
 
-import { jiraGet, jiraPut } from '../../services/jiraApi.ts';
-import type { JiraIssue, JiraIssueLink } from '../../types/jira.ts';
+import { jiraGet, jiraPost, jiraPut } from '../../services/jiraApi.ts';
+import type { JiraIssue, JiraIssueLink, JiraTransition } from '../../types/jira.ts';
 import type { PiReviewRow } from './piReviewTable.ts';
 
 const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
@@ -52,6 +52,25 @@ export interface PiReviewFeatureDatePill {
   value: string;
 }
 
+export interface PiReviewTransitionAllowedValue {
+  accountId?: string;
+  displayName?: string;
+  id?: string;
+  key?: string;
+  name?: string;
+  value?: string;
+}
+
+export interface PiReviewTransitionField {
+  allowedValues?: PiReviewTransitionAllowedValue[];
+  name?: string;
+  required?: boolean;
+  schema?: {
+    items?: string;
+    type?: string;
+  };
+}
+
 export interface PiReviewJiraReconciliationResult {
   rows: PiReviewRow[];
   hasChanges: boolean;
@@ -64,6 +83,65 @@ function normalizeFreeText(value: string): string {
 
 function isMeaningfulFreeText(value: string): boolean {
   return !BLANKISH_TEXT_VALUES.has(normalizeFreeText(value));
+}
+
+function buildJiraUserPayload(userIdentifier: string): { accountId: string } | { key: string } | { name: string } {
+  const [identifierType, ...identifierValueParts] = userIdentifier.split(':');
+  const identifierValue = identifierValueParts.join(':').trim();
+  if (identifierType === 'accountId' && identifierValue !== '') {
+    return { accountId: identifierValue };
+  }
+
+  if (identifierType === 'key' && identifierValue !== '') {
+    return { key: identifierValue };
+  }
+
+  if (identifierType === 'name' && identifierValue !== '') {
+    return { name: identifierValue };
+  }
+
+  const trimmedUserIdentifier = userIdentifier.trim();
+  if (trimmedUserIdentifier !== '' && !trimmedUserIdentifier.includes(':')) {
+    return { accountId: trimmedUserIdentifier };
+  }
+
+  throw new Error('Select a Jira user before saving.');
+}
+
+function resolveAllowedValuePayload(
+  selectedValue: string,
+  transitionField: PiReviewTransitionField | undefined,
+): PiReviewTransitionAllowedValue | string {
+  const matchedAllowedValue = transitionField?.allowedValues?.find((allowedValue) =>
+    [
+      allowedValue.id,
+      allowedValue.value,
+      allowedValue.name,
+      allowedValue.key,
+      allowedValue.accountId,
+      allowedValue.displayName,
+    ].some((candidateValue) => candidateValue === selectedValue),
+  );
+  if (!matchedAllowedValue) {
+    return selectedValue;
+  }
+
+  if (matchedAllowedValue.id) {
+    return { id: matchedAllowedValue.id };
+  }
+  if (matchedAllowedValue.value) {
+    return { value: matchedAllowedValue.value };
+  }
+  if (matchedAllowedValue.name) {
+    return { name: matchedAllowedValue.name };
+  }
+  if (matchedAllowedValue.key) {
+    return { key: matchedAllowedValue.key };
+  }
+  if (matchedAllowedValue.accountId) {
+    return { accountId: matchedAllowedValue.accountId };
+  }
+  return selectedValue;
 }
 
 function readArtSettings(): ArtAdvancedSettings {
@@ -506,6 +584,82 @@ export async function savePiReviewFeatureEstimates(estimateUpdates: PiReviewEsti
       },
     });
   }
+}
+
+/** Loads the workflow transitions PI Review can offer for a Jira feature status update. */
+export async function fetchPiReviewFeatureTransitions(issueKey: string): Promise<JiraTransition[]> {
+  const transitionResponse = await jiraGet<{ transitions?: JiraTransition[] }>(
+    `/rest/api/2/issue/${encodeURIComponent(issueKey)}/transitions`,
+  );
+  return transitionResponse.transitions ?? [];
+}
+
+/** Saves a Jira workflow transition from PI Review so ART teams can update feature status inline. */
+export async function savePiReviewFeatureTransition(issueKey: string, transitionId: string): Promise<void> {
+  if (transitionId.trim() === '') {
+    throw new Error('Select a Jira transition before saving.');
+  }
+
+  await jiraPost<void>(`/rest/api/2/issue/${encodeURIComponent(issueKey)}/transitions`, {
+    transition: { id: transitionId.trim() },
+  });
+}
+
+/**
+ * Loads the Jira transition metadata (including required fields) for a specific workflow transition.
+ * PI Review uses this to render only the fields Jira requires when a transition fails with missing-field errors.
+ */
+export async function fetchPiReviewTransitionFields(
+  issueKey: string,
+  transitionId: string,
+): Promise<Record<string, PiReviewTransitionField>> {
+  const transitionResponse = await jiraGet<{
+    transitions?: Array<{ id?: string; fields?: Record<string, PiReviewTransitionField> }>;
+  }>(`/rest/api/2/issue/${encodeURIComponent(issueKey)}/transitions?expand=transitions.fields`);
+  const transitionDetails = (transitionResponse.transitions ?? [])
+    .find((candidateTransition) => candidateTransition.id === transitionId.trim());
+  return transitionDetails?.fields ?? {};
+}
+
+/**
+ * Saves required Jira fields before retrying a blocked PI Review transition.
+ * Supports parent-link issue keys, Jira user fields, option fields, and plain text values.
+ */
+export async function savePiReviewTransitionRequiredFields(
+  issueKey: string,
+  fieldValuesByFieldId: Record<string, string>,
+  transitionFields: Record<string, PiReviewTransitionField>,
+): Promise<void> {
+  const fields: Record<string, unknown> = {};
+  for (const [fieldId, fieldValue] of Object.entries(fieldValuesByFieldId)) {
+    const trimmedFieldValue = fieldValue.trim();
+    if (trimmedFieldValue === '') {
+      continue;
+    }
+
+    const transitionField = transitionFields[fieldId];
+    if (fieldId === 'parent') {
+      fields.parent = { key: trimmedFieldValue.toUpperCase() };
+      continue;
+    }
+
+    if (transitionField?.schema?.type === 'user') {
+      fields[fieldId] = buildJiraUserPayload(trimmedFieldValue);
+      continue;
+    }
+
+    const optionPayload = resolveAllowedValuePayload(trimmedFieldValue, transitionField);
+    if (transitionField?.schema?.type === 'array') {
+      fields[fieldId] = [optionPayload];
+    } else {
+      fields[fieldId] = optionPayload;
+    }
+  }
+
+  if (Object.keys(fields).length === 0) {
+    throw new Error('Fill the required Jira fields before retrying the status move.');
+  }
+  await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, { fields });
 }
 
 /** Saves pasted PI Review target dates back into Jira using the configured PI Review date fields. */
