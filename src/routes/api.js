@@ -1134,7 +1134,64 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
     }
   });
 
-  // ── GET /api/snow-relay/my-changes ──────────────────────────────────────
+  // ── PATCH /api/snow-relay/change/:changeKey/state ─────────────────────────
+  // Transitions a ServiceNow CHG to a new workflow state.
+  // Uses the relayBridge to send a minimal PATCH containing only the state field,
+  // so callers don't need to know the full change record structure.
+  //
+  // Params: changeKey (e.g., "CHG0046897")
+  // Body: { state: string } — the raw SNow state integer value (e.g., "-2", "1", "4")
+  // Returns: 204 No Content on success
+  // Returns: 400 if state is missing from the request body
+  // Returns: 404 if the change does not exist in ServiceNow
+  // Returns: 502 if the relay bridge is not active or ServiceNow is unreachable
+
+  router.patch('/api/snow-relay/change/:changeKey/state', async (req, res) => {
+    const changeKey = (req.params.changeKey || '').trim().toUpperCase();
+    const { state } = req.body || {};
+
+    if (!changeKey) {
+      return res.status(400).json({ error: 'Missing changeKey', message: 'Change key is required in the URL path.' });
+    }
+
+    if (state === undefined || state === '') {
+      return res.status(400).json({ error: 'Missing state', message: 'state is required in the request body.' });
+    }
+
+    try {
+      // Look up the sys_id for this change number first
+      const fetchRelayRequest = {
+        method: 'GET',
+        url: `/api/now/v2/table/change_request?sysparm_query=number=${encodeURIComponent(changeKey)}&sysparm_fields=sys_id`,
+      };
+
+      const fetchResult = await relayBridge.submitRelayRequest('snow', fetchRelayRequest, 30000);
+
+      if (!fetchResult || !fetchResult.result || fetchResult.result.length === 0) {
+        return res.status(404).json({ error: 'Not found', message: `Change ${changeKey} not found in ServiceNow.` });
+      }
+
+      const sysId = fetchResult.result[0].sys_id;
+
+      const stateRelayRequest = {
+        method: 'PATCH',
+        url: `/api/now/v2/table/change_request/${sysId}`,
+        body: { state: String(state) },
+      };
+
+      await relayBridge.submitRelayRequest('snow', stateRelayRequest, 30000);
+
+      console.log('  ✅ Change ' + changeKey + ' state updated to ' + state);
+      res.status(204).send();
+    } catch (error) {
+      console.error('  ❌ Error updating state for ' + changeKey + ':', error.message);
+      res.status(502).json({
+        error: 'Relay error',
+        message: 'Failed to update change state in ServiceNow. Ensure the relay bookmarklet is active and ServiceNow is accessible.',
+        details: error.message,
+      });
+    }
+  });
   // Fetches all open ServiceNow Changes assigned to the current user.
   // Uses the relayBridge to query ServiceNow via the browser session or proxy credentials.
   //
