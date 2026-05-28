@@ -1,6 +1,6 @@
 // MyIssuesView.test.tsx — Unit tests for the My Issues tabbed view component.
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -132,6 +132,11 @@ vi.mock('../Hygiene/HygieneView.tsx', () => ({
   default: () => <div>Mock Hygiene View</div>,
 }));
 
+vi.mock('../DevWorkspace/DevWorkspaceView.tsx', () => ({
+  EmbeddedTimeTrackingPanel: () => <div>Mock Time Tracking Panel</div>,
+  EmbeddedGitSyncPanel: () => <div>Mock Git Sync Panel</div>,
+}));
+
 vi.mock('../../components/IssueDetailPanel/index.tsx', () => ({
   default: ({ issue, onIssueUpdated }: { issue: JiraIssue; onIssueUpdated?: () => void }) => (
     <div>
@@ -183,12 +188,52 @@ describe('MyIssuesView', () => {
     mockJiraPut.mockResolvedValue(undefined);
   });
 
-  it('renders the Report, Hygiene, and Settings tab buttons', () => {
+  it('renders the Report, Hygiene, Time Tracking, Git Sync, and Settings tab buttons', () => {
     render(<MyIssuesView />);
 
     expect(screen.getByRole('tab', { name: 'Report' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Hygiene' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Time Tracking' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Git Sync' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Settings' })).toBeInTheDocument();
+  });
+
+  it('automatically fetches Jira issues when the view loads', async () => {
+    render(<MyIssuesView />);
+
+    await waitFor(() => {
+      expect(mockActions.fetchMyIssues).toHaveBeenCalled();
+    });
+  });
+
+  it('automatically fetches ServiceNow issues when the relay is ready', async () => {
+    mockUseConnectionStore.mockReturnValue({ isSnowReady: true });
+    render(<MyIssuesView />);
+
+    await waitFor(() => {
+      expect(mockSnowFetch).toHaveBeenCalled();
+    });
+  });
+
+  it('renders a top-right Refresh button that refreshes Jira and ServiceNow when relay is ready', async () => {
+    const user = userEvent.setup();
+    mockUseConnectionStore.mockReturnValue({ isSnowReady: true });
+    render(<MyIssuesView />);
+
+    await waitFor(() => {
+      expect(mockActions.fetchMyIssues).toHaveBeenCalled();
+      expect(mockSnowFetch).toHaveBeenCalled();
+    });
+
+    mockActions.fetchMyIssues.mockClear();
+    mockSnowFetch.mockClear();
+
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    await waitFor(() => {
+      expect(mockActions.fetchMyIssues).toHaveBeenCalled();
+      expect(mockSnowFetch).toHaveBeenCalled();
+    });
   });
 
   it('shows the source strip with My Issues/JQL/Saved Filter/Board buttons', () => {

@@ -155,6 +155,9 @@ describe('DevWorkspaceView', () => {
       screen.getByLabelText(/primary sync repository \(owner\/repo or github url\)/i),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /add to monitor list/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/additional sync repositories/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/log commits missing jira keys/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/log healthy runs/i)).toBeInTheDocument();
   });
 
   it('persists monitored repos when adding from the primary sync repository field', async () => {
@@ -178,4 +181,3 @@ describe('DevWorkspaceView', () => {
     });
   });
 });
-

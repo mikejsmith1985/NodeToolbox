@@ -7,6 +7,7 @@ import { useState } from 'react'
 
 import { jiraGet } from '../../../services/jiraApi.ts'
 import { readArtFeatureScopeSettings } from '../../ArtView/artFeatureScopeSettings.ts'
+import { fetchScopedTeamFeatures } from '../../SprintDashboard/scopedTeamFeatures.ts'
 
 // ── Named constants ──
 
@@ -21,6 +22,7 @@ const REPORT_FIELDS =
   'summary,status,fixVersions,assignee,customfield_10301,priority,issuetype,created,updated,duedate,labels,issuelinks,resolutiondate'
 
 const LOAD_FEATURES_FAILURE = 'Failed to load features'
+const LOAD_BOTTOM_UP_FEATURES_FAILURE = 'Failed to load bottom-up features'
 const LOAD_DEFECTS_FAILURE = 'Failed to load defects'
 const LOAD_RISKS_FAILURE = 'Failed to load risks'
 const SPRINT_ISSUE_FIELDS = 'summary,status,assignee,priority,labels,updated,created,resolutiondate,issuetype,fixVersions,customfield_10020,customfield_10301'
@@ -31,6 +33,7 @@ const LOAD_QUALITY_FAILURE = 'Failed to load quality data'
 const LOAD_THROUGHPUT_FAILURE = 'Failed to load throughput data'
 const BOARD_PROJECT_CACHE_PREFIX = 'board:'
 const RISK_LABELS_JQL = 'risk, risks'
+const REPORTS_HUB_FEATURE_LOAD_LOG_PREFIX = '[Reports Hub][Feature Load]'
 
 // ── Type definitions ──
 
@@ -73,6 +76,7 @@ export interface JiraFeatureIssue {
   labelNames?: string[]
   dependencyCount?: number
   isRiskTagged?: boolean
+  isBottomUpScoped?: boolean
 }
 
 /** A normalised active-sprint Jira issue — shared data source for Flow, Impact, Individual, and Sprint Health tabs. */
@@ -229,6 +233,24 @@ interface JiraBoardProjectResponse {
 type JiraPiFieldValue = { value?: string | null; name?: string | null } | string | null
 
 const boardProjectKeyPromiseCache = new Map<string, Promise<string>>()
+
+function logFeatureLoadInfo(message: string, details?: Record<string, unknown>): void {
+  if (details) {
+    console.info(`${REPORTS_HUB_FEATURE_LOAD_LOG_PREFIX} ${message}`, details)
+    return
+  }
+
+  console.info(`${REPORTS_HUB_FEATURE_LOAD_LOG_PREFIX} ${message}`)
+}
+
+function logFeatureLoadWarning(message: string, details?: Record<string, unknown>): void {
+  if (details) {
+    console.warn(`${REPORTS_HUB_FEATURE_LOAD_LOG_PREFIX} ${message}`, details)
+    return
+  }
+
+  console.warn(`${REPORTS_HUB_FEATURE_LOAD_LOG_PREFIX} ${message}`)
+}
 
 // ── Helper: localStorage team loader ──
 
@@ -512,6 +534,107 @@ function mergeFeatureIssuesByKey(
   return Array.from(mergedIssuesByKey.values())
 }
 
+function normalizeStatusCategory(statusName: string): string {
+  const normalizedStatusName = statusName.toLowerCase()
+  if (
+    normalizedStatusName.includes('done')
+    || normalizedStatusName.includes('closed')
+    || normalizedStatusName.includes('resolved')
+    || normalizedStatusName.includes('complete')
+  ) {
+    return 'done'
+  }
+
+  if (
+    normalizedStatusName.includes('to do')
+    || normalizedStatusName.includes('todo')
+    || normalizedStatusName.includes('open')
+    || normalizedStatusName.includes('new')
+  ) {
+    return 'new'
+  }
+
+  return 'indeterminate'
+}
+
+/** Maps Team Dashboard bottom-up feature records to the Reports Hub issue shape. */
+function mapScopedTeamFeatureToReportIssue(
+  teamConfig: ArtTeamConfig,
+  scopedFeatureRecord: Awaited<ReturnType<typeof fetchScopedTeamFeatures>>[number],
+): JiraFeatureIssue {
+  const featureIssue = scopedFeatureRecord.featureIssue
+  const issueFields = featureIssue?.fields
+  const issueLabels = issueFields?.labels ?? []
+
+  return {
+    key: scopedFeatureRecord.feature.key,
+    summary: issueFields?.summary ?? scopedFeatureRecord.feature.summary,
+    statusName: issueFields?.status?.name ?? scopedFeatureRecord.feature.status,
+    statusCategory:
+      issueFields?.status?.statusCategory?.key
+      ?? normalizeStatusCategory(issueFields?.status?.name ?? scopedFeatureRecord.feature.status),
+    teamName: teamConfig.name,
+    fixVersions: issueFields?.fixVersions?.map((fixVersion) => fixVersion.name) ?? [],
+    assigneeName: issueFields?.assignee?.displayName ?? null,
+    piName: resolveIssuePiName(issueFields?.[PI_CUSTOM_FIELD] ?? null, issueFields?.fixVersions),
+    priority: issueFields?.priority?.name ?? null,
+    issueTypeName: issueFields?.issuetype?.name ?? 'Feature',
+    createdDate: issueFields?.created ?? undefined,
+    updatedDate: issueFields?.updated ?? undefined,
+    dueDate: issueFields?.duedate ?? null,
+    resolutionDate: issueFields?.resolutiondate ?? null,
+    labelNames: issueLabels,
+    dependencyCount: issueFields?.issuelinks?.length ?? 0,
+    isRiskTagged: issueLabels.some((issueLabel) => issueLabel.toLowerCase().includes('risk')),
+    isBottomUpScoped: true,
+  }
+}
+
+/** Loads features using the Team Dashboard bottom-up hierarchy path for teams that otherwise return no feature records. */
+async function fetchBottomUpFeaturesAcrossTeams(
+  artTeams: ArtTeamConfig[],
+): Promise<JiraFeatureIssue[]> {
+  if (artTeams.length === 0) {
+    return []
+  }
+
+  const featureScopeSettings = readArtFeatureScopeSettings()
+  const scopedTeamFeatureResults = await Promise.all(
+    artTeams.map(async (teamConfig) => {
+      const scopedTeamFeatures = await fetchScopedTeamFeatures(
+        {
+          id: `${teamConfig.name}-${teamConfig.boardId ?? teamConfig.projectKey ?? 'reports-hub'}`,
+          name: teamConfig.name,
+          boardId: teamConfig.boardId ?? '',
+          projectKey: teamConfig.projectKey,
+          sprintIssues: [],
+          isLoading: false,
+          loadError: null,
+        },
+        '',
+        {
+          piFieldId: featureScopeSettings.piFieldId,
+          featureProjectKeys: featureScopeSettings.featureProjectKeys,
+          requestedFieldIds: [
+            'assignee',
+            'created',
+            'duedate',
+            'fixVersions',
+            'issuelinks',
+            'labels',
+            'priority',
+            'resolutiondate',
+            'updated',
+          ],
+        },
+      )
+      return scopedTeamFeatures.map((scopedFeatureRecord) => mapScopedTeamFeatureToReportIssue(teamConfig, scopedFeatureRecord))
+    }),
+  )
+
+  return scopedTeamFeatureResults.flat()
+}
+
 /** Extracts readable loader errors from settled promise results without losing partial success data. */
 function extractRejectedMessages(
   settledResults: PromiseSettledResult<unknown>[],
@@ -712,9 +835,15 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
   }
 
   async function loadFeatures(): Promise<void> {
+    const featureLoadStartedAt = Date.now()
     setIsLoadingFeatures(true)
     setFeaturesError(null)
     const featureScopeProjectKeys = readArtFeatureScopeSettings().featureProjectKeys
+    logFeatureLoadInfo('Starting feature load', {
+      artTeamCount: currentArtTeams.length,
+      artTeamNames: currentArtTeams.map((teamConfig) => teamConfig.name),
+      featureScopeProjectKeys,
+    })
     const featureResultSet = await Promise.allSettled([
       fetchIssuesAcrossTeams(
         currentArtTeams,
@@ -733,12 +862,47 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
       const scopedProjectFeatures = scopedProjectFeatureResult.status === 'fulfilled'
         ? scopedProjectFeatureResult.value
         : []
-      setFeatures(mergeFeatureIssuesByKey(teamScopedFeatures, scopedProjectFeatures))
+      logFeatureLoadInfo('Project feature queries completed', {
+        teamQueryStatus: teamScopedFeatureResult.status,
+        teamFeatureCount: teamScopedFeatures.length,
+        featureScopeQueryStatus: scopedProjectFeatureResult.status,
+        featureScopeFeatureCount: scopedProjectFeatures.length,
+      })
+      let mergedFeatureIssues = mergeFeatureIssuesByKey(teamScopedFeatures, scopedProjectFeatures)
 
-      const rejectedMessages = extractRejectedMessages(featureResultSet, LOAD_FEATURES_FAILURE)
-      if (rejectedMessages.length > 0) {
-        setFeaturesError(rejectedMessages.join('; '))
+      const errorMessages = extractRejectedMessages(featureResultSet, LOAD_FEATURES_FAILURE)
+      if (mergedFeatureIssues.length === 0 && currentArtTeams.length > 0) {
+        logFeatureLoadWarning('No project-level features found, activating bottom-up fallback', {
+          artTeamCount: currentArtTeams.length,
+          artTeamNames: currentArtTeams.map((teamConfig) => teamConfig.name),
+        })
+        const bottomUpFeatureResult = await Promise.allSettled([
+          fetchBottomUpFeaturesAcrossTeams(currentArtTeams),
+        ])
+        const loadedBottomUpFeatures = bottomUpFeatureResult[0]?.status === 'fulfilled'
+          ? bottomUpFeatureResult[0].value
+          : []
+        mergedFeatureIssues = mergeFeatureIssuesByKey(mergedFeatureIssues, loadedBottomUpFeatures)
+        errorMessages.push(...extractRejectedMessages(bottomUpFeatureResult, LOAD_BOTTOM_UP_FEATURES_FAILURE))
+        logFeatureLoadInfo('Bottom-up fallback completed', {
+          fallbackStatus: bottomUpFeatureResult[0]?.status ?? 'unknown',
+          fallbackFeatureCount: loadedBottomUpFeatures.length,
+        })
       }
+
+      setFeatures(mergedFeatureIssues)
+
+      if (errorMessages.length > 0) {
+        const uniqueErrorMessages = Array.from(new Set(errorMessages))
+        setFeaturesError(uniqueErrorMessages.join('; '))
+        logFeatureLoadWarning('Feature load completed with errors', {
+          errorMessages: uniqueErrorMessages,
+        })
+      }
+      logFeatureLoadInfo('Feature load completed', {
+        finalFeatureCount: mergedFeatureIssues.length,
+        loadDurationMs: Date.now() - featureLoadStartedAt,
+      })
     } finally {
       setIsLoadingFeatures(false)
     }

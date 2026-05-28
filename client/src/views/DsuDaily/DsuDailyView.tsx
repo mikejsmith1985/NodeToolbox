@@ -84,7 +84,7 @@ export default function DsuDailyView() {
                 void dsuDailyState.refresh();
               }}
             >
-              {dsuDailyState.isLoading ? 'Loading…' : '↻ Refresh'}
+              {dsuDailyState.isLoading ? 'Loading…' : 'Refresh'}
             </button>
             <button
               type="button"

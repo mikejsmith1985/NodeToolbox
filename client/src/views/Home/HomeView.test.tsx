@@ -73,7 +73,7 @@ describe('HomeView', () => {
     renderHomeView();
 
     expect(screen.getByText('Recently Used')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: '🏗 Dev Workspace' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '📊 My Issues' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '📈 Reports Hub' })).toBeInTheDocument();
   });
 

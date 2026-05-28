@@ -19,7 +19,6 @@ import ArtView from './views/ArtView/ArtView.tsx';
 import AdminHubView from './views/AdminHub/AdminHubView.tsx';
 import BusinessHelperView from './views/BusinessHelper/BusinessHelperView.tsx';
 import CodeWalkthroughView from './views/CodeWalkthrough/CodeWalkthroughView.tsx';
-import DevWorkspaceView from './views/DevWorkspace/DevWorkspaceView.tsx';
 import DsuBoardView from './views/DsuBoard/DsuBoardView.tsx';
 import HomeView from './views/Home/HomeView.tsx';
 import MyIssuesView from './views/MyIssues/MyIssuesView.tsx';
@@ -170,7 +169,7 @@ export default function App() {
           <Route path={PERSONAL_TOOLBOX_ROUTE} element={<PersonalToolboxView />} />
           <Route path={SPRINT_DASHBOARD_ROUTE} element={<SprintDashboardView />} />
           <Route path={ART_ROUTE} element={<ArtView />} />
-          <Route path={DEV_WORKSPACE_ROUTE} element={<DevWorkspaceView />} />
+          <Route path={DEV_WORKSPACE_ROUTE} element={<Navigate to={MY_ISSUES_ROUTE} replace />} />
           <Route path={DSU_BOARD_ROUTE} element={<DsuBoardView />} />
           <Route path={CODE_WALKTHROUGH_ROUTE} element={<CodeWalkthroughView />} />
           <Route path={TEXT_TOOLS_ROUTE} element={<TextToolsView />} />
@@ -190,7 +189,7 @@ export default function App() {
           <Route path="/pipeline" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
           <Route path="/defects" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
           <Route path="/release-monitor" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
-          <Route path="/work-log" element={<Navigate to={DEV_WORKSPACE_ROUTE} replace />} />
+          <Route path="/work-log" element={<Navigate to={MY_ISSUES_ROUTE} replace />} />
           <Route path="/mermaid" element={<Navigate to={TEXT_TOOLS_ROUTE} replace />} />
           <Route path="/pitch-deck" element={<Navigate to={CODE_WALKTHROUGH_ROUTE} replace />} />
           <Route path="/hygiene" element={<Navigate to={MY_ISSUES_ROUTE} replace />} />

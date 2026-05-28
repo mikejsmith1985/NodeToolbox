@@ -534,7 +534,7 @@ export default function StandupTab({
               </div>
               <div className={styles.personWalkActionRow}>
                 <button className={styles.secondaryButton} onClick={() => void actions.refreshPersonWalk()} type="button">
-                  ↻ Refresh
+                  Refresh
                 </button>
                 <button className={styles.secondaryButton} onClick={() => void actions.copyPersonWalk()} type="button">
                   📋 Copy Summary
