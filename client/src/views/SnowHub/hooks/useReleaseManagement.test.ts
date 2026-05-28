@@ -16,16 +16,16 @@ const MOCK_CHANGE_RECORD = {
   short_description: { value: 'Deploy checkout service fixes', display_value: 'Deploy checkout service fixes' },
   state: { value: '-2', display_value: 'Scheduled' },
   assigned_to: { value: 'user-1', display_value: 'Casey Engineer' },
-  planned_start_date: { value: '2025-02-01 08:00:00', display_value: '2025-02-01 08:00:00' },
-  planned_end_date: { value: '2025-02-01 09:00:00', display_value: '2025-02-01 09:00:00' },
+  start_date: { value: '2025-02-01 08:00:00', display_value: '2025-02-01 08:00:00' },
+  end_date: { value: '2025-02-01 09:00:00', display_value: '2025-02-01 09:00:00' },
   risk: { value: 'moderate', display_value: 'Moderate' },
   impact: { value: 'medium', display_value: 'Medium' },
 };
 
 const MOCK_CHANGE_RECORD_WITH_BLANK_DATE_DISPLAY = {
   ...MOCK_CHANGE_RECORD,
-  planned_start_date: { value: '2025-02-01 08:00:00', display_value: '' },
-  planned_end_date: { value: '2025-02-01 09:00:00', display_value: '' },
+  start_date: { value: '2025-02-01 08:00:00', display_value: '' },
+  end_date: { value: '2025-02-01 09:00:00', display_value: '' },
 };
 
 const EXPECTED_CHANGE_REQUEST = {
@@ -155,7 +155,7 @@ describe('useReleaseManagement', () => {
     expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain(
       'sysparm_query=assigned_to%3Djavascript%3Ags.getUserID()%5Eactive%3Dtrue',
     );
-    expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('sysparm_fields=sys_id,number,short_description,state,planned_start_date,planned_end_date');
+    expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('sysparm_fields=sys_id,number,short_description,state,start_date,end_date');
     expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('sysparm_display_value=all');
     expect(result.current.state.myChangesError).toBeNull();
     expect(result.current.state.myActiveChanges).toEqual([EXPECTED_ACTIVE_CHANGE_SUMMARY]);

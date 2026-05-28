@@ -59,9 +59,10 @@ interface ReleaseManagementActions {
 const EMPTY_VALUE = '';
 const RELEASE_MONITOR_SETTINGS_STORAGE_KEY = 'tbx-release-monitor-settings';
 const CHANGE_TABLE_PATH = '/api/now/table/change_request';
+// SNow change_request table stores schedule dates as start_date and end_date (not planned_*)
 const CHANGE_LOOKUP_FIELDS =
-  'sys_id,number,short_description,state,assigned_to,planned_start_date,planned_end_date,risk,impact';
-const ACTIVE_CHANGE_FIELDS = 'sys_id,number,short_description,state,planned_start_date,planned_end_date';
+  'sys_id,number,short_description,state,assigned_to,start_date,end_date,risk,impact';
+const ACTIVE_CHANGE_FIELDS = 'sys_id,number,short_description,state,start_date,end_date';
 const CHANGE_LOOKUP_LIMIT = 1;
 const ACTIVE_CHANGE_LIMIT = 20;
 const ACTIVE_CHANGE_QUERY = 'assigned_to=javascript:gs.getUserID()^active=true';
@@ -288,8 +289,8 @@ function mapChangeRecord(changeRecord: ServiceNowChangeRecord): ChangeRequest {
     shortDescription: extractServiceNowFieldValue(changeRecord.short_description),
     state: extractServiceNowFieldValue(changeRecord.state),
     assignedTo: extractServiceNowReference(changeRecord.assigned_to),
-    plannedStartDate: extractServiceNowFieldValue(changeRecord.planned_start_date),
-    plannedEndDate: extractServiceNowFieldValue(changeRecord.planned_end_date),
+    plannedStartDate: extractServiceNowFieldValue(changeRecord.start_date),
+    plannedEndDate: extractServiceNowFieldValue(changeRecord.end_date),
     risk: extractServiceNowFieldValue(changeRecord.risk),
     impact: extractServiceNowFieldValue(changeRecord.impact),
   };
@@ -301,8 +302,8 @@ function mapActiveChangeSummary(changeRecord: ServiceNowChangeRecord): ActiveCha
     number: extractServiceNowFieldValue(changeRecord.number),
     shortDescription: extractServiceNowFieldValue(changeRecord.short_description),
     state: extractServiceNowFieldValue(changeRecord.state),
-    plannedStartDate: extractServiceNowFieldValue(changeRecord.planned_start_date),
-    plannedEndDate: extractServiceNowFieldValue(changeRecord.planned_end_date),
+    plannedStartDate: extractServiceNowFieldValue(changeRecord.start_date),
+    plannedEndDate: extractServiceNowFieldValue(changeRecord.end_date),
     alertSeverity: 'healthy',
     alertMessage: null,
   };
