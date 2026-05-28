@@ -190,8 +190,8 @@ describe('ModifyChgTab - My Open Changes Feature', () => {
         ...MOCK_CHANGE_RECORD,
         u_environment: { value: 'prod', display_value: 'Production' },
         cmdb_ci: { value: 'ci-123', display_value: 'Payroll Production Cluster' },
-        planned_start_date: { value: '2026-06-01 10:00:00', display_value: '2026-06-01 10:00:00' },
-        planned_end_date: { value: '2026-06-01 11:00:00', display_value: '2026-06-01 11:00:00' },
+        start_date: { value: '2026-06-01 10:00:00', display_value: '2026-06-01 10:00:00' },
+        end_date: { value: '2026-06-01 11:00:00', display_value: '2026-06-01 11:00:00' },
       }],
     });
 

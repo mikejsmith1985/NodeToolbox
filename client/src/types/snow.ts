@@ -12,7 +12,10 @@ export interface ChangeRequest {
   sysId: string;
   number: string;
   shortDescription: string;
+  /** Human-readable display label for the current workflow state (e.g. "Scheduled"). */
   state: string;
+  /** Raw SNow integer choice value for state (e.g. "-2"). Used for workflow transitions. */
+  stateValue: string;
   assignedTo: SnowUser | null;
   plannedStartDate: string;
   plannedEndDate: string;

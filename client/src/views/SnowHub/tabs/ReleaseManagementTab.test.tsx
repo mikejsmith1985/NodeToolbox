@@ -12,6 +12,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
       number: string;
       shortDescription: string;
       state: string;
+      stateValue: string;
       assignedTo: { sysId: string; name: string; email: string } | null;
       plannedStartDate: string;
       plannedEndDate: string;
@@ -25,6 +26,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
       number: string;
       shortDescription: string;
       state: string;
+      stateValue: string;
       plannedStartDate: string;
       plannedEndDate: string;
       alertSeverity: 'healthy' | 'warning' | 'error';
@@ -46,6 +48,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     setChgNumber: vi.fn(),
     loadChg: vi.fn().mockResolvedValue(undefined),
     loadMyActiveChanges: vi.fn().mockResolvedValue(undefined),
+    updateChangeState: vi.fn().mockResolvedValue(undefined),
     appendLogEntry: vi.fn(),
     clearLog: vi.fn(),
     clearLoadedChg: vi.fn(),
@@ -55,6 +58,8 @@ const { mockState, mockActions } = vi.hoisted(() => ({
 
 vi.mock('../hooks/useReleaseManagement.ts', () => ({
   useReleaseManagement: () => ({ state: mockState, actions: mockActions }),
+  CHG_STATE_TRANSITIONS: {} as Record<string, readonly { value: string; label: string }[]>,
+  ALL_CHG_STATES: [] as readonly { value: string; label: string }[],
 }));
 
 import ReleaseManagementTab from './ReleaseManagementTab.tsx';
@@ -113,6 +118,7 @@ describe('ReleaseManagementTab', () => {
       number: 'CHG0001234',
       shortDescription: 'Release the payment patch',
       state: 'Implement',
+      stateValue: '1',
       assignedTo: { sysId: 'user-1', name: 'Casey Engineer', email: 'casey@example.com' },
       plannedStartDate: '2026-05-01 10:00:00',
       plannedEndDate: '2026-05-01 12:00:00',
@@ -167,6 +173,7 @@ describe('ReleaseManagementTab', () => {
         number: 'CHG0001234',
         shortDescription: 'Release the payment patch',
         state: 'Scheduled',
+        stateValue: '-2',
         plannedStartDate: '2026-05-01 10:00:00',
         plannedEndDate: '2026-05-01 12:00:00',
         alertSeverity: 'warning',
