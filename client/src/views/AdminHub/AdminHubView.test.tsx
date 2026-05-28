@@ -169,6 +169,10 @@ vi.mock('../DevPanel/DevPanelView.tsx', () => ({
   default: () => <div>Mock Dev Panel</div>,
 }));
 
+vi.mock('../DevWorkspace/DevWorkspaceView.tsx', () => ({
+  RepoMonitorPanel: () => <div>Mock Repo Monitor Panel</div>,
+}));
+
 import AdminHubView from './AdminHubView.tsx';
 
 function renderAdminHubView() {
@@ -201,9 +205,10 @@ describe('AdminHubView', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders the Config and Dev Panel tab buttons', () => {
+  it('renders the Config, Repo Monitor, and Dev Panel tab buttons', () => {
     renderAdminHubView();
     expect(screen.getByRole('tab', { name: /config/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /repo monitor/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /dev panel/i })).toBeInTheDocument();
   });
 

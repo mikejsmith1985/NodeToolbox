@@ -67,7 +67,7 @@ describe('DsuDailyView', () => {
     expect(screen.getByLabelText('Today')).toBeInTheDocument();
     expect(screen.getByLabelText('Blockers')).toBeInTheDocument();
     expect(screen.getByLabelText('Standup preview')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '↻ Refresh' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '📋 Copy' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Post to Jira' })).toBeInTheDocument();
     expect(screen.getByLabelText('Issue key for Jira comment')).toBeInTheDocument();

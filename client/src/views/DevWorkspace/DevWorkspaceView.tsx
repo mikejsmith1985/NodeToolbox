@@ -124,6 +124,18 @@ type PanelProps = {
   actions: ReturnType<typeof useDevWorkspaceState>['actions'];
 };
 
+/** Renders Time Tracking as an embedded panel inside other workspaces. */
+export function EmbeddedTimeTrackingPanel() {
+  const { state, actions } = useDevWorkspaceState();
+  return <TimeTrackingPanel state={state} actions={actions} />;
+}
+
+/** Renders Git Sync as an embedded panel inside other workspaces. */
+export function EmbeddedGitSyncPanel() {
+  const { state, actions } = useDevWorkspaceState();
+  return <GitSyncPanel state={state} actions={actions} />;
+}
+
 /** Renders the primary Jira hygiene workspace for developer issue health. */
 function HygienePanel() {
   return (
@@ -245,12 +257,16 @@ function GitSyncPanel({ state, actions }: PanelProps) {
   const pollingEngine = useGitHubPollingEngine({
     githubPat: settings.githubPat,
     repoFullName: settings.repoFullName,
+    monitoredReposText: settings.monitoredReposText,
     jiraProjectKey: settings.jiraProjectKey,
     intervalMinutes: settings.syncIntervalMinutes,
     maxCommits: settings.maxCommitsPerSync,
     keyPattern: settings.commitKeyPattern,
     commitTemplate: settings.commitMessageTemplate,
+    branchPrefixesToStrip: settings.branchPrefixesToStrip,
     strategy: settings.postingStrategy,
+    shouldLogMissingJiraKeys: settings.shouldLogMissingJiraKeys,
+    shouldLogHealthyRuns: settings.shouldLogHealthyRuns,
     onLogEntry: actions.appendSyncLog,
   })
 
@@ -319,7 +335,7 @@ function GitSyncPanel({ state, actions }: PanelProps) {
 }
 
 /** Renders the Repo Monitor tab backed by the legacy server scheduler endpoints. */
-function RepoMonitorPanel() {
+export function RepoMonitorPanel() {
   const [monitorConfig, setMonitorConfig] = useState<RepoMonitorSchedulerConfig | null>(null);
   const [monitorStatus, setMonitorStatus] = useState<SchedulerStatusResponse | null>(null);
   const [monitorEvents, setMonitorEvents] = useState<SchedulerResultEvent[]>([]);
@@ -839,6 +855,38 @@ function WorkspaceSettingsPanel() {
               onChange={(event) => updateSettings({ branchPrefixesToStrip: event.target.value })}
             />
           </div>
+          <div className={`${styles.settingsField} ${styles.settingsFieldWide}`}>
+            <label className={styles.fieldLabel} htmlFor="dw-additional-sync-repos">Additional Sync Repositories</label>
+            <textarea
+              id="dw-additional-sync-repos"
+              className={styles.textArea}
+              rows={3}
+              value={settings.monitoredReposText}
+              placeholder="owner/repo-one, owner/repo-two"
+              onChange={(event) => updateSettings({ monitoredReposText: event.target.value })}
+            />
+            <p className={styles.helpText}>
+              Optional comma or newline list. When provided, Git Sync scans these repos instead of only the primary repo.
+            </p>
+          </div>
+        </div>
+        <div className={styles.radioGroup}>
+          <label className={styles.radioLabel}>
+            <input
+              type="checkbox"
+              checked={settings.shouldLogMissingJiraKeys}
+              onChange={(event) => updateSettings({ shouldLogMissingJiraKeys: event.target.checked })}
+            />
+            Log commits missing Jira keys
+          </label>
+          <label className={styles.radioLabel}>
+            <input
+              type="checkbox"
+              checked={settings.shouldLogHealthyRuns}
+              onChange={(event) => updateSettings({ shouldLogHealthyRuns: event.target.checked })}
+            />
+            Log healthy runs
+          </label>
         </div>
       </div>
 

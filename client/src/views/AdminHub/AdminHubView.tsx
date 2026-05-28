@@ -14,6 +14,7 @@ import { listGitHubAppInstallations, type GitHubAppInstallation } from '../../se
 import { fetchSchedulerValidation, type SchedulerValidationRepoResult } from '../../services/schedulerApi.ts'
 import { useConnectionStore } from '../../store/connectionStore'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
+import { RepoMonitorPanel } from '../DevWorkspace/DevWorkspaceView.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
 import type {
   AdminHubActions,
@@ -39,10 +40,11 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-type AdminHubTab = 'main' | 'dev-panel'
+type AdminHubTab = 'main' | 'repo-monitor' | 'dev-panel'
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
+  { key: 'repo-monitor', label: '🔁 Repo Monitor' },
   { key: 'dev-panel', label: '🛰️ Dev Panel' },
 ]
 
@@ -2083,6 +2085,12 @@ export default function AdminHubView() {
           <ClientDiagnosticsPanel />
           <TbxBackupRestoreSection />
           <ToolVisibilitySection />
+        </section>
+      )}
+
+      {activeAdminTab === 'repo-monitor' && (
+        <section id="admin-hub-repo-monitor-panel" role="tabpanel" aria-labelledby="admin-hub-repo-monitor-tab">
+          <RepoMonitorPanel />
         </section>
       )}
     </ViewFrame>

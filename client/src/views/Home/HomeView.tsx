@@ -31,9 +31,11 @@ const DEFAULT_OPACITY = 1;
 const APP_CARD_BY_ID = new Map(APP_CARDS.map((cardDef) => [cardDef.id, cardDef]));
 const LEGACY_RECENT_VIEW_CARD_IDS: Record<string, string> = {
   'dsu-board': 'sprint-dashboard',
+  'dev-workspace': 'my-issues',
 };
 const LEGACY_RECENT_VIEW_ROUTES: Record<string, string> = {
   'dsu-board': '/sprint-dashboard',
+  'dev-workspace': '/my-issues',
 };
 
 interface SortableCardProps {

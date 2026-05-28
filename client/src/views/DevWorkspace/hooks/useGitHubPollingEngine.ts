@@ -37,6 +37,7 @@ export interface PollingEngineOptions {
   maxCommits: number
   keyPattern: string
   commitTemplate: string
+  branchPrefixesToStrip?: string
   strategy: 'comment' | 'worklog'
   mode?: 'sync' | 'monitor'
   shouldLogMissingJiraKeys?: boolean
@@ -86,12 +87,62 @@ function buildCommentBody(
   template: string,
   issueKey: string,
   summaryLine: string,
-  shortSha: string,
+  branchLabel: string,
 ): string {
   return template
     .replace(/\{key\}/g, issueKey)
     .replace(/\{summary\}/g, summaryLine)
-    .replace(/\{branch\}/g, shortSha)
+    .replace(/\{branch\}/g, branchLabel)
+}
+
+function stripConfiguredBranchPrefix(
+  branchLabel: string,
+  configuredPrefixes: string | undefined,
+): string {
+  if (!configuredPrefixes || configuredPrefixes.trim() === '') {
+    return branchLabel
+  }
+
+  const prefixesToStrip = configuredPrefixes
+    .split(/[,\n]/)
+    .map((prefixValue) => prefixValue.trim())
+    .filter((prefixValue) => prefixValue !== '')
+
+  if (prefixesToStrip.length === 0) {
+    return branchLabel
+  }
+
+  const normalizedBranchLabel = branchLabel.trim()
+  const matchingPrefix = prefixesToStrip.find((prefixValue) =>
+    normalizedBranchLabel.toLowerCase().startsWith(prefixValue.toLowerCase()),
+  )
+  if (!matchingPrefix) {
+    return normalizedBranchLabel
+  }
+
+  const strippedBranchLabel = normalizedBranchLabel.slice(matchingPrefix.length).trim()
+  return strippedBranchLabel === '' ? normalizedBranchLabel : strippedBranchLabel
+}
+
+function resolveCommitBranchLabel(
+  summaryLine: string,
+  shortSha: string,
+  branchPrefixesToStrip: string | undefined,
+): string {
+  const mergedPullRequestBranchMatch = summaryLine.match(/from\s+([^\s]+)/i)
+  if (mergedPullRequestBranchMatch?.[1]) {
+    const branchPath = mergedPullRequestBranchMatch[1]
+      .replace(/^[^:/]+:/, '')
+      .replace(/^([^/]+)\//, '')
+    return stripConfiguredBranchPrefix(branchPath, branchPrefixesToStrip)
+  }
+
+  const mergedBranchMatch = summaryLine.match(/branch\s+['"]([^'"]+)['"]/i)
+  if (mergedBranchMatch?.[1]) {
+    return stripConfiguredBranchPrefix(mergedBranchMatch[1], branchPrefixesToStrip)
+  }
+
+  return shortSha
 }
 
 // ── Hook ──
@@ -203,7 +254,12 @@ export function useGitHubPollingEngine(
       for (const commit of repoCommits) {
         const commitMessage = commit.commit?.message ?? ''
         const extractedKeys = extractJiraKeys(commitMessage, currentOptions.keyPattern)
-        if (extractedKeys.length === 0) {
+        const normalizedJiraProjectKey = currentOptions.jiraProjectKey.trim().toUpperCase()
+        const projectScopedKeys = normalizedJiraProjectKey === ''
+          ? extractedKeys
+          : extractedKeys.filter((issueKey) => issueKey.toUpperCase().startsWith(`${normalizedJiraProjectKey}-`))
+
+        if (projectScopedKeys.length === 0) {
           totalCommitsWithoutJiraKey += 1
           continue
         }
@@ -213,9 +269,17 @@ export function useGitHubPollingEngine(
 
         const summaryLine = commitMessage.split('\n')[0]
         const shortSha = commit.sha?.slice(0, 7) ?? ''
-        for (const jiraKey of extractedKeys) {
+        const branchLabel = resolveCommitBranchLabel(
+          summaryLine,
+          shortSha,
+          currentOptions.branchPrefixesToStrip,
+        )
+        for (const jiraKey of projectScopedKeys) {
           const commentBody = buildCommentBody(
-            currentOptions.commitTemplate, jiraKey, summaryLine, shortSha,
+            currentOptions.commitTemplate,
+            jiraKey,
+            summaryLine,
+            branchLabel,
           )
           try {
             await postCommitToJira(jiraKey, commentBody)
@@ -228,8 +292,12 @@ export function useGitHubPollingEngine(
       }
     }
 
-    if (mode === 'monitor' && currentOptions.shouldLogMissingJiraKeys !== false) {
-      logSyncEntry?.(`Monitor result: ${totalCommitsWithoutJiraKey} commit(s) missing Jira keys across ${monitoredRepos.length} repo(s).`)
+    if (currentOptions.shouldLogMissingJiraKeys !== false) {
+      if (mode === 'monitor') {
+        logSyncEntry?.(`Monitor result: ${totalCommitsWithoutJiraKey} commit(s) missing Jira keys across ${monitoredRepos.length} repo(s).`)
+      } else {
+        logSyncEntry?.(`Sync result: ${totalCommitsWithoutJiraKey} commit(s) missing Jira keys for configured project scope.`)
+      }
     }
 
     if (mode === 'sync') {

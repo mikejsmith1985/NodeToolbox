@@ -117,7 +117,7 @@ const REDIRECT_ROUTE_EXPECTATIONS = [
   { legacyPath: '/pipeline', headingName: 'Sprint Dashboard Mock' },
   { legacyPath: '/defects', headingName: 'Sprint Dashboard Mock' },
   { legacyPath: '/release-monitor', headingName: 'Sprint Dashboard Mock' },
-  { legacyPath: '/work-log', headingName: 'Dev Workspace Mock' },
+  { legacyPath: '/work-log', headingName: 'My Issues Mock' },
   { legacyPath: '/mermaid', headingName: 'Text Tools Mock' },
   { legacyPath: '/pitch-deck', headingName: 'Code Walkthrough Mock' },
   { legacyPath: '/hygiene', headingName: 'My Issues Mock' },
