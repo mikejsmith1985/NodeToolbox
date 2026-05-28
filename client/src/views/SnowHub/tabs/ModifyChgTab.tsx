@@ -412,8 +412,9 @@ function mapServiceNowChangeRecord(changeRecord: ServiceNowChangeRecord): Editab
     changeRecord,
     PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY.impactedPersonsAware,
   );
-  const loadedPlannedStartDate = normalizeSnowDateTimeForInput(changeRecord.planned_start_date);
-  const loadedPlannedEndDate = normalizeSnowDateTimeForInput(changeRecord.planned_end_date);
+  // SNow change_request table stores schedule dates as start_date and end_date (not planned_*)
+  const loadedPlannedStartDate = normalizeSnowDateTimeForInput(changeRecord.start_date);
+  const loadedPlannedEndDate = normalizeSnowDateTimeForInput(changeRecord.end_date);
 
   return {
     sysId: extractServiceNowTextValue(changeRecord.sys_id),
