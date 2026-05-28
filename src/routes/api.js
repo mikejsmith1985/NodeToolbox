@@ -899,6 +899,64 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
       // ServiceNow returns an array of matches — take the first one
       const change = changeData.result[0];
 
+      // Helper to normalize SNow date-time values for datetime-local HTML input format (YYYY-MM-DDTHH:MM)
+      function normalizeSnowDateTimeForInput(dateTimeValue) {
+        if (!dateTimeValue) return '';
+        const dateTimeString = String(dateTimeValue).trim();
+        if (!dateTimeString) return '';
+        // SNow returns format: "2024-01-15 14:30:45" or ISO "2024-01-15T14:30:45.000Z"
+        // HTML datetime-local expects "2024-01-15T14:30"
+        const dateTimeRegex = /^(\d{4}-\d{2}-\d{2})[\sT](\d{2}:\d{2})/;
+        const match = dateTimeRegex.exec(dateTimeString);
+        return match ? `${match[1]}T${match[2]}` : dateTimeString;
+      }
+
+      // Infer which environment (rel, prd, pfix) is configured from the u_environment field
+      function buildEnvironmentState(environmentValue, configItem, impactedPersonsAware, plannedStartDate, plannedEndDate) {
+        const normalizedEnv = String(environmentValue || '').trim().toLowerCase();
+        let environmentKey = null;
+        
+        if (normalizedEnv.includes('pfix') || normalizedEnv.includes('fix')) {
+          environmentKey = 'pfix';
+        } else if (normalizedEnv.includes('prd') || normalizedEnv.includes('prod')) {
+          environmentKey = 'prd';
+        } else if (normalizedEnv.includes('rel') || normalizedEnv.includes('release')) {
+          environmentKey = 'rel';
+        }
+
+        const baseEnvironmentState = {
+          isEnabled: false,
+          plannedStartDate: '',
+          plannedEndDate: '',
+          configItem: { sysId: '', displayName: '' },
+          impactedPersonsAware: '',
+        };
+
+        return {
+          relEnvironment: environmentKey === 'rel' ? {
+            isEnabled: true,
+            plannedStartDate: normalizeSnowDateTimeForInput(plannedStartDate),
+            plannedEndDate: normalizeSnowDateTimeForInput(plannedEndDate),
+            configItem: configItem && typeof configItem === 'object' ? { sysId: configItem.value || '', displayName: configItem.display_value || '' } : { sysId: '', displayName: '' },
+            impactedPersonsAware: impactedPersonsAware || '',
+          } : baseEnvironmentState,
+          prdEnvironment: environmentKey === 'prd' ? {
+            isEnabled: true,
+            plannedStartDate: normalizeSnowDateTimeForInput(plannedStartDate),
+            plannedEndDate: normalizeSnowDateTimeForInput(plannedEndDate),
+            configItem: configItem && typeof configItem === 'object' ? { sysId: configItem.value || '', displayName: configItem.display_value || '' } : { sysId: '', displayName: '' },
+            impactedPersonsAware: impactedPersonsAware || '',
+          } : baseEnvironmentState,
+          pfixEnvironment: environmentKey === 'pfix' ? {
+            isEnabled: true,
+            plannedStartDate: normalizeSnowDateTimeForInput(plannedStartDate),
+            plannedEndDate: normalizeSnowDateTimeForInput(plannedEndDate),
+            configItem: configItem && typeof configItem === 'object' ? { sysId: configItem.value || '', displayName: configItem.display_value || '' } : { sysId: '', displayName: '' },
+            impactedPersonsAware: impactedPersonsAware || '',
+          } : baseEnvironmentState,
+        };
+      }
+
       // Map ServiceNow field names to our internal schema
       res.json({
         sysId: change.sys_id || '',
@@ -910,7 +968,9 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
         chgBasicInfo: {
           category: change.category || '',
           changeType: change.type || '',
+          environment: change.u_environment || '',
           requestedBy: change.requested_by ? { sysId: change.requested_by.value, displayName: change.requested_by.display_value } : { sysId: '', displayName: '' },
+          configItem: change.cmdb_ci ? { sysId: change.cmdb_ci.value, displayName: change.cmdb_ci.display_value } : { sysId: '', displayName: '' },
           assignmentGroup: change.assignment_group ? { sysId: change.assignment_group.value, displayName: change.assignment_group.display_value } : { sysId: '', displayName: '' },
         },
         chgPlanningAssessment: {
@@ -927,6 +987,7 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
           backoutPlan: change.backout_plan || '',
           testPlan: change.test_plan || '',
         },
+        ...buildEnvironmentState(change.u_environment, change.cmdb_ci, change.u_impacted_persons_aware, change.planned_start_date, change.planned_end_date),
       });
     } catch (error) {
       console.error('  ❌ Error fetching change ' + changeKey + ':', error.message);

@@ -84,16 +84,6 @@ export const APP_CARDS: AppCardDef[] = [
     sectionKey: 'agile',
   },
   {
-    id: 'dev-workspace',
-    route: '/dev-workspace',
-    icon: '🏗',
-    title: 'Dev Workspace',
-    description:
-      'Developer workspace for hygiene, Jira time tracking, Git sync, repo monitoring, and automation settings.',
-    tags: ['Jira', 'Time Tracking', 'Git', 'Automation'],
-    sectionKey: 'agile',
-  },
-  {
     id: 'reports-hub',
     route: '/reports-hub',
     icon: '📈',
@@ -160,7 +150,7 @@ export const RECENT_VIEW_LABELS: Record<string, string> = {
   'my-issues': '📊 My Issues',
   'personal-toolbox': '🧰 Personal Toolbox',
   'business-helper': '💼 Business Helper',
-  'dev-workspace': '🏗 Dev Workspace',
+  'dev-workspace': '📊 My Issues',
   'snow-hub': '❄️ SNow Hub',
   'text-tools': '🛠 Text Tools',
   'reports-hub': '📈 Reports Hub',

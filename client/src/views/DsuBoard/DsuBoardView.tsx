@@ -94,7 +94,7 @@ export default function DsuBoardView({ projectKey = '' }: DsuBoardViewProps) {
           <ViewModeButton label="Table" modeKey="table" activeMode={state.viewMode} onSelect={actions.setViewMode} />
         </div>
         <button className={styles.refreshBtn} onClick={() => actions.loadBoard()}>
-          🔄 Refresh
+          Refresh
         </button>
       </div>
 

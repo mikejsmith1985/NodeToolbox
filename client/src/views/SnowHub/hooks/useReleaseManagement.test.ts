@@ -22,6 +22,12 @@ const MOCK_CHANGE_RECORD = {
   impact: { value: 'medium', display_value: 'Medium' },
 };
 
+const MOCK_CHANGE_RECORD_WITH_BLANK_DATE_DISPLAY = {
+  ...MOCK_CHANGE_RECORD,
+  planned_start_date: { value: '2025-02-01 08:00:00', display_value: '' },
+  planned_end_date: { value: '2025-02-01 09:00:00', display_value: '' },
+};
+
 const EXPECTED_CHANGE_REQUEST = {
   sysId: 'change-1',
   number: 'CHG0012345',
@@ -38,6 +44,11 @@ const EXPECTED_ACTIVE_CHANGE_SUMMARY = {
   sysId: 'change-1',
   number: 'CHG0012345',
   shortDescription: 'Deploy checkout service fixes',
+  state: 'Scheduled',
+  plannedStartDate: '2025-02-01 08:00:00',
+  plannedEndDate: '2025-02-01 09:00:00',
+  alertSeverity: 'error',
+  alertMessage: 'Planned end has passed and this change is not in a completed state.',
 };
 
 describe('useReleaseManagement', () => {
@@ -51,6 +62,8 @@ describe('useReleaseManagement', () => {
     expect(result.current.state.chgNumber).toBe('');
     expect(result.current.state.loadedChg).toBeNull();
     expect(result.current.state.activityLog).toEqual([]);
+    expect(result.current.state.monitorSettings.shouldAlertOnPlannedStartMiss).toBe(true);
+    expect(result.current.state.monitorSettings.shouldAlertOnPlannedEndMiss).toBe(true);
   });
 
   it('updates the change number when setChgNumber is called', () => {
@@ -142,9 +155,32 @@ describe('useReleaseManagement', () => {
     expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain(
       'sysparm_query=assigned_to%3Djavascript%3Ags.getUserID()%5Eactive%3Dtrue',
     );
-    expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('sysparm_fields=sys_id,number,short_description');
+    expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('sysparm_fields=sys_id,number,short_description,state,planned_start_date,planned_end_date');
     expect(vi.mocked(snowFetch).mock.calls[0][0]).toContain('sysparm_display_value=all');
     expect(result.current.state.myChangesError).toBeNull();
     expect(result.current.state.myActiveChanges).toEqual([EXPECTED_ACTIVE_CHANGE_SUMMARY]);
+    expect(result.current.state.activityLog.some((entry) => entry.message.includes('End milestone missed'))).toBe(true);
+  });
+
+  it('falls back to date value when ServiceNow date display_value is blank', async () => {
+    vi.mocked(snowFetch).mockResolvedValue({ result: [MOCK_CHANGE_RECORD_WITH_BLANK_DATE_DISPLAY] });
+    const { result } = renderHook(() => useReleaseManagement());
+
+    await act(async () => {
+      await result.current.actions.loadMyActiveChanges();
+    });
+
+    expect(result.current.state.myActiveChanges[0]?.plannedStartDate).toBe('2025-02-01 08:00:00');
+    expect(result.current.state.myActiveChanges[0]?.plannedEndDate).toBe('2025-02-01 09:00:00');
+  });
+
+  it('updates monitor settings when setMonitorSetting is called', () => {
+    const { result } = renderHook(() => useReleaseManagement());
+
+    act(() => {
+      result.current.actions.setMonitorSetting('shouldAlertOnPlannedStartMiss', false);
+    });
+
+    expect(result.current.state.monitorSettings.shouldAlertOnPlannedStartMiss).toBe(false);
   });
 });

@@ -139,6 +139,11 @@ const { mockCrgState, mockCrgActions, mockPrbState, mockPrbActions, mockReleaseS
       sysId: string;
       number: string;
       shortDescription: string;
+      state: string;
+      plannedStartDate: string;
+      plannedEndDate: string;
+      alertSeverity: 'healthy' | 'warning' | 'error';
+      alertMessage: string | null;
     }>,
     isLoadingMyChanges: false,
     myChangesError: null as string | null,
@@ -147,6 +152,10 @@ const { mockCrgState, mockCrgActions, mockPrbState, mockPrbActions, mockReleaseS
       message: string;
       level: 'info' | 'success' | 'warning' | 'error';
     }>,
+    monitorSettings: {
+      shouldAlertOnPlannedStartMiss: true,
+      shouldAlertOnPlannedEndMiss: true,
+    },
   },
   mockReleaseActions: {
     setChgNumber: vi.fn(),
@@ -155,6 +164,7 @@ const { mockCrgState, mockCrgActions, mockPrbState, mockPrbActions, mockReleaseS
     appendLogEntry: vi.fn(),
     clearLog: vi.fn(),
     clearLoadedChg: vi.fn(),
+    setMonitorSetting: vi.fn(),
   },
   mockSyncEngineState: {
     isRunning: false,

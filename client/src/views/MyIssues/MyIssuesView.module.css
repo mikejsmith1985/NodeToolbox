@@ -9,6 +9,10 @@
 }
 
 .pageHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--spacing-md);
   margin-bottom: var(--spacing-sm);
 }
 
@@ -16,6 +20,30 @@
   font-size: var(--font-size-lg);
   color: var(--color-text-primary);
   margin: 0 0 var(--spacing-xs);
+}
+
+.headerText {
+  flex: 1;
+}
+
+.headerActions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+}
+
+.refreshButton {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.refreshButton:hover {
+  background: var(--color-surface-1);
 }
 
 /* ── Tab bar ── */

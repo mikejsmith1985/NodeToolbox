@@ -68,6 +68,7 @@ describe('ReportsHubView', () => {
     mockState.features = [];
     mockState.defects = [];
     mockState.risks = [];
+    mockState.isLoadingFeatures = false;
     mockState.sprintIssues = [];
     mockState.storyIssues = [];
     mockState.throughputIssues = [];
@@ -209,6 +210,16 @@ describe('ReportsHubView', () => {
     expect(screen.getAllByText('TBX-100').length).toBeGreaterThan(0);
     expect(screen.getByText(/at-risk features/i)).toBeInTheDocument();
     expect(screen.getByText(/team feature health/i)).toBeInTheDocument();
+  });
+
+  it('shows a loading message while the feature report is loading', () => {
+    mockState.activeTab = 'features';
+    mockState.isLoadingFeatures = true;
+    mockState.features = [];
+
+    render(<ReportsHubView />);
+
+    expect(screen.getByText(/loading feature report/i)).toBeInTheDocument();
   });
 
   it('applies global team parameters to dashboard data', () => {
@@ -403,6 +414,75 @@ describe('ReportsHubView', () => {
 
     expect(screen.getByText('TBX-220')).toBeInTheDocument();
     expect(screen.queryByText('TBX-221')).not.toBeInTheDocument();
+  });
+
+  it('keeps features with no PI label visible when a PI filter is selected', () => {
+    mockState.activeTab = 'features';
+    mockState.piFilter = 'PI 26.3 (05/21/26 - 07/29/26)';
+    mockState.features = [
+      {
+        key: 'TBX-230',
+        summary: 'Feature discovered from child-work scope without feature PI value',
+        statusName: 'In Progress',
+        statusCategory: 'indeterminate',
+        teamName: 'Team A',
+        fixVersions: [],
+        assigneeName: 'Alice',
+        piName: null,
+        priority: 'High',
+      },
+      {
+        key: 'TBX-231',
+        summary: 'Feature with different PI label',
+        statusName: 'In Progress',
+        statusCategory: 'indeterminate',
+        teamName: 'Team A',
+        fixVersions: [],
+        assigneeName: 'Bob',
+        piName: 'PI 26.2',
+        priority: 'High',
+      },
+    ];
+
+    render(<ReportsHubView />);
+
+    expect(screen.getByText('TBX-230')).toBeInTheDocument();
+    expect(screen.queryByText('TBX-231')).not.toBeInTheDocument();
+  });
+
+  it('keeps bottom-up scoped features visible even when feature PI does not match the selected PI', () => {
+    mockState.activeTab = 'features';
+    mockState.piFilter = 'PI 26.3 (05/21/26 - 07/29/26)';
+    mockState.features = [
+      {
+        key: 'TBX-240',
+        summary: 'Bottom-up scoped feature',
+        statusName: 'In Progress',
+        statusCategory: 'indeterminate',
+        teamName: 'Team A',
+        fixVersions: [],
+        assigneeName: 'Alice',
+        piName: 'PI 26.1',
+        priority: 'High',
+        isBottomUpScoped: true,
+      },
+      {
+        key: 'TBX-241',
+        summary: 'Standard feature with mismatched PI',
+        statusName: 'In Progress',
+        statusCategory: 'indeterminate',
+        teamName: 'Team A',
+        fixVersions: [],
+        assigneeName: 'Bob',
+        piName: 'PI 26.1',
+        priority: 'High',
+      },
+    ];
+
+    render(<ReportsHubView />);
+
+    expect(screen.getByText('TBX-240')).toBeInTheDocument();
+    expect(screen.queryByText('TBX-241')).not.toBeInTheDocument();
   });
 
   it('shows the defect tracker table when defects tab is active', () => {
