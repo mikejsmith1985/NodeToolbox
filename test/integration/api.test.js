@@ -1088,8 +1088,8 @@ describe('PATCH /api/snow-relay/change/:changeKey', () => {
     expect(capturedPatchRequest.body.u_environment).toBe('prod');
     expect(capturedPatchRequest.body.cmdb_ci).toBe('ci-123');
     expect(capturedPatchRequest.body.u_impacted_persons_aware).toBe('yes');
-    expect(capturedPatchRequest.body.planned_start_date).toBe('2026-06-01T10:00');
-    expect(capturedPatchRequest.body.planned_end_date).toBe('2026-06-01T11:00');
+    expect(capturedPatchRequest.body.start_date).toBe('2026-06-01T10:00');
+    expect(capturedPatchRequest.body.end_date).toBe('2026-06-01T11:00');
     expect(capturedPatchRequest.body.u_change_tested).toBe('yes');
     expect(capturedPatchRequest.body.implementation_plan).toBe('Implement plan');
   });
@@ -1151,7 +1151,7 @@ describe('PATCH /api/snow-relay/change/:changeKey', () => {
     expect(response.status).toBe(204);
     expect(capturedPatchRequest.body.cmdb_ci).toBe('');
     expect(capturedPatchRequest.body.u_impacted_persons_aware).toBe('');
-    expect(capturedPatchRequest.body.planned_start_date).toBe('');
-    expect(capturedPatchRequest.body.planned_end_date).toBe('');
+    expect(capturedPatchRequest.body.start_date).toBe('');
+    expect(capturedPatchRequest.body.end_date).toBe('');
   });
 });
