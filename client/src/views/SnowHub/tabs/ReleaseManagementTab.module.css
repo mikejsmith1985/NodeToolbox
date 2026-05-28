@@ -19,6 +19,8 @@
 .loadingText { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
 .errorText { margin: 0; color: var(--color-danger); font-size: var(--font-size-sm); }
 .mutedText { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-md); }
+.checkboxLabel { display: flex; gap: var(--spacing-sm); align-items: center; color: var(--color-text-primary); font-size: var(--font-size-md); }
+.summaryRow { display: flex; gap: var(--spacing-md); flex-wrap: wrap; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
 .detailCard { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-md); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-2); }
 .detailGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(var(--spacing-xl) * 6), 1fr)); gap: var(--spacing-md); }
 .detailStack { display: grid; gap: var(--spacing-md); }
@@ -32,6 +34,8 @@
 .logBadge { padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-lg); font-size: var(--font-size-sm); text-transform: uppercase; }
 .logTime { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
 .logMessage { color: var(--color-text-primary); font-size: var(--font-size-md); }
+.alertMessageText { margin: var(--spacing-xs) 0 0; font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+.healthy { color: var(--color-success); border: 1px solid var(--color-success); }
 .info { color: var(--color-accent); border: 1px solid var(--color-accent); }
 .success { color: var(--color-success); border: 1px solid var(--color-success); }
 .warning { color: var(--color-warning); border: 1px solid var(--color-warning); }

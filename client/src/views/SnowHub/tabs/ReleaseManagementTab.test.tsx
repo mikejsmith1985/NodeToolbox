@@ -24,6 +24,11 @@ const { mockState, mockActions } = vi.hoisted(() => ({
       sysId: string;
       number: string;
       shortDescription: string;
+      state: string;
+      plannedStartDate: string;
+      plannedEndDate: string;
+      alertSeverity: 'healthy' | 'warning' | 'error';
+      alertMessage: string | null;
     }>,
     isLoadingMyChanges: false,
     myChangesError: null as string | null,
@@ -32,6 +37,10 @@ const { mockState, mockActions } = vi.hoisted(() => ({
       message: string;
       level: 'info' | 'success' | 'warning' | 'error';
     }>,
+    monitorSettings: {
+      shouldAlertOnPlannedStartMiss: true,
+      shouldAlertOnPlannedEndMiss: true,
+    },
   },
   mockActions: {
     setChgNumber: vi.fn(),
@@ -40,6 +49,7 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     appendLogEntry: vi.fn(),
     clearLog: vi.fn(),
     clearLoadedChg: vi.fn(),
+    setMonitorSetting: vi.fn(),
   },
 }));
 
@@ -59,6 +69,10 @@ function resetMockState(): void {
     isLoadingMyChanges: false,
     myChangesError: null,
     activityLog: [],
+    monitorSettings: {
+      shouldAlertOnPlannedStartMiss: true,
+      shouldAlertOnPlannedEndMiss: true,
+    },
   });
 }
 
@@ -72,6 +86,16 @@ describe('ReleaseManagementTab', () => {
 
   it('calls loadMyActiveChanges on mount', () => {
     render(<ReleaseManagementTab />);
+
+    expect(mockActions.loadMyActiveChanges).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes active changes when Refresh is clicked', async () => {
+    const user = userEvent.setup();
+    render(<ReleaseManagementTab />);
+    mockActions.loadMyActiveChanges.mockClear();
+
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
 
     expect(mockActions.loadMyActiveChanges).toHaveBeenCalledTimes(1);
   });
@@ -127,12 +151,26 @@ describe('ReleaseManagementTab', () => {
     expect(mockActions.clearLog).toHaveBeenCalledTimes(1);
   });
 
+  it('updates monitor setting when planned-start checkbox is toggled', async () => {
+    const user = userEvent.setup();
+    render(<ReleaseManagementTab />);
+
+    await user.click(screen.getByRole('checkbox', { name: 'Alert when planned start is missed and work has not started' }));
+
+    expect(mockActions.setMonitorSetting).toHaveBeenCalledWith('shouldAlertOnPlannedStartMiss', false);
+  });
+
   it('shows the active changes summary table when change summaries are present', () => {
     mockState.myActiveChanges = [
       {
         sysId: 'change-1',
         number: 'CHG0001234',
         shortDescription: 'Release the payment patch',
+        state: 'Scheduled',
+        plannedStartDate: '2026-05-01 10:00:00',
+        plannedEndDate: '2026-05-01 12:00:00',
+        alertSeverity: 'warning',
+        alertMessage: 'Planned start has passed and this change has not started.',
       },
     ];
 
@@ -140,9 +178,12 @@ describe('ReleaseManagementTab', () => {
 
     expect(screen.getByRole('columnheader', { name: 'Number' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Short Description' })).toBeInTheDocument();
-    expect(screen.queryByRole('columnheader', { name: 'State' })).toBeNull();
-    expect(screen.queryByRole('columnheader', { name: 'Planned Start' })).toBeNull();
+    expect(screen.getByRole('columnheader', { name: 'State' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Planned Start' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Planned End' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Alert' })).toBeInTheDocument();
     expect(screen.getByText('CHG0001234')).toBeInTheDocument();
     expect(screen.getByText('Release the payment patch')).toBeInTheDocument();
+    expect(screen.getByText('Warning')).toBeInTheDocument();
   });
 });

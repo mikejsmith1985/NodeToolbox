@@ -6,10 +6,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const { mockJiraGet } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
 }));
+const { mockFetchScopedTeamFeatures } = vi.hoisted(() => ({
+  mockFetchScopedTeamFeatures: vi.fn(),
+}));
 
 vi.mock('../../../services/jiraApi.ts', () => ({
   jiraGet: mockJiraGet,
   jiraPost: vi.fn(),
+}));
+vi.mock('../../SprintDashboard/scopedTeamFeatures.ts', () => ({
+  fetchScopedTeamFeatures: mockFetchScopedTeamFeatures,
 }));
 
 import { useReportsHubState } from './useReportsHubState.ts';
@@ -21,6 +27,7 @@ const ART_PROJECT_KEY = 'STE';
 describe('useReportsHubState', () => {
   afterEach(() => {
     vi.clearAllMocks();
+    mockFetchScopedTeamFeatures.mockReset();
     localStorage.clear();
   });
 
@@ -494,6 +501,79 @@ describe('useReportsHubState', () => {
 
     expect(result.current.state.features[0]?.key).toBe('TEAM-101');
     expect(result.current.state.featuresError).toContain('Feature scope unavailable');
+  });
+
+  it('loadFeatures falls back to bottom-up feature discovery when project-level feature queries are empty', async () => {
+    localStorage.setItem(
+      ART_TEAMS_STORAGE_KEY,
+      JSON.stringify([{ name: 'Team A', projectKey: 'TEAM', boardId: '12345' }]),
+    );
+
+    mockJiraGet.mockImplementation(async (requestPath: string) => {
+      const decodedRequestPath = decodeURIComponent(requestPath);
+      if (decodedRequestPath.includes('project="TEAM"') && decodedRequestPath.includes('issuetype in ("Epic", "Feature")')) {
+        return { issues: [] };
+      }
+
+      throw new Error(`Unexpected Jira request: ${requestPath}`);
+    });
+
+    mockFetchScopedTeamFeatures.mockResolvedValue([
+      {
+        feature: {
+          type: 'feature',
+          key: 'FEAT-777',
+          summary: 'Bottom-up discovered feature',
+          status: 'In Progress',
+          health: 'yellow',
+          completionPercent: 50,
+          children: [{ key: 'TEAM-12' }],
+          offTrain: [],
+          isExternal: false,
+        },
+        featureIssue: {
+          id: '10001',
+          key: 'FEAT-777',
+          fields: {
+            summary: 'Bottom-up discovered feature',
+            status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+            priority: { name: 'High', iconUrl: '' },
+            assignee: null,
+            reporter: null,
+            issuetype: { name: 'Feature', iconUrl: '' },
+            created: '2026-05-01T00:00:00.000Z',
+            updated: '2026-05-20T00:00:00.000Z',
+            duedate: null,
+            description: null,
+            customfield_10301: null,
+            fixVersions: [],
+            issuelinks: [],
+            labels: ['risk'],
+            parent: null,
+            resolutiondate: null,
+          },
+        },
+      },
+    ]);
+
+    const { result } = renderHook(() => useReportsHubState());
+
+    await act(async () => {
+      await result.current.actions.loadFeatures();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.features).toHaveLength(1);
+    });
+
+    expect(result.current.state.features[0]).toMatchObject({
+      key: 'FEAT-777',
+      teamName: 'Team A',
+      summary: 'Bottom-up discovered feature',
+      issueTypeName: 'Feature',
+      isRiskTagged: true,
+    });
+    expect(mockFetchScopedTeamFeatures).toHaveBeenCalledTimes(1);
   });
 
   it('loadRisks uses a query that includes risk-labeled issues, not only issuetype Risk', async () => {

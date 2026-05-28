@@ -329,7 +329,7 @@ describe('StandupTab', () => {
     expect(screen.getByText('Standup Preview')).toBeInTheDocument();
     expect(screen.getByDisplayValue('• TBX-1 - Investigated incident')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '↻ Refresh' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
     fireEvent.click(screen.getByRole('button', { name: '📋 Copy Summary' }));
     fireEvent.click(screen.getByRole('button', { name: 'Post to Jira' }));
 

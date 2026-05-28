@@ -1,13 +1,13 @@
 // MyIssuesView.tsx — My Issues view with report, hygiene, and settings workflows in one place.
 //
-// Provides three top-level tabs: Report (issue browsing), Hygiene (issue-health checks),
-// and Settings (defaults). The Report tab lets users switch between four issue sources
+// Provides top-level tabs for Report, Hygiene, Time Tracking, Git Sync, and Settings.
+// The Report tab lets users switch between four issue sources
 // (mine / JQL / filter / board) and view results in card, compact, or table layout.
 //
 // This view also surfaces ServiceNow issues assigned to the current user alongside Jira
 // issues, and highlights linked Jira Defect/Story ↔ SNow Problem pairs with a health badge.
 
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
@@ -15,6 +15,7 @@ import { useConnectionStore } from '../../store/connectionStore.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import { detectLinkedPairs, collectLinkedSnowSysIds } from '../../utils/issueLinkCalculator.ts';
+import { EmbeddedGitSyncPanel, EmbeddedTimeTrackingPanel } from '../DevWorkspace/DevWorkspaceView.tsx';
 import HygieneView from '../Hygiene/HygieneView.tsx';
 import { LinkedIssuePair } from './LinkedIssuePair.tsx';
 import { SnowIssueRow } from './SnowIssueRow.tsx';
@@ -64,11 +65,13 @@ const AGING_WARN_DAYS = 5;
 const AGING_STALE_DAYS = 10;
 const MS_PER_DAY = 86_400_000;
 
-type MyIssuesTab = 'report' | 'hygiene' | 'settings';
+type MyIssuesTab = 'report' | 'hygiene' | 'time' | 'gitsync' | 'settings';
 
 const MY_ISSUES_TABS: { key: MyIssuesTab; label: string }[] = [
   { key: 'report', label: 'Report' },
   { key: 'hygiene', label: 'Hygiene' },
+  { key: 'time', label: 'Time Tracking' },
+  { key: 'gitsync', label: 'Git Sync' },
   { key: 'settings', label: 'Settings' },
 ];
 
@@ -556,13 +559,32 @@ function SourcePane({
 export default function MyIssuesView() {
   const { state, actions } = useMyIssuesState();
   const { isSnowReady } = useConnectionStore();
-  void isSnowReady;
   const [activeTab, setActiveTab] = useState<MyIssuesTab>('report');
   const [requestedExpandedIssueKey, setRequestedExpandedIssueKey] = useState<string | null>(null);
   const [isSnowSectionCollapsed, setIsSnowSectionCollapsed] = useState(false);
+  const hasAutoLoadedJiraIssuesRef = useRef(false);
+  const hasAutoLoadedSnowIssuesRef = useRef(false);
 
   // SNow issues hook — fetches all 4 record types assigned to the current user.
   const { snowIssues, isLoadingSnowIssues, snowFetchError, fetchSnowIssues } = useSnowIssues();
+
+  useEffect(() => {
+    if (hasAutoLoadedJiraIssuesRef.current) {
+      return;
+    }
+
+    hasAutoLoadedJiraIssuesRef.current = true;
+    void actions.fetchMyIssues();
+  }, [actions]);
+
+  useEffect(() => {
+    if (!isSnowReady || hasAutoLoadedSnowIssuesRef.current) {
+      return;
+    }
+
+    hasAutoLoadedSnowIssuesRef.current = true;
+    void fetchSnowIssues();
+  }, [fetchSnowIssues, isSnowReady]);
 
   // Status mappings from the settings store — used for health calculation.
   const { statusMappings } = useSettingsStore();
@@ -629,6 +651,14 @@ export default function MyIssuesView() {
     void actions.runBoardIssues();
   }
 
+  function handleRefreshIssueSources() {
+    void actions.fetchMyIssues();
+
+    if (isSnowReady) {
+      void fetchSnowIssues();
+    }
+  }
+
   const STATUS_ZONE_CHIPS = [
     { key: 'attention', label: 'Attention', count: zoneCounts.attentionCount },
     { key: 'inprogress', label: 'In Progress', count: zoneCounts.inProgressCount },
@@ -640,8 +670,19 @@ export default function MyIssuesView() {
   return (
     <div className={styles.myIssuesView}>
       <header className={styles.pageHeader}>
-        <h1 className={styles.pageTitle}>{VIEW_TITLE}</h1>
-        <p>{VIEW_SUBTITLE}</p>
+        <div className={styles.headerText}>
+          <h1 className={styles.pageTitle}>{VIEW_TITLE}</h1>
+          <p>{VIEW_SUBTITLE}</p>
+        </div>
+        <div className={styles.headerActions}>
+          <button
+            className={styles.refreshButton}
+            onClick={handleRefreshIssueSources}
+            type="button"
+          >
+            {state.isFetching || isLoadingSnowIssues ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
       </header>
 
       {/* Top-level Report / Settings tabs */}
@@ -714,13 +755,6 @@ export default function MyIssuesView() {
           <div className={styles.toolbar} style={{ marginTop: 'var(--spacing-sm)' }}>
             {state.source === 'mine' && (
               <>
-                <button
-                  className={styles.toolbarButton}
-                  onClick={actions.fetchMyIssues}
-                  type="button"
-                >
-                  Fetch Issues
-                </button>
                 {/* SNow fetch button — only meaningful when the relay is ready */}
                 <button
                   className={styles.toolbarButton}
@@ -930,6 +964,20 @@ export default function MyIssuesView() {
       {activeTab === 'hygiene' && (
         <section id="my-issues-hygiene-panel" role="tabpanel" aria-labelledby="my-issues-hygiene-tab">
           <HygieneView />
+        </section>
+      )}
+
+      {/* ── Time Tracking tab ── */}
+      {activeTab === 'time' && (
+        <section id="my-issues-time-panel" role="tabpanel" aria-labelledby="my-issues-time-tab">
+          <EmbeddedTimeTrackingPanel />
+        </section>
+      )}
+
+      {/* ── Git Sync tab ── */}
+      {activeTab === 'gitsync' && (
+        <section id="my-issues-gitsync-panel" role="tabpanel" aria-labelledby="my-issues-gitsync-tab">
+          <EmbeddedGitSyncPanel />
         </section>
       )}
 

@@ -600,17 +600,27 @@ function DashboardTab({
 interface FeatureReportTabProps {
   features: JiraFeatureIssue[]
   artTeamCount: number
+  isLoadingFeatures: boolean
 }
 
 /** Feature Report table filtered by the global report parameters. */
 function FeatureReportTab({
   features,
   artTeamCount,
+  isLoadingFeatures,
 }: FeatureReportTabProps) {
   if (artTeamCount === 0) {
     return (
       <p className={styles.emptyState}>
         No ART teams configured — add them in ART View Settings or run a Refresh.
+      </p>
+    )
+  }
+
+  if (isLoadingFeatures && features.length === 0) {
+    return (
+      <p className={styles.emptyState}>
+        Loading feature report…
       </p>
     )
   }
@@ -653,6 +663,9 @@ function FeatureReportTab({
 
   return (
     <div>
+      {isLoadingFeatures && (
+        <p className={styles.emptyState}>Refreshing feature report…</p>
+      )}
       <h3 className={styles.tabSectionHeading}>Feature Execution Summary</h3>
       <div className={styles.kpiGrid}>
         <div className={styles.kpiCard}>
@@ -799,6 +812,25 @@ function matchesSharedIssueFilters(
   return matchesPi && matchesTeam
 }
 
+function matchesFeatureIssueFilters(
+  issue: { piName: string | null; teamName: string; isBottomUpScoped?: boolean },
+  piFilter: string,
+  teamFilter: string,
+): boolean {
+  const normalizedPiFilter = createPiFilterKey(piFilter)
+  const issuePiFilterKey = createPiFilterKey(issue.piName)
+  const shouldBypassPiFilterForBottomUpIssue = issue.isBottomUpScoped === true && normalizedPiFilter !== null
+  // Mirror Team Dashboard bottom-up behavior: when a PI is selected, keep
+  // features that do not have a PI value on the feature issue itself.
+  const matchesPi =
+    shouldBypassPiFilterForBottomUpIssue
+    || normalizedPiFilter === null
+    || issuePiFilterKey === null
+    || issuePiFilterKey === normalizedPiFilter
+  const matchesTeam = teamFilter === '' || issue.teamName === teamFilter
+  return matchesPi && matchesTeam
+}
+
 function createPiFilterKey(piName: string | null): string | null {
   if (typeof piName !== 'string') {
     return null
@@ -830,7 +862,7 @@ function filterFeatureIssuesByParameters(
   piFilter: string,
   teamFilter: string,
 ): JiraFeatureIssue[] {
-  return issueList.filter((issue) => matchesSharedIssueFilters(issue, piFilter, teamFilter))
+  return issueList.filter((issue) => matchesFeatureIssueFilters(issue, piFilter, teamFilter))
 }
 
 function filterSprintIssuesByParameters(
@@ -2076,6 +2108,7 @@ export default function ReportsHubView() {
           <FeatureReportTab
             features={filteredFeatures}
             artTeamCount={visibleArtTeamCount}
+            isLoadingFeatures={state.isLoadingFeatures}
           />
         )
       case 'defects':
@@ -2162,7 +2195,7 @@ export default function ReportsHubView() {
             className={`${styles.actionButton} ${styles.primaryButton}`}
             onClick={() => { void actions.loadAllReports() }}
           >
-            🔄 Refresh
+            Refresh
           </button>
         </div>
       </header>
