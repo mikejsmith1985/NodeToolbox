@@ -28,6 +28,7 @@ describe('snow types', () => {
       number: 'CHG0001',
       shortDescription: 'Deploy release',
       state: 'Implement',
+      stateValue: '1',
       assignedTo: null,
       plannedStartDate: '2025-01-01T00:00:00.000Z',
       plannedEndDate: '2025-01-01T01:00:00.000Z',

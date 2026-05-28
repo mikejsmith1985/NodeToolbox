@@ -40,3 +40,11 @@
 .success { color: var(--color-success); border: 1px solid var(--color-success); }
 .warning { color: var(--color-warning); border: 1px solid var(--color-warning); }
 .error { color: var(--color-danger); border: 1px solid var(--color-danger); }
+
+/* ── State transition dropdown ── */
+.stateCell { position: relative; display: inline-block; }
+.stateButton { padding: var(--spacing-xs) var(--spacing-sm); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-text-primary); font-size: var(--font-size-sm); cursor: pointer; white-space: nowrap; }
+.stateButton:hover { border-color: var(--color-accent); background: var(--color-surface-1); }
+.stateDropdown { position: absolute; top: 100%; left: 0; z-index: 50; min-width: 10rem; margin: var(--spacing-xs) 0 0; padding: var(--spacing-xs) 0; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-1); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); list-style: none; }
+.stateOption { display: block; width: 100%; padding: var(--spacing-sm) var(--spacing-md); border: none; background: none; color: var(--color-text-primary); font-size: var(--font-size-sm); text-align: left; cursor: pointer; white-space: nowrap; }
+.stateOption:hover { background: var(--color-surface-2); }

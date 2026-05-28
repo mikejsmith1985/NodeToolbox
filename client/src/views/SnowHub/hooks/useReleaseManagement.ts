@@ -24,7 +24,10 @@ interface ActiveChangeSummary {
   sysId: string;
   number: string;
   shortDescription: string;
+  /** Human-readable display label for the current workflow state (e.g. "Scheduled"). */
   state: string;
+  /** Raw SNow integer choice value for state (e.g. "-2"). Used for workflow transitions. */
+  stateValue: string;
   plannedStartDate: string;
   plannedEndDate: string;
   alertSeverity: AlertSeverity;
@@ -47,6 +50,7 @@ interface ReleaseManagementActions {
   setChgNumber: (chgNumber: string) => void;
   loadChg: () => Promise<void>;
   loadMyActiveChanges: () => Promise<void>;
+  updateChangeState: (changeKey: string, newStateValue: string) => Promise<void>;
   appendLogEntry: (message: string, level: ActivityLogLevel) => void;
   clearLog: () => void;
   clearLoadedChg: () => void;
@@ -68,6 +72,7 @@ const ACTIVE_CHANGE_LIMIT = 20;
 const ACTIVE_CHANGE_QUERY = 'assigned_to=javascript:gs.getUserID()^active=true';
 const LOAD_CHANGE_FAILURE_MESSAGE = 'Failed to load change request';
 const LOAD_MY_CHANGES_FAILURE_MESSAGE = 'Failed to load active changes';
+const UPDATE_STATE_FAILURE_MESSAGE = 'Failed to update change state';
 const CHANGE_NUMBER_REQUIRED_MESSAGE = 'Change number is required.';
 const START_MILESTONE_ALERT_MESSAGE = 'Planned start has passed and this change has not started.';
 const END_MILESTONE_ALERT_MESSAGE = 'Planned end has passed and this change is not in a completed state.';
@@ -76,6 +81,47 @@ const END_ALERT_LOG_TEMPLATE = 'End milestone missed for';
 const RECOVERY_LOG_TEMPLATE = 'Recovered to healthy status for';
 const ALERT_STATE_COMPLETED_KEYWORDS = ['closed', 'complete', 'completed', 'review', 'cancelled', 'canceled'] as const;
 const ALERT_STATE_IN_PROGRESS_KEYWORDS = ['implement', 'in progress', 'progress', 'work in progress'] as const;
+
+/** Valid next-state options in the standard SNow change_request workflow, keyed by current raw state value. */
+export interface StateTransitionOption {
+  value: string;
+  label: string;
+}
+
+// Standard SNow change_request workflow state transitions.
+// Keys are the raw integer choice values SNow stores for the `state` field.
+// Values list the states that SNow allows transitioning to from that state.
+// Terminal states (Closed, Cancelled) intentionally have no entries.
+export const CHG_STATE_TRANSITIONS: Readonly<Record<string, readonly StateTransitionOption[]>> = {
+  '-5': [{ value: '-4', label: 'Submit for Approval' }],
+  '-4': [
+    { value: '-2', label: 'Schedule' },
+    { value: '-3', label: 'Cancel' },
+  ],
+  '-2': [
+    { value: '1', label: 'Implement' },
+    { value: '-3', label: 'Cancel' },
+  ],
+  '1': [
+    { value: '3', label: 'Review' },
+    { value: '-3', label: 'Cancel' },
+  ],
+  '3': [
+    { value: '4', label: 'Close' },
+    { value: '1', label: 'Return to Implement' },
+  ],
+};
+
+// All non-terminal states shown as a fallback when the current state value isn't in the map.
+export const ALL_CHG_STATES: readonly StateTransitionOption[] = [
+  { value: '-5', label: 'Draft' },
+  { value: '-4', label: 'Submitted' },
+  { value: '-2', label: 'Scheduled' },
+  { value: '1', label: 'Implement' },
+  { value: '3', label: 'Review' },
+  { value: '4', label: 'Close' },
+  { value: '-3', label: 'Cancel' },
+];
 
 const DEFAULT_RELEASE_MONITOR_SETTINGS: ReleaseMonitorSettings = {
   shouldAlertOnPlannedStartMiss: true,
@@ -261,6 +307,22 @@ function extractServiceNowFieldValue(fieldValue: ServiceNowFieldValue | undefine
   return normalizeRichTextToPlainText(fieldValue.value ?? EMPTY_VALUE);
 }
 
+/**
+ * Extracts only the raw stored value from a SNow field (ignores display_value).
+ * Used for fields like `state` where the integer choice value is needed for API calls.
+ */
+function extractServiceNowRawValue(fieldValue: ServiceNowFieldValue | undefined): string {
+  if (fieldValue === undefined) {
+    return EMPTY_VALUE;
+  }
+
+  if (typeof fieldValue === 'string') {
+    return fieldValue;
+  }
+
+  return String(fieldValue.value ?? EMPTY_VALUE);
+}
+
 function extractServiceNowReference(fieldValue: ServiceNowFieldValue | undefined): SnowUser | null {
   if (fieldValue === undefined) {
     return null;
@@ -288,6 +350,7 @@ function mapChangeRecord(changeRecord: ServiceNowChangeRecord): ChangeRequest {
     number: extractServiceNowFieldValue(changeRecord.number),
     shortDescription: extractServiceNowFieldValue(changeRecord.short_description),
     state: extractServiceNowFieldValue(changeRecord.state),
+    stateValue: extractServiceNowRawValue(changeRecord.state),
     assignedTo: extractServiceNowReference(changeRecord.assigned_to),
     plannedStartDate: extractServiceNowFieldValue(changeRecord.start_date),
     plannedEndDate: extractServiceNowFieldValue(changeRecord.end_date),
@@ -302,6 +365,7 @@ function mapActiveChangeSummary(changeRecord: ServiceNowChangeRecord): ActiveCha
     number: extractServiceNowFieldValue(changeRecord.number),
     shortDescription: extractServiceNowFieldValue(changeRecord.short_description),
     state: extractServiceNowFieldValue(changeRecord.state),
+    stateValue: extractServiceNowRawValue(changeRecord.state),
     plannedStartDate: extractServiceNowFieldValue(changeRecord.start_date),
     plannedEndDate: extractServiceNowFieldValue(changeRecord.end_date),
     alertSeverity: 'healthy',
@@ -419,6 +483,69 @@ export function useReleaseManagement(): {
     setState((previousState) => ({ ...previousState, loadedChg: null, loadError: null }));
   }, []);
 
+  /**
+   * Sends a state-transition PATCH for a change through the NodeToolbox relay endpoint.
+   * On success, re-fetches the affected change so both the detail card and active-changes
+   * table reflect the new state immediately without a full page reload.
+   */
+  const updateChangeState = useCallback(async (changeKey: string, newStateValue: string) => {
+    const normalizedChangeKey = changeKey.trim().toUpperCase();
+
+    try {
+      const stateUpdateResponse = await fetch(
+        `/api/snow-relay/change/${encodeURIComponent(normalizedChangeKey)}/state`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ state: newStateValue }),
+        },
+      );
+
+      if (!stateUpdateResponse.ok) {
+        let errorDetail = `HTTP ${stateUpdateResponse.status}`;
+        try {
+          const errorBody = await stateUpdateResponse.json() as { message?: string };
+          if (errorBody.message) {
+            errorDetail = errorBody.message;
+          }
+        } catch {
+          // Body parse failure — fall back to the HTTP status text
+        }
+        throw new Error(errorDetail);
+      }
+
+      setState((previousState) => {
+        // Update the loaded CHG detail card if it matches
+        const updatedLoadedChg = previousState.loadedChg?.number === normalizedChangeKey
+          ? { ...previousState.loadedChg, stateValue: newStateValue }
+          : previousState.loadedChg;
+
+        // Update the matching row in the active changes table
+        const updatedActiveChanges = previousState.myActiveChanges.map((changeSummary) =>
+          changeSummary.number === normalizedChangeKey
+            ? { ...changeSummary, stateValue: newStateValue }
+            : changeSummary,
+        );
+
+        return {
+          ...previousState,
+          loadedChg: updatedLoadedChg,
+          myActiveChanges: updatedActiveChanges,
+          activityLog: [
+            createLogEntry(`State transition sent for ${normalizedChangeKey}. Refresh to see updated state.`, 'info'),
+            ...previousState.activityLog,
+          ],
+        };
+      });
+    } catch (unknownError) {
+      const errorMessage = unknownError instanceof Error ? unknownError.message : UPDATE_STATE_FAILURE_MESSAGE;
+      setState((previousState) => ({
+        ...previousState,
+        activityLog: [createLogEntry(`Failed to update state for ${normalizedChangeKey}: ${errorMessage}`, 'error'), ...previousState.activityLog],
+      }));
+    }
+  }, []);
+
   const setMonitorSetting = useCallback(<SettingKey extends keyof ReleaseMonitorSettings>(
     settingKey: SettingKey,
     settingValue: ReleaseMonitorSettings[SettingKey],
@@ -449,12 +576,13 @@ export function useReleaseManagement(): {
       setChgNumber,
       loadChg,
       loadMyActiveChanges,
+      updateChangeState,
       appendLogEntry,
       clearLog,
       clearLoadedChg,
       setMonitorSetting,
     };
-  }, [appendLogEntry, clearLoadedChg, clearLog, loadChg, loadMyActiveChanges, setChgNumber, setMonitorSetting]);
+  }, [appendLogEntry, clearLoadedChg, clearLog, loadChg, loadMyActiveChanges, setChgNumber, setMonitorSetting, updateChangeState]);
 
   return { state, actions };
 }
