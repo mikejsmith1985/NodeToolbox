@@ -3,25 +3,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JiraIssue } from '../../types/jira.ts';
 
-const { mockJiraGet, mockJiraPut } = vi.hoisted(() => ({
+const { mockJiraGet, mockJiraPost, mockJiraPut } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
+  mockJiraPost: vi.fn(),
   mockJiraPut: vi.fn(),
 }));
 
 vi.mock('../../services/jiraApi.ts', () => ({
   jiraGet: mockJiraGet,
+  jiraPost: mockJiraPost,
   jiraPut: mockJiraPut,
 }));
 
 import {
   extractPiReviewFeatureKey,
   fetchPiReviewFeatureIssues,
+  fetchPiReviewFeatureTransitions,
+  fetchPiReviewTransitionFields,
   formatPiReviewFeatureDisplayValue,
   parsePiReviewFeatureDateUpdates,
   readPiReviewFeatureDatePills,
   reconcilePiReviewRowsWithJira,
   savePiReviewFeatureDates,
   savePiReviewFeatureEstimates,
+  savePiReviewFeatureTransition,
+  savePiReviewTransitionRequiredFields,
 } from './piReviewJira.ts';
 import { createEmptyPiReviewRow } from './piReviewTable.ts';
 
@@ -298,6 +304,79 @@ describe('piReviewJira', () => {
     expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/DENP-1352', {
       fields: {
         customfield_10111: 8,
+      },
+    });
+  });
+
+  it('fetches available Jira transitions for PI Review status changes', async () => {
+    mockJiraGet.mockResolvedValue({
+      transitions: [
+        { id: '31', name: 'In Progress' },
+        { id: '41', name: 'Done' },
+      ],
+    });
+
+    await expect(fetchPiReviewFeatureTransitions('ART-5000')).resolves.toEqual([
+      { id: '31', name: 'In Progress' },
+      { id: '41', name: 'Done' },
+    ]);
+    expect(mockJiraGet).toHaveBeenCalledWith('/rest/api/2/issue/ART-5000/transitions');
+  });
+
+  it('saves a Jira transition from PI Review', async () => {
+    mockJiraPost.mockResolvedValue(undefined);
+
+    await savePiReviewFeatureTransition('ART-5000', '31');
+
+    expect(mockJiraPost).toHaveBeenCalledWith('/rest/api/2/issue/ART-5000/transitions', {
+      transition: { id: '31' },
+    });
+  });
+
+  it('rejects empty Jira transition selections before sending a transition request', async () => {
+    await expect(savePiReviewFeatureTransition('ART-5000', '   ')).rejects.toThrow(
+      'Select a Jira transition before saving.',
+    );
+    expect(mockJiraPost).not.toHaveBeenCalled();
+  });
+
+  it('loads required fields for a specific Jira transition', async () => {
+    mockJiraGet.mockResolvedValue({
+      transitions: [
+        {
+          id: '31',
+          fields: {
+            customfield_12345: { name: 'Product Owner', required: true },
+          },
+        },
+      ],
+    });
+
+    await expect(fetchPiReviewTransitionFields('ART-5000', '31')).resolves.toEqual({
+      customfield_12345: { name: 'Product Owner', required: true },
+    });
+    expect(mockJiraGet).toHaveBeenCalledWith('/rest/api/2/issue/ART-5000/transitions?expand=transitions.fields');
+  });
+
+  it('saves transition-required fields before retrying a blocked status update', async () => {
+    mockJiraPut.mockResolvedValue(undefined);
+
+    await savePiReviewTransitionRequiredFields(
+      'ART-5000',
+      {
+        customfield_12345: 'accountId:abc-123',
+        parent: 'ART-1000',
+      },
+      {
+        customfield_12345: { name: 'Product Owner', schema: { type: 'user' } },
+        parent: { name: 'Parent Link' },
+      },
+    );
+
+    expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/ART-5000', {
+      fields: {
+        customfield_12345: { accountId: 'abc-123' },
+        parent: { key: 'ART-1000' },
       },
     });
   });
