@@ -239,18 +239,17 @@ describe('RosterTab', () => {
     );
   });
 
-  it('shows a no-users status message when both the standard and Jira Server username= endpoints return empty lists', async () => {
-    // First call: standard endpoint (no username param) returns empty
-    // Second call: Jira Server username= fallback also returns empty
-    vi.mocked(jiraGet).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+  it('shows a no-users status message when all Jira user enumeration endpoints return empty lists', async () => {
+    // Three calls: standard (no param), username= empty, username=. dot wildcard
+    vi.mocked(jiraGet).mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     render(<RosterTab issues={[]} projectKey="TBX" />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Load project users' }));
 
     expect(await screen.findByText('No Jira project users are currently available for TBX.')).toBeInTheDocument();
-    // Confirms the standard v2 endpoint is tried first, then the Jira Server username= fallback.
-    expect(vi.mocked(jiraGet)).toHaveBeenCalledTimes(2);
+    // Confirms the full fallback chain: standard -> username= -> username=. (Jira Server dot wildcard)
+    expect(vi.mocked(jiraGet)).toHaveBeenCalledTimes(3);
     expect(vi.mocked(jiraGet)).toHaveBeenNthCalledWith(
       1,
       '/rest/api/2/user/assignable/search?project=TBX&startAt=0&maxResults=50',
@@ -258,6 +257,10 @@ describe('RosterTab', () => {
     expect(vi.mocked(jiraGet)).toHaveBeenNthCalledWith(
       2,
       '/rest/api/2/user/assignable/search?project=TBX&username=&startAt=0&maxResults=50',
+    );
+    expect(vi.mocked(jiraGet)).toHaveBeenNthCalledWith(
+      3,
+      '/rest/api/2/user/assignable/search?project=TBX&username=.&startAt=0&maxResults=50',
     );
   });
 
