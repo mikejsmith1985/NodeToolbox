@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Hygiene score tile now shows a ℹ info button that explains how the score is calculated (100 − flags × 5, min 0; both warn and error flags count equally)
 
+### Changed
+- **Dev Workspace removed as a standalone Personal Toolbox module**: The `RepoMonitorPanel` component has been extracted to `views/AdminHub/`, and the embedded `EmbeddedTimeTrackingPanel`/`EmbeddedGitSyncPanel` panels plus their supporting hooks and utils have been migrated to `views/MyIssues/`. The `views/DevWorkspace/` folder and its dedicated route (`/dev-workspace`) have been deleted.
+
 ### Fixed
 - **PI Review — Confluence→Toolbox sync now transparent**: When loading a PI Review page, any field that Jira overwrote during reconciliation (Priority, Points, Dependencies, Risks, Notes) is now surfaced in a collapsible delta banner beneath the toolbar, so users can immediately see what Jira changed and know whether to Save to Confluence. Previously these silent overwrites could make manual Confluence edits look like they "didn't stick."
 

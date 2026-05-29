@@ -16,7 +16,7 @@ describe('PERSONAL_TOOLBOX_MODULES', () => {
     const moduleIds = PERSONAL_TOOLBOX_MODULES.map((moduleDefinition) => moduleDefinition.id);
 
     expect(moduleIds).toEqual(
-      expect.arrayContaining(['my-issues', 'dev-workspace', 'snow-hub', 'reports-hub']),
+      expect.arrayContaining(['my-issues', 'snow-hub', 'reports-hub']),
     );
   });
 });

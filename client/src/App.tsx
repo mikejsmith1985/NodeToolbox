@@ -39,7 +39,6 @@ const MY_ISSUES_ROUTE = '/my-issues';
 const PERSONAL_TOOLBOX_ROUTE = '/personal-toolbox';
 const SPRINT_DASHBOARD_ROUTE = '/sprint-dashboard';
 const ART_ROUTE = '/art';
-const DEV_WORKSPACE_ROUTE = '/dev-workspace';
 const DSU_BOARD_ROUTE = '/dsu-board';
 const CODE_WALKTHROUGH_ROUTE = '/code-walkthrough';
 const TEXT_TOOLS_ROUTE = '/text-tools';
@@ -169,7 +168,6 @@ export default function App() {
           <Route path={PERSONAL_TOOLBOX_ROUTE} element={<PersonalToolboxView />} />
           <Route path={SPRINT_DASHBOARD_ROUTE} element={<SprintDashboardView />} />
           <Route path={ART_ROUTE} element={<ArtView />} />
-          <Route path={DEV_WORKSPACE_ROUTE} element={<Navigate to={MY_ISSUES_ROUTE} replace />} />
           <Route path={DSU_BOARD_ROUTE} element={<DsuBoardView />} />
           <Route path={CODE_WALKTHROUGH_ROUTE} element={<CodeWalkthroughView />} />
           <Route path={TEXT_TOOLS_ROUTE} element={<TextToolsView />} />

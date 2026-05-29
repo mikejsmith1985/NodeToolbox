@@ -45,9 +45,6 @@ vi.mock('./views/SprintDashboard/SprintDashboardView.tsx', () => ({
   default: () => <h1>Sprint Dashboard Mock</h1>,
 }));
 
-vi.mock('./views/DevWorkspace/DevWorkspaceView.tsx', () => ({
-  default: () => <h1>Dev Workspace Mock</h1>,
-}));
 
 vi.mock('./views/TextTools/TextToolsView.tsx', () => ({
   default: () => <h1>Text Tools Mock</h1>,
