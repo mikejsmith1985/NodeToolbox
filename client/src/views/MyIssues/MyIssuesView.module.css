@@ -487,6 +487,7 @@
   display: grid;
   grid-template-columns:
     clamp(92px, 12vw, 108px)
+    clamp(80px, 10vw, 100px)
     minmax(0, 1fr)
     clamp(96px, 12vw, 120px)
     minmax(112px, 0.85fr)

@@ -275,6 +275,7 @@ function renderCompactRow(issue: JiraIssue, inlineIssueExpansion: InlineIssueExp
           <span className={styles.issueKeyLink}>{issue.key}</span>
           <span className={styles.expandHint}>{isExpanded ? '▲ Less' : '▼ Details'}</span>
         </span>
+        <span>{issue.fields.issuetype.name}</span>
         <span>{issue.fields.summary}</span>
         <span>
           <span className={`${styles.statusBadge} ${resolveStatusBadgeClassName(issue.fields.status.name, issue.fields.status.statusCategory.key)}`}>
@@ -318,6 +319,7 @@ function renderTableRow(issue: JiraIssue, inlineIssueExpansion: InlineIssueExpan
             <span className={styles.expandHint}>{isExpanded ? '▲ Less' : '▼ Details'}</span>
           </div>
         </td>
+        <td>{issue.fields.issuetype.name}</td>
         <td>{issue.fields.summary}</td>
         <td>
           <span className={`${styles.statusBadge} ${resolveStatusBadgeClassName(issue.fields.status.name, issue.fields.status.statusCategory.key)}`}>
@@ -338,7 +340,7 @@ function renderTableRow(issue: JiraIssue, inlineIssueExpansion: InlineIssueExpan
       </tr>
       {isExpanded && (
         <tr>
-          <td className={styles.issueDetailCell} colSpan={6}>
+          <td className={styles.issueDetailCell} colSpan={7}>
             <IssueDetailPanel isEmbedded issue={issue} onIssueUpdated={inlineIssueExpansion.onIssueUpdated} />
           </td>
         </tr>
@@ -358,6 +360,7 @@ function renderIssueList(
       <div className={styles.compactList}>
         <div className={`${styles.compactRow} ${styles.issueTable}`}>
           <strong>Key</strong>
+          <strong>Type</strong>
           <strong>Summary</strong>
           <strong>Status</strong>
           <strong>Assignee</strong>
@@ -374,6 +377,7 @@ function renderIssueList(
         <thead>
           <tr>
             <th>Key</th>
+            <th>Type</th>
             <th>Summary</th>
             <th>Status</th>
             <th>Priority</th>

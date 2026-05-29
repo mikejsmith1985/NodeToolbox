@@ -1668,16 +1668,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
           >
           {isLoading ? 'Loading…' : 'Reload from Confluence'}
           </button>
-          {buildConfluencePageUrl(target.pageReference, resolvedPageId, confluenceBaseUrl) !== null && (
-            <a
-              className={styles.confluenceExternalLink}
-              href={buildConfluencePageUrl(target.pageReference, resolvedPageId, confluenceBaseUrl) ?? '#'}
-              rel="noreferrer"
-              target="_blank"
-            >
-              Open in Confluence ↗
-            </a>
-          )}
+
           <button
             className={joinClassNames(styles.actionButton, styles.actionButtonExport)}
             disabled={rows.length === 0 || isToolbarBusy}
