@@ -8,8 +8,10 @@ import {
   type HygieneFinding,
   type HygieneFlag,
 } from './checks/hygieneChecks.ts';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useHygieneState } from './hooks/useHygieneState.ts';
+import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
+import type { JiraIssue as RealJiraIssue } from '../../types/jira.ts';
 import styles from './HygieneView.module.css';
 
 const VIEW_TITLE = 'Hygiene';
@@ -43,6 +45,11 @@ export default function HygieneView() {
   const hasVisibleFindings = hygieneState.filteredFindings.length > 0;
   const hasProjectKey = hygieneState.projectKey.trim().length > 0;
   const shouldShowNoFlags = !hygieneState.isLoading && hasProjectKey && !hasVisibleFindings;
+  const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
+
+  function handleToggleIssueExpand(issueKey: string) {
+    setExpandedIssueKey((currentKey) => (currentKey === issueKey ? null : issueKey));
+  }
 
   useEffect(() => {
     if (hasAutoRunTriggeredRef.current || !hasProjectKey || isHygieneLoading) {
@@ -135,7 +142,17 @@ export default function HygieneView() {
       {shouldShowNoFlags && <div className={styles.emptyState}>{NO_FLAGS_MESSAGE}</div>}
       {!hygieneState.isLoading && hasVisibleFindings && (
         <div className={styles.findingsList} aria-label="Hygiene findings">
-          {hygieneState.filteredFindings.map(renderFindingRow)}
+          {hygieneState.filteredFindings.map((finding) => (
+            <FindingRow
+              key={finding.issue.key}
+              finding={finding}
+              isExpanded={expandedIssueKey === finding.issue.key}
+              onToggleExpand={() => handleToggleIssueExpand(finding.issue.key)}
+              onIssueUpdated={() => {
+                void hygieneState.loadHygiene();
+              }}
+            />
+          ))}
         </div>
       )}
     </section>
@@ -158,27 +175,72 @@ function renderSummaryTile(checkId: string, hygieneState: ReturnType<typeof useH
   );
 }
 
-function renderFindingRow(finding: HygieneFinding) {
+interface FindingRowProps {
+  finding: HygieneFinding;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onIssueUpdated: () => void;
+}
+
+function FindingRow({ finding, isExpanded, onToggleExpand, onIssueUpdated }: FindingRowProps) {
+  function handleKeyDown(keyEvent: React.KeyboardEvent) {
+    if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+      keyEvent.preventDefault();
+      onToggleExpand();
+    }
+  }
+
   return (
-    <article key={finding.issue.key} className={styles.findingRow}>
-      <div className={styles.issueMain}>
-        <a className={styles.issueKey} href={buildJiraBrowseUrl(finding.issue.key)} target="_blank" rel="noreferrer">
-          {finding.issue.key}
-        </a>
-        <h2 className={styles.issueSummary}>{readIssueSummary(finding)}</h2>
+    <div className={styles.findingRowWrapper}>
+      <div
+        className={styles.findingRow}
+        onClick={onToggleExpand}
+        onKeyDown={handleKeyDown}
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
+      >
+        <div className={styles.issueMain}>
+          <div className={styles.issueKeyRow}>
+            <a
+              className={styles.issueKey}
+              href={buildJiraBrowseUrl(finding.issue.key)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {finding.issue.key}
+            </a>
+            <span className={styles.expandHint}>{isExpanded ? '▲ Less' : '▼ Details'}</span>
+          </div>
+          <h2 className={styles.issueSummary}>{readIssueSummary(finding)}</h2>
+        </div>
+        <div className={styles.flagList}>{finding.flags.map(renderFlagChip)}</div>
+        <dl className={styles.issueMeta}>
+          <div>
+            <dt>Type</dt>
+            <dd>{finding.issue.fields.issuetype?.name || '—'}</dd>
+          </div>
+          <div>
+            <dt>PI</dt>
+            <dd>{finding.programIncrement || '—'}</dd>
+          </div>
+          <div>
+            <dt>Assignee</dt>
+            <dd>{readAssigneeName(finding)}</dd>
+          </div>
+          <div>
+            <dt>Age</dt>
+            <dd>{formatIssueAge(finding.issue.fields.created)}</dd>
+          </div>
+        </dl>
       </div>
-      <div className={styles.flagList}>{finding.flags.map(renderFlagChip)}</div>
-      <dl className={styles.issueMeta}>
-        <div>
-          <dt>Assignee</dt>
-          <dd>{readAssigneeName(finding)}</dd>
+      {isExpanded && (
+        <div className={styles.issueDetailCell}>
+          <IssueDetailPanel isEmbedded issue={finding.issue as unknown as RealJiraIssue} onIssueUpdated={onIssueUpdated} />
         </div>
-        <div>
-          <dt>Age</dt>
-          <dd>{formatIssueAge(finding.issue.fields.created)}</dd>
-        </div>
-      </dl>
-    </article>
+      )}
+    </div>
   );
 }
 

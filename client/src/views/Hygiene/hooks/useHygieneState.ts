@@ -101,7 +101,45 @@ export function mapJiraIssueToHygieneFinding(
   evaluationContext: HygieneEvaluationContext = {},
 ): HygieneFinding | null {
   const flags = evaluateHygieneIssue(issue, evaluationContext);
-  return flags.length > 0 ? { issue, flags } : null;
+  if (flags.length === 0) {
+    return null;
+  }
+  const programIncrement = readProgramIncrementValue(issue, evaluationContext.fieldConfig);
+  return { issue, flags, programIncrement };
+}
+
+export function readProgramIncrementValue(issue: JiraIssue, fieldConfig?: Partial<HygieneFieldConfig>): string | null {
+  if (!fieldConfig?.programIncrementFieldIds) {
+    return null;
+  }
+  for (const fieldId of fieldConfig.programIncrementFieldIds) {
+    const value = issue.fields[fieldId];
+    if (value !== null && value !== undefined) {
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed) return trimmed;
+      }
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (typeof item === 'string') {
+            const trimmed = item.trim();
+            if (trimmed) return trimmed;
+          }
+          if (item && typeof item === 'object') {
+            const piObj = item as { value?: string; name?: string };
+            const name = piObj.name?.trim() || piObj.value?.trim();
+            if (name) return name;
+          }
+        }
+      }
+      if (value && typeof value === 'object') {
+        const piObj = value as { value?: string; name?: string };
+        const name = piObj.name?.trim() || piObj.value?.trim();
+        if (name) return name;
+      }
+    }
+  }
+  return null;
 }
 
 /** Owns Hygiene view state and actions so the render layer can stay declarative. */
