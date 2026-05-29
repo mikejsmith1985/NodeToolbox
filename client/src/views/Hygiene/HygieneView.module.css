@@ -142,7 +142,15 @@
 
 .findingRow {
   display: grid;
-  grid-template-columns: minmax(18rem, 1fr) minmax(12rem, auto) minmax(12rem, auto);
+  /*
+   * Each finding renders as its own grid, so the badge and meta columns MUST be
+   * sized deterministically — never by content. Using content-based tracks
+   * (auto / max-content) lets a row whose values are shorter (e.g. an issue with
+   * a brief Program Increment) compute narrower meta cards, which shifts its
+   * badge and cards out of line with every other row. A fixed badge column plus
+   * a capped meta column keeps every row's cards in the same vertical position.
+   */
+  grid-template-columns: minmax(18rem, 1fr) 12rem minmax(18rem, 48rem);
   gap: var(--spacing-md);
   align-items: center;
   padding: var(--spacing-md);
@@ -231,7 +239,15 @@
 
 .issueMeta {
   display: grid;
-  grid-template-columns: repeat(4, minmax(5rem, 1fr));
+  /*
+   * Floor each card at 0 (minmax(0, ...)) so a long value — most often the
+   * Program Increment date range — wraps inside its card instead of widening
+   * the track. Without the 0 floor, a long value inflates one card on some rows
+   * but not others, which is what knocks rows out of alignment. The weights give
+   * Program Increment and Assignee the extra room they typically need to stay on
+   * a single line while Type and Age stay compact.
+   */
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.5fr) minmax(0, 1.15fr) minmax(0, 0.6fr);
   gap: var(--spacing-sm);
   margin: 0;
 }
@@ -250,6 +266,8 @@
 .issueMeta dd {
   margin: var(--spacing-xs) 0 0;
   color: var(--color-text-primary);
+  /* Long values wrap within the fixed-width card instead of overflowing it. */
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 860px) {
