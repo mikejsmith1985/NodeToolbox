@@ -162,32 +162,49 @@ async function fetchSnowWorkItemsForRosterMember(snowUserSysId: string): Promise
     .sort((firstIssue, secondIssue) => new Date(secondIssue.opened_at).getTime() - new Date(firstIssue.opened_at).getTime());
 }
 
+/**
+ * Reads the stable identity key for a Jira user across Cloud (accountId) and Server (name/key).
+ * Jira Cloud always provides accountId; Jira Server provides name and key instead.
+ */
+function readJiraUserIdentityKey(jiraUser: JiraUser): string {
+  return jiraUser.accountId?.trim() || jiraUser.name?.trim() || jiraUser.key?.trim() || '';
+}
+
+/**
+ * Reads the best available assignee query value for a Jira user.
+ * Jira Cloud assignees are identified by displayName in JQL; Jira Server by username/name.
+ */
+function readJiraUserAssigneeQueryValue(jiraUser: JiraUser): string {
+  return jiraUser.displayName?.trim() || jiraUser.name?.trim() || '';
+}
+
 function mapJiraUsersToRosterSearchResults(
   jiraUsers: JiraUser[],
   rosterAssigneeValues: Set<string>,
 ): JiraRosterSearchResult[] {
-  const searchResultsByAccountId = new Map<string, JiraRosterSearchResult>();
+  const searchResultsByIdentityKey = new Map<string, JiraRosterSearchResult>();
   for (const jiraUser of jiraUsers) {
-    const displayName = jiraUser.displayName.trim();
-    if (!displayName || !jiraUser.accountId.trim()) {
+    const identityKey = readJiraUserIdentityKey(jiraUser);
+    const displayName = jiraUser.displayName?.trim() || jiraUser.name?.trim() || '';
+    if (!displayName || !identityKey) {
       continue;
     }
 
-    const assigneeQueryValue = displayName;
+    const assigneeQueryValue = readJiraUserAssigneeQueryValue(jiraUser);
     const normalizedAssigneeValue = assigneeQueryValue.toLowerCase();
-    if (rosterAssigneeValues.has(normalizedAssigneeValue) || searchResultsByAccountId.has(jiraUser.accountId)) {
+    if (rosterAssigneeValues.has(normalizedAssigneeValue) || searchResultsByIdentityKey.has(identityKey)) {
       continue;
     }
 
-    searchResultsByAccountId.set(jiraUser.accountId, {
+    searchResultsByIdentityKey.set(identityKey, {
       displayName,
       assigneeQueryValue,
-      jiraAccountId: jiraUser.accountId,
+      jiraAccountId: jiraUser.accountId?.trim() || jiraUser.name?.trim() || identityKey,
       emailAddress: jiraUser.emailAddress?.trim() || undefined,
     });
   }
 
-  return [...searchResultsByAccountId.values()].sort((firstUser, secondUser) =>
+  return [...searchResultsByIdentityKey.values()].sort((firstUser, secondUser) =>
     firstUser.displayName.localeCompare(secondUser.displayName),
   );
 }
@@ -195,15 +212,18 @@ function mapJiraUsersToRosterSearchResults(
 async function loadPaginatedProjectUsers(
   requestPathBuilder: (startAt: number) => string,
 ): Promise<JiraUser[]> {
-  const projectUsersByAccountId = new Map<string, JiraUser>();
+  const projectUsersByIdentityKey = new Map<string, JiraUser>();
 
   for (let pageIndex = 0; pageIndex < MAX_JIRA_PROJECT_USER_PAGES; pageIndex += 1) {
     const startAt = pageIndex * JIRA_PROJECT_USER_PAGE_SIZE;
-    const jiraUsers = await jiraGet<JiraUser[]>(requestPathBuilder(startAt));
+    // Guard against non-array responses — some Jira versions return null or a non-array on error.
+    const rawResponse = await jiraGet<JiraUser[] | null | undefined>(requestPathBuilder(startAt));
+    const jiraUsers = Array.isArray(rawResponse) ? rawResponse : [];
 
     for (const jiraUser of jiraUsers) {
-      if (jiraUser.accountId?.trim()) {
-        projectUsersByAccountId.set(jiraUser.accountId, jiraUser);
+      const identityKey = readJiraUserIdentityKey(jiraUser);
+      if (identityKey) {
+        projectUsersByIdentityKey.set(identityKey, jiraUser);
       }
     }
 
@@ -212,19 +232,55 @@ async function loadPaginatedProjectUsers(
     }
   }
 
-  return [...projectUsersByAccountId.values()];
+  return [...projectUsersByIdentityKey.values()];
+}
+
+/** Detects whether a Jira error message indicates a redirect or missing-query-param issue. */
+function isJiraAssignableSearchRedirectError(caughtError: unknown): boolean {
+  if (!(caughtError instanceof Error)) {
+    return false;
+  }
+  const lowerMessage = caughtError.message.toLowerCase();
+  // 302 = redirect (Jira Server requires username param); 400 = missing required param on some versions
+  return lowerMessage.includes(': 302') || lowerMessage.includes(': 400');
 }
 
 async function loadProjectUsersForRoster(
   normalizedProjectKey: string,
   rosterAssigneeValues: Set<string>,
 ): Promise<JiraRosterSearchResult[]> {
-  // Use the v2 assignable/search endpoint — the v3 multiProjectSearch endpoint
-  // is not supported by the proxy and returns a 302 redirect.
-  const assignableProjectUsers = await loadPaginatedProjectUsers(
-    (startAt) =>
-      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
-  );
+  // Try the standard v2 assignable/search endpoint first (works on Jira Cloud and most Server versions).
+  // On some Jira Server versions this endpoint requires a `username` query parameter and returns a
+  // 302 redirect when the param is absent — detect that and retry with an empty username param.
+  let assignableProjectUsers: JiraUser[];
+  try {
+    assignableProjectUsers = await loadPaginatedProjectUsers(
+      (startAt) =>
+        `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
+    );
+  } catch (caughtError) {
+    if (!isJiraAssignableSearchRedirectError(caughtError)) {
+      throw caughtError;
+    }
+    // Jira Server fallback: include username= so the server does not redirect.
+    // An empty username string returns all assignable users on Jira Server.
+    assignableProjectUsers = await loadPaginatedProjectUsers(
+      (startAt) =>
+        `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&username=&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
+    );
+  }
+
+  // If the no-query call returned 0 users (Jira Server silently returns empty without redirecting),
+  // retry with username= which forces the server to enumerate all assignable users.
+  if (assignableProjectUsers.length === 0) {
+    const serverFallbackUsers = await loadPaginatedProjectUsers(
+      (startAt) =>
+        `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&username=&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
+    );
+    if (serverFallbackUsers.length > 0) {
+      return mapJiraUsersToRosterSearchResults(serverFallbackUsers, rosterAssigneeValues);
+    }
+  }
 
   return mapJiraUsersToRosterSearchResults(assignableProjectUsers, rosterAssigneeValues);
 }

@@ -6,7 +6,12 @@ export interface JiraUser {
   displayName: string;
   emailAddress: string;
   avatarUrls: Record<string, string>;
+  /** Jira Server username (absent on Jira Cloud which uses accountId instead). */
+  name?: string;
+  /** Jira Server user key (absent on Jira Cloud which uses accountId instead). */
+  key?: string;
 }
+
 
 /** Jira workflow transition metadata returned by /rest/api/2/issue/{key}/transitions. */
 export interface JiraTransition {
