@@ -1023,4 +1023,14 @@ describe('SprintDashboardView', () => {
     expect(screen.getByText(/stale.*7\+ days/i)).toBeInTheDocument();
     mockConfig.staleDaysThreshold = 5; // reset
   });
+
+  it('renders Jira issue keys as external links that open in a new tab', () => {
+    mockState.activeTab = 'overview';
+    render(<SprintDashboardView />);
+
+    const link = screen.getByRole('link', { name: 'TBX-10' });
+    expect(link).toHaveAttribute('href', 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/TBX-10');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noreferrer');
+  });
 });
