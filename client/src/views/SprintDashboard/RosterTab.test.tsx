@@ -218,7 +218,7 @@ describe('RosterTab', () => {
     expect(await screen.findByText('Jordan Joiner')).toBeInTheDocument();
     expect(screen.getByText('Taylor Teammate')).toBeInTheDocument();
     expect(vi.mocked(jiraGet)).toHaveBeenCalledWith(
-      '/rest/api/2/user/assignable/search?project=TBX&startAt=0&maxResults=50',
+      '/rest/api/2/user/assignable/search?project=TBX&startAt=0&maxResults=1000',
     );
 
     fireEvent.click(screen.getByLabelText('Select Jordan Joiner for roster'));
@@ -252,15 +252,15 @@ describe('RosterTab', () => {
     expect(vi.mocked(jiraGet)).toHaveBeenCalledTimes(3);
     expect(vi.mocked(jiraGet)).toHaveBeenNthCalledWith(
       1,
-      '/rest/api/2/user/assignable/search?project=TBX&startAt=0&maxResults=50',
+      '/rest/api/2/user/assignable/search?project=TBX&startAt=0&maxResults=1000',
     );
     expect(vi.mocked(jiraGet)).toHaveBeenNthCalledWith(
       2,
-      '/rest/api/2/user/assignable/search?project=TBX&username=&startAt=0&maxResults=50',
+      '/rest/api/2/user/assignable/search?project=TBX&username=&startAt=0&maxResults=1000',
     );
     expect(vi.mocked(jiraGet)).toHaveBeenNthCalledWith(
       3,
-      '/rest/api/2/user/assignable/search?project=TBX&username=.&startAt=0&maxResults=50',
+      '/rest/api/2/user/assignable/search?project=TBX&username=.&startAt=0&maxResults=1000',
     );
   });
 
