@@ -1,0 +1,17 @@
+{
+  "job_id": "86ce6ffd-9a59-4731-8227-29aafa6c0e96",
+  "repo_path": "C:\\ProjectsWin\\NodeToolbox",
+  "script_path": "C:\\ProjectsWin\\NodeToolbox\\scripts\\local-release.ps1",
+  "version": "0.13.27",
+  "release_notes": "Release v0.13.27",
+  "include_uncommitted_changes": false,
+  "should_proceed_with_warnings": false,
+  "timeout_seconds": 3600,
+  "status": "completed",
+  "exit_code": 0,
+  "log_path": "C:\\ProjectsWin\\NodeToolbox\\.forge\\release-jobs\\86ce6ffd-9a59-4731-8227-29aafa6c0e96\\job.log",
+  "created_at": "2026-05-29T12:28:13.6667417Z",
+  "started_at": "2026-05-29T12:28:13.67074Z",
+  "finished_at": "2026-05-29T12:28:13.9103686Z",
+  "updated_at": "2026-05-29T12:28:13.9113859Z"
+}
