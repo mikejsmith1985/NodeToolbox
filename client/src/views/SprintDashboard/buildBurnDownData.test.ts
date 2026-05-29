@@ -26,6 +26,39 @@ describe('buildBurnDownData', () => {
     // Ideal should start at 1 and drop to 0
     expect(result[0].ideal).toBe(1);
     expect(result[10].ideal).toBe(0);
+    // Projected should start at 0 and rise to 1
+    expect(result[0].projected).toBe(0);
+    expect(result[10].projected).toBe(1);
+  });
+
+  it('calculates the projected burnup correctly over multiple days', () => {
+    const issues: JiraIssue[] = [
+      {
+        id: '1',
+        key: 'TBX-1',
+        fields: {
+          summary: 'Issue 1',
+          status: { name: 'To Do', statusCategory: { key: 'new' } },
+          created: '2025-01-01T00:00:00.000Z',
+          updated: '2025-01-01T00:00:00.000Z',
+        },
+      } as any,
+      {
+        id: '2',
+        key: 'TBX-2',
+        fields: {
+          summary: 'Issue 2',
+          status: { name: 'To Do', statusCategory: { key: 'new' } },
+          created: '2025-01-01T00:00:00.000Z',
+          updated: '2025-01-01T00:00:00.000Z',
+        },
+      } as any,
+    ];
+    const result = buildBurnDownData(startDate, endDate, issues, true);
+
+    expect(result[0].projected).toBe(0);
+    expect(result[5].projected).toBe(1); // Day 5 is middle of 10 days (2 * 5 / 10 = 1)
+    expect(result[10].projected).toBe(2); // Day 10 is end of 10 days (2 * 10 / 10 = 2)
   });
 
   it('calculates completed and remaining over time with changelog', () => {

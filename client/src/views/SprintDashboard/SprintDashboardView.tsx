@@ -118,6 +118,7 @@ const DASHBOARD_TEAM_NAME_PLACEHOLDER = 'e.g. Payments Team';
 const BURN_IDEAL_KEY = 'ideal';
 const BURN_REMAINING_KEY = 'remaining';
 const BURN_COMPLETED_KEY = 'completed';
+const BURN_PROJECTED_KEY = 'projected';
 const BURNUP_TOGGLE_LABEL = 'Show Burnup';
 const OVERVIEW_GROUP_ORDER = ['In Progress', 'To Do', 'Done'] as const;
 const OVERVIEW_IN_PROGRESS_STATUS_TOKENS = ['progress', 'review', 'dev', 'test'];
@@ -1245,6 +1246,9 @@ export function buildBurnDownData(
     const totalIssues = issues.length;
     const ideal = Math.round(totalIssues - (totalIssues / totalDays) * dayIndex);
 
+    // Calculate projected burnup to show the linear path from 0 to total issues across the sprint
+    const projected = Math.round((totalIssues / totalDays) * dayIndex);
+
     // Only plot remaining and completed for past/current days if active, or all days if closed
     const showPlot = isClosed || dayIndex <= todayDayIndex;
 
@@ -1310,6 +1314,7 @@ export function buildBurnDownData(
       [BURN_IDEAL_KEY]: ideal,
       [BURN_REMAINING_KEY]: remaining,
       [BURN_COMPLETED_KEY]: completed,
+      [BURN_PROJECTED_KEY]: projected,
     };
   });
 }
@@ -1715,6 +1720,16 @@ function BurnDownChart({
             stroke="var(--color-accent)"
             type="monotone"
           />
+          {isBurnupVisible && (
+            <Line
+              dataKey={BURN_PROJECTED_KEY}
+              dot={false}
+              name="Projected"
+              stroke="var(--color-text-secondary)"
+              strokeDasharray="4 4"
+              type="monotone"
+            />
+          )}
           {isBurnupVisible && (
             <Line
               dataKey={BURN_COMPLETED_KEY}
