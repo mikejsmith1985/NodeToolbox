@@ -120,6 +120,7 @@ const BURN_REMAINING_KEY = 'remaining';
 const BURN_COMPLETED_KEY = 'completed';
 const BURN_PROJECTED_KEY = 'projected';
 const BURNUP_TOGGLE_LABEL = 'Show Burnup';
+const JIRA_BROWSE_URL_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/';
 const OVERVIEW_GROUP_ORDER = ['In Progress', 'To Do', 'Done'] as const;
 const OVERVIEW_IN_PROGRESS_STATUS_TOKENS = ['progress', 'review', 'dev', 'test'];
 const OVERVIEW_TO_DO_STATUS_TOKENS = ['to do', 'open', 'backlog', 'new'];
@@ -1375,8 +1376,10 @@ function IssueCardWithMove({
       >
         <a
           className={styles.issueKeyLink}
-          href={`#${issue.key}`}
+          href={`${JIRA_BROWSE_URL_PREFIX}${issue.key}`}
           onClick={stopRowToggle}
+          target="_blank"
+          rel="noreferrer"
         >
           {issue.key}
         </a>
@@ -1965,8 +1968,10 @@ function BlockersTab({
           <div className={styles.issueCardHeaderRow}>
             <a
               className={styles.issueKeyLink}
-              href={`#${issue.key}`}
+              href={`${JIRA_BROWSE_URL_PREFIX}${issue.key}`}
               onClick={(clickEvent) => clickEvent.stopPropagation()}
+              target="_blank"
+              rel="noreferrer"
             >
               {issue.key}
             </a>
@@ -2260,7 +2265,15 @@ function DefectsTab({
                 <div className={styles.defectCard}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
                     <div>
-                      <a className={styles.issueKeyLink} href={`#${defectIssue.key}`}>{defectIssue.key}</a>{' '}
+                      <a
+                        className={styles.issueKeyLink}
+                        href={`${JIRA_BROWSE_URL_PREFIX}${defectIssue.key}`}
+                        onClick={(clickEvent) => clickEvent.stopPropagation()}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {defectIssue.key}
+                      </a>{' '}
                       <span>{defectIssue.fields.summary}</span>
                     </div>
                     <div className={styles.issueMetaText}>
@@ -4189,7 +4202,15 @@ function PipelineTab({
                         {pipelineRow.alerts.length > 0 && (
                           <div className={styles.issueMetaText}>{pipelineRow.alerts.join(' · ')}</div>
                         )}
-                        <a className={styles.issueKeyLink} href={`#${pipelineRow.relKey}`}>{pipelineRow.relKey}</a>{' '}
+                        <a
+                          className={styles.issueKeyLink}
+                          href={`${JIRA_BROWSE_URL_PREFIX}${pipelineRow.relKey}`}
+                          onClick={(clickEvent) => clickEvent.stopPropagation()}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {pipelineRow.relKey}
+                        </a>{' '}
                         <span>{pipelineRow.relSummary.replace(/^REL\s*[–-]\s*[A-Z]+-\d+\s*[–-]\s*/, '')}</span>
                       </td>
                       <td style={{ padding: '8px 10px', textAlign: 'center' }}>{pipelineRow.devStatus ?? '—'}</td>
@@ -4531,7 +4552,15 @@ function PlanningTab({
                 <div className={styles.blockerCard}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
                     <div>
-                      <a className={styles.issueKeyLink} href={`#${planningIssue.key}`}>{planningIssue.key}</a>{' '}
+                      <a
+                        className={styles.issueKeyLink}
+                        href={`${JIRA_BROWSE_URL_PREFIX}${planningIssue.key}`}
+                        onClick={(clickEvent) => clickEvent.stopPropagation()}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {planningIssue.key}
+                      </a>{' '}
                       <span className={styles.issueSummaryText}>{planningIssue.fields.summary}</span>
                     </div>
                     <div className={styles.issueMetaText}>
@@ -5321,7 +5350,15 @@ function ReleasesTab({
                                         ? '🔄'
                                         : '⬜'}
                                   </span>
-                                  <a className={styles.issueKeyLink} href={`#${issue.key}`}>{issue.key}</a>
+                                  <a
+                                    className={styles.issueKeyLink}
+                                    href={`${JIRA_BROWSE_URL_PREFIX}${issue.key}`}
+                                    onClick={(clickEvent) => clickEvent.stopPropagation()}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    {issue.key}
+                                  </a>
                                   <span className={styles.releaseIssueSummary}>{issue.fields.summary}</span>
                                   <span className={styles.releaseIssueAssignee}>
                                     {issue.fields.assignee?.displayName?.split(' ')[0] ?? '—'}

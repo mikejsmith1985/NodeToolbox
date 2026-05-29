@@ -219,21 +219,14 @@ async function loadProjectUsersForRoster(
   normalizedProjectKey: string,
   rosterAssigneeValues: Set<string>,
 ): Promise<JiraRosterSearchResult[]> {
+  // Use the v2 assignable/search endpoint — the v3 multiProjectSearch endpoint
+  // is not supported by the proxy and returns a 302 redirect.
   const assignableProjectUsers = await loadPaginatedProjectUsers(
     (startAt) =>
       `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
   );
 
-  if (assignableProjectUsers.length > 0) {
-    return mapJiraUsersToRosterSearchResults(assignableProjectUsers, rosterAssigneeValues);
-  }
-
-  const multiProjectAssignableUsers = await loadPaginatedProjectUsers(
-    (startAt) =>
-      `/rest/api/3/user/assignable/multiProjectSearch?projectKeys=${encodeURIComponent(normalizedProjectKey)}&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
-  );
-
-  return mapJiraUsersToRosterSearchResults(multiProjectAssignableUsers, rosterAssigneeValues);
+  return mapJiraUsersToRosterSearchResults(assignableProjectUsers, rosterAssigneeValues);
 }
 
 function RosterCard({ rosterMember, actionAriaLabel, actionLabel, onAction, children }: RosterCardProps) {
@@ -403,6 +396,9 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
   const [jiraSearchErrorMessage, setJiraSearchErrorMessage] = useState<string | null>(null);
   const [jiraSearchStatusMessage, setJiraSearchStatusMessage] = useState<string | null>(null);
   const [isSearchingJiraUsers, setIsSearchingJiraUsers] = useState(false);
+  // loadProjectKey is a local override so users can load users from any project,
+  // independent of the Team Dashboard's active sprint project.
+  const [loadProjectKey, setLoadProjectKey] = useState(() => projectKey.trim().toUpperCase());
   const [projectUserResults, setProjectUserResults] = useState<JiraRosterSearchResult[]>([]);
   const [selectedProjectUserIds, setSelectedProjectUserIds] = useState<string[]>([]);
   const [projectUserErrorMessage, setProjectUserErrorMessage] = useState<string | null>(null);
@@ -518,10 +514,10 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
   }
 
   async function handleLoadProjectUsers() {
-    const normalizedProjectKey = projectKey.trim().toUpperCase();
+    const normalizedProjectKey = loadProjectKey.trim().toUpperCase();
     if (!normalizedProjectKey) {
       setProjectUserStatusMessage(null);
-      setProjectUserErrorMessage('Enter and load a Jira project before loading project users.');
+      setProjectUserErrorMessage('Enter a project key to load its assignable Jira users.');
       resetProjectUserSelection([]);
       return;
     }
@@ -736,29 +732,38 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
         <div className={styles.personWalkSectionHeader}>
           <h3 className={styles.personWalkSectionTitle}>Load all project users</h3>
         </div>
-        <div className={styles.rosterImportActionRow}>
+        <div className={styles.rosterInputGrid}>
+          <label className={styles.rosterFieldLabel}>
+            <span>Project key</span>
+            <input
+              className={styles.personWalkPostInput}
+              onChange={(changeEvent) => setLoadProjectKey(changeEvent.target.value.toUpperCase())}
+              placeholder="e.g. ENFCT"
+              value={loadProjectKey}
+            />
+          </label>
           <button
             className={styles.secondaryButton}
-            disabled={isLoadingProjectUsers}
+            disabled={isLoadingProjectUsers || !loadProjectKey.trim()}
             onClick={() => void handleLoadProjectUsers()}
             type="button"
           >
-            {isLoadingProjectUsers ? 'Loading Jira project users…' : `Load users for ${projectKey.trim().toUpperCase() || 'current project'}`}
+            {isLoadingProjectUsers ? 'Loading Jira project users…' : 'Load project users'}
           </button>
-          {visibleProjectUserResults.length > 0 ? (
-            <>
-              <button className={styles.secondaryButton} onClick={handleSelectAllProjectUsers} type="button">
-                Select all
-              </button>
-              <button className={styles.secondaryButton} onClick={handleDeselectAllProjectUsers} type="button">
-                Deselect all
-              </button>
-              <button className={styles.secondaryButton} onClick={handleAddSelectedProjectUsers} type="button">
-                Add selected users to roster
-              </button>
-            </>
-          ) : null}
         </div>
+        {visibleProjectUserResults.length > 0 ? (
+          <div className={styles.rosterImportActionRow}>
+            <button className={styles.secondaryButton} onClick={handleSelectAllProjectUsers} type="button">
+              Select all
+            </button>
+            <button className={styles.secondaryButton} onClick={handleDeselectAllProjectUsers} type="button">
+              Deselect all
+            </button>
+            <button className={styles.secondaryButton} onClick={handleAddSelectedProjectUsers} type="button">
+              Add selected users to roster
+            </button>
+          </div>
+        ) : null}
         <p className={styles.personWalkMeta}>
           Load the current Jira project&apos;s assignable users, then keep everyone selected or deselect the people who do not belong in this roster.
         </p>
