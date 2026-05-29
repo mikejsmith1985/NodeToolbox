@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Hygiene score tile now shows a ℹ info button that explains how the score is calculated (100 − flags × 5, min 0; both warn and error flags count equally)
+
+### Changed
+- **Dev Workspace removed as a standalone Personal Toolbox module**: The `RepoMonitorPanel` component has been extracted to `views/AdminHub/`, and the embedded `EmbeddedTimeTrackingPanel`/`EmbeddedGitSyncPanel` panels plus their supporting hooks and utils have been migrated to `views/MyIssues/`. The `views/DevWorkspace/` folder and its dedicated route (`/dev-workspace`) have been deleted.
+
+### Fixed
+- **PI Review — Confluence→Toolbox sync now transparent**: When loading a PI Review page, any field that Jira overwrote during reconciliation (Priority, Points, Dependencies, Risks, Notes) is now surfaced in a collapsible delta banner beneath the toolbar, so users can immediately see what Jira changed and know whether to Save to Confluence. Previously these silent overwrites could make manual Confluence edits look like they "didn't stick."
+
+### Added
+- **PI Review — Open in Confluence link**: The toolbar and the "Configured page URL or ID" summary card entry now include an **Open in Confluence ↗** link that opens the backing Confluence page in a new tab. The URL is resolved from the configured page reference, or constructed from the Confluence base URL and the resolved page ID when only a numeric ID is stored.
+- **PI Review — Last synced timestamp**: The page summary card shows a **Last synced from Confluence** pill with the time of the most recent successful load, so users can tell at a glance whether their view is fresh.
+- **PI Review — Jira load-delta notification**: After every load (initial or manual reload), a collapsible banner lists every field that Jira updated during reconciliation — keyed by feature, with old → new values — so users know exactly what Jira changed and whether a **Save to Confluence** is needed to persist those changes.
+
 ### Fixed
 - **SNow Hub — Release Management and Modify CHG now correctly read schedule dates from ServiceNow**: Both the Release Management tab (`useReleaseManagement`) and the Modify CHG tab were requesting and reading `planned_start_date`/`planned_end_date` from the ServiceNow `change_request` table, but the actual SNow field names are `start_date` and `end_date`. Planned Start and Planned End now populate correctly in the My Active Changes grid and the loaded change detail card.
 - **SNow Hub — Modify CHG schedule dates now sync correctly with ServiceNow**: The Modify CHG workflow was requesting and sending incorrect field names for scheduled dates (`planned_start_date`/`planned_end_date` instead of `start_date`/`end_date`). The fix ensures dates from the schedule tab are correctly fetched from ServiceNow, displayed in the Environments step, and sent back to the correct SNow fields during save. Schedule dates are now properly preserved in the schedule tab through the edit-save cycle.
@@ -1266,7 +1280,10 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 
 ### Fixed
 - **Critical: GitHub API authentication header fixed (Bearer → token) + debug endpoint**: Fixed the Repo Monitor connectivity bug where GitHub API requests were using the OAuth2 `Bearer` scheme instead of GitHub's native PAT `token` scheme. The issue affected both the scheduler API calls (makeGithubApiRequest) and the browser proxy (github-proxy and proxy routes). Now correctly sends `Authorization: token <PAT>` for GitHub while preserving `Bearer` for Jira/Confluence. Added `/api/scheduler/github-debug` endpoint to the Admin Hub Dev Panel for diagnosing GitHub connectivity issues: shows the exact auth header format being sent, PAT mask, and detailed probe results. All 270 tests updated and passing.
- (v0.0.12 / previous [Unreleased])
+ (v0.0.12 / previous [Unreleased]
+
+### Added
+- Hygiene score tile now shows a ℹ info button that explains how the score is calculated (100 − flags × 5, min 0; both warn and error flags count equally))
 - **Root cause of "HTML not found" on corporate PCs** — The `resolvePortConflict`
   function previously detected an existing NodeToolbox on port 5555 and redirected the
   browser to it, then called `process.exit(0)`. If that old stuck session was a
@@ -1610,3 +1627,4 @@ The `📦 Release Management` tab (`snh-tab-rm`) was always visible in the SNow 
 
 ### Changed
 - Forge Workflow initialized with Forge Terminal Workflow Architect
+

@@ -71,10 +71,20 @@ export interface PiReviewTransitionField {
   };
 }
 
+/** Describes a single field that Jira overwrote during PI Review reconciliation (for the load-delta notification). */
+export interface PiReviewJiraFieldChange {
+  featureKey: string;
+  fieldLabel: string;
+  oldValue: string;
+  newValue: string;
+}
+
 export interface PiReviewJiraReconciliationResult {
   rows: PiReviewRow[];
   hasChanges: boolean;
   pendingEstimateUpdates: PiReviewEstimateUpdate[];
+  /** Per-field change details so the UI can show the user exactly what Jira updated on load. */
+  fieldChanges: PiReviewJiraFieldChange[];
 }
 
 function normalizeFreeText(value: string): string {
@@ -376,9 +386,9 @@ function reconcileSinglePiReviewRow(
   jiraIssue: JiraIssue | undefined,
   dependencyLinkTypes: Set<string>,
   shouldQueueEstimateUpdates: boolean,
-): { row: PiReviewRow; changed: boolean; pendingEstimateUpdate: PiReviewEstimateUpdate | null } {
+): { row: PiReviewRow; changed: boolean; pendingEstimateUpdate: PiReviewEstimateUpdate | null; fieldChanges: PiReviewJiraFieldChange[] } {
   if (!jiraIssue) {
-    return { row, changed: false, pendingEstimateUpdate: null };
+    return { row, changed: false, pendingEstimateUpdate: null, fieldChanges: [] };
   }
 
   const derivedDependencies = dedupeAndFormatLinkedIssues(
@@ -420,7 +430,24 @@ function reconcileSinglePiReviewRow(
   const changed = Object.keys(nextRow).some((fieldName) =>
     nextRow[fieldName as keyof PiReviewRow] !== row[fieldName as keyof PiReviewRow]);
 
-  return { row: nextRow, changed, pendingEstimateUpdate };
+  // Collect field-level changes so the UI can show users what Jira updated on load.
+  const fieldChanges: PiReviewJiraFieldChange[] = [];
+  const fieldLabelsByKey: Record<string, string> = {
+    priority: 'Priority',
+    pointEstimate: 'Points',
+    dependency: 'Dependencies',
+    risks: 'Risks',
+    notes: 'Notes',
+  };
+  for (const fieldKey of Object.keys(fieldLabelsByKey)) {
+    const oldValue = row[fieldKey as keyof PiReviewRow] as string;
+    const newValue = nextRow[fieldKey as keyof PiReviewRow] as string;
+    if (oldValue !== newValue) {
+      fieldChanges.push({ featureKey: jiraIssue.key, fieldLabel: fieldLabelsByKey[fieldKey], oldValue, newValue });
+    }
+  }
+
+  return { row: nextRow, changed, pendingEstimateUpdate, fieldChanges };
 }
 
 /** Extracts the Jira feature key from a PI Review feature cell, even when the cell already contains summary text. */
@@ -543,6 +570,7 @@ export function reconcilePiReviewRowsWithJira(
   const dependencyLinkTypes = readConfiguredDependencyLinkTypes();
   const shouldQueueEstimateUpdates = options?.shouldQueueEstimateUpdates ?? false;
   const pendingEstimateUpdates: PiReviewEstimateUpdate[] = [];
+  const fieldChanges: PiReviewJiraFieldChange[] = [];
   let hasChanges = false;
 
   const reconciledRows = rows.map((row) => {
@@ -560,6 +588,9 @@ export function reconcilePiReviewRowsWithJira(
     if (reconciliationResult.pendingEstimateUpdate) {
       pendingEstimateUpdates.push(reconciliationResult.pendingEstimateUpdate);
     }
+    for (const fieldChange of reconciliationResult.fieldChanges) {
+      fieldChanges.push(fieldChange);
+    }
     return reconciliationResult.row;
   });
 
@@ -567,6 +598,7 @@ export function reconcilePiReviewRowsWithJira(
     rows: reconciledRows,
     hasChanges,
     pendingEstimateUpdates,
+    fieldChanges,
   };
 }
 

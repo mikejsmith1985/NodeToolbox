@@ -47,6 +47,7 @@ import {
   fetchPiReviewFeatureIssues,
   formatPiReviewFeatureDisplayValue,
   parsePiReviewFeatureDateUpdates,
+  type PiReviewJiraFieldChange,
   type PiReviewTransitionAllowedValue,
   type PiReviewTransitionField,
   readPiReviewFeatureDatePills,
@@ -154,6 +155,26 @@ function readActivePiReviewTargetKey(previousTargetKey: string, configuredTarget
 
 function openTeamDashboardPiReviewWorkspace(): void {
   useSettingsStore.getState().setSprintDashboardActiveTab(TEAM_DASHBOARD_PI_REVIEW_TAB);
+}
+
+/**
+ * Builds the direct Confluence page URL for "Open in Confluence" links.
+ * If the configured reference is already a full URL, it is returned as-is.
+ * Otherwise, falls back to constructing a /pages/<id> URL from the Confluence base URL.
+ */
+function buildConfluencePageUrl(pageReference: string, resolvedPageId: string, confluenceBaseUrl: string): string | null {
+  const trimmedReference = pageReference.trim();
+  if (trimmedReference.startsWith('http')) {
+    return trimmedReference;
+  }
+
+  const trimmedBaseUrl = confluenceBaseUrl.trim().replace(/\/$/, '');
+  const pageIdForUrl = resolvedPageId.trim();
+  if (trimmedBaseUrl !== '' && pageIdForUrl !== '') {
+    return `${trimmedBaseUrl}/pages/${pageIdForUrl}`;
+  }
+
+  return null;
 }
 
 function createTodayDateValue(): string {
@@ -623,6 +644,7 @@ function PiReviewFeatureDatePills({ jiraIssue }: { jiraIssue: JiraIssue | undefi
 
 function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverride }: PiReviewPagePanelProps) {
   const { showToast } = useToast();
+  const confluenceBaseUrl = useSettingsStore((storeState) => storeState.confluenceUrl);
   const [rows, setRows] = useState<PiReviewRow[]>([]);
   const [confidenceRows, setConfidenceRows] = useState<ConfidenceVoteRow[]>([]);
   const [savedCapacitySummary, setSavedCapacitySummary] = useState<CapacitySummary | null>(null);
@@ -657,6 +679,8 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
   const [jiraIssueMap, setJiraIssueMap] = useState<Record<string, JiraIssue>>({});
   const [focusedCustomGroupingLineId, setFocusedCustomGroupingLineId] = useState<string | null>(null);
   const [expandedCustomGroupingLineId, setExpandedCustomGroupingLineId] = useState<string | null>(null);
+  const [jiraLoadDeltaDetails, setJiraLoadDeltaDetails] = useState<PiReviewJiraFieldChange[]>([]);
+  const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const lastAutoLoadKeyRef = useRef('');
   const loadedSnapshotRef = useRef<PiReviewLoadedSnapshot | null>(null);
   const [hasLoadedSnapshot, setHasLoadedSnapshot] = useState(false);
@@ -743,6 +767,8 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
       loadedSnapshotRef.current = nextLoadedSnapshot;
       setHasLoadedSnapshot(true);
       applyLoadedSnapshot(nextLoadedSnapshot);
+      setJiraLoadDeltaDetails(jiraReconciliationResult.fieldChanges);
+      setLastLoadedAt(new Date().toLocaleTimeString());
       setIsEditMode(false);
       setIsTemplateDraftConfirmationVisible(false);
     } catch (error) {
@@ -1041,6 +1067,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
 
     applyLoadedSnapshot(loadedSnapshot);
     setLoadError(null);
+    setJiraLoadDeltaDetails([]);
     setIsTemplateDraftConfirmationVisible(false);
     setIsEditMode(false);
     showToast(`${target.targetLabel} PI Review edits were discarded.`, 'success');
@@ -1430,6 +1457,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
       setResolvedPageId(updatedPage.id);
       setPageVersionNumber(updatedPage.version.number);
       setIsEditMode(false);
+      setJiraLoadDeltaDetails([]);
       showToast(`${target.targetLabel} PI Review saved to Confluence ✓`, 'success');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to save the PI Review page';
@@ -1593,7 +1621,20 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
         </div>
         <div>
           <div className={styles.summaryLabel}>Configured page URL or ID</div>
-          <div className={styles.summaryValue}>{target.pageReference}</div>
+          <div className={styles.summaryValue}>
+            {buildConfluencePageUrl(target.pageReference, resolvedPageId, confluenceBaseUrl) ? (
+              <a
+                className={styles.confluencePageReferenceLink}
+                href={buildConfluencePageUrl(target.pageReference, resolvedPageId, confluenceBaseUrl) ?? '#'}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {target.pageReference}
+              </a>
+            ) : (
+              target.pageReference
+            )}
+          </div>
         </div>
         <div>
           <div className={styles.summaryLabel}>Resolved page ID</div>
@@ -1607,6 +1648,14 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
           <div className={styles.summaryLabel}>Page version</div>
           <div className={styles.summaryValue}>{pageVersionNumber ?? 'Not loaded yet'}</div>
         </div>
+        {lastLoadedAt !== null && (
+          <div>
+            <div className={styles.summaryLabel}>Last synced from Confluence</div>
+            <div className={styles.summaryValue}>
+              <span className={styles.lastSyncedPill}>{lastLoadedAt}</span>
+            </div>
+          </div>
+        )}
       </div>
 
         <div className={styles.toolbar} data-export-exclude="true">
@@ -1614,10 +1663,21 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
             className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
             disabled={isToolbarBusy}
             onClick={() => void loadPiReviewPage()}
+            title="Pull the latest content from Confluence. Note: Priority, Dependencies, Risks, and Points are always refreshed from Jira."
             type="button"
           >
           {isLoading ? 'Loading…' : 'Reload from Confluence'}
           </button>
+          {buildConfluencePageUrl(target.pageReference, resolvedPageId, confluenceBaseUrl) !== null && (
+            <a
+              className={styles.confluenceExternalLink}
+              href={buildConfluencePageUrl(target.pageReference, resolvedPageId, confluenceBaseUrl) ?? '#'}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Open in Confluence ↗
+            </a>
+          )}
           <button
             className={joinClassNames(styles.actionButton, styles.actionButtonExport)}
             disabled={rows.length === 0 || isToolbarBusy}
@@ -1700,6 +1760,32 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
           </>
         )}
       </div>
+      {jiraLoadDeltaDetails.length > 0 && (
+        <details className={styles.deltaBanner} data-export-exclude="true">
+          <summary className={styles.deltaBannerSummary}>
+            {`Jira updated ${jiraLoadDeltaDetails.length} field${jiraLoadDeltaDetails.length !== 1 ? 's' : ''} across ${new Set(jiraLoadDeltaDetails.map((change) => change.featureKey)).size} feature${new Set(jiraLoadDeltaDetails.map((change) => change.featureKey)).size !== 1 ? 's' : ''} on load — click to see details`}
+          </summary>
+          <p className={styles.deltaBannerHint}>
+            These fields are always read from Jira. Use <strong>Save to Confluence</strong> to write these Jira values back to Confluence.
+          </p>
+          <ul className={styles.deltaChangeList}>
+            {jiraLoadDeltaDetails.map((change, changeIndex) => (
+              <li
+                className={styles.deltaChangeItem}
+                key={`${change.featureKey}-${change.fieldLabel}-${changeIndex}`}
+              >
+                <span className={styles.deltaFeatureKey}>{change.featureKey}</span>
+                <span className={styles.deltaFieldLabel}>{change.fieldLabel}</span>
+                {change.oldValue.trim() !== '' && (
+                  <span className={styles.deltaOldValue} title="Previous Confluence value">{change.oldValue}</span>
+                )}
+                <span className={styles.deltaArrow}>→</span>
+                <span className={styles.deltaNewValue} title="New value from Jira">{change.newValue || '(cleared)'}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {tableBinding && canEditContent && isJiraDatePasteVisible && (
         <fieldset className={styles.tableTools} data-export-exclude="true">
           <legend>Jira date updates</legend>
