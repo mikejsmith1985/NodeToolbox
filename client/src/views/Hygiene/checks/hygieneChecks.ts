@@ -70,6 +70,7 @@ export interface HygieneEvaluationContext {
 export interface HygieneFinding {
   issue: JiraIssue;
   flags: HygieneFlag[];
+  programIncrement?: string | null;
 }
 
 export interface HygieneSummary {

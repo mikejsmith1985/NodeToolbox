@@ -8,9 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **My Issues (Hygiene) — Inline issue details and transitions**: Flagged issues on the Hygiene tab can now be clicked to expand them inline. This displays the full Jira issue detail card, allowing users to transition states, add comments, or edit story points directly from the Hygiene tab.
+- **My Issues (Hygiene) — Issue Type and Program Increment (PI) metadata**: Each flagged issue card in the Hygiene tab now displays its Jira Issue Type and Program Increment (PI) field values under metadata.
 - Hygiene score tile now shows a ℹ info button that explains how the score is calculated (100 − flags × 5, min 0; both warn and error flags count equally)
 
 ### Changed
+- **My Issues (Report) — Issue Type column added to list and table views**: The compact list and table views in the Report tab now include a Type column displaying the Jira Issue Type.
 - **PI Review — Removed redundant Open in Confluence button**: Removed the redundant "Open in Confluence" toolbar button in the PI Review tab, as the configured page URL directly above it already serves as a clickable link.
 - **Dev Workspace removed as a standalone Personal Toolbox module**: The `RepoMonitorPanel` component has been extracted to `views/AdminHub/`, and the embedded `EmbeddedTimeTrackingPanel`/`EmbeddedGitSyncPanel` panels plus their supporting hooks and utils have been migrated to `views/MyIssues/`. The `views/DevWorkspace/` folder and its dedicated route (`/dev-workspace`) have been deleted.
 
