@@ -284,7 +284,7 @@ async function loadAvailableBoardsForProject(projectKey: string): Promise<JiraBo
 }
 
 function buildIssueSearchPath(jql: string): string {
-  return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${SPRINT_ISSUE_FIELDS}&maxResults=${SPRINT_ISSUE_MAX_RESULTS}`;
+  return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${SPRINT_ISSUE_FIELDS}&maxResults=${SPRINT_ISSUE_MAX_RESULTS}&expand=changelog`;
 }
 
 function escapeJqlValue(jqlValue: string): string {
@@ -552,7 +552,7 @@ export function useSprintData(
     }
 
     const issuesResponse = await jiraGet<JiraSprintIssuesResponse>(
-      `${BOARDS_API_PATH}/${boardId}/issue?maxResults=${SPRINT_ISSUE_MAX_RESULTS}&fields=${SPRINT_ISSUE_FIELDS}`,
+      `${BOARDS_API_PATH}/${boardId}/issue?maxResults=${SPRINT_ISSUE_MAX_RESULTS}&fields=${SPRINT_ISSUE_FIELDS}&expand=changelog`,
     );
     persistSelectedSprintId(null);
     setState((previousState) => ({
@@ -619,7 +619,7 @@ export function useSprintData(
 
     persistSelectedSprintId(selectedScopeSprint.id);
     const issuesResponse = await jiraGet<JiraSprintIssuesResponse>(
-      `/rest/agile/1.0/sprint/${selectedScopeSprint.id}/issue?maxResults=${SPRINT_ISSUE_MAX_RESULTS}&fields=${SPRINT_ISSUE_FIELDS}`,
+      `/rest/agile/1.0/sprint/${selectedScopeSprint.id}/issue?maxResults=${SPRINT_ISSUE_MAX_RESULTS}&fields=${SPRINT_ISSUE_FIELDS}&expand=changelog`,
     );
     setState((previousState) => ({
       ...previousState,
