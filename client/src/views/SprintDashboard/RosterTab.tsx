@@ -20,9 +20,16 @@ import {
 import styles from './SprintDashboardView.module.css';
 
 const MIN_JIRA_ROSTER_SEARCH_LENGTH = 2;
-const MAX_JIRA_ROSTER_SEARCH_RESULTS = 8;
-const JIRA_PROJECT_USER_PAGE_SIZE = 50;
+const MAX_JIRA_ROSTER_SEARCH_RESULTS = 20;
+// Jira Server's hard limit per request is 1000. Requesting the maximum in a single call avoids
+// pagination issues where Jira Server ignores startAt on the username= and username=. endpoints.
+const JIRA_BULK_USER_PAGE_SIZE = 1000;
 const MAX_JIRA_PROJECT_USER_PAGES = 20;
+// 91 days ≈ 3 months; used by the recently-active assignee loader to scope the JQL window.
+const RECENT_ASSIGNEE_LOOKBACK_DAYS = 91;
+const MAX_RECENT_ROSTER_ASSIGNEES = 15;
+// Fetch up to this many recent issues to tally per-person assignment frequency.
+const RECENT_ASSIGNEE_ISSUE_FETCH_LIMIT = 500;
 const MAX_SNOW_RECORDS_PER_TYPE = 25;
 const SNOW_ROSTER_WORK_FIELDS =
   'sys_id,number,short_description,state,priority,sys_class_name,opened_at,problem_statement';
@@ -215,7 +222,7 @@ async function loadPaginatedProjectUsers(
   const projectUsersByIdentityKey = new Map<string, JiraUser>();
 
   for (let pageIndex = 0; pageIndex < MAX_JIRA_PROJECT_USER_PAGES; pageIndex += 1) {
-    const startAt = pageIndex * JIRA_PROJECT_USER_PAGE_SIZE;
+    const startAt = pageIndex * JIRA_BULK_USER_PAGE_SIZE;
     // Guard against non-array responses — some Jira versions return null or a non-array on error.
     const rawResponse = await jiraGet<JiraUser[] | null | undefined>(requestPathBuilder(startAt));
     const jiraUsers = Array.isArray(rawResponse) ? rawResponse : [];
@@ -227,7 +234,7 @@ async function loadPaginatedProjectUsers(
       }
     }
 
-    if (jiraUsers.length < JIRA_PROJECT_USER_PAGE_SIZE) {
+    if (jiraUsers.length < JIRA_BULK_USER_PAGE_SIZE) {
       break;
     }
   }
@@ -255,11 +262,11 @@ async function loadProjectUsersForRoster(
   //   3. username=. dot wildcard (Jira Server convention for "all users" enumeration)
   const endpointBuilders: Array<(startAt: number) => string> = [
     (startAt) =>
-      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
+      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&startAt=${startAt}&maxResults=${JIRA_BULK_USER_PAGE_SIZE}`,
     (startAt) =>
-      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&username=&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
+      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&username=&startAt=${startAt}&maxResults=${JIRA_BULK_USER_PAGE_SIZE}`,
     (startAt) =>
-      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&username=.&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
+      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&username=.&startAt=${startAt}&maxResults=${JIRA_BULK_USER_PAGE_SIZE}`,
   ];
 
   for (const endpointBuilder of endpointBuilders) {
@@ -280,6 +287,70 @@ async function loadProjectUsersForRoster(
   return [];
 }
 
+/**
+ * Fetches the top N most-active assignees for a project over the past RECENT_ASSIGNEE_LOOKBACK_DAYS days.
+ * Uses the issue search endpoint (not user/assignable) so it is immune to Jira Server's pagination cap
+ * on assignable-user endpoints. Results are ordered by assignment frequency, most active first.
+ */
+async function loadRecentlyActiveAssignees(
+  normalizedProjectKey: string,
+  rosterAssigneeValues: Set<string>,
+): Promise<JiraRosterSearchResult[]> {
+  const jql = `project = "${normalizedProjectKey}" AND assignee is not EMPTY AND updated >= "-${RECENT_ASSIGNEE_LOOKBACK_DAYS}d" ORDER BY updated DESC`;
+  const rawResponse = await jiraGet<{ issues?: JiraIssue[] } | null | undefined>(
+    `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=assignee&maxResults=${RECENT_ASSIGNEE_ISSUE_FETCH_LIMIT}`,
+  );
+
+  const recentIssues = rawResponse != null && Array.isArray(rawResponse.issues) ? rawResponse.issues : [];
+
+  // Tally how many issues each person was assigned to so we can rank by activity level.
+  const assigneeCountsByIdentityKey = new Map<string, { jiraUser: JiraUser; issueCount: number }>();
+  for (const recentIssue of recentIssues) {
+    const assignee = recentIssue.fields?.assignee;
+    if (!assignee) {
+      continue;
+    }
+    const identityKey = readJiraUserIdentityKey(assignee);
+    if (!identityKey) {
+      continue;
+    }
+    const existingEntry = assigneeCountsByIdentityKey.get(identityKey);
+    if (existingEntry) {
+      existingEntry.issueCount += 1;
+    } else {
+      assigneeCountsByIdentityKey.set(identityKey, { jiraUser: assignee, issueCount: 1 });
+    }
+  }
+
+  // Sort by issue count descending and take only the top N before mapping.
+  const topAssignees = [...assigneeCountsByIdentityKey.values()]
+    .sort((firstEntry, secondEntry) => secondEntry.issueCount - firstEntry.issueCount)
+    .slice(0, MAX_RECENT_ROSTER_ASSIGNEES);
+
+  // Map to roster results in frequency order — do not re-sort alphabetically.
+  const searchResults: JiraRosterSearchResult[] = [];
+  const seenIdentityKeys = new Set<string>();
+  for (const { jiraUser } of topAssignees) {
+    const identityKey = readJiraUserIdentityKey(jiraUser);
+    const displayName = jiraUser.displayName?.trim() || jiraUser.name?.trim() || '';
+    if (!displayName || !identityKey || seenIdentityKeys.has(identityKey)) {
+      continue;
+    }
+    const assigneeQueryValue = readJiraUserAssigneeQueryValue(jiraUser);
+    if (rosterAssigneeValues.has(assigneeQueryValue.toLowerCase())) {
+      continue;
+    }
+    seenIdentityKeys.add(identityKey);
+    searchResults.push({
+      displayName,
+      assigneeQueryValue,
+      jiraAccountId: jiraUser.accountId?.trim() || jiraUser.name?.trim() || identityKey,
+      emailAddress: jiraUser.emailAddress?.trim() || undefined,
+    });
+  }
+
+  return searchResults;
+}
 
 function RosterCard({ rosterMember, actionAriaLabel, actionLabel, onAction, children }: RosterCardProps) {
   const primaryMetaLine = buildRosterCardMetaLine(rosterMember.emailAddress);
@@ -543,19 +614,27 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
 
     setIsSearchingJiraUsers(true);
     try {
-      // Jira Cloud uses `query=`; Jira Server uses `username=`. Try query= first and fall back if needed.
-      const rawResponse = await jiraGet<JiraUser[] | null | undefined>(
-        `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&query=${encodeURIComponent(normalizedSearchQuery)}&maxResults=${MAX_JIRA_ROSTER_SEARCH_RESULTS}`,
-      );
-      let jiraUsers = Array.isArray(rawResponse) ? rawResponse : [];
-
-      // Jira Server returns an empty or non-array result when `query=` is not supported.
-      // Retry with `username=` which is the correct Jira Server parameter name.
-      if (jiraUsers.length === 0) {
-        const serverRawResponse = await jiraGet<JiraUser[] | null | undefined>(
+      // Run both query= (Jira Cloud) and username= (Jira Server) searches.
+      // Jira Server may ignore `query=` and return up to MAX_JIRA_ROSTER_SEARCH_RESULTS unfiltered.
+      const [rawQuery, rawUsername] = await Promise.all([
+        jiraGet<JiraUser[] | null | undefined>(
+          `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&query=${encodeURIComponent(normalizedSearchQuery)}&maxResults=${MAX_JIRA_ROSTER_SEARCH_RESULTS}`,
+        ).catch(() => null),
+        jiraGet<JiraUser[] | null | undefined>(
           `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&username=${encodeURIComponent(normalizedSearchQuery)}&maxResults=${MAX_JIRA_ROSTER_SEARCH_RESULTS}`,
-        );
-        jiraUsers = Array.isArray(serverRawResponse) ? serverRawResponse : [];
+        ).catch(() => null),
+      ]);
+
+      const queryUsers = Array.isArray(rawQuery) ? rawQuery : [];
+      const usernameUsers = Array.isArray(rawUsername) ? rawUsername : [];
+
+      // Choose the result set with fewer entries (more filtered). If equal, prefer queryUsers.
+      let jiraUsers: JiraUser[] = queryUsers;
+      if (
+        usernameUsers.length > 0 &&
+        (queryUsers.length === 0 || usernameUsers.length < queryUsers.length)
+      ) {
+        jiraUsers = usernameUsers;
       }
 
       const nextSearchResults = mapJiraUsersToRosterSearchResults(jiraUsers, rosterAssigneeValues);
@@ -577,6 +656,36 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
     }
   }
 
+
+  async function handleLoadRecentAssignees() {
+    const normalizedProjectKey = loadProjectKey.trim().toUpperCase();
+    if (!normalizedProjectKey) {
+      setProjectUserStatusMessage(null);
+      setProjectUserErrorMessage('Enter a project key to load recently active assignees.');
+      resetProjectUserSelection([]);
+      return;
+    }
+
+    setIsLoadingProjectUsers(true);
+    try {
+      const nextRecentAssignees = await loadRecentlyActiveAssignees(normalizedProjectKey, rosterAssigneeValues);
+      resetProjectUserSelection(nextRecentAssignees);
+      setProjectUserErrorMessage(null);
+      setProjectUserStatusMessage(
+        nextRecentAssignees.length > 0
+          ? `Found ${nextRecentAssignees.length} recently active assignees for ${normalizedProjectKey} (last ${RECENT_ASSIGNEE_LOOKBACK_DAYS} days, ranked by activity).`
+          : `No recently active assignees found for ${normalizedProjectKey} in the last ${RECENT_ASSIGNEE_LOOKBACK_DAYS} days.`,
+      );
+    } catch (caughtError) {
+      resetProjectUserSelection([]);
+      setProjectUserStatusMessage(null);
+      setProjectUserErrorMessage(
+        caughtError instanceof Error ? caughtError.message : 'Failed to load recently active assignees.',
+      );
+    } finally {
+      setIsLoadingProjectUsers(false);
+    }
+  }
 
   async function handleLoadProjectUsers() {
     const normalizedProjectKey = loadProjectKey.trim().toUpperCase();
@@ -795,7 +904,7 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
           </div>
         ) : null}
         <div className={styles.personWalkSectionHeader}>
-          <h3 className={styles.personWalkSectionTitle}>Load all project users</h3>
+          <h3 className={styles.personWalkSectionTitle}>Add project users to roster</h3>
         </div>
         <div className={styles.rosterInputGrid}>
           <label className={styles.rosterFieldLabel}>
@@ -810,10 +919,18 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
           <button
             className={styles.secondaryButton}
             disabled={isLoadingProjectUsers || !loadProjectKey.trim()}
+            onClick={() => void handleLoadRecentAssignees()}
+            type="button"
+          >
+            {isLoadingProjectUsers ? 'Loading assignees…' : 'Recently active (last 3 mo)'}
+          </button>
+          <button
+            className={styles.secondaryButton}
+            disabled={isLoadingProjectUsers || !loadProjectKey.trim()}
             onClick={() => void handleLoadProjectUsers()}
             type="button"
           >
-            {isLoadingProjectUsers ? 'Loading Jira project users…' : 'Load project users'}
+            {isLoadingProjectUsers ? 'Loading assignees…' : 'Load all project users'}
           </button>
         </div>
         {visibleProjectUserResults.length > 0 ? (
@@ -830,7 +947,8 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
           </div>
         ) : null}
         <p className={styles.personWalkMeta}>
-          Load the current Jira project&apos;s assignable users, then keep everyone selected or deselect the people who do not belong in this roster.
+          <strong>Recently active</strong> finds the top {MAX_RECENT_ROSTER_ASSIGNEES} people assigned to issues in the last 3 months, ranked by activity — great for projects with a large access list.{' '}
+          <strong>Load all</strong> returns every Jira-assignable user for the project.
         </p>
         {projectUserStatusMessage ? <p className={styles.personWalkMeta}>{projectUserStatusMessage}</p> : null}
         {projectUserErrorMessage ? <p className={styles.errorMessage}>{projectUserErrorMessage}</p> : null}

@@ -21,5 +21,5 @@ export default function TeamDashboardHygieneTab({ projectKey }: TeamDashboardHyg
     window.localStorage.setItem(HYGIENE_PROJECT_KEY_STORAGE_KEY, normalizedProjectKey);
   }, [normalizedProjectKey]);
 
-  return <HygieneView key={normalizedProjectKey || 'team-hygiene-unscoped'} />;
+  return <HygieneView key={normalizedProjectKey || 'team-hygiene-unscoped'} isTeamMode />;
 }

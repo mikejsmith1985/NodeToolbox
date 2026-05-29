@@ -31,9 +31,13 @@ const HYGIENE_SCORE_TOOLTIP =
   `Every flagged issue deducts ${HYGIENE_SCORE_FLAG_PENALTY} points regardless of severity — ` +
   `both ⚠ warn and ✕ error flags count equally. Fix flags to raise the score.`;
 
+interface HygieneViewProps {
+  isTeamMode?: boolean;
+}
+
 /** Renders the standalone Hygiene checker and delegates stateful Jira work to `useHygieneState`. */
-export default function HygieneView() {
-  const hygieneState = useHygieneState();
+export default function HygieneView({ isTeamMode = false }: HygieneViewProps = {}) {
+  const hygieneState = useHygieneState({ isTeamMode });
   const hasAutoRunTriggeredRef = useRef(false);
   const isHygieneLoading = hygieneState.isLoading;
   const loadHygiene = hygieneState.loadHygiene;
