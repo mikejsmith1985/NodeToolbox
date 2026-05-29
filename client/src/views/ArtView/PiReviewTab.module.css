@@ -855,27 +855,6 @@
   color: var(--color-danger);
 }
 
-/* ── Open in Confluence link (toolbar) ── */
-
-.confluenceExternalLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 14px;
-  border: 1px solid rgba(56, 189, 248, 0.5);
-  border-radius: 999px;
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(14, 165, 233, 0.08));
-  color: #38bdf8;
-  font-weight: 600;
-  text-decoration: none;
-  font-size: inherit;
-  transition: transform 140ms ease, box-shadow 140ms ease;
-}
-
-.confluenceExternalLink:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(56, 189, 248, 0.18);
-}
 
 /* ── Clickable page reference link (summary card) ── */
 
