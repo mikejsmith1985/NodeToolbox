@@ -126,15 +126,56 @@
   gap: var(--spacing-sm);
 }
 
+.findingRowWrapper {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-surface);
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.findingRowWrapper:hover {
+  border-color: var(--color-accent, #6366f1);
+}
+
 .findingRow {
   display: grid;
   grid-template-columns: minmax(18rem, 1fr) minmax(12rem, auto) minmax(12rem, auto);
   gap: var(--spacing-md);
   align-items: center;
   padding: var(--spacing-md);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg, 10px);
-  background: var(--color-surface);
+  cursor: pointer;
+  outline: none;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.findingRow:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.findingRow:focus-visible {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.issueKeyRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.expandHint {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  user-select: none;
+}
+
+.issueDetailCell {
+  padding: 0;
+  background: var(--color-surface-1, #1e1e24);
+  border-top: 1px solid var(--color-border);
 }
 
 .issueMain {
@@ -190,7 +231,7 @@
 
 .issueMeta {
   display: grid;
-  grid-template-columns: repeat(2, minmax(5rem, 1fr));
+  grid-template-columns: repeat(4, minmax(5rem, 1fr));
   gap: var(--spacing-sm);
   margin: 0;
 }
