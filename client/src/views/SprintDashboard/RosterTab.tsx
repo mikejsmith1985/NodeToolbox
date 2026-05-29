@@ -22,6 +22,9 @@ import styles from './SprintDashboardView.module.css';
 const MIN_JIRA_ROSTER_SEARCH_LENGTH = 2;
 const MAX_JIRA_ROSTER_SEARCH_RESULTS = 8;
 const JIRA_PROJECT_USER_PAGE_SIZE = 50;
+// Jira Server's hard limit per request is 1000. Requesting the maximum in a single call avoids
+// pagination issues where Jira Server ignores startAt on the username= and username=. endpoints.
+const JIRA_BULK_USER_PAGE_SIZE = 1000;
 const MAX_JIRA_PROJECT_USER_PAGES = 20;
 const MAX_SNOW_RECORDS_PER_TYPE = 25;
 const SNOW_ROSTER_WORK_FIELDS =
@@ -255,11 +258,11 @@ async function loadProjectUsersForRoster(
   //   3. username=. dot wildcard (Jira Server convention for "all users" enumeration)
   const endpointBuilders: Array<(startAt: number) => string> = [
     (startAt) =>
-      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
+      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&startAt=${startAt}&maxResults=${JIRA_BULK_USER_PAGE_SIZE}`,
     (startAt) =>
-      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&username=&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
+      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&username=&startAt=${startAt}&maxResults=${JIRA_BULK_USER_PAGE_SIZE}`,
     (startAt) =>
-      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&username=.&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
+      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&username=.&startAt=${startAt}&maxResults=${JIRA_BULK_USER_PAGE_SIZE}`,
   ];
 
   for (const endpointBuilder of endpointBuilders) {
