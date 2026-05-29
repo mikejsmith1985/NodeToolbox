@@ -14,6 +14,7 @@ import {
   readEnabledEnterpriseCheckDefinitions,
   readEnabledRequiredFieldRules,
 } from '../../AdminHub/enterpriseRules.ts';
+import { buildStandupRosterAssigneeClause } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
 import {
   evaluateHygieneIssue,
   isFeatureLikeIssue,
@@ -88,10 +89,15 @@ export interface HygieneActions {
 }
 
 /** Builds the single Jira search URL required by the standalone Hygiene view. */
-export function buildHygieneSearchPath(projectKey: string, extraJql: string, requestedFields: string[] = BASE_HYGIENE_FIELDS): string {
+export function buildHygieneSearchPath(
+  projectKey: string,
+  extraJql: string,
+  requestedFields: string[] = BASE_HYGIENE_FIELDS,
+  assigneeClause: string = DEFAULT_ASSIGNEE_CLAUSE,
+): string {
   const normalizedProjectKey = projectKey.trim().toUpperCase();
   const extraJqlClause = extraJql.trim();
-  const jqlText = `project=${normalizedProjectKey} AND statusCategory != Done AND ${DEFAULT_ASSIGNEE_CLAUSE}${extraJqlClause ? ` ${extraJqlClause}` : ''}`;
+  const jqlText = `project=${normalizedProjectKey} AND statusCategory != Done AND ${assigneeClause}${extraJqlClause ? ` ${extraJqlClause}` : ''}`;
   return `/rest/api/2/search?jql=${encodeURIComponent(jqlText)}&fields=${encodeURIComponent(buildUniqueFieldIds(requestedFields).join(','))}&maxResults=${HYGIENE_MAX_RESULTS}`;
 }
 
@@ -142,8 +148,13 @@ export function readProgramIncrementValue(issue: JiraIssue, fieldConfig?: Partia
   return null;
 }
 
+export interface useHygieneStateOptions {
+  isTeamMode?: boolean;
+}
+
 /** Owns Hygiene view state and actions so the render layer can stay declarative. */
-export function useHygieneState(): HygieneState & HygieneActions {
+export function useHygieneState(options: useHygieneStateOptions = {}): HygieneState & HygieneActions {
+  const { isTeamMode = false } = options;
   const [projectKey, setProjectKey] = useState<string>(() => readStoredProjectKey());
   const [extraJql, setExtraJql] = useState<string>('');
   const [findings, setFindings] = useState<HygieneFinding[]>([]);
@@ -193,8 +204,23 @@ export function useHygieneState(): HygieneState & HygieneActions {
       const hygieneFieldConfig = await loadHygieneFieldConfig();
       setAvailableCheckIds(enabledCheckDefinitions.map((checkDefinition) => checkDefinition.checkId));
       setCheckLabelsById(buildCheckLabelsById(enabledCheckDefinitions));
+
+      // When in team mode, scope findings to the configured team roster members if populated
+      let assigneeClause = DEFAULT_ASSIGNEE_CLAUSE;
+      if (isTeamMode) {
+        const rosterClause = buildStandupRosterAssigneeClause();
+        if (rosterClause) {
+          assigneeClause = rosterClause;
+        }
+      }
+
       const jiraSearchResponse = await jiraGet<JiraSearchResponse>(
-        buildHygieneSearchPath(normalizedProjectKey, extraJql, buildRequestedHygieneFields(hygieneFieldConfig, enabledCustomRules)),
+        buildHygieneSearchPath(
+          normalizedProjectKey,
+          extraJql,
+          buildRequestedHygieneFields(hygieneFieldConfig, enabledCustomRules),
+          assigneeClause,
+        ),
       );
       const loadedIssues = jiraSearchResponse.issues ?? [];
       const featureKeysWithPointedStories = await loadFeatureKeysWithPointedStories(loadedIssues, hygieneFieldConfig);
@@ -211,7 +237,7 @@ export function useHygieneState(): HygieneState & HygieneActions {
     } finally {
       setIsLoading(false);
     }
-  }, [extraJql, projectKey]);
+  }, [extraJql, isTeamMode, projectKey]);
 
   return {
     projectKey,
