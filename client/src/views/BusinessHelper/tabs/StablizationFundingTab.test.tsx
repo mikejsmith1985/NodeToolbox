@@ -117,6 +117,62 @@ describe('StablizationFundingTab', () => {
     );
   });
 
+  it('renders the source Jira link in the Name cell from the saved key even without linked-column metadata', () => {
+    window.localStorage.setItem(
+      'tbxBusinessHelperStablizationTable',
+      JSON.stringify([
+        {
+          id: 'row-1',
+          grouping: 'Portfolio',
+          name: 'TBX-202 - Legacy mapped row',
+          fulfillmentCost: '',
+          enrollmentCost: '',
+          billing: '',
+          justification: '',
+          timing: '',
+          cost: '',
+          sourceJiraBrowseUrl: 'https://jira.example.com/browse/TBX-202',
+          sourceJiraIssueKey: 'TBX-202',
+          sourceJiraLinkedColumns: [],
+        },
+      ]),
+    );
+
+    render(<StablizationFundingTab />);
+
+    expect(screen.getByRole('link', { name: 'Open source Jira issue TBX-202' })).toHaveAttribute(
+      'href',
+      'https://jira.example.com/browse/TBX-202',
+    );
+  });
+
+  it('derives a Name-cell link from a manually-typed leading issue key with no saved metadata', () => {
+    window.localStorage.setItem('tbxCRGenJiraUrl', 'https://jira.example.com/');
+    window.localStorage.setItem(
+      'tbxBusinessHelperStablizationTable',
+      JSON.stringify([
+        {
+          id: 'manual-row',
+          grouping: 'Portfolio',
+          name: 'CCAM-644 - 26.3 Zelis: Premium Refund Void',
+          fulfillmentCost: '',
+          enrollmentCost: '',
+          billing: '',
+          justification: '',
+          timing: '',
+          cost: '',
+        },
+      ]),
+    );
+
+    render(<StablizationFundingTab />);
+
+    expect(screen.getByRole('link', { name: 'Open source Jira issue CCAM-644' })).toHaveAttribute(
+      'href',
+      'https://jira.example.com/browse/CCAM-644',
+    );
+  });
+
   it('renders and totals a user-defined currency column', () => {
     window.localStorage.setItem(
       'tbxBusinessHelperSettings',
