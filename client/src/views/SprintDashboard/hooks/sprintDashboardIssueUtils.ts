@@ -6,7 +6,7 @@ const MS_PER_DAY = 86_400_000;
 const BLOCKED_STATUS_TOKENS = ['blocked', 'impeded', 'on hold'];
 const BLOCK_LINK_TOKEN = 'block';
 const LEGACY_STORY_POINTS_FIELD_ID = 'customfield_10016';
-const DONE_STATUS_NAMES = ['done', 'closed', 'resolved', 'complete', 'accepted'];
+export const DONE_STATUS_NAMES = ['done', 'closed', 'resolved', 'complete', 'accepted'];
 
 function readCustomFieldValue(issue: JiraIssue, fieldId: string): unknown {
   return (issue.fields as Record<string, unknown>)[fieldId];

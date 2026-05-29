@@ -52,6 +52,7 @@ import {
   isStaleIssue,
   readStoryPoints,
   readStoryPointsValue,
+  DONE_STATUS_NAMES,
 } from './hooks/sprintDashboardIssueUtils.ts';
 import {
   buildReleaseRovoPrompt,
@@ -1178,26 +1179,139 @@ function calculateFlowCounts(issues: JiraIssue[]) {
 }
 
 /**
- * Builds burn-down chart data points for the ideal and remaining lines.
- * Since we only have a snapshot, "remaining" is flat at (total - done).
+ * Checks whether a given status is treated as completed.
  */
-function buildBurnDownData(
+function isStatusDone(statusName: string, issue: JiraIssue): boolean {
+  if (!statusName) return false;
+  if (statusName.toLowerCase() === issue.fields.status.name.toLowerCase()) {
+    return isDoneIssue(issue);
+  }
+  return DONE_STATUS_NAMES.includes(statusName.toLowerCase());
+}
+
+/**
+ * Builds burn-down chart data points for the ideal, remaining, and completed lines.
+ * Reconstructs issue status over each day of the sprint using issue changelogs.
+ */
+export function buildBurnDownData(
   sprintStartDate: string,
   sprintEndDate: string,
-  totalIssues: number,
-  doneCount: number,
+  issues: JiraIssue[],
+  isClosed: boolean,
 ) {
   const startMs = new Date(sprintStartDate).getTime();
   const endMs = new Date(sprintEndDate).getTime();
   const totalDays = Math.max(1, Math.ceil((endMs - startMs) / MS_PER_DAY));
-  const remainingCount = totalIssues - doneCount;
 
-  return Array.from({ length: totalDays + 1 }, (_, dayIndex) => ({
-    day: dayIndex,
-    [BURN_IDEAL_KEY]: Math.round(totalIssues - (totalIssues / totalDays) * dayIndex),
-    [BURN_REMAINING_KEY]: remainingCount,
-    [BURN_COMPLETED_KEY]: doneCount,
-  }));
+  const todayMs = Date.now();
+  const todayDayIndex = Math.floor((todayMs - startMs) / MS_PER_DAY);
+
+  // Pre-parse issues, their creation date, and status transitions from the changelog
+  const parsedIssues = issues.map((issue) => {
+    const createdMs = new Date(issue.fields.created).getTime();
+    const updatedMs = new Date(issue.fields.updated).getTime();
+
+    const transitions: Array<{ timestamp: number; from: string; to: string }> = [];
+    if (issue.changelog && Array.isArray(issue.changelog.histories)) {
+      for (const history of issue.changelog.histories) {
+        if (!history.created) continue;
+        const ts = new Date(history.created).getTime();
+        for (const item of history.items) {
+          if (item.field === 'status') {
+            transitions.push({
+              timestamp: ts,
+              from: item.fromString || '',
+              to: item.toString || '',
+            });
+          }
+        }
+      }
+    }
+    // Sort transitions chronologically
+    transitions.sort((a, b) => a.timestamp - b.timestamp);
+
+    return {
+      issue,
+      createdMs,
+      updatedMs,
+      transitions,
+    };
+  });
+
+  return Array.from({ length: totalDays + 1 }, (_, dayIndex) => {
+    const dayTimestamp = startMs + dayIndex * MS_PER_DAY;
+
+    // Ideal burndown trends from totalIssues down to 0
+    const totalIssues = issues.length;
+    const ideal = Math.round(totalIssues - (totalIssues / totalDays) * dayIndex);
+
+    // Only plot remaining and completed for past/current days if active, or all days if closed
+    const showPlot = isClosed || dayIndex <= todayDayIndex;
+
+    let remaining: number | undefined = undefined;
+    let completed: number | undefined = undefined;
+
+    if (showPlot) {
+      let activeCount = 0;
+      let doneCount = 0;
+
+      for (const parsed of parsedIssues) {
+        // Issue did not exist on this day yet (creation date fallback check)
+        if (parsed.createdMs > dayTimestamp) {
+          continue;
+        }
+
+        let statusName = '';
+        if (parsed.transitions.length === 0) {
+          // Fallback when no changelog is available:
+          // If the issue is currently done, check if we are past the issue's updated timestamp.
+          // Otherwise assume it was not done (e.g. "To Do")
+          const currentDone = isDoneIssue(parsed.issue);
+          if (currentDone) {
+            if (dayTimestamp >= parsed.updatedMs) {
+              statusName = parsed.issue.fields.status.name;
+            } else {
+              statusName = 'To Do';
+            }
+          } else {
+            statusName = parsed.issue.fields.status.name;
+          }
+        } else {
+          // Trace history to determine status on this day
+          if (dayTimestamp < parsed.transitions[0].timestamp) {
+            statusName = parsed.transitions[0].from;
+          } else {
+            let lastTx = parsed.transitions[0];
+            for (const tx of parsed.transitions) {
+              if (tx.timestamp <= dayTimestamp) {
+                lastTx = tx;
+              } else {
+                break;
+              }
+            }
+            statusName = lastTx.to;
+          }
+        }
+
+        const isDone = isStatusDone(statusName, parsed.issue);
+        if (isDone) {
+          doneCount++;
+        } else {
+          activeCount++;
+        }
+      }
+
+      remaining = activeCount;
+      completed = doneCount;
+    }
+
+    return {
+      day: dayIndex,
+      [BURN_IDEAL_KEY]: ideal,
+      [BURN_REMAINING_KEY]: remaining,
+      [BURN_COMPLETED_KEY]: completed,
+    };
+  });
 }
 
 // ── Issue card with move-to-sprint action ──
@@ -1547,15 +1661,11 @@ function BurnDownChart({
   issues: JiraIssue[];
 }) {
   const [isBurnupVisible, setIsBurnupVisible] = useState(false);
-  const doneCount = issues.filter(
-    isDoneIssue,
-  ).length;
-
   const burnDownData = buildBurnDownData(
     sprintInfo.startDate,
     sprintInfo.endDate,
-    issues.length,
-    doneCount,
+    issues,
+    sprintInfo.state === 'closed',
   );
 
   return (
