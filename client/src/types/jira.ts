@@ -34,6 +34,20 @@ export interface JiraComment {
 export interface JiraIssue {
   id: string;
   key: string;
+  changelog?: {
+    histories: Array<{
+      id: string;
+      created: string;
+      items: Array<{
+        field: string;
+        fieldtype: string;
+        from: string | null;
+        fromString: string | null;
+        to: string | null;
+        toString: string | null;
+      }>;
+    }>;
+  };
   fields: {
     summary: string;
     status: { name: string; statusCategory: { key: string } };
