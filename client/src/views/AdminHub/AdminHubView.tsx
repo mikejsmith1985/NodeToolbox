@@ -14,7 +14,7 @@ import { listGitHubAppInstallations, type GitHubAppInstallation } from '../../se
 import { fetchSchedulerValidation, type SchedulerValidationRepoResult } from '../../services/schedulerApi.ts'
 import { useConnectionStore } from '../../store/connectionStore'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
-import { RepoMonitorPanel } from '../DevWorkspace/DevWorkspaceView.tsx'
+import { RepoMonitorPanel } from './RepoMonitorPanel.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
 import type {
   AdminHubActions,

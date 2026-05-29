@@ -23,6 +23,11 @@ const JIRA_BROWSE_PREFIX = '/browse/';
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 const MAX_HYGIENE_SCORE = 100;
 const HYGIENE_SCORE_FLAG_PENALTY = 5;
+// Tooltip text is built from the constants so the explanation stays in sync if the formula changes.
+const HYGIENE_SCORE_TOOLTIP =
+  `Score = ${MAX_HYGIENE_SCORE} − (total flags × ${HYGIENE_SCORE_FLAG_PENALTY}), minimum 0.\n` +
+  `Every flagged issue deducts ${HYGIENE_SCORE_FLAG_PENALTY} points regardless of severity — ` +
+  `both ⚠ warn and ✕ error flags count equally. Fix flags to raise the score.`;
 
 /** Renders the standalone Hygiene checker and delegates stateful Jira work to `useHygieneState`. */
 export default function HygieneView() {
@@ -94,9 +99,23 @@ export default function HygieneView() {
       )}
 
       <div className={styles.summaryGrid} aria-label="Hygiene summary tiles">
-        <div className={styles.summaryTile} aria-label="Hygiene score tile">
+        <div className={styles.scoreTile} aria-label="Hygiene score tile">
           <strong>{hygieneScore}/100</strong>
-          <span>Hygiene Score</span>
+          <span className={styles.scoreLabel}>
+            Hygiene Score
+            <span className={styles.scoreInfoWrapper}>
+              <button
+                type="button"
+                className={styles.scoreInfoButton}
+                aria-label="How is the hygiene score calculated?"
+              >
+                ℹ
+              </button>
+              <span role="tooltip" className={styles.scoreTooltip}>
+                {HYGIENE_SCORE_TOOLTIP}
+              </span>
+            </span>
+          </span>
         </div>
         <button
           type="button"

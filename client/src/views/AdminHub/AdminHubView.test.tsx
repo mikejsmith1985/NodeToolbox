@@ -169,7 +169,7 @@ vi.mock('../DevPanel/DevPanelView.tsx', () => ({
   default: () => <div>Mock Dev Panel</div>,
 }));
 
-vi.mock('../DevWorkspace/DevWorkspaceView.tsx', () => ({
+vi.mock('./RepoMonitorPanel.tsx', () => ({
   RepoMonitorPanel: () => <div>Mock Repo Monitor Panel</div>,
 }));
 
