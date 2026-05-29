@@ -249,41 +249,37 @@ async function loadProjectUsersForRoster(
   normalizedProjectKey: string,
   rosterAssigneeValues: Set<string>,
 ): Promise<JiraRosterSearchResult[]> {
-  // Try the standard v2 assignable/search endpoint first (works on Jira Cloud and most Server versions).
-  // On some Jira Server versions this endpoint requires a `username` query parameter and returns a
-  // 302 redirect when the param is absent — detect that and retry with an empty username param.
-  let assignableProjectUsers: JiraUser[];
-  try {
-    assignableProjectUsers = await loadPaginatedProjectUsers(
-      (startAt) =>
-        `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
-    );
-  } catch (caughtError) {
-    if (!isJiraAssignableSearchRedirectError(caughtError)) {
-      throw caughtError;
-    }
-    // Jira Server fallback: include username= so the server does not redirect.
-    // An empty username string returns all assignable users on Jira Server.
-    assignableProjectUsers = await loadPaginatedProjectUsers(
-      (startAt) =>
-        `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&username=&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
-    );
-  }
+  // Attempt sequence for Jira Cloud and various Jira Server versions:
+  //   1. Standard endpoint with no query param (Jira Cloud, modern Server)
+  //   2. username= empty string (some Jira Server versions require the param to be present)
+  //   3. username=. dot wildcard (Jira Server convention for "all users" enumeration)
+  const endpointBuilders: Array<(startAt: number) => string> = [
+    (startAt) =>
+      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
+    (startAt) =>
+      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&username=&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
+    (startAt) =>
+      `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&username=.&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
+  ];
 
-  // If the no-query call returned 0 users (Jira Server silently returns empty without redirecting),
-  // retry with username= which forces the server to enumerate all assignable users.
-  if (assignableProjectUsers.length === 0) {
-    const serverFallbackUsers = await loadPaginatedProjectUsers(
-      (startAt) =>
-        `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&username=&startAt=${startAt}&maxResults=${JIRA_PROJECT_USER_PAGE_SIZE}`,
-    );
-    if (serverFallbackUsers.length > 0) {
-      return mapJiraUsersToRosterSearchResults(serverFallbackUsers, rosterAssigneeValues);
+  for (const endpointBuilder of endpointBuilders) {
+    try {
+      const projectUsers = await loadPaginatedProjectUsers(endpointBuilder);
+      if (projectUsers.length > 0) {
+        return mapJiraUsersToRosterSearchResults(projectUsers, rosterAssigneeValues);
+      }
+    } catch (caughtError) {
+      // A 302 or 400 means this variant is not supported on this Jira version — try the next one.
+      if (!isJiraAssignableSearchRedirectError(caughtError)) {
+        throw caughtError;
+      }
     }
   }
 
-  return mapJiraUsersToRosterSearchResults(assignableProjectUsers, rosterAssigneeValues);
+  // All variants returned zero users — report empty rather than throwing.
+  return [];
 }
+
 
 function RosterCard({ rosterMember, actionAriaLabel, actionLabel, onAction, children }: RosterCardProps) {
   const primaryMetaLine = buildRosterCardMetaLine(rosterMember.emailAddress);
@@ -547,9 +543,21 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
 
     setIsSearchingJiraUsers(true);
     try {
-      const jiraUsers = await jiraGet<JiraUser[]>(
+      // Jira Cloud uses `query=`; Jira Server uses `username=`. Try query= first and fall back if needed.
+      const rawResponse = await jiraGet<JiraUser[] | null | undefined>(
         `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&query=${encodeURIComponent(normalizedSearchQuery)}&maxResults=${MAX_JIRA_ROSTER_SEARCH_RESULTS}`,
       );
+      let jiraUsers = Array.isArray(rawResponse) ? rawResponse : [];
+
+      // Jira Server returns an empty or non-array result when `query=` is not supported.
+      // Retry with `username=` which is the correct Jira Server parameter name.
+      if (jiraUsers.length === 0) {
+        const serverRawResponse = await jiraGet<JiraUser[] | null | undefined>(
+          `/rest/api/2/user/assignable/search?project=${encodeURIComponent(normalizedProjectKey)}&username=${encodeURIComponent(normalizedSearchQuery)}&maxResults=${MAX_JIRA_ROSTER_SEARCH_RESULTS}`,
+        );
+        jiraUsers = Array.isArray(serverRawResponse) ? serverRawResponse : [];
+      }
+
       const nextSearchResults = mapJiraUsersToRosterSearchResults(jiraUsers, rosterAssigneeValues);
       setJiraSearchResults(nextSearchResults);
       setJiraSearchErrorMessage(null);
@@ -568,6 +576,7 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
       setIsSearchingJiraUsers(false);
     }
   }
+
 
   async function handleLoadProjectUsers() {
     const normalizedProjectKey = loadProjectKey.trim().toUpperCase();
