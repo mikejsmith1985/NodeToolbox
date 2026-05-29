@@ -213,7 +213,7 @@ describe('RosterTab', () => {
 
     render(<RosterTab issues={[]} projectKey="TBX" />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Load users for TBX' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Load project users' }));
 
     expect(await screen.findByText('Jordan Joiner')).toBeInTheDocument();
     expect(screen.getByText('Taylor Teammate')).toBeInTheDocument();
@@ -239,30 +239,19 @@ describe('RosterTab', () => {
     );
   });
 
-  it('falls back to multi-project assignable user loading when assignable project users are empty', async () => {
-    vi.mocked(jiraGet)
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          accountId: 'acct-333',
-          displayName: 'Project Viewer',
-          emailAddress: 'project.viewer@example.com',
-          avatarUrls: {},
-        },
-      ]);
+  it('shows a no-users status message when the v2 assignable search returns an empty list', async () => {
+    vi.mocked(jiraGet).mockResolvedValueOnce([]);
 
     render(<RosterTab issues={[]} projectKey="TBX" />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Load users for TBX' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Load project users' }));
 
-    expect(await screen.findByText('Project Viewer')).toBeInTheDocument();
-    expect(vi.mocked(jiraGet)).toHaveBeenNthCalledWith(
-      1,
+    expect(await screen.findByText('No Jira project users are currently available for TBX.')).toBeInTheDocument();
+    // Confirms only the v2 endpoint is called — the v3 multiProjectSearch endpoint
+    // was removed because the proxy does not support it and returns 302 redirects.
+    expect(vi.mocked(jiraGet)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(jiraGet)).toHaveBeenCalledWith(
       '/rest/api/2/user/assignable/search?project=TBX&startAt=0&maxResults=50',
-    );
-    expect(vi.mocked(jiraGet)).toHaveBeenNthCalledWith(
-      2,
-      '/rest/api/3/user/assignable/multiProjectSearch?projectKeys=TBX&startAt=0&maxResults=50',
     );
   });
 
