@@ -132,7 +132,7 @@ vi.mock('../Hygiene/HygieneView.tsx', () => ({
   default: () => <div>Mock Hygiene View</div>,
 }));
 
-vi.mock('../DevWorkspace/DevWorkspaceView.tsx', () => ({
+vi.mock('./EmbeddedWorkspacePanels.tsx', () => ({
   EmbeddedTimeTrackingPanel: () => <div>Mock Time Tracking Panel</div>,
   EmbeddedGitSyncPanel: () => <div>Mock Git Sync Panel</div>,
 }));
