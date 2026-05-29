@@ -23,6 +23,9 @@ const CURRENCY_ROUNDING_PRECISION = 100;
 const ROW_ID_RANDOM_SUFFIX_LENGTH = 8;
 const JIRA_BASE_URL_STORAGE_KEY = 'tbxCRGenJiraUrl';
 const JIRA_BROWSE_PATH_PREFIX = '/browse/';
+// Matches a Jira issue key (e.g. "CCAM-644") at the very start of a cell's text so legacy rows,
+// saved before the source-Jira fields existed, can recover their key from the visible Name value.
+const LEADING_JIRA_ISSUE_KEY_PATTERN = /^([A-Z][A-Z0-9]+-\d+)\b/;
 const USD_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
@@ -429,6 +432,21 @@ function sanitizeStoredRow(candidateRow: StablizationFundingRow): StablizationFu
   };
 }
 
+/**
+ * Finds the first leading Jira issue key across the row's text columns so any row whose text starts
+ * with a key (typed manually or kept from a legacy import) can show a consistent issue link.
+ */
+function extractLeadingJiraIssueKey(textColumnValues: readonly string[]): string {
+  for (const textColumnValue of textColumnValues) {
+    const leadingKeyMatch = textColumnValue.trim().match(LEADING_JIRA_ISSUE_KEY_PATTERN);
+    if (leadingKeyMatch) {
+      return leadingKeyMatch[1];
+    }
+  }
+
+  return DEFAULT_TEXT_INPUT;
+}
+
 function sanitizeStoredText(candidateValue: string, fallbackValue = DEFAULT_TEXT_INPUT): string {
   if (typeof candidateValue !== 'string') {
     return fallbackValue;
@@ -481,11 +499,43 @@ function isBlankStablizationRow(
 }
 
 function buildComputedRow(stablizationRow: StablizationFundingRow): StablizationFundingComputedRow {
+  const displaySourceJira = resolveDisplaySourceJira(stablizationRow);
+
   return {
     ...stablizationRow,
+    // The displayed link is resolved for rendering only and never written back to storage, so a
+    // manually-typed key tracks edits live and is dropped the moment the key leaves the text.
+    sourceJiraIssueKey: displaySourceJira.issueKey,
+    sourceJiraBrowseUrl: displaySourceJira.browseUrl,
     testingAmount: calculateStablizationTestingAmount(stablizationRow),
     totalAmount: calculateStablizationTotalAmount(stablizationRow),
   };
+}
+
+/**
+ * Resolves the Jira link to show for a row: a key sent from Simple Search is authoritative, and
+ * otherwise the link is derived from the issue key the user typed into the row's own text.
+ */
+function resolveDisplaySourceJira(
+  stablizationRow: StablizationFundingRow,
+): { issueKey: string; browseUrl: string } {
+  if (stablizationRow.sourceJiraIssueKey && stablizationRow.sourceJiraBrowseUrl) {
+    return {
+      issueKey: stablizationRow.sourceJiraIssueKey,
+      browseUrl: stablizationRow.sourceJiraBrowseUrl,
+    };
+  }
+
+  const derivedIssueKey = extractLeadingJiraIssueKey([
+    stablizationRow.name,
+    stablizationRow.grouping,
+    stablizationRow.justification,
+  ]);
+  if (!derivedIssueKey) {
+    return { issueKey: DEFAULT_TEXT_INPUT, browseUrl: DEFAULT_TEXT_INPUT };
+  }
+
+  return { issueKey: derivedIssueKey, browseUrl: buildJiraBrowseUrl(derivedIssueKey) };
 }
 
 function buildStablizationSingleOptionDefaults(

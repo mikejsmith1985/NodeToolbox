@@ -216,9 +216,9 @@ function FundingTableRow({
 }: FundingTableRowProps) {
   const rowNumber = rowIndex + 1;
   const removeButtonLabel = row.name ? `Remove ${row.name}` : `Remove row ${rowNumber}`;
-  const hasGroupingJiraLink = row.sourceJiraLinkedColumns.includes('grouping');
-  const hasNameJiraLink = row.sourceJiraLinkedColumns.includes('name');
-  const hasJustificationJiraLink = row.sourceJiraLinkedColumns.includes('justification');
+  // The source issue key is the row's identity, so its link lives in one predictable place — the
+  // Name cell — for every row that carries it, instead of scattering across each mapped column.
+  const hasSourceJiraLink = Boolean(row.sourceJiraIssueKey && row.sourceJiraBrowseUrl);
 
   return (
     <tr className={styles.tableRow}>
@@ -230,21 +230,20 @@ function FundingTableRow({
           inputValue={row.grouping}
           onChange={(value) => onTextChange(row.id, 'grouping', value)}
         />
-        {hasGroupingJiraLink && (
-          <SourceJiraLink browseUrl={row.sourceJiraBrowseUrl} issueKey={row.sourceJiraIssueKey} />
-        )}
       </td>
       <td className={styles.tableCell}>
-        <ConfiguredTextCell
-          ariaLabel={`Name for row ${rowNumber}`}
-          dropdownOptions={settingsByColumn.name.dropdownOptions}
-          inputKind={settingsByColumn.name.inputKind}
-          inputValue={row.name}
-          onChange={(value) => onTextChange(row.id, 'name', value)}
-        />
-        {hasNameJiraLink && (
-          <SourceJiraLink browseUrl={row.sourceJiraBrowseUrl} issueKey={row.sourceJiraIssueKey} />
-        )}
+        <div className={styles.cellStack}>
+          <ConfiguredTextCell
+            ariaLabel={`Name for row ${rowNumber}`}
+            dropdownOptions={settingsByColumn.name.dropdownOptions}
+            inputKind={settingsByColumn.name.inputKind}
+            inputValue={row.name}
+            onChange={(value) => onTextChange(row.id, 'name', value)}
+          />
+          {hasSourceJiraLink && (
+            <SourceJiraLink browseUrl={row.sourceJiraBrowseUrl} issueKey={row.sourceJiraIssueKey} />
+          )}
+        </div>
       </td>
       <td className={styles.tableCell}>
         <EditableCurrencyCell
@@ -281,9 +280,6 @@ function FundingTableRow({
           inputValue={row.justification}
           onChange={(value) => onTextChange(row.id, 'justification', value)}
         />
-        {hasJustificationJiraLink && (
-          <SourceJiraLink browseUrl={row.sourceJiraBrowseUrl} issueKey={row.sourceJiraIssueKey} />
-        )}
       </td>
       <td className={styles.tableCell}>
         <EditableDateCell
@@ -302,9 +298,6 @@ function FundingTableRow({
       {stablizationUserColumns.map((stablizationUserColumn) => (
         <td key={stablizationUserColumn.id} className={styles.tableCell}>
           {renderUserColumnInput(stablizationUserColumn, row, rowNumber, onUserColumnChange)}
-          {row.sourceJiraLinkedColumns.includes(stablizationUserColumn.id) && (
-            <SourceJiraLink browseUrl={row.sourceJiraBrowseUrl} issueKey={row.sourceJiraIssueKey} />
-          )}
         </td>
       ))}
       <td className={styles.tableCell}>
