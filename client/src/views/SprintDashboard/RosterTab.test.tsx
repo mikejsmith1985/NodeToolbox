@@ -239,19 +239,28 @@ describe('RosterTab', () => {
     );
   });
 
-  it('shows a no-users status message when the v2 assignable search returns an empty list', async () => {
-    vi.mocked(jiraGet).mockResolvedValueOnce([]);
+  it('shows a no-users status message when all Jira user enumeration endpoints return empty lists', async () => {
+    // Three calls: standard (no param), username= empty, username=. dot wildcard
+    vi.mocked(jiraGet).mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     render(<RosterTab issues={[]} projectKey="TBX" />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Load project users' }));
 
     expect(await screen.findByText('No Jira project users are currently available for TBX.')).toBeInTheDocument();
-    // Confirms only the v2 endpoint is called — the v3 multiProjectSearch endpoint
-    // was removed because the proxy does not support it and returns 302 redirects.
-    expect(vi.mocked(jiraGet)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(jiraGet)).toHaveBeenCalledWith(
+    // Confirms the full fallback chain: standard -> username= -> username=. (Jira Server dot wildcard)
+    expect(vi.mocked(jiraGet)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(jiraGet)).toHaveBeenNthCalledWith(
+      1,
       '/rest/api/2/user/assignable/search?project=TBX&startAt=0&maxResults=50',
+    );
+    expect(vi.mocked(jiraGet)).toHaveBeenNthCalledWith(
+      2,
+      '/rest/api/2/user/assignable/search?project=TBX&username=&startAt=0&maxResults=50',
+    );
+    expect(vi.mocked(jiraGet)).toHaveBeenNthCalledWith(
+      3,
+      '/rest/api/2/user/assignable/search?project=TBX&username=.&startAt=0&maxResults=50',
     );
   });
 
