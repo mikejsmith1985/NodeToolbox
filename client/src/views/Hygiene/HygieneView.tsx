@@ -10,7 +10,9 @@ import {
 } from './checks/hygieneChecks.ts';
 import { useEffect, useRef, useState } from 'react';
 import { useHygieneState } from './hooks/useHygieneState.ts';
+import { buildCheckIssueKeys, buildJiraIssueNavigatorUrl } from './utils/buildHygieneJqlUrl.ts';
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
+import { useConnectionStore } from '../../store/connectionStore.ts';
 import type { JiraIssue as RealJiraIssue } from '../../types/jira.ts';
 import styles from './HygieneView.module.css';
 
@@ -25,6 +27,8 @@ const JIRA_BROWSE_PREFIX = '/browse/';
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 const MAX_HYGIENE_SCORE = 100;
 const HYGIENE_SCORE_FLAG_PENALTY = 5;
+// How long the "copied" confirmation label stays on the tile copy button before reverting.
+const COPY_CONFIRMATION_TIMEOUT_MS = 2000;
 // Tooltip text is built from the constants so the explanation stays in sync if the formula changes.
 const HYGIENE_SCORE_TOOLTIP =
   `Score = ${MAX_HYGIENE_SCORE} − (total flags × ${HYGIENE_SCORE_FLAG_PENALTY}), minimum 0.\n` +
@@ -38,6 +42,7 @@ interface HygieneViewProps {
 /** Renders the standalone Hygiene checker and delegates stateful Jira work to `useHygieneState`. */
 export default function HygieneView({ isTeamMode = false }: HygieneViewProps = {}) {
   const hygieneState = useHygieneState({ isTeamMode });
+  const jiraBaseUrl = useConnectionStore((state) => state.proxyStatus?.jira?.baseUrl ?? null);
   const hasAutoRunTriggeredRef = useRef(false);
   const isHygieneLoading = hygieneState.isLoading;
   const loadHygiene = hygieneState.loadHygiene;
@@ -50,9 +55,22 @@ export default function HygieneView({ isTeamMode = false }: HygieneViewProps = {
   const hasProjectKey = hygieneState.projectKey.trim().length > 0;
   const shouldShowNoFlags = !hygieneState.isLoading && hasProjectKey && !hasVisibleFindings;
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
+  const [copiedCheckId, setCopiedCheckId] = useState<string | null>(null);
 
   function handleToggleIssueExpand(issueKey: string) {
     setExpandedIssueKey((currentKey) => (currentKey === issueKey ? null : issueKey));
+  }
+
+  function handleCopyCheckJql(checkId: string): void {
+    const issueKeys = buildCheckIssueKeys(checkId, hygieneState.findings);
+    if (issueKeys.length === 0) return;
+    const urlOrJql = buildJiraIssueNavigatorUrl(issueKeys, jiraBaseUrl);
+    navigator.clipboard.writeText(urlOrJql).then(() => {
+      setCopiedCheckId(checkId);
+      setTimeout(() => setCopiedCheckId(null), COPY_CONFIRMATION_TIMEOUT_MS);
+    }).catch(() => {
+      // Clipboard API unavailable in non-secure contexts — proceed silently
+    });
   }
 
   useEffect(() => {
@@ -136,7 +154,9 @@ export default function HygieneView({ isTeamMode = false }: HygieneViewProps = {
           <strong>{hygieneState.summary.totalIssues} issues</strong>
           <span>{hygieneState.summary.totalFlags} flags total</span>
         </button>
-        {hygieneState.availableCheckIds.map((checkId) => renderSummaryTile(checkId, hygieneState))}
+        {hygieneState.availableCheckIds.map((checkId) =>
+          renderSummaryTile(checkId, hygieneState, copiedCheckId, handleCopyCheckJql),
+        )}
       </div>
 
       {hygieneState.isLoading && <div className={styles.emptyState}>Loading Hygiene results…</div>}
@@ -163,19 +183,52 @@ export default function HygieneView({ isTeamMode = false }: HygieneViewProps = {
   );
 }
 
-function renderSummaryTile(checkId: string, hygieneState: ReturnType<typeof useHygieneState>) {
+function renderSummaryTile(
+  checkId: string,
+  hygieneState: ReturnType<typeof useHygieneState>,
+  copiedCheckId: string | null,
+  onCopyJql: (checkId: string) => void,
+) {
   const isTileSelected = hygieneState.selectedFilter === checkId;
+  const issueCount = hygieneState.summary.countByCheck[checkId] ?? 0;
+  const checkLabel = hygieneState.checkLabelsById[checkId] ?? checkId;
+  const hasCopyableIssues = issueCount > 0;
+  const justCopied = copiedCheckId === checkId;
+
+  function handleTileKeyDown(keyEvent: React.KeyboardEvent) {
+    if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+      keyEvent.preventDefault();
+      hygieneState.selectFilter(checkId);
+    }
+  }
+
   return (
-    <button
+    <div
       key={checkId}
-      type="button"
+      role="button"
+      tabIndex={0}
       className={isTileSelected ? styles.summaryTileSelected : styles.summaryTile}
       aria-pressed={isTileSelected}
       onClick={() => hygieneState.selectFilter(checkId)}
+      onKeyDown={handleTileKeyDown}
     >
-      <strong>{hygieneState.summary.countByCheck[checkId]}</strong>
-      <span>{hygieneState.checkLabelsById[checkId] ?? checkId}</span>
-    </button>
+      <strong>{issueCount}</strong>
+      <span>{checkLabel}</span>
+      {hasCopyableIssues && (
+        <button
+          type="button"
+          className={justCopied ? styles.copyJqlButtonCopied : styles.copyJqlButton}
+          aria-label={`Copy Jira link for ${checkLabel}`}
+          title={justCopied ? 'Copied!' : 'Copy Jira issue navigator link'}
+          onClick={(clickEvent) => {
+            clickEvent.stopPropagation();
+            onCopyJql(checkId);
+          }}
+        >
+          {justCopied ? '✓' : '⎘'}
+        </button>
+      )}
+    </div>
   );
 }
 
