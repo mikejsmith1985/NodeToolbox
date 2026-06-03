@@ -635,7 +635,7 @@ describe('SprintDashboardView', () => {
     render(<SprintDashboardView />);
 
     expect(screen.getByRole('tab', { name: 'Metrics' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Pipeline' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Pipeline' })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Planning' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Feature Review' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'PI Review' })).toBeInTheDocument();

@@ -435,6 +435,39 @@ module.exports.getBridgeDiag = function getBridgeDiag(sys) {
  * @returns {Promise} Resolves to { result: any }
  * @throws {Error} If relay is not active or request times out
  */
+/**
+ * Normalizes a relay result payload into a plain object for server-side callers.
+ *
+ * The browser bookmarklet reads each ServiceNow response with response.text() and posts
+ * the body back as a raw JSON *string*. Server-side consumers (the CHG state-update,
+ * CHG save, and my-changes routes) expect a parsed object so they can read fields like
+ * `.result`. Without this step the string is handed back verbatim, `.result` comes back
+ * undefined, and the caller wrongly reports the record as "not found in ServiceNow" — the
+ * exact failure seen when updating a change's state from the Release Management tab. Some
+ * relay versions already return parsed JSON, so objects and unparseable bodies pass through
+ * unchanged. This mirrors the tolerant parsing the browser client already does in snowApi.ts.
+ *
+ * @param {*} relayResultData - The `data` field the bookmarklet posted to /result.
+ * @returns {*} A parsed object when the payload was a JSON string; otherwise the value as-is.
+ */
+function parseRelayResultData(relayResultData) {
+  if (typeof relayResultData === 'string') {
+    const trimmedResultData = relayResultData.trim();
+    // An empty body (e.g. a 204 from a PATCH) carries no data — preserve the legacy {} result.
+    if (trimmedResultData === '') {
+      return {};
+    }
+    try {
+      return JSON.parse(trimmedResultData);
+    } catch {
+      // Not JSON (a plain-text error or non-API response) — hand back the raw string untouched.
+      return relayResultData;
+    }
+  }
+  // Already-parsed object/array, or null/undefined which collapses to the legacy {} result.
+  return relayResultData || {};
+}
+
 module.exports.submitRelayRequest = async function submitRelayRequest(sys, request, timeoutMs = 30000) {
   const channel = bridgeState[sys || 'snow'];
   if (!channel || !isRelayReady(channel)) {
@@ -479,7 +512,7 @@ module.exports.submitRelayRequest = async function submitRelayRequest(sys, reque
         delete channel.pendingResults[requestId];
 
         if (result.ok) {
-          resolve(result.data || {});
+          resolve(parseRelayResultData(result.data));
         } else {
           const error = new Error(result.error || 'Relay request failed');
           error.status = result.status;
@@ -489,6 +522,10 @@ module.exports.submitRelayRequest = async function submitRelayRequest(sys, reque
     }, 100);
   });
 };
+
+// Exposed for unit testing the JSON-string normalization that keeps server-side
+// relay consumers from misreading bookmarklet responses as "not found".
+module.exports.parseRelayResultData = parseRelayResultData;
 
 // Exposed only for unit testing — resets all bridge channels to a clean state.
 // Never call this in production code.
