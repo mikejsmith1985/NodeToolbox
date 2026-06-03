@@ -195,11 +195,33 @@
   color: var(--color-danger);
 }
 
+.cellStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
 .sourceJiraLink {
   display: inline-flex;
-  margin-top: var(--spacing-xs);
+  align-items: center;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-2));
   color: var(--color-accent);
   font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.sourceJiraLink:hover,
+.sourceJiraLink:focus-visible {
+  background: color-mix(in srgb, var(--color-accent) 22%, var(--color-surface-2));
   text-decoration: underline;
   text-underline-offset: 0.1em;
 }

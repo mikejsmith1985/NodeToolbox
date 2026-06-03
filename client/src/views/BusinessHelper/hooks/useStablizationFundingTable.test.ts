@@ -183,6 +183,112 @@ describe('useStablizationFundingTable', () => {
     expect(storedRows[0].sourceJiraIssueKey).toBe('TBX-101');
     expect(storedRows[0].sourceJiraLinkedColumns).toEqual(['name', 'owner-notes']);
   });
+
+  it('derives the issue link from the Name text for rows without saved Jira metadata', () => {
+    // Rows kept from a legacy import or typed by hand only carry the key inside the Name text, so
+    // the displayed link is derived from that text to keep every row's link consistent.
+    window.localStorage.setItem('tbxCRGenJiraUrl', 'https://jira.example.com/');
+    window.localStorage.setItem(
+      'tbxBusinessHelperStablizationTable',
+      JSON.stringify([
+        {
+          id: 'legacy-row',
+          grouping: 'Portfolio',
+          name: 'CCAM-644 - 26.3 Zelis: Premium Refund Void',
+          fulfillmentCost: '',
+          enrollmentCost: '',
+          billing: '',
+          justification: '',
+          timing: '',
+          cost: '',
+        },
+      ]),
+    );
+
+    const { result } = renderHook(() => useStablizationFundingTable());
+
+    expect(result.current.rows[0].sourceJiraIssueKey).toBe('CCAM-644');
+    expect(result.current.rows[0].sourceJiraBrowseUrl).toBe('https://jira.example.com/browse/CCAM-644');
+  });
+
+  it('leaves rows without a recognizable Jira key free of a derived browse link', () => {
+    window.localStorage.setItem(
+      'tbxBusinessHelperStablizationTable',
+      JSON.stringify([
+        {
+          id: 'manual-row',
+          grouping: 'Portfolio',
+          name: 'General funding workstream',
+          fulfillmentCost: '',
+          enrollmentCost: '',
+          billing: '',
+          justification: '',
+          timing: '',
+          cost: '',
+        },
+      ]),
+    );
+
+    const { result } = renderHook(() => useStablizationFundingTable());
+
+    expect(result.current.rows[0].sourceJiraIssueKey).toBe('');
+    expect(result.current.rows[0].sourceJiraBrowseUrl).toBe('');
+  });
+
+  it('re-derives the link as the Name is edited and drops it when the key is removed', () => {
+    // Derive-on-display means the link tracks the current text and never persists a stale key.
+    window.localStorage.setItem('tbxCRGenJiraUrl', 'https://jira.example.com/');
+    const { result } = renderHook(() => useStablizationFundingTable());
+    const firstRowId = result.current.rows[0].id;
+
+    act(() => {
+      result.current.updateTextField(firstRowId, 'name', 'TBX-303 - manual entry');
+    });
+    expect(result.current.rows[0].sourceJiraIssueKey).toBe('TBX-303');
+    expect(result.current.rows[0].sourceJiraBrowseUrl).toBe('https://jira.example.com/browse/TBX-303');
+
+    act(() => {
+      result.current.updateTextField(firstRowId, 'name', 'No key here anymore');
+    });
+    expect(result.current.rows[0].sourceJiraIssueKey).toBe('');
+    expect(result.current.rows[0].sourceJiraBrowseUrl).toBe('');
+
+    const persistedRows = JSON.parse(window.localStorage.getItem('tbxBusinessHelperStablizationTable') ?? '[]');
+    expect(persistedRows[0].sourceJiraIssueKey).toBe('');
+  });
+
+  it('keeps a saved Simple Search key as the source of truth even after the Name is edited', () => {
+    window.localStorage.setItem('tbxCRGenJiraUrl', 'https://jira.example.com/');
+    window.localStorage.setItem(
+      'tbxBusinessHelperStablizationTable',
+      JSON.stringify([
+        {
+          id: 'search-row',
+          grouping: 'Portfolio',
+          name: 'TBX-101 - Business summary match',
+          fulfillmentCost: '',
+          enrollmentCost: '',
+          billing: '',
+          justification: '',
+          timing: '',
+          cost: '',
+          sourceJiraBrowseUrl: 'https://jira.example.com/browse/TBX-101',
+          sourceJiraIssueKey: 'TBX-101',
+          sourceJiraLinkedColumns: ['name'],
+        },
+      ]),
+    );
+
+    const { result } = renderHook(() => useStablizationFundingTable());
+    const firstRowId = result.current.rows[0].id;
+
+    act(() => {
+      result.current.updateTextField(firstRowId, 'name', 'TBX-999 - renamed by user');
+    });
+
+    expect(result.current.rows[0].sourceJiraIssueKey).toBe('TBX-101');
+    expect(result.current.rows[0].sourceJiraBrowseUrl).toBe('https://jira.example.com/browse/TBX-101');
+  });
 });
 
 describe('stablization funding formulas', () => {

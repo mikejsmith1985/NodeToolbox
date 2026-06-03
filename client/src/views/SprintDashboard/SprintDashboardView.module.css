@@ -2964,6 +2964,36 @@
   cursor: pointer;
 }
 
+.followUpButtonInactive {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.followUpButtonInactive:hover {
+  border-color: var(--color-warning, #f59e0b);
+  color: var(--color-warning, #f59e0b);
+}
+
+.followUpButtonActive {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-warning, #f59e0b);
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--color-warning, #f59e0b);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.followUpButtonActive:hover {
+  background: rgba(245, 158, 11, 0.2);
+}
+
 .workflowStatusChipActive {
   padding: var(--spacing-xs) var(--spacing-sm);
   border: 1px solid var(--color-accent);

@@ -341,6 +341,73 @@ describe('GET /api/relay-bridge/status — lastPingAt field', () => {
 });
 
 
+// ── parseRelayResultData() — JSON-string normalization for server consumers ──
+// Regression coverage for the Release Management "Change CHG... not found in
+// ServiceNow" bug: the bookmarklet posts ServiceNow responses as JSON strings,
+// and server-side relay consumers must parse them before reading `.result`.
+
+describe('parseRelayResultData()', () => {
+  it('parses a JSON string body into an object so .result is readable', () => {
+    const rawBookmarkletBody = '{"result":[{"sys_id":"abc123","number":"CHG0047146"}]}';
+    const parsed = relayBridgeRouter.parseRelayResultData(rawBookmarkletBody);
+    expect(Array.isArray(parsed.result)).toBe(true);
+    expect(parsed.result[0].sys_id).toBe('abc123');
+  });
+
+  it('returns an already-parsed object unchanged', () => {
+    const alreadyParsed = { result: [{ sys_id: 'def456' }] };
+    expect(relayBridgeRouter.parseRelayResultData(alreadyParsed)).toBe(alreadyParsed);
+  });
+
+  it('collapses null, undefined, and empty bodies to an empty object', () => {
+    expect(relayBridgeRouter.parseRelayResultData(null)).toEqual({});
+    expect(relayBridgeRouter.parseRelayResultData(undefined)).toEqual({});
+    expect(relayBridgeRouter.parseRelayResultData('   ')).toEqual({});
+  });
+
+  it('returns the raw string when the body is not valid JSON', () => {
+    expect(relayBridgeRouter.parseRelayResultData('Service unavailable')).toBe('Service unavailable');
+  });
+});
+
+describe('submitRelayRequest() — JSON-string result handling', () => {
+  it('resolves a JSON-string ServiceNow response as a parsed object', async () => {
+    const app = buildTestApp();
+
+    // Bring the snow channel online: register, then poll (consuming a priming
+    // request) so isRelayReady() passes for the server-initiated request below.
+    await request(app).post('/api/relay-bridge/register?sys=snow').send({});
+    await request(app)
+      .post('/api/relay-bridge/request')
+      .send({ sys: 'snow', id: 'prime-ready', method: 'GET', path: '/test' });
+    await request(app).get('/api/relay-bridge/poll?sys=snow');
+
+    // The server enqueues a lookup the same way the CHG state route does.
+    const submitPromise = relayBridgeRouter.submitRelayRequest(
+      'snow',
+      { method: 'GET', url: '/api/now/v2/table/change_request?sysparm_query=number=CHG0047146&sysparm_fields=sys_id' },
+      5000,
+    );
+
+    // Drain the queued request to learn its generated id, then post the result
+    // exactly as the bookmarklet does — as a raw JSON string body.
+    const pollResponse = await request(app).get('/api/relay-bridge/poll?sys=snow');
+    const queuedRequestId = pollResponse.body.request.id;
+    await request(app)
+      .post('/api/relay-bridge/result')
+      .send({
+        id: queuedRequestId,
+        sys: 'snow',
+        ok: true,
+        status: 200,
+        data: '{"result":[{"sys_id":"sys-abc-123"}]}',
+      });
+
+    const resolvedData = await submitPromise;
+    expect(resolvedData.result[0].sys_id).toBe('sys-abc-123');
+  });
+});
+
 describe('relay bridge full round-trip (request → poll → result → collect)', () => {
   it('delivers a request to the bookmarklet and returns the result to the caller', async () => {
     const app = buildTestApp();
