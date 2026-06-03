@@ -88,7 +88,8 @@ const TAB_OPTIONS: { key: DashboardTab; label: string }[] = [
   { key: 'standup', label: 'Standup' },
   { key: 'hygiene', label: 'Hygiene' },
   { key: 'metrics', label: 'Metrics' },
-  { key: 'pipeline', label: 'Pipeline' },
+  // Pipeline tab is hidden — the workflow was never fully realised. Code remains for future revival.
+  // { key: 'pipeline', label: 'Pipeline' },
   { key: 'planning', label: 'Planning' },
   { key: 'pointing', label: 'Pointing' },
   { key: 'featurereview', label: 'Feature Review' },
@@ -161,6 +162,8 @@ const MAX_CYCLE_TIME_ISSUES = 200;
 const DEFECT_MAX_RESULTS = 200;
 const PLANNING_MAX_RESULTS = 200;
 const PLANNING_DETAIL_FIELDS = 'description,comment,parent,customfield_10201,customfield_10008,fixVersions,assignee,status';
+// Stores which issue keys are flagged for follow-up so selections survive page reloads.
+const PLANNING_FOLLOW_UP_KEYS_STORAGE_KEY = 'tbx-planning-follow-up-keys';
 const POINTING_DETAIL_FIELDS = 'description,comment,parent,customfield_10200';
 const PIPELINE_REL_FIELDS = 'summary,status,assignee,priority,labels,comment,issuelinks,customfield_10016,customfield_10028';
 const PIPELINE_COMPANION_FIELDS = 'summary,status,assignee,labels,updated';
@@ -4281,6 +4284,25 @@ function PipelineTab({
   );
 }
 
+function readStoredFollowUpKeys(): string[] {
+  try {
+    const storedValue = window.localStorage.getItem(PLANNING_FOLLOW_UP_KEYS_STORAGE_KEY);
+    if (!storedValue) return [];
+    const parsed = JSON.parse(storedValue);
+    return Array.isArray(parsed) ? (parsed as unknown[]).filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveFollowUpKeys(issueKeys: string[]): void {
+  try {
+    window.localStorage.setItem(PLANNING_FOLLOW_UP_KEYS_STORAGE_KEY, JSON.stringify(issueKeys));
+  } catch {
+    // localStorage may be unavailable in private browsing — proceed without persisting
+  }
+}
+
 function PlanningTab({
   customStoryPointsFieldId,
   projectKey,
@@ -4311,7 +4333,7 @@ function PlanningTab({
   const [commentDraftByIssueKey, setCommentDraftByIssueKey] = useState<Record<string, string>>({});
   const [assigneeSearchByIssueKey, setAssigneeSearchByIssueKey] = useState<Record<string, string>>({});
   const [assigneeCandidatesByIssueKey, setAssigneeCandidatesByIssueKey] = useState<Record<string, Array<{ accountId: string; displayName: string }>>>({});
-  const [followUpIssueKeys, setFollowUpIssueKeys] = useState<string[]>([]);
+  const [followUpIssueKeys, setFollowUpIssueKeys] = useState<string[]>(readStoredFollowUpKeys);
   const [planningStatusMessage, setPlanningStatusMessage] = useState<string | null>(null);
   const [isLoadingPlanning, setIsLoadingPlanning] = useState(false);
   const [planningError, setPlanningError] = useState<string | null>(null);
@@ -4379,6 +4401,10 @@ function PlanningTab({
       window.clearTimeout(reloadTimerId);
     };
   }, [reloadPlanningData]);
+
+  useEffect(() => {
+    saveFollowUpKeys(followUpIssueKeys);
+  }, [followUpIssueKeys]);
 
   async function loadPlanningDetail(issue: JiraIssue) {
     if (planningDetailByIssueKey[issue.key]) {
@@ -4489,9 +4515,20 @@ function PlanningTab({
       title="Backlog Planning"
       description="Shape the backlog around release, hierarchy, and ownership without leaving the dashboard."
       actions={(
-        <button className={styles.secondaryButton} onClick={() => void copyFollowUpReport()} type="button">
-          Copy Follow-up Report
-        </button>
+        <>
+          {followUpIssueKeys.length > 0 && (
+            <button
+              className={styles.secondaryButton}
+              onClick={() => setFollowUpIssueKeys([])}
+              type="button"
+            >
+              Clear All Follow-ups
+            </button>
+          )}
+          <button className={styles.secondaryButton} onClick={() => void copyFollowUpReport()} type="button">
+            Copy Follow-up Report
+          </button>
+        </>
       )}
       stats={(
         <div className={styles.flowStatsBar}>
@@ -4568,10 +4605,11 @@ function PlanningTab({
                     </div>
                   </div>
                   <button
-                    className={followUpIssueKeys.includes(planningIssue.key) ? styles.secondaryButton : styles.workflowStatusChip}
+                    className={followUpIssueKeys.includes(planningIssue.key) ? styles.followUpButtonActive : styles.followUpButtonInactive}
                     onClick={() => setFollowUpIssueKeys((previousKeys) => previousKeys.includes(planningIssue.key)
                       ? previousKeys.filter((previousKey) => previousKey !== planningIssue.key)
                       : [...previousKeys, planningIssue.key])}
+                    title={followUpIssueKeys.includes(planningIssue.key) ? 'Click to remove follow-up flag' : 'Click to flag for follow-up'}
                     type="button"
                   >
                     Follow-up

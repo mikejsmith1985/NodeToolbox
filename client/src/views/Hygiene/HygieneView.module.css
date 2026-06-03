@@ -85,6 +85,7 @@
 
 .summaryTile,
 .summaryTileSelected {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
@@ -109,6 +110,30 @@
 .summaryTileSelected span {
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
+}
+
+.copyJqlButton,
+.copyJqlButtonCopied {
+  position: absolute;
+  bottom: var(--spacing-xs, 4px);
+  right: var(--spacing-xs, 4px);
+  padding: 1px 5px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.copyJqlButton:hover {
+  border-color: var(--color-accent, #6366f1);
+  color: var(--color-accent, #6366f1);
+}
+
+.copyJqlButtonCopied {
+  color: var(--color-success, #22c55e);
 }
 
 .emptyState {

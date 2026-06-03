@@ -1,6 +1,6 @@
 // HygieneView.test.tsx — Render and interaction tests for the standalone Hygiene view.
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./hooks/useHygieneState.ts', async () => {
@@ -102,8 +102,16 @@ function buildHookState(overrides: OverrideHookState = {}): ReturnType<typeof us
   };
 }
 
+const mockClipboardWriteText = vi.fn().mockResolvedValue(undefined);
+
 beforeEach(() => {
   mockUseHygieneState.mockReset();
+  mockClipboardWriteText.mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText: mockClipboardWriteText },
+    writable: true,
+    configurable: true,
+  });
 });
 
 describe('HygieneView', () => {
@@ -264,5 +272,71 @@ describe('HygieneView', () => {
 
     expect(hookState.selectFilter).toHaveBeenCalledWith('missing-sp');
     expect(hookState.selectFilter).toHaveBeenCalledWith(null);
+  });
+
+  it('shows a copy button on tiles that have flagged issues', () => {
+    mockUseHygieneState.mockReturnValue(
+      buildHookState({
+        projectKey: 'TBX',
+        summary: buildSummary({ countByCheck: { ...buildSummary().countByCheck, 'missing-sp': 3 } }),
+        checkLabelsById: { 'missing-sp': 'Missing SP' },
+        availableCheckIds: ['missing-sp'],
+      }),
+    );
+
+    render(<HygieneView />);
+
+    expect(screen.getByRole('button', { name: /copy jira link for missing sp/i })).toBeInTheDocument();
+  });
+
+  it('does not show a copy button on tiles with a zero count', () => {
+    mockUseHygieneState.mockReturnValue(
+      buildHookState({
+        projectKey: 'TBX',
+        checkLabelsById: { 'no-assignee': 'No assignee' },
+        availableCheckIds: ['no-assignee'],
+      }),
+    );
+
+    render(<HygieneView />);
+
+    expect(screen.queryByRole('button', { name: /copy jira link/i })).not.toBeInTheDocument();
+  });
+
+  it('writes raw JQL to the clipboard when the copy button is clicked and no Jira URL is configured', async () => {
+    const finding = buildFinding();
+    mockUseHygieneState.mockReturnValue(
+      buildHookState({
+        projectKey: 'TBX',
+        findings: [finding],
+        summary: buildSummary({ countByCheck: { ...buildSummary().countByCheck, 'missing-sp': 1 } }),
+        checkLabelsById: { 'missing-sp': 'Missing SP' },
+        availableCheckIds: ['missing-sp'],
+      }),
+    );
+
+    render(<HygieneView />);
+    fireEvent.click(screen.getByRole('button', { name: /copy jira link for missing sp/i }));
+
+    await waitFor(() => {
+      expect(mockClipboardWriteText).toHaveBeenCalledWith('issueKey in (TBX-101)');
+    });
+  });
+
+  it('does not propagate the copy button click to the tile filter action', () => {
+    const finding = buildFinding();
+    const hookState = buildHookState({
+      projectKey: 'TBX',
+      findings: [finding],
+      summary: buildSummary({ countByCheck: { ...buildSummary().countByCheck, 'missing-sp': 1 } }),
+      checkLabelsById: { 'missing-sp': 'Missing SP' },
+      availableCheckIds: ['missing-sp'],
+    });
+    mockUseHygieneState.mockReturnValue(hookState);
+
+    render(<HygieneView />);
+    fireEvent.click(screen.getByRole('button', { name: /copy jira link for missing sp/i }));
+
+    expect(hookState.selectFilter).not.toHaveBeenCalled();
   });
 });

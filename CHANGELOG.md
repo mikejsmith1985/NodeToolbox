@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Hygiene — Copy Jira issue navigator link per filter tile**: Each Hygiene summary tile that has flagged issues now shows a copy button (⎘). Clicking it writes a Jira issue navigator URL (`issueKey in (KEY-1, KEY-2, ...)`) to the clipboard, ready to paste into a DM or email. Falls back to raw JQL when no Jira base URL is configured.
+- **Planning — Persistent follow-up flags**: Follow-up flags in the Backlog Planning tab are now saved to `localStorage` and restored on every page reload. A **Clear All Follow-ups** button appears in the action bar when at least one flag is set. The Follow-up button now has distinct amber active and muted inactive styles so its state is immediately obvious.
+
+### Changed
+- **Sprint Dashboard — Pipeline tab hidden**: The Pipeline tab has been removed from the Team Dashboard tab bar. The underlying code is preserved (commented out) for future revival.
+
+### Added
 - **Roster Settings — Load recently active assignees**: A new **Recently active (last 3 mo)** button queries Jira via JQL (`updated >= "-91d"`) instead of the `user/assignable` endpoint, tallies how many issues each person was assigned to over that window, and returns the top 15 ranked by activity level. This bypasses Jira Server's per-page cap and alphabetical ordering on the assignable-user endpoint, returning the people who actually work in the project rather than whoever sorts first in the user directory.
 - **My Issues (Hygiene) — Inline issue details and transitions**: Flagged issues on the Hygiene tab can now be clicked to expand them inline. This displays the full Jira issue detail card, allowing users to transition states, add comments, or edit story points directly from the Hygiene tab.
 - **My Issues (Hygiene) — Issue Type and Program Increment (PI) metadata**: Each flagged issue card in the Hygiene tab now displays its Jira Issue Type and Program Increment (PI) field values under metadata.
