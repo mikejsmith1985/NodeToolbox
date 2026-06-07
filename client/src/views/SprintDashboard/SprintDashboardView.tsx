@@ -212,6 +212,19 @@ function buildDashboardTeamProfileLabel(teamProfile: SprintDashboardTeamProfile)
   return 'Saved Team';
 }
 
+/**
+ * Builds a full Jira issue browse URL using the Jira base URL configured in Settings.
+ * Falls back to a relative path if no Jira URL has been configured yet.
+ */
+function buildJiraIssueUrl(issueKey: string): string {
+  const configuredJiraBaseUrl = useSettingsStore.getState().changeRequestGeneratorJiraUrl.trim();
+  if (!configuredJiraBaseUrl) {
+    return `/browse/${encodeURIComponent(issueKey)}`;
+  }
+  const normalizedBaseUrl = configuredJiraBaseUrl.replace(/\/+$/, '');
+  return `${normalizedBaseUrl}/browse/${encodeURIComponent(issueKey)}`;
+}
+
 /** Groups issues by assignee display name, with unassigned issues bucketed under "Unassigned". */
 function groupIssuesByAssignee(issues: JiraIssue[]): Map<string, JiraIssue[]> {
   const groupedIssues = new Map<string, JiraIssue[]>();
@@ -1256,7 +1269,9 @@ function IssueCardWithMove({
       >
         <a
           className={styles.issueKeyLink}
-          href={`#${issue.key}`}
+          href={buildJiraIssueUrl(issue.key)}
+          rel="noreferrer"
+          target="_blank"
           onClick={stopRowToggle}
         >
           {issue.key}
@@ -1840,7 +1855,9 @@ function BlockersTab({
           <div className={styles.issueCardHeaderRow}>
             <a
               className={styles.issueKeyLink}
-              href={`#${issue.key}`}
+              href={buildJiraIssueUrl(issue.key)}
+              rel="noreferrer"
+              target="_blank"
               onClick={(clickEvent) => clickEvent.stopPropagation()}
             >
               {issue.key}
@@ -2135,7 +2152,7 @@ function DefectsTab({
                 <div className={styles.defectCard}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
                     <div>
-                      <a className={styles.issueKeyLink} href={`#${defectIssue.key}`}>{defectIssue.key}</a>{' '}
+                      <a className={styles.issueKeyLink} href={buildJiraIssueUrl(defectIssue.key)} rel="noreferrer" target="_blank">{defectIssue.key}</a>{' '}
                       <span>{defectIssue.fields.summary}</span>
                     </div>
                     <div className={styles.issueMetaText}>
@@ -4064,7 +4081,7 @@ function PipelineTab({
                         {pipelineRow.alerts.length > 0 && (
                           <div className={styles.issueMetaText}>{pipelineRow.alerts.join(' · ')}</div>
                         )}
-                        <a className={styles.issueKeyLink} href={`#${pipelineRow.relKey}`}>{pipelineRow.relKey}</a>{' '}
+                        <a className={styles.issueKeyLink} href={buildJiraIssueUrl(pipelineRow.relKey)} rel="noreferrer" target="_blank" onClick={(clickEvent) => clickEvent.stopPropagation()}>{pipelineRow.relKey}</a>{' '}
                         <span>{pipelineRow.relSummary.replace(/^REL\s*[–-]\s*[A-Z]+-\d+\s*[–-]\s*/, '')}</span>
                       </td>
                       <td style={{ padding: '8px 10px', textAlign: 'center' }}>{pipelineRow.devStatus ?? '—'}</td>
@@ -4406,7 +4423,7 @@ function PlanningTab({
                 <div className={styles.blockerCard}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
                     <div>
-                      <a className={styles.issueKeyLink} href={`#${planningIssue.key}`}>{planningIssue.key}</a>{' '}
+                      <a className={styles.issueKeyLink} href={buildJiraIssueUrl(planningIssue.key)} rel="noreferrer" target="_blank">{planningIssue.key}</a>{' '}
                       <span className={styles.issueSummaryText}>{planningIssue.fields.summary}</span>
                     </div>
                     <div className={styles.issueMetaText}>
@@ -5196,7 +5213,7 @@ function ReleasesTab({
                                         ? '🔄'
                                         : '⬜'}
                                   </span>
-                                  <a className={styles.issueKeyLink} href={`#${issue.key}`}>{issue.key}</a>
+                                  <a className={styles.issueKeyLink} href={buildJiraIssueUrl(issue.key)} rel="noreferrer" target="_blank">{issue.key}</a>
                                   <span className={styles.releaseIssueSummary}>{issue.fields.summary}</span>
                                   <span className={styles.releaseIssueAssignee}>
                                     {issue.fields.assignee?.displayName?.split(' ')[0] ?? '—'}
