@@ -15,7 +15,7 @@ import { useConnectionStore } from '../../store/connectionStore.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import { detectLinkedPairs, collectLinkedSnowSysIds } from '../../utils/issueLinkCalculator.ts';
-import { EmbeddedGitSyncPanel, EmbeddedTimeTrackingPanel } from '../DevWorkspace/DevWorkspaceView.tsx';
+import { EmbeddedGitSyncPanel, EmbeddedTimeTrackingPanel } from './EmbeddedWorkspacePanels.tsx';
 import HygieneView from '../Hygiene/HygieneView.tsx';
 import { LinkedIssuePair } from './LinkedIssuePair.tsx';
 import { SnowIssueRow } from './SnowIssueRow.tsx';

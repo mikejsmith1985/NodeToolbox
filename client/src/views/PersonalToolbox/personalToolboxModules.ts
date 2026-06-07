@@ -6,7 +6,7 @@ import AdminHubView from '../AdminHub/AdminHubView.tsx';
 import ArtView from '../ArtView/ArtView.tsx';
 import BusinessHelperView from '../BusinessHelper/BusinessHelperView.tsx';
 import CodeWalkthroughView from '../CodeWalkthrough/CodeWalkthroughView.tsx';
-import DevWorkspaceView from '../DevWorkspace/DevWorkspaceView.tsx';
+
 import MyIssuesView from '../MyIssues/MyIssuesView.tsx';
 import ReportsHubView from '../ReportsHub/ReportsHubView.tsx';
 import SnowHubView from '../SnowHub/SnowHubView.tsx';
@@ -45,12 +45,6 @@ export const PERSONAL_TOOLBOX_MODULES: readonly PersonalToolboxModuleDefinition[
     title: 'Business Helper',
     description: 'Business-friendly Jira search and the Stablization funding workflow with mappings and custom columns.',
     component: BusinessHelperView,
-  },
-  {
-    id: 'dev-workspace',
-    title: 'Dev Workspace',
-    description: 'Developer workflows for hygiene, time tracking, Git sync, repo monitoring, and automation settings.',
-    component: DevWorkspaceView,
   },
   {
     id: 'reports-hub',
