@@ -1,0 +1,4 @@
+const s=/<\/?[a-zA-Z][^>]*>/g,a=/&#(x?[0-9a-fA-F]+);?/g,l={"&nbsp;":" ","&amp;":"&","&lt;":"<","&gt;":">","&quot;":'"',"&#39;":"'"};function T(t){return typeof t=="object"&&t!==null}function c(t){if(!T(t))return"";const e=typeof t.text=="string"?t.text:"",r=(Array.isArray(t.content)?t.content:[]).map(c).filter(Boolean).join(" ");return[e,r].filter(Boolean).join(" ")}function u(t){const e=t.startsWith("x")||t.startsWith("X"),n=Number.parseInt(e?t.slice(1):t,e?16:10);return Number.isFinite(n)?String.fromCodePoint(n):""}function p(t){return Object.entries(l).reduce((n,[r,o])=>n.replaceAll(r,o),t).replace(a,(n,r)=>u(r))}function i(t){return p(t).replace(s," ").replace(/\u00a0/g," ").replace(/\r\n/g,`
+`).replace(/[ \t]+/g," ").replace(/\n{3,}/g,`
+
+`).trim()}function f(t){if(typeof t=="string")return i(t);const e=c(t);return i(e)}export{f as n};
