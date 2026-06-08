@@ -1,0 +1,179 @@
+# DBAI: AI-Orchestrated Production Defect Response
+### Pitch for IT & Engineering Leadership
+
+---
+
+## Elevator Pitch (30 seconds)
+
+> Every production defect costs your team 4–8 hours of overhead that has nothing to do with fixing the bug — triage, ticket creation, context-gathering, manual handoffs between ServiceNow and Jira, coordinating deployments, and remembering to close the Problem record.
+>
+> DBAI eliminates that overhead. A ServiceNow Problem fires a webhook. The system triages it with AI, creates a properly scoped Jira Defect, notifies the right developer with full context already loaded, assists the fix, runs the tests, deploys on approval, and closes the SNow Problem automatically.
+>
+> **Your engineers fix bugs. The system handles everything else.**
+
+---
+
+## Slide 1 — The Problem You're Solving Every Day
+
+Every production defect triggers the same manual chain:
+
+1. Alert fires → someone notices → SNow Problem created (maybe)
+2. Lead triages it → context gathered manually from logs, tickets, Slack
+3. Jira Defect created → manually, inconsistently, sometimes skipped
+4. Developer picks it up → spends 20–40 minutes piecing together context
+5. Fix built → manually tested → manually coordinated for deploy
+6. SNow Problem closed → remembered eventually, or left open
+
+**The bug itself takes 2 hours. The process around it takes 6.**
+
+---
+
+## Slide 2 — What This Costs You
+
+| Overhead Activity | Time per Defect |
+|---|---|
+| Manual SNow → Jira handoff | 30–60 min |
+| Developer context ramp-up | 20–40 min |
+| Coordinating test + deploy | 60–120 min |
+| SNow Problem closure + RCA | 30–60 min |
+| **Total non-coding overhead** | **~4–8 hours** |
+
+Multiply by your monthly defect volume. That's the budget DBAI frees up.
+
+---
+
+## Slide 3 — The DBAI Production Defect Pipeline
+
+One SNow Problem record triggers a fully automated pipeline — with humans at every decision gate.
+
+```
+SNow Problem Created
+        │
+        ▼
+   AI Triage Analysis
+   (severity · root cause · component · assignee)
+        │
+        ▼
+   ┌─ HITL Gate: Dev Lead approves triage ─┐
+        │
+        ▼
+   Jira Defect Created
+   (pre-populated · linked to SNow · assigned)
+        │
+        ▼
+   Developer Notified
+   (full context included · no archaeology)
+        │
+        ▼
+   AI-Assisted Fix
+   (code suggestion · diff · rationale)
+        │
+        ▼
+   ┌─ HITL Gate: Developer reviews fix ──┐
+        │
+        ▼
+   Automated Test Suite
+        │
+        ▼
+   ┌─ HITL Gate: Release owner approves deploy ─┐
+        │
+        ▼
+   Deployment
+        │
+        ▼
+   SNow Problem Auto-Closed
+   (close code · RCA summary · linked PR · resolution notes)
+```
+
+---
+
+## Slide 4 — Human Oversight Where It Counts
+
+DBAI is not autonomous. Every consequential decision has a human approval gate.
+
+| Gate | Approver | What They See |
+|---|---|---|
+| Triage verdict | Dev Lead | AI severity + root cause + confidence score |
+| Defect scope | Dev Lead | Acceptance criteria, affected components |
+| Fix candidate | Developer | Code diff + AI rationale + risk flags |
+| Test results | Dev / QA | Pass/fail + coverage delta |
+| Deploy | Release Owner | Final sign-off with blast-radius summary |
+
+Engineers stay in control. AI eliminates the paperwork between the decisions.
+
+---
+
+## Slide 5 — Before vs. After
+
+| | Before DBAI | After DBAI |
+|---|---|---|
+| SNow → Jira handoff | 30–60 min, manual | < 2 min, automatic |
+| Developer context time | 20–40 min | < 5 min (context already there) |
+| Triage consistency | Varies by person | Same AI criteria, every time |
+| SNow Problem closure | Manual, often missed | Auto-closes on PR merge |
+| RCA documentation | Ad hoc, post-hoc | Generated and attached at triage |
+| SLA compliance | Tracked manually | Enforced by the pipeline |
+
+---
+
+## Slide 6 — Metrics You Can Show Upward
+
+Once the pipeline is live, these are trackable without extra instrumentation:
+
+- **MTTR** — Mean Time To Resolution, per defect category
+- **Triage-to-Jira latency** — time from SNow Problem to developer-ready Defect
+- **Developer ramp time** — time from Jira assignment to first commit
+- **SNow SLA compliance rate** — % of Problems closed before breach
+- **Escaped defect rate** — defects that regress after first fix
+- **AI acceptance rate** — how often triage verdicts and fix suggestions are approved unchanged
+
+---
+
+## Slide 7 — We're Eating Our Own Dog Food
+
+We're not asking IT to run a project to build this. We're configuring it through the same Admin Console that any team would use.
+
+**The workflow spec goes into the Admin Console. Flowbot reads it and builds the pipeline. No code written. No IT tickets.**
+
+```
+Write workflow spec (Mermaid + plain English)
+        │
+        ▼
+Paste into Admin Console → Flowbot
+        │
+        ▼
+Pipeline live within the day
+        │
+        ▼
+Instrument 5 real defects through it
+        │
+        ▼
+Measure the difference
+```
+
+The fact that we built the defect workflow using DBAI is the demo.
+
+---
+
+## Slide 8 — Why Now
+
+- **The integrations are already live.** ServiceNow, Jira, GitHub, and Discord are all connected.
+- **The AI pipeline is proven.** Idea-to-deploy has been running end-to-end. This is a new workflow on proven infrastructure.
+- **Defects are high-frequency and predictable.** Immediate ROI, no waiting for the "right" use case.
+- **This is configuration, not a project.** The Admin Console builds the workflow from a spec. First workflow live validates the platform; every future workflow compounds the value.
+
+---
+
+## Slide 9 — The Ask
+
+**This week:** Build the production defect workflow in the Admin Console.
+
+**Next two weeks:** Route 5 real SNow Problems through the pipeline.
+
+**Measure:** MTTR delta, triage consistency, SNow SLA compliance.
+
+**Decision point:** With 5 defects of data, the ROI case writes itself.
+
+---
+
+*Built with DBAI — dogfooding from day one.*
