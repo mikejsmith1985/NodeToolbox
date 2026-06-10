@@ -1,16 +1,15 @@
 // ConnectionBar.tsx — Compact connection status bar with interactive inline connect panels.
 //
 // Each indicator button represents one connected service. Clicking it toggles an inline
-// detail panel. The SNow panel includes the relay bookmarklet activation workflow so
-// users never need to navigate away to Admin Hub just to set up the relay bridge.
-//
-// Service readiness is driven by the Zustand connectionStore, which is updated from
-// GET /api/proxy-status on every server health check.
+// detail panel. SNow and GitHub indicators are only shown when Admin Hub is unlocked —
+// they contain sensitive relay and PAT controls. Service readiness is driven by the
+// Zustand connectionStore, updated from GET /api/proxy-status on every health check.
 
 import { useState, useRef, useEffect, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
 
 import { BookmarkletInstallLink } from '../BookmarkletInstallLink/index.tsx';
 import { openSnowRelay, SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts';
+import { useAdminStore } from '../../store/adminStore.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
 import styles from './ConnectionBar.module.css';
 
@@ -251,14 +250,17 @@ function JiraPanel({ isJiraReady }: JiraPanelProps) {
 // ── Root component ──
 
 /**
- * Displays global Jira, SNow, Confluence, and GitHub readiness as interactive buttons.
- * Clicking an indicator opens an inline panel with connection details.
- * The SNow panel includes the full relay bookmarklet activation workflow.
+ * Displays Jira and Confluence readiness as interactive buttons at all times.
+ * SNow and GitHub indicators are additionally shown when Admin Hub is unlocked —
+ * these services require admin credentials to configure, so their status is only
+ * relevant to admin users.
  *
  * Service readiness is driven by the Zustand connectionStore — no direct API calls
  * are made here; the store is updated by the proxy-status health check in the app root.
  */
 export function ConnectionBar() {
+  const isAdminUnlocked = useAdminStore((state) => state.isAdminUnlocked);
+
   const isJiraReady = useConnectionStore((state) => state.isJiraReady);
   const isSnowVerified = useConnectionStore((state) => state.isSnowVerified);
   const relayBridgeStatus = useConnectionStore((state) => state.relayBridgeStatus);
@@ -292,6 +294,13 @@ export function ConnectionBar() {
     return () => document.removeEventListener('mousedown', handleDocumentClick);
   }, []);
 
+  // Close any open admin-only panel immediately if admin locks while a panel is open.
+  useEffect(() => {
+    if (!isAdminUnlocked && (activePanel === 'snow' || activePanel === 'github')) {
+      setActivePanel(null);
+    }
+  }, [isAdminUnlocked, activePanel]);
+
   return (
     <div ref={barRef} className={styles.connectionBarWrapper}>
       <div className={styles.connectionBar} aria-label="Connection status">
@@ -302,13 +311,15 @@ export function ConnectionBar() {
           panelId="conn-panel-jira"
           onClick={() => handleIndicatorClick('jira')}
         />
-        <ConnectionIndicatorButton
-          label="SNow"
-          isReady={isSnowActive}
-          isExpanded={activePanel === 'snow'}
-          panelId="conn-panel-snow"
-          onClick={() => handleIndicatorClick('snow')}
-        />
+        {isAdminUnlocked && (
+          <ConnectionIndicatorButton
+            label="SNow"
+            isReady={isSnowActive}
+            isExpanded={activePanel === 'snow'}
+            panelId="conn-panel-snow"
+            onClick={() => handleIndicatorClick('snow')}
+          />
+        )}
         <ConnectionIndicatorButton
           label="Confluence"
           isReady={isConfluenceReady}
@@ -316,19 +327,21 @@ export function ConnectionBar() {
           panelId="conn-panel-confluence"
           onClick={() => handleIndicatorClick('confluence')}
         />
-        <ConnectionIndicatorButton
-          label="GitHub"
-          isReady={isGitHubReady}
-          isExpanded={activePanel === 'github'}
-          panelId="conn-panel-github"
-          onClick={() => handleIndicatorClick('github')}
-        />
+        {isAdminUnlocked && (
+          <ConnectionIndicatorButton
+            label="GitHub"
+            isReady={isGitHubReady}
+            isExpanded={activePanel === 'github'}
+            panelId="conn-panel-github"
+            onClick={() => handleIndicatorClick('github')}
+          />
+        )}
       </div>
 
       {activePanel !== null && (
         <div className={styles.connectPanel} role="region" aria-label="Connection details">
           {activePanel === 'jira' && <JiraPanel isJiraReady={isJiraReady} />}
-          {activePanel === 'snow' && (
+          {activePanel === 'snow' && isAdminUnlocked && (
             <SnowPanel
               isSnowActive={isSnowActive}
               isRelayActive={isRelayActive}
@@ -344,7 +357,9 @@ export function ConnectionBar() {
               confluenceBaseUrl={confluenceBaseUrl}
             />
           )}
-          {activePanel === 'github' && <GitHubPanel isGitHubReady={isGitHubReady} />}
+          {activePanel === 'github' && isAdminUnlocked && (
+            <GitHubPanel isGitHubReady={isGitHubReady} />
+          )}
         </div>
       )}
     </div>

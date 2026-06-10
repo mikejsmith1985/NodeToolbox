@@ -37,9 +37,9 @@ function makeMinimalTemplate(overrides: Partial<CrgTemplate> = {}): CrgTemplate 
     chgPlanningContent: {
       implementationPlan: 'Deploy via pipeline.', backoutPlan: 'Revert tag.', testPlan: 'Smoke test.',
     },
-    relEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' },
-    prdEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' },
-    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' },
+    relEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '', snowEnvironmentValue: '' },
+    prdEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '', snowEnvironmentValue: '' },
+    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '', snowEnvironmentValue: '' },
     ...overrides,
   };
 }
@@ -108,7 +108,7 @@ describe('useCrgTemplates', () => {
         category:    'Hardware',
         environment: 'pfix',
       },
-      pfixEnvironment: { isEnabled: true, plannedStartDate: '2026-01-03T10:00', plannedEndDate: '2026-01-03T11:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' },
+      pfixEnvironment: { isEnabled: true, plannedStartDate: '2026-01-03T10:00', plannedEndDate: '2026-01-03T11:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '', snowEnvironmentValue: '' },
     });
 
     const unsafeTemplateUpdate = {

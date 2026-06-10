@@ -21,6 +21,8 @@ interface EnvironmentConfig {
   plannedEndDate: string;
   configItem: SnowReference;
   impactedPersonsAware: string;
+  /** The SNow u_environment value specific to this environment card. Replaces the old global selector. */
+  snowEnvironmentValue: string;
 }
 
 /**
@@ -170,6 +172,7 @@ function createDefaultEnvironmentConfig(): EnvironmentConfig {
     plannedEndDate: EMPTY_VALUE,
     configItem: { ...EMPTY_SNOW_REFERENCE },
     impactedPersonsAware: EMPTY_VALUE,
+    snowEnvironmentValue: EMPTY_VALUE,
   };
 }
 
@@ -1144,7 +1147,7 @@ function buildChangeSubmissionTargets(
     return {
       environmentKey,
       environmentLabel: readEnvironmentLabel(environmentKey),
-      environmentValue: environmentValueByKey[environmentKey]?.trim() || state.chgBasicInfo.environment,
+      environmentValue: environmentState.snowEnvironmentValue.trim() || environmentValueByKey[environmentKey]?.trim() || state.chgBasicInfo.environment,
       configItem: environmentState.configItem.sysId ? environmentState.configItem : state.chgBasicInfo.configItem,
       impactedPersonsAware: environmentState.impactedPersonsAware.trim() || state.chgPlanningAssessment.impactedPersonsAware,
       plannedStartDate: environmentState.plannedStartDate,
