@@ -1331,9 +1331,9 @@ describe('useCrgState', () => {
         chgPlanningContent: {
           implementationPlan: 'Run pipeline.', backoutPlan: 'Revert tag.', testPlan: 'Smoke tests.',
         },
-        relEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00', configItem: { sysId: '', displayName: '' }, impactedPersonsAware: '' },
-        prdEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00', configItem: { sysId: '', displayName: '' }, impactedPersonsAware: '' },
-        pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { sysId: '', displayName: '' }, impactedPersonsAware: '' },
+        relEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00', configItem: { sysId: '', displayName: '' }, impactedPersonsAware: '', snowEnvironmentValue: '' },
+        prdEnvironment:  { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00', configItem: { sysId: '', displayName: '' }, impactedPersonsAware: '', snowEnvironmentValue: '' },
+        pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { sysId: '', displayName: '' }, impactedPersonsAware: '', snowEnvironmentValue: '' },
       };
 
       act(() => {
@@ -1460,6 +1460,7 @@ describe('useCrgState', () => {
         plannedEndDate: '2026-01-05T11:00',
         configItem: { sysId: '', displayName: '' },
         impactedPersonsAware: '',
+        snowEnvironmentValue: '',
       });
     });
 

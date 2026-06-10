@@ -45,6 +45,7 @@ Invoke co-skills in the order listed. Behavior on failure differs by mode:
 These must load successfully in every project. If missing, report ❌ and stop.
 ```
 invoke skill: code-quality
+invoke skill: framework-first
 ```
 
 ### Forge Terminal Project Only (load when AGENTS.md is present)
@@ -63,6 +64,7 @@ If the project is in **Enterprise mode** and a skill is not found, mark it ❌ a
 ```
 invoke skill: forge-workflow
 invoke skill: branching-strategy
+invoke skill: code-tutor-workflow
 ```
 
 ### Conditionally Required (invoke when the task warrants it)
@@ -92,6 +94,7 @@ reflects the Check 1 result from Phase 0A.
 │ sequential-tasks        │ ✅ Loaded  /  ⚠️ Not configured (optional)  │
 │ forge-workflow          │ ✅ Loaded  /  ⚠️ Not configured (optional) /  ❌ Required but missing │
 │ branching-strategy      │ ✅ Loaded  /  ⚠️ Not configured (optional) /  ❌ Required but missing │
+│ code-tutor-workflow     │ ✅ Loaded  /  ⚠️ Not configured (optional) /  ❌ Required but missing │
 │ AGENTS.md               │ ✅ Found   /  ⚠️ Not present (standard mode) │
 ├─────────────────────────┼────────────────────────────────────────────┤
 │ Active mode             │ Forge Enterprise  /  Enterprise  /  Standard │

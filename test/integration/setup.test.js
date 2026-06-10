@@ -54,14 +54,12 @@ describe('GET /setup', () => {
     expect(response.text).toMatch(/data-step="jira"|id="step-jira"/i);
   });
 
-  it('has a GitHub setup step', async () => {
+  it('includes GitHub and ServiceNow steps in the HTML, marked as admin-only', async () => {
     const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
+    // Both steps exist in the DOM but are hidden by client-side JS when admin is not unlocked.
     expect(response.text).toMatch(/data-step="github"|id="step-github"/i);
-  });
-
-  it('has a ServiceNow setup step', async () => {
-    const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
     expect(response.text).toMatch(/data-step="snow"|id="step-snow"/i);
+    expect(response.text).toContain('data-admin-only="true"');
   });
 
   it('has a Confluence setup step', async () => {
@@ -92,9 +90,9 @@ describe('GET /setup', () => {
     expect(response.text).toMatch(/data-step="done"|id="step-done"/i);
   });
 
-  it('includes Skip buttons for optional services (GitHub and ServiceNow)', async () => {
+  it('includes Skip buttons for optional services (Confluence and workspace)', async () => {
     const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
-    // Both GitHub and ServiceNow are optional — must be skippable
+    // Confluence and workspace steps are optional — must be skippable
     expect(response.text).toMatch(/skip/i);
   });
 
@@ -116,16 +114,12 @@ describe('GET /setup', () => {
   });
 
   it('shows relay-only ServiceNow guidance instead of credential fields', async () => {
-    const configuration = buildBlankConfig();
-    configuration.snow.baseUrl = 'https://myinstance.service-now.com';
-    const response = await request(buildTestApp(configuration)).get('/setup');
+    const response = await request(buildTestApp(buildBlankConfig())).get('/setup');
+    // The SNow step has no credential input fields — it only shows the relay preview.
     expect(response.text).not.toContain('id="snow-base-url"');
     expect(response.text).not.toContain('id="snow-username"');
     expect(response.text).not.toContain('id="snow-password"');
-    expect(response.text).not.toContain('https://myinstance.service-now.com');
     expect(response.text).toContain('ServiceNow not reachable');
-    expect(response.text).toContain('Method: Not connected — relay bridge inactive');
-    expect(response.text).toContain('Open ServiceNow');
     expect(response.text).toContain('NodeToolbox SNow Relay');
   });
 

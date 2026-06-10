@@ -123,9 +123,9 @@ const {
     },
     customSnowFields: {},
     inspectedSnowFields: [] as Array<{ fieldName: string; displayValue: string; storedValue: string }>,
-    relEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference }, impactedPersonsAware: '' },
-    prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference }, impactedPersonsAware: '' },
-    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference }, impactedPersonsAware: '' },
+    relEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference }, impactedPersonsAware: '', snowEnvironmentValue: '' },
+    prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference }, impactedPersonsAware: '', snowEnvironmentValue: '' },
+    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference }, impactedPersonsAware: '', snowEnvironmentValue: '' },
     changeTasks: [] as unknown[],
     isSubmitting: false,
     submitResult: null as string | null,
@@ -319,9 +319,9 @@ function resetMockState(): void {
     chgPlanningContent: { ...DEFAULT_PLANNING_CONTENT },
     customSnowFields: {},
     inspectedSnowFields: [],
-    relEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' },
-    prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' },
-    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' },
+    relEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '', snowEnvironmentValue: '' },
+    prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '', snowEnvironmentValue: '' },
+    pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '', snowEnvironmentValue: '' },
     changeTasks: [],
     isSubmitting: false,
     submitResult: null,
@@ -463,10 +463,10 @@ describe('CreateChgTab', () => {
 
     render(<CreateChgTab />);
 
-    expect(screen.getByRole('combobox', { name: 'ServiceNow Environment' })).toBeInTheDocument();
-    expect(screen.getByText('REL')).toBeInTheDocument();
-    expect(screen.getByText('PRD')).toBeInTheDocument();
-    expect(screen.getByText('PFIX')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'ServiceNow Environment' })).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'REL SNow Environment' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'PRD SNow Environment' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'PFIX SNow Environment' })).toBeInTheDocument();
     expect(screen.getByTestId('lookup-rel-config-item')).toBeInTheDocument();
   });
 
@@ -507,7 +507,7 @@ describe('CreateChgTab', () => {
     expect(screen.getByRole('checkbox', { name: 'PFIX enabled' })).not.toBeDisabled();
   });
 
-  it('maps selected PRD environment to the live SNow environment choice on step 5', async () => {
+  it('toggles a single environment enabled state without affecting the global basic info on step 5', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 5;
 
@@ -516,7 +516,18 @@ describe('CreateChgTab', () => {
     await user.click(screen.getByRole('checkbox', { name: 'PRD enabled' }));
 
     expect(mockActions.updateEnvironment).toHaveBeenCalledWith('prd', { isEnabled: true });
-    expect(mockActions.setChgBasicInfo).toHaveBeenCalledWith({ environment: 'prod' });
+    expect(mockActions.setChgBasicInfo).not.toHaveBeenCalled();
+  });
+
+  it('saves the per-card SNow environment value when a card dropdown changes on step 5', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 5;
+
+    render(<CreateChgTab />);
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'PRD SNow Environment' }), 'prod');
+
+    expect(mockActions.updateEnvironment).toHaveBeenCalledWith('prd', { snowEnvironmentValue: 'prod' });
   });
 
   it('renders fetch mode radio buttons on step 1', () => {
@@ -836,7 +847,7 @@ describe('CreateChgTab', () => {
   it('saves current change details and environment schedules as a template', async () => {
     const user = userEvent.setup();
     mockState.chgBasicInfo = { ...mockState.chgBasicInfo, category: 'software', environment: 'prod' };
-    mockState.relEnvironment = { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' };
+    mockState.relEnvironment = { isEnabled: true, plannedStartDate: '2026-01-01T10:00', plannedEndDate: '2026-01-01T11:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '', snowEnvironmentValue: '' };
 
     render(<CreateChgTab mode="configuration" />);
 
@@ -856,7 +867,7 @@ describe('CreateChgTab', () => {
   it('updates the selected saved template from the current form state', async () => {
     const user = userEvent.setup();
     mockState.chgBasicInfo = { ...mockState.chgBasicInfo, category: 'software', environment: 'prod' };
-    mockState.prdEnvironment = { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '' };
+    mockState.prdEnvironment = { isEnabled: true, plannedStartDate: '2026-01-02T10:00', plannedEndDate: '2026-01-02T11:00', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '', snowEnvironmentValue: '' };
     mockTemplates.push({
       id: 'tpl-001',
       name: 'Release Defaults',
@@ -967,11 +978,12 @@ describe('CreateChgTab', () => {
     expect(mockActions.applyTemplate).toHaveBeenCalledWith(stepTemplate);
   });
 
-  it('does not show the ServiceNow Environment mapping on step 3', () => {
+  it('does not show per-card SNow environment dropdowns on step 3', () => {
     mockState.currentStep = 3;
     render(<CreateChgTab />);
 
-    expect(screen.queryByRole('combobox', { name: 'ServiceNow Environment' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'REL SNow Environment' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'PRD SNow Environment' })).not.toBeInTheDocument();
   });
 
   it('normalizes legacy display labels to SNow internal choice values after choices load', async () => {
@@ -1086,19 +1098,17 @@ describe('CreateChgTab', () => {
     expect(screen.getByRole('textbox', { name: 'Impact' })).toBeEnabled();
   });
 
-  it('uses a manual ServiceNow Environment input when environment options are unavailable', () => {
+  it('uses manual per-card SNow Environment inputs when environment options are unavailable', () => {
     mockSnowChoiceConfig.hasChoiceOptions = false;
     mockState.currentStep = 5;
-    mockState.chgBasicInfo.environment = '';
 
     render(<CreateChgTab />);
 
-    const environmentInput = screen.getByRole('textbox', { name: 'ServiceNow Environment' });
-    expect(environmentInput).toBeEnabled();
-    fireEvent.change(environmentInput, { target: { value: 'prd' } });
-    expect(mockActions.setChgBasicInfo).toHaveBeenLastCalledWith({ environment: 'prd' });
-    expect(screen.getByText(/Live SNow environment choices are unavailable\./)).toBeInTheDocument();
-    expect(screen.queryByText(/saved options shown inline/i)).not.toBeInTheDocument();
+    const prdEnvironmentInput = screen.getByRole('textbox', { name: 'PRD SNow Environment' });
+    expect(prdEnvironmentInput).toBeEnabled();
+    fireEvent.change(prdEnvironmentInput, { target: { value: 'prd' } });
+    expect(mockActions.updateEnvironment).toHaveBeenLastCalledWith('prd', { snowEnvironmentValue: 'prd' });
+    expect(screen.queryByText(/Live SNow environment choices are unavailable\./)).not.toBeInTheDocument();
   });
 
   it('does not expose pinned field selectors in the main CHG wizard', () => {

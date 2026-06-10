@@ -15,11 +15,15 @@ const { buildBasicAuthHeader } = require('../utils/httpClient');
 
 // ── Named Constants ───────────────────────────────────────────────────────────
 
-/** Number of service-connection steps shown in the progress indicator */
-const WIZARD_TOTAL_SERVICE_STEPS = 5;
+/** Number of service-connection steps in the base (non-admin) flow, shown in progress dots */
+const WIZARD_BASE_SERVICE_STEPS = 3;
 
-/** Step name referenced in data-step attributes and JS navigation */
-const STEP_NAMES = ['welcome', 'jira', 'github', 'confluence', 'workspace', 'snow', 'done'];
+/**
+ * Step names for users without admin unlock (Jira, Confluence, Workspace).
+ * Admin unlock adds GitHub (after Jira) and ServiceNow (after Workspace).
+ */
+const BASE_STEP_NAMES = ['welcome', 'jira', 'confluence', 'workspace', 'done'];
+const ADMIN_STEP_NAMES = ['welcome', 'jira', 'github', 'confluence', 'workspace', 'snow', 'done'];
 
 /** Confluence Database property key that stores the published shared ART payload. */
 const SHARED_ART_WORKSPACE_PROPERTY_KEY = 'nodetoolbox-shared-art';
@@ -182,7 +186,9 @@ function buildWizardHtml(configuration, isDemoMode) {
   const prefillJiraBaseUrl  = escapeHtmlAttribute(isPlaceholderJiraUrl || !rawJiraBaseUrl ? DEFAULT_JIRA_BASE_URL : rawJiraBaseUrl);
   const prefillConfluenceBaseUrl = escapeHtmlAttribute(visibleConfiguration.confluence && visibleConfiguration.confluence.baseUrl || '');
   const prefillSharedArtWorkspaceDatabaseId = escapeHtmlAttribute(DEFAULT_SHARED_ART_WORKSPACE_DATABASE_ID);
-  const demoModeScript = `window.__NODE_TOOLBOX_DEMO_MODE__ = ${isDemoMode ? 'true' : 'false'};`;
+  const demoModeScript = `window.__NODE_TOOLBOX_DEMO_MODE__ = ${isDemoMode ? 'true' : 'false'};`
+    + `var BASE_STEP_NAMES = ${JSON.stringify(BASE_STEP_NAMES)};`
+    + `var ADMIN_STEP_NAMES = ${JSON.stringify(ADMIN_STEP_NAMES)};`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -197,10 +203,10 @@ function buildWizardHtml(configuration, isDemoMode) {
 
     <div class="progress-bar" id="progress-bar" aria-hidden="true">
       <div class="progress-dot" id="dot-1" title="Jira"></div>
-      <div class="progress-dot" id="dot-2" title="GitHub"></div>
+      <div class="progress-dot progress-dot--admin" id="dot-2" title="GitHub" style="display:none"></div>
       <div class="progress-dot" id="dot-3" title="Confluence"></div>
       <div class="progress-dot" id="dot-4" title="Shared ART Workspace"></div>
-      <div class="progress-dot" id="dot-5" title="ServiceNow"></div>
+      <div class="progress-dot progress-dot--admin" id="dot-5" title="ServiceNow" style="display:none"></div>
     </div>
 
     ${buildStepWelcome()}
@@ -226,13 +232,11 @@ function buildStepWelcome() {
       <div class="step-hero">👋</div>
       <h1 class="step-title">Hey there!</h1>
       <p class="step-subtitle">NodeToolbox is your personal helper that lives quietly on your computer.</p>
-      <p class="step-body">It acts like a bridge between your browser and your work tools — Jira, GitHub, Confluence, and ServiceNow.</p>
+      <p class="step-body">It acts like a bridge between your browser and your work tools — Jira and Confluence.</p>
 
       <div class="service-preview">
         <div class="service-chip">🎟 Jira</div>
-        <div class="service-chip">🐙 GitHub</div>
         <div class="service-chip">📚 Confluence</div>
-        <div class="service-chip">☁️ ServiceNow</div>
       </div>
 
       <p class="step-body">We'll connect them one at a time. Takes about 2 minutes, and you can skip any you don't use.</p>
@@ -250,7 +254,7 @@ function buildStepWelcome() {
 function buildStepJira(prefillJiraBaseUrl) {
   return `
     <div id="step-jira" data-step="jira" class="wizard-step">
-      <p class="step-counter">Step 1 of ${WIZARD_TOTAL_SERVICE_STEPS}</p>
+      <p class="step-counter"></p>
       <div class="step-hero">🎟</div>
       <h1 class="step-title">Let's connect Jira</h1>
       <p class="step-subtitle">Jira is where your team tracks tasks and tickets.</p>
@@ -289,15 +293,15 @@ function buildStepJira(prefillJiraBaseUrl) {
     </div>`;
 }
 
-/** Builds the GitHub connection step (optional service). */
+/** Builds the GitHub connection step — admin-only, hidden from non-admin users. */
 function buildStepGithub() {
   return `
-    <div id="step-github" data-step="github" class="wizard-step">
-      <p class="step-counter">Step 2 of ${WIZARD_TOTAL_SERVICE_STEPS}</p>
+    <div id="step-github" data-step="github" data-admin-only="true" class="wizard-step">
+      <p class="step-counter"></p>
       <div class="step-hero">🐙</div>
       <h1 class="step-title">Connect GitHub</h1>
       <p class="step-subtitle">GitHub is where your team's code lives. <strong>This step is completely optional</strong> — skip it if you don't use GitHub with this tool.</p>
- 
+
       <label class="field-label" for="github-pat">Your GitHub access token</label>
       <input id="github-pat" class="field-input" type="password"
              placeholder="ghp_your_token_here"
@@ -315,7 +319,7 @@ function buildStepGithub() {
           </ol>
         </div>
       </div>
- 
+
       <div class="btn-row btn-row--spread">
         <button class="btn-ghost" onclick="goBack()">← Back</button>
         <div class="btn-group">
@@ -334,7 +338,7 @@ function buildStepGithub() {
 function buildStepConfluence(prefillConfluenceBaseUrl) {
   return `
     <div id="step-confluence" data-step="confluence" class="wizard-step">
-      <p class="step-counter">Step 3 of ${WIZARD_TOTAL_SERVICE_STEPS}</p>
+      <p class="step-counter"></p>
       <div class="step-hero">📚</div>
       <h1 class="step-title">Connect Confluence</h1>
       <p class="step-subtitle">Confluence powers shared ART setup, PI Review pages, and collaboration spaces. <strong>This step is optional</strong> if you only want local tools.</p>
@@ -374,7 +378,7 @@ function buildStepConfluence(prefillConfluenceBaseUrl) {
 function buildStepWorkspace(prefillSharedArtWorkspaceDatabaseId) {
   return `
     <div id="step-workspace" data-step="workspace" class="wizard-step">
-      <p class="step-counter">Step 4 of ${WIZARD_TOTAL_SERVICE_STEPS}</p>
+      <p class="step-counter"></p>
       <div class="step-hero">🧭</div>
       <h1 class="step-title">Load Shared ART Workspace</h1>
       <p class="step-subtitle">If your team already published an ART workspace in Confluence, load it now so ART View, Sprint Dashboard, and Reports Hub are ready on first launch.</p>
@@ -411,14 +415,14 @@ function buildStepWorkspace(prefillSharedArtWorkspaceDatabaseId) {
 }
 
 /**
- * Builds the ServiceNow setup guidance step.
- * This step is intentionally relay-only so the user learns the post-setup flow
- * without being asked for URL, username, or password fields in the wizard.
+ * Builds the ServiceNow setup guidance step — admin-only, hidden from non-admin users.
+ * Shows the relay flow preview so admin users understand the SNow connection model
+ * after completing the wizard.
  */
 function buildStepSnow() {
   return `
-    <div id="step-snow" data-step="snow" class="wizard-step">
-      <p class="step-counter">Step 5 of ${WIZARD_TOTAL_SERVICE_STEPS}</p>
+    <div id="step-snow" data-step="snow" data-admin-only="true" class="wizard-step">
+      <p class="step-counter"></p>
       <div class="step-hero">☁️</div>
       <h1 class="step-title">Connect ServiceNow</h1>
       <p class="step-subtitle">ServiceNow is where IT tickets and service requests live. <strong>Also optional</strong> — this step shows the relay flow you will use after the wizard.</p>
@@ -643,9 +647,12 @@ const WIZARD_THEME_CSS = `
 
 /** All client-side wizard JS — self-contained, no framework dependencies */
 const WIZARD_JS = `
-  /* All wizard state lives here */
-  var STEP_NAMES = ${JSON.stringify(STEP_NAMES)};
+  /* Step names and admin status are resolved from the server-injected arrays above. */
   var IS_DEMO_MODE = window.__NODE_TOOLBOX_DEMO_MODE__ === true;
+  var IS_ADMIN_UNLOCKED = (function() {
+    try { return sessionStorage.getItem('tbxAdminUnlocked') === '1'; } catch (_) { return false; }
+  }());
+  var STEP_NAMES = IS_ADMIN_UNLOCKED ? ADMIN_STEP_NAMES : BASE_STEP_NAMES;
 
   /* Accumulated credentials collected step-by-step */
   var wizardData = {
@@ -664,20 +671,60 @@ const WIZARD_JS = `
     var targetStep = document.getElementById('step-' + STEP_NAMES[stepIndex]);
     if (targetStep) targetStep.classList.add('is-active');
     updateProgressDots(stepIndex);
+    updateStepCounter(stepIndex);
     if (STEP_NAMES[stepIndex] === 'done') populateDoneSummary();
     window.scrollTo(0, 0);
   }
 
   function updateProgressDots(stepIndex) {
-    /* Dots map to service steps: Jira, GitHub, Confluence, Shared ART, and ServiceNow. */
-    for (var dotNumber = 1; dotNumber <= ${WIZARD_TOTAL_SERVICE_STEPS}; dotNumber++) {
+    /* Map each visible dot to its corresponding position in the active STEP_NAMES flow.
+       Admin-only dots are hidden when not unlocked; the loop skips them via style check. */
+    var visibleDotNumbers = [];
+    for (var dotNumber = 1; dotNumber <= 5; dotNumber++) {
+      var dotEl = document.getElementById('dot-' + dotNumber);
+      if (dotEl && dotEl.style.display !== 'none') visibleDotNumbers.push(dotNumber);
+    }
+    /* stepIndex 0 = welcome (no dot), 1+ = service steps mapped to dot positions. */
+    var serviceStepIndex = stepIndex - 1; /* service steps start at STEP_NAMES index 1 */
+    visibleDotNumbers.forEach(function(dotNumber, arrayIndex) {
       var dotElement = document.getElementById('dot-' + dotNumber);
-      if (!dotElement) continue;
+      if (!dotElement) return;
       dotElement.classList.remove('is-current', 'is-complete');
-      if (stepIndex > dotNumber)      dotElement.classList.add('is-complete');
-      else if (stepIndex === dotNumber) dotElement.classList.add('is-current');
+      if (serviceStepIndex > arrayIndex)      dotElement.classList.add('is-complete');
+      else if (serviceStepIndex === arrayIndex) dotElement.classList.add('is-current');
+    });
+  }
+
+  function updateStepCounter(stepIndex) {
+    /* Write "Step X of Y" into the current step's counter element.
+       Welcome and done steps have no counter — skip them. */
+    var stepName = STEP_NAMES[stepIndex];
+    if (stepName === 'welcome' || stepName === 'done') return;
+    var serviceSteps = STEP_NAMES.filter(function(s) { return s !== 'welcome' && s !== 'done'; });
+    var positionInFlow = serviceSteps.indexOf(stepName) + 1;
+    var counterEl = document.querySelector('#step-' + stepName + ' .step-counter');
+    if (counterEl && positionInFlow > 0) {
+      counterEl.textContent = 'Step ' + positionInFlow + ' of ' + serviceSteps.length;
     }
   }
+
+  function initializeWizard() {
+    /* Hide admin-only steps and dots from the DOM when the user is not admin-unlocked,
+       so non-admin users cannot navigate to them or see them in the page source flow. */
+    if (!IS_ADMIN_UNLOCKED) {
+      document.querySelectorAll('[data-admin-only="true"]').forEach(function(el) {
+        el.style.display = 'none';
+      });
+    } else {
+      /* Reveal the admin progress dots that were hidden by default in the HTML. */
+      document.querySelectorAll('.progress-dot--admin').forEach(function(el) {
+        el.style.display = '';
+      });
+    }
+    updateProgressDots(0);
+  }
+
+  initializeWizard();
 
   function collectCurrentStepData() {
     var stepName = STEP_NAMES[currentStepIndex];
@@ -718,8 +765,8 @@ const WIZARD_JS = `
   function skipCurrentStep() {
     /* Clear any partial data for the skipped service */
     var stepName = STEP_NAMES[currentStepIndex];
-    if (stepName === 'jira')   { wizardData.jiraBaseUrl = ''; wizardData.jiraPat = ''; }
-    if (stepName === 'github') { wizardData.githubPat = ''; }
+    if (stepName === 'jira')       { wizardData.jiraBaseUrl = ''; wizardData.jiraPat = ''; }
+    if (stepName === 'github')     { wizardData.githubPat = ''; }
     if (stepName === 'confluence') { wizardData.confluenceBaseUrl = ''; wizardData.confluenceUsername = ''; wizardData.confluenceApiToken = ''; }
     if (stepName === 'workspace') { wizardData.sharedArtDatabaseId = ''; wizardData.sharedArtWorkspace = null; }
     if (currentStepIndex < STEP_NAMES.length - 1) {
@@ -732,8 +779,8 @@ const WIZARD_JS = `
     var summaryElement = document.getElementById('done-summary');
     if (!summaryElement) return;
     var connectedServices = [];
-    if (wizardData.jiraPat)      connectedServices.push('🎟 Jira connected');
-    if (wizardData.githubPat)    connectedServices.push('🐙 GitHub connected');
+    if (wizardData.jiraPat)            connectedServices.push('🎟 Jira connected');
+    if (wizardData.githubPat)          connectedServices.push('🐙 GitHub connected');
     if (wizardData.confluenceApiToken) connectedServices.push('📚 Confluence connected');
     if (wizardData.sharedArtWorkspace) {
       connectedServices.push('🧭 Shared ART loaded: ' + wizardData.sharedArtWorkspace.artName + ' (' + wizardData.sharedArtWorkspace.teamCount + ' teams)');
