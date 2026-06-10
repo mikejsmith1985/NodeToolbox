@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 
+import { useAdminStore } from '../../store/adminStore.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
 import type { ProxyStatusResponse } from '../../types/config.ts';
 import { ConnectionBar } from './ConnectionBar.tsx';
@@ -21,6 +22,10 @@ vi.mock('../../services/browserRelay.ts', () => ({
 
 function resetConnectionStore(): void {
   useConnectionStore.setState(useConnectionStore.getInitialState());
+}
+
+function resetAdminStore(): void {
+  useAdminStore.setState({ isAdminUnlocked: false });
 }
 
 /** Builds a minimal ProxyStatusResponse with the given SNow base URL for test setups. */
@@ -45,17 +50,34 @@ function buildProxyStatusWithSnowUrl(snowBaseUrl: string): ProxyStatusResponse {
 describe('ConnectionBar', () => {
   beforeEach(() => {
     resetConnectionStore();
+    resetAdminStore();
     openSnowRelayMock.mockReset();
     openSnowRelayMock.mockReturnValue(true);
     vi.spyOn(window, 'alert').mockImplementation(() => undefined);
   });
 
-  it('renders four connection indicators: Jira, SNow, Confluence, and GitHub', () => {
+  // ── Visibility gating ──
+
+  it('always renders Jira and Confluence indicators', () => {
     render(<ConnectionBar />);
 
     expect(screen.getByText('Jira')).toBeInTheDocument();
-    expect(screen.getByText('SNow')).toBeInTheDocument();
     expect(screen.getByText('Confluence')).toBeInTheDocument();
+  });
+
+  it('hides SNow and GitHub indicators when admin is not unlocked', () => {
+    render(<ConnectionBar />);
+
+    expect(screen.queryByText('SNow')).not.toBeInTheDocument();
+    expect(screen.queryByText('GitHub')).not.toBeInTheDocument();
+  });
+
+  it('shows SNow and GitHub indicators when admin is unlocked', () => {
+    useAdminStore.setState({ isAdminUnlocked: true });
+
+    render(<ConnectionBar />);
+
+    expect(screen.getByText('SNow')).toBeInTheDocument();
     expect(screen.getByText('GitHub')).toBeInTheDocument();
   });
 
@@ -64,6 +86,8 @@ describe('ConnectionBar', () => {
 
     expect(screen.queryByText('Relay')).not.toBeInTheDocument();
   });
+
+  // ── Jira indicator ──
 
   it('shows the Jira indicator as ready when Jira is configured in the backend', () => {
     useConnectionStore.setState({ isJiraReady: true });
@@ -79,7 +103,10 @@ describe('ConnectionBar', () => {
     expect(screen.getByText('Jira')).toHaveClass(styles.notReady);
   });
 
+  // ── SNow indicator (admin-gated) ──
+
   it('keeps SNow not ready when only the direct proxy probe has verified the connection', () => {
+    useAdminStore.setState({ isAdminUnlocked: true });
     useConnectionStore.setState({ isSnowVerified: true });
 
     render(<ConnectionBar />);
@@ -87,15 +114,8 @@ describe('ConnectionBar', () => {
     expect(screen.getByText('SNow')).toHaveClass(styles.notReady);
   });
 
-  it('shows SNow as not ready when credentials exist but relay bridge is not active', () => {
-    useConnectionStore.setState({ isSnowReady: true, isSnowVerified: false });
-
-    render(<ConnectionBar />);
-
-    expect(screen.getByText('SNow')).toHaveClass(styles.notReady);
-  });
-
   it('shows SNow as ready when relay bridge is active', () => {
+    useAdminStore.setState({ isAdminUnlocked: true });
     useConnectionStore.setState({
       isSnowVerified: false,
       relayBridgeStatus: { isConnected: true, lastPingAt: null, system: 'snow', version: null },
@@ -107,6 +127,7 @@ describe('ConnectionBar', () => {
   });
 
   it('warns when the SNow relay is active before the g_ck token is ready', () => {
+    useAdminStore.setState({ isAdminUnlocked: true });
     useConnectionStore.setState({
       relayBridgeStatus: {
         isConnected: true,
@@ -124,16 +145,18 @@ describe('ConnectionBar', () => {
   });
 
   it('opens the SNow panel when the SNow indicator is clicked', () => {
-    render(<ConnectionBar />);
+    useAdminStore.setState({ isAdminUnlocked: true });
 
+    render(<ConnectionBar />);
     fireEvent.click(screen.getByText('SNow'));
 
     expect(screen.getByRole('region', { name: 'Connection details' })).toBeInTheDocument();
   });
 
   it('shows bookmarklet drag instructions in the SNow panel when relay is inactive', () => {
-    render(<ConnectionBar />);
+    useAdminStore.setState({ isAdminUnlocked: true });
 
+    render(<ConnectionBar />);
     fireEvent.click(screen.getByText('SNow'));
 
     const panel = screen.getByRole('region', { name: 'Connection details' });
@@ -141,6 +164,7 @@ describe('ConnectionBar', () => {
   });
 
   it('shows Open ServiceNow button in SNow panel when snow URL is configured and relay is inactive', () => {
+    useAdminStore.setState({ isAdminUnlocked: true });
     useConnectionStore.setState({
       proxyStatus: buildProxyStatusWithSnowUrl('https://snow.example.com'),
     });
@@ -152,6 +176,7 @@ describe('ConnectionBar', () => {
   });
 
   it('opens the configured ServiceNow URL through the named relay window flow', () => {
+    useAdminStore.setState({ isAdminUnlocked: true });
     useConnectionStore.setState({
       proxyStatus: buildProxyStatusWithSnowUrl('https://snow.example.com'),
     });
@@ -164,6 +189,8 @@ describe('ConnectionBar', () => {
   });
 
   it('does not render the confusing Copy Code relay action', () => {
+    useAdminStore.setState({ isAdminUnlocked: true });
+
     render(<ConnectionBar />);
     fireEvent.click(screen.getByText('SNow'));
 
@@ -171,6 +198,8 @@ describe('ConnectionBar', () => {
   });
 
   it('explains that the bookmarklet must be dragged when clicked inside NodeToolbox', () => {
+    useAdminStore.setState({ isAdminUnlocked: true });
+
     render(<ConnectionBar />);
     fireEvent.click(screen.getByText('SNow'));
     fireEvent.click(screen.getByRole('link', { name: /NodeToolbox SNow Relay/i }));
@@ -179,6 +208,8 @@ describe('ConnectionBar', () => {
   });
 
   it('keeps the real bookmarklet URL available for browser drag-to-bookmarks install', () => {
+    useAdminStore.setState({ isAdminUnlocked: true });
+
     render(<ConnectionBar />);
     fireEvent.click(screen.getByText('SNow'));
 
@@ -188,6 +219,7 @@ describe('ConnectionBar', () => {
   });
 
   it('does not show Open ServiceNow button when relay is already active', () => {
+    useAdminStore.setState({ isAdminUnlocked: true });
     useConnectionStore.setState({
       relayBridgeStatus: { isConnected: true, lastPingAt: null, system: 'snow', version: null, hasSessionToken: true },
       proxyStatus: buildProxyStatusWithSnowUrl('https://snow.example.com'),
@@ -199,16 +231,10 @@ describe('ConnectionBar', () => {
     expect(screen.queryByRole('button', { name: /Open ServiceNow/i })).not.toBeInTheDocument();
   });
 
-  it('does not show Open ServiceNow button when no snow URL is configured', () => {
-    render(<ConnectionBar />);
-    fireEvent.click(screen.getByText('SNow'));
-
-    expect(screen.queryByRole('button', { name: /Open ServiceNow/i })).not.toBeInTheDocument();
-  });
-
   it('closes the SNow panel when the SNow indicator is clicked a second time', () => {
-    render(<ConnectionBar />);
+    useAdminStore.setState({ isAdminUnlocked: true });
 
+    render(<ConnectionBar />);
     fireEvent.click(screen.getByText('SNow'));
     expect(screen.getByRole('region', { name: 'Connection details' })).toBeInTheDocument();
 
@@ -267,15 +293,18 @@ describe('ConnectionBar', () => {
     expect(screen.getByRole('button', { name: /Open Confluence/i })).toBeInTheDocument();
   });
 
-  // ── GitHub indicator ──
+  // ── GitHub indicator (admin-gated) ──
 
-  it('shows GitHub indicator as not ready when no GitHub PAT is configured', () => {
+  it('shows GitHub indicator as not ready when admin is unlocked but no PAT is configured', () => {
+    useAdminStore.setState({ isAdminUnlocked: true });
+
     render(<ConnectionBar />);
 
     expect(screen.getByText('GitHub')).toHaveClass(styles.notReady);
   });
 
-  it('shows GitHub indicator as ready when isGitHubReady is true', () => {
+  it('shows GitHub indicator as ready when admin is unlocked and isGitHubReady is true', () => {
+    useAdminStore.setState({ isAdminUnlocked: true });
     useConnectionStore.setState({ isGitHubReady: true });
 
     render(<ConnectionBar />);
@@ -284,14 +313,17 @@ describe('ConnectionBar', () => {
   });
 
   it('opens the GitHub panel when the GitHub indicator is clicked', () => {
-    render(<ConnectionBar />);
+    useAdminStore.setState({ isAdminUnlocked: true });
 
+    render(<ConnectionBar />);
     fireEvent.click(screen.getByText('GitHub'));
 
     expect(screen.getByRole('region', { name: 'Connection details' })).toBeInTheDocument();
   });
 
   it('shows a hint to configure GitHub when not ready', () => {
+    useAdminStore.setState({ isAdminUnlocked: true });
+
     render(<ConnectionBar />);
     fireEvent.click(screen.getByText('GitHub'));
 

@@ -33,6 +33,13 @@ import type { JiraComment, JiraIssue, JiraTransition, JiraVersion } from '../../
 import { downloadElementImage } from '../../utils/downloadElementImage.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import { useRovoAssist } from '../SnowHub/hooks/useRovoAssist.ts';
+import {
+  calculateCompositeScore,
+  extractIssueFeatures,
+  snapToNearestPointValue,
+  STORY_POINT_BREAKDOWN_THRESHOLD,
+} from './storyPointEstimator.ts';
+import type { IssueFeatureVector } from './storyPointEstimator.ts';
 import BoardPicker from './BoardPicker.tsx';
 import FeatureReviewTab from './FeatureReviewTab.tsx';
 import MoveToSprintButton from './MoveToSprintButton.tsx';
@@ -237,6 +244,27 @@ interface PointingIssueDetail {
   comments: JiraComment[];
   parentKey: string | null;
   parentSummary: string | null;
+}
+
+/** Baseline issue used to calibrate all subsequent auto-estimates in a pointing session. */
+interface AnchorConfig {
+  issueKey: string;
+  pointValue: number;
+  /** Complexity features captured at the moment the anchor was set — used as the ratio denominator. */
+  features: IssueFeatureVector;
+}
+
+/** Result of running the anchor-based estimation algorithm for a single issue. */
+interface PointingEstimateResult {
+  suggestedPoints: number;
+  /** True when the estimate exceeds the breakdown threshold and the story should be split. */
+  requiresBreakdown: boolean;
+  /** True when the estimate snaps to the same value as the anchor (typically sparse content). */
+  isSameAsAnchor: boolean;
+  /** Raw feature scores that produced the estimate — displayed to the user in the table. */
+  featureBreakdown: IssueFeatureVector;
+  /** True when the issue has too little text for a reliable relative estimate. */
+  isSparseContent: boolean;
 }
 
 interface PipelineChecklistItem {
@@ -510,6 +538,7 @@ function buildPointingQueue(
     showPointed,
     pipelineRoleFilter,
     customStoryPointsFieldId,
+    projectKey,
   }: {
     selectedTypes: string[];
     selectedStatuses: string[];
@@ -517,13 +546,22 @@ function buildPointingQueue(
     showPointed: boolean;
     pipelineRoleFilter: PipelineRole | '';
     customStoryPointsFieldId: string;
+    /** When non-empty, restricts the queue to issues whose key prefix matches this project key.
+     *  Guards against sprints that contain issues from multiple Jira projects. */
+    projectKey: string;
   },
 ): JiraIssue[] {
+  const normalizedProjectKey = projectKey.trim().toUpperCase();
+
   const nextQueue = issues.filter((issue) => {
     const issueTypeName = readIssueTypeName(issue);
     const statusName = readIssueStatusName(issue);
     const storyPoints = readStoryPoints(issue, customStoryPointsFieldId);
 
+    // Reject issues that belong to a different Jira project when a project key is configured.
+    if (normalizedProjectKey && !issue.key.toUpperCase().startsWith(`${normalizedProjectKey}-`)) {
+      return false;
+    }
     if (!showPointed && storyPoints > 0) {
       return false;
     }
@@ -3455,14 +3493,202 @@ function MetricsTab({
   );
 }
 
+/**
+ * Pure helper that runs the anchor-based algorithm for a single target issue.
+ * Extracted from the render path so it can be called in a useMemo loop over all queue items.
+ */
+function computeSingleEstimate(
+  issue: JiraIssue,
+  anchorConfig: AnchorConfig,
+  detail: PointingIssueDetail | undefined,
+  storyPointScale: number[],
+): PointingEstimateResult {
+  const targetFeatureVector = extractIssueFeatures(
+    issue.fields.summary ?? '',
+    detail?.description ?? normalizeCommentBody(issue.fields.description),
+    detail?.acceptanceCriteria ?? '',
+    (issue.fields.issuelinks ?? []).length,
+  );
+  const targetCompositeScore = calculateCompositeScore(targetFeatureVector);
+  const anchorCompositeScore = calculateCompositeScore(anchorConfig.features);
+  // Guard against a degenerate anchor (all-zero score) by treating the ratio as 1:1
+  const complexityRatio = anchorCompositeScore > 0 ? targetCompositeScore / anchorCompositeScore : 1;
+  const suggestedPoints = snapToNearestPointValue(complexityRatio * anchorConfig.pointValue, storyPointScale);
+  return {
+    suggestedPoints,
+    requiresBreakdown: suggestedPoints > STORY_POINT_BREAKDOWN_THRESHOLD,
+    isSameAsAnchor: suggestedPoints === anchorConfig.pointValue,
+    featureBreakdown: targetFeatureVector,
+    isSparseContent: targetCompositeScore < 0.5,
+  };
+}
+
+interface PointingTableRowProps {
+  issue: JiraIssue;
+  /** True when this row IS the currently configured anchor issue. */
+  isAnchor: boolean;
+  /** True when any anchor has been set for this session. */
+  hasAnchor: boolean;
+  estimate: PointingEstimateResult | undefined;
+  detail: PointingIssueDetail | undefined;
+  override: number | undefined;
+  saveProgress: 'idle' | 'saving' | 'saved' | 'error';
+  isExpanded: boolean;
+  storyPointScale: number[];
+  customStoryPointsFieldId: string;
+  onSetAnchor: (issue: JiraIssue, pointValue: number) => void;
+  onOverride: (issueKey: string, pointValue: number | null) => void;
+  onSave: (issueKey: string, pointValue: number) => Promise<void>;
+  onToggleExpand: () => void;
+}
+
+/** Renders a single row (plus an optional inline expanded-detail row) in the pointing table. */
+function PointingTableRow({
+  issue, isAnchor, hasAnchor, estimate, detail, override, saveProgress,
+  isExpanded, storyPointScale, customStoryPointsFieldId, onSetAnchor,
+  onOverride, onSave, onToggleExpand,
+}: PointingTableRowProps) {
+  const issueKey = issue.key;
+  const storyPointsFieldId = customStoryPointsFieldId || 'customfield_10016';
+  const currentPoints = (issue.fields as Record<string, unknown>)[storyPointsFieldId]
+    ?? (issue.fields as Record<string, unknown>).customfield_10028 ?? null;
+  const effectivePoints = override ?? estimate?.suggestedPoints;
+
+  return (
+    <>
+      <tr className={isAnchor ? styles.ptRowAnchor : styles.ptRow}>
+        <td className={styles.ptCellKey}>
+          {isAnchor && <span className={styles.ptAnchorBadge}>⚓</span>}
+          <span className={styles.ptIssueKey}>{issueKey}</span>
+          <span className={styles.statusBadge}>{readIssueTypeName(issue)}</span>
+        </td>
+        <td className={styles.ptCellSummary}>
+          <button className={styles.ptSummaryBtn} onClick={onToggleExpand} type="button">
+            <span>{issue.fields.summary}</span>
+            <span className={styles.ptExpandCaret}>{isExpanded ? '▲' : '▼'}</span>
+          </button>
+        </td>
+        <td className={styles.ptCellMeta}>
+          <span className={styles.statusBadge}>{readIssueStatusName(issue)}</span>
+        </td>
+        <td className={styles.ptCellNum}>{currentPoints != null ? String(currentPoints) : '—'}</td>
+        {hasAnchor && (
+          <td className={styles.ptCellEstimate}>
+            {isAnchor ? (
+              <span className={styles.issueMetaText}>anchor</span>
+            ) : estimate ? (
+              <>
+                <strong className={estimate.requiresBreakdown ? styles.ptEstimateBreakdown : undefined}>
+                  {estimate.suggestedPoints} pts{estimate.requiresBreakdown ? ' ⚠️' : ''}
+                </strong>
+                <div className={styles.ptBreakdownTags}>
+                  <span>Scope {estimate.featureBreakdown.scopeScore.toFixed(1)}</span>
+                  <span>Tech {estimate.featureBreakdown.techComplexityScore.toFixed(1)}</span>
+                  <span>Int {estimate.featureBreakdown.integrationRiskScore.toFixed(1)}</span>
+                  <span>Unc {estimate.featureBreakdown.uncertaintyScore.toFixed(1)}</span>
+                  {estimate.isSparseContent && <span className={styles.ptSparseHint}>sparse — add description</span>}
+                </div>
+              </>
+            ) : null}
+          </td>
+        )}
+        {hasAnchor && (
+          <td className={styles.ptCellOverride}>
+            {!isAnchor && estimate && (
+              <select
+                className={styles.settingsInput}
+                onChange={(changeEvent) => {
+                  const selectedValue = Number(changeEvent.target.value);
+                  onOverride(issueKey, selectedValue === estimate.suggestedPoints ? null : selectedValue);
+                }}
+                value={override ?? estimate.suggestedPoints}
+              >
+                {storyPointScale.map((scaleValue) => (
+                  <option key={scaleValue} value={scaleValue}>{scaleValue}</option>
+                ))}
+              </select>
+            )}
+          </td>
+        )}
+        <td className={styles.ptCellAction}>
+          {!hasAnchor ? (
+            <details className={styles.ptAnchorDropdown}>
+              <summary className={styles.workflowStatusChip}>⚓ Set anchor</summary>
+              <div className={styles.ptAnchorPicker}>
+                {storyPointScale.map((scaleValue) => (
+                  <button
+                    className={styles.workflowStatusChip}
+                    key={scaleValue}
+                    onClick={() => onSetAnchor(issue, scaleValue)}
+                    type="button"
+                  >
+                    {scaleValue}
+                  </button>
+                ))}
+              </div>
+            </details>
+          ) : isAnchor ? (
+            <span className={styles.issueMetaText}>baseline</span>
+          ) : saveProgress === 'saved' ? (
+            <span className={styles.ptSaveSuccess}>✓ Saved</span>
+          ) : saveProgress === 'error' ? (
+            <span className={styles.ptSaveError}>⚠️ Error — check Settings</span>
+          ) : effectivePoints != null ? (
+            <button
+              className={styles.secondaryButton}
+              disabled={saveProgress === 'saving'}
+              onClick={() => void onSave(issueKey, effectivePoints)}
+              type="button"
+            >
+              {saveProgress === 'saving' ? 'Saving…' : `Save ${effectivePoints} pts`}
+            </button>
+          ) : null}
+        </td>
+      </tr>
+      {isExpanded && (
+        <tr className={styles.ptRowExpanded}>
+          <td className={styles.ptCellExpanded} colSpan={99}>
+            {detail == null ? (
+              <span className={styles.issueMetaText}>Loading details…</span>
+            ) : (
+              <div className={styles.ptExpandedContent}>
+                {detail.parentKey && <p><strong>Parent:</strong> {detail.parentKey}</p>}
+                {detail.description ? (
+                  <p><strong>Description:</strong>{' '}<span className={styles.ptExpandedBody}>{detail.description}</span></p>
+                ) : (
+                  <p className={styles.issueMetaText}>No description.</p>
+                )}
+                {detail.acceptanceCriteria && (
+                  <p><strong>Acceptance Criteria:</strong>{' '}<span className={styles.ptExpandedBody}>{detail.acceptanceCriteria}</span></p>
+                )}
+                {detail.comments.length > 0 && (
+                  <p>
+                    <strong>Latest comment:</strong>{' '}
+                    <span className={styles.ptExpandedBody}>
+                      {normalizeCommentBody(detail.comments[detail.comments.length - 1].body)}
+                    </span>
+                  </p>
+                )}
+              </div>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 function PointingTab({
   boardType,
   config,
   issues,
+  projectKey,
 }: {
   boardType: DashboardBoardType;
   config: DashboardConfig;
   issues: JiraIssue[];
+  /** Jira project key for the active team — filters the queue to this project's issues only. */
+  projectKey: string;
 }) {
   const allIssueTypes = useMemo(
     () => Array.from(new Set(issues.map((issue) => readIssueTypeName(issue)))).sort(),
@@ -3493,13 +3719,17 @@ function PointingTab({
       showPointed: false,
       pipelineRoleFilter: '',
       customStoryPointsFieldId: config.customStoryPointsFieldId,
+      projectKey,
     }),
   );
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [sessionCounts, setSessionCounts] = useState({ pointed: 0, skipped: 0 });
   const [detailByIssueKey, setDetailByIssueKey] = useState<Record<string, PointingIssueDetail>>({});
-  const [saveStatusMessage, setSaveStatusMessage] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
+  // Cleared by the user via the "Clear" button; intentionally survives filter/sort rebuilds
+  // so the same anchor stays active for the whole pointing session.
+  const [anchorConfig, setAnchorConfig] = useState<AnchorConfig | null>(null);
+  const [overridesByKey, setOverridesByKey] = useState<Record<string, number>>({});
+  const [saveProgressByKey, setSaveProgressByKey] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'error'>>({});
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const storyPointScale = parsePointingScale(config.storyPointScale);
 
   function rebuildPointingSession({
@@ -3523,59 +3753,47 @@ function PointingTab({
         showPointed: nextShowPointed,
         pipelineRoleFilter: nextPipelineRoleFilter,
         customStoryPointsFieldId: config.customStoryPointsFieldId,
+        projectKey,
       }),
     );
-    setCurrentIndex(0);
-    setSessionCounts({ pointed: 0, skipped: 0 });
   }
 
-  const currentIssue = currentIndex < pointingQueue.length ? pointingQueue[currentIndex] : null;
-
-  useEffect(() => {
-    if (!currentIssue || detailByIssueKey[currentIssue.key]) {
-      return;
+  /** Loads description, AC, and comments for one issue on demand; no-op if already loaded. */
+  async function loadIssueDetail(issueKey: string) {
+    if (detailByIssueKey[issueKey]) return;
+    try {
+      const response = await jiraGet<JiraIssue>(`/rest/api/2/issue/${issueKey}?fields=${POINTING_DETAIL_FIELDS}`);
+      setDetailByIssueKey((previousDetails) => ({
+        ...previousDetails,
+        [issueKey]: {
+          description: normalizeCommentBody(response.fields.description),
+          acceptanceCriteria: normalizeCommentBody(response.fields.customfield_10200),
+          comments: response.fields.comment?.comments ?? [],
+          parentKey: response.fields.parent?.key ?? null,
+          parentSummary: null,
+        },
+      }));
+    } catch {
+      setDetailByIssueKey((previousDetails) => ({
+        ...previousDetails,
+        [issueKey]: { description: '', acceptanceCriteria: '', comments: [], parentKey: null, parentSummary: null },
+      }));
     }
+  }
 
-    const issueKey = currentIssue.key;
-    let isMounted = true;
-    async function loadPointingDetail() {
-      try {
-        const response = await jiraGet<JiraIssue>(`/rest/api/2/issue/${issueKey}?fields=${POINTING_DETAIL_FIELDS}`);
-        if (!isMounted) {
-          return;
-        }
-        setDetailByIssueKey((previousDetails) => ({
-          ...previousDetails,
-          [issueKey]: {
-            description: normalizeCommentBody(response.fields.description),
-            acceptanceCriteria: normalizeCommentBody(response.fields.customfield_10200),
-            comments: response.fields.comment?.comments ?? [],
-            parentKey: response.fields.parent?.key ?? null,
-            parentSummary: null,
-          },
-        }));
-      } catch {
-        if (!isMounted) {
-          return;
-        }
-        setDetailByIssueKey((previousDetails) => ({
-          ...previousDetails,
-          [issueKey]: {
-            description: '',
-            acceptanceCriteria: '',
-            comments: [],
-            parentKey: null,
-            parentSummary: null,
-          },
-        }));
-      }
+  /** Fetches details for every issue in the queue that hasn't been loaded yet. */
+  async function handleLoadAllDetails() {
+    setIsLoadingDetails(true);
+    try {
+      await Promise.allSettled(
+        pointingQueue
+          .filter((issue) => !detailByIssueKey[issue.key])
+          .map((issue) => loadIssueDetail(issue.key)),
+      );
+    } finally {
+      setIsLoadingDetails(false);
     }
-
-    void loadPointingDetail();
-    return () => {
-      isMounted = false;
-    };
-  }, [currentIssue, detailByIssueKey]);
+  }
 
   const roleCounts = useMemo(() => {
     const counts: Record<string, number> = { '': 0 };
@@ -3589,6 +3807,7 @@ function PointingTab({
       showPointed,
       pipelineRoleFilter: '',
       customStoryPointsFieldId: config.customStoryPointsFieldId,
+      projectKey,
     });
     counts[''] = unfilteredQueue.length;
     for (const issue of unfilteredQueue) {
@@ -3596,64 +3815,64 @@ function PointingTab({
       counts[role] += 1;
     }
     return counts;
-  }, [config.customStoryPointsFieldId, issues, selectedStatuses, selectedTypes, showPointed, sortBy]);
+  }, [config.customStoryPointsFieldId, issues, projectKey, selectedStatuses, selectedTypes, showPointed, sortBy]);
 
-  async function handleVote(pointValue: number) {
-    if (!currentIssue) {
-      return;
-    }
-
-    setIsSaving(true);
-    setSaveStatusMessage('Saving…');
-
+  /** Saves one issue's story points to Jira and records the outcome in per-row state. */
+  async function handleSaveRow(issueKey: string, pointValue: number) {
+    setSaveProgressByKey((prev) => ({ ...prev, [issueKey]: 'saving' }));
     try {
       const storyPointsFieldId = config.customStoryPointsFieldId || 'customfield_10016';
-      await jiraPut(`/rest/api/2/issue/${currentIssue.key}`, {
-        fields: { [storyPointsFieldId]: pointValue },
-      });
-      setPointingQueue((previousQueue) => {
-        const nextQueue = previousQueue.map((queuedIssue) => (
-          queuedIssue.key === currentIssue.key
-            ? {
-                ...queuedIssue,
-                fields: {
-                  ...queuedIssue.fields,
-                  [storyPointsFieldId]: pointValue,
-                },
-              }
-            : queuedIssue
-        ));
-        return showPointed
-          ? nextQueue
-          : nextQueue.filter((queuedIssue) => queuedIssue.key !== currentIssue.key);
-      });
-      setSessionCounts((previousCounts) => ({ ...previousCounts, pointed: previousCounts.pointed + 1 }));
-      if (showPointed) {
-        setCurrentIndex((previousIndex) => Math.min(previousIndex + 1, pointingQueue.length));
-      }
-      setSaveStatusMessage(`Saved ${currentIssue.key} at ${pointValue} points.`);
-    } catch (caughtError) {
-      setSaveStatusMessage(caughtError instanceof Error ? caughtError.message : `Failed to save ${currentIssue.key}.`);
-    } finally {
-      setIsSaving(false);
+      await jiraPut(`/rest/api/2/issue/${issueKey}`, { fields: { [storyPointsFieldId]: pointValue } });
+      setSaveProgressByKey((prev) => ({ ...prev, [issueKey]: 'saved' }));
+      setPointingQueue((previousQueue) =>
+        showPointed
+          ? previousQueue.map((queuedIssue) =>
+              queuedIssue.key === issueKey
+                ? { ...queuedIssue, fields: { ...queuedIssue.fields, [storyPointsFieldId]: pointValue } }
+                : queuedIssue,
+            )
+          : previousQueue.filter((queuedIssue) => queuedIssue.key !== issueKey),
+      );
+    } catch {
+      setSaveProgressByKey((prev) => ({ ...prev, [issueKey]: 'error' }));
     }
   }
 
-  function handleSkip() {
-    if (!currentIssue) {
-      return;
-    }
-
-    setPointingQueue((previousQueue) => {
-      if (currentIndex >= previousQueue.length) {
-        return previousQueue;
-      }
-      const nextQueue = [...previousQueue];
-      const [skippedIssue] = nextQueue.splice(currentIndex, 1);
-      nextQueue.push(skippedIssue);
-      return nextQueue;
+  function handleOverride(issueKey: string, pointValue: number | null) {
+    setOverridesByKey((prev) => {
+      const next = { ...prev };
+      if (pointValue == null) { delete next[issueKey]; } else { next[issueKey] = pointValue; }
+      return next;
     });
-    setSessionCounts((previousCounts) => ({ ...previousCounts, skipped: previousCounts.skipped + 1 }));
+  }
+
+  /** Expands or collapses a row's detail section; triggers a detail load on first expand. */
+  function toggleExpandedRow(issueKey: string) {
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(issueKey)) { next.delete(issueKey); } else { next.add(issueKey); }
+      return next;
+    });
+    void loadIssueDetail(issueKey);
+  }
+
+  /**
+   * Sets the chosen table row as the complexity anchor, then background-loads all
+   * issue details so the algorithm has full text rather than just sprint-field summaries.
+   */
+  function handleSetAnchorFromRow(issue: JiraIssue, anchorPointValue: number) {
+    const detail = detailByIssueKey[issue.key];
+    setAnchorConfig({
+      issueKey: issue.key,
+      pointValue: anchorPointValue,
+      features: extractIssueFeatures(
+        issue.fields.summary ?? '',
+        detail?.description ?? normalizeCommentBody(issue.fields.description),
+        detail?.acceptanceCriteria ?? '',
+        (issue.fields.issuelinks ?? []).length,
+      ),
+    });
+    void handleLoadAllDetails();
   }
 
   function toggleTypeFilter(issueTypeName: string) {
@@ -3676,28 +3895,56 @@ function PointingTab({
     });
   }
 
+  // Batch algorithm: computes estimates for every non-anchor issue in the queue.
+  // Placed before the early return so this hook is always called in the same order.
+  const allEstimates = useMemo((): Record<string, PointingEstimateResult> => {
+    if (!anchorConfig) return {};
+    const estimatesByKey: Record<string, PointingEstimateResult> = {};
+    for (const issue of pointingQueue) {
+      if (issue.key === anchorConfig.issueKey) continue;
+      estimatesByKey[issue.key] = computeSingleEstimate(
+        issue, anchorConfig, detailByIssueKey[issue.key], storyPointScale,
+      );
+    }
+    return estimatesByKey;
+  }, [anchorConfig, pointingQueue, detailByIssueKey, storyPointScale]);
+
+  /** Saves all rows that have an estimate (or override) and have not yet been saved. */
+  async function handleSaveAll() {
+    const rowsToSave = pointingQueue.filter((issue) => {
+      if (issue.key === anchorConfig?.issueKey) return false;
+      const pointValue = overridesByKey[issue.key] ?? allEstimates[issue.key]?.suggestedPoints;
+      return pointValue != null && saveProgressByKey[issue.key] !== 'saved';
+    });
+    await Promise.allSettled(
+      rowsToSave.map((issue) => {
+        const pointValue = overridesByKey[issue.key] ?? allEstimates[issue.key]?.suggestedPoints;
+        return pointValue != null ? handleSaveRow(issue.key, pointValue) : Promise.resolve();
+      }),
+    );
+  }
+
   if (issues.length === 0) {
     return <DashboardEmptyState message="Load a board first from Settings to start pointing." />;
   }
-  const currentDetail = currentIssue ? detailByIssueKey[currentIssue.key] : null;
-  const suggestedPoints = currentIssue ? findPointingSuggestion(currentIssue, issues, config.customStoryPointsFieldId) : null;
-  const latestComment = currentDetail && currentDetail.comments.length > 0
-    ? currentDetail.comments[currentDetail.comments.length - 1]
-    : null;
-  const queueProgressLabel = pointingQueue.length === 0
-    ? '0/0'
-    : `${Math.min(currentIndex + 1, pointingQueue.length)}/${pointingQueue.length}`;
+
+  const estimatedCount = Object.keys(allEstimates).length;
+  const savedCount = Object.values(saveProgressByKey).filter((s) => s === 'saved').length;
+  const hasAnyUnsavedEstimate = anchorConfig != null && pointingQueue.some((issue) => {
+    if (issue.key === anchorConfig.issueKey) return false;
+    const pointValue = overridesByKey[issue.key] ?? allEstimates[issue.key]?.suggestedPoints;
+    return pointValue != null && saveProgressByKey[issue.key] !== 'saved';
+  });
 
   return (
     <DashboardTabShell
       title="Story Pointing"
-      description="Keep estimation moving: focus the queue, point the current issue, and only expand extra context when you need it."
+      description="Set an anchor issue to calibrate estimates, then review, override, and save — all from one table."
       stats={(
         <div className={styles.flowStatsBar}>
-          <StatChip label="Queue" value={queueProgressLabel} />
-          <StatChip label="Pointed" value={sessionCounts.pointed} />
-          <StatChip label="Skipped" value={sessionCounts.skipped} />
-          <StatChip label="Filtered" value={pointingQueue.length} />
+          <StatChip label="Queue" value={pointingQueue.length} />
+          <StatChip label="Estimated" value={estimatedCount} />
+          <StatChip label="Saved" value={savedCount} />
         </div>
       )}
       filters={(
@@ -3802,106 +4049,84 @@ function PointingTab({
           <span className={styles.releaseSummaryMuted}>Use role and status filters to keep the queue lean.</span>
         </div>
       )}
-      {saveStatusMessage && <p className={styles.issueMetaText}>{saveStatusMessage}</p>}
-      {!currentIssue && <DashboardEmptyState message="No issues match the current pointing filters." />}
-      {currentIssue && (
-        <div className={styles.pointingShell}>
-          <article className={styles.pointingFocusCard}>
-            <div className={styles.pointingHeaderRow}>
-              <div>
-                <div className={styles.pointingMetaRow}>
-                  <span className={styles.statusBadge}>{currentIssue.key}</span>
-                  <span className={styles.statusBadge}>{readIssueStatusName(currentIssue)}</span>
-                  <span className={styles.statusBadge}>{readIssuePriorityName(currentIssue)}</span>
-                </div>
-                <h3 className={styles.pointingIssueTitle}>{currentIssue.fields.summary}</h3>
-                <div className={styles.issueMetaText}>👤 {readAssigneeName(currentIssue)}</div>
-              </div>
-              <label className={styles.pointingJumpField}>
-                <span>Jump to issue</span>
-                <select
-                  className={`${styles.settingsInput} ${styles.pointingJumpSelect}`}
-                  onChange={(changeEvent) => setCurrentIndex(Number(changeEvent.target.value))}
-                  value={currentIndex}
-                >
-                  {pointingQueue.map((queueIssue, queueIndex) => (
-                    <option key={queueIssue.key} value={queueIndex}>
-                      {queueIndex + 1}. {queueIssue.key} — {queueIssue.fields.summary}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
 
-            {suggestedPoints && (
-              <div className={styles.pointingHintBanner}>
-                💡 DEV story <strong>{suggestedPoints.key}</strong> is already pointed at <strong>{suggestedPoints.points}</strong>.
-              </div>
-            )}
+      {/* Session anchor banner — shows current anchor and batch action buttons. */}
+      {anchorConfig ? (
+        <div className={styles.pointingAnchorBanner}>
+          <span>⚓ Anchor: <strong>{anchorConfig.issueKey}</strong> = <strong>{anchorConfig.pointValue} pts</strong></span>
+          <button
+            className={styles.workflowStatusChip}
+            onClick={() => setAnchorConfig(null)}
+            type="button"
+          >
+            Clear anchor
+          </button>
+          <button
+            className={styles.workflowStatusChip}
+            disabled={isLoadingDetails}
+            onClick={() => void handleLoadAllDetails()}
+            type="button"
+          >
+            {isLoadingDetails ? 'Loading…' : 'Load all details'}
+          </button>
+          {hasAnyUnsavedEstimate && (
+            <button
+              className={styles.secondaryButton}
+              onClick={() => void handleSaveAll()}
+              type="button"
+            >
+              Save All
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className={styles.pointingHintBanner}>
+          Click <strong>⚓ Set anchor</strong> on any row to begin estimating — pick an issue whose complexity you already know.
+        </div>
+      )}
 
-            <div className={styles.pointingVoteGrid}>
-              {storyPointScale.map((pointValue) => (
-                <button
-                  className={styles.loadButton}
-                  disabled={isSaving}
-                  key={pointValue}
-                  onClick={() => void handleVote(pointValue)}
-                  style={suggestedPoints?.points === pointValue ? { boxShadow: '0 0 0 2px var(--color-warning)' } : undefined}
-                  type="button"
-                >
-                  {pointValue}
-                </button>
+      {/* Empty state */}
+      {pointingQueue.length === 0 && (
+        <DashboardEmptyState message="No issues match the current pointing filters." />
+      )}
+
+      {/* Pointing table */}
+      {pointingQueue.length > 0 && (
+        <div className={styles.ptTableWrapper}>
+          <table className={styles.ptTable}>
+            <thead>
+              <tr>
+                <th className={styles.ptHeadKey}>Key / Type</th>
+                <th className={styles.ptHeadSummary}>Summary ▼ to expand</th>
+                <th className={styles.ptHeadMeta}>Status</th>
+                <th className={styles.ptHeadNum}>Current</th>
+                {anchorConfig && <th className={styles.ptHeadEstimate}>Estimate</th>}
+                {anchorConfig && <th className={styles.ptHeadOverride}>Override</th>}
+                <th className={styles.ptHeadAction}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pointingQueue.map((issue) => (
+                <PointingTableRow
+                  key={issue.key}
+                  customStoryPointsFieldId={config.customStoryPointsFieldId}
+                  detail={detailByIssueKey[issue.key]}
+                  estimate={allEstimates[issue.key]}
+                  hasAnchor={anchorConfig != null}
+                  isAnchor={issue.key === anchorConfig?.issueKey}
+                  isExpanded={expandedKeys.has(issue.key)}
+                  issue={issue}
+                  onOverride={handleOverride}
+                  onSave={handleSaveRow}
+                  onSetAnchor={handleSetAnchorFromRow}
+                  onToggleExpand={() => toggleExpandedRow(issue.key)}
+                  override={overridesByKey[issue.key]}
+                  saveProgress={saveProgressByKey[issue.key] ?? 'idle'}
+                  storyPointScale={storyPointScale}
+                />
               ))}
-            </div>
-
-            <div className={styles.pointingActionRow}>
-              <button
-                className={styles.secondaryButton}
-                disabled={currentIndex === 0}
-                onClick={() => setCurrentIndex((previousIndex) => Math.max(0, previousIndex - 1))}
-                type="button"
-              >
-                ← Back
-              </button>
-              <button className={styles.secondaryButton} onClick={handleSkip} type="button">
-                ? Skip
-              </button>
-            </div>
-
-            <details className={styles.pointingContextCard}>
-              <summary className={styles.pointingContextSummary}>Issue context</summary>
-              {currentDetail == null ? (
-                <p className={styles.issueMetaText}>Loading details…</p>
-              ) : (
-                <div className={styles.pointingContextGrid}>
-                  {currentDetail.parentKey && (
-                    <div className={styles.pointingContextBlock}>
-                      <strong>Parent</strong>
-                      <div className={styles.pointingContextBody}>{currentDetail.parentKey}</div>
-                    </div>
-                  )}
-                  <div className={styles.pointingContextBlock}>
-                    <strong>Description</strong>
-                    <div className={styles.pointingContextBody}>
-                      {currentDetail.description || 'No Jira description was returned for this issue.'}
-                    </div>
-                  </div>
-                  <div className={styles.pointingContextBlock}>
-                    <strong>Acceptance Criteria</strong>
-                    <div className={styles.pointingContextBody}>
-                      {currentDetail.acceptanceCriteria || 'No acceptance criteria were returned for this issue.'}
-                    </div>
-                  </div>
-                  <div className={styles.pointingContextBlock}>
-                    <strong>Latest Comment</strong>
-                    <div className={styles.pointingContextBody}>
-                      {latestComment ? normalizeCommentBody(latestComment.body) : 'No Jira comments were returned for this issue.'}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </details>
-          </article>
+            </tbody>
+          </table>
         </div>
       )}
     </DashboardTabShell>
@@ -5881,6 +6106,7 @@ export default function SprintDashboardView() {
           boardType={state.boardType}
           config={config}
           issues={state.sprintIssues}
+          projectKey={state.projectKey}
         />
       );
     }
