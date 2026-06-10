@@ -2133,6 +2133,260 @@
   color: var(--color-text-primary);
 }
 
+/* Displayed when an anchor issue is active — blue/accent palette distinguishes it
+   from the yellow hint banners used for DEV-story and algorithm suggestions. */
+.pointingAnchorBanner {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid color-mix(in srgb, var(--color-accent, #4a9eff) 40%, var(--color-border));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-accent, #4a9eff) 10%, var(--color-surface-1));
+  font-size: var(--font-size-sm);
+}
+
+/* Compact row of small chip-style buttons that lets the user declare an anchor value. */
+.pointingAnchorSetRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) 0;
+}
+
+/* Prominent error banner shown when a Jira write fails (e.g. field not on screen). */
+.pointingSaveError {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid color-mix(in srgb, var(--color-error, #e05555) 50%, var(--color-border));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-error, #e05555) 10%, var(--color-surface-1));
+  color: var(--color-error, #e05555);
+  font-size: var(--font-size-sm);
+}
+
+/* Brief success confirmation shown after a Jira write succeeds. */
+.pointingSaveSuccess {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid color-mix(in srgb, var(--color-success, #4caf50) 40%, var(--color-border));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-success, #4caf50) 10%, var(--color-surface-1));
+  color: var(--color-success, #4caf50);
+  font-size: var(--font-size-sm);
+}
+
+/* Collapsible breakdown inside the algorithm estimate hint banner. */
+.pointingEstimateWhy {
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-xs, 0.75rem);
+  cursor: pointer;
+}
+
+/* ── Pointing table ── */
+
+.ptTableWrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.ptTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.ptTable th {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-muted, #888);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+/* Column width hints */
+.ptHeadKey      { width: 11rem; }
+.ptHeadSummary  { min-width: 18rem; }
+.ptHeadMeta     { width: 8rem; }
+.ptHeadNum      { width: 5rem; }
+.ptHeadEstimate { width: 14rem; }
+.ptHeadOverride { width: 6rem; }
+.ptHeadAction   { width: 9rem; }
+
+.ptRow,
+.ptRowAnchor {
+  border-bottom: 1px solid var(--color-border);
+  transition: background 0.1s;
+}
+
+.ptRow:hover {
+  background: var(--color-surface-hover, rgba(255,255,255,0.04));
+}
+
+/* Anchor row gets a subtle accent tint to mark it as the baseline. */
+.ptRowAnchor {
+  background: color-mix(in srgb, var(--color-accent, #4a9eff) 6%, transparent);
+}
+
+.ptRowExpanded {
+  background: var(--color-surface-2, var(--color-surface-1));
+}
+
+.ptCellKey,
+.ptCellSummary,
+.ptCellMeta,
+.ptCellNum,
+.ptCellEstimate,
+.ptCellOverride,
+.ptCellAction {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  vertical-align: top;
+}
+
+.ptCellKey {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding-top: var(--spacing-sm);
+}
+
+.ptAnchorBadge {
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-accent, #4a9eff);
+}
+
+.ptIssueKey {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Summary cell: full-width button that expands the row. */
+.ptSummaryBtn {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+  font-size: var(--font-size-sm);
+  padding: 0;
+}
+
+.ptSummaryBtn:hover {
+  color: var(--color-accent, #4a9eff);
+}
+
+.ptExpandCaret {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  opacity: 0.5;
+  padding-top: 0.15em;
+}
+
+.ptCellNum {
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* Estimate cell: shows algo pts on top, breakdown tags below. */
+.ptCellEstimate {
+  min-width: 0;
+}
+
+.ptBreakdownTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.2rem;
+}
+
+.ptBreakdownTags span {
+  font-size: var(--font-size-xs, 0.75rem);
+  background: var(--color-surface-2, var(--color-border));
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-xs, 3px);
+  white-space: nowrap;
+}
+
+/* Estimate value when the story should be broken down. */
+.ptEstimateBreakdown {
+  color: var(--color-warning, #f0a500);
+}
+
+/* Tag shown when there is not enough text to produce a reliable estimate. */
+.ptSparseHint {
+  background: color-mix(in srgb, var(--color-warning, #f0a500) 20%, var(--color-surface-2)) !important;
+  color: var(--color-warning, #f0a500);
+}
+
+/* Anchor-picker dropdown: wraps the ⚓ summary + chip grid. */
+.ptAnchorDropdown {
+  position: relative;
+}
+
+.ptAnchorDropdown summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.ptAnchorDropdown summary::-webkit-details-marker { display: none; }
+
+.ptAnchorPicker {
+  position: absolute;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-surface-2, var(--color-surface-1));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  min-width: 12rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+.ptCellExpanded {
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.ptExpandedContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  max-width: 80ch;
+  font-size: var(--font-size-sm);
+}
+
+.ptExpandedContent p {
+  margin: 0;
+}
+
+/* Body text in expanded detail rows — preserves whitespace from Jira descriptions. */
+.ptExpandedBody {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Inline save-state indicators inside table rows. */
+.ptSaveSuccess {
+  color: var(--color-success, #4caf50);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.ptSaveError {
+  color: var(--color-error, #e05555);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
 .pointingVoteGrid {
   display: flex;
   flex-wrap: wrap;

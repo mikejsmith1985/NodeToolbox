@@ -10,6 +10,7 @@
 
 import { useCallback, useRef, useState } from 'react'
 
+import { useAdminStore } from '../../../store/adminStore.ts'
 import type { ConnectivityConfigResult, ConnectionProbeResult } from '../../../types/config.ts'
 import {
   fetchConnectivityConfig,
@@ -623,6 +624,8 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
           } catch {
             // Non-fatal storage error.
           }
+          // Sync the shared store so other components (e.g. ConnectionBar) react immediately.
+          useAdminStore.setState({ isAdminUnlocked: true })
         } else {
           setAdminUnlockError(ADMIN_UNLOCK_ERROR_MESSAGE)
         }
@@ -639,6 +642,8 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     } catch {
       // Non-fatal storage error.
     }
+    // Sync the shared store so other components (e.g. ConnectionBar) react immediately.
+    useAdminStore.setState({ isAdminUnlocked: false })
   }, [])
 
   // ── Diagnostics actions ──

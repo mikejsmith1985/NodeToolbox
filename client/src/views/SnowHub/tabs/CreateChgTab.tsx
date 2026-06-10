@@ -114,6 +114,9 @@ const ENVIRONMENT_VALUE_PIN_KEY = 'chgBasicInfo.environment';
 const REL_CONFIG_ITEM_PIN_KEY = 'relEnvironment.configItem';
 const PRD_CONFIG_ITEM_PIN_KEY = 'prdEnvironment.configItem';
 const PFIX_CONFIG_ITEM_PIN_KEY = 'pfixEnvironment.configItem';
+const REL_ENVIRONMENT_VALUE_PIN_KEY = 'relEnvironment.snowEnvironmentValue';
+const PRD_ENVIRONMENT_VALUE_PIN_KEY = 'prdEnvironment.snowEnvironmentValue';
+const PFIX_ENVIRONMENT_VALUE_PIN_KEY = 'pfixEnvironment.snowEnvironmentValue';
 function buildCurrentTemplateData(state: CrgStateData): Omit<CrgTemplate, 'id' | 'name' | 'createdAt'> {
   return {
     shortDescriptionConfig: state.shortDescriptionConfig,
@@ -154,6 +157,17 @@ function resolveEnvironmentConfigItemPinKey(environmentKey: EnvironmentKey): str
       return PRD_CONFIG_ITEM_PIN_KEY;
     case 'pfix':
       return PFIX_CONFIG_ITEM_PIN_KEY;
+  }
+}
+
+function resolveEnvironmentSnowValuePinKey(environmentKey: EnvironmentKey): string {
+  switch (environmentKey) {
+    case 'rel':
+      return REL_ENVIRONMENT_VALUE_PIN_KEY;
+    case 'prd':
+      return PRD_ENVIRONMENT_VALUE_PIN_KEY;
+    case 'pfix':
+      return PFIX_ENVIRONMENT_VALUE_PIN_KEY;
   }
 }
 
@@ -727,6 +741,15 @@ function applyPinnedFieldValue(actions: CrgActionSet, pinnedField: CrgPinnedFiel
       return;
     case PFIX_CONFIG_ITEM_PIN_KEY:
       if (isSnowReferenceValue(pinnedValue)) actions.updateEnvironment('pfix', { configItem: pinnedValue });
+      return;
+    case REL_ENVIRONMENT_VALUE_PIN_KEY:
+      if (typeof pinnedValue === 'string') actions.updateEnvironment('rel', { snowEnvironmentValue: pinnedValue });
+      return;
+    case PRD_ENVIRONMENT_VALUE_PIN_KEY:
+      if (typeof pinnedValue === 'string') actions.updateEnvironment('prd', { snowEnvironmentValue: pinnedValue });
+      return;
+    case PFIX_ENVIRONMENT_VALUE_PIN_KEY:
+      if (typeof pinnedValue === 'string') actions.updateEnvironment('pfix', { snowEnvironmentValue: pinnedValue });
       return;
     default:
       return;
@@ -1627,18 +1650,11 @@ function EnvironmentStep({
   });
 
   function handleEnvironmentToggle(environmentKey: EnvironmentKey, event: ChangeEvent<HTMLInputElement>): void {
-    const nextSelections: EnvironmentSelectionState = {
-      rel:  state.relEnvironment.isEnabled,
-      prd:  state.prdEnvironment.isEnabled,
-      pfix: state.pfixEnvironment.isEnabled,
-    };
-    nextSelections[environmentKey] = event.target.checked;
-    const suggestedEnvironmentValue = resolveSuggestedEnvironmentValue(environmentOptions, nextSelections);
-
     actions.updateEnvironment(environmentKey, { isEnabled: event.target.checked });
-    if (suggestedEnvironmentValue !== null && suggestedEnvironmentValue !== state.chgBasicInfo.environment) {
-      actions.setChgBasicInfo({ environment: suggestedEnvironmentValue });
-    }
+  }
+
+  function handleEnvironmentSnowValueChange(environmentKey: EnvironmentKey, value: string): void {
+    actions.updateEnvironment(environmentKey, { snowEnvironmentValue: value });
   }
 
   function handleEnvironmentDateChange(
@@ -1664,67 +1680,16 @@ function EnvironmentStep({
   return (
     <section className={styles.section}>
       <StepHeading currentStep={headingStep ?? state.currentStep} />
-      <div className={styles.environmentMappingPanel}>
-        <div className={styles.fieldGroup}>
-          <label className={styles.fieldGroup}>
-            <span className={styles.fieldLabel}>ServiceNow Environment</span>
-            {shouldUseManualEnvironmentInput ? (
-              <input
-                aria-label="ServiceNow Environment"
-                className={styles.input}
-                onChange={(event) => actions.setChgBasicInfo({ environment: event.target.value })}
-                placeholder={SHORT_MANUAL_VALUE_PLACEHOLDER}
-                value={state.chgBasicInfo.environment}
-              />
-            ) : (
-              <select
-                aria-label="ServiceNow Environment"
-                className={styles.input}
-                disabled={isLoadingChoices}
-                onChange={(event) => actions.setChgBasicInfo({ environment: event.target.value })}
-                value={resolveStoredChoiceValue(
-                  state.chgBasicInfo.environment,
-                  buildRenderedChoiceOptions(environmentOptions, state.chgBasicInfo.environment),
-                )}
-              >
-                {isLoadingChoices ? (
-                  <option disabled value="">Loading options…</option>
-                ) : (
-                  buildRenderedChoiceOptions(environmentOptions, state.chgBasicInfo.environment).map((option) => (
-                    <option key={`${option.value}-${option.label}`} value={option.value}>{option.label || 'Select…'}</option>
-                  ))
-                )}
-              </select>
-            )}
-          </label>
-          <FieldControls
-            fieldKey={ENVIRONMENT_VALUE_PIN_KEY}
-            fieldLabel="ServiceNow Environment"
-            fieldSection={PIN_SECTION_ENVIRONMENTS}
-            fieldValue={state.chgBasicInfo.environment}
-            upsertPin={upsertPin}
-            removePin={removePin}
-            getPinnedFields={getPinnedFields}
-            findPinnedField={findPinnedField}
-            shouldShowSaveButton={shouldShowSaveButtons}
-            onApplyPinnedField={(pinnedField) => applyPinnedFieldValue(actions, pinnedField)}
-          />
-        </div>
-        <p className={styles.panelHint}>
-          {shouldUseManualEnvironmentInput
-            ? (
-                shouldShowSaveButtons
-                  ? 'Live SNow environment choices are unavailable. Type the internal value or use a saved field option from this configuration workspace.'
-                  : 'Live SNow environment choices are unavailable. Type the internal value.'
-              )
-            : 'This maps the selected deployment environments below to the single SNow Environment field sent on create.'}
-        </p>
-      </div>
       <div className={styles.environmentCardGrid}>
         {ENVIRONMENT_ROW_DEFINITIONS.map((environmentRow) => {
           const environmentState = state[environmentRow.stateKey];
           const isDateInputDisabled = !environmentState.isEnabled;
           const configItemPinKey = resolveEnvironmentConfigItemPinKey(environmentRow.key);
+          const snowValuePinKey = resolveEnvironmentSnowValuePinKey(environmentRow.key);
+          // Use the stored per-card value; fall back to the auto-resolved option for this environment type.
+          const effectiveSnowEnvironmentValue = environmentState.snowEnvironmentValue
+            || resolveEnvironmentOptionValue(environmentOptions, environmentRow.key);
+          const renderedEnvironmentOptions = buildRenderedChoiceOptions(environmentOptions, effectiveSnowEnvironmentValue);
 
           return (
             <section className={styles.environmentCard} key={environmentRow.key}>
@@ -1739,6 +1704,49 @@ function EnvironmentStep({
                   />
                   <span>Enabled</span>
                 </label>
+              </div>
+
+              <div className={styles.fieldGroup}>
+                <label className={styles.fieldGroup}>
+                  <span className={styles.fieldLabel}>{environmentRow.label} SNow Environment</span>
+                  {shouldUseManualEnvironmentInput ? (
+                    <input
+                      aria-label={`${environmentRow.label} SNow Environment`}
+                      className={styles.input}
+                      onChange={(event) => handleEnvironmentSnowValueChange(environmentRow.key, event.target.value)}
+                      placeholder={SHORT_MANUAL_VALUE_PLACEHOLDER}
+                      value={environmentState.snowEnvironmentValue}
+                    />
+                  ) : (
+                    <select
+                      aria-label={`${environmentRow.label} SNow Environment`}
+                      className={styles.input}
+                      disabled={isLoadingChoices}
+                      onChange={(event) => handleEnvironmentSnowValueChange(environmentRow.key, event.target.value)}
+                      value={resolveStoredChoiceValue(effectiveSnowEnvironmentValue, renderedEnvironmentOptions)}
+                    >
+                      {isLoadingChoices ? (
+                        <option disabled value="">Loading options…</option>
+                      ) : (
+                        renderedEnvironmentOptions.map((option) => (
+                          <option key={`${option.value}-${option.label}`} value={option.value}>{option.label || 'Select…'}</option>
+                        ))
+                      )}
+                    </select>
+                  )}
+                </label>
+                <FieldControls
+                  fieldKey={snowValuePinKey}
+                  fieldLabel={`${environmentRow.label} SNow Environment`}
+                  fieldSection={PIN_SECTION_ENVIRONMENTS}
+                  fieldValue={environmentState.snowEnvironmentValue}
+                  upsertPin={upsertPin}
+                  removePin={removePin}
+                  getPinnedFields={getPinnedFields}
+                  findPinnedField={findPinnedField}
+                  shouldShowSaveButton={shouldShowSaveButtons}
+                  onApplyPinnedField={(pinnedField) => applyPinnedFieldValue(actions, pinnedField)}
+                />
               </div>
 
               <div className={styles.fieldGroup}>
