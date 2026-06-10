@@ -467,44 +467,6 @@ function detectPipelineRole(summary: string): PipelineRole {
   return 'DEV';
 }
 
-function findPointingSuggestion(
-  issue: JiraIssue,
-  issues: JiraIssue[],
-  customStoryPointsFieldId: string,
-): { key: string; points: number } | null {
-  const summary = issue.fields.summary ?? '';
-  const bracketMatch = summary.match(/^\[([A-Z]+)\]\s(.+)$/);
-  if (bracketMatch && bracketMatch[1] !== 'DEV') {
-    const normalizedBaseSummary = bracketMatch[2].trim().toLowerCase();
-    for (const candidateIssue of issues) {
-      const candidateMatch = candidateIssue.fields.summary.match(/^\[DEV\]\s(.+)$/i);
-      if (!candidateMatch) {
-        continue;
-      }
-      if (candidateMatch[1].trim().toLowerCase() !== normalizedBaseSummary) {
-        continue;
-      }
-      const candidatePoints = readStoryPoints(candidateIssue, customStoryPointsFieldId);
-      if (candidatePoints > 0) {
-        return { key: candidateIssue.key, points: candidatePoints };
-      }
-    }
-  }
-
-  const dashMatch = summary.match(/^(?:SL|QE|BT|BC|REL|TDR)\s*[–-]\s*([A-Z]+-\d+)\s*[–-]/);
-  if (dashMatch) {
-    const matchedIssue = issues.find((candidateIssue) => candidateIssue.key === dashMatch[1]);
-    if (!matchedIssue) {
-      return null;
-    }
-    const candidatePoints = readStoryPoints(matchedIssue, customStoryPointsFieldId);
-    if (candidatePoints > 0) {
-      return { key: matchedIssue.key, points: candidatePoints };
-    }
-  }
-
-  return null;
-}
 
 function parsePointingScale(pointingScale: string): number[] {
   const parsedScale = pointingScale
