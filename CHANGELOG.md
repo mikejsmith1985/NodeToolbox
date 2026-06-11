@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Story Pointing — Risk issue type excluded from queue**: Issues with issue type **Risk** are now filtered out of the pointing queue. The story-points field does not exist on the Risk screen in Jira, so those issues could never be estimated or saved.
 - **Hygiene — missing-SP check skips Risk issues**: The "Missing SP" hygiene flag is no longer raised for Risk issues. The check explicitly bypasses issue types whose Jira screen does not include a story-points field.
+- **PI Review — Risk Management issue links open in Jira**: Issue key links in the Risk Management table were using a relative `/browse/` path that routed inside NodeToolbox instead of navigating to Jira. Fixed to use the absolute Jira base URL.
 - **PI Review — test coverage updated for new risk field props**: Existing PI Review tab tests updated to supply the two new required props added in the Risk Management section.
 
 ### Added

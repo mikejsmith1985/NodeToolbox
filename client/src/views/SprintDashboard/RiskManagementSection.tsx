@@ -18,6 +18,8 @@ import styles from './SprintDashboardView.module.css';
 
 // ── Constants ──
 
+// Full Jira browse URL prefix — must be absolute so links open in Jira, not inside NodeToolbox.
+const JIRA_BROWSE_URL_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/';
 // The PI assignment field used project-wide to associate issues with a Program Increment.
 const RISK_PI_CUSTOMFIELD_ID = 'customfield_10301';
 const RISK_PI_CF_NUMBER = RISK_PI_CUSTOMFIELD_ID.replace('customfield_', '');
@@ -478,7 +480,7 @@ export default function RiskManagementSection({
                   <td>
                     <a
                       className={styles.issueKeyLink}
-                      href={`/browse/${risk.key}`}
+                      href={`${JIRA_BROWSE_URL_PREFIX}${risk.key}`}
                       rel="noreferrer"
                       target="_blank"
                     >
