@@ -2384,7 +2384,17 @@
 .ptSaveError {
   color: var(--color-error, #e05555);
   font-size: var(--font-size-sm);
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
+  cursor: help;
+}
+
+/* Wraps the error message and Retry button stacked in the Action column. */
+.ptSaveErrorBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
 }
 
 .pointingVoteGrid {
