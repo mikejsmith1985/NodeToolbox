@@ -10,6 +10,10 @@ const { mockPiReviewTab, mockPiFeatureRemapPanel } = vi.hoisted(() => ({
   mockPiFeatureRemapPanel: vi.fn(),
 }));
 
+vi.mock('./RiskManagementSection.tsx', () => ({
+  default: () => <div>Mock Risk Management</div>,
+}));
+
 vi.mock('../ArtView/PiReviewTab.tsx', () => ({
   default: ({
     mode,
@@ -70,6 +74,8 @@ describe('SprintDashboardPiReviewTab', () => {
         boardId={42}
         boardName="Alpha Board"
         projectKey="TBX"
+        riskImpactDateFieldId=""
+        riskResponseFieldId=""
         selectedPiName="PI 26.3"
         sprintIssues={[]}
       />,
@@ -120,6 +126,8 @@ describe('SprintDashboardPiReviewTab', () => {
         boardId={42}
         boardName="Alpha Board"
         projectKey="TBX"
+        riskImpactDateFieldId=""
+        riskResponseFieldId=""
         selectedPiName="PI 26.3"
         sprintIssues={[]}
       />,
@@ -150,6 +158,8 @@ describe('SprintDashboardPiReviewTab', () => {
         boardId={42}
         boardName="Alpha Board"
         projectKey="TBX"
+        riskImpactDateFieldId=""
+        riskResponseFieldId=""
         selectedPiName=""
         sprintIssues={[]}
       />,
