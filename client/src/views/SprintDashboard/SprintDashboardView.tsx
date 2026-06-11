@@ -181,6 +181,8 @@ const PIPELINE_COMPANION_FIELDS = 'summary,status,assignee,labels,updated';
 const PIPELINE_DEV_FIELDS = 'summary,status,assignee,labels';
 const PIPELINE_ROLES = ['DEV', 'REL', 'SL', 'QE', 'BT', 'BC', 'TDR'] as const;
 const DEFAULT_POINTING_DONE_STATUSES = ['Done', 'Closed', 'Resolved', 'Accepted'] as const;
+// Issue types that are never valid for story-point estimation; excluded from the pointing queue entirely.
+const POINTING_EXCLUDED_ISSUE_TYPE_NAMES = new Set(['risk']);
 const POINTING_SORT_OPTIONS = [
   { id: 'default', label: 'Default' },
   { id: 'priority', label: 'Priority' },
@@ -524,6 +526,10 @@ function buildPointingQueue(
     const statusName = readIssueStatusName(issue);
     const storyPoints = readStoryPoints(issue, customStoryPointsFieldId);
 
+    // Reject issue types that do not support story-point estimation (e.g. Risk).
+    if (POINTING_EXCLUDED_ISSUE_TYPE_NAMES.has(issueTypeName.toLowerCase())) {
+      return false;
+    }
     // Reject issues that belong to a different Jira project when a project key is configured.
     if (normalizedProjectKey && !issue.key.toUpperCase().startsWith(`${normalizedProjectKey}-`)) {
       return false;
