@@ -254,7 +254,7 @@ describe('HygieneView', () => {
 
     render(<HygieneView />);
 
-    expect(screen.getByRole('link', { name: 'TBX-101' })).toHaveAttribute('href', '/browse/TBX-101');
+    expect(screen.getByRole('link', { name: 'TBX-101' })).toHaveAttribute('href', 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/TBX-101');
     expect(screen.getByText('Add acceptance criteria')).toBeInTheDocument();
     expect(screen.getAllByText('Missing SP')).toHaveLength(2);
     expect(screen.getAllByText('No assignee')).toHaveLength(2);

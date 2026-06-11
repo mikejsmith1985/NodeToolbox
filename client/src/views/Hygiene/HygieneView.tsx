@@ -23,7 +23,7 @@ const EXTRA_JQL_PLACEHOLDER = 'AND labels = hygiene ORDER BY updated DESC';
 const EMPTY_STATE_MESSAGE = 'Enter a project key and run Hygiene to find issue-health flags.';
 const NO_FLAGS_MESSAGE = 'No Hygiene flags found for the current project and filter.';
 const NO_VALUE_LABEL = '—';
-const JIRA_BROWSE_PREFIX = '/browse/';
+const JIRA_BROWSE_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/';
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 const MAX_HYGIENE_SCORE = 100;
 const HYGIENE_SCORE_FLAG_PENALTY = 5;

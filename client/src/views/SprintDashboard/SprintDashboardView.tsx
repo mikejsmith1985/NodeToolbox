@@ -183,6 +183,8 @@ const PIPELINE_ROLES = ['DEV', 'REL', 'SL', 'QE', 'BT', 'BC', 'TDR'] as const;
 const DEFAULT_POINTING_DONE_STATUSES = ['Done', 'Closed', 'Resolved', 'Accepted'] as const;
 // Issue types that are never valid for story-point estimation; excluded from the pointing queue entirely.
 const POINTING_EXCLUDED_ISSUE_TYPE_NAMES = new Set(['risk']);
+// Maximum concurrent Jira PUT requests when saving all pointing estimates; avoids 429 rate-limit errors.
+const SAVE_ALL_BATCH_SIZE = 5;
 const POINTING_SORT_OPTIONS = [
   { id: 'default', label: 'Default' },
   { id: 'priority', label: 'Priority' },
@@ -4162,19 +4164,24 @@ function PointingTab({
     return estimatesByKey;
   }, [anchorConfig, pointingQueue, detailByIssueKey, storyPointScale]);
 
-  /** Saves all rows that have an estimate (or override) and have not yet been saved. */
+  /** Saves all rows that have an estimate (or override) and have not yet been saved.
+   *  Processes in batches to avoid overwhelming Jira's API with concurrent PUT requests. */
   async function handleSaveAll() {
     const rowsToSave = pointingQueue.filter((issue) => {
       if (issue.key === anchorConfig?.issueKey) return false;
       const pointValue = overridesByKey[issue.key] ?? allEstimates[issue.key]?.suggestedPoints;
       return pointValue != null && saveProgressByKey[issue.key] !== 'saved';
     });
-    await Promise.allSettled(
-      rowsToSave.map((issue) => {
-        const pointValue = overridesByKey[issue.key] ?? allEstimates[issue.key]?.suggestedPoints;
-        return pointValue != null ? handleSaveRow(issue.key, pointValue) : Promise.resolve();
-      }),
-    );
+    // Process in SAVE_ALL_BATCH_SIZE-wide windows so Jira's rate limiter is never saturated.
+    for (let batchStart = 0; batchStart < rowsToSave.length; batchStart += SAVE_ALL_BATCH_SIZE) {
+      const batch = rowsToSave.slice(batchStart, batchStart + SAVE_ALL_BATCH_SIZE);
+      await Promise.allSettled(
+        batch.map((issue) => {
+          const pointValue = overridesByKey[issue.key] ?? allEstimates[issue.key]?.suggestedPoints;
+          return pointValue != null ? handleSaveRow(issue.key, pointValue) : Promise.resolve();
+        }),
+      );
+    }
   }
 
   // ── Rovo AI assist handlers ──
@@ -6308,8 +6315,8 @@ export default function SprintDashboardView() {
       ) ?? null,
     [activeDashboardTeamProfileId, dashboardTeamProfiles],
   );
-  const { state, actions } = useSprintData(activeDashboardTeamProfileId);
   const { config, actions: configActions } = useDashboardConfig(activeDashboardTeamProfileId);
+  const { state, actions } = useSprintData(activeDashboardTeamProfileId, config.customStoryPointsFieldId);
   const { loadSprint } = actions;
   const hasAttemptedRestoreLoad = useRef(false);
   const tabPanelRef = useRef<HTMLElement | null>(null);

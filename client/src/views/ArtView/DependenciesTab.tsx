@@ -39,7 +39,7 @@ interface DependencyDetailDrawerProps {
 const ART_DEP_FILTER_STORAGE_KEY = 'tbxARTDepFilter';
 const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
 const DEFAULT_DEPENDENCY_LINK_TYPES = ['blocks', 'is blocked by', 'depends on', 'is depended on by', 'relates to'];
-const JIRA_BROWSE_PREFIX = '/browse/';
+const JIRA_BROWSE_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/';
 const NODE_WIDTH = 136;
 const NODE_HEIGHT = 40;
 const NODE_RADIUS = 10;
