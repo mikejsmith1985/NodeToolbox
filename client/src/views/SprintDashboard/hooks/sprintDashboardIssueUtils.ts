@@ -22,6 +22,11 @@ function parseNumericValue(value: unknown): number | null {
     return Number.isFinite(parsedNumber) ? parsedNumber : null;
   }
 
+  // Jira Select-type fields return {id, value} objects; recurse to extract the numeric value.
+  if (value !== null && typeof value === 'object') {
+    return parseNumericValue((value as Record<string, unknown>).value);
+  }
+
   return null;
 }
 
