@@ -3701,8 +3701,12 @@ function PointingTableRow({
 }: PointingTableRowProps) {
   const issueKey = issue.key;
   const storyPointsFieldId = customStoryPointsFieldId || 'customfield_10016';
-  const currentPoints = (issue.fields as Record<string, unknown>)[storyPointsFieldId]
+  const rawCurrentValue = (issue.fields as Record<string, unknown>)[storyPointsFieldId]
     ?? (issue.fields as Record<string, unknown>).customfield_10028 ?? null;
+  // Select-type story-points fields return {id, value} objects — extract the numeric value.
+  const currentPoints = rawCurrentValue !== null && typeof rawCurrentValue === 'object'
+    ? ((rawCurrentValue as Record<string, unknown>).value ?? null)
+    : rawCurrentValue;
   const effectivePoints = override ?? estimate?.suggestedPoints;
 
   return (
