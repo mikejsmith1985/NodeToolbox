@@ -22,6 +22,8 @@ const DEFAULT_KANBAN_PERIOD_DAYS = 14;
 const DEFAULT_CYCLE_TIME_BASELINE_DAYS = 0;
 const DEFAULT_CUSTOM_STORY_POINTS_FIELD_ID = 'story_points';
 const DEFAULT_CUSTOM_EPIC_LINK_FIELD_ID = 'epic_link';
+const DEFAULT_RISK_IMPACT_DATE_FIELD_ID = '';
+const DEFAULT_RISK_RESPONSE_FIELD_ID = '';
 
 // ── Public types ──
 
@@ -45,6 +47,10 @@ export interface DashboardConfig {
   customStoryPointsFieldId: string;
   /** Jira custom field ID used for the epic link. */
   customEpicLinkFieldId: string;
+  /** Jira custom field ID for Risk Impact Date on Risk issue types. */
+  riskImpactDateFieldId: string;
+  /** Jira custom field ID for the Risk Response / ROAM disposition field on Risk issue types. */
+  riskResponseFieldId: string;
 }
 
 export interface DashboardConfigActions {
@@ -64,6 +70,8 @@ export const DEFAULT_DASHBOARD_CONFIG: DashboardConfig = {
   kanbanPeriodDays: DEFAULT_KANBAN_PERIOD_DAYS,
   customStoryPointsFieldId: DEFAULT_CUSTOM_STORY_POINTS_FIELD_ID,
   customEpicLinkFieldId: DEFAULT_CUSTOM_EPIC_LINK_FIELD_ID,
+  riskImpactDateFieldId: DEFAULT_RISK_IMPACT_DATE_FIELD_ID,
+  riskResponseFieldId: DEFAULT_RISK_RESPONSE_FIELD_ID,
 };
 
 // ── Storage helpers ──
