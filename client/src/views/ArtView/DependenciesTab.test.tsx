@@ -198,7 +198,7 @@ describe('DependenciesTab', () => {
     const detailDrawer = await screen.findByRole('complementary', { name: /dependency details/i });
     expect(within(detailDrawer).getByText('ALPHA-1')).toBeInTheDocument();
     expect(within(detailDrawer).getByText(/deploy shared library/i)).toBeInTheDocument();
-    expect(within(detailDrawer).getByRole('link', { name: /open in jira/i })).toHaveAttribute('href', '/browse/ALPHA-1');
+    expect(within(detailDrawer).getByRole('link', { name: /open in jira/i })).toHaveAttribute('href', 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/ALPHA-1');
     expect(within(detailDrawer).getByText(/bETA-7/i)).toBeInTheDocument();
   });
 

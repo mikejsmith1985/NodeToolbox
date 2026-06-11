@@ -17,7 +17,7 @@ const EMPTY_PROJECT_MESSAGE = 'Enter a Jira project key to load recent defects.'
 const EMPTY_RESULT_MESSAGE = 'No defects match the current query and filters.';
 const NO_VALUE_LABEL = '—';
 const UNASSIGNED_LABEL = 'UNASSIGNED';
-const JIRA_BROWSE_PREFIX = '/browse/';
+const JIRA_BROWSE_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/';
 
 const PRIORITY_FILTER_OPTIONS: DefectPriorityFilter[] = ['', 'Highest', 'High', 'Medium', 'Low', 'Lowest'];
 const STATUS_FILTER_OPTIONS: DefectStatusCategoryFilter[] = ['', 'new', 'indeterminate', 'done'];
