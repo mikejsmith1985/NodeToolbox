@@ -139,6 +139,10 @@ const RELEASE_FIELDS =
 const RELEASE_MAX_RESULTS = 50;
 const HIDDEN_ROVO_SHORTCUT_KEY = 'z';
 const RELEASE_ROVO_UNLOCK_STORAGE_KEY = 'tbx-release-rovo-unlocked';
+const POINTING_ROVO_UNLOCK_STORAGE_KEY = 'tbx-pointing-rovo-unlocked';
+const POINTING_ROVO_ENHANCE_BUTTON_LABEL = '✦ Enhance with AI';
+const POINTING_ROVO_COPY_BUTTON_LABEL = '📋 Copy Prompt';
+const POINTING_ROVO_APPLY_BUTTON_LABEL = 'Apply estimates →';
 const RELEASE_ROVO_NOTES_STORAGE_KEY_PREFIX = 'tbx-release-rovo-notes';
 const RELEASE_PROMPT_BUTTON_LABEL = '✦ Build Rovo Prompt';
 const RELEASE_IMPORT_BUTTON_LABEL = '↩ Paste Rovo Response';
@@ -895,6 +899,14 @@ function readStoredReleaseRovoUnlockState(): boolean {
   }
 
   return window.sessionStorage.getItem(RELEASE_ROVO_UNLOCK_STORAGE_KEY) === 'true';
+}
+
+function readStoredPointingRovoUnlockState(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.sessionStorage.getItem(POINTING_ROVO_UNLOCK_STORAGE_KEY) === 'true';
 }
 
 function buildReleaseNotesStorageKey(projectKey: string): string {
@@ -3485,6 +3497,153 @@ function computeSingleEstimate(
   };
 }
 
+// ── Rovo AI assist helpers ──
+
+/**
+ * Parsed estimate from a Rovo AI response. Points have already been validated
+ * against the Fibonacci scale before this type is constructed.
+ */
+interface RovoPointingItem {
+  key: string;
+  points: number;
+  reasoning: string;
+}
+
+/**
+ * Builds the prompt text the user pastes into Rovo.
+ * Includes the anchor story as a calibration reference, every non-anchor queue
+ * issue with its algorithm estimate and dimension scores, and explicit output
+ * format instructions so the response can be parsed back automatically.
+ */
+function buildPointingRovoPrompt(
+  anchorIssue: JiraIssue,
+  anchorConfig: AnchorConfig,
+  nonAnchorIssues: JiraIssue[],
+  allEstimates: Record<string, PointingEstimateResult>,
+  detailByIssueKey: Record<string, PointingIssueDetail>,
+): string {
+  const anchorDetail = detailByIssueKey[anchorIssue.key];
+  const anchorDescription = anchorDetail?.description ?? normalizeCommentBody(anchorIssue.fields.description);
+  const anchorAc = anchorDetail?.acceptanceCriteria ?? '';
+  const { scopeScore, techComplexityScore, integrationRiskScore, uncertaintyScore } = anchorConfig.features;
+
+  const anchorSection = [
+    `${anchorIssue.key}: ${anchorIssue.fields.summary ?? '(no summary)'}`,
+    `Point value: ${anchorConfig.pointValue} pts  ← calibration baseline`,
+    `Description: ${anchorDescription || '(not provided)'}`,
+    anchorAc ? `Acceptance Criteria: ${anchorAc}` : null,
+    `Algorithm scores — Scope: ${scopeScore.toFixed(1)}, Tech: ${techComplexityScore.toFixed(1)}, Integration: ${integrationRiskScore.toFixed(1)}, Uncertainty: ${uncertaintyScore.toFixed(1)}`,
+  ].filter(Boolean).join('\n');
+
+  const issueSections = nonAnchorIssues.map((issue, index) => {
+    const detail = detailByIssueKey[issue.key];
+    const description = detail?.description ?? normalizeCommentBody(issue.fields.description);
+    const ac = detail?.acceptanceCriteria ?? '';
+    const estimate = allEstimates[issue.key];
+    const scores = estimate
+      ? `Algorithm scores — Scope: ${estimate.featureBreakdown.scopeScore.toFixed(1)}, Tech: ${estimate.featureBreakdown.techComplexityScore.toFixed(1)}, Integration: ${estimate.featureBreakdown.integrationRiskScore.toFixed(1)}, Uncertainty: ${estimate.featureBreakdown.uncertaintyScore.toFixed(1)}`
+      : 'Algorithm scores — (no anchor set)';
+
+    return [
+      `[${index + 1}] ${issue.key}: ${issue.fields.summary ?? '(no summary)'}`,
+      `Algorithm estimate: ${estimate?.suggestedPoints ?? '(none)'} pts`,
+      scores,
+      `Description: ${description || '(not provided)'}`,
+      ac ? `Acceptance Criteria: ${ac}` : null,
+    ].filter(Boolean).join('\n');
+  });
+
+  return [
+    'You are helping a software team estimate story points during sprint planning.',
+    'Use the ANCHOR STORY as your complexity calibration reference — it is worth exactly the stated points.',
+    'The Modified Fibonacci scale in use is: 1, 2, 3, 5, 8, 13, 20, 40, 100.',
+    'Stories estimated above 8 points should be broken down into smaller tickets.',
+    '',
+    '── ANCHOR STORY ──',
+    anchorSection,
+    '',
+    '── STORIES TO ESTIMATE ──',
+    issueSections.join('\n\n'),
+    '',
+    '── INSTRUCTIONS ──',
+    'For each story above, use the anchor as your 1× reference point.',
+    'The algorithm estimate is a starting point — apply your judgment based on description and context.',
+    'For sparse stories (short summary, no description), reason conservatively from available signals.',
+    '',
+    'Respond ONLY with a valid JSON array — no prose, no markdown code fences:',
+    '[',
+    '  { "key": "PROJ-123", "points": 5, "reasoning": "One sentence." },',
+    '  { "key": "PROJ-124", "points": 13, "reasoning": "One sentence. ⚠ Consider breakdown." }',
+    ']',
+    '',
+    'Only use values from the scale: 1, 2, 3, 5, 8, 13, 20, 40, 100.',
+    'Append "⚠ Consider breakdown." to the reasoning for any estimate above 8.',
+  ].join('\n');
+}
+
+/**
+ * Extracts and validates a Rovo AI pointing response pasted by the user.
+ * Searches the full text for a JSON array (Rovo often wraps JSON in prose),
+ * then filters out any entries whose key is not in the current queue or whose
+ * point value is not on the Fibonacci scale.
+ */
+function parseRovoPointingResponse(
+  responseText: string,
+  validQueueKeys: Set<string>,
+  storyPointScale: number[],
+): { items: RovoPointingItem[]; errorMessage: string | null } {
+  const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) {
+    return {
+      items: [],
+      errorMessage: 'No JSON array found. Make sure Rovo returned the array format described in the prompt.',
+    };
+  }
+
+  let parsedResponse: unknown;
+  try {
+    parsedResponse = JSON.parse(jsonMatch[0]);
+  } catch {
+    return {
+      items: [],
+      errorMessage: 'The JSON in the response could not be parsed — check for missing commas or quotes.',
+    };
+  }
+
+  if (!Array.isArray(parsedResponse)) {
+    return { items: [], errorMessage: 'Expected a JSON array but found a different type.' };
+  }
+
+  const validScaleValues = new Set(storyPointScale);
+  const validItems: RovoPointingItem[] = [];
+
+  for (const rawEntry of parsedResponse) {
+    if (typeof rawEntry !== 'object' || rawEntry === null) continue;
+
+    const entry = rawEntry as Record<string, unknown>;
+    const issueKey = typeof entry.key === 'string' ? entry.key.trim().toUpperCase() : null;
+    const pointValue = typeof entry.points === 'number' ? entry.points : null;
+    const reasoning = typeof entry.reasoning === 'string' ? entry.reasoning : '';
+
+    // Skip entries whose key is not in the current pointing queue
+    if (!issueKey || !validQueueKeys.has(issueKey)) continue;
+
+    // Skip entries with point values that are off the configured scale
+    if (pointValue === null || !validScaleValues.has(pointValue)) continue;
+
+    validItems.push({ key: issueKey, points: pointValue, reasoning });
+  }
+
+  if (validItems.length === 0) {
+    return {
+      items: [],
+      errorMessage: 'No valid estimates matched the current queue. Check that issue keys are correct and point values are on the scale (1 2 3 5 8 13 20 40 100).',
+    };
+  }
+
+  return { items: validItems, errorMessage: null };
+}
+
 interface PointingTableRowProps {
   issue: JiraIssue;
   /** True when this row IS the currently configured anchor issue. */
@@ -3694,6 +3853,21 @@ function PointingTab({
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const storyPointScale = parsePointingScale(config.storyPointScale);
 
+  // ── Rovo AI assist state ──
+  const { verifyPassphrase } = useRovoAssist();
+  const [isPointingRovoUnlocked, setIsPointingRovoUnlocked] = useState<boolean>(
+    () => readStoredPointingRovoUnlockState(),
+  );
+  const [isPassphraseModalVisible, setIsPassphraseModalVisible] = useState(false);
+  const [passphraseInput, setPassphraseInput] = useState('');
+  const [passphraseError, setPassphraseError] = useState<string | null>(null);
+  const [isRovoModalVisible, setIsRovoModalVisible] = useState(false);
+  const [generatedRovoPromptText, setGeneratedRovoPromptText] = useState('');
+  const [rovoResponseInput, setRovoResponseInput] = useState('');
+  const [rovoResponseParseError, setRovoResponseParseError] = useState<string | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
+  const passphraseInputRef = useRef<HTMLInputElement | null>(null);
+
   function rebuildPointingSession({
     nextPipelineRoleFilter = pipelineRoleFilter,
     nextSelectedStatuses = selectedStatuses,
@@ -3837,6 +4011,37 @@ function PointingTab({
     void handleLoadAllDetails();
   }
 
+  // Persist unlock state for the session so the passphrase is only entered once per browser tab.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.sessionStorage.setItem(POINTING_ROVO_UNLOCK_STORAGE_KEY, isPointingRovoUnlocked ? 'true' : 'false');
+  }, [isPointingRovoUnlocked]);
+
+  // Ctrl+Alt+Z opens the passphrase gate; once unlocked the shortcut is a no-op.
+  useEffect(() => {
+    function handleGlobalKeyDown(keyboardEvent: globalThis.KeyboardEvent): void {
+      const isShortcutPressed = keyboardEvent.ctrlKey
+        && keyboardEvent.altKey
+        && (keyboardEvent.key.toLowerCase() === HIDDEN_ROVO_SHORTCUT_KEY || keyboardEvent.code === 'KeyZ');
+
+      if (!isShortcutPressed || isPointingRovoUnlocked) return;
+      keyboardEvent.preventDefault();
+      setIsPassphraseModalVisible(true);
+      setPassphraseInput('');
+      setPassphraseError(null);
+    }
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [isPointingRovoUnlocked]);
+
+  // Focus the passphrase input when the modal opens.
+  useEffect(() => {
+    if (isPassphraseModalVisible) {
+      passphraseInputRef.current?.focus();
+    }
+  }, [isPassphraseModalVisible]);
+
   function toggleTypeFilter(issueTypeName: string) {
     setSelectedTypes((previousTypes) => {
       const nextSelectedTypes = previousTypes.includes(issueTypeName)
@@ -3884,6 +4089,81 @@ function PointingTab({
         return pointValue != null ? handleSaveRow(issue.key, pointValue) : Promise.resolve();
       }),
     );
+  }
+
+  // ── Rovo AI assist handlers ──
+
+  const handlePointingPassphraseSubmit = useCallback(async () => {
+    const isAccepted = await verifyPassphrase(passphraseInput);
+    if (isAccepted) {
+      setIsPointingRovoUnlocked(true);
+      setIsPassphraseModalVisible(false);
+      setPassphraseInput('');
+      setPassphraseError(null);
+      return;
+    }
+    setPassphraseError('Incorrect passphrase');
+  }, [passphraseInput, verifyPassphrase]);
+
+  const handlePointingPassphraseKeyDown = useCallback(
+    (keyboardEvent: ReactKeyboardEvent<HTMLInputElement>) => {
+      if (keyboardEvent.key === 'Enter') {
+        void handlePointingPassphraseSubmit();
+      }
+    },
+    [handlePointingPassphraseSubmit],
+  );
+
+  /** Builds the prompt from current queue state and opens the two-panel Rovo modal. */
+  function handleOpenRovoModal() {
+    if (!anchorConfig) return;
+    const anchorIssue = pointingQueue.find((issue) => issue.key === anchorConfig.issueKey);
+    if (!anchorIssue) return;
+    const nonAnchorIssues = pointingQueue.filter((issue) => issue.key !== anchorConfig.issueKey);
+    setGeneratedRovoPromptText(
+      buildPointingRovoPrompt(anchorIssue, anchorConfig, nonAnchorIssues, allEstimates, detailByIssueKey),
+    );
+    setRovoResponseInput('');
+    setRovoResponseParseError(null);
+    setIsCopied(false);
+    setIsRovoModalVisible(true);
+  }
+
+  /** Copies the generated prompt to the clipboard and briefly shows a confirmation label. */
+  async function handleCopyRovoPrompt() {
+    await navigator.clipboard.writeText(generatedRovoPromptText);
+    setIsCopied(true);
+    // Reset the copy button label after two seconds so it can be clicked again.
+    setTimeout(() => setIsCopied(false), 2000);
+  }
+
+  /**
+   * Parses Rovo's JSON response and maps each valid entry to the override column.
+   * Closes the modal on success so the user can review and save at their own pace.
+   */
+  function handleApplyRovoResponse() {
+    const validQueueKeys = new Set(
+      pointingQueue
+        .filter((issue) => issue.key !== anchorConfig?.issueKey)
+        .map((issue) => issue.key),
+    );
+    const { items, errorMessage } = parseRovoPointingResponse(rovoResponseInput, validQueueKeys, storyPointScale);
+
+    if (errorMessage) {
+      setRovoResponseParseError(errorMessage);
+      return;
+    }
+
+    setOverridesByKey((previousOverrides) => {
+      const nextOverrides = { ...previousOverrides };
+      for (const item of items) {
+        nextOverrides[item.key] = item.points;
+      }
+      return nextOverrides;
+    });
+    setIsRovoModalVisible(false);
+    setRovoResponseInput('');
+    setRovoResponseParseError(null);
   }
 
   if (issues.length === 0) {
@@ -4040,6 +4320,15 @@ function PointingTab({
               Save All
             </button>
           )}
+          {isPointingRovoUnlocked && (
+            <button
+              className={styles.secondaryButton}
+              onClick={handleOpenRovoModal}
+              type="button"
+            >
+              {POINTING_ROVO_ENHANCE_BUTTON_LABEL}
+            </button>
+          )}
         </div>
       ) : (
         <div className={styles.pointingHintBanner}>
@@ -4091,6 +4380,112 @@ function PointingTab({
           </table>
         </div>
       )}
+
+      {/* Passphrase gate — revealed by Ctrl+Alt+Z */}
+      {isPassphraseModalVisible ? (
+        <div aria-modal="true" className={styles.releasePromptOverlay} role="dialog">
+          <div className={styles.releasePromptModal}>
+            <h3 className={styles.releasePromptTitle}>Unlock protected tools</h3>
+            <input
+              aria-label="Protected tools passphrase"
+              className={styles.releasePromptInput}
+              onChange={(changeEvent) => setPassphraseInput(changeEvent.target.value)}
+              onKeyDown={handlePointingPassphraseKeyDown}
+              placeholder="Enter passphrase"
+              ref={passphraseInputRef}
+              type="password"
+              value={passphraseInput}
+            />
+            {passphraseError ? <p className={styles.errorMessage}>{passphraseError}</p> : null}
+            <div className={styles.releasePromptActions}>
+              <button
+                className={styles.secondaryButton}
+                onClick={() => void handlePointingPassphraseSubmit()}
+                type="button"
+              >
+                Unlock
+              </button>
+              <button
+                className={styles.textActionButton}
+                onClick={() => setIsPassphraseModalVisible(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Rovo AI assist modal — two panels: copy prompt / paste response */}
+      {isRovoModalVisible ? (
+        <div aria-modal="true" className={styles.releasePromptOverlay} role="dialog">
+          <div className={styles.ptRovoModal}>
+            <h3 className={styles.releasePromptTitle}>✦ AI-Assisted Pointing</h3>
+
+            <section className={styles.ptRovoSection}>
+              <p className={styles.releasePromptInstructions}>
+                <strong>Step 1</strong> — Copy this prompt into Rovo. It includes the anchor story,
+                all queue issues, and their algorithm estimates as a starting point.
+              </p>
+              <textarea
+                aria-label="Rovo pointing prompt"
+                className={styles.releasePromptTextArea}
+                readOnly
+                value={generatedRovoPromptText}
+              />
+              <div className={styles.releasePromptActions}>
+                <button
+                  className={styles.secondaryButton}
+                  onClick={() => void handleCopyRovoPrompt()}
+                  type="button"
+                >
+                  {isCopied ? '✓ Copied!' : POINTING_ROVO_COPY_BUTTON_LABEL}
+                </button>
+              </div>
+            </section>
+
+            <hr className={styles.ptRovoDivider} />
+
+            <section className={styles.ptRovoSection}>
+              <p className={styles.releasePromptInstructions}>
+                <strong>Step 2</strong> — Paste Rovo's JSON response below. Toolbox will apply
+                the estimates to the Override column so you can review each value before saving.
+              </p>
+              <textarea
+                aria-label="Rovo pointing response"
+                className={styles.ptRovoResponseTextArea}
+                onChange={(changeEvent) => {
+                  setRovoResponseInput(changeEvent.target.value);
+                  setRovoResponseParseError(null);
+                }}
+                placeholder={'[\n  { "key": "PROJ-123", "points": 5, "reasoning": "..." },\n  ...\n]'}
+                value={rovoResponseInput}
+              />
+              {rovoResponseParseError ? (
+                <p className={styles.errorMessage}>{rovoResponseParseError}</p>
+              ) : null}
+              <div className={styles.releasePromptActions}>
+                <button
+                  className={styles.secondaryButton}
+                  disabled={rovoResponseInput.trim() === ''}
+                  onClick={handleApplyRovoResponse}
+                  type="button"
+                >
+                  {POINTING_ROVO_APPLY_BUTTON_LABEL}
+                </button>
+                <button
+                  className={styles.textActionButton}
+                  onClick={() => setIsRovoModalVisible(false)}
+                  type="button"
+                >
+                  Close
+                </button>
+              </div>
+            </section>
+          </div>
+        </div>
+      ) : null}
     </DashboardTabShell>
   );
 }
