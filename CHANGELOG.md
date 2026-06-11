@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **PI Review — Risk Management section**: A Risk Management panel now appears at the bottom of the PI Review tab. It automatically fetches all Risk-type Jira issues assigned to the currently selected PI and displays them in a summary table showing key, summary, priority, due date, assignee, and status. Two new field pickers in Settings — **Risk Impact Date Field** and **Risk Response (ROAM) Field** — enable the corresponding columns when the Jira customfield IDs are configured.
+
 ### Fixed
 - **Story Pointing — Risk issue type excluded from queue**: Issues with issue type **Risk** are now filtered out of the pointing queue. The story-points field does not exist on the Risk screen in Jira, so those issues could never be estimated or saved.
 - **Hygiene — missing-SP check skips Risk issues**: The "Missing SP" hygiene flag is no longer raised for Risk issues. The check explicitly bypasses issue types whose Jira screen does not include a story-points field.

@@ -2715,6 +2715,20 @@ function AdvancedConfigFields({
         placeholder="Epic Link field"
         value={config.customEpicLinkFieldId}
       />
+      <JiraFieldPicker
+        id="sd-cfg-risk-impact-date-field"
+        label="Risk Impact Date Field"
+        onChange={(fieldId) => onConfigChange({ riskImpactDateFieldId: fieldId })}
+        placeholder="Risk Impact Date field"
+        value={config.riskImpactDateFieldId}
+      />
+      <JiraFieldPicker
+        id="sd-cfg-risk-response-field"
+        label="Risk Response (ROAM) Field"
+        onChange={(fieldId) => onConfigChange({ riskResponseFieldId: fieldId })}
+        placeholder="Risk Response field"
+        value={config.riskResponseFieldId}
+      />
     </div>
   );
 }
@@ -6558,6 +6572,8 @@ export default function SprintDashboardView() {
           boardId={state.boardId}
           boardName={state.selectedBoardName}
           projectKey={state.projectKey}
+          riskImpactDateFieldId={config.riskImpactDateFieldId}
+          riskResponseFieldId={config.riskResponseFieldId}
           selectedPiName={state.selectedPiValue}
           sprintIssues={state.sprintIssues}
         />
