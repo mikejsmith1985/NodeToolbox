@@ -3302,3 +3302,44 @@
     display: none;
   }
 }
+
+/* ── Pointing Rovo AI modal ── */
+
+.ptRovoModal {
+  display: grid;
+  gap: var(--spacing-lg);
+  width: min(680px, 92vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: var(--spacing-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  box-shadow: var(--shadow-floating);
+}
+
+.ptRovoSection {
+  display: grid;
+  gap: var(--spacing-sm);
+}
+
+.ptRovoDivider {
+  margin: 0;
+  border: none;
+  border-top: 1px solid var(--color-border);
+}
+
+/* Paste-response textarea — shorter than the read-only prompt display above it. */
+.ptRovoResponseTextArea {
+  width: 100%;
+  min-height: 160px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-family: monospace;
+  font-size: 13px;
+  resize: vertical;
+}
+
