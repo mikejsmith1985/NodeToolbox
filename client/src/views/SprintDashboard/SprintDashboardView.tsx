@@ -3521,6 +3521,7 @@ function buildPointingRovoPrompt(
   nonAnchorIssues: JiraIssue[],
   allEstimates: Record<string, PointingEstimateResult>,
   detailByIssueKey: Record<string, PointingIssueDetail>,
+  storyPointScale: number[],
 ): string {
   const anchorDetail = detailByIssueKey[anchorIssue.key];
   const anchorDescription = anchorDetail?.description ?? normalizeCommentBody(anchorIssue.fields.description);
@@ -3553,11 +3554,16 @@ function buildPointingRovoPrompt(
     ].filter(Boolean).join('\n');
   });
 
+  const scaleText = storyPointScale.join(', ');
+  // Stories above this value are conventionally flagged for breakdown on this team's scale.
+  const breakdownThreshold = storyPointScale.find((value) => value > STORY_POINT_BREAKDOWN_THRESHOLD)
+    ?? storyPointScale[Math.floor(storyPointScale.length / 2)];
+
   return [
     'You are helping a software team estimate story points during sprint planning.',
     'Use the ANCHOR STORY as your complexity calibration reference — it is worth exactly the stated points.',
-    'The Modified Fibonacci scale in use is: 1, 2, 3, 5, 8, 13, 20, 40, 100.',
-    'Stories estimated above 8 points should be broken down into smaller tickets.',
+    `The team's point scale is: ${scaleText}.`,
+    `Stories estimated above ${breakdownThreshold} points should be broken down into smaller tickets.`,
     '',
     '── ANCHOR STORY ──',
     anchorSection,
@@ -3573,11 +3579,11 @@ function buildPointingRovoPrompt(
     'Respond ONLY with a valid JSON array — no prose, no markdown code fences:',
     '[',
     '  { "key": "PROJ-123", "points": 5, "reasoning": "One sentence." },',
-    '  { "key": "PROJ-124", "points": 13, "reasoning": "One sentence. ⚠ Consider breakdown." }',
+    `  { "key": "PROJ-124", "points": ${breakdownThreshold}, "reasoning": "One sentence. ⚠ Consider breakdown." }`,
     ']',
     '',
-    'Only use values from the scale: 1, 2, 3, 5, 8, 13, 20, 40, 100.',
-    'Append "⚠ Consider breakdown." to the reasoning for any estimate above 8.',
+    `Only use values from the team's scale: ${scaleText}.`,
+    `Append "⚠ Consider breakdown." to the reasoning for any estimate above ${breakdownThreshold}.`,
   ].join('\n');
 }
 
@@ -3654,6 +3660,8 @@ interface PointingTableRowProps {
   detail: PointingIssueDetail | undefined;
   override: number | undefined;
   saveProgress: 'idle' | 'saving' | 'saved' | 'error';
+  /** Jira error message from the last failed save attempt, if any. */
+  saveError: string | undefined;
   isExpanded: boolean;
   storyPointScale: number[];
   customStoryPointsFieldId: string;
@@ -3665,7 +3673,7 @@ interface PointingTableRowProps {
 
 /** Renders a single row (plus an optional inline expanded-detail row) in the pointing table. */
 function PointingTableRow({
-  issue, isAnchor, hasAnchor, estimate, detail, override, saveProgress,
+  issue, isAnchor, hasAnchor, estimate, detail, override, saveProgress, saveError,
   isExpanded, storyPointScale, customStoryPointsFieldId, onSetAnchor,
   onOverride, onSave, onToggleExpand,
 }: PointingTableRowProps) {
@@ -3753,7 +3761,20 @@ function PointingTableRow({
           ) : saveProgress === 'saved' ? (
             <span className={styles.ptSaveSuccess}>✓ Saved</span>
           ) : saveProgress === 'error' ? (
-            <span className={styles.ptSaveError}>⚠️ Error — check Settings</span>
+            <span className={styles.ptSaveErrorBlock}>
+              <span className={styles.ptSaveError} title={saveError}>
+                ⚠️ {saveError ?? 'Save failed'}
+              </span>
+              {effectivePoints != null && (
+                <button
+                  className={styles.textActionButton}
+                  onClick={() => void onSave(issueKey, effectivePoints)}
+                  type="button"
+                >
+                  Retry
+                </button>
+              )}
+            </span>
           ) : effectivePoints != null ? (
             <button
               className={styles.secondaryButton}
@@ -3849,9 +3870,25 @@ function PointingTab({
   const [anchorConfig, setAnchorConfig] = useState<AnchorConfig | null>(null);
   const [overridesByKey, setOverridesByKey] = useState<Record<string, number>>({});
   const [saveProgressByKey, setSaveProgressByKey] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'error'>>({});
+  const [saveErrorByKey, setSaveErrorByKey] = useState<Record<string, string>>({});
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const storyPointScale = parsePointingScale(config.storyPointScale);
+
+  // Detect whether the configured story points field is a Jira Select (dropdown) rather than a
+  // plain number field. Sprint board issues with existing estimates return an object
+  // {id, value} for Select fields and a bare number for numeric fields. When all issues are
+  // unpointed (null), detection returns false and handleSaveRow falls back via retry.
+  const isStoryPointsFieldDropdown = useMemo(() => {
+    const storyPointsFieldId = config.customStoryPointsFieldId || 'customfield_10016';
+    for (const issue of issues) {
+      const rawFieldValue = (issue.fields as Record<string, unknown>)[storyPointsFieldId];
+      if (rawFieldValue !== null && rawFieldValue !== undefined && typeof rawFieldValue === 'object') {
+        return true;
+      }
+    }
+    return false;
+  }, [config.customStoryPointsFieldId, issues]);
 
   // ── Rovo AI assist state ──
   const { verifyPassphrase } = useRovoAssist();
@@ -3956,9 +3993,31 @@ function PointingTab({
   /** Saves one issue's story points to Jira and records the outcome in per-row state. */
   async function handleSaveRow(issueKey: string, pointValue: number) {
     setSaveProgressByKey((prev) => ({ ...prev, [issueKey]: 'saving' }));
+    setSaveErrorByKey((prev) => { const next = { ...prev }; delete next[issueKey]; return next; });
     try {
       const storyPointsFieldId = config.customStoryPointsFieldId || 'customfield_10016';
-      await jiraPut(`/rest/api/2/issue/${issueKey}`, { fields: { [storyPointsFieldId]: pointValue } });
+
+      // Jira Select (dropdown) fields require {value: "N"} format; plain number fields take a bare number.
+      // Detection uses existing field values from sprint board issues; falls back to bare number
+      // and retries as dropdown if Jira returns a 400 format error (covers the all-unpointed case).
+      const dropdownPayload = { value: String(pointValue) };
+      const numericPayload = pointValue;
+      const primaryPayload = isStoryPointsFieldDropdown ? dropdownPayload : numericPayload;
+
+      try {
+        await jiraPut(`/rest/api/2/issue/${issueKey}`, { fields: { [storyPointsFieldId]: primaryPayload } });
+      } catch (firstAttemptError) {
+        // If the number format bounced back with a Jira field-format error, silently retry
+        // using the dropdown object format — avoids requiring users to reconfigure Settings.
+        const firstMessage = firstAttemptError instanceof Error ? firstAttemptError.message : '';
+        const isJiraFormatError = !isStoryPointsFieldDropdown
+          && firstMessage.includes('400')
+          && (firstMessage.toLowerCase().includes('value') || firstMessage.toLowerCase().includes('id'));
+
+        if (!isJiraFormatError) throw firstAttemptError;
+        await jiraPut(`/rest/api/2/issue/${issueKey}`, { fields: { [storyPointsFieldId]: dropdownPayload } });
+      }
+
       setSaveProgressByKey((prev) => ({ ...prev, [issueKey]: 'saved' }));
       setPointingQueue((previousQueue) =>
         showPointed
@@ -3969,8 +4028,15 @@ function PointingTab({
             )
           : previousQueue.filter((queuedIssue) => queuedIssue.key !== issueKey),
       );
-    } catch {
+    } catch (caughtError) {
       setSaveProgressByKey((prev) => ({ ...prev, [issueKey]: 'error' }));
+      // Strip the verbose "Jira PUT /path failed: " prefix — keep only the status + Jira message.
+      const rawMessage = caughtError instanceof Error ? caughtError.message : String(caughtError);
+      const failedIndex = rawMessage.indexOf(' failed: ');
+      setSaveErrorByKey((prev) => ({
+        ...prev,
+        [issueKey]: failedIndex !== -1 ? rawMessage.slice(failedIndex + ' failed: '.length) : rawMessage,
+      }));
     }
   }
 
@@ -4121,7 +4187,7 @@ function PointingTab({
     if (!anchorIssue) return;
     const nonAnchorIssues = pointingQueue.filter((issue) => issue.key !== anchorConfig.issueKey);
     setGeneratedRovoPromptText(
-      buildPointingRovoPrompt(anchorIssue, anchorConfig, nonAnchorIssues, allEstimates, detailByIssueKey),
+      buildPointingRovoPrompt(anchorIssue, anchorConfig, nonAnchorIssues, allEstimates, detailByIssueKey, storyPointScale),
     );
     setRovoResponseInput('');
     setRovoResponseParseError(null);
@@ -4372,6 +4438,7 @@ function PointingTab({
                   onSetAnchor={handleSetAnchorFromRow}
                   onToggleExpand={() => toggleExpandedRow(issue.key)}
                   override={overridesByKey[issue.key]}
+                  saveError={saveErrorByKey[issue.key]}
                   saveProgress={saveProgressByKey[issue.key] ?? 'idle'}
                   storyPointScale={storyPointScale}
                 />
