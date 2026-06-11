@@ -38,7 +38,7 @@ const SORT_OPTIONS: Array<{ value: SimpleSearchSortOption; label: string }> = [
   { value: 'key-asc', label: 'Issue key' },
 ];
 const NO_VALUE_LABEL = '—';
-const JIRA_BROWSE_PREFIX = '/browse/';
+const JIRA_BROWSE_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/';
 const CHILD_SECTION_TITLE = 'Child Records';
 const LINKED_SECTION_TITLE = 'Linked Issues';
 const SEND_TO_STABLIZATION_BUTTON_LABEL = 'Send to Stablization';
