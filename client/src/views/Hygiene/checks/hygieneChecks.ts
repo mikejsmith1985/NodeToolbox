@@ -16,6 +16,8 @@ const SPRINT_FIELD = 'customfield_10020';
 const IMPLEMENTING_STATUS_NAME = 'implementing';
 const FEATURE_ISSUE_TYPE_NAMES = new Set(['feature', 'epic']);
 const FEATURE_LINK_REQUIRED_ISSUE_TYPE_NAMES = new Set(['story', 'task', 'bug', 'defect', 'spike']);
+// Issue types that do not have a story-points field on their Jira screen; the missing-sp check must skip them.
+const STORY_POINTS_UNSUPPORTED_ISSUE_TYPE_NAMES = new Set(['risk']);
 const ACCEPTANCE_CRITERIA_PLACEHOLDER_VALUES = new Set(['tbd', 'to be determined']);
 
 type BuiltInHygieneCheckId =
@@ -327,6 +329,8 @@ export function checkMissingChildStoryPoints(
 /** Flags Story and Task issues that have neither known Jira story-points field populated. */
 export function checkMissingStoryPoints(issue: JiraIssue): HygieneFlag | null {
   const issueTypeName = readIssueTypeName(issue);
+  // Skip issue types that do not have a story-points field on their Jira screen at all.
+  if (STORY_POINTS_UNSUPPORTED_ISSUE_TYPE_NAMES.has(issueTypeName)) return null;
   const shouldCheckStoryPoints = issueTypeName === 'story' || issueTypeName === 'task';
   if (!shouldCheckStoryPoints) return null;
 
