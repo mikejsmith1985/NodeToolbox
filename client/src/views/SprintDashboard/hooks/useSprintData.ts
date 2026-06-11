@@ -8,7 +8,7 @@
 //      For kanban boards: fetches board issues directly (no sprint required).
 // Also manages the standup timer countdown, move-to-sprint, and available-sprints caching.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
@@ -24,8 +24,20 @@ const PI_JQL_FIELD_ID = 'cf[10301]';
 const DASHBOARD_SCOPE_MODE_SPRINT = 'sprint';
 const DASHBOARD_SCOPE_MODE_FIX_VERSION = 'fixVersion';
 const DASHBOARD_SCOPE_MODE_PI = 'pi';
-const SPRINT_ISSUE_FIELDS =
+const SPRINT_ISSUE_BASE_FIELDS =
   'summary,status,priority,issuetype,assignee,reporter,created,updated,description,customfield_10016,customfield_10021,customfield_10301,fixVersions,issuelinks';
+
+/** Returns the full field list for sprint/board issue requests, appending the configured
+ *  story-points field when it differs from the legacy customfield_10016 already in the base. */
+function buildSprintIssueFieldList(customStoryPointsFieldId: string): string {
+  const shouldAppend =
+    customStoryPointsFieldId
+    && customStoryPointsFieldId !== 'customfield_10016'
+    && !SPRINT_ISSUE_BASE_FIELDS.includes(customStoryPointsFieldId);
+  return shouldAppend
+    ? `${SPRINT_ISSUE_BASE_FIELDS},${customStoryPointsFieldId}`
+    : SPRINT_ISSUE_BASE_FIELDS;
+}
 const BOARDS_API_PATH = '/rest/agile/1.0/board';
 const NO_ACTIVE_SPRINT_MESSAGE =
   'No active sprint found on this board. Try selecting a different scrum board in Settings, or switch to a kanban board.';
@@ -283,8 +295,8 @@ async function loadAvailableBoardsForProject(projectKey: string): Promise<JiraBo
   return boardResponse.values ?? [];
 }
 
-function buildIssueSearchPath(jql: string): string {
-  return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${SPRINT_ISSUE_FIELDS}&maxResults=${SPRINT_ISSUE_MAX_RESULTS}&expand=changelog`;
+function buildIssueSearchPath(jql: string, fieldList: string): string {
+  return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${fieldList}&maxResults=${SPRINT_ISSUE_MAX_RESULTS}&expand=changelog`;
 }
 
 function escapeJqlValue(jqlValue: string): string {
@@ -340,8 +352,16 @@ function sortScopeVersions(scopeVersions: JiraVersion[]): JiraVersion[] {
  */
 export function useSprintData(
   activeDashboardTeamProfileId = '',
+  customStoryPointsFieldId = '',
 ): { state: SprintDataState; actions: SprintDataActions } {
   const [state, setState] = useState<SprintDataState>(() => createInitialSprintDataState());
+
+  // Held in a ref so callbacks can read the current value without being re-created
+  // every time the configured story-points field changes.
+  const sprintFieldListRef = useRef(buildSprintIssueFieldList(customStoryPointsFieldId));
+  useEffect(() => {
+    sprintFieldListRef.current = buildSprintIssueFieldList(customStoryPointsFieldId);
+  }, [customStoryPointsFieldId]);
 
   useEffect(() => {
     setState(createInitialSprintDataState());
@@ -436,6 +456,7 @@ export function useSprintData(
       jiraGet<{ issues?: JiraIssue[] }>(
         buildIssueSearchPath(
           `project = "${escapeJqlValue(projectKey)}" AND ${PI_JQL_FIELD_ID} is not EMPTY ORDER BY updated DESC`,
+          sprintFieldListRef.current,
         ),
       ).catch(() => ({ issues: [] })),
     ]);
@@ -522,7 +543,7 @@ export function useSprintData(
       scopeMode === DASHBOARD_SCOPE_MODE_FIX_VERSION
         ? `project = "${escapeJqlValue(projectKey)}" AND fixVersion = "${escapeJqlValue(resolvedFixVersionName)}" ORDER BY updated DESC`
         : `project = "${escapeJqlValue(projectKey)}" AND ${PI_JQL_FIELD_ID} = "${escapeJqlValue(resolvedPiValue)}" ORDER BY updated DESC`;
-    const issuesResponse = await jiraGet<JiraSprintIssuesResponse>(buildIssueSearchPath(scopedJql));
+    const issuesResponse = await jiraGet<JiraSprintIssuesResponse>(buildIssueSearchPath(scopedJql, sprintFieldListRef.current));
     setState((previousState) => ({
       ...previousState,
       ...nextScopedState,
@@ -552,7 +573,7 @@ export function useSprintData(
     }
 
     const issuesResponse = await jiraGet<JiraSprintIssuesResponse>(
-      `${BOARDS_API_PATH}/${boardId}/issue?maxResults=${SPRINT_ISSUE_MAX_RESULTS}&fields=${SPRINT_ISSUE_FIELDS}&expand=changelog`,
+      `${BOARDS_API_PATH}/${boardId}/issue?maxResults=${SPRINT_ISSUE_MAX_RESULTS}&fields=${sprintFieldListRef.current}&expand=changelog`,
     );
     persistSelectedSprintId(null);
     setState((previousState) => ({
@@ -619,7 +640,7 @@ export function useSprintData(
 
     persistSelectedSprintId(selectedScopeSprint.id);
     const issuesResponse = await jiraGet<JiraSprintIssuesResponse>(
-      `/rest/agile/1.0/sprint/${selectedScopeSprint.id}/issue?maxResults=${SPRINT_ISSUE_MAX_RESULTS}&fields=${SPRINT_ISSUE_FIELDS}&expand=changelog`,
+      `/rest/agile/1.0/sprint/${selectedScopeSprint.id}/issue?maxResults=${SPRINT_ISSUE_MAX_RESULTS}&fields=${sprintFieldListRef.current}&expand=changelog`,
     );
     setState((previousState) => ({
       ...previousState,
