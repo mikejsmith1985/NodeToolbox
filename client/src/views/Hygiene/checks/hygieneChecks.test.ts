@@ -74,6 +74,14 @@ describe('hygiene check predicates', () => {
     expect(hygieneFlag).toBeNull();
   });
 
+  it('does not flag Risk issues for missing story points because that field does not exist on the Risk screen', () => {
+    const hygieneFlag = checkMissingStoryPoints(
+      buildIssue({ issuetype: { name: 'Risk' }, customfield_10028: null, customfield_10016: null }),
+    );
+
+    expect(hygieneFlag).toBeNull();
+  });
+
   it('flags in-progress issues that have not been updated for more than fourteen days', () => {
     const hygieneFlag = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: buildDateDaysAgo(15) }));
 

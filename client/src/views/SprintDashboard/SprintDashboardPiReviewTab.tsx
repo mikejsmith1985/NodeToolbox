@@ -7,6 +7,7 @@ import PiReviewTab from '../ArtView/PiReviewTab.tsx';
 import type { ArtTeam } from '../ArtView/hooks/useArtData.ts';
 import CapacityTab from './CapacityTab.tsx';
 import PiFeatureRemapPanel from './PiFeatureRemapPanel.tsx';
+import RiskManagementSection from './RiskManagementSection.tsx';
 import { buildCapacitySummary } from './capacityModel.ts';
 import { useCapacityStore } from './hooks/useCapacityStore.ts';
 import {
@@ -25,6 +26,10 @@ interface SprintDashboardPiReviewTabProps {
   boardId: number | null;
   boardName: string | null;
   projectKey: string;
+  /** Jira customfield ID for Risk Impact Date; empty string when not configured in Settings. */
+  riskImpactDateFieldId: string;
+  /** Jira customfield ID for the Risk Response / ROAM disposition field; empty string when not configured. */
+  riskResponseFieldId: string;
   selectedPiName: string;
   sprintIssues: JiraIssue[];
 }
@@ -37,11 +42,13 @@ function readCapacityBoardLabel(boardName: string | null, boardId: number | null
   return boardId === null ? EMPTY_CONTEXT_LABEL : String(boardId);
 }
 
-/** Mounts the shared PI Review editor inside Team Dashboard for the current matched ART team. */
+/** Mounts the shared PI Review editor and Risk Management panel inside Team Dashboard. */
 export default function SprintDashboardPiReviewTab({
   boardId,
   boardName,
   projectKey,
+  riskImpactDateFieldId,
+  riskResponseFieldId,
   selectedPiName,
   sprintIssues,
 }: SprintDashboardPiReviewTabProps) {
@@ -116,6 +123,12 @@ export default function SprintDashboardPiReviewTab({
       />
       <PiFeatureRemapPanel
         projectKey={projectKey}
+        selectedPiName={effectiveSelectedPiName}
+      />
+      <RiskManagementSection
+        projectKey={projectKey}
+        riskImpactDateFieldId={riskImpactDateFieldId}
+        riskResponseFieldId={riskResponseFieldId}
         selectedPiName={effectiveSelectedPiName}
       />
     </div>

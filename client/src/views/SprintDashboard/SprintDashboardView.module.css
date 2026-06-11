@@ -3353,3 +3353,97 @@
   resize: vertical;
 }
 
+/* ── Risk Management Section ── */
+
+.riskManagementSection {
+  display: grid;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+}
+
+.riskManagementHeader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.riskManagementSubtext {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted, #888);
+  margin: 0;
+}
+
+.riskEnhanceButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px var(--spacing-md);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.riskEnhanceButton:hover {
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.riskTableWrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.riskTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.riskTable th {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-muted, #888);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.riskTable td {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  vertical-align: top;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+}
+
+.riskTableRow:last-child td {
+  border-bottom: none;
+}
+
+.riskSummaryCell {
+  max-width: 28rem;
+}
+
+.riskSaveStatus {
+  font-size: var(--font-size-xs, 11px);
+  color: var(--color-text-muted, #888);
+}
+
+.riskSaveStatusSaved {
+  font-size: var(--font-size-xs, 11px);
+  color: var(--color-success, #4caf50);
+}
+
+.riskSaveStatusError {
+  font-size: var(--font-size-xs, 11px);
+  color: var(--color-error, #e53935);
+  cursor: help;
+}
+
