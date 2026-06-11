@@ -67,6 +67,8 @@ export interface HygieneEvaluationContext {
   fieldConfig?: Partial<HygieneFieldConfig>;
   enabledBuiltInCheckIds?: ReadonlySet<string>;
   customRules?: readonly EnterpriseRequiredFieldRule[];
+  /** Jira custom field ID configured in Settings for story points (e.g. customfield_10236). */
+  customStoryPointsFieldId?: string;
 }
 
 export interface HygieneFinding {
@@ -327,7 +329,7 @@ export function checkMissingChildStoryPoints(
 }
 
 /** Flags Story and Task issues that have neither known Jira story-points field populated. */
-export function checkMissingStoryPoints(issue: JiraIssue): HygieneFlag | null {
+export function checkMissingStoryPoints(issue: JiraIssue, customStoryPointsFieldId?: string): HygieneFlag | null {
   const issueTypeName = readIssueTypeName(issue);
   // Skip issue types that do not have a story-points field on their Jira screen at all.
   if (STORY_POINTS_UNSUPPORTED_ISSUE_TYPE_NAMES.has(issueTypeName)) return null;
@@ -336,7 +338,11 @@ export function checkMissingStoryPoints(issue: JiraIssue): HygieneFlag | null {
 
   const modernStoryPoints = issue.fields[MODERN_STORY_POINTS_FIELD];
   const legacyStoryPoints = issue.fields[LEGACY_STORY_POINTS_FIELD];
-  return hasEmptyStoryPoints(modernStoryPoints) && hasEmptyStoryPoints(legacyStoryPoints)
+  // Also check the team-configured field (e.g. customfield_10236) when provided.
+  const configuredStoryPoints = customStoryPointsFieldId ? issue.fields[customStoryPointsFieldId] : undefined;
+  return hasEmptyStoryPoints(modernStoryPoints)
+    && hasEmptyStoryPoints(legacyStoryPoints)
+    && hasEmptyStoryPoints(configuredStoryPoints)
     ? BUILT_IN_HYGIENE_FLAGS['missing-sp']
     : null;
 }
@@ -438,7 +444,7 @@ export function evaluateHygieneIssue(issue: JiraIssue, evaluationContext: Hygien
     checkTargetEndOverdue(issue, fieldConfig),
     checkDueDateOverdue(issue),
     checkMissingChildStoryPoints(issue, featureKeysWithPointedStories),
-    checkMissingStoryPoints(issue),
+    checkMissingStoryPoints(issue, evaluationContext.customStoryPointsFieldId),
     checkStaleIssue(issue),
     checkNoAssignee(issue),
     checkNoAcceptanceCriteria(issue, fieldConfig),
@@ -626,6 +632,10 @@ function hasEmptyStoryPoints(fieldValue: unknown): boolean {
   if (fieldValue === null || fieldValue === undefined || fieldValue === '') return true;
   if (typeof fieldValue === 'number') return fieldValue <= 0;
   if (Array.isArray(fieldValue)) return fieldValue.length === 0;
+  // Jira Select-type fields return {id, value} objects — extract and re-evaluate the numeric value.
+  if (typeof fieldValue === 'object') {
+    return hasEmptyStoryPoints((fieldValue as Record<string, unknown>).value);
+  }
   return false;
 }
 

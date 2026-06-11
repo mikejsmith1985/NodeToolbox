@@ -15,6 +15,7 @@ import {
   readEnabledRequiredFieldRules,
 } from '../../AdminHub/enterpriseRules.ts';
 import { buildStandupRosterAssigneeClause } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
+import { loadDashboardConfigFromStorage } from '../../SprintDashboard/hooks/useDashboardConfig.ts';
 import {
   evaluateHygieneIssue,
   isFeatureLikeIssue,
@@ -214,11 +215,15 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
         }
       }
 
+      // Read the team's configured story-points field so the missing-SP check uses the right field.
+      const dashboardConfig = loadDashboardConfigFromStorage();
+      const customStoryPointsFieldId = dashboardConfig.customStoryPointsFieldId || '';
+
       const jiraSearchResponse = await jiraGet<JiraSearchResponse>(
         buildHygieneSearchPath(
           normalizedProjectKey,
           extraJql,
-          buildRequestedHygieneFields(hygieneFieldConfig, enabledCustomRules),
+          buildRequestedHygieneFields(hygieneFieldConfig, enabledCustomRules, customStoryPointsFieldId),
           assigneeClause,
         ),
       );
@@ -229,6 +234,7 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
         enabledBuiltInCheckIds,
         fieldConfig: hygieneFieldConfig,
         featureKeysWithPointedStories,
+        customStoryPointsFieldId,
       }));
     } catch (caughtError: unknown) {
       const errorMessage = caughtError instanceof Error ? caughtError.message : 'Failed to load Hygiene results';
@@ -281,9 +287,14 @@ function buildUniqueFieldIds(fieldIds: readonly string[]): string[] {
   return Array.from(new Set(fieldIds.filter(Boolean)));
 }
 
-function buildRequestedHygieneFields(fieldConfig: HygieneFieldConfig, customRules = readEnabledRequiredFieldRules()): string[] {
+function buildRequestedHygieneFields(
+  fieldConfig: HygieneFieldConfig,
+  customRules = readEnabledRequiredFieldRules(),
+  customStoryPointsFieldId = '',
+): string[] {
   return buildUniqueFieldIds([
     ...BASE_HYGIENE_FIELDS,
+    ...(customStoryPointsFieldId ? [customStoryPointsFieldId] : []),
     ...customRules.map((customRule) => customRule.fieldId),
     ...fieldConfig.acceptanceCriteriaFieldIds,
     ...fieldConfig.applicationFieldIds,
