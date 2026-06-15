@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
+import SendToAutomationButton from '../../components/SendToAutomationButton.tsx';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import DsuBoardView from '../DsuBoard/DsuBoardView.tsx';
@@ -630,9 +631,12 @@ export default function StandupTab({
                 {isBriefingBusy ? 'Running…' : 'Run Briefing'}
               </button>
               {briefingText ? (
-                <button className={styles.secondaryButton} onClick={() => void handleCopyBriefing()} type="button">
-                  {briefingCopyLabel}
-                </button>
+                <>
+                  <button className={styles.secondaryButton} onClick={() => void handleCopyBriefing()} type="button">
+                    {briefingCopyLabel}
+                  </button>
+                  <SendToAutomationButton surface="standup-briefing" teamId={projectKey} report={briefingText} />
+                </>
               ) : null}
             </div>
           </div>

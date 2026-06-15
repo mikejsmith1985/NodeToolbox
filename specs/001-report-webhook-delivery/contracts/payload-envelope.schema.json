@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nodetoolbox.local/contracts/payload-envelope.schema.json",
+  "title": "Report Webhook payloadContext envelope",
+  "description": "Body POSTed to the team's Atlassian Automation webhook. Atlassian smart values reference these via {{webhookData.payloadContext.*}}.",
+  "type": "object",
+  "required": ["payloadContext"],
+  "additionalProperties": false,
+  "properties": {
+    "payloadContext": {
+      "type": "object",
+      "required": ["source", "team", "generatedAt", "report", "meta"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": ["standup-briefing", "scope-change", "feature-change"],
+          "description": "Originating report surface id."
+        },
+        "team": {
+          "type": "object",
+          "required": ["name", "projectKey"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "projectKey": { "type": "string" }
+          }
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO-8601 UTC, set server-side at delivery."
+        },
+        "report": {
+          "description": "Surface-specific content. Redacted form when meta.redactionApplied is true.",
+          "oneOf": [
+            { "type": "string", "description": "Markdown report text (e.g. standup briefing)." },
+            { "type": "object", "description": "Structured report (e.g. scope/feature change rows)." }
+          ]
+        },
+        "meta": {
+          "type": "object",
+          "required": ["redactionApplied"],
+          "additionalProperties": false,
+          "properties": {
+            "redactionApplied": { "type": "boolean" },
+            "nodeToolboxVersion": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -10,7 +10,10 @@ import { Link } from 'react-router-dom'
 import { Cell, Pie, PieChart, Tooltip } from 'recharts'
 
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx'
+import SendToAutomationButton from '../../components/SendToAutomationButton.tsx'
+import type { ReportSurface } from '../../api/reportDelivery.ts'
 import { copyElementImageToClipboard } from '../../utils/downloadElementImage.ts'
+import { buildFeatureChangeSendPayload, buildScopeChangeSendPayload, surfaceForTab } from './buildSendPayload.ts'
 import { findPiNameForDate } from '../ArtView/hooks/artHelpers.ts'
 import type {
   ArtTeamFeatureChangeResult,
@@ -264,6 +267,12 @@ interface TabPreambleProps {
   onToggleExplainer(): void
   lastGeneratedAt: string | null
   onCopyReport(): Promise<void>
+  /** When set, shows a "Send to Automation" action for a deliverable report surface. */
+  sendSurface?: ReportSurface
+  /** Team identifier used to resolve the webhook destination server-side. */
+  sendTeamId?: string
+  /** Resolves the report content at click time. */
+  getSendReport?: () => unknown
 }
 
 /** Wraps every tab with an "About" card, last-generated timestamp, and a copy button. */
@@ -273,6 +282,9 @@ function TabPreamble({
   onToggleExplainer,
   lastGeneratedAt,
   onCopyReport,
+  sendSurface,
+  sendTeamId,
+  getSendReport,
 }: TabPreambleProps) {
   return (
     <div className={styles.tabPreamble}>
@@ -283,6 +295,9 @@ function TabPreamble({
           </span>
         )}
         <CopyReportButton onCopyReport={onCopyReport} />
+        {sendSurface && (
+          <SendToAutomationButton surface={sendSurface} teamId={sendTeamId ?? ''} getReport={getSendReport} />
+        )}
       </div>
       <AboutReportCard tabKey={tabKey} isCollapsed={isCollapsed} onToggle={onToggleExplainer} />
     </div>
@@ -2720,6 +2735,13 @@ export default function ReportsHubView() {
           onToggleExplainer={() => { toggleTabExplainer(state.activeTab) }}
           lastGeneratedAt={activeTabTimestamp}
           onCopyReport={handleCopyReportImage}
+          sendSurface={surfaceForTab(state.activeTab)}
+          sendTeamId={state.teamFilter}
+          getSendReport={() =>
+            state.activeTab === 'scopeChange'
+              ? buildScopeChangeSendPayload(state.scopeChangeEntries)
+              : buildFeatureChangeSendPayload(state.featureChangeEntries)
+          }
         />
 
         {/* Tab content — dashboard and reports need ART team configuration before Jira queries can load. */}

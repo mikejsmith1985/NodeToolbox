@@ -5,3 +5,11 @@
 > before beginning any task.
 
 @.github/copilot-instructions.md
+
+<!-- SPECKIT START -->
+## Active Spec Kit Feature
+
+- **report-webhook-delivery** — plan: `specs/001-report-webhook-delivery/plan.md`
+  (spec, research, data-model, contracts, quickstart in the same directory).
+<!-- SPECKIT END -->
+
