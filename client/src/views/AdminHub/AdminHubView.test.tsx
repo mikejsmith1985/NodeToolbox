@@ -207,7 +207,7 @@ describe('AdminHubView', () => {
 
   it('renders the Config, Repo Monitor, and Dev Panel tab buttons', () => {
     renderAdminHubView();
-    expect(screen.getByRole('tab', { name: /config/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '⚙️ Config' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /repo monitor/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /dev panel/i })).toBeInTheDocument();
   });
