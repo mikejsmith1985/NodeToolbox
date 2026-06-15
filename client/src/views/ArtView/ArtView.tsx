@@ -168,6 +168,7 @@ export default function ArtView() {
             onSaveTeams={actions.saveTeams}
             onUpdateTeamSosKey={actions.updateTeamSosKey}
             onUpdateTeamPiReviewPageUrl={actions.updateTeamPiReviewPageUrl}
+            onUpdateTeamJiraLabel={actions.updateTeamJiraLabel}
           />
         )}
       </div>
@@ -2858,6 +2859,8 @@ interface SettingsPanelProps {
   onUpdateTeamSosKey: (teamId: string, sosIssueKey: string) => void;
   /** Updates the PI Review Confluence page URL for a specific team without requiring a full Save Teams. */
   onUpdateTeamPiReviewPageUrl: (teamId: string, piReviewPageUrl: string) => void;
+  /** Updates the Jira label for a specific team used in Feature Change report queries. */
+  onUpdateTeamJiraLabel: (teamId: string, jiraLabel: string) => void;
 }
 
 /** Shape of the ART advanced settings object stored under 'tbxARTSettings' in localStorage. */
@@ -3351,6 +3354,7 @@ function SettingsPanel({
   onSaveTeams,
   onUpdateTeamSosKey,
   onUpdateTeamPiReviewPageUrl,
+  onUpdateTeamJiraLabel,
 }: SettingsPanelProps) {
   const { showToast } = useToast();
   const [newTeamName, setNewTeamName] = useState('');
@@ -3902,6 +3906,14 @@ function SettingsPanel({
               placeholder="PI Review Page URL"
               type="text"
               value={team.piReviewPageUrl ?? ''}
+            />
+            <input
+              aria-label={`Jira Label for ${team.name}`}
+              className={styles.textInput}
+              onChange={(event) => onUpdateTeamJiraLabel(team.id, event.target.value)}
+              placeholder="Jira Label (e.g. Transformers)"
+              type="text"
+              value={team.jiraLabel ?? ''}
             />
             <button className={styles.removeBtn} onClick={() => onRemoveTeam(team.id)}>
               Remove

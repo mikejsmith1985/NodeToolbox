@@ -304,6 +304,21 @@
   justify-content: space-between;
 }
 
+.featureReviewFixHeaderLabel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.featureReviewFixFeatureContext {
+  font-family: monospace;
+  font-size: var(--font-size-sm);
+  color: var(--color-accent);
+  font-weight: 600;
+  opacity: 0.85;
+}
+
 .featureReviewFixGrid,
 .featureReviewChildFixSection {
   display: grid;

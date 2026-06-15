@@ -129,6 +129,7 @@ describe('StandupTab', () => {
         onStart={vi.fn()}
         onStop={vi.fn()}
         onTick={vi.fn()}
+        dashboardScopeMode="sprint"
         projectKey="TBX"
         timerSecondsRemaining={900}
       />,
@@ -192,6 +193,7 @@ describe('StandupTab', () => {
         onStart={vi.fn()}
         onStop={vi.fn()}
         onTick={vi.fn()}
+        dashboardScopeMode="sprint"
         projectKey="TBX"
         timerSecondsRemaining={900}
       />,
@@ -246,6 +248,7 @@ describe('StandupTab', () => {
         onStart={vi.fn()}
         onStop={vi.fn()}
         onTick={vi.fn()}
+        dashboardScopeMode="sprint"
         projectKey="TBX"
         timerSecondsRemaining={900}
       />,
@@ -315,6 +318,7 @@ describe('StandupTab', () => {
         onStart={vi.fn()}
         onStop={vi.fn()}
         onTick={vi.fn()}
+        dashboardScopeMode="sprint"
         projectKey="TBX"
         timerSecondsRemaining={900}
       />,
@@ -382,6 +386,7 @@ describe('StandupTab', () => {
         onStart={vi.fn()}
         onStop={vi.fn()}
         onTick={vi.fn()}
+        dashboardScopeMode="sprint"
         projectKey="ENFCT"
         timerSecondsRemaining={900}
       />,

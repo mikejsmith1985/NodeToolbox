@@ -15,13 +15,18 @@ import { fetchSchedulerValidation, type SchedulerValidationRepoResult } from '..
 import { useConnectionStore } from '../../store/connectionStore'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
 import { RepoMonitorPanel } from './RepoMonitorPanel.tsx'
+import { StandupBriefingPanel } from './StandupBriefingPanel.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
 import type {
   AdminHubActions,
   AdminHubState,
   ArtSettingsConfig,
   DiagnosticsResult,
+  FeatureChangeArtRollupConfig,
+  FeatureChangeReportConfig,
   HygieneRules,
+  NotificationTeamConfig,
+  NotificationArtRollupConfig,
   UpdateCheckResult,
 } from './hooks/useAdminHubState.ts'
 import type { ConnectivityConfigResult, ConnectionProbeResult } from '../../types/config.ts'
@@ -40,12 +45,21 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-type AdminHubTab = 'main' | 'repo-monitor' | 'dev-panel'
+type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'dev-panel'
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
   { key: 'repo-monitor', label: '🔁 Repo Monitor' },
+  { key: 'reports-config', label: '📊 Reports Config' },
+  { key: 'standup-briefing', label: '📋 Standup' },
   { key: 'dev-panel', label: '🛰️ Dev Panel' },
+]
+
+type ReportsConfigSubTab = 'scope-change' | 'feature-change'
+
+const REPORTS_CONFIG_SUB_TAB_OPTIONS: { key: ReportsConfigSubTab; label: string }[] = [
+  { key: 'scope-change', label: '🔔 Scope Change' },
+  { key: 'feature-change', label: '🎯 Feature Change' },
 ]
 
 /**
@@ -388,6 +402,7 @@ function ArtSettingsSection({
     </section>
   )
 }
+
 
 // ── Admin Access section ──
 
@@ -1885,6 +1900,647 @@ function FeatureRequestSection() {
 
 // ── Root component ──
 
+// ── Notifications section ──
+
+interface NotificationsSectionProps {
+  teamConfigs: NotificationTeamConfig[]
+  artRollup: NotificationArtRollupConfig
+  saveStatus: string | null
+  teamRunStatuses: (string | null)[]
+  isTeamRunning: boolean[]
+  isRollupRunning: boolean
+  rollupRunStatus: string | null
+  onMount(): void
+  onUpdateTeam(index: number, field: string, value: string | boolean): void
+  onUpdateRollup(field: string, value: string | boolean): void
+  onSave(): void
+  onRunTeam(index: number): void
+  onRunRollup(): void
+  onTestWebhook(triggerUrl: string, triggerSecret?: string): Promise<{ ok: boolean; message: string }>
+}
+
+/** Notifications section — configures per-team daily Scope Change delivery to Confluence. */
+function NotificationsSection({
+  teamConfigs,
+  artRollup,
+  saveStatus,
+  teamRunStatuses,
+  isTeamRunning,
+  isRollupRunning,
+  rollupRunStatus,
+  onMount,
+  onUpdateTeam,
+  onUpdateRollup,
+  onSave,
+  onRunTeam,
+  onRunRollup,
+  onTestWebhook,
+}: NotificationsSectionProps) {
+  // Capture onMount in a ref so the effect only fires once on initial render,
+  // not every time the parent re-renders and creates a new inline function reference.
+  const onMountRef = useRef(onMount)
+  const [webhookTestStatuses, setWebhookTestStatuses] = useState<(string | null)[]>([])
+  const [webhookTestStatusRollup, setWebhookTestStatusRollup] = useState<string | null>(null)
+
+  const handleTestWebhook = useCallback(async (triggerUrl: string, triggerSecret: string, index: number | 'rollup') => {
+    if (!triggerUrl) return
+    const result = await onTestWebhook(triggerUrl, triggerSecret || undefined)
+    if (index === 'rollup') {
+      setWebhookTestStatusRollup(result.message)
+      setTimeout(() => setWebhookTestStatusRollup(null), 4000)
+    } else {
+      setWebhookTestStatuses((prev) => {
+        const next = [...prev]
+        next[index] = result.message
+        return next
+      })
+      setTimeout(() => setWebhookTestStatuses((prev) => { const next = [...prev]; next[index] = null; return next }), 4000)
+    }
+  }, [onTestWebhook])
+  useEffect(() => { void onMountRef.current() }, [])
+
+  return (
+    <section className={styles.sectionCard}>
+      <h2 className={styles.sectionTitle}>🔔 Notifications</h2>
+      <p className={styles.adminDescription}>
+        Daily Scope Change reports delivered to Confluence. Each ART team can have its own destination
+        and schedule. The ART Rollup delivers a combined cross-team report for the RTE.
+        Teams are sourced from ART View Settings.
+      </p>
+
+      {teamConfigs.length === 0 && (
+        <p className={styles.adminDescription}>
+          ⚠️ No ART teams with project keys found. Configure teams in ART View → Settings first.
+        </p>
+      )}
+
+      {teamConfigs.map((team, index) => (
+        <div key={team.projectKey} className={styles.notificationTeamRow}>
+          <div className={styles.notificationTeamHeader}>
+            <strong>{team.teamName}</strong>
+            <code className={styles.projectKeyBadge}>{team.projectKey}</code>
+            <input
+              type="checkbox"
+              id={'team-enabled-' + index}
+              checked={team.isEnabled}
+              onChange={(e) => onUpdateTeam(index, 'isEnabled', e.target.checked)}
+              aria-label={'Enable notifications for ' + team.teamName}
+            />
+            <label htmlFor={'team-enabled-' + index} className={styles.fieldLabel}>Enabled</label>
+          </div>
+          <div className={styles.notificationTeamFields}>
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel} htmlFor={'team-space-' + index}>Space Key</label>
+              <input
+                id={'team-space-' + index}
+                type="text"
+                className={styles.textInput}
+                value={team.confluenceSpaceKey}
+                onChange={(e) => onUpdateTeam(index, 'confluenceSpaceKey', e.target.value)}
+                placeholder="e.g. TEAM"
+              />
+            </div>
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel} htmlFor={'team-time-' + index}>Schedule</label>
+              <input
+                id={'team-time-' + index}
+                type="time"
+                className={styles.timeInput}
+                value={team.scheduleTime}
+                onChange={(e) => onUpdateTeam(index, 'scheduleTime', e.target.value)}
+              />
+            </div>
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel} htmlFor={'team-url-' + index}>Target Blog URL</label>
+              <input
+                id={'team-url-' + index}
+                type="url"
+                className={styles.textInput}
+                value={team.targetBlogUrl}
+                onChange={(e) => onUpdateTeam(index, 'targetBlogUrl', e.target.value)}
+                placeholder="Paste Confluence blog URL to update existing page (optional)"
+              />
+            </div>
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel} htmlFor={'team-trigger-' + index}>Automation Trigger URL</label>
+              <input
+                id={'team-trigger-' + index}
+                type="url"
+                className={styles.textInput}
+                value={team.triggerUrl}
+                onChange={(e) => onUpdateTeam(index, 'triggerUrl', e.target.value)}
+                placeholder="Confluence Automation incoming webhook URL (optional)"
+              />
+            </div>
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel} htmlFor={'team-trigger-secret-' + index}>Webhook Secret</label>
+              <input
+                id={'team-trigger-secret-' + index}
+                type="password"
+                className={styles.textInput}
+                value={team.triggerSecret}
+                onChange={(e) => onUpdateTeam(index, 'triggerSecret', e.target.value)}
+                placeholder="Secret shown in Confluence Automation rule (optional)"
+              />
+              <button
+                type="button"
+                className={styles.actionButton}
+                disabled={!team.triggerUrl}
+                onClick={() => void handleTestWebhook(team.triggerUrl, team.triggerSecret, index)}
+                title="Send a test POST to this webhook URL"
+              >Test</button>
+              {(webhookTestStatuses[index] ?? null) !== null && (
+                <span className={styles.saveStatus}>{webhookTestStatuses[index]}</span>
+              )}
+            </div>
+          </div>
+          <div className={styles.actionRow}>
+            <button
+              className={styles.actionButton}
+              disabled={isTeamRunning[index] || team.confluenceSpaceKey.trim() === ''}
+              onClick={() => onRunTeam(index)}
+              type="button"
+              title="Run this team's report now"
+            >
+              {isTeamRunning[index] ? 'Running…' : 'Run Now'}
+            </button>
+            {teamRunStatuses[index] !== null && (
+              <span className={styles.saveStatus}>{teamRunStatuses[index]}</span>
+            )}
+          </div>
+        </div>
+      ))}
+
+      <hr className={styles.sectionDivider} />
+
+      <h3 className={styles.sectionTitle}>📊 ART Rollup Report</h3>
+      <p className={styles.adminDescription}>
+        Combines all team project keys into one report for the RTE.
+        {artRollup.projectKeys.length > 0 && (
+          <span> Teams: <strong>{artRollup.projectKeys.join(', ')}</strong></span>
+        )}
+      </p>
+      <div className={styles.notificationTeamFields}>
+        <div className={styles.fieldRow}>
+          <label className={styles.fieldLabel} htmlFor="rollup-space-key">Space Key</label>
+          <input
+            id="rollup-space-key"
+            type="text"
+            className={styles.textInput}
+            value={artRollup.confluenceSpaceKey}
+            onChange={(e) => onUpdateRollup('confluenceSpaceKey', e.target.value)}
+            placeholder="e.g. ART"
+          />
+        </div>
+        <div className={styles.fieldRow}>
+          <label className={styles.fieldLabel} htmlFor="rollup-schedule">Schedule</label>
+          <input
+            id="rollup-schedule"
+            type="time"
+            className={styles.timeInput}
+            value={artRollup.scheduleTime}
+            onChange={(e) => onUpdateRollup('scheduleTime', e.target.value)}
+          />
+        </div>
+        <div className={styles.fieldRow}>
+          <label className={styles.fieldLabel} htmlFor="rollup-url">Target Blog URL</label>
+          <input
+            id="rollup-url"
+            type="url"
+            className={styles.textInput}
+            value={artRollup.targetBlogUrl}
+            onChange={(e) => onUpdateRollup('targetBlogUrl', e.target.value)}
+            placeholder="Paste Confluence blog URL to update existing page (optional)"
+          />
+        </div>
+        <div className={styles.fieldRow}>
+          <label className={styles.fieldLabel} htmlFor="rollup-trigger">Automation Trigger URL</label>
+          <input
+            id="rollup-trigger"
+            type="url"
+            className={styles.textInput}
+            value={artRollup.triggerUrl}
+            onChange={(e) => onUpdateRollup('triggerUrl', e.target.value)}
+            placeholder="Confluence Automation incoming webhook URL (optional)"
+          />
+        </div>
+        <div className={styles.fieldRow}>
+          <label className={styles.fieldLabel} htmlFor="rollup-trigger-secret">Webhook Secret</label>
+          <input
+            id="rollup-trigger-secret"
+            type="password"
+            className={styles.textInput}
+            value={artRollup.triggerSecret}
+            onChange={(e) => onUpdateRollup('triggerSecret', e.target.value)}
+            placeholder="Secret shown in Confluence Automation rule (optional)"
+          />
+          <button
+            type="button"
+            className={styles.actionButton}
+            disabled={!artRollup.triggerUrl}
+            onClick={() => void handleTestWebhook(artRollup.triggerUrl, artRollup.triggerSecret, 'rollup')}
+            title="Send a test POST to this webhook URL"
+          >Test</button>
+          {webhookTestStatusRollup !== null && (
+            <span className={styles.saveStatus}>{webhookTestStatusRollup}</span>
+          )}
+        </div>
+        <div className={styles.flagRow}>
+          <input
+            id="rollup-enabled"
+            type="checkbox"
+            checked={artRollup.isEnabled}
+            onChange={(e) => onUpdateRollup('isEnabled', e.target.checked)}
+          />
+          <label htmlFor="rollup-enabled" className={styles.fieldLabel}>Enable daily schedule</label>
+        </div>
+      </div>
+      <div className={styles.actionRow}>
+        <button
+          className={styles.actionButton}
+          disabled={isRollupRunning || artRollup.projectKeys.length === 0 || artRollup.confluenceSpaceKey.trim() === ''}
+          onClick={onRunRollup}
+          type="button"
+          title="Run the ART rollup report now"
+        >
+          {isRollupRunning ? 'Running…' : 'Run Rollup Now'}
+        </button>
+        {rollupRunStatus !== null && <span className={styles.saveStatus}>{rollupRunStatus}</span>}
+      </div>
+
+      <hr className={styles.sectionDivider} />
+
+      <div className={styles.actionRow}>
+        <button className={`${styles.actionButton} ${styles.saveButton}`} onClick={onSave} type="button">
+          Save All
+        </button>
+        {saveStatus !== null && <span className={styles.saveStatus}>{saveStatus}</span>}
+      </div>
+    </section>
+  )
+}
+
+// ── Feature Change section ──
+
+interface FeatureChangeSectionProps {
+  featureConfigs: FeatureChangeReportConfig[]
+  artRollup: FeatureChangeArtRollupConfig
+  saveStatus: string | null
+  featureRunStatuses: (string | null)[]
+  isFeatureRunning: boolean[]
+  isFeatureRollupRunning: boolean
+  featureRollupRunStatus: string | null
+  onMount(): void
+  onUpdate(index: number, field: keyof FeatureChangeReportConfig, value: string | boolean): void
+  onUpdateArtRollup(field: keyof FeatureChangeArtRollupConfig, value: string | boolean): void
+  onSave(): void
+  onRunNow(index: number): void
+  onRunRollupNow(): void
+  onTestWebhook(triggerUrl: string, triggerSecret?: string): Promise<{ ok: boolean; message: string }>
+}
+
+/** Feature Change section — configures per-project daily Feature Change delivery to Confluence. */
+function FeatureChangeSection({
+  featureConfigs,
+  artRollup,
+  saveStatus,
+  featureRunStatuses,
+  isFeatureRunning,
+  isFeatureRollupRunning,
+  featureRollupRunStatus,
+  onMount,
+  onUpdate,
+  onUpdateArtRollup,
+  onSave,
+  onRunNow,
+  onRunRollupNow,
+  onTestWebhook,
+}: FeatureChangeSectionProps) {
+  const onMountRef = useRef(onMount)
+  const [webhookTestStatuses, setWebhookTestStatuses] = useState<(string | null)[]>([])
+  const [webhookTestStatusRollup, setWebhookTestStatusRollup] = useState<string | null>(null)
+
+  const handleTestWebhook = useCallback(async (triggerUrl: string, triggerSecret: string, index: number | 'rollup') => {
+    if (!triggerUrl) return
+    const result = await onTestWebhook(triggerUrl, triggerSecret || undefined)
+    if (index === 'rollup') {
+      setWebhookTestStatusRollup(result.message)
+      setTimeout(() => setWebhookTestStatusRollup(null), 4000)
+    } else {
+      setWebhookTestStatuses((prev) => {
+        const next = [...prev]
+        next[index] = result.message
+        return next
+      })
+      setTimeout(() => setWebhookTestStatuses((prev) => { const next = [...prev]; next[index] = null; return next }), 4000)
+    }
+  }, [onTestWebhook])
+
+  useEffect(() => { void onMountRef.current() }, [])
+
+  return (
+    <section className={styles.sectionCard}>
+      <h2 className={styles.sectionTitle}>🎯 Feature Change Reports</h2>
+      <p className={styles.adminDescription}>
+        Daily Feature Change reports monitor Epic-level issues for changes to fix version, status,
+        Target Start, Target End, and Due Date. Each project delivers its own report to Confluence.
+        Projects are sourced from ART View Settings.
+      </p>
+
+      {featureConfigs.length === 0 && (
+        <p className={styles.adminDescription}>
+          ⚠️ No ART teams with project keys found. Configure teams in ART View → Settings first.
+        </p>
+      )}
+
+      {featureConfigs.map((featureConfig, index) => (
+        <div key={featureConfig.projectKey} className={styles.notificationTeamRow}>
+          <div className={styles.notificationTeamHeader}>
+            <strong>{featureConfig.teamName}</strong>
+            <code className={styles.projectKeyBadge}>{featureConfig.projectKey}</code>
+            <input
+              type="checkbox"
+              id={'feature-enabled-' + index}
+              checked={featureConfig.isEnabled}
+              onChange={(changeEvent) => onUpdate(index, 'isEnabled', changeEvent.target.checked)}
+              aria-label={'Enable feature change reports for ' + featureConfig.teamName}
+            />
+            <label htmlFor={'feature-enabled-' + index} className={styles.fieldLabel}>Enabled</label>
+          </div>
+          <div className={styles.notificationTeamFields}>
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel} htmlFor={'feature-space-' + index}>Space Key</label>
+              <input
+                id={'feature-space-' + index}
+                type="text"
+                className={styles.textInput}
+                value={featureConfig.confluenceSpaceKey}
+                onChange={(changeEvent) => onUpdate(index, 'confluenceSpaceKey', changeEvent.target.value)}
+                placeholder="e.g. TEAM"
+              />
+            </div>
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel} htmlFor={'feature-time-' + index}>Schedule</label>
+              <input
+                id={'feature-time-' + index}
+                type="time"
+                className={styles.timeInput}
+                value={featureConfig.scheduleTime}
+                onChange={(changeEvent) => onUpdate(index, 'scheduleTime', changeEvent.target.value)}
+              />
+            </div>
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel} htmlFor={'feature-url-' + index}>Target Blog URL</label>
+              <input
+                id={'feature-url-' + index}
+                type="url"
+                className={styles.textInput}
+                value={featureConfig.targetBlogUrl}
+                onChange={(changeEvent) => onUpdate(index, 'targetBlogUrl', changeEvent.target.value)}
+                placeholder="Paste Confluence blog URL to update existing page (optional)"
+              />
+            </div>
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel} htmlFor={'feature-trigger-' + index}>Automation Trigger URL</label>
+              <input
+                id={'feature-trigger-' + index}
+                type="url"
+                className={styles.textInput}
+                value={featureConfig.triggerUrl}
+                onChange={(changeEvent) => onUpdate(index, 'triggerUrl', changeEvent.target.value)}
+                placeholder="Confluence Automation incoming webhook URL (optional)"
+              />
+            </div>
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel} htmlFor={'feature-trigger-secret-' + index}>Webhook Secret</label>
+              <input
+                id={'feature-trigger-secret-' + index}
+                type="password"
+                className={styles.textInput}
+                value={featureConfig.triggerSecret}
+                onChange={(changeEvent) => onUpdate(index, 'triggerSecret', changeEvent.target.value)}
+                placeholder="Secret shown in Confluence Automation rule (optional)"
+              />
+              <button
+                type="button"
+                className={styles.actionButton}
+                disabled={!featureConfig.triggerUrl}
+                onClick={() => void handleTestWebhook(featureConfig.triggerUrl, featureConfig.triggerSecret, index)}
+                title="Send a test POST to this webhook URL"
+              >Test</button>
+              {(webhookTestStatuses[index] ?? null) !== null && (
+                <span className={styles.saveStatus}>{webhookTestStatuses[index]}</span>
+              )}
+            </div>
+          </div>
+          <div className={styles.actionRow}>
+            <button
+              className={styles.actionButton}
+              disabled={isFeatureRunning[index] || featureConfig.confluenceSpaceKey.trim() === ''}
+              onClick={() => onRunNow(index)}
+              type="button"
+              title="Run this project's feature change report now"
+            >
+              {isFeatureRunning[index] ? 'Running…' : 'Run Now'}
+            </button>
+            {featureRunStatuses[index] !== null && (
+              <span className={styles.saveStatus}>{featureRunStatuses[index]}</span>
+            )}
+          </div>
+        </div>
+      ))}
+
+      <hr className={styles.sectionDivider} />
+
+      {/* ART Rollup — combined delivery covering all configured team labels */}
+      <div className={styles.notificationTeamRow}>
+        <div className={styles.notificationTeamHeader}>
+          <strong>All Teams — ART Rollup</strong>
+          <span className={styles.projectKeyBadge}>Combined</span>
+          <input
+            type="checkbox"
+            id="feature-rollup-enabled"
+            checked={artRollup.isEnabled}
+            onChange={(changeEvent) => onUpdateArtRollup('isEnabled', changeEvent.target.checked)}
+            aria-label="Enable Feature Change ART Rollup delivery"
+          />
+          <label htmlFor="feature-rollup-enabled" className={styles.fieldLabel}>Enabled</label>
+        </div>
+        <p className={styles.adminDescription}>
+          Delivers a single combined Feature Change report covering all teams. Team labels are
+          sourced automatically from the per-team configurations above.
+        </p>
+        <div className={styles.notificationTeamFields}>
+          <div className={styles.fieldRow}>
+            <label className={styles.fieldLabel} htmlFor="feature-rollup-space">Space Key</label>
+            <input
+              id="feature-rollup-space"
+              type="text"
+              className={styles.textInput}
+              value={artRollup.confluenceSpaceKey}
+              onChange={(changeEvent) => onUpdateArtRollup('confluenceSpaceKey', changeEvent.target.value)}
+              placeholder="e.g. ART"
+            />
+          </div>
+          <div className={styles.fieldRow}>
+            <label className={styles.fieldLabel} htmlFor="feature-rollup-time">Schedule</label>
+            <input
+              id="feature-rollup-time"
+              type="time"
+              className={styles.timeInput}
+              value={artRollup.scheduleTime}
+              onChange={(changeEvent) => onUpdateArtRollup('scheduleTime', changeEvent.target.value)}
+            />
+          </div>
+          <div className={styles.fieldRow}>
+            <label className={styles.fieldLabel} htmlFor="feature-rollup-url">Target Page URL</label>
+            <input
+              id="feature-rollup-url"
+              type="url"
+              className={styles.textInput}
+              value={artRollup.targetBlogUrl}
+              onChange={(changeEvent) => onUpdateArtRollup('targetBlogUrl', changeEvent.target.value)}
+              placeholder="Paste Confluence page or blog URL to update (optional)"
+            />
+          </div>
+          <div className={styles.fieldRow}>
+            <label className={styles.fieldLabel} htmlFor="feature-rollup-trigger">Automation Trigger URL</label>
+            <input
+              id="feature-rollup-trigger"
+              type="url"
+              className={styles.textInput}
+              value={artRollup.triggerUrl}
+              onChange={(changeEvent) => onUpdateArtRollup('triggerUrl', changeEvent.target.value)}
+              placeholder="Confluence Automation incoming webhook URL (optional)"
+            />
+          </div>
+          <div className={styles.fieldRow}>
+            <label className={styles.fieldLabel} htmlFor="feature-rollup-secret">Webhook Secret</label>
+            <input
+              id="feature-rollup-secret"
+              type="password"
+              className={styles.textInput}
+              value={artRollup.triggerSecret}
+              onChange={(changeEvent) => onUpdateArtRollup('triggerSecret', changeEvent.target.value)}
+              placeholder="Secret shown in Confluence Automation rule (optional)"
+            />
+            <button
+              type="button"
+              className={styles.actionButton}
+              disabled={!artRollup.triggerUrl}
+              onClick={() => void handleTestWebhook(artRollup.triggerUrl, artRollup.triggerSecret, 'rollup')}
+              title="Send a test POST to this webhook URL"
+            >Test</button>
+            {webhookTestStatusRollup !== null && (
+              <span className={styles.saveStatus}>{webhookTestStatusRollup}</span>
+            )}
+          </div>
+        </div>
+        <div className={styles.actionRow}>
+          <button
+            className={styles.actionButton}
+            disabled={isFeatureRollupRunning || artRollup.confluenceSpaceKey.trim() === ''}
+            onClick={onRunRollupNow}
+            type="button"
+            title="Run the ART Feature Change Rollup report now"
+          >
+            {isFeatureRollupRunning ? 'Running…' : 'Run Now'}
+          </button>
+          {featureRollupRunStatus !== null && (
+            <span className={styles.saveStatus}>{featureRollupRunStatus}</span>
+          )}
+        </div>
+      </div>
+
+      <hr className={styles.sectionDivider} />
+
+      <div className={styles.actionRow}>
+        <button className={`${styles.actionButton} ${styles.saveButton}`} onClick={onSave} type="button">
+          Save All
+        </button>
+        {saveStatus !== null && <span className={styles.saveStatus}>{saveStatus}</span>}
+      </div>
+    </section>
+  )
+}
+
+// ── Reports Config tab ──
+
+interface ReportsConfigContentProps {
+  state: AdminHubState
+  actions: AdminHubActions
+}
+
+/**
+ * Reports Config tab content — sub-tabbed container for Scope Change and Feature Change
+ * report configuration. Mirrors the DevPanel sub-tab pattern.
+ */
+function ReportsConfigContent({ state, actions }: ReportsConfigContentProps) {
+  const [activeReportsSubTab, setActiveReportsSubTab] = useState<ReportsConfigSubTab>('scope-change')
+
+  return (
+    <>
+      <PrimaryTabs
+        ariaLabel="Reports Config sub-tabs"
+        idPrefix="admin-hub-reports"
+        tabs={REPORTS_CONFIG_SUB_TAB_OPTIONS}
+        activeTab={activeReportsSubTab}
+        onChange={setActiveReportsSubTab}
+      />
+
+      {activeReportsSubTab === 'scope-change' && (
+        <section
+          id="admin-hub-reports-scope-change-panel"
+          role="tabpanel"
+          aria-labelledby="admin-hub-reports-scope-change-tab"
+        >
+          <NotificationsSection
+            teamConfigs={state.notificationTeamConfigs}
+            artRollup={state.notificationArtRollup}
+            saveStatus={state.notificationsSaveStatus}
+            teamRunStatuses={state.teamRunStatuses}
+            isTeamRunning={state.isTeamRunning}
+            isRollupRunning={state.isRollupRunning}
+            rollupRunStatus={state.rollupRunStatus}
+            onMount={() => { void actions.loadNotificationConfigs() }}
+            onUpdateTeam={(index, field, value) => actions.updateTeamConfig(index, field as never, value as never)}
+            onUpdateRollup={(field, value) => actions.updateArtRollup(field as never, value as never)}
+            onSave={() => { void actions.saveNotificationsConfig() }}
+            onRunTeam={(index) => { void actions.runTeamNow(index) }}
+            onRunRollup={() => { void actions.runRollupNow() }}
+            onTestWebhook={actions.testWebhook}
+          />
+        </section>
+      )}
+
+      {activeReportsSubTab === 'feature-change' && (
+        <section
+          id="admin-hub-reports-feature-change-panel"
+          role="tabpanel"
+          aria-labelledby="admin-hub-reports-feature-change-tab"
+        >
+          <FeatureChangeSection
+            featureConfigs={state.featureChangeConfigs}
+            artRollup={state.featureChangeArtRollup}
+            saveStatus={state.featureChangeSaveStatus}
+            featureRunStatuses={state.featureRunStatuses}
+            isFeatureRunning={state.isFeatureRunning}
+            isFeatureRollupRunning={state.isFeatureRollupRunning}
+            featureRollupRunStatus={state.featureRollupRunStatus}
+            onMount={() => { void actions.loadFeatureChangeConfigs() }}
+            onUpdate={(index, field, value) => actions.updateFeatureChangeConfig(index, field, value)}
+            onUpdateArtRollup={(field, value) => actions.updateFeatureChangeArtRollup(field, value)}
+            onSave={() => { void actions.saveFeatureChangeConfigs() }}
+            onRunNow={(index) => { void actions.runFeatureNow(index) }}
+            onRunRollupNow={() => { void actions.runFeatureArtRollupNow() }}
+            onTestWebhook={actions.testWebhook}
+          />
+        </section>
+      )}
+    </>
+  )
+}
+
 interface AdminHubMainContentProps {
   state: AdminHubState
   actions: AdminHubActions
@@ -2036,6 +2692,12 @@ export default function AdminHubView() {
         </section>
       )}
 
+      {activeAdminTab === 'reports-config' && (
+        <section id="admin-hub-reports-config-panel" role="tabpanel" aria-labelledby="admin-hub-reports-config-tab">
+          <ReportsConfigContent state={state} actions={actions} />
+        </section>
+      )}
+
       {activeAdminTab === 'dev-panel' && (
         <section id="admin-hub-dev-panel-panel" role="tabpanel" aria-labelledby="admin-hub-dev-panel-tab">
           <DevPanelView />
@@ -2091,6 +2753,12 @@ export default function AdminHubView() {
       {activeAdminTab === 'repo-monitor' && (
         <section id="admin-hub-repo-monitor-panel" role="tabpanel" aria-labelledby="admin-hub-repo-monitor-tab">
           <RepoMonitorPanel />
+        </section>
+      )}
+
+      {activeAdminTab === 'standup-briefing' && (
+        <section id="admin-hub-standup-briefing-panel" role="tabpanel" aria-labelledby="admin-hub-standup-briefing-tab">
+          <StandupBriefingPanel />
         </section>
       )}
     </ViewFrame>

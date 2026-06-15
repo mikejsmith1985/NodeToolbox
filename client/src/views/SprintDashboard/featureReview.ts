@@ -20,6 +20,9 @@ import { fetchScopedTeamFeatures } from './scopedTeamFeatures.ts';
 
 const DONE_STATUS_KEYWORDS = ['done', 'closed', 'resolved', 'complete'];
 const BLOCKED_STATUS_KEYWORDS = ['blocked', 'impediment'];
+// The blueprint hierarchy hardcodes only legacy SP fields; the configured custom field must be
+// queried separately. Stories are chunked to stay within Jira's JQL query-length limits.
+const STORY_POINTS_QUERY_CHUNK_SIZE = 100;
 
 interface JiraFieldDefinition {
   id?: string;
@@ -89,8 +92,79 @@ function createFallbackFeatureIssue(featureNode: BlueprintFeatureNode): JiraIssu
   };
 }
 
+// Used only when no real custom field is configured — reads the blueprint's pre-computed legacy values.
 function hasPositiveStoryPoints(storyNode: BlueprintStoryNode): boolean {
   return typeof storyNode.storyPoints === 'number' && storyNode.storyPoints > 0;
+}
+
+// Handles plain numbers, numeric strings, and Jira Select-type {id, value} objects.
+function hasPositiveFieldValue(fieldValue: unknown): boolean {
+  if (fieldValue === null || fieldValue === undefined || fieldValue === '') return false;
+  if (typeof fieldValue === 'number') return fieldValue > 0;
+  if (typeof fieldValue === 'string') {
+    const parsed = Number(fieldValue);
+    return Number.isFinite(parsed) && parsed > 0;
+  }
+  if (Array.isArray(fieldValue)) return false;
+  if (typeof fieldValue === 'object') {
+    return hasPositiveFieldValue((fieldValue as Record<string, unknown>).value);
+  }
+  return false;
+}
+
+/**
+ * Builds the set of feature keys that have at least one child story with positive story points.
+ *
+ * When a real Jira custom field is configured (e.g. customfield_10236), the blueprint hierarchy's
+ * pre-computed storyPoints only covers customfield_10016/10028 and will miss that field. In that
+ * case we fetch the configured field directly for the story keys the blueprint already knows about,
+ * avoiding fragile JQL-based child discovery that depends on Jira field naming conventions.
+ */
+async function buildFeatureKeysWithPointedChildren(
+  blueprintFeatures: BlueprintFeatureNode[],
+  customStoryPointsFieldId: string,
+): Promise<Set<string>> {
+  const isRealCustomField = customStoryPointsFieldId.startsWith('customfield_');
+
+  // Without a real custom field, the blueprint's pre-computed storyPoints is sufficient.
+  if (!isRealCustomField) {
+    return new Set(
+      blueprintFeatures
+        .filter((featureNode) => [...featureNode.children, ...featureNode.offTrain].some(hasPositiveStoryPoints))
+        .map((featureNode) => featureNode.key),
+    );
+  }
+
+  // The blueprint hierarchy already knows which stories belong to which feature — use it directly
+  // instead of re-discovering parent-child links through JQL, which varies across Jira setups.
+  const storyKeyToFeatureKey = new Map<string, string>();
+  for (const featureNode of blueprintFeatures) {
+    for (const storyNode of [...featureNode.children, ...featureNode.offTrain]) {
+      storyKeyToFeatureKey.set(storyNode.key, featureNode.key);
+    }
+  }
+
+  const allStoryKeys = Array.from(storyKeyToFeatureKey.keys());
+  if (allStoryKeys.length === 0) return new Set<string>();
+
+  // Fetch the configured SP field for the known story keys, chunked to respect JQL length limits.
+  const pointedFeatureKeys = new Set<string>();
+  for (let startIndex = 0; startIndex < allStoryKeys.length; startIndex += STORY_POINTS_QUERY_CHUNK_SIZE) {
+    const keyChunk = allStoryKeys.slice(startIndex, startIndex + STORY_POINTS_QUERY_CHUNK_SIZE);
+    const encodedKeys = keyChunk.map((storyKey) => `"${storyKey}"`).join(',');
+    const response = await jiraGet<{ issues?: Array<{ key?: string; fields: Record<string, unknown> }> }>(
+      `/rest/api/2/search?jql=${encodeURIComponent(`issueKey in (${encodedKeys})`)}&fields=${encodeURIComponent(customStoryPointsFieldId)}&maxResults=${STORY_POINTS_QUERY_CHUNK_SIZE}`,
+    ).catch(() => ({ issues: [] as Array<{ key?: string; fields: Record<string, unknown> }> }));
+
+    for (const story of response.issues ?? []) {
+      if (!story.key || !hasPositiveFieldValue(story.fields[customStoryPointsFieldId])) continue;
+      const featureKey = storyKeyToFeatureKey.get(story.key);
+      if (featureKey) {
+        pointedFeatureKeys.add(featureKey);
+      }
+    }
+  }
+  return pointedFeatureKeys;
 }
 
 function isDoneStatus(statusName: string): boolean {
@@ -108,6 +182,7 @@ export async function fetchFeatureReviewItems(
   team: ArtTeam,
   selectedPiName: string,
   featureReviewFieldConfig?: HygieneFieldConfig,
+  customStoryPointsFieldId = '',
 ): Promise<FeatureReviewItem[]> {
   const fieldConfig = featureReviewFieldConfig ?? await fetchFeatureReviewFieldConfig();
   const enterpriseRules = loadEnterpriseRulesFromStorage();
@@ -141,10 +216,9 @@ export async function fetchFeatureReviewItems(
       .filter((featureRecord) => featureRecord.featureIssue)
       .map((featureRecord) => [featureRecord.feature.key, featureRecord.featureIssue as JiraIssue]),
   );
-  const featureKeysWithPointedStories = new Set(
-    blueprintFeatures
-      .filter((featureNode) => [...featureNode.children, ...featureNode.offTrain].some(hasPositiveStoryPoints))
-      .map((featureNode) => featureNode.key),
+  const featureKeysWithPointedStories = await buildFeatureKeysWithPointedChildren(
+    blueprintFeatures,
+    customStoryPointsFieldId,
   );
 
   return blueprintFeatures.map((featureNode) => {

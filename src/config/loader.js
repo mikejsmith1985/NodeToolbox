@@ -150,6 +150,18 @@ function saveConfigToDisk(configuration) {
         seenCommits:   schedulerMonitor.seenCommits   || {},
         seenPrs:       schedulerMonitor.seenPrs       || {},
       },
+      scopeChange: {
+        teamReports: ((configuration.scheduler.scopeChange || {}).teamReports || []),
+        artRollup:   ((configuration.scheduler.scopeChange || {}).artRollup   || {
+          projectKeys: [], teamNames: [], confluenceSpaceKey: '', targetBlogUrl: '', triggerUrl: '', triggerSecret: '', scheduleTime: '09:00', isEnabled: false,
+        }),
+      },
+      featureChange: {
+        reports:    ((configuration.scheduler.featureChange || {}).reports    || []),
+        artRollup:  ((configuration.scheduler.featureChange || {}).artRollup  || {
+          confluenceSpaceKey: '', targetBlogUrl: '', triggerUrl: '', triggerSecret: '', scheduleTime: '09:00', isEnabled: false,
+        }),
+      },
     },
   };
 
@@ -423,6 +435,23 @@ function applyFileConfig(configuration) {
 
   if (fileConfig.scheduler) {
     configuration.scheduler = JSON.parse(JSON.stringify(fileConfig.scheduler));
+    // Migrate old single-config scopeChange format (pre-v0.16.0) to multi-team array format.
+    const sc = configuration.scheduler.scopeChange;
+    if (sc && sc.projectKey && !sc.teamReports) {
+      configuration.scheduler.scopeChange = {
+        teamReports: [{
+          teamName:           sc.projectKey,
+          projectKey:         sc.projectKey,
+          confluenceSpaceKey: sc.confluenceSpaceKey || '',
+          targetBlogUrl:      sc.targetBlogUrl      || '',
+          scheduleTime:       '11:00',
+          isEnabled:          !!sc.isEnabled,
+        }],
+        artRollup: {
+          projectKeys: [], teamNames: [], confluenceSpaceKey: '', targetBlogUrl: '', scheduleTime: '09:00', isEnabled: false,
+        },
+      };
+    }
   }
 }
 

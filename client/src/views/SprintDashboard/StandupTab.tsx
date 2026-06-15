@@ -1,10 +1,12 @@
-// StandupTab.tsx — Team Dashboard standup view for Sprint and Roster board-walk and person-walk workflows.
+// StandupTab.tsx — Team Dashboard standup view for Sprint and Roster board-walk, person-walk, and AI briefing workflows.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
+import { useSettingsStore } from '../../store/settingsStore.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import DsuBoardView from '../DsuBoard/DsuBoardView.tsx';
+import type { DashboardScopeMode } from './hooks/useSprintData.ts';
 import {
   calculateIssueAgeDays,
   classifyIssueAge,
@@ -28,9 +30,44 @@ const STANDUP_SCOPE_ROSTER_LABEL = 'Roster';
 const PLAN_HELD_LABEL = 'Plan held';
 const PLAN_SHIFTED_LABEL = 'Plan shifted';
 
+/** Human-readable labels for each dashboard scope mode, used to relabel the standup scope toggle. */
+const DASHBOARD_SCOPE_LABELS: Record<DashboardScopeMode, string> = {
+  sprint:      'Sprint',
+  fixVersion:  'Fix Version',
+  pi:          'PI',
+};
+
+/** Days-back options exposed in the briefing mode selector. */
+const BRIEFING_DAYS_OPTIONS: readonly number[] = [1, 2, 3];
+/** Default copy-button label shown before the first click. */
+const BRIEFING_COPY_DEFAULT_LABEL = 'Copy Briefing';
+/** Temporary label shown after the user copies the briefing text. */
+const BRIEFING_COPY_SUCCESS_LABEL = '✓ Copied!';
+/** Duration (ms) the copy-success label stays visible. */
+const BRIEFING_COPY_SUCCESS_DURATION_MS = 2_000;
+
+interface BriefingCounts {
+  statusChanges: number;
+  blockers:      number;
+  defects:       number;
+  risks:         number;
+  completions:   number;
+}
+
+interface AdhocBriefingResult {
+  ok:          boolean;
+  briefingText: string;
+  counts?:     BriefingCounts;
+  sprintName?: string;
+  message:     string;
+}
+
 interface StandupTabProps {
   issues: JiraIssue[];
   projectKey: string;
+  /** The dashboard-level "View Work By" scope — sprint, fixVersion, or pi. Used to label
+   *  the scope toggle accurately and warn when roster scope is mixed with a non-sprint filter. */
+  dashboardScopeMode: DashboardScopeMode;
   dashboardTeamProfileId?: string;
   timerSecondsRemaining: number;
   isTimerRunning: boolean;
@@ -401,6 +438,7 @@ function PersonWalkIssueRow({
 export default function StandupTab({
   issues,
   projectKey,
+  dashboardScopeMode,
   dashboardTeamProfileId = '',
   timerSecondsRemaining,
   isTimerRunning,
@@ -413,6 +451,62 @@ export default function StandupTab({
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
   const { state, actions } = useSprintStandupState(issues, projectKey, dashboardTeamProfileId);
   const standupIssues = state.scopeMode === 'roster' ? state.scopeIssues : state.scopeIssues.length > 0 ? state.scopeIssues : issues;
+
+  // ── Briefing mode state ──
+  const [briefingText,    setBriefingText]    = useState<string>('');
+  const [briefingCounts,  setBriefingCounts]  = useState<BriefingCounts | null>(null);
+  const [isBriefingBusy,  setIsBriefingBusy]  = useState(false);
+  const [briefingError,   setBriefingError]   = useState<string | null>(null);
+  const [briefingDaysBack, setBriefingDaysBack] = useState(1);
+  const [briefingCopyLabel, setBriefingCopyLabel] = useState(BRIEFING_COPY_DEFAULT_LABEL);
+
+  // Resolve the display name for the current team profile so the briefing header is human-readable.
+  const teamProfiles = useSettingsStore((storeState) => storeState.sprintDashboardTeamProfiles);
+  const activeTeamName = useMemo(() => {
+    const matchingProfile = teamProfiles.find((profile) => profile.id === dashboardTeamProfileId);
+    return matchingProfile ? matchingProfile.name : (projectKey || 'Team');
+  }, [teamProfiles, dashboardTeamProfileId, projectKey]);
+
+  const handleRunBriefing = useCallback(async () => {
+    if (!projectKey) {
+      setBriefingError('No project key configured for this team.');
+      return;
+    }
+    setBriefingError(null);
+    setBriefingText('');
+    setBriefingCounts(null);
+    setIsBriefingBusy(true);
+    try {
+      const response = await fetch('/api/standup/run-adhoc', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ projectKeys: [projectKey], teamName: activeTeamName, daysBack: briefingDaysBack }),
+      });
+      const result = await response.json() as AdhocBriefingResult;
+      if (!result.ok) {
+        setBriefingError(result.message || 'Briefing failed.');
+      } else {
+        setBriefingText(result.briefingText || '');
+        setBriefingCounts(result.counts ?? null);
+      }
+    } catch (fetchError) {
+      setBriefingError(fetchError instanceof Error ? fetchError.message : 'Network error.');
+    } finally {
+      setIsBriefingBusy(false);
+    }
+  }, [projectKey, activeTeamName, briefingDaysBack]);
+
+  const handleCopyBriefing = useCallback(async () => {
+    if (!briefingText) return;
+    try {
+      await navigator.clipboard.writeText(briefingText);
+      setBriefingCopyLabel(BRIEFING_COPY_SUCCESS_LABEL);
+      setTimeout(() => setBriefingCopyLabel(BRIEFING_COPY_DEFAULT_LABEL), BRIEFING_COPY_SUCCESS_DURATION_MS);
+    } catch {
+      setBriefingCopyLabel('Copy failed');
+      setTimeout(() => setBriefingCopyLabel(BRIEFING_COPY_DEFAULT_LABEL), BRIEFING_COPY_SUCCESS_DURATION_MS);
+    }
+  }, [briefingText]);
 
   useEffect(() => {
     if (!isTimerRunning) {
@@ -485,10 +579,11 @@ export default function StandupTab({
           {renderToggleButton(state.standupMode, 'boardwalk', 'Board Walk', actions.setStandupMode)}
           {renderToggleButton(state.standupMode, 'personwalk', 'Person Walk', actions.setStandupMode)}
           {renderToggleButton(state.standupMode, 'dsu-board', 'DSU Board', actions.setStandupMode)}
+          {renderToggleButton(state.standupMode, 'briefing', '📋 Briefing', actions.setStandupMode)}
         </div>
-        {state.standupMode !== 'dsu-board' ? (
+        {state.standupMode !== 'dsu-board' && state.standupMode !== 'briefing' ? (
           <div className={styles.standupToggleGroup} aria-label="Standup scope" role="group">
-            {renderToggleButton(state.scopeMode, 'sprint', STANDUP_SCOPE_SPRINT_LABEL, actions.setScopeMode)}
+            {renderToggleButton(state.scopeMode, 'sprint', DASHBOARD_SCOPE_LABELS[dashboardScopeMode], actions.setScopeMode)}
             {renderToggleButton(state.scopeMode, 'roster', STANDUP_SCOPE_ROSTER_LABEL, actions.setScopeMode)}
           </div>
         ) : null}
@@ -496,8 +591,107 @@ export default function StandupTab({
       {state.scopeMode === 'roster' && state.activeRosterTeamName ? (
         <p className={styles.personWalkMeta}>Active roster team: {state.activeRosterTeamName}</p>
       ) : null}
+      {state.scopeMode === 'roster' && dashboardScopeMode !== 'sprint' ? (
+        <p className={styles.standupStatusBanner}>
+          Roster loads all assignee activity — not filtered by {DASHBOARD_SCOPE_LABELS[dashboardScopeMode]}
+        </p>
+      ) : null}
 
-      {state.standupMode === 'dsu-board' ? (
+      {state.standupMode === 'briefing' ? (
+        <div className={styles.personWalkShell}>
+          <div className={styles.personWalkSectionHeader}>
+            <div>
+              <h3 className={styles.personWalkSectionTitle}>Pre-Standup Briefing</h3>
+              <p className={styles.personWalkMeta}>
+                Scans Jira activity for <strong>{activeTeamName}</strong> ({projectKey}) and buckets it into
+                Status Changes, Blockers, Defects, Risks, and Completions.
+              </p>
+            </div>
+            <div className={styles.personWalkActionRow}>
+              <label className={styles.personWalkMeta} htmlFor="briefing-days-back">
+                Look back&nbsp;
+                <select
+                  id="briefing-days-back"
+                  value={briefingDaysBack}
+                  onChange={(changeEvent) => setBriefingDaysBack(Number(changeEvent.target.value))}
+                  style={{ marginLeft: '4px' }}
+                >
+                  {BRIEFING_DAYS_OPTIONS.map((dayCount) => (
+                    <option key={dayCount} value={dayCount}>{dayCount} {dayCount === 1 ? 'day' : 'days'}</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className={styles.secondaryButton}
+                disabled={isBriefingBusy || !projectKey}
+                onClick={() => void handleRunBriefing()}
+                type="button"
+              >
+                {isBriefingBusy ? 'Running…' : 'Run Briefing'}
+              </button>
+              {briefingText ? (
+                <button className={styles.secondaryButton} onClick={() => void handleCopyBriefing()} type="button">
+                  {briefingCopyLabel}
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          {briefingError ? <p className={styles.standupStatusBanner}>{briefingError}</p> : null}
+
+          {briefingCounts ? (
+            <div className={styles.personWalkSnapshotBar}>
+              <div className={styles.personWalkSnapshotCard}>
+                <span className={styles.personWalkSnapshotValue}>{briefingCounts.statusChanges}</span>
+                <span className={styles.personWalkSnapshotLabel}>Status Changes</span>
+              </div>
+              <div className={styles.personWalkSnapshotCard}>
+                <span className={styles.personWalkSnapshotValue}>{briefingCounts.blockers}</span>
+                <span className={styles.personWalkSnapshotLabel}>Blockers</span>
+              </div>
+              <div className={styles.personWalkSnapshotCard}>
+                <span className={styles.personWalkSnapshotValue}>{briefingCounts.defects}</span>
+                <span className={styles.personWalkSnapshotLabel}>Defects</span>
+              </div>
+              <div className={styles.personWalkSnapshotCard}>
+                <span className={styles.personWalkSnapshotValue}>{briefingCounts.risks}</span>
+                <span className={styles.personWalkSnapshotLabel}>Risks</span>
+              </div>
+              <div className={styles.personWalkSnapshotCard}>
+                <span className={styles.personWalkSnapshotValue}>{briefingCounts.completions}</span>
+                <span className={styles.personWalkSnapshotLabel}>Completions</span>
+              </div>
+            </div>
+          ) : null}
+
+          {briefingText ? (
+            <textarea
+              aria-label="Pre-standup briefing text"
+              readOnly
+              style={{
+                width:       '100%',
+                minHeight:   '420px',
+                marginTop:   '12px',
+                padding:     '12px',
+                fontFamily:  'monospace',
+                fontSize:    '13px',
+                lineHeight:  '1.5',
+                resize:      'vertical',
+                boxSizing:   'border-box',
+                background:  'var(--color-bg-secondary, #1e1e2e)',
+                color:       'var(--color-text-primary, #cdd6f4)',
+                border:      '1px solid var(--color-border, #45475a)',
+                borderRadius: '6px',
+              }}
+              value={briefingText}
+            />
+          ) : !isBriefingBusy ? (
+            <p className={styles.personWalkMeta} style={{ marginTop: '16px' }}>
+              Click &ldquo;Run Briefing&rdquo; to scan Jira and generate today&apos;s pre-standup summary.
+            </p>
+          ) : null}
+        </div>
+      ) : state.standupMode === 'dsu-board' ? (
         <DsuBoardView key={projectKey || 'standalone'} projectKey={projectKey} />
       ) : state.standupMode === 'personwalk' ? (
         <div className={styles.personWalkShell}>

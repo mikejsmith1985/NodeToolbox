@@ -340,6 +340,8 @@ export interface ArtTeam {
    * Used by the SoS panel to surface the team's standup Jira item and by future SoS sync features.
    */
   sosIssueKey?: string;
+  /** Jira label used to query Features for this team (e.g. "Transformers"). Drives Feature Change reports. */
+  jiraLabel?: string;
   sprintIssues: JiraIssue[];
   isLoading: boolean;
   loadError: string | null;
@@ -402,6 +404,8 @@ export interface ArtDataActions {
   updateTeamSosKey: (teamId: string, sosIssueKey: string) => void;
   /** Update the PI Review Confluence page URL for a specific team, persisted with the team roster. */
   updateTeamPiReviewPageUrl: (teamId: string, piReviewPageUrl: string) => void;
+  /** Update the Jira label for a specific team, persisted with the team roster. Used by Feature Change reports. */
+  updateTeamJiraLabel: (teamId: string, jiraLabel: string) => void;
 }
 
 /** Returns a team record safe to persist without volatile loading or issue data. */
@@ -415,6 +419,7 @@ function buildStoredTeamRecord(team: ArtTeam): ArtTeam {
     projectKey: team.projectKey,
     piReviewPageUrl: team.piReviewPageUrl,
     sosIssueKey: team.sosIssueKey,
+    jiraLabel: team.jiraLabel,
     sprintIssues: [],
     isLoading: false,
     loadError: null,
@@ -447,6 +452,9 @@ function normalizeStoredTeamRecord(team: Partial<ArtTeam>): ArtTeam | null {
       : undefined,
     sosIssueKey: typeof team.sosIssueKey === 'string' && team.sosIssueKey.trim() !== ''
       ? team.sosIssueKey.trim()
+      : undefined,
+    jiraLabel: typeof team.jiraLabel === 'string' && team.jiraLabel.trim() !== ''
+      ? team.jiraLabel.trim()
       : undefined,
     sprintIssues: [],
     isLoading: false,
@@ -861,6 +869,17 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
     );
   }, []);
 
+  /** Updates the Jira label for a team in-place. Persisted to localStorage via the next Save Teams click. */
+  const updateTeamJiraLabel = useCallback((teamId: string, jiraLabel: string) => {
+    setTeams((previous) =>
+      previous.map((team) =>
+        team.id === teamId
+          ? { ...team, jiraLabel: jiraLabel.trim() || undefined }
+          : team,
+      ),
+    );
+  }, []);
+
   return {
     state: {
       activeTab,
@@ -891,6 +910,7 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
       setBoardPrepTeamFilter,
       updateTeamSosKey,
       updateTeamPiReviewPageUrl,
+      updateTeamJiraLabel,
     },
   };
 }

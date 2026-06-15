@@ -16,6 +16,7 @@ import {
 } from '../../AdminHub/enterpriseRules.ts';
 import { buildStandupRosterAssigneeClause } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
 import { loadDashboardConfigFromStorage } from '../../SprintDashboard/hooks/useDashboardConfig.ts';
+import { useSettingsStore } from '../../../store/settingsStore.ts';
 import {
   evaluateHygieneIssue,
   isFeatureLikeIssue,
@@ -151,13 +152,19 @@ export function readProgramIncrementValue(issue: JiraIssue, fieldConfig?: Partia
 
 export interface useHygieneStateOptions {
   isTeamMode?: boolean;
+  /** Pre-populated extra JQL clause (e.g. a PI or sprint scope from the Sprint Dashboard). */
+  initialExtraJql?: string;
 }
 
 /** Owns Hygiene view state and actions so the render layer can stay declarative. */
 export function useHygieneState(options: useHygieneStateOptions = {}): HygieneState & HygieneActions {
-  const { isTeamMode = false } = options;
+  const { isTeamMode = false, initialExtraJql = '' } = options;
+  // Read the active sprint-dashboard team profile so the story-points field lookup uses the right config slot.
+  const activeDashboardTeamProfileId = useSettingsStore(
+    (storeState) => storeState.sprintDashboardActiveTeamProfileId,
+  );
   const [projectKey, setProjectKey] = useState<string>(() => readStoredProjectKey());
-  const [extraJql, setExtraJql] = useState<string>('');
+  const [extraJql, setExtraJql] = useState<string>(initialExtraJql);
   const [findings, setFindings] = useState<HygieneFinding[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<string | null>(() => readStoredFilter());
   const [availableCheckIds, setAvailableCheckIds] = useState<string[]>(() => readEnabledEnterpriseCheckDefinitions().map((checkDefinition) => checkDefinition.checkId));
@@ -216,7 +223,8 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
       }
 
       // Read the team's configured story-points field so the missing-SP check uses the right field.
-      const dashboardConfig = loadDashboardConfigFromStorage();
+      // Pass the active team profile ID so we read the correct team-scoped storage slot.
+      const dashboardConfig = loadDashboardConfigFromStorage(activeDashboardTeamProfileId);
       const customStoryPointsFieldId = dashboardConfig.customStoryPointsFieldId || '';
 
       const jiraSearchResponse = await jiraGet<JiraSearchResponse>(
@@ -228,7 +236,7 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
         ),
       );
       const loadedIssues = jiraSearchResponse.issues ?? [];
-      const featureKeysWithPointedStories = await loadFeatureKeysWithPointedStories(loadedIssues, hygieneFieldConfig);
+      const featureKeysWithPointedStories = await loadFeatureKeysWithPointedStories(loadedIssues, hygieneFieldConfig, customStoryPointsFieldId);
       setFindings(mapIssuesToFindings(loadedIssues, {
         customRules: enabledCustomRules,
         enabledBuiltInCheckIds,
@@ -243,7 +251,7 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
     } finally {
       setIsLoading(false);
     }
-  }, [extraJql, isTeamMode, projectKey]);
+  }, [activeDashboardTeamProfileId, extraJql, isTeamMode, projectKey]);
 
   return {
     projectKey,
@@ -369,19 +377,28 @@ function normalizeFieldName(fieldName: string): string {
 async function loadFeatureKeysWithPointedStories(
   issues: JiraIssue[],
   fieldConfig: HygieneFieldConfig,
+  customStoryPointsFieldId: string,
 ): Promise<Set<string>> {
   const featureKeys = issues.filter(isFeatureLikeIssue).map((issue) => issue.key);
   if (featureKeys.length === 0) {
     return new Set<string>();
   }
 
-  const childFeatureLinkFieldId = fieldConfig.featureLinkFieldIds.find((fieldId) => fieldId !== 'parent') ?? DEFAULT_FEATURE_LINK_FIELD;
-  const childIssueJqlField = buildJqlFieldReference(childFeatureLinkFieldId);
   const encodedFeatureKeys = featureKeys.map((featureKey) => `"${featureKey}"`).join(',');
-  const childIssueJql = `${childIssueJqlField} in (${encodedFeatureKeys}) AND issuetype = Story`;
+  // Build an OR clause covering every possible feature-link field (the configured default may differ
+  // from the field the Jira instance actually uses) plus the native Jira parent relationship, so
+  // child stories are found regardless of which field stores the link.
+  const featureLinkJqlClauses = fieldConfig.featureLinkFieldIds
+    .filter((fieldId) => fieldId !== 'parent')
+    .map((fieldId) => `${buildJqlFieldReference(fieldId)} in (${encodedFeatureKeys})`);
+  const childIssueJql = `(${[...featureLinkJqlClauses, `parent in (${encodedFeatureKeys})`].join(' OR ')}) AND issuetype = Story`;
+
+  // Include the configured story-points field so Select-type values are available for the check.
+  const isRealCustomField = customStoryPointsFieldId.startsWith('customfield_');
   const childIssueFields = buildUniqueFieldIds([
     MODERN_STORY_POINTS_FIELD,
     LEGACY_STORY_POINTS_FIELD,
+    ...(isRealCustomField ? [customStoryPointsFieldId] : []),
     ...fieldConfig.featureLinkFieldIds,
   ]);
   const childIssueSearchPath =
@@ -390,7 +407,12 @@ async function loadFeatureKeysWithPointedStories(
 
   return (childIssueResponse.issues ?? []).reduce((featureKeySet, childIssue) => {
     const linkedFeatureKey = readLinkedFeatureKey(childIssue, fieldConfig.featureLinkFieldIds);
-    const hasPointedStory = hasPositiveStoryPoints(childIssue.fields.customfield_10028) || hasPositiveStoryPoints(childIssue.fields.customfield_10016);
+    // When a real custom field is configured, it is the authoritative source — consistent with
+    // the pointing queue and Hygiene missing-SP check. Fall back to legacy fields otherwise.
+    const hasPointedStory = isRealCustomField
+      ? hasPositiveStoryPoints((childIssue.fields as Record<string, unknown>)[customStoryPointsFieldId])
+      : hasPositiveStoryPoints(childIssue.fields[MODERN_STORY_POINTS_FIELD])
+        || hasPositiveStoryPoints(childIssue.fields[LEGACY_STORY_POINTS_FIELD]);
     if (linkedFeatureKey && hasPointedStory) {
       featureKeySet.add(linkedFeatureKey);
     }
@@ -424,6 +446,16 @@ function readIssueKeyValue(rawValue: unknown): string | null {
     return rawValue;
   }
 
+  // Jira multi-value feature-link fields return an array of issue references.
+  // typeof [] === 'object' so we must check for arrays BEFORE the object branch.
+  if (Array.isArray(rawValue)) {
+    for (const item of rawValue) {
+      const issueKey = readIssueKeyValue(item);
+      if (issueKey) return issueKey;
+    }
+    return null;
+  }
+
   if (!rawValue || typeof rawValue !== 'object') {
     return null;
   }
@@ -433,5 +465,16 @@ function readIssueKeyValue(rawValue: unknown): string | null {
 }
 
 function hasPositiveStoryPoints(fieldValue: unknown): boolean {
-  return typeof fieldValue === 'number' && fieldValue > 0;
+  if (fieldValue === null || fieldValue === undefined || fieldValue === '') return false;
+  if (typeof fieldValue === 'number') return fieldValue > 0;
+  // Non-numeric strings like "None" have no story points; numeric strings like "5" do.
+  if (typeof fieldValue === 'string') {
+    const parsedNumber = Number(fieldValue);
+    return Number.isFinite(parsedNumber) && parsedNumber > 0;
+  }
+  // Jira Select-type fields return {id, value} objects — recurse into the value.
+  if (typeof fieldValue === 'object' && !Array.isArray(fieldValue)) {
+    return hasPositiveStoryPoints((fieldValue as Record<string, unknown>).value);
+  }
+  return false;
 }
