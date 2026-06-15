@@ -50,6 +50,12 @@ function savePinnedFieldsToStorage(pinnedFields: CrgPinnedField[]): void {
 }
 
 function serializePinnedFieldValue(fieldValue: PinnedFieldValue): string {
+  // An unset field can arrive as null/undefined during render — serialise it to a
+  // stable, non-matching key so lookups never throw.
+  if (fieldValue == null) {
+    return 'empty:';
+  }
+
   if (typeof fieldValue === 'string') {
     return `string:${fieldValue.trim()}`;
   }
@@ -58,7 +64,9 @@ function serializePinnedFieldValue(fieldValue: PinnedFieldValue): string {
     return `boolean:${fieldValue ? 'true' : 'false'}`;
   }
 
-  return `reference:${fieldValue.sysId.trim()}|${fieldValue.displayName.trim()}`;
+  // A reference field that has not been populated yet can arrive with empty/absent
+  // sysId or displayName during render; guard so serialising never throws.
+  return `reference:${(fieldValue.sysId ?? '').trim()}|${(fieldValue.displayName ?? '').trim()}`;
 }
 
 function buildPinnedFieldId(fieldKey: string, fieldValue: PinnedFieldValue): string {

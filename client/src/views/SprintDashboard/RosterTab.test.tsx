@@ -171,7 +171,7 @@ describe('RosterTab', () => {
 
     expect(await screen.findByRole('button', { name: 'Add Jordan Joiner' })).toBeInTheDocument();
     expect(vi.mocked(jiraGet)).toHaveBeenCalledWith(
-      '/rest/api/2/user/assignable/search?project=TBX&query=Jordan&maxResults=8',
+      '/rest/api/2/user/assignable/search?project=TBX&query=Jordan&maxResults=20',
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Jordan Joiner' }));
@@ -213,7 +213,7 @@ describe('RosterTab', () => {
 
     render(<RosterTab issues={[]} projectKey="TBX" />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Load project users' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Load all project users' }));
 
     expect(await screen.findByText('Jordan Joiner')).toBeInTheDocument();
     expect(screen.getByText('Taylor Teammate')).toBeInTheDocument();
@@ -245,7 +245,7 @@ describe('RosterTab', () => {
 
     render(<RosterTab issues={[]} projectKey="TBX" />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Load project users' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Load all project users' }));
 
     expect(await screen.findByText('No Jira project users are currently available for TBX.')).toBeInTheDocument();
     // Confirms the full fallback chain: standard -> username= -> username=. (Jira Server dot wildcard)

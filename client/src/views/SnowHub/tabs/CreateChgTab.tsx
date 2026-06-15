@@ -176,6 +176,11 @@ function isSnowReferenceValue(value: CrgPinnedField['value']): value is SnowRefe
 }
 
 function canPinFieldValue(value: CrgPinnedField['value']): boolean {
+  // An unset reference field arrives as null/undefined and cannot be pinned.
+  if (value == null) {
+    return false;
+  }
+
   if (typeof value === 'string') {
     return value.trim().length > 0;
   }
@@ -184,7 +189,7 @@ function canPinFieldValue(value: CrgPinnedField['value']): boolean {
     return true;
   }
 
-  return value.displayName.trim().length > 0 || value.sysId.trim().length > 0;
+  return (value.displayName ?? '').trim().length > 0 || (value.sysId ?? '').trim().length > 0;
 }
 
 function formatPinnedFieldValue(value: CrgPinnedField['value']): string {
