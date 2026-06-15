@@ -688,4 +688,11 @@ module.exports = {
   startScopeChangeScheduler,
   runTeamReportNow,
   runArtRollupNow,
+  // Pure helpers exported for unit testing.
+  getCurrentTimeHHMM,
+  getTodayDateString,
+  extractChangeEntries,
+  escapeXml,
+  renderChangeTable,
+  extractPageIdFromUrl,
 };

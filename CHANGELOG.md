@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Internal — test coverage backfill**: Added unit tests for the scope-change and feature-change schedulers (pure changelog-parsing, XML escaping, page-id extraction, and time helpers), the notifications and standup-briefing routes (config sanitisation, validation, and run/test endpoints), the admin unlock store, and the Admin Hub Pre-Standup Briefing panel. The two scheduler modules now also export their pure helpers so they can be unit-tested directly; no runtime behaviour changed.
+
 ### Fixed
 - **SnowHub — Create Change Configuration tab no longer crashes on an unset reference field**: Opening the SnowHub Create Change Configuration tab threw `Cannot read properties of undefined` when a reference-type field had no value yet, because the CRG field-pin helpers (`serializePinnedFieldValue`, `canPinFieldValue`) assumed a populated `{ sysId, displayName }` reference. Both now guard `null`/`undefined` values, so an unset reference serialises to a stable non-matching key and is reported as not pinnable.
 
