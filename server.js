@@ -19,8 +19,13 @@ const createApiRouter                       = require('./src/routes/api');
 const createSchedulerRouter                 = require('./src/routes/scheduler');
 const createSetupRouter                     = require('./src/routes/setup');
 const relayBridgeRouter                     = require('./src/routes/relayBridge');
+const createNotificationsRouter             = require('./src/routes/notifications');
+const createStandupBriefingRouter           = require('./src/routes/standupBriefing');
 
 const { startSchedulerLoop }                = require('./src/services/repoMonitor');
+const { startScopeChangeScheduler }         = require('./src/services/scopeChangeScheduler');
+const { startFeatureChangeScheduler }       = require('./src/services/featureChangeScheduler');
+const { startStandupBriefingScheduler }     = require('./src/services/standupBriefingScheduler');
 const { isPortInUse, resolvePortConflict }  = require('./src/utils/portManager');
 const { installConsoleInterceptor }         = require('./src/utils/logBuffer');
 const { spawnDetachedProcess }              = require('./src/utils/updater');
@@ -120,6 +125,12 @@ app.use('/api/relay-bridge', relayBridgeRouter);
 
 // Scheduler APIs: /api/scheduler/*
 app.use(createSchedulerRouter(configuration));
+
+// Notification delivery: /api/notifications/*
+app.use(createNotificationsRouter(configuration));
+
+// Standup briefing: /api/standup/*
+app.use(createStandupBriefingRouter(configuration));
 
 // First-run detection: GET / redirects to /setup when no service is configured.
 // Placed before the static file middleware so misconfigured instances always see
@@ -615,6 +626,9 @@ async function launchServer() {
 
   printStartupBanner(listenPort);
   startSchedulerLoop(configuration);
+  startScopeChangeScheduler(configuration);
+  startFeatureChangeScheduler(configuration);
+  startStandupBriefingScheduler(configuration);
 
   // Open the dashboard automatically when:
   //   --open      : passed explicitly by Launch Toolbox.bat (zip distribution)

@@ -5,17 +5,22 @@
 // loaded via useReportsHubState. Each tab also includes an "About this report" explainer
 // card, a per-tab copy-to-clipboard button, and a "Last generated" relative timestamp.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { Cell, Pie, PieChart, Tooltip } from 'recharts'
 
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx'
 import { copyElementImageToClipboard } from '../../utils/downloadElementImage.ts'
 import { findPiNameForDate } from '../ArtView/hooks/artHelpers.ts'
 import type {
+  ArtTeamFeatureChangeResult,
+  ArtTeamScopeResult,
+  FeatureChangeEntry,
   IndividualEntry,
   JiraFeatureIssue,
   QualityMetrics,
   ReportsHubTab,
+  ScopeChangeEntry,
   SprintHealthEntry,
   SprintIssue,
   ThroughputEntry,
@@ -41,6 +46,8 @@ const TAB_OPTIONS: { key: ReportsHubTab; label: string }[] = [
   { key: 'quality', label: '🔬 Quality' },
   { key: 'sprintHealth', label: '💚 Sprint Health' },
   { key: 'throughput', label: '📊 Throughput' },
+  { key: 'scopeChange', label: '🔀 Scope Change' },
+  { key: 'featureChange', label: '🎯 Feature Change' },
 ]
 
 const ALL_PIS_LABEL = 'All PIs'
@@ -133,6 +140,18 @@ const TAB_DESCRIPTIONS: Record<ReportsHubTab, string[]> = {
     'Native Jira locks throughput views to a single board; this report compares the entire ART in one place.',
     'Makes it easy to see whether the ART is accelerating, flattening, or sliding before it becomes a PI-level problem.',
     'Use for: PI capacity planning, velocity benchmarking, quarterly exec reporting.',
+  ],
+  scopeChange: [
+    'Tracks when issues are moved into a different Sprint or assigned a new Release (fixVersion) within a selected time window.',
+    'Surfaces scope creep, sprint re-plans, and version reassignments that are invisible in standard Jira boards.',
+    'Two sections — Release changes and Sprint changes — make it easy to separate release-level shuffles from sprint-level ones.',
+    'Use for: PI scope reviews, retrospectives, sprint planning prep, and release integrity checks.',
+  ],
+  featureChange: [
+    'Monitors Epic-level (Feature) issues for changes to Fix Version, Status, Target Start, Target End, and Due Date.',
+    'Captures every PI-planning field change across the ART so re-plans and date shifts are visible before they surface as delivery risk.',
+    'Single-team mode queries one project; ART Combined queries all configured teams in parallel.',
+    'Use for: PI execution reviews, feature re-plan discussions, RTE reporting, and release readiness checks.',
   ],
 }
 
@@ -277,6 +296,8 @@ interface GlobalReportFiltersProps {
   teamOptions: string[]
   onPiFilterChange(value: string): void
   onTeamFilterChange(value: string): void
+  /** Optional tab-specific controls rendered at the end of the filter bar row. */
+  extraControls?: React.ReactNode
 }
 
 /** Ensures all option values are valid strings; filters out non-strings to prevent render crashes. */
@@ -286,7 +307,7 @@ function sanitizeFilterOptions(options: unknown[]): string[] {
     .sort()
 }
 
-/** Global PI + Team parameters shown for every report tab. */
+/** Global PI + Team parameters shown for every report tab, with an optional slot for tab-specific controls. */
 function GlobalReportFilters({
   piFilter,
   teamFilter,
@@ -294,6 +315,7 @@ function GlobalReportFilters({
   teamOptions,
   onPiFilterChange,
   onTeamFilterChange,
+  extraControls,
 }: GlobalReportFiltersProps) {
   const sanitizedPiOptions = sanitizeFilterOptions(piOptions)
   const sanitizedTeamOptions = sanitizeFilterOptions(teamOptions)
@@ -326,6 +348,7 @@ function GlobalReportFilters({
           </option>
         ))}
       </select>
+      {extraControls}
     </div>
   )
 }
@@ -1985,6 +2008,354 @@ function ThroughputTab({ throughputData, throughputIssues, availableTeamNames, i
   )
 }
 
+// ── Scope Change tab ──
+
+const SCOPE_CHANGE_DAYS_OPTIONS: { label: string; value: number }[] = [
+  { label: 'Last 24 hours', value: 1 },
+  { label: 'Last 7 days', value: 7 },
+  { label: 'Last 14 days', value: 14 },
+  { label: 'Last 30 days', value: 30 },
+  { label: 'Last 60 days', value: 60 },
+]
+
+interface ScopeChangeTableProps {
+  entries: ScopeChangeEntry[]
+  /** When true, adds a Team column before Issue (used in ART Combined mode). */
+  showTeamColumn?: boolean
+}
+
+/** Reusable table for a list of scope-change entries — used in both single-team and ART combined modes. */
+function ScopeChangeTable({ entries, showTeamColumn = false }: ScopeChangeTableProps) {
+  if (entries.length === 0) return null
+
+  return (
+    <div className={styles.tableWrapper}>
+      <table className={styles.reportTable}>
+        <thead>
+          <tr>
+            {showTeamColumn && <th>Team</th>}
+            <th>Issue</th>
+            <th>Summary</th>
+            <th>Type</th>
+            <th>From</th>
+            <th>To</th>
+            <th>Changed by</th>
+            <th>Changed at</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((entry, entryIndex) => (
+            <tr key={`${entry.changeType}-${entry.issueKey}-${entryIndex}`}>
+              {showTeamColumn && <td>{(entry as ScopeChangeEntry & { teamName?: string }).teamName ?? '—'}</td>}
+              <td className={styles.issueKeyCell}>{entry.issueKey}</td>
+              <td>{entry.issueSummary}</td>
+              <td>{entry.issueType}</td>
+              <td className={styles.scopeChangeFrom}>{entry.fromValue}</td>
+              <td className={styles.scopeChangeTo}>{entry.toValue}</td>
+              <td>{entry.changedBy}</td>
+              <td>{new Date(entry.changedAt).toLocaleDateString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+interface ScopeChangeTabProps {
+  // Single-team results
+  entries: ScopeChangeEntry[]
+  isLoading: boolean
+  error: string | null
+  hasSingleTeamGenerated: boolean
+  // ART Combined results — active when teamFilter is "All Teams"
+  isArtCombined: boolean
+  artCombinedResults: ArtTeamScopeResult[]
+  isLoadingArtCombined: boolean
+  artCombinedError: string | null
+}
+
+/**
+ * Scope Change tab — shows issues that received a new Sprint or Release (fixVersion) value.
+ * Controls (team, time window, generate) live in the global filter bar. This component
+ * is results-only. Single Team vs ART Combined is determined by the global team filter:
+ * "All Teams" → ART Combined; a specific team → Single Team.
+ */
+function ScopeChangeTab({
+  entries,
+  isLoading,
+  error,
+  hasSingleTeamGenerated,
+  isArtCombined,
+  artCombinedResults,
+  isLoadingArtCombined,
+  artCombinedError,
+}: ScopeChangeTabProps) {
+  const releaseEntries = entries.filter((entry) => entry.changeType === 'fixVersion')
+  const sprintEntries  = entries.filter((entry) => entry.changeType === 'sprint')
+
+  const artReleaseTotal = artCombinedResults.reduce((sum, t) => sum + t.releaseEntries.length, 0)
+  const artSprintTotal  = artCombinedResults.reduce((sum, t) => sum + t.sprintEntries.length,  0)
+
+  const artFlatRelease = artCombinedResults.flatMap((t) =>
+    t.releaseEntries.map((entry) => ({ ...entry, teamName: t.teamName })),
+  )
+  const artFlatSprint = artCombinedResults.flatMap((t) =>
+    t.sprintEntries.map((entry) => ({ ...entry, teamName: t.teamName })),
+  )
+
+  if (isArtCombined) {
+    return (
+      <div className={styles.scopeChangeTab}>
+        {artCombinedError !== null && <p className={styles.errorMessage}>{artCombinedError}</p>}
+        {artCombinedResults.length === 0 && !isLoadingArtCombined && artCombinedError === null && (
+          <p className={styles.emptyState}>
+            Select a time window and click Generate to run scope change queries across all ART teams.
+          </p>
+        )}
+        {artCombinedResults.length > 0 && (
+          <>
+            <div className={styles.summaryBar}>
+              <span className={styles.summaryBarItem}>Teams: {artCombinedResults.length}</span>
+              <span className={styles.summaryBarItem}>Release changes: {artReleaseTotal}</span>
+              <span className={styles.summaryBarItem}>Sprint changes: {artSprintTotal}</span>
+            </div>
+            {artCombinedResults.filter((r) => r.error !== null).map((failedTeam) => (
+              <p key={failedTeam.teamName} className={styles.errorMessage}>
+                {failedTeam.teamName}: {failedTeam.error}
+              </p>
+            ))}
+            <section className={styles.scopeChangeSection}>
+              <h3 className={styles.scopeChangeSectionTitle}>
+                Release changes — all teams
+                <span className={styles.scopeChangeBadge}>{artReleaseTotal}</span>
+              </h3>
+              {artFlatRelease.length === 0
+                ? <p className={styles.emptyState}>No release changes across any ART team in this window.</p>
+                : <ScopeChangeTable entries={artFlatRelease} showTeamColumn />}
+            </section>
+            <section className={styles.scopeChangeSection}>
+              <h3 className={styles.scopeChangeSectionTitle}>
+                Sprint changes — all teams
+                <span className={styles.scopeChangeBadge}>{artSprintTotal}</span>
+              </h3>
+              {artFlatSprint.length === 0
+                ? <p className={styles.emptyState}>No sprint changes across any ART team in this window.</p>
+                : <ScopeChangeTable entries={artFlatSprint} showTeamColumn />}
+            </section>
+          </>
+        )}
+      </div>
+    )
+  }
+
+  // ── Single Team mode ──
+  return (
+    <div className={styles.scopeChangeTab}>
+      {error !== null && <p className={styles.errorMessage}>{error}</p>}
+      {!hasSingleTeamGenerated && !isLoading && (
+        <p className={styles.emptyState}>
+          Select a team, choose a time window, and click Generate.
+        </p>
+      )}
+      {hasSingleTeamGenerated && (
+        <>
+          <section className={styles.scopeChangeSection}>
+            <h3 className={styles.scopeChangeSectionTitle}>
+              Release changes
+              <span className={styles.scopeChangeBadge}>{releaseEntries.length}</span>
+            </h3>
+            {releaseEntries.length === 0
+              ? <p className={styles.emptyState}>No release (fixVersion) changes in this window.</p>
+              : <ScopeChangeTable entries={releaseEntries} />}
+          </section>
+          <section className={styles.scopeChangeSection}>
+            <h3 className={styles.scopeChangeSectionTitle}>
+              Sprint changes
+              <span className={styles.scopeChangeBadge}>{sprintEntries.length}</span>
+            </h3>
+            {sprintEntries.length === 0
+              ? <p className={styles.emptyState}>No sprint changes in this window.</p>
+              : <ScopeChangeTable entries={sprintEntries} />}
+          </section>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Feature Change tab ──
+
+const FEATURE_CHANGE_DAYS_OPTIONS: { label: string; value: number }[] = [
+  { label: 'Last 24 hours', value: 1 },
+  { label: 'Last 7 days',   value: 7  },
+  { label: 'Last 14 days',  value: 14 },
+  { label: 'Last 30 days',  value: 30 },
+  { label: 'Last 60 days',  value: 60 },
+]
+
+/** Maps a FeatureChangeEntry changeType to an emoji prefix for section headings. */
+const FEATURE_CHANGE_SECTION_LABELS: Record<FeatureChangeEntry['changeType'], string> = {
+  fixVersion:  '🏷️ Fix Version Changes',
+  status:      '🔄 Status Changes',
+  targetStart: '📅 Target Start Changes',
+  targetEnd:   '📅 Target End Changes',
+  dueDate:     '📅 Due Date Changes',
+}
+
+interface FeatureChangeTableProps {
+  entries: FeatureChangeEntry[]
+  showTeamColumn?: boolean
+}
+
+/** Reusable table for a list of feature-change entries. */
+function FeatureChangeTable({ entries, showTeamColumn = false }: FeatureChangeTableProps) {
+  if (entries.length === 0) return null
+  return (
+    <div className={styles.tableWrapper}>
+      <table className={styles.reportTable}>
+        <thead>
+          <tr>
+            {showTeamColumn && <th>Team</th>}
+            <th>Issue</th>
+            <th>Summary</th>
+            <th>Field</th>
+            <th>From</th>
+            <th>To</th>
+            <th>Changed by</th>
+            <th>Changed at</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((entry, entryIndex) => (
+            <tr key={`${entry.changeType}-${entry.issueKey}-${entryIndex}`}>
+              {showTeamColumn && <td>{(entry as FeatureChangeEntry & { teamName?: string }).teamName ?? '—'}</td>}
+              <td className={styles.issueKeyCell}>{entry.issueKey}</td>
+              <td>{entry.issueSummary}</td>
+              <td>{entry.fieldLabel}</td>
+              <td className={styles.scopeChangeFrom}>{entry.fromValue}</td>
+              <td className={styles.scopeChangeTo}>{entry.toValue}</td>
+              <td>{entry.changedBy}</td>
+              <td>{new Date(entry.changedAt).toLocaleDateString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+interface FeatureChangeTabProps {
+  entries: FeatureChangeEntry[]
+  isLoading: boolean
+  error: string | null
+  hasGenerated: boolean
+  isArtCombined: boolean
+  artCombinedResults: ArtTeamFeatureChangeResult[]
+  isLoadingArtCombined: boolean
+  artCombinedError: string | null
+}
+
+/**
+ * Feature Change tab — shows Epic-level changes to Fix Version, Status, and scheduling
+ * fields. Controls (team, time window, generate) live in the global filter bar.
+ */
+function FeatureChangeTab({
+  entries,
+  isLoading,
+  error,
+  hasGenerated,
+  isArtCombined,
+  artCombinedResults,
+  isLoadingArtCombined,
+  artCombinedError,
+}: FeatureChangeTabProps) {
+  if (isArtCombined) {
+    const totalChanges = artCombinedResults.reduce((sum, team) => sum + team.entries.length, 0)
+    const artFlatEntries = artCombinedResults.flatMap((team) =>
+      team.entries.map((entry) => ({ ...entry, teamName: team.teamName })),
+    )
+
+    // Group flat entries by changeType for section display
+    const changeTypes = Array.from(new Set(artFlatEntries.map((e) => e.changeType))) as FeatureChangeEntry['changeType'][]
+
+    return (
+      <div className={styles.scopeChangeTab}>
+        {artCombinedError !== null && <p className={styles.errorMessage}>{artCombinedError}</p>}
+        {artCombinedResults.length === 0 && !isLoadingArtCombined && artCombinedError === null && (
+          <p className={styles.emptyState}>
+            Select a time window and click Generate to run feature change queries across all ART teams.
+          </p>
+        )}
+        {artCombinedResults.length > 0 && (
+          <>
+            <div className={styles.summaryBar}>
+              <span className={styles.summaryBarItem}>Teams: {artCombinedResults.length}</span>
+              <span className={styles.summaryBarItem}>Total changes: {totalChanges}</span>
+            </div>
+            {artCombinedResults.filter((team) => team.error !== null).map((failedTeam) => (
+              <p key={failedTeam.teamName} className={styles.errorMessage}>
+                {failedTeam.teamName}: {failedTeam.error}
+              </p>
+            ))}
+            {changeTypes.map((changeType) => {
+              const sectionEntries = artFlatEntries.filter((e) => e.changeType === changeType)
+              return (
+                <section key={changeType} className={styles.scopeChangeSection}>
+                  <h3 className={styles.scopeChangeSectionTitle}>
+                    {FEATURE_CHANGE_SECTION_LABELS[changeType]}
+                    <span className={styles.scopeChangeBadge}>{sectionEntries.length}</span>
+                  </h3>
+                  {sectionEntries.length === 0
+                    ? <p className={styles.emptyState}>No changes of this type across any ART team.</p>
+                    : <FeatureChangeTable entries={sectionEntries} showTeamColumn />}
+                </section>
+              )
+            })}
+            {changeTypes.length === 0 && (
+              <p className={styles.emptyState}>No feature field changes found across ART teams in this window.</p>
+            )}
+          </>
+        )}
+      </div>
+    )
+  }
+
+  // ── Single Team mode ──
+  const changeTypes = Array.from(new Set(entries.map((e) => e.changeType))) as FeatureChangeEntry['changeType'][]
+
+  return (
+    <div className={styles.scopeChangeTab}>
+      {error !== null && <p className={styles.errorMessage}>{error}</p>}
+      {isLoading && <p className={styles.emptyState}>Loading feature changes…</p>}
+      {!hasGenerated && !isLoading && (
+        <p className={styles.emptyState}>
+          Select a team, choose a time window, and click Generate.
+        </p>
+      )}
+      {hasGenerated && !isLoading && (
+        <>
+          {changeTypes.length === 0 && (
+            <p className={styles.emptyState}>No feature field changes found in this window.</p>
+          )}
+          {changeTypes.map((changeType) => {
+            const sectionEntries = entries.filter((e) => e.changeType === changeType)
+            return (
+              <section key={changeType} className={styles.scopeChangeSection}>
+                <h3 className={styles.scopeChangeSectionTitle}>
+                  {FEATURE_CHANGE_SECTION_LABELS[changeType]}
+                  <span className={styles.scopeChangeBadge}>{sectionEntries.length}</span>
+                </h3>
+                <FeatureChangeTable entries={sectionEntries} />
+              </section>
+            )
+          })}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── Root component ──
 
 /** Reports Hub — director-level PI reporting dashboard across all ART teams. */
@@ -2172,9 +2543,101 @@ export default function ReportsHubView() {
             error={state.throughputError}
           />
         )
+      case 'scopeChange':
+        return (
+          <ScopeChangeTab
+            entries={state.scopeChangeEntries}
+            isLoading={state.isLoadingScopeChange}
+            error={state.scopeChangeError}
+            hasSingleTeamGenerated={state.hasScopeChangeGenerated}
+            isArtCombined={state.teamFilter === ''}
+            artCombinedResults={state.artCombinedResults}
+            isLoadingArtCombined={state.isLoadingArtCombined}
+            artCombinedError={state.artCombinedError}
+          />
+        )
+      case 'featureChange':
+        return (
+          <FeatureChangeTab
+            entries={state.featureChangeEntries}
+            isLoading={state.isLoadingFeatureChange}
+            error={state.featureChangeError}
+            hasGenerated={state.hasFeatureChangeGenerated}
+            isArtCombined={state.teamFilter === ''}
+            artCombinedResults={state.artCombinedFeatureResults}
+            isLoadingArtCombined={state.isLoadingArtCombinedFeature}
+            artCombinedError={state.artCombinedFeatureError}
+          />
+        )
       default:
         return null
     }
+  }
+
+  /** Returns the timebox select + Generate button for the filter bar when Scope Change or Feature Change is active. */
+  function buildChangeReportFilterControls(
+    currentState: typeof state,
+    currentActions: typeof actions,
+  ): ReactNode {
+    if (currentState.activeTab === 'scopeChange') {
+      const isGenerating = currentState.isLoadingScopeChange || currentState.isLoadingArtCombined
+      return (
+        <>
+          <select
+            className={styles.filterSelect}
+            value={currentState.scopeChangeDaysBack}
+            onChange={(changeEvent) => currentActions.setScopeChangeDaysBack(Number(changeEvent.target.value))}
+            aria-label="Time window"
+          >
+            {SCOPE_CHANGE_DAYS_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <button
+            className={`${styles.actionButton} ${styles.primaryButton}`}
+            disabled={isGenerating}
+            onClick={() => { void currentActions.generateScopeChange() }}
+            type="button"
+          >
+            {isGenerating ? 'Loading…' : 'Generate'}
+          </button>
+          <Link to="/admin-hub" className={styles.scopeChangeConfigButton}>
+            ⚙ Scheduled Delivery
+          </Link>
+        </>
+      )
+    }
+
+    if (currentState.activeTab === 'featureChange') {
+      const isGenerating = currentState.isLoadingFeatureChange || currentState.isLoadingArtCombinedFeature
+      return (
+        <>
+          <select
+            className={styles.filterSelect}
+            value={currentState.featureChangeDaysBack}
+            onChange={(changeEvent) => currentActions.setFeatureChangeDaysBack(Number(changeEvent.target.value))}
+            aria-label="Time window"
+          >
+            {FEATURE_CHANGE_DAYS_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <button
+            className={`${styles.actionButton} ${styles.primaryButton}`}
+            disabled={isGenerating}
+            onClick={() => { void currentActions.generateFeatureChange() }}
+            type="button"
+          >
+            {isGenerating ? 'Loading…' : 'Generate'}
+          </button>
+          <Link to="/admin-hub" className={styles.scopeChangeConfigButton}>
+            ⚙ Scheduled Delivery
+          </Link>
+        </>
+      )
+    }
+
+    return null
   }
 
   return (
@@ -2247,6 +2710,7 @@ export default function ReportsHubView() {
           teamOptions={teamFilterOptions}
           onPiFilterChange={actions.setPiFilter}
           onTeamFilterChange={actions.setTeamFilter}
+          extraControls={buildChangeReportFilterControls(state, actions)}
         />
 
         {/* Tab preamble (explainer card + timestamp + copy button) */}

@@ -288,6 +288,73 @@ function makeJiraApiRequest(httpMethod, apiPath, requestBody, jiraConfig, should
   });
 }
 
+/**
+ * Makes a server-side authenticated request to the Confluence REST API.
+ * Mirrors makeJiraApiRequest — same signature, same credential resolution.
+ *
+ * @param {string}      httpMethod        - HTTP verb (GET, POST, PUT, DELETE)
+ * @param {string}      apiPath           - Path + query string, e.g. /rest/api/content
+ * @param {object|null} requestBody       - JSON payload for POST/PUT, or null
+ * @param {object}      confluenceConfig  - Confluence credentials { baseUrl, username?, apiToken?, pat? }
+ * @param {boolean}     shouldVerifyTls
+ * @returns {Promise<{status: number, body: any}>}
+ */
+function makeConfluenceApiRequest(httpMethod, apiPath, requestBody, confluenceConfig, shouldVerifyTls) {
+  return new Promise((resolve, reject) => {
+    const confluenceBaseUrl = (confluenceConfig && confluenceConfig.baseUrl || '').replace(/\/$/, '');
+    if (!confluenceBaseUrl) {
+      reject(new Error('Confluence URL not configured'));
+      return;
+    }
+
+    const authorizationHeader = buildAuthHeader(confluenceConfig);
+    if (!authorizationHeader) {
+      reject(new Error('Confluence credentials not configured'));
+      return;
+    }
+
+    const requestUrl  = new URL(confluenceBaseUrl + apiPath);
+    const isHttps     = requestUrl.protocol === 'https:';
+    const transport   = isHttps ? https : http;
+    const encodedBody = requestBody ? Buffer.from(JSON.stringify(requestBody), 'utf8') : null;
+
+    const requestOptions = {
+      hostname:           requestUrl.hostname,
+      port:               requestUrl.port || (isHttps ? 443 : 80),
+      path:               requestUrl.pathname + requestUrl.search,
+      method:             httpMethod,
+      rejectUnauthorized: shouldVerifyTls !== false,
+      headers: {
+        'Accept':        'application/json',
+        'Content-Type':  'application/json',
+        'Authorization': authorizationHeader,
+        'User-Agent':    PROXY_USER_AGENT,
+      },
+    };
+
+    if (encodedBody) {
+      requestOptions.headers['Content-Length'] = encodedBody.length;
+    }
+
+    const request = transport.request(requestOptions, (response) => {
+      const responseChunks = [];
+      response.on('data', (chunk) => responseChunks.push(chunk));
+      response.on('end', () => {
+        const rawBody = Buffer.concat(responseChunks).toString('utf8');
+        try {
+          resolve({ status: response.statusCode, body: JSON.parse(rawBody) });
+        } catch (_jsonParseError) {
+          resolve({ status: response.statusCode, body: rawBody });
+        }
+      });
+    });
+
+    request.on('error', reject);
+    if (encodedBody) request.write(encodedBody);
+    request.end();
+  });
+}
+
 // ── Private Helpers ───────────────────────────────────────────────────────────
 
 /**
@@ -328,6 +395,79 @@ function buildOutboundHeaders(clientReq, serviceConfig, sessionOverrides) {
   return outboundHeaders;
 }
 
+/**
+ * POSTs a JSON payload to an arbitrary webhook URL.
+ * Used to trigger Confluence Automation rules (or any HTTP webhook consumer)
+ * after a scheduled scope change report is delivered.
+ *
+ * When webhookSecret is provided it is sent as the `X-Automation-Webhook-Token`
+ * request header, which is required by Confluence Cloud Automation incoming
+ * webhooks that have a secret configured.
+ *
+ * Failures are non-fatal — the caller logs the error but does not abort delivery.
+ *
+ * @param {string}  webhookUrl    - Full URL of the automation webhook endpoint
+ * @param {object}  payload       - JSON body to send
+ * @param {boolean} shouldVerifyTls
+ * @param {string}  [webhookSecret] - Optional bearer token / Confluence automation secret
+ * @returns {Promise<{ status: number }>}
+ */
+function triggerWebhook(webhookUrl, payload, shouldVerifyTls, webhookSecret) {
+  return new Promise((resolve, reject) => {
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(webhookUrl);
+    } catch (urlParseError) {
+      reject(new Error('Invalid webhook URL: ' + urlParseError.message));
+      return;
+    }
+
+    const isHttps    = parsedUrl.protocol === 'https:';
+    const transport  = isHttps ? https : http;
+    const encodedBody = Buffer.from(JSON.stringify(payload), 'utf8');
+
+    const requestHeaders = {
+      'Content-Type':   'application/json',
+      'Content-Length': encodedBody.length,
+      'User-Agent':     PROXY_USER_AGENT,
+    };
+
+    // Confluence Cloud Automation requires the secret as the X-Automation-Webhook-Token
+    // request header. Query-parameter approaches (?token=, ?secret=) are rejected
+    // with {"errorMessages":["Missing token"],"status":400}.
+    if (webhookSecret) {
+      requestHeaders['X-Automation-Webhook-Token'] = webhookSecret;
+    }
+
+    const requestOptions = {
+      hostname:           parsedUrl.hostname,
+      port:               parsedUrl.port || (isHttps ? 443 : 80),
+      path:               parsedUrl.pathname + parsedUrl.search,
+      method:             'POST',
+      rejectUnauthorized: shouldVerifyTls !== false,
+      headers:            requestHeaders,
+    };
+
+    const request = transport.request(requestOptions, (response) => {
+      const responseChunks = [];
+      response.on('data', (chunk) => responseChunks.push(chunk));
+      response.on('end', () => {
+        const rawBody = Buffer.concat(responseChunks).toString('utf8');
+        console.log('  [Webhook] ← HTTP ' + response.statusCode + ' from ' + parsedUrl.hostname + (rawBody ? ' — ' + rawBody.slice(0, 200) : ''));
+        resolve({ status: response.statusCode, body: rawBody });
+      });
+    });
+
+    request.on('error', (requestError) => {
+      console.error('  [Webhook] ✗ Request error: ' + requestError.message);
+      reject(requestError);
+    });
+
+    request.write(encodedBody);
+    request.end();
+  });
+}
+
 // ── Exports ───────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -337,5 +477,6 @@ module.exports = {
   buildGitHubAuthHeader,
   makeGithubApiRequest,
   makeJiraApiRequest,
-  proxyRequest,
+  makeConfluenceApiRequest,
+  triggerWebhook,
 };

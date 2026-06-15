@@ -37,11 +37,13 @@ const HYGIENE_SCORE_TOOLTIP =
 
 interface HygieneViewProps {
   isTeamMode?: boolean;
+  /** Pre-populated extra JQL clause injected from the Sprint Dashboard scope (PI, sprint, fix version). */
+  initialExtraJql?: string;
 }
 
 /** Renders the standalone Hygiene checker and delegates stateful Jira work to `useHygieneState`. */
-export default function HygieneView({ isTeamMode = false }: HygieneViewProps = {}) {
-  const hygieneState = useHygieneState({ isTeamMode });
+export default function HygieneView({ isTeamMode = false, initialExtraJql = '' }: HygieneViewProps = {}) {
+  const hygieneState = useHygieneState({ isTeamMode, initialExtraJql });
   const jiraBaseUrl = useConnectionStore((state) => state.proxyStatus?.jira?.baseUrl ?? null);
   const hasAutoRunTriggeredRef = useRef(false);
   const isHygieneLoading = hygieneState.isLoading;

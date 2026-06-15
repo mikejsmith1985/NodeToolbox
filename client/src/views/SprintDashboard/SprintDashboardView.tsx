@@ -180,7 +180,6 @@ const PIPELINE_REL_FIELDS = 'summary,status,assignee,priority,labels,comment,iss
 const PIPELINE_COMPANION_FIELDS = 'summary,status,assignee,labels,updated';
 const PIPELINE_DEV_FIELDS = 'summary,status,assignee,labels';
 const PIPELINE_ROLES = ['DEV', 'REL', 'SL', 'QE', 'BT', 'BC', 'TDR'] as const;
-const DEFAULT_POINTING_DONE_STATUSES = ['Done', 'Closed', 'Resolved', 'Accepted'] as const;
 // Issue types that are never valid for story-point estimation; excluded from the pointing queue entirely.
 const POINTING_EXCLUDED_ISSUE_TYPE_NAMES = new Set(['risk']);
 // Maximum concurrent Jira PUT requests when saving all pointing estimates; avoids 429 rate-limit errors.
@@ -3678,6 +3677,8 @@ interface PointingTableRowProps {
   isAnchor: boolean;
   /** True when any anchor has been set for this session. */
   hasAnchor: boolean;
+  /** Point value the user chose when designating this row as the anchor. Only set when isAnchor. */
+  anchorPointValue: number | undefined;
   estimate: PointingEstimateResult | undefined;
   detail: PointingIssueDetail | undefined;
   override: number | undefined;
@@ -3695,7 +3696,7 @@ interface PointingTableRowProps {
 
 /** Renders a single row (plus an optional inline expanded-detail row) in the pointing table. */
 function PointingTableRow({
-  issue, isAnchor, hasAnchor, estimate, detail, override, saveProgress, saveError,
+  issue, isAnchor, hasAnchor, anchorPointValue, estimate, detail, override, saveProgress, saveError,
   isExpanded, storyPointScale, customStoryPointsFieldId, onSetAnchor,
   onOverride, onSave, onToggleExpand,
 }: PointingTableRowProps) {
@@ -3782,6 +3783,18 @@ function PointingTableRow({
                 ))}
               </div>
             </details>
+          ) : isAnchor && saveProgress === 'saved' ? (
+            <span className={styles.ptSaveSuccess}>✓ Saved</span>
+          ) : isAnchor && anchorPointValue != null ? (
+            // Anchor row gets its own save button so a single-issue queue can be pointed.
+            <button
+              className={styles.secondaryButton}
+              disabled={saveProgress === 'saving'}
+              onClick={() => void onSave(issueKey, anchorPointValue)}
+              type="button"
+            >
+              {saveProgress === 'saving' ? 'Saving…' : `Save ${anchorPointValue} pts`}
+            </button>
           ) : isAnchor ? (
             <span className={styles.issueMetaText}>baseline</span>
           ) : saveProgress === 'saved' ? (
@@ -3866,13 +3879,21 @@ function PointingTab({
     () => Array.from(new Set(issues.map((issue) => readIssueStatusName(issue)))).sort(),
     [issues],
   );
+  // Build a set of status names whose issues are in a "done" category so we can default them off.
+  // Using statusCategory.key matches Hygiene's "statusCategory != Done" JQL — a status name like
+  // "Accepted" may be mapped to a non-done category in custom Jira configurations.
+  const doneStatusNames = useMemo(() => {
+    const doneNames = new Set<string>();
+    for (const issue of issues) {
+      if (issue.fields.status.statusCategory.key === 'done') {
+        doneNames.add(readIssueStatusName(issue));
+      }
+    }
+    return doneNames;
+  }, [issues]);
   const defaultSelectedStatuses = useMemo(
-    () => allStatuses.filter(
-      (statusName) => !DEFAULT_POINTING_DONE_STATUSES.includes(
-        statusName as (typeof DEFAULT_POINTING_DONE_STATUSES)[number],
-      ),
-    ),
-    [allStatuses],
+    () => allStatuses.filter((statusName) => !doneStatusNames.has(statusName)),
+    [allStatuses, doneStatusNames],
   );
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>(defaultSelectedStatuses);
@@ -4169,21 +4190,30 @@ function PointingTab({
   }, [anchorConfig, pointingQueue, detailByIssueKey, storyPointScale]);
 
   /** Saves all rows that have an estimate (or override) and have not yet been saved.
-   *  Processes in batches to avoid overwhelming Jira's API with concurrent PUT requests. */
+   *  Includes the anchor row (using its manually chosen point value) so a single-issue queue
+   *  can be fully saved. Processes in batches to avoid overwhelming Jira's API. */
   async function handleSaveAll() {
-    const rowsToSave = pointingQueue.filter((issue) => {
-      if (issue.key === anchorConfig?.issueKey) return false;
+    const rowsToSave: Array<{ key: string; pointValue: number }> = [];
+
+    // Always include the anchor with its manually chosen value if it hasn't been saved yet.
+    if (anchorConfig && saveProgressByKey[anchorConfig.issueKey] !== 'saved') {
+      rowsToSave.push({ key: anchorConfig.issueKey, pointValue: anchorConfig.pointValue });
+    }
+
+    // Include all non-anchor rows that have an estimate or manual override.
+    for (const issue of pointingQueue) {
+      if (issue.key === anchorConfig?.issueKey) continue;
       const pointValue = overridesByKey[issue.key] ?? allEstimates[issue.key]?.suggestedPoints;
-      return pointValue != null && saveProgressByKey[issue.key] !== 'saved';
-    });
+      if (pointValue != null && saveProgressByKey[issue.key] !== 'saved') {
+        rowsToSave.push({ key: issue.key, pointValue });
+      }
+    }
+
     // Process in SAVE_ALL_BATCH_SIZE-wide windows so Jira's rate limiter is never saturated.
     for (let batchStart = 0; batchStart < rowsToSave.length; batchStart += SAVE_ALL_BATCH_SIZE) {
       const batch = rowsToSave.slice(batchStart, batchStart + SAVE_ALL_BATCH_SIZE);
       await Promise.allSettled(
-        batch.map((issue) => {
-          const pointValue = overridesByKey[issue.key] ?? allEstimates[issue.key]?.suggestedPoints;
-          return pointValue != null ? handleSaveRow(issue.key, pointValue) : Promise.resolve();
-        }),
+        batch.map(({ key, pointValue }) => handleSaveRow(key, pointValue)),
       );
     }
   }
@@ -4269,11 +4299,15 @@ function PointingTab({
 
   const estimatedCount = Object.keys(allEstimates).length;
   const savedCount = Object.values(saveProgressByKey).filter((s) => s === 'saved').length;
-  const hasAnyUnsavedEstimate = anchorConfig != null && pointingQueue.some((issue) => {
-    if (issue.key === anchorConfig.issueKey) return false;
-    const pointValue = overridesByKey[issue.key] ?? allEstimates[issue.key]?.suggestedPoints;
-    return pointValue != null && saveProgressByKey[issue.key] !== 'saved';
-  });
+  const hasAnyUnsavedEstimate = anchorConfig != null && (
+    // The anchor itself is unsaved (covers the single-issue case).
+    saveProgressByKey[anchorConfig.issueKey] !== 'saved'
+    || pointingQueue.some((issue) => {
+      if (issue.key === anchorConfig.issueKey) return false;
+      const pointValue = overridesByKey[issue.key] ?? allEstimates[issue.key]?.suggestedPoints;
+      return pointValue != null && saveProgressByKey[issue.key] !== 'saved';
+    })
+  );
 
   return (
     <DashboardTabShell
@@ -4457,6 +4491,7 @@ function PointingTab({
               {pointingQueue.map((issue) => (
                 <PointingTableRow
                   key={issue.key}
+                  anchorPointValue={issue.key === anchorConfig?.issueKey ? anchorConfig?.pointValue : undefined}
                   customStoryPointsFieldId={config.customStoryPointsFieldId}
                   detail={detailByIssueKey[issue.key]}
                   estimate={allEstimates[issue.key]}
@@ -6493,6 +6528,7 @@ export default function SprintDashboardView() {
       return (
         <StandupTab
           key={`standup-${activeDashboardTeamProfileId || 'legacy-default'}`}
+          dashboardScopeMode={state.scopeMode}
           dashboardTeamProfileId={activeDashboardTeamProfileId}
           isTimerRunning={state.isTimerRunning}
           issues={state.sprintIssues}
@@ -6509,7 +6545,13 @@ export default function SprintDashboardView() {
 
     if (activeTab === 'hygiene') {
       return (
-        <TeamDashboardHygieneTab projectKey={state.projectKey} />
+        <TeamDashboardHygieneTab
+          projectKey={state.projectKey}
+          scopeMode={state.scopeMode}
+          selectedFixVersionName={state.selectedFixVersionName}
+          selectedPiValue={state.selectedPiValue}
+          selectedSprintId={state.selectedSprintId}
+        />
       );
     }
 

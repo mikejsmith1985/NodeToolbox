@@ -11,8 +11,15 @@ describe('TeamDashboardHygieneTab', () => {
     window.localStorage.clear();
   });
 
+  const defaultScopeProps = {
+    scopeMode: 'sprint' as const,
+    selectedPiValue: '',
+    selectedFixVersionName: '',
+    selectedSprintId: null,
+  };
+
   it('stores the active Team Dashboard project key for the embedded Hygiene view', () => {
-    render(<TeamDashboardHygieneTab projectKey="tbx" />);
+    render(<TeamDashboardHygieneTab projectKey="tbx" {...defaultScopeProps} />);
 
     expect(window.localStorage.getItem(HYGIENE_PROJECT_KEY_STORAGE_KEY)).toBe('TBX');
     expect(screen.getByRole('heading', { name: 'Hygiene' })).toBeInTheDocument();
@@ -21,7 +28,7 @@ describe('TeamDashboardHygieneTab', () => {
   it('does not overwrite stored hygiene project key when Team Dashboard project key is blank', () => {
     window.localStorage.setItem(HYGIENE_PROJECT_KEY_STORAGE_KEY, 'EXISTING');
 
-    render(<TeamDashboardHygieneTab projectKey="   " />);
+    render(<TeamDashboardHygieneTab projectKey="   " {...defaultScopeProps} />);
 
     expect(window.localStorage.getItem(HYGIENE_PROJECT_KEY_STORAGE_KEY)).toBe('EXISTING');
   });
