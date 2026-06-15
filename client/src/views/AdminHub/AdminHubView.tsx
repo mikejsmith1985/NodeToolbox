@@ -15,6 +15,7 @@ import { fetchSchedulerValidation, type SchedulerValidationRepoResult } from '..
 import { useConnectionStore } from '../../store/connectionStore'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
 import { RepoMonitorPanel } from './RepoMonitorPanel.tsx'
+import { RovoAutomationPanel } from './RovoAutomationPanel.tsx'
 import { StandupBriefingPanel } from './StandupBriefingPanel.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
 import type {
@@ -2759,6 +2760,8 @@ export default function AdminHubView() {
       {activeAdminTab === 'standup-briefing' && (
         <section id="admin-hub-standup-briefing-panel" role="tabpanel" aria-labelledby="admin-hub-standup-briefing-tab">
           <StandupBriefingPanel />
+          {/* Self-gated: only renders once the Rovo passphrase is unlocked. */}
+          <RovoAutomationPanel />
         </section>
       )}
     </ViewFrame>

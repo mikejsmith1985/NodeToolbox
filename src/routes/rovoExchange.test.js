@@ -6,17 +6,43 @@ const express = require('express');
 const request = require('supertest');
 
 jest.mock('../services/rovoExchange', () => ({ dispatchPrompt: jest.fn(), fetchResult: jest.fn() }));
+jest.mock('../config/loader', () => ({ saveConfigToDisk: jest.fn() }));
 const { dispatchPrompt, fetchResult } = require('../services/rovoExchange');
+const { saveConfigToDisk } = require('../config/loader');
 const createRovoExchangeRouter = require('./rovoExchange');
 
-function buildApp() {
+function buildApp(configuration = {}) {
   const app = express();
   app.use(express.json());
-  app.use(createRovoExchangeRouter({}));
+  app.use(createRovoExchangeRouter(configuration));
   return app;
 }
 
 beforeEach(() => jest.clearAllMocks());
+
+describe('Rovo config endpoints', () => {
+  it('GET returns the current config (empty defaults)', async () => {
+    const response = await request(buildApp({})).get('/api/rovo/config');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ webhookUrl: '', webhookSecret: '', parkingSpaceKey: '', isEnabled: false });
+  });
+
+  it('POST sanitises, saves to disk, and persists into configuration', async () => {
+    const configuration = {};
+    const response = await request(buildApp(configuration)).post('/api/rovo/config').send({
+      webhookUrl: '  https://x.atlassian.net/hook  ', webhookSecret: ' s ', parkingSpaceKey: ' ROVO ', isEnabled: 1,
+    });
+    expect(response.status).toBe(200);
+    expect(configuration.rovoAutomation).toEqual({ webhookUrl: 'https://x.atlassian.net/hook', webhookSecret: 's', parkingSpaceKey: 'ROVO', isEnabled: true });
+    expect(saveConfigToDisk).toHaveBeenCalledTimes(1);
+  });
+
+  it('GET reflects a previously saved config', async () => {
+    const configuration = { rovoAutomation: { webhookUrl: 'https://x.atlassian.net/h', webhookSecret: 'k', parkingSpaceKey: 'ROVO', isEnabled: true } };
+    const response = await request(buildApp(configuration)).get('/api/rovo/config');
+    expect(response.body).toMatchObject({ webhookUrl: 'https://x.atlassian.net/h', parkingSpaceKey: 'ROVO', isEnabled: true });
+  });
+});
 
 describe('POST /api/rovo/dispatch', () => {
   it('returns 200 on a successful dispatch and never echoes a prompt or secret', async () => {
