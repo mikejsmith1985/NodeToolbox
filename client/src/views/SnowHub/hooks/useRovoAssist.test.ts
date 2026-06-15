@@ -1,10 +1,11 @@
 // useRovoAssist.test.ts — Unit tests for the hidden Rovo prompt generator hook.
 
 import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
+import { setRovoUnlocked } from '../../../store/rovoStore.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
-import { useRovoAssist } from './useRovoAssist.ts';
+import { parseRovoChgResponse, useRovoAssist } from './useRovoAssist.ts';
 
 function createMockJiraIssue(issueKey: string, summary: string): JiraIssue {
   return {
@@ -50,6 +51,12 @@ const EMPTY_CURRENT_FIELDS = {
 };
 
 describe('useRovoAssist', () => {
+  beforeEach(() => {
+    // Reset the shared unlock store between tests (it is a global singleton).
+    sessionStorage.clear();
+    setRovoUnlocked(false);
+  });
+
   it('starts in a locked state', () => {
     const { result } = renderHook(() => useRovoAssist());
 
@@ -198,5 +205,51 @@ describe('useRovoAssist', () => {
     const prompt = result.current.buildPrompt([], EMPTY_CURRENT_FIELDS);
 
     expect(prompt).not.toContain('Existing content to refine');
+  });
+});
+
+describe('parseRovoChgResponse', () => {
+  it('parses all four fields from the deterministic block', () => {
+    const response = [
+      'SHORT_DESCRIPTION: Deploy TOOL 2.0',
+      'DESCRIPTION: Rolls out the new release',
+      'JUSTIFICATION: Planned PI work',
+      'RISK_AND_IMPACT: Low risk, no downtime',
+    ].join('\n');
+
+    expect(parseRovoChgResponse(response)).toEqual({
+      shortDescription: 'Deploy TOOL 2.0',
+      description: 'Rolls out the new release',
+      justification: 'Planned PI work',
+      riskImpact: 'Low risk, no downtime',
+    });
+  });
+
+  it('preserves multi-line values up to the next marker', () => {
+    const response = [
+      'SHORT_DESCRIPTION: One line',
+      'DESCRIPTION: First line of detail',
+      'second line of detail',
+      'JUSTIFICATION: Because',
+      'RISK_AND_IMPACT: None',
+    ].join('\n');
+
+    expect(parseRovoChgResponse(response).description).toBe('First line of detail\nsecond line of detail');
+  });
+
+  it('does not confuse the DESCRIPTION marker with SHORT_DESCRIPTION', () => {
+    const response = 'SHORT_DESCRIPTION: Short text\nDESCRIPTION: Long text';
+    const parsed = parseRovoChgResponse(response);
+    expect(parsed.shortDescription).toBe('Short text');
+    expect(parsed.description).toBe('Long text');
+  });
+
+  it('omits fields that are missing from the response', () => {
+    const parsed = parseRovoChgResponse('SHORT_DESCRIPTION: Only this one');
+    expect(parsed).toEqual({ shortDescription: 'Only this one' });
+  });
+
+  it('returns an empty object for non-string input', () => {
+    expect(parseRovoChgResponse(undefined as unknown as string)).toEqual({});
   });
 });

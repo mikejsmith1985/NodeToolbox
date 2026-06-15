@@ -18,7 +18,8 @@ import { useCrgFieldPins } from '../hooks/useCrgFieldPins.ts';
 import { useCrgState } from '../hooks/useCrgState.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
-import { useRovoAssist } from '../hooks/useRovoAssist.ts';
+import { parseRovoChgResponse, useRovoAssist } from '../hooks/useRovoAssist.ts';
+import { useRovoExchange } from '../hooks/useRovoExchange.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 import { CtaskEditForm } from '../components/CtaskEditForm.tsx';
@@ -2249,6 +2250,11 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
   // Prompt modal state — holds the generated prompt text the user pastes into Rovo.
   const [rovoPrompt, setRovoPrompt] = useState<string | null>(null);
 
+  // Automated Rovo exchange — dispatches the prompt and polls for the result,
+  // removing the manual copy-paste step. Status is shown inside the prompt modal.
+  const { isRunning: isRovoRunning, runRovoExchange } = useRovoExchange();
+  const [rovoAutoStatus, setRovoAutoStatus] = useState<string | null>(null);
+
   const issueCountSummary = useMemo(() => {
     if (mode === 'configuration') {
       return CONFIGURATION_SUMMARY;
@@ -2388,6 +2394,35 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     const promptText = buildPrompt(selectedIssues, currentFields);
     setRovoPrompt(promptText);
   }, [state, buildPrompt]);
+
+  // Automated path: send the shown prompt to Rovo, poll for the deterministic
+  // response, parse it, and apply each returned value to its CHG field — the
+  // same fields the manual paste-back would populate.
+  const handleRunRovoAuto = useCallback(async () => {
+    if (!rovoPrompt) return;
+
+    setRovoAutoStatus('Sending to Rovo…');
+    const exchange = await runRovoExchange(rovoPrompt);
+    if (!exchange.ok) {
+      setRovoAutoStatus(exchange.message);
+      return;
+    }
+
+    const parsedFields = parseRovoChgResponse(exchange.response ?? '');
+    const parsedFieldKeys = Object.keys(parsedFields) as Array<keyof typeof parsedFields>;
+    parsedFieldKeys.forEach((fieldKey) => {
+      const fieldValue = parsedFields[fieldKey];
+      if (fieldValue) {
+        actions.updateGeneratedField(fieldKey, fieldValue);
+      }
+    });
+
+    setRovoAutoStatus(
+      parsedFieldKeys.length > 0
+        ? `Applied ${parsedFieldKeys.length} field(s) from Rovo.`
+        : 'Rovo returned no recognisable fields.',
+    );
+  }, [rovoPrompt, runRovoExchange, actions]);
 
   const planningExtras: PlanningStepExtras = {
     isRovoUnlocked:    isUnlocked,
@@ -2536,6 +2571,14 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
             <div className={styles.promptActions}>
               <button
                 className={styles.rovoButton}
+                disabled={isRovoRunning}
+                onClick={() => void handleRunRovoAuto()}
+                type="button"
+              >
+                {isRovoRunning ? '⏳ Running via Rovo…' : '⚡ Run via Rovo (auto)'}
+              </button>
+              <button
+                className={styles.rovoButton}
                 onClick={() => void navigator.clipboard.writeText(rovoPrompt)}
                 type="button"
               >
@@ -2543,12 +2586,15 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
               </button>
               <button
                 className={styles.linkButton}
-                onClick={() => setRovoPrompt(null)}
+                onClick={() => { setRovoPrompt(null); setRovoAutoStatus(null); }}
                 type="button"
               >
                 Close
               </button>
             </div>
+            {rovoAutoStatus !== null ? (
+              <p className={styles.promptInstructions} role="status">{rovoAutoStatus}</p>
+            ) : null}
           </div>
         </div>
       ) : null}

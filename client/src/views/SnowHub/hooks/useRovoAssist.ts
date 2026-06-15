@@ -2,8 +2,9 @@
 // Activated through a keyboard shortcut and a passphrase gate.
 // No external documentation — internal capability only.
 
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 
+import { setRovoUnlocked, useRovoStore } from '../../../store/rovoStore.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 
@@ -123,6 +124,47 @@ function buildRovoPromptText(selectedIssues: JiraIssue[], currentFields: RovoGen
   ].join('\n');
 }
 
+// Maps each deterministic response marker to the CHG field it populates. The
+// prompt forces Rovo to emit exactly these markers, so parsing is reliable.
+const ROVO_RESPONSE_MARKERS: ReadonlyArray<{ marker: string; field: keyof RovoGeneratedFields }> = [
+  { marker: 'SHORT_DESCRIPTION', field: 'shortDescription' },
+  { marker: 'DESCRIPTION',       field: 'description' },
+  { marker: 'JUSTIFICATION',     field: 'justification' },
+  { marker: 'RISK_AND_IMPACT',   field: 'riskImpact' },
+];
+
+/**
+ * Parses Rovo's deterministic "KEY: value" response into the four CHG fields.
+ * Each value runs from its marker up to the next marker (so multi-line values are
+ * preserved). A leading line boundary on each marker prevents the "DESCRIPTION"
+ * marker from matching inside "SHORT_DESCRIPTION". Missing fields are omitted.
+ *
+ * @param responseText - The raw text Rovo returned.
+ * @returns Only the fields that were found, trimmed.
+ */
+export function parseRovoChgResponse(responseText: string): Partial<RovoGeneratedFields> {
+  const parsedFields: Partial<RovoGeneratedFields> = {};
+  if (typeof responseText !== 'string') {
+    return parsedFields;
+  }
+
+  for (let markerIndex = 0; markerIndex < ROVO_RESPONSE_MARKERS.length; markerIndex += 1) {
+    const { marker, field } = ROVO_RESPONSE_MARKERS[markerIndex];
+    const laterMarkers = ROVO_RESPONSE_MARKERS.slice(markerIndex + 1).map((entry) => entry.marker);
+    // Stop at the next known marker OR end of input — so a value works whether or
+    // not later markers are present in the response.
+    const stopAhead = laterMarkers.length > 0 ? `(?=\\n\\s*(?:${laterMarkers.join('|')})\\s*:|$)` : '$';
+    const fieldRegExp = new RegExp(`(?:^|\\n)\\s*${marker}\\s*:\\s*([\\s\\S]*?)${stopAhead}`, 'i');
+
+    const match = responseText.match(fieldRegExp);
+    if (match && match[1].trim()) {
+      parsedFields[field] = match[1].trim();
+    }
+  }
+
+  return parsedFields;
+}
+
 /**
  * Provides passphrase-gated prompt generation for populating CHG content fields.
  * Generates a prompt string the user pastes directly into Rovo — no API calls made.
@@ -130,14 +172,16 @@ function buildRovoPromptText(selectedIssues: JiraIssue[], currentFields: RovoGen
  * @returns Unlock state and action functions.
  */
 export function useRovoAssist(): UseRovoAssistResult {
-  const [isUnlocked, setIsUnlocked] = useState(false);
+  // Unlock state is shared app-wide via rovoStore, so one passphrase entry
+  // unlocks every Rovo affordance and the Admin Hub config section.
+  const isUnlocked = useRovoStore((state) => state.isRovoUnlocked);
 
   const verifyPassphrase = useCallback(async (passphrase: string): Promise<boolean> => {
     const inputDigest = await computeSha256Hex(passphrase);
     const isPassphraseCorrect = inputDigest === ACTIVATION_DIGEST;
 
     if (isPassphraseCorrect) {
-      setIsUnlocked(true);
+      setRovoUnlocked(true);
     }
 
     return isPassphraseCorrect;
