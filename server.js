@@ -21,6 +21,7 @@ const createSetupRouter                     = require('./src/routes/setup');
 const relayBridgeRouter                     = require('./src/routes/relayBridge');
 const createNotificationsRouter             = require('./src/routes/notifications');
 const createStandupBriefingRouter           = require('./src/routes/standupBriefing');
+const createReportDeliveryRouter            = require('./src/routes/reportDelivery');
 
 const { startSchedulerLoop }                = require('./src/services/repoMonitor');
 const { startScopeChangeScheduler }         = require('./src/services/scopeChangeScheduler');
@@ -131,6 +132,10 @@ app.use(createNotificationsRouter(configuration));
 
 // Standup briefing: /api/standup/*
 app.use(createStandupBriefingRouter(configuration));
+
+// Report webhook delivery: POST /api/reports/deliver — server-mediated send of an
+// on-screen report to the team's Atlassian Automation webhook.
+app.use(createReportDeliveryRouter(configuration));
 
 // First-run detection: GET / redirects to /setup when no service is configured.
 // Placed before the static file middleware so misconfigured instances always see

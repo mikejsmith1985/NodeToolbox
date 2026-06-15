@@ -5,11 +5,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { JiraIssue } from '../../types/jira.ts';
 
-const { mockUseSprintStandupState, mockIssueDetailPanel, mockDsuBoardView } = vi.hoisted(() => ({
+const { mockUseSprintStandupState, mockIssueDetailPanel, mockDsuBoardView, mockSendToAutomation } = vi.hoisted(() => ({
   mockUseSprintStandupState: vi.fn(),
   mockIssueDetailPanel: vi.fn(() => <div>Mock Issue Detail Panel</div>),
   mockDsuBoardView: vi.fn(() => <div>Mock DSU Board</div>),
+  mockSendToAutomation: vi.fn(() => <div data-testid="send-to-automation">Mock Send</div>),
 }));
+
+vi.mock('../../components/SendToAutomationButton.tsx', () => ({ default: mockSendToAutomation }));
 
 vi.mock('./hooks/useSprintStandupState.ts', () => ({
   calculateIssueAgeDays: () => 3,
@@ -394,5 +397,68 @@ describe('StandupTab', () => {
 
     expect(screen.getByText('Mock DSU Board')).toBeInTheDocument();
     expect(mockDsuBoardView).toHaveBeenCalledWith({ projectKey: 'ENFCT' }, undefined);
+  });
+
+  it('shows both Copy Briefing and Send to Automation once a briefing is generated', async () => {
+    // Briefing mode with the same valid state shape, only the mode switched.
+    mockUseSprintStandupState.mockReturnValue({
+      state: {
+        standupMode: 'briefing',
+        scopeMode: 'sprint',
+        shouldShowDoneColumn: false,
+        scopeIssues: [],
+        isLoadingScopeIssues: false,
+        scopeLoadErrorMessage: null,
+        plannedIssueKeysByPerson: {},
+        previousPlannedIssueKeysByPerson: {},
+        boardwalkStatusFilters: { new: {}, indeterminate: {}, done: {} },
+        personWalkDraft: { yesterday: '', today: '', blockers: '' },
+        personWalkPostKey: '',
+        personWalkPostStatus: 'idle',
+        personWalkPostErrorMessage: null,
+        personWalkCopyStatusMessage: null,
+        isLoadingPersonWalk: false,
+        personWalkErrorMessage: null,
+      },
+      actions: {
+        setStandupMode: vi.fn(),
+        setScopeMode: vi.fn(),
+        setShouldShowDoneColumn: vi.fn(),
+        togglePlannedIssue: vi.fn(),
+        toggleBoardwalkStatusFilter: vi.fn(),
+        refreshPersonWalk: vi.fn().mockResolvedValue(undefined),
+        setPersonWalkDraftField: vi.fn(),
+        setPersonWalkPostKey: vi.fn(),
+        copyPersonWalk: vi.fn().mockResolvedValue(undefined),
+        postPersonWalkComment: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: async () => ({ ok: true, briefingText: '## Briefing\n- item', counts: {} }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <StandupTab
+        isTimerRunning={false}
+        issues={[]}
+        onRefreshIssues={vi.fn()}
+        onReset={vi.fn()}
+        onStart={vi.fn()}
+        onStop={vi.fn()}
+        onTick={vi.fn()}
+        dashboardScopeMode="sprint"
+        projectKey="TBX"
+        timerSecondsRemaining={900}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Run Briefing/i }));
+
+    // Copy Briefing still works (additive change) and the Send action is wired in.
+    expect(await screen.findByText('Copy Briefing')).toBeInTheDocument();
+    expect(screen.getByTestId('send-to-automation')).toBeInTheDocument();
+    expect(mockSendToAutomation).toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });
