@@ -1,11 +1,14 @@
 // RovoAutomationPanel.tsx — Passphrase-gated Admin Hub config for the automated
-// Rovo exchange. Renders nothing until the Rovo capability is unlocked (shared
-// rovoStore). Holds the single Atlassian Automation/Rovo webhook + secret and the
-// Confluence parking space used by the "Run via Rovo (auto)" actions.
+// Rovo exchange. Holds the single Atlassian Automation/Rovo webhook + secret and
+// the Confluence parking space used by the "Run via Rovo (auto)" actions.
+//
+// The capability is hidden: nothing is shown until the Rovo passphrase is entered.
+// The same hidden Ctrl+Alt+Z shortcut that unlocks the generators also unlocks
+// this section in place, so the user never has to leave Admin Hub to configure it.
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { useRovoStore } from '../../store/rovoStore';
+import { useRovoAssist } from '../SnowHub/hooks/useRovoAssist.ts';
 import styles from './AdminHubView.module.css';
 
 interface RovoConfig {
@@ -16,6 +19,7 @@ interface RovoConfig {
 }
 
 const EMPTY_CONFIG: RovoConfig = { webhookUrl: '', webhookSecret: '', parkingSpaceKey: '', isEnabled: false };
+const HIDDEN_ROVO_SHORTCUT_KEY = 'z';
 
 async function fetchRovoConfig(): Promise<RovoConfig> {
   const response = await fetch('/api/rovo/config');
@@ -41,21 +45,51 @@ async function testRovoDispatch(): Promise<{ ok: boolean; message: string }> {
   return { ok: Boolean(body.ok), message: body.message ?? (body.ok ? 'Dispatched.' : 'Dispatch failed.') };
 }
 
-/** Renders the Rovo Automation config section (only when the Rovo passphrase is unlocked). */
+/** Renders the Rovo Automation config section (only once the Rovo passphrase is unlocked). */
 export function RovoAutomationPanel() {
-  const isRovoUnlocked = useRovoStore((state) => state.isRovoUnlocked);
+  const { isUnlocked, verifyPassphrase } = useRovoAssist();
   const [config, setConfig] = useState<RovoConfig>(EMPTY_CONFIG);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
+  const [isPassphraseModalVisible, setIsPassphraseModalVisible] = useState(false);
+  const [passphraseInput, setPassphraseInput] = useState('');
+  const [passphraseError, setPassphraseError] = useState<string | null>(null);
+
+  // Hidden Ctrl+Alt+Z reveals the passphrase gate in place (only while locked).
   useEffect(() => {
-    if (!isRovoUnlocked) return;
+    function handleKeyDown(keyboardEvent: KeyboardEvent) {
+      const isShortcutPressed =
+        keyboardEvent.ctrlKey && keyboardEvent.altKey && keyboardEvent.key.toLowerCase() === HIDDEN_ROVO_SHORTCUT_KEY;
+      if (!isShortcutPressed || isUnlocked) return;
+      setIsPassphraseModalVisible(true);
+      setPassphraseInput('');
+      setPassphraseError(null);
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isUnlocked]);
+
+  useEffect(() => {
+    if (!isUnlocked) return;
     void fetchRovoConfig().then(setConfig).catch(() => { /* leave defaults on failure */ });
-  }, [isRovoUnlocked]);
+  }, [isUnlocked]);
 
   const updateField = useCallback((field: keyof RovoConfig, value: string | boolean) => {
     setConfig((previous) => ({ ...previous, [field]: value }));
   }, []);
+
+  const handlePassphraseSubmit = useCallback(async () => {
+    const isAccepted = await verifyPassphrase(passphraseInput);
+    if (isAccepted) {
+      // verifyPassphrase sets the shared rovoStore — the section reveals itself.
+      setIsPassphraseModalVisible(false);
+      setPassphraseInput('');
+      setPassphraseError(null);
+      return;
+    }
+    setPassphraseError('Incorrect passphrase');
+  }, [passphraseInput, verifyPassphrase]);
 
   const handleSave = useCallback(async () => {
     setIsBusy(true);
@@ -78,8 +112,32 @@ export function RovoAutomationPanel() {
     setIsBusy(false);
   }, []);
 
-  // Gate: the whole section stays hidden until the Rovo passphrase is entered.
-  if (!isRovoUnlocked) return null;
+  // Locked: render only the passphrase modal if the hidden shortcut opened it.
+  if (!isUnlocked) {
+    if (!isPassphraseModalVisible) return null;
+    return (
+      <div className={styles.sectionCard}>
+        <h2 className={styles.sectionTitle}>🔒 Rovo Automation</h2>
+        <label className={styles.adminDescription}>
+          Passphrase
+          <input
+            autoFocus
+            className={styles.inputField}
+            type="password"
+            placeholder="Enter passphrase"
+            value={passphraseInput}
+            onChange={(changeEvent) => { setPassphraseInput(changeEvent.target.value); setPassphraseError(null); }}
+            onKeyDown={(keyboardEvent) => { if (keyboardEvent.key === 'Enter') void handlePassphraseSubmit(); }}
+          />
+        </label>
+        {passphraseError !== null ? <p className={styles.errorMessage}>{passphraseError}</p> : null}
+        <div>
+          <button className={styles.primaryBtn} onClick={() => void handlePassphraseSubmit()} type="button">Unlock</button>
+          <button className={styles.secondaryBtn} onClick={() => setIsPassphraseModalVisible(false)} type="button">Cancel</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <section className={styles.sectionCard}>

@@ -139,8 +139,6 @@ const RELEASE_FIELDS =
   'summary,status,assignee,priority,issuetype,fixVersions,description,customfield_10200';
 const RELEASE_MAX_RESULTS = 50;
 const HIDDEN_ROVO_SHORTCUT_KEY = 'z';
-const RELEASE_ROVO_UNLOCK_STORAGE_KEY = 'tbx-release-rovo-unlocked';
-const POINTING_ROVO_UNLOCK_STORAGE_KEY = 'tbx-pointing-rovo-unlocked';
 const POINTING_ROVO_ENHANCE_BUTTON_LABEL = '✦ Enhance with AI';
 const POINTING_ROVO_COPY_BUTTON_LABEL = '📋 Copy Prompt';
 const POINTING_ROVO_APPLY_BUTTON_LABEL = 'Apply estimates →';
@@ -901,21 +899,7 @@ function buildReleasePromptInput(projectKey: string, releaseEntry: ReleaseRadarE
   };
 }
 
-function readStoredReleaseRovoUnlockState(): boolean {
-  if (typeof window === 'undefined') {
-    return false;
-  }
 
-  return window.sessionStorage.getItem(RELEASE_ROVO_UNLOCK_STORAGE_KEY) === 'true';
-}
-
-function readStoredPointingRovoUnlockState(): boolean {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  return window.sessionStorage.getItem(POINTING_ROVO_UNLOCK_STORAGE_KEY) === 'true';
-}
 
 function buildReleaseNotesStorageKey(projectKey: string): string {
   const normalizedProjectKey = projectKey.trim().toUpperCase() || 'default';
@@ -3939,10 +3923,9 @@ function PointingTab({
   }, [config.customStoryPointsFieldId, issues]);
 
   // ── Rovo AI assist state ──
-  const { verifyPassphrase } = useRovoAssist();
-  const [isPointingRovoUnlocked, setIsPointingRovoUnlocked] = useState<boolean>(
-    () => readStoredPointingRovoUnlockState(),
-  );
+  // Unlock state comes from the shared rovoStore (via useRovoAssist) so one
+  // passphrase entry unlocks every Rovo surface, including the Admin Hub config.
+  const { isUnlocked: isPointingRovoUnlocked, verifyPassphrase } = useRovoAssist();
   const [isPassphraseModalVisible, setIsPassphraseModalVisible] = useState(false);
   const [passphraseInput, setPassphraseInput] = useState('');
   const [passphraseError, setPassphraseError] = useState<string | null>(null);
@@ -4129,12 +4112,6 @@ function PointingTab({
     void handleLoadAllDetails();
   }
 
-  // Persist unlock state for the session so the passphrase is only entered once per browser tab.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.sessionStorage.setItem(POINTING_ROVO_UNLOCK_STORAGE_KEY, isPointingRovoUnlocked ? 'true' : 'false');
-  }, [isPointingRovoUnlocked]);
-
   // Ctrl+Alt+Z opens the passphrase gate; once unlocked the shortcut is a no-op.
   useEffect(() => {
     function handleGlobalKeyDown(keyboardEvent: globalThis.KeyboardEvent): void {
@@ -4228,7 +4205,7 @@ function PointingTab({
   const handlePointingPassphraseSubmit = useCallback(async () => {
     const isAccepted = await verifyPassphrase(passphraseInput);
     if (isAccepted) {
-      setIsPointingRovoUnlocked(true);
+      // verifyPassphrase sets the shared rovoStore; no local flag to update.
       setIsPassphraseModalVisible(false);
       setPassphraseInput('');
       setPassphraseError(null);
@@ -5641,12 +5618,13 @@ function ReleasesTab({
   selectedFixVersionName: string;
   selectedPiValue: string;
 }) {
-  const { verifyPassphrase } = useRovoAssist();
+  // Unlock state comes from the shared rovoStore (via useRovoAssist) so one
+  // passphrase entry unlocks every Rovo surface, including the Admin Hub config.
+  const { isUnlocked: isReleaseRovoUnlocked, verifyPassphrase } = useRovoAssist();
   const [releaseEntries, setReleaseEntries] = useState<ReleaseRadarEntry[]>([]);
   const [isLoadingReleaseRadar, setIsLoadingReleaseRadar] = useState(false);
   const [releaseRadarError, setReleaseRadarError] = useState<string | null>(null);
   const [expandedReleaseIds, setExpandedReleaseIds] = useState<Record<string, boolean>>({});
-  const [isReleaseRovoUnlocked, setIsReleaseRovoUnlocked] = useState<boolean>(() => readStoredReleaseRovoUnlockState());
   const [releaseNotesByVersionId, setReleaseNotesByVersionId] = useState<Record<string, ReleaseRovoTableDocument>>(
     () => readStoredReleaseNotes(projectKey),
   );
@@ -5669,17 +5647,6 @@ function ReleasesTab({
     setReleasePromptModalState(null);
     setReleaseImportModalState(null);
   }, [projectKey]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    window.sessionStorage.setItem(
-      RELEASE_ROVO_UNLOCK_STORAGE_KEY,
-      isReleaseRovoUnlocked ? 'true' : 'false',
-    );
-  }, [isReleaseRovoUnlocked]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -5879,7 +5846,7 @@ function ReleasesTab({
     const isPassphraseAccepted = await verifyPassphrase(passphraseInput);
 
     if (isPassphraseAccepted) {
-      setIsReleaseRovoUnlocked(true);
+      // verifyPassphrase sets the shared rovoStore; no local flag to update.
       setIsPassphraseModalVisible(false);
       setPassphraseInput('');
       setPassphraseError(null);

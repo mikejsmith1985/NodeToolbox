@@ -1,6 +1,6 @@
 // SprintDashboardView.test.tsx — Unit tests for the Sprint Dashboard tabbed view component.
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 
@@ -197,11 +197,21 @@ vi.mock('../../utils/downloadElementImage.ts', () => ({
 
 import SprintDashboardView from './SprintDashboardView.tsx';
 import { useSettingsStore } from '../../store/settingsStore.ts';
+import { setRovoUnlocked } from '../../store/rovoStore.ts';
+
+// Mock the Rovo exchange (dispatch+poll is unit-tested separately) so the
+// auto-path integration test gets a canned deterministic response immediately.
+const { mockRunRovoExchange } = vi.hoisted(() => ({ mockRunRovoExchange: vi.fn() }));
+vi.mock('../SnowHub/hooks/useRovoExchange.ts', () => ({
+  useRovoExchange: () => ({ isRunning: false, runRovoExchange: mockRunRovoExchange }),
+}));
 
 describe('SprintDashboardView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
+    setRovoUnlocked(false); // reset the shared Rovo unlock singleton between tests
+    mockRunRovoExchange.mockReset();
     useSettingsStore.setState({
       sprintDashboardTeamProfiles: [],
       sprintDashboardActiveTeamProfileId: '',
@@ -882,6 +892,52 @@ describe('SprintDashboardView', () => {
     expect(await screen.findByRole('button', { name: /paste rovo response/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Rovo Release Notes Draft' })).toBeInTheDocument();
     expect(screen.getByText('Delivers the hidden Rovo workflow for release notes.')).toBeInTheDocument();
+  });
+
+  it('renders a release-notes table from the automated Rovo exchange (Run via Rovo)', async () => {
+    mockState.activeTab = 'releases';
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/project/TBX/versions') {
+        return Promise.resolve([
+          { id: 'rel-1', name: 'Release 24.1', releaseDate: '2099-01-15', released: false, archived: false },
+        ]);
+      }
+      if (path.startsWith('/rest/api/2/search?jql=')) {
+        return Promise.resolve({
+          issues: [
+            { id: 'TBX-99', key: 'TBX-99', fields: { summary: 'Prepare production deploy', status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } }, assignee: { displayName: 'Alice Johnson' }, issuetype: { name: 'Story', iconUrl: 'story.png' }, priority: { name: 'High', iconUrl: 'priority.png' }, description: 'Release details', customfield_10200: 'Validation notes' } },
+          ],
+        });
+      }
+      return Promise.resolve({ values: [] });
+    });
+
+    // The automated exchange returns Rovo's deterministic JSON directly.
+    mockRunRovoExchange.mockResolvedValue({
+      ok: true,
+      response: JSON.stringify({
+        releaseName: 'Release 24.1',
+        releaseSummary: 'Auto-delivered release notes via Rovo.',
+        items: [{ issueKey: 'TBX-99', title: 'Automated release note', releaseNote: 'Generated without copy-paste.', customerImpact: 'Faster drafting.', technicalDetails: 'Dispatch + poll + parse.', risks: 'None.', validation: 'Covered by tests.' }],
+      }),
+    });
+
+    render(<SprintDashboardView />);
+    expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: true });
+    const passphraseInput = screen.getByLabelText('Protected tools passphrase');
+    fireEvent.change(passphraseInput, { target: { value: 'rovonow' } });
+    fireEvent.keyDown(passphraseInput, { key: 'Enter' });
+
+    // Open the prompt modal, then run the automated exchange instead of copy-paste.
+    fireEvent.click(await screen.findByRole('button', { name: /Build Rovo Prompt/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Run via Rovo \(auto\)/i }));
+
+    await waitFor(() => expect(mockRunRovoExchange).toHaveBeenCalled());
+    expect(await screen.findByRole('heading', { name: 'Rovo Release Notes Draft' })).toBeInTheDocument();
+    expect(screen.getByText('Auto-delivered release notes via Rovo.')).toBeInTheDocument();
+    expect(screen.getByText('Automated release note')).toBeInTheDocument();
   });
 
   it('exports rendered release notes as a PNG image', async () => {

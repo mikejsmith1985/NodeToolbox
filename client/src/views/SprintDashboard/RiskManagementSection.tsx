@@ -25,7 +25,6 @@ const JIRA_BROWSE_URL_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverto
 const RISK_PI_CUSTOMFIELD_ID = 'customfield_10301';
 const RISK_PI_CF_NUMBER = RISK_PI_CUSTOMFIELD_ID.replace('customfield_', '');
 
-const RISK_ROVO_UNLOCK_STORAGE_KEY = 'tbx-risk-rovo-unlocked';
 const RISK_MANAGEMENT_MAX_RESULTS = 100;
 const HIDDEN_ROVO_SHORTCUT_KEY = 'z';
 
@@ -50,15 +49,6 @@ export interface RiskManagementSectionProps {
   riskResponseFieldId: string;
 }
 
-// ── Storage helpers ──
-
-function readStoredRiskRovoUnlockState(): boolean {
-  try {
-    return window.sessionStorage.getItem(RISK_ROVO_UNLOCK_STORAGE_KEY) === 'true';
-  } catch {
-    return false;
-  }
-}
 
 // ── Prompt builder ──
 
@@ -222,7 +212,9 @@ export default function RiskManagementSection({
   riskImpactDateFieldId,
   riskResponseFieldId,
 }: RiskManagementSectionProps) {
-  const { verifyPassphrase } = useRovoAssist();
+  // Unlock state comes from the shared rovoStore (via useRovoAssist) so one
+  // passphrase entry unlocks every Rovo surface, including the Admin Hub config.
+  const { isUnlocked: isRovoUnlocked, verifyPassphrase } = useRovoAssist();
   const passphraseInputRef = useRef<HTMLInputElement | null>(null);
 
   const [riskIssues, setRiskIssues] = useState<JiraIssue[]>([]);
@@ -232,7 +224,6 @@ export default function RiskManagementSection({
   const [saveProgressByKey, setSaveProgressByKey] = useState<Record<string, RiskSaveProgress>>({});
   const [saveErrorByKey, setSaveErrorByKey] = useState<Record<string, string>>({});
 
-  const [isRovoUnlocked, setIsRovoUnlocked] = useState<boolean>(readStoredRiskRovoUnlockState);
   const [isPassphraseModalVisible, setIsPassphraseModalVisible] = useState(false);
   const [passphraseInput, setPassphraseInput] = useState('');
   const [passphraseError, setPassphraseError] = useState<string | null>(null);
@@ -289,16 +280,6 @@ export default function RiskManagementSection({
     };
   }, [projectKey, selectedPiName, riskImpactDateFieldId, riskResponseFieldId]);
 
-  // ── Persist unlock state per browser tab ──
-
-  useEffect(() => {
-    try {
-      window.sessionStorage.setItem(RISK_ROVO_UNLOCK_STORAGE_KEY, isRovoUnlocked ? 'true' : 'false');
-    } catch {
-      // sessionStorage may be blocked in some browser contexts; ignore.
-    }
-  }, [isRovoUnlocked]);
-
   // ── Ctrl+Alt+Z shortcut to reveal the passphrase gate ──
 
   useEffect(() => {
@@ -329,7 +310,7 @@ export default function RiskManagementSection({
   const handlePassphraseSubmit = useCallback(async () => {
     const isAccepted = await verifyPassphrase(passphraseInput);
     if (isAccepted) {
-      setIsRovoUnlocked(true);
+      // verifyPassphrase sets the shared rovoStore; no local flag to update.
       setIsPassphraseModalVisible(false);
       setPassphraseInput('');
       setPassphraseError(null);
