@@ -872,4 +872,10 @@ module.exports = {
   startFeatureChangeScheduler,
   runFeatureReportNow,
   runFeatureArtRollupNow,
+  // Pure helpers exported for unit testing.
+  getCurrentTimeHHMM,
+  getTodayDateString,
+  extractFeatureChangeEntries,
+  escapeXml,
+  extractPageIdFromUrl,
 };
