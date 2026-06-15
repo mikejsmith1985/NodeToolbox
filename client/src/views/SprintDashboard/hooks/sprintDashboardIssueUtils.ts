@@ -34,13 +34,18 @@ function readIssueLinks(issue: JiraIssue): JiraIssueLink[] {
   return issue.fields.issuelinks ?? [];
 }
 
-/** Returns the configured story-point estimate, falling back to the legacy Jira field when needed. */
+/**
+ * Returns the story-point value for an issue using the team's configured field.
+ * When a real Jira custom field is configured (starts with "customfield_"), that field is
+ * authoritative — no fallback to legacy fields. This keeps the pointing queue and Hygiene
+ * "missing SP" check in sync: both treat the configured field as the single source of truth.
+ */
 export function readStoryPointsValue(issue: JiraIssue, customStoryPointsFieldId: string): number | null {
-  const configuredValue = parseNumericValue(readCustomFieldValue(issue, customStoryPointsFieldId));
-  if (configuredValue !== null) {
-    return configuredValue;
+  const isRealCustomField = customStoryPointsFieldId.startsWith('customfield_');
+  if (isRealCustomField) {
+    return parseNumericValue(readCustomFieldValue(issue, customStoryPointsFieldId));
   }
-
+  // No real custom field configured — fall back to the legacy story-points field.
   return parseNumericValue(readCustomFieldValue(issue, LEGACY_STORY_POINTS_FIELD_ID));
 }
 

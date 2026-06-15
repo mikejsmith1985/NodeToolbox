@@ -43,7 +43,7 @@ const ROSTER_SCOPE_MAX_RESULTS = 200;
 const ROSTER_SCOPE_FIELDS =
   'summary,status,priority,issuetype,assignee,reporter,created,updated,description,comment,fixVersions,issuelinks,customfield_10016,customfield_10021';
 
-export type StandupMode = 'boardwalk' | 'personwalk' | 'dsu-board';
+export type StandupMode = 'boardwalk' | 'personwalk' | 'dsu-board' | 'briefing';
 export type StandupStatusCategory = 'new' | 'indeterminate' | 'done';
 export type PersonWalkPostStatus = 'idle' | 'posting' | 'success' | 'error';
 export type { StandupScopeMode } from './useStandupPlanningStore.ts';
@@ -102,7 +102,7 @@ interface StoredStandupUiState {
 }
 
 function isStandupMode(value: unknown): value is StandupMode {
-  return value === 'boardwalk' || value === 'personwalk' || value === 'dsu-board';
+  return value === 'boardwalk' || value === 'personwalk' || value === 'dsu-board' || value === 'briefing';
 }
 
 function isStandupScopeMode(value: unknown): value is StandupScopeMode {

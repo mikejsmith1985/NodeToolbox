@@ -3,7 +3,7 @@
 // Loads Epic, Defect, and Risk issues from Jira across all configured ART teams,
 // storing them for display in the director-level PI reporting dashboard.
 
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 
 import { jiraGet } from '../../../services/jiraApi.ts'
 import { readArtFeatureScopeSettings } from '../../ArtView/artFeatureScopeSettings.ts'
@@ -49,12 +49,16 @@ export type ReportsHubTab =
   | 'quality'
   | 'sprintHealth'
   | 'throughput'
+  | 'scopeChange'
+  | 'featureChange'
 
 /** A single ART team configuration loaded from localStorage. */
 export interface ArtTeamConfig {
   name: string
   projectKey?: string
   boardId?: string
+  /** Jira label used by the Feature Change report query: type = Feature AND labels in (jiraLabel). */
+  jiraLabel?: string
 }
 
 /** A normalised Jira issue record used across all three report types. */
@@ -129,6 +133,48 @@ export interface ThroughputEntry {
   resolvedCount: number
 }
 
+/** A single scope-change event — an issue that received a new Sprint or fixVersion value. */
+export interface ScopeChangeEntry {
+  issueKey: string
+  issueSummary: string
+  issueType: string
+  changeType: 'sprint' | 'fixVersion'
+  fromValue: string
+  toValue: string
+  changedBy: string
+  changedAt: string
+}
+
+/** Scope change results for a single ART team when running in ART Combined mode. */
+export interface ArtTeamScopeResult {
+  teamName: string
+  projectKey: string
+  releaseEntries: ScopeChangeEntry[]
+  sprintEntries: ScopeChangeEntry[]
+  error: string | null
+}
+
+/** A single Feature Change event — an Epic that received a change to a monitored PI-planning field. */
+export interface FeatureChangeEntry {
+  issueKey: string
+  issueSummary: string
+  /** Human-readable field name — "Fix Version", "Status", "Target Start", "Target End", "Due Date". */
+  fieldLabel: string
+  changeType: 'fixVersion' | 'status' | 'targetStart' | 'targetEnd' | 'dueDate'
+  fromValue: string
+  toValue: string
+  changedBy: string
+  changedAt: string
+}
+
+/** Feature change results for a single ART team in ART Combined mode. */
+export interface ArtTeamFeatureChangeResult {
+  teamName: string
+  projectKey: string
+  entries: FeatureChangeEntry[]
+  error: string | null
+}
+
 /** All reactive state fields managed by this hook. */
 export interface ReportsHubState {
   activeTab: ReportsHubTab
@@ -156,6 +202,25 @@ export interface ReportsHubState {
   throughputData: ThroughputEntry[]
   isLoadingThroughput: boolean
   throughputError: string | null
+  scopeChangeEntries: ScopeChangeEntry[]
+  isLoadingScopeChange: boolean
+  scopeChangeError: string | null
+  scopeChangeProjectKey: string
+  scopeChangeDaysBack: number
+  hasScopeChangeGenerated: boolean
+  isArtCombinedMode: boolean
+  artCombinedResults: ArtTeamScopeResult[]
+  isLoadingArtCombined: boolean
+  artCombinedError: string | null
+  artCombinedDaysBack: number
+  featureChangeEntries: FeatureChangeEntry[]
+  isLoadingFeatureChange: boolean
+  featureChangeError: string | null
+  featureChangeDaysBack: number
+  hasFeatureChangeGenerated: boolean
+  artCombinedFeatureResults: ArtTeamFeatureChangeResult[]
+  isLoadingArtCombinedFeature: boolean
+  artCombinedFeatureError: string | null
 }
 
 /** All action callbacks returned by this hook. */
@@ -170,6 +235,17 @@ export interface ReportsHubActions {
   loadSprintData(): Promise<void>
   loadQuality(): Promise<void>
   loadThroughput(): Promise<void>
+  setScopeChangeProjectKey(projectKey: string): void
+  setScopeChangeDaysBack(daysBack: number): void
+  loadScopeChanges(projectKeyOverride?: string): Promise<void>
+  loadArtCombinedScopeChanges(): Promise<void>
+  setArtCombinedMode(isEnabled: boolean): void
+  setArtCombinedDaysBack(days: number): void
+  /** Routes to single-team or ART Combined based on the current teamFilter value. */
+  generateScopeChange(): Promise<void>
+  setFeatureChangeDaysBack(daysBack: number): void
+  /** Routes to single-team or ART Combined feature change query based on the current teamFilter value. */
+  generateFeatureChange(): Promise<void>
   copyReport(): void
 }
 
@@ -260,7 +336,7 @@ function normalizeArtTeamConfig(rawTeamConfig: unknown): ArtTeamConfig | null {
     return null
   }
 
-  const teamCandidate = rawTeamConfig as { name?: unknown; projectKey?: unknown; boardId?: unknown }
+  const teamCandidate = rawTeamConfig as { name?: unknown; projectKey?: unknown; boardId?: unknown; jiraLabel?: unknown }
   if (typeof teamCandidate.name !== 'string') {
     return null
   }
@@ -284,6 +360,11 @@ function normalizeArtTeamConfig(rawTeamConfig: unknown): ArtTeamConfig | null {
 
   if (trimmedBoardId !== '') {
     normalizedTeamConfig.boardId = trimmedBoardId
+  }
+
+  const trimmedJiraLabel = typeof teamCandidate.jiraLabel === 'string' ? teamCandidate.jiraLabel.trim() : undefined
+  if (trimmedJiraLabel) {
+    normalizedTeamConfig.jiraLabel = trimmedJiraLabel
   }
 
   return normalizedTeamConfig
@@ -774,6 +855,124 @@ function aggregateThroughputData(resolvedIssues: SprintIssue[]): ThroughputEntry
     }))
 }
 
+// ── Helper: scope change entry extraction ──
+
+/** Raw Jira changelog issue shape used by scope change and feature change queries. */
+interface ChangelogIssue {
+  key: string
+  fields: { summary: string; issuetype: { name: string } | null; labels?: string[] }
+  changelog: {
+    histories: Array<{
+      created: string
+      author: { displayName: string }
+      items: Array<{ field: string; fieldId?: string; fromString: string | null; toString: string | null }>
+    }>
+  }
+}
+
+/**
+ * Maps Jira changelog field identifiers (both display names and field IDs) to the
+ * human-readable label and change type used in FeatureChangeEntry records.
+ * Each field is keyed twice — once by display name, once by field ID — so matching
+ * works regardless of which Jira returns in a given changelog item.
+ */
+const FEATURE_CHANGE_FIELD_MAP = new Map<string, { fieldLabel: string; changeType: FeatureChangeEntry['changeType'] }>([
+  ['fix version',       { fieldLabel: 'Fix Version',  changeType: 'fixVersion'  }],
+  ['status',            { fieldLabel: 'Status',       changeType: 'status'      }],
+  ['customfield_10101', { fieldLabel: 'Target Start', changeType: 'targetStart' }],
+  ['target start',      { fieldLabel: 'Target Start', changeType: 'targetStart' }],
+  ['customfield_10102', { fieldLabel: 'Target End',   changeType: 'targetEnd'   }],
+  ['target end',        { fieldLabel: 'Target End',   changeType: 'targetEnd'   }],
+  ['duedate',           { fieldLabel: 'Due Date',     changeType: 'dueDate'     }],
+  ['due date',          { fieldLabel: 'Due Date',     changeType: 'dueDate'     }],
+])
+
+/**
+ * Scans changelog issues for Epic-level field changes (fix version, status, target
+ * dates) that occurred on or after the cutoff date. Deduplicates by issue+field+timestamp.
+ */
+function extractFeatureChangeEntries(
+  issues: ChangelogIssue[],
+  cutoffDate: Date,
+): FeatureChangeEntry[] {
+  const collectedEntries: FeatureChangeEntry[] = []
+  const seenKeys = new Set<string>()
+
+  for (const issue of issues) {
+    for (const history of issue.changelog?.histories ?? []) {
+      if (new Date(history.created) < cutoffDate) continue
+
+      for (const changeItem of history.items) {
+        const fieldIdKey = (changeItem.fieldId ?? '').toLowerCase()
+        const fieldDisplayKey = changeItem.field.toLowerCase()
+        const fieldDef = FEATURE_CHANGE_FIELD_MAP.get(fieldIdKey) ?? FEATURE_CHANGE_FIELD_MAP.get(fieldDisplayKey)
+        if (!fieldDef) continue
+
+        // Skip changelog items where nothing meaningful changed (null → null)
+        if (!changeItem.fromString && !changeItem.toString) continue
+
+        const dedupeKey = `${issue.key}|${fieldDef.changeType}|${history.created}`
+        if (seenKeys.has(dedupeKey)) continue
+        seenKeys.add(dedupeKey)
+
+        collectedEntries.push({
+          issueKey: issue.key,
+          issueSummary: issue.fields.summary,
+          fieldLabel: fieldDef.fieldLabel,
+          changeType: fieldDef.changeType,
+          fromValue: changeItem.fromString ?? '—',
+          toValue: changeItem.toString ?? '—',
+          changedBy: history.author.displayName,
+          changedAt: history.created,
+        })
+      }
+    }
+  }
+
+  collectedEntries.sort((entryA, entryB) => entryB.changedAt.localeCompare(entryA.changedAt))
+  return collectedEntries
+}
+
+/**
+ * Scans a set of Jira changelog issues and returns ScopeChangeEntry records for
+ * every matching field change that occurred on or after the given cutoff date.
+ * Shared by both single-team and ART combined scope change loaders.
+ */
+function extractScopeEntries(
+  issues: ChangelogIssue[],
+  targetFieldName: 'fix version' | 'sprint',
+  changeType: 'fixVersion' | 'sprint',
+  cutoffDate: Date,
+): ScopeChangeEntry[] {
+  const collectedEntries: ScopeChangeEntry[] = []
+
+  for (const issue of issues) {
+    for (const history of issue.changelog?.histories ?? []) {
+      // Skip changelog entries that fall outside the requested time window
+      if (new Date(history.created) < cutoffDate) continue
+
+      for (const changeItem of history.items) {
+        if (changeItem.field.toLowerCase() !== targetFieldName) continue
+        // Only include changes that set a new value (not removals)
+        if (!changeItem.toString) continue
+
+        collectedEntries.push({
+          issueKey: issue.key,
+          issueSummary: issue.fields.summary,
+          issueType: issue.fields.issuetype?.name ?? 'Unknown',
+          changeType,
+          fromValue: changeItem.fromString ?? '—',
+          toValue: changeItem.toString,
+          changedBy: history.author.displayName,
+          changedAt: history.created,
+        })
+      }
+    }
+  }
+
+  return collectedEntries
+}
+
 // ── Hook ──
 
 /** Provides all reactive state and action callbacks for the Reports Hub view. */
@@ -803,6 +1002,25 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
   const [throughputData, setThroughputData] = useState<ThroughputEntry[]>([])
   const [isLoadingThroughput, setIsLoadingThroughput] = useState(false)
   const [throughputError, setThroughputError] = useState<string | null>(null)
+  const [scopeChangeEntries, setScopeChangeEntries] = useState<ScopeChangeEntry[]>([])
+  const [isLoadingScopeChange, setIsLoadingScopeChange] = useState(false)
+  const [scopeChangeError, setScopeChangeError] = useState<string | null>(null)
+  const [scopeChangeProjectKey, setScopeChangeProjectKey] = useState('')
+  const [scopeChangeDaysBack, setScopeChangeDaysBack] = useState(14)
+  const [hasScopeChangeGenerated, setHasScopeChangeGenerated] = useState(false)
+  const [isArtCombinedMode, setIsArtCombinedMode] = useState(false)
+  const [artCombinedResults, setArtCombinedResults] = useState<ArtTeamScopeResult[]>([])
+  const [isLoadingArtCombined, setIsLoadingArtCombined] = useState(false)
+  const [artCombinedError, setArtCombinedError] = useState<string | null>(null)
+  const [artCombinedDaysBack, setArtCombinedDaysBack] = useState(7)
+  const [featureChangeEntries, setFeatureChangeEntries] = useState<FeatureChangeEntry[]>([])
+  const [isLoadingFeatureChange, setIsLoadingFeatureChange] = useState(false)
+  const [featureChangeError, setFeatureChangeError] = useState<string | null>(null)
+  const [featureChangeDaysBack, setFeatureChangeDaysBack] = useState(14)
+  const [hasFeatureChangeGenerated, setHasFeatureChangeGenerated] = useState(false)
+  const [artCombinedFeatureResults, setArtCombinedFeatureResults] = useState<ArtTeamFeatureChangeResult[]>([])
+  const [isLoadingArtCombinedFeature, setIsLoadingArtCombinedFeature] = useState(false)
+  const [artCombinedFeatureError, setArtCombinedFeatureError] = useState<string | null>(null)
 
   const currentArtTeams = artTeams.length > 0 ? artTeams : loadArtTeamsFromStorage()
 
@@ -832,6 +1050,25 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
     throughputData,
     isLoadingThroughput,
     throughputError,
+    scopeChangeEntries,
+    isLoadingScopeChange,
+    scopeChangeError,
+    scopeChangeProjectKey,
+    scopeChangeDaysBack,
+    hasScopeChangeGenerated,
+    isArtCombinedMode,
+    artCombinedResults,
+    isLoadingArtCombined,
+    artCombinedError,
+    artCombinedDaysBack,
+    featureChangeEntries,
+    isLoadingFeatureChange,
+    featureChangeError,
+    featureChangeDaysBack,
+    hasFeatureChangeGenerated,
+    artCombinedFeatureResults,
+    isLoadingArtCombinedFeature,
+    artCombinedFeatureError,
   }
 
   async function loadFeatures(): Promise<void> {
@@ -989,6 +1226,297 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
     }
   }
 
+  /** Fetches changelog events for the given (or previously-set) project key, extracting sprint and fixVersion changes. */
+  async function loadScopeChanges(projectKeyOverride?: string): Promise<void> {
+    const trimmedProjectKey = (projectKeyOverride ?? scopeChangeProjectKey).trim()
+    if (!trimmedProjectKey) {
+      setScopeChangeError('No project key — select a team first.')
+      return
+    }
+    setIsLoadingScopeChange(true)
+    setScopeChangeError(null)
+    setHasScopeChangeGenerated(false)
+    try {
+      const cutoffDate = new Date()
+      cutoffDate.setDate(cutoffDate.getDate() - scopeChangeDaysBack)
+      const cutoffDateString = cutoffDate.toISOString().slice(0, 10)
+
+      // Jira's history-search JQL supports `fixVersion changed AFTER` but NOT `sprint changed AFTER`
+      // (sprint is an Agile-managed field excluded from history predicates). We run two separate queries:
+      //   1. fixVersion changed — use the native history predicate for accurate results.
+      //   2. Sprint changed — use `updated >= date` to catch recently-touched issues, then filter
+      //      the inline changelog client-side for sprint field changes in the window.
+      const fixVersionJql = `project = "${trimmedProjectKey}" AND fixVersion changed AFTER "${cutoffDateString}"`
+      const sprintJql = `project = "${trimmedProjectKey}" AND updated >= "${cutoffDateString}"`
+
+      const [fixVersionResponse, sprintResponse] = await Promise.all([
+        jiraGet<{ issues?: ChangelogIssue[] }>(
+          `/rest/api/2/search?jql=${encodeURIComponent(fixVersionJql)}&fields=summary,issuetype&expand=changelog&maxResults=200`,
+        ).catch(() => ({ issues: [] as ChangelogIssue[] })),
+        jiraGet<{ issues?: ChangelogIssue[] }>(
+          `/rest/api/2/search?jql=${encodeURIComponent(sprintJql)}&fields=summary,issuetype&expand=changelog&maxResults=200`,
+        ).catch(() => ({ issues: [] as ChangelogIssue[] })),
+      ])
+
+      const releaseEntries = extractScopeEntries(fixVersionResponse.issues ?? [], 'fix version', 'fixVersion', cutoffDate)
+      const sprintEntries = extractScopeEntries(sprintResponse.issues ?? [], 'sprint', 'sprint', cutoffDate)
+      const collectedEntries = [...releaseEntries, ...sprintEntries]
+
+      // Most-recent changes first within each section.
+      collectedEntries.sort((entryA, entryB) => entryB.changedAt.localeCompare(entryA.changedAt))
+      setScopeChangeEntries(collectedEntries)
+      setHasScopeChangeGenerated(true)
+    } catch (fetchError) {
+      const errorMessage = fetchError instanceof Error ? fetchError.message : 'Failed to load scope changes.'
+      setScopeChangeError(errorMessage)
+    } finally {
+      setIsLoadingScopeChange(false)
+    }
+  }
+
+  /**
+   * Fetches scope change data for all configured ART teams in parallel and stores
+   * the combined results for display in the ART Combined mode of the Scope Change tab.
+   */
+  const loadArtCombinedScopeChanges = useCallback(async (): Promise<void> => {
+    // Read ART teams from localStorage — re-read at call time to pick up any changes
+    // since the component mounted (same storage key used by the rest of the Reports Hub).
+    let rawArtTeams: Array<{ id: string; name: string; projectKey?: string }> = []
+    try {
+      const rawStoredValue = localStorage.getItem(ART_TEAMS_STORAGE_KEY)
+      if (rawStoredValue) {
+        rawArtTeams = JSON.parse(rawStoredValue) as typeof rawArtTeams
+      }
+    } catch {
+      setArtCombinedError('Could not read ART teams from localStorage.')
+      return
+    }
+
+    // Only teams with a project key can be queried; filter out teams missing one.
+    const teamsWithProjectKeys = rawArtTeams.filter(
+      (team) => typeof team.projectKey === 'string' && team.projectKey.trim() !== '',
+    )
+    if (teamsWithProjectKeys.length === 0) {
+      setArtCombinedError(
+        'No ART teams with project keys configured. Set project keys in ART View → Settings.',
+      )
+      return
+    }
+
+    setIsLoadingArtCombined(true)
+    setArtCombinedError(null)
+    setArtCombinedResults([])
+
+    const cutoffDate = new Date()
+    cutoffDate.setDate(cutoffDate.getDate() - scopeChangeDaysBack)
+    const cutoffIso = cutoffDate.toISOString().slice(0, 10)
+
+    // Query all teams in parallel — each team's result is independent so failures
+    // are captured per-team rather than aborting the entire combined run.
+    const teamResults = await Promise.all(
+      teamsWithProjectKeys.map(async (team): Promise<ArtTeamScopeResult> => {
+        const projectKey = team.projectKey!
+
+        try {
+          const fixVersionJql = `project = "${projectKey}" AND fixVersion changed AFTER "${cutoffIso}"`
+          const sprintJql = `project = "${projectKey}" AND updated >= "${cutoffIso}"`
+          const changelogFields = 'summary,issuetype'
+          const maxResults = 200
+
+          const [fixVersionResponse, sprintResponse] = await Promise.all([
+            fetch(
+              `/jira-proxy/rest/api/2/search?jql=${encodeURIComponent(fixVersionJql)}&fields=${changelogFields}&expand=changelog&maxResults=${maxResults}`,
+            ).then((response) => response.json() as Promise<{ issues?: ChangelogIssue[] }>),
+            fetch(
+              `/jira-proxy/rest/api/2/search?jql=${encodeURIComponent(sprintJql)}&fields=${changelogFields}&expand=changelog&maxResults=${maxResults}`,
+            ).then((response) => response.json() as Promise<{ issues?: ChangelogIssue[] }>),
+          ])
+
+          const releaseEntries = extractScopeEntries(
+            fixVersionResponse.issues ?? [],
+            'fix version',
+            'fixVersion',
+            cutoffDate,
+          )
+          const sprintEntries = extractScopeEntries(
+            sprintResponse.issues ?? [],
+            'sprint',
+            'sprint',
+            cutoffDate,
+          )
+
+          return { teamName: team.name, projectKey, releaseEntries, sprintEntries, error: null }
+        } catch (teamError) {
+          return {
+            teamName: team.name,
+            projectKey,
+            releaseEntries: [],
+            sprintEntries: [],
+            error: teamError instanceof Error ? teamError.message : 'Query failed',
+          }
+        }
+      }),
+    )
+
+    setArtCombinedResults(teamResults)
+    setIsLoadingArtCombined(false)
+  }, [scopeChangeDaysBack])
+
+  /**
+   * Dispatches to the correct scope change query based on the current team filter.
+   * Empty team filter (All Teams) runs ART Combined; a specific team resolves its
+   * project key and runs a single-team query.
+   */
+  async function generateScopeChange(): Promise<void> {
+    if (teamFilter === '') {
+      setIsArtCombinedMode(true)
+      await loadArtCombinedScopeChanges()
+    } else {
+      setIsArtCombinedMode(false)
+      const matchedTeam = artTeams.find((artTeam) => artTeam.name === teamFilter)
+      if (!matchedTeam?.projectKey) {
+        setScopeChangeError(`No project key configured for "${teamFilter}". Check ART View Settings.`)
+        return
+      }
+      await loadScopeChanges(matchedTeam.projectKey)
+    }
+  }
+
+  /** Fetches Feature-type issues with the given Jira label, extracting changes to PI-planning fields. */
+  async function loadFeatureChanges(jiraLabel: string): Promise<void> {
+    const trimmedLabel = jiraLabel.trim()
+    if (!trimmedLabel) {
+      setFeatureChangeError('No Jira label configured for this team. Set it in Admin Hub → Label Mapping.')
+      return
+    }
+    setIsLoadingFeatureChange(true)
+    setFeatureChangeError(null)
+    setHasFeatureChangeGenerated(false)
+    try {
+      const cutoffDate = new Date()
+      cutoffDate.setDate(cutoffDate.getDate() - featureChangeDaysBack)
+      const cutoffDateString = cutoffDate.toISOString().slice(0, 10)
+
+      // Query Feature-type issues by team label with changelog expanded for client-side extraction.
+      const featureJql = `type = Feature AND labels in ("${trimmedLabel}") AND updated >= "${cutoffDateString}" ORDER BY updated DESC`
+      const response = await jiraGet<{ issues?: ChangelogIssue[] }>(
+        `/rest/api/2/search?jql=${encodeURIComponent(featureJql)}&fields=summary,issuetype&expand=changelog&maxResults=200`,
+      )
+
+      const entries = extractFeatureChangeEntries(response.issues ?? [], cutoffDate)
+      setFeatureChangeEntries(entries)
+      setHasFeatureChangeGenerated(true)
+    } catch (fetchError) {
+      const errorMessage = fetchError instanceof Error ? fetchError.message : 'Failed to load feature changes.'
+      setFeatureChangeError(errorMessage)
+    } finally {
+      setIsLoadingFeatureChange(false)
+    }
+  }
+
+  /**
+   * Fetches Feature-type changelog events for all ART teams using a single label-based query,
+   * then groups results by team by matching issue labels to configured team labels.
+   */
+  const loadArtCombinedFeatureChanges = useCallback(async (): Promise<void> => {
+    let rawArtTeams: Array<{ id?: string; name?: string; projectKey?: string; jiraLabel?: string }> = []
+    try {
+      const rawStoredValue = localStorage.getItem(ART_TEAMS_STORAGE_KEY)
+      if (rawStoredValue) {
+        rawArtTeams = JSON.parse(rawStoredValue) as typeof rawArtTeams
+      }
+    } catch {
+      setArtCombinedFeatureError('Could not read ART teams from localStorage.')
+      return
+    }
+
+    // Only teams with a configured Jira label can participate in the label-based query.
+    const teamsWithLabels = rawArtTeams.filter(
+      (team) =>
+        typeof team.name === 'string' && team.name.trim() !== '' &&
+        typeof team.jiraLabel === 'string' && team.jiraLabel.trim() !== '',
+    )
+    if (teamsWithLabels.length === 0) {
+      setArtCombinedFeatureError(
+        'No ART teams have a Jira label configured. Set labels in Admin Hub → Label Mapping.',
+      )
+      return
+    }
+
+    setIsLoadingArtCombinedFeature(true)
+    setArtCombinedFeatureError(null)
+    setArtCombinedFeatureResults([])
+
+    const cutoffDate = new Date()
+    cutoffDate.setDate(cutoffDate.getDate() - featureChangeDaysBack)
+    const cutoffIso = cutoffDate.toISOString().slice(0, 10)
+
+    // Single query covering all team labels — one round-trip instead of one per team.
+    const allLabelsList = teamsWithLabels.map((team) => `"${team.jiraLabel!.trim()}"`).join(', ')
+    const featureJql = `type = Feature AND labels in (${allLabelsList}) AND updated >= "${cutoffIso}" ORDER BY updated DESC`
+
+    try {
+      const response = await jiraGet<{ issues?: ChangelogIssue[] }>(
+        `/rest/api/2/search?jql=${encodeURIComponent(featureJql)}&fields=summary,issuetype,labels&expand=changelog&maxResults=200`,
+      )
+      const allIssues = response.issues ?? []
+
+      // Map each configured label to its team name for O(1) grouping of issues.
+      const labelToTeamName = new Map(
+        teamsWithLabels.map((team) => [team.jiraLabel!.trim().toLowerCase(), team.name!.trim()]),
+      )
+      const teamEntriesMap = new Map<string, FeatureChangeEntry[]>(
+        teamsWithLabels.map((team) => [team.name!.trim(), []]),
+      )
+
+      for (const issue of allIssues) {
+        const issueLabels = issue.fields.labels ?? []
+        const matchingTeamNames = issueLabels
+          .map((label) => labelToTeamName.get(label.toLowerCase()))
+          .filter((teamName): teamName is string => teamName !== undefined)
+
+        if (matchingTeamNames.length === 0) continue
+
+        const issueEntries = extractFeatureChangeEntries([issue], cutoffDate)
+        for (const teamName of matchingTeamNames) {
+          teamEntriesMap.get(teamName)?.push(...issueEntries)
+        }
+      }
+
+      const teamResults: ArtTeamFeatureChangeResult[] = teamsWithLabels.map((team) => ({
+        teamName:   team.name!.trim(),
+        projectKey: team.jiraLabel!.trim(),
+        entries:    teamEntriesMap.get(team.name!.trim()) ?? [],
+        error:      null,
+      }))
+
+      setArtCombinedFeatureResults(teamResults)
+    } catch (combinedError) {
+      const errorMessage = combinedError instanceof Error ? combinedError.message : 'Query failed'
+      setArtCombinedFeatureError(errorMessage)
+    } finally {
+      setIsLoadingArtCombinedFeature(false)
+    }
+  }, [featureChangeDaysBack])
+
+  /**
+   * Routes to single-team or ART Combined feature change query based on the teamFilter value.
+   * Empty team filter runs ART Combined across all teams; a specific team resolves its
+   * project key and runs a single-team Epic changelog query.
+   */
+  async function generateFeatureChange(): Promise<void> {
+    if (teamFilter === '') {
+      await loadArtCombinedFeatureChanges()
+    } else {
+      const matchedTeam = artTeams.find((artTeam) => artTeam.name === teamFilter)
+      if (!matchedTeam?.jiraLabel) {
+        setFeatureChangeError(`No Jira label configured for "${teamFilter}". Set it in Admin Hub → Label Mapping.`)
+        return
+      }
+      await loadFeatureChanges(matchedTeam.jiraLabel)
+    }
+  }
+
   async function loadAllReports(): Promise<void> {
     setLastGeneratedAt(new Date().toISOString())
     await Promise.allSettled([
@@ -1028,6 +1556,15 @@ export function useReportsHubState(): { state: ReportsHubState; actions: Reports
     loadSprintData,
     loadQuality,
     loadThroughput,
+    setScopeChangeProjectKey,
+    setScopeChangeDaysBack,
+    loadScopeChanges,
+    loadArtCombinedScopeChanges,
+    setArtCombinedMode: setIsArtCombinedMode,
+    setArtCombinedDaysBack,
+    generateScopeChange,
+    setFeatureChangeDaysBack,
+    generateFeatureChange,
     copyReport,
   }
 

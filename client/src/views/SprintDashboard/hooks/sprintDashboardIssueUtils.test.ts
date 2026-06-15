@@ -40,17 +40,22 @@ describe('sprintDashboardIssueUtils', () => {
     vi.setSystemTime(new Date('2025-01-06T00:00:00.000Z'));
   });
 
-  it('reads the configured story points field and falls back to the legacy field', () => {
-    const configuredFieldIssue = {
+  it('uses only the configured custom field when it is a real Jira field, falls back to legacy otherwise', () => {
+    const mixedFieldIssue = {
       ...createIssue(),
       fields: {
         ...createIssue().fields,
         customfield_10016: 3,
-        story_points: 8,
+        customfield_10236: 8,
       },
     } as JiraIssue;
 
-    expect(readStoryPointsValue(configuredFieldIssue, 'story_points')).toBe(8);
+    // Real Jira field configured → use only that field, no legacy fallback.
+    expect(readStoryPointsValue(mixedFieldIssue, 'customfield_10236')).toBe(8);
+    // Configured field empty but legacy has a value → still returns null (no fallback when real field configured).
+    const noCustomFieldIssue = { ...mixedFieldIssue, fields: { ...mixedFieldIssue.fields, customfield_10236: null } } as JiraIssue;
+    expect(readStoryPointsValue(noCustomFieldIssue, 'customfield_10236')).toBeNull();
+    // Default non-Jira field ('story_points') → falls back to legacy customfield_10016.
     expect(readStoryPointsValue(createIssue(), 'story_points')).toBe(5);
     expect(readStoryPoints(createIssue(), 'story_points')).toBe(5);
   });
