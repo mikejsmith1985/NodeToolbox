@@ -67,6 +67,7 @@ import {
   type ReleaseRovoPromptInput,
   type ReleaseRovoTableDocument,
 } from './hooks/releaseRovoNotes.ts';
+import { useRovoExchange } from '../SnowHub/hooks/useRovoExchange.ts';
 import { useSprintData } from './hooks/useSprintData.ts';
 import type { DashboardScopeMode, DashboardTab } from './hooks/useSprintData.ts';
 import styles from './SprintDashboardView.module.css';
@@ -3950,6 +3951,10 @@ function PointingTab({
   const [rovoResponseInput, setRovoResponseInput] = useState('');
   const [rovoResponseParseError, setRovoResponseParseError] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
+  // Automated Rovo exchange for pointing — dispatch the prompt and apply the
+  // returned estimates without the manual copy-paste.
+  const { isRunning: isPointingRovoRunning, runRovoExchange: runPointingRovoExchange } = useRovoExchange();
+  const [pointingRovoAutoStatus, setPointingRovoAutoStatus] = useState<string | null>(null);
   const passphraseInputRef = useRef<HTMLInputElement | null>(null);
 
   function rebuildPointingSession({
@@ -4268,13 +4273,13 @@ function PointingTab({
    * Parses Rovo's JSON response and maps each valid entry to the override column.
    * Closes the modal on success so the user can review and save at their own pace.
    */
-  function handleApplyRovoResponse() {
+  function applyRovoResponse(responseText: string) {
     const validQueueKeys = new Set(
       pointingQueue
         .filter((issue) => issue.key !== anchorConfig?.issueKey)
         .map((issue) => issue.key),
     );
-    const { items, errorMessage } = parseRovoPointingResponse(rovoResponseInput, validQueueKeys, storyPointScale);
+    const { items, errorMessage } = parseRovoPointingResponse(responseText, validQueueKeys, storyPointScale);
 
     if (errorMessage) {
       setRovoResponseParseError(errorMessage);
@@ -4291,6 +4296,19 @@ function PointingTab({
     setIsRovoModalVisible(false);
     setRovoResponseInput('');
     setRovoResponseParseError(null);
+  }
+
+  // Automated path: dispatch the pointing prompt to Rovo, then apply the returned
+  // estimates directly — no manual paste.
+  async function handleRunPointingRovoAuto() {
+    setPointingRovoAutoStatus('Sending to Rovo…');
+    const exchange = await runPointingRovoExchange(generatedRovoPromptText);
+    if (!exchange.ok) {
+      setPointingRovoAutoStatus(exchange.message);
+      return;
+    }
+    setPointingRovoAutoStatus(null);
+    applyRovoResponse(exchange.response ?? '');
   }
 
   if (issues.length === 0) {
@@ -4570,12 +4588,23 @@ function PointingTab({
               <div className={styles.releasePromptActions}>
                 <button
                   className={styles.secondaryButton}
+                  disabled={isPointingRovoRunning}
+                  onClick={() => void handleRunPointingRovoAuto()}
+                  type="button"
+                >
+                  {isPointingRovoRunning ? '⏳ Running via Rovo…' : '⚡ Run via Rovo (auto)'}
+                </button>
+                <button
+                  className={styles.secondaryButton}
                   onClick={() => void handleCopyRovoPrompt()}
                   type="button"
                 >
                   {isCopied ? '✓ Copied!' : POINTING_ROVO_COPY_BUTTON_LABEL}
                 </button>
               </div>
+              {pointingRovoAutoStatus !== null ? (
+                <p className={styles.releasePromptInstructions} role="status">{pointingRovoAutoStatus}</p>
+              ) : null}
             </section>
 
             <hr className={styles.ptRovoDivider} />
@@ -4602,7 +4631,7 @@ function PointingTab({
                 <button
                   className={styles.secondaryButton}
                   disabled={rovoResponseInput.trim() === ''}
-                  onClick={handleApplyRovoResponse}
+                  onClick={() => applyRovoResponse(rovoResponseInput)}
                   type="button"
                 >
                   {POINTING_ROVO_APPLY_BUTTON_LABEL}
@@ -5627,6 +5656,10 @@ function ReleasesTab({
   const [releasePromptModalState, setReleasePromptModalState] = useState<ReleasePromptModalState | null>(null);
   const [releaseImportModalState, setReleaseImportModalState] = useState<ReleaseImportModalState | null>(null);
   const [releaseExportErrorByVersionId, setReleaseExportErrorByVersionId] = useState<Record<string, string>>({});
+  // Automated Rovo exchange for release notes — dispatches the prompt and renders
+  // the parsed table without the manual copy-paste.
+  const { isRunning: isReleaseRovoRunning, runRovoExchange: runReleaseRovoExchange } = useRovoExchange();
+  const [releaseRovoAutoStatus, setReleaseRovoAutoStatus] = useState<string | null>(null);
   const passphraseInputRef = useRef<HTMLInputElement | null>(null);
   const releaseNotesSectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
@@ -5878,6 +5911,32 @@ function ReleasesTab({
       promptText,
     });
   }, [projectKey]);
+
+  // Automated path: dispatch the shown release prompt to Rovo, parse the returned
+  // table, and render it — no manual paste step.
+  const handleRunReleaseRovoAuto = useCallback(async () => {
+    if (!releasePromptModalState) return;
+    const { versionId, promptText } = releasePromptModalState;
+
+    setReleaseRovoAutoStatus('Sending to Rovo…');
+    const exchange = await runReleaseRovoExchange(promptText);
+    if (!exchange.ok) {
+      setReleaseRovoAutoStatus(exchange.message);
+      return;
+    }
+
+    try {
+      const parsedReleaseNotes = parseReleaseRovoResponse(exchange.response ?? '');
+      setReleaseNotesByVersionId((previousReleaseNotesByVersionId) => ({
+        ...previousReleaseNotesByVersionId,
+        [versionId]: parsedReleaseNotes,
+      }));
+      setReleaseRovoAutoStatus(null);
+      setReleasePromptModalState(null);
+    } catch (caughtError) {
+      setReleaseRovoAutoStatus(caughtError instanceof Error ? caughtError.message : 'Unable to parse the Rovo response.');
+    }
+  }, [releasePromptModalState, runReleaseRovoExchange]);
 
   const handleOpenReleaseImportModal = useCallback((releaseEntry: ReleaseRadarEntry) => {
     setReleaseImportModalState({
@@ -6264,6 +6323,14 @@ function ReleasesTab({
             <div className={styles.releasePromptActions}>
               <button
                 className={styles.secondaryButton}
+                disabled={isReleaseRovoRunning}
+                onClick={() => void handleRunReleaseRovoAuto()}
+                type="button"
+              >
+                {isReleaseRovoRunning ? '⏳ Running via Rovo…' : '⚡ Run via Rovo (auto)'}
+              </button>
+              <button
+                className={styles.secondaryButton}
                 onClick={() => void navigator.clipboard.writeText(releasePromptModalState.promptText)}
                 type="button"
               >
@@ -6277,6 +6344,9 @@ function ReleasesTab({
                 Close
               </button>
             </div>
+            {releaseRovoAutoStatus !== null ? (
+              <p className={styles.releasePromptInstructions} role="status">{releaseRovoAutoStatus}</p>
+            ) : null}
           </div>
         </div>
       ) : null}

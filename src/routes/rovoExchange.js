@@ -10,6 +10,7 @@
 'use strict';
 
 const express = require('express');
+const { saveConfigToDisk } = require('../config/loader');
 const { dispatchPrompt, fetchResult } = require('../services/rovoExchange');
 
 /**
@@ -20,6 +21,32 @@ const { dispatchPrompt, fetchResult } = require('../services/rovoExchange');
  */
 function createRovoExchangeRouter(configuration) {
   const router = express.Router();
+
+  // GET /api/rovo/config — returns the Rovo automation config. The config lives
+  // behind the passphrase-gated Admin Hub section.
+  router.get('/api/rovo/config', (req, res) => {
+    const rovo = configuration.rovoAutomation || {};
+    return res.json({
+      webhookUrl:      rovo.webhookUrl      || '',
+      webhookSecret:   rovo.webhookSecret   || '',
+      parkingSpaceKey: rovo.parkingSpaceKey || '',
+      isEnabled:       !!rovo.isEnabled,
+    });
+  });
+
+  // POST /api/rovo/config — saves the Rovo automation config to memory and disk.
+  // Body: { webhookUrl, webhookSecret, parkingSpaceKey, isEnabled }
+  router.post('/api/rovo/config', (req, res) => {
+    const { webhookUrl, webhookSecret, parkingSpaceKey, isEnabled } = req.body || {};
+    configuration.rovoAutomation = {
+      webhookUrl:      typeof webhookUrl      === 'string' ? webhookUrl.trim()      : '',
+      webhookSecret:   typeof webhookSecret   === 'string' ? webhookSecret.trim()   : '',
+      parkingSpaceKey: typeof parkingSpaceKey === 'string' ? parkingSpaceKey.trim() : '',
+      isEnabled:       !!isEnabled,
+    };
+    saveConfigToDisk(configuration);
+    return res.json({ ok: true, config: configuration.rovoAutomation });
+  });
 
   // POST /api/rovo/dispatch — Body: { correlationId: string, prompt: string }
   router.post('/api/rovo/dispatch', async (req, res) => {

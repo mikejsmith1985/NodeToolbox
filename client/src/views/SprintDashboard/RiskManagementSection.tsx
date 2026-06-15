@@ -14,6 +14,7 @@ import {
 import type { JiraIssue } from '../../types/jira.ts';
 import { jiraGet, jiraPut } from '../../services/jiraApi.ts';
 import { useRovoAssist } from '../SnowHub/hooks/useRovoAssist.ts';
+import { useRovoExchange } from '../SnowHub/hooks/useRovoExchange.ts';
 import styles from './SprintDashboardView.module.css';
 
 // ── Constants ──
@@ -240,6 +241,11 @@ export default function RiskManagementSection({
   const [generatedRovoPromptText, setGeneratedRovoPromptText] = useState('');
   const [rovoResponseInput, setRovoResponseInput] = useState('');
   const [rovoResponseParseError, setRovoResponseParseError] = useState<string | null>(null);
+
+  // Automated exchange — removes the copy-paste by dispatching the prompt and
+  // applying Rovo's response directly.
+  const { isRunning: isRovoRunning, runRovoExchange } = useRovoExchange();
+  const [rovoAutoStatus, setRovoAutoStatus] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
 
   // ── Data loading ──
@@ -359,10 +365,23 @@ export default function RiskManagementSection({
     setTimeout(() => setIsCopied(false), 2000);
   }
 
+  // Automated path: dispatch the prompt to Rovo, then apply the returned JSON
+  // directly — no manual paste.
+  async function handleRunRovoAuto() {
+    setRovoAutoStatus('Sending to Rovo…');
+    const exchange = await runRovoExchange(generatedRovoPromptText);
+    if (!exchange.ok) {
+      setRovoAutoStatus(exchange.message);
+      return;
+    }
+    setRovoAutoStatus(null);
+    await applyRovoResponse(exchange.response ?? '');
+  }
+
   /** Parses Rovo's JSON, writes all refined risk fields back to Jira, and tracks per-row save state. */
-  async function handleApplyRovoResponse() {
+  async function applyRovoResponse(responseText: string) {
     const validRiskKeys = new Set(riskIssues.map((issue) => issue.key));
-    const { items, errorMessage } = parseRovoRiskResponse(rovoResponseInput, validRiskKeys);
+    const { items, errorMessage } = parseRovoRiskResponse(responseText, validRiskKeys);
 
     if (errorMessage) {
       setRovoResponseParseError(errorMessage);
@@ -558,12 +577,23 @@ export default function RiskManagementSection({
               <div className={styles.releasePromptActions}>
                 <button
                   className={styles.secondaryButton}
+                  disabled={isRovoRunning}
+                  onClick={() => void handleRunRovoAuto()}
+                  type="button"
+                >
+                  {isRovoRunning ? '⏳ Running via Rovo…' : '⚡ Run via Rovo (auto)'}
+                </button>
+                <button
+                  className={styles.secondaryButton}
                   onClick={() => void handleCopyRovoPrompt()}
                   type="button"
                 >
                   {isCopied ? '✓ Copied!' : '📋 Copy Prompt'}
                 </button>
               </div>
+              {rovoAutoStatus !== null ? (
+                <p className={styles.releasePromptInstructions} role="status">{rovoAutoStatus}</p>
+              ) : null}
             </section>
 
             <hr className={styles.ptRovoDivider} />
@@ -590,7 +620,7 @@ export default function RiskManagementSection({
                 <button
                   className={styles.secondaryButton}
                   disabled={rovoResponseInput.trim() === ''}
-                  onClick={() => void handleApplyRovoResponse()}
+                  onClick={() => void applyRovoResponse(rovoResponseInput)}
                   type="button"
                 >
                   Apply & Save to Jira
