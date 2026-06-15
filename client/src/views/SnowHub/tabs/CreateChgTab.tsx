@@ -18,6 +18,7 @@ import { useCrgFieldPins } from '../hooks/useCrgFieldPins.ts';
 import { useCrgState } from '../hooks/useCrgState.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
+import { setRovoUnlocked } from '../../../store/rovoStore.ts';
 import { parseRovoChgResponse, useRovoAssist } from '../hooks/useRovoAssist.ts';
 import { useRovoExchange } from '../hooks/useRovoExchange.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
@@ -2335,12 +2336,17 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     state.pfixEnvironment.impactedPersonsAware,
   ]);
 
-  // Listen for the hidden activation key combination: Ctrl+Alt+Z.
-  // Only shows the modal when Rovo is not already unlocked.
+  // Listen for the hidden activation key combination: Ctrl+Alt+Z. It toggles —
+  // opens the passphrase gate when locked, and re-hides all Rovo features when
+  // already unlocked.
   useEffect(() => {
     function handleGlobalKeyDown(keyboardEvent: globalThis.KeyboardEvent): void {
-      if (keyboardEvent.ctrlKey && keyboardEvent.altKey && keyboardEvent.key === 'z' && !isUnlocked) {
+      if (keyboardEvent.ctrlKey && keyboardEvent.altKey && keyboardEvent.key.toLowerCase() === 'z') {
         keyboardEvent.preventDefault();
+        if (isUnlocked) {
+          setRovoUnlocked(false);
+          return;
+        }
         setIsPassphraseModalVisible(true);
         setPassphraseInput('');
         setPassphraseError(null);

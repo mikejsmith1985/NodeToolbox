@@ -1,10 +1,11 @@
 // AdminHubView.test.tsx — Unit tests for the Admin Hub view component.
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ToastProvider } from '../../components/Toast/ToastProvider.tsx';
+import { setRovoUnlocked } from '../../store/rovoStore.ts';
 
 const { mockState, mockActions } = vi.hoisted(() => ({
   mockState: {
@@ -191,6 +192,7 @@ describe('AdminHubView', () => {
     mockState.adminUsername = '';
     mockState.adminUnlockError = null;
     vi.clearAllMocks();
+    setRovoUnlocked(false); // reset the shared Rovo unlock singleton between tests
 
     // Mock global fetch so the server control buttons don't make real network calls.
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) }));
@@ -210,6 +212,49 @@ describe('AdminHubView', () => {
     expect(screen.getByRole('tab', { name: '⚙️ Config' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /repo monitor/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /dev panel/i })).toBeInTheDocument();
+  });
+
+  describe('hidden Rovo capability', () => {
+    it('does not show the ⚡ Rovo tab while locked', () => {
+      renderAdminHubView();
+      expect(screen.queryByRole('tab', { name: /Rovo/i })).not.toBeInTheDocument();
+    });
+
+    it('unlocks via Ctrl+Alt+Z + passphrase from any tab and reveals the ⚡ Rovo tab + config', async () => {
+      renderAdminHubView();
+      // Locked: hidden shortcut opens the passphrase gate.
+      fireEvent.keyDown(window, { key: 'z', ctrlKey: true, altKey: true });
+      const passphraseInput = await screen.findByPlaceholderText('Enter passphrase');
+      fireEvent.change(passphraseInput, { target: { value: 'rovonow' } });
+      fireEvent.keyDown(passphraseInput, { key: 'Enter' });
+
+      // The ⚡ Rovo tab appears and its config form mounts.
+      expect(await screen.findByRole('tab', { name: '⚡ Rovo' })).toBeInTheDocument();
+      expect(await screen.findByText('⚡ Rovo Automation')).toBeInTheDocument();
+    });
+
+    it('re-hides everything on a second Ctrl+Alt+Z', async () => {
+      renderAdminHubView();
+      fireEvent.keyDown(window, { key: 'z', ctrlKey: true, altKey: true });
+      const passphraseInput = await screen.findByPlaceholderText('Enter passphrase');
+      fireEvent.change(passphraseInput, { target: { value: 'rovonow' } });
+      fireEvent.keyDown(passphraseInput, { key: 'Enter' });
+      expect(await screen.findByRole('tab', { name: '⚡ Rovo' })).toBeInTheDocument();
+
+      // Second shortcut re-hides the capability.
+      fireEvent.keyDown(window, { key: 'z', ctrlKey: true, altKey: true });
+      await waitFor(() => expect(screen.queryByRole('tab', { name: '⚡ Rovo' })).not.toBeInTheDocument());
+    });
+
+    it('rejects an incorrect passphrase', async () => {
+      renderAdminHubView();
+      fireEvent.keyDown(window, { key: 'z', ctrlKey: true, altKey: true });
+      const passphraseInput = await screen.findByPlaceholderText('Enter passphrase');
+      fireEvent.change(passphraseInput, { target: { value: 'wrong' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Unlock Rovo' }));
+      expect(await screen.findByText('Incorrect passphrase')).toBeInTheDocument();
+      expect(screen.queryByRole('tab', { name: '⚡ Rovo' })).not.toBeInTheDocument();
+    });
   });
 
   it('scrolls the Admin Hub back to the top on initial render and tab changes', async () => {
