@@ -4,6 +4,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { setRovoUnlocked } from '../../../store/rovoStore.ts';
+
 const MOCK_ISSUES = [
   {
     id: '10001',
@@ -331,6 +333,9 @@ function resetMockState(): void {
 
 describe('CreateChgTab', () => {
   beforeEach(() => {
+    // Reset the shared Rovo unlock store (global singleton) between tests.
+    sessionStorage.clear();
+    setRovoUnlocked(false);
     resetMockState();
     Object.values(mockActions).forEach((mockAction) => mockAction.mockReset());
     mockActions.fetchIssues.mockResolvedValue(undefined);

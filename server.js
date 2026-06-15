@@ -22,6 +22,7 @@ const relayBridgeRouter                     = require('./src/routes/relayBridge'
 const createNotificationsRouter             = require('./src/routes/notifications');
 const createStandupBriefingRouter           = require('./src/routes/standupBriefing');
 const createReportDeliveryRouter            = require('./src/routes/reportDelivery');
+const createRovoExchangeRouter              = require('./src/routes/rovoExchange');
 
 const { startSchedulerLoop }                = require('./src/services/repoMonitor');
 const { startScopeChangeScheduler }         = require('./src/services/scopeChangeScheduler');
@@ -136,6 +137,10 @@ app.use(createStandupBriefingRouter(configuration));
 // Report webhook delivery: POST /api/reports/deliver — server-mediated send of an
 // on-screen report to the team's Atlassian Automation webhook.
 app.use(createReportDeliveryRouter(configuration));
+
+// Rovo prompt exchange: /api/rovo/dispatch + /api/rovo/result — automates the
+// hidden Rovo copy-paste workflow (send prompt out, poll the deterministic result).
+app.use(createRovoExchangeRouter(configuration));
 
 // First-run detection: GET / redirects to /setup when no service is configured.
 // Placed before the static file middleware so misconfigured instances always see

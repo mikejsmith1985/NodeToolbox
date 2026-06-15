@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Internal — automated Rovo exchange (CHG)**: The hidden CHG drafting assistant can now run its deterministic prompt automatically instead of via manual copy-paste. A "Run via Rovo (auto)" action dispatches the generated prompt to a configured Atlassian Automation/Rovo webhook, polls for the deterministic response from a Confluence parking page keyed by a correlation id (write → read → delete), and applies the parsed `SHORT_DESCRIPTION/DESCRIPTION/JUSTIFICATION/RISK_AND_IMPACT` values to the matching CHG fields. The webhook destination is restricted to Atlassian hosts; the prompt is not redacted (the content is what Rovo must process). The capability stays behind the existing passphrase gate, and the unlock is now shared app-wide via a `rovoStore` so one passphrase entry covers every Rovo affordance. Requires a configured Rovo automation endpoint + parking space (`configuration.rovoAutomation`).
+
 ### Changed
 - **Internal — test coverage backfill**: Added unit tests for the scope-change and feature-change schedulers (pure changelog-parsing, XML escaping, page-id extraction, and time helpers), the notifications and standup-briefing routes (config sanitisation, validation, and run/test endpoints), the admin unlock store, and the Admin Hub Pre-Standup Briefing panel. The two scheduler modules now also export their pure helpers so they can be unit-tested directly; no runtime behaviour changed.
 
