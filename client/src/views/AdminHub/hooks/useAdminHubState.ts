@@ -62,6 +62,9 @@ const HYGIENE_STALE_DAYS_KEY = 'toolbox-hygiene-stale-days'
 const HYGIENE_UNPOINTED_WARNING_DAYS_KEY = 'toolbox-hygiene-unpointed-warning-days'
 const HYGIENE_FLAG_MISSING_ASSIGNEE_KEY = 'toolbox-hygiene-flag-missing-assignee'
 
+/** localStorage key for ART teams (written by ART View, read here to build notification team list). */
+const ART_TEAMS_STORAGE_KEY = 'nodetoolbox-art-teams'
+
 /** Prefix used to identify all Toolbox backup/settings keys in localStorage. */
 const TOOLBOX_BACKUP_PREFIX = 'toolbox-'
 
@@ -133,6 +136,52 @@ export interface HygieneRules {
   hasMissingAssigneeFlag: boolean
 }
 
+export interface NotificationTeamConfig {
+  teamName: string
+  projectKey: string
+  confluenceSpaceKey: string
+  targetBlogUrl: string
+  triggerUrl: string
+  triggerSecret: string
+  scheduleTime: string
+  isEnabled: boolean
+}
+
+/** Per-project configuration for the Feature Change (Epic-level) scheduled report. */
+export interface FeatureChangeReportConfig {
+  teamName: string
+  projectKey: string
+  /** Jira label used to identify this team's features: type = Feature AND labels in (jiraLabel). */
+  jiraLabel: string
+  confluenceSpaceKey: string
+  targetBlogUrl: string
+  triggerUrl: string
+  triggerSecret: string
+  scheduleTime: string
+  isEnabled: boolean
+}
+
+/** Configuration for the ART-wide Feature Change Rollup — one combined report for all teams. */
+export interface FeatureChangeArtRollupConfig {
+  confluenceSpaceKey: string
+  targetBlogUrl: string
+  triggerUrl: string
+  triggerSecret: string
+  scheduleTime: string
+  isEnabled: boolean
+}
+
+export interface NotificationArtRollupConfig {
+  projectKeys: string[]
+  teamNames: string[]
+  confluenceSpaceKey: string
+  targetBlogUrl: string
+  triggerUrl: string
+  triggerSecret: string
+  scheduleTime: string
+  isEnabled: boolean
+}
+
 /** Shape of the response from GET /api/version-check. */
 export interface UpdateCheckResult {
   currentVersion: string
@@ -190,6 +239,23 @@ export interface AdminHubState {
   isGitHubTesting: boolean
   confluenceTestResult: ConnectionProbeResult | null
   isConfluenceTesting: boolean
+  // ── Notifications ──
+  notificationTeamConfigs: NotificationTeamConfig[]
+  notificationArtRollup: NotificationArtRollupConfig
+  notificationsSaveStatus: string | null
+  teamRunStatuses: (string | null)[]
+  isTeamRunning: boolean[]
+  isRollupRunning: boolean
+  rollupRunStatus: string | null
+  // ── Feature Change Reports ──
+  featureChangeConfigs: FeatureChangeReportConfig[]
+  featureChangeSaveStatus: string | null
+  featureRunStatuses: (string | null)[]
+  isFeatureRunning: boolean[]
+  // ── Feature Change ART Rollup ──
+  featureChangeArtRollup: FeatureChangeArtRollupConfig
+  isFeatureRollupRunning: boolean
+  featureRollupRunStatus: string | null
 }
 
 /** All action callbacks returned by this hook. */
@@ -235,6 +301,22 @@ export interface AdminHubActions {
   testSnowConfig(): Promise<void>
   testGitHubConfig(): Promise<void>
   testConfluenceConfig(): Promise<void>
+  // ── Notifications ──
+  updateTeamConfig(index: number, field: keyof NotificationTeamConfig, value: string | boolean): void
+  updateArtRollup(field: keyof NotificationArtRollupConfig, value: string | boolean | string[]): void
+  loadNotificationConfigs(): Promise<void>
+  saveNotificationsConfig(): Promise<void>
+  runTeamNow(teamIndex: number): Promise<void>
+  runRollupNow(): Promise<void>
+  testWebhook(triggerUrl: string, triggerSecret?: string): Promise<{ ok: boolean; message: string }>
+  // ── Feature Change Reports ──
+  updateFeatureChangeConfig(index: number, field: keyof FeatureChangeReportConfig, value: string | boolean): void
+  loadFeatureChangeConfigs(): Promise<void>
+  saveFeatureChangeConfigs(): Promise<void>
+  runFeatureNow(reportIndex: number): Promise<void>
+  // ── Feature Change ART Rollup ──
+  updateFeatureChangeArtRollup(field: keyof FeatureChangeArtRollupConfig, value: string | boolean): void
+  runFeatureArtRollupNow(): Promise<void>
 }
 
 // ── Helper: safe localStorage reads ──
@@ -479,6 +561,30 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
   const [confluenceTestResult, setConfluenceTestResult] = useState<ConnectionProbeResult | null>(null)
   const [isConfluenceTesting, setConfluenceTesting] = useState(false)
 
+  // ── Notifications state ──
+  const [notificationTeamConfigs, setNotificationTeamConfigs] = useState<NotificationTeamConfig[]>([])
+  const [notificationArtRollup, setNotificationArtRollup] = useState<NotificationArtRollupConfig>({
+    projectKeys: [], teamNames: [], confluenceSpaceKey: '', targetBlogUrl: '', triggerUrl: '', triggerSecret: '', scheduleTime: '09:00', isEnabled: false,
+  })
+  const [notificationsSaveStatus, setNotificationsSaveStatus] = useState<string | null>(null)
+  const [teamRunStatuses, setTeamRunStatuses] = useState<(string | null)[]>([])
+  const [isTeamRunning, setIsTeamRunning] = useState<boolean[]>([])
+  const [isRollupRunning, setIsRollupRunning] = useState(false)
+  const [rollupRunStatus, setRollupRunStatus] = useState<string | null>(null)
+
+  // ── Feature Change Reports state ──
+  const [featureChangeConfigs, setFeatureChangeConfigs] = useState<FeatureChangeReportConfig[]>([])
+  const [featureChangeSaveStatus, setFeatureChangeSaveStatus] = useState<string | null>(null)
+  const [featureRunStatuses, setFeatureRunStatuses] = useState<(string | null)[]>([])
+  const [isFeatureRunning, setIsFeatureRunning] = useState<boolean[]>([])
+
+  // ── Feature Change ART Rollup state ──
+  const [featureChangeArtRollup, setFeatureChangeArtRollup] = useState<FeatureChangeArtRollupConfig>({
+    confluenceSpaceKey: '', targetBlogUrl: '', triggerUrl: '', triggerSecret: '', scheduleTime: '09:00', isEnabled: false,
+  })
+  const [isFeatureRollupRunning, setIsFeatureRollupRunning] = useState(false)
+  const [featureRollupRunStatus, setFeatureRollupRunStatus] = useState<string | null>(null)
+
   // Refs give callbacks synchronous access to latest state values even within
   // the same React batched-update cycle (e.g. setX then readX in one act() call).
   const proxyUrlsRef = useRef(proxyUrls)
@@ -527,6 +633,20 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     isGitHubTesting,
     confluenceTestResult,
     isConfluenceTesting,
+    notificationTeamConfigs,
+    notificationArtRollup,
+    notificationsSaveStatus,
+    teamRunStatuses,
+    isTeamRunning,
+    isRollupRunning,
+    rollupRunStatus,
+    featureChangeConfigs,
+    featureChangeSaveStatus,
+    featureRunStatuses,
+    isFeatureRunning,
+    featureChangeArtRollup,
+    isFeatureRollupRunning,
+    featureRollupRunStatus,
   }
 
   const setProxyUrl = useCallback(
@@ -1017,6 +1137,304 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     }
   }, [])
 
+  /** Loads ART teams from localStorage and merges with saved server notification config. */
+  const loadNotificationConfigs = useCallback(async () => {
+    // Read ART teams from localStorage
+    let artTeams: Array<{ id: string; name: string; projectKey?: string }> = []
+    try {
+      const raw = localStorage.getItem(ART_TEAMS_STORAGE_KEY)
+      if (raw) artTeams = JSON.parse(raw)
+    } catch {
+      // Ignore parse errors — start with empty list
+    }
+
+    const teamsWithKeys = artTeams.filter((team) => team.projectKey && team.projectKey.trim() !== '')
+
+    // Fetch saved server config and merge per projectKey
+    let savedTeamReports: NotificationTeamConfig[] = []
+    let savedArtRollup: NotificationArtRollupConfig | null = null
+    try {
+      const response = await fetch('/api/notifications/config')
+      if (response.ok) {
+        const serverConfig = await response.json() as { teamReports: NotificationTeamConfig[]; artRollup: NotificationArtRollupConfig }
+        savedTeamReports = serverConfig.teamReports || []
+        savedArtRollup   = serverConfig.artRollup   || null
+      }
+    } catch {
+      // Server config unavailable — use defaults
+    }
+
+    // Merge: one row per ART team, overlay saved config where projectKey matches
+    const mergedTeams: NotificationTeamConfig[] = teamsWithKeys.map((artTeam) => {
+      const saved = savedTeamReports.find((saved) => saved.projectKey === artTeam.projectKey)
+      return {
+        teamName:           artTeam.name,
+        projectKey:         artTeam.projectKey!,
+        confluenceSpaceKey: saved?.confluenceSpaceKey ?? '',
+        targetBlogUrl:      saved?.targetBlogUrl      ?? '',
+        triggerUrl:         saved?.triggerUrl         ?? '',
+        triggerSecret:      saved?.triggerSecret      ?? '',
+        scheduleTime:       saved?.scheduleTime       ?? '11:00',
+        isEnabled:          saved?.isEnabled          ?? false,
+      }
+    })
+
+    setNotificationTeamConfigs(mergedTeams)
+    setTeamRunStatuses(mergedTeams.map(() => null))
+    setIsTeamRunning(mergedTeams.map(() => false))
+
+    if (savedArtRollup) {
+      // Update project keys and team names from current ART teams (they may have changed)
+      setNotificationArtRollup({
+        ...savedArtRollup,
+        projectKeys: teamsWithKeys.map((t) => t.projectKey!),
+        teamNames:   teamsWithKeys.map((t) => t.name),
+      })
+    } else {
+      setNotificationArtRollup((prev) => ({
+        ...prev,
+        projectKeys: teamsWithKeys.map((t) => t.projectKey!),
+        teamNames:   teamsWithKeys.map((t) => t.name),
+      }))
+    }
+  }, [])
+
+  /** Updates a single field on a team config row. */
+  const updateTeamConfig = useCallback((index: number, field: keyof NotificationTeamConfig, value: string | boolean) => {
+    setNotificationTeamConfigs((prev) => {
+      const updated = [...prev]
+      updated[index] = { ...updated[index], [field]: value }
+      return updated
+    })
+  }, [])
+
+  /** Updates a single field on the ART rollup config. */
+  const updateArtRollup = useCallback((field: keyof NotificationArtRollupConfig, value: string | boolean | string[]) => {
+    setNotificationArtRollup((prev) => ({ ...prev, [field]: value }))
+  }, [])
+
+  /** Saves the full multi-team notification config to the server. */
+  const saveNotificationsConfig = useCallback(async () => {
+    try {
+      await fetch('/api/notifications/config', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ teamReports: notificationTeamConfigs, artRollup: notificationArtRollup }),
+      })
+      setNotificationsSaveStatus(SAVE_STATUS_SUCCESS)
+    } catch {
+      setNotificationsSaveStatus('❌ Save failed')
+    }
+    setTimeout(() => setNotificationsSaveStatus(null), SAVE_STATUS_CLEAR_DELAY_MS)
+  }, [notificationTeamConfigs, notificationArtRollup])
+
+  /** Triggers an immediate run for one team report. */
+  const runTeamNow = useCallback(async (teamIndex: number) => {
+    setIsTeamRunning((prev) => { const next = [...prev]; next[teamIndex] = true; return next })
+    setTeamRunStatuses((prev) => { const next = [...prev]; next[teamIndex] = null; return next })
+    try {
+      const response = await fetch('/api/notifications/run-team', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ teamIndex }),
+      })
+      const data = await response.json() as { ok: boolean; skipped?: boolean; message?: string; postUrl?: string }
+      if (!data.ok) {
+        setTeamRunStatuses((prev) => { const next = [...prev]; next[teamIndex] = '❌ ' + (data.message ?? 'Error'); return next })
+      } else if (data.skipped) {
+        setTeamRunStatuses((prev) => { const next = [...prev]; next[teamIndex] = 'ℹ No changes found'; return next })
+      } else {
+        setTeamRunStatuses((prev) => { const next = [...prev]; next[teamIndex] = '✓ Delivered'; return next })
+      }
+    } catch {
+      setTeamRunStatuses((prev) => { const next = [...prev]; next[teamIndex] = '❌ Network error'; return next })
+    } finally {
+      setIsTeamRunning((prev) => { const next = [...prev]; next[teamIndex] = false; return next })
+    }
+  }, [])
+
+  /** POSTs a test payload to the given trigger URL to verify webhook plumbing. */
+  const testWebhook = useCallback(async (triggerUrl: string, triggerSecret?: string): Promise<{ ok: boolean; message: string }> => {
+    try {
+      const response = await fetch('/api/notifications/test-webhook', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ triggerUrl, triggerSecret }),
+      })
+      const data = await response.json() as { ok: boolean; message?: string; httpStatus?: number; body?: string }
+      if (data.ok) {
+        return { ok: true, message: `✓ Webhook accepted (HTTP ${data.httpStatus ?? '2xx'})` }
+      }
+      const detail = data.body ? ` — ${data.body.slice(0, 120)}` : ''
+      return { ok: false, message: `❌ HTTP ${data.httpStatus ?? '?'}${detail || (data.message ? ` — ${data.message}` : '')}` }
+    } catch {
+      return { ok: false, message: '❌ Network error — server unreachable' }
+    }
+  }, [])
+
+  // ── Feature Change Reports actions ──
+
+  /** Loads ART teams from localStorage and merges with saved feature change config. */
+  const loadFeatureChangeConfigs = useCallback(async () => {
+    let artTeams: Array<{ id: string; name: string; projectKey?: string; jiraLabel?: string }> = []
+    try {
+      const raw = localStorage.getItem(ART_TEAMS_STORAGE_KEY)
+      if (raw) artTeams = JSON.parse(raw)
+    } catch {
+      // Ignore parse errors
+    }
+
+    // Feature Change is label-driven — only teams with a jiraLabel can generate a report.
+    const teamsWithLabels = artTeams.filter((team) => team.jiraLabel && team.jiraLabel.trim() !== '')
+
+    let savedReports: FeatureChangeReportConfig[] = []
+    let savedArtRollup: Partial<FeatureChangeArtRollupConfig> = {}
+    try {
+      const response = await fetch('/api/notifications/feature-change-config')
+      if (response.ok) {
+        const serverConfig = await response.json() as { reports: FeatureChangeReportConfig[]; artRollup?: Partial<FeatureChangeArtRollupConfig> }
+        savedReports   = serverConfig.reports   || []
+        savedArtRollup = serverConfig.artRollup || {}
+      }
+    } catch {
+      // Server config unavailable — use defaults
+    }
+
+    setFeatureChangeArtRollup({
+      confluenceSpaceKey: savedArtRollup.confluenceSpaceKey ?? '',
+      targetBlogUrl:      savedArtRollup.targetBlogUrl      ?? '',
+      triggerUrl:         savedArtRollup.triggerUrl         ?? '',
+      triggerSecret:      savedArtRollup.triggerSecret      ?? '',
+      scheduleTime:       savedArtRollup.scheduleTime       ?? '09:00',
+      isEnabled:          savedArtRollup.isEnabled          ?? false,
+    })
+
+    const mergedConfigs: FeatureChangeReportConfig[] = teamsWithLabels.map((artTeam) => {
+      const trimmedLabel = artTeam.jiraLabel!.trim()
+      // Match saved config by jiraLabel first; fall back to projectKey for configs saved before the label migration.
+      const saved = savedReports.find((report) => report.jiraLabel === trimmedLabel)
+        ?? savedReports.find((report) => report.projectKey === artTeam.projectKey)
+      return {
+        teamName:           artTeam.name,
+        projectKey:         artTeam.projectKey ?? '',
+        jiraLabel:          trimmedLabel,
+        confluenceSpaceKey: saved?.confluenceSpaceKey ?? '',
+        targetBlogUrl:      saved?.targetBlogUrl      ?? '',
+        triggerUrl:         saved?.triggerUrl         ?? '',
+        triggerSecret:      saved?.triggerSecret      ?? '',
+        scheduleTime:       saved?.scheduleTime       ?? '09:00',
+        isEnabled:          saved?.isEnabled          ?? false,
+      }
+    })
+
+    setFeatureChangeConfigs(mergedConfigs)
+    setFeatureRunStatuses(mergedConfigs.map(() => null))
+    setIsFeatureRunning(mergedConfigs.map(() => false))
+  }, [])
+
+  /** Updates a single field on a feature change config row. */
+  const updateFeatureChangeConfig = useCallback((
+    index: number,
+    field: keyof FeatureChangeReportConfig,
+    value: string | boolean,
+  ) => {
+    setFeatureChangeConfigs((prev) => {
+      const updated = [...prev]
+      updated[index] = { ...updated[index], [field]: value }
+      return updated
+    })
+  }, [])
+
+  /** Saves the full feature change config (per-team reports + ART rollup) to the server. */
+  const saveFeatureChangeConfigs = useCallback(async () => {
+    try {
+      await fetch('/api/notifications/feature-change-config', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ reports: featureChangeConfigs, artRollup: featureChangeArtRollup }),
+      })
+      setFeatureChangeSaveStatus(SAVE_STATUS_SUCCESS)
+    } catch {
+      setFeatureChangeSaveStatus('❌ Save failed')
+    }
+    setTimeout(() => setFeatureChangeSaveStatus(null), SAVE_STATUS_CLEAR_DELAY_MS)
+  }, [featureChangeConfigs, featureChangeArtRollup])
+
+  /** Triggers an immediate run for one feature change report. */
+  const runFeatureNow = useCallback(async (reportIndex: number) => {
+    setIsFeatureRunning((prev) => { const next = [...prev]; next[reportIndex] = true; return next })
+    setFeatureRunStatuses((prev) => { const next = [...prev]; next[reportIndex] = null; return next })
+    try {
+      const response = await fetch('/api/notifications/run-feature', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ reportIndex }),
+      })
+      const data = await response.json() as { ok: boolean; skipped?: boolean; message?: string; postUrl?: string }
+      if (!data.ok) {
+        setFeatureRunStatuses((prev) => { const next = [...prev]; next[reportIndex] = '❌ ' + (data.message ?? 'Error'); return next })
+      } else if (data.skipped) {
+        setFeatureRunStatuses((prev) => { const next = [...prev]; next[reportIndex] = 'ℹ No changes found'; return next })
+      } else {
+        setFeatureRunStatuses((prev) => { const next = [...prev]; next[reportIndex] = '✓ Delivered'; return next })
+      }
+    } catch {
+      setFeatureRunStatuses((prev) => { const next = [...prev]; next[reportIndex] = '❌ Network error'; return next })
+    } finally {
+      setIsFeatureRunning((prev) => { const next = [...prev]; next[reportIndex] = false; return next })
+    }
+  }, [])
+
+  /** Updates a single field on the Feature Change ART Rollup config. */
+  const updateFeatureChangeArtRollup = useCallback((
+    field: keyof FeatureChangeArtRollupConfig,
+    value: string | boolean,
+  ) => {
+    setFeatureChangeArtRollup((prev) => ({ ...prev, [field]: value }))
+  }, [])
+
+  /** Triggers an immediate Feature Change ART Rollup delivery (all teams combined). */
+  const runFeatureArtRollupNow = useCallback(async () => {
+    setIsFeatureRollupRunning(true)
+    setFeatureRollupRunStatus(null)
+    try {
+      const response = await fetch('/api/notifications/run-feature-rollup', { method: 'POST' })
+      const data = await response.json() as { ok: boolean; skipped?: boolean; message?: string; postUrl?: string }
+      if (!data.ok) {
+        setFeatureRollupRunStatus('❌ ' + (data.message ?? 'Error'))
+      } else if (data.skipped) {
+        setFeatureRollupRunStatus('ℹ No changes found')
+      } else {
+        setFeatureRollupRunStatus('✓ Delivered')
+      }
+    } catch {
+      setFeatureRollupRunStatus('❌ Network error')
+    } finally {
+      setIsFeatureRollupRunning(false)
+    }
+  }, [])
+
+  /** Triggers an immediate ART rollup delivery. */
+  const runRollupNow = useCallback(async () => {
+    setIsRollupRunning(true)
+    setRollupRunStatus(null)
+    try {
+      const response = await fetch('/api/notifications/run-rollup', { method: 'POST' })
+      const data = await response.json() as { ok: boolean; skipped?: boolean; message?: string; postUrl?: string }
+      if (!data.ok) {
+        setRollupRunStatus('❌ ' + (data.message ?? 'Error'))
+      } else if (data.skipped) {
+        setRollupRunStatus('ℹ No changes found')
+      } else {
+        setRollupRunStatus('✓ Delivered')
+      }
+    } catch {
+      setRollupRunStatus('❌ Network error')
+    } finally {
+      setIsRollupRunning(false)
+    }
+  }, [])
+
   const actions: AdminHubActions = {
     setProxyUrl,
     saveProxyUrls,
@@ -1061,6 +1479,19 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     testSnowConfig,
     testGitHubConfig,
     testConfluenceConfig,
+    updateTeamConfig,
+    updateArtRollup,
+    loadNotificationConfigs,
+    saveNotificationsConfig,
+    runTeamNow,
+    runRollupNow,
+    testWebhook,
+    updateFeatureChangeConfig,
+    loadFeatureChangeConfigs,
+    saveFeatureChangeConfigs,
+    runFeatureNow,
+    updateFeatureChangeArtRollup,
+    runFeatureArtRollupNow,
   }
 
   return { state, actions }

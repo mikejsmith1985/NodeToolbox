@@ -328,7 +328,13 @@ export function checkMissingChildStoryPoints(
   return featureKeysWithPointedStories.has(issue.key) ? null : BUILT_IN_HYGIENE_FLAGS['missing-child-story-points'];
 }
 
-/** Flags Story and Task issues that have neither known Jira story-points field populated. */
+/**
+ * Flags Story and Task issues that are missing story points.
+ * When the team has configured a real Jira custom field (starts with "customfield_"), ONLY that
+ * field is checked — matching the pointing queue's source-of-truth logic so both surfaces agree
+ * on which issues are genuinely unpointed. Without a real custom field, the check falls back to
+ * the modern and legacy built-in fields.
+ */
 export function checkMissingStoryPoints(issue: JiraIssue, customStoryPointsFieldId?: string): HygieneFlag | null {
   const issueTypeName = readIssueTypeName(issue);
   // Skip issue types that do not have a story-points field on their Jira screen at all.
@@ -336,13 +342,17 @@ export function checkMissingStoryPoints(issue: JiraIssue, customStoryPointsField
   const shouldCheckStoryPoints = issueTypeName === 'story' || issueTypeName === 'task';
   if (!shouldCheckStoryPoints) return null;
 
+  // When a real Jira custom field is configured, treat it as the authoritative source.
+  const isRealCustomField = customStoryPointsFieldId?.startsWith('customfield_') ?? false;
+  if (isRealCustomField && customStoryPointsFieldId) {
+    const configuredValue = issue.fields[customStoryPointsFieldId];
+    return hasEmptyStoryPoints(configuredValue) ? BUILT_IN_HYGIENE_FLAGS['missing-sp'] : null;
+  }
+
+  // Fallback: no real custom field configured — check both built-in fields.
   const modernStoryPoints = issue.fields[MODERN_STORY_POINTS_FIELD];
   const legacyStoryPoints = issue.fields[LEGACY_STORY_POINTS_FIELD];
-  // Also check the team-configured field (e.g. customfield_10236) when provided.
-  const configuredStoryPoints = customStoryPointsFieldId ? issue.fields[customStoryPointsFieldId] : undefined;
-  return hasEmptyStoryPoints(modernStoryPoints)
-    && hasEmptyStoryPoints(legacyStoryPoints)
-    && hasEmptyStoryPoints(configuredStoryPoints)
+  return hasEmptyStoryPoints(modernStoryPoints) && hasEmptyStoryPoints(legacyStoryPoints)
     ? BUILT_IN_HYGIENE_FLAGS['missing-sp']
     : null;
 }
@@ -631,6 +641,13 @@ function buildTodayDateOnlyText(): string {
 function hasEmptyStoryPoints(fieldValue: unknown): boolean {
   if (fieldValue === null || fieldValue === undefined || fieldValue === '') return true;
   if (typeof fieldValue === 'number') return fieldValue <= 0;
+  // A string is only non-empty when it parses as a positive finite number.
+  // Non-numeric placeholder values like "None" that Jira returns for an explicitly-cleared
+  // Select field are treated as empty — consistent with how parseNumericValue works.
+  if (typeof fieldValue === 'string') {
+    const parsedNumber = Number(fieldValue);
+    return !Number.isFinite(parsedNumber) || parsedNumber <= 0;
+  }
   if (Array.isArray(fieldValue)) return fieldValue.length === 0;
   // Jira Select-type fields return {id, value} objects — extract and re-evaluate the numeric value.
   if (typeof fieldValue === 'object') {

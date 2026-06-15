@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { loadDashboardConfigFromStorage } from './hooks/useDashboardConfig.ts';
+import { useSettingsStore } from '../../store/settingsStore.ts';
+
 import { useToast } from '../../components/Toast/ToastContext.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import type { JiraTransition } from '../../types/jira.ts';
@@ -582,7 +585,12 @@ function FeatureReviewQuickFixPanel({
   return (
     <section className={styles.featureReviewFixPanel}>
       <div className={styles.featureReviewFixHeader}>
-        <strong>Direct hygiene fixes</strong>
+        <div className={styles.featureReviewFixHeaderLabel}>
+          <strong>Direct hygiene fixes</strong>
+          <span className={styles.featureReviewFixFeatureContext}>
+            → {featureIssue.key}
+          </span>
+        </div>
         <button
           className={styles.secondaryButton}
           onClick={() => {
@@ -659,6 +667,10 @@ export default function FeatureReviewTab({
     [boardId, projectKey, storedArtTeams],
   );
   const effectiveSelectedPiName = selectedPiName.trim() || readFallbackSelectedPiName();
+  const activeDashboardTeamProfileId = useSettingsStore(
+    (storeState) => storeState.sprintDashboardActiveTeamProfileId,
+  );
+  const customStoryPointsFieldId = loadDashboardConfigFromStorage(activeDashboardTeamProfileId).customStoryPointsFieldId ?? '';
   const boardLabel = readBoardLabel(boardName, boardId);
   const [featureReviewItems, setFeatureReviewItems] = useState<FeatureReviewItem[]>([]);
   const [featureReviewFieldConfig, setFeatureReviewFieldConfig] = useState<HygieneFieldConfig | null>(null);
@@ -686,6 +698,7 @@ export default function FeatureReviewTab({
         } satisfies ArtTeam,
         effectiveSelectedPiName,
         resolvedFieldConfig,
+        customStoryPointsFieldId,
       );
       setFeatureReviewFieldConfig(resolvedFieldConfig);
       setFeatureReviewItems(reviewItems);
@@ -698,7 +711,7 @@ export default function FeatureReviewTab({
     } finally {
       setIsLoading(false);
     }
-  }, [effectiveSelectedPiName, matchedArtTeam, showToast]);
+  }, [customStoryPointsFieldId, effectiveSelectedPiName, matchedArtTeam, showToast]);
 
   useEffect(() => {
     const loadTimeoutHandle = window.setTimeout(() => {
