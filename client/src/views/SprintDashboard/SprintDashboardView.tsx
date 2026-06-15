@@ -68,6 +68,7 @@ import {
   type ReleaseRovoTableDocument,
 } from './hooks/releaseRovoNotes.ts';
 import { useRovoExchange } from '../SnowHub/hooks/useRovoExchange.ts';
+import { setRovoUnlocked } from '../../store/rovoStore.ts';
 import { useSprintData } from './hooks/useSprintData.ts';
 import type { DashboardScopeMode, DashboardTab } from './hooks/useSprintData.ts';
 import styles from './SprintDashboardView.module.css';
@@ -4119,8 +4120,12 @@ function PointingTab({
         && keyboardEvent.altKey
         && (keyboardEvent.key.toLowerCase() === HIDDEN_ROVO_SHORTCUT_KEY || keyboardEvent.code === 'KeyZ');
 
-      if (!isShortcutPressed || isPointingRovoUnlocked) return;
+      if (!isShortcutPressed) return;
       keyboardEvent.preventDefault();
+      if (isPointingRovoUnlocked) {
+        setRovoUnlocked(false); // toggle: re-hide all Rovo features
+        return;
+      }
       setIsPassphraseModalVisible(true);
       setPassphraseInput('');
       setPassphraseError(null);
@@ -5809,11 +5814,15 @@ function ReleasesTab({
           || keyboardEvent.code === 'KeyZ'
         );
 
-      if (!isHiddenShortcutPressed || isReleaseRovoUnlocked) {
+      if (!isHiddenShortcutPressed) {
         return;
       }
 
       keyboardEvent.preventDefault();
+      if (isReleaseRovoUnlocked) {
+        setRovoUnlocked(false); // toggle: re-hide all Rovo features
+        return;
+      }
       openReleaseUnlockModal();
     }
 

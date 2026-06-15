@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Internal — Rovo unlock works from anywhere + toggles to re-hide**: The hidden Ctrl+Alt+Z shortcut now works from **any Admin Hub tab** (the listener moved to the Admin Hub root) and **toggles**: it opens the passphrase gate when locked and **re-hides all Rovo features when already unlocked**. The same toggle-to-hide behaviour was added to every generator surface (Create Change, risk, pointing, release), so Ctrl+Alt+Z re-hides from anywhere. When unlocked, a dedicated **⚡ Rovo** tab appears in Admin Hub holding the configuration form (it disappears again on re-hide); the config no longer lives under the Standup tab.
 - **Internal — unified Rovo unlock + in-place Admin Hub unlock**: The Rovo capability unlock is now a single shared state (`rovoStore`) across every surface. The risk-refinement, release-notes, and story-pointing generators previously each kept their own per-surface unlock flag (`tbx-risk-rovo-unlocked`, `tbx-release-rovo-unlocked`, `tbx-pointing-rovo-unlocked`); those are removed and all now read the shared store, so one passphrase entry unlocks every Rovo affordance and the Admin Hub config section together. The Admin Hub "Rovo Automation" section now also responds to the hidden Ctrl+Alt+Z passphrase shortcut, so it can be unlocked and configured in place without first unlocking on another surface.
 
 ### Added

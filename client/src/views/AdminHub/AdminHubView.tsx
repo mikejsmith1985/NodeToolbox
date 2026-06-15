@@ -13,6 +13,8 @@ import { SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts'
 import { listGitHubAppInstallations, type GitHubAppInstallation } from '../../services/connectivityConfigApi.ts'
 import { fetchSchedulerValidation, type SchedulerValidationRepoResult } from '../../services/schedulerApi.ts'
 import { useConnectionStore } from '../../store/connectionStore'
+import { setRovoUnlocked } from '../../store/rovoStore.ts'
+import { useRovoAssist } from '../SnowHub/hooks/useRovoAssist.ts'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
 import { RepoMonitorPanel } from './RepoMonitorPanel.tsx'
 import { RovoAutomationPanel } from './RovoAutomationPanel.tsx'
@@ -46,7 +48,7 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'dev-panel'
+type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'dev-panel' | 'rovo'
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
@@ -55,6 +57,10 @@ const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'standup-briefing', label: '📋 Standup' },
   { key: 'dev-panel', label: '🛰️ Dev Panel' },
 ]
+
+// Hidden "⚡ Rovo" tab, appended only while the Rovo capability is unlocked.
+const ROVO_ADMIN_TAB: { key: AdminHubTab; label: string } = { key: 'rovo', label: '⚡ Rovo' }
+const HIDDEN_ROVO_SHORTCUT_KEY = 'z'
 
 type ReportsConfigSubTab = 'scope-change' | 'feature-change'
 
@@ -2648,6 +2654,55 @@ export default function AdminHubView() {
   const [activeAdminTab, setActiveAdminTab] = useState<AdminHubTab>('main')
   const adminHubRootRef = useRef<HTMLDivElement | null>(null)
 
+  // Hidden Rovo capability: Ctrl+Alt+Z toggles it from ANY Admin Hub tab —
+  // opens the passphrase gate when locked, re-hides everything when unlocked.
+  const { isUnlocked: isRovoUnlocked, verifyPassphrase } = useRovoAssist()
+  const [isRovoPassphraseVisible, setIsRovoPassphraseVisible] = useState(false)
+  const [rovoPassphraseInput, setRovoPassphraseInput] = useState('')
+  const [rovoPassphraseError, setRovoPassphraseError] = useState<string | null>(null)
+
+  useEffect(() => {
+    function handleKeyDown(keyboardEvent: KeyboardEvent) {
+      const isShortcut =
+        keyboardEvent.ctrlKey && keyboardEvent.altKey && keyboardEvent.key.toLowerCase() === HIDDEN_ROVO_SHORTCUT_KEY
+      if (!isShortcut) return
+      if (isRovoUnlocked) {
+        // Re-hide all Rovo features (shared store → hides generators + this tab).
+        setRovoUnlocked(false)
+        setActiveAdminTab((current) => (current === 'rovo' ? 'main' : current))
+        return
+      }
+      setIsRovoPassphraseVisible(true)
+      setRovoPassphraseInput('')
+      setRovoPassphraseError(null)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isRovoUnlocked])
+
+  // If the capability locks while the Rovo tab is active, fall back to Config.
+  useEffect(() => {
+    if (!isRovoUnlocked && activeAdminTab === 'rovo') {
+      setActiveAdminTab('main')
+    }
+  }, [isRovoUnlocked, activeAdminTab])
+
+  const handleRovoPassphraseSubmit = useCallback(async () => {
+    const isAccepted = await verifyPassphrase(rovoPassphraseInput)
+    if (isAccepted) {
+      // verifyPassphrase sets the shared rovoStore → the ⚡ Rovo tab appears.
+      setIsRovoPassphraseVisible(false)
+      setRovoPassphraseInput('')
+      setRovoPassphraseError(null)
+      setActiveAdminTab('rovo')
+      return
+    }
+    setRovoPassphraseError('Incorrect passphrase')
+  }, [rovoPassphraseInput, verifyPassphrase])
+
+  // The ⚡ Rovo tab is only offered while unlocked.
+  const adminHubTabs = isRovoUnlocked ? [...ADMIN_HUB_TAB_OPTIONS, ROVO_ADMIN_TAB] : ADMIN_HUB_TAB_OPTIONS
+
   useEffect(() => {
     const scrollContainer = adminHubRootRef.current?.closest('main')
     if (scrollContainer instanceof HTMLElement) {
@@ -2682,10 +2737,33 @@ export default function AdminHubView() {
       <PrimaryTabs
         ariaLabel="Admin Hub tabs"
         idPrefix="admin-hub"
-        tabs={ADMIN_HUB_TAB_OPTIONS}
+        tabs={adminHubTabs}
         activeTab={activeAdminTab}
         onChange={setActiveAdminTab}
       />
+
+      {isRovoPassphraseVisible && (
+        <div className={styles.sectionCard}>
+          <h2 className={styles.sectionTitle}>🔒 Rovo Automation</h2>
+          <label className={styles.adminDescription}>
+            Passphrase
+            <input
+              autoFocus
+              className={styles.inputField}
+              type="password"
+              placeholder="Enter passphrase"
+              value={rovoPassphraseInput}
+              onChange={(changeEvent) => { setRovoPassphraseInput(changeEvent.target.value); setRovoPassphraseError(null) }}
+              onKeyDown={(keyboardEvent) => { if (keyboardEvent.key === 'Enter') void handleRovoPassphraseSubmit() }}
+            />
+          </label>
+          {rovoPassphraseError !== null ? <p className={styles.errorMessage}>{rovoPassphraseError}</p> : null}
+          <div>
+            <button className={styles.primaryBtn} onClick={() => void handleRovoPassphraseSubmit()} type="button">Unlock Rovo</button>
+            <button className={styles.secondaryBtn} onClick={() => setIsRovoPassphraseVisible(false)} type="button">Cancel</button>
+          </div>
+        </div>
+      )}
 
       {activeAdminTab === 'main' && (
         <section id="admin-hub-main-panel" role="tabpanel" aria-labelledby="admin-hub-main-tab">
@@ -2760,7 +2838,11 @@ export default function AdminHubView() {
       {activeAdminTab === 'standup-briefing' && (
         <section id="admin-hub-standup-briefing-panel" role="tabpanel" aria-labelledby="admin-hub-standup-briefing-tab">
           <StandupBriefingPanel />
-          {/* Self-gated: only renders once the Rovo passphrase is unlocked. */}
+        </section>
+      )}
+
+      {activeAdminTab === 'rovo' && isRovoUnlocked && (
+        <section id="admin-hub-rovo-panel" role="tabpanel" aria-labelledby="admin-hub-rovo-tab">
           <RovoAutomationPanel />
         </section>
       )}

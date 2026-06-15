@@ -13,6 +13,7 @@ import {
 
 import type { JiraIssue } from '../../types/jira.ts';
 import { jiraGet, jiraPut } from '../../services/jiraApi.ts';
+import { setRovoUnlocked } from '../../store/rovoStore.ts';
 import { useRovoAssist } from '../SnowHub/hooks/useRovoAssist.ts';
 import { useRovoExchange } from '../SnowHub/hooks/useRovoExchange.ts';
 import styles from './SprintDashboardView.module.css';
@@ -288,7 +289,11 @@ export default function RiskManagementSection({
         keyboardEvent.ctrlKey
         && keyboardEvent.altKey
         && keyboardEvent.key.toLowerCase() === HIDDEN_ROVO_SHORTCUT_KEY;
-      if (!isShortcutPressed || isRovoUnlocked) return;
+      if (!isShortcutPressed) return;
+      if (isRovoUnlocked) {
+        setRovoUnlocked(false); // toggle: re-hide all Rovo features
+        return;
+      }
       setIsPassphraseModalVisible(true);
       setPassphraseInput('');
       setPassphraseError(null);
