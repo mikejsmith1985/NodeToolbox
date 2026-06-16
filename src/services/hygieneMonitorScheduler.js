@@ -13,6 +13,27 @@
 
 'use strict';
 
+const { makeJiraApiRequest } = require('../utils/httpClient');
+const { requestRovoText, isRovoEnabled } = require('./rovoEnrichment');
+const { deliverReport } = require('./reportWebhookDelivery');
+const { evaluateHygieneRules } = require('./hygieneRules');
+
+// ── Jira query constants ──────────────────────────────────────────────────────
+
+// Fields fetched per issue — keep narrow to reduce response size.
+const HYGIENE_JIRA_FIELDS = [
+  'summary', 'issuetype', 'status', 'assignee', 'reporter',
+  'fixVersions', 'updated', 'created', 'duedate',
+  'customfield_10028', 'customfield_10016', 'customfield_10020',
+].join(',');
+
+// Maximum issues fetched per project key batch (Jira paginates at 100 by default).
+const JIRA_HYGIENE_MAX_RESULTS = 100;
+
+// Maximum number of violations batched into a single Rovo classification prompt.
+// Keeps prompts within Rovo's context window.
+const ROVO_BATCH_SIZE = 50;
+
 // ── Trend calculation ─────────────────────────────────────────────────────────
 
 const TREND_DOWN = 'down';
@@ -137,41 +158,371 @@ function getLastScanStatus() {
   };
 }
 
+// ── Jira issue fetching ───────────────────────────────────────────────────────
+
+/**
+ * Queries Jira for all open issues across the team's project keys.
+ * Returns an empty array when the Jira request fails or the team has no project keys.
+ *
+ * @param {string[]} projectKeys - Jira project keys to include in the search.
+ * @param {object} jiraConfig - Jira service config from the main configuration object.
+ * @param {boolean} isTlsVerified - Whether to verify TLS certificates.
+ * @returns {Promise<object[]>} Array of Jira issue objects.
+ */
+async function fetchOpenIssuesForTeam(projectKeys, jiraConfig, isTlsVerified) {
+  if (!projectKeys || projectKeys.length === 0) return [];
+
+  const projectList = projectKeys.map((projectKey) => '"' + projectKey + '"').join(', ');
+  const jql = 'project in (' + projectList + ') AND statusCategory != Done ORDER BY updated DESC';
+  const searchPath = '/rest/api/2/search'
+    + '?jql=' + encodeURIComponent(jql)
+    + '&fields=' + encodeURIComponent(HYGIENE_JIRA_FIELDS)
+    + '&maxResults=' + JIRA_HYGIENE_MAX_RESULTS;
+
+  try {
+    const jiraResponse = await makeJiraApiRequest('GET', searchPath, null, jiraConfig, isTlsVerified);
+    return (jiraResponse.body && jiraResponse.body.issues) || [];
+  } catch (jiraError) {
+    console.error('[HygieneMonitor] Jira query failed for projects ' + projectKeys.join(',') + ': ' + jiraError.message);
+    return [];
+  }
+}
+
+// ── Rovo classification prompt builder ───────────────────────────────────────
+
+/**
+ * Builds the structured Rovo prompt for a batch of hygiene violations.
+ * Instructs Rovo to respond with one FIXABLE or UNFIXABLE line per violation.
+ *
+ * @param {string} teamName - Display name of the team being scanned.
+ * @param {Array<{ issueKey: string, summary: string, checkId: string, label: string }>} violations
+ * @returns {string} The formatted prompt text.
+ */
+function buildHygieneClassificationPrompt(teamName, violations) {
+  const violationLines = violations.map((violation) =>
+    violation.issueKey + ': [' + violation.checkId + '] ' + violation.label + ' — "' + violation.summary + '"'
+  ).join('\n');
+
+  return [
+    'You are reviewing Jira hygiene violations for team "' + teamName + '".',
+    'For each violation below, classify it on a single line using EXACTLY one of these formats:',
+    '  FIXABLE: <ISSUE-KEY> | <fieldId> | <suggested-value>',
+    '  UNFIXABLE: <ISSUE-KEY> | <checkId> | <one-sentence guidance for the assignee>',
+    '',
+    'Rules:',
+    '- FIXABLE means you can suggest a concrete field value Toolbox should write (e.g. story points, acceptance criteria text, a date).',
+    '- UNFIXABLE means a human must act (e.g. no-assignee, missing parent link, ambiguous feature link).',
+    '- Use the field ID from the violation for FIXABLE lines (e.g. customfield_10028 for story points).',
+    '- For "no-ac" violations: draft acceptance criteria from the issue summary as the FIXABLE value.',
+    '- For "missing-sp" violations: estimate story points (1, 2, 3, 5, 8) from the summary complexity as the FIXABLE value.',
+    '- For "stale-issue" violations: classify UNFIXABLE with a prompt asking the assignee for a status update.',
+    '- Output ONLY the classification lines — no preamble, no explanation, no blank lines between them.',
+    '',
+    'Violations:',
+    violationLines,
+  ].join('\n');
+}
+
+// ── FIXABLE — apply Jira field updates ───────────────────────────────────────
+
+/**
+ * Attempts to apply a FIXABLE classification as a Jira field update.
+ * Returns true on success, false when the update is rejected by Jira.
+ * On rejection, the violation is re-classified as UNFIXABLE for this run.
+ *
+ * @param {{ issueKey: string, field: string, value: string }} classification
+ * @param {object} jiraConfig - Jira service config.
+ * @param {boolean} isTlsVerified - TLS verification flag.
+ * @returns {Promise<boolean>} True when the update succeeded (2xx status).
+ */
+async function applyJiraFieldFix(classification, jiraConfig, isTlsVerified) {
+  const issueUpdatePath = '/rest/api/2/issue/' + encodeURIComponent(classification.issueKey);
+  const requestBody = { fields: { [classification.field]: classification.value } };
+
+  try {
+    const updateResponse = await makeJiraApiRequest('PUT', issueUpdatePath, requestBody, jiraConfig, isTlsVerified);
+    const isSuccess = updateResponse.status >= 200 && updateResponse.status < 300;
+    if (!isSuccess) {
+      console.warn('[HygieneMonitor] Field update rejected for ' + classification.issueKey
+        + ' field=' + classification.field + ' status=' + updateResponse.status);
+    }
+    return isSuccess;
+  } catch (updateError) {
+    console.error('[HygieneMonitor] Field update threw for ' + classification.issueKey + ': ' + updateError.message);
+    return false;
+  }
+}
+
+// ── UNFIXABLE — post Jira comments ───────────────────────────────────────────
+
+/**
+ * Posts a single Jira comment to the issue flagged as UNFIXABLE.
+ * Addresses the assignee when available, then the reporter, then neither.
+ * Uses a per-cycle dedup set to post at most one comment per (issueKey, checkId) pair
+ * per scan run — prevents comment spam when a violation recurs across multiple cycles.
+ *
+ * @param {{ issueKey: string, checkId: string, guidance: string }} classification
+ * @param {object} issue - Full Jira issue object (for assignee/reporter lookup).
+ * @param {Set<string>} postedCommentKeys - Dedup set mutated by this call.
+ * @param {object} jiraConfig - Jira service config.
+ * @param {boolean} isTlsVerified - TLS verification flag.
+ * @returns {Promise<boolean>} True when the comment was posted successfully.
+ */
+async function postUnfixableComment(classification, issue, postedCommentKeys, jiraConfig, isTlsVerified) {
+  const dedupKey = classification.issueKey + '|' + classification.checkId;
+  if (postedCommentKeys.has(dedupKey)) return false;
+  postedCommentKeys.add(dedupKey);
+
+  const assigneeName = (issue && issue.fields.assignee && issue.fields.assignee.displayName) || null;
+  const reporterName = (issue && issue.fields.reporter && issue.fields.reporter.displayName) || null;
+  const addressee = assigneeName || reporterName;
+  const greeting = addressee ? 'Hi ' + addressee + ', ' : '';
+
+  const commentBody = greeting
+    + '[Hygiene Monitor] ' + classification.guidance
+    + '\n\n_This comment was added automatically by the NodeToolbox Hygiene Monitor. '
+    + 'Check ID: ' + classification.checkId + '_';
+
+  const commentPath = '/rest/api/2/issue/' + encodeURIComponent(classification.issueKey) + '/comment';
+
+  try {
+    const commentResponse = await makeJiraApiRequest(
+      'POST',
+      commentPath,
+      { body: commentBody },
+      jiraConfig,
+      isTlsVerified
+    );
+    return commentResponse.status === 200 || commentResponse.status === 201;
+  } catch (commentError) {
+    console.error('[HygieneMonitor] Comment post threw for ' + classification.issueKey + ': ' + commentError.message);
+    return false;
+  }
+}
+
+// ── Digest delivery ───────────────────────────────────────────────────────────
+
+/**
+ * Delivers the hygiene digest to the team's Teams webhook and appends the scan
+ * result to the bounded hygieneScanHistory in the live configuration object.
+ *
+ * Skips delivery silently when no Teams webhook is configured for the team.
+ *
+ * @param {object} digest - Computed by buildHygieneDigest.
+ * @param {{ teamsWebhookUrl?: string, teamsWebhookSecret?: string }} teamConfig
+ * @param {object} configuration - Live server configuration (mutated to append history).
+ */
+async function deliverHygieneDigest(digest, teamConfig, configuration) {
+  const hygieneMonitorConfig = configuration.hygieneMonitor || {};
+  const historyArray = hygieneMonitorConfig.hygieneScanHistory || [];
+
+  // Append this scan result to the bounded history before delivery.
+  historyArray.push(digest);
+  if (historyArray.length > 30) historyArray.splice(0, historyArray.length - 30);
+  if (!hygieneMonitorConfig.hygieneScanHistory) {
+    hygieneMonitorConfig.hygieneScanHistory = historyArray;
+  }
+  if (!configuration.hygieneMonitor) {
+    configuration.hygieneMonitor = hygieneMonitorConfig;
+  }
+
+  if (!teamConfig.teamsWebhookUrl) {
+    console.log('[HygieneMonitor] No Teams webhook configured for team "' + digest.teamName + '" — digest skipped.');
+    return;
+  }
+
+  try {
+    // deliverReport resolves the destination via the hygiene-digest surface's
+    // resolveDestination, which looks up the team by name in configuration.hygieneMonitor.teams.
+    const deliveryResult = await deliverReport(configuration, {
+      surface: 'hygiene-digest',
+      teamId:  digest.teamName,
+      report:  {
+        teamName:        digest.teamName,
+        scannedAt:       digest.scannedAt,
+        issuesScanned:   digest.issuesScanned,
+        violationsFound: digest.violationsFound,
+        fixesApplied:    digest.fixesApplied,
+        actionsRequired: digest.actionsRequired,
+        unassignedCount: digest.unassignedCount,
+        trend:           digest.trend,
+        failures:        digest.failures,
+      },
+    });
+
+    if (!deliveryResult.ok) {
+      console.warn('[HygieneMonitor] Digest delivery not-ok for "' + digest.teamName + '": ' + deliveryResult.message);
+    }
+  } catch (deliveryError) {
+    console.error('[HygieneMonitor] Teams digest delivery threw for "' + digest.teamName + '": ' + deliveryError.message);
+  }
+}
+
 // ── runHygieneScan ────────────────────────────────────────────────────────────
 
 /**
- * Orchestrates a full hygiene scan for one team configuration.
- * Queries Jira, evaluates rules, dispatches to Rovo, applies fixes,
- * posts comments, delivers digest, and caches the result.
+ * Orchestrates a full hygiene scan for one team configuration:
+ * 1. Query Jira for open issues across all project keys
+ * 2. Evaluate server-side hygiene rules against each issue
+ * 3. Batch violations and dispatch to Rovo for classification (when enabled)
+ * 4. Apply FIXABLE fixes via the Jira proxy
+ * 5. Post UNFIXABLE comments with per-cycle dedup
+ * 6. Build and deliver the Teams digest
+ * 7. Cache the result and append to scan history
  *
- * This is the integration point for the scheduler — the scan engine
- * is implemented incrementally across T022–T025 tasks. This initial
- * skeleton provides the cache write and returns a minimal result so
- * T020 route tests can pass against the mock interface.
- *
- * @param {{ teamName: string, projectKeys: string[], enabledCheckIds?: string[] }} teamConfig
+ * @param {{ teamName: string, projectKeys: string[], enabledCheckIds?: string[], teamsWebhookUrl?: string, teamsWebhookSecret?: string, fieldConfig?: object }} teamConfig
  * @param {object} configuration - Live server configuration object.
  * @returns {Promise<{ teamName: string, issuesScanned: number, violationsFound: number, fixesApplied: number, actionsRequired: number, unassignedCount: number, failures: object[] }>}
  */
 async function runHygieneScan(teamConfig, configuration) {
   const scanStartedAt = new Date().toISOString();
+  const isTlsVerified = configuration.sslVerify !== false;
+  const jiraConfig = configuration.jira || {};
+  const teamFieldConfig = teamConfig.fieldConfig || {};
+  const enabledCheckFilter = teamConfig.enabledCheckIds && teamConfig.enabledCheckIds.length > 0
+    ? new Set(teamConfig.enabledCheckIds)
+    : null;
 
-  // Scan engine implementation comes in T022–T025.
-  // This skeleton satisfies the route contract (T020) and will be
-  // expanded incrementally as the full scan pipeline is built.
+  let issuesScanned = 0;
+  let fixesApplied = 0;
+  let actionsRequired = 0;
+  let unassignedCount = 0;
+  const scanFailures = [];
+
+  // Per-cycle dedup set: prevents duplicate comments within a single scan run.
+  const postedCommentKeys = new Set();
+
+  // ── Step 1: Fetch open issues from Jira ──────────────────────────────────
+
+  const openIssues = await fetchOpenIssuesForTeam(teamConfig.projectKeys, jiraConfig, isTlsVerified);
+  issuesScanned = openIssues.length;
+  console.log('[HygieneMonitor] Team "' + teamConfig.teamName + '": ' + issuesScanned + ' open issues fetched.');
+
+  // ── Step 2: Evaluate hygiene rules per issue ─────────────────────────────
+
+  const issueViolationMap = new Map();
+  let totalViolationCount = 0;
+
+  for (const jiraIssue of openIssues) {
+    if (!jiraIssue.fields.assignee) unassignedCount++;
+
+    const allFlags = evaluateHygieneRules(jiraIssue, teamFieldConfig);
+    const filteredFlags = enabledCheckFilter
+      ? allFlags.filter((flag) => enabledCheckFilter.has(flag.checkId))
+      : allFlags;
+
+    if (filteredFlags.length > 0) {
+      issueViolationMap.set(jiraIssue.key, { issue: jiraIssue, flags: filteredFlags });
+      totalViolationCount += filteredFlags.length;
+    }
+  }
+
+  console.log('[HygieneMonitor] Team "' + teamConfig.teamName + '": ' + totalViolationCount + ' violations across '
+    + issueViolationMap.size + ' issues.');
+
+  // ── Step 3: Dispatch violations to Rovo for classification ───────────────
+
+  const allClassifications = [];
+
+  if (isRovoEnabled(configuration) && issueViolationMap.size > 0) {
+    // Flatten all (issueKey, flag) pairs into a flat violation list for batching.
+    const flatViolations = [];
+    for (const [issueKey, { issue, flags }] of issueViolationMap.entries()) {
+      for (const flag of flags) {
+        flatViolations.push({
+          issueKey,
+          summary: (issue.fields.summary || '').substring(0, 120),
+          checkId: flag.checkId,
+          label:   flag.label,
+        });
+      }
+    }
+
+    // Process in batches of ROVO_BATCH_SIZE to stay within Rovo's context window.
+    for (let batchStart = 0; batchStart < flatViolations.length; batchStart += ROVO_BATCH_SIZE) {
+      const batchViolations = flatViolations.slice(batchStart, batchStart + ROVO_BATCH_SIZE);
+      const classificationPrompt = buildHygieneClassificationPrompt(teamConfig.teamName, batchViolations);
+
+      console.log('[HygieneMonitor] Dispatching batch ' + (Math.floor(batchStart / ROVO_BATCH_SIZE) + 1)
+        + ' (' + batchViolations.length + ' violations) to Rovo...');
+
+      const rovoResponse = await requestRovoText(configuration, classificationPrompt, { label: 'hygiene-' + teamConfig.teamName });
+      if (rovoResponse) {
+        allClassifications.push(...parseRovoClassifications(rovoResponse));
+      } else {
+        console.warn('[HygieneMonitor] Rovo returned no classification for batch starting at index ' + batchStart);
+      }
+    }
+  } else if (issueViolationMap.size > 0) {
+    console.log('[HygieneMonitor] Rovo not enabled — all ' + issueViolationMap.size + ' violating issues will receive comments only.');
+  }
+
+  // ── Step 4: Apply FIXABLE fixes via Jira proxy ──────────────────────────
+
+  for (const classification of allClassifications) {
+    if (classification.type !== 'FIXABLE') continue;
+
+    const wasFixApplied = await applyJiraFieldFix(classification, jiraConfig, isTlsVerified);
+    if (wasFixApplied) {
+      fixesApplied++;
+    } else {
+      // Rejected by Jira — re-classify as UNFIXABLE so the assignee is notified.
+      const issueEntry = issueViolationMap.get(classification.issueKey);
+      if (issueEntry) {
+        const wasCommentPosted = await postUnfixableComment(
+          { issueKey: classification.issueKey, checkId: classification.field, guidance: 'Automated fix was rejected by Jira for field ' + classification.field + '. Please update manually.' },
+          issueEntry.issue,
+          postedCommentKeys,
+          jiraConfig,
+          isTlsVerified
+        );
+        if (wasCommentPosted) actionsRequired++;
+      }
+      scanFailures.push({ issueKey: classification.issueKey, reason: 'Jira field update rejected for field ' + classification.field });
+    }
+  }
+
+  // ── Step 5: Post UNFIXABLE comments ──────────────────────────────────────
+
+  for (const classification of allClassifications) {
+    if (classification.type !== 'UNFIXABLE') continue;
+
+    const issueEntry = issueViolationMap.get(classification.issueKey);
+    const wasCommentPosted = await postUnfixableComment(
+      classification,
+      issueEntry ? issueEntry.issue : null,
+      postedCommentKeys,
+      jiraConfig,
+      isTlsVerified
+    );
+    if (wasCommentPosted) actionsRequired++;
+  }
+
+  // ── Step 6: Build digest, deliver to Teams, append to history ────────────
+
   const scanResult = {
-    teamName: teamConfig.teamName,
-    scannedAt: scanStartedAt,
-    issuesScanned: 0,
-    violationsFound: 0,
-    fixesApplied: 0,
-    actionsRequired: 0,
-    unassignedCount: 0,
-    failures: [],
+    teamName:        teamConfig.teamName,
+    scannedAt:       scanStartedAt,
+    issuesScanned,
+    violationsFound: totalViolationCount,
+    fixesApplied,
+    actionsRequired,
+    unassignedCount,
+    failures:        scanFailures,
   };
+
+  const priorScan = lastScanResultByTeam.get(teamConfig.teamName) || null;
+  const digest = buildHygieneDigest(scanResult, priorScan);
+
+  await deliverHygieneDigest(digest, teamConfig, configuration);
+
+  // ── Step 7: Cache and return ─────────────────────────────────────────────
 
   lastScanResultByTeam.set(teamConfig.teamName, scanResult);
   globalLastScanAt = scanStartedAt;
+
+  console.log('[HygieneMonitor] Scan complete for "' + teamConfig.teamName + '": '
+    + fixesApplied + ' fixed, ' + actionsRequired + ' actions required, trend=' + digest.trend + '.');
 
   return scanResult;
 }
