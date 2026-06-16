@@ -109,16 +109,16 @@ Web app: Express backend at `src/`, React SPA at `client/src/`. Server tests are
 - [X] T021 [US3] Extract the pure hygiene check functions into dependency-free `src/services/hygieneRules.js` and re-point `client/src/views/Hygiene/checks/hygieneChecks.ts` to the shared source (no behaviour change) (FR-008, research R1)
 - [X] T022 [US3] Implement `parseRovoClassifications(text)` in `src/services/hygieneMonitorScheduler.js` (contract `rovo-classification.md`)
 - [X] T023 [US3] Implement `buildHygieneDigest(scan, priorScan)` pure function in `src/services/hygieneMonitorScheduler.js` (FR-012, SC-009)
-- [ ] T024 [US3] Add `hygieneMonitor` config + bounded `hygieneScanHistory` sections (persist; base64-obfuscate the Teams secret; never log it) in `src/config/loader.js` (research R8, FR-014)
+- [X] T024 [US3] Add `hygieneMonitor` config + bounded `hygieneScanHistory` sections (persist; base64-obfuscate the Teams secret; never log it) in `src/config/loader.js` (research R8, FR-014)
 
 ### Implementation for User Story 3 — scan engine & side effects
 
-- [ ] T025 [US3] Implement the per-team scan: query open issues for `projectKeys` via the Jira proxy, evaluate with `hygieneRules`, batch violations, and dispatch the classification prompt via `requestRovoText` in `src/services/hygieneMonitorScheduler.js` (FR-008, FR-009)
-- [ ] T026 [US3] Apply FIXABLE fixes via the Jira proxy, treating a violation resolved only on a 2xx; on a rejected field update, re-classify as UNFIXABLE for this run, in `src/services/hygieneMonitorScheduler.js` (FR-010, SC-005, edge case)
-- [ ] T027 [US3] Post one Jira comment per UNFIXABLE violation using a per-cycle `(issueKey,checkId)` dedup set; address assignee → reporter → none; attribute to the hygiene monitor, in `src/services/hygieneMonitorScheduler.js` (FR-011, FR-016, SC-006, edge cases)
-- [ ] T028 [US3] Deliver the digest to the team's Teams webhook via `src/services/reportWebhookDelivery.js`; skip silently when unconfigured; append a `hygieneScanHistory` entry, in `src/services/hygieneMonitorScheduler.js` (FR-012, SC-004)
-- [ ] T029 [US3] Add a narrow, config-scoped allow-list exception for the validated Teams webhook host in `src/utils/webhookHostPolicy.js` (research R4)
-- [ ] T030 [US3] Register the daily scheduler (60s tick, schedule-time + weekday guard, already-ran-today flag; "Scan Now" bypasses the daily guard) and wire boot in `src/services/hygieneMonitorScheduler.js` and `server.js` (FR-007, research R5)
+- [X] T025 [US3] Implement the per-team scan: query open issues for `projectKeys` via the Jira proxy, evaluate with `hygieneRules`, batch violations, and dispatch the classification prompt via `requestRovoText` in `src/services/hygieneMonitorScheduler.js` (FR-008, FR-009)
+- [X] T026 [US3] Apply FIXABLE fixes via the Jira proxy, treating a violation resolved only on a 2xx; on a rejected field update, re-classify as UNFIXABLE for this run, in `src/services/hygieneMonitorScheduler.js` (FR-010, SC-005, edge case)
+- [X] T027 [US3] Post one Jira comment per UNFIXABLE violation using a per-cycle `(issueKey,checkId)` dedup set; address assignee → reporter → none; attribute to the hygiene monitor, in `src/services/hygieneMonitorScheduler.js` (FR-011, FR-016, SC-006, edge cases)
+- [X] T028 [US3] Deliver the digest to the team's Teams webhook via `src/services/reportWebhookDelivery.js`; skip silently when unconfigured; append a `hygieneScanHistory` entry, in `src/services/hygieneMonitorScheduler.js` (FR-012, SC-004)
+- [X] T029 [US3] Add a narrow, config-scoped allow-list exception for the validated Teams webhook host in `src/utils/webhookHostPolicy.js` (research R4)
+- [X] T030 [US3] Register the daily scheduler (60s tick, schedule-time + weekday guard, already-ran-today flag; "Scan Now" bypasses the daily guard) and wire boot in `src/services/hygieneMonitorScheduler.js` and `server.js` (FR-007, research R5)
 
 ### Implementation for User Story 3 — API & UI
 

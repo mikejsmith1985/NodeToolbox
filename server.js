@@ -23,11 +23,13 @@ const createNotificationsRouter             = require('./src/routes/notification
 const createStandupBriefingRouter           = require('./src/routes/standupBriefing');
 const createReportDeliveryRouter            = require('./src/routes/reportDelivery');
 const createRovoExchangeRouter              = require('./src/routes/rovoExchange');
+const createHygieneMonitorRouter            = require('./src/routes/hygieneMonitor');
 
 const { startSchedulerLoop }                = require('./src/services/repoMonitor');
 const { startScopeChangeScheduler }         = require('./src/services/scopeChangeScheduler');
 const { startFeatureChangeScheduler }       = require('./src/services/featureChangeScheduler');
 const { startStandupBriefingScheduler }     = require('./src/services/standupBriefingScheduler');
+const { startHygieneMonitorScheduler }      = require('./src/services/hygieneMonitorScheduler');
 const { isPortInUse, resolvePortConflict }  = require('./src/utils/portManager');
 const { installConsoleInterceptor }         = require('./src/utils/logBuffer');
 const { spawnDetachedProcess }              = require('./src/utils/updater');
@@ -141,6 +143,9 @@ app.use(createReportDeliveryRouter(configuration));
 // Rovo prompt exchange: /api/rovo/dispatch + /api/rovo/result — automates the
 // hidden Rovo copy-paste workflow (send prompt out, poll the deterministic result).
 app.use(createRovoExchangeRouter(configuration));
+
+// Hygiene monitor: /api/hygiene-monitor/config, /scan, /status
+app.use(createHygieneMonitorRouter(configuration));
 
 // First-run detection: GET / redirects to /setup when no service is configured.
 // Placed before the static file middleware so misconfigured instances always see
@@ -639,6 +644,7 @@ async function launchServer() {
   startScopeChangeScheduler(configuration);
   startFeatureChangeScheduler(configuration);
   startStandupBriefingScheduler(configuration);
+  startHygieneMonitorScheduler(configuration);
 
   // Open the dashboard automatically when:
   //   --open      : passed explicitly by Launch Toolbox.bat (zip distribution)
