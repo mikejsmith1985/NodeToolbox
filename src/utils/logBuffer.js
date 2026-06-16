@@ -14,6 +14,13 @@ const MAX_ENTRIES = 300;
 /** All captured log entries in insertion order. */
 const logEntries = [];
 
+/**
+ * Monotonic id assigned to each entry. The Dev Panel client tracks the last id
+ * it has seen and only shows entries with a higher id — so entries MUST carry a
+ * numeric id or the client filters them all out and the panel stays empty.
+ */
+let nextEntryId = 0;
+
 /** Maps Node.js console method names to short level labels used by the client. */
 const LEVEL_MAP = {
   log:   'info',
@@ -32,7 +39,8 @@ const LEVEL_MAP = {
  * @param {string} message - The formatted console message text.
  */
 function appendEntry(level, message) {
-  logEntries.push({ level, message, timestamp: new Date().toISOString() });
+  logEntries.push({ id: nextEntryId, level, message, timestamp: new Date().toISOString() });
+  nextEntryId += 1;
   if (logEntries.length > MAX_ENTRIES) {
     logEntries.shift();
   }
