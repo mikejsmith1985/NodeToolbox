@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Rovo result lookup now logs its query**: The Rovo exchange's result poll logs the exact Confluence space + page title it searches for and how many pages matched (`[Rovo] result lookup: space=… title=… → N match(es)`), and logs the error if the Confluence request fails. Surfaces space/title mismatches in Dev Panel → Server Logs when a "Run via Rovo (auto)" times out.
+
 ### Fixed
 - **Webhook host allow-list now accepts all Atlassian hosts**: The outbound webhook allow-list (used by report delivery and the Rovo exchange) only permitted `automation.atlassian.com` and `*.atlassian.net`, so a real Atlassian Automation webhook on `api-private.atlassian.com` was rejected with "Destination host is not an allowed Atlassian host; nothing was sent." The allow-list now permits any `*.atlassian.com` or `*.atlassian.net` host (still exact dot-suffix matched, so look-alikes like `evil-atlassian.com.attacker.com` remain rejected).
 - **Scope Change scheduler — Sprint Changes section removed**: The Scope Change report now only surfaces PI-level Fix Version changes on Feature-type issues. The Sprint Changes section (and its supporting `fetchSprintChangeCandidates` query) has been removed entirely, so the ART rollup no longer writes "Team Summary / Release Changes / Sprint Changes" to the same Confluence page as the Feature Change report. The fix version JQL now also filters to `issuetype = Feature` so Story-level changes cannot appear.
