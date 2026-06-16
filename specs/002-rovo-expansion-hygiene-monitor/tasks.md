@@ -123,9 +123,9 @@ Web app: Express backend at `src/`, React SPA at `client/src/`. Server tests are
 ### Implementation for User Story 3 — API & UI
 
 - [X] T031 [US3] Implement GET/POST `/api/hygiene-monitor/config`, POST `/api/hygiene-monitor/scan`, GET `/api/hygiene-monitor/status` in `src/routes/hygieneMonitor.js` and mount in `server.js` (contract, FR-013/FR-014)
-- [ ] T032 [P] [US3] Build the Admin Hub config panel (per-team project keys, schedule time, weekdays, Teams webhook, field mappings, enabled checks) with tests in `client/src/views/AdminHub/HygieneMonitorPanel.tsx` (+ `.test.tsx`) (FR-014)
-- [ ] T033 [P] [US3] Build the gated Hygiene Monitor panel (last/next scan, per-team violation count + trend, "Scan Now") with tests in `client/src/views/Hygiene/components/HygieneMonitorPanel.tsx` (+ `.test.tsx`) and mount it in `client/src/views/Hygiene/HygieneView.tsx` (FR-013, SC-009)
-- [ ] T034 [US3] Gate both new panels behind the shared `rovoStore` unlock so they hide on re-lock without reload in `HygieneView.tsx` and the Admin Hub view (FR-015, SC-007)
+- [X] T032 [P] [US3] Build the Admin Hub config panel (per-team project keys, schedule time, weekdays, Teams webhook, field mappings, enabled checks) with tests in `client/src/views/AdminHub/HygieneMonitorPanel.tsx` (+ `.test.tsx`) (FR-014)
+- [X] T033 [P] [US3] Build the gated Hygiene Monitor panel (last/next scan, per-team violation count + trend, "Scan Now") with tests in `client/src/views/Hygiene/components/HygieneMonitorPanel.tsx` (+ `.test.tsx`) and mount it in `client/src/views/Hygiene/HygieneView.tsx` (FR-013, SC-009)
+- [X] T034 [US3] Gate both new panels behind the shared `rovoStore` unlock so they hide on re-lock without reload in `HygieneView.tsx` and the Admin Hub view (FR-015, SC-007)
 
 **Checkpoint**: All three user stories function independently; the hygiene monitor runs daily and on demand.
 
@@ -133,7 +133,7 @@ Web app: Express backend at `src/`, React SPA at `client/src/`. Server tests are
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T035 [P] Update `CHANGELOG.md` with the user-visible additions (Article VI)
+- [X] T035 [P] Update `CHANGELOG.md` with the user-visible additions (Article VI)
 - [ ] T036 Run the full quickstart.md validation V1–V9 and record evidence (Article X)
 - [ ] T037 Run full suites (`npx jest`; `cd client && npx vitest run`) and `npm run build:client`; fix any regressions
 - [ ] T038 Verify SC-007 (gate locked → zero Rovo affordances reachable) and SC-008 (Rovo forced offline → 100% of briefings/reports still publish)

@@ -16,6 +16,7 @@ import { useConnectionStore } from '../../store/connectionStore'
 import { setRovoUnlocked } from '../../store/rovoStore.ts'
 import { useRovoAssist } from '../SnowHub/hooks/useRovoAssist.ts'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
+import { HygieneMonitorPanel } from './HygieneMonitorPanel.tsx'
 import { RepoMonitorPanel } from './RepoMonitorPanel.tsx'
 import { RovoAutomationPanel } from './RovoAutomationPanel.tsx'
 import { StandupBriefingPanel } from './StandupBriefingPanel.tsx'
@@ -48,7 +49,7 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'dev-panel' | 'rovo'
+type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'dev-panel' | 'rovo' | 'hygiene-monitor'
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
@@ -60,6 +61,8 @@ const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
 
 // Hidden "⚡ Rovo" tab, appended only while the Rovo capability is unlocked.
 const ROVO_ADMIN_TAB: { key: AdminHubTab; label: string } = { key: 'rovo', label: '⚡ Rovo' }
+// Hidden "🧹 Hygiene Monitor" tab, appended alongside Rovo when unlocked.
+const HYGIENE_MONITOR_ADMIN_TAB: { key: AdminHubTab; label: string } = { key: 'hygiene-monitor', label: '🧹 Hygiene Monitor' }
 const HIDDEN_ROVO_SHORTCUT_KEY = 'z'
 
 type ReportsConfigSubTab = 'scope-change' | 'feature-change'
@@ -2680,9 +2683,10 @@ export default function AdminHubView() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isRovoUnlocked])
 
-  // If the capability locks while the Rovo tab is active, fall back to Config.
+  // If the capability locks while a Rovo-gated tab is active, fall back to Config.
   useEffect(() => {
-    if (!isRovoUnlocked && activeAdminTab === 'rovo') {
+    const isRovoGatedTab = activeAdminTab === 'rovo' || activeAdminTab === 'hygiene-monitor'
+    if (!isRovoUnlocked && isRovoGatedTab) {
       setActiveAdminTab('main')
     }
   }, [isRovoUnlocked, activeAdminTab])
@@ -2700,8 +2704,10 @@ export default function AdminHubView() {
     setRovoPassphraseError('Incorrect passphrase')
   }, [rovoPassphraseInput, verifyPassphrase])
 
-  // The ⚡ Rovo tab is only offered while unlocked.
-  const adminHubTabs = isRovoUnlocked ? [...ADMIN_HUB_TAB_OPTIONS, ROVO_ADMIN_TAB] : ADMIN_HUB_TAB_OPTIONS
+  // The ⚡ Rovo and 🧹 Hygiene Monitor tabs are only offered while unlocked.
+  const adminHubTabs = isRovoUnlocked
+    ? [...ADMIN_HUB_TAB_OPTIONS, ROVO_ADMIN_TAB, HYGIENE_MONITOR_ADMIN_TAB]
+    : ADMIN_HUB_TAB_OPTIONS
 
   useEffect(() => {
     const scrollContainer = adminHubRootRef.current?.closest('main')
@@ -2844,6 +2850,12 @@ export default function AdminHubView() {
       {activeAdminTab === 'rovo' && isRovoUnlocked && (
         <section id="admin-hub-rovo-panel" role="tabpanel" aria-labelledby="admin-hub-rovo-tab">
           <RovoAutomationPanel />
+        </section>
+      )}
+
+      {activeAdminTab === 'hygiene-monitor' && isRovoUnlocked && (
+        <section id="admin-hub-hygiene-monitor-panel" role="tabpanel" aria-labelledby="admin-hub-hygiene-monitor-tab">
+          <HygieneMonitorPanel />
         </section>
       )}
     </ViewFrame>
