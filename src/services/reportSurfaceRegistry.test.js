@@ -5,9 +5,9 @@
 const { getSurface, listSurfaces, SURFACE_IDS } = require('./reportSurfaceRegistry');
 
 describe('reportSurfaceRegistry', () => {
-  test('exposes exactly the three report surfaces', () => {
-    expect(SURFACE_IDS.sort()).toEqual(['feature-change', 'scope-change', 'standup-briefing']);
-    expect(listSurfaces()).toHaveLength(3);
+  test('exposes exactly the four report surfaces', () => {
+    expect(SURFACE_IDS.sort()).toEqual(['feature-change', 'hygiene-digest', 'scope-change', 'standup-briefing']);
+    expect(listSurfaces()).toHaveLength(4);
   });
 
   test('getSurface returns null for an unknown id', () => {
@@ -71,6 +71,44 @@ describe('reportSurfaceRegistry', () => {
     test('returns null when the matched team has no triggerUrl', () => {
       const noUrl = { scheduler: { scopeChange: { teamReports: [{ teamName: 'Beta', projectKey: 'BETA', triggerUrl: '' }] } } };
       expect(getSurface('scope-change').resolveDestination(noUrl, 'BETA')).toBeNull();
+    });
+  });
+
+  describe('hygiene-digest resolver', () => {
+    const configuration = {
+      hygieneMonitor: {
+        teams: [
+          {
+            teamName: 'Platform',
+            projectKeys: ['PLAT'],
+            teamsWebhookUrl: 'https://contoso.webhook.office.com/webhookb2/abc',
+            teamsWebhookSecret: 'teams-secret',
+          },
+        ],
+      },
+    };
+
+    test('resolves by team name', () => {
+      const destination = getSurface('hygiene-digest').resolveDestination(configuration, 'Platform');
+      expect(destination).toMatchObject({
+        triggerUrl:    'https://contoso.webhook.office.com/webhookb2/abc',
+        triggerSecret: 'teams-secret',
+        teamName:      'Platform',
+      });
+    });
+
+    test('resolution is case-insensitive on team name', () => {
+      const destination = getSurface('hygiene-digest').resolveDestination(configuration, 'platform');
+      expect(destination).not.toBeNull();
+    });
+
+    test('returns null when the team has no Teams webhook URL', () => {
+      const noWebhook = { hygieneMonitor: { teams: [{ teamName: 'Platform', teamsWebhookUrl: '' }] } };
+      expect(getSurface('hygiene-digest').resolveDestination(noWebhook, 'Platform')).toBeNull();
+    });
+
+    test('returns null when the team name does not match', () => {
+      expect(getSurface('hygiene-digest').resolveDestination(configuration, 'Unknown')).toBeNull();
     });
   });
 });
