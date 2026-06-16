@@ -195,6 +195,10 @@ async function fetchResult(configuration, correlationId, deps = {}) {
       const markersOnPage = listCorrelationMarkers(pageText);
       console.log(`  [Rovo] result lookup [page ${rovo.parkingPageId}] want=${correlationId} page-has=[${markersOnPage.join(', ') || 'none'}] match=${freshResponse !== null}`);
       if (freshResponse === null) {
+        // No marker matched. Dump the raw + stripped lengths and a snippet so we can
+        // see whether the page is empty over the API, holds unexpected markup, or the
+        // marker text simply isn't there — without guessing from the rendered page.
+        console.log(`  [Rovo] page ${rovo.parkingPageId} read: raw=${rawBody.length}B stripped=${pageText.length}B snippet=${JSON.stringify(pageText.slice(0, 300))}`);
         return { ok: true, httpStatus: 200, ready: false };
       }
       return { ok: true, httpStatus: 200, ready: true, response: freshResponse };
