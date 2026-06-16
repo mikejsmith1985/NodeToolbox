@@ -99,16 +99,16 @@ Web app: Express backend at `src/`, React SPA at `client/src/`. Server tests are
 
 ### Tests for User Story 3 ⚠️ (write first, must fail)
 
-- [ ] T017 [P] [US3] Failing unit tests asserting `src/services/hygieneRules.js` flags the same violations as the client checks for representative issues in `src/services/hygieneRules.test.js` (FR-008, research R1)
-- [ ] T018 [P] [US3] Failing unit tests for `parseRovoClassifications(text)` (FIXABLE/UNFIXABLE, VALUE/GUIDANCE, malformed→skip) per `contracts/rovo-classification.md` in `src/services/hygieneMonitorScheduler.test.js`
-- [ ] T019 [P] [US3] Failing unit tests for `buildHygieneDigest(scan, priorScan)` (counts, `trend` up/down/flat/n‑a, `unassignedCount`, `failures`) in `src/services/hygieneMonitorScheduler.test.js` (FR-012, SC-009)
-- [ ] T020 [P] [US3] Failing route tests for GET/POST `/api/hygiene-monitor/config`, POST `/scan`, GET `/status` (secret never echoed, validation) in `src/routes/hygieneMonitor.test.js` (contract)
+- [X] T017 [P] [US3] Failing unit tests asserting `src/services/hygieneRules.js` flags the same violations as the client checks for representative issues in `src/services/hygieneRules.test.js` (FR-008, research R1)
+- [X] T018 [P] [US3] Failing unit tests for `parseRovoClassifications(text)` (FIXABLE/UNFIXABLE, VALUE/GUIDANCE, malformed→skip) per `contracts/rovo-classification.md` in `src/services/hygieneMonitorScheduler.test.js`
+- [X] T019 [P] [US3] Failing unit tests for `buildHygieneDigest(scan, priorScan)` (counts, `trend` up/down/flat/n‑a, `unassignedCount`, `failures`) in `src/services/hygieneMonitorScheduler.test.js` (FR-012, SC-009)
+- [X] T020 [P] [US3] Failing route tests for GET/POST `/api/hygiene-monitor/config`, POST `/scan`, GET `/status` (secret never echoed, validation) in `src/routes/hygieneMonitor.test.js` (contract)
 
 ### Implementation for User Story 3 — shared rules & pure helpers
 
-- [ ] T021 [US3] Extract the pure hygiene check functions into dependency-free `src/services/hygieneRules.js` and re-point `client/src/views/Hygiene/checks/hygieneChecks.ts` to the shared source (no behaviour change) (FR-008, research R1)
-- [ ] T022 [US3] Implement `parseRovoClassifications(text)` in `src/services/hygieneMonitorScheduler.js` (contract `rovo-classification.md`)
-- [ ] T023 [US3] Implement `buildHygieneDigest(scan, priorScan)` pure function in `src/services/hygieneMonitorScheduler.js` (FR-012, SC-009)
+- [X] T021 [US3] Extract the pure hygiene check functions into dependency-free `src/services/hygieneRules.js` and re-point `client/src/views/Hygiene/checks/hygieneChecks.ts` to the shared source (no behaviour change) (FR-008, research R1)
+- [X] T022 [US3] Implement `parseRovoClassifications(text)` in `src/services/hygieneMonitorScheduler.js` (contract `rovo-classification.md`)
+- [X] T023 [US3] Implement `buildHygieneDigest(scan, priorScan)` pure function in `src/services/hygieneMonitorScheduler.js` (FR-012, SC-009)
 - [ ] T024 [US3] Add `hygieneMonitor` config + bounded `hygieneScanHistory` sections (persist; base64-obfuscate the Teams secret; never log it) in `src/config/loader.js` (research R8, FR-014)
 
 ### Implementation for User Story 3 — scan engine & side effects
@@ -122,7 +122,7 @@ Web app: Express backend at `src/`, React SPA at `client/src/`. Server tests are
 
 ### Implementation for User Story 3 — API & UI
 
-- [ ] T031 [US3] Implement GET/POST `/api/hygiene-monitor/config`, POST `/api/hygiene-monitor/scan`, GET `/api/hygiene-monitor/status` in `src/routes/hygieneMonitor.js` and mount in `server.js` (contract, FR-013/FR-014)
+- [X] T031 [US3] Implement GET/POST `/api/hygiene-monitor/config`, POST `/api/hygiene-monitor/scan`, GET `/api/hygiene-monitor/status` in `src/routes/hygieneMonitor.js` and mount in `server.js` (contract, FR-013/FR-014)
 - [ ] T032 [P] [US3] Build the Admin Hub config panel (per-team project keys, schedule time, weekdays, Teams webhook, field mappings, enabled checks) with tests in `client/src/views/AdminHub/HygieneMonitorPanel.tsx` (+ `.test.tsx`) (FR-014)
 - [ ] T033 [P] [US3] Build the gated Hygiene Monitor panel (last/next scan, per-team violation count + trend, "Scan Now") with tests in `client/src/views/Hygiene/components/HygieneMonitorPanel.tsx` (+ `.test.tsx`) and mount it in `client/src/views/Hygiene/HygieneView.tsx` (FR-013, SC-009)
 - [ ] T034 [US3] Gate both new panels behind the shared `rovoStore` unlock so they hide on re-lock without reload in `HygieneView.tsx` and the Admin Hub view (FR-015, SC-007)
