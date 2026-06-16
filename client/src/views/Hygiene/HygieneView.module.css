@@ -499,6 +499,12 @@
   font-size: var(--font-size-sm);
 }
 
+.monitorTrend {
+  color: var(--color-text-secondary, #94a3b8);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+
 .monitorScanButton {
   padding: var(--spacing-xs) var(--spacing-sm);
   border: 1px solid var(--color-accent, #6366f1);

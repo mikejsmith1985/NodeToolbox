@@ -150,6 +150,7 @@ function getLastScanStatus() {
     teamName: scanResult.teamName,
     violationsFound: scanResult.violationsFound,
     scannedAt: scanResult.scannedAt,
+    trend: scanResult.trend || 'n/a',
   }));
 
   return {
@@ -522,13 +523,16 @@ async function runHygieneScan(teamConfig, configuration) {
 
   // ── Step 7: Cache and return ─────────────────────────────────────────────
 
-  lastScanResultByTeam.set(teamConfig.teamName, scanResult);
+  // Cache the result WITH the computed trend so the status endpoint and panel can
+  // show a per-team trend (↓ improving / ↑ worsening) without recomputing (SC-009).
+  const cachedResult = { ...scanResult, trend: digest.trend };
+  lastScanResultByTeam.set(teamConfig.teamName, cachedResult);
   globalLastScanAt = scanStartedAt;
 
   console.log('[HygieneMonitor] Scan complete for "' + teamConfig.teamName + '": '
     + fixesApplied + ' fixed, ' + actionsRequired + ' actions required, trend=' + digest.trend + '.');
 
-  return scanResult;
+  return cachedResult;
 }
 
 // ── Daily scheduler ───────────────────────────────────────────────────────────

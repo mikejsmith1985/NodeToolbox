@@ -13,6 +13,7 @@ interface TeamStatus {
   teamName:        string
   violationsFound: number
   scannedAt:       string | null
+  trend?:          string
 }
 
 interface HygieneMonitorStatus {
@@ -29,10 +30,16 @@ interface ScanResult {
   actionsRequired: number
 }
 
-// NOTE (SC-009, deferred): a per-team trend indicator (↓ improving / ↑ worsening)
-// is not yet shown — the /api/hygiene-monitor/status teamStatuses do not include a
-// `trend` field. Completing SC-009 requires returning trend from getLastScanStatus
-// and rendering it here; tracked as an open US3 item, separate from email delivery.
+// ── Trend indicator (SC-009) ────────────────────────────────────────────────────
+
+// Maps a trend string from the status endpoint to a human-readable indicator shown
+// beside a team's violation count. 'n/a' (or absent) means fewer than two scans.
+const TREND_INDICATORS: Record<string, string> = {
+  down:  '↓ improving',
+  up:    '↑ worsening',
+  flat:  '→ unchanged',
+  'n/a': '',
+}
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 
@@ -149,6 +156,7 @@ export function HygieneMonitorPanel() {
               const freshResult = lastScanResults[teamStatus.teamName]
               const violationCount = freshResult?.violationsFound ?? teamStatus.violationsFound
               const isScanRunning = scanningTeam === teamStatus.teamName
+              const trendLabel = TREND_INDICATORS[teamStatus.trend ?? 'n/a'] ?? ''
 
               return (
                 <li key={teamStatus.teamName} className={styles.monitorTeamRow}>
@@ -157,6 +165,9 @@ export function HygieneMonitorPanel() {
                     <span className={styles.monitorViolationCount}>
                       {violationCount} violation{violationCount !== 1 ? 's' : ''}
                     </span>
+                    {trendLabel && (
+                      <span className={styles.monitorTrend}>{trendLabel}</span>
+                    )}
                     {freshResult && (
                       <span className={styles.monitorFixCount}>
                         {freshResult.fixesApplied} fixed, {freshResult.actionsRequired} action{freshResult.actionsRequired !== 1 ? 's' : ''} required
