@@ -11,6 +11,7 @@
 'use strict';
 
 const { makeJiraApiRequest, makeConfluenceApiRequest, triggerWebhook } = require('../utils/httpClient');
+const { requestRovoText, isRovoEnabled } = require('./rovoEnrichment');
 
 // ── Constants ──
 
@@ -206,7 +207,7 @@ function checkAndFireScheduledReports(configuration) {
 
     markFiredToday(configKey);
     console.log('  🎯 Feature Change: firing report for label "' + (report.jiraLabel || report.projectKey) + '" (' + report.teamName + ')');
-    runFeatureReportDelivery(report, jiraConfig, confluenceConfig, sslVerify).catch((deliveryError) => {
+    runFeatureReportDelivery(report, jiraConfig, confluenceConfig, sslVerify, configuration).catch((deliveryError) => {
       console.error('  ⚠ Feature Change report error (' + (report.jiraLabel || report.projectKey) + '):', deliveryError.message);
     });
   }
@@ -387,6 +388,62 @@ function escapeXml(text) {
     .replace(/</g,  '&lt;')
     .replace(/>/g,  '&gt;')
     .replace(/"/g,  '&quot;');
+}
+
+/**
+ * Summarises change entries into compact prompt lines (issue, summary, from → to).
+ * @param {Array} entries
+ * @returns {string}
+ */
+function summariseChangeEntries(entries) {
+  return (entries || [])
+    .map((entry) => `- ${entry.issueKey} ${entry.issueSummary}: ${entry.fromValue} → ${entry.toValue}`)
+    .join('\n');
+}
+
+/**
+ * Builds the prompt asking Rovo for a one-paragraph trend commentary on the
+ * feature changes, identifying the release/area most at risk.
+ *
+ * @param {Array} fixVersionEntries
+ * @param {Array} statusEntries
+ * @param {Array} scheduleEntries
+ * @param {string} label
+ * @returns {string}
+ */
+function buildFeatureRovoPrompt(fixVersionEntries, statusEntries, scheduleEntries, label) {
+  return [
+    `You are a release train assistant. Below are the feature changes detected for "${label}" since the last business day.`,
+    'Write ONE short paragraph (2-3 sentences, plain prose, no preamble or heading) identifying the release or area',
+    'most at risk and why.',
+    '',
+    'Fix version changes:',
+    summariseChangeEntries(fixVersionEntries) || '(none)',
+    '',
+    'Status changes:',
+    summariseChangeEntries(statusEntries) || '(none)',
+    '',
+    'Schedule changes:',
+    summariseChangeEntries(scheduleEntries) || '(none)',
+  ].join('\n');
+}
+
+/**
+ * Wraps Rovo's trend commentary in a Confluence "info" panel for prepending above
+ * the change tables. Text is XML-escaped; blank-line groups become paragraphs.
+ *
+ * @param {string} commentaryText - Plain-text commentary returned by Rovo.
+ * @returns {string} Confluence storage-format markup.
+ */
+function buildRovoTrendPanel(commentaryText) {
+  const paragraphs = String(commentaryText)
+    .trim()
+    .split(/\n{2,}/)
+    .map((paragraph) => '<p>' + escapeXml(paragraph).replace(/\n/g, '<br/>') + '</p>')
+    .join('');
+  return '<ac:structured-macro ac:name="info"><ac:rich-text-body>'
+    + '<p><strong>🤖 Rovo trend</strong></p>' + paragraphs
+    + '</ac:rich-text-body></ac:structured-macro>';
 }
 
 /**
@@ -630,7 +687,7 @@ async function createConfluenceBlogPost(spaceKey, title, bodyHtml, confluenceCon
  * @param {boolean} sslVerify
  * @returns {Promise<{ skipped: boolean, message: string, postUrl?: string }>}
  */
-async function runFeatureReportDelivery(report, jiraConfig, confluenceConfig, sslVerify) {
+async function runFeatureReportDelivery(report, jiraConfig, confluenceConfig, sslVerify, configuration) {
   const { teamName, projectKey, jiraLabel, confluenceSpaceKey, targetBlogUrl, triggerUrl, triggerSecret } = report;
 
   // jiraLabel is required for the label-based query; skip with a clear log if missing.
@@ -672,7 +729,21 @@ async function runFeatureReportDelivery(report, jiraConfig, confluenceConfig, ss
   const postTitle    = targetPageId
     ? 'Feature Change Report — ' + teamLabel
     : 'Feature Change Report — ' + teamLabel + ' — ' + dateLabel;
-  const bodyHtml  = buildFeatureChangeBlogBody(fixVersionEntries, statusEntries, scheduleEntries, effectiveLabel, generatedAt, sinceLabel);
+  let bodyHtml  = buildFeatureChangeBlogBody(fixVersionEntries, statusEntries, scheduleEntries, effectiveLabel, generatedAt, sinceLabel);
+
+  // Optional, non-blocking Rovo enrichment: prepend a trend paragraph above the
+  // change tables. Skipped silently when Rovo is disabled/unavailable so the report
+  // always publishes (FR-002, SC-002, SC-008).
+  if (isRovoEnabled(configuration)) {
+    const rovoCommentary = await requestRovoText(
+      configuration,
+      buildFeatureRovoPrompt(fixVersionEntries, statusEntries, scheduleEntries, effectiveLabel),
+      { label: 'feature-change' },
+    );
+    if (rovoCommentary) {
+      bodyHtml = buildRovoTrendPanel(rovoCommentary) + bodyHtml;
+    }
+  }
   console.log(
     '  🔗 Feature Change [' + effectiveLabel + ']: targetBlogUrl = ' +
     (targetBlogUrl || '(not set)') + ' → pageId = ' + (targetPageId || 'none')
@@ -911,7 +982,7 @@ async function runFeatureReportNow(configuration, reportIndex) {
   const confluenceConfig = configuration.confluence;
   const sslVerify        = configuration.sslVerify !== false;
 
-  return runFeatureReportDelivery(report, jiraConfig, confluenceConfig, sslVerify);
+  return runFeatureReportDelivery(report, jiraConfig, confluenceConfig, sslVerify, configuration);
 }
 
 /**
@@ -944,4 +1015,6 @@ module.exports = {
   extractFeatureChangeEntries,
   escapeXml,
   extractPageIdFromUrl,
+  buildFeatureRovoPrompt,
+  buildRovoTrendPanel,
 };

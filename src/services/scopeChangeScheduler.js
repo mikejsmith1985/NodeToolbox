@@ -11,6 +11,7 @@
 'use strict';
 
 const { makeJiraApiRequest, makeConfluenceApiRequest, triggerWebhook } = require('../utils/httpClient');
+const { requestRovoText, isRovoEnabled } = require('./rovoEnrichment');
 
 // ── Constants ──
 
@@ -168,7 +169,7 @@ function checkAndFireScheduledReports(configuration) {
 
     markFiredToday(configKey);
     console.log('  📤 Scope Change: firing team report for ' + teamReport.projectKey + ' (' + teamReport.teamName + ')');
-    runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, sslVerify).catch((deliveryError) => {
+    runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, sslVerify, configuration).catch((deliveryError) => {
       console.error('  ⚠ Scope Change team report error (' + teamReport.projectKey + '):', deliveryError.message);
     });
   }
@@ -254,6 +255,45 @@ function escapeXml(text) {
     .replace(/</g,  '&lt;')
     .replace(/>/g,  '&gt;')
     .replace(/"/g,  '&quot;');
+}
+
+/**
+ * Builds the prompt asking Rovo for a one-paragraph trend commentary on the
+ * release (fix version) changes, identifying the release most at risk.
+ *
+ * @param {Array} releaseEntries - Change entries (issueKey, issueSummary, fromValue, toValue).
+ * @param {string} projectKey
+ * @returns {string}
+ */
+function buildScopeRovoPrompt(releaseEntries, projectKey) {
+  const lines = (releaseEntries || [])
+    .map((entry) => `- ${entry.issueKey} ${entry.issueSummary}: ${entry.fromValue} → ${entry.toValue}`)
+    .join('\n');
+  return [
+    `You are a release train assistant. Below are the fix-version (release scope) changes for "${projectKey}" since the last business day.`,
+    'Write ONE short paragraph (2-3 sentences, plain prose, no preamble or heading) identifying the release',
+    'most at risk from these scope movements and why.',
+    '',
+    lines || '(none)',
+  ].join('\n');
+}
+
+/**
+ * Wraps Rovo's trend commentary in a Confluence "info" panel for prepending above
+ * the change table. Text is XML-escaped; blank-line groups become paragraphs.
+ *
+ * @param {string} commentaryText - Plain-text commentary returned by Rovo.
+ * @returns {string} Confluence storage-format markup.
+ */
+function buildRovoTrendPanel(commentaryText) {
+  const paragraphs = String(commentaryText)
+    .trim()
+    .split(/\n{2,}/)
+    .map((paragraph) => '<p>' + escapeXml(paragraph).replace(/\n/g, '<br/>') + '</p>')
+    .join('');
+  return '<ac:structured-macro ac:name="info"><ac:rich-text-body>'
+    + '<p><strong>🤖 Rovo trend</strong></p>' + paragraphs
+    + '</ac:rich-text-body></ac:structured-macro>';
 }
 
 /**
@@ -521,7 +561,7 @@ async function createConfluenceBlogPost(spaceKey, title, bodyHtml, confluenceCon
  * @param {boolean} sslVerify
  * @returns {Promise<{ skipped: boolean, message: string, postUrl?: string }>}
  */
-async function runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, sslVerify) {
+async function runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, sslVerify, configuration) {
   const { teamName, projectKey, confluenceSpaceKey, targetBlogUrl, triggerUrl, triggerSecret } = teamReport;
 
   // Use the previous business day as the cutoff so Monday's run catches Friday's work.
@@ -555,7 +595,21 @@ async function runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, s
   const postTitle    = targetPageId
     ? 'Scope Change Report — ' + teamLabel
     : 'Scope Change Report — ' + teamLabel + ' — ' + dateLabel;
-  const bodyHtml     = buildConfluenceBlogBody(releaseEntries, projectKey, generatedAt, sinceLabel);
+  let bodyHtml     = buildConfluenceBlogBody(releaseEntries, projectKey, generatedAt, sinceLabel);
+
+  // Optional, non-blocking Rovo enrichment: prepend a trend paragraph above the
+  // change table. Skipped silently when Rovo is disabled/unavailable so the report
+  // always publishes (FR-002, SC-002, SC-008).
+  if (isRovoEnabled(configuration)) {
+    const rovoCommentary = await requestRovoText(
+      configuration,
+      buildScopeRovoPrompt(releaseEntries, projectKey),
+      { label: 'scope-change' },
+    );
+    if (rovoCommentary) {
+      bodyHtml = buildRovoTrendPanel(rovoCommentary) + bodyHtml;
+    }
+  }
   console.log('  🔗 Scope Change [' + projectKey + ']: targetBlogUrl = ' + (targetBlogUrl || '(not set)') + ' → pageId = ' + (targetPageId || 'none'));
   let postUrl;
   if (targetPageId) {
@@ -702,7 +756,7 @@ async function runTeamReportNow(configuration, teamIndex) {
   const confluenceConfig = configuration.confluence;
   const sslVerify        = configuration.sslVerify !== false;
 
-  return runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, sslVerify);
+  return runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, sslVerify, configuration);
 }
 
 /**
@@ -734,4 +788,6 @@ module.exports = {
   escapeXml,
   renderChangeTable,
   extractPageIdFromUrl,
+  buildScopeRovoPrompt,
+  buildRovoTrendPanel,
 };

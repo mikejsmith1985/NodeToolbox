@@ -11,7 +11,34 @@ const {
   extractFeatureChangeEntries,
   escapeXml,
   extractPageIdFromUrl,
+  buildFeatureRovoPrompt,
+  buildRovoTrendPanel,
 } = require('./featureChangeScheduler');
+
+describe('buildFeatureRovoPrompt (US1)', () => {
+  it('includes the label and all three change categories', () => {
+    const prompt = buildFeatureRovoPrompt(
+      [{ issueKey: 'F-1', issueSummary: 'Payments', fromValue: '2.0', toValue: '2.1' }],
+      [{ issueKey: 'F-2', issueSummary: 'Search', fromValue: 'In Progress', toValue: 'Done' }],
+      [],
+      'PI-2026.2',
+    );
+    expect(prompt).toContain('PI-2026.2');
+    expect(prompt).toContain('F-1 Payments: 2.0 → 2.1');
+    expect(prompt).toContain('F-2 Search: In Progress → Done');
+    expect(prompt).toContain('Schedule changes:');
+    expect(prompt).toContain('(none)'); // empty schedule list
+  });
+});
+
+describe('buildRovoTrendPanel (US1)', () => {
+  it('wraps text in an info macro and escapes XML', () => {
+    const html = buildRovoTrendPanel('PI-2026.2 slipping & risky');
+    expect(html).toContain('<ac:structured-macro ac:name="info">');
+    expect(html).toContain('🤖 Rovo trend');
+    expect(html).toContain('slipping &amp; risky');
+  });
+});
 
 describe('time helpers', () => {
   it('getCurrentTimeHHMM returns HH:MM', () => {
