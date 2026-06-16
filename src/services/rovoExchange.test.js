@@ -153,6 +153,19 @@ describe('fetchResult — static parking page (by id)', () => {
     const confluence = () => Promise.reject(new Error('404 not found'));
     expect(await fetchResult(pageConfig(), 'abc', { makeConfluenceApiRequest: confluence })).toMatchObject({ ok: false, httpStatus: 502, code: 'fetch-failed' });
   });
+
+  it('falls back to the rendered view body when storage is empty (modern ADF editor)', async () => {
+    // Confluence returns an empty body.storage for new-editor pages; the text is in body.view.
+    const confluence = () => Promise.resolve({
+      body: {
+        storage: { value: '' },
+        view: { value: '<p>correlationId:&nbsp;<code>abc</code></p><p>SHORT_DESCRIPTION: Restore prod data</p>' },
+      },
+    });
+    const result = await fetchResult(pageConfig(), 'abc', { makeConfluenceApiRequest: confluence });
+    expect(result).toMatchObject({ ok: true, ready: true });
+    expect(result.response).toBe('SHORT_DESCRIPTION: Restore prod data');
+  });
 });
 
 describe('extractStaticResult', () => {

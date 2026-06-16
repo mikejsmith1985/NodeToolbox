@@ -76,8 +76,9 @@ async function dispatchPrompt(configuration, request, deps = {}) {
 function stripStorageHtml(storageHtml) {
   return String(storageHtml)
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/(p|div|h[1-6]|li)>/gi, '\n') // block tags end a line in the rendered view too
     .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ') // rendered view uses non-breaking spaces between label and value
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
@@ -186,19 +187,25 @@ async function fetchResult(configuration, correlationId, deps = {}) {
   // the correlationId into the body so we only accept the result for THIS request.
   if (rovo.parkingPageId) {
     try {
-      const page = await confluenceRequest('GET', `/wiki/rest/api/content/${encodeURIComponent(rovo.parkingPageId)}?expand=body.storage`, null, confluenceConfig, shouldVerify);
-      const rawBody = (((page || {}).body || {}).storage || {}).value || '';
-      const pageText = stripStorageHtml(rawBody);
+      // Request BOTH the legacy storage body and the rendered view body. Pages
+      // authored in Confluence's modern (ADF) editor often return an EMPTY
+      // body.storage while their text is only present in body.view, so we fall
+      // back to the rendered body when storage comes back blank.
+      const page = await confluenceRequest('GET', `/wiki/rest/api/content/${encodeURIComponent(rovo.parkingPageId)}?expand=body.storage,body.view`, null, confluenceConfig, shouldVerify);
+      const storageBody = (((page || {}).body || {}).storage || {}).value || '';
+      const viewBody = (((page || {}).body || {}).view || {}).value || '';
+      const usedView = storageBody.trim() === '' && viewBody.trim() !== '';
+      const pageText = stripStorageHtml(usedView ? viewBody : storageBody);
       const freshResponse = extractStaticResult(pageText, correlationId);
       // Log what we want vs what the page holds: no markers found ⇒ wrong page id
       // or the rule writes elsewhere; a different id ⇒ a stale/previous result.
       const markersOnPage = listCorrelationMarkers(pageText);
-      console.log(`  [Rovo] result lookup [page ${rovo.parkingPageId}] want=${correlationId} page-has=[${markersOnPage.join(', ') || 'none'}] match=${freshResponse !== null}`);
+      console.log(`  [Rovo] result lookup [page ${rovo.parkingPageId}] want=${correlationId} page-has=[${markersOnPage.join(', ') || 'none'}] source=${usedView ? 'view' : 'storage'} match=${freshResponse !== null}`);
       if (freshResponse === null) {
-        // No marker matched. Dump the raw + stripped lengths and a snippet so we can
-        // see whether the page is empty over the API, holds unexpected markup, or the
-        // marker text simply isn't there — without guessing from the rendered page.
-        console.log(`  [Rovo] page ${rovo.parkingPageId} read: raw=${rawBody.length}B stripped=${pageText.length}B snippet=${JSON.stringify(pageText.slice(0, 300))}`);
+        // No marker matched. Dump the storage/view lengths and a snippet so we can
+        // see whether the page is empty in BOTH representations (an unpublished
+        // draft) or just in storage (handled by the view fallback above).
+        console.log(`  [Rovo] page ${rovo.parkingPageId} read: storage=${storageBody.length}B view=${viewBody.length}B stripped=${pageText.length}B snippet=${JSON.stringify(pageText.slice(0, 300))}`);
         return { ok: true, httpStatus: 200, ready: false };
       }
       return { ok: true, httpStatus: 200, ready: true, response: freshResponse };
