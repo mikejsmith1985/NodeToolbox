@@ -527,9 +527,102 @@ async function runHygieneScan(teamConfig, configuration) {
   return scanResult;
 }
 
+// ── Daily scheduler ───────────────────────────────────────────────────────────
+
+const SCHEDULE_CHECK_INTERVAL_MS = 60 * 1000;
+const DEFAULT_HYGIENE_SCHEDULE_TIME = '06:00';
+const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** Returns the current local time as a 'HH:MM' string for schedule comparisons. */
+function getCurrentTimeHHMM() {
+  const now = new Date();
+  return now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+}
+
+/** Returns the short weekday name ('Mon', 'Tue', etc.) for today in local time. */
+function getTodayWeekdayName() {
+  return WEEKDAY_NAMES[new Date().getDay()];
+}
+
+/** Module-level set of teams that have already run today (resets at process restart). */
+const firedTodayKeys = new Set();
+let lastKnownDayKey = '';
+
+/**
+ * Resets the fired-today set when the calendar day changes.
+ * Called at the top of every scheduled tick so the set stays current.
+ */
+function refreshDayIfNeeded() {
+  const todayKey = new Date().toDateString();
+  if (todayKey !== lastKnownDayKey) {
+    firedTodayKeys.clear();
+    lastKnownDayKey = todayKey;
+  }
+}
+
+/** Tracks the interval handle so the scheduler can be restarted if needed. */
+let hygieneSchedulerInterval = null;
+
+/**
+ * Checks all configured teams and fires any whose scheduleTime matches the current
+ * minute and have not yet fired today. Weekday filtering is applied per-team.
+ *
+ * @param {object} configuration - Live server config (read at fire time).
+ */
+function checkAndFireHygieneScans(configuration) {
+  refreshDayIfNeeded();
+
+  const currentTime = getCurrentTimeHHMM();
+  const todayWeekday = getTodayWeekdayName();
+  const hygieneTeams = (configuration.hygieneMonitor || {}).teams || [];
+
+  for (let teamIndex = 0; teamIndex < hygieneTeams.length; teamIndex++) {
+    const teamConfig = hygieneTeams[teamIndex];
+    const scheduledTime = teamConfig.scheduleTime || DEFAULT_HYGIENE_SCHEDULE_TIME;
+
+    if (scheduledTime !== currentTime) continue;
+
+    // Per-team weekday filter — default to Mon–Fri.
+    const allowedWeekdays = Array.isArray(teamConfig.weekdays) && teamConfig.weekdays.length > 0
+      ? teamConfig.weekdays
+      : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+    if (!allowedWeekdays.includes(todayWeekday)) continue;
+
+    const firedKey = 'hygiene-' + teamIndex + '-' + (teamConfig.teamName || '');
+    if (firedTodayKeys.has(firedKey)) continue;
+    firedTodayKeys.add(firedKey);
+
+    console.log('[HygieneMonitor] Firing scheduled scan for team "' + teamConfig.teamName + '"...');
+    runHygieneScan(teamConfig, configuration).catch((scanError) => {
+      console.error('[HygieneMonitor] Scheduled scan threw for "' + teamConfig.teamName + '": ' + scanError.message);
+    });
+  }
+}
+
+/**
+ * Starts the daily hygiene monitor scheduler. Fires a check every 60 seconds.
+ * Per-team weekday + scheduleTime guards prevent duplicate runs on the same day.
+ *
+ * Can be called after a config change to re-register teams without restarting
+ * the server — safe because `configuration` is read by reference at tick time.
+ *
+ * @param {object} configuration - Live server configuration object.
+ */
+function startHygieneMonitorScheduler(configuration) {
+  if (hygieneSchedulerInterval) {
+    clearInterval(hygieneSchedulerInterval);
+  }
+  console.log('[HygieneMonitor] Daily hygiene monitor scheduler started — checking every minute.');
+
+  hygieneSchedulerInterval = setInterval(() => {
+    checkAndFireHygieneScans(configuration);
+  }, SCHEDULE_CHECK_INTERVAL_MS);
+}
+
 module.exports = {
   parseRovoClassifications,
   buildHygieneDigest,
   runHygieneScan,
   getLastScanStatus,
+  startHygieneMonitorScheduler,
 };
