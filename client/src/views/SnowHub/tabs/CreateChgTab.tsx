@@ -129,6 +129,7 @@ function buildCurrentTemplateData(state: CrgStateData): Omit<CrgTemplate, 'id' |
     relEnvironment:        state.relEnvironment,
     prdEnvironment:        state.prdEnvironment,
     pfixEnvironment:       state.pfixEnvironment,
+    ctaskTemplateIds:      state.ctaskTemplateIds ?? [],
   };
 }
 
@@ -589,6 +590,8 @@ interface EnvironmentStepExtras {
 /** Additional props for the Change Details step — templates and dynamic choice options. */
 interface ChangeDetailsExtras {
   templates: CrgTemplate[];
+  /** CTASK templates a CHG template can link to, so applying one auto-stages them. */
+  linkableCtaskTemplates: CtaskTemplate[];
   defaultTemplateId: string | null;
   setDefaultTemplateId: (templateId: string) => void;
   clearDefaultTemplateId: () => void;
@@ -636,6 +639,8 @@ interface StepRenderOptions {
 
 interface CrgWorkspaceExtras {
   templates: CrgTemplate[];
+  /** CTASK templates that can be linked to a CHG template from the workspace. */
+  linkableCtaskTemplates: CtaskTemplate[];
   saveTemplate: (name: string, data: Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>) => string;
   updateTemplate: (templateId: string, data: Omit<CrgTemplate, 'id' | 'name' | 'createdAt'>) => void;
   deleteTemplate: (templateId: string) => void;
@@ -767,6 +772,7 @@ function CrgWorkspacePanel({
   state,
   actions,
   templates,
+  linkableCtaskTemplates,
   saveTemplate,
   updateTemplate,
   deleteTemplate,
@@ -785,8 +791,17 @@ function CrgWorkspacePanel({
 
   function handleApplyTemplate(): void {
     if (selectedTemplate) {
-      actions.applyTemplate(selectedTemplate);
+      actions.applyTemplate(selectedTemplate, linkableCtaskTemplates);
     }
+  }
+
+  /** Toggles whether a CTASK template is linked to the CHG template being edited. */
+  function handleToggleLinkedCtask(ctaskTemplateId: string): void {
+    const isCurrentlyLinked = state.ctaskTemplateIds.includes(ctaskTemplateId);
+    const nextLinkedIds = isCurrentlyLinked
+      ? state.ctaskTemplateIds.filter((linkedId) => linkedId !== ctaskTemplateId)
+      : [...state.ctaskTemplateIds, ctaskTemplateId];
+    actions.setLinkedCtaskTemplateIds(nextLinkedIds);
   }
 
   function handleCloneNumberChange(event: ChangeEvent<HTMLInputElement>): void {
@@ -904,6 +919,34 @@ function CrgWorkspacePanel({
           ) : (
             <p className={styles.panelHint}>No CHG templates saved yet.</p>
           )}
+
+          <div className={styles.linkedCtaskSection}>
+            <h5 className={styles.panelSectionTitle}>Linked CTASKs</h5>
+            <p className={styles.panelHint}>
+              Check the CTASK templates that belong to this CHG. Applying the CHG template auto-stages
+              them in the change-task list (still editable), so you generate the CHG and its CTASKs in
+              one go. Save or update the CHG template to remember these links.
+            </p>
+            {linkableCtaskTemplates.length > 0 ? (
+              <ul className={styles.linkedCtaskList}>
+                {linkableCtaskTemplates.map((ctaskTemplate) => (
+                  <li key={ctaskTemplate.id}>
+                    <label className={styles.linkedCtaskOption}>
+                      <input
+                        checked={state.ctaskTemplateIds.includes(ctaskTemplate.id)}
+                        onChange={() => handleToggleLinkedCtask(ctaskTemplate.id)}
+                        type="checkbox"
+                      />
+                      <span>{ctaskTemplate.name}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className={styles.panelHint}>No CTASK templates saved yet — clone or create one first to link it here.</p>
+            )}
+          </div>
+
           {isSavePromptVisible ? (
             <div className={styles.cloneInputRow}>
               <input
@@ -1152,6 +1195,7 @@ function ChangeDetailsStep({
   state,
   actions,
   templates,
+  linkableCtaskTemplates,
   defaultTemplateId,
   setDefaultTemplateId,
   clearDefaultTemplateId,
@@ -1190,9 +1234,9 @@ function ChangeDetailsStep({
       return;
     }
 
-    actions.applyTemplate(defaultTemplate);
+    actions.applyTemplate(defaultTemplate, linkableCtaskTemplates);
     hasAutoAppliedDefaultTemplateRef.current = true;
-  }, [actions, defaultTemplateId, shouldShowNavigation, templates]);
+  }, [actions, defaultTemplateId, shouldShowNavigation, templates, linkableCtaskTemplates]);
 
   function handleBasicInfoChange<K extends keyof ChgBasicInfo>(
     fieldKey: K,
@@ -1313,7 +1357,7 @@ function ChangeDetailsStep({
               <button
                 className={styles.secondaryButton}
                 disabled={!selectedTemplate}
-                onClick={() => selectedTemplate && actions.applyTemplate(selectedTemplate)}
+                onClick={() => selectedTemplate && actions.applyTemplate(selectedTemplate, linkableCtaskTemplates)}
                 type="button"
               >
                 Apply template
@@ -2460,6 +2504,7 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
 
   const changeDetailsExtras: ChangeDetailsExtras = {
     templates,
+    linkableCtaskTemplates: ctaskTemplates.templates,
     defaultTemplateId,
     setDefaultTemplateId,
     clearDefaultTemplateId,
@@ -2478,6 +2523,7 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
 
   const workspaceExtras: CrgWorkspaceExtras = {
     templates,
+    linkableCtaskTemplates: ctaskTemplates.templates,
     saveTemplate,
     updateTemplate,
     deleteTemplate,

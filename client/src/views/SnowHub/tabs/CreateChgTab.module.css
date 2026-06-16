@@ -435,6 +435,31 @@
   font-size: var(--font-size-sm);
 }
 
+/* Linked-CTASK checklist inside the CHG Templates panel. */
+.linkedCtaskSection {
+  display: grid;
+  gap: var(--spacing-xs);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.linkedCtaskList {
+  display: grid;
+  gap: var(--spacing-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.linkedCtaskOption {
+  display: flex;
+  gap: var(--spacing-xs);
+  align-items: center;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
 .pinnedFieldList {
   display: grid;
   gap: var(--spacing-sm);
