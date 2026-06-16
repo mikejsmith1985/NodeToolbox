@@ -7,16 +7,14 @@
 
 'use strict';
 
-// The only destinations a payload may be sent to: Atlassian-owned hosts or
-// Microsoft Teams incoming webhook hosts. Matching is an exact hostname or a
-// dot-prefixed suffix — never a substring test — so look-alike hosts are rejected.
-//
-// Microsoft Teams exception: the Hygiene Monitor digest is delivered to a Teams
-// channel via an incoming webhook on *.webhook.office.com. This is a validated,
-// user-configured destination stored in the Admin Hub — not an arbitrary URL.
-// The exception is narrow (one Microsoft suffix) and does not relax Atlassian rules.
+// The only destinations a payload may be sent to: Atlassian-owned hosts. Matching
+// is an exact hostname or a dot-prefixed suffix — never a substring test — so
+// look-alike hosts are rejected. Every outbound webhook (report delivery, Rovo
+// dispatch, and the Hygiene Monitor digest) targets an Atlassian Automation rule;
+// the digest email is composed by that rule, so no non-Atlassian destination
+// (e.g. a Microsoft Teams incoming webhook) is permitted.
 const ALLOWED_EXACT_HOSTS = [];
-const ALLOWED_HOST_SUFFIXES = ['.atlassian.net', '.atlassian.com', '.webhook.office.com'];
+const ALLOWED_HOST_SUFFIXES = ['.atlassian.net', '.atlassian.com'];
 
 /**
  * Evaluates whether a webhook URL is an allowed Atlassian Automation destination.

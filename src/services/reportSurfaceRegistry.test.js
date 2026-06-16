@@ -81,8 +81,8 @@ describe('reportSurfaceRegistry', () => {
           {
             teamName: 'Platform',
             projectKeys: ['PLAT'],
-            teamsWebhookUrl: 'https://contoso.webhook.office.com/webhookb2/abc',
-            teamsWebhookSecret: 'teams-secret',
+            digestTriggerUrl: 'https://contoso.atlassian.net/automation/webhooks/abc',
+            digestTriggerSecret: 'digest-secret',
           },
         ],
       },
@@ -91,8 +91,8 @@ describe('reportSurfaceRegistry', () => {
     test('resolves by team name', () => {
       const destination = getSurface('hygiene-digest').resolveDestination(configuration, 'Platform');
       expect(destination).toMatchObject({
-        triggerUrl:    'https://contoso.webhook.office.com/webhookb2/abc',
-        triggerSecret: 'teams-secret',
+        triggerUrl:    'https://contoso.atlassian.net/automation/webhooks/abc',
+        triggerSecret: 'digest-secret',
         teamName:      'Platform',
       });
     });
@@ -102,8 +102,8 @@ describe('reportSurfaceRegistry', () => {
       expect(destination).not.toBeNull();
     });
 
-    test('returns null when the team has no Teams webhook URL', () => {
-      const noWebhook = { hygieneMonitor: { teams: [{ teamName: 'Platform', teamsWebhookUrl: '' }] } };
+    test('returns null when the team has no digest trigger webhook URL', () => {
+      const noWebhook = { hygieneMonitor: { teams: [{ teamName: 'Platform', digestTriggerUrl: '' }] } };
       expect(getSurface('hygiene-digest').resolveDestination(noWebhook, 'Platform')).toBeNull();
     });
 

@@ -19,14 +19,14 @@ const { saveConfigToDisk } = require('../config/loader');
 // ── Secret scrubbing ──────────────────────────────────────────────────────────
 
 /**
- * Returns a copy of a team config object with the Teams webhook secret removed.
+ * Returns a copy of a team config object with the digest trigger webhook secret removed.
  * Called on every team object before any outbound serialization.
  *
- * @param {{ teamsWebhookSecret?: string, [key: string]: unknown }} teamConfig
+ * @param {{ digestTriggerSecret?: string, [key: string]: unknown }} teamConfig
  * @returns {object} Team config with the secret field omitted.
  */
 function scrubTeamSecret(teamConfig) {
-  const { teamsWebhookSecret: _omitted, ...safeConfig } = teamConfig;
+  const { digestTriggerSecret: _omitted, ...safeConfig } = teamConfig;
   return safeConfig;
 }
 

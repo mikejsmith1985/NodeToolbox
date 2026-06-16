@@ -16,10 +16,6 @@ function buildFetchOk(body: unknown) {
   })
 }
 
-function buildFetchError(statusCode: number) {
-  return Promise.resolve({ ok: false, status: statusCode, json: () => Promise.resolve({ error: 'Error' }) })
-}
-
 beforeEach(() => {
   vi.clearAllMocks()
   // Default: empty config
@@ -55,13 +51,14 @@ describe('HygieneMonitorPanel', () => {
       ok:   true,
       json: () => Promise.resolve({
         teams: [{
-          teamName:           'Platform',
-          projectKeys:        ['PLAT'],
-          scheduleTime:       '06:00',
-          weekdays:           ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-          teamsWebhookUrl:    '',
-          teamsWebhookSecret: '',
-          enabledCheckIds:    [],
+          teamName:            'Platform',
+          projectKeys:         ['PLAT'],
+          scheduleTime:        '06:00',
+          weekdays:            ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+          digestTriggerUrl:    '',
+          digestTriggerSecret: '',
+          digestEmailTo:       '',
+          enabledCheckIds:     [],
         }],
       }),
     })
