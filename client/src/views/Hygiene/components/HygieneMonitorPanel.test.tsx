@@ -11,7 +11,7 @@ vi.stubGlobal('fetch', mockFetch)
 
 function buildStatusResponse(overrides: Partial<{
   lastScanAt: string | null;
-  teamStatuses: { teamName: string; violationsFound: number; scannedAt: string | null }[];
+  teamStatuses: { teamName: string; violationsFound: number; scannedAt: string | null; trend?: string }[];
 }> = {}) {
   return {
     ok:   true,
@@ -56,6 +56,27 @@ describe('HygieneMonitorPanel', () => {
       expect(screen.getByText('Platform')).toBeTruthy()
       expect(screen.getByText(/5 violations/i)).toBeTruthy()
     })
+  })
+
+  it('shows the per-team trend indicator when the status includes a trend (SC-009)', async () => {
+    mockFetch.mockResolvedValueOnce(buildStatusResponse({
+      lastScanAt:   '2026-06-16T06:00:00.000Z',
+      teamStatuses: [{ teamName: 'Platform', violationsFound: 3, scannedAt: '2026-06-16T06:00:00.000Z', trend: 'down' }],
+    }))
+    render(<HygieneMonitorPanel />)
+    await waitFor(() => {
+      expect(screen.getByText(/improving/i)).toBeTruthy()
+    })
+  })
+
+  it('omits the trend indicator when trend is n/a (fewer than two scans)', async () => {
+    mockFetch.mockResolvedValueOnce(buildStatusResponse({
+      lastScanAt:   '2026-06-16T06:00:00.000Z',
+      teamStatuses: [{ teamName: 'Platform', violationsFound: 3, scannedAt: '2026-06-16T06:00:00.000Z', trend: 'n/a' }],
+    }))
+    render(<HygieneMonitorPanel />)
+    await waitFor(() => screen.getByText('Platform'))
+    expect(screen.queryByText(/improving|worsening|unchanged/i)).toBeNull()
   })
 
   it('shows a Scan Now button for each team', async () => {
