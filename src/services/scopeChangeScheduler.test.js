@@ -12,7 +12,33 @@ const {
   escapeXml,
   renderChangeTable,
   extractPageIdFromUrl,
+  buildScopeRovoPrompt,
+  buildRovoTrendPanel,
 } = require('./scopeChangeScheduler');
+
+describe('buildScopeRovoPrompt (US1)', () => {
+  it('includes the project key and the change entries', () => {
+    const prompt = buildScopeRovoPrompt(
+      [{ issueKey: 'ABC-1', issueSummary: 'Login', fromValue: '1.0', toValue: '1.1' }],
+      'ABC',
+    );
+    expect(prompt).toContain('ABC');
+    expect(prompt).toContain('ABC-1 Login: 1.0 → 1.1');
+    expect(prompt).toContain('most at risk');
+  });
+  it('handles an empty entry list without throwing', () => {
+    expect(buildScopeRovoPrompt([], 'ABC')).toContain('(none)');
+  });
+});
+
+describe('buildRovoTrendPanel (US1)', () => {
+  it('wraps text in an info macro and escapes XML', () => {
+    const html = buildRovoTrendPanel('Release 1.1 is at risk <see>');
+    expect(html).toContain('<ac:structured-macro ac:name="info">');
+    expect(html).toContain('🤖 Rovo trend');
+    expect(html).toContain('at risk &lt;see&gt;');
+  });
+});
 
 describe('getCurrentTimeHHMM', () => {
   it('returns a zero-padded HH:MM string', () => {

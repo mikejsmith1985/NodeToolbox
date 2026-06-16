@@ -55,16 +55,18 @@ Web app: Express backend at `src/`, React SPA at `client/src/`. Server tests are
 ### Tests for User Story 1 ⚠️ (write first, must fail)
 
 - [X] T006 [P] [US1] Test for the standup insight-block enrichment (`buildStandupRovoPrompt` + `buildRovoInsightPanel`) in `src/services/standupBriefingScheduler.test.js`
-- [ ] T007 [P] [US1] Failing test for the scope/feature trend-paragraph enrichment (prepend, non-blocking fallback) in `src/services/scopeChangeScheduler.test.js` and `src/services/featureChangeScheduler.test.js`
+- [X] T007 [P] [US1] Tests for the scope/feature trend-paragraph builders in `src/services/scopeChangeScheduler.test.js` and `src/services/featureChangeScheduler.test.js`
 
 ### Implementation for User Story 1
 
 - [X] T008 [US1] Add the insight-block enrichment step (build prompt from briefing data, call `requestRovoText`, prepend to the Confluence storage body when non-null, gated by `isRovoEnabled`) in `src/services/standupBriefingScheduler.js` (FR-001, SC-001) — also covers standup portion of T011
-- [ ] T009 [P] [US1] Add the trend-paragraph enrichment to `src/services/scopeChangeScheduler.js` (FR-002, SC-002). NOTE: its delivery fn takes decomposed config (`jiraConfig, confluenceConfig, sslVerify`) not the whole `configuration` — thread `rovoAutomation` (or `configuration`) through `runScopeReportDelivery` and its callers first.
-- [ ] T010 [P] [US1] Add the trend-paragraph enrichment to `src/services/featureChangeScheduler.js` (FR-002, SC-002). Same config-threading note as T009 (`runFeatureReportDelivery(report, jiraConfig, confluenceConfig, sslVerify)`).
-- [ ] T011 [US1] Gate enrichment on the existing `rovoAutomation.isEnabled` config and log `[Rovo] enrichment skipped (<reason>)` on fallback in the three schedulers (FR-003, SC-008)
+- [X] T009 [P] [US1] Add the trend-paragraph enrichment to `src/services/scopeChangeScheduler.js` `runTeamReportDelivery` (threaded `configuration` through both call sites) (FR-002, SC-002)
+- [X] T010 [P] [US1] Add the trend-paragraph enrichment to `src/services/featureChangeScheduler.js` `runFeatureReportDelivery` (threaded `configuration` through both call sites) (FR-002, SC-002)
+- [X] T011 [US1] Gate enrichment on `isRovoEnabled` and log `[Rovo] <surface> enrichment skipped (<reason>)` on fallback across the three schedulers (FR-003, SC-008)
 
-**Checkpoint**: All three schedulers enrich when Rovo is up and publish unchanged when it is down — independently demoable (MVP).
+**Checkpoint**: All three schedulers enrich the per-team report when Rovo is up and publish unchanged when it is down — independently demoable (MVP). Full server suite green (568 tests).
+
+> FOLLOW-UP (small, deferred): the aggregate **ART-rollup** delivery variants — `runArtRollupDelivery` (scope) and `runFeatureChangeArtRollupDelivery` (feature) — were left un-enriched to keep this increment bounded. They follow the identical build-body→prepend pattern; enrich them when the per-team behaviour is validated.
 
 ---
 
