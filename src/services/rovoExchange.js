@@ -86,6 +86,25 @@ function stripStorageHtml(storageHtml) {
     .trim();
 }
 
+/**
+ * Unwraps the Confluence JSON payload from makeConfluenceApiRequest's response.
+ *
+ * The shared HTTP helper resolves `{ status, body: <Confluence JSON> }` — the real
+ * page/search object is nested under `.body`. (The working schedulers read it the
+ * same way, e.g. `result.body.body.storage.value`.) Tests may inject the Confluence
+ * JSON directly, so we detect the envelope by its numeric `status` and pass other
+ * shapes through unchanged.
+ *
+ * @param {object} response - The value returned by the confluence request function.
+ * @returns {object} The Confluence JSON payload (page or search result).
+ */
+function unwrapConfluence(response) {
+  if (response && typeof response.status === 'number' && response.body && typeof response.body === 'object') {
+    return response.body;
+  }
+  return response || {};
+}
+
 /** True when a line is a "correlationId: <id>" marker stamped by the Rovo rule. */
 function isCorrelationMarker(line) {
   return line.trimStart().toLowerCase().startsWith('correlationid:');
@@ -192,8 +211,10 @@ async function fetchResult(configuration, correlationId, deps = {}) {
       // body.storage while their text is only present in body.view, so we fall
       // back to the rendered body when storage comes back blank.
       const page = await confluenceRequest('GET', `/wiki/rest/api/content/${encodeURIComponent(rovo.parkingPageId)}?expand=body.storage,body.view`, null, confluenceConfig, shouldVerify);
-      const storageBody = (((page || {}).body || {}).storage || {}).value || '';
-      const viewBody = (((page || {}).body || {}).view || {}).value || '';
+      // The page's content lives at <confluenceJson>.body.storage / .body.view.
+      const contentBody = (unwrapConfluence(page).body) || {};
+      const storageBody = ((contentBody.storage || {}).value) || '';
+      const viewBody = ((contentBody.view || {}).value) || '';
       const usedView = storageBody.trim() === '' && viewBody.trim() !== '';
       const pageText = stripStorageHtml(usedView ? viewBody : storageBody);
       const freshResponse = extractStaticResult(pageText, correlationId);
@@ -231,7 +252,7 @@ async function fetchResult(configuration, correlationId, deps = {}) {
   try {
     for (const strategy of lookupStrategies) {
       const searchResult = await confluenceRequest('GET', strategy.path, null, confluenceConfig, shouldVerify);
-      const pages = (searchResult && searchResult.results) || [];
+      const pages = (unwrapConfluence(searchResult).results) || [];
       const matched = pages.find((candidate) => candidate.title === title);
       console.log(`  [Rovo] result lookup [${strategy.name}] title="${title}" → ${pages.length} page(s), ${matched ? 'MATCH' : 'no match'}`);
 
