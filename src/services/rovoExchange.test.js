@@ -2,7 +2,7 @@
 
 'use strict';
 
-const { dispatchPrompt, fetchResult, stripStorageHtml, extractStaticResult, PARKING_TITLE_PREFIX } = require('./rovoExchange');
+const { dispatchPrompt, fetchResult, stripStorageHtml, extractStaticResult, listCorrelationMarkers, PARKING_TITLE_PREFIX } = require('./rovoExchange');
 
 function rovoConfig(overrides = {}) {
   return {
@@ -170,6 +170,15 @@ describe('extractStaticResult', () => {
     ].join('\n');
     expect(extractStaticResult(accumulated, 'abc')).toBe('SHORT_DESCRIPTION: the fresh one\nDESCRIPTION: mine');
     expect(extractStaticResult(accumulated, 'OLD-1')).toBe('SHORT_DESCRIPTION: stale one');
+  });
+});
+
+describe('listCorrelationMarkers', () => {
+  it('returns an empty array when no marker is present (wrong-page diagnosis)', () => {
+    expect(listCorrelationMarkers('SHORT_DESCRIPTION: x\nDESCRIPTION: y')).toEqual([]);
+  });
+  it('returns every marker id stamped on the page', () => {
+    expect(listCorrelationMarkers('correlationId: id-1\nSHORT_DESCRIPTION: a\ncorrelationId: id-2\nSHORT_DESCRIPTION: b')).toEqual(['id-1', 'id-2']);
   });
 });
 

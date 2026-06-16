@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Rovo result-lookup log now shows what it wants vs what the page holds**: When "Run via Rovo (auto)" times out, the result poll now logs `want=<correlationId> page-has=[<ids on the page>] match=true/false` for the by-ID parking page. An empty `page-has=[none]` means NodeToolbox is reading a different page than the rule writes to (wrong **Parking Page ID**); a different id in `page-has` means the page holds only a stale/previous run. This pinpoints a page-ID mismatch versus a stale result without guesswork.
+
 ### Fixed
 - **Rovo parking page read now handles an "append" rule and ignores stale runs**: When the Confluence Automation rule uses "Append content to the end of a page" (rather than replacing it), the parking page accumulates one result block per run. The reader now isolates the block belonging to the current `correlationId` — the lines between this request's `correlationId:` marker and the next marker (or end of page) — instead of returning the whole accumulated page. A re-run with the same id supersedes its earlier block. This prevents a previous run's result from leaking into a new request and lets the static parking page work with either an append or a replace rule.
 
