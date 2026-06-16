@@ -423,7 +423,7 @@ describe('rovoAutomation persistence', () => {
     };
   }
 
-  const SAMPLE_ROVO = { webhookUrl: 'https://x.atlassian.net/hook', webhookSecret: 'topsecret', parkingSpaceKey: '~712', isEnabled: true };
+  const SAMPLE_ROVO = { webhookUrl: 'https://x.atlassian.net/hook', webhookSecret: 'topsecret', parkingSpaceKey: '~712', parkingPageId: '781058099', isEnabled: true };
 
   it('writes rovoAutomation to disk and obfuscates the secret', () => {
     const { saveConfigToDisk } = require('../../src/config/loader');

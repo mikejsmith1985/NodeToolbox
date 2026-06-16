@@ -30,6 +30,7 @@ function createRovoExchangeRouter(configuration) {
       webhookUrl:      rovo.webhookUrl      || '',
       webhookSecret:   rovo.webhookSecret   || '',
       parkingSpaceKey: rovo.parkingSpaceKey || '',
+      parkingPageId:   rovo.parkingPageId   || '',
       isEnabled:       !!rovo.isEnabled,
     });
   });
@@ -37,11 +38,12 @@ function createRovoExchangeRouter(configuration) {
   // POST /api/rovo/config — saves the Rovo automation config to memory and disk.
   // Body: { webhookUrl, webhookSecret, parkingSpaceKey, isEnabled }
   router.post('/api/rovo/config', (req, res) => {
-    const { webhookUrl, webhookSecret, parkingSpaceKey, isEnabled } = req.body || {};
+    const { webhookUrl, webhookSecret, parkingSpaceKey, parkingPageId, isEnabled } = req.body || {};
     configuration.rovoAutomation = {
       webhookUrl:      typeof webhookUrl      === 'string' ? webhookUrl.trim()      : '',
       webhookSecret:   typeof webhookSecret   === 'string' ? webhookSecret.trim()   : '',
       parkingSpaceKey: typeof parkingSpaceKey === 'string' ? parkingSpaceKey.trim() : '',
+      parkingPageId:   typeof parkingPageId   === 'string' ? parkingPageId.trim()   : '',
       isEnabled:       !!isEnabled,
     };
     saveConfigToDisk(configuration);

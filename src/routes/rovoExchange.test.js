@@ -24,16 +24,16 @@ describe('Rovo config endpoints', () => {
   it('GET returns the current config (empty defaults)', async () => {
     const response = await request(buildApp({})).get('/api/rovo/config');
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ webhookUrl: '', webhookSecret: '', parkingSpaceKey: '', isEnabled: false });
+    expect(response.body).toEqual({ webhookUrl: '', webhookSecret: '', parkingSpaceKey: '', parkingPageId: '', isEnabled: false });
   });
 
   it('POST sanitises, saves to disk, and persists into configuration', async () => {
     const configuration = {};
     const response = await request(buildApp(configuration)).post('/api/rovo/config').send({
-      webhookUrl: '  https://x.atlassian.net/hook  ', webhookSecret: ' s ', parkingSpaceKey: ' ROVO ', isEnabled: 1,
+      webhookUrl: '  https://x.atlassian.net/hook  ', webhookSecret: ' s ', parkingSpaceKey: ' ROVO ', parkingPageId: ' 781058099 ', isEnabled: 1,
     });
     expect(response.status).toBe(200);
-    expect(configuration.rovoAutomation).toEqual({ webhookUrl: 'https://x.atlassian.net/hook', webhookSecret: 's', parkingSpaceKey: 'ROVO', isEnabled: true });
+    expect(configuration.rovoAutomation).toEqual({ webhookUrl: 'https://x.atlassian.net/hook', webhookSecret: 's', parkingSpaceKey: 'ROVO', parkingPageId: '781058099', isEnabled: true });
     expect(saveConfigToDisk).toHaveBeenCalledTimes(1);
   });
 

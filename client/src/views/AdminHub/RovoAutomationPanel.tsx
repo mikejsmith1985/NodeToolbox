@@ -13,10 +13,11 @@ interface RovoConfig {
   webhookUrl: string;
   webhookSecret: string;
   parkingSpaceKey: string;
+  parkingPageId: string;
   isEnabled: boolean;
 }
 
-const EMPTY_CONFIG: RovoConfig = { webhookUrl: '', webhookSecret: '', parkingSpaceKey: '', isEnabled: false };
+const EMPTY_CONFIG: RovoConfig = { webhookUrl: '', webhookSecret: '', parkingSpaceKey: '', parkingPageId: '', isEnabled: false };
 
 async function fetchRovoConfig(): Promise<RovoConfig> {
   const response = await fetch('/api/rovo/config');
@@ -108,11 +109,21 @@ export function RovoAutomationPanel() {
       </label>
 
       <label className={styles.adminDescription}>
+        Parking Page ID
+        <input
+          className={styles.inputField}
+          value={config.parkingPageId}
+          placeholder="Confluence page ID the rule edits (recommended — works in personal spaces)"
+          onChange={(changeEvent) => updateField('parkingPageId', changeEvent.target.value)}
+        />
+      </label>
+
+      <label className={styles.adminDescription}>
         Parking Space Key
         <input
           className={styles.inputField}
           value={config.parkingSpaceKey}
-          placeholder="Confluence space key for result pages"
+          placeholder="Fallback: Confluence space key (used only if no Page ID is set)"
           onChange={(changeEvent) => updateField('parkingSpaceKey', changeEvent.target.value)}
         />
       </label>

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Rovo result lookup now uses a fixed "parking page" read by ID**: Searching for a per-run page by title never returns results in a personal ("~") Confluence space, so "Run via Rovo (auto)" kept timing out. The exchange now supports a single, reusable parking page that the Automation rule **edits** each run. NodeToolbox reads it directly by page ID (`GET /wiki/rest/api/content/<id>`) — a direct lookup that bypasses the search index and works in personal spaces. The rule stamps `correlationId: <id>` into the page body; NodeToolbox only accepts the result when that marker matches the current request (so a stale page reads as not-ready) and strips the marker line before parsing. Configure it in Admin Hub → ⚡ Rovo → **Parking Page ID**; the by-title space search remains as a fallback when no Page ID is set.
+
 ### Fixed
 - **Rovo result lookup now finds pages in a personal Confluence space**: Confluence's `?spaceKey=~personal&title=` content search does not reliably return pages in a personal ("~") space, so the parking page was never found and "Run via Rovo (auto)" always timed out. Since the parking page title is a unique id, the lookup now tries a **global title search** and falls back to **listing the space's pages**, matching the exact title in code. Each attempt is logged (`[Rovo] result lookup [strategy] … → N page(s), MATCH/no match`) for diagnosis.
 

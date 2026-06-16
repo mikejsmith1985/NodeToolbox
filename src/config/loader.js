@@ -146,6 +146,7 @@ function saveConfigToDisk(configuration) {
       webhookUrl:      (configuration.rovoAutomation || {}).webhookUrl      || '',
       webhookSecret:   (configuration.rovoAutomation || {}).webhookSecret   || '',
       parkingSpaceKey: (configuration.rovoAutomation || {}).parkingSpaceKey || '',
+      parkingPageId:   (configuration.rovoAutomation || {}).parkingPageId   || '',
       isEnabled:       !!(configuration.rovoAutomation || {}).isEnabled,
     },
     scheduler: {
@@ -381,6 +382,7 @@ function buildDefaultConfig() {
       webhookUrl:      '',
       webhookSecret:   '',
       parkingSpaceKey: '',
+      parkingPageId:   '',
       isEnabled:       false,
     },
     scheduler: {},
@@ -453,6 +455,7 @@ function applyFileConfig(configuration) {
       webhookUrl:      fileConfig.rovoAutomation.webhookUrl      || '',
       webhookSecret:   fileConfig.rovoAutomation.webhookSecret   || '',
       parkingSpaceKey: fileConfig.rovoAutomation.parkingSpaceKey || '',
+      parkingPageId:   fileConfig.rovoAutomation.parkingPageId   || '',
       isEnabled:       !!fileConfig.rovoAutomation.isEnabled,
     };
   }
