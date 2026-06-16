@@ -13,6 +13,7 @@ const {
   renderChangeTable,
   extractPageIdFromUrl,
   buildScopeRovoPrompt,
+  buildScopeRollupRovoPrompt,
   buildRovoTrendPanel,
 } = require('./scopeChangeScheduler');
 
@@ -37,6 +38,19 @@ describe('buildRovoTrendPanel (US1)', () => {
     expect(html).toContain('<ac:structured-macro ac:name="info">');
     expect(html).toContain('🤖 Rovo trend');
     expect(html).toContain('at risk &lt;see&gt;');
+  });
+});
+
+describe('buildScopeRollupRovoPrompt (US1 ART rollup)', () => {
+  it('summarises each team with its release-change count', () => {
+    const prompt = buildScopeRollupRovoPrompt([
+      { teamName: 'Alpha', projectKey: 'ALP', releaseEntries: [{}, {}] },
+      { teamName: 'Beta', projectKey: 'BET', releaseEntries: [] },
+    ]);
+    expect(prompt).toContain('cross-team ART rollup');
+    expect(prompt).toContain('Alpha (ALP): 2 release change(s)');
+    expect(prompt).toContain('Beta (BET): 0 release change(s)');
+    expect(prompt).toContain('most at risk');
   });
 });
 

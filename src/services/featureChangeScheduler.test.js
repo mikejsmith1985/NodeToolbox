@@ -12,6 +12,7 @@ const {
   escapeXml,
   extractPageIdFromUrl,
   buildFeatureRovoPrompt,
+  buildFeatureRollupRovoPrompt,
   buildRovoTrendPanel,
 } = require('./featureChangeScheduler');
 
@@ -37,6 +38,19 @@ describe('buildRovoTrendPanel (US1)', () => {
     expect(html).toContain('<ac:structured-macro ac:name="info">');
     expect(html).toContain('🤖 Rovo trend');
     expect(html).toContain('slipping &amp; risky');
+  });
+});
+
+describe('buildFeatureRollupRovoPrompt (US1 ART rollup)', () => {
+  it('summarises each team with its total feature-change count', () => {
+    const prompt = buildFeatureRollupRovoPrompt([
+      { teamName: 'Alpha', fixVersionEntries: [{}], statusEntries: [{}], scheduleEntries: [] },
+      { teamName: 'Beta', fixVersionEntries: [], statusEntries: [], scheduleEntries: [] },
+    ]);
+    expect(prompt).toContain('cross-team ART rollup');
+    expect(prompt).toContain('Alpha: 2 feature change(s)');
+    expect(prompt).toContain('Beta: 0 feature change(s)');
+    expect(prompt).toContain('most at risk');
   });
 });
 
