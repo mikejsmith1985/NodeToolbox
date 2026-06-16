@@ -7,9 +7,12 @@
 
 import { useCallback, useState } from 'react';
 
-/** Default poll cadence and ceiling — ~60s total at 1.5s intervals. */
-const DEFAULT_POLL_INTERVAL_MS = 1500;
-const DEFAULT_MAX_ATTEMPTS = 40;
+// Default poll cadence and ceiling — ~3 minutes total at 3s intervals. Rovo can
+// take a while to generate a full response, and Confluence needs a moment to index
+// the brand-new parking page before it's findable, so the window is generous. A
+// successful run still returns as soon as the page is found (within one interval).
+const DEFAULT_POLL_INTERVAL_MS = 3000;
+const DEFAULT_MAX_ATTEMPTS = 60;
 
 export interface RovoExchangeResult {
   ok: boolean;
