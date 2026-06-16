@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Rovo result lookup now finds pages in a personal Confluence space**: Confluence's `?spaceKey=~personal&title=` content search does not reliably return pages in a personal ("~") space, so the parking page was never found and "Run via Rovo (auto)" always timed out. Since the parking page title is a unique id, the lookup now tries a **global title search** and falls back to **listing the space's pages**, matching the exact title in code. Each attempt is logged (`[Rovo] result lookup [strategy] … → N page(s), MATCH/no match`) for diagnosis.
+
 ### Changed
 - **Rovo exchange waits longer for the result**: The "Run via Rovo (auto)" poll window was ~60s (40 × 1.5s), which could expire before Rovo finished generating and Confluence indexed the new parking page — so a working round-trip looked like a timeout. The default is now ~3 minutes (60 × 3s). A successful run still returns as soon as the page is found.
 

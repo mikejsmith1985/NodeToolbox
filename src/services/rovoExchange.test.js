@@ -73,7 +73,7 @@ describe('fetchResult', () => {
     const confluence = (method, path) => {
       calls.push({ method, path });
       if (method === 'GET') {
-        return Promise.resolve({ results: [{ id: '12345', body: { storage: { value: '<p>SHORT_DESCRIPTION: Deploy v2</p>' } } }] });
+        return Promise.resolve({ results: [{ id: '12345', title: 'rovo-result-abc', body: { storage: { value: '<p>SHORT_DESCRIPTION: Deploy v2</p>' } } }] });
       }
       return Promise.resolve({});
     };
@@ -83,6 +83,29 @@ describe('fetchResult', () => {
     // GET searched by the correlationId title, and a DELETE was issued for the page id.
     expect(calls[0].path).toContain(PARKING_TITLE_PREFIX + 'abc');
     expect(calls.some((call) => call.method === 'DELETE' && call.path.includes('12345'))).toBe(true);
+  });
+
+  it('falls back to the space listing and matches the exact title when the global title search misses', async () => {
+    const calls = [];
+    const confluence = (method, path) => {
+      calls.push({ method, path });
+      if (method === 'GET' && path.includes('title=')) {
+        // global-title strategy: returns nothing (e.g. personal-space quirk)
+        return Promise.resolve({ results: [] });
+      }
+      if (method === 'GET' && path.includes('spaceKey=')) {
+        // space-listing strategy: returns several pages; only one matches the title
+        return Promise.resolve({ results: [
+          { id: '111', title: 'Overview', body: { storage: { value: '<p>nope</p>' } } },
+          { id: '222', title: 'rovo-result-abc', body: { storage: { value: '<p>DESCRIPTION: found via listing</p>' } } },
+        ] });
+      }
+      return Promise.resolve({});
+    };
+    const result = await fetchResult(rovoConfig(), 'abc', { makeConfluenceApiRequest: confluence });
+    expect(result).toMatchObject({ ok: true, ready: true });
+    expect(result.response).toBe('DESCRIPTION: found via listing');
+    expect(calls.some((call) => call.method === 'DELETE' && call.path.includes('222'))).toBe(true);
   });
 
   it('returns 409 when the parking space is not configured', async () => {

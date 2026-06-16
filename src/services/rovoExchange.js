@@ -108,31 +108,40 @@ async function fetchResult(configuration, correlationId, deps = {}) {
   }
 
   const confluenceConfig = (configuration && configuration.confluence) || {};
+  const shouldVerify = shouldVerifyTls(configuration);
   const title = PARKING_TITLE_PREFIX + correlationId;
-  const searchPath = `/wiki/rest/api/content?spaceKey=${encodeURIComponent(rovo.parkingSpaceKey)}&title=${encodeURIComponent(title)}&expand=body.storage`;
+
+  // The parking page title is a unique UUID, so several lookups can find it.
+  // Confluence's `spaceKey + title` filter does not reliably return pages in a
+  // personal ("~") space, so we also try a global title search and a space
+  // listing, always matching the exact title in code. First strategy that finds
+  // it wins; each is logged so the working path is visible in Server Logs.
+  const lookupStrategies = [
+    { name: 'global-title', path: `/wiki/rest/api/content?title=${encodeURIComponent(title)}&type=page&expand=body.storage&limit=10` },
+    { name: 'space-listing', path: `/wiki/rest/api/content?spaceKey=${encodeURIComponent(rovo.parkingSpaceKey)}&type=page&expand=body.storage&limit=100` },
+  ];
 
   try {
-    const searchResult = await confluenceRequest('GET', searchPath, null, confluenceConfig, shouldVerifyTls(configuration));
-    const pages = (searchResult && searchResult.results) || [];
-    // Diagnostic: shows the exact space + title queried and how many matched, so a
-    // space/title mismatch is visible in the Dev Panel → Server Logs.
-    console.log(`  [Rovo] result lookup: space="${rovo.parkingSpaceKey}" title="${title}" → ${pages.length} match(es)`);
-    if (pages.length === 0) {
-      return { ok: true, httpStatus: 200, ready: false };
+    for (const strategy of lookupStrategies) {
+      const searchResult = await confluenceRequest('GET', strategy.path, null, confluenceConfig, shouldVerify);
+      const pages = (searchResult && searchResult.results) || [];
+      const matched = pages.find((candidate) => candidate.title === title);
+      console.log(`  [Rovo] result lookup [${strategy.name}] title="${title}" → ${pages.length} page(s), ${matched ? 'MATCH' : 'no match'}`);
+
+      if (matched) {
+        const rawBody = ((matched.body || {}).storage || {}).value || '';
+        const responseText = stripStorageHtml(rawBody);
+        // Ephemeral: delete the parking page once read. Best-effort — a failed
+        // delete must not block returning the result to the caller.
+        confluenceRequest('DELETE', `/wiki/rest/api/content/${matched.id}`, null, confluenceConfig, shouldVerify).catch(() => {});
+        return { ok: true, httpStatus: 200, ready: true, response: responseText };
+      }
     }
 
-    const page = pages[0];
-    const rawBody = ((page.body || {}).storage || {}).value || '';
-    const responseText = stripStorageHtml(rawBody);
-
-    // Ephemeral: delete the parking page once read. Best-effort — a failed delete
-    // must not block returning the result to the caller.
-    confluenceRequest('DELETE', `/wiki/rest/api/content/${page.id}`, null, confluenceConfig, shouldVerifyTls(configuration)).catch(() => {});
-
-    return { ok: true, httpStatus: 200, ready: true, response: responseText };
+    return { ok: true, httpStatus: 200, ready: false };
   } catch (fetchError) {
     const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
-    console.error(`  [Rovo] result lookup FAILED (space="${rovo.parkingSpaceKey}" title="${title}"): ${errorMessage}`);
+    console.error(`  [Rovo] result lookup FAILED title="${title}": ${errorMessage}`);
     return { ok: false, httpStatus: 502, code: 'fetch-failed', message: `Failed to read Rovo result: ${errorMessage}` };
   }
 }
