@@ -295,6 +295,13 @@ export interface CrgTemplate {
    * Optional for backward compatibility with templates saved before linking existed.
    */
   ctaskTemplateIds?: string[];
+  /**
+   * When true, creating the CHG updates the CTASKs ServiceNow auto-generated (one per
+   * staged CTASK, paired by list order) and only creates new records for the staged
+   * CTASKs beyond the auto-generated count — instead of always creating new ones.
+   * Used for teams whose change process auto-spawns CTASKs. Optional/false by default.
+   */
+  reconcileAutoCtasks?: boolean;
 }
 
 /**
@@ -384,6 +391,8 @@ interface CrgState {
   changeTasks: CtaskTemplate[];
   /** IDs of CTASK templates linked to the current CHG template (the editable link set). */
   ctaskTemplateIds: string[];
+  /** When true, reconcile staged CTASKs with ServiceNow's auto-created ones on CHG create. */
+  reconcileAutoCtasks: boolean;
   isSubmitting: boolean;
   submitResult: string | null;
   submissionDebug: ChgSubmissionDebug | null;
@@ -418,6 +427,8 @@ interface CrgActions {
   removeChangeTask: (taskId: string) => void;
   /** Sets which CTASK templates are linked to the CHG template currently being edited. */
   setLinkedCtaskTemplateIds: (ctaskTemplateIds: string[]) => void;
+  /** Toggles whether CHG creation reconciles staged CTASKs with auto-created ones. */
+  setReconcileAutoCtasks: (reconcileAutoCtasks: boolean) => void;
   appendTasksToExistingChg: (chgNumber: string) => Promise<void>;
   updateExistingChg: (chgNumber: string) => Promise<void>;
   cloneCtaskTemplate: (ctaskNumber: string) => Promise<CtaskTemplateData>;
@@ -482,6 +493,7 @@ function createDefaultCrgState(): CrgState {
     pfixEnvironment: createDefaultEnvironmentConfig(),
     changeTasks: [],
     ctaskTemplateIds: [],
+    reconcileAutoCtasks: false,
     isSubmitting: false,
     submitResult: null,
     submissionDebug: null,
@@ -1022,6 +1034,87 @@ async function patchChangeTaskBySysId(changeTaskSysId: string, patchBody: Record
   );
 }
 
+/** How many times to re-check for auto-created CTASKs before reconciling. */
+const AUTO_CTASK_POLL_ATTEMPTS = 6;
+/** Delay between auto-created CTASK polls (ms) — long enough for an async SNow workflow. */
+const AUTO_CTASK_POLL_DELAY_MS = 1500;
+
+/** Resolves after the given delay. Extracted so reconcile polling is injectable in tests. */
+function delayMs(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+/**
+ * Re-reads the auto-created CTASKs until their count holds steady across two polls
+ * (or attempts run out). ServiceNow may spawn them via an async workflow a moment
+ * after the CHG is inserted, so a single read can miss some or catch a partial set.
+ *
+ * @param changeSysId - The new CHG's sys_id.
+ * @param sleep       - Delay function (overridable in tests to avoid real waits).
+ * @returns The auto-created CTASK records, ordered by creation time.
+ */
+async function fetchAutoCreatedChangeTasksStable(
+  changeSysId: string,
+  sleep: (milliseconds: number) => Promise<void> = delayMs,
+): Promise<AutoCreatedChangeTaskRecord[]> {
+  let latestTasks: AutoCreatedChangeTaskRecord[] = [];
+  let previousCount = -1;
+
+  for (let attempt = 0; attempt < AUTO_CTASK_POLL_ATTEMPTS; attempt += 1) {
+    latestTasks = await fetchAutoCreatedChangeTasks(changeSysId);
+    // A non-zero count that matched the previous poll means creation has settled.
+    if (latestTasks.length > 0 && latestTasks.length === previousCount) {
+      return latestTasks;
+    }
+    previousCount = latestTasks.length;
+    if (attempt < AUTO_CTASK_POLL_ATTEMPTS - 1) {
+      await sleep(AUTO_CTASK_POLL_DELAY_MS);
+    }
+  }
+
+  return latestTasks;
+}
+
+/**
+ * Reconciles staged CTASKs with the ones ServiceNow auto-created for a new CHG:
+ * updates the auto-created records in place (paired by list order) and creates new
+ * records only for staged CTASKs beyond the auto-created count. Any auto-created
+ * CTASKs beyond the staged count are left untouched.
+ *
+ * @param changeSysId - The new CHG's sys_id.
+ * @param stagedTasks - The CTASKs queued from the linked templates, in order.
+ * @param sleep       - Delay function for the poll (overridable in tests).
+ * @returns The number of staged CTASKs processed (updated + created).
+ */
+export async function reconcileStagedChangeTasks(
+  changeSysId: string,
+  stagedTasks: CtaskTemplate[],
+  sleep: (milliseconds: number) => Promise<void> = delayMs,
+): Promise<number> {
+  if (stagedTasks.length === 0) {
+    return 0;
+  }
+
+  const autoCreatedTasks = await fetchAutoCreatedChangeTasksStable(changeSysId, sleep);
+  const updateCount = Math.min(autoCreatedTasks.length, stagedTasks.length);
+
+  // Update the auto-created CTASKs in place to match the first staged templates.
+  for (let index = 0; index < updateCount; index += 1) {
+    const autoCreatedSysId = extractReferenceSysId(autoCreatedTasks[index]?.sys_id);
+    if (autoCreatedSysId) {
+      await patchChangeTaskBySysId(autoCreatedSysId, buildChangeTaskPayload(changeSysId, stagedTasks[index]));
+    }
+  }
+
+  // Create new CTASKs for any staged templates beyond the auto-created count.
+  const remainingTasks = stagedTasks.slice(updateCount);
+  if (remainingTasks.length > 0) {
+    await createChangeTasks(changeSysId, remainingTasks);
+  }
+
+  return stagedTasks.length;
+}
+
 async function updateAutoCreatedChangeTasks(
   changeSysId: string,
   state: CrgState,
@@ -1312,6 +1405,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       pfixEnvironment:           state.pfixEnvironment,
       changeTasks:               state.changeTasks,
       ctaskTemplateIds:          state.ctaskTemplateIds,
+      reconcileAutoCtasks:       state.reconcileAutoCtasks,
     };
 
     try {
@@ -1636,6 +1730,8 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       pfixEnvironment:       template.pfixEnvironment ? mergeEnvironmentConfig(template.pfixEnvironment) : previousState.pfixEnvironment,
       // Remember the link set so it round-trips when the user re-saves this CHG template.
       ctaskTemplateIds:      linkedCtaskTemplateIds,
+      // Carry the template's reconcile preference into the working form.
+      reconcileAutoCtasks:   template.reconcileAutoCtasks ?? false,
       // Pre-fill the linked CTASKs (still editable). Skip any already staged from the
       // same source template so re-applying the CHG template doesn't stack duplicates.
       changeTasks:           stageLinkedCtasks(previousState.changeTasks, linkedCtaskTemplateIds, availableCtaskTemplates),
@@ -1644,6 +1740,10 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
 
   const setLinkedCtaskTemplateIds = useCallback((ctaskTemplateIds: string[]) => {
     setState((previousState) => ({ ...previousState, ctaskTemplateIds }));
+  }, []);
+
+  const setReconcileAutoCtasks = useCallback((reconcileAutoCtasks: boolean) => {
+    setState((previousState) => ({ ...previousState, reconcileAutoCtasks }));
   }, []);
 
   const addChangeTask = useCallback((template: CtaskTemplate) => {
@@ -1856,24 +1956,39 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
           changeNumber,
         });
 
-        try {
-          await updateAutoCreatedChangeTasks(changeSysId, state, changeSubmissionTarget.environmentKey);
-        } catch (unknownError) {
-          const errorMessage = unknownError instanceof Error ? unknownError.message : 'Auto-created CTASK updates failed';
-          throw new Error(`${changeNumber} created, but auto-created CTASK updates failed. Check ServiceNow before retrying: ${errorMessage}`, {
-            cause: unknownError,
-          });
-        }
-
-        if (state.changeTasks.length > 0) {
+        // Reconcile mode (per-template): update the CTASKs ServiceNow auto-created to
+        // match the staged ones by order, then create the remainder — for teams whose
+        // change process auto-spawns CTASKs.
+        if (state.reconcileAutoCtasks) {
           try {
-            await createChangeTasks(changeSysId, state.changeTasks);
+            await reconcileStagedChangeTasks(changeSysId, state.changeTasks);
           } catch (unknownError) {
-            const errorMessage = unknownError instanceof Error ? unknownError.message : 'CTASK creation failed';
-            const taskLabel = formatCtaskCount(state.changeTasks.length);
-            throw new Error(`${changeNumber} created, but ${taskLabel} did not fully complete. Check ServiceNow before retrying: ${errorMessage}`, {
+            const errorMessage = unknownError instanceof Error ? unknownError.message : 'CTASK reconcile failed';
+            throw new Error(`${changeNumber} created, but reconciling CTASKs did not fully complete. Check ServiceNow before retrying: ${errorMessage}`, {
               cause: unknownError,
             });
+          }
+        } else {
+          // Default mode: the team-specific auto-CTASK rename, then create all staged as new.
+          try {
+            await updateAutoCreatedChangeTasks(changeSysId, state, changeSubmissionTarget.environmentKey);
+          } catch (unknownError) {
+            const errorMessage = unknownError instanceof Error ? unknownError.message : 'Auto-created CTASK updates failed';
+            throw new Error(`${changeNumber} created, but auto-created CTASK updates failed. Check ServiceNow before retrying: ${errorMessage}`, {
+              cause: unknownError,
+            });
+          }
+
+          if (state.changeTasks.length > 0) {
+            try {
+              await createChangeTasks(changeSysId, state.changeTasks);
+            } catch (unknownError) {
+              const errorMessage = unknownError instanceof Error ? unknownError.message : 'CTASK creation failed';
+              const taskLabel = formatCtaskCount(state.changeTasks.length);
+              throw new Error(`${changeNumber} created, but ${taskLabel} did not fully complete. Check ServiceNow before retrying: ${errorMessage}`, {
+                cause: unknownError,
+              });
+            }
           }
         }
 
@@ -1937,6 +2052,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       addChangeTask,
       removeChangeTask,
       setLinkedCtaskTemplateIds,
+      setReconcileAutoCtasks,
       appendTasksToExistingChg,
       updateExistingChg,
       cloneCtaskTemplate,
@@ -1952,7 +2068,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     setChgBasicInfo, setChgPlanningAssessment, setChgPlanningContent,
     pinCustomSnowField, removeCustomSnowField,
     setCloneChgNumber, cloneFromChg, applyTemplate, addChangeTask, removeChangeTask,
-    setLinkedCtaskTemplateIds,
+    setLinkedCtaskTemplateIds, setReconcileAutoCtasks,
     appendTasksToExistingChg, cloneCtaskTemplate, updateEnvironment, goToStep, reset, createChg,
     updateExistingChg,
   ]);
