@@ -1,7 +1,9 @@
-// src/services/featureChangeScheduler.js — Daily Feature (Epic) Change report scheduler.
+// src/services/featureChangeScheduler.js — Daily Feature Change report scheduler.
 //
-// Monitors Jira Epics for changes to Fix Version, Status, and schedule fields
+// Monitors Jira Features for changes to Fix Version, Status, and schedule fields
 // (Target Start, Target End, Due Date) and delivers a Confluence blog post report.
+// Runs Monday–Friday only, looking back to the previous business day so that
+// Monday's run captures anything that changed over the weekend.
 // A single setInterval fires every 60 seconds and checks all configured
 // scheduleTime values against the current HH:MM local time, firing any
 // that match and have not yet run today.
@@ -53,6 +55,22 @@ const TARGET_END_FIELD_NAMES = ['target end', 'planned end', 'target end date'];
 const DUE_DATE_FIELD_ID   = 'duedate';
 const DUE_DATE_FIELD_NAME = 'due date';
 
+/**
+ * Day-of-week numbers returned by Date.getDay().
+ * Stored as constants so the weekend and business-day logic is self-documenting.
+ */
+const DAY_SUNDAY   = 0;
+const DAY_MONDAY   = 1;
+const DAY_SATURDAY = 6;
+
+/**
+ * How many calendar days to subtract from today to reach the previous business day.
+ * Indexed by getDay() value (0 = Sunday … 6 = Saturday).
+ * Monday (1) → 3 days back lands on Friday.
+ * Saturday (6) and Sunday (0) are safety fallbacks; the scheduler skips weekends.
+ */
+const DAYS_BACK_TO_PREVIOUS_BUSINESS_DAY = [2, 3, 1, 1, 1, 1, 1];
+
 // ── Schedule tracking ──
 
 // Tracks the last date (YYYY-MM-DD) each config fired so we never fire twice on the same day.
@@ -99,6 +117,40 @@ function markFiredToday(configKey) {
   lastFiredDates.set(configKey, getTodayDateString());
 }
 
+/**
+ * Returns true when today is Saturday or Sunday.
+ * The scheduler skips both weekend days — there is no business activity to report.
+ *
+ * @returns {boolean}
+ */
+function isTodayWeekend() {
+  const dayOfWeek = new Date().getDay();
+  return dayOfWeek === DAY_SUNDAY || dayOfWeek === DAY_SATURDAY;
+}
+
+/**
+ * Returns a Date set to midnight at the start of the previous business day.
+ *
+ * Monday  → Friday  (3 days back)
+ * Tue–Fri → previous calendar day (1 day back)
+ * Weekend → Friday  (safety fallback; normally gated by isTodayWeekend)
+ *
+ * Using midnight ensures the Jira query window covers the full previous day,
+ * not just the last 24 hours from the exact moment the scheduler fires.
+ *
+ * @returns {Date}
+ */
+function getPreviousBusinessDayCutoff() {
+  const now        = new Date();
+  const dayOfWeek  = now.getDay();
+  const daysToBack = DAYS_BACK_TO_PREVIOUS_BUSINESS_DAY[dayOfWeek];
+
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - daysToBack);
+  cutoff.setHours(0, 0, 0, 0);
+  return cutoff;
+}
+
 // ── Scheduler entry point ──
 
 /**
@@ -122,10 +174,16 @@ function startFeatureChangeScheduler(configuration) {
 /**
  * Iterates all feature change reports and fires any whose scheduleTime
  * matches the current minute and have not yet fired today.
+ * Skips entirely on Saturday and Sunday — there is no business activity to report.
  *
  * @param {object} configuration
  */
 function checkAndFireScheduledReports(configuration) {
+  // Weekend guard: feature change reports are business-day only.
+  if (isTodayWeekend()) {
+    return;
+  }
+
   const featureChangeConfig = ((configuration.scheduler || {}).featureChange) || {};
   const reports             = featureChangeConfig.reports || [];
   const artRollup           = featureChangeConfig.artRollup || {};
@@ -410,11 +468,12 @@ function renderScheduleChangeTable(entries, emptyMessage) {
  * @param {Array}  fixVersionEntries
  * @param {Array}  statusEntries
  * @param {Array}  scheduleEntries
- * @param {string} projectKey
- * @param {string} generatedAt - Human-readable timestamp string
+ * @param {string} jiraLabel    - Team label used for the query
+ * @param {string} generatedAt  - Human-readable timestamp string
+ * @param {string} sinceLabel   - Human-readable "since" date, e.g. "Jun 13, 2026 (Fri)"
  * @returns {string}
  */
-function buildFeatureChangeBlogBody(fixVersionEntries, statusEntries, scheduleEntries, jiraLabel, generatedAt) {
+function buildFeatureChangeBlogBody(fixVersionEntries, statusEntries, scheduleEntries, jiraLabel, generatedAt, sinceLabel) {
   const fixVersionCount = fixVersionEntries.length;
   const statusCount     = statusEntries.length;
   const scheduleCount   = scheduleEntries.length;
@@ -427,13 +486,13 @@ function buildFeatureChangeBlogBody(fixVersionEntries, statusEntries, scheduleEn
   return [
     '<p><strong>Label:</strong> ' + escapeXml(jiraLabel) +
       ' &nbsp;|&nbsp; <strong>Generated:</strong> ' + escapeXml(generatedAt) +
-      ' &nbsp;|&nbsp; <strong>Window:</strong> Last 24 hours</p>',
+      ' &nbsp;|&nbsp; <strong>Since:</strong> ' + escapeXml(sinceLabel) + '</p>',
     fixVersionHeading,
-    renderSimpleChangeTable(fixVersionEntries, 'No fix version changes in the last 24 hours.'),
+    renderSimpleChangeTable(fixVersionEntries, 'No fix version changes since ' + sinceLabel + '.'),
     statusHeading,
-    renderSimpleChangeTable(statusEntries, 'No status changes in the last 24 hours.'),
+    renderSimpleChangeTable(statusEntries, 'No status changes since ' + sinceLabel + '.'),
     scheduleHeading,
-    renderScheduleChangeTable(scheduleEntries, 'No schedule changes in the last 24 hours.'),
+    renderScheduleChangeTable(scheduleEntries, 'No schedule changes since ' + sinceLabel + '.'),
   ].join('\n');
 }
 
@@ -581,10 +640,12 @@ async function runFeatureReportDelivery(report, jiraConfig, confluenceConfig, ss
     return { skipped: true, message: 'No Jira label configured — delivery skipped.' };
   }
 
-  // Use yesterday's date as the cutoff so a midnight-scheduled run still catches
-  // anything that changed late the previous day.
-  const cutoffDate       = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  // Previous business day cutoff — Monday's run looks back to Friday,
+  // Tuesday–Friday looks back one calendar day. Using midnight ensures
+  // the full prior business day is included regardless of when the job fires.
+  const cutoffDate       = getPreviousBusinessDayCutoff();
   const cutoffDateString = cutoffDate.toISOString().slice(0, 10);
+  const sinceLabel       = cutoffDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', weekday: 'short' });
 
   console.log('  🔍 Feature Change [' + effectiveLabel + ']: querying Features updated since ' + cutoffDateString + '…');
   console.log('  🔗 Feature Change [' + effectiveLabel + ']: triggerUrl = ' + (triggerUrl || '(not set)'));
@@ -594,10 +655,10 @@ async function runFeatureReportDelivery(report, jiraConfig, confluenceConfig, ss
 
   const totalChangeCount = fixVersionEntries.length + statusEntries.length + scheduleEntries.length;
 
-  // Nothing changed — avoid creating a noisy empty report.
+  // Nothing changed — avoid creating a noisy empty report and never fire the webhook.
   if (totalChangeCount === 0) {
     console.log('  ✅ Feature Change [' + effectiveLabel + ']: no changes — skipping');
-    return { skipped: true, message: 'No feature changes found in the last 24 hours — delivery skipped.' };
+    return { skipped: true, message: 'No feature changes since ' + sinceLabel + ' — delivery skipped.' };
   }
 
   const generatedAt = new Date().toLocaleString('en-US', {
@@ -611,7 +672,7 @@ async function runFeatureReportDelivery(report, jiraConfig, confluenceConfig, ss
   const postTitle    = targetPageId
     ? 'Feature Change Report — ' + teamLabel
     : 'Feature Change Report — ' + teamLabel + ' — ' + dateLabel;
-  const bodyHtml  = buildFeatureChangeBlogBody(fixVersionEntries, statusEntries, scheduleEntries, effectiveLabel, generatedAt);
+  const bodyHtml  = buildFeatureChangeBlogBody(fixVersionEntries, statusEntries, scheduleEntries, effectiveLabel, generatedAt, sinceLabel);
   console.log(
     '  🔗 Feature Change [' + effectiveLabel + ']: targetBlogUrl = ' +
     (targetBlogUrl || '(not set)') + ' → pageId = ' + (targetPageId || 'none')
@@ -682,8 +743,10 @@ async function runFeatureChangeArtRollupDelivery(artRollup, teamReports, jiraCon
     return { skipped: true, message: 'No teams have a Jira label configured — delivery skipped.' };
   }
 
-  const cutoffDate       = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  // Previous business day cutoff — same logic as per-team delivery.
+  const cutoffDate       = getPreviousBusinessDayCutoff();
   const cutoffDateString = cutoffDate.toISOString().slice(0, 10);
+  const sinceLabel       = cutoffDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', weekday: 'short' });
 
   // Single combined Jira query covering every team label — more efficient than N separate queries.
   const allLabelsList = teamsWithLabels.map((report) => '"' + report.jiraLabel.trim() + '"').join(', ');
@@ -732,7 +795,7 @@ async function runFeatureChangeArtRollupDelivery(artRollup, teamReports, jiraCon
 
   if (totalChangeCount === 0) {
     console.log('  ✅ Feature Change ART Rollup: no changes across any team — skipping');
-    return { skipped: true, message: 'No feature changes found across any ART team — delivery skipped.' };
+    return { skipped: true, message: 'No feature changes since ' + sinceLabel + ' — delivery skipped.' };
   }
 
   const generatedAt  = new Date().toLocaleString('en-US', {
@@ -745,7 +808,7 @@ async function runFeatureChangeArtRollupDelivery(artRollup, teamReports, jiraCon
   const postTitle    = targetPageId
     ? 'ART Feature Change Rollup'
     : 'ART Feature Change Rollup — ' + dateLabel;
-  const bodyHtml     = buildFeatureChangeArtRollupBody(teamResults, generatedAt);
+  const bodyHtml     = buildFeatureChangeArtRollupBody(teamResults, generatedAt, sinceLabel);
 
   let postUrl;
   if (targetPageId) {
@@ -786,9 +849,10 @@ async function runFeatureChangeArtRollupDelivery(artRollup, teamReports, jiraCon
  *
  * @param {Array}  teamResults  - [{ teamName, fixVersionEntries, statusEntries, scheduleEntries }]
  * @param {string} generatedAt  - Human-readable timestamp string
+ * @param {string} sinceLabel   - Human-readable "since" date, e.g. "Jun 13, 2026 (Fri)"
  * @returns {string}
  */
-function buildFeatureChangeArtRollupBody(teamResults, generatedAt) {
+function buildFeatureChangeArtRollupBody(teamResults, generatedAt, sinceLabel) {
   const totalChanges = teamResults.reduce(
     (sum, team) => sum + team.fixVersionEntries.length + team.statusEntries.length + team.scheduleEntries.length,
     0,
@@ -801,7 +865,7 @@ function buildFeatureChangeArtRollupBody(teamResults, generatedAt) {
     ' &nbsp;|&nbsp; <strong>Teams with changes:</strong> ' + teamsWithChanges.length +
     ' &nbsp;|&nbsp; <strong>Total changes:</strong> ' + totalChanges +
     ' &nbsp;|&nbsp; <strong>Generated:</strong> ' + escapeXml(generatedAt) +
-    ' &nbsp;|&nbsp; <strong>Window:</strong> Last 24 hours</p>';
+    ' &nbsp;|&nbsp; <strong>Since:</strong> ' + escapeXml(sinceLabel) + '</p>';
 
   const teamSections = teamsWithChanges.map((team) => {
     const teamTotal      = team.fixVersionEntries.length + team.statusEntries.length + team.scheduleEntries.length;
@@ -875,6 +939,8 @@ module.exports = {
   // Pure helpers exported for unit testing.
   getCurrentTimeHHMM,
   getTodayDateString,
+  isTodayWeekend,
+  getPreviousBusinessDayCutoff,
   extractFeatureChangeEntries,
   escapeXml,
   extractPageIdFromUrl,
