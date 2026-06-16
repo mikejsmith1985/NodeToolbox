@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Rovo parking page read now handles an "append" rule and ignores stale runs**: When the Confluence Automation rule uses "Append content to the end of a page" (rather than replacing it), the parking page accumulates one result block per run. The reader now isolates the block belonging to the current `correlationId` — the lines between this request's `correlationId:` marker and the next marker (or end of page) — instead of returning the whole accumulated page. A re-run with the same id supersedes its earlier block. This prevents a previous run's result from leaking into a new request and lets the static parking page work with either an append or a replace rule.
+
 ### Added
 - **Rovo result lookup now uses a fixed "parking page" read by ID**: Searching for a per-run page by title never returns results in a personal ("~") Confluence space, so "Run via Rovo (auto)" kept timing out. The exchange now supports a single, reusable parking page that the Automation rule **edits** each run. NodeToolbox reads it directly by page ID (`GET /wiki/rest/api/content/<id>`) — a direct lookup that bypasses the search index and works in personal spaces. The rule stamps `correlationId: <id>` into the page body; NodeToolbox only accepts the result when that marker matches the current request (so a stale page reads as not-ready) and strips the marker line before parsing. Configure it in Admin Hub → ⚡ Rovo → **Parking Page ID**; the by-title space search remains as a fallback when no Page ID is set.
 
