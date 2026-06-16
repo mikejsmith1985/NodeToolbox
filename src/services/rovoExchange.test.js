@@ -162,6 +162,15 @@ describe('extractStaticResult', () => {
   it('strips the correlationId marker line and returns the rest', () => {
     expect(extractStaticResult('correlationId: abc\nSHORT_DESCRIPTION: x\nDESCRIPTION: y', 'abc')).toBe('SHORT_DESCRIPTION: x\nDESCRIPTION: y');
   });
+  it('returns ONLY this request\'s block when the page appends multiple runs', () => {
+    // The "Append content" rule grows the page; an older run must not leak into the new result.
+    const accumulated = [
+      'correlationId: OLD-1', 'SHORT_DESCRIPTION: stale one',
+      'correlationId: abc', 'SHORT_DESCRIPTION: the fresh one', 'DESCRIPTION: mine',
+    ].join('\n');
+    expect(extractStaticResult(accumulated, 'abc')).toBe('SHORT_DESCRIPTION: the fresh one\nDESCRIPTION: mine');
+    expect(extractStaticResult(accumulated, 'OLD-1')).toBe('SHORT_DESCRIPTION: stale one');
+  });
 });
 
 describe('stripStorageHtml', () => {

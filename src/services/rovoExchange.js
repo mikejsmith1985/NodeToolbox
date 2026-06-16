@@ -85,25 +85,54 @@ function stripStorageHtml(storageHtml) {
     .trim();
 }
 
+/** True when a line is a "correlationId: <id>" marker stamped by the Rovo rule. */
+function isCorrelationMarker(line) {
+  return line.trimStart().toLowerCase().startsWith('correlationid:');
+}
+
 /**
- * Extracts this request's response from a static parking page's text. The rule
- * stamps a "correlationId: <id>" marker line into the page; we only accept the
- * body when that marker matches THIS request (so a stale/previous result is
- * ignored), and we strip the marker line so the surface's parser gets clean output.
+ * Extracts this request's response from the parking page's text.
+ *
+ * The Confluence rule stamps a "correlationId: <id>" marker line ahead of Rovo's
+ * output. When the rule *appends* (rather than replaces), the page accumulates
+ * one marked block per run, so we must return ONLY the block belonging to THIS
+ * request and ignore older results. We locate this request's marker line and
+ * return everything between it and the next marker (or end of page); the marker
+ * line itself is dropped so the surface's parser receives clean "KEY: value" text.
+ * Returns null when this request's marker is not on the page yet (still pending).
  *
  * @param {string} pageText - Plain-text body of the parking page.
  * @param {string} correlationId - The id we are waiting for.
- * @returns {string|null} The cleaned response, or null when the page is not yet ours.
+ * @returns {string|null} The cleaned response for this request, or null when not present.
  */
 function extractStaticResult(pageText, correlationId) {
-  if (!pageText || !pageText.includes(correlationId)) {
+  if (!pageText) {
     return null;
   }
-  return pageText
-    .split('\n')
-    .filter((line) => !line.trimStart().toLowerCase().startsWith('correlationid:'))
-    .join('\n')
-    .trim();
+
+  const lines = pageText.split('\n');
+
+  // Find this request's marker. If the page accumulates multiple runs, take the
+  // last occurrence of our id so a re-run supersedes any earlier identical block.
+  let blockStart = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (isCorrelationMarker(lines[i]) && lines[i].includes(correlationId)) {
+      blockStart = i + 1; // response text begins on the line after the marker
+    }
+  }
+  if (blockStart === -1) {
+    return null; // our result has not been written to the page yet
+  }
+
+  // Collect lines until the next run's marker (start of a later block) or the end.
+  const blockLines = [];
+  for (let i = blockStart; i < lines.length; i++) {
+    if (isCorrelationMarker(lines[i])) {
+      break;
+    }
+    blockLines.push(lines[i]);
+  }
+  return blockLines.join('\n').trim();
 }
 
 /**
