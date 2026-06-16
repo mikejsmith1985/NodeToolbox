@@ -2,7 +2,7 @@
 
 'use strict';
 
-const { dispatchPrompt, fetchResult, stripStorageHtml, PARKING_TITLE_PREFIX } = require('./rovoExchange');
+const { dispatchPrompt, fetchResult, stripStorageHtml, extractStaticResult, PARKING_TITLE_PREFIX } = require('./rovoExchange');
 
 function rovoConfig(overrides = {}) {
   return {
@@ -120,6 +120,47 @@ describe('fetchResult', () => {
   it('maps a Confluence error to 502', async () => {
     const confluence = () => Promise.reject(new Error('timeout'));
     expect(await fetchResult(rovoConfig(), 'abc', { makeConfluenceApiRequest: confluence })).toMatchObject({ httpStatus: 502, code: 'fetch-failed' });
+  });
+});
+
+describe('fetchResult — static parking page (by id)', () => {
+  function pageConfig() {
+    return {
+      sslVerify: true,
+      rovoAutomation: { webhookUrl: 'https://x.atlassian.net/h', parkingPageId: '781058099' },
+      confluence: { baseUrl: 'https://x.atlassian.net/wiki', email: 'e', apiToken: 't' },
+    };
+  }
+
+  it('reads by page id, returns ready when the body carries this correlationId, and strips the marker', async () => {
+    const calls = [];
+    const confluence = (method, path) => {
+      calls.push({ method, path });
+      return Promise.resolve({ body: { storage: { value: '<p>correlationId: abc</p><p>SHORT_DESCRIPTION: Deploy v2</p>' } } });
+    };
+    const result = await fetchResult(pageConfig(), 'abc', { makeConfluenceApiRequest: confluence });
+    expect(result).toMatchObject({ ok: true, ready: true });
+    expect(result.response).toBe('SHORT_DESCRIPTION: Deploy v2'); // correlationId marker line removed
+    expect(calls[0].path).toContain('/content/781058099'); // direct by-id fetch, no search
+  });
+
+  it('returns not-ready when the page holds a different (stale) correlationId', async () => {
+    const confluence = () => Promise.resolve({ body: { storage: { value: '<p>correlationId: OLD-ID</p><p>SHORT_DESCRIPTION: stale</p>' } } });
+    expect(await fetchResult(pageConfig(), 'abc', { makeConfluenceApiRequest: confluence })).toMatchObject({ ok: true, ready: false });
+  });
+
+  it('maps a fetch-by-id error to 502', async () => {
+    const confluence = () => Promise.reject(new Error('404 not found'));
+    expect(await fetchResult(pageConfig(), 'abc', { makeConfluenceApiRequest: confluence })).toMatchObject({ ok: false, httpStatus: 502, code: 'fetch-failed' });
+  });
+});
+
+describe('extractStaticResult', () => {
+  it('returns null when the correlationId is absent', () => {
+    expect(extractStaticResult('SHORT_DESCRIPTION: x', 'abc')).toBeNull();
+  });
+  it('strips the correlationId marker line and returns the rest', () => {
+    expect(extractStaticResult('correlationId: abc\nSHORT_DESCRIPTION: x\nDESCRIPTION: y', 'abc')).toBe('SHORT_DESCRIPTION: x\nDESCRIPTION: y');
   });
 });
 
