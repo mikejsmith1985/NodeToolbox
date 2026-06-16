@@ -91,6 +91,26 @@ function isCorrelationMarker(line) {
 }
 
 /**
+ * Lists the correlationId value(s) actually stamped on a parking page. Used only
+ * for diagnostics: comparing what we are waiting for against what the page holds
+ * instantly distinguishes a wrong-page-id (no markers found) from a stale-result
+ * (a different id found) when a "Run via Rovo (auto)" times out.
+ *
+ * @param {string} pageText - Plain-text body of the parking page.
+ * @returns {string[]} The id portion of every correlationId marker line found.
+ */
+function listCorrelationMarkers(pageText) {
+  if (!pageText) {
+    return [];
+  }
+  return pageText
+    .split('\n')
+    .filter(isCorrelationMarker)
+    .map((line) => line.slice(line.indexOf(':') + 1).trim())
+    .filter(Boolean);
+}
+
+/**
  * Extracts this request's response from the parking page's text.
  *
  * The Confluence rule stamps a "correlationId: <id>" marker line ahead of Rovo's
@@ -168,8 +188,12 @@ async function fetchResult(configuration, correlationId, deps = {}) {
     try {
       const page = await confluenceRequest('GET', `/wiki/rest/api/content/${encodeURIComponent(rovo.parkingPageId)}?expand=body.storage`, null, confluenceConfig, shouldVerify);
       const rawBody = (((page || {}).body || {}).storage || {}).value || '';
-      const freshResponse = extractStaticResult(stripStorageHtml(rawBody), correlationId);
-      console.log(`  [Rovo] result lookup [page ${rovo.parkingPageId}] correlationId present: ${freshResponse !== null}`);
+      const pageText = stripStorageHtml(rawBody);
+      const freshResponse = extractStaticResult(pageText, correlationId);
+      // Log what we want vs what the page holds: no markers found ⇒ wrong page id
+      // or the rule writes elsewhere; a different id ⇒ a stale/previous result.
+      const markersOnPage = listCorrelationMarkers(pageText);
+      console.log(`  [Rovo] result lookup [page ${rovo.parkingPageId}] want=${correlationId} page-has=[${markersOnPage.join(', ') || 'none'}] match=${freshResponse !== null}`);
       if (freshResponse === null) {
         return { ok: true, httpStatus: 200, ready: false };
       }
@@ -218,4 +242,4 @@ async function fetchResult(configuration, correlationId, deps = {}) {
   }
 }
 
-module.exports = { dispatchPrompt, fetchResult, stripStorageHtml, extractStaticResult, PARKING_TITLE_PREFIX };
+module.exports = { dispatchPrompt, fetchResult, stripStorageHtml, extractStaticResult, listCorrelationMarkers, PARKING_TITLE_PREFIX };
