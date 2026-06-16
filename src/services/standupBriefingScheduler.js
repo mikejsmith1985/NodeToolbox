@@ -13,6 +13,7 @@
 'use strict';
 
 const { makeJiraApiRequest, makeConfluenceApiRequest, triggerWebhook } = require('../utils/httpClient');
+const { requestRovoText, isRovoEnabled } = require('./rovoEnrichment');
 
 // ── Constants ──
 
@@ -509,6 +510,42 @@ function escapeXml(text) {
 }
 
 /**
+ * Builds the prompt asking Rovo to summarise the briefing into a short insight block.
+ * Sends the already-generated plain-text briefing so Rovo synthesises the urgent items.
+ *
+ * @param {string} briefingText - The markdown/plain briefing already produced for this run.
+ * @param {string} teamName
+ * @returns {string} The Rovo prompt.
+ */
+function buildStandupRovoPrompt(briefingText, teamName) {
+  return [
+    `You are a release train assistant. Below is today's standup briefing for team "${teamName}".`,
+    'Write a concise insight block (2-3 sentences, plain prose, no preamble or headings)',
+    'highlighting the single most urgent item(s) the team should act on today.',
+    '',
+    briefingText,
+  ].join('\n');
+}
+
+/**
+ * Wraps Rovo's insight text in a Confluence "info" panel for prepending above the
+ * data tables. Text is XML-escaped; blank-line groups become separate paragraphs.
+ *
+ * @param {string} insightText - Plain-text insight returned by Rovo.
+ * @returns {string} Confluence storage-format markup.
+ */
+function buildRovoInsightPanel(insightText) {
+  const paragraphs = String(insightText)
+    .trim()
+    .split(/\n{2,}/)
+    .map((paragraph) => '<p>' + escapeXml(paragraph).replace(/\n/g, '<br/>') + '</p>')
+    .join('');
+  return '<ac:structured-macro ac:name="info"><ac:rich-text-body>'
+    + '<p><strong>🤖 Rovo insight</strong></p>' + paragraphs
+    + '</ac:rich-text-body></ac:structured-macro>';
+}
+
+/**
  * Renders an array of row objects as a Confluence storage-format HTML table.
  * Returns an italic empty-state paragraph when rows is empty.
  *
@@ -905,7 +942,18 @@ async function runTeamBriefingDelivery(teamReport, configuration) {
   const dateLabel = new Date().toISOString().slice(0, 10);
 
   const briefingText     = buildBriefingMarkdown(buckets, teamName, sprintName, daysBack);
-  const confluenceHtml   = buildBriefingConfluenceBody(buckets, teamName, sprintName, daysBack, generatedAt);
+  let   confluenceHtml   = buildBriefingConfluenceBody(buckets, teamName, sprintName, daysBack, generatedAt);
+
+  // Optional, non-blocking Rovo enrichment: prepend an insight block above the
+  // tables. Skipped silently when Rovo is disabled/unavailable so the briefing
+  // always publishes on schedule (FR-001, SC-008).
+  if (isRovoEnabled(configuration)) {
+    const rovoInsight = await requestRovoText(configuration, buildStandupRovoPrompt(briefingText, teamName), { label: 'standup' });
+    if (rovoInsight) {
+      confluenceHtml = buildRovoInsightPanel(rovoInsight) + confluenceHtml;
+    }
+  }
+
   const targetPageId     = targetBlogUrl ? extractPageIdFromUrl(targetBlogUrl) : null;
   const postTitle        = targetPageId
     ? 'Standup Briefing — ' + teamName
@@ -1165,4 +1213,6 @@ module.exports = {
   isCompletedStatus,
   isBlockedStatus,
   hasBlockingLink,
+  buildStandupRovoPrompt,
+  buildRovoInsightPanel,
 };

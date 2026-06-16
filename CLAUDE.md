@@ -9,7 +9,7 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **report-webhook-delivery** — plan: `specs/001-report-webhook-delivery/plan.md`
+- **rovo-expansion-hygiene-monitor** — plan: `specs/002-rovo-expansion-hygiene-monitor/plan.md`
   (spec, research, data-model, contracts, quickstart in the same directory).
 <!-- SPECKIT END -->
 
