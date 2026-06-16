@@ -7,12 +7,14 @@
 
 'use strict';
 
-// The only destinations a report may be delivered to. Matching is an exact
-// hostname or a dot-prefixed suffix — never a substring test — so look-alike
-// hosts such as "evil-atlassian.net.attacker.com" or "notatlassian.net" are
-// rejected. Extend these lists if the product ever supports another trusted host.
-const ALLOWED_EXACT_HOSTS = ['automation.atlassian.com'];
-const ALLOWED_HOST_SUFFIXES = ['.atlassian.net'];
+// The only destinations a payload may be sent to: Atlassian-owned hosts. Matching
+// is an exact hostname or a dot-prefixed suffix — never a substring test — so
+// look-alike hosts such as "evil-atlassian.com.attacker.com" or "notatlassian.net"
+// are rejected. Both Atlassian domains are covered because automation/webhook URLs
+// live on several hosts (e.g. automation.atlassian.com, api-private.atlassian.com,
+// and <site>.atlassian.net).
+const ALLOWED_EXACT_HOSTS = [];
+const ALLOWED_HOST_SUFFIXES = ['.atlassian.net', '.atlassian.com'];
 
 /**
  * Evaluates whether a webhook URL is an allowed Atlassian Automation destination.
