@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Dev Panel → Server Logs was always empty**: The Dev Panel client filters log entries by a numeric `id` (`entry.id > lastSeenId`), but the server's log buffer wrote entries as `{ level, message, timestamp }` with no `id`, so every entry failed the filter and the panel showed nothing. The log buffer now assigns a monotonic `id` to each entry, so Server Logs populate as expected (and the `[Rovo] result lookup` diagnostics become visible).
 - **Rovo automation config now persists across restarts and upgrades**: The config loader rebuilds `toolbox-proxy.json` from a fixed set of sections on every save and never included `rovoAutomation`, so the Rovo webhook URL / secret / parking space had to be re-entered after every restart or update. The loader now writes and reads `rovoAutomation` (with the webhook secret base64-obfuscated like other credentials), and the config lives in `%APPDATA%\NodeToolbox\`, so it survives version upgrades — regardless of whether the hidden panel is displayed.
 
 ### Changed

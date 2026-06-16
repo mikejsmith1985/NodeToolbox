@@ -24,6 +24,17 @@ describe('logBuffer', () => {
     expect(entries[0].timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
+  it('assigns a monotonically increasing numeric id to each entry', () => {
+    // The Dev Panel client filters by id (entry.id > lastSeenId); without a
+    // numeric id every entry is dropped and the panel stays empty.
+    console.log('first');
+    console.log('second');
+    const entries = getAllEntries();
+    expect(typeof entries[0].id).toBe('number');
+    expect(typeof entries[1].id).toBe('number');
+    expect(entries[1].id).toBeGreaterThan(entries[0].id);
+  });
+
   it('captures console.warn as warn and console.error as error', () => {
     console.warn('a warning');
     console.error('an error');
