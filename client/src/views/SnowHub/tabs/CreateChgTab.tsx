@@ -130,6 +130,7 @@ function buildCurrentTemplateData(state: CrgStateData): Omit<CrgTemplate, 'id' |
     prdEnvironment:        state.prdEnvironment,
     pfixEnvironment:       state.pfixEnvironment,
     ctaskTemplateIds:      state.ctaskTemplateIds ?? [],
+    reconcileAutoCtasks:   state.reconcileAutoCtasks ?? false,
   };
 }
 
@@ -945,6 +946,20 @@ function CrgWorkspacePanel({
             ) : (
               <p className={styles.panelHint}>No CTASK templates saved yet — clone or create one first to link it here.</p>
             )}
+
+            <label className={styles.linkedCtaskOption}>
+              <input
+                checked={state.reconcileAutoCtasks}
+                onChange={(event) => actions.setReconcileAutoCtasks(event.target.checked)}
+                type="checkbox"
+              />
+              <span>Update ServiceNow&apos;s auto-created CTASKs to match these (then create the rest)</span>
+            </label>
+            <p className={styles.panelHint}>
+              Turn on for a team whose change process auto-spawns CTASKs: on create, the linked CTASKs
+              update the auto-created tickets in order, and only extras beyond that count are created new.
+              Leave off to always create new CTASKs.
+            </p>
           </div>
 
           {isSavePromptVisible ? (

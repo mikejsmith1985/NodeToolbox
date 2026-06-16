@@ -130,6 +130,7 @@ const {
     pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference }, impactedPersonsAware: '', snowEnvironmentValue: '' },
     changeTasks: [] as unknown[],
     ctaskTemplateIds: [] as string[],
+    reconcileAutoCtasks: false,
     isSubmitting: false,
     submitResult: null as string | null,
     submissionDebug: null as null | {
@@ -327,6 +328,7 @@ function resetMockState(): void {
     pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '', snowEnvironmentValue: '' },
     changeTasks: [],
     ctaskTemplateIds: [],
+    reconcileAutoCtasks: false,
     isSubmitting: false,
     submitResult: null,
     submissionDebug: null,

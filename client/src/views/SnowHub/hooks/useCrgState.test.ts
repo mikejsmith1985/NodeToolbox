@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
 import type { CrgTemplate, CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
-import { useCrgState } from './useCrgState.ts';
+import { reconcileStagedChangeTasks, useCrgState } from './useCrgState.ts';
 
 vi.mock('../../../services/jiraApi.ts', () => ({
   jiraGet: vi.fn(),
@@ -1577,6 +1577,94 @@ describe('useCrgState', () => {
       });
 
       expect(result.current.state.ctaskTemplateIds).toEqual(['cta-X', 'cta-Y']);
+    });
+
+    it('setReconcileAutoCtasks toggles the reconcile preference', () => {
+      const { result } = renderHook(() => useCrgState());
+      expect(result.current.state.reconcileAutoCtasks).toBe(false);
+
+      act(() => {
+        result.current.actions.setReconcileAutoCtasks(true);
+      });
+
+      expect(result.current.state.reconcileAutoCtasks).toBe(true);
+    });
+
+    it('applyTemplate carries the reconcile preference from the template', () => {
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.applyTemplate({
+          ...makeChgTemplateWithLinks(result.current.state, []),
+          reconcileAutoCtasks: true,
+        });
+      });
+
+      expect(result.current.state.reconcileAutoCtasks).toBe(true);
+    });
+  });
+
+  describe('reconcileStagedChangeTasks', () => {
+    const noopSleep = () => Promise.resolve();
+
+    /** Routes the mocked snowFetch by method: GET returns auto-created CTASKs, others succeed. */
+    function mockSnowForAutoCtasks(autoCtasks: Array<{ sys_id: string }>) {
+      vi.mocked(snowFetch).mockImplementation((async (path: string, options?: { method?: string }) => {
+        const method = options?.method ?? 'GET';
+        if (method === 'GET' && path.includes('change_task?')) {
+          return { result: autoCtasks };
+        }
+        return {};
+      }) as never);
+    }
+
+    function callsMatching(method: string) {
+      return vi.mocked(snowFetch).mock.calls.filter(([, options]) => (options as { method?: string } | undefined)?.method === method);
+    }
+
+    it('updates the auto-created CTASKs in order and creates new for the remainder', async () => {
+      mockSnowForAutoCtasks([{ sys_id: 'auto-1' }, { sys_id: 'auto-2' }]);
+      const staged = [
+        createMockCtaskTemplate({ id: 's1', name: 'First',  shortDescription: 'Update one' }),
+        createMockCtaskTemplate({ id: 's2', name: 'Second', shortDescription: 'Update two' }),
+        createMockCtaskTemplate({ id: 's3', name: 'Third',  shortDescription: 'Create three' }),
+      ];
+
+      const processed = await reconcileStagedChangeTasks('chg-sys-1', staged, noopSleep);
+
+      expect(processed).toBe(3);
+      // Two PATCHes (to the auto-created sys_ids) and one POST (the remainder).
+      const patchCalls = callsMatching('PATCH');
+      const postCalls = callsMatching('POST');
+      expect(patchCalls).toHaveLength(2);
+      expect(patchCalls[0][0]).toContain('change_task/auto-1');
+      expect(patchCalls[1][0]).toContain('change_task/auto-2');
+      expect(postCalls).toHaveLength(1);
+      expect(postCalls[0][0]).toBe('/api/now/table/change_task');
+    });
+
+    it('creates all staged CTASKs as new when nothing was auto-created', async () => {
+      mockSnowForAutoCtasks([]);
+      const staged = [
+        createMockCtaskTemplate({ id: 's1', name: 'Only' }),
+        createMockCtaskTemplate({ id: 's2', name: 'Second' }),
+      ];
+
+      const processed = await reconcileStagedChangeTasks('chg-sys-2', staged, noopSleep);
+
+      expect(processed).toBe(2);
+      expect(callsMatching('PATCH')).toHaveLength(0);
+      expect(callsMatching('POST')).toHaveLength(2);
+    });
+
+    it('does nothing and issues no writes when there are no staged CTASKs', async () => {
+      mockSnowForAutoCtasks([{ sys_id: 'auto-1' }]);
+
+      const processed = await reconcileStagedChangeTasks('chg-sys-3', [], noopSleep);
+
+      expect(processed).toBe(0);
+      expect(callsMatching('PATCH')).toHaveLength(0);
+      expect(callsMatching('POST')).toHaveLength(0);
     });
   });
 
