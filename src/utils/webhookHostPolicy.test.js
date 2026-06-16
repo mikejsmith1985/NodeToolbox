@@ -10,6 +10,10 @@ describe('webhookHostPolicy', () => {
       expect(isAllowed('https://automation.atlassian.com/hook/abc')).toBe(true);
     });
 
+    test('allows api-private.atlassian.com (Automation webhook host) over HTTPS', () => {
+      expect(isAllowed('https://api-private.atlassian.com/automation/webhooks/abc')).toBe(true);
+    });
+
     test('allows any *.atlassian.net subdomain over HTTPS', () => {
       expect(isAllowed('https://mycompany.atlassian.net/rest/webhook')).toBe(true);
     });
@@ -36,6 +40,10 @@ describe('webhookHostPolicy', () => {
 
     test('rejects a substring trick (notatlassian.net)', () => {
       expect(isAllowed('https://notatlassian.net/hook')).toBe(false);
+    });
+
+    test('rejects a .atlassian.com look-alike (evil-atlassian.com.attacker.com)', () => {
+      expect(isAllowed('https://evil-atlassian.com.attacker.com/hook')).toBe(false);
     });
 
     test('rejects bare atlassian.net with no subdomain', () => {
