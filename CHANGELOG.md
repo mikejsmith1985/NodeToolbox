@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Rovo automation config now persists across restarts and upgrades**: The config loader rebuilds `toolbox-proxy.json` from a fixed set of sections on every save and never included `rovoAutomation`, so the Rovo webhook URL / secret / parking space had to be re-entered after every restart or update. The loader now writes and reads `rovoAutomation` (with the webhook secret base64-obfuscated like other credentials), and the config lives in `%APPDATA%\NodeToolbox\`, so it survives version upgrades — regardless of whether the hidden panel is displayed.
+
 ### Changed
 - **Rovo result lookup now logs its query**: The Rovo exchange's result poll logs the exact Confluence space + page title it searches for and how many pages matched (`[Rovo] result lookup: space=… title=… → N match(es)`), and logs the error if the Confluence request fails. Surfaces space/title mismatches in Dev Panel → Server Logs when a "Run via Rovo (auto)" times out.
 

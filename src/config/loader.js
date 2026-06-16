@@ -68,10 +68,11 @@ const MAX_SEEN_BRANCHES_PER_REPO = 500;
  * The _obfuscated flag in the config file signals that encoding is applied.
  */
 const OBFUSCATED_CREDENTIAL_FIELDS = {
-  jira:       ['username', 'apiToken', 'pat'],
-  snow:       ['username', 'password'],
-  github:     ['pat', 'appPrivateKey'],
-  confluence: ['username', 'apiToken'],
+  jira:           ['username', 'apiToken', 'pat'],
+  snow:           ['username', 'password'],
+  github:         ['pat', 'appPrivateKey'],
+  confluence:     ['username', 'apiToken'],
+  rovoAutomation: ['webhookSecret'],
 };
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -138,6 +139,14 @@ function saveConfigToDisk(configuration) {
     admin: {
       // Persist the credential hash — allows users to change it via the config file
       credentialHash: (configuration.admin || {}).credentialHash || DEFAULT_ADMIN_CREDENTIAL_HASH,
+    },
+    // Rovo automation config — the hidden "Run via Rovo (auto)" webhook + parking
+    // space. Persisted so it survives restarts and version upgrades.
+    rovoAutomation: {
+      webhookUrl:      (configuration.rovoAutomation || {}).webhookUrl      || '',
+      webhookSecret:   (configuration.rovoAutomation || {}).webhookSecret   || '',
+      parkingSpaceKey: (configuration.rovoAutomation || {}).parkingSpaceKey || '',
+      isEnabled:       !!(configuration.rovoAutomation || {}).isEnabled,
     },
     scheduler: {
       repoMonitor: {
@@ -368,6 +377,12 @@ function buildDefaultConfig() {
     admin: {
       credentialHash: DEFAULT_ADMIN_CREDENTIAL_HASH,
     },
+    rovoAutomation: {
+      webhookUrl:      '',
+      webhookSecret:   '',
+      parkingSpaceKey: '',
+      isEnabled:       false,
+    },
     scheduler: {},
   };
 }
@@ -431,6 +446,15 @@ function applyFileConfig(configuration) {
 
   if (fileConfig.admin && fileConfig.admin.credentialHash) {
     configuration.admin.credentialHash = fileConfig.admin.credentialHash;
+  }
+
+  if (fileConfig.rovoAutomation) {
+    configuration.rovoAutomation = {
+      webhookUrl:      fileConfig.rovoAutomation.webhookUrl      || '',
+      webhookSecret:   fileConfig.rovoAutomation.webhookSecret   || '',
+      parkingSpaceKey: fileConfig.rovoAutomation.parkingSpaceKey || '',
+      isEnabled:       !!fileConfig.rovoAutomation.isEnabled,
+    };
   }
 
   if (fileConfig.scheduler) {
