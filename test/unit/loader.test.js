@@ -403,3 +403,59 @@ describe('migrateOldConfig()', () => {
     expect(fsMock.unlinkSync).toHaveBeenCalled();
   });
 });
+
+// ── rovoAutomation persistence ────────────────────────────────────────────────
+
+describe('rovoAutomation persistence', () => {
+  beforeEach(resetEnvironment);
+
+  function baseConfigWithRovo(rovoAutomation) {
+    return {
+      port: 5555,
+      sslVerify: true,
+      jira:   { baseUrl: '', username: '', apiToken: '', pat: '' },
+      snow:   { baseUrl: '', username: '', password: '' },
+      github: { baseUrl: 'https://api.github.com', pat: '' },
+      confluence: { baseUrl: '', username: '', apiToken: '' },
+      admin:  { credentialHash: 'hash' },
+      rovoAutomation,
+      scheduler: { repoMonitor: { enabled: false, repos: [], branchPattern: '', intervalMin: 15, transitions: {}, seenBranches: {}, seenCommits: {}, seenPrs: {} } },
+    };
+  }
+
+  const SAMPLE_ROVO = { webhookUrl: 'https://x.atlassian.net/hook', webhookSecret: 'topsecret', parkingSpaceKey: '~712', isEnabled: true };
+
+  it('writes rovoAutomation to disk and obfuscates the secret', () => {
+    const { saveConfigToDisk } = require('../../src/config/loader');
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.mkdirSync.mockImplementation(() => {});
+    let writtenContent;
+    fsMock.writeFileSync.mockImplementation((_filePath, content) => { writtenContent = content; });
+
+    saveConfigToDisk(baseConfigWithRovo(SAMPLE_ROVO));
+
+    const saved = JSON.parse(writtenContent);
+    expect(saved.rovoAutomation.webhookUrl).toBe('https://x.atlassian.net/hook');
+    expect(saved.rovoAutomation.parkingSpaceKey).toBe('~712');
+    expect(saved.rovoAutomation.isEnabled).toBe(true);
+    // Secret must be obfuscated (base64), not plaintext
+    expect(saved.rovoAutomation.webhookSecret).not.toBe('topsecret');
+    expect(Buffer.from(saved.rovoAutomation.webhookSecret, 'base64').toString('utf8')).toBe('topsecret');
+  });
+
+  it('loads rovoAutomation back across a save → load round-trip', () => {
+    const { saveConfigToDisk, loadConfig } = require('../../src/config/loader');
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.mkdirSync.mockImplementation(() => {});
+    let writtenContent;
+    fsMock.writeFileSync.mockImplementation((_filePath, content) => { writtenContent = content; });
+
+    saveConfigToDisk(baseConfigWithRovo(SAMPLE_ROVO));
+
+    // The persisted (obfuscated) file is now read back on the next launch.
+    fsMock.readFileSync.mockReturnValue(writtenContent);
+    const configuration = loadConfig();
+
+    expect(configuration.rovoAutomation).toEqual(SAMPLE_ROVO);
+  });
+});
