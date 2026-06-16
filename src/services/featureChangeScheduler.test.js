@@ -6,6 +6,8 @@
 const {
   getCurrentTimeHHMM,
   getTodayDateString,
+  isTodayWeekend,
+  getPreviousBusinessDayCutoff,
   extractFeatureChangeEntries,
   escapeXml,
   extractPageIdFromUrl,
@@ -17,6 +19,58 @@ describe('time helpers', () => {
   });
   it('getTodayDateString returns YYYY-MM-DD', () => {
     expect(getTodayDateString()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe('isTodayWeekend', () => {
+  it('returns a boolean', () => {
+    expect(typeof isTodayWeekend()).toBe('boolean');
+  });
+});
+
+describe('getPreviousBusinessDayCutoff', () => {
+  it('returns a Date at midnight (00:00:00.000)', () => {
+    const cutoff = getPreviousBusinessDayCutoff();
+    expect(cutoff).toBeInstanceOf(Date);
+    expect(cutoff.getHours()).toBe(0);
+    expect(cutoff.getMinutes()).toBe(0);
+    expect(cutoff.getSeconds()).toBe(0);
+    expect(cutoff.getMilliseconds()).toBe(0);
+  });
+
+  it('returns a date strictly before today', () => {
+    const cutoff        = getPreviousBusinessDayCutoff();
+    const todayMidnight = new Date();
+    todayMidnight.setHours(0, 0, 0, 0);
+    expect(cutoff.getTime()).toBeLessThan(todayMidnight.getTime());
+  });
+
+  it('on a Monday returns a date that is a Friday (3 days prior)', () => {
+    const originalDate = global.Date;
+    const mondayMs = new originalDate('2026-06-15T09:00:00').getTime();
+    global.Date = class extends originalDate {
+      constructor(...args) { return args.length ? new originalDate(...args) : new originalDate(mondayMs); }
+      static now() { return mondayMs; }
+    };
+
+    const cutoff = getPreviousBusinessDayCutoff();
+    expect(cutoff.getDay()).toBe(5); // 5 = Friday
+
+    global.Date = originalDate;
+  });
+
+  it('on a Wednesday returns a date that is a Tuesday (1 day prior)', () => {
+    const originalDate = global.Date;
+    const wednesdayMs = new originalDate('2026-06-17T09:00:00').getTime();
+    global.Date = class extends originalDate {
+      constructor(...args) { return args.length ? new originalDate(...args) : new originalDate(wednesdayMs); }
+      static now() { return wednesdayMs; }
+    };
+
+    const cutoff = getPreviousBusinessDayCutoff();
+    expect(cutoff.getDay()).toBe(2); // 2 = Tuesday
+
+    global.Date = originalDate;
   });
 });
 
