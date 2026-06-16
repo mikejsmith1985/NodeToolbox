@@ -78,14 +78,14 @@ Web app: Express backend at `src/`, React SPA at `client/src/`. Server tests are
 
 ### Tests for User Story 2 ⚠️ (write first, must fail)
 
-- [ ] T012 [P] [US2] Failing test for "Draft with Rovo" — hidden when locked, populates Short + Description when unlocked, remains editable, wizard proceeds without it — in `client/src/views/SnowHub/tabs/CreateChgTab.test.tsx`
-- [ ] T013 [P] [US2] Failing test for "Risk check with Rovo" — hidden when locked, renders the returned gap list inline at Step 6, submission still allowed — in `client/src/views/SnowHub/tabs/CreateChgTab.test.tsx`
+- [X] T012 [P] [US2] Failing test for "Draft with Rovo" — hidden when locked, populates Short + Description when unlocked, remains editable, wizard proceeds without it — in `client/src/views/SnowHub/tabs/CreateChgTab.test.tsx`
+- [X] T013 [P] [US2] Failing test for "Risk check with Rovo" — hidden when locked, renders the returned gap list inline at Step 6, submission still allowed — in `client/src/views/SnowHub/tabs/CreateChgTab.test.tsx`
 
 ### Implementation for User Story 2
 
-- [ ] T014 [US2] Add the gated "Draft with Rovo" action to Step 3 (dispatch+poll via `useRovoExchange`, write results into the Short Description / Description fields) in `client/src/views/SnowHub/tabs/CreateChgTab.tsx` (FR-004, FR-006)
-- [ ] T015 [US2] Add the gated "Risk check with Rovo" action to Step 6 (submit completed CHG payload, render parsed gaps/risks inline before submit) in `client/src/views/SnowHub/tabs/CreateChgTab.tsx` (FR-005)
-- [ ] T016 [US2] Read the shared `rovoStore` unlock for both actions so they appear/disappear with the passphrase gate without a reload in `client/src/views/SnowHub/tabs/CreateChgTab.tsx` (FR-015, SC-007)
+- [X] T014 [US2] Add the gated "Draft with Rovo" action to Step 3 (dispatch+poll via `useRovoExchange`, write results into the Short Description / Description fields) in `client/src/views/SnowHub/tabs/CreateChgTab.tsx` (FR-004, FR-006)
+- [X] T015 [US2] Add the gated "Risk check with Rovo" action to Step 6 (submit completed CHG payload, render parsed gaps/risks inline before submit) in `client/src/views/SnowHub/tabs/CreateChgTab.tsx` (FR-005)
+- [X] T016 [US2] Read the shared `rovoStore` unlock for both actions so they appear/disappear with the passphrase gate without a reload in `client/src/views/SnowHub/tabs/CreateChgTab.tsx` (FR-015, SC-007)
 
 **Checkpoint**: US1 and US2 both work independently; CHG authors get optional Rovo assistance.
 

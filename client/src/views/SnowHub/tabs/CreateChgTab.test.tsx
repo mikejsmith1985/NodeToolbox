@@ -77,6 +77,7 @@ const {
   mockFieldPinActions,
   mockCtaskTemplates,
   mockCtaskTemplateActions,
+  mockRovoExchange,
 } = vi.hoisted(() => {
   const mockPinnedFields = [] as Array<{ id: string; key: string; label: string; section: string; value: unknown }>;
   const emptySnowReference = { sysId: '', displayName: '' };
@@ -223,6 +224,10 @@ const {
       updateTemplate: vi.fn(),
       deleteTemplate: vi.fn(),
     },
+    // Controllable stand-in for useRovoExchange so T012/T013 tests never hit the network.
+    mockRovoExchange: {
+      runRovoExchange: vi.fn().mockResolvedValue({ ok: false, message: 'Mock Rovo: not configured in this test.' }),
+    },
   };
 });
 
@@ -289,6 +294,14 @@ vi.mock('../hooks/useSnowChoiceOptions.ts', () => ({
     hasExtractorChoices: mockSnowChoiceConfig.hasExtractorChoices,
     applyExtractorChoiceJson: mockExtractorChoiceActions.applyExtractorChoiceJson,
     clearExtractorChoices: mockExtractorChoiceActions.clearExtractorChoices,
+  }),
+}));
+
+// Mock the Rovo exchange hook so tests that click Rovo buttons never make real fetch calls.
+vi.mock('../hooks/useRovoExchange.ts', () => ({
+  useRovoExchange: () => ({
+    isRunning: false,
+    runRovoExchange: mockRovoExchange.runRovoExchange,
   }),
 }));
 
@@ -387,6 +400,7 @@ describe('CreateChgTab', () => {
       isSuccess: true,
       message: 'Loaded extractor choices for 2 field(s).',
     });
+    mockRovoExchange.runRovoExchange.mockResolvedValue({ ok: false, message: 'Mock Rovo: not configured in this test.' });
   });
 
   it('renders step 1 with the project key input and fetch button', () => {
@@ -1221,5 +1235,119 @@ describe('CreateChgTab', () => {
 
     expect(screen.getByRole('combobox', { name: 'Impact' })).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Impact' })).not.toBeInTheDocument();
+  });
+
+  // ── Step 3: Draft with Rovo (T012, US2, FR-004, SC-007) ──
+
+  it('hides Draft with Rovo at step 3 when the gate is locked', () => {
+    mockState.currentStep = 3;
+    render(<CreateChgTab />);
+
+    expect(screen.queryByRole('button', { name: /Draft with Rovo/i })).not.toBeInTheDocument();
+  });
+
+  it('shows Draft with Rovo at step 3 after unlocking the gate', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 3;
+    render(<CreateChgTab />);
+
+    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
+    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+
+    expect(await screen.findByRole('button', { name: /Draft with Rovo/i })).toBeInTheDocument();
+  });
+
+  it('Draft with Rovo populates short description and description from Jira issues', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 3;
+    mockState.fetchedIssues = [{ id: '10001', key: 'ABC-1', fields: { summary: 'Fix release blocker', status: { name: 'In Progress' } } }];
+    mockState.selectedIssueKeys = new Set(['ABC-1']);
+    mockRovoExchange.runRovoExchange.mockResolvedValueOnce({
+      ok: true,
+      response: 'SHORT_DESCRIPTION: Deploy ABC-1 fix\nDESCRIPTION: Applies the release blocker patch.',
+      message: 'Rovo result received.',
+    });
+    render(<CreateChgTab />);
+
+    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
+    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+
+    await user.click(await screen.findByRole('button', { name: /Draft with Rovo/i }));
+
+    await waitFor(() => {
+      expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('shortDescription', 'Deploy ABC-1 fix');
+      expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('description', 'Applies the release blocker patch.');
+    });
+  });
+
+  it('wizard proceeds from step 3 to step 4 without requiring Draft with Rovo', () => {
+    mockState.currentStep = 3;
+    render(<CreateChgTab />);
+
+    // Navigation must not be gated on the Rovo action.
+    expect(screen.getByRole('button', { name: /Next/i })).toBeEnabled();
+  });
+
+  // ── Step 6: Risk check with Rovo (T013, US2, FR-005, SC-007) ──
+
+  it('hides Risk check with Rovo at step 6 when the gate is locked', () => {
+    mockState.currentStep = 6;
+    render(<CreateChgTab />);
+
+    expect(screen.queryByRole('button', { name: /Risk check with Rovo/i })).not.toBeInTheDocument();
+  });
+
+  it('shows Risk check with Rovo at step 6 after unlocking the gate', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    render(<CreateChgTab />);
+
+    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
+    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+
+    expect(await screen.findByRole('button', { name: /Risk check with Rovo/i })).toBeInTheDocument();
+  });
+
+  it('Risk check with Rovo renders identified gaps inline before submission', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    mockRovoExchange.runRovoExchange.mockResolvedValueOnce({
+      ok: true,
+      response: 'GAP: Missing test plan\nGAP: No backout procedure documented',
+      message: 'Rovo result received.',
+    });
+    render(<CreateChgTab />);
+
+    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
+    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+
+    await user.click(await screen.findByRole('button', { name: /Risk check with Rovo/i }));
+
+    expect(await screen.findByText(/Missing test plan/)).toBeInTheDocument();
+    expect(screen.getByText(/No backout procedure documented/)).toBeInTheDocument();
+  });
+
+  it('Create CHG button remains available at step 6 after Risk check with Rovo', async () => {
+    const user = userEvent.setup();
+    mockState.currentStep = 6;
+    mockRovoExchange.runRovoExchange.mockResolvedValueOnce({
+      ok: true,
+      response: 'GAP: Missing test plan',
+      message: 'Rovo result received.',
+    });
+    render(<CreateChgTab />);
+
+    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
+    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+
+    await user.click(await screen.findByRole('button', { name: /Risk check with Rovo/i }));
+
+    await screen.findByText(/Missing test plan/);
+    expect(screen.getByRole('button', { name: /Create CHG/i })).toBeInTheDocument();
   });
 });
