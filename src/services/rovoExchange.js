@@ -114,6 +114,9 @@ async function fetchResult(configuration, correlationId, deps = {}) {
   try {
     const searchResult = await confluenceRequest('GET', searchPath, null, confluenceConfig, shouldVerifyTls(configuration));
     const pages = (searchResult && searchResult.results) || [];
+    // Diagnostic: shows the exact space + title queried and how many matched, so a
+    // space/title mismatch is visible in the Dev Panel → Server Logs.
+    console.log(`  [Rovo] result lookup: space="${rovo.parkingSpaceKey}" title="${title}" → ${pages.length} match(es)`);
     if (pages.length === 0) {
       return { ok: true, httpStatus: 200, ready: false };
     }
@@ -129,6 +132,7 @@ async function fetchResult(configuration, correlationId, deps = {}) {
     return { ok: true, httpStatus: 200, ready: true, response: responseText };
   } catch (fetchError) {
     const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
+    console.error(`  [Rovo] result lookup FAILED (space="${rovo.parkingSpaceKey}" title="${title}"): ${errorMessage}`);
     return { ok: false, httpStatus: 502, code: 'fetch-failed', message: `Failed to read Rovo result: ${errorMessage}` };
   }
 }
