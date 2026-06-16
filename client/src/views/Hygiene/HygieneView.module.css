@@ -387,3 +387,135 @@
   opacity: 1;
   pointer-events: auto;
 }
+
+/* ── Rovo Hygiene Monitor panel ── */
+
+.hygieneMonitorPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-surface);
+}
+
+.monitorPanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.monitorPanelTitle {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md, 1rem);
+}
+
+.monitorRefreshButton {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+}
+
+.monitorRefreshButton:hover:not(:disabled) {
+  border-color: var(--color-accent, #6366f1);
+  color: var(--color-accent, #6366f1);
+}
+
+.monitorRefreshButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.monitorError {
+  margin: 0;
+  color: var(--color-danger, #ef4444);
+  font-size: var(--font-size-sm);
+}
+
+.monitorEmptyState {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.monitorMeta {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.monitorTeamList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.monitorTeamRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-background);
+}
+
+.monitorTeamName {
+  flex: 1;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+
+.monitorTeamStats {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.monitorViolationCount {
+  color: var(--color-danger, #ef4444);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+
+.monitorFixCount {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.monitorScannedAt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.monitorScanButton {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-accent, #6366f1);
+  border-radius: var(--radius-md, 8px);
+  background: transparent;
+  color: var(--color-accent, #6366f1);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.monitorScanButton:hover:not(:disabled) {
+  background: var(--color-accent, #6366f1);
+  color: #ffffff;
+}
+
+.monitorScanButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
