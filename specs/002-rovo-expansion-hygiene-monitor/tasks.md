@@ -135,8 +135,20 @@ Web app: Express backend at `src/`, React SPA at `client/src/`. Server tests are
 
 - [X] T035 [P] Update `CHANGELOG.md` with the user-visible additions (Article VI)
 - [ ] T036 Run the full quickstart.md validation V1–V9 and record evidence (Article X)
-- [ ] T037 Run full suites (`npx jest`; `cd client && npx vitest run`) and `npm run build:client`; fix any regressions
+- [X] T037 Run full suites (`npx jest`; `cd client && npx vitest run`) and `npm run build:client`; fix any regressions — 242 server tests pass, 2259 client tests pass, build clean
 - [ ] T038 Verify SC-007 (gate locked → zero Rovo affordances reachable) and SC-008 (Rovo forced offline → 100% of briefings/reports still publish)
+
+### Reconciliation — `teamsWebhook*` → `digestTrigger*` field rename (spec compliance)
+
+> These tasks resolve the C2 finding from `/speckit-analyze`: the data model specifies
+> `digestTriggerUrl`/`digestTriggerSecret`/`digestEmailTo` but the initial implementation
+> used `teamsWebhook*` field names. All four were renamed across server, config, routes,
+> tests, and Admin Hub UI on branch `feature/rovo-hygiene-email-reconcile`.
+
+- [X] T039 Rename `teamsWebhookUrl` → `digestTriggerUrl`, `teamsWebhookSecret` → `digestTriggerSecret` in server-side config encode/decode functions in `src/config/loader.js`
+- [X] T040 Update `scrubTeamSecret()` in `src/routes/hygieneMonitor.js` to destructure `digestTriggerSecret` (prevents secret leakage in API responses); update route tests to use Atlassian Automation webhook URLs and correct field names in `src/routes/hygieneMonitor.test.js`
+- [X] T041 [P] Update `HygieneTeamConfig` interface, `buildDefaultTeamConfig`, form labels, and field references in `client/src/views/AdminHub/HygieneMonitorPanel.tsx` (+ `.test.tsx`) to use `digestTriggerUrl`/`digestTriggerSecret`/`digestEmailTo`
+- [X] T042 [P] Update spec.md (acceptance scenario 9, Key Entities, and Assumptions section) and CHANGELOG.md to correctly describe Atlassian Automation trigger webhook (email) delivery — not a direct Teams webhook
 
 ---
 

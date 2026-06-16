@@ -135,7 +135,7 @@ still needs to address, without requiring manual hygiene audits.
    specific action needed to resolve it.
 
 9. **Given** a hygiene scan has completed,
-   **When** the configured Teams webhook is active,
+   **When** the digest trigger webhook is configured,
    **Then** a digest message is delivered to Teams listing the total issues
    scanned, violations found, fixes applied, and actions required — with a trend
    indicator comparing counts to the prior scan.
@@ -273,8 +273,10 @@ still needs to address, without requiring manual hygiene audits.
 - **Rovo classification**: Rovo's determination for a violation — `FIXABLE`
   (with the corrected value) or `UNFIXABLE` (with owner guidance) — returned as
   structured text on the Confluence parking page.
-- **Hygiene digest**: A structured summary payload delivered to a Teams webhook
-  after each scan, covering scan statistics, fix counts, and trend direction.
+- **Hygiene digest**: A structured summary payload delivered via an Atlassian
+  Automation trigger webhook (which emails it; the recipient's inbox rule routes
+  it to Teams) after each scan, covering scan statistics, fix counts, and trend
+  direction.
 - **Passphrase gate**: The Ctrl+Alt+Z session unlock that makes all Rovo
   features visible. Session-scoped; requires re-entry after a page reload.
 
@@ -328,8 +330,10 @@ still needs to address, without requiring manual hygiene audits.
 - The Jira proxy available to Toolbox can update all Jira fields relevant to
   hygiene rules (acceptance criteria, story points, target dates, assignee) via
   standard Jira API calls.
-- Teams webhook delivery for the hygiene digest reuses the existing `deliverReport`
-  / `payloadContext` pattern without requiring a new transport mechanism.
+- Atlassian Automation trigger webhook delivery for the hygiene digest reuses
+  the existing `deliverReport` / `payloadContext` pattern without requiring a
+  new transport mechanism; the automation rule handles composing and emailing
+  the digest, and the recipient's inbox rule forwards it to Teams.
 - The passphrase gate persists only for the current browser session; users
   re-entering NodeToolbox will not see Rovo features until they re-enter the
   passphrase. This is the existing and accepted behaviour.
