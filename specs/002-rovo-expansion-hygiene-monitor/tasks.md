@@ -83,8 +83,8 @@ Web app: Express backend at `src/`, React SPA at `client/src/`. Server tests are
 
 ### Implementation for User Story 2
 
-- [X] T014 [US2] Add the gated "Draft with Rovo" action to Step 3 (dispatch+poll via `useRovoExchange`, write results into the Short Description / Description fields) in `client/src/views/SnowHub/tabs/CreateChgTab.tsx` (FR-004, FR-006)
-- [X] T015 [US2] Add the gated "Risk check with Rovo" action to Step 6 (submit completed CHG payload, render parsed gaps/risks inline before submit) in `client/src/views/SnowHub/tabs/CreateChgTab.tsx` (FR-005)
+- [X] T014 [US2] Add the gated "Draft with Rovo" action to Step 3 (dispatch+poll via `useRovoExchange`, write results into the Short Description / Description fields), bounded to ≤60s or a graceful skip, in `client/src/views/SnowHub/tabs/CreateChgTab.tsx` (FR-004, FR-006, FR-006a, SC-003)
+- [X] T015 [US2] Add the gated "Risk check with Rovo" action to Step 6 (submit completed CHG payload, render parsed gaps/risks inline before submit), bounded to ≤60s or a graceful skip, in `client/src/views/SnowHub/tabs/CreateChgTab.tsx` (FR-005, FR-006a, SC-003)
 - [X] T016 [US2] Read the shared `rovoStore` unlock for both actions so they appear/disappear with the passphrase gate without a reload in `client/src/views/SnowHub/tabs/CreateChgTab.tsx` (FR-015, SC-007)
 
 **Checkpoint**: US1 and US2 both work independently; CHG authors get optional Rovo assistance.
@@ -93,9 +93,9 @@ Web app: Express backend at `src/`, React SPA at `client/src/`. Server tests are
 
 ## Phase 5: User Story 3 — Proactive hygiene monitor (Priority: P3)
 
-**Goal**: A daily server-side scheduler scans Jira hygiene, has Rovo classify violations, auto-fixes FIXABLE items via the Jira proxy, comments on UNFIXABLE items, and delivers a Teams digest with a trend — all gated and Admin-Hub-configured.
+**Goal**: A daily server-side scheduler scans Jira hygiene, has Rovo classify violations, auto-fixes FIXABLE items via the Jira proxy, comments on UNFIXABLE items, and emails a digest with a trend (via the existing webhook→Automation→email path; an inbox rule forwards it to Teams) — all gated and Admin-Hub-configured.
 
-**Independent Test**: Configure a team, seed one fixable and one unfixable violation, click "Scan Now" → the fixable field updates in Jira, the unfixable issue gets exactly one comment, and a digest reaches Teams with a trend on the second scan (quickstart V5–V9).
+**Independent Test**: Configure a team, seed one fixable and one unfixable violation, click "Scan Now" → the fixable field updates in Jira, the unfixable issue gets exactly one comment, and a digest email is sent (reaching Teams via the inbox rule) with a trend on the second scan (quickstart V5–V9).
 
 ### Tests for User Story 3 ⚠️ (write first, must fail)
 
@@ -116,8 +116,8 @@ Web app: Express backend at `src/`, React SPA at `client/src/`. Server tests are
 - [X] T025 [US3] Implement the per-team scan: query open issues for `projectKeys` via the Jira proxy, evaluate with `hygieneRules`, batch violations, and dispatch the classification prompt via `requestRovoText` in `src/services/hygieneMonitorScheduler.js` (FR-008, FR-009)
 - [X] T026 [US3] Apply FIXABLE fixes via the Jira proxy, treating a violation resolved only on a 2xx; on a rejected field update, re-classify as UNFIXABLE for this run, in `src/services/hygieneMonitorScheduler.js` (FR-010, SC-005, edge case)
 - [X] T027 [US3] Post one Jira comment per UNFIXABLE violation using a per-cycle `(issueKey,checkId)` dedup set; address assignee → reporter → none; attribute to the hygiene monitor, in `src/services/hygieneMonitorScheduler.js` (FR-011, FR-016, SC-006, edge cases)
-- [X] T028 [US3] Deliver the digest to the team's Teams webhook via `src/services/reportWebhookDelivery.js`; skip silently when unconfigured; append a `hygieneScanHistory` entry, in `src/services/hygieneMonitorScheduler.js` (FR-012, SC-004)
-- [X] T029 [US3] Add a narrow, config-scoped allow-list exception for the validated Teams webhook host in `src/utils/webhookHostPolicy.js` (research R4)
+- [X] T028 [US3] Deliver the digest **by email** — fire a trigger webhook (`digestTriggerUrl`/`digestTriggerSecret`, digest as payload) to an Atlassian Automation rule that emails it, via the existing `reportWebhookDelivery`/`triggerWebhook` path; skip silently when unconfigured; append a `hygieneScanHistory` entry, in `src/services/hygieneMonitorScheduler.js` (FR-012, SC-004)
+- [X] ~~T029~~ **REMOVED** [US3] No allow-list exception needed — the digest destination is an Atlassian Automation webhook already covered by the existing allow-list (research R4, clarified 2026-06-16). Left as a no-op for task-numbering stability.
 - [X] T030 [US3] Register the daily scheduler (60s tick, schedule-time + weekday guard, already-ran-today flag; "Scan Now" bypasses the daily guard) and wire boot in `src/services/hygieneMonitorScheduler.js` and `server.js` (FR-007, research R5)
 
 ### Implementation for User Story 3 — API & UI
