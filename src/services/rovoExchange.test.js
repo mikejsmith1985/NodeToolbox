@@ -108,6 +108,21 @@ describe('fetchResult', () => {
     expect(calls.some((call) => call.method === 'DELETE' && call.path.includes('222'))).toBe(true);
   });
 
+  it('reads the REAL search envelope { status, body: { results } } (title path)', async () => {
+    // Regression: search results are at response.body.results, not response.results.
+    const confluence = (method, path) => {
+      if (method === 'GET' && path.includes('title=')) {
+        return Promise.resolve({ status: 200, body: { results: [
+          { id: '999', title: 'rovo-result-abc', body: { storage: { value: '<p>SHORT_DESCRIPTION: via title</p>' } } },
+        ] } });
+      }
+      return Promise.resolve({ status: 204, body: {} });
+    };
+    const result = await fetchResult(rovoConfig(), 'abc', { makeConfluenceApiRequest: confluence });
+    expect(result).toMatchObject({ ok: true, ready: true });
+    expect(result.response).toBe('SHORT_DESCRIPTION: via title');
+  });
+
   it('returns 409 when the parking space is not configured', async () => {
     const config = rovoConfig({ parkingSpaceKey: '' });
     expect(await fetchResult(config, 'abc', { makeConfluenceApiRequest: () => Promise.resolve({}) })).toMatchObject({ httpStatus: 409, code: 'not-configured' });
@@ -152,6 +167,19 @@ describe('fetchResult — static parking page (by id)', () => {
   it('maps a fetch-by-id error to 502', async () => {
     const confluence = () => Promise.reject(new Error('404 not found'));
     expect(await fetchResult(pageConfig(), 'abc', { makeConfluenceApiRequest: confluence })).toMatchObject({ ok: false, httpStatus: 502, code: 'fetch-failed' });
+  });
+
+  it('reads the REAL makeConfluenceApiRequest envelope { status, body: <json> } by id', async () => {
+    // Regression: the shared HTTP helper wraps the response, so the page content is at
+    // response.body.body.storage.value — one level deeper than a naive read. This mock
+    // mirrors the real shape exactly (status + nested body) so the parsing can't regress.
+    const confluence = () => Promise.resolve({
+      status: 200,
+      body: { id: '283772406', title: 'Release Testing', body: { storage: { value: '<p>correlationId: abc</p><p>SHORT_DESCRIPTION: Live result</p>' } } },
+    });
+    const result = await fetchResult(pageConfig(), 'abc', { makeConfluenceApiRequest: confluence });
+    expect(result).toMatchObject({ ok: true, ready: true });
+    expect(result.response).toBe('SHORT_DESCRIPTION: Live result');
   });
 
   it('falls back to the rendered view body when storage is empty (modern ADF editor)', async () => {
