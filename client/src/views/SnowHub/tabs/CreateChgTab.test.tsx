@@ -129,6 +129,7 @@ const {
     prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference }, impactedPersonsAware: '', snowEnvironmentValue: '' },
     pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...emptySnowReference }, impactedPersonsAware: '', snowEnvironmentValue: '' },
     changeTasks: [] as unknown[],
+    ctaskTemplateIds: [] as string[],
     isSubmitting: false,
     submitResult: null as string | null,
     submissionDebug: null as null | {
@@ -325,6 +326,7 @@ function resetMockState(): void {
     prdEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '', snowEnvironmentValue: '' },
     pfixEnvironment: { isEnabled: false, plannedStartDate: '', plannedEndDate: '', configItem: { ...EMPTY_SNOW_REFERENCE }, impactedPersonsAware: '', snowEnvironmentValue: '' },
     changeTasks: [],
+    ctaskTemplateIds: [],
     isSubmitting: false,
     submitResult: null,
     submissionDebug: null,
@@ -939,7 +941,8 @@ describe('CreateChgTab', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Step 3 template' }), 'tpl-001');
     await user.click(screen.getByRole('button', { name: 'Apply template' }));
 
-    expect(mockActions.applyTemplate).toHaveBeenCalledWith(stepTemplate);
+    // applyTemplate now also receives the linkable CTASK templates to auto-stage.
+    expect(mockActions.applyTemplate).toHaveBeenCalledWith(stepTemplate, expect.any(Array));
   });
 
   it('sets and clears the default template from Step 3 template controls', async () => {
@@ -980,7 +983,7 @@ describe('CreateChgTab', () => {
 
     render(<CreateChgTab />);
 
-    expect(mockActions.applyTemplate).toHaveBeenCalledWith(stepTemplate);
+    expect(mockActions.applyTemplate).toHaveBeenCalledWith(stepTemplate, expect.any(Array));
   });
 
   it('does not show per-card SNow environment dropdowns on step 3', () => {

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
-import type { CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
+import type { CrgTemplate, CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
 import { useCrgState } from './useCrgState.ts';
 
 vi.mock('../../../services/jiraApi.ts', () => ({
@@ -1503,6 +1503,80 @@ describe('useCrgState', () => {
       expect(result.current.state.customSnowFields).toEqual({
         u_custom_change_rule: 'cab_required',
       });
+    });
+  });
+
+  describe('linked CTASK templates', () => {
+    // Builds a CHG template that links the given CTASK template ids, reusing the
+    // hook's current (default) assessment/content shapes so only links vary.
+    function makeChgTemplateWithLinks(
+      state: ReturnType<typeof useCrgState>['state'],
+      ctaskTemplateIds: string[],
+    ): CrgTemplate {
+      return {
+        id: 'tpl-linked',
+        name: 'Release With CTASKs',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        chgBasicInfo:          state.chgBasicInfo,
+        chgPlanningAssessment: state.chgPlanningAssessment,
+        chgPlanningContent:    state.chgPlanningContent,
+        ctaskTemplateIds,
+      };
+    }
+
+    it('auto-stages linked CTASK templates into the change-task queue on apply', () => {
+      const { result } = renderHook(() => useCrgState());
+      const ctaskA = createMockCtaskTemplate({ id: 'cta-A', name: 'Deploy' });
+      const ctaskB = createMockCtaskTemplate({ id: 'cta-B', name: 'Validate' });
+
+      act(() => {
+        result.current.actions.applyTemplate(makeChgTemplateWithLinks(result.current.state, ['cta-A', 'cta-B']), [ctaskA, ctaskB]);
+      });
+
+      expect(result.current.state.changeTasks).toHaveLength(2);
+      // Each staged task keeps its source link but gets a fresh runtime id.
+      expect(result.current.state.changeTasks.map((task) => task.sourceTemplateId)).toEqual(['cta-A', 'cta-B']);
+      expect(result.current.state.changeTasks[0].id).not.toBe('cta-A');
+      expect(result.current.state.changeTasks[0].name).toBe('Deploy');
+      // The link set is remembered so re-saving the CHG template round-trips the links.
+      expect(result.current.state.ctaskTemplateIds).toEqual(['cta-A', 'cta-B']);
+    });
+
+    it('does not stack duplicates when the same CHG template is applied twice', () => {
+      const { result } = renderHook(() => useCrgState());
+      const ctaskA = createMockCtaskTemplate({ id: 'cta-A', name: 'Deploy' });
+
+      act(() => {
+        result.current.actions.applyTemplate(makeChgTemplateWithLinks(result.current.state, ['cta-A']), [ctaskA]);
+      });
+      act(() => {
+        result.current.actions.applyTemplate(makeChgTemplateWithLinks(result.current.state, ['cta-A']), [ctaskA]);
+      });
+
+      expect(result.current.state.changeTasks).toHaveLength(1);
+    });
+
+    it('skips a linked id whose CTASK template no longer exists', () => {
+      const { result } = renderHook(() => useCrgState());
+      const ctaskA = createMockCtaskTemplate({ id: 'cta-A', name: 'Deploy' });
+
+      act(() => {
+        // 'cta-GONE' was deleted from the user's templates — only 'cta-A' resolves.
+        result.current.actions.applyTemplate(makeChgTemplateWithLinks(result.current.state, ['cta-A', 'cta-GONE']), [ctaskA]);
+      });
+
+      expect(result.current.state.changeTasks).toHaveLength(1);
+      expect(result.current.state.changeTasks[0].sourceTemplateId).toBe('cta-A');
+    });
+
+    it('setLinkedCtaskTemplateIds updates the editable link set', () => {
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.setLinkedCtaskTemplateIds(['cta-X', 'cta-Y']);
+      });
+
+      expect(result.current.state.ctaskTemplateIds).toEqual(['cta-X', 'cta-Y']);
     });
   });
 

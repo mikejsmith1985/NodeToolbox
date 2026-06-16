@@ -289,6 +289,12 @@ export interface CrgTemplate {
   relEnvironment?: EnvironmentConfig;
   prdEnvironment?: EnvironmentConfig;
   pfixEnvironment?: EnvironmentConfig;
+  /**
+   * IDs of the CTASK templates linked to this CHG template. Applying the CHG
+   * template auto-stages these CTASKs so they are created with the change.
+   * Optional for backward compatibility with templates saved before linking existed.
+   */
+  ctaskTemplateIds?: string[];
 }
 
 /**
@@ -306,6 +312,12 @@ export interface CtaskTemplate {
   plannedStartDate: string;
   plannedEndDate: string;
   closeNotes: string;
+  /**
+   * When a queued CTASK was auto-staged from a CHG template's link, this records
+   * the source CTASK-template id so re-applying the same template does not stack
+   * duplicate copies. Absent on saved templates and manually added CTASKs.
+   */
+  sourceTemplateId?: string;
 }
 
 /** Editable CTASK fields stored in a reusable template before ids and metadata are assigned. */
@@ -370,6 +382,8 @@ interface CrgState {
   pfixEnvironment: EnvironmentConfig;
   /** CTASKs selected from templates and queued for CHG creation or append. */
   changeTasks: CtaskTemplate[];
+  /** IDs of CTASK templates linked to the current CHG template (the editable link set). */
+  ctaskTemplateIds: string[];
   isSubmitting: boolean;
   submitResult: string | null;
   submissionDebug: ChgSubmissionDebug | null;
@@ -394,10 +408,16 @@ interface CrgActions {
   setCloneChgNumber: (chgNumber: string) => void;
   /** Fetches a SNow CHG by number and pre-populates all form fields with its values. */
   cloneFromChg: () => Promise<void>;
-  /** Applies a saved template's field values to the current form state. */
-  applyTemplate: (template: CrgTemplate) => void;
+  /**
+   * Applies a saved template's field values to the current form state. When the
+   * template links CTASK templates, the matching entries from availableCtaskTemplates
+   * are auto-staged into the change-task list (pre-filled, still editable).
+   */
+  applyTemplate: (template: CrgTemplate, availableCtaskTemplates?: CtaskTemplate[]) => void;
   addChangeTask: (template: CtaskTemplate) => void;
   removeChangeTask: (taskId: string) => void;
+  /** Sets which CTASK templates are linked to the CHG template currently being edited. */
+  setLinkedCtaskTemplateIds: (ctaskTemplateIds: string[]) => void;
   appendTasksToExistingChg: (chgNumber: string) => Promise<void>;
   updateExistingChg: (chgNumber: string) => Promise<void>;
   cloneCtaskTemplate: (ctaskNumber: string) => Promise<CtaskTemplateData>;
@@ -461,10 +481,48 @@ function createDefaultCrgState(): CrgState {
     prdEnvironment: createDefaultEnvironmentConfig(),
     pfixEnvironment: createDefaultEnvironmentConfig(),
     changeTasks: [],
+    ctaskTemplateIds: [],
     isSubmitting: false,
     submitResult: null,
     submissionDebug: null,
   };
+}
+
+/**
+ * Stages the CTASK templates linked to a CHG template into the change-task queue.
+ *
+ * Each linked template is appended as a fresh queued CTASK (its own runtime id) tagged
+ * with `sourceTemplateId` so the same link is not staged twice. Already-staged links and
+ * unresolved ids (a linked template the user has since deleted) are skipped, so the result
+ * is the existing queue plus any newly linked CTASKs — pre-filled but fully editable.
+ *
+ * @param existingTasks          - CTASKs already queued in the form.
+ * @param linkedCtaskTemplateIds - IDs the CHG template links to.
+ * @param availableCtaskTemplates - The user's current CTASK templates to resolve ids against.
+ * @returns The new change-task queue.
+ */
+function stageLinkedCtasks(
+  existingTasks: CtaskTemplate[],
+  linkedCtaskTemplateIds: string[],
+  availableCtaskTemplates: CtaskTemplate[],
+): CtaskTemplate[] {
+  const alreadyStagedSourceIds = new Set(
+    existingTasks.map((task) => task.sourceTemplateId).filter(Boolean) as string[],
+  );
+
+  const newlyStaged: CtaskTemplate[] = [];
+  for (const ctaskTemplateId of linkedCtaskTemplateIds) {
+    if (alreadyStagedSourceIds.has(ctaskTemplateId)) {
+      continue; // this link is already in the queue — don't duplicate it
+    }
+    const sourceTemplate = availableCtaskTemplates.find((template) => template.id === ctaskTemplateId);
+    if (!sourceTemplate) {
+      continue; // linked template was deleted — nothing to stage
+    }
+    newlyStaged.push({ ...sourceTemplate, id: crypto.randomUUID(), sourceTemplateId: ctaskTemplateId });
+  }
+
+  return [...existingTasks, ...newlyStaged];
 }
 
 function mergeEnvironmentConfig(
@@ -1253,6 +1311,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       prdEnvironment:            state.prdEnvironment,
       pfixEnvironment:           state.pfixEnvironment,
       changeTasks:               state.changeTasks,
+      ctaskTemplateIds:          state.ctaskTemplateIds,
     };
 
     try {
@@ -1559,7 +1618,9 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
    * Applies a saved CRG template to the current form state, filling all dropdowns
    * and planning content fields so the user only needs to adjust what's different.
    */
-  const applyTemplate = useCallback((template: CrgTemplate) => {
+  const applyTemplate = useCallback((template: CrgTemplate, availableCtaskTemplates: CtaskTemplate[] = []) => {
+    const linkedCtaskTemplateIds = template.ctaskTemplateIds ?? [];
+
     setState((previousState) => ({
       ...previousState,
       chgBasicInfo:          { ...template.chgBasicInfo },
@@ -1573,7 +1634,16 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       relEnvironment:        template.relEnvironment ? mergeEnvironmentConfig(template.relEnvironment) : previousState.relEnvironment,
       prdEnvironment:        template.prdEnvironment ? mergeEnvironmentConfig(template.prdEnvironment) : previousState.prdEnvironment,
       pfixEnvironment:       template.pfixEnvironment ? mergeEnvironmentConfig(template.pfixEnvironment) : previousState.pfixEnvironment,
+      // Remember the link set so it round-trips when the user re-saves this CHG template.
+      ctaskTemplateIds:      linkedCtaskTemplateIds,
+      // Pre-fill the linked CTASKs (still editable). Skip any already staged from the
+      // same source template so re-applying the CHG template doesn't stack duplicates.
+      changeTasks:           stageLinkedCtasks(previousState.changeTasks, linkedCtaskTemplateIds, availableCtaskTemplates),
     }));
+  }, []);
+
+  const setLinkedCtaskTemplateIds = useCallback((ctaskTemplateIds: string[]) => {
+    setState((previousState) => ({ ...previousState, ctaskTemplateIds }));
   }, []);
 
   const addChangeTask = useCallback((template: CtaskTemplate) => {
@@ -1866,6 +1936,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       applyTemplate,
       addChangeTask,
       removeChangeTask,
+      setLinkedCtaskTemplateIds,
       appendTasksToExistingChg,
       updateExistingChg,
       cloneCtaskTemplate,
@@ -1881,6 +1952,7 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
     setChgBasicInfo, setChgPlanningAssessment, setChgPlanningContent,
     pinCustomSnowField, removeCustomSnowField,
     setCloneChgNumber, cloneFromChg, applyTemplate, addChangeTask, removeChangeTask,
+    setLinkedCtaskTemplateIds,
     appendTasksToExistingChg, cloneCtaskTemplate, updateEnvironment, goToStep, reset, createChg,
     updateExistingChg,
   ]);
