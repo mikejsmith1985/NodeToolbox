@@ -75,6 +75,9 @@ const OBFUSCATED_CREDENTIAL_FIELDS = {
   rovoAutomation: ['webhookSecret'],
 };
 
+// Maximum number of hygiene scan results kept in history (30 = ~one month of daily scans).
+const MAX_HYGIENE_SCAN_HISTORY = 30;
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -173,11 +176,19 @@ function saveConfigToDisk(configuration) {
         }),
       },
     },
+    // Hygiene monitor — deep-clone the teams array and the bounded history slice.
+    // The per-team teamsWebhookSecret is obfuscated below before writing.
+    hygieneMonitor: {
+      teams: ((configuration.hygieneMonitor || {}).teams || []).map((team) => ({ ...team })),
+      hygieneScanHistory: ((configuration.hygieneMonitor || {}).hygieneScanHistory || [])
+        .slice(-MAX_HYGIENE_SCAN_HISTORY),
+    },
   };
 
   // Encode credentials before writing so they are not plaintext on disk
   diskConfig._obfuscated = true;
   encodeCredentialsForDisk(diskConfig);
+  encodeHygieneMonitorTeamSecrets(diskConfig);
   ensureConfigDirExists();
 
   try {
@@ -385,6 +396,12 @@ function buildDefaultConfig() {
       parkingPageId:   '',
       isEnabled:       false,
     },
+    // Proactive hygiene monitor — per-team schedules, Rovo classifications, and digest delivery.
+    // Teams webhook secrets are base64-obfuscated on disk (like other credentials).
+    hygieneMonitor: {
+      teams:             [],
+      hygieneScanHistory: [],
+    },
     scheduler: {},
   };
 }
@@ -457,6 +474,19 @@ function applyFileConfig(configuration) {
       parkingSpaceKey: fileConfig.rovoAutomation.parkingSpaceKey || '',
       parkingPageId:   fileConfig.rovoAutomation.parkingPageId   || '',
       isEnabled:       !!fileConfig.rovoAutomation.isEnabled,
+    };
+  }
+
+  if (fileConfig.hygieneMonitor) {
+    // Decode the per-team webhook secrets that were obfuscated on disk.
+    decodeHygieneMonitorTeamSecrets(fileConfig.hygieneMonitor);
+    configuration.hygieneMonitor = {
+      teams:              Array.isArray(fileConfig.hygieneMonitor.teams)
+        ? fileConfig.hygieneMonitor.teams
+        : [],
+      hygieneScanHistory: Array.isArray(fileConfig.hygieneMonitor.hygieneScanHistory)
+        ? fileConfig.hygieneMonitor.hygieneScanHistory.slice(-MAX_HYGIENE_SCAN_HISTORY)
+        : [],
     };
   }
 
@@ -582,6 +612,46 @@ function normalizeBaseUrls(configuration) {
 }
 
 // ── Exports ───────────────────────────────────────────────────────────────────
+
+/**
+ * Base64-encodes the `teamsWebhookSecret` on each hygiene monitor team object
+ * before writing to disk. The flat `encodeCredentialsForDisk` function cannot
+ * handle this because the secrets are nested inside an array, not a flat service block.
+ *
+ * Mutates diskConfig.hygieneMonitor.teams in place.
+ *
+ * @param {object} diskConfig - The config object about to be written to disk
+ */
+function encodeHygieneMonitorTeamSecrets(diskConfig) {
+  const teamArray = diskConfig.hygieneMonitor?.teams;
+  if (!Array.isArray(teamArray)) return;
+  for (const team of teamArray) {
+    if (team.teamsWebhookSecret) {
+      team.teamsWebhookSecret = Buffer.from(team.teamsWebhookSecret, 'utf8').toString('base64');
+    }
+  }
+}
+
+/**
+ * Base64-decodes the `teamsWebhookSecret` on each hygiene monitor team object
+ * after reading from disk. Silently skips any team whose secret cannot be decoded.
+ *
+ * Mutates the hygieneMonitorSection in place.
+ *
+ * @param {object} hygieneMonitorSection - The hygieneMonitor object from the parsed file
+ */
+function decodeHygieneMonitorTeamSecrets(hygieneMonitorSection) {
+  const teamArray = hygieneMonitorSection?.teams;
+  if (!Array.isArray(teamArray)) return;
+  for (const team of teamArray) {
+    if (!team.teamsWebhookSecret) continue;
+    try {
+      team.teamsWebhookSecret = Buffer.from(team.teamsWebhookSecret, 'base64').toString('utf8');
+    } catch (_decodeError) {
+      // Leave unchanged — may have been written by an older version without obfuscation
+    }
+  }
+}
 
 /**
  * Base64-encodes each credential field listed in OBFUSCATED_CREDENTIAL_FIELDS
