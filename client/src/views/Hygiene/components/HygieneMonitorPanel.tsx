@@ -29,15 +29,10 @@ interface ScanResult {
   actionsRequired: number
 }
 
-// ── Trend emoji helper ────────────────────────────────────────────────────────
-
-// Maps a trend string to a human-readable indicator shown beside the violation count.
-const TREND_INDICATORS: Record<string, string> = {
-  down: '↓ improving',
-  up:   '↑ worsening',
-  flat: '→ unchanged',
-  'n/a': '— first scan',
-}
+// NOTE (SC-009, deferred): a per-team trend indicator (↓ improving / ↑ worsening)
+// is not yet shown — the /api/hygiene-monitor/status teamStatuses do not include a
+// `trend` field. Completing SC-009 requires returning trend from getLastScanStatus
+// and rendering it here; tracked as an open US3 item, separate from email delivery.
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 

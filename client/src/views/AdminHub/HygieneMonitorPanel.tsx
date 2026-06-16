@@ -11,13 +11,14 @@ import styles from './AdminHubView.module.css'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface HygieneTeamConfig {
-  teamName:           string
-  projectKeys:        string[]
-  scheduleTime:       string
-  weekdays:           string[]
-  teamsWebhookUrl:    string
-  teamsWebhookSecret: string
-  enabledCheckIds:    string[]
+  teamName:            string
+  projectKeys:         string[]
+  scheduleTime:        string
+  weekdays:            string[]
+  digestTriggerUrl:    string
+  digestTriggerSecret: string
+  digestEmailTo:       string
+  enabledCheckIds:     string[]
 }
 
 interface ScanResult {
@@ -37,13 +38,14 @@ const DEFAULT_SCHEDULE_TIME = '06:00'
 
 function buildDefaultTeamConfig(): HygieneTeamConfig {
   return {
-    teamName:           '',
-    projectKeys:        [],
-    scheduleTime:       DEFAULT_SCHEDULE_TIME,
-    weekdays:           [...DEFAULT_WEEKDAYS],
-    teamsWebhookUrl:    '',
-    teamsWebhookSecret: '',
-    enabledCheckIds:    [],
+    teamName:            '',
+    projectKeys:         [],
+    scheduleTime:        DEFAULT_SCHEDULE_TIME,
+    weekdays:            [...DEFAULT_WEEKDAYS],
+    digestTriggerUrl:    '',
+    digestTriggerSecret: '',
+    digestEmailTo:       '',
+    enabledCheckIds:     [],
   }
 }
 
@@ -157,7 +159,8 @@ export function HygieneMonitorPanel() {
       <p className={styles.adminDescription}>
         Configure per-team daily Jira hygiene scans. Rovo classifies violations as
         FIXABLE (auto-applied via Jira) or UNFIXABLE (comment added to the issue).
-        A digest is sent to the team&rsquo;s Teams incoming webhook after each scan.
+        After each scan a digest is emailed via an Atlassian Automation webhook (an
+        inbox rule then forwards it into Teams).
       </p>
 
       {errorMessage && (
@@ -309,25 +312,37 @@ function HygieneTeamForm({
 
       <div className={styles.fieldRow}>
         <label className={styles.fieldLabel}>
-          Teams incoming webhook URL
+          Digest trigger webhook URL (Atlassian Automation)
           <input
             className={styles.textInput}
-            value={teamConfig.teamsWebhookUrl}
-            placeholder="https://contoso.webhook.office.com/webhookb2/…"
-            onChange={(changeEvent) => setField('teamsWebhookUrl', changeEvent.target.value)}
+            value={teamConfig.digestTriggerUrl}
+            placeholder="https://…atlassian.net/… incoming webhook (rule emails the digest)"
+            onChange={(changeEvent) => setField('digestTriggerUrl', changeEvent.target.value)}
           />
         </label>
       </div>
 
       <div className={styles.fieldRow}>
         <label className={styles.fieldLabel}>
-          Teams webhook secret (write-only)
+          Digest email recipient
+          <input
+            className={styles.textInput}
+            value={teamConfig.digestEmailTo}
+            placeholder="team-dl@example.com (passed to the Automation rule)"
+            onChange={(changeEvent) => setField('digestEmailTo', changeEvent.target.value)}
+          />
+        </label>
+      </div>
+
+      <div className={styles.fieldRow}>
+        <label className={styles.fieldLabel}>
+          Digest webhook secret (write-only)
           <input
             className={styles.textInput}
             type="password"
-            value={teamConfig.teamsWebhookSecret}
+            value={teamConfig.digestTriggerSecret}
             placeholder="Leave blank to keep existing"
-            onChange={(changeEvent) => setField('teamsWebhookSecret', changeEvent.target.value)}
+            onChange={(changeEvent) => setField('digestTriggerSecret', changeEvent.target.value)}
             autoComplete="new-password"
           />
         </label>

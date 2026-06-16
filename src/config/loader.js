@@ -177,7 +177,7 @@ function saveConfigToDisk(configuration) {
       },
     },
     // Hygiene monitor — deep-clone the teams array and the bounded history slice.
-    // The per-team teamsWebhookSecret is obfuscated below before writing.
+    // The per-team digestTriggerSecret is obfuscated below before writing.
     hygieneMonitor: {
       teams: ((configuration.hygieneMonitor || {}).teams || []).map((team) => ({ ...team })),
       hygieneScanHistory: ((configuration.hygieneMonitor || {}).hygieneScanHistory || [])
@@ -397,7 +397,7 @@ function buildDefaultConfig() {
       isEnabled:       false,
     },
     // Proactive hygiene monitor — per-team schedules, Rovo classifications, and digest delivery.
-    // Teams webhook secrets are base64-obfuscated on disk (like other credentials).
+    // Digest trigger secrets are base64-obfuscated on disk (like other credentials).
     hygieneMonitor: {
       teams:             [],
       hygieneScanHistory: [],
@@ -614,7 +614,7 @@ function normalizeBaseUrls(configuration) {
 // ── Exports ───────────────────────────────────────────────────────────────────
 
 /**
- * Base64-encodes the `teamsWebhookSecret` on each hygiene monitor team object
+ * Base64-encodes the `digestTriggerSecret` on each hygiene monitor team object
  * before writing to disk. The flat `encodeCredentialsForDisk` function cannot
  * handle this because the secrets are nested inside an array, not a flat service block.
  *
@@ -626,14 +626,14 @@ function encodeHygieneMonitorTeamSecrets(diskConfig) {
   const teamArray = diskConfig.hygieneMonitor?.teams;
   if (!Array.isArray(teamArray)) return;
   for (const team of teamArray) {
-    if (team.teamsWebhookSecret) {
-      team.teamsWebhookSecret = Buffer.from(team.teamsWebhookSecret, 'utf8').toString('base64');
+    if (team.digestTriggerSecret) {
+      team.digestTriggerSecret = Buffer.from(team.digestTriggerSecret, 'utf8').toString('base64');
     }
   }
 }
 
 /**
- * Base64-decodes the `teamsWebhookSecret` on each hygiene monitor team object
+ * Base64-decodes the `digestTriggerSecret` on each hygiene monitor team object
  * after reading from disk. Silently skips any team whose secret cannot be decoded.
  *
  * Mutates the hygieneMonitorSection in place.
@@ -644,9 +644,9 @@ function decodeHygieneMonitorTeamSecrets(hygieneMonitorSection) {
   const teamArray = hygieneMonitorSection?.teams;
   if (!Array.isArray(teamArray)) return;
   for (const team of teamArray) {
-    if (!team.teamsWebhookSecret) continue;
+    if (!team.digestTriggerSecret) continue;
     try {
-      team.teamsWebhookSecret = Buffer.from(team.teamsWebhookSecret, 'base64').toString('utf8');
+      team.digestTriggerSecret = Buffer.from(team.digestTriggerSecret, 'base64').toString('utf8');
     } catch (_decodeError) {
       // Leave unchanged — may have been written by an older version without obfuscation
     }

@@ -3,7 +3,8 @@
 // Runs on a per-team schedule, evaluates server-side hygiene rules against
 // open Jira issues, dispatches violations to Rovo for FIXABLE/UNFIXABLE
 // classification, applies Jira fixes for FIXABLE items, posts Jira comments
-// for UNFIXABLE items, then delivers a Teams digest via reportWebhookDelivery.
+// for UNFIXABLE items, then emails a digest via reportWebhookDelivery (an Atlassian
+// Automation rule composes the email; an inbox rule forwards it to Teams).
 //
 // Key exports:
 //   parseRovoClassifications(text) — pure helper, no side effects
@@ -303,13 +304,14 @@ async function postUnfixableComment(classification, issue, postedCommentKeys, ji
 // ── Digest delivery ───────────────────────────────────────────────────────────
 
 /**
- * Delivers the hygiene digest to the team's Teams webhook and appends the scan
- * result to the bounded hygieneScanHistory in the live configuration object.
+ * Delivers the hygiene digest by email — POSTs it to the team's Atlassian Automation
+ * webhook, which composes the email (the recipient's inbox rule forwards it to Teams) —
+ * and appends the scan result to the bounded hygieneScanHistory in the live config.
  *
- * Skips delivery silently when no Teams webhook is configured for the team.
+ * Skips delivery silently when no digest trigger webhook is configured for the team.
  *
  * @param {object} digest - Computed by buildHygieneDigest.
- * @param {{ teamsWebhookUrl?: string, teamsWebhookSecret?: string }} teamConfig
+ * @param {{ digestTriggerUrl?: string, digestTriggerSecret?: string, digestEmailTo?: string }} teamConfig
  * @param {object} configuration - Live server configuration (mutated to append history).
  */
 async function deliverHygieneDigest(digest, teamConfig, configuration) {
@@ -326,14 +328,15 @@ async function deliverHygieneDigest(digest, teamConfig, configuration) {
     configuration.hygieneMonitor = hygieneMonitorConfig;
   }
 
-  if (!teamConfig.teamsWebhookUrl) {
-    console.log('[HygieneMonitor] No Teams webhook configured for team "' + digest.teamName + '" — digest skipped.');
+  if (!teamConfig.digestTriggerUrl) {
+    console.log('[HygieneMonitor] No digest trigger webhook configured for team "' + digest.teamName + '" — digest skipped.');
     return;
   }
 
   try {
     // deliverReport resolves the destination via the hygiene-digest surface's
     // resolveDestination, which looks up the team by name in configuration.hygieneMonitor.teams.
+    // The destination is an Atlassian Automation webhook that emails the digest.
     const deliveryResult = await deliverReport(configuration, {
       surface: 'hygiene-digest',
       teamId:  digest.teamName,
@@ -347,6 +350,7 @@ async function deliverHygieneDigest(digest, teamConfig, configuration) {
         unassignedCount: digest.unassignedCount,
         trend:           digest.trend,
         failures:        digest.failures,
+        emailTo:         teamConfig.digestEmailTo || '',
       },
     });
 
@@ -354,7 +358,7 @@ async function deliverHygieneDigest(digest, teamConfig, configuration) {
       console.warn('[HygieneMonitor] Digest delivery not-ok for "' + digest.teamName + '": ' + deliveryResult.message);
     }
   } catch (deliveryError) {
-    console.error('[HygieneMonitor] Teams digest delivery threw for "' + digest.teamName + '": ' + deliveryError.message);
+    console.error('[HygieneMonitor] Digest delivery threw for "' + digest.teamName + '": ' + deliveryError.message);
   }
 }
 
@@ -367,10 +371,10 @@ async function deliverHygieneDigest(digest, teamConfig, configuration) {
  * 3. Batch violations and dispatch to Rovo for classification (when enabled)
  * 4. Apply FIXABLE fixes via the Jira proxy
  * 5. Post UNFIXABLE comments with per-cycle dedup
- * 6. Build and deliver the Teams digest
+ * 6. Build and email the digest (via the Automation webhook)
  * 7. Cache the result and append to scan history
  *
- * @param {{ teamName: string, projectKeys: string[], enabledCheckIds?: string[], teamsWebhookUrl?: string, teamsWebhookSecret?: string, fieldConfig?: object }} teamConfig
+ * @param {{ teamName: string, projectKeys: string[], enabledCheckIds?: string[], digestTriggerUrl?: string, digestTriggerSecret?: string, digestEmailTo?: string, fieldConfig?: object }} teamConfig
  * @param {object} configuration - Live server configuration object.
  * @returns {Promise<{ teamName: string, issuesScanned: number, violationsFound: number, fixesApplied: number, actionsRequired: number, unassignedCount: number, failures: object[] }>}
  */
@@ -498,7 +502,7 @@ async function runHygieneScan(teamConfig, configuration) {
     if (wasCommentPosted) actionsRequired++;
   }
 
-  // ── Step 6: Build digest, deliver to Teams, append to history ────────────
+  // ── Step 6: Build digest, email it (via Automation), append to history ────────────
 
   const scanResult = {
     teamName:        teamConfig.teamName,

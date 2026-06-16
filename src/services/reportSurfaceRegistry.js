@@ -85,22 +85,24 @@ const SURFACES = {
     resolveDestination: (configuration, teamId) =>
       resolveFromTeamReports(schedulerSection(configuration, 'featureChange'), teamId),
   },
-  // Hygiene Monitor digest — delivered to the team's Microsoft Teams incoming webhook.
-  // Each team stores its own teamsWebhookUrl and teamsWebhookSecret in hygieneMonitor.teams.
+  // Hygiene Monitor digest — emailed via an Atlassian Automation rule. Each team
+  // stores its own digestTriggerUrl, digestTriggerSecret, and (optional) digestEmailTo
+  // in hygieneMonitor.teams; NodeToolbox POSTs the digest to the Automation webhook,
+  // which composes the email (the recipient's inbox rule forwards it to Teams).
   'hygiene-digest': {
     id: 'hygiene-digest',
     label: 'Hygiene Monitor digest',
-    reportShape: 'Object: { teamName, scannedAt, issuesScanned, violationsFound, fixesApplied, actionsRequired, unassignedCount, trend, failures }.',
+    reportShape: 'Object: { teamName, scannedAt, issuesScanned, violationsFound, fixesApplied, actionsRequired, unassignedCount, trend, failures, emailTo }.',
     reportExample: '{ "teamName": "Platform", "trend": "down", "violationsFound": 4 }',
     resolveDestination: (configuration, teamId) => {
       const hygieneTeams = ((configuration || {}).hygieneMonitor || {}).teams || [];
       const matchedTeam = hygieneTeams.find((team) =>
         String(team.teamName || '').trim().toLowerCase() === String(teamId || '').trim().toLowerCase()
       );
-      if (!matchedTeam || !matchedTeam.teamsWebhookUrl) return null;
+      if (!matchedTeam || !matchedTeam.digestTriggerUrl) return null;
       return {
-        triggerUrl:    matchedTeam.teamsWebhookUrl,
-        triggerSecret: matchedTeam.teamsWebhookSecret || '',
+        triggerUrl:    matchedTeam.digestTriggerUrl,
+        triggerSecret: matchedTeam.digestTriggerSecret || '',
         teamName:      matchedTeam.teamName,
         projectKey:    (matchedTeam.projectKeys || [])[0] || '',
       };
