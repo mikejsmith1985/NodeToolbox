@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Rovo result lookup now reads pages authored in the modern (ADF) editor**: A parking page created/edited in Confluence's modern editor returns an EMPTY `body.storage` over the REST API even though it visibly has content, so the by-ID read saw `raw=0B` and never matched — the round-trip timed out despite the rule writing the result correctly. The reader now also requests the rendered `body.view` and falls back to it when `body.storage` is blank, and the HTML stripper handles rendered markup (block tags and `&nbsp;`). The diagnostic log now reports `source=storage|view` and both body lengths, so an empty-in-both case (an unpublished draft) is still distinguishable.
+
 ### Changed
 - **Rovo result lookup logs a snippet of the page it read when no marker matches**: When the by-ID parking-page read finds no matching correlationId, it now also logs the raw + stripped body lengths and the first 300 characters of the page text (`[Rovo] page <id> read: raw=…B stripped=…B snippet="…"`). This shows whether the page is empty over the API, returns unexpected markup, or simply lacks the marker — diagnosing the "visible in the editor but absent over the API" case directly.
 - **Rovo result-lookup log now shows what it wants vs what the page holds**: When "Run via Rovo (auto)" times out, the result poll now logs `want=<correlationId> page-has=[<ids on the page>] match=true/false` for the by-ID parking page. An empty `page-has=[none]` means NodeToolbox is reading a different page than the rule writes to (wrong **Parking Page ID**); a different id in `page-has` means the page holds only a stale/previous run. This pinpoints a page-ID mismatch versus a stale result without guesswork.
