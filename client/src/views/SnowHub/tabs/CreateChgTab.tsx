@@ -617,6 +617,12 @@ interface ChangeDetailsExtras {
   removePin: (pinId: string) => void;
   getPinnedFields: (fieldKey: string) => CrgPinnedField[];
   findPinnedField: (fieldKey: string, fieldValue: CrgPinnedField['value']) => CrgPinnedField | undefined;
+  /** True when the Ctrl+Alt+Z passphrase gate is unlocked — shows Rovo draft action. */
+  isRovoUnlocked: boolean;
+  /** Dispatches a Rovo exchange to populate Short Description + Description from selected issues. */
+  onDraftWithRovo: () => Promise<void>;
+  /** True while the Rovo draft exchange is in flight. */
+  isDraftingWithRovo: boolean;
 }
 
 interface CtaskTemplateExtras {
@@ -629,6 +635,10 @@ interface CtaskTemplateExtras {
 interface ResultsStepExtras {
   ctaskTemplates: CtaskTemplate[];
   environmentValueByKey: Partial<Record<EnvironmentKey, string>>;
+  /** True when the Ctrl+Alt+Z passphrase gate is unlocked — shows Rovo risk check. */
+  isRovoUnlocked: boolean;
+  /** Runs a Rovo exchange to review the CHG payload; resolves to gap text or null. */
+  onRiskCheckWithRovo: () => Promise<string | null>;
 }
 
 interface StepRenderOptions {
@@ -1225,6 +1235,9 @@ function ChangeDetailsStep({
   removePin,
   getPinnedFields,
   findPinnedField,
+  isRovoUnlocked,
+  onDraftWithRovo,
+  isDraftingWithRovo,
   headingStep,
   shouldShowNavigation = true,
   shouldShowSaveButtons = false,
@@ -1351,6 +1364,21 @@ function ChangeDetailsStep({
   return (
     <section className={styles.section}>
       <StepHeading currentStep={headingStep ?? state.currentStep} />
+
+      {/* Draft with Rovo — optional accelerator, gated by Ctrl+Alt+Z passphrase (SC-007). */}
+      {isRovoUnlocked ? (
+        <div className={styles.rovoRow}>
+          <button
+            className={styles.rovoButton}
+            disabled={isDraftingWithRovo}
+            onClick={onDraftWithRovo}
+            title="Draft Short Description and Description from your selected Jira issues using Rovo"
+            type="button"
+          >
+            {isDraftingWithRovo ? '✦ Drafting…' : '✦ Draft with Rovo'}
+          </button>
+        </div>
+      ) : null}
 
       {shouldShowNavigation ? (
         <div className={styles.clonePanel}>
@@ -2109,13 +2137,22 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
   );
 }
 
-function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey }: CrgStepProps & ResultsStepExtras) {
+function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, isRovoUnlocked, onRiskCheckWithRovo }: CrgStepProps & ResultsStepExtras) {
   const [selectedCtaskTemplateId, setSelectedCtaskTemplateId] = useState('');
   const [existingChgNumber, setExistingChgNumber] = useState('');
+  const [riskCheckResult, setRiskCheckResult] = useState<string | null>(null);
+  const [isRiskCheckRunning, setIsRiskCheckRunning] = useState(false);
   const selectedCtaskTemplate = ctaskTemplates.find((template) => template.id === selectedCtaskTemplateId) ?? null;
   const consolidatedResult = buildConsolidatedResult(state);
   const hasGeneratedContent = Boolean(state.generatedShortDescription || state.generatedDescription || state.generatedJustification || state.generatedRiskImpact);
   const normalizedExistingChgNumber = existingChgNumber.trim().toUpperCase();
+
+  async function handleRiskCheckClick() {
+    setIsRiskCheckRunning(true);
+    const result = await onRiskCheckWithRovo();
+    setRiskCheckResult(result);
+    setIsRiskCheckRunning(false);
+  }
 
   return (
     <section className={styles.section}>
@@ -2197,6 +2234,26 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey }: 
         <span className={styles.fieldLabel}>{CONSOLIDATED_RESULT_LABEL}</span>
         <textarea className={styles.textArea} readOnly value={hasGeneratedContent ? consolidatedResult : DEFAULT_RESULT_MESSAGE} />
       </label>
+      {/* Risk check with Rovo — optional pre-submission review, gated by Ctrl+Alt+Z (SC-007). */}
+      {isRovoUnlocked ? (
+        <div className={styles.rovoRow}>
+          <button
+            className={styles.rovoButton}
+            disabled={isRiskCheckRunning}
+            onClick={() => void handleRiskCheckClick()}
+            title="Have Rovo review the CHG payload and flag gaps before submission"
+            type="button"
+          >
+            {isRiskCheckRunning ? '✦ Checking…' : '✦ Risk check with Rovo'}
+          </button>
+          {riskCheckResult !== null ? (
+            <div className={styles.riskCheckResult}>
+              <p className={styles.riskCheckHeading}>Rovo risk review:</p>
+              <pre className={styles.riskCheckText}>{riskCheckResult}</pre>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {state.submitResult ? <p className={styles.successText}>{state.submitResult}</p> : null}
       {state.isSubmitting ? <p className={styles.loadingText}>Submitting change request...</p> : null}
       <label className={styles.fieldGroup}>
@@ -2314,6 +2371,8 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
   // removing the manual copy-paste step. Status is shown inside the prompt modal.
   const { isRunning: isRovoRunning, runRovoExchange } = useRovoExchange();
   const [rovoAutoStatus, setRovoAutoStatus] = useState<string | null>(null);
+  // True while the Step 3 "Draft with Rovo" exchange is in flight.
+  const [isDraftingWithRovo, setIsDraftingWithRovo] = useState(false);
 
   const issueCountSummary = useMemo(() => {
     if (mode === 'configuration') {
@@ -2489,6 +2548,57 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     );
   }, [rovoPrompt, runRovoExchange, actions]);
 
+  // Step 3: dispatch a targeted prompt to populate Short Description and Description from
+  // the selected Jira issues. Only the two relevant fields are updated — the full four-field
+  // prompt (Step 4) is left to the Planning step so each step stays focused.
+  const handleDraftWithRovo = useCallback(async () => {
+    const selectedIssues = state.fetchedIssues.filter((issue) =>
+      state.selectedIssueKeys.has(issue.key),
+    );
+    const issueLines = selectedIssues.length > 0
+      ? selectedIssues.map((issue) => `[${issue.key}] ${issue.fields.summary}`).join('\n')
+      : '(no issues selected)';
+    const draftPrompt = [
+      'You are assisting with a ServiceNow Change Request.',
+      'Based on the Jira issues listed below, generate a Short Description and Description.',
+      'Respond ONLY in this exact format with no extra commentary:',
+      'SHORT_DESCRIPTION: [one-line summary under 100 characters]',
+      'DESCRIPTION: [multi-line description of what is being deployed and why]',
+      '',
+      'Jira issues:',
+      issueLines,
+    ].join('\n');
+
+    setIsDraftingWithRovo(true);
+    const exchange = await runRovoExchange(draftPrompt);
+    setIsDraftingWithRovo(false);
+
+    if (!exchange.ok || !exchange.response) return;
+    const parsedFields = parseRovoChgResponse(exchange.response);
+    if (parsedFields.shortDescription) actions.updateGeneratedField('shortDescription', parsedFields.shortDescription);
+    if (parsedFields.description) actions.updateGeneratedField('description', parsedFields.description);
+  }, [state.fetchedIssues, state.selectedIssueKeys, runRovoExchange, actions]);
+
+  // Step 6: dispatch the current CHG payload to Rovo for a pre-submission risk review.
+  // The raw response text is returned so ResultsStep can display it inline — the user
+  // may still submit regardless of what Rovo flags (FR-005: submission not blocked).
+  const handleRiskCheckWithRovo = useCallback(async (): Promise<string | null> => {
+    const riskPrompt = [
+      'You are reviewing a ServiceNow Change Request before submission.',
+      'Identify gaps, risks, or missing fields that need attention.',
+      'List each issue on its own line starting with "GAP: ".',
+      '',
+      `Short Description: ${state.generatedShortDescription || '(not set)'}`,
+      `Description: ${state.generatedDescription || '(not set)'}`,
+      `Justification: ${state.generatedJustification || '(not set)'}`,
+      `Risk & Impact: ${state.generatedRiskImpact || '(not set)'}`,
+    ].join('\n');
+
+    const exchange = await runRovoExchange(riskPrompt);
+    if (!exchange.ok || !exchange.response) return null;
+    return exchange.response;
+  }, [state.generatedShortDescription, state.generatedDescription, state.generatedJustification, state.generatedRiskImpact, runRovoExchange]);
+
   const planningExtras: PlanningStepExtras = {
     isRovoUnlocked:    isUnlocked,
     onEnhanceWithRovo: handleEnhanceWithRovo,
@@ -2534,6 +2644,9 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     removePin,
     getPinnedFields,
     findPinnedField,
+    isRovoUnlocked: isUnlocked,
+    onDraftWithRovo: handleDraftWithRovo,
+    isDraftingWithRovo,
   };
 
   const workspaceExtras: CrgWorkspaceExtras = {
@@ -2561,6 +2674,8 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
       prd: resolveEnvironmentOptionValue(choiceOptions['u_environment'] ?? [], 'prd'),
       pfix: resolveEnvironmentOptionValue(choiceOptions['u_environment'] ?? [], 'pfix'),
     },
+    isRovoUnlocked: isUnlocked,
+    onRiskCheckWithRovo: handleRiskCheckWithRovo,
   };
 
   const tabTitle = mode === 'configuration' ? CONFIGURATION_TAB_TITLE : TAB_TITLE;
