@@ -218,7 +218,7 @@ function checkAndFireScheduledReports(configuration) {
     if (rollupTime === currentTime && !hasAlreadyFiredToday('feature-art-rollup')) {
       markFiredToday('feature-art-rollup');
       console.log('  🎯 Feature Change ART Rollup: firing combined report…');
-      runFeatureChangeArtRollupDelivery(artRollup, reports, jiraConfig, confluenceConfig, sslVerify).catch((deliveryError) => {
+      runFeatureChangeArtRollupDelivery(artRollup, reports, jiraConfig, confluenceConfig, sslVerify, configuration).catch((deliveryError) => {
         console.error('  ⚠ Feature Change ART Rollup error:', deliveryError.message);
       });
     }
@@ -425,6 +425,31 @@ function buildFeatureRovoPrompt(fixVersionEntries, statusEntries, scheduleEntrie
     '',
     'Schedule changes:',
     summariseChangeEntries(scheduleEntries) || '(none)',
+  ].join('\n');
+}
+
+/**
+ * Builds the prompt asking Rovo for a one-paragraph cross-team trend commentary on
+ * the feature-change ART rollup, identifying the team most at risk across the ART.
+ *
+ * @param {Array} teamResults - [{ teamName, fixVersionEntries, statusEntries, scheduleEntries }]
+ * @returns {string}
+ */
+function buildFeatureRollupRovoPrompt(teamResults) {
+  const lines = (teamResults || [])
+    .map((result) => {
+      const total = (result.fixVersionEntries || []).length
+        + (result.statusEntries || []).length
+        + (result.scheduleEntries || []).length;
+      return `- ${result.teamName}: ${total} feature change(s)`;
+    })
+    .join('\n');
+  return [
+    'You are a release train assistant. Below is a cross-team ART rollup of Feature changes since',
+    'the last business day. Write ONE short paragraph (2-3 sentences, plain prose, no preamble or',
+    'heading) identifying which team is most at risk across the ART and why.',
+    '',
+    lines || '(none)',
   ].join('\n');
 }
 
@@ -800,7 +825,7 @@ async function runFeatureReportDelivery(report, jiraConfig, confluenceConfig, ss
  * @param {boolean} sslVerify
  * @returns {Promise<{ skipped: boolean, message: string, postUrl?: string }>}
  */
-async function runFeatureChangeArtRollupDelivery(artRollup, teamReports, jiraConfig, confluenceConfig, sslVerify) {
+async function runFeatureChangeArtRollupDelivery(artRollup, teamReports, jiraConfig, confluenceConfig, sslVerify, configuration) {
   const { confluenceSpaceKey, targetBlogUrl, triggerUrl, triggerSecret } = artRollup;
 
   // Collect only the teams that have a jiraLabel configured — others cannot be queried.
@@ -879,7 +904,20 @@ async function runFeatureChangeArtRollupDelivery(artRollup, teamReports, jiraCon
   const postTitle    = targetPageId
     ? 'ART Feature Change Rollup'
     : 'ART Feature Change Rollup — ' + dateLabel;
-  const bodyHtml     = buildFeatureChangeArtRollupBody(teamResults, generatedAt, sinceLabel);
+  let   bodyHtml     = buildFeatureChangeArtRollupBody(teamResults, generatedAt, sinceLabel);
+
+  // Optional, non-blocking Rovo enrichment: prepend a cross-team trend paragraph
+  // above the rollup tables. Skipped silently when Rovo is disabled/unavailable.
+  if (isRovoEnabled(configuration)) {
+    const rovoCommentary = await requestRovoText(
+      configuration,
+      buildFeatureRollupRovoPrompt(teamResults),
+      { label: 'feature-rollup' },
+    );
+    if (rovoCommentary) {
+      bodyHtml = buildRovoTrendPanel(rovoCommentary) + bodyHtml;
+    }
+  }
 
   let postUrl;
   if (targetPageId) {
@@ -1000,7 +1038,7 @@ async function runFeatureArtRollupNow(configuration) {
   const confluenceConfig    = configuration.confluence;
   const sslVerify           = configuration.sslVerify !== false;
 
-  return runFeatureChangeArtRollupDelivery(artRollup, reports, jiraConfig, confluenceConfig, sslVerify);
+  return runFeatureChangeArtRollupDelivery(artRollup, reports, jiraConfig, confluenceConfig, sslVerify, configuration);
 }
 
 module.exports = {
@@ -1016,5 +1054,6 @@ module.exports = {
   escapeXml,
   extractPageIdFromUrl,
   buildFeatureRovoPrompt,
+  buildFeatureRollupRovoPrompt,
   buildRovoTrendPanel,
 };

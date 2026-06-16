@@ -179,7 +179,7 @@ function checkAndFireScheduledReports(configuration) {
     if (rollupTime === currentTime && !hasAlreadyFiredToday('artRollup')) {
       markFiredToday('artRollup');
       console.log('  📤 Scope Change: firing ART rollup');
-      runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, sslVerify).catch((deliveryError) => {
+      runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, sslVerify, configuration).catch((deliveryError) => {
         console.error('  ⚠ Scope Change ART rollup error:', deliveryError.message);
       });
     }
@@ -273,6 +273,26 @@ function buildScopeRovoPrompt(releaseEntries, projectKey) {
     `You are a release train assistant. Below are the fix-version (release scope) changes for "${projectKey}" since the last business day.`,
     'Write ONE short paragraph (2-3 sentences, plain prose, no preamble or heading) identifying the release',
     'most at risk from these scope movements and why.',
+    '',
+    lines || '(none)',
+  ].join('\n');
+}
+
+/**
+ * Builds the prompt asking Rovo for a one-paragraph cross-team trend commentary on
+ * the ART rollup, identifying the team/release most at risk across all teams.
+ *
+ * @param {Array} teamResults - [{ teamName, projectKey, releaseEntries }]
+ * @returns {string}
+ */
+function buildScopeRollupRovoPrompt(teamResults) {
+  const lines = (teamResults || [])
+    .map((result) => `- ${result.teamName} (${result.projectKey}): ${(result.releaseEntries || []).length} release change(s)`)
+    .join('\n');
+  return [
+    'You are a release train assistant. Below is a cross-team ART rollup of fix-version (release scope)',
+    'changes since the last business day. Write ONE short paragraph (2-3 sentences, plain prose, no',
+    'preamble or heading) identifying which team or release is most at risk across the ART and why.',
     '',
     lines || '(none)',
   ].join('\n');
@@ -654,7 +674,7 @@ async function runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, s
  * @param {boolean} sslVerify
  * @returns {Promise<{ skipped: boolean, message: string, postUrl?: string }>}
  */
-async function runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, sslVerify) {
+async function runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, sslVerify, configuration) {
   const { projectKeys, teamNames, confluenceSpaceKey, targetBlogUrl, triggerUrl, triggerSecret } = artRollup;
 
   if (!projectKeys || projectKeys.length === 0) {
@@ -698,7 +718,20 @@ async function runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, ssl
     ? 'ART Scope Change Rollup'
     : 'ART Scope Change Rollup — ' + dateLabel;
   const projectKeyList = projectKeys.join(', ');
-  const bodyHtml       = buildArtRollupBlogBody(teamResults, projectKeyList, generatedAt, sinceLabel);
+  let   bodyHtml       = buildArtRollupBlogBody(teamResults, projectKeyList, generatedAt, sinceLabel);
+
+  // Optional, non-blocking Rovo enrichment: prepend a cross-team trend paragraph
+  // above the rollup table. Skipped silently when Rovo is disabled/unavailable.
+  if (isRovoEnabled(configuration)) {
+    const rovoCommentary = await requestRovoText(
+      configuration,
+      buildScopeRollupRovoPrompt(teamResults),
+      { label: 'scope-rollup' },
+    );
+    if (rovoCommentary) {
+      bodyHtml = buildRovoTrendPanel(rovoCommentary) + bodyHtml;
+    }
+  }
   let postUrl;
   if (targetPageId) {
     console.log('  📝 Scope Change ART Rollup: updating page ' + targetPageId + '…');
@@ -772,7 +805,7 @@ async function runArtRollupNow(configuration) {
   const confluenceConfig  = configuration.confluence;
   const sslVerify         = configuration.sslVerify !== false;
 
-  return runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, sslVerify);
+  return runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, sslVerify, configuration);
 }
 
 module.exports = {
@@ -789,5 +822,6 @@ module.exports = {
   renderChangeTable,
   extractPageIdFromUrl,
   buildScopeRovoPrompt,
+  buildScopeRollupRovoPrompt,
   buildRovoTrendPanel,
 };
