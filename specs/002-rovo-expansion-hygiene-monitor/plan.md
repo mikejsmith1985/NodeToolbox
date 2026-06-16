@@ -2,6 +2,8 @@
 
 **Branch**: `002-rovo-expansion-hygiene-monitor` | **Date**: 2026-06-16 | **Spec**: [spec.md](./spec.md)
 
+> Implementation uses `feature/rovo-expansion-hygiene-monitor` to satisfy the repo's pre-commit branch rule (`feature|fix|chore|docs|hotfix|release/*`); the speckit `002-` identifier is retained only for the `specs/` directory.
+
 **Input**: Feature specification from `specs/002-rovo-expansion-hygiene-monitor/spec.md`
 
 ## Summary

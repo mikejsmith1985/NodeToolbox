@@ -55,24 +55,25 @@ Each is resolved below.
   page later — rejected (two Confluence writes, visible fl/flicker, more complex
   failure modes). Block until Rovo answers — rejected (violates SC-008).
 
-## R4 — Teams digest delivery
+## R4 — Hygiene digest delivery (by email, not a direct Teams webhook)
 
-- **Decision**: Reuse `src/services/reportWebhookDelivery.js` and the existing
-  `deliverReport`/`payloadContext` path that Scope/Feature change reports already use
-  for webhook delivery. The hygiene digest is built as a structured payload and sent
-  to the team's configured Teams webhook URL. The Teams URL is the single explicitly
-  allowed non-Atlassian destination, configured per team in Admin Hub.
-- **Rationale**: The spec's Assumptions state Teams delivery reuses the existing
-  delivery engine "without requiring a new transport mechanism." Framework-First:
-  no new HTTP client or retry logic.
-- **Open implementation detail (resolved at build time, not a blocker)**: confirm
-  the exact JSON shape the existing delivery posts and whether the Teams endpoint is
-  a legacy Office365 connector (`MessageCard`) or a Workflows endpoint (Adaptive
-  Card). The digest builder will be a pure function returning the payload object, so
-  the shape is swappable and unit-tested independently of transport. The
-  Atlassian-host allow-list must gain an explicit, per-config exception for the
-  configured Teams host (it is not an Atlassian domain) — handled as a narrow,
-  config-scoped allowance, not a blanket relaxation.
+- **Decision (clarified 2026-06-16)**: The digest is delivered **by email**, reusing the
+  same trigger-webhook → Atlassian Automation → email mechanism the standup/scope/feature
+  reports already use. NodeToolbox fires a trigger webhook (per-team `digestTriggerUrl`/
+  `digestTriggerSecret`, with the digest as the payload) to an Atlassian Automation rule
+  that composes the email; the recipient's inbox rule forwards it into Teams, where a
+  Teams automation handles it.
+- **Rationale**: The user cannot post directly to a Teams endpoint from this environment;
+  the established path to "an email that reaches Teams" is the existing Automation-driven
+  email used by the other reports. Reusing it is Framework-First (no new transport) and
+  keeps **all** outbound calls on Atlassian hosts.
+- **Consequences**:
+  - No Teams payload format to choose (no `MessageCard` vs Adaptive Card decision).
+  - **No allow-list exception** — the destination is an Atlassian Automation webhook,
+    already covered by the existing allow-list. (The previously-planned task to add a
+    Teams-host exception is removed.)
+  - The digest builder remains a pure function returning the webhook payload object
+    (scan stats + trend), unit-tested independently of transport.
 
 ## R5 — Scheduler lifecycle & timing
 

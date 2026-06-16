@@ -18,8 +18,9 @@ Returns the current monitor configuration for the Admin Hub form.
         "projectKeys": ["TFM"],
         "scheduleTime": "06:00",
         "weekdays": [1,2,3,4,5],
-        "teamsWebhookUrl": "https://…webhook.office.com/…",
-        "teamsWebhookSecret": "",            // never echoed; empty string placeholder
+        "digestTriggerUrl": "https://…atlassian.net/…automation-webhook…",
+        "digestTriggerSecret": "",           // never echoed; empty string placeholder
+        "digestEmailTo": "team-dl@example.com",
         "fieldMappings": { "…": "customfield_10001" },
         "enabledCheckIds": ["missing-target-end","missing-assignee"]
       }
@@ -63,7 +64,8 @@ Backs the Hygiene Monitor panel (FR-013, SC-009).
 
 ## Behavioural contract
 - All four endpoints are inert (return empty/zero state) until configured — no errors.
-- Dispatch to Rovo and delivery to Teams happen inside the scan, not in the request
-  cycle; `scan` returns immediately and the panel polls `status`.
-- Outbound calls obey the Atlassian-host allow-list; the configured Teams host is the
-  one explicit, config-scoped exception (validated to be a known Teams webhook host).
+- Dispatch to Rovo and the digest email (fired as a trigger webhook to an Atlassian
+  Automation rule) happen inside the scan, not in the request cycle; `scan` returns
+  immediately and the panel polls `status`.
+- All outbound calls (Rovo dispatch + digest webhook) target Atlassian hosts and are
+  already covered by the existing Atlassian-host allow-list — no host exception is needed.

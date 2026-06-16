@@ -24,8 +24,9 @@ Per-team scan configuration.
 | `projectKeys` | string[] | Jira project keys to scan; non-empty for an active team. |
 | `scheduleTime` | string | `HH:mm` 24h local; default `06:00`. |
 | `weekdays` | number[] | ISO weekday numbers (1=Mon…5=Fri); default `[1,2,3,4,5]`. |
-| `teamsWebhookUrl` | string | Teams incoming webhook; empty ⇒ digest delivery skipped (FR-012). |
-| `teamsWebhookSecret` | string | Optional header token; **base64-obfuscated at rest**, never logged. |
+| `digestTriggerUrl` | string | Atlassian Automation webhook that emails the digest; empty ⇒ digest delivery skipped (FR-012). |
+| `digestTriggerSecret` | string | Optional header token for the webhook; **base64-obfuscated at rest**, never logged. |
+| `digestEmailTo` | string | Recipient address passed in the webhook payload for the Automation rule to email (optional if the rule hard-codes the recipient). |
 | `fieldMappings` | `HygieneFieldConfig` | Same shape the Hygiene view uses (custom field ids per rule). |
 | `enabledCheckIds` | string[] | Which hygiene rules apply for this team (subset of `HYGIENE_CHECK_IDS`). |
 
@@ -74,8 +75,9 @@ Rovo's per-violation verdict, parsed from the Confluence parking page text
 > A malformed/empty classification ⇒ `detected → skipped` (logged, no Jira write — edge case in spec).
 
 ### HygieneDigest
-The payload delivered to Teams after a scan (FR-012, SC-009). Built by a pure
-function; transport via `reportWebhookDelivery`.
+The payload emailed after a scan (FR-012, SC-009) — fired as a trigger webhook to an
+Atlassian Automation rule that composes the email (the inbox rule forwards it to Teams).
+Built by a pure function; transport via the existing `reportWebhookDelivery`/`triggerWebhook` path.
 
 | Field | Type | Notes |
 |---|---|---|
