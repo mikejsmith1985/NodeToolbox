@@ -24,12 +24,14 @@ const createStandupBriefingRouter           = require('./src/routes/standupBrief
 const createReportDeliveryRouter            = require('./src/routes/reportDelivery');
 const createRovoExchangeRouter              = require('./src/routes/rovoExchange');
 const createHygieneMonitorRouter            = require('./src/routes/hygieneMonitor');
+const createSprintReleaseRouter             = require('./src/routes/sprintRelease');
 
 const { startSchedulerLoop }                = require('./src/services/repoMonitor');
 const { startScopeChangeScheduler }         = require('./src/services/scopeChangeScheduler');
 const { startFeatureChangeScheduler }       = require('./src/services/featureChangeScheduler');
 const { startStandupBriefingScheduler }     = require('./src/services/standupBriefingScheduler');
 const { startHygieneMonitorScheduler }      = require('./src/services/hygieneMonitorScheduler');
+const { startSprintReleaseScheduler }       = require('./src/services/sprintReleaseScheduler');
 const { isPortInUse, resolvePortConflict }  = require('./src/utils/portManager');
 const { installConsoleInterceptor }         = require('./src/utils/logBuffer');
 const { spawnDetachedProcess }              = require('./src/utils/updater');
@@ -146,6 +148,9 @@ app.use(createRovoExchangeRouter(configuration));
 
 // Hygiene monitor: /api/hygiene-monitor/config, /scan, /status
 app.use(createHygieneMonitorRouter(configuration));
+
+// Sprint–Release Workflow: /api/sprint-release/config, /dor-violations, /run-now, /status
+app.use(createSprintReleaseRouter(configuration));
 
 // First-run detection: GET / redirects to /setup when no service is configured.
 // Placed before the static file middleware so misconfigured instances always see
@@ -645,6 +650,7 @@ async function launchServer() {
   startFeatureChangeScheduler(configuration);
   startStandupBriefingScheduler(configuration);
   startHygieneMonitorScheduler(configuration);
+  startSprintReleaseScheduler(configuration);
 
   // Open the dashboard automatically when:
   //   --open      : passed explicitly by Launch Toolbox.bat (zip distribution)
