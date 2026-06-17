@@ -9,7 +9,7 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **rovo-expansion-hygiene-monitor** — plan: `specs/002-rovo-expansion-hygiene-monitor/plan.md`
+- **sprint-release-workflow** — plan: `specs/003-sprint-release-workflow/plan.md`
   (spec, research, data-model, contracts, quickstart in the same directory).
 <!-- SPECKIT END -->
 
