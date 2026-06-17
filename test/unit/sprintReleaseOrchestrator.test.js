@@ -24,6 +24,7 @@ const {
   executeDevIssueDone,
   postHandoffComment,
   updateSprintEndDate,
+  createDefectIssue,
 } = require('../../src/services/sprintReleaseOrchestrator');
 
 // ── Test fixtures ─────────────────────────────────────────────────────────────
@@ -483,5 +484,99 @@ describe('updateSprintEndDate', () => {
     expect(result.wasUpdated).toBe(false);
     expect(result.warning).toContain('past');
     expect(makeJiraApiRequest).not.toHaveBeenCalled();
+  });
+});
+
+// ── createDefectIssue (T034) ──────────────────────────────────────────────────
+
+describe('createDefectIssue', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  function buildOriginalDevIssue(overrides) {
+    return Object.assign({
+      key:    'ENFCT-700',
+      fields: {
+        summary:     'User cannot log in',
+        assignee:    { accountId: 'user-123', displayName: 'Alice Dev' },
+        fixVersions: [{ id: 'fv-1', name: '6/18' }],
+      },
+    }, overrides);
+  }
+
+  function buildTriggerIssue() {
+    return {
+      key:    'INTTEST-80',
+      fields: { labels: ['defect-intake'], summary: 'Login fails on mobile' },
+    };
+  }
+
+  it('creates a defect issue with [DEFECT] prefix and inherits the original assignee', async () => {
+    makeJiraApiRequest
+      .mockResolvedValueOnce({ status: 201, body: { key: 'ENFCT-800' } }) // issue creation
+      .mockResolvedValueOnce({ status: 201, body: {} })                    // link to original
+      .mockResolvedValueOnce({ status: 201, body: {} });                   // link to trigger
+
+    const profile = buildTeamProfile();
+    const originalIssue = buildOriginalDevIssue();
+    const triggerIssue = buildTriggerIssue();
+
+    const result = await createDefectIssue(originalIssue, triggerIssue, null, profile, {}, true);
+
+    expect(result.createdIssueKey).toBe('ENFCT-800');
+    const issueCreateCall = makeJiraApiRequest.mock.calls[0];
+    const createdFields = issueCreateCall[2].fields;
+    expect(createdFields.summary).toBe('[DEFECT] User cannot log in');
+    expect(createdFields.assignee).toEqual({ accountId: 'user-123' });
+    expect(createdFields.labels).toContain('defect-from-testing');
+  });
+
+  it('adds TRIAGE REQUIRED label and clears fixVersions when sprint is in freeze window', async () => {
+    makeJiraApiRequest
+      .mockResolvedValueOnce({ status: 201, body: { key: 'ENFCT-801' } })
+      .mockResolvedValue({ status: 201, body: {} });
+
+    const profile = buildTeamProfile();
+    const originalIssue = buildOriginalDevIssue();
+    const triggerIssue = buildTriggerIssue();
+    // Pass a past sprint end date so isSprintInFreezeWindow returns true.
+    const pastSprintEndDate = '2020-01-01';
+
+    const result = await createDefectIssue(originalIssue, triggerIssue, pastSprintEndDate, profile, {}, true);
+
+    expect(result.createdIssueKey).toBe('ENFCT-801');
+    const issueCreateCall = makeJiraApiRequest.mock.calls[0];
+    const createdFields = issueCreateCall[2].fields;
+    expect(createdFields.labels).toContain('TRIAGE REQUIRED');
+    expect(createdFields.fixVersions).toEqual([]);
+  });
+
+  it('includes fixVersions when sprint is not in freeze window', async () => {
+    makeJiraApiRequest
+      .mockResolvedValueOnce({ status: 201, body: { key: 'ENFCT-802' } })
+      .mockResolvedValue({ status: 201, body: {} });
+
+    const profile = buildTeamProfile();
+    const originalIssue = buildOriginalDevIssue();
+    const triggerIssue = buildTriggerIssue();
+    // Pass a far-future sprint end date so freeze window is NOT active.
+    const futureSprintEndDate = '2099-12-31';
+
+    const result = await createDefectIssue(originalIssue, triggerIssue, futureSprintEndDate, profile, {}, true);
+
+    const issueCreateCall = makeJiraApiRequest.mock.calls[0];
+    const createdFields = issueCreateCall[2].fields;
+    expect(createdFields.fixVersions).toEqual([{ id: 'fv-1', name: '6/18' }]);
+    expect(createdFields.labels).not.toContain('TRIAGE REQUIRED');
+  });
+
+  it('returns createdIssueKey null when the Jira issue creation call fails', async () => {
+    makeJiraApiRequest.mockRejectedValue(new Error('Jira down'));
+
+    const profile = buildTeamProfile();
+    const result = await createDefectIssue(buildOriginalDevIssue(), buildTriggerIssue(), null, profile, {}, true);
+
+    expect(result.createdIssueKey).toBeNull();
   });
 });
