@@ -43,9 +43,9 @@
 
 - [ ] T007 Extend `buildDefaultConfig()` in `src/config/loader.js` to include `sprintRelease.teamProfiles` array with default single-profile shape from `data-model.md`
 - [ ] T008 Extend `saveConfigToDisk()` in `src/config/loader.js` to persist the `sprintRelease` block
-- [ ] T009 Implement `GET /api/sprint-release/config` in `src/routes/sprintRelease.js` — returns the first team profile from config
-- [ ] T010 Implement `POST /api/sprint-release/config` in `src/routes/sprintRelease.js` — validates all four Jira project keys via `makeJiraApiRequest GET /rest/api/2/project/{key}`, saves on success, returns 400 with error message on first invalid key
-- [ ] T011 Write unit tests for config CRUD handlers in `test/unit/sprintReleaseConfig.test.js` — mock `makeJiraApiRequest`; cover valid save, invalid project key rejection, missing required field
+- [ ] T009 Write unit tests for config CRUD handlers in `test/unit/sprintReleaseConfig.test.js` — mock `makeJiraApiRequest`; cover valid save, invalid project key rejection, missing required field, invalid boardId rejection
+- [ ] T010 Implement `GET /api/sprint-release/config` in `src/routes/sprintRelease.js` — returns the first team profile from config
+- [ ] T011 Implement `POST /api/sprint-release/config` in `src/routes/sprintRelease.js` — validates all four Jira project keys via `makeJiraApiRequest GET /rest/api/2/project/{key}`, validates boardId via `GET /rest/agile/1.0/board/{boardId}`, saves on success, returns 400 with error message on first invalid key or invalid boardId
 
 **Checkpoint**: `POST /api/sprint-release/config` with valid keys returns 200. Foundation ready.
 
@@ -62,6 +62,7 @@
 - [ ] T012 [P] [US1] Unit test `detectSubStatusChanges(issues, lastHandoffMap, profileConfig)` in `test/unit/sprintReleaseOrchestrator.test.js` — cases: QE sub-status in changelog → QE event returned; BT sub-status → BT event; already-seen issue → nothing returned; config-only label → bypass event (no handoff); no relevant changelog entry → nothing
 - [ ] T013 [P] [US1] Unit test `buildHandoffComment(issueKey, handoffType, featureKey, featureSummary)` in `test/unit/sprintReleaseOrchestrator.test.js` — QE type produces "QE Handoff:" prefix with INT environment; BT type produces "BT Handoff:" with REL environment
 - [ ] T014 [P] [US1] Unit test `executeDevIssueDone(issueKey, jiraConfig, profileConfig)` in `test/unit/sprintReleaseOrchestrator.test.js` — mocked transitions list: finds correct transition by name; calls POST transitions with matching ID; issue already Done → skipped; issue at terminal non-Done status → skipped with warning
+- [ ] T014b [P] [US1] Write unit tests for poll cycle wiring in `test/unit/sprintReleaseScheduler.test.js` — cases: `setInterval` is called with `pollIntervalMinutes * 60000`; `detectSubStatusChanges` is invoked with the issues returned by the mocked JQL search; a Jira HTTP error in the poll does not throw or crash the process (error is logged, interval continues); `lastHandoffByIssue` Map is updated after a handoff event fires
 
 ### Implementation
 
@@ -194,8 +195,8 @@
 
 ### Parallel Opportunities
 
-Within Phase 2 (after T007+T008): T009 and T010 can run in parallel.
-Within Phase 3 tests: T012, T013, T014 in parallel.
+Within Phase 2 (after T007+T008): T010 and T011 can run in parallel (once T009 tests are written and failing).
+Within Phase 3 tests: T012, T013, T014, T014b in parallel.
 Within Phase 4 tests: T023, T024, T025 in parallel.
 Within Phase 5 tests: T032, T033, T034 in parallel.
 Once Phase 2 is complete: Phases 3, 4, 5, 6 can proceed in parallel across team members.
@@ -207,9 +208,10 @@ Polish tasks T054, T055, T056 in parallel.
 
 ```text
 # Write all US1 tests together (they target different functions):
-T012 — detectSubStatusChanges tests
-T013 — buildHandoffComment tests
-T014 — executeDevIssueDone tests
+T012  — detectSubStatusChanges tests
+T013  — buildHandoffComment tests
+T014  — executeDevIssueDone tests
+T014b — startSprintReleaseScheduler poll wiring tests
 
 # Then implement in sequence (each builds on the previous):
 T015 → T016 → T017 → T018 → T019 → T020 → T021 → T022
