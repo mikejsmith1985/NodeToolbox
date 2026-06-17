@@ -183,6 +183,16 @@ function saveConfigToDisk(configuration) {
       hygieneScanHistory: ((configuration.hygieneMonitor || {}).hygieneScanHistory || [])
         .slice(-MAX_HYGIENE_SCAN_HISTORY),
     },
+    // Sprint–Release Workflow — deep-clone the teamProfiles array.
+    // handoffDelivery.webhookSecret is NOT obfuscated (it is an optional relay secret,
+    // not a primary credential). Teams that require secret protection can manage it
+    // via the Forge Vault layer above the config file.
+    sprintRelease: {
+      teamProfiles: ((configuration.sprintRelease || {}).teamProfiles || []).map((profile) => ({
+        ...profile,
+        handoffDelivery: { ...(profile.handoffDelivery || { webhookUrl: '', webhookSecret: '' }) },
+      })),
+    },
   };
 
   // Encode credentials before writing so they are not plaintext on disk
@@ -402,6 +412,33 @@ function buildDefaultConfig() {
       teams:             [],
       hygieneScanHistory: [],
     },
+    // Sprint–Release Workflow — team profile drives sub-status polling, sprint date sync,
+    // defect intake, and DoR gate. teamProfiles is an array for future multi-team expansion;
+    // the UI today operates on the first (and only) profile.
+    sprintRelease: {
+      teamProfiles: [
+        {
+          teamProfileId:            'default',
+          isEnabled:                true,
+          featureProjectKey:        '',
+          devProjectKey:            '',
+          qeProjectKey:             '',
+          btProjectKey:             '',
+          boardId:                  0,
+          subStatusFieldId:         'customfield_10201',
+          qeHandoffSubStatusValue:  'Ready for System Integration Test',
+          btHandoffSubStatusValue:  'Ready for UAT',
+          configOnlyLabel:          'no-testing-required',
+          defectIntakeLabel:        'defect-intake',
+          freezeWindowBusinessDays: 13,
+          doneTransitionName:       'Done',
+          dorQeFieldId:             '',
+          dorBtFieldId:             '',
+          handoffDelivery:          { webhookUrl: '', webhookSecret: '' },
+          pollIntervalMinutes:      5,
+        },
+      ],
+    },
     scheduler: {},
   };
 }
@@ -486,6 +523,14 @@ function applyFileConfig(configuration) {
         : [],
       hygieneScanHistory: Array.isArray(fileConfig.hygieneMonitor.hygieneScanHistory)
         ? fileConfig.hygieneMonitor.hygieneScanHistory.slice(-MAX_HYGIENE_SCAN_HISTORY)
+        : [],
+    };
+  }
+
+  if (fileConfig.sprintRelease) {
+    configuration.sprintRelease = {
+      teamProfiles: Array.isArray(fileConfig.sprintRelease.teamProfiles)
+        ? fileConfig.sprintRelease.teamProfiles
         : [],
     };
   }
