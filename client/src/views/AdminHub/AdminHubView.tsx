@@ -2696,7 +2696,7 @@ export default function AdminHubView() {
 
   // If the capability locks while a Rovo-gated tab is active, fall back to Config.
   useEffect(() => {
-    const isRovoGatedTab = activeAdminTab === 'rovo' || activeAdminTab === 'hygiene-monitor'
+    const isRovoGatedTab = activeAdminTab === 'rovo'
     if (!isRovoUnlocked && isRovoGatedTab) {
       setActiveAdminTab('main')
     }
