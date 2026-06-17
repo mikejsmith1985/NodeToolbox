@@ -51,6 +51,7 @@ const TAB_OPTIONS: { key: ReportsHubTab; label: string }[] = [
   { key: 'throughput', label: '📊 Throughput' },
   { key: 'scopeChange', label: '🔀 Scope Change' },
   { key: 'featureChange', label: '🎯 Feature Change' },
+  { key: 'hygiene', label: '🧹 Hygiene' },
 ]
 
 const ALL_PIS_LABEL = 'All PIs'
@@ -155,6 +156,12 @@ const TAB_DESCRIPTIONS: Record<ReportsHubTab, string[]> = {
     'Captures every PI-planning field change across the ART so re-plans and date shifts are visible before they surface as delivery risk.',
     'Single-team mode queries one project; ART Combined queries all configured teams in parallel.',
     'Use for: PI execution reviews, feature re-plan discussions, RTE reporting, and release readiness checks.',
+  ],
+  hygiene: [
+    'Runs an on-demand Jira hygiene scan for the selected team and displays violations inline.',
+    'Rovo classifies findings as FIXABLE (auto-corrected via Jira) or UNFIXABLE (comment added to the issue).',
+    'Digest delivery via Atlassian Automation webhook is configured per team in Admin Hub → Reports Config → Hygiene Monitor.',
+    'Use for: pre-sprint hygiene checks, ad-hoc audits, and confirming the scheduled scan is working.',
   ],
 }
 
@@ -2584,6 +2591,8 @@ export default function ReportsHubView() {
             artCombinedError={state.artCombinedFeatureError}
           />
         )
+      case 'hygiene':
+        return <HygieneReportTab teamName={state.teamFilter} />
       default:
         return null
     }
@@ -2753,6 +2762,106 @@ export default function ReportsHubView() {
           renderActiveTab()
         )}
       </section>
+    </div>
+  )
+}
+
+// ── Hygiene Report Tab ────────────────────────────────────────────────────────
+
+interface HygieneScanResult {
+  teamName:        string
+  issuesScanned:   number
+  violationsFound: number
+  fixesApplied:    number
+  actionsRequired: number
+  failures:        { issueKey: string; reason: string }[]
+}
+
+interface HygieneReportTabProps {
+  /** The currently selected team name from the Reports Hub global filter, or '' for All Teams. */
+  teamName: string
+}
+
+/** Renders the Hygiene tab in Reports Hub — on-demand scan runner with inline results. */
+function HygieneReportTab({ teamName }: HygieneReportTabProps) {
+  const [isScanning, setIsScanning] = useState(false)
+  const [result, setResult] = useState<HygieneScanResult | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  const handleRunScan = useCallback(async () => {
+    if (!teamName) return
+    setIsScanning(true)
+    setResult(null)
+    setErrorMessage(null)
+    try {
+      const response = await fetch('/api/hygiene-monitor/scan', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ teamName }),
+      })
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({ error: 'Scan failed' })) as { error?: string }
+        throw new Error(errorBody.error ?? `HTTP ${response.status}`)
+      }
+      setResult(await response.json() as HygieneScanResult)
+    } catch (scanError) {
+      setErrorMessage((scanError as Error).message)
+    } finally {
+      setIsScanning(false)
+    }
+  }, [teamName])
+
+  if (!teamName) {
+    return (
+      <div className={styles.emptyState}>
+        Select a team from the filter above to run a hygiene scan.
+      </div>
+    )
+  }
+
+  return (
+    <div className={styles.scopeChangeTab}>
+      <div className={styles.scopeChangeSection}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <strong>{teamName}</strong>
+          <button
+            className={`${styles.actionButton} ${styles.primaryButton}`}
+            disabled={isScanning}
+            onClick={() => { void handleRunScan() }}
+          >
+            {isScanning ? '⏳ Scanning…' : '▶ Run Hygiene Scan'}
+          </button>
+        </div>
+
+        {errorMessage && (
+          <p style={{ color: 'var(--color-tone-error-fg)', marginTop: '0.75rem' }}>⚠ {errorMessage}</p>
+        )}
+
+        {result && (
+          <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+              <span><strong>{result.issuesScanned}</strong> issues scanned</span>
+              <span><strong>{result.violationsFound}</strong> violations</span>
+              <span><strong>{result.fixesApplied}</strong> auto-fixed</span>
+              <span><strong>{result.actionsRequired}</strong> actions required</span>
+            </div>
+            {result.failures.length > 0 && (
+              <details style={{ marginTop: '0.5rem' }}>
+                <summary style={{ cursor: 'pointer', color: 'var(--color-text-secondary)' }}>
+                  {result.failures.length} failures — click to expand
+                </summary>
+                <ul style={{ marginTop: '0.5rem', paddingLeft: '1.25rem' }}>
+                  {result.failures.map((failure) => (
+                    <li key={failure.issueKey}>
+                      <strong>{failure.issueKey}</strong>: {failure.reason}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

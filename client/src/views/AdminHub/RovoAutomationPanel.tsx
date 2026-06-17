@@ -87,66 +87,71 @@ export function RovoAutomationPanel() {
         copy-paste step. Press Ctrl+Alt+Z again to re-hide all Rovo features.
       </p>
 
-      <label className={styles.adminDescription}>
-        Rovo Webhook URL
+      <div className={styles.fieldRow}>
+        <label className={styles.fieldLabel} htmlFor="rovo-webhook-url">Rovo Webhook URL</label>
         <input
-          className={styles.inputField}
+          id="rovo-webhook-url"
+          className={styles.textInput}
           value={config.webhookUrl}
-          placeholder="https://...atlassian.net/... incoming webhook URL"
+          placeholder="https://…atlassian.net/… incoming webhook URL"
           onChange={(changeEvent) => updateField('webhookUrl', changeEvent.target.value)}
         />
-      </label>
+      </div>
 
-      <label className={styles.adminDescription}>
-        Webhook Secret
+      <div className={styles.fieldRow}>
+        <label className={styles.fieldLabel} htmlFor="rovo-webhook-secret">Webhook Secret</label>
         <input
-          className={styles.inputField}
+          id="rovo-webhook-secret"
+          className={styles.textInput}
           type="password"
           value={config.webhookSecret}
           placeholder="X-Automation-Webhook-Token (optional)"
           onChange={(changeEvent) => updateField('webhookSecret', changeEvent.target.value)}
         />
-      </label>
+      </div>
 
-      <label className={styles.adminDescription}>
-        Parking Page ID
+      <div className={styles.fieldRow}>
+        <label className={styles.fieldLabel} htmlFor="rovo-parking-page-id">Parking Page ID</label>
         <input
-          className={styles.inputField}
+          id="rovo-parking-page-id"
+          className={styles.textInput}
           value={config.parkingPageId}
           placeholder="Confluence page ID the rule edits (recommended — works in personal spaces)"
           onChange={(changeEvent) => updateField('parkingPageId', changeEvent.target.value)}
         />
-      </label>
+      </div>
 
-      <label className={styles.adminDescription}>
-        Parking Space Key
+      <div className={styles.fieldRow}>
+        <label className={styles.fieldLabel} htmlFor="rovo-parking-space-key">Parking Space Key</label>
         <input
-          className={styles.inputField}
+          id="rovo-parking-space-key"
+          className={styles.textInput}
           value={config.parkingSpaceKey}
           placeholder="Fallback: Confluence space key (used only if no Page ID is set)"
           onChange={(changeEvent) => updateField('parkingSpaceKey', changeEvent.target.value)}
         />
-      </label>
+      </div>
 
-      <label className={styles.adminDescription}>
+      <label className={styles.fieldLabel}>
         <input
           type="checkbox"
           checked={config.isEnabled}
           onChange={(changeEvent) => updateField('isEnabled', changeEvent.target.checked)}
+          style={{ marginRight: '0.5rem' }}
         />
-        {' '}Enabled
+        Enabled
       </label>
 
-      <div>
-        <button className={styles.primaryBtn} disabled={isBusy} onClick={() => void handleSave()} type="button">
+      <div className={styles.inputRow}>
+        <button className={styles.saveButton} disabled={isBusy} onClick={() => void handleSave()} type="button">
           Save
         </button>
-        <button className={styles.secondaryBtn} disabled={isBusy || !config.webhookUrl} onClick={() => void handleTest()} type="button">
+        <button className={styles.actionButton} disabled={isBusy || !config.webhookUrl} onClick={() => void handleTest()} type="button">
           Test
         </button>
       </div>
 
-      {statusMessage !== null ? <p className={styles.adminDescription} role="status">{statusMessage}</p> : null}
+      {statusMessage !== null ? <p className={styles.fieldLabel} role="status" style={{ marginTop: 0 }}>{statusMessage}</p> : null}
     </section>
   );
 }

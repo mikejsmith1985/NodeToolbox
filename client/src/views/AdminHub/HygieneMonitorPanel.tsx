@@ -259,39 +259,36 @@ function HygieneTeamForm({
       </div>
 
       <div className={styles.fieldRow}>
-        <label className={styles.fieldLabel}>
-          Team name
-          <input
-            className={styles.textInput}
-            value={teamConfig.teamName}
-            placeholder="Platform"
-            onChange={(changeEvent) => setField('teamName', changeEvent.target.value)}
-          />
-        </label>
+        <label className={styles.fieldLabel} htmlFor={`hygiene-team-name-${teamIndex}`}>Team name</label>
+        <input
+          id={`hygiene-team-name-${teamIndex}`}
+          className={styles.textInput}
+          value={teamConfig.teamName}
+          placeholder="Platform"
+          onChange={(changeEvent) => setField('teamName', changeEvent.target.value)}
+        />
       </div>
 
       <div className={styles.fieldRow}>
-        <label className={styles.fieldLabel}>
-          Project keys (comma-separated)
-          <input
-            className={styles.textInput}
-            value={teamConfig.projectKeys.join(', ')}
-            placeholder="PLAT, CORE"
-            onChange={(changeEvent) => handleProjectKeysChange(changeEvent.target.value)}
-          />
-        </label>
+        <label className={styles.fieldLabel} htmlFor={`hygiene-project-keys-${teamIndex}`}>Project keys (comma-separated)</label>
+        <input
+          id={`hygiene-project-keys-${teamIndex}`}
+          className={styles.textInput}
+          value={teamConfig.projectKeys.join(', ')}
+          placeholder="PLAT, CORE"
+          onChange={(changeEvent) => handleProjectKeysChange(changeEvent.target.value)}
+        />
       </div>
 
       <div className={styles.fieldRow}>
-        <label className={styles.fieldLabel}>
-          Daily scan time (HH:MM local)
-          <input
-            className={styles.textInput}
-            type="time"
-            value={teamConfig.scheduleTime}
-            onChange={(changeEvent) => setField('scheduleTime', changeEvent.target.value)}
-          />
-        </label>
+        <label className={styles.fieldLabel} htmlFor={`hygiene-schedule-${teamIndex}`}>Daily scan time (HH:MM local)</label>
+        <input
+          id={`hygiene-schedule-${teamIndex}`}
+          className={styles.textInput}
+          type="time"
+          value={teamConfig.scheduleTime}
+          onChange={(changeEvent) => setField('scheduleTime', changeEvent.target.value)}
+        />
       </div>
 
       <div className={styles.fieldRow}>
@@ -311,41 +308,38 @@ function HygieneTeamForm({
       </div>
 
       <div className={styles.fieldRow}>
-        <label className={styles.fieldLabel}>
-          Digest trigger webhook URL (Atlassian Automation)
-          <input
-            className={styles.textInput}
-            value={teamConfig.digestTriggerUrl}
-            placeholder="https://…atlassian.net/… incoming webhook (rule emails the digest)"
-            onChange={(changeEvent) => setField('digestTriggerUrl', changeEvent.target.value)}
-          />
-        </label>
+        <label className={styles.fieldLabel} htmlFor={`hygiene-trigger-url-${teamIndex}`}>Digest trigger webhook URL (Atlassian Automation)</label>
+        <input
+          id={`hygiene-trigger-url-${teamIndex}`}
+          className={styles.textInput}
+          value={teamConfig.digestTriggerUrl}
+          placeholder="https://…atlassian.net/… incoming webhook (rule emails the digest)"
+          onChange={(changeEvent) => setField('digestTriggerUrl', changeEvent.target.value)}
+        />
       </div>
 
       <div className={styles.fieldRow}>
-        <label className={styles.fieldLabel}>
-          Digest email recipient
-          <input
-            className={styles.textInput}
-            value={teamConfig.digestEmailTo}
-            placeholder="team-dl@example.com (passed to the Automation rule)"
-            onChange={(changeEvent) => setField('digestEmailTo', changeEvent.target.value)}
-          />
-        </label>
+        <label className={styles.fieldLabel} htmlFor={`hygiene-email-${teamIndex}`}>Digest email recipient</label>
+        <input
+          id={`hygiene-email-${teamIndex}`}
+          className={styles.textInput}
+          value={teamConfig.digestEmailTo}
+          placeholder="team-dl@example.com (passed to the Automation rule)"
+          onChange={(changeEvent) => setField('digestEmailTo', changeEvent.target.value)}
+        />
       </div>
 
       <div className={styles.fieldRow}>
-        <label className={styles.fieldLabel}>
-          Digest webhook secret (write-only)
-          <input
-            className={styles.textInput}
-            type="password"
-            value={teamConfig.digestTriggerSecret}
-            placeholder="Leave blank to keep existing"
-            onChange={(changeEvent) => setField('digestTriggerSecret', changeEvent.target.value)}
-            autoComplete="new-password"
-          />
-        </label>
+        <label className={styles.fieldLabel} htmlFor={`hygiene-secret-${teamIndex}`}>Digest webhook secret (write-only)</label>
+        <input
+          id={`hygiene-secret-${teamIndex}`}
+          className={styles.textInput}
+          type="password"
+          value={teamConfig.digestTriggerSecret}
+          placeholder="Leave blank to keep existing"
+          onChange={(changeEvent) => setField('digestTriggerSecret', changeEvent.target.value)}
+          autoComplete="new-password"
+        />
       </div>
 
       <div className={styles.inputRow}>

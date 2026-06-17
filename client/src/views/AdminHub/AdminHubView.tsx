@@ -19,6 +19,7 @@ import DevPanelView from '../DevPanel/DevPanelView.tsx'
 import { HygieneMonitorPanel } from './HygieneMonitorPanel.tsx'
 import { RepoMonitorPanel } from './RepoMonitorPanel.tsx'
 import { RovoAutomationPanel } from './RovoAutomationPanel.tsx'
+import { SprintReleasePanel } from './SprintReleasePanel.tsx'
 import { StandupBriefingPanel } from './StandupBriefingPanel.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
 import type {
@@ -49,27 +50,27 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'dev-panel' | 'rovo' | 'hygiene-monitor'
+type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'dev-panel' | 'sprint-release' | 'rovo'
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
   { key: 'repo-monitor', label: '🔁 Repo Monitor' },
   { key: 'reports-config', label: '📊 Reports Config' },
   { key: 'standup-briefing', label: '📋 Standup' },
+  { key: 'sprint-release', label: '🚀 Sprint Release' },
   { key: 'dev-panel', label: '🛰️ Dev Panel' },
 ]
 
 // Hidden "⚡ Rovo" tab, appended only while the Rovo capability is unlocked.
 const ROVO_ADMIN_TAB: { key: AdminHubTab; label: string } = { key: 'rovo', label: '⚡ Rovo' }
-// Hidden "🧹 Hygiene Monitor" tab, appended alongside Rovo when unlocked.
-const HYGIENE_MONITOR_ADMIN_TAB: { key: AdminHubTab; label: string } = { key: 'hygiene-monitor', label: '🧹 Hygiene Monitor' }
 const HIDDEN_ROVO_SHORTCUT_KEY = 'z'
 
-type ReportsConfigSubTab = 'scope-change' | 'feature-change'
+type ReportsConfigSubTab = 'scope-change' | 'feature-change' | 'hygiene-monitor'
 
 const REPORTS_CONFIG_SUB_TAB_OPTIONS: { key: ReportsConfigSubTab; label: string }[] = [
   { key: 'scope-change', label: '🔔 Scope Change' },
   { key: 'feature-change', label: '🎯 Feature Change' },
+  { key: 'hygiene-monitor', label: '🧹 Hygiene Monitor' },
 ]
 
 /**
@@ -2547,6 +2548,16 @@ function ReportsConfigContent({ state, actions }: ReportsConfigContentProps) {
           />
         </section>
       )}
+
+      {activeReportsSubTab === 'hygiene-monitor' && (
+        <section
+          id="admin-hub-reports-hygiene-monitor-panel"
+          role="tabpanel"
+          aria-labelledby="admin-hub-reports-hygiene-monitor-tab"
+        >
+          <HygieneMonitorPanel />
+        </section>
+      )}
     </>
   )
 }
@@ -2706,7 +2717,7 @@ export default function AdminHubView() {
 
   // The ⚡ Rovo and 🧹 Hygiene Monitor tabs are only offered while unlocked.
   const adminHubTabs = isRovoUnlocked
-    ? [...ADMIN_HUB_TAB_OPTIONS, ROVO_ADMIN_TAB, HYGIENE_MONITOR_ADMIN_TAB]
+    ? [...ADMIN_HUB_TAB_OPTIONS, ROVO_ADMIN_TAB]
     : ADMIN_HUB_TAB_OPTIONS
 
   useEffect(() => {
@@ -2847,15 +2858,15 @@ export default function AdminHubView() {
         </section>
       )}
 
-      {activeAdminTab === 'rovo' && isRovoUnlocked && (
-        <section id="admin-hub-rovo-panel" role="tabpanel" aria-labelledby="admin-hub-rovo-tab">
-          <RovoAutomationPanel />
+      {activeAdminTab === 'sprint-release' && (
+        <section id="admin-hub-sprint-release-panel" role="tabpanel" aria-labelledby="admin-hub-sprint-release-tab">
+          <SprintReleasePanel />
         </section>
       )}
 
-      {activeAdminTab === 'hygiene-monitor' && isRovoUnlocked && (
-        <section id="admin-hub-hygiene-monitor-panel" role="tabpanel" aria-labelledby="admin-hub-hygiene-monitor-tab">
-          <HygieneMonitorPanel />
+      {activeAdminTab === 'rovo' && isRovoUnlocked && (
+        <section id="admin-hub-rovo-panel" role="tabpanel" aria-labelledby="admin-hub-rovo-tab">
+          <RovoAutomationPanel />
         </section>
       )}
     </ViewFrame>
