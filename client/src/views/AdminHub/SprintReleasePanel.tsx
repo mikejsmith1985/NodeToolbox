@@ -46,6 +46,30 @@ interface SprintReleaseStatus {
   sprintSyncWarnings: string[]
 }
 
+interface WorkflowTopologyProject {
+  role:        'feature' | 'dev' | 'qe' | 'bt'
+  isReachable: boolean
+  issueTypes:  { name: string; isSubtask: boolean }[]
+  allStatuses: string[]
+}
+
+interface WorkflowTopologyValidationEntry {
+  configuredValue: string
+  isFound:         boolean
+}
+
+interface WorkflowTopologyData {
+  projects:              Record<string, WorkflowTopologyProject>
+  devTransitions:        { transitionId: string; transitionName: string; toStatusName: string }[]
+  subStatusFieldOptions: string[]
+  validation: {
+    qeHandoffSubStatusValue: WorkflowTopologyValidationEntry
+    btHandoffSubStatusValue: WorkflowTopologyValidationEntry
+    doneTransitionName:      WorkflowTopologyValidationEntry
+  }
+  fetchedAt: string
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const DEFAULT_PROFILE: SprintReleaseProfile = {
@@ -96,15 +120,26 @@ async function triggerPollNow(): Promise<void> {
   await fetch('/api/sprint-release/run-now', { method: 'POST' })
 }
 
+async function fetchWorkflowTopology(): Promise<WorkflowTopologyData> {
+  const response = await fetch('/api/sprint-release/workflow-topology')
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({})) as { error?: string }
+    throw new Error(errorBody.error ?? 'Failed to fetch workflow topology')
+  }
+  return response.json() as Promise<WorkflowTopologyData>
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 /** Admin Hub panel for configuring the Sprint–Release Workflow Orchestrator. */
 export function SprintReleasePanel() {
   const [profile, setProfile] = useState<SprintReleaseProfile>(DEFAULT_PROFILE)
   const [status, setStatus] = useState<SprintReleaseStatus | null>(null)
+  const [topologyData, setTopologyData] = useState<WorkflowTopologyData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isRunningNow, setIsRunningNow] = useState(false)
+  const [isValidatingTopology, setIsValidatingTopology] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -154,6 +189,19 @@ export function SprintReleasePanel() {
       setErrorMessage('Failed to trigger poll cycle.')
     } finally {
       setIsRunningNow(false)
+    }
+  }, [])
+
+  const handleValidateTopology = useCallback(async () => {
+    setIsValidatingTopology(true)
+    setErrorMessage(null)
+    try {
+      const topology = await fetchWorkflowTopology()
+      setTopologyData(topology)
+    } catch (topologyError) {
+      setErrorMessage((topologyError as Error).message)
+    } finally {
+      setIsValidatingTopology(false)
     }
   }, [])
 
@@ -412,7 +460,20 @@ export function SprintReleasePanel() {
         >
           {isRunningNow ? '⏳ Running…' : '▶ Run Now'}
         </button>
+        <button
+          type="button"
+          className={styles.actionButton}
+          disabled={isValidatingTopology}
+          onClick={() => { void handleValidateTopology() }}
+        >
+          {isValidatingTopology ? '🔍 Validating…' : '🔍 Validate Workflow'}
+        </button>
       </div>
+
+      {/* ── Workflow topology diagram ── */}
+      {topologyData && (
+        <WorkflowTopologyCard topology={topologyData} subStatusFieldId={profile.subStatusFieldId} />
+      )}
 
       {/* ── Runtime status ── */}
       {status && (
@@ -427,6 +488,165 @@ export function SprintReleasePanel() {
 interface SprintReleaseStatusCardProps {
   status: SprintReleaseStatus
 }
+
+// ── Workflow topology card ────────────────────────────────────────────────────
+
+/** Role labels shown on each project column header. */
+const PROJECT_ROLE_LABELS: Record<string, string> = {
+  feature: 'Feature',
+  dev:     'Dev',
+  qe:      'QE',
+  bt:      'BT',
+}
+
+interface WorkflowTopologyCardProps {
+  topology:         WorkflowTopologyData
+  subStatusFieldId: string
+}
+
+/**
+ * Renders the live workflow topology fetched from Jira — project columns with issue
+ * types and statuses, the sub-status field options with trigger-value highlights,
+ * the dev project's available transitions, and a validation summary showing whether
+ * each configured rule value actually exists in Jira.
+ */
+function WorkflowTopologyCard({ topology, subStatusFieldId }: WorkflowTopologyCardProps) {
+  const { projects, devTransitions, subStatusFieldOptions, validation, fetchedAt } = topology
+  const projectEntries = Object.entries(projects).sort(([, projectA], [, projectB]) => {
+    const roleOrder: Record<string, number> = { feature: 0, dev: 1, qe: 2, bt: 3 }
+    return (roleOrder[projectA.role] ?? 9) - (roleOrder[projectB.role] ?? 9)
+  })
+
+  const validationEntries: { label: string; entry: WorkflowTopologyValidationEntry }[] = [
+    { label: 'QE Handoff trigger',  entry: validation.qeHandoffSubStatusValue },
+    { label: 'BT Handoff trigger',  entry: validation.btHandoffSubStatusValue },
+    { label: 'Done transition name', entry: validation.doneTransitionName },
+  ]
+
+  const allRulesAreValid = validationEntries.every(({ entry }) => entry.isFound)
+
+  return (
+    <div className={styles.teamBlock} aria-label="Workflow topology diagram">
+      <div className={styles.teamBlockHeader}>
+        <strong className={styles.teamBlockTitle}>Workflow Topology</strong>
+        <span style={{ fontSize: '0.75rem', color: '#888', marginLeft: '0.75rem' }}>
+          fetched {new Date(fetchedAt).toLocaleTimeString()}
+        </span>
+        {allRulesAreValid
+          ? <span style={{ marginLeft: '0.75rem', color: '#22c55e', fontWeight: 600 }}>✓ All rules supported</span>
+          : <span style={{ marginLeft: '0.75rem', color: '#ef4444', fontWeight: 600 }}>✗ Config mismatches found</span>
+        }
+      </div>
+
+      {/* ── Project columns ── */}
+      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', margin: '0.75rem 0' }}>
+        {projectEntries.map(([projectKey, projectData]) => (
+          <div
+            key={projectKey}
+            style={{
+              border: projectData.isReachable ? '1px solid #3b5998' : '1px solid #ef4444',
+              borderRadius: '6px',
+              padding: '0.6rem 0.9rem',
+              minWidth: '160px',
+              background: projectData.isReachable ? '#1a2035' : '#2a1010',
+              flex: '1 1 160px',
+            }}
+          >
+            <div style={{ fontWeight: 700, marginBottom: '0.3rem', color: '#93c5fd' }}>
+              {PROJECT_ROLE_LABELS[projectData.role] ?? projectData.role}: {projectKey}
+              {!projectData.isReachable && <span style={{ color: '#ef4444', marginLeft: '0.4rem' }}>✗ unreachable</span>}
+            </div>
+            {projectData.issueTypes.filter((issueType) => !issueType.isSubtask).map((issueType) => (
+              <div key={issueType.name} style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>• {issueType.name}</div>
+            ))}
+            {projectData.allStatuses.length > 0 && (
+              <details style={{ marginTop: '0.4rem' }}>
+                <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: '#64748b' }}>
+                  {projectData.allStatuses.length} statuses
+                </summary>
+                {projectData.allStatuses.map((statusName) => (
+                  <div key={statusName} style={{ fontSize: '0.75rem', color: '#64748b', paddingLeft: '0.5rem' }}>
+                    {statusName}
+                  </div>
+                ))}
+              </details>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className={styles.notificationTeamFields}>
+
+        {/* ── Sub-status field options ── */}
+        {subStatusFieldOptions.length > 0 && (
+          <div className={styles.fieldRow}>
+            <span className={styles.fieldLabel}>Sub-Status field ({subStatusFieldId}) options</span>
+            <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
+              {subStatusFieldOptions.map((optionValue) => {
+                const isQeTrigger = optionValue === validation.qeHandoffSubStatusValue.configuredValue
+                const isBtTrigger = optionValue === validation.btHandoffSubStatusValue.configuredValue
+                const isHighlighted = isQeTrigger || isBtTrigger
+                return (
+                  <li key={optionValue} style={{ color: isHighlighted ? '#22c55e' : 'inherit', fontWeight: isHighlighted ? 600 : 400 }}>
+                    {optionValue}
+                    {isQeTrigger && <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: '#86efac' }}>← QE trigger</span>}
+                    {isBtTrigger && <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: '#86efac' }}>← BT trigger</span>}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )}
+        {subStatusFieldOptions.length === 0 && (
+          <div className={styles.fieldRow}>
+            <span className={styles.fieldLabel}>Sub-Status field ({subStatusFieldId}) options</span>
+            <span style={{ color: '#f59e0b' }}>⚠ No options found — verify the field ID is correct for the dev project</span>
+          </div>
+        )}
+
+        {/* ── Dev project transitions ── */}
+        {devTransitions.length > 0 && (
+          <div className={styles.fieldRow}>
+            <span className={styles.fieldLabel}>Dev project transitions (sample issue)</span>
+            <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
+              {devTransitions.map((transition) => {
+                const isConfiguredDoneTransition = transition.transitionName === validation.doneTransitionName.configuredValue
+                return (
+                  <li key={transition.transitionId} style={{ color: isConfiguredDoneTransition ? '#22c55e' : 'inherit', fontWeight: isConfiguredDoneTransition ? 600 : 400 }}>
+                    {transition.transitionName} → {transition.toStatusName}
+                    {isConfiguredDoneTransition && <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: '#86efac' }}>← configured Done transition</span>}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )}
+        {devTransitions.length === 0 && (
+          <div className={styles.fieldRow}>
+            <span className={styles.fieldLabel}>Dev project transitions</span>
+            <span style={{ color: '#f59e0b' }}>⚠ Could not fetch transitions — dev project may have no issues yet</span>
+          </div>
+        )}
+
+        {/* ── Validation summary ── */}
+        <div className={styles.fieldRow}>
+          <span className={styles.fieldLabel}>Validation</span>
+          <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
+            {validationEntries.map(({ label, entry }) => (
+              <li key={label} style={{ color: entry.isFound ? '#22c55e' : '#ef4444' }}>
+                {entry.isFound ? '✓' : '✗'} {label}: <em>"{entry.configuredValue}"</em>
+                {!entry.isFound && <span style={{ marginLeft: '0.5rem', color: '#fca5a5' }}>— not found in Jira</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  )
+}
+
+// ── Status card ───────────────────────────────────────────────────────────────
 
 /** Read-only runtime status card showing recent activity and sprint sync state. */
 function SprintReleaseStatusCard({ status }: SprintReleaseStatusCardProps) {
