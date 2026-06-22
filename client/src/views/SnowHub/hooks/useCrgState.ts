@@ -879,6 +879,40 @@ function resolveRecordFieldValue(record: Record<string, unknown>, fieldAliases: 
   return EMPTY_VALUE;
 }
 
+/** Resolves a cloned long-text planning field by trying each alias and taking the first populated one. */
+function resolveRecordTextFieldValue(record: Record<string, unknown>, fieldAliases: readonly string[]): string {
+  for (const fieldAlias of fieldAliases) {
+    const resolvedTextValue = extractStringValue(record[fieldAlias]);
+    if (resolvedTextValue.trim()) {
+      return resolvedTextValue;
+    }
+  }
+  return EMPTY_VALUE;
+}
+
+/**
+ * Reads every planning-assessment choice from a cloned CHG using each field's known aliases.
+ * The submit side writes the value to all aliases, but instances differ on which column actually
+ * exists, so the clone must try each alias and take the first populated one — otherwise a value
+ * stored under the non-default alias silently drops on clone.
+ */
+function buildClonedPlanningAssessment(chgRecord: Record<string, unknown>): ChgPlanningAssessment {
+  const clonedAssessment = {} as ChgPlanningAssessment;
+  for (const [assessmentKey, fieldAliases] of Object.entries(PLANNING_ASSESSMENT_ALIAS_FIELD_NAMES_BY_STATE_KEY)) {
+    clonedAssessment[assessmentKey as keyof ChgPlanningAssessment] = resolveRecordFieldValue(chgRecord, fieldAliases);
+  }
+  return clonedAssessment;
+}
+
+/** Reads every planning-content text area from a cloned CHG using each field's known aliases. */
+function buildClonedPlanningContent(chgRecord: Record<string, unknown>): ChgPlanningContent {
+  const clonedContent = {} as ChgPlanningContent;
+  for (const [contentKey, fieldAliases] of Object.entries(PLANNING_CONTENT_ALIAS_FIELD_NAMES_BY_STATE_KEY)) {
+    clonedContent[contentKey as keyof ChgPlanningContent] = resolveRecordTextFieldValue(chgRecord, fieldAliases);
+  }
+  return clonedContent;
+}
+
 function buildSubmissionMismatchMessages(state: CrgState, verifiedChangeRecord: Record<string, unknown>): string[] {
   const mismatchMessages: string[] = [];
   const expectedPlanningAssessmentValues: Record<keyof ChgPlanningAssessment, string> = {
@@ -1695,7 +1729,11 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       const chg = response.result[0];
       const clonedEnvironmentValue = extractChoiceValue(chg.u_environment);
       const clonedConfigItem = extractSnowReference(chg.cmdb_ci);
-      const clonedImpactedPersonsAware = extractChoiceValue(chg.u_impacted_persons_aware);
+      // Read planning fields through their alias lists so values stored under this instance's
+      // column names carry over — the same resolution the submit and verify paths already use.
+      const clonedPlanningAssessment = buildClonedPlanningAssessment(chg);
+      const clonedPlanningContent = buildClonedPlanningContent(chg);
+      const clonedImpactedPersonsAware = clonedPlanningAssessment.impactedPersonsAware;
       const clonedChangeManager = extractSnowReferenceFromFieldAliases(chg, CHANGE_MANAGER_ALIAS_FIELD_NAMES);
       const inspectedSnowFields = buildInspectedSnowFields(chg);
 
@@ -1731,20 +1769,8 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
           isExpedited:     extractChoiceValue(chg.u_expedited) === 'true',
         },
         ...buildClonedEnvironmentState(previousState, clonedEnvironmentValue, clonedConfigItem, clonedImpactedPersonsAware),
-        chgPlanningAssessment: {
-          impact:                        extractChoiceValue(chg.impact),
-          systemAvailabilityImplication: extractChoiceValue(chg.u_availability_impact),
-          hasBeenTested:                 extractChoiceValue(chg.u_change_tested),
-          impactedPersonsAware:          clonedImpactedPersonsAware,
-          hasBeenPerformedPreviously:    extractChoiceValue(chg.u_performed_previously),
-          successProbability:            extractChoiceValue(chg.u_success_probability),
-          canBeBackedOut:                extractChoiceValue(chg.u_can_be_backed_out),
-        },
-        chgPlanningContent: {
-          implementationPlan: extractStringValue(chg.implementation_plan),
-          backoutPlan:        extractStringValue(chg.backout_plan),
-          testPlan:           extractStringValue(chg.test_plan),
-        },
+        chgPlanningAssessment: clonedPlanningAssessment,
+        chgPlanningContent: clonedPlanningContent,
       }));
     } catch (unknownError) {
       let errorMessage = unknownError instanceof Error ? unknownError.message : 'Failed to load CHG';

@@ -630,6 +630,53 @@ describe('useCrgState', () => {
       });
     });
 
+    it('clones planning values stored under the instance-specific alias field names', async () => {
+      // This instance stores the planning assessment under the long u_ alias columns, not the
+      // short fallback names the clone used to read. The submit side writes every alias, so the
+      // value can live in either column — the clone must try them all or the values silently drop.
+      vi.mocked(snowFetch).mockResolvedValueOnce({
+        result: [
+          {
+            u_impact:                                                { value: '1', display_value: '1 - High' },
+            u_implications_of_system_availability:                   { value: 'No', display_value: 'No' },
+            u_has_this_change_been_tested:                           { value: 'Yes', display_value: 'Yes' },
+            u_are_impacted_persons_aware_prepared_for_test_checkout: { value: 'Yes', display_value: 'Yes' },
+            u_has_change_been_performed_previously:                  { value: 'No', display_value: 'No' },
+            u_assessment_of_success_probability:                     { value: '90-99%', display_value: '90-99%' },
+            u_can_change_be_backed_out:                              { value: 'Yes', display_value: 'Yes' },
+            implementation_plan:                                     { value: 'Run the deploy script', display_value: 'Run the deploy script' },
+            backout_plan:                                            { value: 'Roll back the release', display_value: 'Roll back the release' },
+            test_plan:                                               { value: 'Smoke test prod', display_value: 'Smoke test prod' },
+          },
+        ],
+      } as never);
+
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.setCloneChgNumber('CHG0004321');
+      });
+
+      await act(async () => {
+        await result.current.actions.cloneFromChg();
+      });
+
+      expect(result.current.state.chgPlanningAssessment).toEqual({
+        impact:                        '1',
+        systemAvailabilityImplication: 'No',
+        hasBeenTested:                 'Yes',
+        impactedPersonsAware:          'Yes',
+        hasBeenPerformedPreviously:    'No',
+        successProbability:            '90-99%',
+        canBeBackedOut:                'Yes',
+      });
+      expect(result.current.state.chgPlanningContent).toEqual({
+        implementationPlan: 'Run the deploy script',
+        backoutPlan:        'Roll back the release',
+        testPlan:           'Smoke test prod',
+      });
+    });
+
     it('sets cloneError when the CHG number is not found', async () => {
       vi.mocked(snowFetch).mockResolvedValueOnce({ result: [] } as never);
 
