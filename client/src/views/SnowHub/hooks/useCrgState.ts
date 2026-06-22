@@ -129,6 +129,9 @@ const CTASK_CLONE_FIELDS = [
   'number', 'short_description', 'description', 'assignment_group', 'assigned_to',
   'planned_start_date', 'planned_end_date', 'close_notes',
 ].join(',');
+// Upper bound on how many of a cloned CHG's change tasks to copy. A single change never
+// realistically has more tasks than this, so it doubles as a safety cap on the query.
+const CLONED_CTASK_FETCH_LIMIT = 100;
 const SNOW_DATE_TIME_INPUT_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::\d{2})?/;
 const INSPECTED_FIELD_SKIP_LIST = new Set([
   'sys_id', 'sys_created_by', 'sys_created_on', 'sys_updated_by', 'sys_updated_on',
@@ -746,6 +749,41 @@ async function createChangeTasks(changeSysId: string, templates: CtaskTemplate[]
   }
 
   return templates.length;
+}
+
+/**
+ * Converts a ServiceNow change_task record into a staged CTASK ready for creation.
+ * Used when cloning a CHG so the source change's tasks are reproduced and can overwrite
+ * ServiceNow's auto-created CTASKs. The source CTASK number becomes the staged name so the
+ * user recognizes each task on the review step.
+ */
+function buildStagedChangeTaskFromRecord(ctaskRecord: Record<string, unknown>): CtaskTemplate {
+  const ctaskData = buildCtaskTemplateDataFromRecord(ctaskRecord);
+  const sourceCtaskNumber = extractStringValue(ctaskRecord.number);
+  return {
+    ...ctaskData,
+    id:        crypto.randomUUID(),
+    name:      sourceCtaskNumber || ctaskData.shortDescription || CTASK_DEFAULT_SHORT_DESCRIPTION,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Fetches every change task belonging to the source CHG so a clone reproduces the change in full.
+ * Copies all tasks regardless of state (a verbatim clone), ordered by creation time so the staged
+ * list matches the original. Returns an empty list when the source CHG has no resolvable sys_id.
+ *
+ * @param sourceChgSysId - sys_id of the CHG being cloned.
+ */
+async function fetchClonedChangeTasks(sourceChgSysId: string): Promise<CtaskTemplate[]> {
+  if (!sourceChgSysId) return [];
+
+  const encodedQuery = encodeURIComponent(`change_request=${sourceChgSysId}^ORDERBYsys_created_on`);
+  const responseData = await snowFetch<{ result: Record<string, unknown>[] }>(
+    `/api/now/table/change_task?sysparm_query=${encodedQuery}&sysparm_fields=${CTASK_CLONE_FIELDS}&sysparm_display_value=all&sysparm_limit=${CLONED_CTASK_FETCH_LIMIT}`,
+  );
+
+  return (responseData?.result ?? []).map(buildStagedChangeTaskFromRecord);
 }
 
 async function fetchChangeSysIdByNumber(changeNumber: string): Promise<string> {
@@ -1661,10 +1699,19 @@ export function useCrgState(): { state: CrgState; actions: CrgActions } {
       const clonedChangeManager = extractSnowReferenceFromFieldAliases(chg, CHANGE_MANAGER_ALIAS_FIELD_NAMES);
       const inspectedSnowFields = buildInspectedSnowFields(chg);
 
+      // A clone reproduces the whole change, so copy its CTASKs too and overwrite ServiceNow's
+      // auto-created ones on create — this is what makes cloning better than the native SNow copy.
+      const sourceChgSysId = extractReferenceSysId(chg.sys_id);
+      const clonedChangeTasks = await fetchClonedChangeTasks(sourceChgSysId);
+
       setState((previousState) => ({
         ...previousState,
         isCloning: false,
         cloneError: null,
+        // Cloning is not templating: land on Review & Create with the change fully reproduced.
+        currentStep: 6,
+        changeTasks: clonedChangeTasks,
+        reconcileAutoCtasks: true,
         inspectedSnowFields,
         generatedShortDescription: extractStringValue(chg.short_description),
         generatedDescription:      extractStringValue(chg.description),
