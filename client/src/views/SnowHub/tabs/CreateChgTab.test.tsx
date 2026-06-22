@@ -820,17 +820,27 @@ describe('CreateChgTab', () => {
 
   // ── Step 3: Change Details ──
 
-  it('renders the clone-from-CHG input and Load CHG button in configuration mode', () => {
-    render(<CreateChgTab mode="configuration" />);
+  it('renders the clone-from-CHG input and Clone CHG button on the Fetch Issues step', () => {
+    render(<CreateChgTab />);
 
     expect(screen.getByRole('textbox', { name: 'Existing CHG number' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Load CHG' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clone CHG' })).toBeInTheDocument();
   });
 
-  it('shows the shared clone/template/defaults workspace in configuration mode', () => {
+  it('triggers cloneFromChg when Clone CHG is clicked on the Fetch Issues step', async () => {
+    const user = userEvent.setup();
+    mockState.cloneChgNumber = 'CHG0001234';
+    render(<CreateChgTab />);
+
+    await user.click(screen.getByRole('button', { name: 'Clone CHG' }));
+
+    expect(mockActions.cloneFromChg).toHaveBeenCalled();
+  });
+
+  it('shows the shared template/defaults workspace in configuration mode', () => {
     render(<CreateChgTab mode="configuration" />);
 
-    expect(screen.getByRole('heading', { name: 'Clone, Templates & Defaults' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Templates & Defaults' })).toBeInTheDocument();
     expect(screen.getByText('No CHG templates saved yet.')).toBeInTheDocument();
     expect(screen.getByText('Short Description Defaults')).toBeInTheDocument();
     expect(screen.getByText('Extractor JSON choices')).toBeInTheDocument();
@@ -852,7 +862,7 @@ describe('CreateChgTab', () => {
     mockState.currentStep = 4;
     render(<CreateChgTab />);
 
-    expect(screen.queryByRole('heading', { name: 'Clone, Templates & Defaults' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Templates & Defaults' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '+ Save current CRG defaults as template' })).not.toBeInTheDocument();
   });
 

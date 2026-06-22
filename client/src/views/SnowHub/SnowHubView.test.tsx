@@ -369,7 +369,7 @@ describe('SnowHubView', () => {
     await user.click(screen.getByRole('tab', { name: 'Configuration' }));
 
     expect(screen.getByRole('heading', { name: 'CRG Configuration' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Load CHG' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Templates & Defaults' })).toBeInTheDocument();
   });
 
   it('switches to the Release Management tab', async () => {

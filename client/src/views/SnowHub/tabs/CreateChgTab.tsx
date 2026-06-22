@@ -87,8 +87,8 @@ const CONSOLIDATED_RESULT_LABEL = 'Consolidated Result';
 const STEP_TITLE_PREFIX = 'Step';
 const DEFAULT_RESULT_MESSAGE = 'Generated content will appear here after you complete the wizard.';
 const EMPTY_ENVIRONMENT_DATES = 'Not scheduled';
-const WORKSPACE_PANEL_TITLE = 'Clone, Templates & Defaults';
-const WORKSPACE_PANEL_HINT = 'Clone a known-good CHG, save repeatable templates, and load extractor JSON choices so unavailable ServiceNow dropdowns still render usable options.';
+const WORKSPACE_PANEL_TITLE = 'Templates & Defaults';
+const WORKSPACE_PANEL_HINT = 'Save repeatable templates and load extractor JSON choices so unavailable ServiceNow dropdowns still render usable options. (Cloning an existing CHG now lives on the Fetch Issues step.)';
 const EXTRACTOR_PANEL_TITLE = 'Extractor JSON choices';
 const EXTRACTOR_PANEL_HINT = 'Paste the extractor JSON output to load allowed values for CHG dropdown fields when live ServiceNow choice metadata is unavailable.';
 const EXTRACTOR_JSON_PLACEHOLDER = '{\n  "fields": {\n    "impact": [{ "value": "3", "label": "3 - Low" }],\n    "u_change_tested": [{ "value": "yes", "label": "Yes" }]\n  }\n}';
@@ -815,10 +815,6 @@ function CrgWorkspacePanel({
     actions.setLinkedCtaskTemplateIds(nextLinkedIds);
   }
 
-  function handleCloneNumberChange(event: ChangeEvent<HTMLInputElement>): void {
-    actions.setCloneChgNumber(event.target.value.toUpperCase());
-  }
-
   function handleUpdateTemplate(): void {
     if (selectedTemplateId) {
       updateTemplate(selectedTemplateId, buildCurrentTemplateData(state));
@@ -877,30 +873,6 @@ function CrgWorkspacePanel({
       </div>
       <p className={styles.panelHint}>{WORKSPACE_PANEL_HINT}</p>
       <div className={styles.workspaceGrid}>
-        <div className={styles.clonePanel}>
-          <h4 className={styles.panelSectionTitle}>Clone from existing CHG</h4>
-          <p className={styles.panelHint}>Load a known-good change first, then save repeatable templates or field options from what came back.</p>
-          <div className={styles.cloneInputRow}>
-            <input
-              aria-label="Existing CHG number"
-              className={styles.input}
-              disabled={state.isCloning}
-              onChange={handleCloneNumberChange}
-              placeholder="e.g. CHG0001234"
-              value={state.cloneChgNumber}
-            />
-            <button
-              className={styles.secondaryButton}
-              disabled={state.isCloning || !state.cloneChgNumber}
-              onClick={() => void actions.cloneFromChg()}
-              type="button"
-            >
-              {state.isCloning ? 'Loading…' : 'Load CHG'}
-            </button>
-          </div>
-          {state.cloneError ? <p className={styles.errorText} role="alert">{state.cloneError}</p> : null}
-        </div>
-
         <div className={styles.clonePanel}>
           <h4 className={styles.panelSectionTitle}>CHG Templates</h4>
           <p className={styles.panelHint}>Templates still cover Change Details, Planning, and Environments for the 90% path that follows the same release shape.</p>
@@ -1084,6 +1056,10 @@ function FetchIssuesStep({ state, actions }: CrgStepProps) {
     actions.setFetchMode(event.target.value as FetchMode);
   }
 
+  function handleCloneNumberChange(event: ChangeEvent<HTMLInputElement>): void {
+    actions.setCloneChgNumber(event.target.value.toUpperCase());
+  }
+
   const isProjectMode = state.fetchMode === 'project';
 
   return (
@@ -1160,6 +1136,35 @@ function FetchIssuesStep({ state, actions }: CrgStepProps) {
       </div>
       {state.isFetchingIssues ? <p className={styles.loadingText}>Loading issues...</p> : null}
       {state.fetchError ? <p className={styles.errorText} role="alert">{state.fetchError}</p> : null}
+
+      {/* Clone path — reproduce an existing change instead of building one from issues. The clone
+          copies the source CHG's fields and CTASKs and jumps straight to Review & Create. */}
+      <div className={styles.clonePanel}>
+        <h4 className={styles.panelSectionTitle}>Clone from existing CHG</h4>
+        <p className={styles.panelHint}>
+          Reproduce a known-good change: its fields and change tasks are copied, ServiceNow&apos;s
+          auto-created CTASKs are overwritten, and you jump straight to Review &amp; Create.
+        </p>
+        <div className={styles.cloneInputRow}>
+          <input
+            aria-label="Existing CHG number"
+            className={styles.input}
+            disabled={state.isCloning}
+            onChange={handleCloneNumberChange}
+            placeholder="e.g. CHG0001234"
+            value={state.cloneChgNumber}
+          />
+          <button
+            className={styles.secondaryButton}
+            disabled={state.isCloning || !state.cloneChgNumber}
+            onClick={() => void actions.cloneFromChg()}
+            type="button"
+          >
+            {state.isCloning ? 'Loading…' : 'Clone CHG'}
+          </button>
+        </div>
+        {state.cloneError ? <p className={styles.errorText} role="alert">{state.cloneError}</p> : null}
+      </div>
     </section>
   );
 }

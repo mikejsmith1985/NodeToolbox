@@ -672,6 +672,90 @@ describe('useCrgState', () => {
 
       expect(vi.mocked(snowFetch)).not.toHaveBeenCalled();
     });
+
+    it('clones every change task from the source CHG and stages them for creation', async () => {
+      // First call returns the CHG (now including its sys_id); the second returns the CHG's CTASKs.
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({
+          result: [
+            {
+              sys_id:            { value: 'chg-sys-77', display_value: 'CHG0001234' },
+              short_description: { value: 'Deploy v2', display_value: 'Deploy v2' },
+            },
+          ],
+        } as never)
+        .mockResolvedValueOnce({
+          result: [
+            {
+              number:            { value: 'CTASK0000001', display_value: 'CTASK0000001' },
+              short_description: { value: 'Implementation', display_value: 'Implementation' },
+              description:       { value: 'Do the deploy', display_value: 'Do the deploy' },
+              assignment_group:  { value: 'grp-1', display_value: 'Platform' },
+              assigned_to:       { value: 'usr-1', display_value: 'Jane' },
+              planned_start_date: { value: '', display_value: '' },
+              planned_end_date:   { value: '', display_value: '' },
+              close_notes:        { value: '', display_value: '' },
+            },
+            {
+              // A closed task — clone-all copies it verbatim regardless of state.
+              number:            { value: 'CTASK0000002', display_value: 'CTASK0000002' },
+              short_description: { value: 'Closed task', display_value: 'Closed task' },
+              description:       { value: '', display_value: '' },
+              assignment_group:  { value: '', display_value: '' },
+              assigned_to:       { value: '', display_value: '' },
+              planned_start_date: { value: '', display_value: '' },
+              planned_end_date:   { value: '', display_value: '' },
+              close_notes:        { value: 'Already done', display_value: 'Already done' },
+            },
+          ],
+        } as never);
+
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.setCloneChgNumber('CHG0001234');
+      });
+
+      await act(async () => {
+        await result.current.actions.cloneFromChg();
+      });
+
+      expect(result.current.state.changeTasks).toHaveLength(2);
+      expect(result.current.state.changeTasks.map((task) => task.name)).toEqual(['CTASK0000001', 'CTASK0000002']);
+      expect(result.current.state.changeTasks[0].shortDescription).toBe('Implementation');
+      expect(result.current.state.changeTasks[0].assignmentGroup).toEqual({ sysId: 'grp-1', displayName: 'Platform' });
+      expect(result.current.state.changeTasks[1].closeNotes).toBe('Already done');
+      // The CTASK query is scoped to the source CHG's sys_id.
+      expect(vi.mocked(snowFetch).mock.calls[1][0]).toContain('/api/now/table/change_task?');
+      expect(vi.mocked(snowFetch).mock.calls[1][0]).toContain('change_request%3Dchg-sys-77');
+    });
+
+    it('defaults reconcile-auto-CTASKs on and jumps to the review step when cloning', async () => {
+      vi.mocked(snowFetch)
+        .mockResolvedValueOnce({
+          result: [
+            {
+              sys_id:            { value: 'chg-sys-88', display_value: 'CHG0007777' },
+              short_description: { value: 'Hotfix', display_value: 'Hotfix' },
+            },
+          ],
+        } as never)
+        .mockResolvedValueOnce({ result: [] } as never);
+
+      const { result } = renderHook(() => useCrgState());
+
+      act(() => {
+        result.current.actions.setCloneChgNumber('CHG0007777');
+      });
+
+      await act(async () => {
+        await result.current.actions.cloneFromChg();
+      });
+
+      // Cloning means reproducing a change, so overwrite SNow's auto-created CTASKs and skip to Create.
+      expect(result.current.state.reconcileAutoCtasks).toBe(true);
+      expect(result.current.state.currentStep).toBe(6);
+    });
   });
 
   describe('createChg', () => {
