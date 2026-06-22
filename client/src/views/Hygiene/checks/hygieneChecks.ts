@@ -69,6 +69,12 @@ export interface HygieneEvaluationContext {
   customRules?: readonly EnterpriseRequiredFieldRule[];
   /** Jira custom field ID configured in Settings for story points (e.g. customfield_10236). */
   customStoryPointsFieldId?: string;
+  /**
+   * Days an in-progress issue may sit without an update before it is stale. Sourced from the
+   * Sprint Dashboard's configured threshold so the Hygiene tab and the Blockers tab agree on
+   * what counts as stale. Falls back to STALE_THRESHOLD_DAYS when the caller omits it.
+   */
+  staleDaysThreshold?: number;
 }
 
 export interface HygieneFinding {
@@ -357,10 +363,15 @@ export function checkMissingStoryPoints(issue: JiraIssue, customStoryPointsField
     : null;
 }
 
-/** Flags in-progress issues that have not been updated within the active-work threshold. */
-export function checkStaleIssue(issue: JiraIssue): HygieneFlag | null {
+/**
+ * Flags in-progress issues that have not been updated within the active-work threshold.
+ * The threshold is configurable so this matches the Blockers tab's stale rule exactly; the
+ * comparison is inclusive (>=) so an issue that hits the threshold on the dot is flagged,
+ * mirroring sprintDashboardIssueUtils.isStaleIssue.
+ */
+export function checkStaleIssue(issue: JiraIssue, staleDaysThreshold: number = STALE_THRESHOLD_DAYS): HygieneFlag | null {
   if (!isInProgressIssue(issue)) return null;
-  return calculateAgeInDays(issue.fields.updated) > STALE_THRESHOLD_DAYS ? BUILT_IN_HYGIENE_FLAGS.stale : null;
+  return calculateAgeInDays(issue.fields.updated) >= staleDaysThreshold ? BUILT_IN_HYGIENE_FLAGS.stale : null;
 }
 
 /** Flags non-done issues that still have no accountable assignee. */
@@ -455,7 +466,7 @@ export function evaluateHygieneIssue(issue: JiraIssue, evaluationContext: Hygien
     checkDueDateOverdue(issue),
     checkMissingChildStoryPoints(issue, featureKeysWithPointedStories),
     checkMissingStoryPoints(issue, evaluationContext.customStoryPointsFieldId),
-    checkStaleIssue(issue),
+    checkStaleIssue(issue, evaluationContext.staleDaysThreshold),
     checkNoAssignee(issue),
     checkNoAcceptanceCriteria(issue, fieldConfig),
     checkOldInSprint(issue),
