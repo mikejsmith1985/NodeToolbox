@@ -94,6 +94,36 @@ describe('hygiene check predicates', () => {
     expect(hygieneFlag).toBeNull();
   });
 
+  it('flags an in-progress issue at the configured stale threshold using an inclusive comparison', () => {
+    // A team configured 5-day threshold (matching the Blockers tab) must flag a 5-day-old issue,
+    // so the Hygiene tab and the Blockers tab agree on what counts as stale.
+    const hygieneFlag = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: buildDateDaysAgo(5) }), 5);
+
+    expect(hygieneFlag?.checkId).toBe('stale');
+  });
+
+  it('does not flag an in-progress issue younger than the configured stale threshold', () => {
+    const hygieneFlag = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: buildDateDaysAgo(4) }), 5);
+
+    expect(hygieneFlag).toBeNull();
+  });
+
+  it('falls back to the fourteen-day default when no threshold is provided', () => {
+    // Exactly fourteen days old now flags because the threshold comparison is inclusive (>=).
+    const hygieneFlag = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: buildDateDaysAgo(14) }));
+
+    expect(hygieneFlag?.checkId).toBe('stale');
+  });
+
+  it('uses the context stale threshold when evaluating a full issue', () => {
+    const flags = evaluateHygieneIssue(
+      buildIssue({ status: ACTIVE_STATUS, updated: buildDateDaysAgo(6) }),
+      { staleDaysThreshold: 5 },
+    );
+
+    expect(flags.some((flag) => flag.checkId === 'stale')).toBe(true);
+  });
+
   it('flags in-progress issues with no assignee', () => {
     const hygieneFlag = checkNoAssignee(buildIssue({ status: ACTIVE_STATUS, assignee: null }));
 

@@ -226,6 +226,9 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
       // Pass the active team profile ID so we read the correct team-scoped storage slot.
       const dashboardConfig = loadDashboardConfigFromStorage(activeDashboardTeamProfileId);
       const customStoryPointsFieldId = dashboardConfig.customStoryPointsFieldId || '';
+      // Use the same stale threshold the Blockers tab uses so both surfaces agree on which
+      // in-progress issues are stale (previously Hygiene hard-coded 14 days and under-counted).
+      const staleDaysThreshold = dashboardConfig.staleDaysThreshold;
 
       const jiraSearchResponse = await jiraGet<JiraSearchResponse>(
         buildHygieneSearchPath(
@@ -243,6 +246,7 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
         fieldConfig: hygieneFieldConfig,
         featureKeysWithPointedStories,
         customStoryPointsFieldId,
+        staleDaysThreshold,
       }));
     } catch (caughtError: unknown) {
       const errorMessage = caughtError instanceof Error ? caughtError.message : 'Failed to load Hygiene results';
