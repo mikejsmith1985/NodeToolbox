@@ -70,6 +70,14 @@ describe('useHygieneState helpers', () => {
     expect(decodedSearchPath).toContain('maxResults=200');
   });
 
+  it('buildHygieneSearchPath omits the assignee filter when the clause is null (team mode)', () => {
+    const searchPath = buildHygieneSearchPath('tbx', 'AND sprint = 42', undefined, null);
+    const decodedSearchPath = decodeURIComponent(searchPath);
+
+    expect(decodedSearchPath).toContain('jql=project=TBX AND statusCategory != Done AND sprint = 42');
+    expect(decodedSearchPath).not.toContain('AND assignee');
+  });
+
   it('mapJiraIssueToHygieneFinding returns null for healthy issues and flags unhealthy issues', () => {
     const healthyFinding = mapJiraIssueToHygieneFinding(buildJiraIssue());
     const unhealthyFinding = mapJiraIssueToHygieneFinding(
@@ -208,6 +216,49 @@ describe('useHygieneState', () => {
     expect(result.current.availableCheckIds).toContain('custom-1');
     expect(result.current.findings[0].flags.map((flag) => flag.checkId)).toContain('custom-1');
     expect(result.current.findings[0].flags.map((flag) => flag.checkId)).not.toContain('no-assignee');
+  });
+
+  it('treats the team projectKey option as authoritative and ignores any persisted key', () => {
+    window.localStorage.setItem(HYGIENE_PROJECT_KEY_STORAGE_KEY, 'STALE');
+
+    const { result } = renderHook(() => useHygieneState({ isTeamMode: true, projectKey: 'TBX' }));
+
+    expect(result.current.projectKey).toBe('TBX');
+  });
+
+  it('re-scopes to the new team project when the projectKey option changes', () => {
+    const { result, rerender } = renderHook(
+      ({ projectKey }) => useHygieneState({ isTeamMode: true, projectKey }),
+      { initialProps: { projectKey: 'ALPHA' } },
+    );
+
+    expect(result.current.projectKey).toBe('ALPHA');
+
+    rerender({ projectKey: 'BETA' });
+
+    expect(result.current.projectKey).toBe('BETA');
+  });
+
+  it('omits the assignee filter in team mode so Hygiene audits every in-scope issue', async () => {
+    mockJiraGet.mockResolvedValueOnce(EMPTY_FIELD_METADATA).mockResolvedValueOnce({ issues: [] });
+    const { result } = renderHook(() => useHygieneState({ isTeamMode: true, projectKey: 'TBX' }));
+
+    await act(async () => {
+      await result.current.loadHygiene();
+    });
+
+    const searchPath = String(mockJiraGet.mock.calls[1][0]);
+    const decodedSearchPath = decodeURIComponent(searchPath);
+    expect(decodedSearchPath).toContain('project=TBX AND statusCategory != Done');
+    expect(decodedSearchPath).not.toContain('AND assignee');
+  });
+
+  it('does not persist the team projectKey to standalone Hygiene storage', () => {
+    window.localStorage.setItem(HYGIENE_PROJECT_KEY_STORAGE_KEY, 'EXISTING');
+
+    renderHook(() => useHygieneState({ isTeamMode: true, projectKey: 'TBX' }));
+
+    expect(window.localStorage.getItem(HYGIENE_PROJECT_KEY_STORAGE_KEY)).toBe('EXISTING');
   });
 
   it('reports Jira load errors without retaining stale findings', async () => {

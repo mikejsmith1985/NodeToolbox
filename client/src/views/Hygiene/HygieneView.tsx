@@ -41,11 +41,13 @@ interface HygieneViewProps {
   isTeamMode?: boolean;
   /** Pre-populated extra JQL clause injected from the Sprint Dashboard scope (PI, sprint, fix version). */
   initialExtraJql?: string;
+  /** Team-supplied project key. When set, it is authoritative and follows the active team selection. */
+  projectKey?: string;
 }
 
 /** Renders the standalone Hygiene checker and delegates stateful Jira work to `useHygieneState`. */
-export default function HygieneView({ isTeamMode = false, initialExtraJql = '' }: HygieneViewProps = {}) {
-  const hygieneState = useHygieneState({ isTeamMode, initialExtraJql });
+export default function HygieneView({ isTeamMode = false, initialExtraJql = '', projectKey }: HygieneViewProps = {}) {
+  const hygieneState = useHygieneState({ isTeamMode, initialExtraJql, projectKey });
   const isRovoUnlocked = useRovoStore((storeState) => storeState.isRovoUnlocked);
   const jiraBaseUrl = useConnectionStore((state) => state.proxyStatus?.jira?.baseUrl ?? null);
   const hasAutoRunTriggeredRef = useRef(false);
