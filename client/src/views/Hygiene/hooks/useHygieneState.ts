@@ -14,7 +14,6 @@ import {
   readEnabledEnterpriseCheckDefinitions,
   readEnabledRequiredFieldRules,
 } from '../../AdminHub/enterpriseRules.ts';
-import { buildStandupRosterAssigneeClause } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
 import { loadDashboardConfigFromStorage } from '../../SprintDashboard/hooks/useDashboardConfig.ts';
 import { useSettingsStore } from '../../../store/settingsStore.ts';
 import {
@@ -90,16 +89,23 @@ export interface HygieneActions {
   loadHygiene: () => Promise<void>;
 }
 
-/** Builds the single Jira search URL required by the standalone Hygiene view. */
+/**
+ * Builds the single Jira search URL required by the Hygiene view.
+ *
+ * `assigneeClause` may be null/empty to scope the search to every in-scope issue
+ * regardless of who it is assigned to — the team-mode behaviour, which keeps Hygiene
+ * aligned with the dashboard's issue list (the dashboard is not assignee-filtered).
+ */
 export function buildHygieneSearchPath(
   projectKey: string,
   extraJql: string,
   requestedFields: string[] = BASE_HYGIENE_FIELDS,
-  assigneeClause: string = DEFAULT_ASSIGNEE_CLAUSE,
+  assigneeClause: string | null = DEFAULT_ASSIGNEE_CLAUSE,
 ): string {
   const normalizedProjectKey = projectKey.trim().toUpperCase();
   const extraJqlClause = extraJql.trim();
-  const jqlText = `project=${normalizedProjectKey} AND statusCategory != Done AND ${assigneeClause}${extraJqlClause ? ` ${extraJqlClause}` : ''}`;
+  const assigneeFilter = assigneeClause && assigneeClause.trim() ? ` AND ${assigneeClause.trim()}` : '';
+  const jqlText = `project=${normalizedProjectKey} AND statusCategory != Done${assigneeFilter}${extraJqlClause ? ` ${extraJqlClause}` : ''}`;
   return `/rest/api/2/search?jql=${encodeURIComponent(jqlText)}&fields=${encodeURIComponent(buildUniqueFieldIds(requestedFields).join(','))}&maxResults=${HYGIENE_MAX_RESULTS}`;
 }
 
@@ -154,16 +160,29 @@ export interface useHygieneStateOptions {
   isTeamMode?: boolean;
   /** Pre-populated extra JQL clause (e.g. a PI or sprint scope from the Sprint Dashboard). */
   initialExtraJql?: string;
+  /**
+   * Team-supplied project key. When provided (team mode), it is the authoritative source
+   * of truth and overrides the localStorage seed — this prevents the embedded Hygiene tab
+   * from showing a previous team's data after the user switches teams.
+   */
+  projectKey?: string;
 }
 
 /** Owns Hygiene view state and actions so the render layer can stay declarative. */
 export function useHygieneState(options: useHygieneStateOptions = {}): HygieneState & HygieneActions {
-  const { isTeamMode = false, initialExtraJql = '' } = options;
+  const { isTeamMode = false, initialExtraJql = '', projectKey: controlledProjectKey } = options;
+  // When the team dashboard supplies a project key, that prop is authoritative; the standalone
+  // view falls back to the user's persisted key. This flag drives both seeding and persistence.
+  const isProjectKeyControlled = controlledProjectKey !== undefined;
   // Read the active sprint-dashboard team profile so the story-points field lookup uses the right config slot.
   const activeDashboardTeamProfileId = useSettingsStore(
     (storeState) => storeState.sprintDashboardActiveTeamProfileId,
   );
-  const [projectKey, setProjectKey] = useState<string>(() => readStoredProjectKey());
+  // The standalone view owns an editable, persisted project key. In team mode the supplied prop
+  // is the single source of truth (derived below) and follows the active team, so switching teams
+  // immediately re-scopes Hygiene rather than replaying a previous team from localStorage.
+  const [standaloneProjectKey, setStandaloneProjectKey] = useState<string>(() => readStoredProjectKey());
+  const projectKey = isProjectKeyControlled ? controlledProjectKey : standaloneProjectKey;
   const [extraJql, setExtraJql] = useState<string>(initialExtraJql);
   const [findings, setFindings] = useState<HygieneFinding[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<string | null>(() => readStoredFilter());
@@ -173,8 +192,13 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    window.localStorage.setItem(HYGIENE_PROJECT_KEY_STORAGE_KEY, projectKey);
-  }, [projectKey]);
+    // Only the standalone view persists the project key. Persisting the team-supplied key would
+    // pollute the standalone view's saved project and reintroduce the cross-team staleness bug.
+    if (isProjectKeyControlled) {
+      return;
+    }
+    window.localStorage.setItem(HYGIENE_PROJECT_KEY_STORAGE_KEY, standaloneProjectKey);
+  }, [isProjectKeyControlled, standaloneProjectKey]);
 
   useEffect(() => {
     if (selectedFilter === null) {
@@ -213,14 +237,10 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
       setAvailableCheckIds(enabledCheckDefinitions.map((checkDefinition) => checkDefinition.checkId));
       setCheckLabelsById(buildCheckLabelsById(enabledCheckDefinitions));
 
-      // When in team mode, scope findings to the configured team roster members if populated
-      let assigneeClause = DEFAULT_ASSIGNEE_CLAUSE;
-      if (isTeamMode) {
-        const rosterClause = buildStandupRosterAssigneeClause();
-        if (rosterClause) {
-          assigneeClause = rosterClause;
-        }
-      }
+      // In team mode Hygiene must audit every in-scope issue, matching the dashboard's issue list
+      // (which is not assignee-filtered). A null clause drops the assignee filter so unassigned and
+      // teammate-owned stale issues surface here too. Standalone mode stays scoped to the current user.
+      const assigneeClause = isTeamMode ? null : DEFAULT_ASSIGNEE_CLAUSE;
 
       // Read the team's configured story-points field so the missing-SP check uses the right field.
       // Pass the active team profile ID so we read the correct team-scoped storage slot.
@@ -268,7 +288,7 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
     checkLabelsById,
     isLoading,
     loadError,
-    setProjectKey,
+    setProjectKey: setStandaloneProjectKey,
     setExtraJql,
     selectFilter,
     loadHygiene,

@@ -1,9 +1,8 @@
 // TeamDashboardHygieneTab.tsx — Team-scoped adapter for embedding the shared Hygiene workspace in Team Dashboard.
 
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 
 import HygieneView from '../Hygiene/HygieneView.tsx';
-import { HYGIENE_PROJECT_KEY_STORAGE_KEY } from '../Hygiene/hooks/useHygieneState.ts';
 
 const PI_JQL_FIELD_ID = 'cf[10301]';
 const SCOPE_MODE_PI = 'pi';
@@ -55,17 +54,12 @@ export default function TeamDashboardHygieneTab({
     [scopeMode, selectedPiValue, selectedFixVersionName, selectedSprintId],
   );
 
-  useEffect(() => {
-    if (!normalizedProjectKey) {
-      return;
-    }
-
-    window.localStorage.setItem(HYGIENE_PROJECT_KEY_STORAGE_KEY, normalizedProjectKey);
-  }, [normalizedProjectKey]);
-
+  // The project key flows through a prop (not localStorage) so switching teams immediately
+  // re-scopes Hygiene to the new team. The keyed remount resets transient UI (filters, expanded rows).
   return (
     <HygieneView
       key={`${normalizedProjectKey || 'team-hygiene-unscoped'}:${initialExtraJql}`}
+      projectKey={normalizedProjectKey}
       initialExtraJql={initialExtraJql}
       isTeamMode
     />
