@@ -111,11 +111,22 @@
   min-width: 0;
 }
 
-.issueKey {
+.issueKeyLink {
   color: var(--color-accent, #58a6ff);
   font-family: var(--font-mono, monospace);
   font-size: var(--font-size-sm, 0.875rem);
   font-weight: 600;
+  text-decoration: none;
+  width: fit-content;
+}
+
+.issueKeyLink:hover {
+  text-decoration: underline;
+}
+
+.externalLinkIcon {
+  font-size: 0.75rem;
+  opacity: 0.8;
 }
 
 .issueSummary {

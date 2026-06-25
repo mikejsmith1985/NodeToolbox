@@ -14,6 +14,7 @@ import {
   setMentionAddressed as persistMentionAddressed,
   type AddressedMentionMap,
 } from '../../../services/mentionStateApi.ts';
+import { fetchProxyConfig } from '../../../services/proxyApi.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { businessDaysAgo, toJqlDateString } from '../../../utils/businessDays.ts';
 import { collectUserMentions, type JiraMention, type MentionIdentity } from '../../../utils/jiraMentions.ts';
@@ -37,6 +38,8 @@ export interface MentionsState {
   loadError: string | null;
   /** How many issues the candidate JQL scanned — surfaced so users know the search breadth. */
   scannedIssueCount: number;
+  /** Configured Jira base URL, used to build "open in Jira" links (empty if unavailable). */
+  jiraBaseUrl: string;
 }
 
 export interface MentionsActions {
@@ -68,6 +71,7 @@ export function useMentionsState(): MentionsState & MentionsActions {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [scannedIssueCount, setScannedIssueCount] = useState<number>(0);
+  const [jiraBaseUrl, setJiraBaseUrl] = useState<string>('');
   // Bumping this token forces the load effect to run again (manual refresh).
   const [reloadToken, setReloadToken] = useState<number>(0);
 
@@ -86,6 +90,7 @@ export function useMentionsState(): MentionsState & MentionsActions {
         const loadedIssues = searchResponse.issues ?? [];
         const detectedMentions = collectUserMentions(loadedIssues, resolvedIdentity, windowStart.getTime());
         const addressed = await fetchAddressedMentions(resolveUserKey(resolvedIdentity));
+        const resolvedJiraBaseUrl = await loadJiraBaseUrl();
 
         if (!isMounted) {
           return;
@@ -94,6 +99,7 @@ export function useMentionsState(): MentionsState & MentionsActions {
         setScannedIssueCount(loadedIssues.length);
         setAllMentions(detectedMentions);
         setAddressedMap(addressed);
+        setJiraBaseUrl(resolvedJiraBaseUrl);
         setLoadError(null);
       } catch (caughtError) {
         if (!isMounted) {
@@ -169,6 +175,7 @@ export function useMentionsState(): MentionsState & MentionsActions {
     isLoading,
     loadError,
     scannedIssueCount,
+    jiraBaseUrl,
     setWindowBusinessDays,
     toggleShowAddressed,
     markAddressed,
@@ -177,6 +184,20 @@ export function useMentionsState(): MentionsState & MentionsActions {
 }
 
 // ── Helpers ──
+
+/**
+ * Reads the configured Jira base URL for building "open in Jira" links. Tolerant
+ * by design: a config-fetch failure returns an empty string so the Mentions report
+ * still loads (links then fall back to a relative path).
+ */
+async function loadJiraBaseUrl(): Promise<string> {
+  try {
+    const proxyConfig = await fetchProxyConfig();
+    return proxyConfig.jiraBaseUrl ?? '';
+  } catch {
+    return '';
+  }
+}
 
 /** Fetches and normalizes the current Jira user identity from /rest/api/2/myself. */
 async function loadIdentity(): Promise<MentionIdentity> {

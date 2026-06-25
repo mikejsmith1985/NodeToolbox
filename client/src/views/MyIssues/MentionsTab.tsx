@@ -8,6 +8,7 @@
 import { useState } from 'react';
 
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
+import { buildJiraBrowseUrl } from '../../utils/jiraBrowseUrl.ts';
 import type { JiraMention } from '../../utils/jiraMentions.ts';
 import { MENTION_WINDOW_OPTIONS, useMentionsState } from './hooks/useMentionsState.ts';
 import styles from './MentionsTab.module.css';
@@ -72,6 +73,7 @@ function MentionsBody({ mentions }: { mentions: ReturnType<typeof useMentionsSta
       {mentions.visibleMentions.map((mention) => (
         <MentionCard
           isAddressed={Boolean(mentions.addressedMap[mention.mentionKey])}
+          jiraBaseUrl={mentions.jiraBaseUrl}
           key={mention.mentionKey}
           mention={mention}
           onMarkAddressed={mentions.markAddressed}
@@ -84,18 +86,29 @@ function MentionsBody({ mentions }: { mentions: ReturnType<typeof useMentionsSta
 interface MentionCardProps {
   mention: JiraMention;
   isAddressed: boolean;
+  jiraBaseUrl: string;
   onMarkAddressed: (mention: JiraMention, isAddressed: boolean) => Promise<void>;
 }
 
 /** A single mention row with an excerpt and an expandable full-ticket reply panel. */
-function MentionCard({ mention, isAddressed, onMarkAddressed }: MentionCardProps) {
+function MentionCard({ mention, isAddressed, jiraBaseUrl, onMarkAddressed }: MentionCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
     <li className={styles.mentionCard}>
       <div className={styles.mentionHeader}>
         <div className={styles.mentionHeaderText}>
-          <span className={styles.issueKey}>{mention.issueKey}</span>
+          {/* The key opens the real Jira issue in a new tab so the user can @-mention others in a reply. */}
+          <a
+            className={styles.issueKeyLink}
+            href={buildJiraBrowseUrl(mention.issueKey, jiraBaseUrl)}
+            rel="noopener noreferrer"
+            target="_blank"
+            title="Open in Jira (to reply with @mentions)"
+          >
+            {mention.issueKey}
+            <span aria-hidden="true" className={styles.externalLinkIcon}> ↗</span>
+          </a>
           <span className={styles.issueSummary}>{mention.issueSummary}</span>
           <span className={styles.mentionMeta}>
             Tagged by {mention.authorDisplayName} · {mention.createdIso.slice(0, ISO_DATE_LENGTH)}

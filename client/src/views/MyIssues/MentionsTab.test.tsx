@@ -41,6 +41,7 @@ function buildHookState(overrides: Partial<ReturnType<typeof mockUseMentionsStat
     isLoading: false,
     loadError: null,
     scannedIssueCount: 4,
+    jiraBaseUrl: 'https://jira.example.com',
     setWindowBusinessDays: vi.fn(),
     toggleShowAddressed: vi.fn(),
     markAddressed,
@@ -60,6 +61,14 @@ describe('MentionsTab', () => {
     expect(screen.getByText('TBX-1')).toBeInTheDocument();
     expect(screen.getByText('Fix the login page')).toBeInTheDocument();
     expect(screen.getByText(/Tagged by Bob Jones/)).toBeInTheDocument();
+  });
+
+  it('links the issue key to the Jira issue in a new tab so users can @-mention in their reply', () => {
+    render(<MentionsTab />);
+    const keyLink = screen.getByRole('link', { name: 'TBX-1' });
+    expect(keyLink).toHaveAttribute('href', 'https://jira.example.com/browse/TBX-1');
+    expect(keyLink).toHaveAttribute('target', '_blank');
+    expect(keyLink).toHaveAttribute('rel', expect.stringContaining('noopener'));
   });
 
   it('marks a mention addressed when the button is clicked', async () => {
