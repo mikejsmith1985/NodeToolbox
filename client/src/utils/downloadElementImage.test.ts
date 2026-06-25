@@ -22,7 +22,7 @@ vi.mock('html2canvas', () => ({
   default: mockHtml2Canvas,
 }));
 
-import { copyElementImageToClipboard, downloadElementImage } from './downloadElementImage.ts';
+import { copyElementImageToClipboard, copyElementReportToClipboard, downloadElementImage } from './downloadElementImage.ts';
 
 function createMockCanvas(width: number, height: number): HTMLCanvasElement {
   return {
@@ -101,6 +101,37 @@ describe('downloadElementImage', () => {
       await expect(
         copyElementImageToClipboard(panelElement, 'The export section is no longer available.'),
       ).rejects.toThrow('Image copy is not supported in this browser.');
+    });
+  });
+
+  describe('copyElementReportToClipboard', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      vi.stubGlobal('requestAnimationFrame', (frameRequestCallback: FrameRequestCallback) => {
+        frameRequestCallback(0);
+        return 1;
+      });
+      installClipboardStubs();
+    });
+
+    it('writes both an HTML table and the PNG image to the clipboard in one copy', async () => {
+      mockHtml2Canvas.mockResolvedValue(createMockCanvas(1400, 900));
+      const panelElement = document.createElement('section');
+      panelElement.textContent = 'Release notes';
+      document.body.appendChild(panelElement);
+
+      await copyElementReportToClipboard(
+        panelElement,
+        '<div><h2>Transformers 06/23/2026 Release Notes</h2><table></table></div>',
+        'The release notes section is no longer available to copy.',
+      );
+
+      expect(mockClipboardItemConstructor).toHaveBeenCalledTimes(1);
+      const clipboardPayload = mockClipboardItemConstructor.mock.calls[0][0] as Record<string, Blob>;
+      expect(Object.keys(clipboardPayload)).toEqual(['text/html', 'image/png']);
+      expect(clipboardPayload['text/html'].type).toBe('text/html');
+      expect(clipboardPayload['image/png'].type).toBe('image/png');
+      expect(mockClipboardWrite).toHaveBeenCalledTimes(1);
     });
   });
 

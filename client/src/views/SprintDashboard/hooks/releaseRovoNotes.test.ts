@@ -4,10 +4,28 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildReleaseNotesHeading,
+  buildReleaseNotesHtml,
   buildReleaseRovoPrompt,
   parseReleaseRovoResponse,
   type ReleaseRovoPromptInput,
+  type ReleaseRovoTableDocument,
 } from './releaseRovoNotes.ts';
+
+const SAMPLE_RELEASE_DOCUMENT: ReleaseRovoTableDocument = {
+  releaseName: '06/23/2026',
+  releaseSummary: 'Improves data accuracy across the Team Dashboard.',
+  items: [
+    {
+      issueKey: 'ENFCT-1696',
+      title: 'Fix duplicate SBEL eligibility records',
+      releaseNote: 'Resolved duplicate eligibility records for the same effective date.',
+      customerImpact: 'Prevents duplicate data downstream.',
+      technicalDetails: 'Updated SBEL void handling logic.',
+      risks: 'None.',
+      validation: 'Validated via query checks.',
+    },
+  ],
+};
 
 const SAMPLE_PROMPT_INPUT: ReleaseRovoPromptInput = {
   projectKey: 'TBX',
@@ -175,6 +193,42 @@ describe('releaseRovoNotes', () => {
   it('never mentions how the notes were drafted (no AI/Rovo wording)', () => {
     const heading = buildReleaseNotesHeading('Transformers', '06/23/2026');
     expect(heading).not.toMatch(/rovo|\bai\b|assistant|draft/i);
+  });
+
+  it('builds an inline-styled HTML table with the heading, summary, and every column', () => {
+    const html = buildReleaseNotesHtml('Transformers 06/23/2026 Release Notes', SAMPLE_RELEASE_DOCUMENT);
+
+    expect(html).toContain('<h2 style="font-size:18px');
+    expect(html).toContain('Transformers 06/23/2026 Release Notes');
+    expect(html).toContain('Improves data accuracy across the Team Dashboard.');
+    // All six column headers are present.
+    for (const columnLabel of ['Release Item', 'Release Note', 'Customer Impact', 'Technical Details', 'Risks', 'Validation']) {
+      expect(html).toContain(`>${columnLabel}</th>`);
+    }
+    // The row pairs the bold issue key with the title and includes the remaining cell values.
+    expect(html).toContain('<strong>ENFCT-1696</strong>');
+    expect(html).toContain('Fix duplicate SBEL eligibility records');
+    expect(html).toContain('Validated via query checks.');
+    // Inline styles only — no class attributes that email clients would drop.
+    expect(html).toContain('border-collapse:collapse');
+    expect(html).not.toContain('class=');
+  });
+
+  it('escapes HTML in release-notes content so values cannot break the table markup', () => {
+    const documentWithMarkup: ReleaseRovoTableDocument = {
+      ...SAMPLE_RELEASE_DOCUMENT,
+      items: [{ ...SAMPLE_RELEASE_DOCUMENT.items[0], title: 'Handle <script> & "quoted" tags' }],
+    };
+    const html = buildReleaseNotesHtml('06/23/2026 Release Notes', documentWithMarkup);
+
+    expect(html).toContain('Handle &lt;script&gt; &amp; &quot;quoted&quot; tags');
+    expect(html).not.toContain('<script>');
+  });
+
+  it('produces report HTML with no mention of how the notes were drafted', () => {
+    const html = buildReleaseNotesHtml('Transformers 06/23/2026 Release Notes', SAMPLE_RELEASE_DOCUMENT);
+    // The static chrome (heading suffix, column labels, styles) carries no AI/Rovo wording.
+    expect(html.replace(/Release Notes/g, '')).not.toMatch(/rovo|\bai\b|assistant|draft/i);
   });
 
   it('throws a helpful error when the items array is missing', () => {

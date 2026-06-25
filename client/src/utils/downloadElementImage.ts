@@ -10,6 +10,7 @@ import {
 
 const IMAGE_EXPORT_RENDER_SCALE = 3;
 const PNG_MIME_TYPE = 'image/png';
+const HTML_MIME_TYPE = 'text/html';
 const EXPORT_HOST_ATTRIBUTE = 'data-node-toolbox-export-host';
 const EXPORT_CLONE_ATTRIBUTE = 'data-node-toolbox-export-clone';
 const DOWNLOAD_LINK_CLEANUP_DELAY_MS = 10_000;
@@ -165,4 +166,41 @@ export async function copyElementImageToClipboard(
   const panelCanvas = await capturePanelCanvas(elementToExport, IMAGE_EXPORT_RENDER_SCALE);
   const imageBlob = await createCanvasBlob(panelCanvas);
   await writeImageBlobToClipboard(imageBlob);
+}
+
+/** Writes both an HTML representation and a PNG image to the clipboard in a single copy. */
+async function writeReportToClipboard(imageBlob: Blob, htmlMarkup: string): Promise<void> {
+  if (!navigator.clipboard || typeof navigator.clipboard.write !== 'function') {
+    throw new Error('Image copy is not supported in this browser.');
+  }
+
+  if (typeof ClipboardItem === 'undefined') {
+    throw new Error('Image copy is not supported in this browser.');
+  }
+
+  // Order matters only as a hint; email clients prefer text/html, image-only tools take the PNG.
+  const clipboardItem = new ClipboardItem({
+    [HTML_MIME_TYPE]: new Blob([htmlMarkup], { type: HTML_MIME_TYPE }),
+    [PNG_MIME_TYPE]: imageBlob,
+  });
+  await navigator.clipboard.write([clipboardItem]);
+}
+
+/**
+ * Copies a rendered report to the clipboard as BOTH a reflowable HTML table and a PNG image.
+ * Email clients (Outlook/Gmail) paste the readable native table; chat tools that only accept
+ * images fall back to the high-resolution picture.
+ */
+export async function copyElementReportToClipboard(
+  elementToExport: HTMLElement,
+  htmlMarkup: string,
+  unavailableMessage: string,
+): Promise<void> {
+  if (!elementToExport.isConnected) {
+    throw new Error(unavailableMessage);
+  }
+
+  const panelCanvas = await capturePanelCanvas(elementToExport, IMAGE_EXPORT_RENDER_SCALE);
+  const imageBlob = await createCanvasBlob(panelCanvas);
+  await writeReportToClipboard(imageBlob, htmlMarkup);
 }

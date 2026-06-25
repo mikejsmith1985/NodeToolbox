@@ -59,6 +59,62 @@ export function buildReleaseNotesHeading(teamName: string, fixVersionName: strin
   return [...identitySegments, RELEASE_NOTES_HEADING_SUFFIX].join(' ');
 }
 
+// Inline styles only — email clients (Outlook/Gmail) strip <style> blocks and class rules, and they
+// ignore modern CSS colour functions, so every colour here is a plain hex value applied per element.
+const HTML_WRAPPER_STYLE = 'font-family:Arial,Helvetica,sans-serif;color:#1f2328;';
+const HTML_HEADING_STYLE = 'font-size:18px;font-weight:700;margin:0 0 8px;';
+const HTML_SUMMARY_STYLE = 'font-size:13px;color:#57606a;margin:0 0 12px;';
+const HTML_TABLE_STYLE = 'border-collapse:collapse;width:100%;font-size:13px;';
+const HTML_HEADER_CELL_STYLE = 'text-align:left;background:#f0f3f6;border:1px solid #d0d7de;padding:6px 8px;font-weight:600;';
+const HTML_BODY_CELL_STYLE = 'border:1px solid #d0d7de;padding:6px 8px;vertical-align:top;';
+
+// The report columns, in display order, mirroring the on-screen release-notes table.
+const RELEASE_NOTES_HTML_COLUMN_LABELS = [
+  'Release Item', 'Release Note', 'Customer Impact', 'Technical Details', 'Risks', 'Validation',
+];
+
+/** Escapes the characters that would otherwise break out of HTML text content or attributes. */
+function escapeHtml(rawText: string): string {
+  return rawText
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Builds a self-contained, inline-styled HTML table for the release notes. This is placed on the
+ * clipboard alongside the image so email clients paste a readable, reflowable native table instead
+ * of a fixed-width screenshot. The heading carries the team/release identity only — no tooling wording.
+ */
+export function buildReleaseNotesHtml(heading: string, releaseDocument: ReleaseRovoTableDocument): string {
+  const headerCells = RELEASE_NOTES_HTML_COLUMN_LABELS
+    .map((columnLabel) => `<th style="${HTML_HEADER_CELL_STYLE}">${escapeHtml(columnLabel)}</th>`)
+    .join('');
+
+  const bodyRows = releaseDocument.items.map((releaseRow) => {
+    // The first column pairs the Jira key (bold) with the plain-language title.
+    const releaseItemCell = `<strong>${escapeHtml(releaseRow.issueKey)}</strong><br/>${escapeHtml(releaseRow.title)}`;
+    const cellContents = [
+      releaseItemCell,
+      escapeHtml(releaseRow.releaseNote),
+      escapeHtml(releaseRow.customerImpact),
+      escapeHtml(releaseRow.technicalDetails),
+      escapeHtml(releaseRow.risks),
+      escapeHtml(releaseRow.validation),
+    ];
+    return `<tr>${cellContents.map((cellHtml) => `<td style="${HTML_BODY_CELL_STYLE}">${cellHtml}</td>`).join('')}</tr>`;
+  }).join('');
+
+  return [
+    `<div style="${HTML_WRAPPER_STYLE}">`,
+    `<h2 style="${HTML_HEADING_STYLE}">${escapeHtml(heading)}</h2>`,
+    `<p style="${HTML_SUMMARY_STYLE}">${escapeHtml(releaseDocument.releaseSummary)}</p>`,
+    `<table style="${HTML_TABLE_STYLE}"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>`,
+    '</div>',
+  ].join('');
+}
+
 function formatReleaseDateLabel(releaseDate: string | null): string {
   return releaseDate ? releaseDate : '(not scheduled)';
 }
