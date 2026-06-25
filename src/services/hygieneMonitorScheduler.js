@@ -1,13 +1,13 @@
 // hygieneMonitorScheduler.js — Proactive daily hygiene monitor for Jira issues.
 //
 // Runs on a per-team schedule, evaluates server-side hygiene rules against
-// open Jira issues, dispatches violations to Rovo for FIXABLE/UNFIXABLE
+// open Jira issues, dispatches violations to AI Assist for FIXABLE/UNFIXABLE
 // classification, applies Jira fixes for FIXABLE items, posts Jira comments
 // for UNFIXABLE items, then emails a digest via reportWebhookDelivery (an Atlassian
 // Automation rule composes the email; an inbox rule forwards it to Teams).
 //
 // Key exports:
-//   parseRovoClassifications(text) — pure helper, no side effects
+//   parseAiAssistClassifications(text) — pure helper, no side effects
 //   buildHygieneDigest(scan, priorScan) — pure helper, no side effects
 //   runHygieneScan(teamConfig, configuration) — orchestrates one full scan
 //   getLastScanStatus() — returns the cached scan status summary
@@ -15,7 +15,7 @@
 'use strict';
 
 const { makeJiraApiRequest } = require('../utils/httpClient');
-const { requestRovoText, isRovoEnabled } = require('./rovoEnrichment');
+const { requestAiAssistText, isAiAssistEnabled } = require('./aiAssistEnrichment');
 const { deliverReport } = require('./reportWebhookDelivery');
 const { evaluateHygieneRules } = require('./hygieneRules');
 
@@ -31,9 +31,9 @@ const HYGIENE_JIRA_FIELDS = [
 // Maximum issues fetched per project key batch (Jira paginates at 100 by default).
 const JIRA_HYGIENE_MAX_RESULTS = 100;
 
-// Maximum number of violations batched into a single Rovo classification prompt.
-// Keeps prompts within Rovo's context window.
-const ROVO_BATCH_SIZE = 50;
+// Maximum number of violations batched into a single AI Assist classification prompt.
+// Keeps prompts within AI Assist's context window.
+const AI_ASSIST_BATCH_SIZE = 50;
 
 // ── Trend calculation ─────────────────────────────────────────────────────────
 
@@ -42,22 +42,22 @@ const TREND_UP = 'up';
 const TREND_FLAT = 'flat';
 const TREND_NOT_AVAILABLE = 'n/a';
 
-// ── parseRovoClassifications ──────────────────────────────────────────────────
+// ── parseAiAssistClassifications ──────────────────────────────────────────────────
 
 /**
- * Parses Rovo's deterministic classification output into structured objects.
+ * Parses AI Assist's deterministic classification output into structured objects.
  *
- * Rovo outputs one line per issue in one of two formats:
+ * AI Assist outputs one line per issue in one of two formats:
  *   FIXABLE: ISSUE-KEY | fieldId | suggested-value
  *   UNFIXABLE: ISSUE-KEY | checkId | human-readable guidance
  *
- * Lines that do not match either pattern are silently skipped — Rovo may
+ * Lines that do not match either pattern are silently skipped — AI Assist may
  * include preamble or explanatory paragraphs around the structured lines.
  *
- * @param {string | null | undefined} responseText - Raw Rovo response text.
+ * @param {string | null | undefined} responseText - Raw AI Assist response text.
  * @returns {Array<{ issueKey: string, type: 'FIXABLE'|'UNFIXABLE', field?: string, value?: string, checkId?: string, guidance?: string }>}
  */
-function parseRovoClassifications(responseText) {
+function parseAiAssistClassifications(responseText) {
   if (!responseText) return [];
 
   const classifications = [];
@@ -190,11 +190,11 @@ async function fetchOpenIssuesForTeam(projectKeys, jiraConfig, isTlsVerified) {
   }
 }
 
-// ── Rovo classification prompt builder ───────────────────────────────────────
+// ── AI Assist classification prompt builder ───────────────────────────────────────
 
 /**
- * Builds the structured Rovo prompt for a batch of hygiene violations.
- * Instructs Rovo to respond with one FIXABLE or UNFIXABLE line per violation.
+ * Builds the structured AI Assist prompt for a batch of hygiene violations.
+ * Instructs AI Assist to respond with one FIXABLE or UNFIXABLE line per violation.
  *
  * @param {string} teamName - Display name of the team being scanned.
  * @param {Array<{ issueKey: string, summary: string, checkId: string, label: string }>} violations
@@ -369,7 +369,7 @@ async function deliverHygieneDigest(digest, teamConfig, configuration) {
  * Orchestrates a full hygiene scan for one team configuration:
  * 1. Query Jira for open issues across all project keys
  * 2. Evaluate server-side hygiene rules against each issue
- * 3. Batch violations and dispatch to Rovo for classification (when enabled)
+ * 3. Batch violations and dispatch to AI Assist for classification (when enabled)
  * 4. Apply FIXABLE fixes via the Jira proxy
  * 5. Post UNFIXABLE comments with per-cycle dedup
  * 6. Build and email the digest (via the Automation webhook)
@@ -425,11 +425,11 @@ async function runHygieneScan(teamConfig, configuration) {
   console.log('[HygieneMonitor] Team "' + teamConfig.teamName + '": ' + totalViolationCount + ' violations across '
     + issueViolationMap.size + ' issues.');
 
-  // ── Step 3: Dispatch violations to Rovo for classification ───────────────
+  // ── Step 3: Dispatch violations to AI Assist for classification ───────────────
 
   const allClassifications = [];
 
-  if (isRovoEnabled(configuration) && issueViolationMap.size > 0) {
+  if (isAiAssistEnabled(configuration) && issueViolationMap.size > 0) {
     // Flatten all (issueKey, flag) pairs into a flat violation list for batching.
     const flatViolations = [];
     for (const [issueKey, { issue, flags }] of issueViolationMap.entries()) {
@@ -443,23 +443,23 @@ async function runHygieneScan(teamConfig, configuration) {
       }
     }
 
-    // Process in batches of ROVO_BATCH_SIZE to stay within Rovo's context window.
-    for (let batchStart = 0; batchStart < flatViolations.length; batchStart += ROVO_BATCH_SIZE) {
-      const batchViolations = flatViolations.slice(batchStart, batchStart + ROVO_BATCH_SIZE);
+    // Process in batches of AI_ASSIST_BATCH_SIZE to stay within AI Assist's context window.
+    for (let batchStart = 0; batchStart < flatViolations.length; batchStart += AI_ASSIST_BATCH_SIZE) {
+      const batchViolations = flatViolations.slice(batchStart, batchStart + AI_ASSIST_BATCH_SIZE);
       const classificationPrompt = buildHygieneClassificationPrompt(teamConfig.teamName, batchViolations);
 
-      console.log('[HygieneMonitor] Dispatching batch ' + (Math.floor(batchStart / ROVO_BATCH_SIZE) + 1)
-        + ' (' + batchViolations.length + ' violations) to Rovo...');
+      console.log('[HygieneMonitor] Dispatching batch ' + (Math.floor(batchStart / AI_ASSIST_BATCH_SIZE) + 1)
+        + ' (' + batchViolations.length + ' violations) to AI Assist...');
 
-      const rovoResponse = await requestRovoText(configuration, classificationPrompt, { label: 'hygiene-' + teamConfig.teamName });
-      if (rovoResponse) {
-        allClassifications.push(...parseRovoClassifications(rovoResponse));
+      const aiAssistResponse = await requestAiAssistText(configuration, classificationPrompt, { label: 'hygiene-' + teamConfig.teamName });
+      if (aiAssistResponse) {
+        allClassifications.push(...parseAiAssistClassifications(aiAssistResponse));
       } else {
-        console.warn('[HygieneMonitor] Rovo returned no classification for batch starting at index ' + batchStart);
+        console.warn('[HygieneMonitor] AI Assist returned no classification for batch starting at index ' + batchStart);
       }
     }
   } else if (issueViolationMap.size > 0) {
-    console.log('[HygieneMonitor] Rovo not enabled — all ' + issueViolationMap.size + ' violating issues will receive comments only.');
+    console.log('[HygieneMonitor] AI Assist not enabled — all ' + issueViolationMap.size + ' violating issues will receive comments only.');
   }
 
   // ── Step 4: Apply FIXABLE fixes via Jira proxy ──────────────────────────
@@ -628,7 +628,7 @@ function startHygieneMonitorScheduler(configuration) {
 }
 
 module.exports = {
-  parseRovoClassifications,
+  parseAiAssistClassifications,
   buildHygieneDigest,
   runHygieneScan,
   getLastScanStatus,

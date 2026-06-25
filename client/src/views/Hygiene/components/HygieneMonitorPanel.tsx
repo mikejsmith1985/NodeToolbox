@@ -1,7 +1,7 @@
 // HygieneMonitorPanel.tsx — In-view panel that surfaces the hygiene monitor status
 // and lets users trigger an on-demand scan for any configured team.
 //
-// This panel is only rendered when the Ctrl+Alt+Z Rovo gate is unlocked.
+// This panel is only rendered when the Ctrl+Alt+Z AI Assist gate is unlocked.
 // It polls GET /api/hygiene-monitor/status on mount and after each "Scan Now" click.
 
 import { useCallback, useEffect, useState } from 'react'
@@ -71,7 +71,7 @@ function formatScanTime(isoDate: string | null): string {
 
 /**
  * Displays the hygiene monitor status and provides a per-team "Scan Now" trigger.
- * Must only be rendered when `isRovoUnlocked` is true — the gate is enforced
+ * Must only be rendered when `isAiAssistUnlocked` is true — the gate is enforced
  * by the parent `HygieneView`.
  */
 export function HygieneMonitorPanel() {
@@ -119,7 +119,7 @@ export function HygieneMonitorPanel() {
       aria-label="Hygiene Monitor"
     >
       <header className={styles.monitorPanelHeader}>
-        <h2 className={styles.monitorPanelTitle}>✦ Rovo Hygiene Monitor</h2>
+        <h2 className={styles.monitorPanelTitle}>✦ AI Assist Hygiene Monitor</h2>
         <button
           type="button"
           className={styles.monitorRefreshButton}
@@ -147,7 +147,7 @@ export function HygieneMonitorPanel() {
 
           {status.teamStatuses.length === 0 && (
             <p className={styles.monitorEmptyState}>
-              No teams configured. Add teams in Admin Hub → ⚡ Rovo → Hygiene Monitor.
+              No teams configured. Add teams in Admin Hub → ⚡ AI Assist → Hygiene Monitor.
             </p>
           )}
 

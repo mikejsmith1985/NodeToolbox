@@ -9,7 +9,7 @@
 
 // The only destinations a payload may be sent to: Atlassian-owned hosts. Matching
 // is an exact hostname or a dot-prefixed suffix — never a substring test — so
-// look-alike hosts are rejected. Every outbound webhook (report delivery, Rovo
+// look-alike hosts are rejected. Every outbound webhook (report delivery, AI Assist
 // dispatch, and the Hygiene Monitor digest) targets an Atlassian Automation rule;
 // the digest email is composed by that rule, so no non-Atlassian destination
 // (e.g. a Microsoft Teams incoming webhook) is permitted.

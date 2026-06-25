@@ -11,14 +11,14 @@ const {
   extractFeatureChangeEntries,
   escapeXml,
   extractPageIdFromUrl,
-  buildFeatureRovoPrompt,
-  buildFeatureRollupRovoPrompt,
-  buildRovoTrendPanel,
+  buildFeatureAiAssistPrompt,
+  buildFeatureRollupAiAssistPrompt,
+  buildAiAssistTrendPanel,
 } = require('./featureChangeScheduler');
 
-describe('buildFeatureRovoPrompt (US1)', () => {
+describe('buildFeatureAiAssistPrompt (US1)', () => {
   it('includes the label and all three change categories', () => {
-    const prompt = buildFeatureRovoPrompt(
+    const prompt = buildFeatureAiAssistPrompt(
       [{ issueKey: 'F-1', issueSummary: 'Payments', fromValue: '2.0', toValue: '2.1' }],
       [{ issueKey: 'F-2', issueSummary: 'Search', fromValue: 'In Progress', toValue: 'Done' }],
       [],
@@ -32,18 +32,18 @@ describe('buildFeatureRovoPrompt (US1)', () => {
   });
 });
 
-describe('buildRovoTrendPanel (US1)', () => {
+describe('buildAiAssistTrendPanel (US1)', () => {
   it('wraps text in an info macro and escapes XML', () => {
-    const html = buildRovoTrendPanel('PI-2026.2 slipping & risky');
+    const html = buildAiAssistTrendPanel('PI-2026.2 slipping & risky');
     expect(html).toContain('<ac:structured-macro ac:name="info">');
-    expect(html).toContain('🤖 Rovo trend');
+    expect(html).toContain('🤖 AI Assist trend');
     expect(html).toContain('slipping &amp; risky');
   });
 });
 
-describe('buildFeatureRollupRovoPrompt (US1 ART rollup)', () => {
+describe('buildFeatureRollupAiAssistPrompt (US1 ART rollup)', () => {
   it('summarises each team with its total feature-change count', () => {
-    const prompt = buildFeatureRollupRovoPrompt([
+    const prompt = buildFeatureRollupAiAssistPrompt([
       { teamName: 'Alpha', fixVersionEntries: [{}], statusEntries: [{}], scheduleEntries: [] },
       { teamName: 'Beta', fixVersionEntries: [], statusEntries: [], scheduleEntries: [] },
     ]);

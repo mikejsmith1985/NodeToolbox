@@ -17,7 +17,7 @@ describe('generate-automation-mappings', () => {
     expect(sectionCount).toBe(listSurfaces().length);
   });
 
-  test('references the payloadContext smart values for Rovo', () => {
+  test('references the payloadContext smart values for AI Assist', () => {
     expect(markdown).toContain('{{webhookData.payloadContext.source}}');
     expect(markdown).toContain('{{webhookData.payloadContext.report}}');
     expect(markdown).toContain('payloadContext');

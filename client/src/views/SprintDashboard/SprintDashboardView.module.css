@@ -3336,9 +3336,9 @@
   }
 }
 
-/* ── Pointing Rovo AI modal ── */
+/* ── Pointing AI Assist modal ── */
 
-.ptRovoModal {
+.ptAiAssistModal {
   display: grid;
   gap: var(--spacing-lg);
   width: min(680px, 92vw);
@@ -3351,19 +3351,19 @@
   box-shadow: var(--shadow-floating);
 }
 
-.ptRovoSection {
+.ptAiAssistSection {
   display: grid;
   gap: var(--spacing-sm);
 }
 
-.ptRovoDivider {
+.ptAiAssistDivider {
   margin: 0;
   border: none;
   border-top: 1px solid var(--color-border);
 }
 
 /* Paste-response textarea — shorter than the read-only prompt display above it. */
-.ptRovoResponseTextArea {
+.ptAiAssistResponseTextArea {
   width: 100%;
   min-height: 160px;
   padding: 12px;

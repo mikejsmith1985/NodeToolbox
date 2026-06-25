@@ -68,11 +68,11 @@ const MAX_SEEN_BRANCHES_PER_REPO = 500;
  * The _obfuscated flag in the config file signals that encoding is applied.
  */
 const OBFUSCATED_CREDENTIAL_FIELDS = {
-  jira:           ['username', 'apiToken', 'pat'],
-  snow:           ['username', 'password'],
-  github:         ['pat', 'appPrivateKey'],
-  confluence:     ['username', 'apiToken'],
-  rovoAutomation: ['webhookSecret'],
+  jira:               ['username', 'apiToken', 'pat'],
+  snow:               ['username', 'password'],
+  github:             ['pat', 'appPrivateKey'],
+  confluence:         ['username', 'apiToken'],
+  aiAssistAutomation: ['webhookSecret'],
 };
 
 // Maximum number of hygiene scan results kept in history (30 = ~one month of daily scans).
@@ -143,14 +143,14 @@ function saveConfigToDisk(configuration) {
       // Persist the credential hash — allows users to change it via the config file
       credentialHash: (configuration.admin || {}).credentialHash || DEFAULT_ADMIN_CREDENTIAL_HASH,
     },
-    // Rovo automation config — the hidden "Run via Rovo (auto)" webhook + parking
-    // space. Persisted so it survives restarts and version upgrades.
-    rovoAutomation: {
-      webhookUrl:      (configuration.rovoAutomation || {}).webhookUrl      || '',
-      webhookSecret:   (configuration.rovoAutomation || {}).webhookSecret   || '',
-      parkingSpaceKey: (configuration.rovoAutomation || {}).parkingSpaceKey || '',
-      parkingPageId:   (configuration.rovoAutomation || {}).parkingPageId   || '',
-      isEnabled:       !!(configuration.rovoAutomation || {}).isEnabled,
+    // AI Assist automation config — the hidden "Run via AI Assist (auto)" webhook +
+    // parking space. Persisted so it survives restarts and version upgrades.
+    aiAssistAutomation: {
+      webhookUrl:      (configuration.aiAssistAutomation || {}).webhookUrl      || '',
+      webhookSecret:   (configuration.aiAssistAutomation || {}).webhookSecret   || '',
+      parkingSpaceKey: (configuration.aiAssistAutomation || {}).parkingSpaceKey || '',
+      parkingPageId:   (configuration.aiAssistAutomation || {}).parkingPageId   || '',
+      isEnabled:       !!(configuration.aiAssistAutomation || {}).isEnabled,
     },
     scheduler: {
       repoMonitor: {
@@ -399,14 +399,14 @@ function buildDefaultConfig() {
     admin: {
       credentialHash: DEFAULT_ADMIN_CREDENTIAL_HASH,
     },
-    rovoAutomation: {
+    aiAssistAutomation: {
       webhookUrl:      '',
       webhookSecret:   '',
       parkingSpaceKey: '',
       parkingPageId:   '',
       isEnabled:       false,
     },
-    // Proactive hygiene monitor — per-team schedules, Rovo classifications, and digest delivery.
+    // Proactive hygiene monitor — per-team schedules, AI Assist classifications, and digest delivery.
     // Digest trigger secrets are base64-obfuscated on disk (like other credentials).
     hygieneMonitor: {
       teams:             [],
@@ -461,6 +461,15 @@ function applyFileConfig(configuration) {
     return;
   }
 
+  // Legacy rename migration: older installs stored the AI Assist automation block
+  // under `rovoAutomation`. Alias it to the new key BEFORE decoding so the
+  // obfuscated webhookSecret is base64-decoded under the field name the decoder
+  // now expects. Existing setups keep working after the AI Assist rename.
+  if (fileConfig.rovoAutomation && !fileConfig.aiAssistAutomation) {
+    fileConfig.aiAssistAutomation = fileConfig.rovoAutomation;
+    delete fileConfig.rovoAutomation;
+  }
+
   // Decode credentials before merging — obfuscation is transparent to callers
   if (fileConfig._obfuscated) {
     decodeCredentialsFromDisk(fileConfig);
@@ -504,13 +513,13 @@ function applyFileConfig(configuration) {
     configuration.admin.credentialHash = fileConfig.admin.credentialHash;
   }
 
-  if (fileConfig.rovoAutomation) {
-    configuration.rovoAutomation = {
-      webhookUrl:      fileConfig.rovoAutomation.webhookUrl      || '',
-      webhookSecret:   fileConfig.rovoAutomation.webhookSecret   || '',
-      parkingSpaceKey: fileConfig.rovoAutomation.parkingSpaceKey || '',
-      parkingPageId:   fileConfig.rovoAutomation.parkingPageId   || '',
-      isEnabled:       !!fileConfig.rovoAutomation.isEnabled,
+  if (fileConfig.aiAssistAutomation) {
+    configuration.aiAssistAutomation = {
+      webhookUrl:      fileConfig.aiAssistAutomation.webhookUrl      || '',
+      webhookSecret:   fileConfig.aiAssistAutomation.webhookSecret   || '',
+      parkingSpaceKey: fileConfig.aiAssistAutomation.parkingSpaceKey || '',
+      parkingPageId:   fileConfig.aiAssistAutomation.parkingPageId   || '',
+      isEnabled:       !!fileConfig.aiAssistAutomation.isEnabled,
     };
   }
 

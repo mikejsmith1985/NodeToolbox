@@ -32,7 +32,7 @@ import {
 import type { JiraComment, JiraIssue, JiraTransition, JiraVersion } from '../../types/jira.ts';
 import { copyElementReportToClipboard } from '../../utils/downloadElementImage.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
-import { useRovoAssist } from '../SnowHub/hooks/useRovoAssist.ts';
+import { useAiAssist } from '../SnowHub/hooks/useAiAssist.ts';
 import {
   calculateCompositeScore,
   extractIssueFeatures,
@@ -64,13 +64,13 @@ import {
 import {
   buildReleaseNotesHeading,
   buildReleaseNotesHtml,
-  buildReleaseRovoPrompt,
-  parseReleaseRovoResponse,
-  type ReleaseRovoPromptInput,
-  type ReleaseRovoTableDocument,
-} from './hooks/releaseRovoNotes.ts';
-import { useRovoExchange } from '../SnowHub/hooks/useRovoExchange.ts';
-import { setRovoUnlocked } from '../../store/rovoStore.ts';
+  buildReleaseAiAssistPrompt,
+  parseReleaseAiAssistResponse,
+  type ReleaseAiAssistPromptInput,
+  type ReleaseAiAssistTableDocument,
+} from './hooks/releaseAiAssistNotes.ts';
+import { useAiAssistExchange } from '../SnowHub/hooks/useAiAssistExchange.ts';
+import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
 import { useSprintData } from './hooks/useSprintData.ts';
 import type { DashboardScopeMode, DashboardTab } from './hooks/useSprintData.ts';
 import styles from './SprintDashboardView.module.css';
@@ -141,13 +141,14 @@ const BLOCKERS_FILTER_LABEL = 'Show:';
 const RELEASE_FIELDS =
   'summary,status,assignee,priority,issuetype,fixVersions,description,customfield_10200';
 const RELEASE_MAX_RESULTS = 50;
-const HIDDEN_ROVO_SHORTCUT_KEY = 'z';
-const POINTING_ROVO_ENHANCE_BUTTON_LABEL = '✦ Enhance with AI';
-const POINTING_ROVO_COPY_BUTTON_LABEL = '📋 Copy Prompt';
-const POINTING_ROVO_APPLY_BUTTON_LABEL = 'Apply estimates →';
-const RELEASE_ROVO_NOTES_STORAGE_KEY_PREFIX = 'tbx-release-rovo-notes';
-const RELEASE_PROMPT_BUTTON_LABEL = '✦ Build Rovo Prompt';
-const RELEASE_IMPORT_BUTTON_LABEL = '↩ Paste Rovo Response';
+const HIDDEN_AI_ASSIST_SHORTCUT_KEY = 'z';
+const POINTING_AI_ASSIST_ENHANCE_BUTTON_LABEL = '✦ Enhance with AI';
+const POINTING_AI_ASSIST_COPY_BUTTON_LABEL = '📋 Copy Prompt';
+const POINTING_AI_ASSIST_APPLY_BUTTON_LABEL = 'Apply estimates →';
+// Identifier renamed to AI Assist; the string value is kept so previously stored notes still load.
+const RELEASE_AI_ASSIST_NOTES_STORAGE_KEY_PREFIX = 'tbx-release-rovo-notes';
+const RELEASE_PROMPT_BUTTON_LABEL = '✦ Build AI Assist Prompt';
+const RELEASE_IMPORT_BUTTON_LABEL = '↩ Paste AI Assist Response';
 const COPY_RELEASE_PROMPT_BUTTON_LABEL = '📋 Copy Prompt';
 const RENDER_RELEASE_TABLE_BUTTON_LABEL = 'Render Release Notes Table';
 const COPY_RELEASE_NOTES_BUTTON_LABEL = '📋 Copy Release Notes';
@@ -881,7 +882,7 @@ function getReleaseCompletionClassName(completionPercentage: number): string {
   return styles.releaseCompletionMuted;
 }
 
-function buildReleasePromptInput(projectKey: string, releaseEntry: ReleaseRadarEntry): ReleaseRovoPromptInput {
+function buildReleasePromptInput(projectKey: string, releaseEntry: ReleaseRadarEntry): ReleaseAiAssistPromptInput {
   return {
     projectKey,
     releaseName: releaseEntry.version.name,
@@ -908,10 +909,10 @@ function buildReleasePromptInput(projectKey: string, releaseEntry: ReleaseRadarE
 
 function buildReleaseNotesStorageKey(projectKey: string): string {
   const normalizedProjectKey = projectKey.trim().toUpperCase() || 'default';
-  return `${RELEASE_ROVO_NOTES_STORAGE_KEY_PREFIX}:${normalizedProjectKey}`;
+  return `${RELEASE_AI_ASSIST_NOTES_STORAGE_KEY_PREFIX}:${normalizedProjectKey}`;
 }
 
-function readStoredReleaseNotes(projectKey: string): Record<string, ReleaseRovoTableDocument> {
+function readStoredReleaseNotes(projectKey: string): Record<string, ReleaseAiAssistTableDocument> {
   if (typeof window === 'undefined') {
     return {};
   }
@@ -927,7 +928,7 @@ function readStoredReleaseNotes(projectKey: string): Record<string, ReleaseRovoT
       return {};
     }
 
-    return parsedValue as Record<string, ReleaseRovoTableDocument>;
+    return parsedValue as Record<string, ReleaseAiAssistTableDocument>;
   } catch {
     return {};
   }
@@ -3503,25 +3504,25 @@ function computeSingleEstimate(
   };
 }
 
-// ── Rovo AI assist helpers ──
+// ── AI Assist helpers ──
 
 /**
- * Parsed estimate from a Rovo AI response. Points have already been validated
+ * Parsed estimate from an AI Assist response. Points have already been validated
  * against the Fibonacci scale before this type is constructed.
  */
-interface RovoPointingItem {
+interface AiAssistPointingItem {
   key: string;
   points: number;
   reasoning: string;
 }
 
 /**
- * Builds the prompt text the user pastes into Rovo.
+ * Builds the prompt text the user pastes into AI Assist.
  * Includes the anchor story as a calibration reference, every non-anchor queue
  * issue with its algorithm estimate and dimension scores, and explicit output
  * format instructions so the response can be parsed back automatically.
  */
-function buildPointingRovoPrompt(
+function buildPointingAiAssistPrompt(
   anchorIssue: JiraIssue,
   anchorConfig: AnchorConfig,
   nonAnchorIssues: JiraIssue[],
@@ -3594,21 +3595,21 @@ function buildPointingRovoPrompt(
 }
 
 /**
- * Extracts and validates a Rovo AI pointing response pasted by the user.
- * Searches the full text for a JSON array (Rovo often wraps JSON in prose),
+ * Extracts and validates an AI Assist pointing response pasted by the user.
+ * Searches the full text for a JSON array (AI Assist often wraps JSON in prose),
  * then filters out any entries whose key is not in the current queue or whose
  * point value is not on the Fibonacci scale.
  */
-function parseRovoPointingResponse(
+function parseAiAssistPointingResponse(
   responseText: string,
   validQueueKeys: Set<string>,
   storyPointScale: number[],
-): { items: RovoPointingItem[]; errorMessage: string | null } {
+): { items: AiAssistPointingItem[]; errorMessage: string | null } {
   const jsonMatch = responseText.match(/\[[\s\S]*\]/);
   if (!jsonMatch) {
     return {
       items: [],
-      errorMessage: 'No JSON array found. Make sure Rovo returned the array format described in the prompt.',
+      errorMessage: 'No JSON array found. Make sure AI Assist returned the array format described in the prompt.',
     };
   }
 
@@ -3627,7 +3628,7 @@ function parseRovoPointingResponse(
   }
 
   const validScaleValues = new Set(storyPointScale);
-  const validItems: RovoPointingItem[] = [];
+  const validItems: AiAssistPointingItem[] = [];
 
   for (const rawEntry of parsedResponse) {
     if (typeof rawEntry !== 'object' || rawEntry === null) continue;
@@ -3922,22 +3923,22 @@ function PointingTab({
     return false;
   }, [config.customStoryPointsFieldId, issues]);
 
-  // ── Rovo AI assist state ──
-  // Unlock state comes from the shared rovoStore (via useRovoAssist) so one
-  // passphrase entry unlocks every Rovo surface, including the Admin Hub config.
-  const { isUnlocked: isPointingRovoUnlocked, verifyPassphrase } = useRovoAssist();
+  // ── AI Assist state ──
+  // Unlock state comes from the shared aiAssistStore (via useAiAssist) so one
+  // passphrase entry unlocks every AI Assist surface, including the Admin Hub config.
+  const { isUnlocked: isPointingAiAssistUnlocked, verifyPassphrase } = useAiAssist();
   const [isPassphraseModalVisible, setIsPassphraseModalVisible] = useState(false);
   const [passphraseInput, setPassphraseInput] = useState('');
   const [passphraseError, setPassphraseError] = useState<string | null>(null);
-  const [isRovoModalVisible, setIsRovoModalVisible] = useState(false);
-  const [generatedRovoPromptText, setGeneratedRovoPromptText] = useState('');
-  const [rovoResponseInput, setRovoResponseInput] = useState('');
-  const [rovoResponseParseError, setRovoResponseParseError] = useState<string | null>(null);
+  const [isAiAssistModalVisible, setIsAiAssistModalVisible] = useState(false);
+  const [generatedAiAssistPromptText, setGeneratedAiAssistPromptText] = useState('');
+  const [aiAssistResponseInput, setAiAssistResponseInput] = useState('');
+  const [aiAssistResponseParseError, setAiAssistResponseParseError] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
-  // Automated Rovo exchange for pointing — dispatch the prompt and apply the
+  // Automated AI Assist exchange for pointing — dispatch the prompt and apply the
   // returned estimates without the manual copy-paste.
-  const { isRunning: isPointingRovoRunning, runRovoExchange: runPointingRovoExchange } = useRovoExchange();
-  const [pointingRovoAutoStatus, setPointingRovoAutoStatus] = useState<string | null>(null);
+  const { isRunning: isPointingAiAssistRunning, runAiAssistExchange: runPointingAiAssistExchange } = useAiAssistExchange();
+  const [pointingAiAssistAutoStatus, setPointingAiAssistAutoStatus] = useState<string | null>(null);
   const passphraseInputRef = useRef<HTMLInputElement | null>(null);
 
   function rebuildPointingSession({
@@ -4117,12 +4118,12 @@ function PointingTab({
     function handleGlobalKeyDown(keyboardEvent: globalThis.KeyboardEvent): void {
       const isShortcutPressed = keyboardEvent.ctrlKey
         && keyboardEvent.altKey
-        && (keyboardEvent.key.toLowerCase() === HIDDEN_ROVO_SHORTCUT_KEY || keyboardEvent.code === 'KeyZ');
+        && (keyboardEvent.key.toLowerCase() === HIDDEN_AI_ASSIST_SHORTCUT_KEY || keyboardEvent.code === 'KeyZ');
 
       if (!isShortcutPressed) return;
       keyboardEvent.preventDefault();
-      if (isPointingRovoUnlocked) {
-        setRovoUnlocked(false); // toggle: re-hide all Rovo features
+      if (isPointingAiAssistUnlocked) {
+        setAiAssistUnlocked(false); // toggle: re-hide all AI Assist features
         return;
       }
       setIsPassphraseModalVisible(true);
@@ -4132,7 +4133,7 @@ function PointingTab({
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [isPointingRovoUnlocked]);
+  }, [isPointingAiAssistUnlocked]);
 
   // Focus the passphrase input when the modal opens.
   useEffect(() => {
@@ -4204,12 +4205,12 @@ function PointingTab({
     }
   }
 
-  // ── Rovo AI assist handlers ──
+  // ── AI Assist handlers ──
 
   const handlePointingPassphraseSubmit = useCallback(async () => {
     const isAccepted = await verifyPassphrase(passphraseInput);
     if (isAccepted) {
-      // verifyPassphrase sets the shared rovoStore; no local flag to update.
+      // verifyPassphrase sets the shared aiAssistStore; no local flag to update.
       setIsPassphraseModalVisible(false);
       setPassphraseInput('');
       setPassphraseError(null);
@@ -4227,43 +4228,43 @@ function PointingTab({
     [handlePointingPassphraseSubmit],
   );
 
-  /** Builds the prompt from current queue state and opens the two-panel Rovo modal. */
-  function handleOpenRovoModal() {
+  /** Builds the prompt from current queue state and opens the two-panel AI Assist modal. */
+  function handleOpenAiAssistModal() {
     if (!anchorConfig) return;
     const anchorIssue = pointingQueue.find((issue) => issue.key === anchorConfig.issueKey);
     if (!anchorIssue) return;
     const nonAnchorIssues = pointingQueue.filter((issue) => issue.key !== anchorConfig.issueKey);
-    setGeneratedRovoPromptText(
-      buildPointingRovoPrompt(anchorIssue, anchorConfig, nonAnchorIssues, allEstimates, detailByIssueKey, storyPointScale),
+    setGeneratedAiAssistPromptText(
+      buildPointingAiAssistPrompt(anchorIssue, anchorConfig, nonAnchorIssues, allEstimates, detailByIssueKey, storyPointScale),
     );
-    setRovoResponseInput('');
-    setRovoResponseParseError(null);
+    setAiAssistResponseInput('');
+    setAiAssistResponseParseError(null);
     setIsCopied(false);
-    setIsRovoModalVisible(true);
+    setIsAiAssistModalVisible(true);
   }
 
   /** Copies the generated prompt to the clipboard and briefly shows a confirmation label. */
-  async function handleCopyRovoPrompt() {
-    await navigator.clipboard.writeText(generatedRovoPromptText);
+  async function handleCopyAiAssistPrompt() {
+    await navigator.clipboard.writeText(generatedAiAssistPromptText);
     setIsCopied(true);
     // Reset the copy button label after two seconds so it can be clicked again.
     setTimeout(() => setIsCopied(false), 2000);
   }
 
   /**
-   * Parses Rovo's JSON response and maps each valid entry to the override column.
+   * Parses AI Assist's JSON response and maps each valid entry to the override column.
    * Closes the modal on success so the user can review and save at their own pace.
    */
-  function applyRovoResponse(responseText: string) {
+  function applyAiAssistResponse(responseText: string) {
     const validQueueKeys = new Set(
       pointingQueue
         .filter((issue) => issue.key !== anchorConfig?.issueKey)
         .map((issue) => issue.key),
     );
-    const { items, errorMessage } = parseRovoPointingResponse(responseText, validQueueKeys, storyPointScale);
+    const { items, errorMessage } = parseAiAssistPointingResponse(responseText, validQueueKeys, storyPointScale);
 
     if (errorMessage) {
-      setRovoResponseParseError(errorMessage);
+      setAiAssistResponseParseError(errorMessage);
       return;
     }
 
@@ -4274,22 +4275,22 @@ function PointingTab({
       }
       return nextOverrides;
     });
-    setIsRovoModalVisible(false);
-    setRovoResponseInput('');
-    setRovoResponseParseError(null);
+    setIsAiAssistModalVisible(false);
+    setAiAssistResponseInput('');
+    setAiAssistResponseParseError(null);
   }
 
-  // Automated path: dispatch the pointing prompt to Rovo, then apply the returned
+  // Automated path: dispatch the pointing prompt to AI Assist, then apply the returned
   // estimates directly — no manual paste.
-  async function handleRunPointingRovoAuto() {
-    setPointingRovoAutoStatus('Sending to Rovo…');
-    const exchange = await runPointingRovoExchange(generatedRovoPromptText);
+  async function handleRunPointingAiAssistAuto() {
+    setPointingAiAssistAutoStatus('Sending to AI Assist…');
+    const exchange = await runPointingAiAssistExchange(generatedAiAssistPromptText);
     if (!exchange.ok) {
-      setPointingRovoAutoStatus(exchange.message);
+      setPointingAiAssistAutoStatus(exchange.message);
       return;
     }
-    setPointingRovoAutoStatus(null);
-    applyRovoResponse(exchange.response ?? '');
+    setPointingAiAssistAutoStatus(null);
+    applyAiAssistResponse(exchange.response ?? '');
   }
 
   if (issues.length === 0) {
@@ -4450,13 +4451,13 @@ function PointingTab({
               Save All
             </button>
           )}
-          {isPointingRovoUnlocked && (
+          {isPointingAiAssistUnlocked && (
             <button
               className={styles.secondaryButton}
-              onClick={handleOpenRovoModal}
+              onClick={handleOpenAiAssistModal}
               type="button"
             >
-              {POINTING_ROVO_ENHANCE_BUTTON_LABEL}
+              {POINTING_AI_ASSIST_ENHANCE_BUTTON_LABEL}
             </button>
           )}
         </div>
@@ -4549,77 +4550,77 @@ function PointingTab({
         </div>
       ) : null}
 
-      {/* Rovo AI assist modal — two panels: copy prompt / paste response */}
-      {isRovoModalVisible ? (
+      {/* AI Assist modal — two panels: copy prompt / paste response */}
+      {isAiAssistModalVisible ? (
         <div aria-modal="true" className={styles.releasePromptOverlay} role="dialog">
-          <div className={styles.ptRovoModal}>
+          <div className={styles.ptAiAssistModal}>
             <h3 className={styles.releasePromptTitle}>✦ AI-Assisted Pointing</h3>
 
-            <section className={styles.ptRovoSection}>
+            <section className={styles.ptAiAssistSection}>
               <p className={styles.releasePromptInstructions}>
-                <strong>Step 1</strong> — Copy this prompt into Rovo. It includes the anchor story,
+                <strong>Step 1</strong> — Copy this prompt into AI Assist. It includes the anchor story,
                 all queue issues, and their algorithm estimates as a starting point.
               </p>
               <textarea
-                aria-label="Rovo pointing prompt"
+                aria-label="AI Assist pointing prompt"
                 className={styles.releasePromptTextArea}
                 readOnly
-                value={generatedRovoPromptText}
+                value={generatedAiAssistPromptText}
               />
               <div className={styles.releasePromptActions}>
                 <button
                   className={styles.secondaryButton}
-                  disabled={isPointingRovoRunning}
-                  onClick={() => void handleRunPointingRovoAuto()}
+                  disabled={isPointingAiAssistRunning}
+                  onClick={() => void handleRunPointingAiAssistAuto()}
                   type="button"
                 >
-                  {isPointingRovoRunning ? '⏳ Running via Rovo…' : '⚡ Run via Rovo (auto)'}
+                  {isPointingAiAssistRunning ? '⏳ Running via AI Assist…' : '⚡ Run via AI Assist (auto)'}
                 </button>
                 <button
                   className={styles.secondaryButton}
-                  onClick={() => void handleCopyRovoPrompt()}
+                  onClick={() => void handleCopyAiAssistPrompt()}
                   type="button"
                 >
-                  {isCopied ? '✓ Copied!' : POINTING_ROVO_COPY_BUTTON_LABEL}
+                  {isCopied ? '✓ Copied!' : POINTING_AI_ASSIST_COPY_BUTTON_LABEL}
                 </button>
               </div>
-              {pointingRovoAutoStatus !== null ? (
-                <p className={styles.releasePromptInstructions} role="status">{pointingRovoAutoStatus}</p>
+              {pointingAiAssistAutoStatus !== null ? (
+                <p className={styles.releasePromptInstructions} role="status">{pointingAiAssistAutoStatus}</p>
               ) : null}
             </section>
 
-            <hr className={styles.ptRovoDivider} />
+            <hr className={styles.ptAiAssistDivider} />
 
-            <section className={styles.ptRovoSection}>
+            <section className={styles.ptAiAssistSection}>
               <p className={styles.releasePromptInstructions}>
-                <strong>Step 2</strong> — Paste Rovo's JSON response below. Toolbox will apply
+                <strong>Step 2</strong> — Paste AI Assist's JSON response below. Toolbox will apply
                 the estimates to the Override column so you can review each value before saving.
               </p>
               <textarea
-                aria-label="Rovo pointing response"
-                className={styles.ptRovoResponseTextArea}
+                aria-label="AI Assist pointing response"
+                className={styles.ptAiAssistResponseTextArea}
                 onChange={(changeEvent) => {
-                  setRovoResponseInput(changeEvent.target.value);
-                  setRovoResponseParseError(null);
+                  setAiAssistResponseInput(changeEvent.target.value);
+                  setAiAssistResponseParseError(null);
                 }}
                 placeholder={'[\n  { "key": "PROJ-123", "points": 5, "reasoning": "..." },\n  ...\n]'}
-                value={rovoResponseInput}
+                value={aiAssistResponseInput}
               />
-              {rovoResponseParseError ? (
-                <p className={styles.errorMessage}>{rovoResponseParseError}</p>
+              {aiAssistResponseParseError ? (
+                <p className={styles.errorMessage}>{aiAssistResponseParseError}</p>
               ) : null}
               <div className={styles.releasePromptActions}>
                 <button
                   className={styles.secondaryButton}
-                  disabled={rovoResponseInput.trim() === ''}
-                  onClick={() => applyRovoResponse(rovoResponseInput)}
+                  disabled={aiAssistResponseInput.trim() === ''}
+                  onClick={() => applyAiAssistResponse(aiAssistResponseInput)}
                   type="button"
                 >
-                  {POINTING_ROVO_APPLY_BUTTON_LABEL}
+                  {POINTING_AI_ASSIST_APPLY_BUTTON_LABEL}
                 </button>
                 <button
                   className={styles.textActionButton}
-                  onClick={() => setIsRovoModalVisible(false)}
+                  onClick={() => setIsAiAssistModalVisible(false)}
                   type="button"
                 >
                   Close
@@ -5624,14 +5625,14 @@ function ReleasesTab({
   selectedFixVersionName: string;
   selectedPiValue: string;
 }) {
-  // Unlock state comes from the shared rovoStore (via useRovoAssist) so one
-  // passphrase entry unlocks every Rovo surface, including the Admin Hub config.
-  const { isUnlocked: isReleaseRovoUnlocked, verifyPassphrase } = useRovoAssist();
+  // Unlock state comes from the shared aiAssistStore (via useAiAssist) so one
+  // passphrase entry unlocks every AI Assist surface, including the Admin Hub config.
+  const { isUnlocked: isReleaseAiAssistUnlocked, verifyPassphrase } = useAiAssist();
   const [releaseEntries, setReleaseEntries] = useState<ReleaseRadarEntry[]>([]);
   const [isLoadingReleaseRadar, setIsLoadingReleaseRadar] = useState(false);
   const [releaseRadarError, setReleaseRadarError] = useState<string | null>(null);
   const [expandedReleaseIds, setExpandedReleaseIds] = useState<Record<string, boolean>>({});
-  const [releaseNotesByVersionId, setReleaseNotesByVersionId] = useState<Record<string, ReleaseRovoTableDocument>>(
+  const [releaseNotesByVersionId, setReleaseNotesByVersionId] = useState<Record<string, ReleaseAiAssistTableDocument>>(
     () => readStoredReleaseNotes(projectKey),
   );
   const [isPassphraseModalVisible, setIsPassphraseModalVisible] = useState(false);
@@ -5641,10 +5642,10 @@ function ReleasesTab({
   const [releaseImportModalState, setReleaseImportModalState] = useState<ReleaseImportModalState | null>(null);
   const [releaseExportErrorByVersionId, setReleaseExportErrorByVersionId] = useState<Record<string, string>>({});
   const [releaseCopyConfirmationByVersionId, setReleaseCopyConfirmationByVersionId] = useState<Record<string, string>>({});
-  // Automated Rovo exchange for release notes — dispatches the prompt and renders
+  // Automated AI Assist exchange for release notes — dispatches the prompt and renders
   // the parsed table without the manual copy-paste.
-  const { isRunning: isReleaseRovoRunning, runRovoExchange: runReleaseRovoExchange } = useRovoExchange();
-  const [releaseRovoAutoStatus, setReleaseRovoAutoStatus] = useState<string | null>(null);
+  const { isRunning: isReleaseAiAssistRunning, runAiAssistExchange: runReleaseAiAssistExchange } = useAiAssistExchange();
+  const [releaseAiAssistAutoStatus, setReleaseAiAssistAutoStatus] = useState<string | null>(null);
   const passphraseInputRef = useRef<HTMLInputElement | null>(null);
   const releaseNotesSectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
@@ -5813,7 +5814,7 @@ function ReleasesTab({
       const isHiddenShortcutPressed = keyboardEvent.ctrlKey
         && keyboardEvent.altKey
         && (
-          keyboardEvent.key.toLowerCase() === HIDDEN_ROVO_SHORTCUT_KEY
+          keyboardEvent.key.toLowerCase() === HIDDEN_AI_ASSIST_SHORTCUT_KEY
           || keyboardEvent.code === 'KeyZ'
         );
 
@@ -5822,8 +5823,8 @@ function ReleasesTab({
       }
 
       keyboardEvent.preventDefault();
-      if (isReleaseRovoUnlocked) {
-        setRovoUnlocked(false); // toggle: re-hide all Rovo features
+      if (isReleaseAiAssistUnlocked) {
+        setAiAssistUnlocked(false); // toggle: re-hide all AI Assist features
         return;
       }
       openReleaseUnlockModal();
@@ -5833,7 +5834,7 @@ function ReleasesTab({
     return () => {
       window.removeEventListener('keydown', handleGlobalKeyDown);
     };
-  }, [isReleaseRovoUnlocked]);
+  }, [isReleaseAiAssistUnlocked]);
 
   useEffect(() => {
     if (isPassphraseModalVisible) {
@@ -5858,7 +5859,7 @@ function ReleasesTab({
     const isPassphraseAccepted = await verifyPassphrase(passphraseInput);
 
     if (isPassphraseAccepted) {
-      // verifyPassphrase sets the shared rovoStore; no local flag to update.
+      // verifyPassphrase sets the shared aiAssistStore; no local flag to update.
       setIsPassphraseModalVisible(false);
       setPassphraseInput('');
       setPassphraseError(null);
@@ -5882,7 +5883,7 @@ function ReleasesTab({
   const handleBuildReleasePrompt = useCallback((releaseEntry: ReleaseRadarEntry) => {
     const normalizedProjectKey = projectKey.trim().toUpperCase();
     const promptInput = buildReleasePromptInput(normalizedProjectKey, releaseEntry);
-    const promptText = buildReleaseRovoPrompt(promptInput);
+    const promptText = buildReleaseAiAssistPrompt(promptInput);
 
     setReleasePromptModalState({
       versionId: releaseEntry.version.id,
@@ -5891,31 +5892,31 @@ function ReleasesTab({
     });
   }, [projectKey]);
 
-  // Automated path: dispatch the shown release prompt to Rovo, parse the returned
+  // Automated path: dispatch the shown release prompt to AI Assist, parse the returned
   // table, and render it — no manual paste step.
-  const handleRunReleaseRovoAuto = useCallback(async () => {
+  const handleRunReleaseAiAssistAuto = useCallback(async () => {
     if (!releasePromptModalState) return;
     const { versionId, promptText } = releasePromptModalState;
 
-    setReleaseRovoAutoStatus('Sending to Rovo…');
-    const exchange = await runReleaseRovoExchange(promptText);
+    setReleaseAiAssistAutoStatus('Sending to AI Assist…');
+    const exchange = await runReleaseAiAssistExchange(promptText);
     if (!exchange.ok) {
-      setReleaseRovoAutoStatus(exchange.message);
+      setReleaseAiAssistAutoStatus(exchange.message);
       return;
     }
 
     try {
-      const parsedReleaseNotes = parseReleaseRovoResponse(exchange.response ?? '');
+      const parsedReleaseNotes = parseReleaseAiAssistResponse(exchange.response ?? '');
       setReleaseNotesByVersionId((previousReleaseNotesByVersionId) => ({
         ...previousReleaseNotesByVersionId,
         [versionId]: parsedReleaseNotes,
       }));
-      setReleaseRovoAutoStatus(null);
+      setReleaseAiAssistAutoStatus(null);
       setReleasePromptModalState(null);
     } catch (caughtError) {
-      setReleaseRovoAutoStatus(caughtError instanceof Error ? caughtError.message : 'Unable to parse the Rovo response.');
+      setReleaseAiAssistAutoStatus(caughtError instanceof Error ? caughtError.message : 'Unable to parse the AI Assist response.');
     }
-  }, [releasePromptModalState, runReleaseRovoExchange]);
+  }, [releasePromptModalState, runReleaseAiAssistExchange]);
 
   const handleOpenReleaseImportModal = useCallback((releaseEntry: ReleaseRadarEntry) => {
     setReleaseImportModalState({
@@ -5946,14 +5947,14 @@ function ReleasesTab({
     }
 
     try {
-      const parsedReleaseNotes = parseReleaseRovoResponse(releaseImportModalState.responseText);
+      const parsedReleaseNotes = parseReleaseAiAssistResponse(releaseImportModalState.responseText);
       setReleaseNotesByVersionId((previousReleaseNotesByVersionId) => ({
         ...previousReleaseNotesByVersionId,
         [releaseImportModalState.versionId]: parsedReleaseNotes,
       }));
       setReleaseImportModalState(null);
     } catch (caughtError) {
-      const errorMessage = caughtError instanceof Error ? caughtError.message : 'Unable to parse the Rovo response.';
+      const errorMessage = caughtError instanceof Error ? caughtError.message : 'Unable to parse the AI Assist response.';
       setReleaseImportModalState((previousModalState) => {
         if (!previousModalState) {
           return previousModalState;
@@ -5982,7 +5983,7 @@ function ReleasesTab({
   const handleCopyReleaseNotes = useCallback(async (
     versionId: string,
     fixVersionName: string,
-    releaseDocument: ReleaseRovoTableDocument,
+    releaseDocument: ReleaseAiAssistTableDocument,
   ) => {
     const releaseNotesSectionElement = releaseNotesSectionRefs.current[versionId];
     if (!releaseNotesSectionElement) {
@@ -6111,7 +6112,7 @@ function ReleasesTab({
                         <div className={styles.releaseCountsLine}>No issues linked to this release.</div>
                       )}
 
-                      {isReleaseRovoUnlocked && (
+                      {isReleaseAiAssistUnlocked && (
                         <div className={styles.releaseAiActions}>
                           <button
                             className={styles.secondaryButton}
@@ -6309,13 +6310,13 @@ function ReleasesTab({
         >
           <div className={styles.releasePromptWideModal}>
             <h3 className={styles.releasePromptTitle}>
-              Rovo prompt for {releasePromptModalState.versionName}
+              AI Assist prompt for {releasePromptModalState.versionName}
             </h3>
             <p className={styles.releasePromptInstructions}>
-              Copy this prompt into Rovo, then paste the JSON response back into Toolbox to render the release-notes table.
+              Copy this prompt into AI Assist, then paste the JSON response back into Toolbox to render the release-notes table.
             </p>
             <textarea
-              aria-label="Rovo release prompt"
+              aria-label="AI Assist release prompt"
               className={styles.releasePromptTextArea}
               readOnly
               value={releasePromptModalState.promptText}
@@ -6323,11 +6324,11 @@ function ReleasesTab({
             <div className={styles.releasePromptActions}>
               <button
                 className={styles.secondaryButton}
-                disabled={isReleaseRovoRunning}
-                onClick={() => void handleRunReleaseRovoAuto()}
+                disabled={isReleaseAiAssistRunning}
+                onClick={() => void handleRunReleaseAiAssistAuto()}
                 type="button"
               >
-                {isReleaseRovoRunning ? '⏳ Running via Rovo…' : '⚡ Run via Rovo (auto)'}
+                {isReleaseAiAssistRunning ? '⏳ Running via AI Assist…' : '⚡ Run via AI Assist (auto)'}
               </button>
               <button
                 className={styles.secondaryButton}
@@ -6344,8 +6345,8 @@ function ReleasesTab({
                 Close
               </button>
             </div>
-            {releaseRovoAutoStatus !== null ? (
-              <p className={styles.releasePromptInstructions} role="status">{releaseRovoAutoStatus}</p>
+            {releaseAiAssistAutoStatus !== null ? (
+              <p className={styles.releasePromptInstructions} role="status">{releaseAiAssistAutoStatus}</p>
             ) : null}
           </div>
         </div>
@@ -6359,13 +6360,13 @@ function ReleasesTab({
         >
           <div className={styles.releasePromptWideModal}>
             <h3 className={styles.releasePromptTitle}>
-              Paste Rovo response for {releaseImportModalState.versionName}
+              Paste AI Assist response for {releaseImportModalState.versionName}
             </h3>
             <p className={styles.releasePromptInstructions}>
-              Paste the JSON response from Rovo. Toolbox will parse it and render a release-notes table for this release.
+              Paste the JSON response from AI Assist. Toolbox will parse it and render a release-notes table for this release.
             </p>
             <textarea
-              aria-label="Rovo release response"
+              aria-label="AI Assist release response"
               className={styles.releasePromptTextArea}
               onChange={(changeEvent) => handleReleaseImportTextChange(changeEvent.target.value)}
               value={releaseImportModalState.responseText}

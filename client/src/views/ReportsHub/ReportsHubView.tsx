@@ -159,7 +159,7 @@ const TAB_DESCRIPTIONS: Record<ReportsHubTab, string[]> = {
   ],
   hygiene: [
     'Runs an on-demand Jira hygiene scan for the selected team and displays violations inline.',
-    'Rovo classifies findings as FIXABLE (auto-corrected via Jira) or UNFIXABLE (comment added to the issue).',
+    'AI Assist classifies findings as FIXABLE (auto-corrected via Jira) or UNFIXABLE (comment added to the issue).',
     'Digest delivery via Atlassian Automation webhook is configured per team in Admin Hub → Reports Config → Hygiene Monitor.',
     'Use for: pre-sprint hygiene checks, ad-hoc audits, and confirming the scheduled scan is working.',
   ],

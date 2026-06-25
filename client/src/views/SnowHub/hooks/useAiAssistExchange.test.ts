@@ -1,9 +1,9 @@
-// Tests for the client Rovo exchange hook (dispatch + poll).
+// Tests for the client AI Assist exchange hook (dispatch + poll).
 
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { useRovoExchange } from './useRovoExchange.ts';
+import { useAiAssistExchange } from './useAiAssistExchange.ts';
 
 const FAST_OPTIONS = { pollIntervalMs: 0, maxAttempts: 5, generateCorrelationId: () => 'fixed-id' };
 
@@ -15,7 +15,7 @@ function queueFetch(bodies: unknown[]) {
   return fetchMock;
 }
 
-describe('useRovoExchange', () => {
+describe('useAiAssistExchange', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('dispatches the prompt then returns the response once ready', async () => {
@@ -25,9 +25,9 @@ describe('useRovoExchange', () => {
       { ok: true, ready: true, response: 'SHORT_DESCRIPTION: x' }, // poll 2
     ]);
 
-    const { result } = renderHook(() => useRovoExchange(FAST_OPTIONS));
+    const { result } = renderHook(() => useAiAssistExchange(FAST_OPTIONS));
     let exchange;
-    await act(async () => { exchange = await result.current.runRovoExchange('my prompt'); });
+    await act(async () => { exchange = await result.current.runAiAssistExchange('my prompt'); });
 
     expect(exchange).toMatchObject({ ok: true, response: 'SHORT_DESCRIPTION: x' });
     // First call is the dispatch with the correlationId + prompt.
@@ -38,19 +38,19 @@ describe('useRovoExchange', () => {
   });
 
   it('returns a failure when the dispatch is rejected', async () => {
-    queueFetch([{ ok: false, message: 'Rovo automation webhook is not configured.' }]);
-    const { result } = renderHook(() => useRovoExchange(FAST_OPTIONS));
+    queueFetch([{ ok: false, message: 'AI Assist automation webhook is not configured.' }]);
+    const { result } = renderHook(() => useAiAssistExchange(FAST_OPTIONS));
     let exchange;
-    await act(async () => { exchange = await result.current.runRovoExchange('p'); });
+    await act(async () => { exchange = await result.current.runAiAssistExchange('p'); });
     expect(exchange).toMatchObject({ ok: false });
     expect(exchange!.message).toMatch(/not configured/);
   });
 
   it('surfaces a result-read error', async () => {
-    queueFetch([{ ok: true }, { ok: false, message: 'Failed to read Rovo result: timeout' }]);
-    const { result } = renderHook(() => useRovoExchange(FAST_OPTIONS));
+    queueFetch([{ ok: true }, { ok: false, message: 'Failed to read AI Assist result: timeout' }]);
+    const { result } = renderHook(() => useAiAssistExchange(FAST_OPTIONS));
     let exchange;
-    await act(async () => { exchange = await result.current.runRovoExchange('p'); });
+    await act(async () => { exchange = await result.current.runAiAssistExchange('p'); });
     expect(exchange).toMatchObject({ ok: false });
     expect(exchange!.message).toMatch(/Failed to read/);
   });
@@ -61,9 +61,9 @@ describe('useRovoExchange', () => {
       { ok: true, ready: false },
       { ok: true, ready: false },
     ]);
-    const { result } = renderHook(() => useRovoExchange({ pollIntervalMs: 0, maxAttempts: 2, generateCorrelationId: () => 'fixed-id' }));
+    const { result } = renderHook(() => useAiAssistExchange({ pollIntervalMs: 0, maxAttempts: 2, generateCorrelationId: () => 'fixed-id' }));
     let exchange;
-    await act(async () => { exchange = await result.current.runRovoExchange('p'); });
+    await act(async () => { exchange = await result.current.runAiAssistExchange('p'); });
     expect(exchange).toMatchObject({ ok: false });
     expect(exchange!.message).toMatch(/Timed out/);
   });

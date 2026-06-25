@@ -201,21 +201,21 @@ vi.mock('../../utils/downloadElementImage.ts', () => ({
 
 import SprintDashboardView from './SprintDashboardView.tsx';
 import { useSettingsStore } from '../../store/settingsStore.ts';
-import { setRovoUnlocked } from '../../store/rovoStore.ts';
+import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
 
-// Mock the Rovo exchange (dispatch+poll is unit-tested separately) so the
+// Mock the AI Assist exchange (dispatch+poll is unit-tested separately) so the
 // auto-path integration test gets a canned deterministic response immediately.
-const { mockRunRovoExchange } = vi.hoisted(() => ({ mockRunRovoExchange: vi.fn() }));
-vi.mock('../SnowHub/hooks/useRovoExchange.ts', () => ({
-  useRovoExchange: () => ({ isRunning: false, runRovoExchange: mockRunRovoExchange }),
+const { mockRunAiAssistExchange } = vi.hoisted(() => ({ mockRunAiAssistExchange: vi.fn() }));
+vi.mock('../SnowHub/hooks/useAiAssistExchange.ts', () => ({
+  useAiAssistExchange: () => ({ isRunning: false, runAiAssistExchange: mockRunAiAssistExchange }),
 }));
 
 describe('SprintDashboardView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
-    setRovoUnlocked(false); // reset the shared Rovo unlock singleton between tests
-    mockRunRovoExchange.mockReset();
+    setAiAssistUnlocked(false); // reset the shared AI Assist unlock singleton between tests
+    mockRunAiAssistExchange.mockReset();
     useSettingsStore.setState({
       sprintDashboardTeamProfiles: [],
       sprintDashboardActiveTeamProfileId: '',
@@ -747,7 +747,7 @@ describe('SprintDashboardView', () => {
     expect(screen.getByText(/1 release/i)).toBeInTheDocument();
   });
 
-  it('unlocks the hidden Rovo release prompt flow and builds a structured prompt', async () => {
+  it('unlocks the hidden AI Assist release prompt flow and builds a structured prompt', async () => {
     mockState.activeTab = 'releases';
     mockJiraGet.mockImplementation((path: string) => {
       if (path === '/rest/api/2/project/TBX/versions') {
@@ -784,13 +784,13 @@ describe('SprintDashboardView', () => {
 
     fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: true });
     const passphraseInput = screen.getByLabelText('Protected tools passphrase');
-    fireEvent.change(passphraseInput, { target: { value: 'rovonow' } });
+    fireEvent.change(passphraseInput, { target: { value: 'ainow' } });
     fireEvent.keyDown(passphraseInput, { key: 'Enter' });
 
-    const buildPromptButton = await screen.findByRole('button', { name: /build rovo prompt/i });
+    const buildPromptButton = await screen.findByRole('button', { name: /build ai assist prompt/i });
     fireEvent.click(buildPromptButton);
 
-    const promptTextArea = await screen.findByLabelText('Rovo release prompt');
+    const promptTextArea = await screen.findByLabelText('AI Assist release prompt');
     expect((promptTextArea as HTMLTextAreaElement).value).toContain('Respond ONLY with valid JSON.');
     expect((promptTextArea as HTMLTextAreaElement).value).toContain('"items": [');
     expect((promptTextArea as HTMLTextAreaElement).value).toContain('TBX-99');
@@ -818,7 +818,7 @@ describe('SprintDashboardView', () => {
     expect(screen.queryByLabelText('Protected tools passphrase')).not.toBeInTheDocument();
   });
 
-  it('renders a release-notes table from a pasted Rovo response', async () => {
+  it('renders a release-notes table from a pasted AI Assist response', async () => {
     mockState.activeTab = 'releases';
     mockJiraGet.mockImplementation((path: string) => {
       if (path === '/rest/api/2/project/TBX/versions') {
@@ -855,21 +855,21 @@ describe('SprintDashboardView', () => {
 
     fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: true });
     const passphraseInput = screen.getByLabelText('Protected tools passphrase');
-    fireEvent.change(passphraseInput, { target: { value: 'rovonow' } });
+    fireEvent.change(passphraseInput, { target: { value: 'ainow' } });
     fireEvent.keyDown(passphraseInput, { key: 'Enter' });
 
-    fireEvent.click(await screen.findByRole('button', { name: /paste rovo response/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /paste ai assist response/i }));
 
-    const responseTextArea = await screen.findByLabelText('Rovo release response');
+    const responseTextArea = await screen.findByLabelText('AI Assist release response');
     fireEvent.change(responseTextArea, {
       target: {
         value: JSON.stringify({
           releaseName: 'Release 24.1',
-          releaseSummary: 'Delivers the hidden Rovo workflow for release notes.',
+          releaseSummary: 'Delivers the hidden AI Assist workflow for release notes.',
           items: [
             {
               issueKey: 'TBX-99',
-              title: 'Rovo release note workflow',
+              title: 'AI Assist release note workflow',
               releaseNote: 'Adds a prompt-and-import workflow for release notes.',
               customerImpact: 'Release managers can draft release notes faster.',
               technicalDetails: 'Toolbox parses the JSON response and renders a table.',
@@ -883,8 +883,8 @@ describe('SprintDashboardView', () => {
     fireEvent.click(screen.getByRole('button', { name: /render release notes table/i }));
 
     expect(await screen.findByRole('heading', { name: 'Release 24.1 Release Notes' })).toBeInTheDocument();
-    expect(screen.getByText('Delivers the hidden Rovo workflow for release notes.')).toBeInTheDocument();
-    expect(screen.getByText('Rovo release note workflow')).toBeInTheDocument();
+    expect(screen.getByText('Delivers the hidden AI Assist workflow for release notes.')).toBeInTheDocument();
+    expect(screen.getByText('AI Assist release note workflow')).toBeInTheDocument();
     expect(screen.getByText('Release managers can draft release notes faster.')).toBeInTheDocument();
     expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
 
@@ -893,12 +893,12 @@ describe('SprintDashboardView', () => {
     mockState.activeTab = 'releases';
     rerender(<SprintDashboardView />);
 
-    expect(await screen.findByRole('button', { name: /paste rovo response/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /paste ai assist response/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Release 24.1 Release Notes' })).toBeInTheDocument();
-    expect(screen.getByText('Delivers the hidden Rovo workflow for release notes.')).toBeInTheDocument();
+    expect(screen.getByText('Delivers the hidden AI Assist workflow for release notes.')).toBeInTheDocument();
   });
 
-  it('renders a release-notes table from the automated Rovo exchange (Run via Rovo)', async () => {
+  it('renders a release-notes table from the automated AI Assist exchange (Run via AI Assist)', async () => {
     mockState.activeTab = 'releases';
     mockJiraGet.mockImplementation((path: string) => {
       if (path === '/rest/api/2/project/TBX/versions') {
@@ -916,12 +916,12 @@ describe('SprintDashboardView', () => {
       return Promise.resolve({ values: [] });
     });
 
-    // The automated exchange returns Rovo's deterministic JSON directly.
-    mockRunRovoExchange.mockResolvedValue({
+    // The automated exchange returns AI Assist's deterministic JSON directly.
+    mockRunAiAssistExchange.mockResolvedValue({
       ok: true,
       response: JSON.stringify({
         releaseName: 'Release 24.1',
-        releaseSummary: 'Auto-delivered release notes via Rovo.',
+        releaseSummary: 'Auto-delivered release notes via AI Assist.',
         items: [{ issueKey: 'TBX-99', title: 'Automated release note', releaseNote: 'Generated without copy-paste.', customerImpact: 'Faster drafting.', technicalDetails: 'Dispatch + poll + parse.', risks: 'None.', validation: 'Covered by tests.' }],
       }),
     });
@@ -931,16 +931,16 @@ describe('SprintDashboardView', () => {
 
     fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: true });
     const passphraseInput = screen.getByLabelText('Protected tools passphrase');
-    fireEvent.change(passphraseInput, { target: { value: 'rovonow' } });
+    fireEvent.change(passphraseInput, { target: { value: 'ainow' } });
     fireEvent.keyDown(passphraseInput, { key: 'Enter' });
 
     // Open the prompt modal, then run the automated exchange instead of copy-paste.
-    fireEvent.click(await screen.findByRole('button', { name: /Build Rovo Prompt/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /Run via Rovo \(auto\)/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Build AI Assist Prompt/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Run via AI Assist \(auto\)/i }));
 
-    await waitFor(() => expect(mockRunRovoExchange).toHaveBeenCalled());
+    await waitFor(() => expect(mockRunAiAssistExchange).toHaveBeenCalled());
     expect(await screen.findByRole('heading', { name: 'Release 24.1 Release Notes' })).toBeInTheDocument();
-    expect(screen.getByText('Auto-delivered release notes via Rovo.')).toBeInTheDocument();
+    expect(screen.getByText('Auto-delivered release notes via AI Assist.')).toBeInTheDocument();
     expect(screen.getByText('Automated release note')).toBeInTheDocument();
   });
 
@@ -982,21 +982,21 @@ describe('SprintDashboardView', () => {
 
     fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: true });
     const passphraseInput = screen.getByLabelText('Protected tools passphrase');
-    fireEvent.change(passphraseInput, { target: { value: 'rovonow' } });
+    fireEvent.change(passphraseInput, { target: { value: 'ainow' } });
     fireEvent.keyDown(passphraseInput, { key: 'Enter' });
 
-    fireEvent.click(await screen.findByRole('button', { name: /paste rovo response/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /paste ai assist response/i }));
 
-    const responseTextArea = await screen.findByLabelText('Rovo release response');
+    const responseTextArea = await screen.findByLabelText('AI Assist release response');
     fireEvent.change(responseTextArea, {
       target: {
         value: JSON.stringify({
           releaseName: 'Release 24.1',
-          releaseSummary: 'Delivers the hidden Rovo workflow for release notes.',
+          releaseSummary: 'Delivers the hidden AI Assist workflow for release notes.',
           items: [
             {
               issueKey: 'TBX-99',
-              title: 'Rovo release note workflow',
+              title: 'AI Assist release note workflow',
               releaseNote: 'Adds a prompt-and-import workflow for release notes.',
               customerImpact: 'Release managers can draft release notes faster.',
               technicalDetails: 'Toolbox parses the JSON response and renders a table.',

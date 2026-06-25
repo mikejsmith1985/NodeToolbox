@@ -1,11 +1,11 @@
-// useRovoAssist.test.ts — Unit tests for the hidden Rovo prompt generator hook.
+// useAiAssist.test.ts — Unit tests for the hidden AI Assist prompt generator hook.
 
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { setRovoUnlocked } from '../../../store/rovoStore.ts';
+import { setAiAssistUnlocked } from '../../../store/aiAssistStore.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
-import { parseRovoChgResponse, useRovoAssist } from './useRovoAssist.ts';
+import { parseAiAssistChgResponse, useAiAssist } from './useAiAssist.ts';
 
 function createMockJiraIssue(issueKey: string, summary: string): JiraIssue {
   return {
@@ -50,25 +50,25 @@ const EMPTY_CURRENT_FIELDS = {
   riskImpact:       '',
 };
 
-describe('useRovoAssist', () => {
+describe('useAiAssist', () => {
   beforeEach(() => {
     // Reset the shared unlock store between tests (it is a global singleton).
     sessionStorage.clear();
-    setRovoUnlocked(false);
+    setAiAssistUnlocked(false);
   });
 
   it('starts in a locked state', () => {
-    const { result } = renderHook(() => useRovoAssist());
+    const { result } = renderHook(() => useAiAssist());
 
     expect(result.current.isUnlocked).toBe(false);
   });
 
   it('unlocks and returns true when the correct passphrase is provided', async () => {
-    const { result } = renderHook(() => useRovoAssist());
+    const { result } = renderHook(() => useAiAssist());
 
     let isValid = false;
     await act(async () => {
-      isValid = await result.current.verifyPassphrase('rovonow');
+      isValid = await result.current.verifyPassphrase('ainow');
     });
 
     expect(isValid).toBe(true);
@@ -76,7 +76,7 @@ describe('useRovoAssist', () => {
   });
 
   it('stays locked and returns false when an incorrect passphrase is provided', async () => {
-    const { result } = renderHook(() => useRovoAssist());
+    const { result } = renderHook(() => useAiAssist());
 
     let isValid = true;
     await act(async () => {
@@ -88,7 +88,7 @@ describe('useRovoAssist', () => {
   });
 
   it('stays locked when an empty string is provided as a passphrase', async () => {
-    const { result } = renderHook(() => useRovoAssist());
+    const { result } = renderHook(() => useAiAssist());
 
     let isValid = true;
     await act(async () => {
@@ -100,7 +100,7 @@ describe('useRovoAssist', () => {
   });
 
   it('buildPrompt returns a non-empty string containing the expected prompt instruction', () => {
-    const { result } = renderHook(() => useRovoAssist());
+    const { result } = renderHook(() => useAiAssist());
     const selectedIssues = [createMockJiraIssue('TOOL-1', 'Fix critical bug')];
 
     const prompt = result.current.buildPrompt(selectedIssues, EMPTY_CURRENT_FIELDS);
@@ -115,7 +115,7 @@ describe('useRovoAssist', () => {
   });
 
   it('buildPrompt includes the issue key and summary in the output', () => {
-    const { result } = renderHook(() => useRovoAssist());
+    const { result } = renderHook(() => useAiAssist());
     const selectedIssues = [createMockJiraIssue('TOOL-42', 'Fix the release blocker')];
 
     const prompt = result.current.buildPrompt(selectedIssues, EMPTY_CURRENT_FIELDS);
@@ -125,7 +125,7 @@ describe('useRovoAssist', () => {
   });
 
   it('buildPrompt includes Jira description and acceptance criteria details for each issue', () => {
-    const { result } = renderHook(() => useRovoAssist());
+    const { result } = renderHook(() => useAiAssist());
     const selectedIssues = [createMockJiraIssue('TOOL-77', 'Align release validation')];
     selectedIssues[0].fields.description = 'Implements the release validation updates.';
     selectedIssues[0].fields.customfield_10200 = 'Given release input is valid, when deployed, then validation passes.';
@@ -138,7 +138,7 @@ describe('useRovoAssist', () => {
   });
 
   it('buildPrompt strips encoded HTML tags from issue detail text', () => {
-    const { result } = renderHook(() => useRovoAssist());
+    const { result } = renderHook(() => useAiAssist());
     const selectedIssues = [createMockJiraIssue('TOOL-78', 'Clean encoded detail markup')];
     selectedIssues[0].fields.description = '<p dir="auto" style="animation-duration:0.01ms;">Facets:</p>';
     selectedIssues[0].fields.customfield_10200 = '<b>Given valid input</b> &amp; expected output';
@@ -153,7 +153,7 @@ describe('useRovoAssist', () => {
   });
 
   it('buildPrompt extracts Atlassian document-format text for issue details', () => {
-    const { result } = renderHook(() => useRovoAssist());
+    const { result } = renderHook(() => useAiAssist());
     const selectedIssues = [createMockJiraIssue('TOOL-88', 'Handle Atlassian document text')];
     selectedIssues[0].fields.description = createAtlassianDocumentNode('Document description') as unknown as string;
     selectedIssues[0].fields.customfield_10200 = createAtlassianDocumentNode('Document acceptance criteria');
@@ -165,7 +165,7 @@ describe('useRovoAssist', () => {
   });
 
   it('buildPrompt shows explicit placeholders when issue detail fields are missing', () => {
-    const { result } = renderHook(() => useRovoAssist());
+    const { result } = renderHook(() => useAiAssist());
     const selectedIssues = [createMockJiraIssue('TOOL-99', 'No detail fields')];
 
     const prompt = result.current.buildPrompt(selectedIssues, EMPTY_CURRENT_FIELDS);
@@ -175,7 +175,7 @@ describe('useRovoAssist', () => {
   });
 
   it('buildPrompt includes "(no issues selected)" when the issue list is empty', () => {
-    const { result } = renderHook(() => useRovoAssist());
+    const { result } = renderHook(() => useAiAssist());
 
     const prompt = result.current.buildPrompt([], EMPTY_CURRENT_FIELDS);
 
@@ -183,7 +183,7 @@ describe('useRovoAssist', () => {
   });
 
   it('buildPrompt includes existing field values when they are non-empty', () => {
-    const { result } = renderHook(() => useRovoAssist());
+    const { result } = renderHook(() => useAiAssist());
     const existingFields = {
       shortDescription: 'Deploy TOOL 2.0.0',
       description:      'Deploys the new version',
@@ -200,7 +200,7 @@ describe('useRovoAssist', () => {
   });
 
   it('buildPrompt omits the "Existing content" section when all fields are empty', () => {
-    const { result } = renderHook(() => useRovoAssist());
+    const { result } = renderHook(() => useAiAssist());
 
     const prompt = result.current.buildPrompt([], EMPTY_CURRENT_FIELDS);
 
@@ -208,7 +208,7 @@ describe('useRovoAssist', () => {
   });
 });
 
-describe('parseRovoChgResponse', () => {
+describe('parseAiAssistChgResponse', () => {
   it('parses all four fields from the deterministic block', () => {
     const response = [
       'SHORT_DESCRIPTION: Deploy TOOL 2.0',
@@ -217,7 +217,7 @@ describe('parseRovoChgResponse', () => {
       'RISK_AND_IMPACT: Low risk, no downtime',
     ].join('\n');
 
-    expect(parseRovoChgResponse(response)).toEqual({
+    expect(parseAiAssistChgResponse(response)).toEqual({
       shortDescription: 'Deploy TOOL 2.0',
       description: 'Rolls out the new release',
       justification: 'Planned PI work',
@@ -234,22 +234,22 @@ describe('parseRovoChgResponse', () => {
       'RISK_AND_IMPACT: None',
     ].join('\n');
 
-    expect(parseRovoChgResponse(response).description).toBe('First line of detail\nsecond line of detail');
+    expect(parseAiAssistChgResponse(response).description).toBe('First line of detail\nsecond line of detail');
   });
 
   it('does not confuse the DESCRIPTION marker with SHORT_DESCRIPTION', () => {
     const response = 'SHORT_DESCRIPTION: Short text\nDESCRIPTION: Long text';
-    const parsed = parseRovoChgResponse(response);
+    const parsed = parseAiAssistChgResponse(response);
     expect(parsed.shortDescription).toBe('Short text');
     expect(parsed.description).toBe('Long text');
   });
 
   it('omits fields that are missing from the response', () => {
-    const parsed = parseRovoChgResponse('SHORT_DESCRIPTION: Only this one');
+    const parsed = parseAiAssistChgResponse('SHORT_DESCRIPTION: Only this one');
     expect(parsed).toEqual({ shortDescription: 'Only this one' });
   });
 
   it('returns an empty object for non-string input', () => {
-    expect(parseRovoChgResponse(undefined as unknown as string)).toEqual({});
+    expect(parseAiAssistChgResponse(undefined as unknown as string)).toEqual({});
   });
 });
