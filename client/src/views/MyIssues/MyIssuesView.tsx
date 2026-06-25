@@ -17,6 +17,7 @@ import type { JiraIssue } from '../../types/jira.ts';
 import { detectLinkedPairs, collectLinkedSnowSysIds } from '../../utils/issueLinkCalculator.ts';
 import { EmbeddedGitSyncPanel, EmbeddedTimeTrackingPanel } from './EmbeddedWorkspacePanels.tsx';
 import HygieneView from '../Hygiene/HygieneView.tsx';
+import MentionsTab from './MentionsTab.tsx';
 import { LinkedIssuePair } from './LinkedIssuePair.tsx';
 import { SnowIssueRow } from './SnowIssueRow.tsx';
 import { StatusMappingEditor } from './StatusMappingEditor.tsx';
@@ -65,10 +66,11 @@ const AGING_WARN_DAYS = 5;
 const AGING_STALE_DAYS = 10;
 const MS_PER_DAY = 86_400_000;
 
-type MyIssuesTab = 'report' | 'hygiene' | 'time' | 'gitsync' | 'settings';
+type MyIssuesTab = 'report' | 'mentions' | 'hygiene' | 'time' | 'gitsync' | 'settings';
 
 const MY_ISSUES_TABS: { key: MyIssuesTab; label: string }[] = [
   { key: 'report', label: 'Report' },
+  { key: 'mentions', label: 'Mentions' },
   { key: 'hygiene', label: 'Hygiene' },
   { key: 'time', label: 'Time Tracking' },
   { key: 'gitsync', label: 'Git Sync' },
@@ -961,6 +963,13 @@ export default function MyIssuesView() {
           )}
 
           {/* Inline expansion has replaced the slide-in sidebar for default issue review. */}
+        </section>
+      )}
+
+      {/* ── Mentions tab ── */}
+      {activeTab === 'mentions' && (
+        <section id="my-issues-mentions-panel" role="tabpanel" aria-labelledby="my-issues-mentions-tab">
+          <MentionsTab />
         </section>
       )}
 
