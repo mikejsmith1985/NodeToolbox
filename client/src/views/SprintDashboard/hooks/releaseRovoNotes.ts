@@ -41,7 +41,9 @@ export interface ReleaseRovoTableDocument {
   items: ReleaseRovoTableRow[];
 }
 
-const JSON_CODE_BLOCK_PATTERN = /```json\s*([\s\S]*?)```/i;
+// Matches a Markdown code fence with an optional language tag (```json or a bare ```),
+// capturing whatever the assistant placed between the opening and closing fences.
+const CODE_FENCE_PATTERN = /```(?:json)?\s*([\s\S]*?)```/i;
 
 function formatReleaseDateLabel(releaseDate: string | null): string {
   return releaseDate ? releaseDate : '(not scheduled)';
@@ -92,6 +94,8 @@ export function buildReleaseRovoPrompt(input: ReleaseRovoPromptInput): string {
     'You are helping write software release notes for a Team Dashboard release in NodeToolbox.',
     'Use the release context and Jira issue details below to draft concise, customer-readable release notes.',
     'Respond ONLY with valid JSON. Do not wrap the response in markdown commentary.',
+    'Output the JSON object only. Do not add any text before or after the JSON.',
+    'Do not place the JSON inside a markdown code fence and do not include a greeting or sign-off.',
     '',
     `Project Key: ${input.projectKey}`,
     `Release Name: ${input.releaseName}`,
@@ -128,9 +132,29 @@ export function buildReleaseRovoPrompt(input: ReleaseRovoPromptInput): string {
   ].join('\n');
 }
 
+/**
+ * Pulls the JSON object out of a raw assistant reply.
+ *
+ * Rovo returned clean JSON, but Copilot and other assistants routinely wrap the
+ * payload in chatter — a greeting before it, a "let me know if you need changes"
+ * after it, or a Markdown code fence around it. This helper recovers the JSON in
+ * all of those shapes so a stray sentence no longer breaks the release-notes import:
+ *   1. If a code fence is present, work with its inner contents.
+ *   2. Narrow to the outermost { ... } so any prose outside the object is discarded.
+ */
 function extractJsonPayload(responseText: string): string {
-  const codeBlockMatch = responseText.match(JSON_CODE_BLOCK_PATTERN);
-  return (codeBlockMatch?.[1] ?? responseText).trim();
+  const codeFenceMatch = responseText.match(CODE_FENCE_PATTERN);
+  const candidatePayload = (codeFenceMatch?.[1] ?? responseText).trim();
+
+  // Drop any conversational text surrounding the object by keeping only the span
+  // from the first opening brace to the last closing brace.
+  const firstBraceIndex = candidatePayload.indexOf('{');
+  const lastBraceIndex = candidatePayload.lastIndexOf('}');
+  if (firstBraceIndex !== -1 && lastBraceIndex > firstBraceIndex) {
+    return candidatePayload.slice(firstBraceIndex, lastBraceIndex + 1).trim();
+  }
+
+  return candidatePayload;
 }
 
 function readRequiredString(value: unknown, fieldName: string): string {
