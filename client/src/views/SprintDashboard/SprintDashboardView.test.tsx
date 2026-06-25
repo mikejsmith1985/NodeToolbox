@@ -11,8 +11,9 @@ const { mockJiraGet } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
 }));
 
-const { mockDownloadElementImage } = vi.hoisted(() => ({
+const { mockDownloadElementImage, mockCopyElementImageToClipboard } = vi.hoisted(() => ({
   mockDownloadElementImage: vi.fn(),
+  mockCopyElementImageToClipboard: vi.fn(),
 }));
 
 // Mock recharts so the LineChart renders without canvas/SVG issues in jsdom.
@@ -193,6 +194,7 @@ vi.mock('../../services/jiraApi.ts', () => ({
 
 vi.mock('../../utils/downloadElementImage.ts', () => ({
   downloadElementImage: mockDownloadElementImage,
+  copyElementImageToClipboard: mockCopyElementImageToClipboard,
 }));
 
 import SprintDashboardView from './SprintDashboardView.tsx';
@@ -878,7 +880,7 @@ describe('SprintDashboardView', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /render release notes table/i }));
 
-    expect(await screen.findByRole('heading', { name: 'Rovo Release Notes Draft' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Release 24.1 Release Notes' })).toBeInTheDocument();
     expect(screen.getByText('Delivers the hidden Rovo workflow for release notes.')).toBeInTheDocument();
     expect(screen.getByText('Rovo release note workflow')).toBeInTheDocument();
     expect(screen.getByText('Release managers can draft release notes faster.')).toBeInTheDocument();
@@ -890,7 +892,7 @@ describe('SprintDashboardView', () => {
     rerender(<SprintDashboardView />);
 
     expect(await screen.findByRole('button', { name: /paste rovo response/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Rovo Release Notes Draft' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Release 24.1 Release Notes' })).toBeInTheDocument();
     expect(screen.getByText('Delivers the hidden Rovo workflow for release notes.')).toBeInTheDocument();
   });
 
@@ -935,12 +937,12 @@ describe('SprintDashboardView', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Run via Rovo \(auto\)/i }));
 
     await waitFor(() => expect(mockRunRovoExchange).toHaveBeenCalled());
-    expect(await screen.findByRole('heading', { name: 'Rovo Release Notes Draft' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Release 24.1 Release Notes' })).toBeInTheDocument();
     expect(screen.getByText('Auto-delivered release notes via Rovo.')).toBeInTheDocument();
     expect(screen.getByText('Automated release note')).toBeInTheDocument();
   });
 
-  it('exports rendered release notes as a PNG image', async () => {
+  it('copies rendered release notes to the clipboard as an image', async () => {
     mockState.activeTab = 'releases';
     mockJiraGet.mockImplementation((path: string) => {
       if (path === '/rest/api/2/project/TBX/versions') {
@@ -970,7 +972,7 @@ describe('SprintDashboardView', () => {
 
       return Promise.resolve({ values: [] });
     });
-    mockDownloadElementImage.mockResolvedValue(undefined);
+    mockCopyElementImageToClipboard.mockResolvedValue(undefined);
 
     render(<SprintDashboardView />);
 
@@ -1005,10 +1007,11 @@ describe('SprintDashboardView', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /render release notes table/i }));
     expect(screen.getByRole('table').parentElement).toHaveAttribute('data-export-expand', 'true');
-    fireEvent.click(await screen.findByRole('button', { name: /export release notes png/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /copy release notes/i }));
 
-    expect(mockDownloadElementImage).toHaveBeenCalledTimes(1);
-    expect(mockDownloadElementImage.mock.calls[0][1]).toBe('release-notes-release-24-1.png');
+    expect(mockCopyElementImageToClipboard).toHaveBeenCalledTimes(1);
+    // The captured element is the release-notes section itself (the first argument).
+    expect((mockCopyElementImageToClipboard.mock.calls[0][0] as HTMLElement).className).toContain('releaseNotesSection');
   });
 
   // ── New feature tests ──

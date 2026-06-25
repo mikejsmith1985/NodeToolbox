@@ -1435,6 +1435,14 @@
   transform: translateY(-1px);
 }
 
+/* Transient success note shown after the release notes are copied to the clipboard. */
+.releaseNotesCopyConfirmation {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--color-success, #2ea043);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
 .releaseNotesTitle {
   margin: 0 0 4px;
   color: var(--color-text-primary);

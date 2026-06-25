@@ -45,6 +45,20 @@ export interface ReleaseRovoTableDocument {
 // capturing whatever the assistant placed between the opening and closing fences.
 const CODE_FENCE_PATTERN = /```(?:json)?\s*([\s\S]*?)```/i;
 
+// The fixed suffix every release-notes report heading ends with.
+const RELEASE_NOTES_HEADING_SUFFIX = 'Release Notes';
+
+/**
+ * Builds the heading shown at the top of a release-notes report (e.g. the copied image).
+ * The heading identifies the report by team and release only — for example
+ * "Transformers 06/23/2026 Release Notes", or "06/23/2026 Release Notes" when no team is set.
+ * It deliberately carries no mention of how the notes were drafted.
+ */
+export function buildReleaseNotesHeading(teamName: string, fixVersionName: string): string {
+  const identitySegments = [teamName.trim(), fixVersionName.trim()].filter((segment) => segment.length > 0);
+  return [...identitySegments, RELEASE_NOTES_HEADING_SUFFIX].join(' ');
+}
+
 function formatReleaseDateLabel(releaseDate: string | null): string {
   return releaseDate ? releaseDate : '(not scheduled)';
 }
