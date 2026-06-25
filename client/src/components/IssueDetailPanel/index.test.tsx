@@ -4,7 +4,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
+import type { JiraComment, JiraIssue, JiraTransition } from '../../types/jira.ts';
 
 const { mockJiraGet, mockJiraPost, mockJiraPut } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
@@ -23,6 +23,25 @@ import IssueDetailPanel from './index.tsx';
 const TEST_TRANSITIONS: JiraTransition[] = [
   { id: '31', name: 'In Review', to: { name: 'In Review', statusCategory: { name: 'In Progress' } } },
 ];
+
+const TEST_COMMENTS: JiraComment[] = [
+  {
+    id: '901',
+    author: { displayName: 'Jordan Reviewer' },
+    body: 'Please add acceptance criteria before sprint.',
+    created: '2025-01-03T00:00:00.000Z',
+  },
+];
+
+// Comments and transitions share the same jiraGet mock, so route by URL suffix.
+function mockJiraGetByPath(comments: JiraComment[] = TEST_COMMENTS) {
+  mockJiraGet.mockImplementation((path: string) => {
+    if (path.endsWith('/comment')) {
+      return Promise.resolve({ comments });
+    }
+    return Promise.resolve({ transitions: TEST_TRANSITIONS });
+  });
+}
 
 const TEST_ISSUE: JiraIssue = {
   id: 'TBX-101',
@@ -53,7 +72,7 @@ function renderIssueDetailPanel() {
 describe('IssueDetailPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockJiraGet.mockResolvedValue({ transitions: TEST_TRANSITIONS });
+    mockJiraGetByPath();
     mockJiraPost.mockResolvedValue({});
     mockJiraPut.mockResolvedValue(undefined);
   });
@@ -102,6 +121,51 @@ describe('IssueDetailPanel', () => {
 
     await waitFor(() => {
       expect(screen.getByText('✓ Posted')).toBeInTheDocument();
+    });
+  });
+
+  it('loads existing comments on mount', async () => {
+    renderIssueDetailPanel();
+
+    await waitFor(() => {
+      expect(mockJiraGet).toHaveBeenCalledWith('/rest/api/2/issue/TBX-101/comment');
+    });
+  });
+
+  it('displays existing comments with their author and body', async () => {
+    renderIssueDetailPanel();
+
+    expect(await screen.findByText('Please add acceptance criteria before sprint.')).toBeInTheDocument();
+    expect(screen.getByText('Jordan Reviewer')).toBeInTheDocument();
+  });
+
+  it('shows an empty state when the issue has no comments', async () => {
+    mockJiraGetByPath([]);
+    renderIssueDetailPanel();
+
+    expect(await screen.findByText(/no comments yet/i)).toBeInTheDocument();
+  });
+
+  it('refreshes the comments list after posting a new comment', async () => {
+    const user = userEvent.setup();
+    renderIssueDetailPanel();
+
+    // One comment fetch happens on mount; posting must trigger a second to show the new comment.
+    await waitFor(() => {
+      expect(mockJiraGet).toHaveBeenCalledWith('/rest/api/2/issue/TBX-101/comment');
+    });
+    const commentFetchCountAfterMount = mockJiraGet.mock.calls.filter(
+      ([path]) => typeof path === 'string' && path.endsWith('/comment'),
+    ).length;
+
+    await user.type(screen.getByLabelText(/add comment/i), 'Adding criteria now.');
+    await user.click(screen.getByRole('button', { name: /post comment/i }));
+
+    await waitFor(() => {
+      const commentFetchCountAfterPost = mockJiraGet.mock.calls.filter(
+        ([path]) => typeof path === 'string' && path.endsWith('/comment'),
+      ).length;
+      expect(commentFetchCountAfterPost).toBeGreaterThan(commentFetchCountAfterMount);
     });
   });
 });
