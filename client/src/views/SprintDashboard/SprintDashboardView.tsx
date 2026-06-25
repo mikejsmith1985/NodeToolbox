@@ -30,7 +30,7 @@ import {
   type SprintDashboardTeamProfile,
 } from '../../store/settingsStore.ts';
 import type { JiraComment, JiraIssue, JiraTransition, JiraVersion } from '../../types/jira.ts';
-import { downloadElementImage } from '../../utils/downloadElementImage.ts';
+import { copyElementImageToClipboard } from '../../utils/downloadElementImage.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import { useRovoAssist } from '../SnowHub/hooks/useRovoAssist.ts';
 import {
@@ -62,6 +62,7 @@ import {
   DONE_STATUS_NAMES,
 } from './hooks/sprintDashboardIssueUtils.ts';
 import {
+  buildReleaseNotesHeading,
   buildReleaseRovoPrompt,
   parseReleaseRovoResponse,
   type ReleaseRovoPromptInput,
@@ -148,7 +149,9 @@ const RELEASE_PROMPT_BUTTON_LABEL = '✦ Build Rovo Prompt';
 const RELEASE_IMPORT_BUTTON_LABEL = '↩ Paste Rovo Response';
 const COPY_RELEASE_PROMPT_BUTTON_LABEL = '📋 Copy Prompt';
 const RENDER_RELEASE_TABLE_BUTTON_LABEL = 'Render Release Notes Table';
-const EXPORT_RELEASE_NOTES_BUTTON_LABEL = '🖼 Export Release Notes PNG';
+const COPY_RELEASE_NOTES_BUTTON_LABEL = '📋 Copy Release Notes';
+// Shown briefly after a successful clipboard copy so the user knows the image is ready to paste.
+const RELEASE_NOTES_COPIED_CONFIRMATION = 'Copied to clipboard — paste it into your email or chat.';
 const RELEASE_BUCKETS = [
   { id: 'overdue', label: 'Overdue', emoji: '🚨' },
   { id: 'critical', label: 'Due This Week', emoji: '🔴' },
@@ -905,11 +908,6 @@ function buildReleasePromptInput(projectKey: string, releaseEntry: ReleaseRadarE
 function buildReleaseNotesStorageKey(projectKey: string): string {
   const normalizedProjectKey = projectKey.trim().toUpperCase() || 'default';
   return `${RELEASE_ROVO_NOTES_STORAGE_KEY_PREFIX}:${normalizedProjectKey}`;
-}
-
-function createReleaseNotesExportFileName(releaseName: string): string {
-  const normalizedReleaseName = releaseName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
-  return `release-notes-${normalizedReleaseName || 'draft'}.png`;
 }
 
 function readStoredReleaseNotes(projectKey: string): Record<string, ReleaseRovoTableDocument> {
@@ -5612,12 +5610,14 @@ function PlanningTab({
  */
 function ReleasesTab({
   projectKey,
+  teamName,
   scopeMode,
   selectedSprintId,
   selectedFixVersionName,
   selectedPiValue,
 }: {
   projectKey: string;
+  teamName: string;
   scopeMode: DashboardScopeMode;
   selectedSprintId: number | null;
   selectedFixVersionName: string;
@@ -5639,6 +5639,7 @@ function ReleasesTab({
   const [releasePromptModalState, setReleasePromptModalState] = useState<ReleasePromptModalState | null>(null);
   const [releaseImportModalState, setReleaseImportModalState] = useState<ReleaseImportModalState | null>(null);
   const [releaseExportErrorByVersionId, setReleaseExportErrorByVersionId] = useState<Record<string, string>>({});
+  const [releaseCopyConfirmationByVersionId, setReleaseCopyConfirmationByVersionId] = useState<Record<string, string>>({});
   // Automated Rovo exchange for release notes — dispatches the prompt and renders
   // the parsed table without the manual copy-paste.
   const { isRunning: isReleaseRovoRunning, runRovoExchange: runReleaseRovoExchange } = useRovoExchange();
@@ -5649,6 +5650,7 @@ function ReleasesTab({
   useEffect(() => {
     setReleaseNotesByVersionId(readStoredReleaseNotes(projectKey));
     setReleaseExportErrorByVersionId({});
+    setReleaseCopyConfirmationByVersionId({});
     setReleasePromptModalState(null);
     setReleaseImportModalState(null);
   }, [projectKey]);
@@ -5973,30 +5975,35 @@ function ReleasesTab({
     delete releaseNotesSectionRefs.current[versionId];
   }, []);
 
-  const handleExportReleaseNotes = useCallback(async (versionId: string, releaseName: string) => {
+  // Copies the rendered release-notes section to the clipboard as an image so it can be pasted
+  // straight into email or chat — no file download and no AI/tooling wording in the report.
+  const handleCopyReleaseNotes = useCallback(async (versionId: string) => {
     const releaseNotesSectionElement = releaseNotesSectionRefs.current[versionId];
     if (!releaseNotesSectionElement) {
       setReleaseExportErrorByVersionId((previousExportErrors) => ({
         ...previousExportErrors,
-        [versionId]: 'Render the release notes before exporting the PNG.',
+        [versionId]: 'Render the release notes before copying them.',
       }));
       return;
     }
 
+    // Clear any prior outcome so the user sees the result of this attempt only.
+    setReleaseExportErrorByVersionId((previousExportErrors) => ({ ...previousExportErrors, [versionId]: '' }));
+    setReleaseCopyConfirmationByVersionId((previousConfirmations) => ({ ...previousConfirmations, [versionId]: '' }));
+
     try {
-      setReleaseExportErrorByVersionId((previousExportErrors) => ({
-        ...previousExportErrors,
-        [versionId]: '',
-      }));
-      await downloadElementImage(
+      await copyElementImageToClipboard(
         releaseNotesSectionElement,
-        createReleaseNotesExportFileName(releaseName),
-        'The release notes section is no longer available to export.',
+        'The release notes section is no longer available to copy.',
       );
+      setReleaseCopyConfirmationByVersionId((previousConfirmations) => ({
+        ...previousConfirmations,
+        [versionId]: RELEASE_NOTES_COPIED_CONFIRMATION,
+      }));
     } catch (caughtError) {
       setReleaseExportErrorByVersionId((previousExportErrors) => ({
         ...previousExportErrors,
-        [versionId]: caughtError instanceof Error ? caughtError.message : 'Unable to export the release notes PNG.',
+        [versionId]: caughtError instanceof Error ? caughtError.message : 'Unable to copy the release notes image.',
       }));
     }
   }, []);
@@ -6057,6 +6064,7 @@ function ReleasesTab({
                     : Math.round((entry.progressCount / entry.totalCount) * 100);
                   const importedReleaseNotes = releaseNotesByVersionId[entry.version.id] ?? null;
                   const releaseExportError = releaseExportErrorByVersionId[entry.version.id] ?? '';
+                  const releaseCopyConfirmation = releaseCopyConfirmationByVersionId[entry.version.id] ?? '';
                   const issueByKey = new Map(entry.issues.map((issue) => [issue.key, issue]));
 
                   return (
@@ -6166,7 +6174,9 @@ function ReleasesTab({
                         >
                           <div className={styles.releaseNotesHeader}>
                             <div>
-                              <h4 className={styles.releaseNotesTitle}>Rovo Release Notes Draft</h4>
+                              <h4 className={styles.releaseNotesTitle}>
+                                {buildReleaseNotesHeading(teamName, entry.version.name)}
+                              </h4>
                               <p className={styles.releaseNotesSummary}>
                                 {importedReleaseNotes.releaseSummary}
                               </p>
@@ -6178,14 +6188,19 @@ function ReleasesTab({
                               <button
                                 className={styles.releaseNotesExportButton}
                                 data-export-exclude="true"
-                                onClick={() => void handleExportReleaseNotes(entry.version.id, importedReleaseNotes.releaseName)}
+                                onClick={() => void handleCopyReleaseNotes(entry.version.id)}
                                 type="button"
                               >
-                                {EXPORT_RELEASE_NOTES_BUTTON_LABEL}
+                                {COPY_RELEASE_NOTES_BUTTON_LABEL}
                               </button>
                             </div>
                           </div>
                           {releaseExportError ? <p className={styles.errorMessage}>{releaseExportError}</p> : null}
+                          {releaseCopyConfirmation ? (
+                            <p className={styles.releaseNotesCopyConfirmation} data-export-exclude="true">
+                              {releaseCopyConfirmation}
+                            </p>
+                          ) : null}
                           <div className={styles.releaseNotesTableShell} data-export-expand="true">
                             <table className={styles.releaseNotesTable}>
                               <thead>
@@ -6683,6 +6698,7 @@ export default function SprintDashboardView() {
       return (
         <ReleasesTab
           projectKey={state.projectKey}
+          teamName={activeDashboardTeamProfile?.name ?? ''}
           scopeMode={state.scopeMode}
           selectedFixVersionName={state.selectedFixVersionName}
           selectedPiValue={state.selectedPiValue}

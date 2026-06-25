@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildReleaseNotesHeading,
   buildReleaseRovoPrompt,
   parseReleaseRovoResponse,
   type ReleaseRovoPromptInput,
@@ -157,6 +158,23 @@ describe('releaseRovoNotes', () => {
 
     expect(promptText).toContain('Output the JSON object only');
     expect(promptText).toContain('Do not add any text before or after the JSON');
+  });
+
+  it('builds a release-notes heading from the team name and fix version', () => {
+    expect(buildReleaseNotesHeading('Transformers', '06/23/2026')).toBe('Transformers 06/23/2026 Release Notes');
+  });
+
+  it('omits the team segment when no team name is provided', () => {
+    expect(buildReleaseNotesHeading('', '06/23/2026')).toBe('06/23/2026 Release Notes');
+  });
+
+  it('trims surrounding whitespace on both the team name and fix version', () => {
+    expect(buildReleaseNotesHeading('  Transformers  ', '  06/23/2026  ')).toBe('Transformers 06/23/2026 Release Notes');
+  });
+
+  it('never mentions how the notes were drafted (no AI/Rovo wording)', () => {
+    const heading = buildReleaseNotesHeading('Transformers', '06/23/2026');
+    expect(heading).not.toMatch(/rovo|\bai\b|assistant|draft/i);
   });
 
   it('throws a helpful error when the items array is missing', () => {
