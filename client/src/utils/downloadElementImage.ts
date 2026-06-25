@@ -2,6 +2,12 @@
 
 import html2canvas from 'html2canvas';
 
+import {
+  applyExportColorFallbacks,
+  createCanvasColorResolver,
+  sanitizeColorValue,
+} from './colorFunctionFallback.ts';
+
 const IMAGE_EXPORT_RENDER_SCALE = 3;
 const PNG_MIME_TYPE = 'image/png';
 const EXPORT_HOST_ATTRIBUTE = 'data-node-toolbox-export-host';
@@ -35,10 +41,9 @@ function createDetachedExportHost(): HTMLDivElement {
   return detachedExportHost;
 }
 
-function createExportPanelClone(panelElement: HTMLElement): HTMLElement {
+function createExportPanelClone(panelElement: HTMLElement, panelBackgroundColor: string): HTMLElement {
   const clonedPanelElement = panelElement.cloneNode(true) as HTMLElement;
   const exportWidthPixels = Math.max(panelElement.scrollWidth, panelElement.clientWidth);
-  const panelBackgroundColor = getComputedStyle(panelElement).backgroundColor || '#ffffff';
   clonedPanelElement.setAttribute(EXPORT_CLONE_ATTRIBUTE, 'true');
   clonedPanelElement.style.width = `${exportWidthPixels}px`;
   clonedPanelElement.style.maxWidth = 'none';
@@ -67,9 +72,14 @@ async function waitForExportLayout(): Promise<void> {
 }
 
 async function capturePanelCanvas(panelElement: HTMLElement, renderScale: number): Promise<HTMLCanvasElement> {
+  // A single resolver caches every colour it flattens so repeated theme tints cost one canvas read.
+  const resolveColorToken = createCanvasColorResolver();
   const detachedExportHost = createDetachedExportHost();
-  const clonedPanelElement = createExportPanelClone(panelElement);
-  const panelBackgroundColor = getComputedStyle(panelElement).backgroundColor || '#ffffff';
+  // The panel background can itself be a color-mix()/color() value, so flatten it before html2canvas
+  // receives it both as the host background and as the capture option.
+  const rawPanelBackgroundColor = getComputedStyle(panelElement).backgroundColor || '#ffffff';
+  const panelBackgroundColor = sanitizeColorValue(rawPanelBackgroundColor, resolveColorToken);
+  const clonedPanelElement = createExportPanelClone(panelElement, panelBackgroundColor);
   detachedExportHost.style.backgroundColor = panelBackgroundColor;
 
   detachedExportHost.appendChild(clonedPanelElement);
@@ -77,6 +87,8 @@ async function capturePanelCanvas(panelElement: HTMLElement, renderScale: number
 
   try {
     await waitForExportLayout();
+    // Replace every modern colour function in the live clone with an rgb() value html2canvas can parse.
+    applyExportColorFallbacks(clonedPanelElement, resolveColorToken);
     return await html2canvas(clonedPanelElement, {
       backgroundColor: panelBackgroundColor,
       height: clonedPanelElement.scrollHeight,

@@ -99,6 +99,66 @@ describe('releaseRovoNotes', () => {
     expect(parsedDocument.items[0].title).toBe('Table rendering');
   });
 
+  it('parses a response that has conversational text before and after the JSON (Copilot style)', () => {
+    // Copilot frequently ignores "JSON only" and adds a greeting plus a sign-off with no code fence.
+    const parsedDocument = parseReleaseRovoResponse([
+      'Sure! Here are the release notes you asked for:',
+      '',
+      JSON.stringify({
+        releaseName: 'Release 26.4',
+        releaseSummary: 'Improves the import flow.',
+        items: [
+          {
+            issueKey: 'TBX-200',
+            title: 'Resilient import',
+            releaseNote: 'Tolerates assistant chatter around the JSON payload.',
+            customerImpact: 'Release managers stop seeing parse errors.',
+            technicalDetails: 'Extraction narrows to the outermost JSON object.',
+            risks: 'None.',
+            validation: 'Covered by unit tests.',
+          },
+        ],
+      }),
+      '',
+      'Let me know if you would like any changes!',
+    ].join('\n'));
+
+    expect(parsedDocument.items).toHaveLength(1);
+    expect(parsedDocument.items[0].issueKey).toBe('TBX-200');
+  });
+
+  it('parses a plain triple-backtick fence with no json language tag', () => {
+    // Copilot sometimes opens a bare ``` fence instead of the ```json fence Rovo used.
+    const parsedDocument = parseReleaseRovoResponse([
+      '```',
+      JSON.stringify({
+        releaseName: 'Release 26.4',
+        releaseSummary: 'Handles untagged fences.',
+        items: [
+          {
+            issueKey: 'TBX-201',
+            title: 'Untagged fence support',
+            releaseNote: 'Reads JSON from a bare code fence.',
+            customerImpact: 'Fewer failed imports.',
+            technicalDetails: 'Fence pattern no longer requires the json tag.',
+            risks: 'None.',
+            validation: 'Reviewed in unit tests.',
+          },
+        ],
+      }),
+      '```',
+    ].join('\n'));
+
+    expect(parsedDocument.items[0].issueKey).toBe('TBX-201');
+  });
+
+  it('instructs the assistant to emit only the JSON object with no surrounding text', () => {
+    const promptText = buildReleaseRovoPrompt(SAMPLE_PROMPT_INPUT);
+
+    expect(promptText).toContain('Output the JSON object only');
+    expect(promptText).toContain('Do not add any text before or after the JSON');
+  });
+
   it('throws a helpful error when the items array is missing', () => {
     expect(() => parseReleaseRovoResponse(JSON.stringify({
       releaseName: 'Release 26.3',
