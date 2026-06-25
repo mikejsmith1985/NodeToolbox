@@ -146,6 +146,19 @@ describe('IssueDetailPanel', () => {
     expect(await screen.findByText(/no comments yet/i)).toBeInTheDocument();
   });
 
+  it('invokes onCommentPosted after a successful comment post', async () => {
+    const user = userEvent.setup();
+    const onCommentPosted = vi.fn();
+    render(<IssueDetailPanel isEmbedded issue={TEST_ISSUE} onCommentPosted={onCommentPosted} />);
+
+    await user.type(screen.getByLabelText(/add comment/i), 'Replying to the mention.');
+    await user.click(screen.getByRole('button', { name: /post comment/i }));
+
+    await waitFor(() => {
+      expect(onCommentPosted).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('refreshes the comments list after posting a new comment', async () => {
     const user = userEvent.setup();
     renderIssueDetailPanel();

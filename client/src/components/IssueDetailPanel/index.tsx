@@ -29,6 +29,8 @@ export interface IssueDetailPanelProps {
   issue: JiraIssue;
   /** Called after a successful status transition so the parent can reload issues. */
   onIssueUpdated?: () => void;
+  /** Called after a comment is successfully posted (e.g. so a Mentions report can auto-mark it addressed). */
+  onCommentPosted?: () => void;
   /** When true, the panel shows without a close button so the parent controls visibility. */
   isEmbedded?: boolean;
 }
@@ -39,6 +41,7 @@ export interface IssueDetailPanelProps {
 export default function IssueDetailPanel({
   issue,
   onIssueUpdated,
+  onCommentPosted,
   isEmbedded = false,
 }: IssueDetailPanelProps) {
   const issuePanelStateKey = `${issue.key}:${issue.fields.customfield_10016 ?? ''}`;
@@ -49,6 +52,7 @@ export default function IssueDetailPanel({
       isEmbedded={isEmbedded}
       issue={issue}
       onIssueUpdated={onIssueUpdated}
+      onCommentPosted={onCommentPosted}
     />
   );
 }
@@ -60,6 +64,7 @@ export default function IssueDetailPanel({
 function IssueDetailPanelContent({
   issue,
   onIssueUpdated,
+  onCommentPosted,
   isEmbedded = false,
 }: IssueDetailPanelProps) {
   const [isPanelOpen, setIsPanelOpen] = useState(true);
@@ -212,6 +217,8 @@ function IssueDetailPanelContent({
       setCommentPostSuccess(true);
       // Reload so the freshly posted comment appears in the history below the form.
       setCommentsRefreshToken((currentToken) => currentToken + 1);
+      // Let parents react to a posted reply (e.g. the Mentions report auto-marks it addressed).
+      onCommentPosted?.();
     } catch (caughtError) {
       const errorMessage = caughtError instanceof Error ? caughtError.message : COMMENT_POST_ERROR_MESSAGE;
       setCommentPostError(errorMessage);

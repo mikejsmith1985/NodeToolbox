@@ -25,6 +25,7 @@ const createReportDeliveryRouter            = require('./src/routes/reportDelive
 const createRovoExchangeRouter              = require('./src/routes/rovoExchange');
 const createHygieneMonitorRouter            = require('./src/routes/hygieneMonitor');
 const createSprintReleaseRouter             = require('./src/routes/sprintRelease');
+const createMentionStateRouter              = require('./src/routes/mentionState');
 
 const { startSchedulerLoop }                = require('./src/services/repoMonitor');
 const { startScopeChangeScheduler }         = require('./src/services/scopeChangeScheduler');
@@ -151,6 +152,9 @@ app.use(createHygieneMonitorRouter(configuration));
 
 // Sprint–Release Workflow: /api/sprint-release/config, /dor-violations, /run-now, /status
 app.use(createSprintReleaseRouter(configuration));
+
+// Addressed-mentions store: GET/POST /api/mention-state (backs the My Issues "Mentions" report)
+app.use(createMentionStateRouter());
 
 // First-run detection: GET / redirects to /setup when no service is configured.
 // Placed before the static file middleware so misconfigured instances always see
