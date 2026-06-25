@@ -1,8 +1,8 @@
-// releaseRovoNotes.ts — Builds and parses the hidden Rovo release-notes workflow payload.
+// releaseAiAssistNotes.ts — Builds and parses the hidden AI Assist release-notes workflow payload.
 
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 
-export interface ReleaseRovoPromptIssue {
+export interface ReleaseAiAssistPromptIssue {
   issueKey: string;
   summary: string;
   statusName: string;
@@ -13,7 +13,7 @@ export interface ReleaseRovoPromptIssue {
   acceptanceCriteria: unknown;
 }
 
-export interface ReleaseRovoPromptInput {
+export interface ReleaseAiAssistPromptInput {
   projectKey: string;
   releaseName: string;
   releaseDate: string | null;
@@ -22,10 +22,10 @@ export interface ReleaseRovoPromptInput {
   doneCount: number;
   progressCount: number;
   todoCount: number;
-  issues: ReleaseRovoPromptIssue[];
+  issues: ReleaseAiAssistPromptIssue[];
 }
 
-export interface ReleaseRovoTableRow {
+export interface ReleaseAiAssistTableRow {
   issueKey: string;
   title: string;
   releaseNote: string;
@@ -35,10 +35,10 @@ export interface ReleaseRovoTableRow {
   validation: string;
 }
 
-export interface ReleaseRovoTableDocument {
+export interface ReleaseAiAssistTableDocument {
   releaseName: string;
   releaseSummary: string;
-  items: ReleaseRovoTableRow[];
+  items: ReleaseAiAssistTableRow[];
 }
 
 // Matches a Markdown code fence with an optional language tag (```json or a bare ```),
@@ -87,7 +87,7 @@ function escapeHtml(rawText: string): string {
  * clipboard alongside the image so email clients paste a readable, reflowable native table instead
  * of a fixed-width screenshot. The heading carries the team/release identity only — no tooling wording.
  */
-export function buildReleaseNotesHtml(heading: string, releaseDocument: ReleaseRovoTableDocument): string {
+export function buildReleaseNotesHtml(heading: string, releaseDocument: ReleaseAiAssistTableDocument): string {
   const headerCells = RELEASE_NOTES_HTML_COLUMN_LABELS
     .map((columnLabel) => `<th style="${HTML_HEADER_CELL_STYLE}">${escapeHtml(columnLabel)}</th>`)
     .join('');
@@ -132,7 +132,7 @@ function formatReleaseCountdownLabel(daysLeft: number | null): string {
   return `${daysLeft} day(s) remain until release.`;
 }
 
-function buildPromptIssueSection(releaseIssue: ReleaseRovoPromptIssue): string {
+function buildPromptIssueSection(releaseIssue: ReleaseAiAssistPromptIssue): string {
   const descriptionText = normalizeRichTextToPlainText(releaseIssue.description) || '(not provided)';
   const acceptanceCriteriaText = normalizeRichTextToPlainText(releaseIssue.acceptanceCriteria) || '(not provided)';
   const assigneeLabel = releaseIssue.assigneeName ?? 'Unassigned';
@@ -152,10 +152,10 @@ function buildPromptIssueSection(releaseIssue: ReleaseRovoPromptIssue): string {
 }
 
 /**
- * Builds the copy-paste Rovo prompt for one Team Dashboard release.
+ * Builds the copy-paste AI Assist prompt for one Team Dashboard release.
  * The prompt requires a strict JSON response so Toolbox can render a release-notes table reliably.
  */
-export function buildReleaseRovoPrompt(input: ReleaseRovoPromptInput): string {
+export function buildReleaseAiAssistPrompt(input: ReleaseAiAssistPromptInput): string {
   const issuesSection = input.issues.length > 0
     ? input.issues.map((releaseIssue) => buildPromptIssueSection(releaseIssue)).join('\n\n')
     : '(no Jira issues linked to this release)';
@@ -205,7 +205,7 @@ export function buildReleaseRovoPrompt(input: ReleaseRovoPromptInput): string {
 /**
  * Pulls the JSON object out of a raw assistant reply.
  *
- * Rovo returned clean JSON, but Copilot and other assistants routinely wrap the
+ * AI Assist returned clean JSON, but Copilot and other assistants routinely wrap the
  * payload in chatter — a greeting before it, a "let me know if you need changes"
  * after it, or a Markdown code fence around it. This helper recovers the JSON in
  * all of those shapes so a stray sentence no longer breaks the release-notes import:
@@ -229,14 +229,14 @@ function extractJsonPayload(responseText: string): string {
 
 function readRequiredString(value: unknown, fieldName: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new Error(`Rovo response is missing ${fieldName}.`);
+    throw new Error(`AI Assist response is missing ${fieldName}.`);
   }
   return value.trim();
 }
 
-function readReleaseRow(value: unknown, rowIndex: number): ReleaseRovoTableRow {
+function readReleaseRow(value: unknown, rowIndex: number): ReleaseAiAssistTableRow {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error(`Rovo response item ${rowIndex + 1} is not a valid object.`);
+    throw new Error(`AI Assist response item ${rowIndex + 1} is not a valid object.`);
   }
 
   const rowRecord = value as Record<string, unknown>;
@@ -252,26 +252,26 @@ function readReleaseRow(value: unknown, rowIndex: number): ReleaseRovoTableRow {
 }
 
 /**
- * Parses the pasted Rovo response into the structured release-notes document shown in Toolbox.
+ * Parses the pasted AI Assist response into the structured release-notes document shown in Toolbox.
  * Accepts either raw JSON or a fenced ```json block copied from chat.
  */
-export function parseReleaseRovoResponse(responseText: string): ReleaseRovoTableDocument {
+export function parseReleaseAiAssistResponse(responseText: string): ReleaseAiAssistTableDocument {
   const payloadText = extractJsonPayload(responseText);
   let parsedPayload: unknown;
 
   try {
     parsedPayload = JSON.parse(payloadText);
   } catch {
-    throw new Error('Rovo response is not valid JSON.');
+    throw new Error('AI Assist response is not valid JSON.');
   }
 
   if (!parsedPayload || typeof parsedPayload !== 'object' || Array.isArray(parsedPayload)) {
-    throw new Error('Rovo response must be a JSON object.');
+    throw new Error('AI Assist response must be a JSON object.');
   }
 
   const payloadRecord = parsedPayload as Record<string, unknown>;
   if (!Array.isArray(payloadRecord.items)) {
-    throw new Error('Rovo response must include an items array.');
+    throw new Error('AI Assist response must include an items array.');
   }
 
   return {

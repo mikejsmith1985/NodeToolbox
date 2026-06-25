@@ -1,17 +1,17 @@
-// releaseRovoNotes.test.ts — Unit tests for the hidden release-notes Rovo prompt helpers.
+// releaseAiAssistNotes.test.ts — Unit tests for the hidden release-notes AI Assist prompt helpers.
 
 import { describe, expect, it } from 'vitest';
 
 import {
   buildReleaseNotesHeading,
   buildReleaseNotesHtml,
-  buildReleaseRovoPrompt,
-  parseReleaseRovoResponse,
-  type ReleaseRovoPromptInput,
-  type ReleaseRovoTableDocument,
-} from './releaseRovoNotes.ts';
+  buildReleaseAiAssistPrompt,
+  parseReleaseAiAssistResponse,
+  type ReleaseAiAssistPromptInput,
+  type ReleaseAiAssistTableDocument,
+} from './releaseAiAssistNotes.ts';
 
-const SAMPLE_RELEASE_DOCUMENT: ReleaseRovoTableDocument = {
+const SAMPLE_RELEASE_DOCUMENT: ReleaseAiAssistTableDocument = {
   releaseName: '06/23/2026',
   releaseSummary: 'Improves data accuracy across the Team Dashboard.',
   items: [
@@ -27,7 +27,7 @@ const SAMPLE_RELEASE_DOCUMENT: ReleaseRovoTableDocument = {
   ],
 };
 
-const SAMPLE_PROMPT_INPUT: ReleaseRovoPromptInput = {
+const SAMPLE_PROMPT_INPUT: ReleaseAiAssistPromptInput = {
   projectKey: 'TBX',
   releaseName: 'Release 26.3',
   releaseDate: '2026-05-30',
@@ -51,7 +51,7 @@ const SAMPLE_PROMPT_INPUT: ReleaseRovoPromptInput = {
         content: [
           {
             type: 'paragraph',
-            content: [{ type: 'text', text: 'Given a pasted Rovo response, render a release table.' }],
+            content: [{ type: 'text', text: 'Given a pasted AI Assist response, render a release table.' }],
           },
         ],
       },
@@ -59,27 +59,27 @@ const SAMPLE_PROMPT_INPUT: ReleaseRovoPromptInput = {
   ],
 };
 
-describe('releaseRovoNotes', () => {
+describe('releaseAiAssistNotes', () => {
   it('builds a strict JSON-oriented release prompt with normalized Jira details', () => {
-    const promptText = buildReleaseRovoPrompt(SAMPLE_PROMPT_INPUT);
+    const promptText = buildReleaseAiAssistPrompt(SAMPLE_PROMPT_INPUT);
 
     expect(promptText).toContain('Respond ONLY with valid JSON.');
     expect(promptText).toContain('Release Name: Release 26.3');
     expect(promptText).toContain('Issue Key: TBX-101');
     expect(promptText).toContain('Description: Generate the release note payload.');
-    expect(promptText).toContain('Acceptance Criteria: Given a pasted Rovo response, render a release table.');
+    expect(promptText).toContain('Acceptance Criteria: Given a pasted AI Assist response, render a release table.');
     expect(promptText).toContain('"releaseSummary": "2-4 sentence overview of what this release delivers"');
   });
 
   it('parses a raw JSON response into a release-notes document', () => {
-    const parsedDocument = parseReleaseRovoResponse(JSON.stringify({
+    const parsedDocument = parseReleaseAiAssistResponse(JSON.stringify({
       releaseName: 'Release 26.3',
       releaseSummary: 'Delivers the release-note workflow.',
       items: [
         {
           issueKey: 'TBX-101',
           title: 'Release note generator',
-          releaseNote: 'Adds a Rovo-driven release-note authoring flow.',
+          releaseNote: 'Adds an AI Assist-driven release-note authoring flow.',
           customerImpact: 'Release managers can draft release notes faster.',
           technicalDetails: 'Toolbox now parses a structured JSON response.',
           risks: 'None.',
@@ -94,7 +94,7 @@ describe('releaseRovoNotes', () => {
   });
 
   it('parses a fenced json response copied from chat tools', () => {
-    const parsedDocument = parseReleaseRovoResponse([
+    const parsedDocument = parseReleaseAiAssistResponse([
       '```json',
       JSON.stringify({
         releaseName: 'Release 26.3',
@@ -120,7 +120,7 @@ describe('releaseRovoNotes', () => {
 
   it('parses a response that has conversational text before and after the JSON (Copilot style)', () => {
     // Copilot frequently ignores "JSON only" and adds a greeting plus a sign-off with no code fence.
-    const parsedDocument = parseReleaseRovoResponse([
+    const parsedDocument = parseReleaseAiAssistResponse([
       'Sure! Here are the release notes you asked for:',
       '',
       JSON.stringify({
@@ -147,8 +147,8 @@ describe('releaseRovoNotes', () => {
   });
 
   it('parses a plain triple-backtick fence with no json language tag', () => {
-    // Copilot sometimes opens a bare ``` fence instead of the ```json fence Rovo used.
-    const parsedDocument = parseReleaseRovoResponse([
+    // Copilot sometimes opens a bare ``` fence instead of the ```json fence AI Assist used.
+    const parsedDocument = parseReleaseAiAssistResponse([
       '```',
       JSON.stringify({
         releaseName: 'Release 26.4',
@@ -172,7 +172,7 @@ describe('releaseRovoNotes', () => {
   });
 
   it('instructs the assistant to emit only the JSON object with no surrounding text', () => {
-    const promptText = buildReleaseRovoPrompt(SAMPLE_PROMPT_INPUT);
+    const promptText = buildReleaseAiAssistPrompt(SAMPLE_PROMPT_INPUT);
 
     expect(promptText).toContain('Output the JSON object only');
     expect(promptText).toContain('Do not add any text before or after the JSON');
@@ -190,7 +190,7 @@ describe('releaseRovoNotes', () => {
     expect(buildReleaseNotesHeading('  Transformers  ', '  06/23/2026  ')).toBe('Transformers 06/23/2026 Release Notes');
   });
 
-  it('never mentions how the notes were drafted (no AI/Rovo wording)', () => {
+  it('never mentions how the notes were drafted (no AI/AI Assist wording)', () => {
     const heading = buildReleaseNotesHeading('Transformers', '06/23/2026');
     expect(heading).not.toMatch(/rovo|\bai\b|assistant|draft/i);
   });
@@ -215,7 +215,7 @@ describe('releaseRovoNotes', () => {
   });
 
   it('escapes HTML in release-notes content so values cannot break the table markup', () => {
-    const documentWithMarkup: ReleaseRovoTableDocument = {
+    const documentWithMarkup: ReleaseAiAssistTableDocument = {
       ...SAMPLE_RELEASE_DOCUMENT,
       items: [{ ...SAMPLE_RELEASE_DOCUMENT.items[0], title: 'Handle <script> & "quoted" tags' }],
     };
@@ -227,14 +227,14 @@ describe('releaseRovoNotes', () => {
 
   it('produces report HTML with no mention of how the notes were drafted', () => {
     const html = buildReleaseNotesHtml('Transformers 06/23/2026 Release Notes', SAMPLE_RELEASE_DOCUMENT);
-    // The static chrome (heading suffix, column labels, styles) carries no AI/Rovo wording.
+    // The static chrome (heading suffix, column labels, styles) carries no AI/AI Assist wording.
     expect(html.replace(/Release Notes/g, '')).not.toMatch(/rovo|\bai\b|assistant|draft/i);
   });
 
   it('throws a helpful error when the items array is missing', () => {
-    expect(() => parseReleaseRovoResponse(JSON.stringify({
+    expect(() => parseReleaseAiAssistResponse(JSON.stringify({
       releaseName: 'Release 26.3',
       releaseSummary: 'Missing items array.',
-    }))).toThrow('Rovo response must include an items array.');
+    }))).toThrow('AI Assist response must include an items array.');
   });
 });

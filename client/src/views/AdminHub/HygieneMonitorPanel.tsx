@@ -157,7 +157,7 @@ export function HygieneMonitorPanel() {
     <div className={styles.sectionCard}>
       <h2 className={styles.sectionTitle}>🧹 Hygiene Monitor</h2>
       <p className={styles.adminDescription}>
-        Configure per-team daily Jira hygiene scans. Rovo classifies violations as
+        Configure per-team daily Jira hygiene scans. AI Assist classifies violations as
         FIXABLE (auto-applied via Jira) or UNFIXABLE (comment added to the issue).
         After each scan a digest is emailed via an Atlassian Automation webhook (an
         inbox rule then forwards it into Teams).

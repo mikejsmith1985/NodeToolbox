@@ -13,12 +13,12 @@ import { SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts'
 import { listGitHubAppInstallations, type GitHubAppInstallation } from '../../services/connectivityConfigApi.ts'
 import { fetchSchedulerValidation, type SchedulerValidationRepoResult } from '../../services/schedulerApi.ts'
 import { useConnectionStore } from '../../store/connectionStore'
-import { setRovoUnlocked } from '../../store/rovoStore.ts'
-import { useRovoAssist } from '../SnowHub/hooks/useRovoAssist.ts'
+import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts'
+import { useAiAssist } from '../SnowHub/hooks/useAiAssist.ts'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
 import { HygieneMonitorPanel } from './HygieneMonitorPanel.tsx'
 import { RepoMonitorPanel } from './RepoMonitorPanel.tsx'
-import { RovoAutomationPanel } from './RovoAutomationPanel.tsx'
+import { AiAssistAutomationPanel } from './AiAssistAutomationPanel.tsx'
 import { SprintReleasePanel } from './SprintReleasePanel.tsx'
 import { StandupBriefingPanel } from './StandupBriefingPanel.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
@@ -50,7 +50,7 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'dev-panel' | 'sprint-release' | 'rovo'
+type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'dev-panel' | 'sprint-release' | 'ai-assist'
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
@@ -61,9 +61,9 @@ const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'dev-panel', label: '🛰️ Dev Panel' },
 ]
 
-// Hidden "⚡ Rovo" tab, appended only while the Rovo capability is unlocked.
-const ROVO_ADMIN_TAB: { key: AdminHubTab; label: string } = { key: 'rovo', label: '⚡ Rovo' }
-const HIDDEN_ROVO_SHORTCUT_KEY = 'z'
+// Hidden "⚡ AI Assist" tab, appended only while the AI Assist capability is unlocked.
+const AI_ASSIST_ADMIN_TAB: { key: AdminHubTab; label: string } = { key: 'ai-assist', label: '⚡ AI Assist' }
+const HIDDEN_AI_ASSIST_SHORTCUT_KEY = 'z'
 
 type ReportsConfigSubTab = 'scope-change' | 'feature-change' | 'hygiene-monitor'
 
@@ -2668,56 +2668,56 @@ export default function AdminHubView() {
   const [activeAdminTab, setActiveAdminTab] = useState<AdminHubTab>('main')
   const adminHubRootRef = useRef<HTMLDivElement | null>(null)
 
-  // Hidden Rovo capability: Ctrl+Alt+Z toggles it from ANY Admin Hub tab —
+  // Hidden AI Assist capability: Ctrl+Alt+Z toggles it from ANY Admin Hub tab —
   // opens the passphrase gate when locked, re-hides everything when unlocked.
-  const { isUnlocked: isRovoUnlocked, verifyPassphrase } = useRovoAssist()
-  const [isRovoPassphraseVisible, setIsRovoPassphraseVisible] = useState(false)
-  const [rovoPassphraseInput, setRovoPassphraseInput] = useState('')
-  const [rovoPassphraseError, setRovoPassphraseError] = useState<string | null>(null)
+  const { isUnlocked: isAiAssistUnlocked, verifyPassphrase } = useAiAssist()
+  const [isAiAssistPassphraseVisible, setIsAiAssistPassphraseVisible] = useState(false)
+  const [aiAssistPassphraseInput, setAiAssistPassphraseInput] = useState('')
+  const [aiAssistPassphraseError, setAiAssistPassphraseError] = useState<string | null>(null)
 
   useEffect(() => {
     function handleKeyDown(keyboardEvent: KeyboardEvent) {
       const isShortcut =
-        keyboardEvent.ctrlKey && keyboardEvent.altKey && keyboardEvent.key.toLowerCase() === HIDDEN_ROVO_SHORTCUT_KEY
+        keyboardEvent.ctrlKey && keyboardEvent.altKey && keyboardEvent.key.toLowerCase() === HIDDEN_AI_ASSIST_SHORTCUT_KEY
       if (!isShortcut) return
-      if (isRovoUnlocked) {
-        // Re-hide all Rovo features (shared store → hides generators + this tab).
-        setRovoUnlocked(false)
-        setActiveAdminTab((current) => (current === 'rovo' ? 'main' : current))
+      if (isAiAssistUnlocked) {
+        // Re-hide all AI Assist features (shared store → hides generators + this tab).
+        setAiAssistUnlocked(false)
+        setActiveAdminTab((current) => (current === 'ai-assist' ? 'main' : current))
         return
       }
-      setIsRovoPassphraseVisible(true)
-      setRovoPassphraseInput('')
-      setRovoPassphraseError(null)
+      setIsAiAssistPassphraseVisible(true)
+      setAiAssistPassphraseInput('')
+      setAiAssistPassphraseError(null)
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isRovoUnlocked])
+  }, [isAiAssistUnlocked])
 
-  // If the capability locks while a Rovo-gated tab is active, fall back to Config.
+  // If the capability locks while an AI Assist-gated tab is active, fall back to Config.
   useEffect(() => {
-    const isRovoGatedTab = activeAdminTab === 'rovo'
-    if (!isRovoUnlocked && isRovoGatedTab) {
+    const isAiAssistGatedTab = activeAdminTab === 'ai-assist'
+    if (!isAiAssistUnlocked && isAiAssistGatedTab) {
       setActiveAdminTab('main')
     }
-  }, [isRovoUnlocked, activeAdminTab])
+  }, [isAiAssistUnlocked, activeAdminTab])
 
-  const handleRovoPassphraseSubmit = useCallback(async () => {
-    const isAccepted = await verifyPassphrase(rovoPassphraseInput)
+  const handleAiAssistPassphraseSubmit = useCallback(async () => {
+    const isAccepted = await verifyPassphrase(aiAssistPassphraseInput)
     if (isAccepted) {
-      // verifyPassphrase sets the shared rovoStore → the ⚡ Rovo tab appears.
-      setIsRovoPassphraseVisible(false)
-      setRovoPassphraseInput('')
-      setRovoPassphraseError(null)
-      setActiveAdminTab('rovo')
+      // verifyPassphrase sets the shared aiAssistStore → the ⚡ AI Assist tab appears.
+      setIsAiAssistPassphraseVisible(false)
+      setAiAssistPassphraseInput('')
+      setAiAssistPassphraseError(null)
+      setActiveAdminTab('ai-assist')
       return
     }
-    setRovoPassphraseError('Incorrect passphrase')
-  }, [rovoPassphraseInput, verifyPassphrase])
+    setAiAssistPassphraseError('Incorrect passphrase')
+  }, [aiAssistPassphraseInput, verifyPassphrase])
 
-  // The ⚡ Rovo and 🧹 Hygiene Monitor tabs are only offered while unlocked.
-  const adminHubTabs = isRovoUnlocked
-    ? [...ADMIN_HUB_TAB_OPTIONS, ROVO_ADMIN_TAB]
+  // The ⚡ AI Assist and 🧹 Hygiene Monitor tabs are only offered while unlocked.
+  const adminHubTabs = isAiAssistUnlocked
+    ? [...ADMIN_HUB_TAB_OPTIONS, AI_ASSIST_ADMIN_TAB]
     : ADMIN_HUB_TAB_OPTIONS
 
   useEffect(() => {
@@ -2759,9 +2759,9 @@ export default function AdminHubView() {
         onChange={setActiveAdminTab}
       />
 
-      {isRovoPassphraseVisible && (
+      {isAiAssistPassphraseVisible && (
         <div className={styles.sectionCard}>
-          <h2 className={styles.sectionTitle}>🔒 Rovo Automation</h2>
+          <h2 className={styles.sectionTitle}>🔒 AI Assist Automation</h2>
           <label className={styles.adminDescription}>
             Passphrase
             <input
@@ -2769,15 +2769,15 @@ export default function AdminHubView() {
               className={styles.inputField}
               type="password"
               placeholder="Enter passphrase"
-              value={rovoPassphraseInput}
-              onChange={(changeEvent) => { setRovoPassphraseInput(changeEvent.target.value); setRovoPassphraseError(null) }}
-              onKeyDown={(keyboardEvent) => { if (keyboardEvent.key === 'Enter') void handleRovoPassphraseSubmit() }}
+              value={aiAssistPassphraseInput}
+              onChange={(changeEvent) => { setAiAssistPassphraseInput(changeEvent.target.value); setAiAssistPassphraseError(null) }}
+              onKeyDown={(keyboardEvent) => { if (keyboardEvent.key === 'Enter') void handleAiAssistPassphraseSubmit() }}
             />
           </label>
-          {rovoPassphraseError !== null ? <p className={styles.errorMessage}>{rovoPassphraseError}</p> : null}
+          {aiAssistPassphraseError !== null ? <p className={styles.errorMessage}>{aiAssistPassphraseError}</p> : null}
           <div>
-            <button className={styles.primaryBtn} onClick={() => void handleRovoPassphraseSubmit()} type="button">Unlock Rovo</button>
-            <button className={styles.secondaryBtn} onClick={() => setIsRovoPassphraseVisible(false)} type="button">Cancel</button>
+            <button className={styles.primaryBtn} onClick={() => void handleAiAssistPassphraseSubmit()} type="button">Unlock AI Assist</button>
+            <button className={styles.secondaryBtn} onClick={() => setIsAiAssistPassphraseVisible(false)} type="button">Cancel</button>
           </div>
         </div>
       )}
@@ -2864,9 +2864,9 @@ export default function AdminHubView() {
         </section>
       )}
 
-      {activeAdminTab === 'rovo' && isRovoUnlocked && (
-        <section id="admin-hub-rovo-panel" role="tabpanel" aria-labelledby="admin-hub-rovo-tab">
-          <RovoAutomationPanel />
+      {activeAdminTab === 'ai-assist' && isAiAssistUnlocked && (
+        <section id="admin-hub-ai-assist-panel" role="tabpanel" aria-labelledby="admin-hub-ai-assist-tab">
+          <AiAssistAutomationPanel />
         </section>
       )}
     </ViewFrame>

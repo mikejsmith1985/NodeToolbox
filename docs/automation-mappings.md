@@ -4,7 +4,7 @@
 >
 > For each report surface NodeToolbox can deliver to an Atlassian Automation
 > webhook, this lists the JSON payload shape and a ready-to-paste System Prompt
-> for the Jira "Use Rovo agent" cloud block.
+> for the Jira AI Assist cloud block.
 
 All payloads share the `payloadContext` envelope; only `report` varies per surface.
 
@@ -32,7 +32,7 @@ All payloads share the `payloadContext` envelope; only `report` varies per surfa
 }
 ```
 
-**Rovo "Use Rovo agent" System Prompt template:**
+**AI Assist System Prompt template:**
 
 ```text
 You are summarising a NodeToolbox **Standup Briefing** for an Agile Release Train.
@@ -71,7 +71,7 @@ Produce a concise summary highlighting the most important changes, risks, and bl
 }
 ```
 
-**Rovo "Use Rovo agent" System Prompt template:**
+**AI Assist System Prompt template:**
 
 ```text
 You are summarising a NodeToolbox **Scope Change report** for an Agile Release Train.
@@ -110,10 +110,49 @@ Produce a concise summary highlighting the most important changes, risks, and bl
 }
 ```
 
-**Rovo "Use Rovo agent" System Prompt template:**
+**AI Assist System Prompt template:**
 
 ```text
 You are summarising a NodeToolbox **Feature Change report** for an Agile Release Train.
+
+Source: {{webhookData.payloadContext.source}}
+Team: {{webhookData.payloadContext.team.name}} ({{webhookData.payloadContext.team.projectKey}})
+Generated: {{webhookData.payloadContext.generatedAt}}
+
+Report content:
+{{webhookData.payloadContext.report}}
+
+Produce a concise summary highlighting the most important changes, risks, and blockers.
+```
+
+## Hygiene Monitor digest (`hygiene-digest`)
+
+**Report shape:** Object: { teamName, scannedAt, issuesScanned, violationsFound, fixesApplied, actionsRequired, unassignedCount, trend, failures, emailTo }.
+
+**Payload sent:**
+
+```json
+{
+  "payloadContext": {
+    "source": "hygiene-digest",
+    "team": {
+      "name": "Team Alpha",
+      "projectKey": "ALPHA"
+    },
+    "generatedAt": "2026-06-15T11:00:00.000Z",
+    "report": "<Object: { teamName, scannedAt, issuesScanned, violationsFound, fixesApplied, actionsRequired, unassignedCount, trend, failures, emailTo }.>",
+    "meta": {
+      "redactionApplied": false,
+      "nodeToolboxVersion": "0.16.20"
+    }
+  }
+}
+```
+
+**AI Assist System Prompt template:**
+
+```text
+You are summarising a NodeToolbox **Hygiene Monitor digest** for an Agile Release Train.
 
 Source: {{webhookData.payloadContext.source}}
 Team: {{webhookData.payloadContext.team.name}} ({{webhookData.payloadContext.team.projectKey}})

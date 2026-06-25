@@ -3,7 +3,7 @@
 //
 // For each report surface NodeToolbox can deliver to an Atlassian Automation
 // webhook, this emits the JSON payload shape and a ready-to-paste System Prompt
-// template for the Jira "Use Rovo agent" cloud block, referencing the payload via
+// template for the Jira AI Assist cloud block, referencing the payload via
 // {{webhookData.payloadContext.*}} smart values. Driving the docs off the same
 // registry the delivery service uses keeps the contract and its documentation in
 // lockstep.
@@ -27,7 +27,7 @@ function buildEnvelopeExample(surface) {
   };
 }
 
-/** Builds the Rovo "Use Rovo agent" System Prompt template for a surface. */
+/** Builds the AI Assist System Prompt template for a surface. */
 function buildSystemPrompt(surface) {
   return [
     `You are summarising a NodeToolbox **${surface.label}** for an Agile Release Train.`,
@@ -52,7 +52,7 @@ function generateMarkdown(surfaces) {
     '>',
     '> For each report surface NodeToolbox can deliver to an Atlassian Automation',
     '> webhook, this lists the JSON payload shape and a ready-to-paste System Prompt',
-    '> for the Jira "Use Rovo agent" cloud block.',
+    '> for the Jira AI Assist cloud block.',
     '',
     'All payloads share the `payloadContext` envelope; only `report` varies per surface.',
     '',
@@ -69,7 +69,7 @@ function generateMarkdown(surfaces) {
     lines.push(JSON.stringify(buildEnvelopeExample(surface), null, 2));
     lines.push('```');
     lines.push('');
-    lines.push('**Rovo "Use Rovo agent" System Prompt template:**');
+    lines.push('**AI Assist System Prompt template:**');
     lines.push('');
     lines.push('```text');
     lines.push(buildSystemPrompt(surface));

@@ -18,9 +18,9 @@ import { useCrgFieldPins } from '../hooks/useCrgFieldPins.ts';
 import { useCrgState } from '../hooks/useCrgState.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
-import { setRovoUnlocked } from '../../../store/rovoStore.ts';
-import { parseRovoChgResponse, useRovoAssist } from '../hooks/useRovoAssist.ts';
-import { useRovoExchange } from '../hooks/useRovoExchange.ts';
+import { setAiAssistUnlocked } from '../../../store/aiAssistStore.ts';
+import { parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
+import { useAiAssistExchange } from '../hooks/useAiAssistExchange.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
 import { useSnowChoiceOptions } from '../hooks/useSnowChoiceOptions.ts';
 import { CtaskEditForm } from '../components/CtaskEditForm.tsx';
@@ -544,10 +544,10 @@ interface CrgStepProps {
   actions: CrgActionSet;
 }
 
-/** Additional props passed to PlanningStep when Rovo assist is active. */
+/** Additional props passed to PlanningStep when AI Assist is active. */
 interface PlanningStepExtras {
-  isRovoUnlocked: boolean;
-  onEnhanceWithRovo: () => void;
+  isAiAssistUnlocked: boolean;
+  onEnhanceWithAiAssist: () => void;
   /** Dynamic choice options fetched from SNow form metadata for planning dropdowns. */
   choiceOptions: SnowChoiceOptionMap;
   /** True while the SNow metadata fetch is still in flight. */
@@ -617,12 +617,12 @@ interface ChangeDetailsExtras {
   removePin: (pinId: string) => void;
   getPinnedFields: (fieldKey: string) => CrgPinnedField[];
   findPinnedField: (fieldKey: string, fieldValue: CrgPinnedField['value']) => CrgPinnedField | undefined;
-  /** True when the Ctrl+Alt+Z passphrase gate is unlocked — shows Rovo draft action. */
-  isRovoUnlocked: boolean;
-  /** Dispatches a Rovo exchange to populate Short Description + Description from selected issues. */
-  onDraftWithRovo: () => Promise<void>;
-  /** True while the Rovo draft exchange is in flight. */
-  isDraftingWithRovo: boolean;
+  /** True when the Ctrl+Alt+Z passphrase gate is unlocked — shows AI Assist draft action. */
+  isAiAssistUnlocked: boolean;
+  /** Dispatches an AI Assist exchange to populate Short Description + Description from selected issues. */
+  onDraftWithAiAssist: () => Promise<void>;
+  /** True while the AI Assist draft exchange is in flight. */
+  isDraftingWithAiAssist: boolean;
 }
 
 interface CtaskTemplateExtras {
@@ -635,10 +635,10 @@ interface CtaskTemplateExtras {
 interface ResultsStepExtras {
   ctaskTemplates: CtaskTemplate[];
   environmentValueByKey: Partial<Record<EnvironmentKey, string>>;
-  /** True when the Ctrl+Alt+Z passphrase gate is unlocked — shows Rovo risk check. */
-  isRovoUnlocked: boolean;
-  /** Runs a Rovo exchange to review the CHG payload; resolves to gap text or null. */
-  onRiskCheckWithRovo: () => Promise<string | null>;
+  /** True when the Ctrl+Alt+Z passphrase gate is unlocked — shows AI Assist risk check. */
+  isAiAssistUnlocked: boolean;
+  /** Runs an AI Assist exchange to review the CHG payload; resolves to gap text or null. */
+  onRiskCheckWithAiAssist: () => Promise<string | null>;
 }
 
 interface StepRenderOptions {
@@ -1240,9 +1240,9 @@ function ChangeDetailsStep({
   removePin,
   getPinnedFields,
   findPinnedField,
-  isRovoUnlocked,
-  onDraftWithRovo,
-  isDraftingWithRovo,
+  isAiAssistUnlocked,
+  onDraftWithAiAssist,
+  isDraftingWithAiAssist,
   headingStep,
   shouldShowNavigation = true,
   shouldShowSaveButtons = false,
@@ -1370,17 +1370,17 @@ function ChangeDetailsStep({
     <section className={styles.section}>
       <StepHeading currentStep={headingStep ?? state.currentStep} />
 
-      {/* Draft with Rovo — optional accelerator, gated by Ctrl+Alt+Z passphrase (SC-007). */}
-      {isRovoUnlocked ? (
-        <div className={styles.rovoRow}>
+      {/* Draft with AI Assist — optional accelerator, gated by Ctrl+Alt+Z passphrase (SC-007). */}
+      {isAiAssistUnlocked ? (
+        <div className={styles.aiAssistRow}>
           <button
-            className={styles.rovoButton}
-            disabled={isDraftingWithRovo}
-            onClick={onDraftWithRovo}
-            title="Draft Short Description and Description from your selected Jira issues using Rovo"
+            className={styles.aiAssistButton}
+            disabled={isDraftingWithAiAssist}
+            onClick={onDraftWithAiAssist}
+            title="Draft Short Description and Description from your selected Jira issues using AI Assist"
             type="button"
           >
-            {isDraftingWithRovo ? '✦ Drafting…' : '✦ Draft with Rovo'}
+            {isDraftingWithAiAssist ? '✦ Drafting…' : '✦ Draft with AI Assist'}
           </button>
         </div>
       ) : null}
@@ -1523,8 +1523,8 @@ function ChangeDetailsStep({
 function PlanningStep({
   state,
   actions,
-  isRovoUnlocked,
-  onEnhanceWithRovo,
+  isAiAssistUnlocked,
+  onEnhanceWithAiAssist,
   choiceOptions,
   isLoadingChoices,
   isFetchFailed,
@@ -1697,12 +1697,12 @@ function PlanningStep({
         ))}
       </div>
 
-      {isRovoUnlocked ? (
-        <div className={styles.rovoRow}>
+      {isAiAssistUnlocked ? (
+        <div className={styles.aiAssistRow}>
           <button
-            className={styles.rovoButton}
-            onClick={onEnhanceWithRovo}
-            title="Generate a hidden prompt to enhance content with Rovo"
+            className={styles.aiAssistButton}
+            onClick={onEnhanceWithAiAssist}
+            title="Generate a hidden prompt to enhance content with AI Assist"
             type="button"
           >
             ✦ Enhance with prompt
@@ -2142,7 +2142,7 @@ function CtaskTemplatePanel({ state, actions, templates, saveTemplate, updateTem
   );
 }
 
-function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, isRovoUnlocked, onRiskCheckWithRovo }: CrgStepProps & ResultsStepExtras) {
+function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, isAiAssistUnlocked, onRiskCheckWithAiAssist }: CrgStepProps & ResultsStepExtras) {
   const [selectedCtaskTemplateId, setSelectedCtaskTemplateId] = useState('');
   const [existingChgNumber, setExistingChgNumber] = useState('');
   const [riskCheckResult, setRiskCheckResult] = useState<string | null>(null);
@@ -2154,7 +2154,7 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
 
   async function handleRiskCheckClick() {
     setIsRiskCheckRunning(true);
-    const result = await onRiskCheckWithRovo();
+    const result = await onRiskCheckWithAiAssist();
     setRiskCheckResult(result);
     setIsRiskCheckRunning(false);
   }
@@ -2239,21 +2239,21 @@ function ResultsStep({ state, actions, ctaskTemplates, environmentValueByKey, is
         <span className={styles.fieldLabel}>{CONSOLIDATED_RESULT_LABEL}</span>
         <textarea className={styles.textArea} readOnly value={hasGeneratedContent ? consolidatedResult : DEFAULT_RESULT_MESSAGE} />
       </label>
-      {/* Risk check with Rovo — optional pre-submission review, gated by Ctrl+Alt+Z (SC-007). */}
-      {isRovoUnlocked ? (
-        <div className={styles.rovoRow}>
+      {/* Risk check with AI Assist — optional pre-submission review, gated by Ctrl+Alt+Z (SC-007). */}
+      {isAiAssistUnlocked ? (
+        <div className={styles.aiAssistRow}>
           <button
-            className={styles.rovoButton}
+            className={styles.aiAssistButton}
             disabled={isRiskCheckRunning}
             onClick={() => void handleRiskCheckClick()}
-            title="Have Rovo review the CHG payload and flag gaps before submission"
+            title="Have AI Assist review the CHG payload and flag gaps before submission"
             type="button"
           >
-            {isRiskCheckRunning ? '✦ Checking…' : '✦ Risk check with Rovo'}
+            {isRiskCheckRunning ? '✦ Checking…' : '✦ Risk check with AI Assist'}
           </button>
           {riskCheckResult !== null ? (
             <div className={styles.riskCheckResult}>
-              <p className={styles.riskCheckHeading}>Rovo risk review:</p>
+              <p className={styles.riskCheckHeading}>AI Assist risk review:</p>
               <pre className={styles.riskCheckText}>{riskCheckResult}</pre>
             </div>
           ) : null}
@@ -2338,7 +2338,7 @@ export interface CrgTabProps {
  */
 export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
   const { state, actions } = useCrgState();
-  const { isUnlocked, verifyPassphrase, buildPrompt } = useRovoAssist();
+  const { isUnlocked, verifyPassphrase, buildPrompt } = useAiAssist();
   const {
     templates,
     defaultTemplateId,
@@ -2369,15 +2369,15 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
   const [passphraseError, setPassphraseError] = useState<string | null>(null);
   const passphraseInputRef = useRef<HTMLInputElement>(null);
 
-  // Prompt modal state — holds the generated prompt text the user pastes into Rovo.
-  const [rovoPrompt, setRovoPrompt] = useState<string | null>(null);
+  // Prompt modal state — holds the generated prompt text the user pastes into AI Assist.
+  const [aiAssistPrompt, setAiAssistPrompt] = useState<string | null>(null);
 
-  // Automated Rovo exchange — dispatches the prompt and polls for the result,
+  // Automated AI Assist exchange — dispatches the prompt and polls for the result,
   // removing the manual copy-paste step. Status is shown inside the prompt modal.
-  const { isRunning: isRovoRunning, runRovoExchange } = useRovoExchange();
-  const [rovoAutoStatus, setRovoAutoStatus] = useState<string | null>(null);
-  // True while the Step 3 "Draft with Rovo" exchange is in flight.
-  const [isDraftingWithRovo, setIsDraftingWithRovo] = useState(false);
+  const { isRunning: isAiAssistRunning, runAiAssistExchange } = useAiAssistExchange();
+  const [aiAssistAutoStatus, setAiAssistAutoStatus] = useState<string | null>(null);
+  // True while the Step 3 "Draft with AI Assist" exchange is in flight.
+  const [isDraftingWithAiAssist, setIsDraftingWithAiAssist] = useState(false);
 
   const issueCountSummary = useMemo(() => {
     if (mode === 'configuration') {
@@ -2460,14 +2460,14 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
   ]);
 
   // Listen for the hidden activation key combination: Ctrl+Alt+Z. It toggles —
-  // opens the passphrase gate when locked, and re-hides all Rovo features when
+  // opens the passphrase gate when locked, and re-hides all AI Assist features when
   // already unlocked.
   useEffect(() => {
     function handleGlobalKeyDown(keyboardEvent: globalThis.KeyboardEvent): void {
       if (keyboardEvent.ctrlKey && keyboardEvent.altKey && keyboardEvent.key.toLowerCase() === 'z') {
         keyboardEvent.preventDefault();
         if (isUnlocked) {
-          setRovoUnlocked(false);
+          setAiAssistUnlocked(false);
           return;
         }
         setIsPassphraseModalVisible(true);
@@ -2508,7 +2508,7 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     }
   }, [handlePassphraseSubmit]);
 
-  const handleEnhanceWithRovo = useCallback(() => {
+  const handleEnhanceWithAiAssist = useCallback(() => {
     const selectedIssues = state.fetchedIssues.filter((issue) =>
       state.selectedIssueKeys.has(issue.key),
     );
@@ -2521,23 +2521,23 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     };
 
     const promptText = buildPrompt(selectedIssues, currentFields);
-    setRovoPrompt(promptText);
+    setAiAssistPrompt(promptText);
   }, [state, buildPrompt]);
 
-  // Automated path: send the shown prompt to Rovo, poll for the deterministic
+  // Automated path: send the shown prompt to AI Assist, poll for the deterministic
   // response, parse it, and apply each returned value to its CHG field — the
   // same fields the manual paste-back would populate.
-  const handleRunRovoAuto = useCallback(async () => {
-    if (!rovoPrompt) return;
+  const handleRunAiAssistAuto = useCallback(async () => {
+    if (!aiAssistPrompt) return;
 
-    setRovoAutoStatus('Sending to Rovo…');
-    const exchange = await runRovoExchange(rovoPrompt);
+    setAiAssistAutoStatus('Sending to AI Assist…');
+    const exchange = await runAiAssistExchange(aiAssistPrompt);
     if (!exchange.ok) {
-      setRovoAutoStatus(exchange.message);
+      setAiAssistAutoStatus(exchange.message);
       return;
     }
 
-    const parsedFields = parseRovoChgResponse(exchange.response ?? '');
+    const parsedFields = parseAiAssistChgResponse(exchange.response ?? '');
     const parsedFieldKeys = Object.keys(parsedFields) as Array<keyof typeof parsedFields>;
     parsedFieldKeys.forEach((fieldKey) => {
       const fieldValue = parsedFields[fieldKey];
@@ -2546,17 +2546,17 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
       }
     });
 
-    setRovoAutoStatus(
+    setAiAssistAutoStatus(
       parsedFieldKeys.length > 0
-        ? `Applied ${parsedFieldKeys.length} field(s) from Rovo.`
-        : 'Rovo returned no recognisable fields.',
+        ? `Applied ${parsedFieldKeys.length} field(s) from AI Assist.`
+        : 'AI Assist returned no recognisable fields.',
     );
-  }, [rovoPrompt, runRovoExchange, actions]);
+  }, [aiAssistPrompt, runAiAssistExchange, actions]);
 
   // Step 3: dispatch a targeted prompt to populate Short Description and Description from
   // the selected Jira issues. Only the two relevant fields are updated — the full four-field
   // prompt (Step 4) is left to the Planning step so each step stays focused.
-  const handleDraftWithRovo = useCallback(async () => {
+  const handleDraftWithAiAssist = useCallback(async () => {
     const selectedIssues = state.fetchedIssues.filter((issue) =>
       state.selectedIssueKeys.has(issue.key),
     );
@@ -2574,20 +2574,20 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
       issueLines,
     ].join('\n');
 
-    setIsDraftingWithRovo(true);
-    const exchange = await runRovoExchange(draftPrompt);
-    setIsDraftingWithRovo(false);
+    setIsDraftingWithAiAssist(true);
+    const exchange = await runAiAssistExchange(draftPrompt);
+    setIsDraftingWithAiAssist(false);
 
     if (!exchange.ok || !exchange.response) return;
-    const parsedFields = parseRovoChgResponse(exchange.response);
+    const parsedFields = parseAiAssistChgResponse(exchange.response);
     if (parsedFields.shortDescription) actions.updateGeneratedField('shortDescription', parsedFields.shortDescription);
     if (parsedFields.description) actions.updateGeneratedField('description', parsedFields.description);
-  }, [state.fetchedIssues, state.selectedIssueKeys, runRovoExchange, actions]);
+  }, [state.fetchedIssues, state.selectedIssueKeys, runAiAssistExchange, actions]);
 
-  // Step 6: dispatch the current CHG payload to Rovo for a pre-submission risk review.
+  // Step 6: dispatch the current CHG payload to AI Assist for a pre-submission risk review.
   // The raw response text is returned so ResultsStep can display it inline — the user
-  // may still submit regardless of what Rovo flags (FR-005: submission not blocked).
-  const handleRiskCheckWithRovo = useCallback(async (): Promise<string | null> => {
+  // may still submit regardless of what AI Assist flags (FR-005: submission not blocked).
+  const handleRiskCheckWithAiAssist = useCallback(async (): Promise<string | null> => {
     const riskPrompt = [
       'You are reviewing a ServiceNow Change Request before submission.',
       'Identify gaps, risks, or missing fields that need attention.',
@@ -2599,14 +2599,14 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
       `Risk & Impact: ${state.generatedRiskImpact || '(not set)'}`,
     ].join('\n');
 
-    const exchange = await runRovoExchange(riskPrompt);
+    const exchange = await runAiAssistExchange(riskPrompt);
     if (!exchange.ok || !exchange.response) return null;
     return exchange.response;
-  }, [state.generatedShortDescription, state.generatedDescription, state.generatedJustification, state.generatedRiskImpact, runRovoExchange]);
+  }, [state.generatedShortDescription, state.generatedDescription, state.generatedJustification, state.generatedRiskImpact, runAiAssistExchange]);
 
   const planningExtras: PlanningStepExtras = {
-    isRovoUnlocked:    isUnlocked,
-    onEnhanceWithRovo: handleEnhanceWithRovo,
+    isAiAssistUnlocked:    isUnlocked,
+    onEnhanceWithAiAssist: handleEnhanceWithAiAssist,
     choiceOptions,
     isLoadingChoices,
     isFetchFailed,
@@ -2649,9 +2649,9 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     removePin,
     getPinnedFields,
     findPinnedField,
-    isRovoUnlocked: isUnlocked,
-    onDraftWithRovo: handleDraftWithRovo,
-    isDraftingWithRovo,
+    isAiAssistUnlocked: isUnlocked,
+    onDraftWithAiAssist: handleDraftWithAiAssist,
+    isDraftingWithAiAssist,
   };
 
   const workspaceExtras: CrgWorkspaceExtras = {
@@ -2679,8 +2679,8 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
       prd: resolveEnvironmentOptionValue(choiceOptions['u_environment'] ?? [], 'prd'),
       pfix: resolveEnvironmentOptionValue(choiceOptions['u_environment'] ?? [], 'pfix'),
     },
-    isRovoUnlocked: isUnlocked,
-    onRiskCheckWithRovo: handleRiskCheckWithRovo,
+    isAiAssistUnlocked: isUnlocked,
+    onRiskCheckWithAiAssist: handleRiskCheckWithAiAssist,
   };
 
   const tabTitle = mode === 'configuration' ? CONFIGURATION_TAB_TITLE : TAB_TITLE;
@@ -2743,44 +2743,44 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
         </div>
       ) : null}
 
-      {/* Prompt modal — shows the generated Rovo prompt for copy/paste */}
-      {rovoPrompt !== null ? (
+      {/* Prompt modal — shows the generated AI Assist prompt for copy/paste */}
+      {aiAssistPrompt !== null ? (
         <div className={styles.passphraseOverlay}>
           <div className={styles.promptModal}>
             <p className={styles.promptInstructions}>
-              Copy this prompt and paste it into Rovo to generate the four CHG field values.
+              Copy this prompt and paste it into AI Assist to generate the four CHG field values.
             </p>
             <textarea
               className={styles.promptTextArea}
               readOnly
-              value={rovoPrompt}
+              value={aiAssistPrompt}
             />
             <div className={styles.promptActions}>
               <button
-                className={styles.rovoButton}
-                disabled={isRovoRunning}
-                onClick={() => void handleRunRovoAuto()}
+                className={styles.aiAssistButton}
+                disabled={isAiAssistRunning}
+                onClick={() => void handleRunAiAssistAuto()}
                 type="button"
               >
-                {isRovoRunning ? '⏳ Running via Rovo…' : '⚡ Run via Rovo (auto)'}
+                {isAiAssistRunning ? '⏳ Running via AI Assist…' : '⚡ Run via AI Assist (auto)'}
               </button>
               <button
-                className={styles.rovoButton}
-                onClick={() => void navigator.clipboard.writeText(rovoPrompt)}
+                className={styles.aiAssistButton}
+                onClick={() => void navigator.clipboard.writeText(aiAssistPrompt)}
                 type="button"
               >
                 📋 Copy to Clipboard
               </button>
               <button
                 className={styles.linkButton}
-                onClick={() => { setRovoPrompt(null); setRovoAutoStatus(null); }}
+                onClick={() => { setAiAssistPrompt(null); setAiAssistAutoStatus(null); }}
                 type="button"
               >
                 Close
               </button>
             </div>
-            {rovoAutoStatus !== null ? (
-              <p className={styles.promptInstructions} role="status">{rovoAutoStatus}</p>
+            {aiAssistAutoStatus !== null ? (
+              <p className={styles.promptInstructions} role="status">{aiAssistAutoStatus}</p>
             ) : null}
           </div>
         </div>

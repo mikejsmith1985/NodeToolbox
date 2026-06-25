@@ -4,20 +4,20 @@ import { describe, expect, it } from 'vitest';
 
 // ── Inline test utilities (mirror the module-private helpers) ──
 
-interface RovoRiskItem {
+interface AiAssistRiskItem {
   key: string;
   description: string;
   riskResponse?: string;
   priority?: string;
 }
 
-function parseRovoRiskResponse(
+function parseAiAssistRiskResponse(
   responseText: string,
   validRiskKeys: ReadonlySet<string>,
-): { items: RovoRiskItem[]; errorMessage: string | null } {
+): { items: AiAssistRiskItem[]; errorMessage: string | null } {
   const jsonMatch = responseText.match(/\[[\s\S]*\]/);
   if (!jsonMatch) {
-    return { items: [], errorMessage: 'No JSON array found in the response. Paste the full Rovo output.' };
+    return { items: [], errorMessage: 'No JSON array found in the response. Paste the full AI Assist output.' };
   }
 
   let parsedItems: unknown;
@@ -31,7 +31,7 @@ function parseRovoRiskResponse(
     return { items: [], errorMessage: 'Expected a JSON array at the top level.' };
   }
 
-  const validItems: RovoRiskItem[] = [];
+  const validItems: AiAssistRiskItem[] = [];
   for (const parsedItem of parsedItems) {
     if (typeof parsedItem !== 'object' || parsedItem === null) continue;
     const candidate = parsedItem as Record<string, unknown>;
@@ -56,12 +56,12 @@ function parseRovoRiskResponse(
 
 // ── Tests ──
 
-describe('parseRovoRiskResponse', () => {
+describe('parseAiAssistRiskResponse', () => {
   it('extracts a valid risk update from a clean JSON array', () => {
     const json = JSON.stringify([
       { key: 'PROJ-1', description: 'There is a risk that: ...', riskResponse: 'Mitigate', priority: 'High' },
     ]);
-    const { items, errorMessage } = parseRovoRiskResponse(json, new Set(['PROJ-1']));
+    const { items, errorMessage } = parseAiAssistRiskResponse(json, new Set(['PROJ-1']));
 
     expect(errorMessage).toBeNull();
     expect(items).toHaveLength(1);
@@ -74,7 +74,7 @@ describe('parseRovoRiskResponse', () => {
     const json = JSON.stringify([
       { key: 'proj-2', description: 'There is a risk that: ...' },
     ]);
-    const { items } = parseRovoRiskResponse(json, new Set(['PROJ-2']));
+    const { items } = parseAiAssistRiskResponse(json, new Set(['PROJ-2']));
 
     expect(items[0].key).toBe('PROJ-2');
   });
@@ -83,21 +83,21 @@ describe('parseRovoRiskResponse', () => {
     const json = `Here are the refined risks:\n${JSON.stringify([
       { key: 'PROJ-3', description: 'There is a risk that: ...' },
     ])}\nHope this helps!`;
-    const { items, errorMessage } = parseRovoRiskResponse(json, new Set(['PROJ-3']));
+    const { items, errorMessage } = parseAiAssistRiskResponse(json, new Set(['PROJ-3']));
 
     expect(errorMessage).toBeNull();
     expect(items).toHaveLength(1);
   });
 
   it('returns an error when the response contains no JSON array', () => {
-    const { items, errorMessage } = parseRovoRiskResponse('No JSON here.', new Set(['PROJ-1']));
+    const { items, errorMessage } = parseAiAssistRiskResponse('No JSON here.', new Set(['PROJ-1']));
 
     expect(items).toHaveLength(0);
     expect(errorMessage).toContain('No JSON array found');
   });
 
   it('returns an error for malformed JSON', () => {
-    const { items, errorMessage } = parseRovoRiskResponse('[{ broken }]', new Set(['PROJ-1']));
+    const { items, errorMessage } = parseAiAssistRiskResponse('[{ broken }]', new Set(['PROJ-1']));
 
     expect(items).toHaveLength(0);
     expect(errorMessage).toContain('invalid JSON');
@@ -107,7 +107,7 @@ describe('parseRovoRiskResponse', () => {
     const json = JSON.stringify([
       { key: 'OTHER-99', description: 'There is a risk that: ...' },
     ]);
-    const { items, errorMessage } = parseRovoRiskResponse(json, new Set(['PROJ-1']));
+    const { items, errorMessage } = parseAiAssistRiskResponse(json, new Set(['PROJ-1']));
 
     expect(items).toHaveLength(0);
     expect(errorMessage).toContain('No valid risk updates found');
@@ -117,7 +117,7 @@ describe('parseRovoRiskResponse', () => {
     const json = JSON.stringify([
       { key: 'PROJ-1', riskResponse: 'Accept' },
     ]);
-    const { items, errorMessage } = parseRovoRiskResponse(json, new Set(['PROJ-1']));
+    const { items, errorMessage } = parseAiAssistRiskResponse(json, new Set(['PROJ-1']));
 
     expect(items).toHaveLength(0);
     expect(errorMessage).toContain('No valid risk updates found');
@@ -127,7 +127,7 @@ describe('parseRovoRiskResponse', () => {
     const json = JSON.stringify([
       { key: 'PROJ-4', description: 'There is a risk that: ...' },
     ]);
-    const { items, errorMessage } = parseRovoRiskResponse(json, new Set(['PROJ-4']));
+    const { items, errorMessage } = parseAiAssistRiskResponse(json, new Set(['PROJ-4']));
 
     expect(errorMessage).toBeNull();
     expect(items[0].riskResponse).toBeUndefined();

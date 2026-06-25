@@ -1,13 +1,13 @@
-// src/services/rovoExchange.js — Server-mediated Rovo prompt exchange.
+// src/services/aiAssistExchange.js — Server-mediated AI Assist prompt exchange.
 //
-// Replaces the manual copy-paste in the hidden Rovo workflow: NodeToolbox POSTs a
-// generated prompt + correlationId to the configured Atlassian Automation/Rovo
-// webhook, then later reads Rovo's deterministic response back from a Confluence
+// Replaces the manual copy-paste in the hidden AI Assist workflow: NodeToolbox POSTs a
+// generated prompt + correlationId to the configured Atlassian Automation/AI Assist
+// webhook, then later reads AI Assist's deterministic response back from a Confluence
 // "parking" page keyed by that correlationId (write → read → delete). The caller
 // feeds the returned text into the surface's existing response parser.
 //
 // Unlike report delivery, the prompt is NOT redacted — the Jira content it carries
-// is exactly what the user wants Rovo to process. The Atlassian-host allow-list
+// is exactly what the user wants AI Assist to process. The Atlassian-host allow-list
 // still applies so the prompt can only go to an Atlassian destination.
 
 'use strict';
@@ -15,11 +15,14 @@
 const { triggerWebhook, makeConfluenceApiRequest } = require('../utils/httpClient');
 const { evaluateHost } = require('../utils/webhookHostPolicy');
 
-/** Title prefix for the per-request Confluence parking page. */
+// Title prefix for the per-request Confluence parking page. The literal value
+// 'rovo-result-' is an external Atlassian Automation contract and is preserved
+// exactly for compatibility — do NOT rename the value even though the feature is
+// now called "AI Assist".
 const PARKING_TITLE_PREFIX = 'rovo-result-';
 
-function getRovoConfig(configuration) {
-  return (configuration && configuration.rovoAutomation) || {};
+function getAiAssistConfig(configuration) {
+  return (configuration && configuration.aiAssistAutomation) || {};
 }
 
 function shouldVerifyTls(configuration) {
@@ -27,9 +30,9 @@ function shouldVerifyTls(configuration) {
 }
 
 /**
- * Dispatches a generated prompt to the configured Rovo automation webhook.
+ * Dispatches a generated prompt to the configured AI Assist automation webhook.
  *
- * @param {object} configuration - Live server config (holds rovoAutomation + sslVerify).
+ * @param {object} configuration - Live server config (holds aiAssistAutomation + sslVerify).
  * @param {{ correlationId: string, prompt: string }} request
  * @param {{ triggerWebhook?: Function }} [deps] - Test seam.
  * @returns {Promise<object>} Structured result with httpStatus + code + message.
@@ -45,27 +48,27 @@ async function dispatchPrompt(configuration, request, deps = {}) {
     return { ok: false, httpStatus: 400, code: 'empty-prompt', message: 'prompt is required.' };
   }
 
-  const rovo = getRovoConfig(configuration);
-  if (!rovo.webhookUrl) {
-    return { ok: false, httpStatus: 409, code: 'not-configured', message: 'Rovo automation webhook is not configured.' };
+  const aiAssist = getAiAssistConfig(configuration);
+  if (!aiAssist.webhookUrl) {
+    return { ok: false, httpStatus: 409, code: 'not-configured', message: 'AI Assist automation webhook is not configured.' };
   }
 
-  const hostCheck = evaluateHost(rovo.webhookUrl);
+  const hostCheck = evaluateHost(aiAssist.webhookUrl);
   if (!hostCheck.allowed) {
     return { ok: false, httpStatus: 422, code: 'host-not-allowed', message: hostCheck.reason };
   }
 
   try {
-    const result = await sendWebhook(rovo.webhookUrl, { correlationId, prompt }, shouldVerifyTls(configuration), rovo.webhookSecret || undefined);
+    const result = await sendWebhook(aiAssist.webhookUrl, { correlationId, prompt }, shouldVerifyTls(configuration), aiAssist.webhookSecret || undefined);
     const webhookStatus = result && result.status;
     const isSuccess = webhookStatus >= 200 && webhookStatus < 300;
     if (isSuccess) {
-      return { ok: true, httpStatus: 200, webhookStatus, code: 'dispatched', message: `Dispatched to Rovo (HTTP ${webhookStatus}).` };
+      return { ok: true, httpStatus: 200, webhookStatus, code: 'dispatched', message: `Dispatched to AI Assist (HTTP ${webhookStatus}).` };
     }
-    return { ok: false, httpStatus: 502, webhookStatus, code: 'webhook-rejected', message: `Rovo webhook rejected the request (HTTP ${webhookStatus}).` };
+    return { ok: false, httpStatus: 502, webhookStatus, code: 'webhook-rejected', message: `AI Assist webhook rejected the request (HTTP ${webhookStatus}).` };
   } catch (dispatchError) {
     const errorMessage = dispatchError instanceof Error ? dispatchError.message : String(dispatchError);
-    return { ok: false, httpStatus: 502, code: 'dispatch-failed', message: `Rovo dispatch failed: ${errorMessage}` };
+    return { ok: false, httpStatus: 502, code: 'dispatch-failed', message: `AI Assist dispatch failed: ${errorMessage}` };
   }
 }
 
@@ -105,7 +108,7 @@ function unwrapConfluence(response) {
   return response || {};
 }
 
-/** True when a line is a "correlationId: <id>" marker stamped by the Rovo rule. */
+/** True when a line is a "correlationId: <id>" marker stamped by the AI Assist rule. */
 function isCorrelationMarker(line) {
   return line.trimStart().toLowerCase().startsWith('correlationid:');
 }
@@ -114,7 +117,7 @@ function isCorrelationMarker(line) {
  * Lists the correlationId value(s) actually stamped on a parking page. Used only
  * for diagnostics: comparing what we are waiting for against what the page holds
  * instantly distinguishes a wrong-page-id (no markers found) from a stale-result
- * (a different id found) when a "Run via Rovo (auto)" times out.
+ * (a different id found) when a "Run via AI Assist (auto)" times out.
  *
  * @param {string} pageText - Plain-text body of the parking page.
  * @returns {string[]} The id portion of every correlationId marker line found.
@@ -133,7 +136,7 @@ function listCorrelationMarkers(pageText) {
 /**
  * Extracts this request's response from the parking page's text.
  *
- * The Confluence rule stamps a "correlationId: <id>" marker line ahead of Rovo's
+ * The Confluence rule stamps a "correlationId: <id>" marker line ahead of AI Assist's
  * output. When the rule *appends* (rather than replaces), the page accumulates
  * one marked block per run, so we must return ONLY the block belonging to THIS
  * request and ignore older results. We locate this request's marker line and
@@ -176,7 +179,7 @@ function extractStaticResult(pageText, correlationId) {
 }
 
 /**
- * Reads Rovo's response for a correlationId from the Confluence parking page.
+ * Reads AI Assist's response for a correlationId from the Confluence parking page.
  * Returns ready:false while the page does not exist yet; on success returns the
  * plain-text response and deletes the page (ephemeral, best-effort).
  *
@@ -192,9 +195,9 @@ async function fetchResult(configuration, correlationId, deps = {}) {
     return { ok: false, httpStatus: 400, code: 'bad-correlation', message: 'correlationId is required.' };
   }
 
-  const rovo = getRovoConfig(configuration);
-  if (!rovo.parkingPageId && !rovo.parkingSpaceKey) {
-    return { ok: false, httpStatus: 409, code: 'not-configured', message: 'Rovo parking page or space is not configured.' };
+  const aiAssist = getAiAssistConfig(configuration);
+  if (!aiAssist.parkingPageId && !aiAssist.parkingSpaceKey) {
+    return { ok: false, httpStatus: 409, code: 'not-configured', message: 'AI Assist parking page or space is not configured.' };
   }
 
   const confluenceConfig = (configuration && configuration.confluence) || {};
@@ -204,13 +207,13 @@ async function fetchResult(configuration, correlationId, deps = {}) {
   // direct lookup (no search index, no space-scoped query), so it works even in a
   // personal ("~") space where the content search returns nothing. The rule stamps
   // the correlationId into the body so we only accept the result for THIS request.
-  if (rovo.parkingPageId) {
+  if (aiAssist.parkingPageId) {
     try {
       // Request BOTH the legacy storage body and the rendered view body. Pages
       // authored in Confluence's modern (ADF) editor often return an EMPTY
       // body.storage while their text is only present in body.view, so we fall
       // back to the rendered body when storage comes back blank.
-      const page = await confluenceRequest('GET', `/wiki/rest/api/content/${encodeURIComponent(rovo.parkingPageId)}?expand=body.storage,body.view`, null, confluenceConfig, shouldVerify);
+      const page = await confluenceRequest('GET', `/wiki/rest/api/content/${encodeURIComponent(aiAssist.parkingPageId)}?expand=body.storage,body.view`, null, confluenceConfig, shouldVerify);
       // The page's content lives at <confluenceJson>.body.storage / .body.view.
       const contentBody = (unwrapConfluence(page).body) || {};
       const storageBody = ((contentBody.storage || {}).value) || '';
@@ -221,19 +224,19 @@ async function fetchResult(configuration, correlationId, deps = {}) {
       // Log what we want vs what the page holds: no markers found ⇒ wrong page id
       // or the rule writes elsewhere; a different id ⇒ a stale/previous result.
       const markersOnPage = listCorrelationMarkers(pageText);
-      console.log(`  [Rovo] result lookup [page ${rovo.parkingPageId}] want=${correlationId} page-has=[${markersOnPage.join(', ') || 'none'}] source=${usedView ? 'view' : 'storage'} match=${freshResponse !== null}`);
+      console.log(`  [AI Assist] result lookup [page ${aiAssist.parkingPageId}] want=${correlationId} page-has=[${markersOnPage.join(', ') || 'none'}] source=${usedView ? 'view' : 'storage'} match=${freshResponse !== null}`);
       if (freshResponse === null) {
         // No marker matched. Dump the storage/view lengths and a snippet so we can
         // see whether the page is empty in BOTH representations (an unpublished
         // draft) or just in storage (handled by the view fallback above).
-        console.log(`  [Rovo] page ${rovo.parkingPageId} read: storage=${storageBody.length}B view=${viewBody.length}B stripped=${pageText.length}B snippet=${JSON.stringify(pageText.slice(0, 300))}`);
+        console.log(`  [AI Assist] page ${aiAssist.parkingPageId} read: storage=${storageBody.length}B view=${viewBody.length}B stripped=${pageText.length}B snippet=${JSON.stringify(pageText.slice(0, 300))}`);
         return { ok: true, httpStatus: 200, ready: false };
       }
       return { ok: true, httpStatus: 200, ready: true, response: freshResponse };
     } catch (pageError) {
       const errorMessage = pageError instanceof Error ? pageError.message : String(pageError);
-      console.error(`  [Rovo] result lookup FAILED (page ${rovo.parkingPageId}): ${errorMessage}`);
-      return { ok: false, httpStatus: 502, code: 'fetch-failed', message: `Failed to read Rovo parking page: ${errorMessage}` };
+      console.error(`  [AI Assist] result lookup FAILED (page ${aiAssist.parkingPageId}): ${errorMessage}`);
+      return { ok: false, httpStatus: 502, code: 'fetch-failed', message: `Failed to read AI Assist parking page: ${errorMessage}` };
     }
   }
 
@@ -246,7 +249,7 @@ async function fetchResult(configuration, correlationId, deps = {}) {
   // it wins; each is logged so the working path is visible in Server Logs.
   const lookupStrategies = [
     { name: 'global-title', path: `/wiki/rest/api/content?title=${encodeURIComponent(title)}&type=page&expand=body.storage&limit=10` },
-    { name: 'space-listing', path: `/wiki/rest/api/content?spaceKey=${encodeURIComponent(rovo.parkingSpaceKey)}&type=page&expand=body.storage&limit=100` },
+    { name: 'space-listing', path: `/wiki/rest/api/content?spaceKey=${encodeURIComponent(aiAssist.parkingSpaceKey)}&type=page&expand=body.storage&limit=100` },
   ];
 
   try {
@@ -254,7 +257,7 @@ async function fetchResult(configuration, correlationId, deps = {}) {
       const searchResult = await confluenceRequest('GET', strategy.path, null, confluenceConfig, shouldVerify);
       const pages = (unwrapConfluence(searchResult).results) || [];
       const matched = pages.find((candidate) => candidate.title === title);
-      console.log(`  [Rovo] result lookup [${strategy.name}] title="${title}" → ${pages.length} page(s), ${matched ? 'MATCH' : 'no match'}`);
+      console.log(`  [AI Assist] result lookup [${strategy.name}] title="${title}" → ${pages.length} page(s), ${matched ? 'MATCH' : 'no match'}`);
 
       if (matched) {
         const rawBody = ((matched.body || {}).storage || {}).value || '';
@@ -269,8 +272,8 @@ async function fetchResult(configuration, correlationId, deps = {}) {
     return { ok: true, httpStatus: 200, ready: false };
   } catch (fetchError) {
     const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
-    console.error(`  [Rovo] result lookup FAILED title="${title}": ${errorMessage}`);
-    return { ok: false, httpStatus: 502, code: 'fetch-failed', message: `Failed to read Rovo result: ${errorMessage}` };
+    console.error(`  [AI Assist] result lookup FAILED title="${title}": ${errorMessage}`);
+    return { ok: false, httpStatus: 502, code: 'fetch-failed', message: `Failed to read AI Assist result: ${errorMessage}` };
   }
 }
 

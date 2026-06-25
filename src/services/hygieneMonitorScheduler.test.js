@@ -4,16 +4,16 @@
 'use strict';
 
 const {
-  parseRovoClassifications,
+  parseAiAssistClassifications,
   buildHygieneDigest,
 } = require('./hygieneMonitorScheduler');
 
-// ── parseRovoClassifications (T018) ──────────────────────────────────────────
+// ── parseAiAssistClassifications (T018) ──────────────────────────────────────────
 
-describe('parseRovoClassifications', () => {
+describe('parseAiAssistClassifications', () => {
   it('parses a FIXABLE line into a classification with the correct shape', () => {
     const text = 'FIXABLE: PROJ-1 | customfield_10200 | Generate acceptance criteria from summary.';
-    const results = parseRovoClassifications(text);
+    const results = parseAiAssistClassifications(text);
 
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
@@ -26,7 +26,7 @@ describe('parseRovoClassifications', () => {
 
   it('parses an UNFIXABLE line into a classification with guidance', () => {
     const text = 'UNFIXABLE: PROJ-2 | no-assignee | Assign this issue to the responsible engineer before the sprint starts.';
-    const results = parseRovoClassifications(text);
+    const results = parseAiAssistClassifications(text);
 
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
@@ -44,7 +44,7 @@ describe('parseRovoClassifications', () => {
       'FIXABLE: PROJ-3 | customfield_10200 | AC text here.',
     ].join('\n');
 
-    const results = parseRovoClassifications(text);
+    const results = parseAiAssistClassifications(text);
     expect(results).toHaveLength(3);
     expect(results.map((result) => result.issueKey)).toEqual(['PROJ-1', 'PROJ-2', 'PROJ-3']);
     expect(results[0].type).toBe('FIXABLE');
@@ -56,11 +56,11 @@ describe('parseRovoClassifications', () => {
     const text = [
       'FIXABLE: PROJ-1 | customfield_10028 | 3',
       'GARBAGE LINE WITH NO PIPE SEPARATORS',
-      'random note from Rovo',
+      'random note from AI Assist',
       'UNFIXABLE: PROJ-2 | no-assignee | Assign it.',
     ].join('\n');
 
-    const results = parseRovoClassifications(text);
+    const results = parseAiAssistClassifications(text);
     // Only the two well-formed lines should survive.
     expect(results).toHaveLength(2);
     expect(results[0].issueKey).toBe('PROJ-1');
@@ -68,17 +68,17 @@ describe('parseRovoClassifications', () => {
   });
 
   it('returns an empty array when the input text is empty', () => {
-    expect(parseRovoClassifications('')).toEqual([]);
+    expect(parseAiAssistClassifications('')).toEqual([]);
   });
 
   it('returns an empty array when the input text is null or undefined', () => {
-    expect(parseRovoClassifications(null)).toEqual([]);
-    expect(parseRovoClassifications(undefined)).toEqual([]);
+    expect(parseAiAssistClassifications(null)).toEqual([]);
+    expect(parseAiAssistClassifications(undefined)).toEqual([]);
   });
 
   it('trims whitespace from all parsed fields', () => {
     const text = 'FIXABLE:  PROJ-10  |  customfield_10200  |  Some long value here.  ';
-    const results = parseRovoClassifications(text);
+    const results = parseAiAssistClassifications(text);
 
     expect(results[0].issueKey).toBe('PROJ-10');
     expect(results[0].field).toBe('customfield_10200');

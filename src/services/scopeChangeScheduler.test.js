@@ -12,14 +12,14 @@ const {
   escapeXml,
   renderChangeTable,
   extractPageIdFromUrl,
-  buildScopeRovoPrompt,
-  buildScopeRollupRovoPrompt,
-  buildRovoTrendPanel,
+  buildScopeAiAssistPrompt,
+  buildScopeRollupAiAssistPrompt,
+  buildAiAssistTrendPanel,
 } = require('./scopeChangeScheduler');
 
-describe('buildScopeRovoPrompt (US1)', () => {
+describe('buildScopeAiAssistPrompt (US1)', () => {
   it('includes the project key and the change entries', () => {
-    const prompt = buildScopeRovoPrompt(
+    const prompt = buildScopeAiAssistPrompt(
       [{ issueKey: 'ABC-1', issueSummary: 'Login', fromValue: '1.0', toValue: '1.1' }],
       'ABC',
     );
@@ -28,22 +28,22 @@ describe('buildScopeRovoPrompt (US1)', () => {
     expect(prompt).toContain('most at risk');
   });
   it('handles an empty entry list without throwing', () => {
-    expect(buildScopeRovoPrompt([], 'ABC')).toContain('(none)');
+    expect(buildScopeAiAssistPrompt([], 'ABC')).toContain('(none)');
   });
 });
 
-describe('buildRovoTrendPanel (US1)', () => {
+describe('buildAiAssistTrendPanel (US1)', () => {
   it('wraps text in an info macro and escapes XML', () => {
-    const html = buildRovoTrendPanel('Release 1.1 is at risk <see>');
+    const html = buildAiAssistTrendPanel('Release 1.1 is at risk <see>');
     expect(html).toContain('<ac:structured-macro ac:name="info">');
-    expect(html).toContain('🤖 Rovo trend');
+    expect(html).toContain('🤖 AI Assist trend');
     expect(html).toContain('at risk &lt;see&gt;');
   });
 });
 
-describe('buildScopeRollupRovoPrompt (US1 ART rollup)', () => {
+describe('buildScopeRollupAiAssistPrompt (US1 ART rollup)', () => {
   it('summarises each team with its release-change count', () => {
-    const prompt = buildScopeRollupRovoPrompt([
+    const prompt = buildScopeRollupAiAssistPrompt([
       { teamName: 'Alpha', projectKey: 'ALP', releaseEntries: [{}, {}] },
       { teamName: 'Beta', projectKey: 'BET', releaseEntries: [] },
     ]);

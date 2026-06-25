@@ -11,7 +11,7 @@
 'use strict';
 
 const { makeJiraApiRequest, makeConfluenceApiRequest, triggerWebhook } = require('../utils/httpClient');
-const { requestRovoText, isRovoEnabled } = require('./rovoEnrichment');
+const { requestAiAssistText, isAiAssistEnabled } = require('./aiAssistEnrichment');
 
 // ── Constants ──
 
@@ -402,7 +402,7 @@ function summariseChangeEntries(entries) {
 }
 
 /**
- * Builds the prompt asking Rovo for a one-paragraph trend commentary on the
+ * Builds the prompt asking AI Assist for a one-paragraph trend commentary on the
  * feature changes, identifying the release/area most at risk.
  *
  * @param {Array} fixVersionEntries
@@ -411,7 +411,7 @@ function summariseChangeEntries(entries) {
  * @param {string} label
  * @returns {string}
  */
-function buildFeatureRovoPrompt(fixVersionEntries, statusEntries, scheduleEntries, label) {
+function buildFeatureAiAssistPrompt(fixVersionEntries, statusEntries, scheduleEntries, label) {
   return [
     `You are a release train assistant. Below are the feature changes detected for "${label}" since the last business day.`,
     'Write ONE short paragraph (2-3 sentences, plain prose, no preamble or heading) identifying the release or area',
@@ -429,13 +429,13 @@ function buildFeatureRovoPrompt(fixVersionEntries, statusEntries, scheduleEntrie
 }
 
 /**
- * Builds the prompt asking Rovo for a one-paragraph cross-team trend commentary on
+ * Builds the prompt asking AI Assist for a one-paragraph cross-team trend commentary on
  * the feature-change ART rollup, identifying the team most at risk across the ART.
  *
  * @param {Array} teamResults - [{ teamName, fixVersionEntries, statusEntries, scheduleEntries }]
  * @returns {string}
  */
-function buildFeatureRollupRovoPrompt(teamResults) {
+function buildFeatureRollupAiAssistPrompt(teamResults) {
   const lines = (teamResults || [])
     .map((result) => {
       const total = (result.fixVersionEntries || []).length
@@ -454,20 +454,20 @@ function buildFeatureRollupRovoPrompt(teamResults) {
 }
 
 /**
- * Wraps Rovo's trend commentary in a Confluence "info" panel for prepending above
+ * Wraps AI Assist's trend commentary in a Confluence "info" panel for prepending above
  * the change tables. Text is XML-escaped; blank-line groups become paragraphs.
  *
- * @param {string} commentaryText - Plain-text commentary returned by Rovo.
+ * @param {string} commentaryText - Plain-text commentary returned by AI Assist.
  * @returns {string} Confluence storage-format markup.
  */
-function buildRovoTrendPanel(commentaryText) {
+function buildAiAssistTrendPanel(commentaryText) {
   const paragraphs = String(commentaryText)
     .trim()
     .split(/\n{2,}/)
     .map((paragraph) => '<p>' + escapeXml(paragraph).replace(/\n/g, '<br/>') + '</p>')
     .join('');
   return '<ac:structured-macro ac:name="info"><ac:rich-text-body>'
-    + '<p><strong>🤖 Rovo trend</strong></p>' + paragraphs
+    + '<p><strong>🤖 AI Assist trend</strong></p>' + paragraphs
     + '</ac:rich-text-body></ac:structured-macro>';
 }
 
@@ -756,17 +756,17 @@ async function runFeatureReportDelivery(report, jiraConfig, confluenceConfig, ss
     : 'Feature Change Report — ' + teamLabel + ' — ' + dateLabel;
   let bodyHtml  = buildFeatureChangeBlogBody(fixVersionEntries, statusEntries, scheduleEntries, effectiveLabel, generatedAt, sinceLabel);
 
-  // Optional, non-blocking Rovo enrichment: prepend a trend paragraph above the
-  // change tables. Skipped silently when Rovo is disabled/unavailable so the report
+  // Optional, non-blocking AI Assist enrichment: prepend a trend paragraph above the
+  // change tables. Skipped silently when AI Assist is disabled/unavailable so the report
   // always publishes (FR-002, SC-002, SC-008).
-  if (isRovoEnabled(configuration)) {
-    const rovoCommentary = await requestRovoText(
+  if (isAiAssistEnabled(configuration)) {
+    const aiAssistCommentary = await requestAiAssistText(
       configuration,
-      buildFeatureRovoPrompt(fixVersionEntries, statusEntries, scheduleEntries, effectiveLabel),
+      buildFeatureAiAssistPrompt(fixVersionEntries, statusEntries, scheduleEntries, effectiveLabel),
       { label: 'feature-change' },
     );
-    if (rovoCommentary) {
-      bodyHtml = buildRovoTrendPanel(rovoCommentary) + bodyHtml;
+    if (aiAssistCommentary) {
+      bodyHtml = buildAiAssistTrendPanel(aiAssistCommentary) + bodyHtml;
     }
   }
   console.log(
@@ -906,16 +906,16 @@ async function runFeatureChangeArtRollupDelivery(artRollup, teamReports, jiraCon
     : 'ART Feature Change Rollup — ' + dateLabel;
   let   bodyHtml     = buildFeatureChangeArtRollupBody(teamResults, generatedAt, sinceLabel);
 
-  // Optional, non-blocking Rovo enrichment: prepend a cross-team trend paragraph
-  // above the rollup tables. Skipped silently when Rovo is disabled/unavailable.
-  if (isRovoEnabled(configuration)) {
-    const rovoCommentary = await requestRovoText(
+  // Optional, non-blocking AI Assist enrichment: prepend a cross-team trend paragraph
+  // above the rollup tables. Skipped silently when AI Assist is disabled/unavailable.
+  if (isAiAssistEnabled(configuration)) {
+    const aiAssistCommentary = await requestAiAssistText(
       configuration,
-      buildFeatureRollupRovoPrompt(teamResults),
+      buildFeatureRollupAiAssistPrompt(teamResults),
       { label: 'feature-rollup' },
     );
-    if (rovoCommentary) {
-      bodyHtml = buildRovoTrendPanel(rovoCommentary) + bodyHtml;
+    if (aiAssistCommentary) {
+      bodyHtml = buildAiAssistTrendPanel(aiAssistCommentary) + bodyHtml;
     }
   }
 
@@ -1053,7 +1053,7 @@ module.exports = {
   extractFeatureChangeEntries,
   escapeXml,
   extractPageIdFromUrl,
-  buildFeatureRovoPrompt,
-  buildFeatureRollupRovoPrompt,
-  buildRovoTrendPanel,
+  buildFeatureAiAssistPrompt,
+  buildFeatureRollupAiAssistPrompt,
+  buildAiAssistTrendPanel,
 };

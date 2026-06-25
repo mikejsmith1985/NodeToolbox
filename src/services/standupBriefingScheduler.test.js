@@ -16,26 +16,26 @@ const {
   isCompletedStatus,
   isBlockedStatus,
   hasBlockingLink,
-  buildStandupRovoPrompt,
-  buildRovoInsightPanel,
+  buildStandupAiAssistPrompt,
+  buildAiAssistInsightPanel,
 } = require('./standupBriefingScheduler');
 
-// ── Rovo insight enrichment (US1) ──
+// ── AI Assist insight enrichment (US1) ──
 
-describe('buildStandupRovoPrompt', () => {
+describe('buildStandupAiAssistPrompt', () => {
   it('includes the team name and the briefing text', () => {
-    const prompt = buildStandupRovoPrompt('Blocked: ABC-1 is stuck', 'Transformers');
+    const prompt = buildStandupAiAssistPrompt('Blocked: ABC-1 is stuck', 'Transformers');
     expect(prompt).toContain('Transformers');
     expect(prompt).toContain('Blocked: ABC-1 is stuck');
     expect(prompt).toContain('insight block');
   });
 });
 
-describe('buildRovoInsightPanel', () => {
+describe('buildAiAssistInsightPanel', () => {
   it('wraps text in an info macro, escapes XML, and splits paragraphs', () => {
-    const html = buildRovoInsightPanel('Ship <now>\n\nSecond & final');
+    const html = buildAiAssistInsightPanel('Ship <now>\n\nSecond & final');
     expect(html).toContain('<ac:structured-macro ac:name="info">');
-    expect(html).toContain('🤖 Rovo insight');
+    expect(html).toContain('🤖 AI Assist insight');
     expect(html).toContain('Ship &lt;now&gt;');     // escaped
     expect(html).toContain('Second &amp; final');   // escaped, second paragraph
     expect((html.match(/<p>/g) || []).length).toBeGreaterThanOrEqual(3); // heading + 2 paragraphs

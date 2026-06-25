@@ -1,15 +1,15 @@
-// RovoAutomationPanel.tsx — Config form for the automated Rovo exchange.
+// AiAssistAutomationPanel.tsx — Config form for the automated AI Assist exchange.
 //
-// Holds the single Atlassian Automation/Rovo webhook + secret and the Confluence
-// parking space used by the "Run via Rovo (auto)" actions. Unlock/hide and the
+// Holds the single Atlassian Automation/AI Assist webhook + secret and the Confluence
+// parking space used by the "Run via AI Assist (auto)" actions. Unlock/hide and the
 // passphrase gate are handled by AdminHubView, which only renders this panel on
-// the "⚡ Rovo" tab (shown only while the Rovo capability is unlocked).
+// the "⚡ AI Assist" tab (shown only while the AI Assist capability is unlocked).
 
 import { useCallback, useEffect, useState } from 'react';
 
 import styles from './AdminHubView.module.css';
 
-interface RovoConfig {
+interface AiAssistConfig {
   webhookUrl: string;
   webhookSecret: string;
   parkingSpaceKey: string;
@@ -17,43 +17,43 @@ interface RovoConfig {
   isEnabled: boolean;
 }
 
-const EMPTY_CONFIG: RovoConfig = { webhookUrl: '', webhookSecret: '', parkingSpaceKey: '', parkingPageId: '', isEnabled: false };
+const EMPTY_CONFIG: AiAssistConfig = { webhookUrl: '', webhookSecret: '', parkingSpaceKey: '', parkingPageId: '', isEnabled: false };
 
-async function fetchRovoConfig(): Promise<RovoConfig> {
-  const response = await fetch('/api/rovo/config');
-  return (await response.json()) as RovoConfig;
+async function fetchAiAssistConfig(): Promise<AiAssistConfig> {
+  const response = await fetch('/api/ai-assist/config');
+  return (await response.json()) as AiAssistConfig;
 }
 
-async function saveRovoConfig(config: RovoConfig): Promise<void> {
-  const response = await fetch('/api/rovo/config', {
+async function saveAiAssistConfig(config: AiAssistConfig): Promise<void> {
+  const response = await fetch('/api/ai-assist/config', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
-  if (!response.ok) throw new Error('Failed to save Rovo config: ' + response.statusText);
+  if (!response.ok) throw new Error('Failed to save AI Assist config: ' + response.statusText);
 }
 
-async function testRovoDispatch(): Promise<{ ok: boolean; message: string }> {
-  const response = await fetch('/api/rovo/dispatch', {
+async function testAiAssistDispatch(): Promise<{ ok: boolean; message: string }> {
+  const response = await fetch('/api/ai-assist/dispatch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ correlationId: 'rovo-config-test', prompt: 'Connection test from NodeToolbox.' }),
+    body: JSON.stringify({ correlationId: 'ai-assist-config-test', prompt: 'Connection test from NodeToolbox.' }),
   });
   const body = (await response.json()) as { ok?: boolean; message?: string };
   return { ok: Boolean(body.ok), message: body.message ?? (body.ok ? 'Dispatched.' : 'Dispatch failed.') };
 }
 
-/** Renders the Rovo Automation config form. Rendered only when the Rovo tab is active (unlocked). */
-export function RovoAutomationPanel() {
-  const [config, setConfig] = useState<RovoConfig>(EMPTY_CONFIG);
+/** Renders the AI Assist Automation config form. Rendered only when the AI Assist tab is active (unlocked). */
+export function AiAssistAutomationPanel() {
+  const [config, setConfig] = useState<AiAssistConfig>(EMPTY_CONFIG);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
   useEffect(() => {
-    void fetchRovoConfig().then(setConfig).catch(() => { /* leave defaults on failure */ });
+    void fetchAiAssistConfig().then(setConfig).catch(() => { /* leave defaults on failure */ });
   }, []);
 
-  const updateField = useCallback((field: keyof RovoConfig, value: string | boolean) => {
+  const updateField = useCallback((field: keyof AiAssistConfig, value: string | boolean) => {
     setConfig((previous) => ({ ...previous, [field]: value }));
   }, []);
 
@@ -61,7 +61,7 @@ export function RovoAutomationPanel() {
     setIsBusy(true);
     setStatusMessage(null);
     try {
-      await saveRovoConfig(config);
+      await saveAiAssistConfig(config);
       setStatusMessage('Saved.');
     } catch (saveError) {
       setStatusMessage(saveError instanceof Error ? saveError.message : 'Save failed.');
@@ -73,24 +73,24 @@ export function RovoAutomationPanel() {
   const handleTest = useCallback(async () => {
     setIsBusy(true);
     setStatusMessage('Testing…');
-    const result = await testRovoDispatch();
+    const result = await testAiAssistDispatch();
     setStatusMessage(result.message);
     setIsBusy(false);
   }, []);
 
   return (
     <section className={styles.sectionCard}>
-      <h2 className={styles.sectionTitle}>⚡ Rovo Automation</h2>
+      <h2 className={styles.sectionTitle}>⚡ AI Assist Automation</h2>
       <p className={styles.adminDescription}>
-        Configure the Atlassian Automation webhook that runs Rovo and the Confluence space where
-        results are parked. Used by the &quot;Run via Rovo (auto)&quot; actions to remove the manual
-        copy-paste step. Press Ctrl+Alt+Z again to re-hide all Rovo features.
+        Configure the Atlassian Automation webhook that runs AI Assist and the Confluence space where
+        results are parked. Used by the &quot;Run via AI Assist (auto)&quot; actions to remove the manual
+        copy-paste step. Press Ctrl+Alt+Z again to re-hide all AI Assist features.
       </p>
 
       <div className={styles.fieldRow}>
-        <label className={styles.fieldLabel} htmlFor="rovo-webhook-url">Rovo Webhook URL</label>
+        <label className={styles.fieldLabel} htmlFor="ai-assist-webhook-url">AI Assist Webhook URL</label>
         <input
-          id="rovo-webhook-url"
+          id="ai-assist-webhook-url"
           className={styles.textInput}
           value={config.webhookUrl}
           placeholder="https://…atlassian.net/… incoming webhook URL"
@@ -99,9 +99,9 @@ export function RovoAutomationPanel() {
       </div>
 
       <div className={styles.fieldRow}>
-        <label className={styles.fieldLabel} htmlFor="rovo-webhook-secret">Webhook Secret</label>
+        <label className={styles.fieldLabel} htmlFor="ai-assist-webhook-secret">Webhook Secret</label>
         <input
-          id="rovo-webhook-secret"
+          id="ai-assist-webhook-secret"
           className={styles.textInput}
           type="password"
           value={config.webhookSecret}
@@ -111,9 +111,9 @@ export function RovoAutomationPanel() {
       </div>
 
       <div className={styles.fieldRow}>
-        <label className={styles.fieldLabel} htmlFor="rovo-parking-page-id">Parking Page ID</label>
+        <label className={styles.fieldLabel} htmlFor="ai-assist-parking-page-id">Parking Page ID</label>
         <input
-          id="rovo-parking-page-id"
+          id="ai-assist-parking-page-id"
           className={styles.textInput}
           value={config.parkingPageId}
           placeholder="Confluence page ID the rule edits (recommended — works in personal spaces)"
@@ -122,9 +122,9 @@ export function RovoAutomationPanel() {
       </div>
 
       <div className={styles.fieldRow}>
-        <label className={styles.fieldLabel} htmlFor="rovo-parking-space-key">Parking Space Key</label>
+        <label className={styles.fieldLabel} htmlFor="ai-assist-parking-space-key">Parking Space Key</label>
         <input
-          id="rovo-parking-space-key"
+          id="ai-assist-parking-space-key"
           className={styles.textInput}
           value={config.parkingSpaceKey}
           placeholder="Fallback: Confluence space key (used only if no Page ID is set)"

@@ -13,7 +13,7 @@
 'use strict';
 
 const { makeJiraApiRequest, makeConfluenceApiRequest, triggerWebhook } = require('../utils/httpClient');
-const { requestRovoText, isRovoEnabled } = require('./rovoEnrichment');
+const { requestAiAssistText, isAiAssistEnabled } = require('./aiAssistEnrichment');
 
 // ── Constants ──
 
@@ -510,14 +510,14 @@ function escapeXml(text) {
 }
 
 /**
- * Builds the prompt asking Rovo to summarise the briefing into a short insight block.
- * Sends the already-generated plain-text briefing so Rovo synthesises the urgent items.
+ * Builds the prompt asking AI Assist to summarise the briefing into a short insight block.
+ * Sends the already-generated plain-text briefing so AI Assist synthesises the urgent items.
  *
  * @param {string} briefingText - The markdown/plain briefing already produced for this run.
  * @param {string} teamName
- * @returns {string} The Rovo prompt.
+ * @returns {string} The AI Assist prompt.
  */
-function buildStandupRovoPrompt(briefingText, teamName) {
+function buildStandupAiAssistPrompt(briefingText, teamName) {
   return [
     `You are a release train assistant. Below is today's standup briefing for team "${teamName}".`,
     'Write a concise insight block (2-3 sentences, plain prose, no preamble or headings)',
@@ -528,20 +528,20 @@ function buildStandupRovoPrompt(briefingText, teamName) {
 }
 
 /**
- * Wraps Rovo's insight text in a Confluence "info" panel for prepending above the
+ * Wraps AI Assist's insight text in a Confluence "info" panel for prepending above the
  * data tables. Text is XML-escaped; blank-line groups become separate paragraphs.
  *
- * @param {string} insightText - Plain-text insight returned by Rovo.
+ * @param {string} insightText - Plain-text insight returned by AI Assist.
  * @returns {string} Confluence storage-format markup.
  */
-function buildRovoInsightPanel(insightText) {
+function buildAiAssistInsightPanel(insightText) {
   const paragraphs = String(insightText)
     .trim()
     .split(/\n{2,}/)
     .map((paragraph) => '<p>' + escapeXml(paragraph).replace(/\n/g, '<br/>') + '</p>')
     .join('');
   return '<ac:structured-macro ac:name="info"><ac:rich-text-body>'
-    + '<p><strong>🤖 Rovo insight</strong></p>' + paragraphs
+    + '<p><strong>🤖 AI Assist insight</strong></p>' + paragraphs
     + '</ac:rich-text-body></ac:structured-macro>';
 }
 
@@ -944,13 +944,13 @@ async function runTeamBriefingDelivery(teamReport, configuration) {
   const briefingText     = buildBriefingMarkdown(buckets, teamName, sprintName, daysBack);
   let   confluenceHtml   = buildBriefingConfluenceBody(buckets, teamName, sprintName, daysBack, generatedAt);
 
-  // Optional, non-blocking Rovo enrichment: prepend an insight block above the
-  // tables. Skipped silently when Rovo is disabled/unavailable so the briefing
+  // Optional, non-blocking AI Assist enrichment: prepend an insight block above the
+  // tables. Skipped silently when AI Assist is disabled/unavailable so the briefing
   // always publishes on schedule (FR-001, SC-008).
-  if (isRovoEnabled(configuration)) {
-    const rovoInsight = await requestRovoText(configuration, buildStandupRovoPrompt(briefingText, teamName), { label: 'standup' });
-    if (rovoInsight) {
-      confluenceHtml = buildRovoInsightPanel(rovoInsight) + confluenceHtml;
+  if (isAiAssistEnabled(configuration)) {
+    const aiAssistInsight = await requestAiAssistText(configuration, buildStandupAiAssistPrompt(briefingText, teamName), { label: 'standup' });
+    if (aiAssistInsight) {
+      confluenceHtml = buildAiAssistInsightPanel(aiAssistInsight) + confluenceHtml;
     }
   }
 
@@ -1213,6 +1213,6 @@ module.exports = {
   isCompletedStatus,
   isBlockedStatus,
   hasBlockingLink,
-  buildStandupRovoPrompt,
-  buildRovoInsightPanel,
+  buildStandupAiAssistPrompt,
+  buildAiAssistInsightPanel,
 };

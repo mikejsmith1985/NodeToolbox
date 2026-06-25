@@ -9,7 +9,7 @@ import {
   type HygieneFlag,
 } from './checks/hygieneChecks.ts';
 import { useEffect, useRef, useState } from 'react';
-import { useRovoStore } from '../../store/rovoStore.ts';
+import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { HygieneMonitorPanel } from './components/HygieneMonitorPanel.tsx';
 import { useHygieneState } from './hooks/useHygieneState.ts';
 import { buildCheckIssueKeys, buildJiraIssueNavigatorUrl } from './utils/buildHygieneJqlUrl.ts';
@@ -48,7 +48,7 @@ interface HygieneViewProps {
 /** Renders the standalone Hygiene checker and delegates stateful Jira work to `useHygieneState`. */
 export default function HygieneView({ isTeamMode = false, initialExtraJql = '', projectKey }: HygieneViewProps = {}) {
   const hygieneState = useHygieneState({ isTeamMode, initialExtraJql, projectKey });
-  const isRovoUnlocked = useRovoStore((storeState) => storeState.isRovoUnlocked);
+  const isAiAssistUnlocked = useAiAssistStore((storeState) => storeState.isAiAssistUnlocked);
   const jiraBaseUrl = useConnectionStore((state) => state.proxyStatus?.jira?.baseUrl ?? null);
   const hasAutoRunTriggeredRef = useRef(false);
   const isHygieneLoading = hygieneState.isLoading;
@@ -187,8 +187,8 @@ export default function HygieneView({ isTeamMode = false, initialExtraJql = '', 
         </div>
       )}
 
-      {/* Rovo-gated monitor panel — only visible after Ctrl+Alt+Z unlock */}
-      {isRovoUnlocked && <HygieneMonitorPanel />}
+      {/* AI Assist-gated monitor panel — only visible after Ctrl+Alt+Z unlock */}
+      {isAiAssistUnlocked && <HygieneMonitorPanel />}
     </section>
   );
 }

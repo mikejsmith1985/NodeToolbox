@@ -34,7 +34,7 @@ describe('HygieneMonitorPanel', () => {
   it('renders the panel title', async () => {
     render(<HygieneMonitorPanel />)
     await waitFor(() => {
-      expect(screen.getByText(/Rovo Hygiene Monitor/i)).toBeTruthy()
+      expect(screen.getByText(/AI Assist Hygiene Monitor/i)).toBeTruthy()
     })
   })
 

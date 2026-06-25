@@ -1,6 +1,6 @@
 // RiskManagementSection.tsx — PI-scoped Risk Management panel for the PI Review tab.
 // Fetches Risk-type Jira issues for the active PI, displays them in a summary table, and
-// provides a hidden AI-assist workflow (Ctrl+Alt+Z passphrase gate) that builds a Rovo
+// provides a hidden AI-assist workflow (Ctrl+Alt+Z passphrase gate) that builds an AI Assist
 // prompt and writes refined risk descriptions back to Jira on paste-back.
 
 import {
@@ -13,9 +13,9 @@ import {
 
 import type { JiraIssue } from '../../types/jira.ts';
 import { jiraGet, jiraPut } from '../../services/jiraApi.ts';
-import { setRovoUnlocked } from '../../store/rovoStore.ts';
-import { useRovoAssist } from '../SnowHub/hooks/useRovoAssist.ts';
-import { useRovoExchange } from '../SnowHub/hooks/useRovoExchange.ts';
+import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
+import { useAiAssist } from '../SnowHub/hooks/useAiAssist.ts';
+import { useAiAssistExchange } from '../SnowHub/hooks/useAiAssistExchange.ts';
 import styles from './SprintDashboardView.module.css';
 
 // ── Constants ──
@@ -27,14 +27,14 @@ const RISK_PI_CUSTOMFIELD_ID = 'customfield_10301';
 const RISK_PI_CF_NUMBER = RISK_PI_CUSTOMFIELD_ID.replace('customfield_', '');
 
 const RISK_MANAGEMENT_MAX_RESULTS = 100;
-const HIDDEN_ROVO_SHORTCUT_KEY = 'z';
+const HIDDEN_AI_ASSIST_SHORTCUT_KEY = 'z';
 
 type RiskSaveProgress = 'idle' | 'saving' | 'saved' | 'error';
 
 // ── Types ──
 
-/** A single risk update returned by Rovo after AI-assisted refinement. */
-interface RovoRiskItem {
+/** A single risk update returned by AI Assist after AI-assisted refinement. */
+interface AiAssistRiskItem {
   key: string;
   description: string;
   riskResponse?: string;
@@ -53,8 +53,8 @@ export interface RiskManagementSectionProps {
 
 // ── Prompt builder ──
 
-/** Builds the Rovo prompt asking AI to refine all risk descriptions to the enterprise template. */
-function buildRiskRovoPrompt(
+/** Builds the AI Assist prompt asking AI to refine all risk descriptions to the enterprise template. */
+function buildRiskAiAssistPrompt(
   risks: JiraIssue[],
   selectedPiName: string,
   riskImpactDateFieldId: string,
@@ -126,14 +126,14 @@ Return ONLY a valid JSON array with no prose, no explanation, and no markdown co
 
 // ── Response parser ──
 
-/** Extracts and validates the JSON array from Rovo's response text. */
-function parseRovoRiskResponse(
+/** Extracts and validates the JSON array from AI Assist's response text. */
+function parseAiAssistRiskResponse(
   responseText: string,
   validRiskKeys: ReadonlySet<string>,
-): { items: RovoRiskItem[]; errorMessage: string | null } {
+): { items: AiAssistRiskItem[]; errorMessage: string | null } {
   const jsonMatch = responseText.match(/\[[\s\S]*\]/);
   if (!jsonMatch) {
-    return { items: [], errorMessage: 'No JSON array found in the response. Paste the full Rovo output.' };
+    return { items: [], errorMessage: 'No JSON array found in the response. Paste the full AI Assist output.' };
   }
 
   let parsedItems: unknown;
@@ -147,7 +147,7 @@ function parseRovoRiskResponse(
     return { items: [], errorMessage: 'Expected a JSON array at the top level.' };
   }
 
-  const validItems: RovoRiskItem[] = [];
+  const validItems: AiAssistRiskItem[] = [];
   for (const parsedItem of parsedItems) {
     if (typeof parsedItem !== 'object' || parsedItem === null) continue;
     const candidate = parsedItem as Record<string, unknown>;
@@ -213,9 +213,9 @@ export default function RiskManagementSection({
   riskImpactDateFieldId,
   riskResponseFieldId,
 }: RiskManagementSectionProps) {
-  // Unlock state comes from the shared rovoStore (via useRovoAssist) so one
-  // passphrase entry unlocks every Rovo surface, including the Admin Hub config.
-  const { isUnlocked: isRovoUnlocked, verifyPassphrase } = useRovoAssist();
+  // Unlock state comes from the shared aiAssistStore (via useAiAssist) so one
+  // passphrase entry unlocks every AI Assist surface, including the Admin Hub config.
+  const { isUnlocked: isAiAssistUnlocked, verifyPassphrase } = useAiAssist();
   const passphraseInputRef = useRef<HTMLInputElement | null>(null);
 
   const [riskIssues, setRiskIssues] = useState<JiraIssue[]>([]);
@@ -229,15 +229,15 @@ export default function RiskManagementSection({
   const [passphraseInput, setPassphraseInput] = useState('');
   const [passphraseError, setPassphraseError] = useState<string | null>(null);
 
-  const [isRovoModalVisible, setIsRovoModalVisible] = useState(false);
-  const [generatedRovoPromptText, setGeneratedRovoPromptText] = useState('');
-  const [rovoResponseInput, setRovoResponseInput] = useState('');
-  const [rovoResponseParseError, setRovoResponseParseError] = useState<string | null>(null);
+  const [isAiAssistModalVisible, setIsAiAssistModalVisible] = useState(false);
+  const [generatedAiAssistPromptText, setGeneratedAiAssistPromptText] = useState('');
+  const [aiAssistResponseInput, setAiAssistResponseInput] = useState('');
+  const [aiAssistResponseParseError, setAiAssistResponseParseError] = useState<string | null>(null);
 
   // Automated exchange — removes the copy-paste by dispatching the prompt and
-  // applying Rovo's response directly.
-  const { isRunning: isRovoRunning, runRovoExchange } = useRovoExchange();
-  const [rovoAutoStatus, setRovoAutoStatus] = useState<string | null>(null);
+  // applying AI Assist's response directly.
+  const { isRunning: isAiAssistRunning, runAiAssistExchange } = useAiAssistExchange();
+  const [aiAssistAutoStatus, setAiAssistAutoStatus] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
 
   // ── Data loading ──
@@ -288,10 +288,10 @@ export default function RiskManagementSection({
       const isShortcutPressed =
         keyboardEvent.ctrlKey
         && keyboardEvent.altKey
-        && keyboardEvent.key.toLowerCase() === HIDDEN_ROVO_SHORTCUT_KEY;
+        && keyboardEvent.key.toLowerCase() === HIDDEN_AI_ASSIST_SHORTCUT_KEY;
       if (!isShortcutPressed) return;
-      if (isRovoUnlocked) {
-        setRovoUnlocked(false); // toggle: re-hide all Rovo features
+      if (isAiAssistUnlocked) {
+        setAiAssistUnlocked(false); // toggle: re-hide all AI Assist features
         return;
       }
       setIsPassphraseModalVisible(true);
@@ -300,7 +300,7 @@ export default function RiskManagementSection({
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isRovoUnlocked]);
+  }, [isAiAssistUnlocked]);
 
   // ── Focus passphrase input when modal opens ──
 
@@ -315,7 +315,7 @@ export default function RiskManagementSection({
   const handlePassphraseSubmit = useCallback(async () => {
     const isAccepted = await verifyPassphrase(passphraseInput);
     if (isAccepted) {
-      // verifyPassphrase sets the shared rovoStore; no local flag to update.
+      // verifyPassphrase sets the shared aiAssistStore; no local flag to update.
       setIsPassphraseModalVisible(false);
       setPassphraseInput('');
       setPassphraseError(null);
@@ -333,50 +333,50 @@ export default function RiskManagementSection({
     [handlePassphraseSubmit],
   );
 
-  // ── Rovo modal handlers ──
+  // ── AI Assist modal handlers ──
 
-  function handleOpenRovoModal() {
-    setGeneratedRovoPromptText(
-      buildRiskRovoPrompt(riskIssues, selectedPiName, riskImpactDateFieldId, riskResponseFieldId),
+  function handleOpenAiAssistModal() {
+    setGeneratedAiAssistPromptText(
+      buildRiskAiAssistPrompt(riskIssues, selectedPiName, riskImpactDateFieldId, riskResponseFieldId),
     );
-    setRovoResponseInput('');
-    setRovoResponseParseError(null);
+    setAiAssistResponseInput('');
+    setAiAssistResponseParseError(null);
     setIsCopied(false);
-    setIsRovoModalVisible(true);
+    setIsAiAssistModalVisible(true);
   }
 
-  async function handleCopyRovoPrompt() {
-    await navigator.clipboard.writeText(generatedRovoPromptText);
+  async function handleCopyAiAssistPrompt() {
+    await navigator.clipboard.writeText(generatedAiAssistPromptText);
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
   }
 
-  // Automated path: dispatch the prompt to Rovo, then apply the returned JSON
+  // Automated path: dispatch the prompt to AI Assist, then apply the returned JSON
   // directly — no manual paste.
-  async function handleRunRovoAuto() {
-    setRovoAutoStatus('Sending to Rovo…');
-    const exchange = await runRovoExchange(generatedRovoPromptText);
+  async function handleRunAiAssistAuto() {
+    setAiAssistAutoStatus('Sending to AI Assist…');
+    const exchange = await runAiAssistExchange(generatedAiAssistPromptText);
     if (!exchange.ok) {
-      setRovoAutoStatus(exchange.message);
+      setAiAssistAutoStatus(exchange.message);
       return;
     }
-    setRovoAutoStatus(null);
-    await applyRovoResponse(exchange.response ?? '');
+    setAiAssistAutoStatus(null);
+    await applyAiAssistResponse(exchange.response ?? '');
   }
 
-  /** Parses Rovo's JSON, writes all refined risk fields back to Jira, and tracks per-row save state. */
-  async function applyRovoResponse(responseText: string) {
+  /** Parses AI Assist's JSON, writes all refined risk fields back to Jira, and tracks per-row save state. */
+  async function applyAiAssistResponse(responseText: string) {
     const validRiskKeys = new Set(riskIssues.map((issue) => issue.key));
-    const { items, errorMessage } = parseRovoRiskResponse(responseText, validRiskKeys);
+    const { items, errorMessage } = parseAiAssistRiskResponse(responseText, validRiskKeys);
 
     if (errorMessage) {
-      setRovoResponseParseError(errorMessage);
+      setAiAssistResponseParseError(errorMessage);
       return;
     }
 
-    setIsRovoModalVisible(false);
-    setRovoResponseInput('');
-    setRovoResponseParseError(null);
+    setIsAiAssistModalVisible(false);
+    setAiAssistResponseInput('');
+    setAiAssistResponseParseError(null);
 
     await Promise.allSettled(
       items.map(async (item) => {
@@ -439,10 +439,10 @@ export default function RiskManagementSection({
             Risk issues for {normalizedPiName || 'the selected PI'}.
           </p>
         </div>
-        {isRovoUnlocked && isContextReady && riskIssues.length > 0 && (
+        {isAiAssistUnlocked && isContextReady && riskIssues.length > 0 && (
           <button
             className={styles.riskEnhanceButton}
-            onClick={handleOpenRovoModal}
+            onClick={handleOpenAiAssistModal}
             type="button"
           >
             ✦ Enhance with AI
@@ -543,77 +543,77 @@ export default function RiskManagementSection({
         </div>
       ) : null}
 
-      {/* Rovo AI-assist modal — two-step: copy prompt / paste response */}
-      {isRovoModalVisible ? (
+      {/* AI Assist modal — two-step: copy prompt / paste response */}
+      {isAiAssistModalVisible ? (
         <div aria-modal="true" className={styles.releasePromptOverlay} role="dialog">
-          <div className={styles.ptRovoModal}>
+          <div className={styles.ptAiAssistModal}>
             <h3 className={styles.releasePromptTitle}>✦ AI-Assisted Risk Refinement</h3>
 
-            <section className={styles.ptRovoSection}>
+            <section className={styles.ptAiAssistSection}>
               <p className={styles.releasePromptInstructions}>
-                <strong>Step 1</strong> — Copy this prompt into Rovo. It includes all{' '}
+                <strong>Step 1</strong> — Copy this prompt into AI Assist. It includes all{' '}
                 {riskIssues.length} risk{riskIssues.length === 1 ? '' : 's'} for {normalizedPiName}.
               </p>
               <textarea
-                aria-label="Rovo risk refinement prompt"
+                aria-label="AI Assist risk refinement prompt"
                 className={styles.releasePromptTextArea}
                 readOnly
-                value={generatedRovoPromptText}
+                value={generatedAiAssistPromptText}
               />
               <div className={styles.releasePromptActions}>
                 <button
                   className={styles.secondaryButton}
-                  disabled={isRovoRunning}
-                  onClick={() => void handleRunRovoAuto()}
+                  disabled={isAiAssistRunning}
+                  onClick={() => void handleRunAiAssistAuto()}
                   type="button"
                 >
-                  {isRovoRunning ? '⏳ Running via Rovo…' : '⚡ Run via Rovo (auto)'}
+                  {isAiAssistRunning ? '⏳ Running via AI Assist…' : '⚡ Run via AI Assist (auto)'}
                 </button>
                 <button
                   className={styles.secondaryButton}
-                  onClick={() => void handleCopyRovoPrompt()}
+                  onClick={() => void handleCopyAiAssistPrompt()}
                   type="button"
                 >
                   {isCopied ? '✓ Copied!' : '📋 Copy Prompt'}
                 </button>
               </div>
-              {rovoAutoStatus !== null ? (
-                <p className={styles.releasePromptInstructions} role="status">{rovoAutoStatus}</p>
+              {aiAssistAutoStatus !== null ? (
+                <p className={styles.releasePromptInstructions} role="status">{aiAssistAutoStatus}</p>
               ) : null}
             </section>
 
-            <hr className={styles.ptRovoDivider} />
+            <hr className={styles.ptAiAssistDivider} />
 
-            <section className={styles.ptRovoSection}>
+            <section className={styles.ptAiAssistSection}>
               <p className={styles.releasePromptInstructions}>
-                <strong>Step 2</strong> — Paste Rovo's JSON response below. Toolbox will write the
+                <strong>Step 2</strong> — Paste AI Assist's JSON response below. Toolbox will write the
                 refined descriptions and ROAM dispositions directly to each Jira Risk issue.
               </p>
               <textarea
-                aria-label="Rovo risk refinement response"
-                className={styles.ptRovoResponseTextArea}
+                aria-label="AI Assist risk refinement response"
+                className={styles.ptAiAssistResponseTextArea}
                 onChange={(changeEvent) => {
-                  setRovoResponseInput(changeEvent.target.value);
-                  setRovoResponseParseError(null);
+                  setAiAssistResponseInput(changeEvent.target.value);
+                  setAiAssistResponseParseError(null);
                 }}
                 placeholder={'[\n  { "key": "PROJ-123", "description": "...", "riskResponse": "Mitigate", "priority": "High" },\n  ...\n]'}
-                value={rovoResponseInput}
+                value={aiAssistResponseInput}
               />
-              {rovoResponseParseError ? (
-                <p className={styles.errorMessage}>{rovoResponseParseError}</p>
+              {aiAssistResponseParseError ? (
+                <p className={styles.errorMessage}>{aiAssistResponseParseError}</p>
               ) : null}
               <div className={styles.releasePromptActions}>
                 <button
                   className={styles.secondaryButton}
-                  disabled={rovoResponseInput.trim() === ''}
-                  onClick={() => void applyRovoResponse(rovoResponseInput)}
+                  disabled={aiAssistResponseInput.trim() === ''}
+                  onClick={() => void applyAiAssistResponse(aiAssistResponseInput)}
                   type="button"
                 >
                   Apply & Save to Jira
                 </button>
                 <button
                   className={styles.textActionButton}
-                  onClick={() => setIsRovoModalVisible(false)}
+                  onClick={() => setIsAiAssistModalVisible(false)}
                   type="button"
                 >
                   Close

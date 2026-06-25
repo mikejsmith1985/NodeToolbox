@@ -1,18 +1,18 @@
-// src/services/rovoEnrichment.js — Shared, non-blocking server-side Rovo text request.
+// src/services/aiAssistEnrichment.js — Shared, non-blocking server-side AI Assist text request.
 //
 // Schedulers (standup briefing, scope-change, feature-change) and the hygiene
-// monitor all need the same thing: send a prompt to Rovo via the existing
+// monitor all need the same thing: send a prompt to AI Assist via the existing
 // dispatch-and-poll exchange and get the response text back — but NEVER let a slow
-// or unavailable Rovo block or fail the surrounding report. This helper wraps
+// or unavailable AI Assist block or fail the surrounding report. This helper wraps
 // `dispatchPrompt` + `fetchResult` with a bounded poll and a non-throwing `null`
-// fallback so callers can treat Rovo purely as an optional enrichment.
+// fallback so callers can treat AI Assist purely as an optional enrichment.
 
 'use strict';
 
 const crypto = require('crypto');
-const { dispatchPrompt, fetchResult } = require('./rovoExchange');
+const { dispatchPrompt, fetchResult } = require('./aiAssistExchange');
 
-// Bounded poll budget. Default ≈60s (20 × 3s) — enough for Rovo to answer without
+// Bounded poll budget. Default ≈60s (20 × 3s) — enough for AI Assist to answer without
 // materially delaying a scheduler run (SC-001), short enough to fail fast when down.
 const DEFAULT_POLL_ATTEMPTS = 20;
 const DEFAULT_POLL_INTERVAL_MS = 3000;
@@ -23,29 +23,29 @@ function delayMs(milliseconds) {
 }
 
 /**
- * Reports whether Rovo enrichment is configured and turned on. Enrichment is opt-in
- * via the existing `rovoAutomation.isEnabled` flag and requires a webhook URL.
+ * Reports whether AI Assist enrichment is configured and turned on. Enrichment is opt-in
+ * via the existing `aiAssistAutomation.isEnabled` flag and requires a webhook URL.
  *
  * @param {object} configuration - Live server config.
- * @returns {boolean} True when a scheduler may attempt Rovo enrichment.
+ * @returns {boolean} True when a scheduler may attempt AI Assist enrichment.
  */
-function isRovoEnabled(configuration) {
-  const rovo = (configuration && configuration.rovoAutomation) || {};
-  return !!rovo.isEnabled && !!rovo.webhookUrl;
+function isAiAssistEnabled(configuration) {
+  const aiAssist = (configuration && configuration.aiAssistAutomation) || {};
+  return !!aiAssist.isEnabled && !!aiAssist.webhookUrl;
 }
 
 /**
- * Sends a prompt to Rovo and returns the response text, or `null` on any
- * failure/timeout. NEVER throws — the caller proceeds without the Rovo block when
- * this returns null, so a Rovo outage cannot break report delivery (SC-008).
+ * Sends a prompt to AI Assist and returns the response text, or `null` on any
+ * failure/timeout. NEVER throws — the caller proceeds without the AI Assist block when
+ * this returns null, so an AI Assist outage cannot break report delivery (SC-008).
  *
- * @param {object} configuration - Live server config (rovoAutomation + confluence + sslVerify).
- * @param {string} prompt - The prompt to send to Rovo.
+ * @param {object} configuration - Live server config (aiAssistAutomation + confluence + sslVerify).
+ * @param {string} prompt - The prompt to send to AI Assist.
  * @param {{ pollAttempts?: number, pollIntervalMs?: number, label?: string }} [options]
  * @param {{ dispatchPrompt?: Function, fetchResult?: Function, sleep?: Function, generateCorrelationId?: Function }} [deps] - Test seam.
- * @returns {Promise<string|null>} The Rovo response text, or null when skipped.
+ * @returns {Promise<string|null>} The AI Assist response text, or null when skipped.
  */
-async function requestRovoText(configuration, prompt, options = {}, deps = {}) {
+async function requestAiAssistText(configuration, prompt, options = {}, deps = {}) {
   const dispatch = deps.dispatchPrompt || dispatchPrompt;
   const poll = deps.fetchResult || fetchResult;
   const sleep = deps.sleep || delayMs;
@@ -54,7 +54,7 @@ async function requestRovoText(configuration, prompt, options = {}, deps = {}) {
   const intervalMs = options.pollIntervalMs || DEFAULT_POLL_INTERVAL_MS;
   const label = options.label ? `${options.label} ` : '';
 
-  if (!isRovoEnabled(configuration)) {
+  if (!isAiAssistEnabled(configuration)) {
     return null; // not configured/enabled — silently skip
   }
   if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
@@ -66,7 +66,7 @@ async function requestRovoText(configuration, prompt, options = {}, deps = {}) {
   try {
     const dispatchResult = await dispatch(configuration, { correlationId, prompt });
     if (!dispatchResult || !dispatchResult.ok) {
-      console.log(`  [Rovo] ${label}enrichment skipped (dispatch ${(dispatchResult && dispatchResult.code) || 'failed'})`);
+      console.log(`  [AI Assist] ${label}enrichment skipped (dispatch ${(dispatchResult && dispatchResult.code) || 'failed'})`);
       return null;
     }
 
@@ -77,7 +77,7 @@ async function requestRovoText(configuration, prompt, options = {}, deps = {}) {
       }
       // A hard error (not just "not ready yet") means stop polling and skip.
       if (result && result.ok === false) {
-        console.log(`  [Rovo] ${label}enrichment skipped (result ${result.code || 'error'})`);
+        console.log(`  [AI Assist] ${label}enrichment skipped (result ${result.code || 'error'})`);
         return null;
       }
       if (attempt < attempts - 1) {
@@ -85,13 +85,13 @@ async function requestRovoText(configuration, prompt, options = {}, deps = {}) {
       }
     }
 
-    console.log(`  [Rovo] ${label}enrichment skipped (timeout)`);
+    console.log(`  [AI Assist] ${label}enrichment skipped (timeout)`);
     return null;
   } catch (enrichmentError) {
     const reason = enrichmentError instanceof Error ? enrichmentError.message : String(enrichmentError);
-    console.log(`  [Rovo] ${label}enrichment skipped (${reason})`);
+    console.log(`  [AI Assist] ${label}enrichment skipped (${reason})`);
     return null;
   }
 }
 
-module.exports = { requestRovoText, isRovoEnabled };
+module.exports = { requestAiAssistText, isAiAssistEnabled };

@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { setRovoUnlocked } from '../../../store/rovoStore.ts';
+import { setAiAssistUnlocked } from '../../../store/aiAssistStore.ts';
 
 const MOCK_ISSUES = [
   {
@@ -77,7 +77,7 @@ const {
   mockFieldPinActions,
   mockCtaskTemplates,
   mockCtaskTemplateActions,
-  mockRovoExchange,
+  mockAiAssistExchange,
 } = vi.hoisted(() => {
   const mockPinnedFields = [] as Array<{ id: string; key: string; label: string; section: string; value: unknown }>;
   const emptySnowReference = { sysId: '', displayName: '' };
@@ -224,9 +224,9 @@ const {
       updateTemplate: vi.fn(),
       deleteTemplate: vi.fn(),
     },
-    // Controllable stand-in for useRovoExchange so T012/T013 tests never hit the network.
-    mockRovoExchange: {
-      runRovoExchange: vi.fn().mockResolvedValue({ ok: false, message: 'Mock Rovo: not configured in this test.' }),
+    // Controllable stand-in for useAiAssistExchange so T012/T013 tests never hit the network.
+    mockAiAssistExchange: {
+      runAiAssistExchange: vi.fn().mockResolvedValue({ ok: false, message: 'Mock AI Assist: not configured in this test.' }),
     },
   };
 });
@@ -297,11 +297,11 @@ vi.mock('../hooks/useSnowChoiceOptions.ts', () => ({
   }),
 }));
 
-// Mock the Rovo exchange hook so tests that click Rovo buttons never make real fetch calls.
-vi.mock('../hooks/useRovoExchange.ts', () => ({
-  useRovoExchange: () => ({
+// Mock the AI Assist exchange hook so tests that click AI Assist buttons never make real fetch calls.
+vi.mock('../hooks/useAiAssistExchange.ts', () => ({
+  useAiAssistExchange: () => ({
     isRunning: false,
-    runRovoExchange: mockRovoExchange.runRovoExchange,
+    runAiAssistExchange: mockAiAssistExchange.runAiAssistExchange,
   }),
 }));
 
@@ -350,9 +350,9 @@ function resetMockState(): void {
 
 describe('CreateChgTab', () => {
   beforeEach(() => {
-    // Reset the shared Rovo unlock store (global singleton) between tests.
+    // Reset the shared AI Assist unlock store (global singleton) between tests.
     sessionStorage.clear();
-    setRovoUnlocked(false);
+    setAiAssistUnlocked(false);
     resetMockState();
     Object.values(mockActions).forEach((mockAction) => mockAction.mockReset());
     mockActions.fetchIssues.mockResolvedValue(undefined);
@@ -400,7 +400,7 @@ describe('CreateChgTab', () => {
       isSuccess: true,
       message: 'Loaded extractor choices for 2 field(s).',
     });
-    mockRovoExchange.runRovoExchange.mockResolvedValue({ ok: false, message: 'Mock Rovo: not configured in this test.' });
+    mockAiAssistExchange.runAiAssistExchange.mockResolvedValue({ ok: false, message: 'Mock AI Assist: not configured in this test.' });
   });
 
   it('renders step 1 with the project key input and fetch button', () => {
@@ -772,13 +772,13 @@ describe('CreateChgTab', () => {
     expect(screen.queryByPlaceholderText('Enter passphrase')).not.toBeInTheDocument();
   });
 
-  it('unlocks Rovo and shows the hidden prompt button after correct passphrase on step 4', async () => {
+  it('unlocks AI Assist and shows the hidden prompt button after correct passphrase on step 4', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 4;
     render(<CreateChgTab />);
 
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
+    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'ainow');
     await user.click(screen.getByRole('button', { name: 'Unlock' }));
 
     expect(await screen.findByRole('button', { name: '✦ Enhance with prompt' })).toBeInTheDocument();
@@ -791,14 +791,14 @@ describe('CreateChgTab', () => {
 
     // Unlock
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
+    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'ainow');
     await user.click(screen.getByRole('button', { name: 'Unlock' }));
 
     // Click enhance
     await user.click(await screen.findByRole('button', { name: '✦ Enhance with prompt' }));
 
     // Prompt modal should appear
-    expect(await screen.findByText(/Copy this prompt and paste it into Rovo/)).toBeInTheDocument();
+    expect(await screen.findByText(/Copy this prompt and paste it into AI Assist/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '📋 Copy to Clipboard' })).toBeInTheDocument();
   });
 
@@ -808,14 +808,14 @@ describe('CreateChgTab', () => {
     render(<CreateChgTab />);
 
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
+    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'ainow');
     await user.click(screen.getByRole('button', { name: 'Unlock' }));
     await user.click(await screen.findByRole('button', { name: '✦ Enhance with prompt' }));
 
     // Close prompt modal
     await user.click(await screen.findByRole('button', { name: 'Close' }));
 
-    expect(screen.queryByText(/Copy this prompt and paste it into Rovo/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Copy this prompt and paste it into AI Assist/)).not.toBeInTheDocument();
   });
 
   // ── Step 3: Change Details ──
@@ -1247,44 +1247,44 @@ describe('CreateChgTab', () => {
     expect(screen.queryByRole('textbox', { name: 'Impact' })).not.toBeInTheDocument();
   });
 
-  // ── Step 3: Draft with Rovo (T012, US2, FR-004, SC-007) ──
+  // ── Step 3: Draft with AI Assist (T012, US2, FR-004, SC-007) ──
 
-  it('hides Draft with Rovo at step 3 when the gate is locked', () => {
+  it('hides Draft with AI Assist at step 3 when the gate is locked', () => {
     mockState.currentStep = 3;
     render(<CreateChgTab />);
 
-    expect(screen.queryByRole('button', { name: /Draft with Rovo/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Draft with AI Assist/i })).not.toBeInTheDocument();
   });
 
-  it('shows Draft with Rovo at step 3 after unlocking the gate', async () => {
+  it('shows Draft with AI Assist at step 3 after unlocking the gate', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 3;
     render(<CreateChgTab />);
 
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
+    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'ainow');
     await user.click(screen.getByRole('button', { name: 'Unlock' }));
 
-    expect(await screen.findByRole('button', { name: /Draft with Rovo/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Draft with AI Assist/i })).toBeInTheDocument();
   });
 
-  it('Draft with Rovo populates short description and description from Jira issues', async () => {
+  it('Draft with AI Assist populates short description and description from Jira issues', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 3;
     mockState.fetchedIssues = [{ id: '10001', key: 'ABC-1', fields: { summary: 'Fix release blocker', status: { name: 'In Progress' } } }];
     mockState.selectedIssueKeys = new Set(['ABC-1']);
-    mockRovoExchange.runRovoExchange.mockResolvedValueOnce({
+    mockAiAssistExchange.runAiAssistExchange.mockResolvedValueOnce({
       ok: true,
       response: 'SHORT_DESCRIPTION: Deploy ABC-1 fix\nDESCRIPTION: Applies the release blocker patch.',
-      message: 'Rovo result received.',
+      message: 'AI Assist result received.',
     });
     render(<CreateChgTab />);
 
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
+    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'ainow');
     await user.click(screen.getByRole('button', { name: 'Unlock' }));
 
-    await user.click(await screen.findByRole('button', { name: /Draft with Rovo/i }));
+    await user.click(await screen.findByRole('button', { name: /Draft with AI Assist/i }));
 
     await waitFor(() => {
       expect(mockActions.updateGeneratedField).toHaveBeenCalledWith('shortDescription', 'Deploy ABC-1 fix');
@@ -1292,70 +1292,70 @@ describe('CreateChgTab', () => {
     });
   });
 
-  it('wizard proceeds from step 3 to step 4 without requiring Draft with Rovo', () => {
+  it('wizard proceeds from step 3 to step 4 without requiring Draft with AI Assist', () => {
     mockState.currentStep = 3;
     render(<CreateChgTab />);
 
-    // Navigation must not be gated on the Rovo action.
+    // Navigation must not be gated on the AI Assist action.
     expect(screen.getByRole('button', { name: /Next/i })).toBeEnabled();
   });
 
-  // ── Step 6: Risk check with Rovo (T013, US2, FR-005, SC-007) ──
+  // ── Step 6: Risk check with AI Assist (T013, US2, FR-005, SC-007) ──
 
-  it('hides Risk check with Rovo at step 6 when the gate is locked', () => {
+  it('hides Risk check with AI Assist at step 6 when the gate is locked', () => {
     mockState.currentStep = 6;
     render(<CreateChgTab />);
 
-    expect(screen.queryByRole('button', { name: /Risk check with Rovo/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Risk check with AI Assist/i })).not.toBeInTheDocument();
   });
 
-  it('shows Risk check with Rovo at step 6 after unlocking the gate', async () => {
+  it('shows Risk check with AI Assist at step 6 after unlocking the gate', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 6;
     render(<CreateChgTab />);
 
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
+    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'ainow');
     await user.click(screen.getByRole('button', { name: 'Unlock' }));
 
-    expect(await screen.findByRole('button', { name: /Risk check with Rovo/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Risk check with AI Assist/i })).toBeInTheDocument();
   });
 
-  it('Risk check with Rovo renders identified gaps inline before submission', async () => {
+  it('Risk check with AI Assist renders identified gaps inline before submission', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 6;
-    mockRovoExchange.runRovoExchange.mockResolvedValueOnce({
+    mockAiAssistExchange.runAiAssistExchange.mockResolvedValueOnce({
       ok: true,
       response: 'GAP: Missing test plan\nGAP: No backout procedure documented',
-      message: 'Rovo result received.',
+      message: 'AI Assist result received.',
     });
     render(<CreateChgTab />);
 
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
+    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'ainow');
     await user.click(screen.getByRole('button', { name: 'Unlock' }));
 
-    await user.click(await screen.findByRole('button', { name: /Risk check with Rovo/i }));
+    await user.click(await screen.findByRole('button', { name: /Risk check with AI Assist/i }));
 
     expect(await screen.findByText(/Missing test plan/)).toBeInTheDocument();
     expect(screen.getByText(/No backout procedure documented/)).toBeInTheDocument();
   });
 
-  it('Create CHG button remains available at step 6 after Risk check with Rovo', async () => {
+  it('Create CHG button remains available at step 6 after Risk check with AI Assist', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 6;
-    mockRovoExchange.runRovoExchange.mockResolvedValueOnce({
+    mockAiAssistExchange.runAiAssistExchange.mockResolvedValueOnce({
       ok: true,
       response: 'GAP: Missing test plan',
-      message: 'Rovo result received.',
+      message: 'AI Assist result received.',
     });
     render(<CreateChgTab />);
 
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'rovonow');
+    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'ainow');
     await user.click(screen.getByRole('button', { name: 'Unlock' }));
 
-    await user.click(await screen.findByRole('button', { name: /Risk check with Rovo/i }));
+    await user.click(await screen.findByRole('button', { name: /Risk check with AI Assist/i }));
 
     await screen.findByText(/Missing test plan/);
     expect(screen.getByRole('button', { name: /Create CHG/i })).toBeInTheDocument();

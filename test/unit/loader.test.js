@@ -404,12 +404,12 @@ describe('migrateOldConfig()', () => {
   });
 });
 
-// ── rovoAutomation persistence ────────────────────────────────────────────────
+// ── aiAssistAutomation persistence ──────────────────────────────────────────────
 
-describe('rovoAutomation persistence', () => {
+describe('aiAssistAutomation persistence', () => {
   beforeEach(resetEnvironment);
 
-  function baseConfigWithRovo(rovoAutomation) {
+  function baseConfigWithAiAssist(aiAssistAutomation) {
     return {
       port: 5555,
       sslVerify: true,
@@ -418,44 +418,75 @@ describe('rovoAutomation persistence', () => {
       github: { baseUrl: 'https://api.github.com', pat: '' },
       confluence: { baseUrl: '', username: '', apiToken: '' },
       admin:  { credentialHash: 'hash' },
-      rovoAutomation,
+      aiAssistAutomation,
       scheduler: { repoMonitor: { enabled: false, repos: [], branchPattern: '', intervalMin: 15, transitions: {}, seenBranches: {}, seenCommits: {}, seenPrs: {} } },
     };
   }
 
-  const SAMPLE_ROVO = { webhookUrl: 'https://x.atlassian.net/hook', webhookSecret: 'topsecret', parkingSpaceKey: '~712', parkingPageId: '781058099', isEnabled: true };
+  const SAMPLE_AI_ASSIST = { webhookUrl: 'https://x.atlassian.net/hook', webhookSecret: 'topsecret', parkingSpaceKey: '~712', parkingPageId: '781058099', isEnabled: true };
 
-  it('writes rovoAutomation to disk and obfuscates the secret', () => {
+  it('writes aiAssistAutomation to disk and obfuscates the secret', () => {
     const { saveConfigToDisk } = require('../../src/config/loader');
     fsMock.existsSync.mockReturnValue(true);
     fsMock.mkdirSync.mockImplementation(() => {});
     let writtenContent;
     fsMock.writeFileSync.mockImplementation((_filePath, content) => { writtenContent = content; });
 
-    saveConfigToDisk(baseConfigWithRovo(SAMPLE_ROVO));
+    saveConfigToDisk(baseConfigWithAiAssist(SAMPLE_AI_ASSIST));
 
     const saved = JSON.parse(writtenContent);
-    expect(saved.rovoAutomation.webhookUrl).toBe('https://x.atlassian.net/hook');
-    expect(saved.rovoAutomation.parkingSpaceKey).toBe('~712');
-    expect(saved.rovoAutomation.isEnabled).toBe(true);
+    expect(saved.aiAssistAutomation.webhookUrl).toBe('https://x.atlassian.net/hook');
+    expect(saved.aiAssistAutomation.parkingSpaceKey).toBe('~712');
+    expect(saved.aiAssistAutomation.isEnabled).toBe(true);
     // Secret must be obfuscated (base64), not plaintext
-    expect(saved.rovoAutomation.webhookSecret).not.toBe('topsecret');
-    expect(Buffer.from(saved.rovoAutomation.webhookSecret, 'base64').toString('utf8')).toBe('topsecret');
+    expect(saved.aiAssistAutomation.webhookSecret).not.toBe('topsecret');
+    expect(Buffer.from(saved.aiAssistAutomation.webhookSecret, 'base64').toString('utf8')).toBe('topsecret');
   });
 
-  it('loads rovoAutomation back across a save → load round-trip', () => {
+  it('loads aiAssistAutomation back across a save → load round-trip', () => {
     const { saveConfigToDisk, loadConfig } = require('../../src/config/loader');
     fsMock.existsSync.mockReturnValue(true);
     fsMock.mkdirSync.mockImplementation(() => {});
     let writtenContent;
     fsMock.writeFileSync.mockImplementation((_filePath, content) => { writtenContent = content; });
 
-    saveConfigToDisk(baseConfigWithRovo(SAMPLE_ROVO));
+    saveConfigToDisk(baseConfigWithAiAssist(SAMPLE_AI_ASSIST));
 
     // The persisted (obfuscated) file is now read back on the next launch.
     fsMock.readFileSync.mockReturnValue(writtenContent);
     const configuration = loadConfig();
 
-    expect(configuration.rovoAutomation).toEqual(SAMPLE_ROVO);
+    expect(configuration.aiAssistAutomation).toEqual(SAMPLE_AI_ASSIST);
+  });
+
+  it('migrates a legacy rovoAutomation block to aiAssistAutomation on load', () => {
+    // Older config files persisted this feature under the key `rovoAutomation`.
+    // The loader aliases that legacy block to `aiAssistAutomation` so existing
+    // installs keep working after the rename. The webhookSecret was stored
+    // base64-obfuscated and must still decode back to its plaintext value.
+    const legacyObfuscatedConfig = {
+      _obfuscated: true,
+      port: 5555,
+      jira:   { baseUrl: '', username: '', apiToken: '', pat: '' },
+      snow:   { baseUrl: '', username: '', password: '' },
+      github: { baseUrl: 'https://api.github.com', pat: '' },
+      // Intentional legacy key — proves old config files still load after the rename.
+      rovoAutomation: {
+        isEnabled: true,
+        webhookUrl: 'https://legacy.atlassian.net/hook',
+        webhookSecret: Buffer.from('legacy-secret').toString('base64'),
+      },
+    };
+
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.readFileSync.mockReturnValue(JSON.stringify(legacyObfuscatedConfig));
+
+    const configuration = loadConfig();
+
+    expect(configuration.aiAssistAutomation).toBeDefined();
+    expect(configuration.aiAssistAutomation.isEnabled).toBe(true);
+    expect(configuration.aiAssistAutomation.webhookUrl).toBe('https://legacy.atlassian.net/hook');
+    // The obfuscated secret must be base64-decoded back to its plaintext value.
+    expect(configuration.aiAssistAutomation.webhookSecret).toBe('legacy-secret');
   });
 });
