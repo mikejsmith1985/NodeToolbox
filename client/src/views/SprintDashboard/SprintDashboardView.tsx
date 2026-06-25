@@ -30,7 +30,7 @@ import {
   type SprintDashboardTeamProfile,
 } from '../../store/settingsStore.ts';
 import type { JiraComment, JiraIssue, JiraTransition, JiraVersion } from '../../types/jira.ts';
-import { copyElementImageToClipboard } from '../../utils/downloadElementImage.ts';
+import { copyElementReportToClipboard } from '../../utils/downloadElementImage.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import { useRovoAssist } from '../SnowHub/hooks/useRovoAssist.ts';
 import {
@@ -63,6 +63,7 @@ import {
 } from './hooks/sprintDashboardIssueUtils.ts';
 import {
   buildReleaseNotesHeading,
+  buildReleaseNotesHtml,
   buildReleaseRovoPrompt,
   parseReleaseRovoResponse,
   type ReleaseRovoPromptInput,
@@ -5975,9 +5976,14 @@ function ReleasesTab({
     delete releaseNotesSectionRefs.current[versionId];
   }, []);
 
-  // Copies the rendered release-notes section to the clipboard as an image so it can be pasted
-  // straight into email or chat — no file download and no AI/tooling wording in the report.
-  const handleCopyReleaseNotes = useCallback(async (versionId: string) => {
+  // Copies the rendered release-notes section to the clipboard as BOTH a reflowable HTML table and
+  // an image, so email pastes a readable native table while chat tools fall back to the picture.
+  // The report carries the team/release identity only — no AI or tooling wording.
+  const handleCopyReleaseNotes = useCallback(async (
+    versionId: string,
+    fixVersionName: string,
+    releaseDocument: ReleaseRovoTableDocument,
+  ) => {
     const releaseNotesSectionElement = releaseNotesSectionRefs.current[versionId];
     if (!releaseNotesSectionElement) {
       setReleaseExportErrorByVersionId((previousExportErrors) => ({
@@ -5992,8 +5998,11 @@ function ReleasesTab({
     setReleaseCopyConfirmationByVersionId((previousConfirmations) => ({ ...previousConfirmations, [versionId]: '' }));
 
     try {
-      await copyElementImageToClipboard(
+      const reportHeading = buildReleaseNotesHeading(teamName, fixVersionName);
+      const reportHtml = buildReleaseNotesHtml(reportHeading, releaseDocument);
+      await copyElementReportToClipboard(
         releaseNotesSectionElement,
+        reportHtml,
         'The release notes section is no longer available to copy.',
       );
       setReleaseCopyConfirmationByVersionId((previousConfirmations) => ({
@@ -6003,10 +6012,10 @@ function ReleasesTab({
     } catch (caughtError) {
       setReleaseExportErrorByVersionId((previousExportErrors) => ({
         ...previousExportErrors,
-        [versionId]: caughtError instanceof Error ? caughtError.message : 'Unable to copy the release notes image.',
+        [versionId]: caughtError instanceof Error ? caughtError.message : 'Unable to copy the release notes.',
       }));
     }
-  }, []);
+  }, [teamName]);
 
   if (!projectKey.trim()) {
     return (
@@ -6188,7 +6197,7 @@ function ReleasesTab({
                               <button
                                 className={styles.releaseNotesExportButton}
                                 data-export-exclude="true"
-                                onClick={() => void handleCopyReleaseNotes(entry.version.id)}
+                                onClick={() => void handleCopyReleaseNotes(entry.version.id, entry.version.name, importedReleaseNotes)}
                                 type="button"
                               >
                                 {COPY_RELEASE_NOTES_BUTTON_LABEL}

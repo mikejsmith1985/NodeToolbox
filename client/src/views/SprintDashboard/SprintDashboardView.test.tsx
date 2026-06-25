@@ -11,9 +11,10 @@ const { mockJiraGet } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
 }));
 
-const { mockDownloadElementImage, mockCopyElementImageToClipboard } = vi.hoisted(() => ({
+const { mockDownloadElementImage, mockCopyElementImageToClipboard, mockCopyElementReportToClipboard } = vi.hoisted(() => ({
   mockDownloadElementImage: vi.fn(),
   mockCopyElementImageToClipboard: vi.fn(),
+  mockCopyElementReportToClipboard: vi.fn(),
 }));
 
 // Mock recharts so the LineChart renders without canvas/SVG issues in jsdom.
@@ -195,6 +196,7 @@ vi.mock('../../services/jiraApi.ts', () => ({
 vi.mock('../../utils/downloadElementImage.ts', () => ({
   downloadElementImage: mockDownloadElementImage,
   copyElementImageToClipboard: mockCopyElementImageToClipboard,
+  copyElementReportToClipboard: mockCopyElementReportToClipboard,
 }));
 
 import SprintDashboardView from './SprintDashboardView.tsx';
@@ -972,7 +974,7 @@ describe('SprintDashboardView', () => {
 
       return Promise.resolve({ values: [] });
     });
-    mockCopyElementImageToClipboard.mockResolvedValue(undefined);
+    mockCopyElementReportToClipboard.mockResolvedValue(undefined);
 
     render(<SprintDashboardView />);
 
@@ -1009,9 +1011,14 @@ describe('SprintDashboardView', () => {
     expect(screen.getByRole('table').parentElement).toHaveAttribute('data-export-expand', 'true');
     fireEvent.click(await screen.findByRole('button', { name: /copy release notes/i }));
 
-    expect(mockCopyElementImageToClipboard).toHaveBeenCalledTimes(1);
-    // The captured element is the release-notes section itself (the first argument).
-    expect((mockCopyElementImageToClipboard.mock.calls[0][0] as HTMLElement).className).toContain('releaseNotesSection');
+    expect(mockCopyElementReportToClipboard).toHaveBeenCalledTimes(1);
+    // First argument is the release-notes section element being captured.
+    expect((mockCopyElementReportToClipboard.mock.calls[0][0] as HTMLElement).className).toContain('releaseNotesSection');
+    // Second argument is the HTML report — it carries the heading and the rendered item.
+    const reportHtml = mockCopyElementReportToClipboard.mock.calls[0][1] as string;
+    expect(reportHtml).toContain('Release 24.1 Release Notes');
+    expect(reportHtml).toContain('<strong>TBX-99</strong>');
+    expect(await screen.findByText(/copied to clipboard/i)).toBeInTheDocument();
   });
 
   // ── New feature tests ──
