@@ -12,6 +12,8 @@ const {
   escapeXml,
   renderChangeTable,
   extractPageIdFromUrl,
+  buildConfluenceBlogBody,
+  buildArtRollupBlogBody,
   buildScopeAiAssistPrompt,
   buildScopeRollupAiAssistPrompt,
   buildAiAssistTrendPanel,
@@ -211,6 +213,68 @@ describe('extractChangeEntries', () => {
       ]),
     ];
     expect(extractChangeEntries(issues, 'fix version', 'fixVersion', cutoffDate)[0].fromValue).toBe('—');
+  });
+
+  it('extracts Sprint changes for non-Feature issues (full Reports Hub parity)', () => {
+    const issues = [
+      {
+        key: 'ENFCT-1669',
+        fields: { summary: 'Wire integration', issuetype: { name: 'Story' } },
+        changelog: {
+          histories: [
+            {
+              created: '2026-06-26T13:51:00.000Z',
+              author: { displayName: 'Mike Smith' },
+              items: [{ field: 'Sprint', fromString: '', toString: 'Transformers 08/13/2026' }],
+            },
+          ],
+        },
+      },
+    ];
+    const entries = extractChangeEntries(issues, 'sprint', 'sprint', cutoffDate);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      issueKey: 'ENFCT-1669',
+      issueType: 'Story',
+      changeType: 'sprint',
+      toValue: 'Transformers 08/13/2026',
+    });
+  });
+});
+
+describe('buildConfluenceBlogBody (release + sprint parity)', () => {
+  const releaseEntries = [{ issueKey: 'ENFCT-10', issueSummary: 'Release move', issueType: 'Feature', fromValue: '25.1', toValue: '25.2', changedBy: 'Jane', changedAt: '2026-06-26' }];
+  const sprintEntries  = [{ issueKey: 'ENFCT-1669', issueSummary: 'Wire integration', issueType: 'Story', fromValue: '—', toValue: 'Transformers 08/13/2026', changedBy: 'Mike', changedAt: '2026-06-26' }];
+
+  it('renders both a Release Changes and a Sprint Changes section', () => {
+    const body = buildConfluenceBlogBody(releaseEntries, sprintEntries, 'ENFCT', 'Jun 26', 'Jun 25');
+    expect(body).toContain('📦 Release Changes (1 change)');
+    expect(body).toContain('🏃 Sprint Changes (1 change)');
+    expect(body).toContain('ENFCT-1669');
+    expect(body).toContain('Transformers 08/13/2026');
+  });
+
+  it('shows an empty-state message for a section with no changes', () => {
+    const body = buildConfluenceBlogBody([], sprintEntries, 'ENFCT', 'Jun 26', 'Jun 25');
+    expect(body).toContain('📦 Release Changes (0 changes)');
+    expect(body).toContain('No fix version changes since Jun 25.');
+    expect(body).toContain('🏃 Sprint Changes (1 change)');
+  });
+});
+
+describe('buildArtRollupBlogBody (release + sprint parity)', () => {
+  it('includes a Sprint Changes column and a combined sprint table', () => {
+    const teamResults = [
+      {
+        teamName: 'Alpha', projectKey: 'ALP',
+        releaseEntries: [],
+        sprintEntries: [{ issueKey: 'ALP-1', issueSummary: 'Move', issueType: 'Story', fromValue: '—', toValue: 'Sprint 5', changedBy: 'Mike', changedAt: '2026-06-26' }],
+      },
+    ];
+    const body = buildArtRollupBlogBody(teamResults, 'ALP', 'Jun 26', 'Jun 25');
+    expect(body).toContain('<th><strong>Sprint Changes</strong></th>');
+    expect(body).toContain('🏃 Sprint Changes (1 change)');
+    expect(body).toContain('ALP-1');
   });
 });
 
