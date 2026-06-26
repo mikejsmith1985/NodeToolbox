@@ -37,12 +37,13 @@ import type {
 } from './hooks/useAdminHubState.ts'
 
 /**
- * Formats a report's last delivery outcome into a short status line, or null when the
- * report has never run. Lets each row show whether the last run delivered, skipped
- * because there were no changes, or errored — instead of that being invisible.
+ * Formats a report's last delivery outcome into a short status line. Always returns a
+ * string — when the report has not run since this version was installed it reads
+ * "not yet recorded" so the row visibly shows the feature is wired up, rather than
+ * rendering nothing at all.
  */
-function formatLastDelivery(outcome?: DeliveryOutcome): string | null {
-  if (!outcome) return null
+function formatLastDelivery(outcome?: DeliveryOutcome): string {
+  if (!outcome) return 'Last run: not yet recorded'
   const when = new Date(outcome.ranAt).toLocaleString('en-US', {
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
   })
@@ -2097,11 +2098,9 @@ function NotificationsSection({
               <span className={styles.saveStatus}>{teamRunStatuses[index]}</span>
             )}
           </div>
-          {formatLastDelivery(deliveryStatuses[`team-${index}-${team.projectKey}`]) && (
-            <span className={styles.deliveryStatusLine}>
-              {formatLastDelivery(deliveryStatuses[`team-${index}-${team.projectKey}`])}
-            </span>
-          )}
+          <span className={styles.deliveryStatusLine}>
+            {formatLastDelivery(deliveryStatuses[`team-${index}-${team.projectKey}`])}
+          </span>
         </div>
       ))}
 
@@ -2200,9 +2199,7 @@ function NotificationsSection({
           {isRollupRunning ? 'Running…' : 'Run Rollup Now'}
         </button>
         {rollupRunStatus !== null && <span className={styles.saveStatus}>{rollupRunStatus}</span>}
-        {formatLastDelivery(deliveryStatuses.artRollup) && (
-          <span className={styles.deliveryStatusLine}>{formatLastDelivery(deliveryStatuses.artRollup)}</span>
-        )}
+        <span className={styles.deliveryStatusLine}>{formatLastDelivery(deliveryStatuses.artRollup)}</span>
       </div>
 
       <hr className={styles.sectionDivider} />
@@ -2386,11 +2383,9 @@ function FeatureChangeSection({
               <span className={styles.saveStatus}>{featureRunStatuses[index]}</span>
             )}
           </div>
-          {formatLastDelivery(deliveryStatuses[`feature-${index}-${featureConfig.jiraLabel || featureConfig.projectKey}`]) && (
-            <span className={styles.deliveryStatusLine}>
-              {formatLastDelivery(deliveryStatuses[`feature-${index}-${featureConfig.jiraLabel || featureConfig.projectKey}`])}
-            </span>
-          )}
+          <span className={styles.deliveryStatusLine}>
+            {formatLastDelivery(deliveryStatuses[`feature-${index}-${featureConfig.jiraLabel || featureConfig.projectKey}`])}
+          </span>
         </div>
       ))}
 
@@ -2493,9 +2488,7 @@ function FeatureChangeSection({
           {featureRollupRunStatus !== null && (
             <span className={styles.saveStatus}>{featureRollupRunStatus}</span>
           )}
-          {formatLastDelivery(deliveryStatuses['feature-art-rollup']) && (
-            <span className={styles.deliveryStatusLine}>{formatLastDelivery(deliveryStatuses['feature-art-rollup'])}</span>
-          )}
+          <span className={styles.deliveryStatusLine}>{formatLastDelivery(deliveryStatuses['feature-art-rollup'])}</span>
         </div>
       </div>
 
