@@ -325,6 +325,42 @@
   gap: var(--spacing-sm);
 }
 
+/* Footer row holding the single "Save all fixes" action for the whole panel. */
+.featureReviewSaveAllRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+  margin-top: var(--spacing-xs);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+.featureReviewSaveAllButton {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-on-accent, #fff);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.featureReviewSaveAllButton:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.featureReviewSaveAllButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.featureReviewSaveAllHint {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
 .featureReviewFixRow,
 .featureReviewStoryFixRow {
   display: grid;

@@ -13,8 +13,9 @@
 const { makeJiraApiRequest, makeConfluenceApiRequest, triggerWebhook } = require('../utils/httpClient');
 const { requestAiAssistText, isAiAssistEnabled } = require('./aiAssistEnrichment');
 const { loadFiredDates, recordFiredDate, isScheduledTimeReached } = require('./schedulerFiredState');
+const { recordDeliveryOutcome } = require('./reportDeliveryStatus');
 
-/** Stable name under which this scheduler's fired dates are persisted to disk. */
+/** Stable name under which this scheduler's fired dates and delivery status are persisted. */
 const FIRED_STATE_SCHEDULER_NAME = 'scopeChange';
 
 // ── Constants ──
@@ -183,7 +184,10 @@ function checkAndFireScheduledReports(configuration) {
 
     markFiredToday(configKey);
     console.log('  📤 Scope Change: firing team report for ' + teamReport.projectKey + ' (' + teamReport.teamName + ')');
-    runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, sslVerify, configuration).catch((deliveryError) => {
+    const teamLabel = teamReport.teamName || teamReport.projectKey;
+    recordDeliveryOutcome('scopeChange', configKey, teamLabel, 'scheduled',
+      () => runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, sslVerify, configuration),
+    ).catch((deliveryError) => {
       console.error('  ⚠ Scope Change team report error (' + teamReport.projectKey + '):', deliveryError.message);
     });
   }
@@ -193,7 +197,9 @@ function checkAndFireScheduledReports(configuration) {
     if (isScheduledTimeReached(rollupTime, currentTime) && !hasAlreadyFiredToday('artRollup')) {
       markFiredToday('artRollup');
       console.log('  📤 Scope Change: firing ART rollup');
-      runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, sslVerify, configuration).catch((deliveryError) => {
+      recordDeliveryOutcome('scopeChange', 'artRollup', 'ART Rollup', 'scheduled',
+        () => runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, sslVerify, configuration),
+      ).catch((deliveryError) => {
         console.error('  ⚠ Scope Change ART rollup error:', deliveryError.message);
       });
     }
@@ -623,12 +629,10 @@ async function runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, s
   const dateLabel    = new Date().toISOString().slice(0, 10);
   const teamLabel    = teamName || projectKey;
   const targetPageId = targetBlogUrl ? extractPageIdFromUrl(targetBlogUrl) : null;
-  // Omit date from title when updating an ongoing page — the date would accumulate
-  // across every run and make the stable URL misleading. Use a dated title only when
-  // creating a fresh post so each new post is uniquely named in Confluence.
-  const postTitle    = targetPageId
-    ? 'Scope Change Report — ' + teamLabel
-    : 'Scope Change Report — ' + teamLabel + ' — ' + dateLabel;
+  // Always stamp the run date into the title so the page name reflects when it was last
+  // updated. On an ongoing (updated) page Confluence renames it to the latest date; on a
+  // fresh post the date keeps each new post uniquely named.
+  const postTitle    = 'Scope Change Report — ' + teamLabel + ' — ' + dateLabel;
   let bodyHtml     = buildConfluenceBlogBody(releaseEntries, projectKey, generatedAt, sinceLabel);
 
   // Optional, non-blocking AI Assist enrichment: prepend a trend paragraph above the
@@ -727,10 +731,8 @@ async function runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, ssl
   });
   const dateLabel      = new Date().toISOString().slice(0, 10);
   const targetPageId   = targetBlogUrl ? extractPageIdFromUrl(targetBlogUrl) : null;
-  // Omit date from title when updating an ongoing page — use dated title only for fresh posts.
-  const postTitle      = targetPageId
-    ? 'ART Scope Change Rollup'
-    : 'ART Scope Change Rollup — ' + dateLabel;
+  // Always stamp the run date into the title so the page name reflects its latest update.
+  const postTitle      = 'ART Scope Change Rollup — ' + dateLabel;
   const projectKeyList = projectKeys.join(', ');
   let   bodyHtml       = buildArtRollupBlogBody(teamResults, projectKeyList, generatedAt, sinceLabel);
 
@@ -803,7 +805,10 @@ async function runTeamReportNow(configuration, teamIndex) {
   const confluenceConfig = configuration.confluence;
   const sslVerify        = configuration.sslVerify !== false;
 
-  return runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, sslVerify, configuration);
+  const configKey = 'team-' + teamIndex + '-' + teamReport.projectKey;
+  const teamLabel = teamReport.teamName || teamReport.projectKey;
+  return recordDeliveryOutcome('scopeChange', configKey, teamLabel, 'manual',
+    () => runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, sslVerify, configuration));
 }
 
 /**
@@ -819,7 +824,8 @@ async function runArtRollupNow(configuration) {
   const confluenceConfig  = configuration.confluence;
   const sslVerify         = configuration.sslVerify !== false;
 
-  return runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, sslVerify, configuration);
+  return recordDeliveryOutcome('scopeChange', 'artRollup', 'ART Rollup', 'manual',
+    () => runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, sslVerify, configuration));
 }
 
 module.exports = {

@@ -182,6 +182,22 @@ export interface NotificationArtRollupConfig {
   isEnabled: boolean
 }
 
+/** One report's last delivery outcome, as persisted server-side and returned by the status endpoint. */
+export interface DeliveryOutcome {
+  status: 'delivered' | 'skipped' | 'error'
+  message: string
+  postUrl: string
+  label: string
+  trigger: string
+  ranAt: string
+}
+
+/** Delivery outcomes grouped by scheduler name, then by report key (e.g. "team-0-ENFCT"). */
+export interface DeliveryStatusMap {
+  scopeChange?: Record<string, DeliveryOutcome>
+  featureChange?: Record<string, DeliveryOutcome>
+}
+
 /** Shape of the response from GET /api/version-check. */
 export interface UpdateCheckResult {
   currentVersion: string
@@ -247,6 +263,7 @@ export interface AdminHubState {
   isTeamRunning: boolean[]
   isRollupRunning: boolean
   rollupRunStatus: string | null
+  deliveryStatuses: DeliveryStatusMap
   // ── Feature Change Reports ──
   featureChangeConfigs: FeatureChangeReportConfig[]
   featureChangeSaveStatus: string | null
@@ -571,6 +588,8 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
   const [isTeamRunning, setIsTeamRunning] = useState<boolean[]>([])
   const [isRollupRunning, setIsRollupRunning] = useState(false)
   const [rollupRunStatus, setRollupRunStatus] = useState<string | null>(null)
+  // Last persisted delivery outcome per report (scheduled or manual), keyed by scheduler → reportKey.
+  const [deliveryStatuses, setDeliveryStatuses] = useState<DeliveryStatusMap>({})
 
   // ── Feature Change Reports state ──
   const [featureChangeConfigs, setFeatureChangeConfigs] = useState<FeatureChangeReportConfig[]>([])
@@ -640,6 +659,7 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     isTeamRunning,
     isRollupRunning,
     rollupRunStatus,
+    deliveryStatuses,
     featureChangeConfigs,
     featureChangeSaveStatus,
     featureRunStatuses,
@@ -1137,6 +1157,18 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     }
   }, [])
 
+  /** Fetches the last delivery outcome for every report so each row can show its status. */
+  const refreshDeliveryStatuses = useCallback(async () => {
+    try {
+      const response = await fetch('/api/notifications/delivery-status')
+      if (response.ok) {
+        setDeliveryStatuses(await response.json() as DeliveryStatusMap)
+      }
+    } catch {
+      // Status is best-effort — a fetch failure just leaves the rows without a "last run" line.
+    }
+  }, [])
+
   /** Loads ART teams from localStorage and merges with saved server notification config. */
   const loadNotificationConfigs = useCallback(async () => {
     // Read ART teams from localStorage
@@ -1197,7 +1229,9 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
         teamNames:   teamsWithKeys.map((t) => t.name),
       }))
     }
-  }, [])
+
+    void refreshDeliveryStatuses()
+  }, [refreshDeliveryStatuses])
 
   /** Updates a single field on a team config row. */
   const updateTeamConfig = useCallback((index: number, field: keyof NotificationTeamConfig, value: string | boolean) => {
@@ -1250,8 +1284,9 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
       setTeamRunStatuses((prev) => { const next = [...prev]; next[teamIndex] = '❌ Network error'; return next })
     } finally {
       setIsTeamRunning((prev) => { const next = [...prev]; next[teamIndex] = false; return next })
+      void refreshDeliveryStatuses()
     }
-  }, [])
+  }, [refreshDeliveryStatuses])
 
   /** POSTs a test payload to the given trigger URL to verify webhook plumbing. */
   const testWebhook = useCallback(async (triggerUrl: string, triggerSecret?: string): Promise<{ ok: boolean; message: string }> => {
@@ -1330,7 +1365,9 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     setFeatureChangeConfigs(mergedConfigs)
     setFeatureRunStatuses(mergedConfigs.map(() => null))
     setIsFeatureRunning(mergedConfigs.map(() => false))
-  }, [])
+
+    void refreshDeliveryStatuses()
+  }, [refreshDeliveryStatuses])
 
   /** Updates a single field on a feature change config row. */
   const updateFeatureChangeConfig = useCallback((
@@ -1382,8 +1419,9 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
       setFeatureRunStatuses((prev) => { const next = [...prev]; next[reportIndex] = '❌ Network error'; return next })
     } finally {
       setIsFeatureRunning((prev) => { const next = [...prev]; next[reportIndex] = false; return next })
+      void refreshDeliveryStatuses()
     }
-  }, [])
+  }, [refreshDeliveryStatuses])
 
   /** Updates a single field on the Feature Change ART Rollup config. */
   const updateFeatureChangeArtRollup = useCallback((

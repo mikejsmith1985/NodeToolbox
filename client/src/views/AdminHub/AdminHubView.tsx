@@ -26,6 +26,7 @@ import type {
   AdminHubActions,
   AdminHubState,
   ArtSettingsConfig,
+  DeliveryOutcome,
   DiagnosticsResult,
   FeatureChangeArtRollupConfig,
   FeatureChangeReportConfig,
@@ -34,6 +35,21 @@ import type {
   NotificationArtRollupConfig,
   UpdateCheckResult,
 } from './hooks/useAdminHubState.ts'
+
+/**
+ * Formats a report's last delivery outcome into a short status line, or null when the
+ * report has never run. Lets each row show whether the last run delivered, skipped
+ * because there were no changes, or errored — instead of that being invisible.
+ */
+function formatLastDelivery(outcome?: DeliveryOutcome): string | null {
+  if (!outcome) return null
+  const when = new Date(outcome.ranAt).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
+  if (outcome.status === 'delivered') return `✓ Last run delivered · ${when}`
+  if (outcome.status === 'skipped') return `ℹ Last run skipped (no changes) · ${when}`
+  return `❌ Last run failed: ${outcome.message || 'error'} · ${when}`
+}
 import type { ConnectivityConfigResult, ConnectionProbeResult } from '../../types/config.ts'
 import ClientDiagnosticsPanel from './ClientDiagnosticsPanel'
 import CredentialManagementSection from './CredentialManagementSection'
@@ -1921,6 +1937,7 @@ interface NotificationsSectionProps {
   isTeamRunning: boolean[]
   isRollupRunning: boolean
   rollupRunStatus: string | null
+  deliveryStatuses: Record<string, DeliveryOutcome>
   onMount(): void
   onUpdateTeam(index: number, field: string, value: string | boolean): void
   onUpdateRollup(field: string, value: string | boolean): void
@@ -1939,6 +1956,7 @@ function NotificationsSection({
   isTeamRunning,
   isRollupRunning,
   rollupRunStatus,
+  deliveryStatuses,
   onMount,
   onUpdateTeam,
   onUpdateRollup,
@@ -2079,6 +2097,11 @@ function NotificationsSection({
               <span className={styles.saveStatus}>{teamRunStatuses[index]}</span>
             )}
           </div>
+          {formatLastDelivery(deliveryStatuses[`team-${index}-${team.projectKey}`]) && (
+            <span className={styles.deliveryStatusLine}>
+              {formatLastDelivery(deliveryStatuses[`team-${index}-${team.projectKey}`])}
+            </span>
+          )}
         </div>
       ))}
 
@@ -2177,6 +2200,9 @@ function NotificationsSection({
           {isRollupRunning ? 'Running…' : 'Run Rollup Now'}
         </button>
         {rollupRunStatus !== null && <span className={styles.saveStatus}>{rollupRunStatus}</span>}
+        {formatLastDelivery(deliveryStatuses.artRollup) && (
+          <span className={styles.deliveryStatusLine}>{formatLastDelivery(deliveryStatuses.artRollup)}</span>
+        )}
       </div>
 
       <hr className={styles.sectionDivider} />
@@ -2201,6 +2227,7 @@ interface FeatureChangeSectionProps {
   isFeatureRunning: boolean[]
   isFeatureRollupRunning: boolean
   featureRollupRunStatus: string | null
+  deliveryStatuses: Record<string, DeliveryOutcome>
   onMount(): void
   onUpdate(index: number, field: keyof FeatureChangeReportConfig, value: string | boolean): void
   onUpdateArtRollup(field: keyof FeatureChangeArtRollupConfig, value: string | boolean): void
@@ -2219,6 +2246,7 @@ function FeatureChangeSection({
   isFeatureRunning,
   isFeatureRollupRunning,
   featureRollupRunStatus,
+  deliveryStatuses,
   onMount,
   onUpdate,
   onUpdateArtRollup,
@@ -2358,6 +2386,11 @@ function FeatureChangeSection({
               <span className={styles.saveStatus}>{featureRunStatuses[index]}</span>
             )}
           </div>
+          {formatLastDelivery(deliveryStatuses[`feature-${index}-${featureConfig.jiraLabel || featureConfig.projectKey}`]) && (
+            <span className={styles.deliveryStatusLine}>
+              {formatLastDelivery(deliveryStatuses[`feature-${index}-${featureConfig.jiraLabel || featureConfig.projectKey}`])}
+            </span>
+          )}
         </div>
       ))}
 
@@ -2460,6 +2493,9 @@ function FeatureChangeSection({
           {featureRollupRunStatus !== null && (
             <span className={styles.saveStatus}>{featureRollupRunStatus}</span>
           )}
+          {formatLastDelivery(deliveryStatuses['feature-art-rollup']) && (
+            <span className={styles.deliveryStatusLine}>{formatLastDelivery(deliveryStatuses['feature-art-rollup'])}</span>
+          )}
         </div>
       </div>
 
@@ -2513,6 +2549,7 @@ function ReportsConfigContent({ state, actions }: ReportsConfigContentProps) {
             isTeamRunning={state.isTeamRunning}
             isRollupRunning={state.isRollupRunning}
             rollupRunStatus={state.rollupRunStatus}
+            deliveryStatuses={state.deliveryStatuses.scopeChange ?? {}}
             onMount={() => { void actions.loadNotificationConfigs() }}
             onUpdateTeam={(index, field, value) => actions.updateTeamConfig(index, field as never, value as never)}
             onUpdateRollup={(field, value) => actions.updateArtRollup(field as never, value as never)}
@@ -2538,6 +2575,7 @@ function ReportsConfigContent({ state, actions }: ReportsConfigContentProps) {
             isFeatureRunning={state.isFeatureRunning}
             isFeatureRollupRunning={state.isFeatureRollupRunning}
             featureRollupRunStatus={state.featureRollupRunStatus}
+            deliveryStatuses={state.deliveryStatuses.featureChange ?? {}}
             onMount={() => { void actions.loadFeatureChangeConfigs() }}
             onUpdate={(index, field, value) => actions.updateFeatureChangeConfig(index, field, value)}
             onUpdateArtRollup={(field, value) => actions.updateFeatureChangeArtRollup(field, value)}

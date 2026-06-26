@@ -10,10 +10,12 @@ jest.mock('../config/loader', () => ({ saveConfigToDisk: jest.fn() }));
 jest.mock('../services/scopeChangeScheduler', () => ({ runTeamReportNow: jest.fn(), runArtRollupNow: jest.fn() }));
 jest.mock('../services/featureChangeScheduler', () => ({ runFeatureReportNow: jest.fn(), runFeatureArtRollupNow: jest.fn() }));
 jest.mock('../utils/httpClient', () => ({ triggerWebhook: jest.fn() }));
+jest.mock('../services/reportDeliveryStatus', () => ({ loadDeliveryStatuses: jest.fn(() => ({})) }));
 
 const { saveConfigToDisk } = require('../config/loader');
 const { runTeamReportNow } = require('../services/scopeChangeScheduler');
 const { triggerWebhook } = require('../utils/httpClient');
+const { loadDeliveryStatuses } = require('../services/reportDeliveryStatus');
 const createNotificationsRouter = require('./notifications');
 
 function buildApp(configuration) {
@@ -49,6 +51,21 @@ describe('POST /api/notifications/config', () => {
     expect(saved.scheduleTime).toBe('11:00'); // default applied
     expect(saved.isEnabled).toBe(true); // coerced from 1
     expect(saveConfigToDisk).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('GET /api/notifications/delivery-status', () => {
+  it('returns the persisted delivery status object for the Admin Hub to display', async () => {
+    loadDeliveryStatuses.mockReturnValueOnce({
+      scopeChange: {
+        'team-0-ENFCT': { status: 'skipped', message: 'No fix version changes since Jun 25.', label: 'Transformers', ranAt: '2026-06-26T13:00:00.000Z' },
+      },
+    });
+
+    const response = await request(buildApp({})).get('/api/notifications/delivery-status');
+
+    expect(response.status).toBe(200);
+    expect(response.body.scopeChange['team-0-ENFCT']).toMatchObject({ status: 'skipped', label: 'Transformers' });
   });
 });
 

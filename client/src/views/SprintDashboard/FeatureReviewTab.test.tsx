@@ -235,7 +235,7 @@ describe('FeatureReviewTab', () => {
     fireEvent.change(screen.getByDisplayValue('Identity hardening'), {
       target: { value: 'Identity hardening updated' },
     });
-    fireEvent.click(screen.getAllByRole('button', { name: /^save$/i })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /save all fixes/i }));
 
     await waitFor(() => {
       expect(mockSaveFeatureReviewSimpleField).toHaveBeenCalledWith(
@@ -245,10 +245,10 @@ describe('FeatureReviewTab', () => {
       );
     });
     expect(mockFetchFeatureReviewItems).toHaveBeenCalledTimes(2);
-    expect(mockShowToast).toHaveBeenCalledWith('ART-5000 updated.', 'success');
+    expect(mockShowToast).toHaveBeenCalledWith('ART-5000 — 1 fix saved.', 'success');
   });
 
-  it('saves missing child story points directly from the feature review card', async () => {
+  it('saves missing child story points through the single Save all fixes button', async () => {
     localStorage.setItem('nodetoolbox-art-teams', JSON.stringify([
       {
         id: 'team-1',
@@ -258,6 +258,12 @@ describe('FeatureReviewTab', () => {
         piReviewPageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha',
       },
     ]));
+    // Only the story-points flag, so the batch contains exactly the points fix we fill in.
+    mockFetchFeatureReviewItems.mockResolvedValue([
+      createFeatureReviewItem({
+        hygieneFlags: [{ checkId: 'missing-child-story-points', label: 'Missing Pointed Child Story', severity: 'warn' }],
+      }),
+    ]);
 
     render(
       <FeatureReviewTab
@@ -272,14 +278,14 @@ describe('FeatureReviewTab', () => {
     fireEvent.change(screen.getByPlaceholderText(/story points/i), {
       target: { value: '5' },
     });
-    fireEvent.click(screen.getAllByRole('button', { name: /^save$/i }).at(-1)!);
+    fireEvent.click(screen.getByRole('button', { name: /save all fixes/i }));
 
     await waitFor(() => {
       expect(mockSaveFeatureReviewStoryPoints).toHaveBeenCalledWith('TBX-101', '5');
     });
   });
 
-  it('shows and saves direct Jira status transitions from the feature review card', async () => {
+  it('saves several different fixes with one button and refreshes the data only once', async () => {
     localStorage.setItem('nodetoolbox-art-teams', JSON.stringify([
       {
         id: 'team-1',
@@ -289,6 +295,59 @@ describe('FeatureReviewTab', () => {
         piReviewPageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha',
       },
     ]));
+    mockFetchFeatureReviewItems.mockResolvedValue([
+      createFeatureReviewItem({
+        hygieneFlags: [
+          { checkId: 'missing-summary', label: 'Missing Feature Name / Summary', severity: 'error' },
+          { checkId: 'missing-due-date', label: 'Missing Due Date', severity: 'warn' },
+          { checkId: 'missing-child-story-points', label: 'Missing Pointed Child Story', severity: 'warn' },
+        ],
+      }),
+    ]);
+
+    render(
+      <FeatureReviewTab
+        boardId={42}
+        boardName="Alpha Board"
+        projectKey="TBX"
+        selectedPiName="PI 26.3"
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /show fixes/i }));
+    fireEvent.change(screen.getByDisplayValue('Identity hardening'), {
+      target: { value: 'Identity hardening v2' },
+    });
+    fireEvent.change(screen.getByLabelText('Due Date'), { target: { value: '2026-07-01' } });
+    fireEvent.change(screen.getByPlaceholderText(/story points/i), { target: { value: '8' } });
+    fireEvent.click(screen.getByRole('button', { name: /save all fixes/i }));
+
+    await waitFor(() => {
+      expect(mockSaveFeatureReviewSimpleField).toHaveBeenCalledWith('ART-5000', 'summary', 'Identity hardening v2');
+    });
+    expect(mockSaveFeatureReviewSimpleField).toHaveBeenCalledWith('ART-5000', 'duedate', '2026-07-01');
+    expect(mockSaveFeatureReviewStoryPoints).toHaveBeenCalledWith('TBX-101', '8');
+    // One batch → exactly one reload (initial load + single post-save refresh).
+    expect(mockFetchFeatureReviewItems).toHaveBeenCalledTimes(2);
+    expect(mockShowToast).toHaveBeenCalledWith('ART-5000 — 3 fixes saved.', 'success');
+  });
+
+  it('shows and saves a direct Jira status transition through the single Save all fixes button', async () => {
+    localStorage.setItem('nodetoolbox-art-teams', JSON.stringify([
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'TBX',
+        piReviewPageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha',
+      },
+    ]));
+    // Story-points-only flag keeps the panel open with no other pending fix, so the batch is just the transition.
+    mockFetchFeatureReviewItems.mockResolvedValue([
+      createFeatureReviewItem({
+        hygieneFlags: [{ checkId: 'missing-child-story-points', label: 'Missing Pointed Child Story', severity: 'warn' }],
+      }),
+    ]);
 
     render(
       <FeatureReviewTab
@@ -304,13 +363,13 @@ describe('FeatureReviewTab', () => {
     fireEvent.change(screen.getByLabelText('Change Status'), {
       target: { value: '41' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /save status/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save all fixes/i }));
 
     await waitFor(() => {
       expect(mockSaveFeatureReviewTransition).toHaveBeenCalledWith('ART-5000', '41');
     });
     expect(mockFetchFeatureReviewItems).toHaveBeenCalledTimes(2);
-    expect(mockShowToast).toHaveBeenCalledWith('ART-5000 status updated.', 'success');
+    expect(mockShowToast).toHaveBeenCalledWith('ART-5000 — 1 fix saved.', 'success');
   });
 
   it('reloads transition options after a status change when the fix panel is reopened', async () => {
@@ -323,7 +382,8 @@ describe('FeatureReviewTab', () => {
         piReviewPageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha',
       },
     ]));
-    const updatedFeatureReviewItem = createFeatureReviewItem();
+    const transitionOnlyFlags = [{ checkId: 'missing-child-story-points', label: 'Missing Pointed Child Story', severity: 'warn' as const }];
+    const updatedFeatureReviewItem = createFeatureReviewItem({ hygieneFlags: transitionOnlyFlags });
     updatedFeatureReviewItem.feature.status = 'Done';
     updatedFeatureReviewItem.featureIssue.fields.status = {
       name: 'Done',
@@ -331,7 +391,7 @@ describe('FeatureReviewTab', () => {
     } as JiraIssue['fields']['status'];
 
     mockFetchFeatureReviewItems
-      .mockResolvedValueOnce([createFeatureReviewItem()])
+      .mockResolvedValueOnce([createFeatureReviewItem({ hygieneFlags: transitionOnlyFlags })])
       .mockResolvedValueOnce([updatedFeatureReviewItem]);
 
     render(
@@ -348,7 +408,7 @@ describe('FeatureReviewTab', () => {
     fireEvent.change(screen.getByLabelText('Change Status'), {
       target: { value: '41' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /save status/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save all fixes/i }));
 
     await waitFor(() => {
       expect(mockFetchFeatureReviewItems).toHaveBeenCalledTimes(2);

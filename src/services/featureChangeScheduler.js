@@ -13,8 +13,9 @@
 const { makeJiraApiRequest, makeConfluenceApiRequest, triggerWebhook } = require('../utils/httpClient');
 const { requestAiAssistText, isAiAssistEnabled } = require('./aiAssistEnrichment');
 const { loadFiredDates, recordFiredDate, isScheduledTimeReached } = require('./schedulerFiredState');
+const { recordDeliveryOutcome } = require('./reportDeliveryStatus');
 
-/** Stable name under which this scheduler's fired dates are persisted to disk. */
+/** Stable name under which this scheduler's fired dates and delivery status are persisted. */
 const FIRED_STATE_SCHEDULER_NAME = 'featureChange';
 
 // ── Constants ──
@@ -221,7 +222,10 @@ function checkAndFireScheduledReports(configuration) {
 
     markFiredToday(configKey);
     console.log('  🎯 Feature Change: firing report for label "' + (report.jiraLabel || report.projectKey) + '" (' + report.teamName + ')');
-    runFeatureReportDelivery(report, jiraConfig, confluenceConfig, sslVerify, configuration).catch((deliveryError) => {
+    const reportLabel = report.teamName || report.jiraLabel || report.projectKey;
+    recordDeliveryOutcome('featureChange', configKey, reportLabel, 'scheduled',
+      () => runFeatureReportDelivery(report, jiraConfig, confluenceConfig, sslVerify, configuration),
+    ).catch((deliveryError) => {
       console.error('  ⚠ Feature Change report error (' + (report.jiraLabel || report.projectKey) + '):', deliveryError.message);
     });
   }
@@ -232,7 +236,9 @@ function checkAndFireScheduledReports(configuration) {
     if (isScheduledTimeReached(rollupTime, currentTime) && !hasAlreadyFiredToday('feature-art-rollup')) {
       markFiredToday('feature-art-rollup');
       console.log('  🎯 Feature Change ART Rollup: firing combined report…');
-      runFeatureChangeArtRollupDelivery(artRollup, reports, jiraConfig, confluenceConfig, sslVerify, configuration).catch((deliveryError) => {
+      recordDeliveryOutcome('featureChange', 'feature-art-rollup', 'ART Feature Change Rollup', 'scheduled',
+        () => runFeatureChangeArtRollupDelivery(artRollup, reports, jiraConfig, confluenceConfig, sslVerify, configuration),
+      ).catch((deliveryError) => {
         console.error('  ⚠ Feature Change ART Rollup error:', deliveryError.message);
       });
     }
@@ -764,10 +770,9 @@ async function runFeatureReportDelivery(report, jiraConfig, confluenceConfig, ss
   const dateLabel    = new Date().toISOString().slice(0, 10);
   const teamLabel    = teamName || effectiveLabel;
   const targetPageId = targetBlogUrl ? extractPageIdFromUrl(targetBlogUrl) : null;
-  // Omit date from title when updating an ongoing page — use dated title only for fresh posts.
-  const postTitle    = targetPageId
-    ? 'Feature Change Report — ' + teamLabel
-    : 'Feature Change Report — ' + teamLabel + ' — ' + dateLabel;
+  // Always stamp the run date into the title so the page name reflects when it was last
+  // updated. On an ongoing (updated) page Confluence renames it to the latest date.
+  const postTitle    = 'Feature Change Report — ' + teamLabel + ' — ' + dateLabel;
   let bodyHtml  = buildFeatureChangeBlogBody(fixVersionEntries, statusEntries, scheduleEntries, effectiveLabel, generatedAt, sinceLabel);
 
   // Optional, non-blocking AI Assist enrichment: prepend a trend paragraph above the
@@ -914,10 +919,8 @@ async function runFeatureChangeArtRollupDelivery(artRollup, teamReports, jiraCon
   });
   const dateLabel    = new Date().toISOString().slice(0, 10);
   const targetPageId = targetBlogUrl ? extractPageIdFromUrl(targetBlogUrl) : null;
-  // Omit date from title when updating an ongoing page — use dated title only for fresh posts.
-  const postTitle    = targetPageId
-    ? 'ART Feature Change Rollup'
-    : 'ART Feature Change Rollup — ' + dateLabel;
+  // Always stamp the run date into the title so the page name reflects its latest update.
+  const postTitle    = 'ART Feature Change Rollup — ' + dateLabel;
   let   bodyHtml     = buildFeatureChangeArtRollupBody(teamResults, generatedAt, sinceLabel);
 
   // Optional, non-blocking AI Assist enrichment: prepend a cross-team trend paragraph
@@ -1034,7 +1037,10 @@ async function runFeatureReportNow(configuration, reportIndex) {
   const confluenceConfig = configuration.confluence;
   const sslVerify        = configuration.sslVerify !== false;
 
-  return runFeatureReportDelivery(report, jiraConfig, confluenceConfig, sslVerify, configuration);
+  const configKey   = 'feature-' + reportIndex + '-' + (report.jiraLabel || report.projectKey);
+  const reportLabel = report.teamName || report.jiraLabel || report.projectKey;
+  return recordDeliveryOutcome('featureChange', configKey, reportLabel, 'manual',
+    () => runFeatureReportDelivery(report, jiraConfig, confluenceConfig, sslVerify, configuration));
 }
 
 /**
@@ -1052,7 +1058,8 @@ async function runFeatureArtRollupNow(configuration) {
   const confluenceConfig    = configuration.confluence;
   const sslVerify           = configuration.sslVerify !== false;
 
-  return runFeatureChangeArtRollupDelivery(artRollup, reports, jiraConfig, confluenceConfig, sslVerify, configuration);
+  return recordDeliveryOutcome('featureChange', 'feature-art-rollup', 'ART Feature Change Rollup', 'manual',
+    () => runFeatureChangeArtRollupDelivery(artRollup, reports, jiraConfig, confluenceConfig, sslVerify, configuration));
 }
 
 module.exports = {
