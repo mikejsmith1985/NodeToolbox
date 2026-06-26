@@ -14,6 +14,7 @@ const { makeJiraApiRequest, makeConfluenceApiRequest, triggerWebhook } = require
 const { requestAiAssistText, isAiAssistEnabled } = require('./aiAssistEnrichment');
 const { loadFiredDates, recordFiredDate, isScheduledTimeReached } = require('./schedulerFiredState');
 const { recordDeliveryOutcome } = require('./reportDeliveryStatus');
+const { resolveCoverageCutoff, getCoverageWatermark, setCoverageWatermark } = require('./reportCoverage');
 
 /** Stable name under which this scheduler's fired dates and delivery status are persisted. */
 const FIRED_STATE_SCHEDULER_NAME = 'scopeChange';
@@ -636,8 +637,11 @@ async function createConfluenceBlogPost(spaceKey, title, bodyHtml, confluenceCon
 async function runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, sslVerify, configuration) {
   const { teamName, projectKey, confluenceSpaceKey, targetBlogUrl, triggerUrl, triggerSecret } = teamReport;
 
-  // Use the previous business day as the cutoff so Monday's run catches Friday's work.
-  const cutoffDate       = getPreviousBusinessDayCutoff();
+  // Cutoff = the previous business day, but reaching back to the last run if days were missed
+  // (downtime), so a gap self-heals instead of dropping changes. coverageKey is per project.
+  const coverageKey      = 'scope-team-' + projectKey;
+  const runStartedAt     = new Date();
+  const cutoffDate       = resolveCoverageCutoff(getCoverageWatermark(coverageKey), getPreviousBusinessDayCutoff(), runStartedAt);
   const cutoffDateString = cutoffDate.toISOString().slice(0, 10);
   const sinceLabel       = cutoffDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', weekday: 'short' });
 
@@ -657,6 +661,8 @@ async function runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, s
   // should not trigger automation rules or clutter the Confluence page history.
   if (releaseEntries.length === 0 && sprintEntries.length === 0) {
     console.log('  ✅ Scope Change [' + projectKey + ']: no fix version or sprint changes — skipping');
+    // A skip confirms coverage through now (there was nothing to report), so advance the watermark.
+    setCoverageWatermark(coverageKey, runStartedAt.toISOString());
     return { skipped: true, message: 'No fix version or sprint changes since ' + sinceLabel + ' — delivery skipped.' };
   }
 
@@ -714,6 +720,9 @@ async function runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, s
     });
   }
 
+  // Delivery succeeded — coverage is confirmed through this run's start.
+  setCoverageWatermark(coverageKey, runStartedAt.toISOString());
+
   return {
     skipped: false,
     message: 'Report delivered — ' + releaseEntries.length + ' release change(s), ' + sprintEntries.length + ' sprint change(s).',
@@ -738,8 +747,10 @@ async function runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, ssl
     return { skipped: true, message: 'No project keys configured for ART rollup.' };
   }
 
-  // Previous business day cutoff — same logic as team reports.
-  const cutoffDate       = getPreviousBusinessDayCutoff();
+  // Prior-business-day cutoff, reaching back to the last run when days were missed.
+  const coverageKey      = 'scope-rollup';
+  const runStartedAt     = new Date();
+  const cutoffDate       = resolveCoverageCutoff(getCoverageWatermark(coverageKey), getPreviousBusinessDayCutoff(), runStartedAt);
   const cutoffDateString = cutoffDate.toISOString().slice(0, 10);
   const sinceLabel       = cutoffDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', weekday: 'short' });
 
@@ -768,6 +779,7 @@ async function runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, ssl
   // Only deliver when at least one team has a real release or sprint change.
   if (totalChanges === 0) {
     console.log('  ✅ Scope Change ART Rollup: no fix version or sprint changes across any team — skipping');
+    setCoverageWatermark(coverageKey, runStartedAt.toISOString());
     return { skipped: true, message: 'No fix version or sprint changes since ' + sinceLabel + ' — delivery skipped.' };
   }
 
@@ -823,6 +835,9 @@ async function runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, ssl
       console.error('  ⚠ Scope Change ART Rollup: webhook trigger failed — ' + webhookError.message);
     });
   }
+
+  // Delivery succeeded — coverage is confirmed through this run's start.
+  setCoverageWatermark(coverageKey, runStartedAt.toISOString());
 
   return {
     skipped: false,

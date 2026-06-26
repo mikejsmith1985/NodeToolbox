@@ -14,6 +14,7 @@ const { makeJiraApiRequest, makeConfluenceApiRequest, triggerWebhook } = require
 const { requestAiAssistText, isAiAssistEnabled } = require('./aiAssistEnrichment');
 const { loadFiredDates, recordFiredDate, isScheduledTimeReached } = require('./schedulerFiredState');
 const { recordDeliveryOutcome } = require('./reportDeliveryStatus');
+const { resolveCoverageCutoff, getCoverageWatermark, setCoverageWatermark } = require('./reportCoverage');
 
 /** Stable name under which this scheduler's fired dates and delivery status are persisted. */
 const FIRED_STATE_SCHEDULER_NAME = 'featureChange';
@@ -742,10 +743,11 @@ async function runFeatureReportDelivery(report, jiraConfig, confluenceConfig, ss
     return { skipped: true, message: 'No Jira label configured — delivery skipped.' };
   }
 
-  // Previous business day cutoff — Monday's run looks back to Friday,
-  // Tuesday–Friday looks back one calendar day. Using midnight ensures
-  // the full prior business day is included regardless of when the job fires.
-  const cutoffDate       = getPreviousBusinessDayCutoff();
+  // Cutoff = the previous business day, reaching back to the last run if days were missed
+  // (downtime) so a gap self-heals. coverageKey is per label (the report's identity).
+  const coverageKey      = 'feature-' + (effectiveLabel || projectKey);
+  const runStartedAt     = new Date();
+  const cutoffDate       = resolveCoverageCutoff(getCoverageWatermark(coverageKey), getPreviousBusinessDayCutoff(), runStartedAt);
   const cutoffDateString = cutoffDate.toISOString().slice(0, 10);
   const sinceLabel       = cutoffDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', weekday: 'short' });
 
@@ -760,6 +762,8 @@ async function runFeatureReportDelivery(report, jiraConfig, confluenceConfig, ss
   // Nothing changed — avoid creating a noisy empty report and never fire the webhook.
   if (totalChangeCount === 0) {
     console.log('  ✅ Feature Change [' + effectiveLabel + ']: no changes — skipping');
+    // A skip confirms coverage through now, so advance the watermark.
+    setCoverageWatermark(coverageKey, runStartedAt.toISOString());
     return { skipped: true, message: 'No feature changes since ' + sinceLabel + ' — delivery skipped.' };
   }
 
@@ -820,6 +824,9 @@ async function runFeatureReportDelivery(report, jiraConfig, confluenceConfig, ss
     });
   }
 
+  // Delivery succeeded — coverage is confirmed through this run's start.
+  setCoverageWatermark(coverageKey, runStartedAt.toISOString());
+
   return {
     skipped: false,
     message: 'Report delivered — ' +
@@ -858,8 +865,10 @@ async function runFeatureChangeArtRollupDelivery(artRollup, teamReports, jiraCon
     return { skipped: true, message: 'No teams have a Jira label configured — delivery skipped.' };
   }
 
-  // Previous business day cutoff — same logic as per-team delivery.
-  const cutoffDate       = getPreviousBusinessDayCutoff();
+  // Prior-business-day cutoff, reaching back to the last run when days were missed.
+  const coverageKey      = 'feature-rollup';
+  const runStartedAt     = new Date();
+  const cutoffDate       = resolveCoverageCutoff(getCoverageWatermark(coverageKey), getPreviousBusinessDayCutoff(), runStartedAt);
   const cutoffDateString = cutoffDate.toISOString().slice(0, 10);
   const sinceLabel       = cutoffDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', weekday: 'short' });
 
@@ -910,6 +919,7 @@ async function runFeatureChangeArtRollupDelivery(artRollup, teamReports, jiraCon
 
   if (totalChangeCount === 0) {
     console.log('  ✅ Feature Change ART Rollup: no changes across any team — skipping');
+    setCoverageWatermark(coverageKey, runStartedAt.toISOString());
     return { skipped: true, message: 'No feature changes since ' + sinceLabel + ' — delivery skipped.' };
   }
 
@@ -960,6 +970,9 @@ async function runFeatureChangeArtRollupDelivery(artRollup, teamReports, jiraCon
       console.error('  ⚠ Feature Change ART Rollup: webhook trigger failed — ' + webhookError.message);
     });
   }
+
+  // Delivery succeeded — coverage is confirmed through this run's start.
+  setCoverageWatermark(coverageKey, runStartedAt.toISOString());
 
   return {
     skipped: false,
