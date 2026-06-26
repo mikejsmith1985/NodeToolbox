@@ -69,6 +69,16 @@ describe('requestAiAssistText', () => {
     expect(fetchResult).toHaveBeenCalledTimes(3);
   });
 
+  it('caps the DEFAULT poll budget so a dead backend cannot stall a report (~6s, 3 attempts)', async () => {
+    // Safety net: with Rovo off the parking page never fills, so the default budget must
+    // stay small. A never-ready backend should be abandoned after the default attempts.
+    const dispatchPrompt = jest.fn().mockResolvedValue({ ok: true });
+    const fetchResult = jest.fn().mockResolvedValue({ ok: true, ready: false });
+    const result = await requestAiAssistText(ENABLED_CONFIG, 'x', {}, baseDeps({ dispatchPrompt, fetchResult }));
+    expect(result).toBeNull();
+    expect(fetchResult).toHaveBeenCalledTimes(3);
+  });
+
   it('stops polling and returns null on a hard result error', async () => {
     const dispatchPrompt = jest.fn().mockResolvedValue({ ok: true });
     const fetchResult = jest.fn().mockResolvedValue({ ok: false, code: 'fetch-failed' });

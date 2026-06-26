@@ -12,9 +12,12 @@
 const crypto = require('crypto');
 const { dispatchPrompt, fetchResult } = require('./aiAssistExchange');
 
-// Bounded poll budget. Default ≈60s (20 × 3s) — enough for AI Assist to answer without
-// materially delaying a scheduler run (SC-001), short enough to fail fast when down.
-const DEFAULT_POLL_ATTEMPTS = 20;
+// Bounded poll budget. Default ≈6s (3 × 3s) — a report must never be held hostage by a
+// slow or dead AI Assist backend. When Rovo is turned off nothing ever writes the parking
+// page, so every attempt times out; keeping the budget small means that costs ~6s, not
+// ~60s, per report. A caller (or a future Copilot-backed setup) can pass a larger
+// `pollAttempts` if its backend genuinely needs longer to answer.
+const DEFAULT_POLL_ATTEMPTS = 3;
 const DEFAULT_POLL_INTERVAL_MS = 3000;
 
 /** Resolves after the given delay. Extracted so the poll is injectable in tests. */
