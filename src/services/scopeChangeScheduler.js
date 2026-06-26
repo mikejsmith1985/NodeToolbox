@@ -12,6 +12,10 @@
 
 const { makeJiraApiRequest, makeConfluenceApiRequest, triggerWebhook } = require('../utils/httpClient');
 const { requestAiAssistText, isAiAssistEnabled } = require('./aiAssistEnrichment');
+const { loadFiredDates, recordFiredDate, isScheduledTimeReached } = require('./schedulerFiredState');
+
+/** Stable name under which this scheduler's fired dates are persisted to disk. */
+const FIRED_STATE_SCHEDULER_NAME = 'scopeChange';
 
 // ── Constants ──
 
@@ -43,7 +47,9 @@ const DAYS_BACK_TO_PREVIOUS_BUSINESS_DAY = [2, 3, 1, 1, 1, 1, 1];
 // ── Schedule tracking ──
 
 // Tracks the last date (YYYY-MM-DD) each config fired so we never fire twice on the same day.
-const lastFiredDates = new Map();
+// Hydrated from the persistent fired-state file when the scheduler starts, so a restart
+// later the same day does not re-deliver a report that already went out.
+let lastFiredDates = new Map();
 
 let schedulerIntervalHandle = null;
 
@@ -75,11 +81,14 @@ function hasAlreadyFiredToday(configKey) {
 }
 
 /**
- * Records that a config key fired today.
+ * Records that a config key fired today, both in memory and on disk. Persisting the
+ * date lets a restart later the same day recognise the slot as already satisfied.
  * @param {string} configKey
  */
 function markFiredToday(configKey) {
-  lastFiredDates.set(configKey, getTodayDateString());
+  const today = getTodayDateString();
+  lastFiredDates.set(configKey, today);
+  recordFiredDate(FIRED_STATE_SCHEDULER_NAME, configKey, today);
 }
 
 /**
@@ -129,6 +138,9 @@ function startScopeChangeScheduler(configuration) {
   if (schedulerIntervalHandle) {
     clearInterval(schedulerIntervalHandle);
   }
+  // Seed the in-memory tracker from disk so today's already-delivered reports are not
+  // re-sent after a restart, while any slot still due today can still catch up.
+  lastFiredDates = loadFiredDates(FIRED_STATE_SCHEDULER_NAME);
   console.log('  📅 Scope Change scheduler started — checking every minute');
 
   schedulerIntervalHandle = setInterval(() => {
@@ -161,8 +173,10 @@ function checkAndFireScheduledReports(configuration) {
     const teamReport = teamReports[teamIndex];
     if (!teamReport.isEnabled) continue;
 
+    // Fire when the scheduled time has been reached OR passed today (catch-up) and
+    // the report has not already fired today — not only on an exact minute match.
     const scheduledTime = teamReport.scheduleTime || DEFAULT_SCHEDULE_TIME;
-    if (scheduledTime !== currentTime) continue;
+    if (!isScheduledTimeReached(scheduledTime, currentTime)) continue;
 
     const configKey = 'team-' + teamIndex + '-' + teamReport.projectKey;
     if (hasAlreadyFiredToday(configKey)) continue;
@@ -176,7 +190,7 @@ function checkAndFireScheduledReports(configuration) {
 
   if (artRollup.isEnabled) {
     const rollupTime = artRollup.scheduleTime || DEFAULT_SCHEDULE_TIME;
-    if (rollupTime === currentTime && !hasAlreadyFiredToday('artRollup')) {
+    if (isScheduledTimeReached(rollupTime, currentTime) && !hasAlreadyFiredToday('artRollup')) {
       markFiredToday('artRollup');
       console.log('  📤 Scope Change: firing ART rollup');
       runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, sslVerify, configuration).catch((deliveryError) => {
