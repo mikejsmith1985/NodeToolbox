@@ -209,9 +209,9 @@ function checkAndFireScheduledReports(configuration) {
 // ── Jira queries ──
 
 /**
- * Fetches Feature-type issues where fixVersion changed after the cutoff date.
- * Restricted to issuetype = Feature so that Story-level scope changes
- * do not appear in this PI-level report.
+ * Fetches all issues whose fixVersion changed after the cutoff date.
+ * Covers every issue type (not just Features) so the scheduled report matches what the
+ * Reports Hub shows — a Story or Task fixVersion change is a real scope change too.
  *
  * @param {string} projectKey
  * @param {string} cutoffDateString - YYYY-MM-DD
@@ -220,7 +220,28 @@ function checkAndFireScheduledReports(configuration) {
  * @returns {Promise<Array>}
  */
 async function fetchFixVersionChanges(projectKey, cutoffDateString, jiraConfig, sslVerify) {
-  const jql  = 'project = "' + projectKey + '" AND issuetype = Feature AND fixVersion changed AFTER "' + cutoffDateString + '"';
+  const jql  = 'project = "' + projectKey + '" AND fixVersion changed AFTER "' + cutoffDateString + '"';
+  const path = '/rest/api/2/search?jql=' + encodeURIComponent(jql) + '&fields=summary,issuetype&expand=changelog&maxResults=' + JIRA_MAX_RESULTS;
+  const result = await makeJiraApiRequest('GET', path, null, jiraConfig, sslVerify);
+  return result.body.issues || [];
+}
+
+/**
+ * Fetches candidate issues for Sprint changes after the cutoff date.
+ *
+ * Jira's history-search JQL supports `fixVersion changed AFTER` but NOT `sprint changed
+ * AFTER` (sprint is an Agile-managed field excluded from history predicates), so we widen
+ * the query to `updated >= cutoff` and let extractChangeEntries() filter the inline
+ * changelog for sprint-field changes inside the window. This mirrors the Reports Hub.
+ *
+ * @param {string} projectKey
+ * @param {string} cutoffDateString - YYYY-MM-DD
+ * @param {object} jiraConfig
+ * @param {boolean} sslVerify
+ * @returns {Promise<Array>}
+ */
+async function fetchSprintChanges(projectKey, cutoffDateString, jiraConfig, sslVerify) {
+  const jql  = 'project = "' + projectKey + '" AND updated >= "' + cutoffDateString + '"';
   const path = '/rest/api/2/search?jql=' + encodeURIComponent(jql) + '&fields=summary,issuetype&expand=changelog&maxResults=' + JIRA_MAX_RESULTS;
   const result = await makeJiraApiRequest('GET', path, null, jiraConfig, sslVerify);
   return result.body.issues || [];
@@ -409,16 +430,19 @@ function renderRollupChangeTable(entries, emptyMessage) {
 
 /**
  * Builds the Confluence storage-format body for a single team report.
- * Shows only PI-level Fix Version changes — sprint changes are excluded by design.
+ * Shows both Release (Fix Version) and Sprint changes so the scheduled report matches
+ * what the Reports Hub displays.
  *
  * @param {Array}  releaseEntries
+ * @param {Array}  sprintEntries
  * @param {string} projectKey
  * @param {string} generatedAt     - Human-readable timestamp
  * @param {string} sinceLabel      - Human-readable "since" date, e.g. "Jun 13, 2026 (Fri)"
  * @returns {string}
  */
-function buildConfluenceBlogBody(releaseEntries, projectKey, generatedAt, sinceLabel) {
+function buildConfluenceBlogBody(releaseEntries, sprintEntries, projectKey, generatedAt, sinceLabel) {
   const releaseBadge = '(' + releaseEntries.length + ' change' + (releaseEntries.length !== 1 ? 's' : '') + ')';
+  const sprintBadge  = '(' + sprintEntries.length  + ' change' + (sprintEntries.length  !== 1 ? 's' : '') + ')';
 
   return [
     '<p><strong>Project:</strong> ' + escapeXml(projectKey) +
@@ -426,35 +450,41 @@ function buildConfluenceBlogBody(releaseEntries, projectKey, generatedAt, sinceL
       ' &nbsp;|&nbsp; <strong>Since:</strong> ' + escapeXml(sinceLabel) + '</p>',
     '<h2>📦 Release Changes ' + escapeXml(releaseBadge) + '</h2>',
     renderChangeTable(releaseEntries, 'No fix version changes since ' + sinceLabel + '.'),
+    '<h2>🏃 Sprint Changes ' + escapeXml(sprintBadge) + '</h2>',
+    renderChangeTable(sprintEntries, 'No sprint changes since ' + sinceLabel + '.'),
   ].join('\n');
 }
 
 /**
  * Builds the Confluence storage-format body for the ART rollup report.
- * Shows a team summary table (Release Changes only) and a combined Release Changes table.
- * Sprint changes are intentionally excluded — this is a PI-level report.
+ * Shows a team summary table and combined Release + Sprint change tables, matching the
+ * per-team report and the Reports Hub.
  *
- * @param {Array}  teamResults    - [{ teamName, projectKey, releaseEntries }]
+ * @param {Array}  teamResults    - [{ teamName, projectKey, releaseEntries, sprintEntries }]
  * @param {string} projectKeyList - Comma-separated project keys shown in the header
  * @param {string} generatedAt    - Human-readable timestamp
  * @param {string} sinceLabel     - Human-readable "since" date, e.g. "Jun 13, 2026 (Fri)"
  * @returns {string}
  */
 function buildArtRollupBlogBody(teamResults, projectKeyList, generatedAt, sinceLabel) {
-  const allReleaseEntries = teamResults.flatMap((result) =>
-    result.releaseEntries.map((entry) => Object.assign({}, entry, { teamName: result.teamName || result.projectKey }))
-  );
+  const withTeamName = (entries, result) =>
+    entries.map((entry) => Object.assign({}, entry, { teamName: result.teamName || result.projectKey }));
+
+  const allReleaseEntries = teamResults.flatMap((result) => withTeamName(result.releaseEntries, result));
+  const allSprintEntries  = teamResults.flatMap((result) => withTeamName(result.sprintEntries || [], result));
 
   const releaseBadge = '(' + allReleaseEntries.length + ' change' + (allReleaseEntries.length !== 1 ? 's' : '') + ')';
+  const sprintBadge  = '(' + allSprintEntries.length  + ' change' + (allSprintEntries.length  !== 1 ? 's' : '') + ')';
 
   const teamSummaryRows = teamResults.map((result) => {
     return '<tr><td><strong>' + escapeXml(result.teamName || result.projectKey) + '</strong></td>' +
       '<td>' + escapeXml(result.projectKey) + '</td>' +
-      '<td>' + result.releaseEntries.length + '</td></tr>';
+      '<td>' + result.releaseEntries.length + '</td>' +
+      '<td>' + (result.sprintEntries || []).length + '</td></tr>';
   }).join('');
 
   const teamSummaryTable = '<table><tbody>' +
-    '<tr><th><strong>Team</strong></th><th><strong>Project</strong></th><th><strong>Release Changes</strong></th></tr>' +
+    '<tr><th><strong>Team</strong></th><th><strong>Project</strong></th><th><strong>Release Changes</strong></th><th><strong>Sprint Changes</strong></th></tr>' +
     teamSummaryRows + '</tbody></table>';
 
   return [
@@ -465,6 +495,8 @@ function buildArtRollupBlogBody(teamResults, projectKeyList, generatedAt, sinceL
     teamSummaryTable,
     '<h2>📦 Release Changes ' + escapeXml(releaseBadge) + '</h2>',
     renderRollupChangeTable(allReleaseEntries, 'No fix version changes since ' + sinceLabel + '.'),
+    '<h2>🏃 Sprint Changes ' + escapeXml(sprintBadge) + '</h2>',
+    renderRollupChangeTable(allSprintEntries, 'No sprint changes since ' + sinceLabel + '.'),
   ].join('\n');
 }
 
@@ -609,17 +641,23 @@ async function runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, s
   const cutoffDateString = cutoffDate.toISOString().slice(0, 10);
   const sinceLabel       = cutoffDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', weekday: 'short' });
 
-  console.log('  🔍 Scope Change [' + projectKey + ']: querying Feature fix version changes since ' + cutoffDateString + '…');
+  console.log('  🔍 Scope Change [' + projectKey + ']: querying fix version + sprint changes since ' + cutoffDateString + '…');
   console.log('  🔗 Scope Change [' + projectKey + ']: triggerUrl = ' + (triggerUrl || '(not set)'));
 
-  const fixVersionIssues = await fetchFixVersionChanges(projectKey, cutoffDateString, jiraConfig, sslVerify);
-  const releaseEntries   = extractChangeEntries(fixVersionIssues, 'fix version', 'fixVersion', cutoffDate);
+  // Query release (fixVersion) and sprint changes in parallel — both are real scope
+  // changes, matching what the Reports Hub shows.
+  const [fixVersionIssues, sprintIssues] = await Promise.all([
+    fetchFixVersionChanges(projectKey, cutoffDateString, jiraConfig, sslVerify),
+    fetchSprintChanges(projectKey, cutoffDateString, jiraConfig, sslVerify),
+  ]);
+  const releaseEntries = extractChangeEntries(fixVersionIssues, 'fix version', 'fixVersion', cutoffDate);
+  const sprintEntries  = extractChangeEntries(sprintIssues, 'sprint', 'sprint', cutoffDate);
 
   // Only deliver when there is actual data — an empty report has no value and
   // should not trigger automation rules or clutter the Confluence page history.
-  if (releaseEntries.length === 0) {
-    console.log('  ✅ Scope Change [' + projectKey + ']: no fix version changes — skipping');
-    return { skipped: true, message: 'No fix version changes since ' + sinceLabel + ' — delivery skipped.' };
+  if (releaseEntries.length === 0 && sprintEntries.length === 0) {
+    console.log('  ✅ Scope Change [' + projectKey + ']: no fix version or sprint changes — skipping');
+    return { skipped: true, message: 'No fix version or sprint changes since ' + sinceLabel + ' — delivery skipped.' };
   }
 
   const generatedAt = new Date().toLocaleString('en-US', {
@@ -633,7 +671,7 @@ async function runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, s
   // updated. On an ongoing (updated) page Confluence renames it to the latest date; on a
   // fresh post the date keeps each new post uniquely named.
   const postTitle    = 'Scope Change Report — ' + teamLabel + ' — ' + dateLabel;
-  let bodyHtml     = buildConfluenceBlogBody(releaseEntries, projectKey, generatedAt, sinceLabel);
+  let bodyHtml     = buildConfluenceBlogBody(releaseEntries, sprintEntries, projectKey, generatedAt, sinceLabel);
 
   // Optional, non-blocking AI Assist enrichment: prepend a trend paragraph above the
   // change table. Skipped silently when AI Assist is disabled/unavailable so the report
@@ -668,6 +706,7 @@ async function runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, s
       postUrl,
       generatedAt:        new Date().toISOString(),
       releaseChangeCount: releaseEntries.length,
+      sprintChangeCount:  sprintEntries.length,
     };
     console.log('  🔔 Scope Change [' + projectKey + ']: triggering webhook…');
     triggerWebhook(triggerUrl, webhookPayload, sslVerify, triggerSecret || undefined).catch((webhookError) => {
@@ -677,7 +716,7 @@ async function runTeamReportDelivery(teamReport, jiraConfig, confluenceConfig, s
 
   return {
     skipped: false,
-    message: 'Report delivered — ' + releaseEntries.length + ' release change(s).',
+    message: 'Report delivered — ' + releaseEntries.length + ' release change(s), ' + sprintEntries.length + ' sprint change(s).',
     postUrl,
   };
 }
@@ -708,21 +747,28 @@ async function runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, ssl
   console.log('  🔗 Scope Change ART Rollup: triggerUrl = ' + (triggerUrl || '(not set)'));
 
   const teamResults = await Promise.all(projectKeys.map(async (projectKey, index) => {
-    const teamName         = (teamNames && teamNames[index]) || projectKey;
-    const fixVersionIssues = await fetchFixVersionChanges(projectKey, cutoffDateString, jiraConfig, sslVerify);
+    const teamName = (teamNames && teamNames[index]) || projectKey;
+    const [fixVersionIssues, sprintIssues] = await Promise.all([
+      fetchFixVersionChanges(projectKey, cutoffDateString, jiraConfig, sslVerify),
+      fetchSprintChanges(projectKey, cutoffDateString, jiraConfig, sslVerify),
+    ]);
     return {
       teamName,
       projectKey,
       releaseEntries: extractChangeEntries(fixVersionIssues, 'fix version', 'fixVersion', cutoffDate),
+      sprintEntries:  extractChangeEntries(sprintIssues, 'sprint', 'sprint', cutoffDate),
     };
   }));
 
-  const totalChanges = teamResults.reduce((sum, result) => sum + result.releaseEntries.length, 0);
+  const totalChanges = teamResults.reduce(
+    (sum, result) => sum + result.releaseEntries.length + result.sprintEntries.length,
+    0,
+  );
 
-  // Only deliver when at least one team has real fix version changes.
+  // Only deliver when at least one team has a real release or sprint change.
   if (totalChanges === 0) {
-    console.log('  ✅ Scope Change ART Rollup: no fix version changes across any team — skipping');
-    return { skipped: true, message: 'No fix version changes since ' + sinceLabel + ' — delivery skipped.' };
+    console.log('  ✅ Scope Change ART Rollup: no fix version or sprint changes across any team — skipping');
+    return { skipped: true, message: 'No fix version or sprint changes since ' + sinceLabel + ' — delivery skipped.' };
   }
 
   const generatedAt    = new Date().toLocaleString('en-US', {
@@ -759,6 +805,7 @@ async function runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, ssl
   console.log('  ✅ Scope Change ART Rollup: delivered — ' + postUrl);
 
   const releaseTotal = teamResults.reduce((sum, r) => sum + r.releaseEntries.length, 0);
+  const sprintTotal  = teamResults.reduce((sum, r) => sum + r.sprintEntries.length, 0);
 
   // Fire the automation webhook only when there is real data.
   if (triggerUrl) {
@@ -768,6 +815,7 @@ async function runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, ssl
       postUrl,
       generatedAt:        new Date().toISOString(),
       releaseChangeCount: releaseTotal,
+      sprintChangeCount:  sprintTotal,
       teamCount:          projectKeys.length,
     };
     console.log('  🔔 Scope Change ART Rollup: triggering webhook…');
@@ -778,7 +826,7 @@ async function runArtRollupDelivery(artRollup, jiraConfig, confluenceConfig, ssl
 
   return {
     skipped: false,
-    message: 'ART rollup delivered — ' + releaseTotal + ' release change(s) across ' + projectKeys.length + ' team(s).',
+    message: 'ART rollup delivered — ' + releaseTotal + ' release change(s), ' + sprintTotal + ' sprint change(s) across ' + projectKeys.length + ' team(s).',
     postUrl,
   };
 }
@@ -841,6 +889,8 @@ module.exports = {
   escapeXml,
   renderChangeTable,
   extractPageIdFromUrl,
+  buildConfluenceBlogBody,
+  buildArtRollupBlogBody,
   buildScopeAiAssistPrompt,
   buildScopeRollupAiAssistPrompt,
   buildAiAssistTrendPanel,
