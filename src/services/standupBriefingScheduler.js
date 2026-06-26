@@ -14,8 +14,12 @@
 
 const { makeJiraApiRequest, makeConfluenceApiRequest, triggerWebhook } = require('../utils/httpClient');
 const { requestAiAssistText, isAiAssistEnabled } = require('./aiAssistEnrichment');
+const { loadFiredDates, recordFiredDate, isScheduledTimeReached } = require('./schedulerFiredState');
 
 // ── Constants ──
+
+/** Stable name under which this scheduler's fired dates are persisted to disk. */
+const FIRED_STATE_SCHEDULER_NAME = 'standupBriefing';
 
 /** How often (ms) the scheduler checks for briefings to fire. */
 const SCHEDULE_CHECK_INTERVAL_MS = 60 * 1000;
@@ -57,7 +61,9 @@ const DONE_STATUS_NAME_SUBSTRINGS = ['done', 'closed', 'resolved', 'complete', '
 // ── Schedule tracking ──
 
 // Tracks the last date (YYYY-MM-DD) each config fired — prevents double-firing.
-const lastFiredDates = new Map();
+// Hydrated from the persistent fired-state file when the scheduler starts, so a restart
+// later the same day does not re-deliver a briefing that already went out.
+let lastFiredDates = new Map();
 
 let schedulerIntervalHandle = null;
 
@@ -89,11 +95,14 @@ function hasAlreadyFiredToday(configKey) {
 }
 
 /**
- * Records that the config key fired today, preventing re-fire until tomorrow.
+ * Records that the config key fired today, both in memory and on disk. Persisting the
+ * date lets a restart later the same day recognise the slot as already satisfied.
  * @param {string} configKey
  */
 function markFiredToday(configKey) {
-  lastFiredDates.set(configKey, getTodayDateString());
+  const today = getTodayDateString();
+  lastFiredDates.set(configKey, today);
+  recordFiredDate(FIRED_STATE_SCHEDULER_NAME, configKey, today);
 }
 
 // ── Scheduler entry point ──
@@ -111,6 +120,10 @@ function startStandupBriefingScheduler(configuration) {
     clearInterval(schedulerIntervalHandle);
   }
   console.log('  📋 Standup Briefing scheduler started — checking every minute');
+
+  // Seed the in-memory tracker from disk so today's already-delivered briefings are not
+  // re-sent after a restart, while any slot still due today can still catch up.
+  lastFiredDates = loadFiredDates(FIRED_STATE_SCHEDULER_NAME);
 
   schedulerIntervalHandle = setInterval(() => {
     checkAndFireScheduledBriefings(configuration);
@@ -135,8 +148,10 @@ function checkAndFireScheduledBriefings(configuration) {
     const teamReport = teamReports[teamIndex];
     if (!teamReport.isEnabled) continue;
 
+    // Fire when the scheduled time has been reached OR passed today (catch-up) and
+    // the briefing has not already fired today — not only on an exact minute match.
     const scheduledTime = teamReport.scheduleTime || DEFAULT_SCHEDULE_TIME;
-    if (scheduledTime !== currentTime) continue;
+    if (!isScheduledTimeReached(scheduledTime, currentTime)) continue;
 
     const configKey = 'standup-team-' + teamIndex + '-' + (teamReport.projectKeys || []).join(',');
     if (hasAlreadyFiredToday(configKey)) continue;
@@ -150,7 +165,7 @@ function checkAndFireScheduledBriefings(configuration) {
 
   if (artRollup.isEnabled) {
     const rollupTime = artRollup.scheduleTime || DEFAULT_SCHEDULE_TIME;
-    if (rollupTime === currentTime && !hasAlreadyFiredToday('standup-art-rollup')) {
+    if (isScheduledTimeReached(rollupTime, currentTime) && !hasAlreadyFiredToday('standup-art-rollup')) {
       markFiredToday('standup-art-rollup');
       console.log('  📤 Standup Briefing: firing ART rollup');
       runArtRollupDelivery(artRollup, configuration).catch((deliveryError) => {

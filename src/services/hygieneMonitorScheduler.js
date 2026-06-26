@@ -18,6 +18,7 @@ const { makeJiraApiRequest } = require('../utils/httpClient');
 const { requestAiAssistText, isAiAssistEnabled } = require('./aiAssistEnrichment');
 const { deliverReport } = require('./reportWebhookDelivery');
 const { evaluateHygieneRules } = require('./hygieneRules');
+const { loadFiredDates, recordFiredDate, isScheduledTimeReached } = require('./schedulerFiredState');
 
 // ── Jira query constants ──────────────────────────────────────────────────────
 
@@ -541,10 +542,19 @@ const SCHEDULE_CHECK_INTERVAL_MS = 60 * 1000;
 const DEFAULT_HYGIENE_SCHEDULE_TIME = '06:00';
 const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+/** Stable name under which this scheduler's fired dates are persisted to disk. */
+const FIRED_STATE_SCHEDULER_NAME = 'hygieneMonitor';
+
 /** Returns the current local time as a 'HH:MM' string for schedule comparisons. */
 function getCurrentTimeHHMM() {
   const now = new Date();
   return now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+}
+
+/** Returns today's local date as "YYYY-MM-DD" — the value stored per fired team. */
+function getTodayDateString() {
+  const now = new Date();
+  return now.getFullYear() + '-' + (now.getMonth() + 1).toString().padStart(2, '0') + '-' + now.getDate().toString().padStart(2, '0');
 }
 
 /** Returns the short weekday name ('Mon', 'Tue', etc.) for today in local time. */
@@ -552,21 +562,11 @@ function getTodayWeekdayName() {
   return WEEKDAY_NAMES[new Date().getDay()];
 }
 
-/** Module-level set of teams that have already run today (resets at process restart). */
-const firedTodayKeys = new Set();
-let lastKnownDayKey = '';
-
-/**
- * Resets the fired-today set when the calendar day changes.
- * Called at the top of every scheduled tick so the set stays current.
- */
-function refreshDayIfNeeded() {
-  const todayKey = new Date().toDateString();
-  if (todayKey !== lastKnownDayKey) {
-    firedTodayKeys.clear();
-    lastKnownDayKey = todayKey;
-  }
-}
+// Tracks the last date (YYYY-MM-DD) each team's scan fired — prevents double-firing.
+// Hydrated from the persistent fired-state file when the scheduler starts, so a restart
+// later the same day does not re-run a scan that already completed. Comparing against
+// today's date also makes the day-rollover reset automatic — no manual clearing needed.
+let hygieneLastFiredDates = new Map();
 
 /** Tracks the interval handle so the scheduler can be restarted if needed. */
 let hygieneSchedulerInterval = null;
@@ -578,9 +578,8 @@ let hygieneSchedulerInterval = null;
  * @param {object} configuration - Live server config (read at fire time).
  */
 function checkAndFireHygieneScans(configuration) {
-  refreshDayIfNeeded();
-
   const currentTime = getCurrentTimeHHMM();
+  const todayDate = getTodayDateString();
   const todayWeekday = getTodayWeekdayName();
   const hygieneTeams = (configuration.hygieneMonitor || {}).teams || [];
 
@@ -588,7 +587,9 @@ function checkAndFireHygieneScans(configuration) {
     const teamConfig = hygieneTeams[teamIndex];
     const scheduledTime = teamConfig.scheduleTime || DEFAULT_HYGIENE_SCHEDULE_TIME;
 
-    if (scheduledTime !== currentTime) continue;
+    // Fire when the scheduled time has been reached OR passed today (catch-up) and
+    // the scan has not already run today — not only on an exact minute match.
+    if (!isScheduledTimeReached(scheduledTime, currentTime)) continue;
 
     // Per-team weekday filter — default to Mon–Fri.
     const allowedWeekdays = Array.isArray(teamConfig.weekdays) && teamConfig.weekdays.length > 0
@@ -597,8 +598,9 @@ function checkAndFireHygieneScans(configuration) {
     if (!allowedWeekdays.includes(todayWeekday)) continue;
 
     const firedKey = 'hygiene-' + teamIndex + '-' + (teamConfig.teamName || '');
-    if (firedTodayKeys.has(firedKey)) continue;
-    firedTodayKeys.add(firedKey);
+    if (hygieneLastFiredDates.get(firedKey) === todayDate) continue;
+    hygieneLastFiredDates.set(firedKey, todayDate);
+    recordFiredDate(FIRED_STATE_SCHEDULER_NAME, firedKey, todayDate);
 
     console.log('[HygieneMonitor] Firing scheduled scan for team "' + teamConfig.teamName + '"...');
     runHygieneScan(teamConfig, configuration).catch((scanError) => {
@@ -620,6 +622,9 @@ function startHygieneMonitorScheduler(configuration) {
   if (hygieneSchedulerInterval) {
     clearInterval(hygieneSchedulerInterval);
   }
+  // Seed the in-memory tracker from disk so today's already-completed scans are not
+  // re-run after a restart, while any team still due today can still catch up.
+  hygieneLastFiredDates = loadFiredDates(FIRED_STATE_SCHEDULER_NAME);
   console.log('[HygieneMonitor] Daily hygiene monitor scheduler started — checking every minute.');
 
   hygieneSchedulerInterval = setInterval(() => {
