@@ -10,6 +10,7 @@ const express = require('express');
 const { saveConfigToDisk } = require('../config/loader');
 const { runTeamReportNow, runArtRollupNow } = require('../services/scopeChangeScheduler');
 const { runFeatureReportNow, runFeatureArtRollupNow } = require('../services/featureChangeScheduler');
+const { loadDeliveryStatuses } = require('../services/reportDeliveryStatus');
 
 /** Default schedule time applied when a feature change report has no scheduleTime set. */
 const DEFAULT_FEATURE_SCHEDULE_TIME = '09:00';
@@ -55,6 +56,16 @@ function createNotificationsRouter(configuration) {
 
     saveConfigToDisk(configuration);
     return res.json({ ok: true, config: configuration.scheduler.scopeChange });
+  });
+
+  /**
+   * GET /api/notifications/delivery-status
+   * Returns the last recorded delivery outcome for every scope/feature report so the
+   * Admin Hub can show whether the most recent run delivered, skipped, or errored.
+   * Shape: { scopeChange: { <reportKey>: outcome }, featureChange: { <reportKey>: outcome } }
+   */
+  router.get('/api/notifications/delivery-status', (req, res) => {
+    return res.json(loadDeliveryStatuses());
   });
 
   /**

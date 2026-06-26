@@ -275,6 +275,14 @@
   color: var(--color-tone-success-fg);
 }
 
+/* Subtle "last automatic run" line shown under each report's Run Now button. */
+.deliveryStatusLine {
+  display: block;
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
 /* ── Admin access ── */
 
 .adminAccessUnlocked {

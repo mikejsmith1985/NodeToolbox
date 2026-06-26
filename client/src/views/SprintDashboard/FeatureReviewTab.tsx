@@ -210,6 +210,11 @@ function renderSaveStateMessage(saveMessage: string | null, isErrorMessage: bool
   );
 }
 
+interface PendingFixAction {
+  fieldKey: string;
+  run: () => Promise<void>;
+}
+
 function FeatureReviewQuickFixPanel({
   featureReviewFieldConfig,
   featureReviewItem,
@@ -218,7 +223,9 @@ function FeatureReviewQuickFixPanel({
 }: FeatureReviewQuickFixPanelProps) {
   const [isFixPanelOpen, setIsFixPanelOpen] = useState(false);
   const [isLoadingEditMeta, setIsLoadingEditMeta] = useState(false);
-  const [isSavingFieldKey, setIsSavingFieldKey] = useState<string | null>(null);
+  // A single in-flight flag for the one "Save all fixes" button — there are no
+  // longer per-field save buttons, so the whole batch shares one saving state.
+  const [isSavingAllFixes, setIsSavingAllFixes] = useState(false);
   const [saveMessageByFieldKey, setSaveMessageByFieldKey] = useState<Record<string, string | null>>({});
   const [isErrorMessageByFieldKey, setIsErrorMessageByFieldKey] = useState<Record<string, boolean>>({});
   const [fieldDraftByKey, setFieldDraftByKey] = useState<Record<string, string>>(
@@ -257,23 +264,10 @@ function FeatureReviewQuickFixPanel({
     }
   }
 
-  async function runFixAction(fieldKey: string, saveAction: () => Promise<void>, successMessage: string) {
-    setIsSavingFieldKey(fieldKey);
-    setSaveMessageByFieldKey((currentMessages) => ({ ...currentMessages, [fieldKey]: null }));
-    setIsErrorMessageByFieldKey((currentMessages) => ({ ...currentMessages, [fieldKey]: false }));
-    try {
-      await saveAction();
-      setSaveMessageByFieldKey((currentMessages) => ({ ...currentMessages, [fieldKey]: successMessage }));
-      showToast(successMessage, 'success');
-      await onFeatureFixed();
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : `Unable to save ${fieldKey}.`;
-      setSaveMessageByFieldKey((currentMessages) => ({ ...currentMessages, [fieldKey]: errorMessage }));
-      setIsErrorMessageByFieldKey((currentMessages) => ({ ...currentMessages, [fieldKey]: true }));
-      showToast(errorMessage, 'error');
-    } finally {
-      setIsSavingFieldKey(null);
-    }
+  // Records the per-field outcome message shown beside each fix row after a batch save.
+  function recordFieldOutcome(fieldKey: string, message: string | null, isError: boolean) {
+    setSaveMessageByFieldKey((currentMessages) => ({ ...currentMessages, [fieldKey]: message }));
+    setIsErrorMessageByFieldKey((currentMessages) => ({ ...currentMessages, [fieldKey]: isError }));
   }
 
   async function handleSearchUsers(fieldKey: string) {
@@ -297,11 +291,9 @@ function FeatureReviewQuickFixPanel({
     label: string,
     fieldKey: string,
     placeholder: string,
-    saveHandler: () => Promise<void>,
     isMultiline = false,
   ) {
     const inputValue = fieldDraftByKey[fieldKey] ?? '';
-    const isSavingCurrentField = isSavingFieldKey === fieldKey;
     const saveMessage = saveMessageByFieldKey[fieldKey] ?? null;
     const isErrorMessage = isErrorMessageByFieldKey[fieldKey] ?? false;
 
@@ -325,24 +317,15 @@ function FeatureReviewQuickFixPanel({
             />
           )}
         </label>
-        <div className={styles.featureReviewFixActionRow}>
-          <button
-            className={styles.secondaryButton}
-            disabled={inputValue.trim() === '' || isSavingCurrentField}
-            onClick={() => void runFixAction(fieldKey, saveHandler, `${featureIssue.key} updated.`)}
-            type="button"
-          >
-            {isSavingCurrentField ? 'Saving…' : 'Save'}
-          </button>
-          {renderSaveStateMessage(saveMessage, isErrorMessage)}
-        </div>
+        {saveMessage ? (
+          <div className={styles.featureReviewFixActionRow}>{renderSaveStateMessage(saveMessage, isErrorMessage)}</div>
+        ) : null}
       </div>
     );
   }
 
-  function renderDateFixRow(label: string, fieldKey: string, fieldId: string) {
+  function renderDateFixRow(label: string, fieldKey: string) {
     const inputValue = fieldDraftByKey[fieldKey] ?? '';
-    const isSavingCurrentField = isSavingFieldKey === fieldKey;
     const saveMessage = saveMessageByFieldKey[fieldKey] ?? null;
     const isErrorMessage = isErrorMessageByFieldKey[fieldKey] ?? false;
 
@@ -357,27 +340,18 @@ function FeatureReviewQuickFixPanel({
             value={inputValue}
           />
         </label>
-        <div className={styles.featureReviewFixActionRow}>
-          <button
-            className={styles.secondaryButton}
-            disabled={inputValue.trim() === '' || isSavingCurrentField}
-            onClick={() => void runFixAction(fieldKey, async () => saveFeatureReviewSimpleField(featureIssue.key, fieldId, inputValue), `${featureIssue.key} updated.`)}
-            type="button"
-          >
-            {isSavingCurrentField ? 'Saving…' : 'Save'}
-          </button>
-          {renderSaveStateMessage(saveMessage, isErrorMessage)}
-        </div>
+        {saveMessage ? (
+          <div className={styles.featureReviewFixActionRow}>{renderSaveStateMessage(saveMessage, isErrorMessage)}</div>
+        ) : null}
       </div>
     );
   }
 
-  function renderSelectFixRow(label: string, fieldKey: string, fieldId: string) {
+  function renderSelectFixRow(label: string, fieldKey: string) {
     const selectOptions = fieldKey === 'fixVersion'
       ? fixVersionOptions
       : readSelectableFieldOptions(fieldKey, editMetaFields, featureReviewFieldConfig);
     const inputValue = fieldDraftByKey[fieldKey] ?? '';
-    const isSavingCurrentField = isSavingFieldKey === fieldKey;
     const saveMessage = saveMessageByFieldKey[fieldKey] ?? null;
     const isErrorMessage = isErrorMessageByFieldKey[fieldKey] ?? false;
 
@@ -396,33 +370,16 @@ function FeatureReviewQuickFixPanel({
             ))}
           </select>
         </label>
-        <div className={styles.featureReviewFixActionRow}>
-          <button
-            className={styles.secondaryButton}
-            disabled={inputValue.trim() === '' || isSavingCurrentField}
-            onClick={() => void runFixAction(
-              fieldKey,
-              async () => (
-                fieldKey === 'fixVersion'
-                  ? saveFeatureReviewFixVersion(featureIssue.key, inputValue)
-                  : saveFeatureReviewOptionField(featureIssue.key, fieldId, inputValue, editMetaFields[fieldId])
-              ),
-              `${featureIssue.key} updated.`,
-            )}
-            type="button"
-          >
-            {isSavingCurrentField ? 'Saving…' : 'Save'}
-          </button>
-          {renderSaveStateMessage(saveMessage, isErrorMessage)}
-        </div>
+        {saveMessage ? (
+          <div className={styles.featureReviewFixActionRow}>{renderSaveStateMessage(saveMessage, isErrorMessage)}</div>
+        ) : null}
       </div>
     );
   }
 
-  function renderUserFixRow(label: string, fieldKey: string, fieldId: string) {
+  function renderUserFixRow(label: string, fieldKey: string) {
     const searchValue = userSearchQueryByFieldKey[fieldKey] ?? '';
     const selectedUserIdentifier = fieldDraftByKey[fieldKey] ?? '';
-    const isSavingCurrentField = isSavingFieldKey === fieldKey;
     const saveMessage = saveMessageByFieldKey[fieldKey] ?? null;
     const isErrorMessage = isErrorMessageByFieldKey[fieldKey] ?? false;
     const userCandidates = userCandidatesByFieldKey[fieldKey] ?? [];
@@ -459,17 +416,9 @@ function FeatureReviewQuickFixPanel({
             </select>
           </label>
         ) : null}
-        <div className={styles.featureReviewFixActionRow}>
-          <button
-            className={styles.secondaryButton}
-            disabled={selectedUserIdentifier.trim() === '' || isSavingCurrentField}
-            onClick={() => void runFixAction(fieldKey, async () => saveFeatureReviewUserField(featureIssue.key, fieldId, selectedUserIdentifier), `${featureIssue.key} updated.`)}
-            type="button"
-          >
-            {isSavingCurrentField ? 'Saving…' : 'Save'}
-          </button>
-          {renderSaveStateMessage(saveMessage, isErrorMessage)}
-        </div>
+        {saveMessage ? (
+          <div className={styles.featureReviewFixActionRow}>{renderSaveStateMessage(saveMessage, isErrorMessage)}</div>
+        ) : null}
       </div>
     );
   }
@@ -487,7 +436,6 @@ function FeatureReviewQuickFixPanel({
           const saveMessage = saveMessageByFieldKey[saveKey] ?? null;
           const isErrorMessage = isErrorMessageByFieldKey[saveKey] ?? false;
           const draftValue = storyPointsDraftByIssueKey[storyNode.key] ?? '';
-          const isSavingCurrentField = isSavingFieldKey === saveKey;
           return (
             <div className={styles.featureReviewStoryFixRow} key={storyNode.key}>
               <div className={styles.featureReviewStoryFixSummary}>
@@ -504,18 +452,6 @@ function FeatureReviewQuickFixPanel({
                   type="number"
                   value={draftValue}
                 />
-                <button
-                  className={styles.secondaryButton}
-                  disabled={draftValue.trim() === '' || isSavingCurrentField}
-                  onClick={() => void runFixAction(
-                    saveKey,
-                    async () => saveFeatureReviewStoryPoints(storyNode.key, draftValue),
-                    `${storyNode.key} story points updated.`,
-                  )}
-                  type="button"
-                >
-                  {isSavingCurrentField ? 'Saving…' : 'Save'}
-                </button>
               </div>
               {renderSaveStateMessage(saveMessage, isErrorMessage)}
             </div>
@@ -526,7 +462,6 @@ function FeatureReviewQuickFixPanel({
   }
 
   function renderStatusTransitionRow() {
-    const isSavingCurrentField = isSavingFieldKey === STATUS_TRANSITION_FIELD_KEY;
     const saveMessage = saveMessageByFieldKey[STATUS_TRANSITION_FIELD_KEY] ?? null;
     const isErrorMessage = isErrorMessageByFieldKey[STATUS_TRANSITION_FIELD_KEY] ?? false;
 
@@ -537,7 +472,7 @@ function FeatureReviewQuickFixPanel({
           <select
             aria-label="Change Status"
             className={styles.settingsInput}
-            disabled={isLoadingEditMeta || isSavingCurrentField || availableTransitions.length === 0}
+            disabled={isLoadingEditMeta || isSavingAllFixes || availableTransitions.length === 0}
             onChange={(event) => setSelectedTransitionId(event.target.value)}
             value={selectedTransitionId}
           >
@@ -549,24 +484,9 @@ function FeatureReviewQuickFixPanel({
             ))}
           </select>
         </label>
-        <div className={styles.featureReviewFixActionRow}>
-          <button
-            className={styles.secondaryButton}
-            disabled={selectedTransitionId.trim() === '' || isSavingCurrentField}
-            onClick={() => void runFixAction(
-              STATUS_TRANSITION_FIELD_KEY,
-              async () => {
-                await saveFeatureReviewTransition(featureIssue.key, selectedTransitionId);
-                setSelectedTransitionId('');
-              },
-              `${featureIssue.key} status updated.`,
-            )}
-            type="button"
-          >
-            {isSavingCurrentField ? 'Saving…' : 'Save Status'}
-          </button>
-          {renderSaveStateMessage(saveMessage, isErrorMessage)}
-        </div>
+        {saveMessage ? (
+          <div className={styles.featureReviewFixActionRow}>{renderSaveStateMessage(saveMessage, isErrorMessage)}</div>
+        ) : null}
       </div>
     );
   }
@@ -581,6 +501,107 @@ function FeatureReviewQuickFixPanel({
   const acceptanceCriteriaFieldId = readPrimaryFieldId(featureReviewFieldConfig.acceptanceCriteriaFieldIds);
   const productOwnerEditMetaField = editMetaFields[productOwnerFieldId];
   const shouldUseProductOwnerUserSearch = productOwnerEditMetaField?.schema?.type === 'user';
+
+  // Collects one save action per fix the user has actually filled in. This is the single
+  // source of truth for the "Save all fixes" button — only rows whose draft has a value
+  // (and whose hygiene flag is present) are saved, so untouched fields are left alone.
+  function buildPendingFixActions(): PendingFixAction[] {
+    const hygieneFlags = featureReviewItem.hygieneFlags;
+    const pendingFixActions: PendingFixAction[] = [];
+
+    function addAction(shouldInclude: boolean, draftValue: string, fieldKey: string, run: () => Promise<void>) {
+      if (shouldInclude && draftValue.trim() !== '') {
+        pendingFixActions.push({ fieldKey, run });
+      }
+    }
+
+    addAction(hasHygieneFlag(hygieneFlags, 'missing-summary'), fieldDraftByKey.summary ?? '', 'summary',
+      async () => saveFeatureReviewSimpleField(featureIssue.key, 'summary', fieldDraftByKey.summary ?? ''));
+    addAction(hasHygieneFlag(hygieneFlags, 'missing-parent-link') && parentLinkFieldId !== '', fieldDraftByKey.parentLink ?? '', 'parentLink',
+      async () => saveFeatureReviewIssueLinkField(featureIssue.key, parentLinkFieldId, fieldDraftByKey.parentLink ?? ''));
+    addAction(hasHygieneFlag(hygieneFlags, 'missing-pi') && programIncrementFieldId !== '', fieldDraftByKey.programIncrement ?? '', 'programIncrement',
+      async () => saveFeatureReviewOptionField(featureIssue.key, programIncrementFieldId, fieldDraftByKey.programIncrement ?? '', editMetaFields[programIncrementFieldId]));
+    addAction(hasHygieneFlag(hygieneFlags, 'missing-target-start') && targetStartFieldId !== '', fieldDraftByKey.targetStart ?? '', 'targetStart',
+      async () => saveFeatureReviewSimpleField(featureIssue.key, targetStartFieldId, fieldDraftByKey.targetStart ?? ''));
+    addAction(hasHygieneFlag(hygieneFlags, 'missing-target-end') && targetEndFieldId !== '', fieldDraftByKey.targetEnd ?? '', 'targetEnd',
+      async () => saveFeatureReviewSimpleField(featureIssue.key, targetEndFieldId, fieldDraftByKey.targetEnd ?? ''));
+    addAction(hasHygieneFlag(hygieneFlags, 'missing-application') && applicationFieldId !== '', fieldDraftByKey.application ?? '', 'application',
+      async () => saveFeatureReviewOptionField(featureIssue.key, applicationFieldId, fieldDraftByKey.application ?? '', editMetaFields[applicationFieldId]));
+    addAction(hasHygieneFlag(hygieneFlags, 'missing-initiative-type') && initiativeTypeFieldId !== '', fieldDraftByKey.initiativeType ?? '', 'initiativeType',
+      async () => saveFeatureReviewOptionField(featureIssue.key, initiativeTypeFieldId, fieldDraftByKey.initiativeType ?? '', editMetaFields[initiativeTypeFieldId]));
+    addAction(hasHygieneFlag(hygieneFlags, 'missing-product-owner') && productOwnerFieldId !== '', fieldDraftByKey.productOwner ?? '', 'productOwner',
+      shouldUseProductOwnerUserSearch
+        ? async () => saveFeatureReviewUserField(featureIssue.key, productOwnerFieldId, fieldDraftByKey.productOwner ?? '')
+        : async () => saveFeatureReviewOptionField(featureIssue.key, productOwnerFieldId, fieldDraftByKey.productOwner ?? '', editMetaFields[productOwnerFieldId]));
+    addAction(hasHygieneFlag(hygieneFlags, 'missing-fix-version'), fieldDraftByKey.fixVersion ?? '', 'fixVersion',
+      async () => saveFeatureReviewFixVersion(featureIssue.key, fieldDraftByKey.fixVersion ?? ''));
+    addAction(hasHygieneFlag(hygieneFlags, 'missing-due-date'), fieldDraftByKey.dueDate ?? '', 'dueDate',
+      async () => saveFeatureReviewSimpleField(featureIssue.key, 'duedate', fieldDraftByKey.dueDate ?? ''));
+    addAction(hasHygieneFlag(hygieneFlags, 'no-ac') && acceptanceCriteriaFieldId !== '', fieldDraftByKey.acceptanceCriteria ?? '', 'acceptanceCriteria',
+      async () => saveFeatureReviewSimpleField(featureIssue.key, acceptanceCriteriaFieldId, fieldDraftByKey.acceptanceCriteria ?? ''));
+    addAction(hasHygieneFlag(hygieneFlags, 'no-assignee'), fieldDraftByKey.assignee ?? '', 'assignee',
+      async () => saveFeatureReviewUserField(featureIssue.key, 'assignee', fieldDraftByKey.assignee ?? ''));
+
+    if (hasHygieneFlag(hygieneFlags, 'missing-child-story-points')) {
+      for (const storyNode of missingStoryPointChildren) {
+        const draftValue = storyPointsDraftByIssueKey[storyNode.key] ?? '';
+        addAction(true, draftValue, `story-points-${storyNode.key}`,
+          async () => saveFeatureReviewStoryPoints(storyNode.key, draftValue));
+      }
+    }
+
+    // Status transition clears its own selection on success so a retry of a partly-failed
+    // batch does not re-apply a transition that is no longer valid from the new status.
+    addAction(true, selectedTransitionId, STATUS_TRANSITION_FIELD_KEY, async () => {
+      await saveFeatureReviewTransition(featureIssue.key, selectedTransitionId);
+      setSelectedTransitionId('');
+    });
+
+    return pendingFixActions;
+  }
+
+  // Saves every filled-in fix in one pass, then refreshes the feature data ONCE — only when
+  // the whole batch succeeded. A partial failure keeps the panel open with the failed
+  // drafts intact and per-field error messages so the user can retry just those.
+  async function handleSaveAllFixes() {
+    const pendingFixActions = buildPendingFixActions();
+    if (pendingFixActions.length === 0) {
+      showToast('Enter at least one fix before saving.', 'error');
+      return;
+    }
+
+    setIsSavingAllFixes(true);
+    let savedFixCount = 0;
+    const failedFieldKeys: string[] = [];
+    for (const pendingFixAction of pendingFixActions) {
+      recordFieldOutcome(pendingFixAction.fieldKey, null, false);
+      try {
+        await pendingFixAction.run();
+        recordFieldOutcome(pendingFixAction.fieldKey, 'Saved.', false);
+        savedFixCount += 1;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : `Unable to save ${pendingFixAction.fieldKey}.`;
+        recordFieldOutcome(pendingFixAction.fieldKey, errorMessage, true);
+        failedFieldKeys.push(pendingFixAction.fieldKey);
+      }
+    }
+    setIsSavingAllFixes(false);
+
+    if (savedFixCount > 0) {
+      showToast(`${featureIssue.key} — ${savedFixCount} fix${savedFixCount === 1 ? '' : 'es'} saved.`, 'success');
+    }
+    if (failedFieldKeys.length > 0) {
+      showToast(`${featureIssue.key} — ${failedFieldKeys.length} fix${failedFieldKeys.length === 1 ? '' : 'es'} could not be saved.`, 'error');
+    }
+
+    // Single refresh at the very end, only when nothing failed — this is what stops the
+    // "refreshes after every save" thrash the user was hitting.
+    if (savedFixCount > 0 && failedFieldKeys.length === 0) {
+      await onFeatureFixed();
+    }
+  }
+
+  const pendingFixCount = buildPendingFixActions().length;
 
   return (
     <section className={styles.featureReviewFixPanel}>
@@ -608,45 +629,61 @@ function FeatureReviewQuickFixPanel({
         <div className={styles.featureReviewFixGrid}>
           {isLoadingEditMeta ? <p className={styles.spinnerText}>Loading Jira edit options…</p> : null}
           {hasHygieneFlag(featureReviewItem.hygieneFlags, 'missing-summary')
-            ? renderTextFixRow('Feature name / summary', 'summary', 'Enter feature summary', async () => saveFeatureReviewSimpleField(featureIssue.key, 'summary', fieldDraftByKey.summary ?? ''))
+            ? renderTextFixRow('Feature name / summary', 'summary', 'Enter feature summary')
             : null}
           {hasHygieneFlag(featureReviewItem.hygieneFlags, 'missing-parent-link') && parentLinkFieldId
-            ? renderTextFixRow('Parent link', 'parentLink', 'Enter parent issue key', async () => saveFeatureReviewIssueLinkField(featureIssue.key, parentLinkFieldId, fieldDraftByKey.parentLink ?? ''))
+            ? renderTextFixRow('Parent link', 'parentLink', 'Enter parent issue key')
             : null}
           {hasHygieneFlag(featureReviewItem.hygieneFlags, 'missing-pi') && programIncrementFieldId
-            ? renderSelectFixRow('Program Increment', 'programIncrement', programIncrementFieldId)
+            ? renderSelectFixRow('Program Increment', 'programIncrement')
             : null}
           {hasHygieneFlag(featureReviewItem.hygieneFlags, 'missing-target-start') && targetStartFieldId
-            ? renderDateFixRow('Target Start', 'targetStart', targetStartFieldId)
+            ? renderDateFixRow('Target Start', 'targetStart')
             : null}
           {hasHygieneFlag(featureReviewItem.hygieneFlags, 'missing-target-end') && targetEndFieldId
-            ? renderDateFixRow('Target End', 'targetEnd', targetEndFieldId)
+            ? renderDateFixRow('Target End', 'targetEnd')
             : null}
           {hasHygieneFlag(featureReviewItem.hygieneFlags, 'missing-application') && applicationFieldId
-            ? renderSelectFixRow('Application', 'application', applicationFieldId)
+            ? renderSelectFixRow('Application', 'application')
             : null}
           {hasHygieneFlag(featureReviewItem.hygieneFlags, 'missing-initiative-type') && initiativeTypeFieldId
-            ? renderSelectFixRow('Initiative Type', 'initiativeType', initiativeTypeFieldId)
+            ? renderSelectFixRow('Initiative Type', 'initiativeType')
             : null}
           {hasHygieneFlag(featureReviewItem.hygieneFlags, 'missing-product-owner') && productOwnerFieldId
             ? (shouldUseProductOwnerUserSearch
-              ? renderUserFixRow('Product Owner', 'productOwner', productOwnerFieldId)
-              : renderSelectFixRow('Product Owner', 'productOwner', productOwnerFieldId))
+              ? renderUserFixRow('Product Owner', 'productOwner')
+              : renderSelectFixRow('Product Owner', 'productOwner'))
             : null}
           {hasHygieneFlag(featureReviewItem.hygieneFlags, 'missing-fix-version')
-            ? renderSelectFixRow('Fix Version', 'fixVersion', 'fixVersions')
+            ? renderSelectFixRow('Fix Version', 'fixVersion')
             : null}
           {hasHygieneFlag(featureReviewItem.hygieneFlags, 'missing-due-date')
-            ? renderDateFixRow('Due Date', 'dueDate', 'duedate')
+            ? renderDateFixRow('Due Date', 'dueDate')
             : null}
           {hasHygieneFlag(featureReviewItem.hygieneFlags, 'no-ac') && acceptanceCriteriaFieldId
-            ? renderTextFixRow('Acceptance Criteria', 'acceptanceCriteria', 'Describe acceptance criteria', async () => saveFeatureReviewSimpleField(featureIssue.key, acceptanceCriteriaFieldId, fieldDraftByKey.acceptanceCriteria ?? ''), true)
+            ? renderTextFixRow('Acceptance Criteria', 'acceptanceCriteria', 'Describe acceptance criteria', true)
             : null}
           {hasHygieneFlag(featureReviewItem.hygieneFlags, 'no-assignee')
-            ? renderUserFixRow('Assignee', 'assignee', 'assignee')
+            ? renderUserFixRow('Assignee', 'assignee')
             : null}
           {renderStoryPointFixRows()}
           {renderStatusTransitionRow()}
+
+          <div className={styles.featureReviewSaveAllRow}>
+            <button
+              className={styles.featureReviewSaveAllButton}
+              disabled={isSavingAllFixes || pendingFixCount === 0}
+              onClick={() => void handleSaveAllFixes()}
+              type="button"
+            >
+              {isSavingAllFixes ? 'Saving all fixes…' : 'Save all fixes'}
+            </button>
+            <span className={styles.featureReviewSaveAllHint}>
+              {pendingFixCount === 0
+                ? 'Fill in at least one fix to enable saving.'
+                : `${pendingFixCount} fix${pendingFixCount === 1 ? '' : 'es'} ready — saved together, refreshes once.`}
+            </span>
+          </div>
         </div>
       ) : null}
     </section>
