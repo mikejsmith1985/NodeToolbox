@@ -328,7 +328,64 @@ function isDueDateChange(item) {
 }
 
 /**
- * Inspects all Jira issue changelogs and extracts entries for the five monitored
+ * Classifies a changelog item as one of the five monitored Epic fields, returning the report
+ * category and display label for it, or null if the item touches an unmonitored field.
+ *
+ * @param {object} item - A single Jira changelog item.
+ * @returns {{ changeCategory: string, fieldLabel: string }|null}
+ */
+function classifyFeatureField(item) {
+  if (isFixVersionChange(item))  return { changeCategory: 'fixVersion', fieldLabel: 'Fix Version' };
+  if (isStatusChange(item))      return { changeCategory: 'status',     fieldLabel: 'Status' };
+  if (isTargetStartChange(item)) return { changeCategory: 'schedule',   fieldLabel: 'Target Start' };
+  if (isTargetEndChange(item))   return { changeCategory: 'schedule',   fieldLabel: 'Target End' };
+  if (isDueDateChange(item))     return { changeCategory: 'schedule',   fieldLabel: 'Due Date' };
+  return null;
+}
+
+/**
+ * Groups an issue's in-window changes by the specific field they touched, then collapses each
+ * field's edits into a single net change (earliest "from" → latest "to"). This keeps the
+ * "previous" column showing the value a field held when the self-healed window opened, instead of
+ * an intermediate blank left when the field was changed more than once during the window.
+ *
+ * @param {object} issue      - Jira issue with an expanded changelog.
+ * @param {Date}   cutoffDate - Only changes at or after this date are considered.
+ * @returns {Array<{ changeCategory: string, fieldLabel: string, fromValue: string, toValue: string, changedBy: string, changedAt: string }>}
+ */
+function collapseFeatureFieldChanges(issue, cutoffDate) {
+  const changesByField = new Map();
+  for (const history of (issue.changelog && issue.changelog.histories) || []) {
+    if (new Date(history.created) < cutoffDate) continue; // pre-window noise
+    for (const item of history.items || []) {
+      const classification = classifyFeatureField(item);
+      if (!classification) continue;
+      if (!changesByField.has(classification.fieldLabel)) {
+        changesByField.set(classification.fieldLabel, { classification, changes: [] });
+      }
+      changesByField.get(classification.fieldLabel).changes.push({ item, created: history.created, author: history.author });
+    }
+  }
+
+  const netChanges = [];
+  for (const { classification, changes } of changesByField.values()) {
+    changes.sort((first, second) => new Date(first.created) - new Date(second.created));
+    const earliest = changes[0];
+    const latest   = changes[changes.length - 1];
+    netChanges.push({
+      changeCategory: classification.changeCategory,
+      fieldLabel:     classification.fieldLabel,
+      fromValue:      earliest.item.fromString || '',
+      toValue:        latest.item.toString    || '',
+      changedBy:      latest.author.displayName,
+      changedAt:      latest.created,
+    });
+  }
+  return netChanges;
+}
+
+/**
+ * Inspects all Jira issue changelogs and extracts net change entries for the five monitored
  * Epic fields: Fix Version, Status, Target Start, Target End, and Due Date.
  *
  * Returns three parallel arrays — fixVersionEntries, statusEntries, and
@@ -344,50 +401,22 @@ function extractFeatureChangeEntries(issues, cutoffDate) {
   const scheduleEntries   = [];
 
   for (const issue of issues) {
-    const histories = (issue.changelog && issue.changelog.histories) || [];
+    for (const netChange of collapseFeatureFieldChanges(issue, cutoffDate)) {
+      const entry = {
+        issueKey:       issue.key,
+        issueSummary:   issue.fields.summary,
+        issueType:      (issue.fields.issuetype && issue.fields.issuetype.name) || 'Unknown',
+        fromValue:      netChange.fromValue || '—',
+        toValue:        netChange.toValue  || '—',
+        changedBy:      netChange.changedBy,
+        changedAt:      netChange.changedAt,
+        changeCategory: netChange.changeCategory,
+        fieldLabel:     netChange.fieldLabel,
+      };
 
-    for (const history of histories) {
-      // Skip change events that pre-date the monitoring window.
-      if (new Date(history.created) < cutoffDate) continue;
-
-      for (const item of history.items || []) {
-        const sharedFields = {
-          issueKey:     issue.key,
-          issueSummary: issue.fields.summary,
-          issueType:    (issue.fields.issuetype && issue.fields.issuetype.name) || 'Unknown',
-          fromValue:    item.fromString || '—',
-          toValue:      item.toString  || '—',
-          changedBy:    history.author.displayName,
-          changedAt:    history.created,
-        };
-
-        if (isFixVersionChange(item)) {
-          fixVersionEntries.push(Object.assign({}, sharedFields, {
-            changeCategory: 'fixVersion',
-            fieldLabel:     'Fix Version',
-          }));
-        } else if (isStatusChange(item)) {
-          statusEntries.push(Object.assign({}, sharedFields, {
-            changeCategory: 'status',
-            fieldLabel:     'Status',
-          }));
-        } else if (isTargetStartChange(item)) {
-          scheduleEntries.push(Object.assign({}, sharedFields, {
-            changeCategory: 'schedule',
-            fieldLabel:     'Target Start',
-          }));
-        } else if (isTargetEndChange(item)) {
-          scheduleEntries.push(Object.assign({}, sharedFields, {
-            changeCategory: 'schedule',
-            fieldLabel:     'Target End',
-          }));
-        } else if (isDueDateChange(item)) {
-          scheduleEntries.push(Object.assign({}, sharedFields, {
-            changeCategory: 'schedule',
-            fieldLabel:     'Due Date',
-          }));
-        }
-      }
+      if (netChange.changeCategory === 'fixVersion')  fixVersionEntries.push(entry);
+      else if (netChange.changeCategory === 'status') statusEntries.push(entry);
+      else                                            scheduleEntries.push(entry);
     }
   }
 

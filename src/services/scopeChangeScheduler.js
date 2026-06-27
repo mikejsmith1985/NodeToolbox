@@ -251,8 +251,41 @@ async function fetchSprintChanges(projectKey, cutoffDateString, jiraConfig, sslV
 // ── Change entry extraction ──
 
 /**
- * Filters Jira changelog entries for a specific field that were set (not removed)
- * after the cutoff date.
+ * Reduces every in-window change to one field on one issue to a single net change: the previous
+ * value is taken from the EARLIEST change and the current value from the LATEST. A self-healed
+ * catch-up window can hold several edits to the same field (e.g. removed from a sprint, then added
+ * to another); collapsing them keeps the "previous" column showing the value the field actually
+ * held when the window opened, rather than an intermediate blank left by the last raw edit.
+ *
+ * @param {object} issue       - Jira issue with an expanded changelog.
+ * @param {string} targetField - Lowercase field name to collapse ('fix version' or 'sprint').
+ * @param {Date}   cutoffDate  - Only changes at or after this date are considered.
+ * @returns {{ fromValue: string, toValue: string, changedBy: string, changedAt: string }|null}
+ */
+function collapseNetFieldChange(issue, targetField, cutoffDate) {
+  const changes = [];
+  for (const history of (issue.changelog && issue.changelog.histories) || []) {
+    if (new Date(history.created) < cutoffDate) continue;
+    for (const item of history.items || []) {
+      if (item.field.toLowerCase() !== targetField) continue;
+      changes.push({ item, created: history.created, author: history.author });
+    }
+  }
+  if (changes.length === 0) return null;
+  changes.sort((first, second) => new Date(first.created) - new Date(second.created));
+  const earliest = changes[0];
+  const latest   = changes[changes.length - 1];
+  return {
+    fromValue: earliest.item.fromString || '',
+    toValue:   latest.item.toString    || '',
+    changedBy: latest.author.displayName,
+    changedAt: latest.created,
+  };
+}
+
+/**
+ * Builds one net change entry per issue for a specific field after the cutoff date. Multiple edits
+ * to the same field inside the window collapse into a single row (see collapseNetFieldChange).
  *
  * @param {Array}  issues
  * @param {string} targetField    - Lowercase field name ('fix version' or 'sprint')
@@ -263,23 +296,21 @@ async function fetchSprintChanges(projectKey, cutoffDateString, jiraConfig, sslV
 function extractChangeEntries(issues, targetField, changeType, cutoffDate) {
   const entries = [];
   for (const issue of issues) {
-    for (const history of (issue.changelog && issue.changelog.histories) || []) {
-      if (new Date(history.created) < cutoffDate) continue;
-      for (const item of history.items || []) {
-        if (item.field.toLowerCase() !== targetField) continue;
-        if (!item.toString) continue;
-        entries.push({
-          issueKey:     issue.key,
-          issueSummary: issue.fields.summary,
-          issueType:    (issue.fields.issuetype && issue.fields.issuetype.name) || 'Unknown',
-          changeType,
-          fromValue:    item.fromString || '—',
-          toValue:      item.toString,
-          changedBy:    history.author.displayName,
-          changedAt:    history.created,
-        });
-      }
-    }
+    const netChange = collapseNetFieldChange(issue, targetField, cutoffDate);
+    if (!netChange) continue;
+    // Skip when the field ended the window with no value (a removal) or did not net change —
+    // mirrors the original "ignore items without a toString" rule, applied to the net result.
+    if (!netChange.toValue || netChange.fromValue === netChange.toValue) continue;
+    entries.push({
+      issueKey:     issue.key,
+      issueSummary: issue.fields.summary,
+      issueType:    (issue.fields.issuetype && issue.fields.issuetype.name) || 'Unknown',
+      changeType,
+      fromValue:    netChange.fromValue || '—',
+      toValue:      netChange.toValue,
+      changedBy:    netChange.changedBy,
+      changedAt:    netChange.changedAt,
+    });
   }
   return entries;
 }
