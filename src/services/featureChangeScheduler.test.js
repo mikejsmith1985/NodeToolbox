@@ -162,6 +162,24 @@ describe('extractFeatureChangeEntries', () => {
     expect(scheduleEntries[0].fieldLabel).toBe('Due Date');
   });
 
+  it('collapses a remove-then-re-add into one net change instead of an empty previous value', () => {
+    // After the coverage-watermark rework a field can change several times inside one self-healed
+    // window. The report must report the net change with the real prior value, not a blank left by
+    // the intermediate removal.
+    const issues = [{
+      key: 'DENP-9',
+      fields: { summary: 'Bounced feature', issuetype: { name: 'Feature' } },
+      changelog: { histories: [
+        { created: '2026-06-20T09:00:00.000Z', author: { displayName: 'Pat Lee' }, items: [{ field: 'Fix Version', fromString: '25.1', toString: '' }] },
+        { created: '2026-06-24T09:00:00.000Z', author: { displayName: 'Pat Lee' }, items: [{ field: 'Fix Version', fromString: '', toString: '25.3' }] },
+      ] },
+    }];
+    const { fixVersionEntries } = extractFeatureChangeEntries(issues, cutoffDate);
+    expect(fixVersionEntries).toHaveLength(1);
+    expect(fixVersionEntries[0].fromValue).toBe('25.1');
+    expect(fixVersionEntries[0].toValue).toBe('25.3');
+  });
+
   it('skips changes before the cutoff date', () => {
     const oldIssue = {
       key: 'DENP-101',

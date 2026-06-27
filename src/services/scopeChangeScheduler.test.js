@@ -215,6 +215,30 @@ describe('extractChangeEntries', () => {
     expect(extractChangeEntries(issues, 'fix version', 'fixVersion', cutoffDate)[0].fromValue).toBe('—');
   });
 
+  it('collapses several in-window edits into one net change, keeping the original previous value', () => {
+    // A self-healed catch-up window can contain more than one change to the same field. The
+    // report must show the value the field held when the window opened — not an intermediate
+    // blank left by a remove-then-re-add. This is the empty-previous-value bug.
+    const issues = [
+      buildIssue([
+        {
+          created: '2026-06-23T10:00:00.000Z',
+          author: { displayName: 'Mike Smith' },
+          items: [{ field: 'Sprint', fromString: 'Transformers 07/30/2026', toString: '' }],
+        },
+        {
+          created: '2026-06-25T10:00:00.000Z',
+          author: { displayName: 'Mike Smith' },
+          items: [{ field: 'Sprint', fromString: '', toString: 'Transformers 08/13/2026' }],
+        },
+      ]),
+    ];
+    const entries = extractChangeEntries(issues, 'sprint', 'sprint', cutoffDate);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].fromValue).toBe('Transformers 07/30/2026');
+    expect(entries[0].toValue).toBe('Transformers 08/13/2026');
+  });
+
   it('extracts Sprint changes for non-Feature issues (full Reports Hub parity)', () => {
     const issues = [
       {
