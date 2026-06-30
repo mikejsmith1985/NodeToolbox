@@ -14,7 +14,7 @@ import {
   setMentionAddressed as persistMentionAddressed,
   type AddressedMentionMap,
 } from '../../../services/mentionStateApi.ts';
-import { fetchProxyConfig } from '../../../services/proxyApi.ts';
+import { fetchJiraBaseUrl } from '../../../services/proxyApi.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { businessDaysAgo, toJqlDateString } from '../../../utils/businessDays.ts';
 import { collectUserMentions, type JiraMention, type MentionIdentity } from '../../../utils/jiraMentions.ts';
@@ -192,8 +192,10 @@ export function useMentionsState(): MentionsState & MentionsActions {
  */
 async function loadJiraBaseUrl(): Promise<string> {
   try {
-    const proxyConfig = await fetchProxyConfig();
-    return proxyConfig.jiraBaseUrl ?? '';
+    // The proxy-config endpoint nests the Jira URL under jira.baseUrl; fetchJiraBaseUrl reads
+    // the real shape (the flat ProxyConfig.jiraBaseUrl is always undefined, which previously made
+    // mention links fall back to a relative /browse/KEY that the SPA router bounced to home).
+    return await fetchJiraBaseUrl();
   } catch {
     return '';
   }

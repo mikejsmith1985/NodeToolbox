@@ -41,9 +41,10 @@
 
 .actionButton {
   padding: var(--spacing-xs) var(--spacing-sm);
-  border: 1px solid var(--color-border, #d1d5db);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm, 6px);
-  background: var(--color-surface-alt, #f9fafb);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
   cursor: pointer;
 }
 
@@ -78,16 +79,16 @@
 /* ── State variants ── */
 
 .completeCard {
-  background: var(--color-success-bg, #ecfdf5);
-  border-color: var(--color-success-border, #a7f3d0);
+  background: color-mix(in srgb, var(--color-success) 14%, var(--color-surface));
+  border-color: var(--color-success);
 }
 
 .errorCard {
-  border-color: var(--color-danger-border, #fecaca);
-  background: var(--color-danger-bg, #fef2f2);
+  border-color: var(--color-error, var(--color-danger));
+  background: var(--color-error-bg, color-mix(in srgb, var(--color-danger) 14%, var(--color-surface)));
 }
 
 .notConfiguredCard {
   border-style: dashed;
-  background: var(--color-surface-alt, #f9fafb);
+  background: var(--color-surface-2);
 }

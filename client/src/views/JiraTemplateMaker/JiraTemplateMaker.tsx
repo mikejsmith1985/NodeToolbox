@@ -289,7 +289,7 @@ export default function JiraTemplateMaker() {
                     onChange={(event) => state.setFieldMode(entry.fieldId, (event.target.checked ? 'promptAtLaunch' : 'fixed') as FieldEntryMode)}
                     type="checkbox"
                   />
-                  Ask for this value each time it&apos;s used
+                  Leave blank / fill in per use
                 </label>
                 {descriptor && entry.mode === 'fixed' && (
                   <FieldValueInput
@@ -300,7 +300,7 @@ export default function JiraTemplateMaker() {
                 )}
                 {descriptor && entry.mode === 'promptAtLaunch' && (
                   <div>
-                    <span className={styles.unsupportedTag}>Optional default to pre-fill the prompt:</span>
+                    <span className={styles.unsupportedTag}>Optional default (pre-fills the link / launch prompt; the user can still change it):</span>
                     <FieldValueInput
                       descriptor={descriptor}
                       value={entry.defaultValue}
