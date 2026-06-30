@@ -929,20 +929,21 @@ describe('useCrgState', () => {
       expect(relPayload.u_environment).toBe('rel-env');
       expect(relPayload.cmdb_ci).toBe('ci-rel-001');
       expect(relPayload.u_impacted_persons_aware).toBe('rel-aware');
-      expect(relPayload.planned_start_date).toBe('2025-02-01T08:00');
-      expect(relPayload.planned_end_date).toBe('2025-02-01T09:00');
+      // change_request stores the requested window as start_date/end_date, not planned_*
+      expect(relPayload.start_date).toBe('2025-02-01T08:00');
+      expect(relPayload.end_date).toBe('2025-02-01T09:00');
 
       expect(prdPayload.u_environment).toBe('prd-env');
       expect(prdPayload.cmdb_ci).toBe('ci-prd-001');
       expect(prdPayload.u_impacted_persons_aware).toBe('prd-aware');
-      expect(prdPayload.planned_start_date).toBe('2025-02-02T08:00');
-      expect(prdPayload.planned_end_date).toBe('2025-02-02T09:00');
+      expect(prdPayload.start_date).toBe('2025-02-02T08:00');
+      expect(prdPayload.end_date).toBe('2025-02-02T09:00');
 
       expect(pfixPayload.u_environment).toBe('pfix-env');
       expect(pfixPayload.cmdb_ci).toBe('ci-pfix-001');
       expect(pfixPayload.u_impacted_persons_aware).toBe('pfix-aware');
-      expect(pfixPayload.planned_start_date).toBe('2025-02-03T08:00');
-      expect(pfixPayload.planned_end_date).toBe('2025-02-03T09:00');
+      expect(pfixPayload.start_date).toBe('2025-02-03T08:00');
+      expect(pfixPayload.end_date).toBe('2025-02-03T09:00');
       expect(result.current.state.submitResult).toBe(
         '3 CHGs created: REL CHG0002001, PRD CHG0002002, PFIX CHG0002003',
       );

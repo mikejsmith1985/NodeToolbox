@@ -822,8 +822,11 @@ function buildChangeRequestPayload(
   if (state.chgBasicInfo.assignedTo.sysId)      changeRequestPayload.assigned_to       = state.chgBasicInfo.assignedTo.sysId;
   if (state.chgBasicInfo.tester.sysId)          changeRequestPayload.u_tester          = state.chgBasicInfo.tester.sysId;
   if (state.chgBasicInfo.serviceManager.sysId)  changeRequestPayload.u_service_manager = state.chgBasicInfo.serviceManager.sysId;
-  if (changeSubmissionTarget.plannedStartDate)  changeRequestPayload.planned_start_date = changeSubmissionTarget.plannedStartDate;
-  if (changeSubmissionTarget.plannedEndDate)    changeRequestPayload.planned_end_date   = changeSubmissionTarget.plannedEndDate;
+  // The change_request table exposes the requested change window as start_date/end_date
+  // (the form labels them "Planned start/end date"). planned_start_date/planned_end_date
+  // only exist on change_task, so writing them here is silently dropped by the Table API.
+  if (changeSubmissionTarget.plannedStartDate)  changeRequestPayload.start_date = changeSubmissionTarget.plannedStartDate;
+  if (changeSubmissionTarget.plannedEndDate)    changeRequestPayload.end_date   = changeSubmissionTarget.plannedEndDate;
 
   if (state.chgPlanningAssessment.impact)                        changeRequestPayload.impact                  = state.chgPlanningAssessment.impact;
   if (state.chgPlanningAssessment.systemAvailabilityImplication) changeRequestPayload.u_availability_impact   = state.chgPlanningAssessment.systemAvailabilityImplication;
