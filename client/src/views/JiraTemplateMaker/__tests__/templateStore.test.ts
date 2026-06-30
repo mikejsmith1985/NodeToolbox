@@ -1,6 +1,6 @@
 // templateStore.test.ts — Unit tests for the shared template store wrappers + 3-way merge.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   JIRA_TEMPLATES_PROPERTY_KEY,

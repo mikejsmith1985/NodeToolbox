@@ -21,14 +21,14 @@ describe('Template Maker Jira wrappers', () => {
   });
 
   it('getCreateMeta requests the classic endpoint with the field expansion', async () => {
-    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ projects: [] }), {
+    const fetchSpy = vi.fn(async (_url: string) => new Response(JSON.stringify({ projects: [] }), {
       status: 200, headers: { 'content-type': 'application/json' },
     }));
     vi.stubGlobal('fetch', fetchSpy);
 
     await getCreateMeta('ABC');
 
-    const calledUrl = fetchSpy.mock.calls[0][0] as string;
+    const calledUrl = fetchSpy.mock.calls[0][0];
     expect(calledUrl).toContain('/jira-proxy/rest/api/2/issue/createmeta');
     expect(calledUrl).toContain('projectKeys=ABC');
     expect(calledUrl).toContain('expand=projects.issuetypes.fields');
