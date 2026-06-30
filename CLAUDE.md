@@ -9,7 +9,7 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **sprint-release-workflow** — plan: `specs/003-sprint-release-workflow/plan.md`
+- **jira-template-maker** — plan: `specs/004-jira-template-maker/plan.md`
   (spec, research, data-model, contracts, quickstart in the same directory).
 <!-- SPECKIT END -->
 

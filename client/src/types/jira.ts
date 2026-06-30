@@ -153,3 +153,74 @@ export interface JiraProject {
   key: string;
   name: string;
 }
+
+// ── Create-metadata & issue-creation types (Jira Template Maker) ──
+// Shapes returned by the classic Server/DC endpoint
+// /rest/api/2/issue/createmeta?projectKeys=...&expand=projects.issuetypes.fields
+// and the request/response for POST /rest/api/2/issue.
+
+/** Type descriptor for a createmeta field; drives the internal field-model mapping. */
+export interface CreateMetaFieldSchema {
+  type: string;
+  items?: string;
+  system?: string;
+  custom?: string;
+}
+
+/** A single allowed option for a choice/components/versions createmeta field. */
+export interface CreateMetaAllowedValue {
+  id: string;
+  /** Present on priorities/components/versions and option fields. */
+  name?: string;
+  /** Present on custom select options instead of (or alongside) name. */
+  value?: string;
+}
+
+/** One field as described by createmeta for a given issue type. */
+export interface CreateMetaField {
+  required: boolean;
+  name: string;
+  schema?: CreateMetaFieldSchema;
+  allowedValues?: CreateMetaAllowedValue[];
+  hasDefaultValue?: boolean;
+}
+
+/** An issue type within a createmeta project, including its create-screen fields. */
+export interface CreateMetaIssueType {
+  id: string;
+  name: string;
+  subtask: boolean;
+  fields?: Record<string, CreateMetaField>;
+}
+
+/** A project entry in the createmeta response. */
+export interface CreateMetaProject {
+  id: string;
+  key: string;
+  name: string;
+  issuetypes: CreateMetaIssueType[];
+}
+
+/** Top-level createmeta response (classic Server/DC shape). */
+export interface CreateMetaResponse {
+  projects: CreateMetaProject[];
+}
+
+/** Request body for POST /rest/api/2/issue. */
+export interface CreateIssueRequest {
+  fields: Record<string, unknown>;
+}
+
+/** Response body from a successful POST /rest/api/2/issue. */
+export interface CreateIssueResponse {
+  id: string;
+  key: string;
+  self: string;
+}
+
+/** Current Jira user shape from GET /rest/api/2/myself (used to record template authors). */
+export interface JiraMyself {
+  displayName?: string;
+  name?: string;
+  accountId?: string;
+}

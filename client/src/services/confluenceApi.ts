@@ -1,5 +1,8 @@
 // confluenceApi.ts — Typed Confluence REST client routed through the Express Confluence proxy.
 
+import type { JiraTemplate, JiraTemplateStore } from '../views/JiraTemplateMaker/lib/templateTypes.ts';
+import { JIRA_TEMPLATE_STORE_SCHEMA_VERSION } from '../views/JiraTemplateMaker/lib/templateTypes.ts';
+
 const CONFLUENCE_PROXY_BASE = '/confluence-proxy';
 const CONFLUENCE_V2_BASE = `${CONFLUENCE_PROXY_BASE}/wiki/api/v2`;
 const JSON_CONTENT_TYPE = 'application/json';
@@ -342,4 +345,128 @@ export async function saveSharedArtWorkspace(
       schemaVersion: SHARED_ART_WORKSPACE_SCHEMA_VERSION,
     },
   );
+}
+
+// ── Jira Template Maker shared store ──
+// Templates persist as one JSON document under their own content-property key on the same
+// shared database used by the ART workspace, kept independent so the ART schema is untouched.
+
+/** Content-property key holding the globally-shared Jira template library. */
+export const JIRA_TEMPLATES_PROPERTY_KEY = 'nodetoolbox-jira-templates';
+
+/**
+ * Loads the shared Jira template library. Unlike the ART workspace, an absent property is the
+ * normal first-run state and yields an empty store rather than an error; an unrecognized
+ * schema version is rejected so we never mis-parse a future format.
+ */
+export async function loadJiraTemplates(databaseId: string): Promise<JiraTemplateStore> {
+  const templateProperty = await fetchConfluenceDatabasePropertyByKey<JiraTemplateStore>(
+    databaseId,
+    JIRA_TEMPLATES_PROPERTY_KEY,
+  );
+  if (!templateProperty) {
+    return { schemaVersion: JIRA_TEMPLATE_STORE_SCHEMA_VERSION, updatedAt: '', templates: [] };
+  }
+  if (templateProperty.value.schemaVersion !== JIRA_TEMPLATE_STORE_SCHEMA_VERSION) {
+    throw new Error(`Unsupported Jira template store schema version ${templateProperty.value.schemaVersion}.`);
+  }
+  return templateProperty.value;
+}
+
+/** Persists the template library, stamping the current schema version and save time. */
+export async function saveJiraTemplates(
+  databaseId: string,
+  store: JiraTemplateStore,
+): Promise<JiraTemplateStore> {
+  const stampedStore: JiraTemplateStore = {
+    ...store,
+    schemaVersion: JIRA_TEMPLATE_STORE_SCHEMA_VERSION,
+    updatedAt: new Date().toISOString(),
+  };
+  await upsertConfluenceDatabaseProperty(databaseId, JIRA_TEMPLATES_PROPERTY_KEY, stampedStore);
+  return stampedStore;
+}
+
+/** Compares two templates ignoring their save timestamp (so a re-save isn't seen as an edit). */
+function areTemplatesEquivalent(left: JiraTemplate, right: JiraTemplate): boolean {
+  const withoutTimestamp = (template: JiraTemplate): JiraTemplate => ({ ...template, updatedAt: '' });
+  return JSON.stringify(withoutTimestamp(left)) === JSON.stringify(withoutTimestamp(right));
+}
+
+/**
+ * Three-way merges the template library so concurrent editors don't silently overwrite each
+ * other. Compares the local working copy and the freshly-fetched remote copy against the base
+ * snapshot taken at load. Edits to different templates both survive; edits to the same template
+ * on both sides surface as a conflict (by template id) instead of last-writer-win.
+ */
+export function mergeJiraTemplateStores(
+  base: JiraTemplateStore,
+  remote: JiraTemplateStore,
+  working: JiraTemplateStore,
+): { merged: JiraTemplateStore; conflicts: string[] } {
+  const baseById = new Map(base.templates.map((template) => [template.id, template]));
+  const remoteById = new Map(remote.templates.map((template) => [template.id, template]));
+  const workingById = new Map(working.templates.map((template) => [template.id, template]));
+  const allTemplateIds = new Set([...baseById.keys(), ...remoteById.keys(), ...workingById.keys()]);
+
+  const mergedTemplates: JiraTemplate[] = [];
+  const conflicts: string[] = [];
+
+  for (const templateId of allTemplateIds) {
+    const baseTemplate = baseById.get(templateId);
+    const remoteTemplate = remoteById.get(templateId);
+    const workingTemplate = workingById.get(templateId);
+
+    const wasChangedLocally = baseTemplate
+      ? (workingTemplate ? !areTemplatesEquivalent(baseTemplate, workingTemplate) : true)
+      : Boolean(workingTemplate);
+    const wasChangedRemotely = baseTemplate
+      ? (remoteTemplate ? !areTemplatesEquivalent(baseTemplate, remoteTemplate) : true)
+      : Boolean(remoteTemplate);
+
+    // Both sides added the same new id with different content → conflict.
+    if (!baseTemplate && workingTemplate && remoteTemplate && !areTemplatesEquivalent(workingTemplate, remoteTemplate)) {
+      conflicts.push(templateId);
+      mergedTemplates.push(remoteTemplate);
+      continue;
+    }
+    if (wasChangedLocally && wasChangedRemotely) {
+      if (!workingTemplate && !remoteTemplate) {
+        continue; // both deleted — agree
+      }
+      if (workingTemplate && remoteTemplate && areTemplatesEquivalent(workingTemplate, remoteTemplate)) {
+        mergedTemplates.push(workingTemplate);
+        continue;
+      }
+      conflicts.push(templateId);
+      mergedTemplates.push(remoteTemplate ?? workingTemplate as JiraTemplate);
+      continue;
+    }
+    if (wasChangedLocally) {
+      if (workingTemplate) {
+        mergedTemplates.push(workingTemplate); // local add/edit (deletion → skip)
+      }
+      continue;
+    }
+    if (wasChangedRemotely) {
+      if (remoteTemplate) {
+        mergedTemplates.push(remoteTemplate);
+      }
+      continue;
+    }
+    // Unchanged on both sides.
+    const unchangedTemplate = remoteTemplate ?? baseTemplate;
+    if (unchangedTemplate) {
+      mergedTemplates.push(unchangedTemplate);
+    }
+  }
+
+  return {
+    merged: {
+      schemaVersion: JIRA_TEMPLATE_STORE_SCHEMA_VERSION,
+      updatedAt: working.updatedAt,
+      templates: mergedTemplates,
+    },
+    conflicts,
+  };
 }
