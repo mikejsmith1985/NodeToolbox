@@ -4,7 +4,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 
-import type { FieldEntryMode, JiraTemplate, TemplateFieldEntry, TemplateFieldType } from '../lib/templateTypes.ts';
+import type { FieldEntryMode, JiraTemplate, ManualUrlParam, TemplateFieldEntry, TemplateFieldType } from '../lib/templateTypes.ts';
 
 /** Wizard steps in order. */
 export const TEMPLATE_MAKER_STEPS = ['project', 'issueType', 'fields', 'review'] as const;
@@ -24,6 +24,7 @@ export interface UseTemplateMakerStateResult {
   templateName: string;
   templateDescription: string;
   fieldEntries: TemplateFieldEntry[];
+  manualUrlParams: ManualUrlParam[];
   rescopeWarning: string | null;
   dismissRescopeWarning: () => void;
   setProject: (projectKey: string, projectId: string) => void;
@@ -35,6 +36,9 @@ export interface UseTemplateMakerStateResult {
   setFieldValue: (fieldId: string, value: unknown) => void;
   setFieldDefault: (fieldId: string, defaultValue: unknown) => void;
   setFieldMode: (fieldId: string, mode: FieldEntryMode) => void;
+  addManualUrlParam: () => void;
+  updateManualUrlParam: (index: number, patch: Partial<ManualUrlParam>) => void;
+  removeManualUrlParam: (index: number) => void;
   reset: () => void;
 }
 
@@ -56,6 +60,7 @@ export function useTemplateMakerState(): UseTemplateMakerStateResult {
   const [templateName, setTemplateName] = useState<string>('');
   const [templateDescription, setTemplateDescription] = useState<string>('');
   const [fieldEntries, setFieldEntries] = useState<TemplateFieldEntry[]>([]);
+  const [manualUrlParams, setManualUrlParams] = useState<ManualUrlParam[]>([]);
   const [rescopeWarning, setRescopeWarning] = useState<string | null>(null);
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
 
@@ -71,6 +76,7 @@ export function useTemplateMakerState(): UseTemplateMakerStateResult {
     setTemplateName(template.name);
     setTemplateDescription(template.description);
     setFieldEntries(template.fields.map((entry) => ({ ...entry })));
+    setManualUrlParams((template.manualUrlParams ?? []).map((manualParam) => ({ ...manualParam })));
     setRescopeWarning(null);
     setCurrentStep('fields');
   }, []);
@@ -134,6 +140,20 @@ export function useTemplateMakerState(): UseTemplateMakerStateResult {
     )));
   }, []);
 
+  const addManualUrlParam = useCallback(() => {
+    setManualUrlParams((previous) => [...previous, { param: '', value: '' }]);
+  }, []);
+
+  const updateManualUrlParam = useCallback((index: number, patch: Partial<ManualUrlParam>) => {
+    setManualUrlParams((previous) => previous.map((manualParam, currentIndex) => (
+      currentIndex === index ? { ...manualParam, ...patch } : manualParam
+    )));
+  }, []);
+
+  const removeManualUrlParam = useCallback((index: number) => {
+    setManualUrlParams((previous) => previous.filter((_manualParam, currentIndex) => currentIndex !== index));
+  }, []);
+
   const reset = useCallback(() => {
     setCurrentStep('project');
     setProjectKey('');
@@ -143,6 +163,7 @@ export function useTemplateMakerState(): UseTemplateMakerStateResult {
     setTemplateName('');
     setTemplateDescription('');
     setFieldEntries([]);
+    setManualUrlParams([]);
     setRescopeWarning(null);
     setEditingTemplateId(null);
   }, []);
@@ -150,13 +171,15 @@ export function useTemplateMakerState(): UseTemplateMakerStateResult {
   return useMemo(() => ({
     currentStep, goToStep, editingTemplateId, loadTemplate,
     projectKey, projectId, issueTypeId, issueTypeName,
-    templateName, templateDescription, fieldEntries, rescopeWarning, dismissRescopeWarning,
+    templateName, templateDescription, fieldEntries, manualUrlParams, rescopeWarning, dismissRescopeWarning,
     setProject, setIssueType, setTemplateName, setTemplateDescription,
-    addField, removeField, setFieldValue, setFieldDefault, setFieldMode, reset,
+    addField, removeField, setFieldValue, setFieldDefault, setFieldMode,
+    addManualUrlParam, updateManualUrlParam, removeManualUrlParam, reset,
   }), [
     currentStep, goToStep, editingTemplateId, loadTemplate, projectKey, projectId, issueTypeId, issueTypeName,
-    templateName, templateDescription, fieldEntries, rescopeWarning, dismissRescopeWarning,
-    setProject, setIssueType, addField, removeField, setFieldValue, setFieldDefault, setFieldMode, reset,
+    templateName, templateDescription, fieldEntries, manualUrlParams, rescopeWarning, dismissRescopeWarning,
+    setProject, setIssueType, addField, removeField, setFieldValue, setFieldDefault, setFieldMode,
+    addManualUrlParam, updateManualUrlParam, removeManualUrlParam, reset,
   ]);
 }
 

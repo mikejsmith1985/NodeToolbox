@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createIssue, getIssueTypeFields, getMyself, getProjectIssueTypes } from '../../../services/jiraApi.ts';
+import { createIssue, getIssueTypeFields, getMyself, getProject, getProjectIssueTypes } from '../../../services/jiraApi.ts';
 
 function mockFetchOnce(body: unknown, status = 200): void {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), {
@@ -55,5 +55,15 @@ describe('Template Maker Jira wrappers', () => {
     mockFetchOnce({ displayName: 'Jane Doe', name: 'jdoe' });
     const me = await getMyself();
     expect(me.displayName).toBe('Jane Doe');
+  });
+
+  it('getProject fetches a project by key (for the prefill URL pid)', async () => {
+    const fetchSpy = vi.fn(async (_url: string) => new Response(JSON.stringify({ id: '11900', key: 'ENCUC', name: 'Customer UC' }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchSpy);
+    const project = await getProject('ENCUC');
+    expect(project.id).toBe('11900');
+    expect(fetchSpy.mock.calls[0][0]).toContain('/jira-proxy/rest/api/2/project/ENCUC');
   });
 });

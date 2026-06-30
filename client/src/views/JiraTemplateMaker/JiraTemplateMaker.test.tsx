@@ -3,25 +3,30 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { getIssueTypeFields, getMyself, getProjectIssueTypes } from '../../services/jiraApi.ts';
+import { getIssueTypeFields, getMyself, getProject, getProjectIssueTypes } from '../../services/jiraApi.ts';
 import { loadJiraTemplates } from '../../services/confluenceApi.ts';
+import { fetchProxyConfig } from '../../services/proxyApi.ts';
 import JiraTemplateMaker from './JiraTemplateMaker.tsx';
 
 vi.mock('../../services/jiraApi.ts', () => ({
   getProjectIssueTypes: vi.fn(),
   getIssueTypeFields: vi.fn(),
   getMyself: vi.fn(),
+  getProject: vi.fn(),
 }));
 vi.mock('../../services/confluenceApi.ts', () => ({
   loadJiraTemplates: vi.fn(),
   saveJiraTemplates: vi.fn(),
   mergeJiraTemplateStores: vi.fn(),
 }));
+vi.mock('../../services/proxyApi.ts', () => ({ fetchProxyConfig: vi.fn() }));
 
 const issueTypesMock = vi.mocked(getProjectIssueTypes);
 const fieldsMock = vi.mocked(getIssueTypeFields);
 const loadMock = vi.mocked(loadJiraTemplates);
 const myselfMock = vi.mocked(getMyself);
+const projectMock = vi.mocked(getProject);
+const proxyConfigMock = vi.mocked(fetchProxyConfig);
 
 describe('JiraTemplateMaker view', () => {
   afterEach(() => { vi.clearAllMocks(); });
@@ -33,6 +38,8 @@ describe('JiraTemplateMaker view', () => {
     ] } as never);
     loadMock.mockResolvedValue({ schemaVersion: 1, updatedAt: '', templates: [] } as never);
     myselfMock.mockResolvedValue({ displayName: 'Jane' } as never);
+    projectMock.mockResolvedValue({ id: '11900', key: 'ABC', name: 'Alpha' } as never);
+    proxyConfigMock.mockResolvedValue({ jiraBaseUrl: 'https://jira.example.com' } as never);
 
     render(<JiraTemplateMaker />);
     expect(screen.getByRole('heading', { name: /jira template maker/i })).toBeInTheDocument();

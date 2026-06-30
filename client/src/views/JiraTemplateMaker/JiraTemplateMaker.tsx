@@ -4,12 +4,16 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
+import { getProject } from '../../services/jiraApi.ts';
+import { fetchProxyConfig } from '../../services/proxyApi.ts';
 import ArtProjectInput from './components/ArtProjectInput.tsx';
 import FieldValueInput from './components/FieldValueInput.tsx';
 import IssueTypePicker from './components/IssueTypePicker.tsx';
 import LaunchDialog from './components/LaunchDialog.tsx';
 import ScopedFieldPicker from './components/ScopedFieldPicker.tsx';
+import ShareLinkPanel from './components/ShareLinkPanel.tsx';
 import { getArtProjectKeys } from './lib/artProjects.ts';
+import { buildPrefillUrl } from './lib/prefillUrl.ts';
 import type { JiraTemplate } from './lib/templateTypes.ts';
 import { useJiraCreateMeta } from './hooks/useJiraCreateMeta.ts';
 import { useTemplateLibrary } from './hooks/useTemplateLibrary.ts';
@@ -17,6 +21,24 @@ import { createFieldEntry, TEMPLATE_MAKER_STEPS, useTemplateMakerState } from '.
 import type { TemplateMakerStep } from './hooks/useTemplateMakerState.ts';
 import type { FieldDescriptor, FieldEntryMode } from './lib/templateTypes.ts';
 import styles from './JiraTemplateMaker.module.css';
+
+/** Assembles a JiraTemplate-shaped object from the current wizard state (for URL generation). */
+function draftTemplateFromState(state: ReturnType<typeof useTemplateMakerState>): JiraTemplate {
+  return {
+    id: state.editingTemplateId ?? 'draft',
+    name: state.templateName,
+    description: state.templateDescription,
+    projectKey: state.projectKey,
+    projectId: state.projectId,
+    issueTypeId: state.issueTypeId,
+    issueTypeName: state.issueTypeName,
+    fields: state.fieldEntries,
+    manualUrlParams: state.manualUrlParams,
+    authorName: '',
+    createdAt: '',
+    updatedAt: '',
+  };
+}
 
 const STEP_LABELS: Record<TemplateMakerStep, string> = {
   project: '1. Project',
@@ -38,6 +60,29 @@ export default function JiraTemplateMaker() {
   const launchDescriptors = launchTemplate ? launchMeta.getFieldDescriptors(launchTemplate.issueTypeId) : [];
   // ART-configured project keys seed the project search (no full project dropdown).
   const artProjectKeys = useMemo(() => getArtProjectKeys(), []);
+  // Jira base URL for the shareable prefill link (non-Toolbox users open it directly in Jira).
+  const [jiraBaseUrl, setJiraBaseUrl] = useState<string>('');
+
+  useEffect(() => {
+    let isMounted = true;
+    void fetchProxyConfig()
+      .then((config) => { if (isMounted) { setJiraBaseUrl(config.jiraBaseUrl ?? ''); } })
+      .catch(() => { /* base URL stays empty; the share panel explains it's unavailable */ });
+    return () => { isMounted = false; };
+  }, []);
+
+  // Resolve the numeric project id (needed for the prefill URL's pid) once a project is chosen.
+  const { setProject } = state;
+  useEffect(() => {
+    if (!state.projectKey || state.projectId) {
+      return;
+    }
+    let isMounted = true;
+    void getProject(state.projectKey)
+      .then((project) => { if (isMounted && project?.id) { setProject(state.projectKey, project.id); } })
+      .catch(() => { /* leave projectId empty; share link shows unavailable until resolved */ });
+    return () => { isMounted = false; };
+  }, [state.projectKey, state.projectId, setProject]);
 
   const { loadFields: loadWizardFields } = createMeta;
   const { loadFields: loadLaunchFields } = launchMeta;
@@ -65,6 +110,15 @@ export default function JiraTemplateMaker() {
     [fieldDescriptors],
   );
 
+  const sharePrefillUrl = buildPrefillUrl({ baseUrl: jiraBaseUrl, template: draftTemplateFromState(state) });
+  const shareUnavailableReason = !state.projectKey
+    ? 'Pick a project to generate the link.'
+    : !state.projectId
+      ? 'Resolving the project… the link will appear once it loads.'
+      : !jiraBaseUrl
+        ? 'Jira base URL is unavailable — check the Admin Hub configuration.'
+        : undefined;
+
   function handleAddField(descriptor: FieldDescriptor): void {
     if (descriptor.internalType) {
       state.addField(createFieldEntry(descriptor.fieldId, descriptor.name, descriptor.internalType));
@@ -86,6 +140,7 @@ export default function JiraTemplateMaker() {
       issueTypeId: state.issueTypeId,
       issueTypeName: state.issueTypeName,
       fields: state.fieldEntries,
+      manualUrlParams: state.manualUrlParams,
     });
     if (!outcome.ok) {
       setSaveMessage('Someone else changed these templates while you were editing. Reload the library and try again.');
@@ -103,6 +158,20 @@ export default function JiraTemplateMaker() {
     setSaveMessage(outcome.ok
       ? `Deleted "${templateName}".`
       : 'Someone else changed these templates. Reload and try again.');
+  }
+
+  async function handleCopyShareLink(template: JiraTemplate): Promise<void> {
+    const shareUrl = buildPrefillUrl({ baseUrl: jiraBaseUrl, template });
+    if (!shareUrl) {
+      setSaveMessage('Could not build the share link — the Jira base URL or project id is unavailable.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setSaveMessage(`Copied the share link for "${template.name}".`);
+    } catch {
+      setSaveMessage('Clipboard unavailable — open the template and copy the link from Review.');
+    }
   }
 
   /** Whether a step is reachable yet — gates the step chips so prerequisites can't be skipped. */
@@ -248,6 +317,34 @@ export default function JiraTemplateMaker() {
               onChange={(event) => state.setTemplateDescription(event.target.value)} value={state.templateDescription} />
           </div>
           <p>{state.projectKey} · {state.issueTypeName} · {state.fieldEntries.length} field(s)</p>
+
+          <h3>Manual field mappings (advanced)</h3>
+          <p className={styles.unsupportedTag}>
+            Add a URL parameter and value by hand for any field the picker can&apos;t map automatically.
+          </p>
+          {state.manualUrlParams.map((manualParam, index) => (
+            <div className={styles.fieldRow} key={index} style={{ flexDirection: 'row', gap: '0.4rem' }}>
+              <input
+                aria-label={`Manual param name ${index + 1}`}
+                className={styles.input}
+                onChange={(event) => state.updateManualUrlParam(index, { param: event.target.value })}
+                placeholder="param (e.g. customfield_10010)"
+                value={manualParam.param}
+              />
+              <input
+                aria-label={`Manual param value ${index + 1}`}
+                className={styles.input}
+                onChange={(event) => state.updateManualUrlParam(index, { value: event.target.value })}
+                placeholder="value"
+                value={manualParam.value}
+              />
+              <button className={styles.toolbarButton} onClick={() => state.removeManualUrlParam(index)} type="button">Remove</button>
+            </div>
+          ))}
+          <button className={styles.toolbarButton} onClick={state.addManualUrlParam} type="button">+ Add mapping</button>
+
+          <ShareLinkPanel url={sharePrefillUrl} unavailableReason={shareUnavailableReason} />
+
           <button className={styles.primaryButton} onClick={() => void handleSave()} type="button">Save template</button>
           {saveMessage && <p role="status">{saveMessage}</p>}
         </section>
@@ -262,7 +359,8 @@ export default function JiraTemplateMaker() {
           <div className={styles.fieldPickerItem} key={template.id}>
             <span>{template.name} <span className={styles.unsupportedTag}>{template.projectKey} · {template.issueTypeName} · by {template.authorName}</span></span>
             <span>
-              <button className={styles.toolbarButton} onClick={() => setLaunchTemplate(template)} type="button">Use</button>
+              <button className={styles.toolbarButton} onClick={() => void handleCopyShareLink(template)} type="button">Copy link</button>
+              <button className={styles.toolbarButton} onClick={() => setLaunchTemplate(template)} type="button" style={{ marginLeft: '0.4rem' }}>Use</button>
               <button className={styles.toolbarButton} onClick={() => state.loadTemplate(template)} type="button" style={{ marginLeft: '0.4rem' }}>Edit</button>
               <button className={styles.toolbarButton} onClick={() => void handleDelete(template.id, template.name)} type="button" style={{ marginLeft: '0.4rem' }}>Delete</button>
             </span>
