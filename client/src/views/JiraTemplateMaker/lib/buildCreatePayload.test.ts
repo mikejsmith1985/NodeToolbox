@@ -14,9 +14,9 @@ function makeTemplate(fields: TemplateFieldEntry[]): JiraTemplate {
 }
 
 describe('buildCreatePayload', () => {
-  it('always sets project and issuetype by id', () => {
+  it('sets project by key and issuetype by id', () => {
     const payload = buildCreatePayload({ template: makeTemplate([]), launchAnswers: {} });
-    expect(payload.fields.project).toEqual({ id: '10000' });
+    expect(payload.fields.project).toEqual({ key: 'ABC' });
     expect(payload.fields.issuetype).toEqual({ id: '10001' });
   });
 

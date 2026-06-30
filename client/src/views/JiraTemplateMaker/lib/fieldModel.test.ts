@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CreateMetaField } from '../../../types/jira.ts';
-import { mapCreateMetaField } from './fieldModel.ts';
+import { mapCreateMetaField, mapCreateMetaFieldList } from './fieldModel.ts';
 
 function makeField(overrides: Partial<CreateMetaField>): CreateMetaField {
   return { required: false, name: 'Field', ...overrides };
@@ -88,5 +88,16 @@ describe('mapCreateMetaField', () => {
   it('treats a field with no schema as unsupported', () => {
     const descriptor = mapCreateMetaField('weird', makeField({ schema: undefined }));
     expect(descriptor.isSupported).toBe(false);
+  });
+});
+
+describe('mapCreateMetaFieldList', () => {
+  it('maps the modern field list (each entry carries its own fieldId), required first', () => {
+    const descriptors = mapCreateMetaFieldList([
+      { fieldId: 'priority', required: false, name: 'Priority', schema: { type: 'priority' }, allowedValues: [{ id: '2', name: 'High' }] },
+      { fieldId: 'summary', required: true, name: 'Summary', schema: { type: 'string', system: 'summary' } },
+    ]);
+    expect(descriptors.map((descriptor) => descriptor.fieldId)).toEqual(['summary', 'priority']);
+    expect(descriptors[1].allowedValues).toEqual([{ id: '2', label: 'High' }]);
   });
 });

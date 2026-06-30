@@ -7,7 +7,8 @@
 import type {
   CreateIssueRequest,
   CreateIssueResponse,
-  CreateMetaResponse,
+  CreateMetaFieldsResponse,
+  CreateMetaIssueTypesResponse,
   JiraMyself,
 } from '../types/jira.ts';
 
@@ -169,15 +170,33 @@ export async function jiraPut(path: string, body: unknown): Promise<void> {
 
 // ── Jira Template Maker helpers ──
 
+// A high page size that covers any realistic project's issue-type / field count in one request.
+const CREATE_META_PAGE_SIZE = 200;
+
 /**
- * Loads issue-creation metadata for a project: its issue types and, for each, the fields on
- * the create screen with their allowed option values. Uses the classic Server/DC createmeta
- * endpoint with the projects.issuetypes.fields expansion.
+ * Lists the issue types a project offers, using the modern createmeta endpoint (Jira Cloud and
+ * DC 8.4+). Replaces the classic bulk `createmeta?projectKeys=` call, which Atlassian removed on
+ * Cloud and Data Center 10+.
  */
-export async function getCreateMeta(projectKey: string): Promise<CreateMetaResponse> {
+export async function getProjectIssueTypes(projectKey: string): Promise<CreateMetaIssueTypesResponse> {
   const encodedProjectKey = encodeURIComponent(projectKey);
-  return jiraGet<CreateMetaResponse>(
-    `/rest/api/2/issue/createmeta?projectKeys=${encodedProjectKey}&expand=projects.issuetypes.fields`,
+  return jiraGet<CreateMetaIssueTypesResponse>(
+    `/rest/api/2/issue/createmeta/${encodedProjectKey}/issuetypes?maxResults=${CREATE_META_PAGE_SIZE}`,
+  );
+}
+
+/**
+ * Lists the create-screen fields (with allowed option values) for one issue type in a project,
+ * using the modern createmeta endpoint.
+ */
+export async function getIssueTypeFields(
+  projectKey: string,
+  issueTypeId: string,
+): Promise<CreateMetaFieldsResponse> {
+  const encodedProjectKey = encodeURIComponent(projectKey);
+  const encodedIssueTypeId = encodeURIComponent(issueTypeId);
+  return jiraGet<CreateMetaFieldsResponse>(
+    `/rest/api/2/issue/createmeta/${encodedProjectKey}/issuetypes/${encodedIssueTypeId}?maxResults=${CREATE_META_PAGE_SIZE}`,
   );
 }
 

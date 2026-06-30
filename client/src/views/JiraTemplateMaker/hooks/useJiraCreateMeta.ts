@@ -1,38 +1,45 @@
-// useJiraCreateMeta.ts — Loads Jira create metadata for a project and exposes its issue types
-// and per-issue-type field descriptors. Every choice in the wizard is constrained by this live
-// data so a user can never build an invalid issue. On failure it surfaces a plain-language
-// message and presents no guessed data (FR-7.2).
+// useJiraCreateMeta.ts — Loads Jira create metadata for a project via the modern createmeta
+// endpoints (Cloud + DC 8.4+): issue types eagerly when the project is chosen, and the fields
+// for a given issue type lazily (cached) when it is selected. Every choice in the wizard is
+// constrained by this live data. On failure it surfaces a plain-language message plus the
+// underlying reason, and presents no guessed data (FR-7.2).
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
-import { getCreateMeta } from '../../../services/jiraApi.ts';
-import type { CreateMetaIssueType, CreateMetaProject } from '../../../types/jira.ts';
-import { mapCreateMetaFields } from '../lib/fieldModel.ts';
+import { getIssueTypeFields, getProjectIssueTypes } from '../../../services/jiraApi.ts';
+import type { CreateMetaIssueType } from '../../../types/jira.ts';
+import { mapCreateMetaFieldList } from '../lib/fieldModel.ts';
 import type { FieldDescriptor } from '../lib/templateTypes.ts';
 
-const LOAD_ERROR_MESSAGE = 'Could not load issue types and fields for this project. Check your Jira access and try again.';
-const NO_PERMISSION_MESSAGE = 'This project has no issue types you can create. You may not have permission to create issues here.';
+const ISSUE_TYPES_ERROR = 'Could not load issue types for this project. Check your Jira access and try again.';
+const NO_ISSUE_TYPES_MESSAGE = 'This project exposes no issue types you can create. You may not have create permission here.';
+const FIELDS_ERROR = 'Could not load the fields for this issue type. Check your Jira access and try again.';
 
 export interface UseJiraCreateMetaResult {
   isLoading: boolean;
   errorMessage: string | null;
-  project: CreateMetaProject | null;
   issueTypes: CreateMetaIssueType[];
-  /** True only when the project resolved with at least one creatable issue type. */
   hasCreatePermission: boolean;
-  /** Maps the chosen issue type's createmeta fields to internal descriptors. */
+  /** Fetches and caches the field descriptors for an issue type (no-op if already cached). */
+  loadFields: (issueTypeId: string) => void;
+  /** Returns the cached field descriptors for an issue type (empty until loaded). */
   getFieldDescriptors: (issueTypeId: string) => FieldDescriptor[];
+  areFieldsLoading: boolean;
 }
 
-/** Loads createmeta for the given project key, re-fetching whenever the key changes. */
+/** Loads createmeta for a project key, re-fetching whenever the key changes. */
 export function useJiraCreateMeta(projectKey: string | null): UseJiraCreateMetaResult {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [project, setProject] = useState<CreateMetaProject | null>(null);
+  const [issueTypes, setIssueTypes] = useState<CreateMetaIssueType[]>([]);
+  const [fieldsByIssueType, setFieldsByIssueType] = useState<Record<string, FieldDescriptor[]>>({});
+  const [areFieldsLoading, setAreFieldsLoading] = useState<boolean>(false);
 
+  // Load the project's issue types whenever the project changes.
   useEffect(() => {
+    setFieldsByIssueType({});
     if (!projectKey) {
-      setProject(null);
+      setIssueTypes([]);
       setErrorMessage(null);
       setIsLoading(false);
       return;
@@ -42,22 +49,19 @@ export function useJiraCreateMeta(projectKey: string | null): UseJiraCreateMetaR
     setIsLoading(true);
     setErrorMessage(null);
 
-    async function loadCreateMeta(): Promise<void> {
+    async function loadIssueTypes(): Promise<void> {
       try {
-        const response = await getCreateMeta(projectKey as string);
+        const response = await getProjectIssueTypes(projectKey as string);
         if (!isMounted) {
           return;
         }
-        const matchedProject = response.projects.find((candidate) => candidate.key === projectKey)
-          ?? response.projects[0]
-          ?? null;
-        setProject(matchedProject);
-        // A reachable project with no creatable issue types signals missing create permission.
-        setErrorMessage(matchedProject && matchedProject.issuetypes.length === 0 ? NO_PERMISSION_MESSAGE : null);
-      } catch {
+        const loadedIssueTypes = response.values ?? [];
+        setIssueTypes(loadedIssueTypes);
+        setErrorMessage(loadedIssueTypes.length === 0 ? NO_ISSUE_TYPES_MESSAGE : null);
+      } catch (caught) {
         if (isMounted) {
-          setProject(null);
-          setErrorMessage(LOAD_ERROR_MESSAGE);
+          setIssueTypes([]);
+          setErrorMessage(`${ISSUE_TYPES_ERROR} (${caught instanceof Error ? caught.message : String(caught)})`);
         }
       } finally {
         if (isMounted) {
@@ -66,22 +70,39 @@ export function useJiraCreateMeta(projectKey: string | null): UseJiraCreateMetaR
       }
     }
 
-    void loadCreateMeta();
-    return () => {
-      isMounted = false;
-    };
+    void loadIssueTypes();
+    return () => { isMounted = false; };
   }, [projectKey]);
 
-  const issueTypes = useMemo(() => project?.issuetypes ?? [], [project]);
-  const hasCreatePermission = Boolean(project) && issueTypes.length > 0;
-
-  function getFieldDescriptors(issueTypeId: string): FieldDescriptor[] {
-    const issueType = issueTypes.find((candidate) => candidate.id === issueTypeId);
-    if (!issueType?.fields) {
-      return [];
+  const loadFields = useCallback((issueTypeId: string): void => {
+    if (!projectKey || !issueTypeId) {
+      return;
     }
-    return mapCreateMetaFields(issueType.fields);
-  }
+    setFieldsByIssueType((cache) => {
+      if (cache[issueTypeId]) {
+        return cache; // already loaded
+      }
+      // Kick off the fetch outside the updater; mark loading.
+      setAreFieldsLoading(true);
+      void getIssueTypeFields(projectKey, issueTypeId)
+        .then((response) => {
+          setFieldsByIssueType((current) => ({ ...current, [issueTypeId]: mapCreateMetaFieldList(response.values ?? []) }));
+          setErrorMessage(null);
+        })
+        .catch((caught) => {
+          setErrorMessage(`${FIELDS_ERROR} (${caught instanceof Error ? caught.message : String(caught)})`);
+        })
+        .finally(() => setAreFieldsLoading(false));
+      return cache;
+    });
+  }, [projectKey]);
 
-  return { isLoading, errorMessage, project, issueTypes, hasCreatePermission, getFieldDescriptors };
+  const getFieldDescriptors = useCallback(
+    (issueTypeId: string): FieldDescriptor[] => fieldsByIssueType[issueTypeId] ?? [],
+    [fieldsByIssueType],
+  );
+
+  const hasCreatePermission = issueTypes.length > 0;
+
+  return { isLoading, errorMessage, issueTypes, hasCreatePermission, loadFields, getFieldDescriptors, areFieldsLoading };
 }

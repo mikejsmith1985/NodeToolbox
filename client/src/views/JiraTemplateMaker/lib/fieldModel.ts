@@ -1,7 +1,7 @@
 // fieldModel.ts — Maps Jira createmeta field descriptors to the tool's internal field model.
 // Pure (no I/O): given one createmeta field, classify its type and whether the tool supports it.
 
-import type { CreateMetaField } from '../../../types/jira.ts';
+import type { CreateMetaField, CreateMetaFieldEntry } from '../../../types/jira.ts';
 import type { AllowedOption, FieldDescriptor, TemplateFieldType } from './templateTypes.ts';
 
 // Jira schema item types that resolve an array field to a known internal type.
@@ -88,14 +88,26 @@ export function mapCreateMetaField(fieldId: string, field: CreateMetaField): Fie
   };
 }
 
-/** Maps an entire issue type's createmeta fields map to descriptors, sorted required-first. */
+/** Orders descriptors required-first, then alphabetically by name. */
+function sortDescriptors(descriptors: FieldDescriptor[]): FieldDescriptor[] {
+  return [...descriptors].sort((left, right) => {
+    if (left.required !== right.required) {
+      return left.required ? -1 : 1;
+    }
+    return left.name.localeCompare(right.name);
+  });
+}
+
+/** Maps a classic createmeta fields map to descriptors, sorted required-first. */
 export function mapCreateMetaFields(fields: Record<string, CreateMetaField>): FieldDescriptor[] {
-  return Object.entries(fields)
-    .map(([fieldId, field]) => mapCreateMetaField(fieldId, field))
-    .sort((left, right) => {
-      if (left.required !== right.required) {
-        return left.required ? -1 : 1;
-      }
-      return left.name.localeCompare(right.name);
-    });
+  return sortDescriptors(
+    Object.entries(fields).map(([fieldId, field]) => mapCreateMetaField(fieldId, field)),
+  );
+}
+
+/** Maps the modern createmeta field list (each entry carries its own fieldId) to descriptors. */
+export function mapCreateMetaFieldList(fieldEntries: CreateMetaFieldEntry[]): FieldDescriptor[] {
+  return sortDescriptors(
+    fieldEntries.map((fieldEntry) => mapCreateMetaField(fieldEntry.fieldId, fieldEntry)),
+  );
 }

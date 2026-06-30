@@ -74,8 +74,10 @@ function resolveFieldValue(entry: TemplateFieldEntry, launchAnswers: Record<stri
  * adds each templated field whose resolved value is present.
  */
 export function buildCreatePayload({ template, launchAnswers }: BuildCreatePayloadInput): CreateIssueRequest {
+  // Identify the project by key (works on Cloud + DC; the modern createmeta flow does not
+  // surface a numeric project id). Jira accepts either { id } or { key } here.
   const fields: Record<string, unknown> = {
-    project: { id: template.projectId },
+    project: { key: template.projectKey },
     issuetype: { id: template.issueTypeId },
   };
 
