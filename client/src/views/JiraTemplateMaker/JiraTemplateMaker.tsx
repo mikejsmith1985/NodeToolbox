@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { getProject } from '../../services/jiraApi.ts';
-import { fetchProxyConfig } from '../../services/proxyApi.ts';
+import { fetchJiraBaseUrl } from '../../services/proxyApi.ts';
 import ArtProjectInput from './components/ArtProjectInput.tsx';
 import FieldValueInput from './components/FieldValueInput.tsx';
 import IssueTypePicker from './components/IssueTypePicker.tsx';
@@ -66,8 +66,8 @@ export default function JiraTemplateMaker() {
 
   useEffect(() => {
     let isMounted = true;
-    void fetchProxyConfig()
-      .then((config) => { if (isMounted) { setJiraBaseUrl(config.jiraBaseUrl ?? ''); } })
+    void fetchJiraBaseUrl()
+      .then((baseUrl) => { if (isMounted) { setJiraBaseUrl(baseUrl); } })
       .catch(() => { /* base URL stays empty; the share panel explains it's unavailable */ });
     return () => { isMounted = false; };
   }, []);
