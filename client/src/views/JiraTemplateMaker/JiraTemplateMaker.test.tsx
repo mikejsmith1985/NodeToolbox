@@ -3,13 +3,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { getCreateMeta, getMyself, jiraGet } from '../../services/jiraApi.ts';
+import { getIssueTypeFields, getMyself, getProjectIssueTypes } from '../../services/jiraApi.ts';
 import { loadJiraTemplates } from '../../services/confluenceApi.ts';
 import JiraTemplateMaker from './JiraTemplateMaker.tsx';
 
 vi.mock('../../services/jiraApi.ts', () => ({
-  jiraGet: vi.fn(),
-  getCreateMeta: vi.fn(),
+  getProjectIssueTypes: vi.fn(),
+  getIssueTypeFields: vi.fn(),
   getMyself: vi.fn(),
 }));
 vi.mock('../../services/confluenceApi.ts', () => ({
@@ -18,26 +18,19 @@ vi.mock('../../services/confluenceApi.ts', () => ({
   mergeJiraTemplateStores: vi.fn(),
 }));
 
-const jiraGetMock = vi.mocked(jiraGet);
-const getCreateMetaMock = vi.mocked(getCreateMeta);
+const issueTypesMock = vi.mocked(getProjectIssueTypes);
+const fieldsMock = vi.mocked(getIssueTypeFields);
 const loadMock = vi.mocked(loadJiraTemplates);
 const myselfMock = vi.mocked(getMyself);
-
-const META = {
-  projects: [{
-    id: '10000', key: 'ABC', name: 'Alpha',
-    issuetypes: [{ id: '1', name: 'Task', subtask: false, fields: {
-      summary: { required: true, name: 'Summary', schema: { type: 'string', system: 'summary' } },
-    } }],
-  }],
-};
 
 describe('JiraTemplateMaker view', () => {
   afterEach(() => { vi.clearAllMocks(); });
 
   it('renders the wizard and narrows issue types to the chosen project', async () => {
-    jiraGetMock.mockResolvedValue([{ id: '10000', key: 'ABC', name: 'Alpha' }] as never);
-    getCreateMetaMock.mockResolvedValue(META as never);
+    issueTypesMock.mockResolvedValue({ values: [{ id: '1', name: 'Task', subtask: false }] } as never);
+    fieldsMock.mockResolvedValue({ values: [
+      { fieldId: 'summary', required: true, name: 'Summary', schema: { type: 'string', system: 'summary' } },
+    ] } as never);
     loadMock.mockResolvedValue({ schemaVersion: 1, updatedAt: '', templates: [] } as never);
     myselfMock.mockResolvedValue({ displayName: 'Jane' } as never);
 

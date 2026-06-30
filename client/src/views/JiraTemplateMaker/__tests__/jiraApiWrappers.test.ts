@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createIssue, getCreateMeta, getMyself } from '../../../services/jiraApi.ts';
+import { createIssue, getIssueTypeFields, getMyself, getProjectIssueTypes } from '../../../services/jiraApi.ts';
 
 function mockFetchOnce(body: unknown, status = 200): void {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), {
@@ -20,18 +20,29 @@ describe('Template Maker Jira wrappers', () => {
     vi.restoreAllMocks();
   });
 
-  it('getCreateMeta requests the classic endpoint with the field expansion', async () => {
-    const fetchSpy = vi.fn(async (_url: string) => new Response(JSON.stringify({ projects: [] }), {
+  it('getProjectIssueTypes requests the modern per-project issuetypes endpoint', async () => {
+    const fetchSpy = vi.fn(async (_url: string) => new Response(JSON.stringify({ values: [] }), {
       status: 200, headers: { 'content-type': 'application/json' },
     }));
     vi.stubGlobal('fetch', fetchSpy);
 
-    await getCreateMeta('ABC');
+    await getProjectIssueTypes('ABC');
 
     const calledUrl = fetchSpy.mock.calls[0][0];
-    expect(calledUrl).toContain('/jira-proxy/rest/api/2/issue/createmeta');
-    expect(calledUrl).toContain('projectKeys=ABC');
-    expect(calledUrl).toContain('expand=projects.issuetypes.fields');
+    expect(calledUrl).toContain('/jira-proxy/rest/api/2/issue/createmeta/ABC/issuetypes');
+    expect(calledUrl).not.toContain('projectKeys=');
+  });
+
+  it('getIssueTypeFields requests the modern per-issuetype fields endpoint', async () => {
+    const fetchSpy = vi.fn(async (_url: string) => new Response(JSON.stringify({ values: [] }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await getIssueTypeFields('ABC', '10001');
+
+    const calledUrl = fetchSpy.mock.calls[0][0];
+    expect(calledUrl).toContain('/jira-proxy/rest/api/2/issue/createmeta/ABC/issuetypes/10001');
   });
 
   it('createIssue POSTs to /rest/api/2/issue and returns the created key', async () => {

@@ -1,4 +1,4 @@
-// ArtProjectInput.test.tsx — Component test: ART suggestions + free key search + normalization.
+// ArtProjectInput.test.tsx — Component test: themed suggestions + free key search + select.
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -6,20 +6,34 @@ import { describe, expect, it, vi } from 'vitest';
 import ArtProjectInput from './ArtProjectInput.tsx';
 
 describe('ArtProjectInput', () => {
-  it('offers the ART project keys as datalist suggestions', () => {
+  it('shows ART project keys as suggestions on focus', () => {
     render(<ArtProjectInput id="p" label="Project" value="" artProjectKeys={['ENFCT', 'DENP']} onChange={vi.fn()} />);
-    const optionValues = Array.from(document.querySelectorAll('datalist option')).map((option) => (option as HTMLOptionElement).value);
-    expect(optionValues).toEqual(['ENFCT', 'DENP']);
+    fireEvent.focus(screen.getByLabelText('Project'));
+    const options = screen.getAllByRole('option').map((option) => option.textContent);
+    expect(options).toEqual(['ENFCT', 'DENP']);
   });
 
-  it('lets the user search/enter any key and normalizes it to uppercase', () => {
+  it('filters suggestions by what is typed and normalizes to uppercase', () => {
     const onChange = vi.fn();
-    render(<ArtProjectInput id="p" label="Project" value="" artProjectKeys={['ENFCT']} onChange={onChange} />);
-    fireEvent.change(screen.getByLabelText('Project'), { target: { value: ' abc ' } });
-    expect(onChange).toHaveBeenCalledWith('ABC');
+    render(<ArtProjectInput id="p" label="Project" value="" artProjectKeys={['ENFCT', 'DENP']} onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText('Project'), { target: { value: 'en' } });
+    expect(onChange).toHaveBeenCalledWith('EN');
   });
 
-  it('explains there are no ART projects when none are configured', () => {
+  it('selecting a suggestion reports the chosen key', () => {
+    const onChange = vi.fn();
+    render(<ArtProjectInput id="p" label="Project" value="" artProjectKeys={['ENFCT', 'DENP']} onChange={onChange} />);
+    fireEvent.focus(screen.getByLabelText('Project'));
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'DENP' }));
+    expect(onChange).toHaveBeenCalledWith('DENP');
+  });
+
+  it('does not render a native datalist (uses a themed dropdown instead)', () => {
+    render(<ArtProjectInput id="p" label="Project" value="" artProjectKeys={['ENFCT']} onChange={vi.fn()} />);
+    expect(document.querySelector('datalist')).toBeNull();
+  });
+
+  it('explains when no ART projects are configured', () => {
     render(<ArtProjectInput id="p" label="Project" value="" artProjectKeys={[]} onChange={vi.fn()} />);
     expect(screen.getByText(/no ART projects configured/i)).toBeInTheDocument();
   });

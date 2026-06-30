@@ -1,4 +1,5 @@
-/* JiraTemplateMaker.module.css — Layout for the Jira Template Maker wizard. */
+/* JiraTemplateMaker.module.css — Layout for the Jira Template Maker wizard.
+   Uses the app's theme variables so it matches the rest of the application in any theme. */
 
 .view {
   padding: 1.5rem;
@@ -15,15 +16,20 @@
 
 .stepButton {
   padding: 0.4rem 0.8rem;
-  border: 1px solid var(--color-border, #30363d);
+  border: 1px solid var(--color-border);
   border-radius: 0.4rem;
   background: transparent;
   color: inherit;
   cursor: pointer;
 }
 
+.stepButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .stepButtonActive {
-  border-color: var(--color-accent, #8b5cf6);
+  border-color: var(--color-accent);
   font-weight: 600;
 }
 
@@ -43,18 +49,29 @@
 }
 
 .required {
-  color: #f85149;
+  color: var(--color-danger);
   margin-left: 0.2rem;
 }
 
 .input,
 .select,
 .textarea {
-  padding: 0.4rem 0.5rem;
-  border: 1px solid var(--color-border, #30363d);
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--color-border);
   border-radius: 0.35rem;
-  background: var(--color-bg-input, #0d1117);
-  color: inherit;
+  background: var(--color-field-bg);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  border-color: var(--color-accent);
 }
 
 .textarea {
@@ -71,7 +88,7 @@
 
 .toolbarButton {
   padding: 0.2rem 0.5rem;
-  border: 1px solid var(--color-border, #30363d);
+  border: 1px solid var(--color-border);
   border-radius: 0.3rem;
   background: transparent;
   color: inherit;
@@ -79,12 +96,17 @@
   font-size: 0.85rem;
 }
 
+.toolbarButton:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
 .fieldPickerItem {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.35rem 0.5rem;
-  border-bottom: 1px solid var(--color-border, #21262d);
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .unsupported {
@@ -93,32 +115,32 @@
 
 .unsupportedTag {
   font-size: 0.75rem;
-  color: #8b949e;
+  color: var(--color-text-muted);
   margin-left: 0.4rem;
 }
 
 .warning {
   padding: 0.6rem 0.8rem;
-  border: 1px solid #d29922;
+  border: 1px solid var(--color-border-warning, var(--color-accent));
   border-radius: 0.4rem;
-  background: rgba(210, 153, 34, 0.1);
+  background: var(--color-surface-2);
   margin-bottom: 1rem;
 }
 
 .error {
   padding: 0.6rem 0.8rem;
-  border: 1px solid #f85149;
+  border: 1px solid var(--color-error, var(--color-danger));
   border-radius: 0.4rem;
-  background: rgba(248, 81, 73, 0.1);
+  background: var(--color-error-bg, var(--color-surface-2));
   margin-bottom: 1rem;
 }
 
 .primaryButton {
   padding: 0.5rem 1rem;
-  border: 1px solid var(--color-accent, #8b5cf6);
+  border: 1px solid var(--color-accent);
   border-radius: 0.4rem;
-  background: var(--color-accent, #8b5cf6);
-  color: #fff;
+  background: var(--color-accent);
+  color: var(--color-text-on-accent, #fff);
   cursor: pointer;
 }
 
@@ -132,4 +154,44 @@
   gap: 0.4rem;
   align-items: center;
   font-size: 0.85rem;
+}
+
+/* ── Themed project combobox (replaces the native datalist) ── */
+.combobox {
+  position: relative;
+}
+
+.suggestionDropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: var(--color-card-bg-subtle, var(--color-surface-2));
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.suggestionList {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.suggestionItem {
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.suggestionItem:hover,
+.suggestionItemActive {
+  background: var(--color-surface-hover);
+  color: var(--color-accent);
 }

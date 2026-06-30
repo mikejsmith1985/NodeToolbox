@@ -201,9 +201,33 @@ export interface CreateMetaProject {
   issuetypes: CreateMetaIssueType[];
 }
 
-/** Top-level createmeta response (classic Server/DC shape). */
+/** Top-level createmeta response (classic bulk shape — removed on Cloud / DC 10+). */
 export interface CreateMetaResponse {
   projects: CreateMetaProject[];
+}
+
+// Modern createmeta endpoints (Jira Cloud + DC 8.4+):
+//   GET /rest/api/2/issue/createmeta/{projectKey}/issuetypes
+//   GET /rest/api/2/issue/createmeta/{projectKey}/issuetypes/{issueTypeId}
+// Both return paginated `values` arrays.
+
+/** Paginated issue-type list for a project from the modern createmeta endpoint. */
+export interface CreateMetaIssueTypesResponse {
+  values: CreateMetaIssueType[];
+  total?: number;
+  isLast?: boolean;
+}
+
+/** One field from the modern per-issue-type createmeta endpoint (carries its own fieldId). */
+export interface CreateMetaFieldEntry extends CreateMetaField {
+  fieldId: string;
+}
+
+/** Paginated field list for one issue type from the modern createmeta endpoint. */
+export interface CreateMetaFieldsResponse {
+  values: CreateMetaFieldEntry[];
+  total?: number;
+  isLast?: boolean;
 }
 
 /** Request body for POST /rest/api/2/issue. */

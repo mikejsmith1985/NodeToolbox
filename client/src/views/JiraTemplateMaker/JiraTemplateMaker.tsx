@@ -39,12 +39,22 @@ export default function JiraTemplateMaker() {
   // ART-configured project keys seed the project search (no full project dropdown).
   const artProjectKeys = useMemo(() => getArtProjectKeys(), []);
 
-  // Once createmeta resolves the project, capture its id (needed for the create payload).
+  const { loadFields: loadWizardFields } = createMeta;
+  const { loadFields: loadLaunchFields } = launchMeta;
+
+  // Load the chosen issue type's fields lazily (the modern createmeta endpoint is per-issue-type).
   useEffect(() => {
-    if (createMeta.project && createMeta.project.id !== state.projectId) {
-      state.setProject(state.projectKey, createMeta.project.id);
+    if (state.issueTypeId) {
+      loadWizardFields(state.issueTypeId);
     }
-  }, [createMeta.project, state]);
+  }, [state.issueTypeId, loadWizardFields]);
+
+  // When launching a saved template, load its issue type's fields for validation + prompts.
+  useEffect(() => {
+    if (launchTemplate) {
+      loadLaunchFields(launchTemplate.issueTypeId);
+    }
+  }, [launchTemplate, loadLaunchFields]);
 
   const fieldDescriptors = useMemo(
     () => (state.issueTypeId ? createMeta.getFieldDescriptors(state.issueTypeId) : []),
