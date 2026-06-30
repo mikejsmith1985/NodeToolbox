@@ -7,7 +7,9 @@ import { useEffect, useMemo, useState } from 'react';
 import JiraProjectPicker from '../../components/JiraProjectPicker/index.tsx';
 import FieldValueInput from './components/FieldValueInput.tsx';
 import IssueTypePicker from './components/IssueTypePicker.tsx';
+import LaunchDialog from './components/LaunchDialog.tsx';
 import ScopedFieldPicker from './components/ScopedFieldPicker.tsx';
+import type { JiraTemplate } from './lib/templateTypes.ts';
 import { useJiraCreateMeta } from './hooks/useJiraCreateMeta.ts';
 import { useTemplateLibrary } from './hooks/useTemplateLibrary.ts';
 import { createFieldEntry, TEMPLATE_MAKER_STEPS, useTemplateMakerState } from './hooks/useTemplateMakerState.ts';
@@ -28,6 +30,11 @@ export default function JiraTemplateMaker() {
   const createMeta = useJiraCreateMeta(state.projectKey || null);
   const library = useTemplateLibrary();
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  // The template the user is creating an issue from (launch flow); loads its own createmeta so
+  // it works regardless of what the wizard above currently has selected.
+  const [launchTemplate, setLaunchTemplate] = useState<JiraTemplate | null>(null);
+  const launchMeta = useJiraCreateMeta(launchTemplate?.projectKey ?? null);
+  const launchDescriptors = launchTemplate ? launchMeta.getFieldDescriptors(launchTemplate.issueTypeId) : [];
 
   // Once createmeta resolves the project, capture its id (needed for the create payload).
   useEffect(() => {
@@ -197,6 +204,31 @@ export default function JiraTemplateMaker() {
           <button className={styles.primaryButton} onClick={() => void handleSave()} type="button">Save template</button>
           {saveMessage && <p role="status">{saveMessage}</p>}
         </section>
+      )}
+
+      <section className={styles.section} aria-label="Saved templates">
+        <h2>Saved templates</h2>
+        {library.isLoading && <p>Loading templates…</p>}
+        {library.errorMessage && <div className={styles.error} role="alert">{library.errorMessage}</div>}
+        {!library.isLoading && library.templates.length === 0 && <p>No templates saved yet.</p>}
+        {library.templates.map((template) => (
+          <div className={styles.fieldPickerItem} key={template.id}>
+            <span>{template.name} <span className={styles.unsupportedTag}>{template.projectKey} · {template.issueTypeName} · by {template.authorName}</span></span>
+            <button className={styles.toolbarButton} onClick={() => setLaunchTemplate(template)} type="button">Use</button>
+          </div>
+        ))}
+      </section>
+
+      {launchTemplate && (
+        launchMeta.isLoading
+          ? <p>Loading template fields…</p>
+          : (
+            <LaunchDialog
+              template={launchTemplate}
+              descriptors={launchDescriptors}
+              onClose={() => setLaunchTemplate(null)}
+            />
+          )
       )}
     </div>
   );
