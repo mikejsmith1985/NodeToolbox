@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { jiraGet } from '../../../services/jiraApi.ts';
 import { snowFetch } from '../../../services/snowApi.ts';
 import type { CrgTemplate, CtaskTemplate, CtaskTemplateData } from './useCrgState.ts';
-import { reconcileStagedChangeTasks, useCrgState } from './useCrgState.ts';
+import { formatSnowDateTimeForApi, reconcileStagedChangeTasks, useCrgState } from './useCrgState.ts';
 
 vi.mock('../../../services/jiraApi.ts', () => ({
   jiraGet: vi.fn(),
@@ -929,21 +929,22 @@ describe('useCrgState', () => {
       expect(relPayload.u_environment).toBe('rel-env');
       expect(relPayload.cmdb_ci).toBe('ci-rel-001');
       expect(relPayload.u_impacted_persons_aware).toBe('rel-aware');
-      // change_request stores the requested window as start_date/end_date, not planned_*
-      expect(relPayload.start_date).toBe('2025-02-01T08:00');
-      expect(relPayload.end_date).toBe('2025-02-01T09:00');
+      // change_request stores the requested window as start_date/end_date, not planned_*,
+      // and the values are sent in ServiceNow's canonical "YYYY-MM-DD HH:MM:SS" format.
+      expect(relPayload.start_date).toBe('2025-02-01 08:00:00');
+      expect(relPayload.end_date).toBe('2025-02-01 09:00:00');
 
       expect(prdPayload.u_environment).toBe('prd-env');
       expect(prdPayload.cmdb_ci).toBe('ci-prd-001');
       expect(prdPayload.u_impacted_persons_aware).toBe('prd-aware');
-      expect(prdPayload.start_date).toBe('2025-02-02T08:00');
-      expect(prdPayload.end_date).toBe('2025-02-02T09:00');
+      expect(prdPayload.start_date).toBe('2025-02-02 08:00:00');
+      expect(prdPayload.end_date).toBe('2025-02-02 09:00:00');
 
       expect(pfixPayload.u_environment).toBe('pfix-env');
       expect(pfixPayload.cmdb_ci).toBe('ci-pfix-001');
       expect(pfixPayload.u_impacted_persons_aware).toBe('pfix-aware');
-      expect(pfixPayload.start_date).toBe('2025-02-03T08:00');
-      expect(pfixPayload.end_date).toBe('2025-02-03T09:00');
+      expect(pfixPayload.start_date).toBe('2025-02-03 08:00:00');
+      expect(pfixPayload.end_date).toBe('2025-02-03 09:00:00');
       expect(result.current.state.submitResult).toBe(
         '3 CHGs created: REL CHG0002001, PRD CHG0002002, PFIX CHG0002003',
       );
@@ -1973,5 +1974,28 @@ describe('useCrgState', () => {
         changeDetailsOverride: 'FixVersion',
       });
     });
+  });
+});
+
+describe('formatSnowDateTimeForApi', () => {
+  it('converts datetime-local input into ServiceNow canonical format with seconds', () => {
+    expect(formatSnowDateTimeForApi('2026-07-02T14:00')).toBe('2026-07-02 14:00:00');
+  });
+
+  it('preserves the wall-clock value without shifting the time', () => {
+    expect(formatSnowDateTimeForApi('2026-12-31T23:59')).toBe('2026-12-31 23:59:00');
+  });
+
+  it('accepts an already space-separated value and keeps existing seconds', () => {
+    expect(formatSnowDateTimeForApi('2026-07-02 14:00:30')).toBe('2026-07-02 14:00:30');
+  });
+
+  it('returns an empty string for empty or whitespace input', () => {
+    expect(formatSnowDateTimeForApi('')).toBe('');
+    expect(formatSnowDateTimeForApi('   ')).toBe('');
+  });
+
+  it('passes unrecognized values through untouched rather than fabricating a date', () => {
+    expect(formatSnowDateTimeForApi('not-a-date')).toBe('not-a-date');
   });
 });
