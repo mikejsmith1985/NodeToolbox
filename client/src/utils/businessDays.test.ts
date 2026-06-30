@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { businessDaysAgo, toJqlDateString } from './businessDays.ts';
+import { businessDaysAgo, mostRecentBusinessDayKey, toJqlDateString } from './businessDays.ts';
 
 describe('businessDaysAgo', () => {
   it('counts back business days, skipping the weekend (Wednesday minus 3)', () => {
@@ -39,5 +39,24 @@ describe('toJqlDateString', () => {
   it('formats a date as YYYY-MM-DD using local calendar parts', () => {
     const date = new Date(2025, 2, 9, 14, 0, 0); // 9 March 2025, local time
     expect(toJqlDateString(date)).toBe('2025-03-09');
+  });
+});
+
+describe('mostRecentBusinessDayKey', () => {
+  // Fixtures are built with local calendar parts (month index 5 = June) so the
+  // weekday is unambiguous regardless of the test runner's timezone.
+  it('returns the same date on a weekday (Tuesday)', () => {
+    const tuesday = new Date(2026, 5, 30, 12, 0, 0); // Tue 2026-06-30
+    expect(mostRecentBusinessDayKey(tuesday)).toBe('2026-06-30');
+  });
+
+  it('returns the preceding Friday on a Saturday', () => {
+    const saturday = new Date(2026, 5, 27, 12, 0, 0); // Sat 2026-06-27
+    expect(mostRecentBusinessDayKey(saturday)).toBe('2026-06-26');
+  });
+
+  it('returns the preceding Friday on a Sunday', () => {
+    const sunday = new Date(2026, 5, 28, 12, 0, 0); // Sun 2026-06-28
+    expect(mostRecentBusinessDayKey(sunday)).toBe('2026-06-26');
   });
 });

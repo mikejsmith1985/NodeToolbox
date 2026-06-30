@@ -8,8 +8,10 @@
 // issues, and highlights linked Jira Defect/Story ↔ SNow Problem pairs with a health badge.
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
+import TodayDashboard from './Today/TodayDashboard.tsx';
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import { useConnectionStore } from '../../store/connectionStore.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
@@ -66,9 +68,10 @@ const AGING_WARN_DAYS = 5;
 const AGING_STALE_DAYS = 10;
 const MS_PER_DAY = 86_400_000;
 
-type MyIssuesTab = 'report' | 'mentions' | 'hygiene' | 'time' | 'gitsync' | 'settings';
+type MyIssuesTab = 'today' | 'report' | 'mentions' | 'hygiene' | 'time' | 'gitsync' | 'settings';
 
 const MY_ISSUES_TABS: { key: MyIssuesTab; label: string }[] = [
+  { key: 'today', label: 'Today' },
   { key: 'report', label: 'Report' },
   { key: 'mentions', label: 'Mentions' },
   { key: 'hygiene', label: 'Hygiene' },
@@ -76,6 +79,17 @@ const MY_ISSUES_TABS: { key: MyIssuesTab; label: string }[] = [
   { key: 'gitsync', label: 'Git Sync' },
   { key: 'settings', label: 'Settings' },
 ];
+
+// The Today dashboard is the default landing tab. The `?tab=` query param lets other
+// surfaces (and the dashboard's own deep links) jump straight to a specific sub-tab.
+const DEFAULT_MY_ISSUES_TAB: MyIssuesTab = 'today';
+const TAB_QUERY_PARAM = 'tab';
+
+/** Returns the requested tab from the URL when it is a known tab, else the default. */
+function resolveTabFromQuery(requestedTab: string | null): MyIssuesTab {
+  const isKnownTab = MY_ISSUES_TABS.some((tabOption) => tabOption.key === requestedTab);
+  return isKnownTab ? (requestedTab as MyIssuesTab) : DEFAULT_MY_ISSUES_TAB;
+}
 
 // ── Helper functions ──
 
@@ -565,7 +579,21 @@ function SourcePane({
 export default function MyIssuesView() {
   const { state, actions } = useMyIssuesState();
   const { isSnowReady } = useConnectionStore();
-  const [activeTab, setActiveTab] = useState<MyIssuesTab>('report');
+  // The active sub-tab is driven by the `?tab=` URL param so the Today dashboard's
+  // deep links (and links from other views) can land directly on a specific sub-tab.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = resolveTabFromQuery(searchParams.get(TAB_QUERY_PARAM));
+
+  function handleTabChange(nextTab: MyIssuesTab) {
+    setSearchParams(
+      (previousParams) => {
+        const nextParams = new URLSearchParams(previousParams);
+        nextParams.set(TAB_QUERY_PARAM, nextTab);
+        return nextParams;
+      },
+      { replace: true },
+    );
+  }
   const [requestedExpandedIssueKey, setRequestedExpandedIssueKey] = useState<string | null>(null);
   const [isSnowSectionCollapsed, setIsSnowSectionCollapsed] = useState(false);
   const hasAutoLoadedJiraIssuesRef = useRef(false);
@@ -697,8 +725,15 @@ export default function MyIssuesView() {
         idPrefix="my-issues"
         tabs={MY_ISSUES_TABS}
         activeTab={activeTab}
-        onChange={setActiveTab}
+        onChange={handleTabChange}
       />
+
+      {/* ── Today tab (default landing) ── */}
+      {activeTab === 'today' && (
+        <section id="my-issues-today-panel" role="tabpanel" aria-labelledby="my-issues-today-tab">
+          <TodayDashboard />
+        </section>
+      )}
 
       {/* ── Report tab ── */}
       {activeTab === 'report' && (

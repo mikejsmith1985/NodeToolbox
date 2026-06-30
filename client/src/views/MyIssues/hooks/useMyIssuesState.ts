@@ -17,7 +17,7 @@ export type SortField = 'updated' | 'priority' | 'due' | 'created' | 'project';
 
 // ── Named API path constants ──
 
-const MY_ISSUES_JQL =
+export const MY_ISSUES_JQL =
   'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC';
 const ISSUE_FIELDS =
   'summary,status,priority,issuetype,assignee,reporter,created,updated,description';
