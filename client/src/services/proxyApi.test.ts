@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ConnectionProbeResult, ProxyConfig, ProxyStatusResponse } from '../types/config.ts';
 import {
+  fetchJiraBaseUrl,
   fetchProxyConfig,
   fetchProxyStatus,
   probeJiraConnection,
@@ -62,6 +63,24 @@ describe('proxyApi', () => {
     vi.mocked(fetch).mockResolvedValue({ ok: false, status: 404 } as Response);
 
     await expect(fetchProxyConfig()).rejects.toThrow('proxy-config fetch failed: 404');
+  });
+
+  it('fetchJiraBaseUrl reads the nested jira.baseUrl from the real proxy-config shape', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ jira: { baseUrl: 'https://jira.example.com' }, snow: {} }),
+    } as unknown as Response);
+
+    await expect(fetchJiraBaseUrl()).resolves.toBe('https://jira.example.com');
+  });
+
+  it('fetchJiraBaseUrl returns empty string when jira is not configured', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ snow: {} }),
+    } as unknown as Response);
+
+    await expect(fetchJiraBaseUrl()).resolves.toBe('');
   });
 
   it('updateProxyConfig posts JSON to the config endpoint', async () => {

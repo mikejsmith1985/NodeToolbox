@@ -34,6 +34,18 @@ export async function fetchProxyConfig(): Promise<ProxyConfig> {
   return parseJsonResponse<ProxyConfig>(response);
 }
 
+/**
+ * Returns the configured Jira base URL from /api/proxy-config. The endpoint nests it under
+ * `jira.baseUrl` (the flat `ProxyConfig.jiraBaseUrl` type does not match the real response), so
+ * this helper reads the actual shape and returns '' when it isn't configured.
+ */
+export async function fetchJiraBaseUrl(): Promise<string> {
+  const response = await fetch(PROXY_CONFIG_ENDPOINT);
+  assertSuccessfulResponse(response, 'proxy-config fetch failed');
+  const body = await parseJsonResponse<{ jira?: { baseUrl?: string } }>(response);
+  return body.jira?.baseUrl ?? '';
+}
+
 /** Persists updated proxy configuration to the Express backend. */
 export async function updateProxyConfig(config: Partial<ProxyConfig>): Promise<void> {
   const response = await fetch(PROXY_CONFIG_ENDPOINT, {
