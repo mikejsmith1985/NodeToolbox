@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 
+import { copyToClipboard } from '../lib/copyToClipboard.ts';
 import styles from '../JiraTemplateMaker.module.css';
 
 interface ShareLinkPanelProps {
@@ -13,17 +14,17 @@ interface ShareLinkPanelProps {
 
 /** Read-only display of the prefill URL with a one-click copy. */
 export default function ShareLinkPanel({ url, unavailableReason }: ShareLinkPanelProps) {
-  const [hasCopied, setHasCopied] = useState(false);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
 
   async function copyLink(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(url);
-      setHasCopied(true);
-      window.setTimeout(() => setHasCopied(false), 1500);
-    } catch {
-      // Clipboard unavailable (e.g. insecure context); the user can still select the text.
-    }
+    const didCopy = await copyToClipboard(url);
+    setCopyState(didCopy ? 'copied' : 'failed');
+    window.setTimeout(() => setCopyState('idle'), 2000);
   }
+
+  const copyButtonLabel = copyState === 'copied'
+    ? 'Copied!'
+    : copyState === 'failed' ? 'Copy failed — select the text above' : 'Copy link';
 
   if (!url) {
     return <p className={styles.unsupportedTag}>{unavailableReason ?? 'Shareable link not available yet.'}</p>;
@@ -37,7 +38,7 @@ export default function ShareLinkPanel({ url, unavailableReason }: ShareLinkPane
       <textarea className={styles.textarea} id="tmpl-share-link" readOnly rows={3} value={url} />
       <div>
         <button className={styles.primaryButton} onClick={() => void copyLink()} type="button">
-          {hasCopied ? 'Copied!' : 'Copy link'}
+          {copyButtonLabel}
         </button>
       </div>
       <span className={styles.unsupportedTag}>

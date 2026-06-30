@@ -13,6 +13,7 @@ import LaunchDialog from './components/LaunchDialog.tsx';
 import ScopedFieldPicker from './components/ScopedFieldPicker.tsx';
 import ShareLinkPanel from './components/ShareLinkPanel.tsx';
 import { getArtProjectKeys } from './lib/artProjects.ts';
+import { copyToClipboard } from './lib/copyToClipboard.ts';
 import { buildPrefillUrl } from './lib/prefillUrl.ts';
 import type { JiraTemplate } from './lib/templateTypes.ts';
 import { useJiraCreateMeta } from './hooks/useJiraCreateMeta.ts';
@@ -161,17 +162,25 @@ export default function JiraTemplateMaker() {
   }
 
   async function handleCopyShareLink(template: JiraTemplate): Promise<void> {
-    const shareUrl = buildPrefillUrl({ baseUrl: jiraBaseUrl, template });
+    // Older saved templates may lack a stored project id — resolve it on demand for the link.
+    let linkTemplate = template;
+    if (!template.projectId && template.projectKey) {
+      try {
+        const project = await getProject(template.projectKey);
+        linkTemplate = { ...template, projectId: project.id };
+      } catch {
+        /* fall through — buildPrefillUrl will report the link is unavailable */
+      }
+    }
+    const shareUrl = buildPrefillUrl({ baseUrl: jiraBaseUrl, template: linkTemplate });
     if (!shareUrl) {
       setSaveMessage('Could not build the share link — the Jira base URL or project id is unavailable.');
       return;
     }
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setSaveMessage(`Copied the share link for "${template.name}".`);
-    } catch {
-      setSaveMessage('Clipboard unavailable — open the template and copy the link from Review.');
-    }
+    const didCopy = await copyToClipboard(shareUrl);
+    setSaveMessage(didCopy
+      ? `Copied the share link for "${template.name}".`
+      : `Couldn't copy automatically. Here is the link: ${shareUrl}`);
   }
 
   /** Whether a step is reachable yet — gates the step chips so prerequisites can't be skipped. */
@@ -189,6 +198,8 @@ export default function JiraTemplateMaker() {
     <div className={styles.view}>
       <h1>Jira Template Maker</h1>
       <p>Build a reusable issue template — pick a project, an issue type, and the fields you want, then save it for everyone to use.</p>
+
+      {saveMessage && <p className={styles.warning} role="status">{saveMessage}</p>}
 
       <nav className={styles.steps} aria-label="Wizard steps">
         {TEMPLATE_MAKER_STEPS.map((step) => (
@@ -346,7 +357,6 @@ export default function JiraTemplateMaker() {
           <ShareLinkPanel url={sharePrefillUrl} unavailableReason={shareUnavailableReason} />
 
           <button className={styles.primaryButton} onClick={() => void handleSave()} type="button">Save template</button>
-          {saveMessage && <p role="status">{saveMessage}</p>}
         </section>
       )}
 
