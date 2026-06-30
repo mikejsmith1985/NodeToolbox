@@ -10,6 +10,7 @@ import type {
   CreateMetaFieldsResponse,
   CreateMetaIssueTypesResponse,
   JiraMyself,
+  JiraProject,
 } from '../types/jira.ts';
 
 const JIRA_PROXY_BASE = '/jira-proxy';
@@ -208,4 +209,9 @@ export async function createIssue(request: CreateIssueRequest): Promise<CreateIs
 /** Returns the current Jira user, used to record the author on a saved template. */
 export async function getMyself(): Promise<JiraMyself> {
   return jiraGet<JiraMyself>('/rest/api/2/myself');
+}
+
+/** Fetches a single project by key — used to resolve the numeric id for the prefill URL's pid. */
+export async function getProject(projectKey: string): Promise<JiraProject> {
+  return jiraGet<JiraProject>(`/rest/api/2/project/${encodeURIComponent(projectKey)}`);
 }

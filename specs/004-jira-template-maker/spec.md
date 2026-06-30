@@ -77,6 +77,20 @@ existing Jira proxy layer.
   italic, headings, bullet/numbered lists, links, inline code, and code blocks. Tables,
   panels, @-mentions, smart links, and media are out of scope for this release.
 
+### Session 2026-06-30 (post-release pivot — primary consumers are NON-Toolbox users)
+
+- **Q1 reversed → primary output is a shareable prefill URL.** The templates are for
+  **non-Toolbox users**, who can't use NodeToolbox's authenticated Jira connection. The primary
+  deliverable is therefore the **`CreateIssueDetails!init.jspa` prefill link** (the original
+  request): a Toolbox user authors the template, Toolbox produces a shareable URL, and any Jira
+  user opens it to create a pre-filled issue under their **own** Jira session. The instance is
+  confirmed **Jira Data Center**, where this servlet pre-fills (consistent with the classic
+  *createmeta* having been removed on DC 10+ while the servlet persists).
+- **In-Toolbox direct create is retained as a bonus** for Toolbox users (the launch dialog), not
+  the primary path.
+- **Manual field mapping fallback.** Because some fields can't be auto-mapped to a URL param/value
+  from the API, the user can hand-add `param=value` mappings appended to the link.
+
 ### Session 2026-06-30 (clarify pass)
 
 - Q: Which Jira field types must v1 support? → A: Common set — single/multi choice
@@ -317,6 +331,29 @@ creation does not re-add a label the issue already carries.
   presenting stale/guessed choices.
 - **FR-7.3**: When a saved template references an issue type/field/option that no longer
   exists, the tool MUST flag the template for review rather than create a malformed issue.
+
+### FR-8: Shareable prefill link (primary output, non-Toolbox users)
+
+- **FR-8.1**: Each template MUST produce a copyable **`CreateIssueDetails!init.jspa` prefill URL**
+  (Jira Data Center) that opens Jira's native create screen pre-populated, requiring no NodeToolbox
+  access for the person who uses it.
+- **FR-8.2**: The URL MUST carry `pid` (numeric project id), `issuetype`, and each templated
+  field's value keyed by its Jira field id, type-encoded (choice/components/versions by option id,
+  labels repeated, text as wiki markup). Prompt-at-launch fields contribute only a default if set.
+- **FR-8.3**: The link MUST be copyable both from the wizard (Review) and from each saved template.
+- **FR-8.4**: When the project id or Jira base URL is unavailable, the tool MUST explain the link
+  isn't ready rather than emit a broken URL.
+
+### FR-9: Manual field mapping (API-gap fallback)
+
+- **FR-9.1**: Because some fields can't be auto-mapped from the API, the user MUST be able to add
+  hand-mapped `parameter = value` pairs that are appended verbatim to the prefill URL.
+- **FR-9.2**: Manual mappings MUST be saved with the template and restored on edit.
+
+### FR-10: In-Toolbox create (retained bonus)
+
+- **FR-10.1**: Toolbox users MAY still create the issue directly in-app (the launch dialog),
+  as a convenience alongside the shareable link; this is not the primary path.
 
 ## Success Criteria
 

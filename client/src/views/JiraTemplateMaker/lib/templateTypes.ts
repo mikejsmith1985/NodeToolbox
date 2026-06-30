@@ -40,6 +40,17 @@ export interface FieldDescriptor {
   hasDefault: boolean;
 }
 
+/**
+ * A manual URL parameter the user maps by hand for the shareable prefill link, used when the
+ * API can't supply the right field name or value automatically (e.g. an unsupported field type).
+ */
+export interface ManualUrlParam {
+  /** The URL query parameter name (e.g. a field id like `customfield_10010` or `labels`). */
+  param: string;
+  /** The raw value to assign to it. */
+  value: string;
+}
+
 /** One field captured in a template, with its value or prompt mode. */
 export interface TemplateFieldEntry {
   fieldId: string;
@@ -58,10 +69,13 @@ export interface JiraTemplate {
   name: string;
   description: string;
   projectKey: string;
+  /** Numeric Jira project id, needed for the prefill URL's `pid` parameter. */
   projectId: string;
   issueTypeId: string;
   issueTypeName: string;
   fields: TemplateFieldEntry[];
+  /** Hand-mapped URL parameters appended to the shareable prefill link (manual fallback). */
+  manualUrlParams?: ManualUrlParam[];
   authorName: string;
   createdAt: string;
   updatedAt: string;

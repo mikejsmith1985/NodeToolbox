@@ -11,7 +11,7 @@ import {
   saveJiraTemplates,
 } from '../../../services/confluenceApi.ts';
 import { getMyself } from '../../../services/jiraApi.ts';
-import type { JiraTemplate, JiraTemplateStore, TemplateFieldEntry } from '../lib/templateTypes.ts';
+import type { JiraTemplate, JiraTemplateStore, ManualUrlParam, TemplateFieldEntry } from '../lib/templateTypes.ts';
 import { JIRA_TEMPLATE_STORE_SCHEMA_VERSION } from '../lib/templateTypes.ts';
 
 // Templates live on the same shared database as the ART workspace (globally shared, FR-4.4).
@@ -29,6 +29,7 @@ export interface TemplateDraft {
   issueTypeId: string;
   issueTypeName: string;
   fields: TemplateFieldEntry[];
+  manualUrlParams?: ManualUrlParam[];
 }
 
 export interface UseTemplateLibraryResult {
@@ -109,6 +110,7 @@ export function useTemplateLibrary(): UseTemplateLibraryResult {
       issueTypeId: draft.issueTypeId,
       issueTypeName: draft.issueTypeName,
       fields: draft.fields,
+      manualUrlParams: draft.manualUrlParams ?? [],
       // Preserve the original author on edit; record the current user on first save.
       authorName: existing?.authorName ?? authorName,
       createdAt: existing?.createdAt ?? nowIso,
