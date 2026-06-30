@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { jiraGet, jiraPost } from '../../../services/jiraApi.ts';
 import { useSettingsStore } from '../../../store/settingsStore.ts';
+import { formatLastBusinessDayEndChicago } from '../../../utils/lastBusinessDayChicago.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import { buildStandupRosterAssigneeClause } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
 import {
@@ -232,21 +233,6 @@ function buildSearchPath(jql: string): string {
   return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${JIRA_SEARCH_FIELDS}&maxResults=${JIRA_SEARCH_MAX_RESULTS}`;
 }
 
-function formatLastBusinessDayEndChicago(): string {
-  const chicagoParts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Chicago',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    weekday: 'long',
-  }).formatToParts(new Date());
-  const partMap = Object.fromEntries(chicagoParts.map((part) => [part.type, part.value]));
-  const weekday = partMap.weekday;
-  const daysBack =
-    weekday === 'Sunday' ? 2 : weekday === 'Saturday' ? 1 : weekday === 'Monday' ? 3 : 1;
-  const businessDay = new Date(Number(partMap.year), Number(partMap.month) - 1, Number(partMap.day) - daysBack);
-  return `${businessDay.getFullYear()}/${String(businessDay.getMonth() + 1).padStart(2, '0')}/${String(businessDay.getDate()).padStart(2, '0')} 17:00`;
-}
 
 function buildRosterAssigneeClause(): string | null {
   return buildStandupRosterAssigneeClause(undefined, null);

@@ -26,6 +26,7 @@ const createAiAssistExchangeRouter          = require('./src/routes/aiAssistExch
 const createHygieneMonitorRouter            = require('./src/routes/hygieneMonitor');
 const createSprintReleaseRouter             = require('./src/routes/sprintRelease');
 const createMentionStateRouter              = require('./src/routes/mentionState');
+const createChecklistStateRouter            = require('./src/routes/checklistState');
 
 const { startSchedulerLoop }                = require('./src/services/repoMonitor');
 const { startScopeChangeScheduler }         = require('./src/services/scopeChangeScheduler');
@@ -155,6 +156,9 @@ app.use(createSprintReleaseRouter(configuration));
 
 // Addressed-mentions store: GET/POST /api/mention-state (backs the My Issues "Mentions" report)
 app.use(createMentionStateRouter());
+
+// Daily-checklist store: GET/POST /api/sm-checklist-state (backs the Scrum Master "Today" dashboard)
+app.use(createChecklistStateRouter());
 
 // First-run detection: GET / redirects to /setup when no service is configured.
 // Placed before the static file middleware so misconfigured instances always see
