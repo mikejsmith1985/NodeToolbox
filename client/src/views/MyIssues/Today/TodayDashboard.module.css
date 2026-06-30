@@ -1,0 +1,56 @@
+/* TodayDashboard.module.css — layout for the Today daily-checklist landing tab. */
+
+.todayDashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+}
+
+.dashboardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.refreshButton {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-surface-alt, #f9fafb);
+  cursor: pointer;
+}
+
+.dashboardHeading {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.dashboardSubheading {
+  margin: 0;
+  color: var(--color-text-muted, #6b7280);
+}
+
+/* ── Category card grid (populated in later phases) ── */
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.doneForToday {
+  padding: var(--spacing-lg);
+  text-align: center;
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-success-bg, #ecfdf5);
+  color: var(--color-success-text, #065f46);
+  font-weight: 600;
+}
+
+.connectionRequired {
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-warning-bg, #fffbeb);
+  color: var(--color-warning-text, #92400e);
+}

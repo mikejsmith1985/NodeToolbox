@@ -1,0 +1,93 @@
+/* CategoryCard.module.css — visual states for a single Today daily-duty card. */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface, #ffffff);
+  min-height: 140px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.icon {
+  font-size: 1.25rem;
+}
+
+.label {
+  font-weight: 600;
+}
+
+.count {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.actionButton {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-surface-alt, #f9fafb);
+  cursor: pointer;
+}
+
+.checkLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  cursor: pointer;
+}
+
+.message {
+  margin: 0;
+  color: var(--color-text-muted, #6b7280);
+}
+
+.spinner {
+  display: inline-block;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 2px solid var(--color-border, #d1d5db);
+  border-top-color: var(--color-accent, #2563eb);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── State variants ── */
+
+.completeCard {
+  background: var(--color-success-bg, #ecfdf5);
+  border-color: var(--color-success-border, #a7f3d0);
+}
+
+.errorCard {
+  border-color: var(--color-danger-border, #fecaca);
+  background: var(--color-danger-bg, #fef2f2);
+}
+
+.notConfiguredCard {
+  border-style: dashed;
+  background: var(--color-surface-alt, #f9fafb);
+}

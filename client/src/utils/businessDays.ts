@@ -31,6 +31,24 @@ export function businessDaysAgo(businessDayCount: number, fromDate: Date = new D
   return cursor;
 }
 
+/**
+ * Returns the YYYY-MM-DD key of the most recent business day relative to `fromDate`.
+ * On a weekday this is the date itself; on a Saturday or Sunday it steps back to the
+ * preceding Friday. The Scrum Master "Today" dashboard uses this key to anchor its
+ * daily view to the last working day so weekend visits still show Friday's work.
+ *
+ * @param fromDate The reference date to resolve (defaults to now).
+ */
+export function mostRecentBusinessDayKey(fromDate: Date = new Date()): string {
+  const cursor = new Date(fromDate);
+  // Walk backwards one calendar day at a time until we land on a weekday.
+  while (isWeekend(cursor)) {
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  return toJqlDateString(cursor);
+}
+
 /** Formats a date as YYYY-MM-DD using local calendar parts (the form Jira JQL expects). */
 export function toJqlDateString(date: Date): string {
   const year = date.getFullYear();

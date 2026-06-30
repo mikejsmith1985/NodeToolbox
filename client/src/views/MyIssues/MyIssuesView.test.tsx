@@ -2,6 +2,7 @@
 
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
@@ -132,6 +133,14 @@ vi.mock('../Hygiene/HygieneView.tsx', () => ({
   default: () => <div>Mock Hygiene View</div>,
 }));
 
+vi.mock('./Today/TodayDashboard.tsx', () => ({
+  default: () => <div data-testid="today-dashboard">Mock Today Dashboard</div>,
+}));
+
+vi.mock('./MentionsTab.tsx', () => ({
+  default: () => <div>Mock Mentions Tab</div>,
+}));
+
 vi.mock('./EmbeddedWorkspacePanels.tsx', () => ({
   EmbeddedTimeTrackingPanel: () => <div>Mock Time Tracking Panel</div>,
   EmbeddedGitSyncPanel: () => <div>Mock Git Sync Panel</div>,
@@ -149,6 +158,47 @@ vi.mock('../../components/IssueDetailPanel/index.tsx', () => ({
 }));
 
 import MyIssuesView from './MyIssuesView.tsx';
+
+// Renders MyIssuesView inside a router at the given sub-tab. The Today dashboard is the
+// default landing tab, so the legacy Report-focused tests pass `'report'` explicitly.
+function renderMyIssues(tab: string = 'report') {
+  const initialPath = tab ? `/my-issues?tab=${tab}` : '/my-issues';
+  return render(
+    <MemoryRouter initialEntries={[initialPath]}>
+      <MyIssuesView />
+    </MemoryRouter>,
+  );
+}
+
+describe('MyIssuesView — tab routing', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseConnectionStore.mockReturnValue({ isSnowReady: false });
+    mockSnowFetch.mockResolvedValue({ result: [] });
+  });
+
+  it('lands on the Today dashboard by default when no tab is in the URL', () => {
+    render(
+      <MemoryRouter initialEntries={['/my-issues']}>
+        <MyIssuesView />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('today-dashboard')).toBeInTheDocument();
+  });
+
+  it('activates the Mentions sub-tab from ?tab=mentions', () => {
+    renderMyIssues('mentions');
+
+    expect(screen.getByText('Mock Mentions Tab')).toBeInTheDocument();
+  });
+
+  it('falls back to the Today dashboard for an unknown ?tab value', () => {
+    renderMyIssues('does-not-exist');
+
+    expect(screen.getByTestId('today-dashboard')).toBeInTheDocument();
+  });
+});
 
 describe('MyIssuesView', () => {
   beforeEach(() => {
@@ -189,7 +239,7 @@ describe('MyIssuesView', () => {
   });
 
   it('renders the Report, Hygiene, Time Tracking, Git Sync, and Settings tab buttons', () => {
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     expect(screen.getByRole('tab', { name: 'Report' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Hygiene' })).toBeInTheDocument();
@@ -199,7 +249,7 @@ describe('MyIssuesView', () => {
   });
 
   it('automatically fetches Jira issues when the view loads', async () => {
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     await waitFor(() => {
       expect(mockActions.fetchMyIssues).toHaveBeenCalled();
@@ -208,7 +258,7 @@ describe('MyIssuesView', () => {
 
   it('automatically fetches ServiceNow issues when the relay is ready', async () => {
     mockUseConnectionStore.mockReturnValue({ isSnowReady: true });
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     await waitFor(() => {
       expect(mockSnowFetch).toHaveBeenCalled();
@@ -218,7 +268,7 @@ describe('MyIssuesView', () => {
   it('renders a top-right Refresh button that refreshes Jira and ServiceNow when relay is ready', async () => {
     const user = userEvent.setup();
     mockUseConnectionStore.mockReturnValue({ isSnowReady: true });
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     await waitFor(() => {
       expect(mockActions.fetchMyIssues).toHaveBeenCalled();
@@ -237,7 +287,7 @@ describe('MyIssuesView', () => {
   });
 
   it('shows the source strip with My Issues/JQL/Saved Filter/Board buttons', () => {
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     expect(screen.getByRole('button', { name: 'My Issues' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'JQL' })).toBeInTheDocument();
@@ -247,20 +297,20 @@ describe('MyIssuesView', () => {
 
   it('shows the JQL textarea when JQL source is selected', () => {
     mockState.source = 'jql';
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     expect(screen.getByRole('textbox', { name: /jql query/i })).toBeInTheDocument();
   });
 
   it('shows issue count label when issues are present', () => {
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     expect(screen.getByText(/2 issues/i)).toBeInTheDocument();
   });
 
   it('renders issue cards in card view mode', () => {
     mockState.viewMode = 'cards';
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     expect(screen.getByText('TBX-1')).toBeInTheDocument();
     expect(screen.getByText('Build the feature')).toBeInTheDocument();
@@ -268,7 +318,7 @@ describe('MyIssuesView', () => {
 
   it('renders compact rows in compact view mode', () => {
     mockState.viewMode = 'compact';
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     expect(screen.getByText('TBX-1')).toBeInTheDocument();
     expect(screen.getByText('TBX-2')).toBeInTheDocument();
@@ -276,7 +326,7 @@ describe('MyIssuesView', () => {
 
   it('switches to the embedded Hygiene tab content when Hygiene is clicked', async () => {
     const user = userEvent.setup();
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     await user.click(screen.getByRole('tab', { name: 'Hygiene' }));
 
@@ -285,7 +335,7 @@ describe('MyIssuesView', () => {
 
   it('switches to Settings tab content when Settings is clicked', async () => {
     const user = userEvent.setup();
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     await user.click(screen.getByRole('tab', { name: 'Settings' }));
 
@@ -307,7 +357,7 @@ describe('MyIssuesView — inline detail expansion', () => {
   it('clicking an issue card expands inline issue details', async () => {
     const user = userEvent.setup();
     mockState.issues = [createMockIssue('TBX-1', 'Build the feature')];
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     await user.click(screen.getByText('Build the feature'));
 
@@ -317,7 +367,7 @@ describe('MyIssuesView — inline detail expansion', () => {
   it('clicking the same issue again collapses the inline details', async () => {
     const user = userEvent.setup();
     mockState.issues = [createMockIssue('TBX-1', 'Build the feature')];
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     await user.click(screen.getByText('Build the feature'));
     expect(screen.getByText('Detail panel for TBX-1')).toBeInTheDocument();
@@ -330,7 +380,7 @@ describe('MyIssuesView — inline detail expansion', () => {
     const user = userEvent.setup();
     mockState.viewMode = 'compact';
     mockState.issues = [createMockIssue('TBX-1', 'Build the feature')];
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     await user.click(screen.getByText('TBX-1'));
 
@@ -341,7 +391,7 @@ describe('MyIssuesView — inline detail expansion', () => {
     const user = userEvent.setup();
     mockState.source = 'mine';
     mockState.issues = [createMockIssue('TBX-1', 'Build the feature')];
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     await user.click(screen.getByText('Build the feature'));
     await user.click(screen.getByRole('button', { name: 'Refresh TBX-1' }));
@@ -354,7 +404,7 @@ describe('MyIssuesView — inline detail expansion', () => {
     mockState.source = 'board';
     mockState.selectedBoardId = 42;
     mockState.issues = [createMockIssue('TBX-1', 'Build the feature')];
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     await user.click(screen.getByText('Build the feature'));
     await user.click(screen.getByRole('button', { name: 'Refresh TBX-1' }));
@@ -377,14 +427,14 @@ describe('MyIssuesView — export menu', () => {
   });
 
   it('renders an Export button in the toolbar', () => {
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     expect(screen.getByRole('button', { name: /export/i })).toBeInTheDocument();
   });
 
   it('shows CSV and Markdown options when isExportMenuOpen is true', () => {
     mockState.isExportMenuOpen = true;
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     expect(screen.getByRole('button', { name: /copy as csv/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /copy as markdown table/i })).toBeInTheDocument();
@@ -392,7 +442,7 @@ describe('MyIssuesView — export menu', () => {
 
   it('calls setExportMenuOpen when Export button is clicked', async () => {
     const user = userEvent.setup();
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     await user.click(screen.getByRole('button', { name: /^export$/i }));
 
@@ -402,7 +452,7 @@ describe('MyIssuesView — export menu', () => {
   it('calls exportAsCsv when "Copy as CSV" is clicked', async () => {
     const user = userEvent.setup();
     mockState.isExportMenuOpen = true;
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     await user.click(screen.getByRole('button', { name: /copy as csv/i }));
 
@@ -412,7 +462,7 @@ describe('MyIssuesView — export menu', () => {
   it('calls exportAsMarkdown when "Copy as Markdown Table" is clicked', async () => {
     const user = userEvent.setup();
     mockState.isExportMenuOpen = true;
-    render(<MyIssuesView />);
+    renderMyIssues('report');
 
     await user.click(screen.getByRole('button', { name: /copy as markdown table/i }));
 
