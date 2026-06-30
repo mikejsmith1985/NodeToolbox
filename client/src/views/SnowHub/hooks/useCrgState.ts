@@ -709,8 +709,8 @@ function buildChangeTaskPayload(changeSysId: string, template: CtaskTemplate): R
   if (template.description) ctaskPayload.description = template.description;
   if (template.assignmentGroup.sysId) ctaskPayload.assignment_group = template.assignmentGroup.sysId;
   if (template.assignedTo.sysId) ctaskPayload.assigned_to = template.assignedTo.sysId;
-  if (template.plannedStartDate) ctaskPayload.planned_start_date = template.plannedStartDate;
-  if (template.plannedEndDate) ctaskPayload.planned_end_date = template.plannedEndDate;
+  if (template.plannedStartDate) ctaskPayload.planned_start_date = formatSnowDateTimeForApi(template.plannedStartDate);
+  if (template.plannedEndDate) ctaskPayload.planned_end_date = formatSnowDateTimeForApi(template.plannedEndDate);
   if (template.closeNotes) ctaskPayload.close_notes = template.closeNotes;
 
   return ctaskPayload;
@@ -722,6 +722,29 @@ function normalizeSnowDateTimeForInput(field: unknown): string {
 
   const dateTimeMatch = SNOW_DATE_TIME_INPUT_PATTERN.exec(snowDateTime);
   return dateTimeMatch ? `${dateTimeMatch[1]}T${dateTimeMatch[2]}` : snowDateTime;
+}
+
+// Matches the HTML datetime-local input shape (and tolerates a space separator or
+// pre-existing seconds) so we can re-serialize it into ServiceNow's canonical format.
+const SNOW_API_DATE_TIME_PATTERN = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(:\d{2})?$/;
+
+/**
+ * Converts a date-time from the form's datetime-local format (e.g. "2026-07-02T14:00")
+ * into the format the ServiceNow Table API expects for glide_date_time fields:
+ * "YYYY-MM-DD HH:MM:SS" (space separator, seconds always present). Without this, the
+ * API silently drops the value on insert, leaving Planned start/end date empty.
+ * The wall-clock value is preserved as-typed (no timezone shift). Unrecognized or empty
+ * input passes through untouched so we never fabricate a date.
+ */
+export function formatSnowDateTimeForApi(inputValue: string): string {
+  const trimmedValue = (inputValue || '').trim();
+  if (!trimmedValue) return '';
+
+  const dateTimeMatch = SNOW_API_DATE_TIME_PATTERN.exec(trimmedValue);
+  if (!dateTimeMatch) return trimmedValue;
+
+  const [, datePart, hoursAndMinutes, secondsPart] = dateTimeMatch;
+  return `${datePart} ${hoursAndMinutes}${secondsPart || ':00'}`;
 }
 
 function buildCtaskTemplateDataFromRecord(ctaskRecord: Record<string, unknown>): CtaskTemplateData {
@@ -825,8 +848,9 @@ function buildChangeRequestPayload(
   // The change_request table exposes the requested change window as start_date/end_date
   // (the form labels them "Planned start/end date"). planned_start_date/planned_end_date
   // only exist on change_task, so writing them here is silently dropped by the Table API.
-  if (changeSubmissionTarget.plannedStartDate)  changeRequestPayload.start_date = changeSubmissionTarget.plannedStartDate;
-  if (changeSubmissionTarget.plannedEndDate)    changeRequestPayload.end_date   = changeSubmissionTarget.plannedEndDate;
+  // Values are reformatted to ServiceNow's "YYYY-MM-DD HH:MM:SS" so the API doesn't drop them.
+  if (changeSubmissionTarget.plannedStartDate)  changeRequestPayload.start_date = formatSnowDateTimeForApi(changeSubmissionTarget.plannedStartDate);
+  if (changeSubmissionTarget.plannedEndDate)    changeRequestPayload.end_date   = formatSnowDateTimeForApi(changeSubmissionTarget.plannedEndDate);
 
   if (state.chgPlanningAssessment.impact)                        changeRequestPayload.impact                  = state.chgPlanningAssessment.impact;
   if (state.chgPlanningAssessment.systemAvailabilityImplication) changeRequestPayload.u_availability_impact   = state.chgPlanningAssessment.systemAvailabilityImplication;
