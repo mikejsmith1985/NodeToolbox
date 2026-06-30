@@ -41,12 +41,42 @@ describe('useTemplateMakerState', () => {
     expect(result.current.fieldEntries).toHaveLength(0);
   });
 
-  it('updates a field value and mode', () => {
+  it('updates a field value, default, and mode', () => {
     const { result } = renderHook(() => useTemplateMakerState());
     act(() => { result.current.addField(createFieldEntry('summary', 'Summary', 'text')); });
     act(() => { result.current.setFieldValue('summary', 'Hi'); });
+    act(() => { result.current.setFieldDefault('summary', 'Default text'); });
     act(() => { result.current.setFieldMode('summary', 'promptAtLaunch'); });
     expect(result.current.fieldEntries[0].value).toBe('Hi');
+    expect(result.current.fieldEntries[0].defaultValue).toBe('Default text');
     expect(result.current.fieldEntries[0].mode).toBe('promptAtLaunch');
+  });
+
+  it('loads a saved template for editing and tracks its id', () => {
+    const { result } = renderHook(() => useTemplateMakerState());
+    act(() => {
+      result.current.loadTemplate({
+        id: 'tpl-1', name: 'Weekly', description: 'desc', projectKey: 'ABC', projectId: '10000',
+        issueTypeId: '1', issueTypeName: 'Task', authorName: 'Jane', createdAt: '', updatedAt: '',
+        fields: [{ fieldId: 'summary', fieldName: 'Summary', fieldType: 'text', mode: 'fixed', value: 'Hi' }],
+      });
+    });
+    expect(result.current.editingTemplateId).toBe('tpl-1');
+    expect(result.current.templateName).toBe('Weekly');
+    expect(result.current.projectKey).toBe('ABC');
+    expect(result.current.fieldEntries).toHaveLength(1);
+    expect(result.current.currentStep).toBe('fields');
+  });
+
+  it('clears the editing id on reset', () => {
+    const { result } = renderHook(() => useTemplateMakerState());
+    act(() => {
+      result.current.loadTemplate({
+        id: 'tpl-1', name: 'Weekly', description: '', projectKey: 'ABC', projectId: '1',
+        issueTypeId: '1', issueTypeName: 'Task', authorName: 'x', createdAt: '', updatedAt: '', fields: [],
+      });
+    });
+    act(() => { result.current.reset(); });
+    expect(result.current.editingTemplateId).toBeNull();
   });
 });

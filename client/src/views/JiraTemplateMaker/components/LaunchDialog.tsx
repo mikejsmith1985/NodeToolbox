@@ -6,6 +6,7 @@
 import { useMemo } from 'react';
 
 import { useTemplateLaunch } from '../hooks/useTemplateLaunch.ts';
+import { findTemplateDrift, isTemplateStale } from '../lib/drift.ts';
 import type { FieldDescriptor, JiraTemplate } from '../lib/templateTypes.ts';
 import styles from '../JiraTemplateMaker.module.css';
 import FieldValueInput from './FieldValueInput.tsx';
@@ -28,6 +29,12 @@ export default function LaunchDialog({ template, descriptors, onClose }: LaunchD
 
   const promptFields = template.fields.filter((entry) => entry.mode === 'promptAtLaunch');
   const hasReporterField = template.fields.some((entry) => entry.fieldId === REPORTER_FIELD_ID);
+
+  // Block launch if the template references fields/options that no longer exist (FR-7.3),
+  // rather than creating a malformed issue. Only evaluated once descriptors have loaded.
+  const drift = findTemplateDrift(template, descriptors);
+  const isStale = descriptors.length > 0 && isTemplateStale(drift);
+  const staleFieldNames = [...drift.missingFieldIds, ...drift.invalidOptionFieldIds];
 
   return (
     <section className={styles.section} aria-label={`Use template ${template.name}`}>
@@ -59,6 +66,13 @@ export default function LaunchDialog({ template, descriptors, onClose }: LaunchD
         <p className={styles.unsupportedTag}>If Reporter isn’t set, the issue is created by the integration account.</p>
       )}
 
+      {isStale && (
+        <div className={styles.warning} role="alert">
+          This template needs review — it uses fields or options that no longer exist in Jira:{' '}
+          {staleFieldNames.join(', ')}. Edit the template before creating an issue from it.
+        </div>
+      )}
+
       {launch.missingRequiredNames.length > 0 && (
         <div className={styles.error} role="alert">
           Please provide these required field(s) before creating: {launch.missingRequiredNames.join(', ')}.
@@ -74,7 +88,7 @@ export default function LaunchDialog({ template, descriptors, onClose }: LaunchD
       ) : (
         <button
           className={styles.primaryButton}
-          disabled={launch.isCreating}
+          disabled={launch.isCreating || isStale}
           onClick={() => void launch.createFromTemplate(template, descriptors)}
           type="button"
         >

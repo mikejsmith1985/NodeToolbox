@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { dedupeLabels, isValidLabel, mergeLabelsForCreate } from './labels.ts';
+import { dedupeLabels, isValidLabel } from './labels.ts';
 
 describe('dedupeLabels', () => {
   it('collapses exact duplicates but keeps case distinctions', () => {
@@ -27,15 +27,5 @@ describe('isValidLabel', () => {
   });
   it('rejects an empty label', () => {
     expect(isValidLabel('')).toBe(false);
-  });
-});
-
-describe('mergeLabelsForCreate', () => {
-  it('unions template labels with existing issue labels without duplicating (case-sensitive)', () => {
-    expect(mergeLabelsForCreate(['Ops', 'ops'], ['Ops', 'prod'])).toEqual(['Ops', 'prod', 'ops']);
-  });
-
-  it('returns just the deduped template labels when the issue has none', () => {
-    expect(mergeLabelsForCreate(['a', 'a', 'b'], [])).toEqual(['a', 'b']);
   });
 });

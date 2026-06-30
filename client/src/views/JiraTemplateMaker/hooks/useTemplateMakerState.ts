@@ -4,7 +4,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 
-import type { FieldEntryMode, TemplateFieldEntry, TemplateFieldType } from '../lib/templateTypes.ts';
+import type { FieldEntryMode, JiraTemplate, TemplateFieldEntry, TemplateFieldType } from '../lib/templateTypes.ts';
 
 /** Wizard steps in order. */
 export const TEMPLATE_MAKER_STEPS = ['project', 'issueType', 'fields', 'review'] as const;
@@ -13,6 +13,10 @@ export type TemplateMakerStep = typeof TEMPLATE_MAKER_STEPS[number];
 export interface UseTemplateMakerStateResult {
   currentStep: TemplateMakerStep;
   goToStep: (step: TemplateMakerStep) => void;
+  /** The id of the template currently being edited, or null when building a new one. */
+  editingTemplateId: string | null;
+  /** Loads a saved template back into the wizard for editing. */
+  loadTemplate: (template: JiraTemplate) => void;
   projectKey: string;
   projectId: string;
   issueTypeId: string;
@@ -29,6 +33,7 @@ export interface UseTemplateMakerStateResult {
   addField: (entry: TemplateFieldEntry) => void;
   removeField: (fieldId: string) => void;
   setFieldValue: (fieldId: string, value: unknown) => void;
+  setFieldDefault: (fieldId: string, defaultValue: unknown) => void;
   setFieldMode: (fieldId: string, mode: FieldEntryMode) => void;
   reset: () => void;
 }
@@ -52,9 +57,23 @@ export function useTemplateMakerState(): UseTemplateMakerStateResult {
   const [templateDescription, setTemplateDescription] = useState<string>('');
   const [fieldEntries, setFieldEntries] = useState<TemplateFieldEntry[]>([]);
   const [rescopeWarning, setRescopeWarning] = useState<string | null>(null);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
 
   const goToStep = useCallback((step: TemplateMakerStep) => setCurrentStep(step), []);
   const dismissRescopeWarning = useCallback(() => setRescopeWarning(null), []);
+
+  const loadTemplate = useCallback((template: JiraTemplate) => {
+    setEditingTemplateId(template.id);
+    setProjectKey(template.projectKey);
+    setProjectId(template.projectId);
+    setIssueTypeId(template.issueTypeId);
+    setIssueTypeName(template.issueTypeName);
+    setTemplateName(template.name);
+    setTemplateDescription(template.description);
+    setFieldEntries(template.fields.map((entry) => ({ ...entry })));
+    setRescopeWarning(null);
+    setCurrentStep('fields');
+  }, []);
 
   const setProject = useCallback((nextProjectKey: string, nextProjectId: string) => {
     setProjectKey((previousKey) => {
@@ -103,6 +122,12 @@ export function useTemplateMakerState(): UseTemplateMakerStateResult {
     )));
   }, []);
 
+  const setFieldDefault = useCallback((fieldId: string, defaultValue: unknown) => {
+    setFieldEntries((previousEntries) => previousEntries.map((entry) => (
+      entry.fieldId === fieldId ? { ...entry, defaultValue } : entry
+    )));
+  }, []);
+
   const setFieldMode = useCallback((fieldId: string, mode: FieldEntryMode) => {
     setFieldEntries((previousEntries) => previousEntries.map((entry) => (
       entry.fieldId === fieldId ? { ...entry, mode } : entry
@@ -119,18 +144,19 @@ export function useTemplateMakerState(): UseTemplateMakerStateResult {
     setTemplateDescription('');
     setFieldEntries([]);
     setRescopeWarning(null);
+    setEditingTemplateId(null);
   }, []);
 
   return useMemo(() => ({
-    currentStep, goToStep,
+    currentStep, goToStep, editingTemplateId, loadTemplate,
     projectKey, projectId, issueTypeId, issueTypeName,
     templateName, templateDescription, fieldEntries, rescopeWarning, dismissRescopeWarning,
     setProject, setIssueType, setTemplateName, setTemplateDescription,
-    addField, removeField, setFieldValue, setFieldMode, reset,
+    addField, removeField, setFieldValue, setFieldDefault, setFieldMode, reset,
   }), [
-    currentStep, goToStep, projectKey, projectId, issueTypeId, issueTypeName,
+    currentStep, goToStep, editingTemplateId, loadTemplate, projectKey, projectId, issueTypeId, issueTypeName,
     templateName, templateDescription, fieldEntries, rescopeWarning, dismissRescopeWarning,
-    setProject, setIssueType, addField, removeField, setFieldValue, setFieldMode, reset,
+    setProject, setIssueType, addField, removeField, setFieldValue, setFieldDefault, setFieldMode, reset,
   ]);
 }
 

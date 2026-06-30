@@ -65,6 +65,7 @@ export default function JiraTemplateMaker() {
       return;
     }
     const outcome = await library.saveTemplate({
+      id: state.editingTemplateId ?? undefined,
       name: state.templateName.trim(),
       description: state.templateDescription.trim(),
       projectKey: state.projectKey,
@@ -81,6 +82,27 @@ export default function JiraTemplateMaker() {
     state.reset();
   }
 
+  async function handleDelete(templateId: string, templateName: string): Promise<void> {
+    if (!window.confirm(`Delete the template "${templateName}"? This affects everyone.`)) {
+      return;
+    }
+    const outcome = await library.deleteTemplate(templateId);
+    setSaveMessage(outcome.ok
+      ? `Deleted "${templateName}".`
+      : 'Someone else changed these templates. Reload and try again.');
+  }
+
+  /** Whether a step is reachable yet — gates the step chips so prerequisites can't be skipped. */
+  function canVisitStep(step: TemplateMakerStep): boolean {
+    if (step === 'project') {
+      return true;
+    }
+    if (step === 'issueType') {
+      return Boolean(state.projectKey) && createMeta.hasCreatePermission;
+    }
+    return Boolean(state.issueTypeId); // fields + review need an issue type
+  }
+
   return (
     <div className={styles.view}>
       <h1>Jira Template Maker</h1>
@@ -90,6 +112,7 @@ export default function JiraTemplateMaker() {
         {TEMPLATE_MAKER_STEPS.map((step) => (
           <button
             className={`${styles.stepButton} ${state.currentStep === step ? styles.stepButtonActive : ''}`}
+            disabled={!canVisitStep(step)}
             key={step}
             onClick={() => state.goToStep(step)}
             type="button"
@@ -181,6 +204,16 @@ export default function JiraTemplateMaker() {
                     onChange={(value) => state.setFieldValue(entry.fieldId, value)}
                   />
                 )}
+                {descriptor && entry.mode === 'promptAtLaunch' && (
+                  <div>
+                    <span className={styles.unsupportedTag}>Optional default to pre-fill the prompt:</span>
+                    <FieldValueInput
+                      descriptor={descriptor}
+                      value={entry.defaultValue}
+                      onChange={(value) => state.setFieldDefault(entry.fieldId, value)}
+                    />
+                  </div>
+                )}
               </div>
             );
           })}
@@ -214,7 +247,11 @@ export default function JiraTemplateMaker() {
         {library.templates.map((template) => (
           <div className={styles.fieldPickerItem} key={template.id}>
             <span>{template.name} <span className={styles.unsupportedTag}>{template.projectKey} · {template.issueTypeName} · by {template.authorName}</span></span>
-            <button className={styles.toolbarButton} onClick={() => setLaunchTemplate(template)} type="button">Use</button>
+            <span>
+              <button className={styles.toolbarButton} onClick={() => setLaunchTemplate(template)} type="button">Use</button>
+              <button className={styles.toolbarButton} onClick={() => state.loadTemplate(template)} type="button" style={{ marginLeft: '0.4rem' }}>Edit</button>
+              <button className={styles.toolbarButton} onClick={() => void handleDelete(template.id, template.name)} type="button" style={{ marginLeft: '0.4rem' }}>Delete</button>
+            </span>
           </div>
         ))}
       </section>
