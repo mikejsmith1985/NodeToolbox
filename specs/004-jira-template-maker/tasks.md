@@ -126,13 +126,13 @@ written to Jira, and invalid labels are surfaced clearly.
 ### Tests for User Story 3 ⚠️ (write first, must fail)
 
 - [X] T035 [P] [US3] Unit test `lib/labels.ts`: case-sensitive dedupe (`Ops`≠`ops`, collapse duplicate `Ops`), reject space-containing labels with a message, union-dedupe on create, in `client/src/views/JiraTemplateMaker/__tests__/labels.test.ts`
-- [ ] T036 [P] [US3] Component test: the Labels field input dedupes case-sensitively and the create payload's labels are deduped, in `client/src/views/JiraTemplateMaker/__tests__/labelsInput.test.tsx`
+- [X] T036 [P] [US3] Component test: the Labels field input dedupes case-sensitively and the create payload's labels are deduped, in `client/src/views/JiraTemplateMaker/__tests__/labelsInput.test.tsx`
 
 ### Implementation for User Story 3
 
 - [X] T037 [US3] Implement pure `client/src/views/JiraTemplateMaker/lib/labels.ts` (case-sensitive dedupe, invalid-label detection, union-on-create) to make T035 pass (FR-3.1–3.4)
-- [ ] T038 [US3] Implement the Labels variant in `FieldValueInput.tsx` using `lib/labels` (case-sensitive add/dedupe; reject invalid with a clear message — FR-3.4)
-- [ ] T039 [US3] Wire deduped labels through `buildCreatePayload` so created-issue labels are never duplicated (FR-3.3)
+- [X] T038 [US3] Implement the Labels variant in `FieldValueInput.tsx` using `lib/labels` (case-sensitive add/dedupe; reject invalid with a clear message — FR-3.4)
+- [X] T039 [US3] Wire deduped labels through `buildCreatePayload` so created-issue labels are never duplicated (FR-3.3)
 
 **Checkpoint**: All three stories work independently.
 
@@ -140,10 +140,10 @@ written to Jira, and invalid labels are surfaced clearly.
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T040 [P] Update `CHANGELOG.md` (`[Unreleased]`) with the Jira Template Maker feature entry
-- [ ] T041 [P] Accessibility & plain-language pass across the wizard (FR-6): step clarity, human field names, no Jira jargon in labels/errors
-- [ ] T042 Run the full client suite `cd client && npx vitest run` and `npx tsc --noEmit`; resolve any regressions
-- [ ] T043 Execute the quickstart.md scenarios S1–S9 against a live Jira and record evidence (Article X — verify a created issue in Jira, not just HTTP 200)
+- [X] T040 [P] Update `CHANGELOG.md` (`[Unreleased]`) with the Jira Template Maker feature entry
+- [X] T041 [P] Accessibility & plain-language pass across the wizard (FR-6): step clarity, human field names, no Jira jargon in labels/errors
+- [X] T042 Run the full client suite `cd client && npx vitest run` and `npx tsc --noEmit`; resolve any regressions
+- [ ] T043 Execute the quickstart.md scenarios S1–S9 against a live Jira and record evidence (Article X — verify a created issue in Jira, not just HTTP 200) — BLOCKED: requires a running Jira Server/DC instance; not runnable in this environment.
 
 ---
 

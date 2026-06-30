@@ -1,9 +1,9 @@
 // FieldValueInput.tsx — Renders the right input for a field based on its internal type, sourcing
 // dropdown options from the field's live allowedValues so only valid choices are selectable.
 
-import { dedupeLabels } from '../lib/labels.ts';
 import type { FieldDescriptor } from '../lib/templateTypes.ts';
 import styles from '../JiraTemplateMaker.module.css';
+import LabelsInput from './LabelsInput.tsx';
 import WikiMarkupEditor from './WikiMarkupEditor.tsx';
 
 interface FieldValueInputProps {
@@ -73,13 +73,10 @@ export default function FieldValueInput({ descriptor, value, onChange }: FieldVa
 
     case 'labels':
       return (
-        <input
-          className={styles.input}
+        <LabelsInput
           id={inputId}
-          onChange={(event) => onChange(dedupeLabels(event.target.value.split(',')))}
-          placeholder="comma,separated,labels"
-          type="text"
-          value={(Array.isArray(value) ? value : []).join(', ')}
+          onChange={onChange}
+          value={Array.isArray(value) ? (value as string[]) : []}
         />
       );
 
