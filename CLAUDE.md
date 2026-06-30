@@ -10,6 +10,7 @@
 ## Active Spec Kit Feature
 
 - **jira-template-maker** — plan: `specs/004-jira-template-maker/plan.md`
+- **my-issues-today-dashboard** — plan: `specs/004-my-issues-today-dashboard/plan.md`
   (spec, research, data-model, contracts, quickstart in the same directory).
 <!-- SPECKIT END -->
 

@@ -1,0 +1,168 @@
+// useTodayDashboard.test.ts — Unit tests for the Today dashboard orchestration hook.
+//
+// Every data source is mocked so we can prove each card resolves independently, a single
+// failing source does not blank its siblings, team cards report "not-configured" without a
+// board, and the counts come straight from the shared Today selectors.
+
+import { renderHook, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { mockJiraGet, mockUseMentionsState, mockUseSprintData, mockUseConnectionStore, mockUseSettingsStore } =
+  vi.hoisted(() => ({
+    mockJiraGet: vi.fn(),
+    mockUseMentionsState: vi.fn(),
+    mockUseSprintData: vi.fn(),
+    mockUseConnectionStore: vi.fn(),
+    mockUseSettingsStore: vi.fn(),
+  }));
+
+vi.mock('../../../../services/jiraApi.ts', () => ({ jiraGet: mockJiraGet }));
+vi.mock('../../hooks/useMentionsState.ts', () => ({ useMentionsState: mockUseMentionsState }));
+vi.mock('../../../SprintDashboard/hooks/useSprintData.ts', () => ({ useSprintData: mockUseSprintData }));
+vi.mock('../../../SprintDashboard/hooks/useDashboardConfig.ts', () => ({
+  loadDashboardConfigFromStorage: () => ({ staleDaysThreshold: 5, customStoryPointsFieldId: '' }),
+}));
+vi.mock('../../../../store/connectionStore.ts', () => ({ useConnectionStore: mockUseConnectionStore }));
+vi.mock('../../../../store/settingsStore.ts', () => ({ useSettingsStore: mockUseSettingsStore }));
+
+import { useTodayDashboard } from './useTodayDashboard.ts';
+
+const LONG_PAST_ISO = '2020-01-01T00:00:00.000Z';
+
+function recentIso(): string {
+  return new Date().toISOString();
+}
+
+function buildIssue(key: string, fields: Record<string, unknown>) {
+  return { id: key, key, fields: { summary: `Summary ${key}`, ...fields } };
+}
+
+function buildSprintData(overrides: Record<string, unknown> = {}) {
+  return {
+    state: {
+      boardId: 1,
+      projectKey: 'PROJ',
+      sprintIssues: [] as unknown[],
+      isLoadingSprint: false,
+      loadError: null as string | null,
+      sprintInfo: { id: 7, name: 'Sprint 7', state: 'active', startDate: '', endDate: '' },
+      ...overrides,
+    },
+    actions: { loadSprint: vi.fn().mockResolvedValue(undefined) },
+  };
+}
+
+function buildMentions(overrides: Record<string, unknown> = {}) {
+  return {
+    visibleMentions: [{ mentionKey: 'TBX-1#1' }],
+    isLoading: false,
+    loadError: null as string | null,
+    reload: vi.fn(),
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockUseConnectionStore.mockImplementation((selector: (state: { isJiraReady: boolean }) => unknown) =>
+    selector({ isJiraReady: true }),
+  );
+  mockUseSettingsStore.mockImplementation(
+    (selector: (state: { sprintDashboardActiveTeamProfileId: string; dsuProjectKey: string }) => unknown) =>
+      selector({ sprintDashboardActiveTeamProfileId: '', dsuProjectKey: 'PROJ' }),
+  );
+  mockUseMentionsState.mockReturnValue(buildMentions());
+  mockUseSprintData.mockReturnValue(buildSprintData());
+  mockJiraGet.mockImplementation((path: string) => {
+    if (path.includes('currentUser')) {
+      return Promise.resolve({ issues: [] });
+    }
+    return Promise.resolve({ issues: [] });
+  });
+});
+
+describe('useTodayDashboard', () => {
+  it('resolves every card independently to ready', async () => {
+    const { result } = renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(result.current.categories['my-stale'].status).toBe('ready'));
+
+    expect(result.current.categories.mentions.status).toBe('ready');
+    expect(result.current.categories.blockers.status).toBe('ready');
+    expect(result.current.categories['team-stale'].status).toBe('ready');
+    expect(result.current.categories.untriaged.status).toBe('ready');
+  });
+
+  it('sets only the my-issues cards to error when that fetch throws, leaving others ready', async () => {
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.includes('currentUser')) {
+        return Promise.reject(new Error('my-issues boom'));
+      }
+      return Promise.resolve({ issues: [] });
+    });
+
+    const { result } = renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(result.current.categories['my-stale'].status).toBe('error'));
+
+    expect(result.current.categories['my-stale'].errorMessage).toBe('my-issues boom');
+    expect(result.current.categories.mentions.status).toBe('ready');
+    expect(result.current.categories.untriaged.status).toBe('ready');
+    expect(result.current.categories['team-stale'].status).toBe('ready');
+  });
+
+  it('marks team-scope cards not-configured when no board or project is selected', async () => {
+    mockUseSprintData.mockReturnValue(buildSprintData({ boardId: null, projectKey: '' }));
+
+    const { result } = renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(result.current.categories['my-stale'].status).toBe('ready'));
+
+    expect(result.current.categories['team-stale'].status).toBe('not-configured');
+    expect(result.current.categories.unassigned.status).toBe('not-configured');
+    expect(result.current.categories['commitment-gaps'].status).toBe('not-configured');
+  });
+
+  it('computes counts from the shared selectors', async () => {
+    mockUseMentionsState.mockReturnValue(
+      buildMentions({ visibleMentions: [{ mentionKey: 'TBX-1#1' }, { mentionKey: 'TBX-2#1' }] }),
+    );
+    mockUseSprintData.mockReturnValue(
+      buildSprintData({
+        sprintIssues: [
+          buildIssue('TEAM-1', {
+            status: { name: 'To Do', statusCategory: { key: 'new' } },
+            assignee: null,
+            updated: recentIso(),
+          }),
+        ],
+      }),
+    );
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.includes('currentUser')) {
+        return Promise.resolve({
+          issues: [
+            buildIssue('MINE-1', {
+              status: { name: 'Blocked', statusCategory: { key: 'indeterminate' } },
+              updated: recentIso(),
+            }),
+            buildIssue('MINE-2', {
+              status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+              updated: LONG_PAST_ISO,
+            }),
+          ],
+        });
+      }
+      return Promise.resolve({ issues: [] });
+    });
+
+    const { result } = renderHook(() => useTodayDashboard());
+
+    await waitFor(() => expect(result.current.categories['my-stale'].status).toBe('ready'));
+
+    expect(result.current.categories.mentions.count).toBe(2);
+    expect(result.current.categories.blockers.count).toBe(1);
+    expect(result.current.categories['my-stale'].count).toBe(1);
+    expect(result.current.categories.unassigned.count).toBe(1);
+  });
+});

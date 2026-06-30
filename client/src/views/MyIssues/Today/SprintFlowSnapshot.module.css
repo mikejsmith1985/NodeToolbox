@@ -1,0 +1,57 @@
+/* SprintFlowSnapshot.module.css — read-only sprint WIP + days-remaining panel. */
+
+.snapshot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface-alt, #f9fafb);
+}
+
+.snapshotHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.snapshotTitle {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.snapshotLink {
+  font-size: 0.875rem;
+}
+
+.zoneList {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--spacing-sm);
+  margin: 0;
+}
+
+.zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.zoneLabel {
+  color: var(--color-text-muted, #6b7280);
+  font-size: 0.875rem;
+}
+
+.zoneCount {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.daysRemaining {
+  margin: 0;
+  color: var(--color-text-muted, #6b7280);
+}
