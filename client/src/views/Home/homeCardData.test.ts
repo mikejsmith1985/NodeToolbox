@@ -6,9 +6,10 @@ import { APP_CARDS, APP_SECTIONS } from './homeCardData.ts';
 
 describe('homeCardData', () => {
   it('contains the retained home cards including Reports Hub', () => {
-    expect(APP_CARDS).toHaveLength(10);
+    expect(APP_CARDS).toHaveLength(11);
     expect(APP_CARDS.some((appCard) => appCard.id === 'reports-hub')).toBe(true);
     expect(APP_CARDS.some((appCard) => appCard.id === 'business-helper')).toBe(true);
+    expect(APP_CARDS.some((appCard) => appCard.id === 'jira-template-maker')).toBe(true);
   });
 
   it('defines every required field for each card', () => {

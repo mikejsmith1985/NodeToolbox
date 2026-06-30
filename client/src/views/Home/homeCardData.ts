@@ -104,6 +104,16 @@ export const APP_CARDS: AppCardDef[] = [
     sectionKey: 'snow',
   },
   {
+    id: 'jira-template-maker',
+    route: '/jira-template-maker',
+    icon: '🧩',
+    title: 'Jira Template Maker',
+    description:
+      'Build reusable Jira issue templates with guided project, issue-type, and field pickers, then create real issues in one click.',
+    tags: ['Jira', 'Templates', 'Create Issue'],
+    sectionKey: 'agile',
+  },
+  {
     id: 'text-tools',
     route: '/text-tools',
     icon: '🛠',
