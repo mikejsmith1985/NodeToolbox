@@ -99,17 +99,17 @@ blocks creation by name.
 
 ### Tests for User Story 2 ⚠️ (write first, must fail)
 
-- [ ] T027 [P] [US2] Test: launch prompts only prompt-at-launch fields (defaults pre-filled) and applies fixed values without re-entry, in `client/src/views/JiraTemplateMaker/__tests__/launch.test.tsx`
+- [X] T027 [P] [US2] Test: launch prompts only prompt-at-launch fields (defaults pre-filled) and applies fixed values without re-entry, in `client/src/views/JiraTemplateMaker/__tests__/launch.test.tsx`
 - [X] T028 [P] [US2] Unit test: `buildCreatePayload` maps every supported field type to the correct `POST /issue` `fields` shape (data-model §1 table), in `client/src/views/JiraTemplateMaker/__tests__/buildCreatePayload.test.ts`
-- [ ] T029 [P] [US2] Test: a missing required field blocks create, names the field, and creates nothing (FR-5.2), in `client/src/views/JiraTemplateMaker/__tests__/launch.validation.test.tsx`
+- [X] T029 [P] [US2] Test: a missing required field blocks create, names the field, and creates nothing (FR-5.2), in `client/src/views/JiraTemplateMaker/__tests__/launch.validation.test.tsx`
 
 ### Implementation for User Story 2
 
 - [X] T030 [US2] Implement pure `client/src/views/JiraTemplateMaker/lib/buildCreatePayload.ts` (template fixed entries + launch answers → `{ fields: {...} }`, per-type mapping, optional reporter) to make T028 pass
-- [ ] T031 [US2] Implement the launch flow in `JiraTemplateMaker.tsx`/a `LaunchDialog` component: prompt for prompt-at-launch fields with defaults, single confirm (FR-5.1)
-- [ ] T032 [US2] Add pre-create required-field validation surfacing all missing fields in plain language before any POST (FR-5.2)
-- [ ] T033 [US2] Call `createIssue`; on success render an open-in-Jira link built from the configured base URL (FR-5.3) and ensure no stray issue links/parent relationships are created (FR-5.4)
-- [ ] T034 [US2] Implement reporter handling (FR-5.5): Reporter as a templatable/prompt field (`{ name }` on Server/DC); when unset, default to the integration account and clearly tell the user
+- [X] T031 [US2] Implement the launch flow in `JiraTemplateMaker.tsx`/a `LaunchDialog` component: prompt for prompt-at-launch fields with defaults, single confirm (FR-5.1)
+- [X] T032 [US2] Add pre-create required-field validation surfacing all missing fields in plain language before any POST (FR-5.2)
+- [X] T033 [US2] Call `createIssue`; on success render an open-in-Jira link built from the configured base URL (FR-5.3) and ensure no stray issue links/parent relationships are created (FR-5.4)
+- [X] T034 [US2] Implement reporter handling (FR-5.5): Reporter as a templatable/prompt field (`{ name }` on Server/DC); when unset, default to the integration account and clearly tell the user
 
 **Checkpoint**: A saved template creates a real, valid Jira issue in one action.
 
