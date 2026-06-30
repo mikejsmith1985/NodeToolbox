@@ -24,14 +24,14 @@ fetch and an existing rule (the Mentions scan, the Hygiene checks, the self-assi
 issue query, the team roster and sprint scope from the Sprint Dashboard). It performs
 no analysis the product cannot already do.
 
-Crucially, the dashboard is **fully deterministic** — it depends on no AI/Rovo
+Crucially, the dashboard is **fully deterministic** — it depends on no AI Assist
 capability. It is the bridge the Scrum Master uses to maintain discipline *until*
 direct AI assistance returns to Toolbox; when that happens, AI enrichment can be
 layered on later as an additive, non-blocking enhancement (out of scope here).
 
 ## Scope Boundary (explicit non-goals)
 
-- **Out of scope**: Any AI/Rovo dependency. Every count, threshold, and ordering on
+- **Out of scope**: Any AI Assist dependency. Every count, threshold, and ordering on
   the dashboard is computed by deterministic rules already present in the codebase.
   No dashboard element requires the Ctrl+Alt+Z AI-Assist gate to function.
 - **Out of scope**: New data fetches or new hygiene rules. The dashboard reuses the
@@ -53,7 +53,7 @@ layered on later as an additive, non-blocking enhancement (out of scope here).
 
 ### Session 2026-06-30
 
-- Q: Must the dashboard work without AI? → A: Yes. Fully deterministic; no Rovo/AI-Assist
+- Q: Must the dashboard work without AI? → A: Yes. Fully deterministic; no AI Assist
   dependency. This is a hard constraint, not a preference.
 - Q: Is this a new data source? → A: No. It is a read-side mashup of data already pulled
   into existing tabs/views, reusing their existing rules and selections.
@@ -138,7 +138,7 @@ a capability that is currently offline.
    (Mentions, Hygiene), **When** I click it, **Then** I am taken to that exact sub-tab
    in a single action (not merely to the parent view's default tab).
 
-8. **Given** AI/Rovo is unavailable or the AI-Assist gate is locked, **When** I use
+8. **Given** AI Assist is unavailable or the AI-Assist gate is locked, **When** I use
    the dashboard, **Then** every count, link, and check-off works normally; no
    dashboard feature is hidden or degraded by the absence of AI.
 
@@ -178,7 +178,7 @@ a capability that is currently offline.
   loads.
 
 - **FR-002**: Every count, threshold, ordering, and completion state on the dashboard
-  MUST be computed by deterministic rules. No dashboard element may require an AI/Rovo
+  MUST be computed by deterministic rules. No dashboard element may require an AI Assist
   call or the AI-Assist gate to render or function.
 
 - **FR-003**: The dashboard MUST derive its data exclusively from sources the product
@@ -316,7 +316,7 @@ a capability that is currently offline.
   handles it (including the correct sub-tab) in a single click.
 
 - **SC-004**: The dashboard renders and functions with 100% of features available when
-  AI/Rovo is unavailable and the AI-Assist gate is locked.
+  AI Assist is unavailable and the AI-Assist gate is locked.
 
 - **SC-005**: When a single underlying source fails, at least all other categories
   still display their counts; the dashboard is never fully blanked by one source's

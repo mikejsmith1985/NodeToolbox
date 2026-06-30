@@ -12,7 +12,7 @@ need to do today to keep Jira clean and work moving?" It is a **read-side mashup
 count is computed from data the product already fetches, using rules the product already
 implements (the Mentions scan, the Hygiene checks, the self-assigned issue query, and the
 Sprint Dashboard sprint/board scope). It introduces **no new hygiene/categorization rule**
-and has **no AI/Rovo dependency**.
+and has **no AI Assist dependency**.
 
 Technical approach: a new `Today` tab in `MyIssuesView` renders one self-contained
 **category card** per daily duty. Each card loads independently (per-card fetch/error
