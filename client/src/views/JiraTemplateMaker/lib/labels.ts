@@ -21,11 +21,3 @@ export function dedupeLabels(labels: string[]): string[] {
 export function isValidLabel(label: string): boolean {
   return label.length > 0 && !/\s/.test(label);
 }
-
-/**
- * Builds the label set to write on create: the issue's existing labels plus the template's
- * labels, case-sensitively de-duplicated so no label is added twice (FR-3.3).
- */
-export function mergeLabelsForCreate(templateLabels: string[], existingLabels: string[]): string[] {
-  return dedupeLabels([...existingLabels, ...templateLabels]);
-}

@@ -36,4 +36,14 @@ describe('LaunchDialog', () => {
     render(<LaunchDialog template={TEMPLATE} descriptors={DESCRIPTORS} onClose={vi.fn()} />);
     expect(screen.getByText(/integration account/i)).toBeInTheDocument();
   });
+
+  it('blocks create and flags a stale template that references a missing field', () => {
+    const staleTemplate: JiraTemplate = {
+      ...TEMPLATE,
+      fields: [{ fieldId: 'gone', fieldName: 'Gone', fieldType: 'text', mode: 'fixed', value: 'x' }],
+    };
+    render(<LaunchDialog template={staleTemplate} descriptors={DESCRIPTORS} onClose={vi.fn()} />);
+    expect(screen.getByText(/needs review/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create issue/i })).toBeDisabled();
+  });
 });
