@@ -44,8 +44,7 @@ describe('JiraTemplateMaker view', () => {
     render(<JiraTemplateMaker />);
     expect(screen.getByRole('heading', { name: /jira template maker/i })).toBeInTheDocument();
 
-    // Project select populates after the project list loads.
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Alpha (ABC)' })).toBeInTheDocument());
+    // Project is a searchable key input (seeded with ART projects); type a key directly.
     fireEvent.change(screen.getByLabelText('Project'), { target: { value: 'ABC' } });
 
     // After createmeta resolves, advancing reaches the issue-type step scoped to this project.
