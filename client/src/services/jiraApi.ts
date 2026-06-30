@@ -4,6 +4,13 @@
 // `window` so the Dev Panel view can record API activity without coupling to
 // this module. The event detail shape is documented by `JiraApiEventDetail`.
 
+import type {
+  CreateIssueRequest,
+  CreateIssueResponse,
+  CreateMetaResponse,
+  JiraMyself,
+} from '../types/jira.ts';
+
 const JIRA_PROXY_BASE = '/jira-proxy';
 const JSON_CONTENT_TYPE = 'application/json';
 const NO_CONTENT_STATUS = 204;
@@ -158,4 +165,28 @@ export async function jiraPut(path: string, body: unknown): Promise<void> {
     await assertSuccessfulResponse(response, `Jira PUT ${path} failed`);
     return { value: undefined, status: response.status };
   });
+}
+
+// ── Jira Template Maker helpers ──
+
+/**
+ * Loads issue-creation metadata for a project: its issue types and, for each, the fields on
+ * the create screen with their allowed option values. Uses the classic Server/DC createmeta
+ * endpoint with the projects.issuetypes.fields expansion.
+ */
+export async function getCreateMeta(projectKey: string): Promise<CreateMetaResponse> {
+  const encodedProjectKey = encodeURIComponent(projectKey);
+  return jiraGet<CreateMetaResponse>(
+    `/rest/api/2/issue/createmeta?projectKeys=${encodedProjectKey}&expand=projects.issuetypes.fields`,
+  );
+}
+
+/** Creates a Jira issue from a built field payload and returns its id/key/self link. */
+export async function createIssue(request: CreateIssueRequest): Promise<CreateIssueResponse> {
+  return jiraPost<CreateIssueResponse>('/rest/api/2/issue', request);
+}
+
+/** Returns the current Jira user, used to record the author on a saved template. */
+export async function getMyself(): Promise<JiraMyself> {
+  return jiraGet<JiraMyself>('/rest/api/2/myself');
 }
