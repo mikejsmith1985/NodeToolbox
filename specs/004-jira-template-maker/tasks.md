@@ -26,7 +26,7 @@ wiki-markup text fields.
 **Purpose**: Scaffolding.
 
 - [X] T001 Create the view directory structure `client/src/views/JiraTemplateMaker/` with `hooks/`, `components/`, `lib/`, and `__tests__/` subfolders per plan.md
-- [ ] T002 [P] Register the Jira Template Maker view in the client navigation/view registry, mirroring how `ArtView`/`SnowHub` views are registered (e.g. `client/src/App.tsx` or the view registry)
+- [X] T002 [P] Register the Jira Template Maker view in the client navigation/view registry, mirroring how `ArtView`/`SnowHub` views are registered (e.g. `client/src/App.tsx` or the view registry)
 - [X] T003 ✅ RESOLVED — Jira flavor confirmed **Server/Data Center** (research.md D1): use the classic `/rest/api/2/issue/createmeta` endpoint and the **wiki-markup** text serializer throughout. No further action; downstream tasks assume this.
 
 ---
@@ -44,8 +44,8 @@ shell that every user story builds on.
 - [X] T007 Add `getCreateMeta` (classic Server/DC endpoint) and `createIssue` typed wrappers to `client/src/services/jiraApi.ts` (using `jiraGet`/`jiraPost`), with unit tests mocking `fetch`, per contracts/jira-metadata.md C2/C3 (both wrappers added here so US1 and US2 don't edit this file in parallel)
 - [X] T008 [P] Write failing unit tests for the template store (load-absent→empty default, `schemaVersion` gate, save round-trip, 3-way merge by template id) in `client/src/views/JiraTemplateMaker/__tests__/templateStore.test.ts` per contracts/template-store.md
 - [X] T009 Add `JIRA_TEMPLATES_PROPERTY_KEY`, `loadJiraTemplates`, `saveJiraTemplates`, and the merge helper to `client/src/services/confluenceApi.ts` (reusing `fetchConfluenceDatabasePropertyByKey`/`upsertConfluenceDatabaseProperty`) to make T008 pass
-- [ ] T010 Create the wizard state skeleton `client/src/views/JiraTemplateMaker/hooks/useTemplateMakerState.ts` (currentStep, goToStep, draft `JiraTemplate` model with `TemplateFieldEntry[]`) mirroring `useCrgState.ts`
-- [ ] T011 Create the wizard shell `client/src/views/JiraTemplateMaker/JiraTemplateMaker.tsx` (step indicator + navigation) mirroring `client/src/views/SnowHub/tabs/CreateChgTab.tsx`, wired to `useTemplateMakerState`
+- [X] T010 Create the wizard state skeleton `client/src/views/JiraTemplateMaker/hooks/useTemplateMakerState.ts` (currentStep, goToStep, draft `JiraTemplate` model with `TemplateFieldEntry[]`) mirroring `useCrgState.ts`
+- [X] T011 Create the wizard shell `client/src/views/JiraTemplateMaker/JiraTemplateMaker.tsx` (step indicator + navigation) mirroring `client/src/views/SnowHub/tabs/CreateChgTab.tsx`, wired to `useTemplateMakerState`
 
 **Checkpoint**: Types, field model, Jira wrappers, template store, and an empty wizard render — user stories can begin.
 
@@ -64,24 +64,24 @@ to the shared store with the author recorded, and reloads.
 
 ### Tests for User Story 1 ⚠️ (write first, must fail)
 
-- [ ] T012 [P] [US1] Component test: project→issuetype→field dependent narrowing, and unsupported field types appear marked and non-addable, in `client/src/views/JiraTemplateMaker/__tests__/wizard.pickers.test.tsx`
-- [ ] T013 [P] [US1] Component test: a dropdown field offers only `allowedValues` and rejects free-typed values, in `client/src/views/JiraTemplateMaker/__tests__/fieldValueInput.test.tsx`
-- [ ] T014 [P] [US1] Test: saving persists the template via the store with `authorName` recorded, and a template referencing a now-missing option is flagged stale (drift, FR-7.3), in `client/src/views/JiraTemplateMaker/__tests__/templateLibrary.test.ts`
+- [X] T012 [P] [US1] Component test: project→issuetype→field dependent narrowing, and unsupported field types appear marked and non-addable, in `client/src/views/JiraTemplateMaker/__tests__/wizard.pickers.test.tsx`
+- [X] T013 [P] [US1] Component test: a dropdown field offers only `allowedValues` and rejects free-typed values, in `client/src/views/JiraTemplateMaker/__tests__/fieldValueInput.test.tsx`
+- [X] T014 [P] [US1] Test: saving persists the template via the store with `authorName` recorded, and a template referencing a now-missing option is flagged stale (drift, FR-7.3), in `client/src/views/JiraTemplateMaker/__tests__/templateLibrary.test.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T015 [US1] Implement `client/src/views/JiraTemplateMaker/hooks/useJiraCreateMeta.ts` (load createmeta per project+issuetype via `getCreateMeta`, map through `fieldModel`, surface a plain-language error with no guessed data on failure — FR-7.2), with unit tests
-- [ ] T016 [P] [US1] Implement `client/src/views/JiraTemplateMaker/components/IssueTypePicker.tsx` (issue types from createmeta for the chosen project — FR-1.2)
-- [ ] T017 [P] [US1] Implement `client/src/views/JiraTemplateMaker/components/ScopedFieldPicker.tsx` (supported fields addable; unsupported shown-not-addable — FR-1.3, FR-2.1)
-- [ ] T018 [P] [US1] Implement `client/src/views/JiraTemplateMaker/components/FieldValueInput.tsx` dispatcher for choice/multiChoice/user/date/datetime/number/components/versions inputs sourced from `allowedValues` (FR-2.2); labels & text handled in later stories/tasks
+- [X] T015 [US1] Implement `client/src/views/JiraTemplateMaker/hooks/useJiraCreateMeta.ts` (load createmeta per project+issuetype via `getCreateMeta`, map through `fieldModel`, surface a plain-language error with no guessed data on failure — FR-7.2), with unit tests
+- [X] T016 [P] [US1] Implement `client/src/views/JiraTemplateMaker/components/IssueTypePicker.tsx` (issue types from createmeta for the chosen project — FR-1.2)
+- [X] T017 [P] [US1] Implement `client/src/views/JiraTemplateMaker/components/ScopedFieldPicker.tsx` (supported fields addable; unsupported shown-not-addable — FR-1.3, FR-2.1)
+- [X] T018 [P] [US1] Implement `client/src/views/JiraTemplateMaker/components/FieldValueInput.tsx` dispatcher for choice/multiChoice/user/date/datetime/number/components/versions inputs sourced from `allowedValues` (FR-2.2); labels & text handled in later stories/tasks
 - [X] T019 [US1] Implement pure `client/src/views/JiraTemplateMaker/lib/wikiMarkup.ts` (editor doc → Jira wiki markup: bold, italic, headings, lists, links, inline/code blocks — Q3=A) with unit tests
-- [ ] T020 [US1] Implement `client/src/views/JiraTemplateMaker/components/WikiMarkupEditor.tsx` (minimal core-formatting editor emitting via `wikiMarkup`) and wire it as the `text` input in `FieldValueInput`
-- [ ] T021 [US1] Implement `client/src/views/JiraTemplateMaker/hooks/useTemplateLibrary.ts` (list/save/edit/delete shared templates via `load/saveJiraTemplates`; drift detection per FR-7.3)
-- [ ] T022 [US1] Resolve the current author via `GET /rest/api/2/myself` (reuse the mention-state identity approach) and record `authorName` on save; fall back to `unknown` without blocking the save (FR-4.3, research.md D8)
-- [ ] T023 [US1] Re-scope downstream pickers when the project or issue type changes, and warn the user about any previously added fields that are no longer valid, in `useTemplateMakerState`/the wizard (FR-1.4)
-- [ ] T024 [US1] Add a pre-flight create-permission check (e.g. createmeta returning the issue type / a permission probe) so a project the user cannot create issues in is surfaced before they build a template (spec Edge Cases)
-- [ ] T025 [US1] Add the per-field fixed vs prompt-at-launch toggle (FR-2.5, with optional default) and required-field indicators (FR-2.4) to the wizard form
-- [ ] T026 [US1] Wire the project step to the reused `client/src/components/JiraProjectPicker`, assemble the full build→save flow in `JiraTemplateMaker.tsx`, and apply plain-language labels/errors (FR-6, human field names not IDs)
+- [X] T020 [US1] Implement `client/src/views/JiraTemplateMaker/components/WikiMarkupEditor.tsx` (minimal core-formatting editor emitting via `wikiMarkup`) and wire it as the `text` input in `FieldValueInput`
+- [X] T021 [US1] Implement `client/src/views/JiraTemplateMaker/hooks/useTemplateLibrary.ts` (list/save/edit/delete shared templates via `load/saveJiraTemplates`; drift detection per FR-7.3)
+- [X] T022 [US1] Resolve the current author via `GET /rest/api/2/myself` (reuse the mention-state identity approach) and record `authorName` on save; fall back to `unknown` without blocking the save (FR-4.3, research.md D8)
+- [X] T023 [US1] Re-scope downstream pickers when the project or issue type changes, and warn the user about any previously added fields that are no longer valid, in `useTemplateMakerState`/the wizard (FR-1.4)
+- [X] T024 [US1] Add a pre-flight create-permission check (e.g. createmeta returning the issue type / a permission probe) so a project the user cannot create issues in is surfaced before they build a template (spec Edge Cases)
+- [X] T025 [US1] Add the per-field fixed vs prompt-at-launch toggle (FR-2.5, with optional default) and required-field indicators (FR-2.4) to the wizard form
+- [X] T026 [US1] Wire the project step to the reused `client/src/components/JiraProjectPicker`, assemble the full build→save flow in `JiraTemplateMaker.tsx`, and apply plain-language labels/errors (FR-6, human field names not IDs)
 
 **Checkpoint**: A user can build and save a valid template (author recorded); invalid choices are impossible. MVP demoable.
 

@@ -21,6 +21,7 @@ import BusinessHelperView from './views/BusinessHelper/BusinessHelperView.tsx';
 import CodeWalkthroughView from './views/CodeWalkthrough/CodeWalkthroughView.tsx';
 import DsuBoardView from './views/DsuBoard/DsuBoardView.tsx';
 import HomeView from './views/Home/HomeView.tsx';
+import JiraTemplateMaker from './views/JiraTemplateMaker/JiraTemplateMaker.tsx';
 import MyIssuesView from './views/MyIssues/MyIssuesView.tsx';
 import PersonalToolboxView from './views/PersonalToolbox/PersonalToolboxView.tsx';
 import ReportsHubView from './views/ReportsHub/ReportsHubView.tsx';
@@ -35,6 +36,7 @@ const APP_TITLE = 'NodeToolbox';
 const HOME_ROUTE = '/';
 const SETTINGS_ROUTE = '/settings';
 const SNOW_HUB_ROUTE = '/snow-hub';
+const JIRA_TEMPLATE_MAKER_ROUTE = '/jira-template-maker';
 const MY_ISSUES_ROUTE = '/my-issues';
 const PERSONAL_TOOLBOX_ROUTE = '/personal-toolbox';
 const SPRINT_DASHBOARD_ROUTE = '/sprint-dashboard';
@@ -164,6 +166,7 @@ export default function App() {
           <Route path={HOME_ROUTE} element={<HomeView />} />
           <Route path={SETTINGS_ROUTE} element={<SettingsView />} />
           <Route path={SNOW_HUB_ROUTE} element={<SnowHubView />} />
+          <Route path={JIRA_TEMPLATE_MAKER_ROUTE} element={<JiraTemplateMaker />} />
           <Route path={MY_ISSUES_ROUTE} element={<MyIssuesView />} />
           <Route path={PERSONAL_TOOLBOX_ROUTE} element={<PersonalToolboxView />} />
           <Route path={SPRINT_DASHBOARD_ROUTE} element={<SprintDashboardView />} />
