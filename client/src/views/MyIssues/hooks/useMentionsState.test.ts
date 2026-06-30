@@ -5,11 +5,11 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockJiraGet, mockFetchAddressed, mockSetAddressed, mockFetchProxyConfig } = vi.hoisted(() => ({
+const { mockJiraGet, mockFetchAddressed, mockSetAddressed, mockFetchJiraBaseUrl } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
   mockFetchAddressed: vi.fn(),
   mockSetAddressed: vi.fn(),
-  mockFetchProxyConfig: vi.fn(),
+  mockFetchJiraBaseUrl: vi.fn(),
 }));
 
 vi.mock('../../../services/jiraApi.ts', () => ({ jiraGet: mockJiraGet }));
@@ -17,7 +17,7 @@ vi.mock('../../../services/mentionStateApi.ts', () => ({
   fetchAddressedMentions: mockFetchAddressed,
   setMentionAddressed: mockSetAddressed,
 }));
-vi.mock('../../../services/proxyApi.ts', () => ({ fetchProxyConfig: mockFetchProxyConfig }));
+vi.mock('../../../services/proxyApi.ts', () => ({ fetchJiraBaseUrl: mockFetchJiraBaseUrl }));
 
 import { useMentionsState } from './useMentionsState.ts';
 
@@ -66,7 +66,7 @@ beforeEach(() => {
   // TBX-1#101 has already been addressed previously.
   mockFetchAddressed.mockResolvedValue({ 'TBX-1#101': { addressedAt: 'x', issueKey: 'TBX-1' } });
   mockSetAddressed.mockResolvedValue({});
-  mockFetchProxyConfig.mockResolvedValue({ jiraBaseUrl: 'https://jira.example.com' });
+  mockFetchJiraBaseUrl.mockResolvedValue('https://jira.example.com');
 });
 
 describe('useMentionsState', () => {
@@ -87,7 +87,7 @@ describe('useMentionsState', () => {
   });
 
   it('still loads mentions when the proxy config fetch fails (empty base URL)', async () => {
-    mockFetchProxyConfig.mockRejectedValue(new Error('config unavailable'));
+    mockFetchJiraBaseUrl.mockRejectedValue(new Error('config unavailable'));
     const { result } = renderHook(() => useMentionsState());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
