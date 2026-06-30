@@ -4,11 +4,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import JiraProjectPicker from '../../components/JiraProjectPicker/index.tsx';
+import ArtProjectInput from './components/ArtProjectInput.tsx';
 import FieldValueInput from './components/FieldValueInput.tsx';
 import IssueTypePicker from './components/IssueTypePicker.tsx';
 import LaunchDialog from './components/LaunchDialog.tsx';
 import ScopedFieldPicker from './components/ScopedFieldPicker.tsx';
+import { getArtProjectKeys } from './lib/artProjects.ts';
 import type { JiraTemplate } from './lib/templateTypes.ts';
 import { useJiraCreateMeta } from './hooks/useJiraCreateMeta.ts';
 import { useTemplateLibrary } from './hooks/useTemplateLibrary.ts';
@@ -35,6 +36,8 @@ export default function JiraTemplateMaker() {
   const [launchTemplate, setLaunchTemplate] = useState<JiraTemplate | null>(null);
   const launchMeta = useJiraCreateMeta(launchTemplate?.projectKey ?? null);
   const launchDescriptors = launchTemplate ? launchMeta.getFieldDescriptors(launchTemplate.issueTypeId) : [];
+  // ART-configured project keys seed the project search (no full project dropdown).
+  const artProjectKeys = useMemo(() => getArtProjectKeys(), []);
 
   // Once createmeta resolves the project, capture its id (needed for the create payload).
   useEffect(() => {
@@ -132,10 +135,11 @@ export default function JiraTemplateMaker() {
 
       {state.currentStep === 'project' && (
         <section className={styles.section}>
-          <JiraProjectPicker
+          <ArtProjectInput
             id="tmpl-project"
             label="Project"
             value={state.projectKey}
+            artProjectKeys={artProjectKeys}
             onChange={(projectKey) => state.setProject(projectKey, '')}
           />
           <button
