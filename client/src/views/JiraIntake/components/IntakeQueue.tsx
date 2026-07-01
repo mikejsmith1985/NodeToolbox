@@ -1,5 +1,6 @@
-// IntakeQueue.tsx — Renders the parsed submissions newest-first with submitter, timestamp, core
-// values, a per-row state badge, the created Jira key, and any blocking reason. See FR-2.1/2.4.
+// IntakeQueue.tsx — Renders the parsed submissions newest-first with the full captured detail
+// (summary + description + acceptance criteria, issue type, priority, team), the submitter,
+// timestamp, per-row state badge, created Jira key, and any blocking reason. See FR-2.1/2.4.
 
 import styles from '../JiraIntake.module.css';
 import type { QueueEntry, QueueEntryState } from '../lib/intakeTypes.ts';
@@ -32,7 +33,7 @@ const STATE_BADGE_CLASS: Record<QueueEntryState, string> = {
   skipped: styles.badgeSkipped,
 };
 
-/** The newest-first queue table. Empty until a file is imported. */
+/** The newest-first queue table showing every captured field. Empty until a file is imported. */
 export default function IntakeQueue({ entries, counts, isReviewMode = false, onCreate, onDismiss }: IntakeQueueProps) {
   if (entries.length === 0) {
     return <p className={styles.emptyState}>No submissions yet. Import an exported file to get started.</p>;
@@ -50,7 +51,10 @@ export default function IntakeQueue({ entries, counts, isReviewMode = false, onC
         <thead>
           <tr>
             <th>Status</th>
-            <th>Summary</th>
+            <th>Summary &amp; details</th>
+            <th>Type</th>
+            <th>Priority</th>
+            <th>Team</th>
             <th>Submitter</th>
             <th>Submitted</th>
             <th>Jira key</th>
@@ -68,7 +72,20 @@ export default function IntakeQueue({ entries, counts, isReviewMode = false, onC
                   <div className={styles.reason}>{entry.blockingReasons.join('; ')}</div>
                 )}
               </td>
-              <td>{entry.submission.fields.summary || <em>(no summary)</em>}</td>
+              <td>
+                <div className={styles.summaryText}>{entry.submission.fields.summary || <em>(no summary)</em>}</div>
+                {entry.submission.fields.description && (
+                  <div className={styles.detailText}>{entry.submission.fields.description}</div>
+                )}
+                {entry.submission.fields.acceptanceCriteria && (
+                  <div className={styles.detailText}>
+                    <span className={styles.detailLabel}>AC:</span> {entry.submission.fields.acceptanceCriteria}
+                  </div>
+                )}
+              </td>
+              <td>{entry.submission.fields.issueType || '—'}</td>
+              <td>{entry.submission.fields.priority || '—'}</td>
+              <td>{entry.submission.fields.project || '—'}</td>
               <td>{entry.submission.submitter.displayName || entry.submission.submitter.email || '—'}</td>
               <td>{entry.submission.submittedAt || '—'}</td>
               <td>{entry.jiraKey ?? '—'}</td>
