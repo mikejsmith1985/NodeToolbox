@@ -24,7 +24,12 @@ export default function IntakeConfigPanel({ initialConfig, artProjectKeys, onSav
   const [autoCreateOnImport, setAutoCreateOnImport] = useState(initialConfig?.autoCreateOnImport ?? true);
   const [projectMappings, setProjectMappings] = useState<ProjectMapping[]>(initialConfig?.projectMappings ?? []);
 
-  const canSave = projectKey.trim() !== '' && !isSaving;
+  // A default project OR at least one complete project mapping is enough to save — a user who
+  // routes every row by its project name does not need a default.
+  const hasCompleteMapping = projectMappings.some(
+    (mapping) => mapping.projectName.trim() !== '' && mapping.projectKey.trim() !== '',
+  );
+  const canSave = (projectKey.trim() !== '' || hasCompleteMapping) && !isSaving;
 
   function updateMapping(index: number, patch: Partial<ProjectMapping>): void {
     setProjectMappings((mappings) => mappings.map((mapping, position) => (position === index ? { ...mapping, ...patch } : mapping)));
@@ -59,8 +64,9 @@ export default function IntakeConfigPanel({ initialConfig, artProjectKeys, onSav
       <h2 className={styles.panelTitle}>Intake settings</h2>
       <p className={styles.subtitle}>
         Issue type and priority come from each submission. The row&apos;s &quot;project&quot; column is a
-        project name — map each project name to a Jira project key below; rows with no project use
-        the default project.
+        project name — map each project name to a Jira project key below. The default project is
+        optional: it is only used for rows whose &quot;project&quot; column is blank. Save once you have a
+        default project or at least one project mapping.
       </p>
 
       <ArtProjectInput

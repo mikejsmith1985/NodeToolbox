@@ -13,9 +13,17 @@ describe('IntakeConfigPanel', () => {
     expect(screen.getByLabelText(/acceptance criteria field id/i)).toHaveValue('customfield_10200');
   });
 
-  it('disables save until a project is chosen', () => {
+  it('disables save until a default project or a project mapping exists', () => {
     render(<IntakeConfigPanel initialConfig={null} artProjectKeys={[]} onSave={vi.fn()} />);
     expect(screen.getByRole('button', { name: /save settings/i })).toBeDisabled();
+  });
+
+  it('enables save with only a project mapping (no default project needed)', () => {
+    render(<IntakeConfigPanel initialConfig={null} artProjectKeys={[]} onSave={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /add project mapping/i }));
+    fireEvent.change(screen.getByLabelText('Project name 1'), { target: { value: 'Cleanup Crew' } });
+    fireEvent.change(screen.getByLabelText('Jira project key 1'), { target: { value: 'ENCUC' } });
+    expect(screen.getByRole('button', { name: /save settings/i })).toBeEnabled();
   });
 
   it('assembles the config from default project, AC field, and the auto-create toggle', () => {

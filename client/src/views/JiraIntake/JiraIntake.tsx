@@ -23,8 +23,7 @@ export default function JiraIntake() {
   const [isEditingSettings, setIsEditingSettings] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const hasProject = Boolean(config && config.projectKey.trim() !== '');
-  const isReviewMode = Boolean(config && !config.autoCreateOnImport);
+  const isConfigured = Boolean(config);
   const shouldShowSettings = isEditingSettings || !config;
 
   async function handleSaveConfig(nextConfig: IntakeConfig): Promise<void> {
@@ -39,18 +38,27 @@ export default function JiraIntake() {
 
   async function handleFile(file: File): Promise<void> {
     const newEntries = await ingestFile(file);
-    // Auto-create only when configured and a project is set; otherwise rows wait for review.
-    if (config?.autoCreateOnImport && hasProject && newEntries.length > 0) {
+    // Auto-create only when configured; otherwise rows wait for a manual Create.
+    if (config?.autoCreateOnImport && isConfigured && newEntries.length > 0) {
       const created = await createAllNew(newEntries);
       created.forEach(updateEntry);
     }
   }
 
-  // Review-and-pick: create one submission on demand, reflecting progress in the queue.
+  // Create one submission on demand (manual create / retry), reflecting progress in the queue.
   async function handleCreateEntry(entry: QueueEntry): Promise<void> {
     updateEntry({ ...entry, state: 'creating' });
     updateEntry(await createFromSubmission(entry));
   }
+
+  // Manual bulk create of every row still waiting (new or previously failed).
+  async function handleCreateAll(): Promise<void> {
+    const pending = entries.filter((entry) => entry.state === 'new' || entry.state === 'failed');
+    const created = await createAllNew(pending.map((entry) => ({ ...entry, state: 'new' as const })));
+    created.forEach(updateEntry);
+  }
+
+  const pendingCount = entries.filter((entry) => entry.state === 'new' || entry.state === 'failed').length;
 
   return (
     <div className={styles.view}>
@@ -75,7 +83,9 @@ export default function JiraIntake() {
         <section className={styles.panel} aria-label="Intake settings summary">
           <div className={styles.header}>
             <h2 className={styles.panelTitle}>
-              {config?.projectKey} · {config?.autoCreateOnImport ? 'auto-create on import' : 'review and pick'}
+              {config?.projectKey ? `Default ${config.projectKey}` : 'Routed by project mapping'}
+              {' · '}
+              {config?.autoCreateOnImport ? 'auto-create on import' : 'review and pick'}
             </h2>
             <button className={styles.secondaryButton} onClick={() => setIsEditingSettings(true)} type="button">
               Edit settings
@@ -86,17 +96,29 @@ export default function JiraIntake() {
 
       <section className={styles.panel} aria-label="Import submissions">
         <h2 className={styles.panelTitle}>Import submissions</h2>
-        {!hasProject && (
-          <p className={styles.subtitle}>Set a target project above to create issues from imported rows.</p>
+        {!isConfigured && (
+          <p className={styles.subtitle}>Save intake settings above to create issues from imported rows.</p>
         )}
         <SubmissionDropzone onFile={(file) => { void handleFile(file); }} errorMessage={queueError} />
       </section>
 
       <section className={styles.panel} aria-label="Intake queue">
+        <div className={styles.header}>
+          <h2 className={styles.panelTitle}>Intake queue</h2>
+          {pendingCount > 0 && (
+            <button
+              className={styles.primaryButton}
+              disabled={!isConfigured}
+              onClick={() => { void handleCreateAll(); }}
+              type="button"
+            >
+              {isConfigured ? `Create ${pendingCount} issue${pendingCount === 1 ? '' : 's'} in Jira` : 'Save settings to create'}
+            </button>
+          )}
+        </div>
         <IntakeQueue
           entries={entries}
           counts={counts}
-          isReviewMode={isReviewMode}
           onCreate={(entry) => { void handleCreateEntry(entry); }}
           onDismiss={(entry) => dismissEntry(entry.submission.id)}
         />

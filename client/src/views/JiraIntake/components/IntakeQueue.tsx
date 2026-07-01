@@ -9,8 +9,7 @@ import type { IntakeQueueCounts } from '../hooks/useIntakeQueue.ts';
 interface IntakeQueueProps {
   entries: QueueEntry[];
   counts: IntakeQueueCounts;
-  /** In review-and-pick mode, each new row shows Create / Dismiss actions. */
-  isReviewMode?: boolean;
+  /** When provided, actionable rows show Create/Retry (and Dismiss) so the user can create by hand. */
   onCreate?: (entry: QueueEntry) => void;
   onDismiss?: (entry: QueueEntry) => void;
 }
@@ -34,10 +33,12 @@ const STATE_BADGE_CLASS: Record<QueueEntryState, string> = {
 };
 
 /** The newest-first queue table showing every captured field. Empty until a file is imported. */
-export default function IntakeQueue({ entries, counts, isReviewMode = false, onCreate, onDismiss }: IntakeQueueProps) {
+export default function IntakeQueue({ entries, counts, onCreate, onDismiss }: IntakeQueueProps) {
   if (entries.length === 0) {
     return <p className={styles.emptyState}>No submissions yet. Import an exported file to get started.</p>;
   }
+
+  const showActions = Boolean(onCreate);
 
   return (
     <div>
@@ -58,7 +59,7 @@ export default function IntakeQueue({ entries, counts, isReviewMode = false, onC
             <th>Submitter</th>
             <th>Submitted</th>
             <th>Jira key</th>
-            {isReviewMode && <th>Actions</th>}
+            {showActions && <th>Actions</th>}
           </tr>
         </thead>
         <tbody>
@@ -89,7 +90,7 @@ export default function IntakeQueue({ entries, counts, isReviewMode = false, onC
               <td>{entry.submission.submitter.displayName || entry.submission.submitter.email || '—'}</td>
               <td>{entry.submission.submittedAt || '—'}</td>
               <td>{entry.jiraKey ?? '—'}</td>
-              {isReviewMode && (
+              {showActions && (
                 <td>
                   {entry.state === 'new' && (
                     <>
@@ -97,6 +98,9 @@ export default function IntakeQueue({ entries, counts, isReviewMode = false, onC
                       {' '}
                       <button className={styles.secondaryButton} onClick={() => onDismiss?.(entry)} type="button">Dismiss</button>
                     </>
+                  )}
+                  {entry.state === 'failed' && (
+                    <button className={styles.secondaryButton} onClick={() => onCreate?.(entry)} type="button">Retry</button>
                   )}
                 </td>
               )}
