@@ -104,8 +104,8 @@ creates or dismisses individual rows; created rows show their Jira key; nothing 
 **Independent Test**: quickstart Scenario 5 — with auto-create OFF, import creates nothing until the
 user clicks Create on a row; Dismiss marks a row `skipped`.
 
-- [ ] T023 [US3] Extend `useIntakeQueue.test.ts`/`useCreateFromSubmission.test.ts` for review mode (import with auto-create OFF creates nothing; `createFromSubmission(entry)` on demand; `dismiss(entry)` → `skipped`), then implement the review-mode gating (depends on T012, T013)
-- [ ] T024 [US3] Extend `IntakeQueue.test.tsx` to render per-row **Create** and **Dismiss** actions in review mode, then update `IntakeQueue.tsx`
+- [X] T023 [US3] Extend `useIntakeQueue.test.ts`/`useCreateFromSubmission.test.ts` for review mode (import with auto-create OFF creates nothing; `createFromSubmission(entry)` on demand; `dismiss(entry)` → `skipped`), then implement the review-mode gating (depends on T012, T013)
+- [X] T024 [US3] Extend `IntakeQueue.test.tsx` to render per-row **Create** and **Dismiss** actions in review mode, then update `IntakeQueue.tsx`
 - [ ] T025 [US3] Run quickstart Scenario 5 and confirm no issue is created until an explicit per-row Create
 
 **Checkpoint**: Both auto-create and review-and-pick modes work from the same config toggle.

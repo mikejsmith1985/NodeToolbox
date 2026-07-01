@@ -12,7 +12,7 @@ import { useCreateFromSubmission } from './hooks/useCreateFromSubmission.ts';
 import { useIntakeConfig } from './hooks/useIntakeConfig.ts';
 import { useIntakeQueue } from './hooks/useIntakeQueue.ts';
 import styles from './JiraIntake.module.css';
-import type { IntakeConfig } from './lib/intakeTypes.ts';
+import type { IntakeConfig, QueueEntry } from './lib/intakeTypes.ts';
 
 /** The Jira Intake view: configure once, then import submission files and create issues. */
 export default function JiraIntake() {
@@ -24,13 +24,15 @@ export default function JiraIntake() {
   const [isSaving, setIsSaving] = useState(false);
 
   const { issueTypes, loadFields, getFieldDescriptors } = useJiraCreateMeta(metaProjectKey);
-  const { entries, counts, ingestFile, updateEntry, errorMessage: queueError } = useIntakeQueue(ledger);
+  const { entries, counts, ingestFile, updateEntry, dismissEntry, errorMessage: queueError } = useIntakeQueue(ledger);
 
   const fieldDescriptors = useMemo(
     () => (config ? getFieldDescriptors(config.issueTypeId) : []),
     [config, getFieldDescriptors],
   );
-  const { createAllNew } = useCreateFromSubmission({ config, fieldDescriptors, recordProcessed });
+  const { createFromSubmission, createAllNew } = useCreateFromSubmission({ config, fieldDescriptors, recordProcessed });
+
+  const isReviewMode = Boolean(config && !config.autoCreateOnImport);
 
   // Once a config exists, follow its project for createmeta and load its issue-type fields.
   useEffect(() => {
@@ -61,6 +63,13 @@ export default function JiraIntake() {
       const created = await createAllNew(newEntries);
       created.forEach(updateEntry);
     }
+  }
+
+  // Review-and-pick: create one submission on demand, reflecting progress in the queue.
+  async function handleCreateEntry(entry: QueueEntry): Promise<void> {
+    updateEntry({ ...entry, state: 'creating' });
+    const created = await createFromSubmission(entry);
+    updateEntry(created);
   }
 
   const shouldShowConfigPanel = isEditingConfig || !config;
@@ -103,7 +112,13 @@ export default function JiraIntake() {
           </section>
 
           <section className={styles.panel} aria-label="Intake queue">
-            <IntakeQueue entries={entries} counts={counts} />
+            <IntakeQueue
+              entries={entries}
+              counts={counts}
+              isReviewMode={isReviewMode}
+              onCreate={(entry) => { void handleCreateEntry(entry); }}
+              onDismiss={(entry) => dismissEntry(entry.submission.id)}
+            />
           </section>
         </>
       )}

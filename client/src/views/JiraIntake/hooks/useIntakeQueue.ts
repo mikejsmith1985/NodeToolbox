@@ -25,6 +25,8 @@ export interface UseIntakeQueueResult {
   /** Parses + loads the file into the queue and returns the resulting entries ([] on failure). */
   ingestFile: (file: File) => Promise<QueueEntry[]>;
   updateEntry: (updated: QueueEntry) => void;
+  /** Marks a submission as skipped (review-and-pick dismiss), leaving others untouched. */
+  dismissEntry: (submissionId: string) => void;
   reset: () => void;
 }
 
@@ -75,6 +77,12 @@ export function useIntakeQueue(ledger: ProcessedEntry[]): UseIntakeQueueResult {
     setEntries((current) => current.map((entry) => (entry.submission.id === updated.submission.id ? updated : entry)));
   }, []);
 
+  const dismissEntry = useCallback((submissionId: string): void => {
+    setEntries((current) => current.map((entry) => (
+      entry.submission.id === submissionId ? { ...entry, state: 'skipped', blockingReasons: [] } : entry
+    )));
+  }, []);
+
   const reset = useCallback((): void => {
     setEntries([]);
     setErrorMessage(null);
@@ -87,5 +95,5 @@ export function useIntakeQueue(ledger: ProcessedEntry[]): UseIntakeQueueResult {
     invalid: entries.filter((entry) => entry.state === 'invalid').length,
   }), [entries]);
 
-  return { entries, errorMessage, counts, ingestFile, updateEntry, reset };
+  return { entries, errorMessage, counts, ingestFile, updateEntry, dismissEntry, reset };
 }

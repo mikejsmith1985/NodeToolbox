@@ -1,8 +1,8 @@
 // IntakeQueue.test.tsx — Covers the empty state, newest-first rendering with badges/keys, and the
 // blocking-reason display for invalid rows.
 
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 
 import IntakeQueue from './IntakeQueue.tsx';
 import type { QueueEntry } from '../lib/intakeTypes.ts';
@@ -47,5 +47,30 @@ describe('IntakeQueue', () => {
     const entries = [entry({ id: 'c', state: 'invalid', blockingReasons: ['Missing required field: Summary'] })];
     render(<IntakeQueue entries={entries} counts={{ total: 1, newCount: 0, imported: 0, invalid: 1 }} />);
     expect(screen.getByText('Missing required field: Summary')).toBeInTheDocument();
+  });
+
+  it('renders Create/Dismiss actions for new rows in review mode and wires the callbacks', () => {
+    const onCreate = vi.fn();
+    const onDismiss = vi.fn();
+    const newRow = entry({ id: 'd', state: 'new' });
+    render(
+      <IntakeQueue
+        entries={[newRow]}
+        counts={{ total: 1, newCount: 1, imported: 0, invalid: 0 }}
+        isReviewMode
+        onCreate={onCreate}
+        onDismiss={onDismiss}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(onCreate).toHaveBeenCalledWith(newRow);
+    expect(onDismiss).toHaveBeenCalledWith(newRow);
+  });
+
+  it('does not render row actions when not in review mode', () => {
+    render(<IntakeQueue entries={[entry({ id: 'e', state: 'new' })]} counts={{ total: 1, newCount: 1, imported: 0, invalid: 0 }} />);
+    expect(screen.queryByRole('button', { name: 'Create' })).not.toBeInTheDocument();
   });
 });

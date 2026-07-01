@@ -8,6 +8,10 @@ import type { IntakeQueueCounts } from '../hooks/useIntakeQueue.ts';
 interface IntakeQueueProps {
   entries: QueueEntry[];
   counts: IntakeQueueCounts;
+  /** In review-and-pick mode, each new row shows Create / Dismiss actions. */
+  isReviewMode?: boolean;
+  onCreate?: (entry: QueueEntry) => void;
+  onDismiss?: (entry: QueueEntry) => void;
 }
 
 const STATE_LABEL: Record<QueueEntryState, string> = {
@@ -29,7 +33,7 @@ const STATE_BADGE_CLASS: Record<QueueEntryState, string> = {
 };
 
 /** The newest-first queue table. Empty until a file is imported. */
-export default function IntakeQueue({ entries, counts }: IntakeQueueProps) {
+export default function IntakeQueue({ entries, counts, isReviewMode = false, onCreate, onDismiss }: IntakeQueueProps) {
   if (entries.length === 0) {
     return <p className={styles.emptyState}>No submissions yet. Import an exported file to get started.</p>;
   }
@@ -50,6 +54,7 @@ export default function IntakeQueue({ entries, counts }: IntakeQueueProps) {
             <th>Submitter</th>
             <th>Submitted</th>
             <th>Jira key</th>
+            {isReviewMode && <th>Actions</th>}
           </tr>
         </thead>
         <tbody>
@@ -67,6 +72,17 @@ export default function IntakeQueue({ entries, counts }: IntakeQueueProps) {
               <td>{entry.submission.submitter.displayName || entry.submission.submitter.email || '—'}</td>
               <td>{entry.submission.submittedAt || '—'}</td>
               <td>{entry.jiraKey ?? '—'}</td>
+              {isReviewMode && (
+                <td>
+                  {entry.state === 'new' && (
+                    <>
+                      <button className={styles.secondaryButton} onClick={() => onCreate?.(entry)} type="button">Create</button>
+                      {' '}
+                      <button className={styles.secondaryButton} onClick={() => onDismiss?.(entry)} type="button">Dismiss</button>
+                    </>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
