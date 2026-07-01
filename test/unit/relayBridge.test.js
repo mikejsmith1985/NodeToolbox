@@ -34,6 +34,16 @@ describe('GET /api/relay-bridge/status', () => {
     expect(response.body.system).toBe('snow');
   });
 
+  it('supports the sharepoint relay system (register + status)', async () => {
+    const app = buildTestApp();
+    const registerResponse = await request(app).post('/api/relay-bridge/register?sys=sharepoint').send({});
+    expect(registerResponse.status).toBe(200);
+
+    const statusResponse = await request(app).get('/api/relay-bridge/status?sys=sharepoint');
+    expect(statusResponse.status).toBe(200);
+    expect(statusResponse.body.system).toBe('sharepoint');
+  });
+
   it('does not report connected until the bookmarklet has started polling', async () => {
     const app = buildTestApp();
     await request(app).post('/api/relay-bridge/register?sys=snow').send({});

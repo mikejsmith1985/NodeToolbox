@@ -9,10 +9,12 @@ import type {
 } from './relay.ts';
 
 describe('relay types', () => {
-  it('accepts the supported relay system literal', () => {
-    const relaySystem: RelaySystem = 'snow';
+  it('accepts the supported relay system literals', () => {
+    const snowSystem: RelaySystem = 'snow';
+    const sharepointSystem: RelaySystem = 'sharepoint';
 
-    expect(relaySystem).toBe('snow');
+    expect(snowSystem).toBe('snow');
+    expect(sharepointSystem).toBe('sharepoint');
   });
 
   it('accepts a relay bridge status literal with the expected keys', () => {

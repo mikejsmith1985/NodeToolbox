@@ -3,28 +3,40 @@
 // row); the only setting is the target project. On import, when auto-create is on, each new row
 // becomes an issue with the reporter set to the submitter (integration-account fallback). Spec 005.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import IntakeConfigPanel from './components/IntakeConfigPanel.tsx';
 import IntakeQueue from './components/IntakeQueue.tsx';
+import SharePointPullPanel from './components/SharePointPullPanel.tsx';
 import SubmissionDropzone from './components/SubmissionDropzone.tsx';
 import { useCreateFromSubmission } from './hooks/useCreateFromSubmission.ts';
 import { useIntakeConfig } from './hooks/useIntakeConfig.ts';
 import { useIntakeQueue } from './hooks/useIntakeQueue.ts';
+import { useSharePointPull } from './hooks/useSharePointPull.ts';
 import styles from './JiraIntake.module.css';
 import type { IntakeConfig, QueueEntry } from './lib/intakeTypes.ts';
 
 /** The Jira Intake view: set the project once, then import submission files and create issues. */
 export default function JiraIntake() {
   const { config, ledger, isLoading, errorMessage: configError, saveConfig, recordProcessed } = useIntakeConfig();
-  const { entries, counts, ingestFile, updateEntry, dismissEntry, errorMessage: queueError } = useIntakeQueue(ledger);
+  const { entries, counts, ingestFile, ingestRows, updateEntry, dismissEntry, errorMessage: queueError } = useIntakeQueue(ledger);
   const { createFromSubmission, createAllNew, reconcileExisting } = useCreateFromSubmission({ config, recordProcessed });
+  const { isConnected: isRelayConnected, refreshStatus, pull, isPulling, errorMessage: pullError } = useSharePointPull(config);
 
   const [isEditingSettings, setIsEditingSettings] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [pullWarning, setPullWarning] = useState<string | null>(null);
 
   const isConfigured = Boolean(config);
   const shouldShowSettings = isEditingSettings || !config;
+  const isSharePointConfigured = Boolean(config?.sharePointSiteRelativeUrl && config?.sharePointListName);
+
+  // Reflect the SharePoint relay connection state on mount / when the config appears.
+  useEffect(() => {
+    if (isSharePointConfigured) {
+      void refreshStatus();
+    }
+  }, [isSharePointConfigured, refreshStatus]);
 
   async function handleSaveConfig(nextConfig: IntakeConfig): Promise<void> {
     setIsSaving(true);
@@ -36,23 +48,35 @@ export default function JiraIntake() {
     }
   }
 
-  async function handleFile(file: File): Promise<void> {
-    const newEntries = await ingestFile(file);
-    if (newEntries.length === 0) {
+  // Shared post-ingest flow (used by both file drop and SharePoint pull): dedup pre-scan then,
+  // when auto-create is on, create the remaining new rows — identical for both ingestion sources.
+  async function processIngestedEntries(newEntries: QueueEntry[]): Promise<void> {
+    if (newEntries.length === 0 || !isConfigured) {
       return;
     }
-    // Dedup pre-scan: mark rows whose issue already exists in Jira as Imported before any create,
-    // so re-imports never create duplicates even if the local ledger was reset (feature 006).
-    let reconciled = newEntries;
-    if (isConfigured) {
-      reconciled = await reconcileExisting(newEntries);
-      reconciled.forEach(updateEntry);
-    }
-    // Auto-create only when configured; otherwise the remaining new rows wait for a manual Create.
-    if (config?.autoCreateOnImport && isConfigured) {
+    const reconciled = await reconcileExisting(newEntries);
+    reconciled.forEach(updateEntry);
+    if (config?.autoCreateOnImport) {
       const created = await createAllNew(reconciled);
       created.forEach(updateEntry);
     }
+  }
+
+  async function handleFile(file: File): Promise<void> {
+    await processIngestedEntries(await ingestFile(file));
+  }
+
+  // One-click pull from the SharePoint List through the relay, then the same downstream flow.
+  async function handlePull(): Promise<void> {
+    setPullWarning(null);
+    const result = await pull();
+    if (!result) {
+      return; // hook set errorMessage; ingest nothing
+    }
+    if (result.missingColumns.length > 0) {
+      setPullWarning(`Missing expected column(s) in the List: ${result.missingColumns.join(', ')}.`);
+    }
+    await processIngestedEntries(ingestRows(result.rows));
   }
 
   // Create one submission on demand (manual create / retry), reflecting progress in the queue.
@@ -104,8 +128,20 @@ export default function JiraIntake() {
         </section>
       )}
 
+      {!shouldShowSettings && (
+        <SharePointPullPanel
+          siteConfigured={isSharePointConfigured}
+          siteUrl={config?.sharePointSiteRelativeUrl ?? ''}
+          isConnected={isRelayConnected}
+          isPulling={isPulling}
+          statusMessage={pullError ?? pullWarning}
+          onCheckConnection={() => { void refreshStatus(); }}
+          onPull={() => { void handlePull(); }}
+        />
+      )}
+
       <section className={styles.panel} aria-label="Import submissions">
-        <h2 className={styles.panelTitle}>Import submissions</h2>
+        <h2 className={styles.panelTitle}>Import submissions (file)</h2>
         {!isConfigured && (
           <p className={styles.subtitle}>Save intake settings above to create issues from imported rows.</p>
         )}

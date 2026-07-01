@@ -28,7 +28,7 @@ const express = require('express');
 // ── Constants ────────────────────────────────────────────────────────────────
 
 /** Systems the bridge supports — matches the sys identifiers used by the bookmarklet. */
-const SUPPORTED_SYSTEMS = ['snow', 'jira', 'conf'];
+const SUPPORTED_SYSTEMS = ['snow', 'jira', 'conf', 'sharepoint'];
 
 /**
  * How long (ms) to hold a bookmarklet poll open before returning { request: null }.
@@ -49,7 +49,7 @@ const RESULT_TIMEOUT_MS = 30000;
 const RELAY_HEARTBEAT_STALE_MS = 65000;
 
 /** Message returned when the active browser relay is gone before a response arrives. */
-const RELAY_DISCONNECTED_ERROR = 'Relay bridge disconnected. Reopen ServiceNow and click the relay bookmarklet again.';
+const RELAY_DISCONNECTED_ERROR = 'Relay bridge disconnected. Reopen the source tab and click the relay bookmarklet again.';
 
 // ── Bridge state ──────────────────────────────────────────────────────────────
 

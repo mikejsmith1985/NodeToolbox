@@ -4,10 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useConnectionStore } from '../store/connectionStore.ts';
 import {
+  openSharePointRelay,
   openSnowRelay,
   parseRelayReturnRoute,
   RELAY_RETURN_ROUTE_KEY,
   resetBrowserRelayForTests,
+  SHAREPOINT_RELAY_BOOKMARKLET_CODE,
   SNOW_RELAY_BOOKMARKLET_CODE,
 } from './browserRelay.ts';
 
@@ -113,5 +115,25 @@ describe('browserRelay', () => {
     const expiredRoute = JSON.stringify({ path: '/snow-hub', createdAt: nowMs - 10 * 60 * 1000 });
 
     expect(parseRelayReturnRoute(expiredRoute, nowMs)).toBeNull();
+  });
+
+  describe('SharePoint relay', () => {
+    it('bookmarklet targets the sharepoint system with the JSON Accept header and host guard', () => {
+      expect(SHAREPOINT_RELAY_BOOKMARKLET_CODE).toContain('var sys="sharepoint"');
+      expect(SHAREPOINT_RELAY_BOOKMARKLET_CODE).toContain('application/json;odata=nometadata');
+      expect(SHAREPOINT_RELAY_BOOKMARKLET_CODE).toContain('sharepoint.com');
+      expect(SHAREPOINT_RELAY_BOOKMARKLET_CODE).toContain('127.0.0.1:5555');
+      expect(SHAREPOINT_RELAY_BOOKMARKLET_CODE).toContain('credentials:"include"');
+    });
+
+    it('openSharePointRelay opens the site in a named window and returns true', () => {
+      vi.spyOn(window, 'open').mockReturnValue({} as Window);
+      expect(openSharePointRelay('https://contoso.sharepoint.com/sites/CUCIntake')).toBe(true);
+    });
+
+    it('openSharePointRelay returns false for an empty URL', () => {
+      vi.spyOn(window, 'open').mockReturnValue(null);
+      expect(openSharePointRelay('')).toBe(false);
+    });
   });
 });

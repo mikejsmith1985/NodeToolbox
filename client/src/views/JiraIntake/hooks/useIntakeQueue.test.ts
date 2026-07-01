@@ -85,6 +85,24 @@ describe('useIntakeQueue', () => {
     expect(result.current.entries[0].jiraKey).toBe('ENFCT-1');
   });
 
+  it('ingestRows loads already-parsed rows into the queue newest-first, deduped against the ledger', () => {
+    const ledger: ProcessedEntry[] = [{ id: 'done', jiraKey: 'ENCUC-1', createdAt: '', reporterOutcome: 'matched' }];
+    const { result } = renderHook(() => useIntakeQueue(ledger));
+
+    let returned: QueueEntry[] = [];
+    act(() => {
+      returned = result.current.ingestRows([
+        { id: 'older', submittedAt: '2026-07-01T10:00:00Z', summary: 'Older' },
+        { id: 'newer', submittedAt: '2026-07-01T12:00:00Z', summary: 'Newer' },
+        { id: 'done', submittedAt: '2026-07-01T09:00:00Z', summary: 'Already' },
+      ]);
+    });
+
+    expect(returned.map((entry) => entry.submission.id)).toEqual(['newer', 'older', 'done']);
+    expect(result.current.entries.find((entry) => entry.submission.id === 'done')?.state).toBe('imported');
+    expect(result.current.counts).toMatchObject({ total: 3, newCount: 2, imported: 1 });
+  });
+
   it('dismissEntry marks a submission skipped without touching others', async () => {
     parseWorkbookMock.mockResolvedValue([
       { id: 'a', submittedAt: '2026-07-01T11:00:00Z', summary: 'Keep' },

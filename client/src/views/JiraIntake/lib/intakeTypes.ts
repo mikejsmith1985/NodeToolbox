@@ -66,6 +66,10 @@ export interface IntakeConfig {
   acceptanceCriteriaFieldId: string;
   /** true = create on import; false = review-and-pick (FR-1.3). */
   autoCreateOnImport: boolean;
+  /** SharePoint site-relative URL for the live relay pull (feature 007), e.g. /sites/CUCIntake. */
+  sharePointSiteRelativeUrl?: string;
+  /** SharePoint List title the relay pull reads (feature 007), e.g. Jira-Intake. */
+  sharePointListName?: string;
   updatedAt: string;
   updatedBy: string;
 }
