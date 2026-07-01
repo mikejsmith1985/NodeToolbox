@@ -87,9 +87,9 @@ recorded at the top of the description.
 still creates an issue whose description opens with the origin note and whose reporter is the
 integration account.
 
-- [ ] T019 [P] [US2] Write failing `client/src/views/JiraIntake/lib/describeSubmitter.test.ts` (builds the wiki-markup origin note from `submitter.displayName`/`email`, handles missing pieces), then implement `describeSubmitter.ts` per contracts §C
-- [ ] T020 [US2] Extend `resolveReporter.test.ts` for the fallback branch (no match / ambiguous / search error → `{outcome:'fallback', reporter:null}`), then complete the fallback path in `resolveReporter.ts`
-- [ ] T021 [US2] Extend `useCreateFromSubmission.test.ts` so a `fallback` outcome **omits `reporter`** on the create payload (Jira then attributes the issue to the `/jira-proxy` account `configuration.jira` — the confirmed integration account, per research R4/spec FR-3.2) and prepends `describeSubmitter(...)` to the mapped description; set `reporterOutcome` on the entry — then update `useCreateFromSubmission.ts` (depends on T019, T020)
+- [X] T019 [P] [US2] Write failing `client/src/views/JiraIntake/lib/describeSubmitter.test.ts` (builds the wiki-markup origin note from `submitter.displayName`/`email`, handles missing pieces), then implement `describeSubmitter.ts` per contracts §C
+- [X] T020 [US2] Extend `resolveReporter.test.ts` for the fallback branch (no match / ambiguous / search error → `{outcome:'fallback', reporter:null}`), then complete the fallback path in `resolveReporter.ts`
+- [X] T021 [US2] Extend `useCreateFromSubmission.test.ts` so a `fallback` outcome **omits `reporter`** on the create payload (Jira then attributes the issue to the `/jira-proxy` account `configuration.jira` — the confirmed integration account, per research R4/spec FR-3.2) and prepends `describeSubmitter(...)` to the mapped description; set `reporterOutcome` on the entry — then update `useCreateFromSubmission.ts` (depends on T019, T020)
 - [ ] T022 [US2] Run quickstart Scenario 3 (both matched and fallback rows) and capture evidence that the origin is preserved
 
 **Checkpoint**: Every submission creates an issue; attribution is correct or safely falls back.

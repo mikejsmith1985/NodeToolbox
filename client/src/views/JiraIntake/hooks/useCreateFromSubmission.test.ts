@@ -98,6 +98,49 @@ describe('useCreateFromSubmission', () => {
     expect(updated.state).toBe('imported');
   });
 
+  it('prepends the submitter origin note to the description on the fallback path', async () => {
+    searchUsersMock.mockResolvedValue([]); // no match → fallback
+    createIssueMock.mockResolvedValue({ id: '4', key: 'ENFCT-103', self: 'x' });
+    const recordProcessed = vi.fn().mockResolvedValue(undefined);
+    const configWithDescription: IntakeConfig = {
+      ...CONFIG,
+      fieldMappings: [
+        ...CONFIG.fieldMappings,
+        { coreField: 'description', jiraFieldId: 'description', jiraFieldType: 'text', transform: 'wikiMarkup' },
+      ],
+    };
+    const { result } = renderHook(() => useCreateFromSubmission({ config: configWithDescription, fieldDescriptors: [], recordProcessed }));
+
+    const entryWithDescription = newEntry({
+      fields: { summary: 'Do it', description: 'Original details', acceptanceCriteria: '', issueType: 'Story', priority: 'High' },
+    });
+    await result.current.createFromSubmission(entryWithDescription);
+
+    const sentDescription = createIssueMock.mock.calls[0][0].fields.description as string;
+    expect(sentDescription).toContain('Submitted via Teams by *Michael Smith* (m@corp.com)');
+    expect(sentDescription).toContain('Original details');
+    // The origin note comes first, before the original content.
+    expect(sentDescription.indexOf('Submitted via Teams')).toBeLessThan(sentDescription.indexOf('Original details'));
+  });
+
+  it('records the origin note as the description when no description was provided', async () => {
+    searchUsersMock.mockResolvedValue([]);
+    createIssueMock.mockResolvedValue({ id: '5', key: 'ENFCT-104', self: 'x' });
+    const recordProcessed = vi.fn().mockResolvedValue(undefined);
+    const configWithDescription: IntakeConfig = {
+      ...CONFIG,
+      fieldMappings: [
+        ...CONFIG.fieldMappings,
+        { coreField: 'description', jiraFieldId: 'description', jiraFieldType: 'text', transform: 'wikiMarkup' },
+      ],
+    };
+    const { result } = renderHook(() => useCreateFromSubmission({ config: configWithDescription, fieldDescriptors: [], recordProcessed }));
+
+    await result.current.createFromSubmission(newEntry());
+
+    expect(createIssueMock.mock.calls[0][0].fields.description).toContain('Submitted via Teams by *Michael Smith*');
+  });
+
   it('createAllNew creates only new entries and passes through others', async () => {
     searchUsersMock.mockResolvedValue([]);
     createIssueMock.mockResolvedValue({ id: '3', key: 'ENFCT-102', self: 'x' });

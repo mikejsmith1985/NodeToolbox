@@ -7,9 +7,13 @@ import { useCallback } from 'react';
 import { createIssue, searchUsers } from '../../../services/jiraApi.ts';
 import { findMissingRequiredFields } from '../../JiraTemplateMaker/lib/requiredFields.ts';
 import type { FieldDescriptor } from '../../JiraTemplateMaker/lib/templateTypes.ts';
+import { describeSubmitter } from '../lib/describeSubmitter.ts';
 import { mapSubmissionToFields } from '../lib/mapToTemplateFields.ts';
 import { resolveReporter } from '../lib/resolveReporter.ts';
 import type { IntakeConfig, ProcessedEntry, QueueEntry } from '../lib/intakeTypes.ts';
+
+/** The Jira field id the description core field maps to, or the standard `description` field. */
+const DEFAULT_DESCRIPTION_FIELD_ID = 'description';
 
 export interface UseCreateFromSubmissionParams {
   config: IntakeConfig | null;
@@ -31,6 +35,23 @@ function buildFullFields(entry: QueueEntry, config: IntakeConfig): Record<string
     issuetype: { id: config.issueTypeId },
     ...mapSubmissionToFields(entry.submission, config),
   };
+}
+
+/** Resolves which Jira field holds the description, so the origin note lands in the right place. */
+function resolveDescriptionFieldId(config: IntakeConfig): string {
+  const descriptionMapping = config.fieldMappings.find((mapping) => mapping.coreField === 'description');
+  return descriptionMapping?.jiraFieldId ?? DEFAULT_DESCRIPTION_FIELD_ID;
+}
+
+/**
+ * On the fallback path, prepends the submitter origin note to the description field so the request's
+ * origin is never lost (Story D). Mutates the given fields object in place.
+ */
+function prependOriginNote(fields: Record<string, unknown>, entry: QueueEntry, config: IntakeConfig): void {
+  const descriptionFieldId = resolveDescriptionFieldId(config);
+  const originNote = describeSubmitter(entry.submission);
+  const existingDescription = typeof fields[descriptionFieldId] === 'string' ? fields[descriptionFieldId] as string : '';
+  fields[descriptionFieldId] = existingDescription ? `${originNote}\n\n${existingDescription}` : originNote;
 }
 
 /** Hook exposing single-submission and bulk create operations, each ledger-guarded and idempotent. */
@@ -57,10 +78,13 @@ export function useCreateFromSubmission({
       };
     }
 
-    // Reporter resolution never blocks creation: a non-match falls back to the integration account.
+    // Reporter resolution never blocks creation: a non-match falls back to the integration account
+    // (reporter omitted) with the submitter's origin recorded in the description so it is not lost.
     const reporter = await resolveReporter(entry.submission.submitter.email, { searchUsers });
     if (reporter.outcome === 'matched') {
       fields.reporter = reporter.reporter;
+    } else {
+      prependOriginNote(fields, entry, config);
     }
 
     try {
