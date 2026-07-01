@@ -84,4 +84,21 @@ describe('useIntakeQueue', () => {
     expect(result.current.entries[0].state).toBe('imported');
     expect(result.current.entries[0].jiraKey).toBe('ENFCT-1');
   });
+
+  it('dismissEntry marks a submission skipped without touching others', async () => {
+    parseWorkbookMock.mockResolvedValue([
+      { id: 'a', submittedAt: '2026-07-01T11:00:00Z', summary: 'Keep' },
+      { id: 'b', submittedAt: '2026-07-01T10:00:00Z', summary: 'Dismiss' },
+    ]);
+    const { result } = renderHook(() => useIntakeQueue([]));
+    await act(async () => { await result.current.ingestFile(FILE); });
+
+    act(() => { result.current.dismissEntry('b'); });
+
+    const dismissed = result.current.entries.find((entry) => entry.submission.id === 'b');
+    const kept = result.current.entries.find((entry) => entry.submission.id === 'a');
+    expect(dismissed?.state).toBe('skipped');
+    expect(kept?.state).toBe('new');
+    expect(result.current.counts.newCount).toBe(1);
+  });
 });

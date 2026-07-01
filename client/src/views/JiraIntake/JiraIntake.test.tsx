@@ -49,7 +49,7 @@ describe('JiraIntake', () => {
   it('shows the configuration panel when no config exists', () => {
     stubConfig(null);
     useJiraCreateMetaMock.mockReturnValue({ issueTypes: [], loadFields: vi.fn(), getFieldDescriptors: () => [] } as never);
-    useIntakeQueueMock.mockReturnValue({ entries: [], counts: { total: 0, newCount: 0, imported: 0, invalid: 0 }, ingestFile: vi.fn(), updateEntry: vi.fn(), errorMessage: null, reset: vi.fn() });
+    useIntakeQueueMock.mockReturnValue({ entries: [], counts: { total: 0, newCount: 0, imported: 0, invalid: 0 }, ingestFile: vi.fn(), updateEntry: vi.fn(), dismissEntry: vi.fn(), errorMessage: null, reset: vi.fn() });
     useCreateFromSubmissionMock.mockReturnValue({ createFromSubmission: vi.fn(), createAllNew: vi.fn() });
 
     render(<JiraIntake />);
@@ -61,7 +61,7 @@ describe('JiraIntake', () => {
     useJiraCreateMetaMock.mockReturnValue({ issueTypes: [], loadFields: vi.fn(), getFieldDescriptors: () => [] } as never);
     const ingestFile = vi.fn().mockResolvedValue([ENTRY]);
     const updateEntry = vi.fn();
-    useIntakeQueueMock.mockReturnValue({ entries: [ENTRY], counts: { total: 1, newCount: 1, imported: 0, invalid: 0 }, ingestFile, updateEntry, errorMessage: null, reset: vi.fn() });
+    useIntakeQueueMock.mockReturnValue({ entries: [ENTRY], counts: { total: 1, newCount: 1, imported: 0, invalid: 0 }, ingestFile, updateEntry, dismissEntry: vi.fn(), errorMessage: null, reset: vi.fn() });
     const createAllNew = vi.fn().mockResolvedValue([{ ...ENTRY, state: 'imported', jiraKey: 'ENFCT-1' }]);
     useCreateFromSubmissionMock.mockReturnValue({ createFromSubmission: vi.fn(), createAllNew });
 
