@@ -65,7 +65,7 @@ describe('IntakeQueue', () => {
     expect(screen.getByText('Missing required field: Summary')).toBeInTheDocument();
   });
 
-  it('renders Create/Dismiss actions for new rows in review mode and wires the callbacks', () => {
+  it('renders Create/Dismiss for new rows and wires the callbacks when a handler is provided', () => {
     const onCreate = vi.fn();
     const onDismiss = vi.fn();
     const newRow = entry({ id: 'd', state: 'new' });
@@ -73,7 +73,6 @@ describe('IntakeQueue', () => {
       <IntakeQueue
         entries={[newRow]}
         counts={{ total: 1, newCount: 1, imported: 0, invalid: 0 }}
-        isReviewMode
         onCreate={onCreate}
         onDismiss={onDismiss}
       />,
@@ -85,7 +84,16 @@ describe('IntakeQueue', () => {
     expect(onDismiss).toHaveBeenCalledWith(newRow);
   });
 
-  it('does not render row actions when not in review mode', () => {
+  it('offers Retry on a failed row', () => {
+    const onCreate = vi.fn();
+    const failedRow = entry({ id: 'f', state: 'failed', blockingReasons: ['boom'] });
+    render(<IntakeQueue entries={[failedRow]} counts={{ total: 1, newCount: 0, imported: 0, invalid: 0 }} onCreate={onCreate} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onCreate).toHaveBeenCalledWith(failedRow);
+  });
+
+  it('does not render row actions when no create handler is provided', () => {
     render(<IntakeQueue entries={[entry({ id: 'e', state: 'new' })]} counts={{ total: 1, newCount: 1, imported: 0, invalid: 0 }} />);
     expect(screen.queryByRole('button', { name: 'Create' })).not.toBeInTheDocument();
   });
