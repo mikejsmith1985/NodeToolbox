@@ -22,7 +22,7 @@ export interface IntakeCoreFields {
   acceptanceCriteria: string;
   issueType: string;
   priority: string;
-  /** The Teams "project" column — a team NAME (e.g. "Cleanup Crew"), mapped to a project key below. */
+  /** The Teams "project" column — a friendly project NAME (e.g. "Cleanup Crew"), mapped to a Jira key below. */
   project: string;
 }
 
@@ -44,24 +44,24 @@ export interface IntakeSubmission {
 /** The Jira custom field that holds Acceptance Criteria on this instance. */
 export const DEFAULT_ACCEPTANCE_CRITERIA_FIELD_ID = 'customfield_10200';
 
-/** Maps a Teams team name (the "project" column value) to a real Jira project key. */
-export interface TeamProjectMapping {
-  /** The team name as it appears in the submission's "project" column (e.g. "Cleanup Crew"). */
-  teamName: string;
+/** Maps a submission's "project" column value (a friendly name) to a real Jira project key. */
+export interface ProjectMapping {
+  /** The project name as it appears in the submission's "project" column (e.g. "Cleanup Crew"). */
+  projectName: string;
   /** The Jira project key it routes to (e.g. "ENCUC"). */
   projectKey: string;
 }
 
 /**
  * The active intake configuration. Persisted in the shared Confluence content property. Issue type
- * and priority come from each submission row; the target project is resolved from the row's team
- * name via the team→project mappings, falling back to the default project key.
+ * and priority come from each submission row; the target Jira project is resolved from the row's
+ * "project" name via the project mappings, falling back to the default project key.
  */
 export interface IntakeConfig {
-  /** Default Jira project key, used when a row's "project" (team) column is blank. */
+  /** Default Jira project key, used when a row's "project" column is blank. */
   projectKey: string;
-  /** Team-name → project-key routing for the submission "project" column. */
-  teamProjectMappings?: TeamProjectMapping[];
+  /** Project-name → Jira-project-key routing for the submission "project" column. */
+  projectMappings?: ProjectMapping[];
   /** Jira field id that receives Acceptance Criteria (defaults to customfield_10200). */
   acceptanceCriteriaFieldId: string;
   /** true = create on import; false = review-and-pick (FR-1.3). */
@@ -103,4 +103,4 @@ export interface JiraIntakeStore {
 }
 
 /** Current intake store schema version; load rejects unknown versions. */
-export const JIRA_INTAKE_STORE_SCHEMA_VERSION = 2;
+export const JIRA_INTAKE_STORE_SCHEMA_VERSION = 3;

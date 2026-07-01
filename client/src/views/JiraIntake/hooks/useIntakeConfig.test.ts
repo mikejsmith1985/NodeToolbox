@@ -48,7 +48,7 @@ describe('useIntakeConfig', () => {
 
   it('loads an existing config and ledger', async () => {
     mockStore({
-      schemaVersion: 2,
+      schemaVersion: 3,
       updatedAt: '',
       config: SAMPLE_CONFIG,
       ledger: [{ id: 'a', jiraKey: 'ENFCT-1', createdAt: '', reporterOutcome: 'matched' }],
@@ -68,7 +68,7 @@ describe('useIntakeConfig', () => {
 
   it('saveConfig stamps the author and preserves the existing ledger', async () => {
     mockStore({
-      schemaVersion: 2,
+      schemaVersion: 3,
       updatedAt: '',
       config: null,
       ledger: [{ id: 'keep', jiraKey: 'ENFCT-7', createdAt: '', reporterOutcome: 'fallback' }],
@@ -89,7 +89,7 @@ describe('useIntakeConfig', () => {
   });
 
   it('recordProcessed appends to the ledger and persists', async () => {
-    mockStore({ schemaVersion: 2, updatedAt: '', config: SAMPLE_CONFIG, ledger: [] });
+    mockStore({ schemaVersion: 3, updatedAt: '', config: SAMPLE_CONFIG, ledger: [] });
     upsertPropertyMock.mockResolvedValue({} as never);
 
     const { result } = renderHook(() => useIntakeConfig());

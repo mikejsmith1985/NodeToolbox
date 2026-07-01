@@ -54,7 +54,7 @@ export default function IntakeQueue({ entries, counts, isReviewMode = false, onC
             <th>Summary &amp; details</th>
             <th>Type</th>
             <th>Priority</th>
-            <th>Team</th>
+            <th>Project</th>
             <th>Submitter</th>
             <th>Submitted</th>
             <th>Jira key</th>

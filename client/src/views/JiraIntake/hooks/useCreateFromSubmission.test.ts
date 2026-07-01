@@ -15,7 +15,7 @@ const searchUsersMock = vi.mocked(searchUsers);
 
 const CONFIG: IntakeConfig = {
   projectKey: 'ENFCT',
-  teamProjectMappings: [{ teamName: 'Cleanup Crew', projectKey: 'ENCUC' }],
+  projectMappings: [{ projectName: 'Cleanup Crew', projectKey: 'ENCUC' }],
   acceptanceCriteriaFieldId: 'customfield_10200',
   autoCreateOnImport: true,
   updatedAt: '', updatedBy: '',
@@ -67,7 +67,7 @@ describe('useCreateFromSubmission', () => {
     expect(createIssueMock).not.toHaveBeenCalled();
   });
 
-  it('routes to the mapped project when the row carries a team name', async () => {
+  it('routes to the mapped project when the row carries a project name', async () => {
     searchUsersMock.mockResolvedValue([]);
     createIssueMock.mockResolvedValue({ id: '9', key: 'ENCUC-1', self: 'x' });
     const recordProcessed = vi.fn().mockResolvedValue(undefined);
@@ -80,7 +80,7 @@ describe('useCreateFromSubmission', () => {
     expect(createIssueMock.mock.calls[0][0].fields.project).toEqual({ key: 'ENCUC' });
   });
 
-  it('flags an unmapped team name as invalid without calling Jira', async () => {
+  it('flags an unmapped project name as invalid without calling Jira', async () => {
     const recordProcessed = vi.fn();
     const { result } = renderHook(() => useCreateFromSubmission({ config: CONFIG, recordProcessed }));
 
@@ -93,7 +93,7 @@ describe('useCreateFromSubmission', () => {
     expect(createIssueMock).not.toHaveBeenCalled();
   });
 
-  it('fails clearly when a row has no team and no default project is configured', async () => {
+  it('fails clearly when a row has no project and no default project is configured', async () => {
     const recordProcessed = vi.fn();
     const noProject: IntakeConfig = { ...CONFIG, projectKey: '' };
     const { result } = renderHook(() => useCreateFromSubmission({ config: noProject, recordProcessed }));
