@@ -4,6 +4,7 @@
 // configured custom field; free text is serialized to wiki markup. See data-model.md.
 
 import { serializeWikiMarkup, type WikiDoc } from '../../JiraTemplateMaker/lib/wikiMarkup.ts';
+import { buildIntakeLabel } from './intakeLabel.ts';
 import type { IntakeConfig, IntakeSubmission } from './intakeTypes.ts';
 
 /** Converts plain (possibly multi-line) text into wiki markup: one paragraph per non-empty line. */
@@ -48,6 +49,14 @@ export function buildIntakeFields(
   const acceptanceCriteria = submission.fields.acceptanceCriteria.trim();
   if (acceptanceCriteria !== '' && config.acceptanceCriteriaFieldId.trim() !== '') {
     fields[config.acceptanceCriteriaFieldId.trim()] = plainTextToWikiMarkup(acceptanceCriteria);
+  }
+
+  // Stamp the submission id as a dedup label so the created issue can be found on later runs,
+  // making duplicate detection independent of the local ledger (feature 006). Omitted when the id
+  // cannot form a valid label — such rows are flagged upstream and never created.
+  const intakeLabel = buildIntakeLabel(submission.id);
+  if (intakeLabel) {
+    fields.labels = [intakeLabel];
   }
 
   return fields;

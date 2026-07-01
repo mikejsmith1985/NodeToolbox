@@ -56,6 +56,18 @@ describe('buildIntakeFields', () => {
     const fields = buildIntakeFields(submissionWith({ issueType: '' }), CONFIG, 'ENFCT');
     expect(fields.issuetype).toBeUndefined();
   });
+
+  it('stamps the submission id as an intake- dedup label', () => {
+    const submission = { ...submissionWith({}), id: '2f58d5cd-de0b-4c42-80c4-a1fd8e3ae503' };
+    const fields = buildIntakeFields(submission, CONFIG, 'ENFCT');
+    expect(fields.labels).toEqual(['intake-2f58d5cd-de0b-4c42-80c4-a1fd8e3ae503']);
+  });
+
+  it('omits the label when the submission id cannot form a valid label', () => {
+    const submission = { ...submissionWith({}), id: '   ' };
+    const fields = buildIntakeFields(submission, CONFIG, 'ENFCT');
+    expect(fields.labels).toBeUndefined();
+  });
 });
 
 describe('plainTextToWikiMarkup', () => {

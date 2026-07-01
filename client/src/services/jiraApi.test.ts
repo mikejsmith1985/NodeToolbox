@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { jiraGet, jiraPost, jiraPut, searchUsers, type JiraApiEventDetail } from './jiraApi.ts';
+import { jiraGet, jiraPost, jiraPut, searchIssuesByLabels, searchUsers, type JiraApiEventDetail } from './jiraApi.ts';
 
 const JIRA_PATH = '/rest/api/3/issue/ABC-123';
 const JIRA_RESPONSE = { key: 'ABC-123' };
@@ -236,5 +236,49 @@ describe('searchUsers', () => {
     vi.mocked(fetch).mockResolvedValue({ ok: false, status: 503 } as Response);
     await expect(searchUsers('m@corp.com')).rejects.toThrow('503');
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('searchIssuesByLabels', () => {
+  function jsonResponse(body: unknown): Response {
+    return {
+      ok: true,
+      status: 200,
+      text: vi.fn().mockResolvedValue(JSON.stringify(body)),
+      headers: JSON_RESPONSE_HEADERS,
+    } as unknown as Response;
+  }
+
+  it('returns [] without calling the API for an empty label list', async () => {
+    await expect(searchIssuesByLabels([])).resolves.toEqual([]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('builds a labels-in JQL search and maps key + labels', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({
+      issues: [{ key: 'ENCUC-1', fields: { labels: ['intake-abc', 'backlog'] } }],
+    }));
+
+    await expect(searchIssuesByLabels(['intake-abc'])).resolves.toEqual([
+      { key: 'ENCUC-1', labels: ['intake-abc', 'backlog'] },
+    ]);
+    const calledUrl = vi.mocked(fetch).mock.calls[0][0] as string;
+    expect(calledUrl).toContain('/jira-proxy/rest/api/2/search?jql=');
+    expect(calledUrl).toContain(encodeURIComponent('labels in ("intake-abc")'));
+    expect(calledUrl).toContain('fields=labels');
+  });
+
+  it('chunks a large label list into multiple queries', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ issues: [] }));
+    const manyLabels = Array.from({ length: 120 }, (_, index) => `intake-${index}`);
+
+    await searchIssuesByLabels(manyLabels);
+    // 120 labels / 50 per chunk = 3 queries.
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('defaults missing labels to an empty array', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ issues: [{ key: 'ENCUC-2' }] }));
+    await expect(searchIssuesByLabels(['intake-x'])).resolves.toEqual([{ key: 'ENCUC-2', labels: [] }]);
   });
 });
