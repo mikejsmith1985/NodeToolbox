@@ -1,5 +1,5 @@
-// JiraIntake.test.tsx — View-wiring test: shows the config panel when unconfigured, and (when
-// configured with auto-create) runs ingest → create-all on import. Underlying hooks are mocked.
+// JiraIntake.test.tsx — View-wiring test: shows settings when unconfigured, and (when configured
+// with auto-create + a project) runs ingest → create-all on import. Underlying hooks are mocked.
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -8,22 +8,18 @@ import JiraIntake from './JiraIntake.tsx';
 import { useIntakeConfig } from './hooks/useIntakeConfig.ts';
 import { useIntakeQueue } from './hooks/useIntakeQueue.ts';
 import { useCreateFromSubmission } from './hooks/useCreateFromSubmission.ts';
-import { useJiraCreateMeta } from '../JiraTemplateMaker/hooks/useJiraCreateMeta.ts';
 import type { IntakeConfig, QueueEntry } from './lib/intakeTypes.ts';
 
 vi.mock('./hooks/useIntakeConfig.ts', () => ({ useIntakeConfig: vi.fn() }));
 vi.mock('./hooks/useIntakeQueue.ts', () => ({ useIntakeQueue: vi.fn() }));
 vi.mock('./hooks/useCreateFromSubmission.ts', () => ({ useCreateFromSubmission: vi.fn() }));
-vi.mock('../JiraTemplateMaker/hooks/useJiraCreateMeta.ts', () => ({ useJiraCreateMeta: vi.fn() }));
 
 const useIntakeConfigMock = vi.mocked(useIntakeConfig);
 const useIntakeQueueMock = vi.mocked(useIntakeQueue);
 const useCreateFromSubmissionMock = vi.mocked(useCreateFromSubmission);
-const useJiraCreateMetaMock = vi.mocked(useJiraCreateMeta);
 
 const CONFIG: IntakeConfig = {
-  projectKey: 'ENFCT', projectId: '1', issueTypeId: '10001', issueTypeName: 'Story',
-  fieldMappings: [], autoCreateOnImport: true, updatedAt: '', updatedBy: '',
+  projectKey: 'ENFCT', acceptanceCriteriaFieldId: 'customfield_10200', autoCreateOnImport: true, updatedAt: '', updatedBy: '',
 };
 
 const ENTRY: QueueEntry = {
@@ -43,31 +39,36 @@ function stubConfig(config: IntakeConfig | null): void {
   });
 }
 
+function stubQueue(overrides: Partial<ReturnType<typeof useIntakeQueue>> = {}): void {
+  useIntakeQueueMock.mockReturnValue({
+    entries: [], counts: { total: 0, newCount: 0, imported: 0, invalid: 0 },
+    ingestFile: vi.fn().mockResolvedValue([]), updateEntry: vi.fn(), dismissEntry: vi.fn(),
+    errorMessage: null, reset: vi.fn(), ...overrides,
+  });
+}
+
 afterEach(() => { vi.clearAllMocks(); });
 
 describe('JiraIntake', () => {
-  it('shows the configuration panel when no config exists', () => {
+  it('shows the settings panel when no config exists', () => {
     stubConfig(null);
-    useJiraCreateMetaMock.mockReturnValue({ issueTypes: [], loadFields: vi.fn(), getFieldDescriptors: () => [] } as never);
-    useIntakeQueueMock.mockReturnValue({ entries: [], counts: { total: 0, newCount: 0, imported: 0, invalid: 0 }, ingestFile: vi.fn(), updateEntry: vi.fn(), dismissEntry: vi.fn(), errorMessage: null, reset: vi.fn() });
+    stubQueue();
     useCreateFromSubmissionMock.mockReturnValue({ createFromSubmission: vi.fn(), createAllNew: vi.fn() });
 
     render(<JiraIntake />);
-    expect(screen.getByRole('region', { name: /intake configuration/i })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /intake settings/i })).toBeInTheDocument();
   });
 
-  it('ingests and auto-creates on import when configured with auto-create', async () => {
+  it('ingests and auto-creates on import when configured with auto-create and a project', async () => {
     stubConfig(CONFIG);
-    useJiraCreateMetaMock.mockReturnValue({ issueTypes: [], loadFields: vi.fn(), getFieldDescriptors: () => [] } as never);
     const ingestFile = vi.fn().mockResolvedValue([ENTRY]);
     const updateEntry = vi.fn();
-    useIntakeQueueMock.mockReturnValue({ entries: [ENTRY], counts: { total: 1, newCount: 1, imported: 0, invalid: 0 }, ingestFile, updateEntry, dismissEntry: vi.fn(), errorMessage: null, reset: vi.fn() });
+    stubQueue({ entries: [ENTRY], counts: { total: 1, newCount: 1, imported: 0, invalid: 0 }, ingestFile, updateEntry });
     const createAllNew = vi.fn().mockResolvedValue([{ ...ENTRY, state: 'imported', jiraKey: 'ENFCT-1' }]);
     useCreateFromSubmissionMock.mockReturnValue({ createFromSubmission: vi.fn(), createAllNew });
 
     render(<JiraIntake />);
-    const input = screen.getByTestId('submission-file-input') as HTMLInputElement;
-    fireEvent.change(input, { target: { files: [new File(['x'], 'Jira-Intake.xlsx')] } });
+    fireEvent.change(screen.getByTestId('submission-file-input'), { target: { files: [new File(['x'], 'Jira-Intake.xlsx')] } });
 
     await waitFor(() => expect(ingestFile).toHaveBeenCalled());
     await waitFor(() => expect(createAllNew).toHaveBeenCalledWith([ENTRY]));

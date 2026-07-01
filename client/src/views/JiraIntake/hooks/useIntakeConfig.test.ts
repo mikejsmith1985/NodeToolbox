@@ -25,10 +25,7 @@ const getMyselfMock = vi.mocked(getMyself);
 
 const SAMPLE_CONFIG: IntakeConfig = {
   projectKey: 'ENFCT',
-  projectId: '10000',
-  issueTypeId: '10001',
-  issueTypeName: 'Story',
-  fieldMappings: [{ coreField: 'summary', jiraFieldId: 'summary', jiraFieldType: 'text', transform: 'raw' }],
+  acceptanceCriteriaFieldId: 'customfield_10200',
   autoCreateOnImport: true,
   updatedAt: '',
   updatedBy: '',
@@ -51,7 +48,7 @@ describe('useIntakeConfig', () => {
 
   it('loads an existing config and ledger', async () => {
     mockStore({
-      schemaVersion: 1,
+      schemaVersion: 2,
       updatedAt: '',
       config: SAMPLE_CONFIG,
       ledger: [{ id: 'a', jiraKey: 'ENFCT-1', createdAt: '', reporterOutcome: 'matched' }],
@@ -71,7 +68,7 @@ describe('useIntakeConfig', () => {
 
   it('saveConfig stamps the author and preserves the existing ledger', async () => {
     mockStore({
-      schemaVersion: 1,
+      schemaVersion: 2,
       updatedAt: '',
       config: null,
       ledger: [{ id: 'keep', jiraKey: 'ENFCT-7', createdAt: '', reporterOutcome: 'fallback' }],
@@ -92,7 +89,7 @@ describe('useIntakeConfig', () => {
   });
 
   it('recordProcessed appends to the ledger and persists', async () => {
-    mockStore({ schemaVersion: 1, updatedAt: '', config: SAMPLE_CONFIG, ledger: [] });
+    mockStore({ schemaVersion: 2, updatedAt: '', config: SAMPLE_CONFIG, ledger: [] });
     upsertPropertyMock.mockResolvedValue({} as never);
 
     const { result } = renderHook(() => useIntakeConfig());

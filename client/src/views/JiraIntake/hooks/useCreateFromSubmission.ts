@@ -1,25 +1,21 @@
-// useCreateFromSubmission.ts — Orchestrates turning a queue entry into a Jira issue: validate
-// required fields → resolve the reporter → build + POST the create payload → record the submission
-// id locally (before surfacing success, so a re-import never double-creates). See FR-3 and R5/R6.
+// useCreateFromSubmission.ts — Orchestrates turning a queue entry into a Jira issue: validate the
+// always-required fields → resolve the reporter → build + POST the create payload → record the
+// submission id locally (before surfacing success, so a re-import never double-creates). Mapping is
+// by convention (buildIntakeFields); Jira validates anything instance-specific. See FR-3.
 
 import { useCallback } from 'react';
 
 import { createIssue, searchUsers } from '../../../services/jiraApi.ts';
-import { findMissingRequiredFields } from '../../JiraTemplateMaker/lib/requiredFields.ts';
-import type { FieldDescriptor } from '../../JiraTemplateMaker/lib/templateTypes.ts';
+import { buildIntakeFields } from '../lib/buildIntakeFields.ts';
 import { describeSubmitter } from '../lib/describeSubmitter.ts';
-import { findChoiceDrift } from '../lib/intakeDrift.ts';
-import { mapSubmissionToFields } from '../lib/mapToTemplateFields.ts';
 import { resolveReporter } from '../lib/resolveReporter.ts';
 import type { IntakeConfig, ProcessedEntry, QueueEntry } from '../lib/intakeTypes.ts';
 
-/** The Jira field id the description core field maps to, or the standard `description` field. */
-const DEFAULT_DESCRIPTION_FIELD_ID = 'description';
+/** The standard Jira field that receives the submitter origin note on the fallback path. */
+const DESCRIPTION_FIELD_ID = 'description';
 
 export interface UseCreateFromSubmissionParams {
   config: IntakeConfig | null;
-  /** Createmeta field descriptors for the configured issue type (for required-field validation). */
-  fieldDescriptors: FieldDescriptor[];
   /** Records a created submission id in the local dedup ledger. */
   recordProcessed: (entry: ProcessedEntry) => Promise<void>;
 }
@@ -29,62 +25,41 @@ export interface UseCreateFromSubmissionResult {
   createAllNew: (entries: QueueEntry[]) => Promise<QueueEntry[]>;
 }
 
-/** Builds the full create payload fields, including project and issue type by id/key. */
-function buildFullFields(entry: QueueEntry, config: IntakeConfig): Record<string, unknown> {
-  return {
-    project: { key: config.projectKey },
-    issuetype: { id: config.issueTypeId },
-    ...mapSubmissionToFields(entry.submission, config),
-  };
+/** Returns the reasons a submission cannot be created yet, or [] when it is ready. */
+function findBlockingReasons(entry: QueueEntry): string[] {
+  if (entry.submission.parseErrors.length > 0) {
+    return entry.submission.parseErrors;
+  }
+  const reasons: string[] = [];
+  if (entry.submission.fields.issueType.trim() === '') {
+    reasons.push('Missing issue type');
+  }
+  return reasons;
 }
 
-/** Resolves which Jira field holds the description, so the origin note lands in the right place. */
-function resolveDescriptionFieldId(config: IntakeConfig): string {
-  const descriptionMapping = config.fieldMappings.find((mapping) => mapping.coreField === 'description');
-  return descriptionMapping?.jiraFieldId ?? DEFAULT_DESCRIPTION_FIELD_ID;
-}
-
-/**
- * On the fallback path, prepends the submitter origin note to the description field so the request's
- * origin is never lost (Story D). Mutates the given fields object in place.
- */
-function prependOriginNote(fields: Record<string, unknown>, entry: QueueEntry, config: IntakeConfig): void {
-  const descriptionFieldId = resolveDescriptionFieldId(config);
+/** Prepends the submitter origin note to the description on the fallback path (Story D). */
+function prependOriginNote(fields: Record<string, unknown>, entry: QueueEntry): void {
   const originNote = describeSubmitter(entry.submission);
-  const existingDescription = typeof fields[descriptionFieldId] === 'string' ? fields[descriptionFieldId] as string : '';
-  fields[descriptionFieldId] = existingDescription ? `${originNote}\n\n${existingDescription}` : originNote;
+  const existingDescription = typeof fields[DESCRIPTION_FIELD_ID] === 'string' ? fields[DESCRIPTION_FIELD_ID] as string : '';
+  fields[DESCRIPTION_FIELD_ID] = existingDescription ? `${originNote}\n\n${existingDescription}` : originNote;
 }
 
 /** Hook exposing single-submission and bulk create operations, each ledger-guarded and idempotent. */
 export function useCreateFromSubmission({
   config,
-  fieldDescriptors,
   recordProcessed,
 }: UseCreateFromSubmissionParams): UseCreateFromSubmissionResult {
   const createFromSubmission = useCallback(async (entry: QueueEntry): Promise<QueueEntry> => {
-    if (!config) {
-      return { ...entry, state: 'failed', blockingReasons: ['No intake configuration is set.'] };
-    }
-    if (entry.submission.parseErrors.length > 0) {
-      return { ...entry, state: 'invalid', blockingReasons: entry.submission.parseErrors };
+    if (!config || config.projectKey.trim() === '') {
+      return { ...entry, state: 'failed', blockingReasons: ['Set the target project before creating issues.'] };
     }
 
-    const fields = buildFullFields(entry, config);
-    const missingRequired = findMissingRequiredFields(fieldDescriptors, fields);
-    if (missingRequired.length > 0) {
-      return {
-        ...entry,
-        state: 'invalid',
-        blockingReasons: missingRequired.map((fieldName) => `Missing required field: ${fieldName}`),
-      };
+    const blockingReasons = findBlockingReasons(entry);
+    if (blockingReasons.length > 0) {
+      return { ...entry, state: 'invalid', blockingReasons };
     }
 
-    // Flag a submission whose mapped choice value no longer exists in Jira instead of creating a
-    // malformed issue (FR-2.4).
-    const driftReasons = findChoiceDrift(entry.submission, config, fieldDescriptors);
-    if (driftReasons.length > 0) {
-      return { ...entry, state: 'invalid', blockingReasons: driftReasons };
-    }
+    const fields = buildIntakeFields(entry.submission, config);
 
     // Reporter resolution never blocks creation: a non-match falls back to the integration account
     // (reporter omitted) with the submitter's origin recorded in the description so it is not lost.
@@ -92,7 +67,7 @@ export function useCreateFromSubmission({
     if (reporter.outcome === 'matched') {
       fields.reporter = reporter.reporter;
     } else {
-      prependOriginNote(fields, entry, config);
+      prependOriginNote(fields, entry);
     }
 
     try {
@@ -110,7 +85,7 @@ export function useCreateFromSubmission({
       const reason = caught instanceof Error ? caught.message : String(caught);
       return { ...entry, state: 'failed', reporterOutcome: reporter.outcome, blockingReasons: [reason] };
     }
-  }, [config, fieldDescriptors, recordProcessed]);
+  }, [config, recordProcessed]);
 
   const createAllNew = useCallback(async (entries: QueueEntry[]): Promise<QueueEntry[]> => {
     const results: QueueEntry[] = [];

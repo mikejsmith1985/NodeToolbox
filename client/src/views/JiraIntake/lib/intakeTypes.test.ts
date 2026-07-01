@@ -14,8 +14,8 @@ import {
 } from './intakeTypes.ts';
 
 describe('intakeTypes', () => {
-  it('pins the store schema version to 1', () => {
-    expect(JIRA_INTAKE_STORE_SCHEMA_VERSION).toBe(1);
+  it('pins the store schema version to 2', () => {
+    expect(JIRA_INTAKE_STORE_SCHEMA_VERSION).toBe(2);
   });
 
   it('accepts a fully-populated submission fixture', () => {
@@ -35,10 +35,7 @@ describe('intakeTypes', () => {
   it('accepts a config, ledger entry, queue entry, and store fixture', () => {
     const config: IntakeConfig = {
       projectKey: 'ENFCT',
-      projectId: '10000',
-      issueTypeId: '10001',
-      issueTypeName: 'Story',
-      fieldMappings: [{ coreField: 'summary', jiraFieldId: 'summary', jiraFieldType: 'text', transform: 'raw' }],
+      acceptanceCriteriaFieldId: 'customfield_10200',
       autoCreateOnImport: true,
       updatedAt: '2026-07-01T00:00:00.000Z',
       updatedBy: 'Michael Smith',
