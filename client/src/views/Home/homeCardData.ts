@@ -114,6 +114,16 @@ export const APP_CARDS: AppCardDef[] = [
     sectionKey: 'agile',
   },
   {
+    id: 'jira-intake',
+    route: '/jira-intake',
+    icon: '📥',
+    title: 'Jira Intake',
+    description:
+      'Import Teams request submissions from an exported Excel/CSV and turn them into Jira issues, with reporter attribution, dedup, and a review queue.',
+    tags: ['Jira', 'Teams', 'Intake', 'Create Issue'],
+    sectionKey: 'agile',
+  },
+  {
     id: 'text-tools',
     route: '/text-tools',
     icon: '🛠',
@@ -158,6 +168,7 @@ export const RECENT_VIEW_LABELS: Record<string, string> = {
   'dsu-board': '🏃 Team Dashboard',
   art: '🚂 ART View',
   'my-issues': '📊 My Issues',
+  'jira-intake': '📥 Jira Intake',
   'personal-toolbox': '🧰 Personal Toolbox',
   'business-helper': '💼 Business Helper',
   'dev-workspace': '📊 My Issues',

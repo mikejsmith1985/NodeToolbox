@@ -116,9 +116,9 @@ user clicks Create on a row; Dismiss marks a row `skipped`.
 
 **Purpose**: Robustness scenarios that span stories, plus release readiness.
 
-- [ ] T026 [P] Add drift flagging: extend `useIntakeQueue`/queue entry to run `detectDrift` (Template Maker `drift.ts`) so a submission with a stale mapped option is marked `invalid` with reason, not created (FR-2.4, quickstart Scenario 6); update the co-located tests first
-- [ ] T027 [P] Add the store/file error path (quickstart Scenario 7): dropzone surfaces a clear non-technical message on `IntakeParseError`; queue state unchanged, nothing created (FR-6.1, SC-5); assert in `SubmissionDropzone.test.tsx`
-- [ ] T028 [P] Register one Jira Intake card/shortcut on the home/sidebar surface (mirror the Template Maker card); update the corresponding card-count test
+- [X] T026 [P] Add drift flagging: extend `useIntakeQueue`/queue entry to run `detectDrift` (Template Maker `drift.ts`) so a submission with a stale mapped option is marked `invalid` with reason, not created (FR-2.4, quickstart Scenario 6); update the co-located tests first
+- [X] T027 [P] Add the store/file error path (quickstart Scenario 7): dropzone surfaces a clear non-technical message on `IntakeParseError`; queue state unchanged, nothing created (FR-6.1, SC-5); assert in `SubmissionDropzone.test.tsx`
+- [X] T028 [P] Register one Jira Intake card/shortcut on the home/sidebar surface (mirror the Template Maker card); update the corresponding card-count test
 - [ ] T029 Run the full quickstart (Scenarios 1–7) end-to-end and `cd client && npm run build` (tsc -b && vite build) + `npx vitest run src/views/JiraIntake` — all green (Article X)
 - [ ] T030 Finalize the `CHANGELOG.md` entry and release with `scripts\local-release.ps1 minor`
 
