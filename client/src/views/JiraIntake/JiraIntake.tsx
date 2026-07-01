@@ -18,7 +18,7 @@ import type { IntakeConfig, QueueEntry } from './lib/intakeTypes.ts';
 export default function JiraIntake() {
   const { config, ledger, isLoading, errorMessage: configError, saveConfig, recordProcessed } = useIntakeConfig();
   const { entries, counts, ingestFile, updateEntry, dismissEntry, errorMessage: queueError } = useIntakeQueue(ledger);
-  const { createFromSubmission, createAllNew } = useCreateFromSubmission({ config, recordProcessed });
+  const { createFromSubmission, createAllNew, reconcileExisting } = useCreateFromSubmission({ config, recordProcessed });
 
   const [isEditingSettings, setIsEditingSettings] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -38,9 +38,19 @@ export default function JiraIntake() {
 
   async function handleFile(file: File): Promise<void> {
     const newEntries = await ingestFile(file);
-    // Auto-create only when configured; otherwise rows wait for a manual Create.
-    if (config?.autoCreateOnImport && isConfigured && newEntries.length > 0) {
-      const created = await createAllNew(newEntries);
+    if (newEntries.length === 0) {
+      return;
+    }
+    // Dedup pre-scan: mark rows whose issue already exists in Jira as Imported before any create,
+    // so re-imports never create duplicates even if the local ledger was reset (feature 006).
+    let reconciled = newEntries;
+    if (isConfigured) {
+      reconciled = await reconcileExisting(newEntries);
+      reconciled.forEach(updateEntry);
+    }
+    // Auto-create only when configured; otherwise the remaining new rows wait for a manual Create.
+    if (config?.autoCreateOnImport && isConfigured) {
+      const created = await createAllNew(reconciled);
       created.forEach(updateEntry);
     }
   }

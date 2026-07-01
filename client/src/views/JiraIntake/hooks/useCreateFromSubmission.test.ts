@@ -3,15 +3,19 @@
 // fallback reporter + origin note, and bulk create skipping non-new rows.
 
 import { renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createIssue, searchUsers } from '../../../services/jiraApi.ts';
+import { createIssue, searchIssuesByLabels, searchUsers } from '../../../services/jiraApi.ts';
 import { useCreateFromSubmission } from './useCreateFromSubmission.ts';
 import type { IntakeConfig, QueueEntry } from '../lib/intakeTypes.ts';
 
-vi.mock('../../../services/jiraApi.ts', () => ({ createIssue: vi.fn(), searchUsers: vi.fn() }));
+vi.mock('../../../services/jiraApi.ts', () => ({ createIssue: vi.fn(), searchUsers: vi.fn(), searchIssuesByLabels: vi.fn() }));
 const createIssueMock = vi.mocked(createIssue);
 const searchUsersMock = vi.mocked(searchUsers);
+const searchLabelsMock = vi.mocked(searchIssuesByLabels);
+
+// Default: the dedup guard finds no existing issue, so create paths proceed.
+beforeEach(() => { searchLabelsMock.mockResolvedValue([]); });
 
 const CONFIG: IntakeConfig = {
   projectKey: 'ENFCT',
@@ -148,5 +152,99 @@ describe('useCreateFromSubmission', () => {
     expect(createIssueMock).toHaveBeenCalledTimes(1);
     expect(results[0].state).toBe('imported');
     expect(results[1].jiraKey).toBe('ENFCT-1');
+  });
+
+  // ── Dedup guard (feature 006) ──
+
+  it('reconciles instead of creating when Jira already has a stamped issue (US1/US2)', async () => {
+    // Guard finds an existing issue carrying intake-s1; ledger is irrelevant.
+    searchLabelsMock.mockResolvedValue([{ key: 'ENCUC-77', labels: ['intake-s1'] }]);
+    const recordProcessed = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useCreateFromSubmission({ config: CONFIG, recordProcessed }));
+
+    const updated = await result.current.createFromSubmission(newEntry());
+
+    expect(updated.state).toBe('imported');
+    expect(updated.jiraKey).toBe('ENCUC-77');
+    expect(updated.reporterOutcome).toBe('fallback');
+    expect(createIssueMock).not.toHaveBeenCalled();               // no duplicate created
+    expect(recordProcessed).toHaveBeenCalledWith(expect.objectContaining({ id: 's1', jiraKey: 'ENCUC-77' })); // self-heal cache
+  });
+
+  it('flags ambiguous when more than one issue carries the stamp, and does not create', async () => {
+    searchLabelsMock.mockResolvedValue([
+      { key: 'ENCUC-1', labels: ['intake-s1'] },
+      { key: 'ENCUC-2', labels: ['intake-s1'] },
+    ]);
+    const recordProcessed = vi.fn();
+    const { result } = renderHook(() => useCreateFromSubmission({ config: CONFIG, recordProcessed }));
+
+    const updated = await result.current.createFromSubmission(newEntry());
+
+    expect(updated.state).toBe('invalid');
+    expect(updated.blockingReasons[0]).toContain('Multiple Jira issues');
+    expect(createIssueMock).not.toHaveBeenCalled();
+  });
+
+  it('fails safe (creates nothing) when the existence check errors', async () => {
+    searchLabelsMock.mockRejectedValue(new Error('proxy down'));
+    const recordProcessed = vi.fn();
+    const { result } = renderHook(() => useCreateFromSubmission({ config: CONFIG, recordProcessed }));
+
+    const updated = await result.current.createFromSubmission(newEntry());
+
+    expect(updated.state).toBe('failed');
+    expect(updated.blockingReasons[0]).toMatch(/check Jira/i);
+    expect(createIssueMock).not.toHaveBeenCalled();
+  });
+
+  it('stamps the created issue with the intake- label on the happy path', async () => {
+    searchUsersMock.mockResolvedValue([]);
+    createIssueMock.mockResolvedValue({ id: '9', key: 'ENFCT-200', self: 'x' });
+    const recordProcessed = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useCreateFromSubmission({ config: CONFIG, recordProcessed }));
+
+    await result.current.createFromSubmission(newEntry());
+
+    expect(createIssueMock.mock.calls[0][0].fields.labels).toEqual(['intake-s1']);
+  });
+
+  // ── Batched pre-scan (feature 006, US1/US3) ──
+
+  it('reconcileExisting marks already-created rows imported and records them (single batched query)', async () => {
+    searchLabelsMock.mockResolvedValue([{ key: 'ENCUC-5', labels: ['intake-a'] }]);
+    const recordProcessed = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useCreateFromSubmission({ config: CONFIG, recordProcessed }));
+
+    const reconciled = await result.current.reconcileExisting([newEntry({ id: 'a' }), newEntry({ id: 'b' })]);
+
+    expect(searchLabelsMock).toHaveBeenCalledTimes(1);                       // one batched call (FR-6)
+    expect(searchLabelsMock).toHaveBeenCalledWith(['intake-a', 'intake-b']);
+    expect(reconciled.find((entry) => entry.submission.id === 'a')?.state).toBe('imported');
+    expect(reconciled.find((entry) => entry.submission.id === 'a')?.jiraKey).toBe('ENCUC-5');
+    expect(reconciled.find((entry) => entry.submission.id === 'b')?.state).toBe('new');
+    expect(recordProcessed).toHaveBeenCalledWith(expect.objectContaining({ id: 'a', jiraKey: 'ENCUC-5' }));
+  });
+
+  it('reconcileExisting does not query Jira for rows already resolved by the ledger cache (US3)', async () => {
+    const recordProcessed = vi.fn();
+    const { result } = renderHook(() => useCreateFromSubmission({ config: CONFIG, recordProcessed }));
+
+    const alreadyImported: QueueEntry = { ...newEntry({ id: 'known' }), state: 'imported', jiraKey: 'ENCUC-1' };
+    const reconciled = await result.current.reconcileExisting([alreadyImported]);
+
+    expect(searchLabelsMock).not.toHaveBeenCalled();     // cache-first: no lookup for known rows
+    expect(reconciled[0].state).toBe('imported');
+  });
+
+  it('reconcileExisting fails safe (leaves rows unchanged) when the search errors', async () => {
+    searchLabelsMock.mockRejectedValue(new Error('proxy down'));
+    const recordProcessed = vi.fn();
+    const { result } = renderHook(() => useCreateFromSubmission({ config: CONFIG, recordProcessed }));
+
+    const reconciled = await result.current.reconcileExisting([newEntry({ id: 'a' })]);
+
+    expect(reconciled[0].state).toBe('new');            // not created, not mis-marked
+    expect(recordProcessed).not.toHaveBeenCalled();
   });
 });

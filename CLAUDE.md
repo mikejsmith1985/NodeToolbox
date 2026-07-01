@@ -9,7 +9,7 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **teams-jira-intake** — plan: `specs/005-teams-jira-intake/plan.md`
+- **intake-dedup** (Phase 2A of teams-jira-intake) — plan: `specs/006-intake-dedup/plan.md`
   (spec, research, data-model, contracts, quickstart in the same directory).
 <!-- SPECKIT END -->
 

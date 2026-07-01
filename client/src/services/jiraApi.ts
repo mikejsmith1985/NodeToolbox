@@ -250,3 +250,53 @@ export async function searchUsers(query: string, maxResults: number = USER_SEARC
     return legacyResults ?? [];
   }
 }
+
+// Default page size and per-query chunk size for label searches. A submission maps to at most one
+// issue, so a modest page covers a chunk; chunking keeps the JQL string a sane length.
+const LABEL_SEARCH_MAX_RESULTS = 100;
+const LABEL_SEARCH_CHUNK_SIZE = 50;
+
+/** One issue returned by a label search — just its key and labels, enough to map back to a submission. */
+export interface JiraLabelSearchIssue {
+  key: string;
+  labels: string[];
+}
+
+/** Shape of the Jira search response we consume (only key + labels). */
+interface JiraSearchResponse {
+  issues?: Array<{ key: string; fields?: { labels?: string[] } }>;
+}
+
+/** Splits a list into fixed-size chunks so a large label set becomes several bounded queries. */
+function chunk<Item>(items: Item[], size: number): Item[][] {
+  const chunks: Item[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+/**
+ * Finds issues carrying any of the given labels, via `labels in (...)` JQL through the proxy. Used
+ * by the intake importer to detect an already-created (stamped) issue before creating a duplicate.
+ * Returns each match's key and labels; chunks large label lists into multiple queries.
+ */
+export async function searchIssuesByLabels(labels: string[], maxResults: number = LABEL_SEARCH_MAX_RESULTS): Promise<JiraLabelSearchIssue[]> {
+  const cleanedLabels = labels.map((label) => label.trim()).filter((label) => label !== '');
+  if (cleanedLabels.length === 0) {
+    return [];
+  }
+
+  const matches: JiraLabelSearchIssue[] = [];
+  for (const labelChunk of chunk(cleanedLabels, LABEL_SEARCH_CHUNK_SIZE)) {
+    const quotedLabels = labelChunk.map((label) => `"${label}"`).join(', ');
+    const jql = `labels in (${quotedLabels})`;
+    const response = await jiraGet<JiraSearchResponse>(
+      `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=labels&maxResults=${maxResults}`,
+    );
+    for (const issue of response.issues ?? []) {
+      matches.push({ key: issue.key, labels: issue.fields?.labels ?? [] });
+    }
+  }
+  return matches;
+}

@@ -53,24 +53,26 @@ describe('JiraIntake', () => {
   it('shows the settings panel when no config exists', () => {
     stubConfig(null);
     stubQueue();
-    useCreateFromSubmissionMock.mockReturnValue({ createFromSubmission: vi.fn(), createAllNew: vi.fn() });
+    useCreateFromSubmissionMock.mockReturnValue({ createFromSubmission: vi.fn(), createAllNew: vi.fn(), reconcileExisting: vi.fn() });
 
     render(<JiraIntake />);
     expect(screen.getByRole('region', { name: /intake settings/i })).toBeInTheDocument();
   });
 
-  it('ingests and auto-creates on import when configured with auto-create and a project', async () => {
+  it('runs the dedup pre-scan then auto-creates the remaining rows on import', async () => {
     stubConfig(CONFIG);
     const ingestFile = vi.fn().mockResolvedValue([ENTRY]);
     const updateEntry = vi.fn();
     stubQueue({ entries: [ENTRY], counts: { total: 1, newCount: 1, imported: 0, invalid: 0 }, ingestFile, updateEntry });
+    const reconcileExisting = vi.fn().mockResolvedValue([ENTRY]); // nothing already existed
     const createAllNew = vi.fn().mockResolvedValue([{ ...ENTRY, state: 'imported', jiraKey: 'ENFCT-1' }]);
-    useCreateFromSubmissionMock.mockReturnValue({ createFromSubmission: vi.fn(), createAllNew });
+    useCreateFromSubmissionMock.mockReturnValue({ createFromSubmission: vi.fn(), createAllNew, reconcileExisting });
 
     render(<JiraIntake />);
     fireEvent.change(screen.getByTestId('submission-file-input'), { target: { files: [new File(['x'], 'Jira-Intake.xlsx')] } });
 
     await waitFor(() => expect(ingestFile).toHaveBeenCalled());
+    await waitFor(() => expect(reconcileExisting).toHaveBeenCalledWith([ENTRY]));
     await waitFor(() => expect(createAllNew).toHaveBeenCalledWith([ENTRY]));
     await waitFor(() => expect(updateEntry).toHaveBeenCalled());
   });
