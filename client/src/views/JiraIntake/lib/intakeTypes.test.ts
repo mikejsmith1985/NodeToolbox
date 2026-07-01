@@ -24,7 +24,7 @@ describe('intakeTypes', () => {
       submittedAt: '2026-06-30T22:31:49.6154481Z',
       status: 'New',
       submitter: { displayName: 'Michael Smith', email: 'Michael_Smith3@hcsc.com' },
-      fields: { summary: 'S', description: 'D', acceptanceCriteria: 'AC', issueType: 'Story', priority: 'Medium' },
+      fields: { summary: 'S', description: 'D', acceptanceCriteria: 'AC', issueType: 'Story', priority: 'Medium', project: '' },
       extras: {},
       rowIndex: 0,
       parseErrors: [],
@@ -45,7 +45,7 @@ describe('intakeTypes', () => {
       submission: {
         id: 'a', submittedAt: '', status: 'New',
         submitter: { displayName: '', email: '' },
-        fields: { summary: 's', description: '', acceptanceCriteria: '', issueType: '', priority: '' },
+        fields: { summary: 's', description: '', acceptanceCriteria: '', issueType: '', priority: '', project: '' },
         extras: {}, rowIndex: 0, parseErrors: [],
       },
       state: 'imported',

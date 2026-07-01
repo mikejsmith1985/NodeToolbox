@@ -17,11 +17,16 @@ export function plainTextToWikiMarkup(text: string): string {
 
 /**
  * Builds the create-issue field payload (without reporter, which the create hook adds). Includes
- * project + issue type; adds description, priority, and Acceptance Criteria only when present.
+ * project (the already-resolved key) + issue type; adds description, priority, and Acceptance
+ * Criteria only when present.
  */
-export function buildIntakeFields(submission: IntakeSubmission, config: IntakeConfig): Record<string, unknown> {
+export function buildIntakeFields(
+  submission: IntakeSubmission,
+  config: IntakeConfig,
+  projectKey: string,
+): Record<string, unknown> {
   const fields: Record<string, unknown> = {
-    project: { key: config.projectKey },
+    project: { key: projectKey },
     summary: submission.fields.summary.trim(),
   };
 

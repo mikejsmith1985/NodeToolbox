@@ -8,8 +8,10 @@ import { useCallback } from 'react';
 import { createIssue, searchUsers } from '../../../services/jiraApi.ts';
 import { buildIntakeFields } from '../lib/buildIntakeFields.ts';
 import { describeSubmitter } from '../lib/describeSubmitter.ts';
+import { resolveProjectKey } from '../lib/resolveProjectKey.ts';
 import { resolveReporter } from '../lib/resolveReporter.ts';
-import type { IntakeConfig, ProcessedEntry, QueueEntry } from '../lib/intakeTypes.ts';
+import type { ProcessedEntry, QueueEntry } from '../lib/intakeTypes.ts';
+import type { IntakeConfig } from '../lib/intakeTypes.ts';
 
 /** The standard Jira field that receives the submitter origin note on the fallback path. */
 const DESCRIPTION_FIELD_ID = 'description';
@@ -50,8 +52,8 @@ export function useCreateFromSubmission({
   recordProcessed,
 }: UseCreateFromSubmissionParams): UseCreateFromSubmissionResult {
   const createFromSubmission = useCallback(async (entry: QueueEntry): Promise<QueueEntry> => {
-    if (!config || config.projectKey.trim() === '') {
-      return { ...entry, state: 'failed', blockingReasons: ['Set the target project before creating issues.'] };
+    if (!config) {
+      return { ...entry, state: 'failed', blockingReasons: ['No intake configuration is set.'] };
     }
 
     const blockingReasons = findBlockingReasons(entry);
@@ -59,7 +61,15 @@ export function useCreateFromSubmission({
       return { ...entry, state: 'invalid', blockingReasons };
     }
 
-    const fields = buildIntakeFields(entry.submission, config);
+    // Resolve the target project from the row's team name (or the default). An unmapped team is a
+    // fixable data/config gap (invalid); a missing default project is a settings gap (failed).
+    const projectResolution = resolveProjectKey(entry.submission, config);
+    if (!projectResolution.ok) {
+      const nextState = projectResolution.kind === 'unmapped-team' ? 'invalid' : 'failed';
+      return { ...entry, state: nextState, blockingReasons: [projectResolution.reason] };
+    }
+
+    const fields = buildIntakeFields(entry.submission, config, projectResolution.projectKey);
 
     // Reporter resolution never blocks creation: a non-match falls back to the integration account
     // (reporter omitted) with the submitter's origin recorded in the description so it is not lost.

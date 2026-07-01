@@ -75,4 +75,9 @@ describe('normalizeSubmission', () => {
     const submission = normalizeSubmission({ id: 'e', summary: 's' }, 0);
     expect(submission.status).toBe('New');
   });
+
+  it('reads the project (team name) column', () => {
+    const submission = normalizeSubmission({ id: 'f', summary: 's', project: 'Cleanup Crew' }, 0);
+    expect(submission.fields.project).toBe('Cleanup Crew');
+  });
 });

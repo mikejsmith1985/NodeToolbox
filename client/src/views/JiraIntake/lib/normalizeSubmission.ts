@@ -9,8 +9,8 @@ import type { IntakeSubmission } from './intakeTypes.ts';
 const KNOWN_FLAT_KEYS = new Set([
   'id', 'submittedAt', 'status',
   'submitterDisplayName', 'submitterEmail', 'submitter.displayName', 'submitter.email',
-  'summary', 'description', 'acceptanceCriteria', 'issueType', 'priority',
-  'fields.summary', 'fields.description', 'fields.acceptanceCriteria', 'fields.issueType', 'fields.priority',
+  'summary', 'description', 'acceptanceCriteria', 'issueType', 'priority', 'project',
+  'fields.summary', 'fields.description', 'fields.acceptanceCriteria', 'fields.issueType', 'fields.priority', 'fields.project',
 ]);
 
 /** Reads a nested value like row.submitter.email when the row carries actual nested objects. */
@@ -91,6 +91,7 @@ export function normalizeSubmission(row: Record<string, unknown>, rowIndex: numb
       acceptanceCriteria: readField(row, 'acceptanceCriteria', ['fields', 'acceptanceCriteria']),
       issueType: readField(row, 'issueType', ['fields', 'issueType']),
       priority: readField(row, 'priority', ['fields', 'priority']),
+      project: readField(row, 'project', ['fields', 'project']),
     },
     extras: collectExtras(row),
     rowIndex,
