@@ -9,8 +9,7 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **jira-template-maker** — plan: `specs/004-jira-template-maker/plan.md`
-- **my-issues-today-dashboard** — plan: `specs/004-my-issues-today-dashboard/plan.md`
+- **teams-jira-intake** — plan: `specs/005-teams-jira-intake/plan.md`
   (spec, research, data-model, contracts, quickstart in the same directory).
 <!-- SPECKIT END -->
 

@@ -1,0 +1,175 @@
+/* JiraIntake.module.css — Styles for the Teams→Jira intake importer. Uses only the app's real
+   theme tokens so it renders correctly in dark mode (see research.md R7). */
+
+.view {
+  padding: 1.5rem;
+  color: var(--color-text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.title {
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.subtitle {
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.panelTitle {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+
+.fieldRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.fieldLabel {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.input,
+.select {
+  background: var(--color-field-bg);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.9rem;
+}
+
+.mappingRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.5rem;
+  align-items: end;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.primaryButton {
+  background: var(--color-accent);
+  color: var(--color-text-primary);
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+
+/* ── Dropzone ── */
+.dropzone {
+  border: 2px dashed var(--color-border);
+  border-radius: 10px;
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-text-muted);
+  background: var(--color-surface-2);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.dropzoneActive {
+  border-color: var(--color-accent);
+  background: var(--color-surface-hover);
+}
+
+.dropzoneError {
+  color: var(--color-danger);
+  margin-top: 0.5rem;
+}
+
+.hiddenInput {
+  display: none;
+}
+
+/* ── Queue ── */
+.countsBar {
+  display: flex;
+  gap: 1rem;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.queueTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.queueTable th,
+.queueTable td {
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.88rem;
+  vertical-align: top;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--color-border);
+}
+
+.badgeNew { color: var(--color-accent); }
+.badgeImported { color: var(--color-text-primary); background: var(--color-surface-hover); }
+.badgeInvalid,
+.badgeFailed { color: var(--color-danger); }
+.badgeSkipped { color: var(--color-text-muted); }
+
+.reason {
+  color: var(--color-danger);
+  font-size: 0.8rem;
+}
+
+.emptyState {
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: 1rem;
+}
