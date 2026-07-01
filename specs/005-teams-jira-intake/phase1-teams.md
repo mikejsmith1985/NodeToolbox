@@ -68,25 +68,47 @@ Write **exactly this shape** (extra fields are fine; these are required):
   description if the email doesn't match a Jira user).
 - `fields` — the core values; Toolbox **maps** these to real Jira fields via the intake template.
 
-## Step 5 — Where to write it
+## Step 5 — Where to write it (STANDARD connectors only)
 
-**Try Confluence first** (Toolbox already reads/writes it via API token — Rovo-independent):
-- Power Automate **HTTP action** to Confluence Cloud, **Basic auth** = base64(`email:apiToken`).
-- Append each record to a Confluence page/Database that Toolbox can read, keeping `status`
-  updatable.
-- **This is the step to validate.** If your tenant blocks Power Automate → Confluence, stop and
-  tell us — we pivot the store to a **SharePoint list** (which adds a new Toolbox reader).
+> Confirmed: Power Automate's **HTTP action and Confluence/Jira/ServiceNow connectors are premium**
+> and unavailable in this tenant, and elevated access / app registrations are a no-go. So the store
+> must be written with a **standard** connector, and Toolbox ingests an **exported file** (no
+> server-side API/auth needed).
+
+Pick one (both are standard, license-free):
+
+- **Excel Online (Business) → "Add a row into a table"** *(recommended)* — one workbook in
+  SharePoint/OneDrive with a table whose columns are the fields below; one row per submission.
+  Easiest for Toolbox to parse.
+- **SharePoint → "Create item"** — an intake list with a column per field. Also fine; you'd use the
+  list's built-in **Export to Excel/CSV** to get the file.
+
+Columns / fields to write per submission:
+
+| Column | Example |
+|--------|---------|
+| `id` | `2921ea40-6eff-47a5-aecf-ae3b6d7b76aa` (unique — used for dedup) |
+| `submittedAt` | ISO 8601 |
+| `status` | `New` |
+| `submitterDisplayName` | `Michael Smith` |
+| `submitterEmail` | `Michael_Smith3@hcsc.com` (→ Jira reporter) |
+| `summary` / `description` / `acceptanceCriteria` / `issueType` / `priority` | the form values |
+
+(Nested JSON like the sample record is also fine if you write a JSON/CSV file — Toolbox accepts
+either nested or flat columns.)
 
 ## Definition of done for Phase 1
 
-- Clicking **New Request** opens the form; submitting writes a record with the shape above.
-- The record lands in the store with `status=New` and a populated `submitter`.
-- You can **send back one real stored record** (the actual JSON/row). That sample finalizes the
-  Phase-2 reader contract before the Toolbox importer is built.
+- Clicking **New Request** opens the form; submitting appends a row with the fields above and
+  `status=New`.
+- You can **download/export the store as Excel or CSV** (Excel download, or SharePoint → Export).
+  That file is what you'll drag into Toolbox.
 
 ## Hand-off to Phase 2
 
-Once the above works, the Toolbox importer (`spec.md`) will: read `New` records newest-first,
-map fields per the intake template, create the Jira issue (reporter = submitter when resolvable),
-then mark the record `Imported` with its `jiraKey`. Triage stays in Jira for now; a configurable
-review queue is built for later team-wide use.
+Once the above works, the Toolbox importer (`spec.md`) will: accept the **drag-and-dropped
+Excel/CSV**, parse rows newest-first, map fields per the intake template, create the Jira issue
+(reporter = submitter when resolvable, else integration account + submitter recorded in the
+description), and track processed `id`s locally so re-imports never double-create. Triage stays in
+Jira for now; a configurable review queue is built for later team-wide use. A live SharePoint pull
+(browser-relay, your session — no app registration) is a possible v2.
