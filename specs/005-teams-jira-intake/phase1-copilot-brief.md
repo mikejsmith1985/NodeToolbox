@@ -14,15 +14,25 @@ Create the destination Excel workbook so the flow has a table to write to:
 
 1. In your OneDrive for Business (or a SharePoint document library you can edit), create a workbook
    named e.g. **`Jira-Intake.xlsx`**.
-2. Add these **exact column headers** in row 1:
+2. Add these **exact column headers** in row 1 (11 columns):
 
-   `id | submittedAt | status | submitterDisplayName | submitterEmail | summary | description | acceptanceCriteria | issueType | priority`
+   `id | submittedAt | status | submitterDisplayName | submitterEmail | summary | description | acceptanceCriteria | issueType | priority | project`
 
 3. Select those headers → **Insert → Table** (check "My table has headers"). Rename the table to
    **`Submissions`** (Table Design → Table Name).
 4. Save. This table is what Power Automate's "Add a row into a table" action targets.
 
 > Keeping these column names exact means the file drops straight into NodeToolbox with no mapping guesswork.
+
+> **About the `project` column:** it holds a **team name** (e.g. `Cleanup Crew`), not a Jira project
+> key. NodeToolbox maps each team name to a real Jira project in its Intake settings (e.g.
+> `Cleanup Crew` → `ENCUC`). Leave it blank and the row uses NodeToolbox's default project. It is
+> optional on the form; add it only when you have more than one team submitting.
+
+> ⚠️ **The Table accumulates — never recreate it.** Every submission appends **one row** to the
+> **same** `Submissions` table, so over time the workbook holds all requests. When you later add a
+> column, **do not** delete and rebuild the sheet/table (that resets it to a plain sheet with a
+> single row and breaks the flow's table reference). Use the safe steps in **Section 6** instead.
 
 ---
 
@@ -41,7 +51,7 @@ Details:
   the Teams response — do NOT ask them to type it.
 - The form collects: Summary (single line, required), Description (multi-line), Acceptance Criteria
   (multi-line), Issue Type (dropdown: Story, Bug, Task, Spike), Priority (dropdown: Highest, High,
-  Medium, Low, Lowest).
+  Medium, Low, Lowest), and an optional Team (dropdown of team names, may be left unset).
 - On submit, use the Excel Online (Business) action "Add a row into a table" targeting the workbook
   "Jira-Intake.xlsx" and table "Submissions", writing these columns:
     id                   = a new GUID
@@ -50,6 +60,7 @@ Details:
     submitterDisplayName = the responder's display name
     submitterEmail       = the responder's email
     summary, description, acceptanceCriteria, issueType, priority = the matching form inputs
+    project              = the selected Team (a team name; leave blank if none was chosen)
 - After writing the row, reply in the Teams thread confirming the request was received.
 
 Use the Teams "Post adaptive card and wait for a response" action for the form so the responder's
@@ -72,9 +83,12 @@ identity is available. Keep everything on standard connectors.
 | `acceptanceCriteria` | form input `acceptanceCriteria` |
 | `issueType` | form input `issueType` |
 | `priority` | form input `priority` |
+| `project` | form input `team` (a team name; blank when none chosen) |
 
 > The "Post adaptive card and wait for a response" action exposes the **responder** (who submitted)
 > and the **submitted values**. Map responder → the two submitter columns; map inputs → the rest.
+> The `project` column receives the **team** input — NodeToolbox translates the team name to the
+> right Jira project, so send the team name as-is (do not try to convert it to a project key here).
 
 ---
 
@@ -106,11 +120,20 @@ Use this JSON in the card action. The `id` on each input is what you reference f
         { "title": "Medium", "value": "Medium" },
         { "title": "Low", "value": "Low" },
         { "title": "Lowest", "value": "Lowest" }
+      ] },
+    { "type": "Input.ChoiceSet", "id": "team", "label": "Team (optional)", "isRequired": false,
+      "placeholder": "Select a team",
+      "choices": [
+        { "title": "Cleanup Crew", "value": "Cleanup Crew" }
       ] }
   ],
   "actions": [ { "type": "Action.Submit", "title": "Submit request" } ]
 }
 ```
+
+> Add one `choices` entry per team as more teams start submitting. The value must match the team
+> name you map in NodeToolbox Intake settings. Leaving Team unset writes a blank `project` cell, and
+> NodeToolbox uses its default project for that row.
 
 > Optional "launcher": if you'd rather have a persistent **New Request** button that opens this
 > form, post a small card with an `Action.ShowCard` wrapping the body above, or a button that starts
@@ -133,11 +156,51 @@ Use this JSON in the card action. The `id` on each input is what you reference f
 
 ## 5. Acceptance test (Phase-1 "done")
 
-- Clicking the button/card opens the form; submitting adds exactly **one row** to `Submissions`.
+- Clicking the button/card opens the form; submitting **appends one row** to the `Submissions`
+  table — and **previous rows remain** (the table grows over time).
 - `id` is a unique GUID, `submittedAt` is a timestamp, `status` = `New`, and
   `submitterDisplayName`/`submitterEmail` are populated automatically (not typed).
-- You can **download `Jira-Intake.xlsx`** (or File → Download a copy) — that file is what you drag
-  into NodeToolbox.
+- You can **download `Jira-Intake.xlsx`** (File → Download a copy) — and the download contains
+  **all** rows, on a sheet with the `Submissions` table intact. That file is what you drag into
+  NodeToolbox. NodeToolbox imports **every** row it finds, so a download with only one row means the
+  workbook itself has only one row (see Section 6 — usually a rebuilt/reset table).
 
-Then send me the downloaded **`.xlsx`** (or just the header row + one sample row) and I'll build the
-Toolbox drag-and-drop importer against it.
+Then send me the downloaded **`.xlsx`** (or the header row + a couple of sample rows).
+
+---
+
+## 6. Adding or changing a column later — WITHOUT breaking the flow
+
+> This is the safe way to extend the schema (e.g. the `project` column was added this way). The
+> failure mode to avoid: deleting the sheet/table and starting over, which **resets the workbook to
+> one row and detaches the flow's table reference** — the exact symptom of "the export only has one
+> row."
+
+**Do this (safe):**
+
+1. Open `Jira-Intake.xlsx` in **Excel Online** (the same file the flow writes to — not a copy).
+2. Click any cell **inside** the existing `Submissions` table.
+3. Type the new header in the **first empty column immediately to the right of the table** — Excel
+   auto-extends the table to include it (the new column joins `Submissions`; the table name and all
+   existing rows are preserved). Do **not** Insert → Table again.
+4. **Save.** Confirm under **Table Design** the table is still named **`Submissions`** and still
+   contains all prior rows.
+5. In Power Automate, open the flow → the **"Add a row into a table"** action. Re-select the
+   **File** and **Table** (`Jira-Intake.xlsx` / `Submissions`) so the action refreshes its column
+   list, then **map the new column** to its form input. Save.
+6. If you added a form field, also add the matching input to the Adaptive Card (Section 3).
+7. **Test:** submit once; confirm a **new** row is appended (total row count goes **up**, not back to
+   one) and the new column is populated.
+
+**Do NOT:**
+
+- ❌ Delete the worksheet/table and recreate it (loses rows, renames the sheet to `Sheet1`, breaks
+  the flow's table binding).
+- ❌ Rename the `Submissions` table (the flow targets it by name).
+- ❌ Edit a downloaded copy and expect the flow to use it — always edit the live workbook the flow
+  points at.
+
+**If the table was already rebuilt/reset** (download shows `Sheet1` and one row): re-add the
+`Submissions` table (Insert → Table, name it `Submissions`), then in the flow's "Add a row into a
+table" action re-select the file + table and re-map every column. Past rows that were lost cannot be
+recovered, but new submissions will accumulate again.
