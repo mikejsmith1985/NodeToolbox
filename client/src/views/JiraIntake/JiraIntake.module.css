@@ -168,6 +168,22 @@
   font-size: 0.8rem;
 }
 
+.summaryText {
+  font-weight: 600;
+}
+
+.detailText {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  margin-top: 0.15rem;
+  white-space: normal;
+  max-width: 40rem;
+}
+
+.detailLabel {
+  font-weight: 600;
+}
+
 .emptyState {
   color: var(--color-text-muted);
   text-align: center;

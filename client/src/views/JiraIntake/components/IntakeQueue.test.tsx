@@ -43,6 +43,22 @@ describe('IntakeQueue', () => {
     expect(screen.getByTestId('queue-counts')).toHaveTextContent('1 imported');
   });
 
+  it('shows the full captured detail: description, AC, issue type, priority, and team', () => {
+    const detailed = entry({ id: 'd', state: 'new' });
+    detailed.submission.fields.description = 'The detailed description';
+    detailed.submission.fields.acceptanceCriteria = 'The acceptance criteria';
+    detailed.submission.fields.issueType = 'Bug';
+    detailed.submission.fields.priority = 'Highest';
+    detailed.submission.fields.project = 'Cleanup Crew';
+    render(<IntakeQueue entries={[detailed]} counts={{ total: 1, newCount: 1, imported: 0, invalid: 0 }} />);
+
+    expect(screen.getByText('The detailed description')).toBeInTheDocument();
+    expect(screen.getByText(/The acceptance criteria/)).toBeInTheDocument();
+    expect(screen.getByText('Bug')).toBeInTheDocument();
+    expect(screen.getByText('Highest')).toBeInTheDocument();
+    expect(screen.getByText('Cleanup Crew')).toBeInTheDocument();
+  });
+
   it('shows blocking reasons for invalid rows', () => {
     const entries = [entry({ id: 'c', state: 'invalid', blockingReasons: ['Missing required field: Summary'] })];
     render(<IntakeQueue entries={entries} counts={{ total: 1, newCount: 0, imported: 0, invalid: 1 }} />);
