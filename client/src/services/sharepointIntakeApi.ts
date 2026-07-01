@@ -33,14 +33,60 @@ function nextRequestId(): string {
   return `sp-${Date.now()}-${relayRequestCounter}`;
 }
 
-/** Normalizes a site-relative URL: ensure a leading slash, drop any trailing slashes. */
-export function normalizeSitePath(siteRelativeUrl: string): string {
-  const trimmed = siteRelativeUrl.trim();
+/**
+ * Parses whatever the user pasted — a site-relative path (`/sites/CUCIntake`), a full site URL, or
+ * even the full List URL (`https://tenant.sharepoint.com/sites/CUCIntake/Lists/Jira-Intake/AllItems.aspx`)
+ * — into the site-relative path plus, when present, the List name. Lets the user paste the address
+ * bar and have it "just work". Pure (no I/O).
+ */
+export function parseSharePointListUrl(input: string): { siteRelativeUrl: string; listName?: string } {
+  const trimmed = input.trim();
   if (trimmed === '') {
-    return '';
+    return { siteRelativeUrl: '' };
   }
-  const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-  return withLeadingSlash.replace(/\/+$/, '');
+
+  // Reduce a full URL to its path; keep a bare path as-is.
+  let path = trimmed;
+  if (/:\/\//.test(trimmed)) {
+    try {
+      path = new URL(trimmed).pathname;
+    } catch {
+      path = trimmed;
+    }
+  }
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    // Leave the path as-is if it isn't validly encoded.
+  }
+
+  // The List name (if the URL points at a list) is the segment after /Lists/.
+  const listMatch = /\/lists\/([^/]+)/i.exec(path);
+  const listName = listMatch ? listMatch[1] : undefined;
+
+  // Managed-path sites (/sites/<name> or /teams/<name>) have a well-known root — prefer it so a
+  // pasted page or list URL reduces cleanly to just the site path.
+  const managedPathMatch = /^\/(sites|teams)\/[^/]+/i.exec(path);
+  let sitePath: string;
+  if (managedPathMatch) {
+    sitePath = managedPathMatch[0];
+  } else {
+    // Root-hosted (or unknown) site: cut before /Lists/ or the REST /_api/ segment, then drop a
+    // trailing page segment such as /AllItems.aspx.
+    const lowerPath = path.toLowerCase();
+    const listsIndex = lowerPath.indexOf('/lists/');
+    const apiIndex = lowerPath.indexOf('/_api/');
+    sitePath = listsIndex >= 0 ? path.slice(0, listsIndex) : apiIndex >= 0 ? path.slice(0, apiIndex) : path;
+    sitePath = sitePath.replace(/\/[^/]*\.aspx$/i, '');
+  }
+
+  const withLeadingSlash = sitePath === '' || sitePath.startsWith('/') ? sitePath : `/${sitePath}`;
+  return { siteRelativeUrl: withLeadingSlash.replace(/\/+$/, ''), listName };
+}
+
+/** Normalizes a site-relative URL (accepts a full site/List URL too): leading slash, no trailing slash. */
+export function normalizeSitePath(siteRelativeUrl: string): string {
+  return parseSharePointListUrl(siteRelativeUrl).siteRelativeUrl;
 }
 
 /** Escapes single quotes for a SharePoint getbytitle('...') segment. */

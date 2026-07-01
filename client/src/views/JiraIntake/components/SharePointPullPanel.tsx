@@ -3,9 +3,10 @@
 // (blocked with a message when disconnected), an optional auto-refresh, and any error/warning.
 // See spec 007 FR-006/007/008.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react';
 
-import { openSharePointRelay, SHAREPOINT_RELAY_BOOKMARKLET_CODE } from '../../../services/browserRelay.ts';
+import { BookmarkletInstallLink } from '../../../components/BookmarkletInstallLink/index.tsx';
+import { SHAREPOINT_RELAY_BOOKMARKLET_CODE } from '../../../services/browserRelay.ts';
 import styles from '../JiraIntake.module.css';
 
 /** How often auto-refresh re-pulls while enabled and connected. */
@@ -14,7 +15,6 @@ const AUTO_REFRESH_INTERVAL_MS = 60000;
 interface SharePointPullPanelProps {
   /** Whether the SharePoint site + list are configured (else Pull is unavailable). */
   siteConfigured: boolean;
-  siteUrl: string;
   isConnected: boolean;
   isPulling: boolean;
   /** Error or missing-column warning to show, or null. */
@@ -23,10 +23,18 @@ interface SharePointPullPanelProps {
   onPull: () => void;
 }
 
+/** Warns if the user clicks the bookmarklet here instead of dragging it to the bookmarks bar. */
+function handleBookmarkletClick(clickEvent: ReactMouseEvent<HTMLAnchorElement>): void {
+  clickEvent.preventDefault();
+  window.alert(
+    'Drag "NodeToolbox SharePoint Relay" to your browser bookmarks bar first. ' +
+    'Then open your SharePoint site and click that bookmark from the SharePoint tab.',
+  );
+}
+
 /** The SharePoint live-pull panel. */
 export default function SharePointPullPanel({
   siteConfigured,
-  siteUrl,
   isConnected,
   isPulling,
   statusMessage,
@@ -67,13 +75,23 @@ export default function SharePointPullPanel({
 
       {!isConnected && (
         <div className={styles.fieldRow}>
+          <p className={styles.subtitle}>To connect the relay (one-time bookmarklet install):</p>
+          <ol className={styles.panelSteps}>
+            <li>Drag the link below to your browser&apos;s bookmarks bar.</li>
+            <li>Open your SharePoint site in a browser tab (where you can see the Jira-Intake list).</li>
+            <li>Click the <strong>NodeToolbox SharePoint Relay</strong> bookmark from that tab, then return here and click <strong>Check connection</strong>.</li>
+          </ol>
+          <BookmarkletInstallLink
+            bookmarkletCode={SHAREPOINT_RELAY_BOOKMARKLET_CODE}
+            className={styles.secondaryButton}
+            title="Drag this to your bookmarks bar"
+            onClick={handleBookmarkletClick}
+          >
+            🔖 Drag to bookmarks: NodeToolbox SharePoint Relay
+          </BookmarkletInstallLink>
           <p className={styles.subtitle}>
-            To connect: drag this bookmarklet to your bookmarks bar, open the SharePoint site, and click it.
+            ⚠️ Don&apos;t click it here — drag it to the bookmarks bar, then click it from the SharePoint tab.
           </p>
-          <input className={styles.input} readOnly value={SHAREPOINT_RELAY_BOOKMARKLET_CODE} aria-label="SharePoint relay bookmarklet" />
-          <button className={styles.secondaryButton} onClick={() => openSharePointRelay(siteUrl)} type="button">
-            Open SharePoint site
-          </button>
         </div>
       )}
 

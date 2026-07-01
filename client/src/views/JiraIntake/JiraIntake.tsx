@@ -131,7 +131,6 @@ export default function JiraIntake() {
       {!shouldShowSettings && (
         <SharePointPullPanel
           siteConfigured={isSharePointConfigured}
-          siteUrl={config?.sharePointSiteRelativeUrl ?? ''}
           isConnected={isRelayConnected}
           isPulling={isPulling}
           statusMessage={pullError ?? pullWarning}

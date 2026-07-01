@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { postRelayRequest, waitForRelayResult } from './relayBridgeApi.ts';
-import { fetchListItems, normalizeSitePath, resolveListFieldMap } from './sharepointIntakeApi.ts';
+import { fetchListItems, normalizeSitePath, parseSharePointListUrl, resolveListFieldMap } from './sharepointIntakeApi.ts';
 
 vi.mock('./relayBridgeApi.ts', () => ({ postRelayRequest: vi.fn(), waitForRelayResult: vi.fn() }));
 const postRequestMock = vi.mocked(postRelayRequest);
@@ -24,6 +24,30 @@ describe('normalizeSitePath', () => {
     expect(normalizeSitePath('sites/CUCIntake/')).toBe('/sites/CUCIntake');
     expect(normalizeSitePath('/sites/CUCIntake')).toBe('/sites/CUCIntake');
     expect(normalizeSitePath('   ')).toBe('');
+  });
+});
+
+describe('parseSharePointListUrl', () => {
+  it('reduces a full List URL to the site path and extracts the list name', () => {
+    const parsed = parseSharePointListUrl('https://contoso.sharepoint.com/sites/CUCIntake/Lists/Jira-Intake/AllItems.aspx');
+    expect(parsed.siteRelativeUrl).toBe('/sites/CUCIntake');
+    expect(parsed.listName).toBe('Jira-Intake');
+  });
+
+  it('reduces a full site URL (no list) to the site path', () => {
+    const parsed = parseSharePointListUrl('https://contoso.sharepoint.com/sites/CUCIntake/SitePages/Home.aspx');
+    expect(parsed.siteRelativeUrl).toBe('/sites/CUCIntake');
+    expect(parsed.listName).toBeUndefined();
+  });
+
+  it('leaves a bare site-relative path unchanged', () => {
+    expect(parseSharePointListUrl('/sites/CUCIntake').siteRelativeUrl).toBe('/sites/CUCIntake');
+  });
+
+  it('handles a root-site list URL', () => {
+    const parsed = parseSharePointListUrl('https://contoso.sharepoint.com/Lists/Jira-Intake/AllItems.aspx');
+    expect(parsed.siteRelativeUrl).toBe('');
+    expect(parsed.listName).toBe('Jira-Intake');
   });
 });
 

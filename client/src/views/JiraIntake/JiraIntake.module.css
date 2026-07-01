@@ -184,6 +184,16 @@
   font-weight: 600;
 }
 
+.panelSteps {
+  margin: 0.25rem 0 0.5rem 1.1rem;
+  padding: 0;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
 .emptyState {
   color: var(--color-text-muted);
   text-align: center;
