@@ -34,17 +34,17 @@ describe('IntakeConfigPanel', () => {
     expect(savedConfig.autoCreateOnImport).toBe(false);
   });
 
-  it('captures team → project mappings (only fully-filled rows, project key upper-cased)', () => {
+  it('captures project → Jira-key mappings (only fully-filled rows, project key upper-cased)', () => {
     const onSave = vi.fn();
     render(<IntakeConfigPanel initialConfig={null} artProjectKeys={[]} onSave={onSave} />);
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Default project' }), { target: { value: 'DEFLT' } });
-    fireEvent.click(screen.getByRole('button', { name: /add team mapping/i }));
-    fireEvent.change(screen.getByLabelText('Team name 1'), { target: { value: 'Cleanup Crew' } });
-    fireEvent.change(screen.getByLabelText('Project key 1'), { target: { value: 'encuc' } });
+    fireEvent.click(screen.getByRole('button', { name: /add project mapping/i }));
+    fireEvent.change(screen.getByLabelText('Project name 1'), { target: { value: 'Cleanup Crew' } });
+    fireEvent.change(screen.getByLabelText('Jira project key 1'), { target: { value: 'encuc' } });
     fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
 
     const savedConfig = onSave.mock.calls[0][0] as IntakeConfig;
-    expect(savedConfig.teamProjectMappings).toEqual([{ teamName: 'Cleanup Crew', projectKey: 'ENCUC' }]);
+    expect(savedConfig.projectMappings).toEqual([{ projectName: 'Cleanup Crew', projectKey: 'ENCUC' }]);
   });
 });

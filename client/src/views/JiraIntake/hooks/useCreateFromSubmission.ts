@@ -61,11 +61,12 @@ export function useCreateFromSubmission({
       return { ...entry, state: 'invalid', blockingReasons };
     }
 
-    // Resolve the target project from the row's team name (or the default). An unmapped team is a
-    // fixable data/config gap (invalid); a missing default project is a settings gap (failed).
+    // Resolve the target project from the row's "project" name (or the default). An unmapped
+    // project is a fixable data/config gap (invalid); a missing default project is a settings gap
+    // (failed).
     const projectResolution = resolveProjectKey(entry.submission, config);
     if (!projectResolution.ok) {
-      const nextState = projectResolution.kind === 'unmapped-team' ? 'invalid' : 'failed';
+      const nextState = projectResolution.kind === 'unmapped-project' ? 'invalid' : 'failed';
       return { ...entry, state: nextState, blockingReasons: [projectResolution.reason] };
     }
 

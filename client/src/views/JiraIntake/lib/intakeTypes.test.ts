@@ -14,8 +14,8 @@ import {
 } from './intakeTypes.ts';
 
 describe('intakeTypes', () => {
-  it('pins the store schema version to 2', () => {
-    expect(JIRA_INTAKE_STORE_SCHEMA_VERSION).toBe(2);
+  it('pins the store schema version to 3', () => {
+    expect(JIRA_INTAKE_STORE_SCHEMA_VERSION).toBe(3);
   });
 
   it('accepts a fully-populated submission fixture', () => {

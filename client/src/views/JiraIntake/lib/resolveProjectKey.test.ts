@@ -17,7 +17,7 @@ function submissionWith(project: string): IntakeSubmission {
 
 const CONFIG: IntakeConfig = {
   projectKey: 'DEFLT',
-  teamProjectMappings: [{ teamName: 'Cleanup Crew', projectKey: 'ENCUC' }],
+  projectMappings: [{ projectName: 'Cleanup Crew', projectKey: 'ENCUC' }],
   acceptanceCriteriaFieldId: 'customfield_10200',
   autoCreateOnImport: true, updatedAt: '', updatedBy: '',
 };
@@ -31,11 +31,11 @@ describe('resolveProjectKey', () => {
     expect(resolveProjectKey(submissionWith('  '), CONFIG)).toEqual({ ok: true, projectKey: 'DEFLT' });
   });
 
-  it('fails as unmapped-team when the team name has no mapping', () => {
+  it('fails as unmapped-project when the project name has no mapping', () => {
     const result = resolveProjectKey(submissionWith('Unknown Squad'), CONFIG);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.kind).toBe('unmapped-team');
+      expect(result.kind).toBe('unmapped-project');
       expect(result.reason).toContain('Unknown Squad');
     }
   });

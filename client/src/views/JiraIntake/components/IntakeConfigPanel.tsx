@@ -6,7 +6,7 @@ import { useState } from 'react';
 
 import ArtProjectInput from '../../JiraTemplateMaker/components/ArtProjectInput.tsx';
 import styles from '../JiraIntake.module.css';
-import { DEFAULT_ACCEPTANCE_CRITERIA_FIELD_ID, type IntakeConfig, type TeamProjectMapping } from '../lib/intakeTypes.ts';
+import { DEFAULT_ACCEPTANCE_CRITERIA_FIELD_ID, type IntakeConfig, type ProjectMapping } from '../lib/intakeTypes.ts';
 
 interface IntakeConfigPanelProps {
   initialConfig: IntakeConfig | null;
@@ -22,31 +22,31 @@ export default function IntakeConfigPanel({ initialConfig, artProjectKeys, onSav
     initialConfig?.acceptanceCriteriaFieldId ?? DEFAULT_ACCEPTANCE_CRITERIA_FIELD_ID,
   );
   const [autoCreateOnImport, setAutoCreateOnImport] = useState(initialConfig?.autoCreateOnImport ?? true);
-  const [teamMappings, setTeamMappings] = useState<TeamProjectMapping[]>(initialConfig?.teamProjectMappings ?? []);
+  const [projectMappings, setProjectMappings] = useState<ProjectMapping[]>(initialConfig?.projectMappings ?? []);
 
   const canSave = projectKey.trim() !== '' && !isSaving;
 
-  function updateMapping(index: number, patch: Partial<TeamProjectMapping>): void {
-    setTeamMappings((mappings) => mappings.map((mapping, position) => (position === index ? { ...mapping, ...patch } : mapping)));
+  function updateMapping(index: number, patch: Partial<ProjectMapping>): void {
+    setProjectMappings((mappings) => mappings.map((mapping, position) => (position === index ? { ...mapping, ...patch } : mapping)));
   }
 
   function addMapping(): void {
-    setTeamMappings((mappings) => [...mappings, { teamName: '', projectKey: '' }]);
+    setProjectMappings((mappings) => [...mappings, { projectName: '', projectKey: '' }]);
   }
 
   function removeMapping(index: number): void {
-    setTeamMappings((mappings) => mappings.filter((_, position) => position !== index));
+    setProjectMappings((mappings) => mappings.filter((_, position) => position !== index));
   }
 
   function handleSave(): void {
     // Keep only fully-filled mapping rows so blank editor rows are not persisted.
-    const cleanedMappings = teamMappings
-      .filter((mapping) => mapping.teamName.trim() !== '' && mapping.projectKey.trim() !== '')
-      .map((mapping) => ({ teamName: mapping.teamName.trim(), projectKey: mapping.projectKey.trim().toUpperCase() }));
+    const cleanedMappings = projectMappings
+      .filter((mapping) => mapping.projectName.trim() !== '' && mapping.projectKey.trim() !== '')
+      .map((mapping) => ({ projectName: mapping.projectName.trim(), projectKey: mapping.projectKey.trim().toUpperCase() }));
 
     onSave({
       projectKey: projectKey.trim().toUpperCase(),
-      teamProjectMappings: cleanedMappings,
+      projectMappings: cleanedMappings,
       acceptanceCriteriaFieldId: acceptanceCriteriaFieldId.trim(),
       autoCreateOnImport,
       updatedAt: '',
@@ -58,8 +58,9 @@ export default function IntakeConfigPanel({ initialConfig, artProjectKeys, onSav
     <section className={styles.panel} aria-label="Intake settings">
       <h2 className={styles.panelTitle}>Intake settings</h2>
       <p className={styles.subtitle}>
-        Issue type and priority come from each submission. The row&apos;s &quot;project&quot; column is a team
-        name — map each team to a Jira project below; rows with no team use the default project.
+        Issue type and priority come from each submission. The row&apos;s &quot;project&quot; column is a
+        project name — map each project name to a Jira project key below; rows with no project use
+        the default project.
       </p>
 
       <ArtProjectInput
@@ -71,27 +72,27 @@ export default function IntakeConfigPanel({ initialConfig, artProjectKeys, onSav
       />
 
       <div>
-        <span className={styles.fieldLabel}>Team → project mapping</span>
-        {teamMappings.map((mapping, index) => (
+        <span className={styles.fieldLabel}>Project → Jira project-key mapping</span>
+        {projectMappings.map((mapping, index) => (
           <div className={styles.mappingRow} key={index}>
             <input
-              aria-label={`Team name ${index + 1}`}
+              aria-label={`Project name ${index + 1}`}
               className={styles.input}
-              onChange={(event) => updateMapping(index, { teamName: event.target.value })}
-              placeholder="Team name (e.g. Cleanup Crew)"
-              value={mapping.teamName}
+              onChange={(event) => updateMapping(index, { projectName: event.target.value })}
+              placeholder="Project name (e.g. Cleanup Crew)"
+              value={mapping.projectName}
             />
             <input
-              aria-label={`Project key ${index + 1}`}
+              aria-label={`Jira project key ${index + 1}`}
               className={styles.input}
               onChange={(event) => updateMapping(index, { projectKey: event.target.value })}
-              placeholder="Project key (e.g. ENCUC)"
+              placeholder="Jira project key (e.g. ENCUC)"
               value={mapping.projectKey}
             />
             <button className={styles.secondaryButton} onClick={() => removeMapping(index)} type="button">Remove</button>
           </div>
         ))}
-        <button className={styles.secondaryButton} onClick={addMapping} type="button">+ Add team mapping</button>
+        <button className={styles.secondaryButton} onClick={addMapping} type="button">+ Add project mapping</button>
       </div>
 
       <div className={styles.fieldRow}>

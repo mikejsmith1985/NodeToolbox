@@ -51,12 +51,14 @@ field-mapping configuration, and the submitter→reporter resolution.
   by name, and **`issueType`→issuetype by name taken from each row** (not a per-config value —
   future rows may carry different types). Acceptance Criteria goes to a configured custom field
   (**default `customfield_10200`**).
-- **Target project is resolved per row via a team mapping.** The Teams export carries a `project`
-  column holding a **team name** (e.g. "Cleanup Crew"). Intake settings hold a manual **team-name →
-  project-key mapping** (e.g. "Cleanup Crew" → `ENCUC`); a row's project is resolved from its team,
-  falling back to the **default project** when the column is blank. An unmapped team name is flagged
-  Invalid (never created in the wrong project). Settings are: default project, team→project
-  mappings, Acceptance Criteria field id, and the auto-create toggle.
+- **Target project is resolved per row via a project mapping.** The Teams export carries a `project`
+  column holding a **friendly project name** (e.g. "Cleanup Crew"). Intake settings hold a manual
+  **project-name → Jira-project-key mapping** (e.g. "Cleanup Crew" → `ENCUC`); a row's project is
+  resolved from that name, falling back to the **default project** when the column is blank. An
+  unmapped project name is flagged Invalid (never created in the wrong project). Settings are:
+  default project, project mappings, Acceptance Criteria field id, and the auto-create toggle.
+  ("project" is the term used consistently across the Teams form, the Excel column, and Toolbox —
+  "team" is avoided because it means something else in the tenant.)
 - **Drop-first flow.** The dropzone and queue are always visible; the settings panel is compact and
   collapses to a summary once the project is set. Nothing about a submission is typed by hand.
 - **No createmeta pre-validation of options.** Issue type / priority are sent by name and Jira

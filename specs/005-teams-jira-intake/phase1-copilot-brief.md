@@ -24,10 +24,11 @@ Create the destination Excel workbook so the flow has a table to write to:
 
 > Keeping these column names exact means the file drops straight into NodeToolbox with no mapping guesswork.
 
-> **About the `project` column:** it holds a **team name** (e.g. `Cleanup Crew`), not a Jira project
-> key. NodeToolbox maps each team name to a real Jira project in its Intake settings (e.g.
-> `Cleanup Crew` → `ENCUC`). Leave it blank and the row uses NodeToolbox's default project. It is
-> optional on the form; add it only when you have more than one team submitting.
+> **About the `project` column:** it holds a **friendly project name** (e.g. `Cleanup Crew`), not a
+> Jira project key. NodeToolbox maps each project name to a real Jira project key in its Intake
+> settings (e.g. `Cleanup Crew` → `ENCUC`). Leave it blank and the row uses NodeToolbox's default
+> project. It is optional on the form; add options as more projects start submitting. (The word
+> "project" is used consistently across the Teams form, this column, and NodeToolbox.)
 
 > ⚠️ **The Table accumulates — never recreate it.** Every submission appends **one row** to the
 > **same** `Submissions` table, so over time the workbook holds all requests. When you later add a
@@ -51,7 +52,7 @@ Details:
   the Teams response — do NOT ask them to type it.
 - The form collects: Summary (single line, required), Description (multi-line), Acceptance Criteria
   (multi-line), Issue Type (dropdown: Story, Bug, Task, Spike), Priority (dropdown: Highest, High,
-  Medium, Low, Lowest), and an optional Team (dropdown of team names, may be left unset).
+  Medium, Low, Lowest), and an optional Project (dropdown of project names, may be left unset).
 - On submit, use the Excel Online (Business) action "Add a row into a table" targeting the workbook
   "Jira-Intake.xlsx" and table "Submissions", writing these columns:
     id                   = a new GUID
@@ -60,7 +61,7 @@ Details:
     submitterDisplayName = the responder's display name
     submitterEmail       = the responder's email
     summary, description, acceptanceCriteria, issueType, priority = the matching form inputs
-    project              = the selected Team (a team name; leave blank if none was chosen)
+    project              = the selected Project (a project name; leave blank if none was chosen)
 - After writing the row, reply in the Teams thread confirming the request was received.
 
 Use the Teams "Post adaptive card and wait for a response" action for the form so the responder's
@@ -83,12 +84,12 @@ identity is available. Keep everything on standard connectors.
 | `acceptanceCriteria` | form input `acceptanceCriteria` |
 | `issueType` | form input `issueType` |
 | `priority` | form input `priority` |
-| `project` | form input `team` (a team name; blank when none chosen) |
+| `project` | form input `project` (a project name; blank when none chosen) |
 
 > The "Post adaptive card and wait for a response" action exposes the **responder** (who submitted)
 > and the **submitted values**. Map responder → the two submitter columns; map inputs → the rest.
-> The `project` column receives the **team** input — NodeToolbox translates the team name to the
-> right Jira project, so send the team name as-is (do not try to convert it to a project key here).
+> The `project` column receives the **project** input — NodeToolbox translates the project name to
+> the right Jira project key, so send the project name as-is (do not convert it to a key here).
 
 ---
 
@@ -121,8 +122,8 @@ Use this JSON in the card action. The `id` on each input is what you reference f
         { "title": "Low", "value": "Low" },
         { "title": "Lowest", "value": "Lowest" }
       ] },
-    { "type": "Input.ChoiceSet", "id": "team", "label": "Team (optional)", "isRequired": false,
-      "placeholder": "Select a team",
+    { "type": "Input.ChoiceSet", "id": "project", "label": "Project (optional)", "isRequired": false,
+      "placeholder": "Select a project",
       "choices": [
         { "title": "Cleanup Crew", "value": "Cleanup Crew" }
       ] }
@@ -131,9 +132,9 @@ Use this JSON in the card action. The `id` on each input is what you reference f
 }
 ```
 
-> Add one `choices` entry per team as more teams start submitting. The value must match the team
-> name you map in NodeToolbox Intake settings. Leaving Team unset writes a blank `project` cell, and
-> NodeToolbox uses its default project for that row.
+> Add one `choices` entry per project as more projects start submitting. The value must match the
+> project name you map in NodeToolbox Intake settings. Leaving Project unset writes a blank
+> `project` cell, and NodeToolbox uses its default project for that row.
 
 > Optional "launcher": if you'd rather have a persistent **New Request** button that opens this
 > form, post a small card with an `Action.ShowCard` wrapping the body above, or a button that starts
