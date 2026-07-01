@@ -79,8 +79,12 @@ such as `{{webhookData.postUrl}}`, `{{webhookData.projectKey}}`, `{{webhookData.
 
 ## Why this matters for the Teams intake (Phase 1)
 
-This is the proven, Rovo-independent pattern for moving data between NodeToolbox and Confluence
-Automation. For the Teams path, the mirror image applies: **Power Automate** can POST to a
-**Confluence Automation incoming webhook** (token in `X-Automation-Webhook-Token`) the same way, or
-write directly to a Confluence page via the REST API with Basic auth (email + API token) — both are
-the same family of mechanism proven here.
+This is how NodeToolbox itself triggers Confluence Automation. **Note it does NOT translate to the
+Teams intake path**: NodeToolbox does this from its own Node server (any outbound HTTP + a stored
+secret), but **Power Automate's HTTP action and Confluence connector are premium**, which the
+target tenant does not have. So the Teams intake cannot POST to Confluence this way.
+
+The Teams intake therefore uses **standard** Power Automate connectors (SharePoint list / Excel)
+to store submissions, and Toolbox ingests an **exported Excel/CSV file** via drag-and-drop — see
+`phase1-teams.md` and `spec.md`. This document remains as an accurate reference for the *existing
+report delivery*, not the intake design.

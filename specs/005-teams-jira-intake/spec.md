@@ -13,14 +13,15 @@ issues. The flow has two phases that meet at a shared **bridge store**:
 
 - **Phase 1 — Teams capture (built outside this repo, by the user).** A Microsoft Teams +
   Power Automate workflow: a persistent **"New Request"** button card in an intake channel opens
-  an **Adaptive Card form** capturing a fixed **core field set**; on submit the flow writes a
-  **submission record** (core values + submitter identity + a unique id/timestamp + `Status=New`)
-  to the bridge store.
-- **Phase 2 — Toolbox import (this feature).** Toolbox reads the store, shows an **intake queue**,
-  **maps** the core fields to real Jira fields via a template (reusing the Jira Template Maker),
-  and **creates the Jira issue** — setting the **reporter to the submitter** when resolvable. It
-  then marks the submission **Imported** (writing back the created Jira key) so it is never
-  re-created.
+  an **Adaptive Card form** capturing a fixed **core field set**; on submit the flow appends a
+  **submission row** (core values + submitter identity + a unique id/timestamp + `Status=New`) to a
+  **standard-connector store** — a **SharePoint list or an Excel workbook** (the only license-free
+  Power Automate write path; see Clarifications).
+- **Phase 2 — Toolbox import (this feature).** The user exports/downloads the store as a file
+  (Excel/CSV) and **drags it into Toolbox** (v1). Toolbox parses the rows, shows an **intake
+  queue**, **maps** the core fields to real Jira fields via a template (reusing the Jira Template
+  Maker), and **creates the Jira issue** — setting the **reporter to the submitter** when
+  resolvable. Dedup is by submission **`id`** so re-importing the same file never double-creates.
 
 This feature is **additive** to the Jira Template Maker: it reuses that tool's field model,
 field→value mapping, and issue-creation logic, adding the intake source, the queue, the
@@ -42,6 +43,24 @@ field-mapping configuration, and the submitter→reporter resolution.
 - **Out of scope**: Anything that depends on Atlassian **Rovo** (removed from the tenant).
 
 ## Clarifications
+
+### Session 2026-07-01 — store pivot (Power Automate premium constraint)
+
+- **Confluence bridge is NOT viable.** In the user's tenant, Power Automate's **HTTP action and
+  the Confluence/Jira/ServiceNow connectors are all premium** and unavailable (and elevated access
+  / app registrations are a hard no-go). So no "POST to a webhook/API" path works from Teams.
+- **Store → SharePoint list or Excel workbook via a STANDARD connector** ("Create item" /
+  "Add a row into a table") — the only license-free write path. The submission-record fields are
+  unchanged; they become columns/row values.
+- **Toolbox ingest (v1) → drag-and-drop file import.** The user downloads the store as Excel/CSV
+  (Excel download, or SharePoint's built-in Export) and drags it into Toolbox, which parses it
+  client-side (Toolbox already bundles an Excel parser). **No server-side SharePoint/Graph auth, no
+  premium connector, no elevated access, no inbound endpoint.**
+- **Live pull is a v2 upgrade** (not v1): read the SharePoint list live via a browser-relay using
+  the user's authenticated session (the same pattern Toolbox already uses for ServiceNow) — only if
+  desired later; still no app registration.
+- **Dedup by `id`** (file re-imports are expected): a submission already turned into an issue is
+  never created again, tracked by Toolbox locally on `id`.
 
 ### Session 2026-06-30 — resolved with the user
 
@@ -135,13 +154,16 @@ description, so the origin is never lost.
 
 ### FR-2: Import & queue
 
-- **FR-2.1**: A manual **Import / Refresh** action MUST read the store and list `New` submissions
-  **newest-first** with submitter, timestamp, and core values.
-- **FR-2.2**: Already-`Imported` submissions MUST NOT reappear as new (dedup by `id` + `Status`).
+- **FR-2.1**: The user MUST be able to **drag and drop (or pick) an exported Excel/CSV file** of
+  submissions into Toolbox; Toolbox parses the rows and lists them **newest-first** with submitter,
+  timestamp, and core values. (v1 ingest is a file, not a live pull.)
+- **FR-2.2**: Submissions already turned into issues MUST NOT be created again on re-import (dedup
+  by submission **`id`**, tracked locally by Toolbox) — re-importing the same or a superset file is
+  safe.
 - **FR-2.3**: In review-and-pick mode, the queue MUST let the user create or dismiss individual
   submissions; created ones show their Jira key.
 - **FR-2.4**: The queue MUST clearly flag submissions that cannot be created (missing required
-  field, drifted option) with the reason.
+  field, drifted option, malformed row) with the reason, without blocking the others.
 
 ### FR-3: Issue creation
 
@@ -155,20 +177,35 @@ description, so the origin is never lost.
 - **FR-3.4**: Creation MUST be idempotent per submission `id` — a submission is never turned into
   more than one issue.
 
-### FR-4: Write-back & dedup
+### FR-4: Processed tracking & dedup (local)
 
-- **FR-4.1**: After a successful create, the tool MUST mark the submission `Imported` and write the
-  created **Jira key** back to the store.
-- **FR-4.2**: If write-back fails, the tool MUST still record the submission as processed locally
-  (by `id`) so a later import cannot double-create, and MUST surface the write-back failure.
+- **FR-4.1**: After a successful create, the tool MUST record the submission `id` locally as
+  processed, along with the created **Jira key**, and show that key in the queue.
+- **FR-4.2**: Because v1 ingests a downloaded file (Toolbox does not write to the SharePoint/Excel
+  store), dedup is **local by `id`** — a processed submission is skipped on any later import. (A
+  future live-pull v2 MAY additionally write `Status=Imported` back to the store.)
 
 ### FR-5: Submission-record contract (Phase 1 ↔ Phase 2 interface)
 
-- **FR-5.1**: Each submission record MUST contain: a unique `id`, a `submittedAt` timestamp, the
-  **submitter** identity (display name + email/UPN), the **core field values**, and a `Status`
-  the Teams flow sets to `New`.
-- **FR-5.2**: Toolbox MUST tolerate extra/unknown fields in the record (forward-compatible) and
-  MUST validate the required core fields are present.
+- **FR-5.1**: Each submission record (one per file row / list item) MUST contain: a unique `id`, a
+  `submittedAt` timestamp, `status` (Teams sets `New`), a **submitter** (`displayName` + `email`),
+  and the **core fields** — confirmed from the real sample as `summary`, `description`,
+  `acceptanceCriteria`, `issueType`, `priority`.
+- **FR-5.2**: Toolbox MUST tolerate extra/unknown columns (forward-compatible), accept the record
+  whether nested (JSON) or flattened (spreadsheet columns like `submitter.email` /
+  `fields.summary`), and validate the required core fields are present per row.
+
+Reference sample (from the working Teams flow):
+
+```json
+{
+  "id": "2921ea40-6eff-47a5-aecf-ae3b6d7b76aa",
+  "submittedAt": "2026-06-30T22:31:49.6154481Z",
+  "status": "New",
+  "submitter": { "displayName": "Michael Smith", "email": "Michael_Smith3@hcsc.com" },
+  "fields": { "summary": "Summary", "description": "Description", "acceptanceCriteria": "AC", "issueType": "Story", "priority": "Medium" }
+}
+```
 
 ### FR-6: Resilience & clarity
 
@@ -206,19 +243,23 @@ description, so the origin is never lost.
 
 - Power Automate authoring is available to the user; the Teams flow stamps the submitter's
   email/UPN automatically.
-- Bridge store is **Confluence** (existing Toolbox integration, API-token auth, Rovo-independent);
-  pending the user's Phase-1 verification, with SharePoint-list as a documented fallback that would
-  add a new Toolbox reader. The record contract is store-agnostic.
+- Bridge store is a **SharePoint list or Excel workbook** written by a **standard** Power Automate
+  connector (Confluence/HTTP connectors are premium and unavailable). Toolbox never authenticates
+  to SharePoint in v1 — it ingests an exported **Excel/CSV file** the user drags in. A live
+  browser-relay read is a possible v2, still with no app registration.
 - One active intake configuration in v1; multiple later.
-- Manual import in v1 (no scheduler); newest-first ordering.
+- **File drag-and-drop import** in v1 (no scheduler, no live store read); newest-first ordering;
+  dedup by `id` tracked locally.
 - Reuses the Jira Template Maker's field model, mapping, drift detection, and create path.
 - Jira is **Data Center** (per the Template Maker work); reporter is set by username/key.
 
 ## Dependencies
 
-- A working Phase-1 Teams + Power Automate workflow that writes the submission-record contract
-  (FR-5) to the bridge store. **The exact stored format/sample is provided by the user after
-  Phase 1 and finalizes the reader contract before Phase-2 build.**
-- The bridge store reachable by Toolbox (Confluence proxy today; a new reader if SharePoint).
+- A working Phase-1 Teams + Power Automate workflow (standard connectors only) that appends the
+  submission-record fields (FR-5) as rows in a **SharePoint list or Excel workbook**. The real
+  sample record has been provided (see FR-5) and finalizes the reader contract.
+- The user can **export/download that store as Excel/CSV** (built-in, no special access) to drag
+  into Toolbox.
+- A client-side spreadsheet parser (Toolbox already bundles one) to read the dropped file.
 - Existing Jira create + user-search capability via the Toolbox Jira proxy.
 - The Jira Template Maker feature (field model, mapping, create logic) it extends.
