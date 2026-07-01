@@ -4,6 +4,7 @@
 
 import { useState } from 'react';
 
+import { parseSharePointListUrl } from '../../../services/sharepointIntakeApi.ts';
 import ArtProjectInput from '../../JiraTemplateMaker/components/ArtProjectInput.tsx';
 import styles from '../JiraIntake.module.css';
 import { DEFAULT_ACCEPTANCE_CRITERIA_FIELD_ID, type IntakeConfig, type ProjectMapping } from '../lib/intakeTypes.ts';
@@ -126,12 +127,23 @@ export default function IntakeConfigPanel({ initialConfig, artProjectKeys, onSav
       </label>
 
       <div className={styles.fieldRow}>
-        <label className={styles.fieldLabel} htmlFor="intake-sp-site">SharePoint site URL (optional — for live pull)</label>
+        <label className={styles.fieldLabel} htmlFor="intake-sp-site">SharePoint site or list URL (optional — for live pull)</label>
         <input
           className={styles.input}
           id="intake-sp-site"
+          onBlur={() => {
+            // Accept a pasted full site OR list URL: reduce to the site-relative path and, when the
+            // List URL was pasted, auto-fill the list name if it is still empty.
+            const parsed = parseSharePointListUrl(sharePointSiteRelativeUrl);
+            if (parsed.siteRelativeUrl !== sharePointSiteRelativeUrl) {
+              setSharePointSiteRelativeUrl(parsed.siteRelativeUrl);
+            }
+            if (parsed.listName && sharePointListName.trim() === '') {
+              setSharePointListName(parsed.listName);
+            }
+          }}
           onChange={(event) => setSharePointSiteRelativeUrl(event.target.value)}
-          placeholder="/sites/CUCIntake"
+          placeholder="Paste the list URL, or /sites/CUCIntake"
           value={sharePointSiteRelativeUrl}
         />
       </div>

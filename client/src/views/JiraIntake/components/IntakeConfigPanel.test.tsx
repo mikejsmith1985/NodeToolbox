@@ -47,13 +47,26 @@ describe('IntakeConfigPanel', () => {
     render(<IntakeConfigPanel initialConfig={null} artProjectKeys={[]} onSave={onSave} />);
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Default project' }), { target: { value: 'DEFLT' } });
-    fireEvent.change(screen.getByLabelText(/sharepoint site url/i), { target: { value: '/sites/CUCIntake' } });
+    fireEvent.change(screen.getByLabelText(/sharepoint site or list url/i), { target: { value: '/sites/CUCIntake' } });
     fireEvent.change(screen.getByLabelText(/sharepoint list name/i), { target: { value: 'Jira-Intake' } });
     fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
 
     const savedConfig = onSave.mock.calls[0][0] as IntakeConfig;
     expect(savedConfig.sharePointSiteRelativeUrl).toBe('/sites/CUCIntake');
     expect(savedConfig.sharePointListName).toBe('Jira-Intake');
+  });
+
+  it('derives the site path and list name when a full List URL is pasted (on blur)', () => {
+    const onSave = vi.fn();
+    render(<IntakeConfigPanel initialConfig={null} artProjectKeys={[]} onSave={onSave} />);
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Default project' }), { target: { value: 'DEFLT' } });
+    const siteField = screen.getByLabelText(/sharepoint site or list url/i);
+    fireEvent.change(siteField, { target: { value: 'https://contoso.sharepoint.com/sites/CUCIntake/Lists/Jira-Intake/AllItems.aspx' } });
+    fireEvent.blur(siteField);
+
+    expect(siteField).toHaveValue('/sites/CUCIntake');
+    expect(screen.getByLabelText(/sharepoint list name/i)).toHaveValue('Jira-Intake');
   });
 
   it('captures project → Jira-key mappings (only fully-filled rows, project key upper-cased)', () => {

@@ -8,7 +8,6 @@ import SharePointPullPanel from './SharePointPullPanel.tsx';
 
 const BASE = {
   siteConfigured: true,
-  siteUrl: 'https://contoso.sharepoint.com/sites/CUCIntake',
   isConnected: true,
   isPulling: false,
   statusMessage: null as string | null,
@@ -25,10 +24,11 @@ describe('SharePointPullPanel', () => {
     expect(screen.queryByRole('button', { name: /pull from sharepoint/i })).not.toBeInTheDocument();
   });
 
-  it('disables Pull and shows the bookmarklet when not connected', () => {
+  it('disables Pull and shows the draggable bookmarklet link when not connected', () => {
     render(<SharePointPullPanel {...BASE} isConnected={false} />);
     expect(screen.getByRole('button', { name: /pull from sharepoint/i })).toBeDisabled();
-    expect(screen.getByLabelText(/relay bookmarklet/i)).toBeInTheDocument();
+    // The bookmarklet is a draggable link (not raw JSON in an input).
+    expect(screen.getByRole('link', { name: /NodeToolbox SharePoint Relay/i })).toBeInTheDocument();
   });
 
   it('fires onPull when connected and Pull is clicked', () => {
