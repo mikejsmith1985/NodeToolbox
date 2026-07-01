@@ -1,8 +1,10 @@
-// intakeTypes.ts — Shapes for the Teams→Jira intake importer: parsed submissions, the active
+// intakeTypes.ts — Shapes for the Teams→Jira intake importer: parsed submissions, the (minimal)
 // intake configuration, per-row queue state, and the local dedup ledger. No I/O lives here.
-// See specs/005-teams-jira-intake/data-model.md.
-
-import type { TemplateFieldType } from '../../JiraTemplateMaker/lib/templateTypes.ts';
+//
+// The Teams submission contract is fixed, so mapping is by convention (summary→summary,
+// description→description, priority→priority by name, issueType→issuetype by name from the row,
+// acceptanceCriteria→a configured custom field). The only genuine configuration is the target
+// project (not carried in the record) plus the auto-create toggle. See data-model.md.
 
 /** The fixed core fields the Teams Adaptive Card captures (the Phase-1 ↔ Phase-2 contract). */
 export type CoreFieldKey = 'summary' | 'description' | 'acceptanceCriteria' | 'issueType' | 'priority';
@@ -13,7 +15,7 @@ export interface IntakeSubmitter {
   email: string;
 }
 
-/** The core field values from one submission, before mapping to real Jira fields. */
+/** The core field values from one submission. */
 export interface IntakeCoreFields {
   summary: string;
   description: string;
@@ -37,26 +39,18 @@ export interface IntakeSubmission {
   parseErrors: string[];
 }
 
-/** How a mapped core value is coerced into the Jira field payload shape. */
-export type FieldTransform = 'raw' | 'wikiMarkup' | 'choiceByName';
+/** The Jira custom field that holds Acceptance Criteria on this instance. */
+export const DEFAULT_ACCEPTANCE_CRITERIA_FIELD_ID = 'customfield_10200';
 
-/** Binds one core intake field to a real Jira field, with an optional constant override. */
-export interface IntakeFieldMapping {
-  coreField: CoreFieldKey;
-  jiraFieldId: string;
-  jiraFieldType: TemplateFieldType;
-  transform: FieldTransform;
-  /** When set, overrides the submission value (supports fixed components/defaults, FR-1.2). */
-  fixedValue?: unknown;
-}
-
-/** The single active v1 intake configuration. Persisted in the shared Confluence content property. */
+/**
+ * The single active v1 intake configuration. Persisted in the shared Confluence content property.
+ * v1 targets one project; issue type + priority come from each submission row, not from here.
+ */
 export interface IntakeConfig {
+  /** Target Jira project key (the one thing not carried in the submission record). */
   projectKey: string;
-  projectId: string;
-  issueTypeId: string;
-  issueTypeName: string;
-  fieldMappings: IntakeFieldMapping[];
+  /** Jira field id that receives Acceptance Criteria (defaults to customfield_10200). */
+  acceptanceCriteriaFieldId: string;
   /** true = create on import; false = review-and-pick (FR-1.3). */
   autoCreateOnImport: boolean;
   updatedAt: string;
@@ -82,7 +76,7 @@ export interface QueueEntry {
   submission: IntakeSubmission;
   state: QueueEntryState;
   jiraKey: string | null;
-  /** Reasons a row cannot be created (missing required field, drifted option, malformed row). */
+  /** Reasons a row cannot be created (missing required field, malformed row, Jira rejection). */
   blockingReasons: string[];
   reporterOutcome: ReporterOutcome | null;
 }
@@ -96,4 +90,4 @@ export interface JiraIntakeStore {
 }
 
 /** Current intake store schema version; load rejects unknown versions. */
-export const JIRA_INTAKE_STORE_SCHEMA_VERSION = 1;
+export const JIRA_INTAKE_STORE_SCHEMA_VERSION = 2;

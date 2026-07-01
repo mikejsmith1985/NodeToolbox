@@ -44,6 +44,23 @@ field-mapping configuration, and the submitter→reporter resolution.
 
 ## Clarifications
 
+### Session 2026-07-01 — convention mapping (post-first-release UX correction)
+
+- **No field-mapping UI, no static issue type.** The submission contract is fixed, so mapping is
+  **by convention**: `summary`→summary, `description`→description (wiki markup), `priority`→priority
+  by name, and **`issueType`→issuetype by name taken from each row** (not a per-config value —
+  future rows may carry different types). Acceptance Criteria goes to a configured custom field
+  (**default `customfield_10200`**).
+- **The only configured setting is the target project** (the one datum not in the record) plus the
+  auto-create toggle. v1 targets one project; multi-project is a later expansion the user will drive
+  by adding a project column to the Teams export.
+- **Drop-first flow.** The dropzone and queue are always visible; the settings panel is compact and
+  collapses to a summary once the project is set. Nothing about a submission is typed by hand.
+- **No createmeta pre-validation of options.** Issue type / priority are sent by name and Jira
+  validates them; an invalid value surfaces as a per-row **Failed** with Jira's message rather than
+  a pre-guessed mapping. (Supersedes the earlier per-config issue-type + field-mapping design and the
+  `findChoiceDrift` guard.)
+
 ### Session 2026-07-01 — store pivot (Power Automate premium constraint)
 
 - **Confluence bridge is NOT viable.** In the user's tenant, Power Automate's **HTTP action and

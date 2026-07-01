@@ -1,10 +1,10 @@
-// JiraIntake.tsx — Teams→Jira intake importer. Wires the configuration panel, the drag-and-drop
-// dropzone, and the intake queue: on import, when auto-create is on, each new submission becomes a
-// Jira issue with the reporter set to the submitter (integration-account fallback). See spec 005.
+// JiraIntake.tsx — Teams→Jira intake importer. Drop the exported Excel/CSV, see the parsed queue,
+// and create Jira issues from it. Mapping is by convention (issue type + priority come from each
+// row); the only setting is the target project. On import, when auto-create is on, each new row
+// becomes an issue with the reporter set to the submitter (integration-account fallback). Spec 005.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 
-import { useJiraCreateMeta } from '../JiraTemplateMaker/hooks/useJiraCreateMeta.ts';
 import IntakeConfigPanel from './components/IntakeConfigPanel.tsx';
 import IntakeQueue from './components/IntakeQueue.tsx';
 import SubmissionDropzone from './components/SubmissionDropzone.tsx';
@@ -14,44 +14,24 @@ import { useIntakeQueue } from './hooks/useIntakeQueue.ts';
 import styles from './JiraIntake.module.css';
 import type { IntakeConfig, QueueEntry } from './lib/intakeTypes.ts';
 
-/** The Jira Intake view: configure once, then import submission files and create issues. */
+/** The Jira Intake view: set the project once, then import submission files and create issues. */
 export default function JiraIntake() {
   const { config, ledger, isLoading, errorMessage: configError, saveConfig, recordProcessed } = useIntakeConfig();
+  const { entries, counts, ingestFile, updateEntry, dismissEntry, errorMessage: queueError } = useIntakeQueue(ledger);
+  const { createFromSubmission, createAllNew } = useCreateFromSubmission({ config, recordProcessed });
 
-  // The project whose createmeta we load — follows the saved config or the in-progress selection.
-  const [metaProjectKey, setMetaProjectKey] = useState<string | null>(null);
-  const [isEditingConfig, setIsEditingConfig] = useState(false);
+  const [isEditingSettings, setIsEditingSettings] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const { issueTypes, loadFields, getFieldDescriptors } = useJiraCreateMeta(metaProjectKey);
-  const { entries, counts, ingestFile, updateEntry, dismissEntry, errorMessage: queueError } = useIntakeQueue(ledger);
-
-  const fieldDescriptors = useMemo(
-    () => (config ? getFieldDescriptors(config.issueTypeId) : []),
-    [config, getFieldDescriptors],
-  );
-  const { createFromSubmission, createAllNew } = useCreateFromSubmission({ config, fieldDescriptors, recordProcessed });
-
+  const hasProject = Boolean(config && config.projectKey.trim() !== '');
   const isReviewMode = Boolean(config && !config.autoCreateOnImport);
-
-  // Once a config exists, follow its project for createmeta and load its issue-type fields.
-  useEffect(() => {
-    if (config) {
-      setMetaProjectKey(config.projectKey);
-    }
-  }, [config]);
-
-  useEffect(() => {
-    if (config && metaProjectKey === config.projectKey) {
-      loadFields(config.issueTypeId);
-    }
-  }, [config, metaProjectKey, loadFields]);
+  const shouldShowSettings = isEditingSettings || !config;
 
   async function handleSaveConfig(nextConfig: IntakeConfig): Promise<void> {
     setIsSaving(true);
     try {
       await saveConfig(nextConfig);
-      setIsEditingConfig(false);
+      setIsEditingSettings(false);
     } finally {
       setIsSaving(false);
     }
@@ -59,7 +39,8 @@ export default function JiraIntake() {
 
   async function handleFile(file: File): Promise<void> {
     const newEntries = await ingestFile(file);
-    if (config?.autoCreateOnImport && newEntries.length > 0) {
+    // Auto-create only when configured and a project is set; otherwise rows wait for review.
+    if (config?.autoCreateOnImport && hasProject && newEntries.length > 0) {
       const created = await createAllNew(newEntries);
       created.forEach(updateEntry);
     }
@@ -68,11 +49,8 @@ export default function JiraIntake() {
   // Review-and-pick: create one submission on demand, reflecting progress in the queue.
   async function handleCreateEntry(entry: QueueEntry): Promise<void> {
     updateEntry({ ...entry, state: 'creating' });
-    const created = await createFromSubmission(entry);
-    updateEntry(created);
+    updateEntry(await createFromSubmission(entry));
   }
-
-  const shouldShowConfigPanel = isEditingConfig || !config;
 
   return (
     <div className={styles.view}>
@@ -83,45 +61,46 @@ export default function JiraIntake() {
         </p>
       </header>
 
-      {isLoading && <p className={styles.subtitle}>Loading intake configuration…</p>}
+      {isLoading && <p className={styles.subtitle}>Loading intake settings…</p>}
       {configError && <p className={styles.dropzoneError} role="alert">{configError}</p>}
 
-      {shouldShowConfigPanel ? (
+      {shouldShowSettings ? (
         <IntakeConfigPanel
           initialConfig={config}
           artProjectKeys={config ? [config.projectKey] : []}
-          issueTypes={issueTypes}
-          onProjectKeyChange={setMetaProjectKey}
           onSave={handleSaveConfig}
           isSaving={isSaving}
         />
       ) : (
-        <>
-          <section className={styles.panel} aria-label="Import submissions">
-            <div className={styles.header}>
-              <h2 className={styles.panelTitle}>
-                {config?.projectKey} · {config?.issueTypeName}
-                {' · '}
-                {config?.autoCreateOnImport ? 'auto-create on import' : 'review and pick'}
-              </h2>
-              <button className={styles.secondaryButton} onClick={() => setIsEditingConfig(true)} type="button">
-                Reconfigure
-              </button>
-            </div>
-            <SubmissionDropzone onFile={(file) => { void handleFile(file); }} errorMessage={queueError} />
-          </section>
-
-          <section className={styles.panel} aria-label="Intake queue">
-            <IntakeQueue
-              entries={entries}
-              counts={counts}
-              isReviewMode={isReviewMode}
-              onCreate={(entry) => { void handleCreateEntry(entry); }}
-              onDismiss={(entry) => dismissEntry(entry.submission.id)}
-            />
-          </section>
-        </>
+        <section className={styles.panel} aria-label="Intake settings summary">
+          <div className={styles.header}>
+            <h2 className={styles.panelTitle}>
+              {config?.projectKey} · {config?.autoCreateOnImport ? 'auto-create on import' : 'review and pick'}
+            </h2>
+            <button className={styles.secondaryButton} onClick={() => setIsEditingSettings(true)} type="button">
+              Edit settings
+            </button>
+          </div>
+        </section>
       )}
+
+      <section className={styles.panel} aria-label="Import submissions">
+        <h2 className={styles.panelTitle}>Import submissions</h2>
+        {!hasProject && (
+          <p className={styles.subtitle}>Set a target project above to create issues from imported rows.</p>
+        )}
+        <SubmissionDropzone onFile={(file) => { void handleFile(file); }} errorMessage={queueError} />
+      </section>
+
+      <section className={styles.panel} aria-label="Intake queue">
+        <IntakeQueue
+          entries={entries}
+          counts={counts}
+          isReviewMode={isReviewMode}
+          onCreate={(entry) => { void handleCreateEntry(entry); }}
+          onDismiss={(entry) => dismissEntry(entry.submission.id)}
+        />
+      </section>
     </div>
   );
 }
