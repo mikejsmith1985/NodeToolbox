@@ -4,7 +4,7 @@
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 
-import { IntakeParseError, parseWorkbook } from '../lib/parseSubmissions.ts';
+import { IntakeParseError, parseWorkbook, type RawRow } from '../lib/parseSubmissions.ts';
 import { normalizeSubmission } from '../lib/normalizeSubmission.ts';
 import { findProcessed } from '../lib/processedLedger.ts';
 import type { IntakeSubmission, ProcessedEntry, QueueEntry } from '../lib/intakeTypes.ts';
@@ -24,6 +24,8 @@ export interface UseIntakeQueueResult {
   counts: IntakeQueueCounts;
   /** Parses + loads the file into the queue and returns the resulting entries ([] on failure). */
   ingestFile: (file: File) => Promise<QueueEntry[]>;
+  /** Loads already-parsed rows (e.g. from the SharePoint relay pull) into the queue. */
+  ingestRows: (rows: RawRow[]) => QueueEntry[];
   updateEntry: (updated: QueueEntry) => void;
   /** Marks a submission as skipped (review-and-pick dismiss), leaving others untouched. */
   dismissEntry: (submissionId: string) => void;
@@ -57,12 +59,17 @@ export function useIntakeQueue(ledger: ProcessedEntry[]): UseIntakeQueueResult {
   const ledgerRef = useRef<ProcessedEntry[]>(ledger);
   ledgerRef.current = ledger;
 
+  // Shared: normalize rows → newest-first → classify against the current ledger cache.
+  const buildEntries = useCallback((rows: RawRow[]): QueueEntry[] => {
+    const submissions = rows.map((row, index) => normalizeSubmission(row, index));
+    const ordered = [...submissions].sort(byNewestFirst);
+    return ordered.map((submission) => toQueueEntry(submission, ledgerRef.current));
+  }, []);
+
   const ingestFile = useCallback(async (file: File): Promise<QueueEntry[]> => {
     try {
       const rows = await parseWorkbook(file);
-      const submissions = rows.map((row, index) => normalizeSubmission(row, index));
-      const ordered = [...submissions].sort(byNewestFirst);
-      const nextEntries = ordered.map((submission) => toQueueEntry(submission, ledgerRef.current));
+      const nextEntries = buildEntries(rows);
       setEntries(nextEntries);
       setErrorMessage(null);
       return nextEntries;
@@ -71,7 +78,14 @@ export function useIntakeQueue(ledger: ProcessedEntry[]): UseIntakeQueueResult {
       setErrorMessage(caught instanceof IntakeParseError ? caught.message : GENERIC_IMPORT_ERROR);
       return [];
     }
-  }, []);
+  }, [buildEntries]);
+
+  const ingestRows = useCallback((rows: RawRow[]): QueueEntry[] => {
+    const nextEntries = buildEntries(rows);
+    setEntries(nextEntries);
+    setErrorMessage(null);
+    return nextEntries;
+  }, [buildEntries]);
 
   const updateEntry = useCallback((updated: QueueEntry): void => {
     setEntries((current) => current.map((entry) => (entry.submission.id === updated.submission.id ? updated : entry)));
@@ -95,5 +109,5 @@ export function useIntakeQueue(ledger: ProcessedEntry[]): UseIntakeQueueResult {
     invalid: entries.filter((entry) => entry.state === 'invalid').length,
   }), [entries]);
 
-  return { entries, errorMessage, counts, ingestFile, updateEntry, dismissEntry, reset };
+  return { entries, errorMessage, counts, ingestFile, ingestRows, updateEntry, dismissEntry, reset };
 }

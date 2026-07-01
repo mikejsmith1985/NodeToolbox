@@ -1,7 +1,7 @@
 // relay.ts — Types describing relay bridge connectivity between the bookmarklet and React app.
 
 /** External systems currently supported by the relay bridge. */
-export type RelaySystem = 'snow';
+export type RelaySystem = 'snow' | 'sharepoint';
 
 /** Current connection status for a relay bridge channel. */
 export interface RelayBridgeStatus {

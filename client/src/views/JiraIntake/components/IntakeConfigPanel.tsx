@@ -23,6 +23,8 @@ export default function IntakeConfigPanel({ initialConfig, artProjectKeys, onSav
   );
   const [autoCreateOnImport, setAutoCreateOnImport] = useState(initialConfig?.autoCreateOnImport ?? true);
   const [projectMappings, setProjectMappings] = useState<ProjectMapping[]>(initialConfig?.projectMappings ?? []);
+  const [sharePointSiteRelativeUrl, setSharePointSiteRelativeUrl] = useState(initialConfig?.sharePointSiteRelativeUrl ?? '');
+  const [sharePointListName, setSharePointListName] = useState(initialConfig?.sharePointListName ?? '');
 
   // A default project OR at least one complete project mapping is enough to save — a user who
   // routes every row by its project name does not need a default.
@@ -54,6 +56,8 @@ export default function IntakeConfigPanel({ initialConfig, artProjectKeys, onSav
       projectMappings: cleanedMappings,
       acceptanceCriteriaFieldId: acceptanceCriteriaFieldId.trim(),
       autoCreateOnImport,
+      sharePointSiteRelativeUrl: sharePointSiteRelativeUrl.trim() || undefined,
+      sharePointListName: sharePointListName.trim() || undefined,
       updatedAt: '',
       updatedBy: '',
     });
@@ -120,6 +124,28 @@ export default function IntakeConfigPanel({ initialConfig, artProjectKeys, onSav
         />
         Auto-create issues on import (off = review and pick)
       </label>
+
+      <div className={styles.fieldRow}>
+        <label className={styles.fieldLabel} htmlFor="intake-sp-site">SharePoint site URL (optional — for live pull)</label>
+        <input
+          className={styles.input}
+          id="intake-sp-site"
+          onChange={(event) => setSharePointSiteRelativeUrl(event.target.value)}
+          placeholder="/sites/CUCIntake"
+          value={sharePointSiteRelativeUrl}
+        />
+      </div>
+
+      <div className={styles.fieldRow}>
+        <label className={styles.fieldLabel} htmlFor="intake-sp-list">SharePoint list name (optional)</label>
+        <input
+          className={styles.input}
+          id="intake-sp-list"
+          onChange={(event) => setSharePointListName(event.target.value)}
+          placeholder="Jira-Intake"
+          value={sharePointListName}
+        />
+      </div>
 
       <button className={styles.primaryButton} disabled={!canSave} onClick={handleSave} type="button">
         {isSaving ? 'Saving…' : 'Save settings'}

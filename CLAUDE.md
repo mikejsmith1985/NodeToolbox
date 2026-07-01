@@ -9,7 +9,7 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **intake-dedup** (Phase 2A of teams-jira-intake) — plan: `specs/006-intake-dedup/plan.md`
+- **sharepoint-relay-pull** (Phase 2B of teams-jira-intake) — plan: `specs/007-sharepoint-relay-pull/plan.md`
   (spec, research, data-model, contracts, quickstart in the same directory).
 <!-- SPECKIT END -->
 
