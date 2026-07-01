@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { jiraGet, jiraPost, jiraPut, type JiraApiEventDetail } from './jiraApi.ts';
+import { jiraGet, jiraPost, jiraPut, searchUsers, type JiraApiEventDetail } from './jiraApi.ts';
 
 const JIRA_PATH = '/rest/api/3/issue/ABC-123';
 const JIRA_RESPONSE = { key: 'ABC-123' };
@@ -190,5 +190,51 @@ describe('jiraApi', () => {
     expect(recordedEvents[0].method).toBe('PUT');
     expect(recordedEvents[0].url).toBe(JIRA_UPDATE_PATH);
     expect(recordedEvents[0].status).toBe(204);
+  });
+});
+
+describe('searchUsers', () => {
+  const USER_RESULT = [{ name: 'msmith', displayName: 'Michael Smith', emailAddress: 'm@corp.com' }];
+
+  it('returns [] without calling the API for a blank query', async () => {
+    await expect(searchUsers('   ')).resolves.toEqual([]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('queries with the modern query parameter and returns the users', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: vi.fn().mockResolvedValue(JSON.stringify(USER_RESULT)),
+      headers: JSON_RESPONSE_HEADERS,
+    } as unknown as Response);
+
+    await expect(searchUsers('m@corp.com', 8)).resolves.toEqual(USER_RESULT);
+    expect(fetch).toHaveBeenCalledWith('/jira-proxy/rest/api/2/user/search?query=m%40corp.com&maxResults=8');
+  });
+
+  it('retries with the legacy username parameter when Data Center rejects query', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: vi.fn().mockResolvedValue({ errorMessages: ['The username query parameter was not provided.'] }),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(JSON.stringify(USER_RESULT)),
+        headers: JSON_RESPONSE_HEADERS,
+      } as unknown as Response);
+
+    await expect(searchUsers('m@corp.com')).resolves.toEqual(USER_RESULT);
+    expect(fetch).toHaveBeenNthCalledWith(1, '/jira-proxy/rest/api/2/user/search?query=m%40corp.com&maxResults=20');
+    expect(fetch).toHaveBeenNthCalledWith(2, '/jira-proxy/rest/api/2/user/search?username=m%40corp.com&maxResults=20');
+  });
+
+  it('rethrows non-legacy errors instead of retrying', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 503 } as Response);
+    await expect(searchUsers('m@corp.com')).rejects.toThrow('503');
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

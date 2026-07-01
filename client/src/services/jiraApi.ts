@@ -11,6 +11,7 @@ import type {
   CreateMetaIssueTypesResponse,
   JiraMyself,
   JiraProject,
+  JiraUser,
 } from '../types/jira.ts';
 
 const JIRA_PROXY_BASE = '/jira-proxy';
@@ -214,4 +215,38 @@ export async function getMyself(): Promise<JiraMyself> {
 /** Fetches a single project by key — used to resolve the numeric id for the prefill URL's pid. */
 export async function getProject(projectKey: string): Promise<JiraProject> {
   return jiraGet<JiraProject>(`/rest/api/2/project/${encodeURIComponent(projectKey)}`);
+}
+
+// Default page size for user search — a submitter email should match at most one user, so a small
+// page is plenty while still surfacing near-matches for diagnostics.
+const USER_SEARCH_PAGE_SIZE = 20;
+
+// Older Jira Data Center rejects the `query` parameter and demands `username` instead; the proxy
+// surfaces this exact phrase in the error, so we detect it and retry the legacy parameter.
+const LEGACY_USER_SEARCH_HINT = 'username query parameter was not provided';
+
+/**
+ * Searches Jira users by free text (typically an email). Uses the modern `query` parameter and,
+ * on the Data Center instances that reject it, transparently retries with the legacy `username`
+ * parameter. Reporter resolution matches the returned users' email addresses.
+ */
+export async function searchUsers(query: string, maxResults: number = USER_SEARCH_PAGE_SIZE): Promise<JiraUser[]> {
+  const trimmedQuery = query.trim();
+  if (trimmedQuery === '') {
+    return [];
+  }
+
+  const encodedQuery = encodeURIComponent(trimmedQuery);
+  try {
+    const results = await jiraGet<JiraUser[]>(`/rest/api/2/user/search?query=${encodedQuery}&maxResults=${maxResults}`);
+    return results ?? [];
+  } catch (caught) {
+    const isLegacyInstance = caught instanceof Error
+      && caught.message.toLowerCase().includes(LEGACY_USER_SEARCH_HINT);
+    if (!isLegacyInstance) {
+      throw caught;
+    }
+    const legacyResults = await jiraGet<JiraUser[]>(`/rest/api/2/user/search?username=${encodedQuery}&maxResults=${maxResults}`);
+    return legacyResults ?? [];
+  }
 }

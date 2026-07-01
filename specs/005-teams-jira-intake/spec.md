@@ -64,11 +64,14 @@ field-mapping configuration, and the submitter→reporter resolution.
 
 ### Session 2026-06-30 — resolved with the user
 
-- **Bridge store → Confluence (primary).** Toolbox already reads/writes Confluence via an API
-  token (Rovo-independent). Power Automate writes submissions there. The user will **verify
-  Power Automate can write to Confluence** during Phase 1; if it cannot, a fallback store (e.g. a
-  SharePoint list) is a documented contingency that would require a new Toolbox reader. The
-  submission-record **contract** (fields below) is store-agnostic.
+> ⚠️ **SUPERSEDED by the 2026-07-01 session above for the STORE decision.** The Confluence bridge
+> below was ruled out (Power Automate's HTTP/Confluence connectors are premium). The store is now a
+> **SharePoint list or Excel workbook via a standard connector**, ingested by drag-and-drop file
+> import. The rest of this session (trigger, fields, reporter, dedup, triage, import) still stands.
+
+- **Bridge store → Confluence (primary).** ~~Toolbox already reads/writes Confluence via an API
+  token (Rovo-independent). Power Automate writes submissions there.~~ **(Superseded — see above.)**
+  The submission-record **contract** (fields below) remains store-agnostic.
 - **Trigger → "New Request" button card** in the intake channel that opens the Adaptive Card form
   (not a DM).
 - **Fields → fixed core set**, mapped to real Jira fields in Toolbox via a template.
@@ -171,7 +174,11 @@ description, so the origin is never lost.
   the existing Jira create path.
 - **FR-3.2**: The **reporter** MUST be set to the submitter when the stamped email/UPN resolves to
   a Jira user; otherwise the integration account is reporter **and** the submitter's name/email is
-  recorded in the description (FR — origin never lost).
+  recorded in the description (FR — origin never lost). The "integration account" is the single
+  account whose credentials the Toolbox `/jira-proxy` injects (`configuration.jira` — Basic Auth
+  username+apiToken or a PAT); every Toolbox-created issue is authored by it. The fallback is
+  therefore implemented by **omitting `reporter`** on the create payload, so Jira attributes the
+  issue to that proxy account (never the current UI user).
 - **FR-3.3**: Required-field validation MUST run before creation; missing fields block that
   submission without creating a partial issue.
 - **FR-3.4**: Creation MUST be idempotent per submission `id` — a submission is never turned into
