@@ -72,6 +72,23 @@ describe('useCreateFromSubmission', () => {
     expect(recordProcessed).not.toHaveBeenCalled();
   });
 
+  it('flags a submission whose mapped choice value is not an available Jira option (drift)', async () => {
+    const recordProcessed = vi.fn();
+    const descriptors: FieldDescriptor[] = [
+      { fieldId: 'priority', name: 'Priority', required: false, internalType: 'choice', isSupported: true,
+        allowedValues: [{ id: '1', label: 'High' }, { id: '2', label: 'Medium' }], hasDefault: false },
+    ];
+    const { result } = renderHook(() => useCreateFromSubmission({ config: CONFIG, fieldDescriptors: descriptors, recordProcessed }));
+
+    // The entry's priority is "High" (allowed); switch to an unknown option to trigger drift.
+    const drifted = newEntry({ fields: { summary: 'Do it', description: '', acceptanceCriteria: '', issueType: 'Story', priority: 'Ultra' } });
+    const updated = await result.current.createFromSubmission(drifted);
+
+    expect(updated.state).toBe('invalid');
+    expect(updated.blockingReasons[0]).toContain('is not an available option');
+    expect(createIssueMock).not.toHaveBeenCalled();
+  });
+
   it('marks the entry failed and writes no ledger entry when create throws', async () => {
     searchUsersMock.mockResolvedValue([]);
     createIssueMock.mockRejectedValue(new Error('Jira POST failed: 400 — boom'));

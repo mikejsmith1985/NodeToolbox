@@ -8,6 +8,7 @@ import { createIssue, searchUsers } from '../../../services/jiraApi.ts';
 import { findMissingRequiredFields } from '../../JiraTemplateMaker/lib/requiredFields.ts';
 import type { FieldDescriptor } from '../../JiraTemplateMaker/lib/templateTypes.ts';
 import { describeSubmitter } from '../lib/describeSubmitter.ts';
+import { findChoiceDrift } from '../lib/intakeDrift.ts';
 import { mapSubmissionToFields } from '../lib/mapToTemplateFields.ts';
 import { resolveReporter } from '../lib/resolveReporter.ts';
 import type { IntakeConfig, ProcessedEntry, QueueEntry } from '../lib/intakeTypes.ts';
@@ -76,6 +77,13 @@ export function useCreateFromSubmission({
         state: 'invalid',
         blockingReasons: missingRequired.map((fieldName) => `Missing required field: ${fieldName}`),
       };
+    }
+
+    // Flag a submission whose mapped choice value no longer exists in Jira instead of creating a
+    // malformed issue (FR-2.4).
+    const driftReasons = findChoiceDrift(entry.submission, config, fieldDescriptors);
+    if (driftReasons.length > 0) {
+      return { ...entry, state: 'invalid', blockingReasons: driftReasons };
     }
 
     // Reporter resolution never blocks creation: a non-match falls back to the integration account
