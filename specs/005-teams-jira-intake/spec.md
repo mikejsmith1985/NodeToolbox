@@ -51,9 +51,12 @@ field-mapping configuration, and the submitter→reporter resolution.
   by name, and **`issueType`→issuetype by name taken from each row** (not a per-config value —
   future rows may carry different types). Acceptance Criteria goes to a configured custom field
   (**default `customfield_10200`**).
-- **The only configured setting is the target project** (the one datum not in the record) plus the
-  auto-create toggle. v1 targets one project; multi-project is a later expansion the user will drive
-  by adding a project column to the Teams export.
+- **Target project is resolved per row via a team mapping.** The Teams export carries a `project`
+  column holding a **team name** (e.g. "Cleanup Crew"). Intake settings hold a manual **team-name →
+  project-key mapping** (e.g. "Cleanup Crew" → `ENCUC`); a row's project is resolved from its team,
+  falling back to the **default project** when the column is blank. An unmapped team name is flagged
+  Invalid (never created in the wrong project). Settings are: default project, team→project
+  mappings, Acceptance Criteria field id, and the auto-create toggle.
 - **Drop-first flow.** The dropzone and queue are always visible; the settings panel is compact and
   collapses to a summary once the project is set. Nothing about a submission is typed by hand.
 - **No createmeta pre-validation of options.** Issue type / priority are sent by name and Jira

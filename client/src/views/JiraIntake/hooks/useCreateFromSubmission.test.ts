@@ -15,6 +15,7 @@ const searchUsersMock = vi.mocked(searchUsers);
 
 const CONFIG: IntakeConfig = {
   projectKey: 'ENFCT',
+  teamProjectMappings: [{ teamName: 'Cleanup Crew', projectKey: 'ENCUC' }],
   acceptanceCriteriaFieldId: 'customfield_10200',
   autoCreateOnImport: true,
   updatedAt: '', updatedBy: '',
@@ -25,7 +26,7 @@ function newEntry(overrides: Partial<QueueEntry['submission']> = {}): QueueEntry
     submission: {
       id: 's1', submittedAt: '2026-07-01T10:00:00Z', status: 'New',
       submitter: { displayName: 'Michael Smith', email: 'm@corp.com' },
-      fields: { summary: 'Do it', description: '', acceptanceCriteria: '', issueType: 'Story', priority: 'High' },
+      fields: { summary: 'Do it', description: '', acceptanceCriteria: '', issueType: 'Story', priority: 'High', project: '' },
       extras: {}, rowIndex: 0, parseErrors: [], ...overrides,
     },
     state: 'new', jiraKey: null, blockingReasons: [], reporterOutcome: null,
@@ -58,7 +59,7 @@ describe('useCreateFromSubmission', () => {
     const { result } = renderHook(() => useCreateFromSubmission({ config: CONFIG, recordProcessed }));
 
     const updated = await result.current.createFromSubmission(newEntry({
-      fields: { summary: 'Do it', description: '', acceptanceCriteria: '', issueType: '', priority: '' },
+      fields: { summary: 'Do it', description: '', acceptanceCriteria: '', issueType: '', priority: '', project: '' },
     }));
 
     expect(updated.state).toBe('invalid');
@@ -66,7 +67,33 @@ describe('useCreateFromSubmission', () => {
     expect(createIssueMock).not.toHaveBeenCalled();
   });
 
-  it('fails clearly when no target project is configured', async () => {
+  it('routes to the mapped project when the row carries a team name', async () => {
+    searchUsersMock.mockResolvedValue([]);
+    createIssueMock.mockResolvedValue({ id: '9', key: 'ENCUC-1', self: 'x' });
+    const recordProcessed = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useCreateFromSubmission({ config: CONFIG, recordProcessed }));
+
+    await result.current.createFromSubmission(newEntry({
+      fields: { summary: 'Do it', description: '', acceptanceCriteria: '', issueType: 'Story', priority: '', project: 'Cleanup Crew' },
+    }));
+
+    expect(createIssueMock.mock.calls[0][0].fields.project).toEqual({ key: 'ENCUC' });
+  });
+
+  it('flags an unmapped team name as invalid without calling Jira', async () => {
+    const recordProcessed = vi.fn();
+    const { result } = renderHook(() => useCreateFromSubmission({ config: CONFIG, recordProcessed }));
+
+    const updated = await result.current.createFromSubmission(newEntry({
+      fields: { summary: 'Do it', description: '', acceptanceCriteria: '', issueType: 'Story', priority: '', project: 'Unknown Squad' },
+    }));
+
+    expect(updated.state).toBe('invalid');
+    expect(updated.blockingReasons[0]).toContain('Unknown Squad');
+    expect(createIssueMock).not.toHaveBeenCalled();
+  });
+
+  it('fails clearly when a row has no team and no default project is configured', async () => {
     const recordProcessed = vi.fn();
     const noProject: IntakeConfig = { ...CONFIG, projectKey: '' };
     const { result } = renderHook(() => useCreateFromSubmission({ config: noProject, recordProcessed }));
@@ -74,7 +101,7 @@ describe('useCreateFromSubmission', () => {
     const updated = await result.current.createFromSubmission(newEntry());
 
     expect(updated.state).toBe('failed');
-    expect(updated.blockingReasons[0]).toContain('Set the target project');
+    expect(updated.blockingReasons[0]).toContain('default target project');
     expect(createIssueMock).not.toHaveBeenCalled();
   });
 
@@ -98,7 +125,7 @@ describe('useCreateFromSubmission', () => {
     const { result } = renderHook(() => useCreateFromSubmission({ config: CONFIG, recordProcessed }));
 
     const updated = await result.current.createFromSubmission(newEntry({
-      fields: { summary: 'Do it', description: 'Original details', acceptanceCriteria: '', issueType: 'Story', priority: '' },
+      fields: { summary: 'Do it', description: 'Original details', acceptanceCriteria: '', issueType: 'Story', priority: '', project: '' },
     }));
 
     const sentDescription = createIssueMock.mock.calls[0][0].fields.description as string;

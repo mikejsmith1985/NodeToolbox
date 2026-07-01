@@ -14,7 +14,7 @@ function entry(overrides: Partial<QueueEntry> & { id: string }): QueueEntry {
     submission: {
       id, submittedAt: '2026-07-01T10:00:00Z', status: 'New',
       submitter: { displayName: 'Michael Smith', email: 'm@corp.com' },
-      fields: { summary: `Summary ${id}`, description: '', acceptanceCriteria: '', issueType: 'Story', priority: 'High' },
+      fields: { summary: `Summary ${id}`, description: '', acceptanceCriteria: '', issueType: 'Story', priority: 'High', project: '' },
       extras: {}, rowIndex: 0, parseErrors: [],
     },
     state: 'new', jiraKey: null, blockingReasons: [], reporterOutcome: null,

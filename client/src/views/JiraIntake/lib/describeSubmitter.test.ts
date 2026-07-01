@@ -9,7 +9,7 @@ function submissionWith(displayName: string, email: string): IntakeSubmission {
   return {
     id: 'a', submittedAt: '', status: 'New',
     submitter: { displayName, email },
-    fields: { summary: 's', description: '', acceptanceCriteria: '', issueType: '', priority: '' },
+    fields: { summary: 's', description: '', acceptanceCriteria: '', issueType: '', priority: '', project: '' },
     extras: {}, rowIndex: 0, parseErrors: [],
   };
 }
