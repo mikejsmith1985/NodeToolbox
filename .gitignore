@@ -165,3 +165,11 @@ src/generated/
 # Auto-generated embedded React build (created at release time)
 src/embeddedClient.js
 
+# Claude Code local session settings and artifacts — machine-specific, not source
+.claude/
+
+# Forge release-job artifacts — one ephemeral job folder per release run.
+# The workflow git hooks under .forge/hooks/ are real source and stay tracked;
+# only these transient job records are ignored.
+.forge/release-jobs/
+
