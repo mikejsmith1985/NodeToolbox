@@ -66,6 +66,31 @@ describe('useConnectionStore', () => {
     expect(useConnectionStore.getState().isSnowVerified).toBe(true);
   });
 
+  it('records a snow relay status in BOTH the legacy field and the per-system map', () => {
+    useConnectionStore.getState().setRelayBridgeStatus(MOCK_RELAY_STATUS);
+
+    expect(useConnectionStore.getState().relayBridgeStatus).toEqual(MOCK_RELAY_STATUS);
+    expect(useConnectionStore.getState().relayStatusBySystem.snow).toEqual(MOCK_RELAY_STATUS);
+  });
+
+  it('records a sharepoint relay status WITHOUT overwriting the snow mirror', () => {
+    useConnectionStore.getState().setRelayBridgeStatus(MOCK_RELAY_STATUS); // snow connected
+    const sharePointStatus: RelayBridgeStatus = { system: 'sharepoint', isConnected: true, lastPingAt: null, version: null };
+
+    useConnectionStore.getState().setRelayBridgeStatus(sharePointStatus);
+
+    // The legacy field still reflects ServiceNow (no clobber), and each system is tracked separately.
+    expect(useConnectionStore.getState().relayBridgeStatus).toEqual(MOCK_RELAY_STATUS);
+    expect(useConnectionStore.getState().relayStatusBySystem.snow).toEqual(MOCK_RELAY_STATUS);
+    expect(useConnectionStore.getState().relayStatusBySystem.sharepoint).toEqual(sharePointStatus);
+  });
+
+  it('clears the per-system relay map on clearConnectionState', () => {
+    useConnectionStore.getState().setRelayBridgeStatus({ system: 'sharepoint', isConnected: true, lastPingAt: null, version: null });
+    useConnectionStore.getState().clearConnectionState();
+    expect(useConnectionStore.getState().relayStatusBySystem).toEqual({});
+  });
+
   it('clears all connection state back to defaults', () => {
     useConnectionStore.getState().setProxyStatus(MOCK_PROXY_STATUS);
     useConnectionStore.getState().setRelayBridgeStatus(MOCK_RELAY_STATUS);

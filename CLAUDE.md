@@ -9,8 +9,8 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **jira-comments-ux** (unify Jira comment display into one full scrollable window + themed field
-  depth) — plan: `specs/008-jira-comments-ux/plan.md`
+- **sharepoint-connection-bar** (unify SharePoint relay connect into the Connection Bar) —
+  plan: `specs/008-sharepoint-connection-bar/plan.md`
   (spec, research, data-model, contracts, quickstart in the same directory).
 <!-- SPECKIT END -->
 

@@ -3,7 +3,7 @@
 // row); the only setting is the target project. On import, when auto-create is on, each new row
 // becomes an issue with the reporter set to the submitter (integration-account fallback). Spec 005.
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import IntakeConfigPanel from './components/IntakeConfigPanel.tsx';
 import IntakeQueue from './components/IntakeQueue.tsx';
@@ -13,6 +13,7 @@ import { useCreateFromSubmission } from './hooks/useCreateFromSubmission.ts';
 import { useIntakeConfig } from './hooks/useIntakeConfig.ts';
 import { useIntakeQueue } from './hooks/useIntakeQueue.ts';
 import { useSharePointPull } from './hooks/useSharePointPull.ts';
+import { useConnectionStore } from '../../store/connectionStore.ts';
 import styles from './JiraIntake.module.css';
 import type { IntakeConfig, QueueEntry } from './lib/intakeTypes.ts';
 
@@ -21,7 +22,9 @@ export default function JiraIntake() {
   const { config, ledger, isLoading, errorMessage: configError, saveConfig, recordProcessed } = useIntakeConfig();
   const { entries, counts, ingestFile, ingestRows, updateEntry, dismissEntry, errorMessage: queueError } = useIntakeQueue(ledger);
   const { createFromSubmission, createAllNew, reconcileExisting } = useCreateFromSubmission({ config, recordProcessed });
-  const { isConnected: isRelayConnected, refreshStatus, pull, isPulling, errorMessage: pullError } = useSharePointPull(config);
+  const { pull, isPulling, errorMessage: pullError } = useSharePointPull(config);
+  // Connection status comes from the shared store (Connection Bar drives connect; feature 008).
+  const isRelayConnected = useConnectionStore((state) => state.relayStatusBySystem.sharepoint?.isConnected ?? false);
 
   const [isEditingSettings, setIsEditingSettings] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -30,13 +33,6 @@ export default function JiraIntake() {
   const isConfigured = Boolean(config);
   const shouldShowSettings = isEditingSettings || !config;
   const isSharePointConfigured = Boolean(config?.sharePointSiteRelativeUrl && config?.sharePointListName);
-
-  // Reflect the SharePoint relay connection state on mount / when the config appears.
-  useEffect(() => {
-    if (isSharePointConfigured) {
-      void refreshStatus();
-    }
-  }, [isSharePointConfigured, refreshStatus]);
 
   async function handleSaveConfig(nextConfig: IntakeConfig): Promise<void> {
     setIsSaving(true);
@@ -134,7 +130,6 @@ export default function JiraIntake() {
           isConnected={isRelayConnected}
           isPulling={isPulling}
           statusMessage={pullError ?? pullWarning}
-          onCheckConnection={() => { void refreshStatus(); }}
           onPull={() => { void handlePull(); }}
         />
       )}

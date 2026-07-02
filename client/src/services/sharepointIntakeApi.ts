@@ -115,13 +115,36 @@ function parseRelayData<ResponseBody>(result: RelayResult): ResponseBody {
   return result.data as ResponseBody;
 }
 
+/**
+ * Pulls a human-readable message out of a SharePoint error response so a 403/404 tells the user
+ * WHY (e.g. "Access denied" / "List does not exist"). Handles both `odata.error` (nometadata) and
+ * verbose `error` shapes, falling back to a trimmed snippet of the raw body.
+ */
+function extractSharePointErrorMessage(rawBody: unknown): string {
+  if (typeof rawBody !== 'string' || rawBody.trim() === '') {
+    return '';
+  }
+  try {
+    const parsed = JSON.parse(rawBody) as { 'odata.error'?: { message?: { value?: string } }; error?: { message?: { value?: string } } };
+    const message = parsed['odata.error']?.message?.value ?? parsed.error?.message?.value;
+    if (message) {
+      return message;
+    }
+  } catch {
+    // Not JSON — fall through to a trimmed raw snippet.
+  }
+  return rawBody.slice(0, 300);
+}
+
 /** Issues a GET through the relay against the SharePoint origin and returns parsed JSON. */
 async function relayGet<ResponseBody>(path: string): Promise<ResponseBody> {
   const requestId = nextRequestId();
   await postRelayRequest({ sys: RELAY_SYSTEM, id: requestId, method: 'GET', path });
   const result = await waitForRelayResult(requestId, RELAY_SYSTEM);
   if (!result.ok) {
-    throw new Error(`SharePoint request failed (status ${result.status})${result.error ? `: ${result.error}` : ''}.`);
+    // Surface SharePoint's own message (and the request path) so 403/404 causes are diagnosable.
+    const detail = extractSharePointErrorMessage(result.data) || result.error || '';
+    throw new Error(`SharePoint request failed (status ${result.status}) for ${path}${detail ? ` — ${detail}` : ''}`);
   }
   return parseRelayData<ResponseBody>(result);
 }

@@ -15,6 +15,7 @@ const { openSnowRelayMock } = vi.hoisted(() => ({
 
 vi.mock('../../services/browserRelay.ts', () => ({
   SNOW_RELAY_BOOKMARKLET_CODE: 'javascript:mockRelay()',
+  SHAREPOINT_RELAY_BOOKMARKLET_CODE: 'javascript:mockSharePointRelay()',
   openSnowRelay: openSnowRelayMock,
 }));
 
@@ -329,5 +330,41 @@ describe('ConnectionBar', () => {
 
     const panel = screen.getByRole('region', { name: 'Connection details' });
     expect(panel.textContent).toMatch(/Admin Hub/i);
+  });
+
+  // ── SharePoint relay (feature 008) ──
+
+  it('always shows the SharePoint indicator and opens a panel with the draggable bookmarklet when disconnected', () => {
+    render(<ConnectionBar />);
+    fireEvent.click(screen.getByText('SharePoint'));
+
+    const panel = screen.getByRole('region', { name: 'Connection details' });
+    expect(panel.textContent).toMatch(/not connected/i);
+    expect(screen.getByRole('link', { name: /NodeToolbox SharePoint Relay/i })).toBeInTheDocument();
+  });
+
+  it('reflects the SharePoint relay connected state from the per-system store', () => {
+    useConnectionStore.setState({
+      relayStatusBySystem: { sharepoint: { system: 'sharepoint', isConnected: true, lastPingAt: null, version: null } },
+    });
+    render(<ConnectionBar />);
+    fireEvent.click(screen.getByText('SharePoint'));
+    expect(screen.getByRole('region', { name: 'Connection details' }).textContent).toMatch(/connected/i);
+  });
+
+  it('tracks SharePoint and ServiceNow relay status independently (no cross-contamination)', () => {
+    useAdminStore.setState({ isAdminUnlocked: true }); // SNow indicator visible
+    // SharePoint connected, ServiceNow NOT — the SharePoint update must not flip SNow on.
+    useConnectionStore.setState({
+      relayBridgeStatus: null,
+      relayStatusBySystem: { sharepoint: { system: 'sharepoint', isConnected: true, lastPingAt: null, version: null } },
+    });
+    render(<ConnectionBar />);
+
+    fireEvent.click(screen.getByText('SharePoint'));
+    expect(screen.getByRole('region', { name: 'Connection details' }).textContent).toMatch(/SharePoint relay connected/i);
+
+    fireEvent.click(screen.getByText('SNow'));
+    expect(screen.getByRole('region', { name: 'Connection details' }).textContent).toMatch(/not reachable|not connected/i);
   });
 });
