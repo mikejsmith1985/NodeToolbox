@@ -77,11 +77,4 @@ describe('useSharePointPull', () => {
     expect(out.value).toBeNull();
     expect(result.current.errorMessage).toMatch(/access denied/i);
   });
-
-  it('refreshStatus reflects the relay connection', async () => {
-    statusMock.mockResolvedValue({ system: 'sharepoint', isConnected: true, lastPingAt: null, version: null });
-    const { result } = renderHook(() => useSharePointPull(CONFIG));
-    await act(async () => { await result.current.refreshStatus(); });
-    expect(result.current.isConnected).toBe(true);
-  });
 });

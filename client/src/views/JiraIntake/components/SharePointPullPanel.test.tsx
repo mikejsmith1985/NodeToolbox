@@ -11,7 +11,6 @@ const BASE = {
   isConnected: true,
   isPulling: false,
   statusMessage: null as string | null,
-  onCheckConnection: vi.fn(),
   onPull: vi.fn(),
 };
 
@@ -24,11 +23,12 @@ describe('SharePointPullPanel', () => {
     expect(screen.queryByRole('button', { name: /pull from sharepoint/i })).not.toBeInTheDocument();
   });
 
-  it('disables Pull and shows the draggable bookmarklet link when not connected', () => {
+  it('disables Pull and points to the Connection Bar when not connected (no bookmarklet here)', () => {
     render(<SharePointPullPanel {...BASE} isConnected={false} />);
     expect(screen.getByRole('button', { name: /pull from sharepoint/i })).toBeDisabled();
-    // The bookmarklet is a draggable link (not raw JSON in an input).
-    expect(screen.getByRole('link', { name: /NodeToolbox SharePoint Relay/i })).toBeInTheDocument();
+    expect(screen.getByText(/connect the sharepoint relay from the/i)).toBeInTheDocument();
+    // Connect UI (bookmarklet) now lives in the Connection Bar, not this panel.
+    expect(screen.queryByRole('link', { name: /NodeToolbox SharePoint Relay/i })).not.toBeInTheDocument();
   });
 
   it('fires onPull when connected and Pull is clicked', () => {

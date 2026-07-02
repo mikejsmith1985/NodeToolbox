@@ -9,6 +9,7 @@ import { useIntakeConfig } from './hooks/useIntakeConfig.ts';
 import { useIntakeQueue } from './hooks/useIntakeQueue.ts';
 import { useCreateFromSubmission } from './hooks/useCreateFromSubmission.ts';
 import { useSharePointPull } from './hooks/useSharePointPull.ts';
+import { useConnectionStore } from '../../store/connectionStore.ts';
 import type { IntakeConfig, QueueEntry } from './lib/intakeTypes.ts';
 
 vi.mock('./hooks/useIntakeConfig.ts', () => ({ useIntakeConfig: vi.fn() }));
@@ -52,12 +53,21 @@ function stubQueue(overrides: Partial<ReturnType<typeof useIntakeQueue>> = {}): 
 
 function stubPull(overrides: Partial<ReturnType<typeof useSharePointPull>> = {}): void {
   useSharePointPullMock.mockReturnValue({
-    isConnected: false, refreshStatus: vi.fn(), pull: vi.fn().mockResolvedValue(null),
-    isPulling: false, errorMessage: null, ...overrides,
+    pull: vi.fn().mockResolvedValue(null), isPulling: false, errorMessage: null, ...overrides,
   });
 }
 
-afterEach(() => { vi.clearAllMocks(); });
+/** Seeds the shared store's SharePoint relay connection state (drives the intake panel + bar). */
+function setSharePointConnected(isConnected: boolean): void {
+  useConnectionStore.setState({
+    relayStatusBySystem: { sharepoint: { system: 'sharepoint', isConnected, lastPingAt: null, version: null } },
+  });
+}
+
+afterEach(() => {
+  vi.clearAllMocks();
+  useConnectionStore.setState({ relayStatusBySystem: {} });
+});
 
 describe('JiraIntake', () => {
   it('shows the settings panel when no config exists', () => {
@@ -92,10 +102,11 @@ describe('JiraIntake', () => {
   it('pulls from SharePoint and runs the same dedup + create flow (ingestRows path)', async () => {
     const spConfig: IntakeConfig = { ...CONFIG, sharePointSiteRelativeUrl: '/sites/CUCIntake', sharePointListName: 'Jira-Intake' };
     stubConfig(spConfig);
+    setSharePointConnected(true); // relay connected via the store (Connection Bar drives this)
     const ingestRows = vi.fn().mockReturnValue([ENTRY]);
     const updateEntry = vi.fn();
     stubQueue({ entries: [ENTRY], counts: { total: 1, newCount: 1, imported: 0, invalid: 0 }, ingestRows, updateEntry });
-    stubPull({ isConnected: true, pull: vi.fn().mockResolvedValue({ rows: [{ id: 's1' }], missingColumns: [], itemCount: 1 }) });
+    stubPull({ pull: vi.fn().mockResolvedValue({ rows: [{ id: 's1' }], missingColumns: [], itemCount: 1 }) });
     const reconcileExisting = vi.fn().mockResolvedValue([ENTRY]);
     const createAllNew = vi.fn().mockResolvedValue([{ ...ENTRY, state: 'imported', jiraKey: 'ENCUC-1' }]);
     useCreateFromSubmissionMock.mockReturnValue({ createFromSubmission: vi.fn(), createAllNew, reconcileExisting });

@@ -9,7 +9,8 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **sharepoint-relay-pull** (Phase 2B of teams-jira-intake) — plan: `specs/007-sharepoint-relay-pull/plan.md`
+- **sharepoint-connection-bar** (unify SharePoint relay connect into the Connection Bar) —
+  plan: `specs/008-sharepoint-connection-bar/plan.md`
   (spec, research, data-model, contracts, quickstart in the same directory).
 <!-- SPECKIT END -->
 
