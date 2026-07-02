@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 
 import type { ProxyStatusResponse } from '../types/config.ts';
-import type { RelayBridgeStatus } from '../types/relay.ts';
+import type { RelayBridgeStatus, RelaySystem } from '../types/relay.ts';
 
 const DEFAULT_CONNECTION_STATE = {
   isJiraReady: false,
@@ -14,6 +14,7 @@ const DEFAULT_CONNECTION_STATE = {
   isGitHubReady: false,
   proxyStatus: null,
   relayBridgeStatus: null,
+  relayStatusBySystem: {} as Partial<Record<RelaySystem, RelayBridgeStatus>>,
 } as const;
 
 interface ConnectionState {
@@ -28,7 +29,10 @@ interface ConnectionState {
   /** True when a GitHub PAT or GitHub App is configured. */
   isGitHubReady: boolean;
   proxyStatus: ProxyStatusResponse | null;
+  /** Legacy single relay status — kept as the ServiceNow mirror for existing SNow consumers. */
   relayBridgeStatus: RelayBridgeStatus | null;
+  /** Relay status per system (snow, sharepoint, …) so multiple relays never clobber each other. */
+  relayStatusBySystem: Partial<Record<RelaySystem, RelayBridgeStatus>>;
   setProxyStatus: (status: ProxyStatusResponse) => void;
   setRelayBridgeStatus: (status: RelayBridgeStatus) => void;
   setJiraVerified: (isVerified: boolean) => void;
@@ -48,9 +52,13 @@ export const useConnectionStore = create<ConnectionState>((setState) => ({
       isGitHubReady: status.github.ready,
     }),
   setRelayBridgeStatus: (status) =>
-    setState({
-      relayBridgeStatus: status,
-    }),
+    setState((currentState) => ({
+      // Always record per-system so ServiceNow and SharePoint statuses stay independent.
+      relayStatusBySystem: { ...currentState.relayStatusBySystem, [status.system]: status },
+      // Keep the legacy single field as the ServiceNow mirror only — a SharePoint update must
+      // never overwrite the ServiceNow status that existing consumers read.
+      relayBridgeStatus: status.system === 'snow' ? status : currentState.relayBridgeStatus,
+    })),
   setJiraVerified: (isVerified) =>
     setState({
       isJiraVerified: isVerified,

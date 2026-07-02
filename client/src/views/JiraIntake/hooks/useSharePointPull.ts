@@ -22,28 +22,20 @@ export interface SharePointPullResult {
 }
 
 export interface UseSharePointPullResult {
-  isConnected: boolean;
-  refreshStatus: () => Promise<void>;
   /** Pulls the List; returns null (with errorMessage set) when not configured/connected or on error. */
   pull: () => Promise<SharePointPullResult | null>;
   isPulling: boolean;
   errorMessage: string | null;
 }
 
-/** Hook owning the SharePoint relay connection state and the pull operation. */
+/**
+ * Hook owning the SharePoint pull operation. Connection status now lives in the shared connection
+ * store (driven by the app's relay poll and surfaced by the Connection Bar, feature 008); this hook
+ * keeps a defensive pre-pull relay check so a stale click never proceeds against a dead relay.
+ */
 export function useSharePointPull(config: IntakeConfig | null): UseSharePointPullResult {
-  const [isConnected, setIsConnected] = useState<boolean>(false);
   const [isPulling, setIsPulling] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const refreshStatus = useCallback(async (): Promise<void> => {
-    try {
-      const status = await fetchRelayStatus('sharepoint');
-      setIsConnected(status.isConnected);
-    } catch {
-      setIsConnected(false);
-    }
-  }, []);
 
   const pull = useCallback(async (): Promise<SharePointPullResult | null> => {
     const siteRelativeUrl = config?.sharePointSiteRelativeUrl?.trim();
@@ -58,11 +50,9 @@ export function useSharePointPull(config: IntakeConfig | null): UseSharePointPul
     try {
       const status = await fetchRelayStatus('sharepoint');
       if (!status.isConnected) {
-        setIsConnected(false);
         setErrorMessage(NOT_CONNECTED_MESSAGE);
         return null;
       }
-      setIsConnected(true);
 
       const source = { siteRelativeUrl, listName };
       const fieldMap = await resolveListFieldMap(source);
@@ -78,5 +68,5 @@ export function useSharePointPull(config: IntakeConfig | null): UseSharePointPul
     }
   }, [config]);
 
-  return { isConnected, refreshStatus, pull, isPulling, errorMessage };
+  return { pull, isPulling, errorMessage };
 }
