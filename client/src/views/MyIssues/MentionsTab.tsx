@@ -6,6 +6,7 @@
 // a manual button covers mentions handled elsewhere.
 
 import { useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import { buildJiraBrowseUrl } from '../../utils/jiraBrowseUrl.ts';
@@ -94,51 +95,79 @@ interface MentionCardProps {
 function MentionCard({ mention, isAddressed, jiraBaseUrl, onMarkAddressed }: MentionCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
+  const toggleExpanded = () => setIsExpanded((open) => !open);
+
+  // Interactive children (the Jira link and action buttons) must not also toggle
+  // the row when clicked, so they stop the click from reaching the row handler.
+  const stopRowToggle = (clickEvent: ReactMouseEvent) => clickEvent.stopPropagation();
+
   return (
     <li className={styles.mentionCard}>
-      <div className={styles.mentionHeader}>
-        <div className={styles.mentionHeaderText}>
-          {/* The key opens the real Jira issue in a new tab so the user can @-mention others in a reply. */}
-          <a
-            className={styles.issueKeyLink}
-            href={buildJiraBrowseUrl(mention.issueKey, jiraBaseUrl)}
-            rel="noopener noreferrer"
-            target="_blank"
-            title="Open in Jira (to reply with @mentions)"
-          >
-            {mention.issueKey}
-            <span aria-hidden="true" className={styles.externalLinkIcon}> ↗</span>
-          </a>
-          <span className={styles.issueSummary}>{mention.issueSummary}</span>
-          <span className={styles.mentionMeta}>
-            Tagged by {mention.authorDisplayName} · {mention.createdIso.slice(0, ISO_DATE_LENGTH)}
-          </span>
-        </div>
-        <div className={styles.mentionActions}>
-          <button className={styles.linkButton} onClick={() => setIsExpanded((open) => !open)} type="button">
-            {isExpanded ? 'Hide details' : 'Reply / details'}
-          </button>
-          {isAddressed ? (
+      {/* Whole summary bar (header + excerpt) toggles the reply panel;
+          the "Reply / details" button below stays as an explicit affordance. */}
+      <div
+        aria-expanded={isExpanded}
+        aria-label={`${isExpanded ? 'Collapse' : 'Expand'} details for ${mention.issueKey}`}
+        onClick={toggleExpanded}
+        onKeyDown={(keyEvent) => {
+          if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+            keyEvent.preventDefault();
+            toggleExpanded();
+          }
+        }}
+        role="button"
+        style={{ cursor: 'pointer', userSelect: 'none' }}
+        tabIndex={0}
+      >
+        <div className={styles.mentionHeader}>
+          <div className={styles.mentionHeaderText}>
+            {/* The key opens the real Jira issue in a new tab so the user can @-mention others in a reply. */}
+            <a
+              className={styles.issueKeyLink}
+              href={buildJiraBrowseUrl(mention.issueKey, jiraBaseUrl)}
+              onClick={stopRowToggle}
+              rel="noopener noreferrer"
+              target="_blank"
+              title="Open in Jira (to reply with @mentions)"
+            >
+              {mention.issueKey}
+              <span aria-hidden="true" className={styles.externalLinkIcon}> ↗</span>
+            </a>
+            <span className={styles.issueSummary}>{mention.issueSummary}</span>
+            <span className={styles.mentionMeta}>
+              Tagged by {mention.authorDisplayName} · {mention.createdIso.slice(0, ISO_DATE_LENGTH)}
+            </span>
+          </div>
+          <div className={styles.mentionActions}>
             <button
-              className={styles.undoButton}
-              onClick={() => void onMarkAddressed(mention, false)}
+              className={styles.linkButton}
+              onClick={(clickEvent) => { stopRowToggle(clickEvent); toggleExpanded(); }}
               type="button"
             >
-              ↩ Undo
+              {isExpanded ? 'Hide details' : 'Reply / details'}
             </button>
-          ) : (
-            <button
-              className={styles.addressedButton}
-              onClick={() => void onMarkAddressed(mention, true)}
-              type="button"
-            >
-              ✓ Mark addressed
-            </button>
-          )}
+            {isAddressed ? (
+              <button
+                className={styles.undoButton}
+                onClick={(clickEvent) => { stopRowToggle(clickEvent); void onMarkAddressed(mention, false); }}
+                type="button"
+              >
+                ↩ Undo
+              </button>
+            ) : (
+              <button
+                className={styles.addressedButton}
+                onClick={(clickEvent) => { stopRowToggle(clickEvent); void onMarkAddressed(mention, true); }}
+                type="button"
+              >
+                ✓ Mark addressed
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
-      <p className={styles.mentionExcerpt}>{mention.excerpt}</p>
+        <p className={styles.mentionExcerpt}>{mention.excerpt}</p>
+      </div>
 
       {isExpanded && (
         <IssueDetailPanel

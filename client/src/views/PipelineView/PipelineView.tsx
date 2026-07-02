@@ -170,35 +170,53 @@ function EpicCard({
 
   return (
     <article className={styles.epicCard}>
-      <div className={styles.epicHeader}>
-        <span className={styles.epicKey}>{epicSummary.key}</span>
-        <span className={styles.statusBadge}>{epicSummary.status || NO_VALUE_LABEL}</span>
+      {/* The whole summary bar (header through progress) toggles the epic's children;
+          the labeled button below remains as an explicit affordance. */}
+      <div
+        aria-expanded={isExpanded}
+        aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${epicSummary.key}`}
+        onClick={onToggle}
+        onKeyDown={(keyEvent) => {
+          if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+            keyEvent.preventDefault();
+            onToggle();
+          }
+        }}
+        role="button"
+        style={{ cursor: 'pointer', userSelect: 'none' }}
+        tabIndex={0}
+      >
+        <div className={styles.epicHeader}>
+          <span className={styles.epicKey}>{epicSummary.key}</span>
+          <span className={styles.statusBadge}>{epicSummary.status || NO_VALUE_LABEL}</span>
+        </div>
+        <h3 className={styles.epicSummary}>{epicSummary.summary}</h3>
+        <dl className={styles.metadataGrid}>
+          <div>
+            <dt>Assignee</dt>
+            <dd>{epicSummary.assignee || NO_VALUE_LABEL}</dd>
+          </div>
+          <div>
+            <dt>Story points</dt>
+            <dd>{epicSummary.rolledUpStoryPoints}</dd>
+          </div>
+          <div>
+            <dt>Children</dt>
+            <dd>{childCount}</dd>
+          </div>
+          <div>
+            <dt>Complete</dt>
+            <dd>{epicSummary.completionPercent}%</dd>
+          </div>
+        </dl>
+        <div className={styles.progressTrack} aria-label={`${epicSummary.key} completion`}>
+          <span className={styles.progressFill} style={{ width: `${epicSummary.completionPercent}%` }} />
+        </div>
+        {/* Visual affordance only — the surrounding bar is the actual toggle control. */}
+        <span aria-hidden="true" className={styles.button}>
+          {isExpanded ? `Collapse ${epicSummary.key}` : `Expand ${epicSummary.key}`}
+        </span>
       </div>
-      <h3 className={styles.epicSummary}>{epicSummary.summary}</h3>
-      <dl className={styles.metadataGrid}>
-        <div>
-          <dt>Assignee</dt>
-          <dd>{epicSummary.assignee || NO_VALUE_LABEL}</dd>
-        </div>
-        <div>
-          <dt>Story points</dt>
-          <dd>{epicSummary.rolledUpStoryPoints}</dd>
-        </div>
-        <div>
-          <dt>Children</dt>
-          <dd>{childCount}</dd>
-        </div>
-        <div>
-          <dt>Complete</dt>
-          <dd>{epicSummary.completionPercent}%</dd>
-        </div>
-      </dl>
-      <div className={styles.progressTrack} aria-label={`${epicSummary.key} completion`}>
-        <span className={styles.progressFill} style={{ width: `${epicSummary.completionPercent}%` }} />
-      </div>
-      <button type="button" className={styles.button} onClick={onToggle}>
-        {isExpanded ? `Collapse ${epicSummary.key}` : `Expand ${epicSummary.key}`}
-      </button>
       {isExpanded && (
         <ChildPanel
           childrenList={epicSummary.children}

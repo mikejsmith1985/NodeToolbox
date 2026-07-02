@@ -14,6 +14,11 @@ vi.mock('./hooks/useMentionsState.ts', async () => {
   return { ...actual, useMentionsState: mockUseMentionsState };
 });
 
+// Stub the heavy issue-detail panel so expand tests stay fast and focused on the row.
+vi.mock('../../components/IssueDetailPanel/index.tsx', () => ({
+  default: () => <div data-testid="issue-detail-panel" />,
+}));
+
 import MentionsTab from './MentionsTab.tsx';
 
 function buildMention(mentionKey: string, summary: string): JiraMention {
@@ -77,6 +82,39 @@ describe('MentionsTab', () => {
 
     await user.click(screen.getByRole('button', { name: /mark addressed/i }));
 
+    expect(markAddressed).toHaveBeenCalledWith(
+      expect.objectContaining({ mentionKey: 'TBX-1#101' }),
+      true,
+    );
+  });
+
+  it('expands the reply panel when the summary bar is clicked (not just a toggle button)', async () => {
+    const user = userEvent.setup();
+    render(<MentionsTab />);
+
+    // Click the summary text — a plain part of the bar, not any button or link.
+    await user.click(screen.getByText('Fix the login page'));
+
+    expect(screen.getByTestId('issue-detail-panel')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /collapse details for TBX-1/i })).toBeInTheDocument();
+  });
+
+  it('does not expand when the issue-key link is clicked', async () => {
+    const user = userEvent.setup();
+    render(<MentionsTab />);
+
+    await user.click(screen.getByRole('link', { name: 'TBX-1' }));
+
+    expect(screen.queryByTestId('issue-detail-panel')).not.toBeInTheDocument();
+  });
+
+  it('does not expand when an action button (Mark addressed) is clicked', async () => {
+    const user = userEvent.setup();
+    render(<MentionsTab />);
+
+    await user.click(screen.getByRole('button', { name: /mark addressed/i }));
+
+    expect(screen.queryByTestId('issue-detail-panel')).not.toBeInTheDocument();
     expect(markAddressed).toHaveBeenCalledWith(
       expect.objectContaining({ mentionKey: 'TBX-1#101' }),
       true,

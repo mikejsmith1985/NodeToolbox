@@ -1452,7 +1452,21 @@ function ReleasesPanel({ teams }: TeamsPanelProps) {
 
               return (
                 <Fragment key={releaseVersion.versionName}>
-                  <tr>
+                  {/* Whole row toggles the issue list; the caret is a visual affordance hint. */}
+                  <tr
+                    aria-expanded={isExpanded}
+                    aria-label={`${isExpanded ? 'Collapse' : 'Expand'} issues for ${releaseVersion.versionName}`}
+                    onClick={() => toggleVersionExpanded(releaseVersion.versionName)}
+                    onKeyDown={(keyEvent) => {
+                      if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+                        keyEvent.preventDefault();
+                        toggleVersionExpanded(releaseVersion.versionName);
+                      }
+                    }}
+                    role="button"
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                    tabIndex={0}
+                  >
                     <td>{releaseVersion.versionName}</td>
                     <td>{releaseVersion.releaseDate ?? '—'}</td>
                     <td>
@@ -1479,15 +1493,9 @@ function ReleasesPanel({ teams }: TeamsPanelProps) {
                     <td>{releaseVersion.doneCount} / {releaseVersion.totalIssueCount}</td>
                     <td>{releaseVersion.teamNames.join(', ')}</td>
                     <td>
-                      <button
-                        className={styles.expandToggleButton}
-                        onClick={() => toggleVersionExpanded(releaseVersion.versionName)}
-                        aria-expanded={isExpanded}
-                        aria-label={`${isExpanded ? 'Collapse' : 'Expand'} issues for ${releaseVersion.versionName}`}
-                        type="button"
-                      >
+                      <span aria-hidden="true" className={styles.expandToggleButton}>
                         {isExpanded ? '▲' : '▼'}
-                      </button>
+                      </span>
                     </td>
                   </tr>
                   {isExpanded && (

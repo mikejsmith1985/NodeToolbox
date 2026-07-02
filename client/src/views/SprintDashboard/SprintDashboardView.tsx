@@ -2269,9 +2269,27 @@ function DefectsTab({
           </div>
           {section.issues.map((defectIssue) => {
             const isExpanded = expandedIssueKey === defectIssue.key;
+            // Toggle this defect's detail panel open/closed. Shared by the whole-row
+            // click and keyboard handlers so the entire bar acts as one control.
+            const toggleThisDefect = () =>
+              setExpandedIssueKey((previousIssueKey) => previousIssueKey === defectIssue.key ? null : defectIssue.key);
             return (
               <div className={styles.issueCardWrapper} key={defectIssue.key}>
-                <div className={styles.defectCard}>
+                {/* Whole bar is clickable — the chevron is now a visual affordance only. */}
+                <div
+                  aria-expanded={isExpanded}
+                  aria-label={`${isExpanded ? 'Collapse' : 'Expand'} details for ${defectIssue.key}`}
+                  className={`${styles.defectCard} ${styles.clickableRow}`}
+                  onClick={toggleThisDefect}
+                  onKeyDown={(keyEvent) => {
+                    if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+                      keyEvent.preventDefault();
+                      toggleThisDefect();
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
                     <div>
                       <a
@@ -2289,14 +2307,9 @@ function DefectsTab({
                       {readIssuePriorityName(defectIssue)} · {readAssigneeName(defectIssue)} · {readIssueAgeDays(defectIssue)}d old · updated {readIssueUpdatedAgeDays(defectIssue)}d ago
                     </div>
                   </div>
-                  <button
-                    aria-expanded={isExpanded}
-                    className={styles.expandToggleButton}
-                    onClick={() => setExpandedIssueKey((previousIssueKey) => previousIssueKey === defectIssue.key ? null : defectIssue.key)}
-                    type="button"
-                  >
+                  <span aria-hidden="true" className={styles.expandToggleButton}>
                     {isExpanded ? EXPAND_TOGGLE_EXPANDED_ICON : EXPAND_TOGGLE_COLLAPSED_ICON}
-                  </button>
+                  </span>
                 </div>
                 {isExpanded && (
                   <IssueDetailPanel isEmbedded issue={defectIssue} onIssueUpdated={onIssueUpdated} />
@@ -5307,9 +5320,32 @@ function PlanningTab({
           {groupedIssues.map((planningIssue) => {
             const isExpanded = expandedIssueKey === planningIssue.key;
             const planningDetail = planningDetailByIssueKey[planningIssue.key];
+            // Toggle this planning row and lazy-load its detail on first expand.
+            // Shared by the whole-row click and keyboard handlers.
+            const toggleThisPlanning = () => {
+              const nextExpanded = isExpanded ? null : planningIssue.key;
+              setExpandedIssueKey(nextExpanded);
+              if (nextExpanded) {
+                void loadPlanningDetail(planningIssue);
+              }
+            };
             return (
               <div className={styles.issueCardWrapper} key={planningIssue.key}>
-                <div className={styles.blockerCard}>
+                {/* Whole bar is clickable — the chevron is now a visual affordance only. */}
+                <div
+                  aria-expanded={isExpanded}
+                  aria-label={`${isExpanded ? 'Collapse' : 'Expand'} details for ${planningIssue.key}`}
+                  className={`${styles.blockerCard} ${styles.clickableRow}`}
+                  onClick={toggleThisPlanning}
+                  onKeyDown={(keyEvent) => {
+                    if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+                      keyEvent.preventDefault();
+                      toggleThisPlanning();
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
                     <div>
                       <a
@@ -5329,28 +5365,21 @@ function PlanningTab({
                   </div>
                   <button
                     className={followUpIssueKeys.includes(planningIssue.key) ? styles.followUpButtonActive : styles.followUpButtonInactive}
-                    onClick={() => setFollowUpIssueKeys((previousKeys) => previousKeys.includes(planningIssue.key)
-                      ? previousKeys.filter((previousKey) => previousKey !== planningIssue.key)
-                      : [...previousKeys, planningIssue.key])}
+                    onClick={(clickEvent) => {
+                      // Flagging follow-up must not also expand/collapse the row.
+                      clickEvent.stopPropagation();
+                      setFollowUpIssueKeys((previousKeys) => previousKeys.includes(planningIssue.key)
+                        ? previousKeys.filter((previousKey) => previousKey !== planningIssue.key)
+                        : [...previousKeys, planningIssue.key]);
+                    }}
                     title={followUpIssueKeys.includes(planningIssue.key) ? 'Click to remove follow-up flag' : 'Click to flag for follow-up'}
                     type="button"
                   >
                     Follow-up
                   </button>
-                  <button
-                    aria-expanded={isExpanded}
-                    className={styles.expandToggleButton}
-                    onClick={() => {
-                      const nextExpanded = isExpanded ? null : planningIssue.key;
-                      setExpandedIssueKey(nextExpanded);
-                      if (nextExpanded) {
-                        void loadPlanningDetail(planningIssue);
-                      }
-                    }}
-                    type="button"
-                  >
+                  <span aria-hidden="true" className={styles.expandToggleButton}>
                     {isExpanded ? EXPAND_TOGGLE_EXPANDED_ICON : EXPAND_TOGGLE_COLLAPSED_ICON}
-                  </button>
+                  </span>
                 </div>
                 {isExpanded && (
                   <div className={styles.sprintInfoCard}>
@@ -6073,10 +6102,32 @@ function ReleasesTab({
                   const releaseExportError = releaseExportErrorByVersionId[entry.version.id] ?? '';
                   const releaseCopyConfirmation = releaseCopyConfirmationByVersionId[entry.version.id] ?? '';
                   const issueByKey = new Map(entry.issues.map((issue) => [issue.key, issue]));
+                  // Only releases with linked issues can expand; when they can, the
+                  // whole header bar toggles the issue list (the labeled button below stays too).
+                  const canExpandRelease = entry.totalCount > 0;
+                  const toggleThisRelease = () =>
+                    setExpandedReleaseIds((previousExpandedReleaseIds) => ({
+                      ...previousExpandedReleaseIds,
+                      [entry.version.id]: !isExpanded,
+                    }));
 
                   return (
                     <article className={styles.releaseCard} key={entry.version.id}>
-                      <div className={styles.releaseCardHeader}>
+                      {/* Header bar is clickable when the release has issues to reveal. */}
+                      <div
+                        aria-expanded={canExpandRelease ? isExpanded : undefined}
+                        aria-label={canExpandRelease ? `${isExpanded ? 'Collapse' : 'Expand'} issues for ${entry.version.name}` : undefined}
+                        className={canExpandRelease ? `${styles.releaseCardHeader} ${styles.clickableRow}` : styles.releaseCardHeader}
+                        onClick={canExpandRelease ? toggleThisRelease : undefined}
+                        onKeyDown={canExpandRelease ? (keyEvent) => {
+                          if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+                            keyEvent.preventDefault();
+                            toggleThisRelease();
+                          }
+                        } : undefined}
+                        role={canExpandRelease ? 'button' : undefined}
+                        tabIndex={canExpandRelease ? 0 : undefined}
+                      >
                         <div className={styles.releaseCardTitleGroup}>
                           <h3 className={styles.releaseCardTitle}>{entry.version.name}</h3>
                           <span className={styles.releaseCardDate}>📅 {formatReleaseDate(entry.releaseDate)}</span>
