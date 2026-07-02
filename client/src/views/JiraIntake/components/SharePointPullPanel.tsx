@@ -41,25 +41,25 @@ export default function SharePointPullPanel({
 
   if (!siteConfigured) {
     return (
-      <section className={styles.panel} aria-label="SharePoint pull">
-        <h2 className={styles.panelTitle}>Pull from SharePoint</h2>
+      <section className={styles.panel} aria-label="SharePoint refresh">
+        <h2 className={styles.panelTitle}>Refresh from SharePoint</h2>
         <p className={styles.subtitle}>
-          Add the SharePoint site URL and list name in Intake settings to enable live pull.
+          Add the SharePoint site URL and list name in Intake settings to enable live refresh.
         </p>
       </section>
     );
   }
 
   return (
-    <section className={styles.panel} aria-label="SharePoint pull">
+    <section className={styles.panel} aria-label="SharePoint refresh">
       <h2 className={styles.panelTitle}>
-        Pull from SharePoint {isConnected ? '· relay connected' : '· relay not connected'}
+        Refresh from SharePoint {isConnected ? '· relay connected' : '· relay not connected'}
       </h2>
 
       {!isConnected && (
         <p className={styles.subtitle}>
           Connect the SharePoint relay from the <strong>Connection Bar</strong> at the top of the app
-          (click the SharePoint indicator), then return here to pull.
+          (click the SharePoint indicator), then return here to refresh.
         </p>
       )}
 
@@ -70,7 +70,7 @@ export default function SharePointPullPanel({
           onClick={onPull}
           type="button"
         >
-          {isPulling ? 'Pulling…' : 'Pull from SharePoint'}
+          {isPulling ? 'Refreshing…' : 'Refresh from SharePoint'}
         </button>
         <label className={styles.checkboxRow}>
           <input

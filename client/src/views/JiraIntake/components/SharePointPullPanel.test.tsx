@@ -20,12 +20,12 @@ describe('SharePointPullPanel', () => {
   it('prompts to configure when the site/list are not set', () => {
     render(<SharePointPullPanel {...BASE} siteConfigured={false} />);
     expect(screen.getByText(/add the sharepoint site url and list name/i)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /pull from sharepoint/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /refresh from sharepoint/i })).not.toBeInTheDocument();
   });
 
   it('disables Pull and points to the Connection Bar when not connected (no bookmarklet here)', () => {
     render(<SharePointPullPanel {...BASE} isConnected={false} />);
-    expect(screen.getByRole('button', { name: /pull from sharepoint/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /refresh from sharepoint/i })).toBeDisabled();
     expect(screen.getByText(/connect the sharepoint relay from the/i)).toBeInTheDocument();
     // Connect UI (bookmarklet) now lives in the Connection Bar, not this panel.
     expect(screen.queryByRole('link', { name: /NodeToolbox SharePoint Relay/i })).not.toBeInTheDocument();
@@ -34,7 +34,7 @@ describe('SharePointPullPanel', () => {
   it('fires onPull when connected and Pull is clicked', () => {
     const onPull = vi.fn();
     render(<SharePointPullPanel {...BASE} onPull={onPull} />);
-    fireEvent.click(screen.getByRole('button', { name: /pull from sharepoint/i }));
+    fireEvent.click(screen.getByRole('button', { name: /refresh from sharepoint/i }));
     expect(onPull).toHaveBeenCalledTimes(1);
   });
 

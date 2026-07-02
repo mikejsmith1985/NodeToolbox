@@ -112,7 +112,7 @@ describe('JiraIntake', () => {
     useCreateFromSubmissionMock.mockReturnValue({ createFromSubmission: vi.fn(), createAllNew, reconcileExisting });
 
     render(<JiraIntake />);
-    fireEvent.click(screen.getByRole('button', { name: /pull from sharepoint/i }));
+    fireEvent.click(screen.getByRole('button', { name: /refresh from sharepoint/i }));
 
     await waitFor(() => expect(ingestRows).toHaveBeenCalledWith([{ id: 's1' }]));
     await waitFor(() => expect(reconcileExisting).toHaveBeenCalledWith([ENTRY]));
