@@ -8,14 +8,14 @@
 import { useState, useRef, useEffect, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
 
 import { BookmarkletInstallLink } from '../BookmarkletInstallLink/index.tsx';
-import { openSnowRelay, SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts';
+import { openSnowRelay, SHAREPOINT_RELAY_BOOKMARKLET_CODE, SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts';
 import { useAdminStore } from '../../store/adminStore.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
 import styles from './ConnectionBar.module.css';
 
 // ── Types ──
 
-type ActivePanel = 'jira' | 'snow' | 'confluence' | 'github' | null;
+type ActivePanel = 'jira' | 'snow' | 'confluence' | 'github' | 'sharepoint' | null;
 
 // ── Sub-components ──
 
@@ -227,6 +227,64 @@ function GitHubPanel({ isGitHubReady }: GitHubPanelProps) {
   );
 }
 
+interface SharePointPanelProps {
+  isSharePointConnected: boolean;
+  lastPingAt: string | null;
+}
+
+/**
+ * Inline panel for the SharePoint indicator. Mirrors the ServiceNow relay workflow: when the relay
+ * is inactive it shows the draggable bookmarklet + drag-to-bookmarks steps; when active it shows the
+ * connection status. Used by the Jira Intake live pull (feature 007/008).
+ */
+function SharePointPanel({ isSharePointConnected, lastPingAt }: SharePointPanelProps) {
+  const lastPingText = lastPingAt !== null ? new Date(lastPingAt).toLocaleTimeString() : null;
+
+  function handleBookmarkletClick(clickEvent: ReactMouseEvent<HTMLAnchorElement>) {
+    clickEvent.preventDefault();
+    window.alert(
+      'Drag "NodeToolbox SharePoint Relay" to your browser bookmarks bar first. ' +
+      'After your SharePoint site opens, click that bookmark from the SharePoint tab.',
+    );
+  }
+
+  return (
+    <div className={styles.panelContent}>
+      <p className={styles.panelStatus}>
+        {isSharePointConnected
+          ? `✅ SharePoint relay connected${lastPingText !== null ? ` — last ping at ${lastPingText}` : ''}`
+          : '❌ SharePoint relay not connected'}
+      </p>
+
+      {!isSharePointConnected && (
+        <>
+          <p className={styles.panelLabel}>To activate the relay bridge:</p>
+          <ol className={styles.panelSteps}>
+            <li>Drag <strong>NodeToolbox SharePoint Relay</strong> to your bookmarks bar</li>
+            <li>Open your SharePoint site (where the intake list lives) while logged in</li>
+            <li>Click that bookmark from the SharePoint tab; this indicator turns green</li>
+          </ol>
+
+          <div className={styles.panelActions}>
+            <BookmarkletInstallLink
+              bookmarkletCode={SHAREPOINT_RELAY_BOOKMARKLET_CODE}
+              className={styles.bookmarkletLink}
+              title="Drag this to your bookmarks bar"
+              onClick={handleBookmarkletClick}
+            >
+              🔖 Drag to bookmarks: NodeToolbox SharePoint Relay
+            </BookmarkletInstallLink>
+          </div>
+
+          <p className={styles.panelHint}>
+            ⚠️ Do not click the bookmarklet here. Drag it to the bookmarks bar, then click it from the SharePoint tab.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 interface JiraPanelProps {
   isJiraReady: boolean;
 }
@@ -274,6 +332,10 @@ export function ConnectionBar() {
   const isGitHubReady = useConnectionStore((state) => state.isGitHubReady);
   const lastPingAt = relayBridgeStatus?.lastPingAt ?? null;
   const hasSessionToken = relayBridgeStatus?.hasSessionToken ?? false;
+  // SharePoint relay status is tracked per-system (feature 008) so it never clobbers ServiceNow.
+  const sharePointRelayStatus = useConnectionStore((state) => state.relayStatusBySystem.sharepoint);
+  const isSharePointConnected = sharePointRelayStatus?.isConnected ?? false;
+  const sharePointLastPingAt = sharePointRelayStatus?.lastPingAt ?? null;
 
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -327,6 +389,13 @@ export function ConnectionBar() {
           panelId="conn-panel-confluence"
           onClick={() => handleIndicatorClick('confluence')}
         />
+        <ConnectionIndicatorButton
+          label="SharePoint"
+          isReady={isSharePointConnected}
+          isExpanded={activePanel === 'sharepoint'}
+          panelId="conn-panel-sharepoint"
+          onClick={() => handleIndicatorClick('sharepoint')}
+        />
         {isAdminUnlocked && (
           <ConnectionIndicatorButton
             label="GitHub"
@@ -355,6 +424,12 @@ export function ConnectionBar() {
             <ConfluencePanel
               isConfluenceReady={isConfluenceReady}
               confluenceBaseUrl={confluenceBaseUrl}
+            />
+          )}
+          {activePanel === 'sharepoint' && (
+            <SharePointPanel
+              isSharePointConnected={isSharePointConnected}
+              lastPingAt={sharePointLastPingAt}
             />
           )}
           {activePanel === 'github' && isAdminUnlocked && (

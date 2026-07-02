@@ -51,6 +51,7 @@ const ADMIN_HUB_ROUTE = '/admin-hub';
 const BUSINESS_HELPER_ROUTE = '/business-helper';
 const DEFAULT_ROUTE = HOME_ROUTE;
 const RELAY_SYSTEM: RelaySystem = 'snow';
+const SHAREPOINT_RELAY_SYSTEM: RelaySystem = 'sharepoint';
 const DEFAULT_TOOL_TEXT_SIZE: ToolTextSize = 'default';
 const LARGE_TOOL_TEXT_SIZE: ToolTextSize = 'large';
 const EXTRA_LARGE_TOOL_TEXT_SIZE: ToolTextSize = 'extra-large';
@@ -74,6 +75,8 @@ export default function App() {
 
   useProxyStatus();
   useRelayBridge(RELAY_SYSTEM);
+  // Poll the SharePoint relay too (feature 008) — the per-system store keeps it independent of SNow.
+  useRelayBridge(SHAREPOINT_RELAY_SYSTEM);
 
   // After the SNow bookmarklet reloads this window to the root URL, navigate the user
   // back to wherever they were (e.g. /snow-hub) so their CRG wizard data is still there.
