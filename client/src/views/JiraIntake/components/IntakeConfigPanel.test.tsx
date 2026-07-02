@@ -56,7 +56,7 @@ describe('IntakeConfigPanel', () => {
     expect(savedConfig.sharePointListName).toBe('Jira-Intake');
   });
 
-  it('derives the site path and list name when a full List URL is pasted (on blur)', () => {
+  it('keeps the full site URL and fills the list name when a full List URL is pasted (on blur)', () => {
     const onSave = vi.fn();
     render(<IntakeConfigPanel initialConfig={null} artProjectKeys={[]} onSave={onSave} />);
 
@@ -65,7 +65,8 @@ describe('IntakeConfigPanel', () => {
     fireEvent.change(siteField, { target: { value: 'https://contoso.sharepoint.com/sites/CUCIntake/Lists/Jira-Intake/AllItems.aspx' } });
     fireEvent.blur(siteField);
 
-    expect(siteField).toHaveValue('/sites/CUCIntake');
+    // Full site URL is kept (so the Connection Bar can open it); the list name is auto-filled.
+    expect(siteField).toHaveValue('https://contoso.sharepoint.com/sites/CUCIntake');
     expect(screen.getByLabelText(/sharepoint list name/i)).toHaveValue('Jira-Intake');
   });
 

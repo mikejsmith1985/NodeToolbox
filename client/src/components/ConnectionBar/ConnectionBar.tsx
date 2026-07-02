@@ -9,6 +9,7 @@ import { useState, useRef, useEffect, useCallback, type MouseEvent as ReactMouse
 
 import { BookmarkletInstallLink } from '../BookmarkletInstallLink/index.tsx';
 import { openSnowRelay, SHAREPOINT_RELAY_BOOKMARKLET_CODE, SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts';
+import { readSharePointSiteUrl } from '../../services/sharePointSiteUrl.ts';
 import { useAdminStore } from '../../store/adminStore.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
 import styles from './ConnectionBar.module.css';
@@ -239,6 +240,8 @@ interface SharePointPanelProps {
  */
 function SharePointPanel({ isSharePointConnected, lastPingAt }: SharePointPanelProps) {
   const lastPingText = lastPingAt !== null ? new Date(lastPingAt).toLocaleTimeString() : null;
+  // The full site URL is configured in Jira Intake settings and bridged via localStorage.
+  const sharePointSiteUrl = readSharePointSiteUrl();
 
   function handleBookmarkletClick(clickEvent: ReactMouseEvent<HTMLAnchorElement>) {
     clickEvent.preventDefault();
@@ -246,6 +249,12 @@ function SharePointPanel({ isSharePointConnected, lastPingAt }: SharePointPanelP
       'Drag "NodeToolbox SharePoint Relay" to your browser bookmarks bar first. ' +
       'After your SharePoint site opens, click that bookmark from the SharePoint tab.',
     );
+  }
+
+  function handleOpenSharePoint() {
+    if (sharePointSiteUrl !== null) {
+      window.open(sharePointSiteUrl, '_blank', 'noopener,noreferrer');
+    }
   }
 
   return (
@@ -260,12 +269,21 @@ function SharePointPanel({ isSharePointConnected, lastPingAt }: SharePointPanelP
         <>
           <p className={styles.panelLabel}>To activate the relay bridge:</p>
           <ol className={styles.panelSteps}>
+            <li>
+              {sharePointSiteUrl !== null
+                ? <>Click <strong>Open SharePoint</strong> below (the site with the intake list), or open it yourself while logged in</>
+                : 'Open your SharePoint site (where the intake list lives) while logged in'}
+            </li>
             <li>Drag <strong>NodeToolbox SharePoint Relay</strong> to your bookmarks bar</li>
-            <li>Open your SharePoint site (where the intake list lives) while logged in</li>
             <li>Click that bookmark from the SharePoint tab; this indicator turns green</li>
           </ol>
 
           <div className={styles.panelActions}>
+            {sharePointSiteUrl !== null && (
+              <button className={styles.panelButton} onClick={handleOpenSharePoint}>
+                🔗 Open SharePoint
+              </button>
+            )}
             <BookmarkletInstallLink
               bookmarkletCode={SHAREPOINT_RELAY_BOOKMARKLET_CODE}
               className={styles.bookmarkletLink}
@@ -278,6 +296,7 @@ function SharePointPanel({ isSharePointConnected, lastPingAt }: SharePointPanelP
 
           <p className={styles.panelHint}>
             ⚠️ Do not click the bookmarklet here. Drag it to the bookmarks bar, then click it from the SharePoint tab.
+            {sharePointSiteUrl === null && ' (Set the SharePoint site URL in Jira Intake settings to enable "Open SharePoint".)'}
           </p>
         </>
       )}

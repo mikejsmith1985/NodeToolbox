@@ -132,11 +132,13 @@ export default function IntakeConfigPanel({ initialConfig, artProjectKeys, onSav
           className={styles.input}
           id="intake-sp-site"
           onBlur={() => {
-            // Accept a pasted full site OR list URL: reduce to the site-relative path and, when the
-            // List URL was pasted, auto-fill the list name if it is still empty.
+            // Accept a pasted full site OR list URL. Keep the FULL site URL when a host is present
+            // (so the Connection Bar can offer "Open SharePoint"); the pull still derives the site
+            // path from it. Also auto-fill the list name from a pasted List URL.
             const parsed = parseSharePointListUrl(sharePointSiteRelativeUrl);
-            if (parsed.siteRelativeUrl !== sharePointSiteRelativeUrl) {
-              setSharePointSiteRelativeUrl(parsed.siteRelativeUrl);
+            const nextValue = parsed.siteFullUrl ?? parsed.siteRelativeUrl;
+            if (nextValue !== sharePointSiteRelativeUrl) {
+              setSharePointSiteRelativeUrl(nextValue);
             }
             if (parsed.listName && sharePointListName.trim() === '') {
               setSharePointListName(parsed.listName);
