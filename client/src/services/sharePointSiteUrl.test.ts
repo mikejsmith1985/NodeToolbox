@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { readSharePointSiteUrl, saveSharePointSiteUrl } from './sharePointSiteUrl.ts';
+import { readSharePointListName, readSharePointSiteUrl, saveSharePointListName, saveSharePointSiteUrl } from './sharePointSiteUrl.ts';
 
 afterEach(() => { localStorage.clear(); });
 
@@ -21,5 +21,12 @@ describe('sharePointSiteUrl', () => {
     saveSharePointSiteUrl('https://contoso.sharepoint.com/sites/CUCIntake');
     saveSharePointSiteUrl(undefined);
     expect(readSharePointSiteUrl()).toBeNull();
+  });
+
+  it('stores, reads, and clears the list name', () => {
+    saveSharePointListName('Jira-Intake');
+    expect(readSharePointListName()).toBe('Jira-Intake');
+    saveSharePointListName('');
+    expect(readSharePointListName()).toBeNull();
   });
 });

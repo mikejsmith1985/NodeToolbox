@@ -8,14 +8,13 @@ import { useState } from 'react';
 import IntakeConfigPanel from './components/IntakeConfigPanel.tsx';
 import IntakeQueue from './components/IntakeQueue.tsx';
 import SharePointPullPanel from './components/SharePointPullPanel.tsx';
-import SharePointDiagnostics from './components/SharePointDiagnostics.tsx';
 import SubmissionDropzone from './components/SubmissionDropzone.tsx';
 import { useCreateFromSubmission } from './hooks/useCreateFromSubmission.ts';
 import { useIntakeConfig } from './hooks/useIntakeConfig.ts';
 import { useIntakeQueue } from './hooks/useIntakeQueue.ts';
 import { useSharePointPull } from './hooks/useSharePointPull.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
-import { saveSharePointSiteUrl } from '../../services/sharePointSiteUrl.ts';
+import { saveSharePointListName, saveSharePointSiteUrl } from '../../services/sharePointSiteUrl.ts';
 import styles from './JiraIntake.module.css';
 import type { IntakeConfig, QueueEntry } from './lib/intakeTypes.ts';
 
@@ -26,7 +25,7 @@ export default function JiraIntake() {
   const { createFromSubmission, createAllNew, reconcileExisting } = useCreateFromSubmission({ config, recordProcessed });
   const { pull, isPulling, errorMessage: pullError } = useSharePointPull(config);
   // Connection status comes from the shared store (Connection Bar drives connect; feature 008).
-  const isRelayConnected = useConnectionStore((state) => state.relayStatusBySystem.sharepoint?.isConnected ?? false);
+  const isRelayConnected = useConnectionStore((state) => state.relayStatusBySystem?.sharepoint?.isConnected ?? false);
 
   const [isEditingSettings, setIsEditingSettings] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -40,8 +39,10 @@ export default function JiraIntake() {
     setIsSaving(true);
     try {
       await saveConfig(nextConfig);
-      // Bridge the full site URL to the Connection Bar's "Open SharePoint" button (feature 007/008).
+      // Bridge the site URL + list name so the Connection Bar ("Open SharePoint") and the Admin Hub
+      // relay diagnostics can use them without loading the intake config (feature 007/008).
       saveSharePointSiteUrl(nextConfig.sharePointSiteRelativeUrl);
+      saveSharePointListName(nextConfig.sharePointListName);
       setIsEditingSettings(false);
     } finally {
       setIsSaving(false);
@@ -135,14 +136,6 @@ export default function JiraIntake() {
           isPulling={isPulling}
           statusMessage={pullError ?? pullWarning}
           onPull={() => { void handlePull(); }}
-        />
-      )}
-
-      {!shouldShowSettings && isSharePointConfigured && (
-        <SharePointDiagnostics
-          siteRelativeUrl={config?.sharePointSiteRelativeUrl ?? ''}
-          listName={config?.sharePointListName ?? ''}
-          isConnected={isRelayConnected}
         />
       )}
 

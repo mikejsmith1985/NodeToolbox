@@ -53,6 +53,7 @@ function formatLastDelivery(outcome?: DeliveryOutcome): string {
 }
 import type { ConnectivityConfigResult, ConnectionProbeResult } from '../../types/config.ts'
 import ClientDiagnosticsPanel from './ClientDiagnosticsPanel'
+import SharePointRelayDiagnosticsPanel from './SharePointRelayDiagnosticsPanel'
 import CredentialManagementSection from './CredentialManagementSection'
 import { CrgSubmissionDebugSection } from './CrgSubmissionDebugSection'
 import EnterpriseStandardsPanel from './EnterpriseStandardsPanel'
@@ -2872,6 +2873,7 @@ export default function AdminHubView() {
             onSetCollapsed={actions.setBackupSectionCollapsed}
           />
           <ClientDiagnosticsPanel />
+          <SharePointRelayDiagnosticsPanel />
           <TbxBackupRestoreSection />
           <ToolVisibilitySection />
         </section>

@@ -126,6 +126,10 @@ describe('browserRelay', () => {
       expect(SHAREPOINT_RELAY_BOOKMARKLET_CODE).toContain('credentials:"include"');
     });
 
+    it('bookmarklet returns the user to Toolbox via window.open("","toolbox") (no blank tab)', () => {
+      expect(SHAREPOINT_RELAY_BOOKMARKLET_CODE).toContain('window.open("","toolbox")');
+    });
+
     it('openSharePointRelay opens the site in a named window and returns true', () => {
       vi.spyOn(window, 'open').mockReturnValue({} as Window);
       expect(openSharePointRelay('https://contoso.sharepoint.com/sites/CUCIntake')).toBe(true);
