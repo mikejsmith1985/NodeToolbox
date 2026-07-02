@@ -3,8 +3,10 @@
 import { useEffect, useState } from 'react';
 
 import { jiraGet, jiraPost, jiraPut } from '../../services/jiraApi.ts';
-import type { JiraComment, JiraIssue, JiraTransition } from '../../types/jira.ts';
+import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
+import { useIssueComments } from '../../hooks/useIssueComments.ts';
+import CommentThread from '../CommentThread/CommentThread.tsx';
 import styles from './IssueDetailPanel.module.css';
 
 const DESCRIPTION_PREVIEW_LENGTH = 300;
@@ -17,13 +19,8 @@ const COMMENT_SUCCESS_LABEL = '✓ Posted';
 const STORY_POINTS_SUCCESS_LABEL = '✓ Saved';
 const TRANSITION_LOAD_ERROR_MESSAGE = 'Failed to load transitions';
 const COMMENT_POST_ERROR_MESSAGE = 'Failed to post comment';
-const COMMENT_LOAD_ERROR_MESSAGE = 'Failed to load comments';
 const STORY_POINTS_SAVE_ERROR_MESSAGE = 'Failed to save story points';
 const COMMENTS_SECTION_LABEL = 'Comments';
-const COMMENTS_LOADING_LABEL = 'Loading comments…';
-const NO_COMMENTS_LABEL = 'No comments yet.';
-const UNKNOWN_AUTHOR_LABEL = 'Unknown';
-const ISO_DATE_LENGTH = 10;
 
 export interface IssueDetailPanelProps {
   issue: JiraIssue;
@@ -77,51 +74,18 @@ function IssueDetailPanelContent({
   const [isPostingComment, setIsPostingComment] = useState(false);
   const [commentPostError, setCommentPostError] = useState<string | null>(null);
   const [commentPostSuccess, setCommentPostSuccess] = useState(false);
-  const [existingComments, setExistingComments] = useState<JiraComment[]>([]);
-  const [isLoadingComments, setIsLoadingComments] = useState(true);
-  const [commentsLoadError, setCommentsLoadError] = useState<string | null>(null);
-  // Bumping this token re-runs the comment-fetch effect so a freshly posted comment appears.
-  const [commentsRefreshToken, setCommentsRefreshToken] = useState(0);
+  // The full comment thread is loaded on demand and kept newest-first by the shared hook, so this
+  // panel shows the same complete, ordered history as every other comment location in the app.
+  const {
+    comments: existingComments,
+    isLoading: isLoadingComments,
+    loadError: commentsLoadError,
+    refresh: refreshComments,
+  } = useIssueComments(issue.key);
   const [storyPointsInput, setStoryPointsInput] = useState(String(issue.fields.customfield_10016 ?? ''));
   const [isSavingStoryPoints, setIsSavingStoryPoints] = useState(false);
   const [storyPointsSaveError, setStoryPointsSaveError] = useState<string | null>(null);
   const [storyPointsSaveSuccess, setStoryPointsSaveSuccess] = useState(false);
-
-  // Fetch the issue's existing comments so reviewers can read the discussion inline.
-  // Kept as an on-demand per-issue request (like transitions) so bulk issue lists are
-  // not bloated with full comment payloads for every row. The refresh token re-runs this
-  // after a new comment is posted so the just-added comment shows in the history.
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadComments() {
-      try {
-        const response = await jiraGet<{ comments: JiraComment[] }>(`/rest/api/2/issue/${issue.key}/comment`);
-        if (!isMounted) {
-          return;
-        }
-        setExistingComments(response.comments ?? []);
-        setCommentsLoadError(null);
-      } catch (caughtError) {
-        if (!isMounted) {
-          return;
-        }
-        const errorMessage = caughtError instanceof Error ? caughtError.message : COMMENT_LOAD_ERROR_MESSAGE;
-        setExistingComments([]);
-        setCommentsLoadError(errorMessage);
-      } finally {
-        if (isMounted) {
-          setIsLoadingComments(false);
-        }
-      }
-    }
-
-    void loadComments();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [issue.key, commentsRefreshToken]);
 
   useEffect(() => {
     let isMounted = true;
@@ -215,8 +179,8 @@ function IssueDetailPanelContent({
       await jiraPost(`/rest/api/2/issue/${issue.key}/comment`, { body: commentText });
       setCommentText('');
       setCommentPostSuccess(true);
-      // Reload so the freshly posted comment appears in the history below the form.
-      setCommentsRefreshToken((currentToken) => currentToken + 1);
+      // Reload so the freshly posted comment appears (pinned at the top, newest-first).
+      refreshComments();
       // Let parents react to a posted reply (e.g. the Mentions report auto-marks it addressed).
       onCommentPosted?.();
     } catch (caughtError) {
@@ -344,7 +308,7 @@ function IssueDetailPanelContent({
         <span className={styles.actionLabel}>
           {COMMENTS_SECTION_LABEL}{existingComments.length > 0 ? ` (${existingComments.length})` : ''}
         </span>
-        <CommentHistory
+        <CommentThread
           comments={existingComments}
           isLoading={isLoadingComments}
           loadError={commentsLoadError}
@@ -403,41 +367,5 @@ function IssueDetailPanelContent({
         {storyPointsSaveError && <span className={styles.errorMessage}>{storyPointsSaveError}</span>}
       </div>
     </section>
-  );
-}
-
-interface CommentHistoryProps {
-  comments: JiraComment[];
-  isLoading: boolean;
-  loadError: string | null;
-}
-
-/**
- * CommentHistory renders the issue's existing Jira comments read-only, with each
- * comment's author, date, and plain-text body, plus loading/error/empty states.
- */
-function CommentHistory({ comments, isLoading, loadError }: CommentHistoryProps) {
-  if (isLoading) {
-    return <p className={styles.commentEmpty}>{COMMENTS_LOADING_LABEL}</p>;
-  }
-  if (loadError) {
-    return <p className={styles.errorMessage}>{loadError}</p>;
-  }
-  if (comments.length === 0) {
-    return <p className={styles.commentEmpty}>{NO_COMMENTS_LABEL}</p>;
-  }
-
-  return (
-    <ul className={styles.commentList}>
-      {comments.map((comment) => (
-        <li className={styles.commentItem} key={comment.id}>
-          <div className={styles.commentMeta}>
-            <span className={styles.commentAuthor}>{comment.author?.displayName ?? UNKNOWN_AUTHOR_LABEL}</span>
-            <span className={styles.commentDate}>{comment.created?.slice(0, ISO_DATE_LENGTH) ?? ''}</span>
-          </div>
-          <p className={styles.commentBody}>{normalizeRichTextToPlainText(comment.body)}</p>
-        </li>
-      ))}
-    </ul>
   );
 }

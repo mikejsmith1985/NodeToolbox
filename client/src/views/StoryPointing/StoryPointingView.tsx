@@ -6,6 +6,7 @@
 // Multi-user relay/WebSocket voting is deferred until NodeToolbox has shared session
 // infrastructure.
 
+import IssueComments from '../../components/CommentThread/IssueComments.tsx';
 import {
   POINTING_SCALE,
   type StoryPointVote,
@@ -156,10 +157,11 @@ export default function StoryPointingView() {
                 </p>
               </div>
               <div className={styles.contextBlock}>
-                <h4 className={styles.contextBlockTitle}>Latest comment</h4>
-                <p className={styles.contextBody}>
-                  {pointingState.currentIssue.latestComment || 'No Jira comments were returned for this issue.'}
-                </p>
+                <h4 className={styles.contextBlockTitle}>Comments</h4>
+                <IssueComments
+                  issueKey={pointingState.currentIssue.key}
+                  emptyLabel="No Jira comments were returned for this issue."
+                />
               </div>
             </div>
           </details>

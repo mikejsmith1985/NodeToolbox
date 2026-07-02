@@ -1,0 +1,78 @@
+/* CommentThread.module.css — Scrollable comment-history window shared across all views. */
+
+/*
+ * The comment window is intentionally raised from its containing panel: the subtle gradient +
+ * inset border read as a distinct "field" without a heavy outline, and the tokens are defined for
+ * both light and dark themes in tokens.css so the treatment follows the active theme automatically.
+ */
+.commentList {
+  list-style: none;
+  margin: 0;
+  padding: var(--spacing-sm, 8px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm, 8px);
+  /* Bounded height keeps a long thread from growing the surrounding view; it scrolls instead. */
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--comment-window-bg, var(--color-field-bg, #161b22));
+  border: 1px solid var(--field-elevation-border, var(--color-border, #30363d));
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--field-elevation-shadow, none);
+}
+
+.commentItem {
+  border-left: 3px solid var(--color-border, #30363d);
+  padding-left: var(--spacing-sm, 8px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.commentMeta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm, 8px);
+  font-size: 0.75rem;
+}
+
+.commentAuthor {
+  color: var(--color-text-primary, #e6edf3);
+  font-weight: 600;
+}
+
+.commentDate {
+  color: var(--color-text-muted, #656d76);
+}
+
+.commentBody {
+  margin: 0;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-secondary, #8b949e);
+  /* Long comments wrap and stay inside the scrolling window rather than overflowing the layout. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.commentEmpty {
+  margin: 0;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-muted, #656d76);
+  font-style: italic;
+}
+
+.commentError {
+  margin: 0;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-error, #f85149);
+}
+
+/* When the user prefers more contrast or reduced transparency, drop the subtle gradient/shadow for a
+   solid field and a clearly visible border so the boundary never becomes hard to see. */
+@media (prefers-contrast: more) {
+  .commentList {
+    background: var(--color-field-bg, #161b22);
+    border-color: var(--color-border-strong, #30363d);
+    box-shadow: none;
+  }
+}

@@ -2433,6 +2433,13 @@
   word-break: break-word;
 }
 
+/* Wraps the inline comment window in the expanded pointing row. */
+.ptExpandedComments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs, 4px);
+}
+
 /* Inline save-state indicators inside table rows. */
 .ptSaveSuccess {
   color: var(--color-success, #4caf50);

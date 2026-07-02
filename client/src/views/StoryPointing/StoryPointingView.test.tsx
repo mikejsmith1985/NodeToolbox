@@ -13,6 +13,12 @@ vi.mock('./hooks/useStoryPointingState.ts', async () => {
   };
 });
 
+// Stub the connected comment window so this view test stays focused on the view; the comment
+// window's own fetch/render behavior is covered by CommentThread/useIssueComments tests.
+vi.mock('../../components/CommentThread/IssueComments.tsx', () => ({
+  default: ({ issueKey }: { issueKey: string }) => <div data-testid="issue-comments" data-issue-key={issueKey} />,
+}));
+
 import StoryPointingView from './StoryPointingView.tsx';
 import { useStoryPointingState, type StoryPointingIssue } from './hooks/useStoryPointingState.ts';
 
@@ -23,7 +29,6 @@ const SAMPLE_ISSUE: StoryPointingIssue = {
   summary: 'Build Story Pointing view',
   description: 'Facilitators can estimate one issue at a time.',
   acceptanceCriteria: 'Acceptance criteria are visible on demand.',
-  latestComment: 'Latest Jira comment.',
   issueType: 'Story',
   status: 'Ready',
   priority: 'High',
@@ -98,7 +103,7 @@ describe('StoryPointingView', () => {
     expect(screen.getByText('Build Story Pointing view')).toBeInTheDocument();
     expect(screen.getByText('Facilitators can estimate one issue at a time.')).toBeInTheDocument();
     expect(screen.getByText('Acceptance criteria are visible on demand.')).toBeInTheDocument();
-    expect(screen.getByText('Latest Jira comment.')).toBeInTheDocument();
+    expect(screen.getByTestId('issue-comments')).toHaveAttribute('data-issue-key', 'TBX-101');
     expect(screen.getByRole('button', { name: 'Vote 13 story points' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Vote unknown story points' })).toBeInTheDocument();
   });

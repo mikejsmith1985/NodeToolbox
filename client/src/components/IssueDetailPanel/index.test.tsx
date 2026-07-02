@@ -139,6 +139,20 @@ describe('IssueDetailPanel', () => {
     expect(screen.getByText('Jordan Reviewer')).toBeInTheDocument();
   });
 
+  it('shows all comments newest-first regardless of the fetched order', async () => {
+    // Deliberately supply the thread oldest-first; the panel must render newest at the top.
+    mockJiraGetByPath([
+      { id: '801', author: { displayName: 'Older Author' }, body: 'older comment body', created: '2025-01-01T00:00:00.000Z' },
+      { id: '802', author: { displayName: 'Newer Author' }, body: 'newer comment body', created: '2025-01-05T00:00:00.000Z' },
+    ]);
+    renderIssueDetailPanel();
+
+    const firstBody = await screen.findByText('newer comment body');
+    const secondBody = screen.getByText('older comment body');
+    // The newer comment appears before the older one in DOM order (newest pinned at top).
+    expect(firstBody.compareDocumentPosition(secondBody) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('shows an empty state when the issue has no comments', async () => {
     mockJiraGetByPath([]);
     renderIssueDetailPanel();
