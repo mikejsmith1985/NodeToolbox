@@ -28,10 +28,15 @@ describe('normalizeSitePath', () => {
 });
 
 describe('parseSharePointListUrl', () => {
-  it('reduces a full List URL to the site path and extracts the list name', () => {
+  it('reduces a full List URL to the site path, extracts the list name, and keeps a full site URL', () => {
     const parsed = parseSharePointListUrl('https://contoso.sharepoint.com/sites/CUCIntake/Lists/Jira-Intake/AllItems.aspx');
     expect(parsed.siteRelativeUrl).toBe('/sites/CUCIntake');
     expect(parsed.listName).toBe('Jira-Intake');
+    expect(parsed.siteFullUrl).toBe('https://contoso.sharepoint.com/sites/CUCIntake');
+  });
+
+  it('returns no full site URL for a bare site-relative path (no host)', () => {
+    expect(parseSharePointListUrl('/sites/CUCIntake').siteFullUrl).toBeUndefined();
   });
 
   it('reduces a full site URL (no list) to the site path', () => {

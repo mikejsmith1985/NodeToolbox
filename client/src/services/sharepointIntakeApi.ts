@@ -39,17 +39,21 @@ function nextRequestId(): string {
  * — into the site-relative path plus, when present, the List name. Lets the user paste the address
  * bar and have it "just work". Pure (no I/O).
  */
-export function parseSharePointListUrl(input: string): { siteRelativeUrl: string; listName?: string } {
+export function parseSharePointListUrl(input: string): { siteRelativeUrl: string; listName?: string; siteFullUrl?: string } {
   const trimmed = input.trim();
   if (trimmed === '') {
     return { siteRelativeUrl: '' };
   }
 
-  // Reduce a full URL to its path; keep a bare path as-is.
+  // Reduce a full URL to its path; keep a bare path as-is. Capture the origin so we can also return
+  // a full, openable site URL (used by the Connection Bar's "Open SharePoint" button).
   let path = trimmed;
+  let origin = '';
   if (/:\/\//.test(trimmed)) {
     try {
-      path = new URL(trimmed).pathname;
+      const parsedUrl = new URL(trimmed);
+      path = parsedUrl.pathname;
+      origin = parsedUrl.origin;
     } catch {
       path = trimmed;
     }
@@ -80,8 +84,10 @@ export function parseSharePointListUrl(input: string): { siteRelativeUrl: string
     sitePath = sitePath.replace(/\/[^/]*\.aspx$/i, '');
   }
 
-  const withLeadingSlash = sitePath === '' || sitePath.startsWith('/') ? sitePath : `/${sitePath}`;
-  return { siteRelativeUrl: withLeadingSlash.replace(/\/+$/, ''), listName };
+  const siteRelativeUrl = (sitePath === '' || sitePath.startsWith('/') ? sitePath : `/${sitePath}`).replace(/\/+$/, '');
+  // A full, openable site URL is available only when the input carried a host.
+  const siteFullUrl = origin !== '' ? `${origin}${siteRelativeUrl}` : undefined;
+  return { siteRelativeUrl, listName, siteFullUrl };
 }
 
 /** Normalizes a site-relative URL (accepts a full site/List URL too): leading slash, no trailing slash. */

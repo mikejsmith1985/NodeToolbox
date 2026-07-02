@@ -14,6 +14,7 @@ import { useIntakeConfig } from './hooks/useIntakeConfig.ts';
 import { useIntakeQueue } from './hooks/useIntakeQueue.ts';
 import { useSharePointPull } from './hooks/useSharePointPull.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
+import { saveSharePointSiteUrl } from '../../services/sharePointSiteUrl.ts';
 import styles from './JiraIntake.module.css';
 import type { IntakeConfig, QueueEntry } from './lib/intakeTypes.ts';
 
@@ -38,6 +39,8 @@ export default function JiraIntake() {
     setIsSaving(true);
     try {
       await saveConfig(nextConfig);
+      // Bridge the full site URL to the Connection Bar's "Open SharePoint" button (feature 007/008).
+      saveSharePointSiteUrl(nextConfig.sharePointSiteRelativeUrl);
       setIsEditingSettings(false);
     } finally {
       setIsSaving(false);

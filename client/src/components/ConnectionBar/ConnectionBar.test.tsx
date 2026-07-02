@@ -5,6 +5,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 
 import { useAdminStore } from '../../store/adminStore.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
+import { saveSharePointSiteUrl } from '../../services/sharePointSiteUrl.ts';
 import type { ProxyStatusResponse } from '../../types/config.ts';
 import { ConnectionBar } from './ConnectionBar.tsx';
 import styles from './ConnectionBar.module.css';
@@ -366,5 +367,24 @@ describe('ConnectionBar', () => {
 
     fireEvent.click(screen.getByText('SNow'));
     expect(screen.getByRole('region', { name: 'Connection details' }).textContent).toMatch(/not reachable|not connected/i);
+  });
+
+  it('offers "Open SharePoint" only when a full site URL is configured', () => {
+    // No configured URL → no Open button.
+    localStorage.clear();
+    const { unmount } = render(<ConnectionBar />);
+    fireEvent.click(screen.getByText('SharePoint'));
+    expect(screen.queryByRole('button', { name: /open sharepoint/i })).not.toBeInTheDocument();
+    unmount();
+
+    // Configured full URL → Open button opens it in a new tab.
+    saveSharePointSiteUrl('https://contoso.sharepoint.com/sites/CUCIntake');
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+    render(<ConnectionBar />);
+    fireEvent.click(screen.getByText('SharePoint'));
+    fireEvent.click(screen.getByRole('button', { name: /open sharepoint/i }));
+    expect(openSpy).toHaveBeenCalledWith('https://contoso.sharepoint.com/sites/CUCIntake', '_blank', 'noopener,noreferrer');
+    openSpy.mockRestore();
+    localStorage.clear();
   });
 });
