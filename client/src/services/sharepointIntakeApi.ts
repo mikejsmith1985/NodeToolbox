@@ -155,6 +155,93 @@ async function relayGet<ResponseBody>(path: string): Promise<ResponseBody> {
   return parseRelayData<ResponseBody>(result);
 }
 
+// ── Relay diagnostics ──
+
+export interface SharePointProbe {
+  /** Human label for the check (e.g. "Signed-in user (auth)"). */
+  label: string;
+  /** The REST path that was probed. */
+  path: string;
+  ok: boolean;
+  status: number;
+  /** A short success summary or SharePoint's own error text. */
+  detail: string;
+}
+
+/** Summarizes a successful probe body (login name / item count) without dumping raw JSON. */
+function summarizeProbeOk(rawBody: unknown): string {
+  if (typeof rawBody !== 'string') {
+    return 'OK';
+  }
+  try {
+    const parsed = JSON.parse(rawBody) as { LoginName?: string; ItemCount?: number; Title?: string };
+    if (parsed.LoginName) {
+      return `OK — ${parsed.LoginName}`;
+    }
+    if (typeof parsed.ItemCount === 'number') {
+      return `OK — ${parsed.ItemCount} item(s)`;
+    }
+  } catch {
+    // Non-JSON success — just report OK.
+  }
+  return 'OK';
+}
+
+/**
+ * Runs three escalating read probes through the relay to localize a 403: can the account read its
+ * own identity (auth), the list object (list permission), and the list schema (fields). Never
+ * throws — each probe returns its own status + message so the caller can render a full picture.
+ */
+export async function probeSharePoint(siteRelativeUrl: string, listName: string): Promise<SharePointProbe[]> {
+  const site = normalizeSitePath(siteRelativeUrl);
+  const encodedList = listName.replace(/'/g, "''"); // OData escapes a single quote by doubling it.
+  const probes = [
+    { label: 'Signed-in user (auth)', path: `${site}/_api/web/currentuser?$select=LoginName,IsSiteAdmin` },
+    { label: `List read ('${listName}')`, path: `${site}/_api/web/lists/getbytitle('${encodedList}')?$select=Title,ItemCount` },
+    { label: 'List fields (schema)', path: `${site}/_api/web/lists/getbytitle('${encodedList}')/fields?$select=Title&$top=1` },
+  ];
+
+  const results: SharePointProbe[] = [];
+  for (const probe of probes) {
+    const requestId = nextRequestId();
+    try {
+      await postRelayRequest({ sys: RELAY_SYSTEM, id: requestId, method: 'GET', path: probe.path });
+      const result = await waitForRelayResult(requestId, RELAY_SYSTEM);
+      results.push({
+        label: probe.label,
+        path: probe.path,
+        ok: result.ok,
+        status: result.status,
+        detail: result.ok ? summarizeProbeOk(result.data) : (extractSharePointErrorMessage(result.data) || result.error || 'Denied'),
+      });
+    } catch (caught) {
+      results.push({ label: probe.label, path: probe.path, ok: false, status: 0, detail: caught instanceof Error ? caught.message : 'Relay error' });
+    }
+  }
+  return results;
+}
+
+/**
+ * Turns probe results into a plain-English conclusion that points at the likely fix — mirrors the
+ * "how to read it" table so users don't need to interpret status codes themselves.
+ */
+export function interpretSharePointProbes(results: SharePointProbe[]): string {
+  if (results.length === 0) {
+    return '';
+  }
+  const [auth, listRead] = results;
+  if (results.every((probe) => probe.ok)) {
+    return '✅ All reads succeeded. If a pull still fails, this is a relay header/context issue — send this to the developer.';
+  }
+  if (results.every((probe) => !probe.ok)) {
+    return '⛔ REST is blocked for your account on this site — often a guest/external account or a tenant API lockdown. Try a member account, or ask a SharePoint admin.';
+  }
+  if (auth?.ok && listRead && !listRead.ok) {
+    return '🔑 You can sign in but cannot read the list — you likely see it via a shared link (Limited Access). Ask the site owner to grant your account Read on the list/site.';
+  }
+  return '⚠️ Mixed results — the first failing check above shows exactly where access stops.';
+}
+
 interface SharePointFieldsResponse {
   value?: Array<{ Title?: string; InternalName?: string }>;
 }
