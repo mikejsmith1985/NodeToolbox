@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { JiraIssue } from '../../types/jira.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
+import IssueComments from '../../components/CommentThread/IssueComments.tsx';
 import styles from './DsuBoardView.module.css';
 import { useDsuBoardState } from './hooks/useDsuBoardState.ts';
 import type {
@@ -22,7 +23,6 @@ import type { SnowLink, SnowLinksMap } from './hooks/useDsuSnowEnrichment.ts';
 
 const STALE_DAY_OPTIONS = [3, 5, 7, 10, 14] as const;
 const MAX_OVERLAY_LINK_COUNT = 5;
-const MAX_OVERLAY_COMMENT_COUNT = 3;
 
 interface DsuIssueLink {
   type?: { inward?: string; outward?: string; name?: string };
@@ -763,13 +763,6 @@ function createIssueLinkDescription(issueLink: DsuIssueLink): string {
   return issueLink.type?.name ?? 'Linked issue';
 }
 
-function createCommentPreview(issueComment: DsuIssueComment): string {
-  const normalizedCommentBody = normalizeRichTextToPlainText(issueComment.body ?? '');
-  const authorName = issueComment.author?.displayName ?? 'Unknown';
-  const createdDate = issueComment.created?.slice(0, 10) ?? 'Unknown date';
-  return `${authorName}: ${normalizedCommentBody} (${createdDate})`;
-}
-
 function IssueDetailOverlay({
   issue,
   availableTransitions,
@@ -789,7 +782,6 @@ function IssueDetailOverlay({
   const issueFields = getExtendedIssueFields(issue);
   const storyPoints = getStoryPoints(issueFields);
   const issueLinks = (issueFields.issuelinks ?? []).slice(0, MAX_OVERLAY_LINK_COUNT);
-  const recentComments = (issueFields.comment?.comments ?? []).slice(-MAX_OVERLAY_COMMENT_COUNT);
   const normalizedDescription = normalizeRichTextToPlainText(issue.fields.description);
   const descriptionPreview = normalizedDescription
     ? normalizedDescription.slice(0, 300) + (normalizedDescription.length > 300 ? '…' : '')
@@ -890,16 +882,10 @@ function IssueDetailOverlay({
           </div>
         )}
 
-        {recentComments.length > 0 && (
-          <div className={styles.overlayComments}>
-            <span className={styles.overlayLabel}>Recent comments</span>
-            {recentComments.map((issueComment) => (
-              <div key={issueComment.id} className={styles.overlayComment}>
-                {createCommentPreview(issueComment)}
-              </div>
-            ))}
-          </div>
-        )}
+        <div className={styles.overlayComments}>
+          <span className={styles.overlayLabel}>Comments</span>
+          <IssueComments issueKey={issue.key} />
+        </div>
 
         <div className={styles.overlaySection}>
           <label className={styles.overlayLabel} htmlFor="overlay-transition">Change Status</label>

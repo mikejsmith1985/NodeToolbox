@@ -26,6 +26,13 @@
   --color-table-header-bg: rgba(13, 17, 23, 0.94);
   --color-field-bg: rgba(17, 24, 39, 0.85);
   --color-field-bg-muted: rgba(17, 24, 39, 0.75);
+  /* Field depth: a subtle gradient + soft border/shadow so text boxes and the comment window read as
+     raised from the surrounding window without a heavy outline. Defined for both themes. */
+  --field-elevation-bg: linear-gradient(180deg, rgba(30, 38, 54, 0.92), rgba(17, 24, 39, 0.92));
+  --field-elevation-border: rgba(88, 166, 255, 0.24);
+  --field-elevation-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 1px 2px rgba(0, 0, 0, 0.32);
+  /* Comment window: slightly recessed relative to its containing panel so the scroll area is distinct. */
+  --comment-window-bg: linear-gradient(180deg, rgba(10, 14, 20, 0.72), rgba(13, 17, 23, 0.88));
   --color-overlay-backdrop: rgba(0, 0, 0, 0.6);
   --color-surface-highlight: rgba(255, 255, 255, 0.04);
   --color-icon-bg: linear-gradient(180deg, rgba(88, 166, 255, 0.18), rgba(88, 166, 255, 0.08));
@@ -131,6 +138,11 @@
   --color-table-header-bg: rgba(246, 248, 250, 0.96);
   --color-field-bg: rgba(255, 255, 255, 0.96);
   --color-field-bg-muted: rgba(246, 248, 250, 0.92);
+  /* Light-theme field depth: a white field raised on the off-white window, with a soft blue border. */
+  --field-elevation-bg: linear-gradient(180deg, #ffffff, rgba(246, 248, 250, 0.96));
+  --field-elevation-border: rgba(9, 105, 218, 0.22);
+  --field-elevation-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 1px 2px rgba(15, 23, 42, 0.08);
+  --comment-window-bg: linear-gradient(180deg, rgba(246, 248, 250, 0.98), rgba(234, 238, 242, 0.96));
   --color-overlay-backdrop: rgba(15, 23, 42, 0.28);
   --color-surface-highlight: rgba(255, 255, 255, 0.62);
   --color-icon-bg: linear-gradient(180deg, rgba(9, 105, 218, 0.14), rgba(9, 105, 218, 0.08));
@@ -165,6 +177,18 @@
   --shadow-deep: 0 24px 72px rgba(15, 23, 42, 0.14);
   --shadow-floating: 0 16px 40px rgba(15, 23, 42, 0.12);
   --shadow-surface: 0 10px 28px rgba(15, 23, 42, 0.1);
+}
+
+/* When the user asks for more contrast, drop the subtle gradients/shadows for solid fields with a
+   clearly visible border so field boundaries never become hard to see. Applies to both themes. */
+@media (prefers-contrast: more) {
+  :root,
+  [data-theme="light"] {
+    --field-elevation-bg: var(--color-field-bg);
+    --field-elevation-border: var(--color-border-strong);
+    --field-elevation-shadow: none;
+    --comment-window-bg: var(--color-field-bg);
+  }
 }
 
 [data-tool-text-size="large"] {

@@ -104,12 +104,15 @@
   min-width: 100px;
 }
 
+/* Fields use the shared elevation tokens so a text box reads as raised from the panel in both
+   themes; the fallbacks keep them legible if a token ever fails to resolve. */
 .select {
   flex: 1;
   padding: 4px 8px;
-  background: var(--color-input-bg, #161b22);
-  border: 1px solid var(--color-border, #30363d);
+  background: var(--field-elevation-bg, var(--color-input-bg, #161b22));
+  border: 1px solid var(--field-elevation-border, var(--color-border, #30363d));
   border-radius: 4px;
+  box-shadow: var(--field-elevation-shadow, none);
   color: var(--color-text-primary, #e6edf3);
   font-size: var(--font-size-sm, 0.875rem);
 }
@@ -118,9 +121,10 @@
   width: 100%;
   min-height: 60px;
   padding: 6px 8px;
-  background: var(--color-input-bg, #161b22);
-  border: 1px solid var(--color-border, #30363d);
+  background: var(--field-elevation-bg, var(--color-input-bg, #161b22));
+  border: 1px solid var(--field-elevation-border, var(--color-border, #30363d));
   border-radius: 4px;
+  box-shadow: var(--field-elevation-shadow, none);
   color: var(--color-text-primary, #e6edf3);
   font-size: var(--font-size-sm, 0.875rem);
   resize: vertical;
@@ -131,9 +135,10 @@
 .pointsInput {
   width: 80px;
   padding: 4px 8px;
-  background: var(--color-input-bg, #161b22);
-  border: 1px solid var(--color-border, #30363d);
+  background: var(--field-elevation-bg, var(--color-input-bg, #161b22));
+  border: 1px solid var(--field-elevation-border, var(--color-border, #30363d));
   border-radius: 4px;
+  box-shadow: var(--field-elevation-shadow, none);
   color: var(--color-text-primary, #e6edf3);
   font-size: var(--font-size-sm, 0.875rem);
   text-align: center;
@@ -168,53 +173,4 @@
   border: none;
   border-top: 1px solid var(--color-border, #30363d);
   margin: 0;
-}
-
-.commentList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm, 8px);
-  max-height: 240px;
-  overflow-y: auto;
-}
-
-.commentItem {
-  border-left: 3px solid var(--color-border, #30363d);
-  padding-left: var(--spacing-sm, 8px);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.commentMeta {
-  display: flex;
-  align-items: baseline;
-  gap: var(--spacing-sm, 8px);
-  font-size: 0.75rem;
-}
-
-.commentAuthor {
-  color: var(--color-text-primary, #e6edf3);
-  font-weight: 600;
-}
-
-.commentDate {
-  color: var(--color-text-muted, #656d76);
-}
-
-.commentBody {
-  margin: 0;
-  font-size: var(--font-size-sm, 0.875rem);
-  color: var(--color-text-secondary, #8b949e);
-  white-space: pre-wrap;
-}
-
-.commentEmpty {
-  margin: 0;
-  font-size: var(--font-size-sm, 0.875rem);
-  color: var(--color-text-muted, #656d76);
-  font-style: italic;
 }

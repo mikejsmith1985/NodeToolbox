@@ -21,6 +21,7 @@ import {
   YAxis,
 } from 'recharts';
 
+import IssueComments from '../../components/CommentThread/IssueComments.tsx';
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
 import JiraFieldPicker from '../../components/JiraFieldPicker/index.tsx';
 import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
@@ -3828,14 +3829,10 @@ function PointingTableRow({
                 {detail.acceptanceCriteria && (
                   <p><strong>Acceptance Criteria:</strong>{' '}<span className={styles.ptExpandedBody}>{detail.acceptanceCriteria}</span></p>
                 )}
-                {detail.comments.length > 0 && (
-                  <p>
-                    <strong>Latest comment:</strong>{' '}
-                    <span className={styles.ptExpandedBody}>
-                      {normalizeCommentBody(detail.comments[detail.comments.length - 1].body)}
-                    </span>
-                  </p>
-                )}
+                <div className={styles.ptExpandedComments}>
+                  <strong>Comments</strong>
+                  <IssueComments issueKey={issueKey} />
+                </div>
               </div>
             )}
           </td>

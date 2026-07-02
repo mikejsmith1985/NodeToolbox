@@ -9,7 +9,8 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **sharepoint-relay-pull** (Phase 2B of teams-jira-intake) — plan: `specs/007-sharepoint-relay-pull/plan.md`
+- **jira-comments-ux** (unify Jira comment display into one full scrollable window + themed field
+  depth) — plan: `specs/008-jira-comments-ux/plan.md`
   (spec, research, data-model, contracts, quickstart in the same directory).
 <!-- SPECKIT END -->
 
