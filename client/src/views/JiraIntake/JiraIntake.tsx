@@ -8,6 +8,7 @@ import { useState } from 'react';
 import IntakeConfigPanel from './components/IntakeConfigPanel.tsx';
 import IntakeQueue from './components/IntakeQueue.tsx';
 import SharePointPullPanel from './components/SharePointPullPanel.tsx';
+import SharePointDiagnostics from './components/SharePointDiagnostics.tsx';
 import SubmissionDropzone from './components/SubmissionDropzone.tsx';
 import { useCreateFromSubmission } from './hooks/useCreateFromSubmission.ts';
 import { useIntakeConfig } from './hooks/useIntakeConfig.ts';
@@ -134,6 +135,14 @@ export default function JiraIntake() {
           isPulling={isPulling}
           statusMessage={pullError ?? pullWarning}
           onPull={() => { void handlePull(); }}
+        />
+      )}
+
+      {!shouldShowSettings && isSharePointConfigured && (
+        <SharePointDiagnostics
+          siteRelativeUrl={config?.sharePointSiteRelativeUrl ?? ''}
+          listName={config?.sharePointListName ?? ''}
+          isConnected={isRelayConnected}
         />
       )}
 

@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { postRelayRequest, waitForRelayResult } from './relayBridgeApi.ts';
-import { fetchListItems, normalizeSitePath, parseSharePointListUrl, resolveListFieldMap } from './sharepointIntakeApi.ts';
+import { fetchListItems, interpretSharePointProbes, normalizeSitePath, parseSharePointListUrl, probeSharePoint, resolveListFieldMap, type SharePointProbe } from './sharepointIntakeApi.ts';
 
 vi.mock('./relayBridgeApi.ts', () => ({ postRelayRequest: vi.fn(), waitForRelayResult: vi.fn() }));
 const postRequestMock = vi.mocked(postRelayRequest);
@@ -92,5 +92,40 @@ describe('fetchListItems', () => {
   it('rejects when the relay reports a non-ok result', async () => {
     waitResultMock.mockResolvedValueOnce({ id: 'x', ok: false, status: 403, data: null, error: 'Access denied' });
     await expect(fetchListItems(SOURCE, new Map([['id', 'id']]))).rejects.toThrow(/403|Access denied/);
+  });
+});
+
+describe('probeSharePoint', () => {
+  it('runs the three read probes and reports each status without throwing', async () => {
+    waitResultMock.mockResolvedValueOnce({ id: '1', ok: true, status: 200, data: JSON.stringify({ LoginName: 'i:0#.f|m|jo@contoso.com' }), error: null });
+    waitResultMock.mockResolvedValueOnce({ id: '2', ok: true, status: 200, data: JSON.stringify({ Title: 'Jira-Intake', ItemCount: 12 }), error: null });
+    waitResultMock.mockResolvedValueOnce({ id: '3', ok: false, status: 403, data: JSON.stringify({ 'odata.error': { message: { value: 'Attempted to perform an unauthorized operation.' } } }), error: null });
+
+    const results = await probeSharePoint('/sites/CleanUpCrew', 'Jira-Intake');
+
+    expect(results).toHaveLength(3);
+    expect(results[0]).toMatchObject({ ok: true, status: 200 });
+    expect(results[0].detail).toContain('jo@contoso.com');
+    expect(results[1].detail).toContain('12 item');
+    expect(results[2]).toMatchObject({ ok: false, status: 403 });
+    expect(results[2].detail).toMatch(/unauthorized operation/i);
+    // Escapes the list title into getbytitle for all list-scoped probes.
+    expect(postRequestMock.mock.calls[1][0].path).toContain("getbytitle('Jira-Intake')");
+  });
+});
+
+describe('interpretSharePointProbes', () => {
+  const probe = (ok: boolean): SharePointProbe => ({ label: 'x', path: '/p', ok, status: ok ? 200 : 403, detail: ok ? 'OK' : 'Denied' });
+
+  it('flags a relay/context issue when everything succeeds', () => {
+    expect(interpretSharePointProbes([probe(true), probe(true), probe(true)])).toMatch(/relay header\/context|developer/i);
+  });
+
+  it('flags an account/tenant block when everything fails', () => {
+    expect(interpretSharePointProbes([probe(false), probe(false), probe(false)])).toMatch(/guest|tenant|blocked/i);
+  });
+
+  it('flags a list-permission issue when auth works but the list read fails', () => {
+    expect(interpretSharePointProbes([probe(true), probe(false), probe(false)])).toMatch(/shared link|Read on the list/i);
   });
 });
