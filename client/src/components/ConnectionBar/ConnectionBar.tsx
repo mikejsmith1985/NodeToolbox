@@ -8,7 +8,7 @@
 import { useState, useRef, useEffect, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
 
 import { BookmarkletInstallLink } from '../BookmarkletInstallLink/index.tsx';
-import { openSnowRelay, SHAREPOINT_RELAY_BOOKMARKLET_CODE, SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts';
+import { openSharePointRelay, openSnowRelay, SHAREPOINT_RELAY_BOOKMARKLET_CODE, SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts';
 import { readSharePointSiteUrl } from '../../services/sharePointSiteUrl.ts';
 import { useAdminStore } from '../../store/adminStore.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
@@ -253,7 +253,9 @@ function SharePointPanel({ isSharePointConnected, lastPingAt }: SharePointPanelP
 
   function handleOpenSharePoint() {
     if (sharePointSiteUrl !== null) {
-      window.open(sharePointSiteUrl, '_blank', 'noopener,noreferrer');
+      // Open in a named window in the SAME browsing-context group (no noopener) so the bookmarklet's
+      // window.open("","toolbox") can focus Toolbox back afterwards — matches the ServiceNow flow.
+      openSharePointRelay(sharePointSiteUrl);
     }
   }
 
@@ -352,7 +354,7 @@ export function ConnectionBar() {
   const lastPingAt = relayBridgeStatus?.lastPingAt ?? null;
   const hasSessionToken = relayBridgeStatus?.hasSessionToken ?? false;
   // SharePoint relay status is tracked per-system (feature 008) so it never clobbers ServiceNow.
-  const sharePointRelayStatus = useConnectionStore((state) => state.relayStatusBySystem.sharepoint);
+  const sharePointRelayStatus = useConnectionStore((state) => state.relayStatusBySystem?.sharepoint);
   const isSharePointConnected = sharePointRelayStatus?.isConnected ?? false;
   const sharePointLastPingAt = sharePointRelayStatus?.lastPingAt ?? null;
 

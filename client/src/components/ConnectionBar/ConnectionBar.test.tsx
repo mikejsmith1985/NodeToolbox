@@ -10,14 +10,16 @@ import type { ProxyStatusResponse } from '../../types/config.ts';
 import { ConnectionBar } from './ConnectionBar.tsx';
 import styles from './ConnectionBar.module.css';
 
-const { openSnowRelayMock } = vi.hoisted(() => ({
+const { openSnowRelayMock, openSharePointRelayMock } = vi.hoisted(() => ({
   openSnowRelayMock: vi.fn(),
+  openSharePointRelayMock: vi.fn(),
 }));
 
 vi.mock('../../services/browserRelay.ts', () => ({
   SNOW_RELAY_BOOKMARKLET_CODE: 'javascript:mockRelay()',
   SHAREPOINT_RELAY_BOOKMARKLET_CODE: 'javascript:mockSharePointRelay()',
   openSnowRelay: openSnowRelayMock,
+  openSharePointRelay: openSharePointRelayMock,
 }));
 
 // ── Helpers ──
@@ -377,14 +379,13 @@ describe('ConnectionBar', () => {
     expect(screen.queryByRole('button', { name: /open sharepoint/i })).not.toBeInTheDocument();
     unmount();
 
-    // Configured full URL → Open button opens it in a new tab.
+    // Configured full URL → Open button opens it via the named-window relay helper (same
+    // browsing-context group as SNow, so the bookmarklet can focus Toolbox back afterwards).
     saveSharePointSiteUrl('https://contoso.sharepoint.com/sites/CUCIntake');
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
     render(<ConnectionBar />);
     fireEvent.click(screen.getByText('SharePoint'));
     fireEvent.click(screen.getByRole('button', { name: /open sharepoint/i }));
-    expect(openSpy).toHaveBeenCalledWith('https://contoso.sharepoint.com/sites/CUCIntake', '_blank', 'noopener,noreferrer');
-    openSpy.mockRestore();
+    expect(openSharePointRelayMock).toHaveBeenCalledWith('https://contoso.sharepoint.com/sites/CUCIntake');
     localStorage.clear();
   });
 });
