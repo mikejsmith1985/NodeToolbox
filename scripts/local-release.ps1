@@ -11,6 +11,10 @@
 #   .\scripts\local-release.ps1 minor            # bump minor version, then release
 #   .\scripts\local-release.ps1 major            # bump major version, then release
 #   .\scripts\local-release.ps1 patch -DryRun    # preview without writing anything
+#   .\scripts\local-release.ps1 patch -KeepBranch # release but keep the feature branch
+#
+# After publishing, the merged feature branch is deleted (local + remote) by
+# default so branches don't accumulate; pass -KeepBranch to preserve it.
 #
 # Requirements:
 #   - Node.js + npm on PATH
@@ -27,7 +31,13 @@ param(
     [string]$BumpType = '',
 
     # Preview mode — prints the plan without installing, building, tagging, or publishing.
-    [switch]$DryRun
+    [switch]$DryRun,
+
+    # Keep the feature branch after release. By default the script deletes the
+    # just-merged feature branch (locally and on the remote) once the release is
+    # published, because its work now lives on main and the branch is only clutter.
+    # Pass -KeepBranch to preserve it (e.g. when continuing work on the same branch).
+    [switch]$KeepBranch
 )
 
 # $ErrorActionPreference = 'Stop' causes PowerShell cmdlet errors to terminate
@@ -114,6 +124,11 @@ if ($DryRun) {
     Write-Host "  4. pkg                   - build self-contained payload exe at $PayloadExeOutputPath"
     Write-Host "  5. Compress-Archive      - bundle one user-facing zip into $ReleaseZipOutputPath"
     Write-Host "  6. gh release create     - publish GitHub Release $GitTag with the single zip asset"
+    if ($KeepBranch) {
+        Write-Host "  7. (branch kept)         - -KeepBranch set; feature branch is preserved"
+    } else {
+        Write-Host "  7. git branch delete     - delete the merged feature branch (local + remote), stay on main"
+    }
     Write-Host ""
     Write-Host "  Version:    $AppVersion"
     Write-Host "  Tag:        $GitTag"
@@ -300,11 +315,9 @@ try {
     git push origin $GitTag
     if ($LASTEXITCODE -ne 0) { throw "git push tag failed with exit code $LASTEXITCODE" }
 
-    # Return to the original feature branch so the developer's workspace is unchanged.
-    # git writes "Switched to branch '...'" to stderr even on success, which triggers a
-    # NativeCommandError under $ErrorActionPreference = 'Stop'. The --quiet flag suppresses
-    # that informational message; the try/catch handles any residual stderr output safely.
-    try { git checkout --quiet $originalBranch } catch { <# stderr noise from git, not a real error #> }
+    # Stay on main for the publish + branch-cleanup steps below. The workspace is
+    # restored to a sensible branch afterward (either the original feature branch
+    # when -KeepBranch is set, or main once the merged branch is deleted).
 
     # Create the GitHub Release with one asset so first-time users have exactly
     # one obvious download. The zip contains stable launchers plus the versioned exe.
@@ -313,6 +326,36 @@ try {
         --generate-notes `
         --latest
     if ($LASTEXITCODE -ne 0) { throw "gh release create failed with exit code $LASTEXITCODE" }
+
+    # ── Step 7: Feature-branch cleanup ──────────────────────────────────────────
+    # The feature branch is now fully merged into main and its release is live, so
+    # the branch is redundant. Delete it locally and on the remote to keep the repo
+    # clean (unless -KeepBranch was passed, or we released directly from main).
+    $ProtectedBranchNames = @('main', 'master')
+    $isReleasingFromMain  = $ProtectedBranchNames -contains $originalBranch
+    $hasOriginalBranch    = -not [string]::IsNullOrWhiteSpace($originalBranch)
+
+    if ($KeepBranch -or $isReleasingFromMain -or (-not $hasOriginalBranch)) {
+        # Preserve the branch: return the developer to it so their workspace is
+        # unchanged. --quiet suppresses git's "Switched to branch" stderr note,
+        # which would otherwise trip $ErrorActionPreference = 'Stop'.
+        if ($hasOriginalBranch -and -not $isReleasingFromMain) {
+            try { git checkout --quiet $originalBranch } catch { <# stderr noise, not a real error #> }
+        }
+    } else {
+        Write-Host "  [7/7] Deleting merged feature branch '$originalBranch'..."
+
+        # Delete the local branch. -d (not -D) is a safety net: it refuses to delete
+        # a branch that is NOT fully merged, so an unexpected state can never silently
+        # discard work. The merge above guarantees it is reachable from main.
+        try { git branch -d $originalBranch | Out-Null } catch { <# guarded below #> }
+
+        # Delete the remote branch. Wrapped in try/catch because git exits non-zero
+        # (tripping 'Stop') when the branch was never pushed to the remote.
+        try { git push origin --delete $originalBranch 2>$null } catch { <# no remote branch to delete #> }
+
+        Write-Host "       ✅ Feature branch cleaned up (now on main)"
+    }
 } finally {
     Pop-Location
 }
