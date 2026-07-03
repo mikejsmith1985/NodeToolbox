@@ -93,7 +93,7 @@ the Parking Lot yields an exact, at-a-glance paused count.
 - [X] T021 [US2] Implement `client/src/views/FeatureCanvas/logic/wip.ts` (pure `WipSnapshot`) to pass T020
 - [X] T022 [US2] Add Stage 2 controls to CoachPanel: WIP-limit input persisted to `overlay.wipLimit`, and an overflow flag on the board when exceeded
 - [X] T023 [US2] Implement the Parking Lot container (singleton per overlay) with drag-to-park, `isParked` mirror, and an always-visible paused count/list
-- [ ] T024 [P] [US2] Write component test in `client/src/views/FeatureCanvas/canvas/__tests__/parkingLot.test.tsx`: setting a limit surfaces overflow; parking a node updates both counts
+- [X] T024 [P] [US2] Write component test in `client/src/views/FeatureCanvas/canvas/__tests__/parkingLot.test.tsx`: setting a limit surfaces overflow; parking a node updates both counts
 
 **Checkpoint**: Active set is bounded and the paused set is explicit and communicable.
 
@@ -124,7 +124,7 @@ increments, and no Jira field changes.
 - [X] T028 [P] [US4] Write RED unit tests in `client/src/views/FeatureCanvas/logic/__tests__/sizing.test.ts`: default S1/M3/L5/XL8 mapping, editable mapping, size↔points resolution
 - [X] T029 [US4] Implement `client/src/views/FeatureCanvas/logic/sizing.ts` to pass T028
 - [X] T030 [US4] Add the node size control (assign S/M/L/XL without opening the issue); show existing story points as-is; compute `effectivePoints`
-- [ ] T031 [P] [US4] Write component test in `client/src/views/FeatureCanvas/canvas/__tests__/sizing.test.tsx`: sizing an unpointed node persists the size and it contributes to a container total
+- [X] T031 [P] [US4] Write component test in `client/src/views/FeatureCanvas/canvas/__tests__/sizing.test.tsx`: sizing an unpointed node persists the size and it contributes to a container total
 
 **Checkpoint**: Every in-scope node is orderable and sized; capacity math is possible.
 
@@ -188,10 +188,10 @@ a malformed reply errors and changes nothing.
 
 ## Phase 10: Polish & Cross-Cutting Concerns
 
-- [ ] T048 [P] Performance pass: confirm the canvas stays interactive at ≥200 nodes (SC-8) — verify React Flow `onlyRenderVisibleElements`/viewport culling and node memoization
+- [X] T048 [P] Performance pass: confirm the canvas stays interactive at ≥200 nodes (SC-8) — verify React Flow `onlyRenderVisibleElements`/viewport culling and node memoization
 - [X] T049 [P] Add a `CHANGELOG.md` entry describing the Feature Canvas (Article VI)
-- [ ] T050 Resume validation (Story F / SC-10): close & reopen the canvas → all positions, sizes, priorities, container assignments, and the Parking Lot restore, and the coach resumes at the saved stage
-- [ ] T051 Run `quickstart.md` scenarios V1–V11 end to end (both AI-locked and AI-unlocked) and fix any gaps
+- [X] T050 Resume validation (Story F / SC-10): close & reopen the canvas → all positions, sizes, priorities, container assignments, and the Parking Lot restore, and the coach resumes at the saved stage
+- [X] T051 Run `quickstart.md` scenarios V1–V11 end to end (both AI-locked and AI-unlocked) and fix any gaps
 - [X] T052 [P] Accessibility/keyboard pass on the coach and canvas controls; ensure `npm run lint` and `npm run build` are green
 
 ---

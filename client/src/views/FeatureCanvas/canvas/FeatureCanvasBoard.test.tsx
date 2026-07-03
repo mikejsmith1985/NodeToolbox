@@ -61,4 +61,19 @@ describe('FeatureCanvasBoard', () => {
     expect(screen.getAllByTestId('rf-feature')).toHaveLength(3);
     expect(screen.getByText('DENP-1')).toBeInTheDocument();
   });
+
+  it('renders a 200-node backlog (SC-8 scale)', () => {
+    const manyNodes = Array.from({ length: 200 }, (_unused, index) => buildNode(`DENP-${index}`));
+    render(
+      <FeatureCanvasBoard
+        canvasNodes={manyNodes}
+        containers={[]}
+        capacities={new Map()}
+        onSelect={vi.fn()}
+        onPositionChange={vi.fn()}
+        onDropIntoContainer={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByTestId('rf-feature')).toHaveLength(200);
+  });
 });

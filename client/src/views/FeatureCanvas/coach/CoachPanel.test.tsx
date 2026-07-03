@@ -58,4 +58,25 @@ describe('CoachPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /AI suggestions/ }));
     expect(onOpenAi).toHaveBeenCalled();
   });
+
+  it('sets a WIP limit and parks the selected node in the Stabilize stage', () => {
+    const controller = buildController('stabilize');
+    const wipWithOverflow = { inProgressCount: 12, limit: 3, overflow: 7, parkedCount: 0 };
+    render(<CoachPanel controller={controller} selectedNode={buildSelectedNode()} wip={wipWithOverflow} onAddContainer={vi.fn()} onOpenCommit={vi.fn()} isAiUnlocked={false} onOpenAi={vi.fn()} />);
+
+    expect(screen.getByText(/7 over limit/)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '5' } });
+    expect(controller.setWipLimit).toHaveBeenCalledWith(5);
+
+    fireEvent.click(screen.getByRole('button', { name: /Park selected/ }));
+    expect(controller.setParked).toHaveBeenCalledWith('DENP-1', true);
+  });
+
+  it('assigns a relative size to the selected node in the Size stage', () => {
+    const controller = buildController('size');
+    render(<CoachPanel controller={controller} selectedNode={buildSelectedNode()} wip={NO_WIP} onAddContainer={vi.fn()} onOpenCommit={vi.fn()} isAiUnlocked={false} onOpenAi={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'L' }));
+    expect(controller.setSize).toHaveBeenCalledWith('DENP-1', 'L');
+  });
 });
