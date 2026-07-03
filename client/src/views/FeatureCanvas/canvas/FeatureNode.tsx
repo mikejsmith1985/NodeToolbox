@@ -1,0 +1,88 @@
+// FeatureNode.tsx — Renders one feature as a card node on the canvas.
+//
+// The card shows everything a user needs to triage at a glance: key, summary, a status-category
+// color stripe, relative size or points, feature health, priority bucket, and a hygiene-flag
+// badge when the reused hygiene checks found problems. Interaction (sizing, prioritizing,
+// parking) happens in the CoachPanel against the selected node, keeping this component display-only.
+
+import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
+
+import type { CanvasNode } from '../logic/canvasTypes.ts';
+
+/** React Flow node data payload for a feature card. */
+export interface FeatureNodeData {
+  node: CanvasNode;
+  [key: string]: unknown;
+}
+
+/** A React Flow node typed to carry feature data. */
+export type FeatureRfNode = Node<FeatureNodeData, 'feature'>;
+
+// Status-category → stripe color, matching the product's WIP zone semantics.
+const STATUS_CATEGORY_COLORS: Record<string, string> = {
+  new: '#6b7280',
+  indeterminate: '#3b82f6',
+  done: '#22c55e',
+};
+
+// Feature-health → accent color.
+const HEALTH_COLORS: Record<string, string> = {
+  green: '#22c55e',
+  yellow: '#eab308',
+  red: '#ef4444',
+  blue: '#3b82f6',
+  gray: '#6b7280',
+};
+
+/** Formats the capacity chip: overlay size (if set) else live points else a dash. */
+function formatSizeChip(node: CanvasNode): string {
+  if (node.size !== null) {
+    return `${node.size} · ${node.effectivePoints}pt`;
+  }
+  return node.storyPoints !== null ? `${node.storyPoints}pt` : '—';
+}
+
+/** Custom React Flow node: a feature triage card. */
+export function FeatureNode({ data, selected }: NodeProps<FeatureRfNode>): React.JSX.Element {
+  const { node } = data;
+  const stripeColor = STATUS_CATEGORY_COLORS[node.statusCategoryKey ?? 'new'] ?? STATUS_CATEGORY_COLORS.new;
+  const healthColor = HEALTH_COLORS[node.health] ?? HEALTH_COLORS.gray;
+  const errorFlagCount = node.hygieneFlags.filter((flag) => flag.severity === 'error').length;
+
+  return (
+    <div
+      style={{
+        width: 240,
+        borderRadius: 8,
+        border: `2px solid ${selected ? '#8b5cf6' : 'rgba(148,163,184,0.4)'}`,
+        borderLeft: `6px solid ${stripeColor}`,
+        background: 'var(--tbx-canvas-node-bg, #1e293b)',
+        color: 'var(--tbx-canvas-node-fg, #e2e8f0)',
+        padding: '8px 10px',
+        opacity: node.isParked ? 0.6 : 1,
+        fontSize: 12,
+      }}
+    >
+      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+        <strong>{node.issueKey}</strong>
+        <span title="Feature health" style={{ color: healthColor }}>●</span>
+      </div>
+      <div style={{ margin: '4px 0', lineHeight: 1.3 }}>{node.summary}</div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ background: 'rgba(148,163,184,0.2)', borderRadius: 4, padding: '1px 6px' }}>{formatSizeChip(node)}</span>
+        {node.priority !== null && (
+          <span style={{ background: 'rgba(139,92,246,0.25)', borderRadius: 4, padding: '1px 6px' }}>{node.priority}</span>
+        )}
+        {node.completionPercent > 0 && <span>{node.completionPercent}%</span>}
+        {node.hygieneFlags.length > 0 && (
+          <span title={node.hygieneFlags.map((flag) => flag.label).join(', ')} style={{ color: errorFlagCount > 0 ? '#ef4444' : '#eab308' }}>
+            ⚑ {node.hygieneFlags.length}
+          </span>
+        )}
+        {node.isParked && <span title="Parked">⏸</span>}
+      </div>
+      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
+    </div>
+  );
+}

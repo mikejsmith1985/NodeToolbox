@@ -9,8 +9,9 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **sharepoint-connection-bar** (unify SharePoint relay connect into the Connection Bar) —
-  plan: `specs/008-sharepoint-connection-bar/plan.md`
+- **feature-canvas** (visual drag-and-drop backlog triage & planning board with a
+  five-stage coaching journey; sandbox overlay + Review & Commit; hidden AI accelerator) —
+  plan: `specs/009-feature-canvas/plan.md`
   (spec, research, data-model, contracts, quickstart in the same directory).
 <!-- SPECKIT END -->
 
