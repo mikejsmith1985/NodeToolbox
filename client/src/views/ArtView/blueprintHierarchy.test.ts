@@ -13,6 +13,7 @@ vi.mock('../../services/jiraApi.ts', () => ({
 import type { ArtTeam } from './hooks/useArtData.ts';
 import {
   fetchBlueprintHierarchy,
+  fetchFeatureNodesByKeys,
   filterProgramEpicsBySearch,
   flattenProgramEpicFeatures,
 } from './blueprintHierarchy.ts';
@@ -544,5 +545,60 @@ describe('blueprintHierarchy', () => {
     ]);
 
     expect(flattenedFeatures.map((feature) => feature.key)).toEqual(['FEAT-1', 'FEAT-2']);
+  });
+});
+
+describe('fetchFeatureNodesByKeys', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    localStorage.clear();
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ featureLinkField: 'customfield_10108', piFieldId: 'customfield_10301' }));
+  });
+
+  it('returns an empty array when given no keys (no queries run)', async () => {
+    expect(await fetchFeatureNodesByKeys([])).toEqual([]);
+    expect(mockJiraGet).not.toHaveBeenCalled();
+  });
+
+  it('builds a feature node with health/completion computed from its children', async () => {
+    mockJiraGet.mockImplementation((path: string) => {
+      const decoded = decodeURIComponent(path);
+      if (decoded.includes('key in (')) {
+        return Promise.resolve({ issues: [{ key: 'F-1', fields: { summary: 'Feature One', status: { name: 'In Progress' } } }] });
+      }
+      // Child discovery (Epic Link / parent).
+      return Promise.resolve({
+        issues: [
+          { key: 'S-1', fields: { summary: 'S1', status: { name: 'Done', statusCategory: { key: 'done' } }, parent: { key: 'F-1' }, customfield_10016: 3 } },
+          { key: 'S-2', fields: { summary: 'S2', status: { name: 'To Do', statusCategory: { key: 'new' } }, parent: { key: 'F-1' }, customfield_10016: 2 } },
+        ],
+      });
+    });
+
+    const nodes = await fetchFeatureNodesByKeys(['F-1']);
+
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].key).toBe('F-1');
+    expect(nodes[0].summary).toBe('Feature One');
+    // Two children, one done → 0.5 done ratio → yellow; children sorted not-done first.
+    expect(nodes[0].health).toBe('yellow');
+    expect(nodes[0].children.map((childStory) => childStory.key)).toEqual(['S-2', 'S-1']);
+    expect(nodes[0].completionPercent).toBeGreaterThan(0);
+  });
+
+  it('treats a childless feature as gray / 0% (superset of the old rollup)', async () => {
+    mockJiraGet.mockImplementation((path: string) => {
+      const decoded = decodeURIComponent(path);
+      if (decoded.includes('key in (')) {
+        return Promise.resolve({ issues: [{ key: 'F-2', fields: { summary: 'Empty feature', status: { name: 'To Do' } } }] });
+      }
+      return Promise.resolve({ issues: [] });
+    });
+
+    const nodes = await fetchFeatureNodesByKeys(['F-2']);
+
+    expect(nodes[0].health).toBe('gray');
+    expect(nodes[0].completionPercent).toBe(0);
+    expect(nodes[0].children).toHaveLength(0);
   });
 });

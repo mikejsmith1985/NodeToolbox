@@ -140,3 +140,31 @@ export function parseCanvasAiResponse(kind: AiSuggestionKind, responseText: stri
   });
   return { kind, items, ignoredUnknownKeyCount: 0 };
 }
+
+// ── NL → JQL scope query (Surface scope helper) ──
+//
+// A distinct round-trip from the suggestion kinds above: the reply is a single JQL string, not a
+// list of per-issue suggestions. Used only by the passphrase-gated NL→JQL control on the scope bar.
+
+/** Builds the prompt that turns a natural-language scope description into one JQL query. */
+export function buildScopeQueryPrompt(context: { projectKey: string; piName: string; description: string }): string {
+  return [
+    'Convert this request into a single Jira JQL query that selects features/epics.',
+    `Project: ${context.projectKey || '(any)'}. Program Increment: ${context.piName || '(any)'}.`,
+    `Request: ${context.description}`,
+    'Respond ONLY with valid JSON: {"kind":"scopeQuery","jql":"<the JQL>"}',
+  ].join('\n');
+}
+
+/** Parses the NL→JQL reply into a proposed query string. Throws a descriptive error on malformed input. */
+export function parseScopeQueryResponse(responseText: string): { jql: string } {
+  const parsed = JSON.parse(extractJsonPayload(responseText)) as Record<string, unknown>;
+  if (parsed.kind !== 'scopeQuery') {
+    throw new Error(`Response kind "${String(parsed.kind)}" does not match the requested "scopeQuery".`);
+  }
+  const jql = typeof parsed.jql === 'string' ? parsed.jql.trim() : '';
+  if (jql === '') {
+    throw new Error('Missing or empty "jql" in the scopeQuery response.');
+  }
+  return { jql };
+}

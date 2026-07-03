@@ -24,7 +24,7 @@ vi.mock('../../services/jiraApi.ts', () => ({
   jiraGet: mockJiraGet,
 }));
 
-import { fetchFeatureReviewFieldConfig, fetchFeatureReviewItems } from './featureReview.ts';
+import { fetchFeatureReviewFieldConfig, fetchFeatureReviewItems, fetchFeatureReviewItemsByJql } from './featureReview.ts';
 
 function createFeatureNode(): BlueprintFeatureNode {
   return {
@@ -248,5 +248,64 @@ describe('featureReview', () => {
         programIncrementFieldIds: ['customfield_10301'],
       }),
     );
+  });
+});
+
+describe('fetchFeatureReviewItemsByJql', () => {
+  const EMPTY_FIELD_CONFIG = {
+    acceptanceCriteriaFieldIds: [],
+    applicationFieldIds: [],
+    featureLinkFieldIds: [],
+    initiativeTypeFieldIds: [],
+    parentLinkFieldIds: [],
+    productOwnerFieldIds: [],
+    programIncrementFieldIds: [],
+    targetEndFieldIds: [],
+    targetStartFieldIds: [],
+  };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    localStorage.clear();
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ featureLinkField: 'customfield_10108', piFieldId: 'customfield_10301' }));
+  });
+
+  it('surfaces features matching an arbitrary JQL with health/completion and hygiene flags', async () => {
+    mockJiraGet.mockImplementation((path: string) => {
+      const decoded = decodeURIComponent(path);
+      if (decoded.includes('project = TEST')) {
+        // The user's query returns the feature issues (with hygiene fields).
+        return Promise.resolve({ issues: [{ key: 'F-1', fields: { summary: 'Feature One', status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } } } }] });
+      }
+      if (decoded.includes('key in (')) {
+        return Promise.resolve({ issues: [{ key: 'F-1', fields: { summary: 'Feature One', status: { name: 'In Progress' } } }] });
+      }
+      // Child discovery.
+      return Promise.resolve({
+        issues: [
+          { key: 'S-1', fields: { summary: 'S1', status: { name: 'Done', statusCategory: { key: 'done' } }, parent: { key: 'F-1' }, customfield_10016: 3 } },
+          { key: 'S-2', fields: { summary: 'S2', status: { name: 'To Do', statusCategory: { key: 'new' } }, parent: { key: 'F-1' }, customfield_10016: 2 } },
+        ],
+      });
+    });
+
+    const items = await fetchFeatureReviewItemsByJql('project = TEST', EMPTY_FIELD_CONFIG);
+
+    expect(items).toHaveLength(1);
+    expect(items[0].feature.key).toBe('F-1');
+    expect(items[0].feature.health).toBe('yellow');
+    expect(items[0].totalChildCount).toBe(2);
+    expect(items[0].doneChildCount).toBe(1);
+    expect(Array.isArray(items[0].hygieneFlags)).toBe(true);
+  });
+
+  it('returns an empty list when the query matches nothing', async () => {
+    mockJiraGet.mockResolvedValue({ issues: [] });
+    expect(await fetchFeatureReviewItemsByJql('project = EMPTY', EMPTY_FIELD_CONFIG)).toEqual([]);
+  });
+
+  it('rejects when the query is invalid so the caller can surface the error', async () => {
+    mockJiraGet.mockRejectedValue(new Error('Jira GET failed: 400 (jql error)'));
+    await expect(fetchFeatureReviewItemsByJql('bad jql', EMPTY_FIELD_CONFIG)).rejects.toThrow(/jql error/);
   });
 });
