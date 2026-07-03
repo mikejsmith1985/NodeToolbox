@@ -170,6 +170,41 @@ export async function jiraPut(path: string, body: unknown): Promise<void> {
   });
 }
 
+// ── Feature Canvas container creation helpers ──
+
+/** Input for creating a Jira sprint when a provisional canvas sprint is committed. */
+export interface CreateSprintInput {
+  name: string;
+  originBoardId: number;
+  startDate?: string;
+  endDate?: string;
+  goal?: string;
+}
+
+/** Input for creating a Jira fixVersion when a provisional canvas release is committed. */
+export interface CreateVersionInput {
+  name: string;
+  project: string;
+  releaseDate?: string;
+  released?: boolean;
+}
+
+/**
+ * Creates a Jira sprint on the given board. Used only at commit time to turn a provisional
+ * Feature Canvas sprint box into a real sprint before member stories are assigned to it.
+ */
+export async function createSprint(input: CreateSprintInput): Promise<{ id: number; name: string }> {
+  return jiraPost<{ id: number; name: string }>('/rest/agile/1.0/sprint', input);
+}
+
+/**
+ * Creates a Jira version (fixVersion) in the given project. Used only at commit time to turn a
+ * provisional Feature Canvas release box into a real fixVersion before it is assigned to features.
+ */
+export async function createVersion(input: CreateVersionInput): Promise<{ id: string; name: string }> {
+  return jiraPost<{ id: string; name: string }>('/rest/api/2/version', input);
+}
+
 // ── Jira Template Maker helpers ──
 
 // A high page size that covers any realistic project's issue-type / field count in one request.

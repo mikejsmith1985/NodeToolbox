@@ -34,6 +34,16 @@ export const APP_SECTIONS: SectionDef[] = [
 /** Ordered list of all cards shown on the Home view. */
 export const APP_CARDS: AppCardDef[] = [
   {
+    id: 'feature-canvas',
+    route: '/feature-canvas',
+    icon: '🗺️',
+    title: 'Feature Canvas',
+    description:
+      'Visual drag-and-drop backlog triage: pull features onto a canvas, box them into releases and sprints, and follow a guided five-stage coaching journey from chaos to a committed plan.',
+    tags: ['Planning', 'Triage', 'Canvas', 'Coach'],
+    sectionKey: 'agile',
+  },
+  {
     id: 'sprint-dashboard',
     route: '/sprint-dashboard',
     icon: '🏃',

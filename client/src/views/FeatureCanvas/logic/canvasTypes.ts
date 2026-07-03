@@ -1,0 +1,79 @@
+// canvasTypes.ts — Derived, in-memory projections that the canvas renders and reasons over.
+//
+// These types are never persisted. They are built at load time by joining the persisted
+// overlay (overlayModel.ts) with live Jira data, and are consumed by the pure-logic modules
+// (wip, capacity, commitDiff) and the React components. Keeping them in one dependency-free
+// module avoids import cycles between mapping and logic.
+
+import type { HygieneFlag } from '../../Hygiene/checks/hygieneChecks.ts';
+import type { MoscowBucket, TshirtSize } from '../overlay/overlayModel.ts';
+
+/** A single Jira issue-link surfaced on a node so the user can spot blocker ordering. */
+export interface CanvasNodeDependency {
+  targetKey: string;
+  type: string;
+  direction: 'inward' | 'outward';
+}
+
+/** A child story revealed when a feature node is expanded; also the unit committed to sprints. */
+export interface CanvasChildStory {
+  key: string;
+  summary: string;
+  status: string;
+  statusCategoryKey: string | null;
+  storyPoints: number | null;
+}
+
+/** The full render/logic projection of one feature node (overlay arrangement + live Jira data). */
+export interface CanvasNode {
+  // Overlay-owned arrangement attributes.
+  issueKey: string;
+  position: { x: number; y: number };
+  size: TshirtSize | null;
+  priority: MoscowBucket | null;
+  containerId: string | null;
+  isExpanded: boolean;
+  isParked: boolean;
+  // Live Jira/blueprint data (re-fetched, never persisted).
+  summary: string;
+  status: string;
+  statusCategoryKey: string | null;
+  assignee: string | null;
+  storyPoints: number | null;
+  health: string;
+  completionPercent: number;
+  hygieneFlags: HygieneFlag[];
+  childStories: CanvasChildStory[];
+  dependencies: CanvasNodeDependency[];
+  // Derived capacity unit: overlay size (mapped to points) when set, else live story points.
+  effectivePoints: number;
+}
+
+/** The running capacity readout for one container box (Stage 5 meter). */
+export interface ContainerCapacity {
+  containerId: string;
+  total: number;
+  budget: number | null;
+  status: 'under' | 'at' | 'over';
+  overBy: number;
+}
+
+/** The Stage 2 work-in-progress readout for the surfaced set. */
+export interface WipSnapshot {
+  inProgressCount: number;
+  limit: number | null;
+  overflow: number;
+  parkedCount: number;
+}
+
+/** One proposed Jira write shown in the Review & Commit diff before anything is written. */
+export interface CommitDiffItem {
+  id: string;
+  kind: 'sprintAssign' | 'versionAssign' | 'pointsSet' | 'prioritySet' | 'createSprint' | 'createVersion';
+  issueKey: string | null;
+  containerId: string | null;
+  from: string | number | null;
+  to: string | number;
+  dependsOn: string | null;
+  selected: boolean;
+}

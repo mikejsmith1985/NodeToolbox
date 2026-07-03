@@ -3,7 +3,7 @@
 // This component owns the global layout, mounts the shared polling hooks, and
 // routes placeholder views until later migration phases replace them.
 
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 
 import { ConnectionBar } from './components/ConnectionBar/index.ts';
@@ -33,6 +33,10 @@ import SprintDashboardView from './views/SprintDashboard/SprintDashboardView.tsx
 import TextToolsView from './views/TextTools/TextToolsView.tsx';
 import styles from './App.module.css';
 
+// Lazy-loaded so the React Flow canvas dependency stays off the shared bundle for users who
+// never open the Feature Canvas (mirrors the repo's on-demand heavy-import philosophy).
+const FeatureCanvasView = lazy(() => import('./views/FeatureCanvas/FeatureCanvasView.tsx'));
+
 const APP_TITLE = 'NodeToolbox';
 const HOME_ROUTE = '/';
 const SETTINGS_ROUTE = '/settings';
@@ -49,6 +53,7 @@ const TEXT_TOOLS_ROUTE = '/text-tools';
 const REPORTS_HUB_ROUTE = '/reports-hub';
 const ADMIN_HUB_ROUTE = '/admin-hub';
 const BUSINESS_HELPER_ROUTE = '/business-helper';
+const FEATURE_CANVAS_ROUTE = '/feature-canvas';
 const DEFAULT_ROUTE = HOME_ROUTE;
 const RELAY_SYSTEM: RelaySystem = 'snow';
 const SHAREPOINT_RELAY_SYSTEM: RelaySystem = 'sharepoint';
@@ -188,6 +193,14 @@ export default function App() {
           />
           <Route path={ADMIN_HUB_ROUTE} element={<AdminHubView />} />
           <Route path={BUSINESS_HELPER_ROUTE} element={<BusinessHelperView />} />
+          <Route
+            path={FEATURE_CANVAS_ROUTE}
+            element={(
+              <Suspense fallback={<div style={{ padding: 48, textAlign: 'center', opacity: 0.7 }}>Loading Feature Canvas…</div>}>
+                <FeatureCanvasView />
+              </Suspense>
+            )}
+          />
           <Route path="/sprint-planning" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
           <Route path="/pointing" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
           <Route path="/standup" element={<Navigate to={SPRINT_DASHBOARD_ROUTE} replace />} />
