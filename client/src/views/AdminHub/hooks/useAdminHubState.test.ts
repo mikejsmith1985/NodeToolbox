@@ -67,6 +67,18 @@ describe('useAdminHubState', () => {
     expect(result.current.state.adminUnlockError).toBeNull();
   });
 
+  it('tryUnlock does not POST or unlock when credentials are empty (no silent unlock)', async () => {
+    const { result } = renderHook(() => useAdminHubState());
+
+    act(() => {
+      result.current.actions.tryUnlock(); // no username/password entered
+    });
+
+    expect(global.fetch).not.toHaveBeenCalledWith('/api/admin-verify', expect.anything());
+    expect(result.current.state.isAdminUnlocked).toBe(false);
+    expect(result.current.state.adminUnlockError).toMatch(/enter admin/i);
+  });
+
   it('tryUnlock sets adminUnlockError when server returns 401', async () => {
     vi.spyOn(global, 'fetch').mockResolvedValue({
       ok: false,
@@ -94,6 +106,8 @@ describe('useAdminHubState', () => {
     const { result } = renderHook(() => useAdminHubState());
 
     act(() => {
+      result.current.actions.setAdminUsername('admin');
+      result.current.actions.setAdminPinInput('toolbox');
       result.current.actions.tryUnlock();
     });
 
@@ -107,6 +121,8 @@ describe('useAdminHubState', () => {
     const { result } = renderHook(() => useAdminHubState());
 
     act(() => {
+      result.current.actions.setAdminUsername('admin');
+      result.current.actions.setAdminPinInput('toolbox');
       result.current.actions.tryUnlock();
     });
     await waitFor(() => {

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Admin Hub — AI tools hidden from admin + real credential gate (feature 010, Area 2)**: The **"Hidden prompt tools" checkbox** (and its orphan `tbxFeatureAIVisible` flag) is **removed from the Admin Hub**, so unlocking Admin Access (password) no longer reveals — or even hints at — the AI tools. The AI/prompt tools are now reachable **only** via the owner's **Ctrl+Alt+Z passphrase**, which is unchanged (its ⚡ AI Assist tab appears only after the passphrase, never on admin unlock). Admin Access also no longer **unlocks silently**: clicking Unlock with empty fields is rejected client-side (it previously auto-submitted the default `admin`/`toolbox`), so admin now genuinely **requires entered credentials** — the server flow is unchanged, so a correctly-typed default still works on an unconfigured install. Finally, the **Dev Panel is now behind admin unlock** (it was previously always-accessible), matching the intended admin scope (SNow access + Dev Panel). Spec/plan/tasks in `specs/010-canvas-scope-access/`.
 - **Feature Canvas — delete a release/sprint box (feature 009 follow-up)**: Stage 5 (Sequence & Box) now lets you **remove a container box** you added, via an ✕ button on the box. Deleting a box is non-destructive: its member features stay on the canvas and simply become unassigned (and un-parked if it was the Parking Lot), so no work is lost. New `removeContainer` overlay action self-heals node membership.
 
 ### Added

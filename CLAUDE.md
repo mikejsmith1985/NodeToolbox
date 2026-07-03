@@ -9,9 +9,9 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **feature-canvas** (visual drag-and-drop backlog triage & planning board with a
-  five-stage coaching journey; sandbox overlay + Review & Commit; hidden AI accelerator) —
-  plan: `specs/009-feature-canvas/plan.md`
+- **canvas-scope-access** (Feature Canvas Surface JQL scoping + hidden NL→JQL; and AI-tools
+  access hardening: remove the admin "Hidden prompt tools" checkbox and fix the silent admin
+  unlock) — plan: `specs/010-canvas-scope-access/plan.md`
   (spec, research, data-model, contracts, quickstart in the same directory).
 <!-- SPECKIT END -->
 
