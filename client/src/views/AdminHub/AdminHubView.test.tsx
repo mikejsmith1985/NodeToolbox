@@ -24,7 +24,6 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     },
     featureFlags: {
       isSnowIntegrationEnabled: false,
-      isAiEnabled: false,
     },
     isAdminUnlocked: false,
     isAdvancedUnlocked: false,
@@ -207,11 +206,34 @@ describe('AdminHubView', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders the Config, Repo Monitor, and Dev Panel tab buttons', () => {
+  it('renders the Config and Repo Monitor tab buttons', () => {
     renderAdminHubView();
     expect(screen.getByRole('tab', { name: '⚙️ Config' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /repo monitor/i })).toBeInTheDocument();
+  });
+
+  it('gates the Dev Panel tab behind admin unlock', () => {
+    // Locked: no Dev Panel tab.
+    const { rerender } = renderAdminHubView();
+    expect(screen.queryByRole('tab', { name: /dev panel/i })).not.toBeInTheDocument();
+
+    // Unlocked: the Dev Panel tab appears.
+    mockState.isAdminUnlocked = true;
+    rerender(
+      <ToastProvider>
+        <AdminHubView />
+      </ToastProvider>,
+    );
     expect(screen.getByRole('tab', { name: /dev panel/i })).toBeInTheDocument();
+  });
+
+  it('shows no "Hidden prompt tools" (or any AI) control when admin is unlocked', () => {
+    mockState.isAdminUnlocked = true;
+    renderAdminHubView();
+    // The Advanced Feature Controls section is present, but the AI checkbox is gone.
+    expect(screen.getByText(/advanced feature controls/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/hidden prompt tools/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/hidden prompt tools/i)).not.toBeInTheDocument();
   });
 
   describe('hidden AI Assist capability', () => {
@@ -259,6 +281,7 @@ describe('AdminHubView', () => {
 
   it('scrolls the Admin Hub back to the top on initial render and tab changes', async () => {
     const user = userEvent.setup();
+    mockState.isAdminUnlocked = true; // Dev Panel tab is admin-gated
     renderAdminHubView();
 
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, left: 0, behavior: 'auto' });
@@ -332,6 +355,7 @@ describe('AdminHubView', () => {
 
   it('renders the embedded Dev Panel when the tab is selected', async () => {
     const user = userEvent.setup();
+    mockState.isAdminUnlocked = true; // Dev Panel tab is admin-gated
     renderAdminHubView();
 
     await user.click(screen.getByRole('tab', { name: /dev panel/i }));
@@ -368,6 +392,10 @@ describe('AdminHubView', () => {
 // ── Diagnostics section tests ──
 
 describe('Diagnostics section', () => {
+  // The Diagnostics UI lives in the admin-gated Dev Panel tab.
+  beforeEach(() => { mockState.isAdminUnlocked = true; });
+  afterEach(() => { mockState.isAdminUnlocked = false; });
+
   it('renders the Diagnostics section in the Dev Panel tab', async () => {
     const user = userEvent.setup();
     renderAdminHubView();
@@ -430,6 +458,10 @@ describe('Diagnostics section', () => {
 // ── Backup & Reset section tests ──
 
 describe('Backup & Reset section', () => {
+  // The Backup & Reset UI lives in the admin-gated Dev Panel tab.
+  beforeEach(() => { mockState.isAdminUnlocked = true; });
+  afterEach(() => { mockState.isAdminUnlocked = false; });
+
   it('renders the Backup & Reset section heading', async () => {
     const user = userEvent.setup();
     renderAdminHubView();
@@ -643,6 +675,10 @@ describe('Credential Management Section', () => {
 // ── Consolidated debug sections (now always visible, Advanced unlock removed) ──
 
 describe('Consolidated debug sections', () => {
+  // These panels live in the admin-gated Dev Panel tab.
+  beforeEach(() => { mockState.isAdminUnlocked = true; });
+  afterEach(() => { mockState.isAdminUnlocked = false; });
+
   it('renders Tool Visibility section', async () => {
     const user = userEvent.setup();
     renderAdminHubView();

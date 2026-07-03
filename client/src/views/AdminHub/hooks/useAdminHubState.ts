@@ -27,14 +27,12 @@ const SNOW_PROXY_URL_KEY = 'tbxSnowProxyUrl'
 const GITHUB_PROXY_URL_KEY = 'tbxGithubProxyUrl'
 const ART_SETTINGS_KEY = 'tbxARTSettings'
 const FEATURE_SNOW_KEY = 'tbxFeatureSnowVisible'
-const FEATURE_AI_KEY = 'tbxFeatureAIVisible'
 /** Stored in sessionStorage so the unlock clears on browser close. */
 const ADMIN_UNLOCK_SESSION_KEY = 'tbxAdminUnlocked'
-/** Default credentials used when no credentialHash is configured in toolbox-proxy.json. */
-const DEFAULT_ADMIN_USERNAME = 'admin'
-const DEFAULT_ADMIN_PASSWORD = 'toolbox'
 /** Error message shown in the Admin Hub lock form when the server rejects credentials. */
 const ADMIN_UNLOCK_ERROR_MESSAGE = 'Incorrect credentials.'
+/** Error shown when the user clicks Unlock without entering both credentials. */
+const ADMIN_UNLOCK_MISSING_MESSAGE = 'Enter admin username and password.'
 const ADMIN_UNLOCK_NETWORK_ERROR_MESSAGE = 'Connection error — check that the server is running.'
 
 /** sessionStorage key for the advanced section gate (Feature Flags, Diagnostics, Backup). */
@@ -96,7 +94,6 @@ export interface ArtSettingsConfig {
 /** Feature flag toggles for optional integrations. */
 export interface FeatureFlags {
   isSnowIntegrationEnabled: boolean
-  isAiEnabled: boolean
 }
 
 /** Shape of the response from GET /api/diagnostics. */
@@ -393,7 +390,6 @@ function buildInitialArtSettings(): ArtSettingsConfig {
 function buildInitialFeatureFlags(): FeatureFlags {
   return {
     isSnowIntegrationEnabled: readLocalBoolFlag(FEATURE_SNOW_KEY),
-    isAiEnabled: readLocalBoolFlag(FEATURE_AI_KEY),
   }
 }
 
@@ -726,8 +722,9 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     (flagKey: keyof FeatureFlags) => {
       setFeatureFlags((currentFlags) => {
         const nextFlagValue = !currentFlags[flagKey]
-        // Persist the new flag value to localStorage as '1' or '0'.
-        const storageKey = flagKey === 'isSnowIntegrationEnabled' ? FEATURE_SNOW_KEY : FEATURE_AI_KEY
+        // Persist the new flag value to localStorage as '1' or '0'. Only the SNow integration flag
+        // remains, so it always maps to the SNow key.
+        const storageKey = FEATURE_SNOW_KEY
         try {
           localStorage.setItem(storageKey, nextFlagValue ? '1' : '0')
         } catch {
@@ -743,12 +740,19 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
    * Sends the entered credentials to the server for verification.
    * On success, sets isAdminUnlocked and stores the session flag.
    * On failure, sets adminUnlockError so the UI can display a message.
-   * Falls back to default credentials (admin / toolbox) when the server has
-   * no credentialHash configured — covers first-time users.
+   * Requires the user to actually enter both fields; blank input is rejected client-side and never
+   * auto-submits default credentials. (The server still accepts a correctly-typed default on an
+   * unconfigured install, so first-run is unaffected — the user just has to type it.)
    */
   const tryUnlock = useCallback(() => {
-    const usernameToSubmit = adminUsernameRef.current || DEFAULT_ADMIN_USERNAME
-    const passwordToSubmit = adminPinInputRef.current || DEFAULT_ADMIN_PASSWORD
+    const usernameToSubmit = (adminUsernameRef.current || '').trim()
+    const passwordToSubmit = (adminPinInputRef.current || '').trim()
+
+    // Do not unlock on empty fields, and never substitute default credentials for blanks.
+    if (usernameToSubmit === '' || passwordToSubmit === '') {
+      setAdminUnlockError(ADMIN_UNLOCK_MISSING_MESSAGE)
+      return
+    }
 
     fetch('/api/admin-verify', {
       method: 'POST',

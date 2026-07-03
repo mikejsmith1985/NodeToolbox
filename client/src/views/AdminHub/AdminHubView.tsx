@@ -76,9 +76,11 @@ const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'reports-config', label: '📊 Reports Config' },
   { key: 'standup-briefing', label: '📋 Standup' },
   { key: 'sprint-release', label: '🚀 Sprint Release' },
-  { key: 'dev-panel', label: '🛰️ Dev Panel' },
 ]
 
+// The Dev Panel is admin-gated: its tab is offered only when Admin Access is unlocked, matching the
+// intended admin scope (admin unlocks SNow access + the Dev Panel).
+const DEV_PANEL_ADMIN_TAB: { key: AdminHubTab; label: string } = { key: 'dev-panel', label: '🛰️ Dev Panel' }
 // Hidden "⚡ AI Assist" tab, appended only while the AI Assist capability is unlocked.
 const AI_ASSIST_ADMIN_TAB: { key: AdminHubTab; label: string } = { key: 'ai-assist', label: '⚡ AI Assist' }
 const HIDDEN_AI_ASSIST_SHORTCUT_KEY = 'z'
@@ -441,12 +443,11 @@ interface AdminAccessSectionProps {
   adminPinInput: string
   adminUnlockError: string | null
   isSnowIntegrationEnabled: boolean
-  isAiEnabled: boolean
   onUsernameChange(value: string): void
   onPinInputChange(value: string): void
   onTryUnlock(): void
   onLock(): void
-  onToggleFeatureFlag(flagKey: 'isSnowIntegrationEnabled' | 'isAiEnabled'): void
+  onToggleFeatureFlag(flagKey: 'isSnowIntegrationEnabled'): void
 }
 
 /** Clears all localStorage keys that start with the 'tbx' prefix. */
@@ -470,7 +471,6 @@ function AdminAccessSection({
   adminPinInput,
   adminUnlockError,
   isSnowIntegrationEnabled,
-  isAiEnabled,
   onUsernameChange,
   onPinInputChange,
   onTryUnlock,
@@ -520,18 +520,6 @@ function AdminAccessSection({
             />
             <label htmlFor="flag-snow-integration" className={styles.fieldLabel}>
               SNow Integration
-            </label>
-          </div>
-          <div className={styles.flagRow}>
-            <input
-              id="flag-ai-features"
-              type="checkbox"
-              checked={isAiEnabled}
-              onChange={() => onToggleFeatureFlag('isAiEnabled')}
-              aria-label="Hidden prompt tools"
-            />
-            <label htmlFor="flag-ai-features" className={styles.fieldLabel}>
-              Hidden prompt tools
             </label>
           </div>
 
@@ -2616,7 +2604,6 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
         adminPinInput={state.adminPinInput}
         adminUnlockError={state.adminUnlockError}
         isSnowIntegrationEnabled={state.featureFlags.isSnowIntegrationEnabled}
-        isAiEnabled={state.featureFlags.isAiEnabled}
         onUsernameChange={actions.setAdminUsername}
         onPinInputChange={actions.setAdminPinInput}
         onTryUnlock={actions.tryUnlock}
@@ -2726,14 +2713,6 @@ export default function AdminHubView() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isAiAssistUnlocked])
 
-  // If the capability locks while an AI Assist-gated tab is active, fall back to Config.
-  useEffect(() => {
-    const isAiAssistGatedTab = activeAdminTab === 'ai-assist'
-    if (!isAiAssistUnlocked && isAiAssistGatedTab) {
-      setActiveAdminTab('main')
-    }
-  }, [isAiAssistUnlocked, activeAdminTab])
-
   const handleAiAssistPassphraseSubmit = useCallback(async () => {
     const isAccepted = await verifyPassphrase(aiAssistPassphraseInput)
     if (isAccepted) {
@@ -2747,10 +2726,22 @@ export default function AdminHubView() {
     setAiAssistPassphraseError('Incorrect passphrase')
   }, [aiAssistPassphraseInput, verifyPassphrase])
 
-  // The ⚡ AI Assist and 🧹 Hygiene Monitor tabs are only offered while unlocked.
-  const adminHubTabs = isAiAssistUnlocked
-    ? [...ADMIN_HUB_TAB_OPTIONS, AI_ASSIST_ADMIN_TAB]
-    : ADMIN_HUB_TAB_OPTIONS
+  // The 🛰️ Dev Panel tab is offered only while Admin Access is unlocked; the ⚡ AI Assist tab only
+  // while the passphrase capability is unlocked.
+  const adminHubTabs = [
+    ...ADMIN_HUB_TAB_OPTIONS,
+    ...(state.isAdminUnlocked ? [DEV_PANEL_ADMIN_TAB] : []),
+    ...(isAiAssistUnlocked ? [AI_ASSIST_ADMIN_TAB] : []),
+  ]
+
+  // If a gated tab is active but its capability locks, fall back to Config. Done during render
+  // (React's endorsed "adjust state when state changes" pattern) rather than in an effect, so it
+  // does not trip react-hooks/set-state-in-effect and applies immediately.
+  if (!state.isAdminUnlocked && activeAdminTab === 'dev-panel') {
+    setActiveAdminTab('main')
+  } else if (!isAiAssistUnlocked && activeAdminTab === 'ai-assist') {
+    setActiveAdminTab('main')
+  }
 
   useEffect(() => {
     const scrollContainer = adminHubRootRef.current?.closest('main')
@@ -2826,7 +2817,7 @@ export default function AdminHubView() {
         </section>
       )}
 
-      {activeAdminTab === 'dev-panel' && (
+      {activeAdminTab === 'dev-panel' && state.isAdminUnlocked && (
         <section id="admin-hub-dev-panel-panel" role="tabpanel" aria-labelledby="admin-hub-dev-panel-tab">
           <DevPanelView />
           <section className={styles.sectionCard}>
