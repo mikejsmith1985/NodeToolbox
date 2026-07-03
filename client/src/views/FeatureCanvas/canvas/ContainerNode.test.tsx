@@ -1,8 +1,8 @@
 // ContainerNode.test.tsx — Verifies the container box renders its title and capacity meter.
 
 import type { ComponentProps } from 'react';
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ContainerNode, type ContainerNodeData } from './ContainerNode.tsx';
 
@@ -27,5 +27,17 @@ describe('ContainerNode', () => {
   it('marks a provisional box as proposed', () => {
     renderContainer({ kind: 'release', title: 'New release', isProvisional: true, capacity: null });
     expect(screen.getByText(/New release \(proposed\)/)).toBeInTheDocument();
+  });
+
+  it('invokes onDelete when the box delete button is clicked', () => {
+    const onDelete = vi.fn();
+    renderContainer({ kind: 'sprint', title: 'Sprint 24', isProvisional: false, capacity: null, onDelete });
+    fireEvent.click(screen.getByRole('button', { name: /Delete Sprint 24/ }));
+    expect(onDelete).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders no delete button when onDelete is absent', () => {
+    renderContainer({ kind: 'sprint', title: 'Sprint 24', isProvisional: false, capacity: null });
+    expect(screen.queryByRole('button', { name: /Delete/ })).not.toBeInTheDocument();
   });
 });

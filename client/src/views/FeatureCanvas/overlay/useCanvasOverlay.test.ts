@@ -42,6 +42,22 @@ describe('useCanvasOverlay', () => {
     expect(result.current.overlay.stageState.currentStageId).toBe('size');
   });
 
+  it('removes a container and unassigns its member nodes without losing them', () => {
+    const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+
+    act(() => result.current.ensureNodeStates([createNodeState('DENP-1', 0, 0)]));
+    act(() => result.current.addContainer(CONTAINER));
+    act(() => result.current.setContainer('DENP-1', CONTAINER.id));
+    expect(result.current.overlay.nodes['DENP-1'].containerId).toBe(CONTAINER.id);
+
+    act(() => result.current.removeContainer(CONTAINER.id));
+
+    expect(result.current.overlay.containers).toHaveLength(0);
+    // The node survives — it is simply no longer boxed.
+    expect(result.current.overlay.nodes['DENP-1']).toBeDefined();
+    expect(result.current.overlay.nodes['DENP-1'].containerId).toBeNull();
+  });
+
   it('persists mutations so a reload restores the plan', () => {
     const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
     act(() => result.current.setWipLimit(7));

@@ -37,6 +37,7 @@ export interface FeatureCanvasBoardProps {
   onSelect: (issueKey: string | null) => void;
   onPositionChange: (issueKey: string, x: number, y: number) => void;
   onDropIntoContainer: (issueKey: string, containerId: string | null) => void;
+  onDeleteContainer: (containerId: string) => void;
 }
 
 /** Builds the React Flow node array: container boxes first (behind), then feature cards on top. */
@@ -44,6 +45,7 @@ function buildReactFlowNodes(
   canvasNodes: readonly CanvasNode[],
   containers: readonly CanvasContainer[],
   capacities: ReadonlyMap<string, ContainerCapacity>,
+  onDeleteContainer: (containerId: string) => void,
 ): Node[] {
   const containerNodes: Node[] = containers.map((container) => ({
     id: container.id,
@@ -54,6 +56,7 @@ function buildReactFlowNodes(
       title: container.title,
       isProvisional: container.provenance.state === 'provisional',
       capacity: capacities.get(container.id) ?? null,
+      onDelete: () => onDeleteContainer(container.id),
     } satisfies ContainerNodeData,
     style: { width: container.bounds.width, height: container.bounds.height },
     draggable: true,
@@ -83,7 +86,7 @@ function buildNodeSignature(canvasNodes: readonly CanvasNode[], containers: read
 
 /** Inner board that has access to the React Flow instance for intersection hit-testing. */
 function BoardInner(props: FeatureCanvasBoardProps): React.JSX.Element {
-  const { canvasNodes, containers, capacities, onSelect, onPositionChange, onDropIntoContainer } = props;
+  const { canvasNodes, containers, capacities, onSelect, onPositionChange, onDropIntoContainer, onDeleteContainer } = props;
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const { getIntersectingNodes } = useReactFlow();
 
@@ -91,7 +94,7 @@ function BoardInner(props: FeatureCanvasBoardProps): React.JSX.Element {
 
   // Rebuild the canvas nodes whenever the underlying feature/container set changes.
   useEffect(() => {
-    setNodes(buildReactFlowNodes(canvasNodes, containers, capacities));
+    setNodes(buildReactFlowNodes(canvasNodes, containers, capacities, onDeleteContainer));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeSignature, setNodes]);
 
