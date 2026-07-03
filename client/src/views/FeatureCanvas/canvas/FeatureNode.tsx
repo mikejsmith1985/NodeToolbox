@@ -5,6 +5,7 @@
 // badge when the reused hygiene checks found problems. Interaction (sizing, prioritizing,
 // parking) happens in the CoachPanel against the selected node, keeping this component display-only.
 
+import { memo } from 'react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 
 import type { CanvasNode } from '../logic/canvasTypes.ts';
@@ -43,7 +44,7 @@ function formatSizeChip(node: CanvasNode): string {
 }
 
 /** Custom React Flow node: a feature triage card. */
-export function FeatureNode({ data, selected }: NodeProps<FeatureRfNode>): React.JSX.Element {
+function FeatureNodeComponent({ data, selected }: NodeProps<FeatureRfNode>): React.JSX.Element {
   const { node } = data;
   const stripeColor = STATUS_CATEGORY_COLORS[node.statusCategoryKey ?? 'new'] ?? STATUS_CATEGORY_COLORS.new;
   const healthColor = HEALTH_COLORS[node.health] ?? HEALTH_COLORS.gray;
@@ -86,3 +87,7 @@ export function FeatureNode({ data, selected }: NodeProps<FeatureRfNode>): React
     </div>
   );
 }
+
+// Memoized so React Flow only re-renders nodes whose data actually changed — keeps the canvas
+// interactive at 200+ nodes (SC-8).
+export const FeatureNode = memo(FeatureNodeComponent);

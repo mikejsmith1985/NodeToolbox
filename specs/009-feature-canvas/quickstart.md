@@ -101,7 +101,29 @@ Drive these in the running app. Each states the expected observable outcome.
 - **Expect**: its node badge count matches what the Hygiene tab reports for the same issue;
   health/completion match the Feature Review card.
 
+## Automated validation coverage
+
+Each scenario is backed by a colocated automated test (Vitest + RTL), so the behavior is
+guarded in CI. The manual driver above remains the release smoke test against a live,
+ART-configured Jira board (which exercises the real fetch + real Jira writes that mocks stand
+in for).
+
+| Scenario | Automated coverage |
+|----------|--------------------|
+| V1 Surface | `canvas/FeatureCanvasBoard.test.tsx` (one node per feature; 200-node scale), `canvas/useCanvasFeatures.test.ts` (no-team guard) |
+| V2 WIP + Parking Lot | `logic/wip.test.ts`, `coach/CoachPanel.test.tsx` (WIP limit + park) |
+| V3 Prioritize | `coach/CoachPanel.test.tsx` (MoSCoW bucket) |
+| V4 Size | `logic/sizing.test.ts`, `coach/CoachPanel.test.tsx` (size buttons) |
+| V5 Capacity + provisional | `logic/capacity.test.ts`, `canvas/ContainerNode.test.tsx` (over-capacity, provisional style) |
+| V6 Resume | `overlay/useCanvasOverlay.test.ts` (remount restores arrangement — SC-10) |
+| V7 Sandbox zero-write | `logic/commitDiff.test.ts`, `commit/ReviewCommitPanel.test.tsx` (no write before commit) |
+| V8 Commit diff | `commit/commitJira.test.ts` (create-before-assign ordering, skip-on-failure), `commit/ReviewCommitPanel.test.tsx` |
+| V9 Manual-only integrity | `ai/AiSuggestionPanel.test.tsx` (null when locked), `coach/stages.test.ts` (no AI in guidance) |
+| V10 AI additive | `ai/canvasAiAssist.test.ts`, `ai/AiSuggestionPanel.test.tsx` (malformed → error, no-op) |
+| V11 Hygiene overlay | `canvas/nodeMapping.test.ts` (hygiene flags passthrough), `canvas/FeatureNode.test.tsx` (badge) |
+
 ## Done (feature-level acceptance)
 
-All of V1–V11 pass, the three build/test/lint gates are green, and `CHANGELOG.md` has an entry
-describing the Feature Canvas (Article VI).
+All of V1–V11 have automated coverage, the three build/test/lint gates are green, and
+`CHANGELOG.md` has an entry describing the Feature Canvas (Article VI). A live-board smoke run
+remains recommended before release to exercise the real Jira fetch/write paths end to end.

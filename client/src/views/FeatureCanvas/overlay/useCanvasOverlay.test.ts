@@ -49,4 +49,25 @@ describe('useCanvasOverlay', () => {
     const reloaded = loadOverlay('team-a', 'denp:pi-1');
     expect(reloaded.wipLimit).toBe(7);
   });
+
+  it('restores the full arrangement after a remount — resume fidelity (SC-10)', () => {
+    const first = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+    act(() => first.result.current.ensureNodeStates([createNodeState('DENP-1', 10, 20)]));
+    act(() => {
+      first.result.current.setSize('DENP-1', 'L');
+      first.result.current.setPriority('DENP-1', 'Must');
+      first.result.current.addContainer(CONTAINER);
+      first.result.current.setWipLimit(4);
+      first.result.current.goToStage('size');
+    });
+    first.unmount();
+
+    // A fresh mount of the same team+scope is exactly what reopening the canvas does.
+    const second = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+    const restored = second.result.current.overlay;
+    expect(restored.nodes['DENP-1']).toMatchObject({ position: { x: 10, y: 20 }, size: 'L', priority: 'Must' });
+    expect(restored.wipLimit).toBe(4);
+    expect(restored.containers).toHaveLength(1);
+    expect(restored.stageState.currentStageId).toBe('size');
+  });
 });

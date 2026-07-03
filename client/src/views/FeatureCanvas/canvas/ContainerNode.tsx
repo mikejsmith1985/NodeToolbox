@@ -5,6 +5,7 @@
 // user can see over-commitment without doing arithmetic. Provisional boxes (not yet in Jira) are
 // drawn with a dashed border to distinguish them from real sprints/versions.
 
+import { memo } from 'react';
 import { type Node, type NodeProps } from '@xyflow/react';
 
 import type { ContainerCapacity } from '../logic/canvasTypes.ts';
@@ -40,7 +41,7 @@ function CapacityMeter({ capacity }: { capacity: ContainerCapacity }): React.JSX
 }
 
 /** Custom React Flow node: a container box that features are dropped into. */
-export function ContainerNode({ data }: NodeProps<ContainerRfNode>): React.JSX.Element {
+function ContainerNodeComponent({ data }: NodeProps<ContainerRfNode>): React.JSX.Element {
   const accent = KIND_ACCENT[data.kind];
   return (
     <div
@@ -65,3 +66,6 @@ export function ContainerNode({ data }: NodeProps<ContainerRfNode>): React.JSX.E
     </div>
   );
 }
+
+// Memoized so a container only re-renders when its own data changes (SC-8 scale).
+export const ContainerNode = memo(ContainerNodeComponent);
