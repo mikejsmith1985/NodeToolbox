@@ -17,6 +17,7 @@ export interface ContainerNodeData {
   title: string;
   isProvisional: boolean;
   capacity: ContainerCapacity | null;
+  onDelete?: () => void;
   [key: string]: unknown;
 }
 
@@ -56,12 +57,30 @@ function ContainerNodeComponent({ data }: NodeProps<ContainerRfNode>): React.JSX
         boxSizing: 'border-box',
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 600 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600 }}>
         <span style={{ color: accent }}>
           {data.title}
           {data.isProvisional ? ' (proposed)' : ''}
         </span>
-        {data.capacity && <CapacityMeter capacity={data.capacity} />}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {data.capacity && <CapacityMeter capacity={data.capacity} />}
+          {data.onDelete && (
+            <button
+              type="button"
+              // `nodrag` stops React Flow from starting a pan/drag when the button is pressed.
+              className="nodrag"
+              aria-label={`Delete ${data.title}`}
+              title="Delete box"
+              onClick={(clickEvent) => {
+                clickEvent.stopPropagation();
+                data.onDelete?.();
+              }}
+              style={{ cursor: 'pointer', border: 'none', background: 'transparent', color: 'inherit', fontSize: 14, lineHeight: 1 }}
+            >
+              ✕
+            </button>
+          )}
+        </span>
       </div>
     </div>
   );

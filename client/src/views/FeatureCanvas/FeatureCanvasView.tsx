@@ -106,6 +106,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
           onSelect={setSelectedIssueKey}
           onPositionChange={(issueKey, x, y) => controller.updateNode(issueKey, { position: { x, y } })}
           onDropIntoContainer={handleDropIntoContainer}
+          onDeleteContainer={(containerId) => controller.removeContainer(containerId)}
         />
         {isCommitOpen && (
           <ReviewCommitPanel

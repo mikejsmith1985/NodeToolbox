@@ -28,6 +28,7 @@ export interface CanvasOverlayController {
   setParked: (issueKey: string, isParked: boolean) => void;
   addContainer: (container: CanvasContainer) => void;
   updateContainer: (containerId: string, changes: Partial<CanvasContainer>) => void;
+  removeContainer: (containerId: string) => void;
   goToStage: (stageId: StageId) => void;
   completeStage: (stageId: StageId) => void;
 }
@@ -100,6 +101,26 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     }));
   }, [mutate]);
 
+  // Removing a box is non-destructive to the work: member nodes stay on the canvas and simply
+  // become unassigned (and un-parked if they were in the Parking Lot), so nothing is lost.
+  const removeContainer = useCallback((containerId: string) => {
+    mutate((previous) => {
+      const removedContainer = previous.containers.find((container) => container.id === containerId);
+      const wasParkingLot = removedContainer?.kind === 'parkingLot';
+      const nextNodes: typeof previous.nodes = {};
+      for (const [issueKey, nodeState] of Object.entries(previous.nodes)) {
+        nextNodes[issueKey] = nodeState.containerId === containerId
+          ? { ...nodeState, containerId: null, isParked: wasParkingLot ? false : nodeState.isParked }
+          : nodeState;
+      }
+      return {
+        ...previous,
+        containers: previous.containers.filter((container) => container.id !== containerId),
+        nodes: nextNodes,
+      };
+    });
+  }, [mutate]);
+
   const goToStage = useCallback((stageId: StageId) => {
     mutate((previous) => ({ ...previous, stageState: { ...previous.stageState, currentStageId: stageId } }));
   }, [mutate]);
@@ -114,8 +135,8 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
   return useMemo(
     () => ({
       overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize,
-      setContainer, setParked, addContainer, updateContainer, goToStage, completeStage,
+      setContainer, setParked, addContainer, updateContainer, removeContainer, goToStage, completeStage,
     }),
-    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, goToStage, completeStage],
+    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, goToStage, completeStage],
   );
 }
