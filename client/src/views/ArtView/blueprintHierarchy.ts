@@ -708,6 +708,63 @@ function createBlueprintFeatureNode(
   };
 }
 
+/** Fetches the feature issues for an explicit key set (summary/status for each node header). */
+async function fetchFeatureIssuesByKeysForBlueprint(
+  featureKeys: string[],
+  featureLinkField: string,
+  piFieldId: string,
+): Promise<Map<string, BlueprintIssueRecord>> {
+  const featureFields = createChildIssueFields(featureLinkField, piFieldId);
+  const featureIssueMap = new Map<string, BlueprintIssueRecord>();
+  const featureKeyBatches: string[][] = [];
+  for (let featureIndex = 0; featureIndex < featureKeys.length; featureIndex += FEATURE_BATCH_SIZE) {
+    featureKeyBatches.push(featureKeys.slice(featureIndex, featureIndex + FEATURE_BATCH_SIZE));
+  }
+
+  const batchResults = await Promise.all(
+    featureKeyBatches.map((featureKeyBatch) =>
+      jiraGet<{ issues?: BlueprintIssueRecord[] }>(
+        createIssueSearchPath(`key in (${featureKeyBatch.join(',')})`, featureFields, SEARCH_BATCH_MAX_RESULTS),
+      ).catch((error) => {
+        console.warn('Blueprint feature-issue query failed.', error);
+        return { issues: [] };
+      })),
+  );
+
+  for (const featureIssue of batchResults.flatMap((result) => result.issues ?? [])) {
+    featureIssueMap.set(featureIssue.key, featureIssue);
+  }
+  return featureIssueMap;
+}
+
+/**
+ * Builds feature nodes (with health/completion + child stories) for an **arbitrary** set of feature
+ * keys, independent of any PI/team scope. It reuses the exact same child-discovery query and node
+ * builder as the PI-scoped blueprint, so health and completion are computed identically. Every
+ * discovered child is treated as in-train (there is no PI-based off-train split here), so a feature's
+ * health/completion reflect all of its children. Used by the Feature Canvas's query-driven surfacing.
+ */
+export async function fetchFeatureNodesByKeys(featureKeys: string[]): Promise<BlueprintFeatureNode[]> {
+  const uniqueFeatureKeys = Array.from(new Set(featureKeys.filter(Boolean)));
+  if (uniqueFeatureKeys.length === 0) {
+    return [];
+  }
+
+  const artSettings = loadArtSettings();
+  const featureLinkField = artSettings.featureLinkField || DEFAULT_FEATURE_LINK_FIELD;
+  const piFieldId = artSettings.piFieldId || DEFAULT_PI_FIELD_ID;
+
+  const featureIssueMap = await fetchFeatureIssuesByKeysForBlueprint(uniqueFeatureKeys, featureLinkField, piFieldId);
+  const childIssueMap = await fetchAllFeatureChildren(featureIssueMap, featureLinkField, piFieldId);
+  const emptySubtaskMap = new Map<string, BlueprintIssueRecord[]>();
+
+  return uniqueFeatureKeys.map((featureKey) => {
+    const children = childIssueMap.get(featureKey) ?? [];
+    // teamIssues === allChildren → offTrain is empty; artProjectKeys/piName are unused for in-train stories.
+    return createBlueprintFeatureNode(featureKey, featureIssueMap.get(featureKey), children, children, emptySubtaskMap, [], '', piFieldId);
+  });
+}
+
 function createBlueprintProgramEpicNodes(
   featureIssueMap: Map<string, BlueprintIssueRecord>,
   programEpicIssueMap: Map<string, BlueprintIssueRecord>,

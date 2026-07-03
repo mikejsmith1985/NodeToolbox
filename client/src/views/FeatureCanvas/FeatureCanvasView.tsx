@@ -11,6 +11,9 @@ import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import { FeatureCanvasBoard } from './canvas/FeatureCanvasBoard.tsx';
 import { collectMissingNodeStates, mapFeaturesToNodes } from './canvas/nodeMapping.ts';
+import { SurfaceScopeBar } from './canvas/SurfaceScopeBar.tsx';
+import { NlToJqlControl } from './canvas/NlToJqlControl.tsx';
+import { applyScopeFilters, EMPTY_SCOPE_FILTERS, type ScopeFilters } from './canvas/scopeQuery.ts';
 import { useCanvasFeatures } from './canvas/useCanvasFeatures.ts';
 import { CoachPanel } from './coach/CoachPanel.tsx';
 import { AiSuggestionPanel } from './ai/AiSuggestionPanel.tsx';
@@ -52,6 +55,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
   const [selectedIssueKey, setSelectedIssueKey] = useState<string | null>(null);
   const [isCommitOpen, setIsCommitOpen] = useState(false);
   const [isAiOpen, setIsAiOpen] = useState(false);
+  const [filters, setFilters] = useState<ScopeFilters>(EMPTY_SCOPE_FILTERS);
 
   // Give every newly-surfaced feature a persisted position so the arrangement survives reloads.
   useEffect(() => {
@@ -62,6 +66,13 @@ export default function FeatureCanvasView(): React.JSX.Element {
   }, [features.status, features.items, scopeKey]);
 
   const canvasNodes = useMemo(() => mapFeaturesToNodes(features.items, overlay), [features.items, overlay]);
+  // Refine filters narrow only what the board shows; WIP/capacity/selection still see the full set,
+  // and the overlay arrangement of filtered-out features is retained for when the filter clears.
+  const filteredKeys = useMemo(
+    () => new Set(applyScopeFilters(features.items, filters).map((item) => item.feature.key)),
+    [features.items, filters],
+  );
+  const boardNodes = useMemo(() => canvasNodes.filter((node) => filteredKeys.has(node.issueKey)), [canvasNodes, filteredKeys]);
   const capacities = useMemo(() => {
     const capacityByContainer = new Map<string, ContainerCapacity>();
     for (const container of overlay.containers) {
@@ -86,51 +97,66 @@ export default function FeatureCanvasView(): React.JSX.Element {
     }
   };
 
+  // Without a configured ART team there is nothing to scope a query against, so keep the guidance
+  // empty state as a full-view message (no scope bar).
   if (features.status === 'no-team') {
     return <CanvasMessage text="Configure an ART team for this board (in ART settings) to surface its features on the canvas." />;
   }
-  if (features.status === 'loading') {
-    return <CanvasMessage text="Surfacing features…" />;
-  }
-  if (features.status === 'error') {
-    return <CanvasMessage text={features.error ?? 'Failed to load features.'} />;
-  }
 
   return (
-    <div style={{ display: 'flex', height: 'calc(100vh - 160px)', minHeight: 480 }}>
-      <div style={{ position: 'relative', flex: 1 }}>
-        <FeatureCanvasBoard
-          canvasNodes={canvasNodes}
-          containers={overlay.containers}
-          capacities={capacities}
-          onSelect={setSelectedIssueKey}
-          onPositionChange={(issueKey, x, y) => controller.updateNode(issueKey, { position: { x, y } })}
-          onDropIntoContainer={handleDropIntoContainer}
-          onDeleteContainer={(containerId) => controller.removeContainer(containerId)}
-        />
-        {isCommitOpen && (
-          <ReviewCommitPanel
-            canvasNodes={canvasNodes}
-            containers={overlay.containers}
-            sizeMapping={overlay.sizeMapping}
-            boardId={features.boardId}
-            projectKey={features.projectKey}
-            onClose={() => setIsCommitOpen(false)}
-          />
-        )}
-        {isAiOpen && (
-          <AiSuggestionPanel canvasNodes={canvasNodes} controller={controller} onClose={() => setIsAiOpen(false)} />
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 160px)', minHeight: 480 }}>
+      <SurfaceScopeBar
+        jql={features.jql}
+        onJqlChange={features.setJql}
+        onSurface={features.surface}
+        filters={filters}
+        onFiltersChange={setFilters}
+        status={features.status}
+        error={features.error}
+        resultCount={boardNodes.length}
+        aiHelperSlot={<NlToJqlControl projectKey={features.projectKey} piName={features.piName} onAcceptJql={features.setJql} />}
+      />
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        {features.status === 'loading' ? (
+          <CanvasMessage text="Surfacing features…" />
+        ) : (
+          <>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <FeatureCanvasBoard
+                canvasNodes={boardNodes}
+                containers={overlay.containers}
+                capacities={capacities}
+                onSelect={setSelectedIssueKey}
+                onPositionChange={(issueKey, x, y) => controller.updateNode(issueKey, { position: { x, y } })}
+                onDropIntoContainer={handleDropIntoContainer}
+                onDeleteContainer={(containerId) => controller.removeContainer(containerId)}
+              />
+              {isCommitOpen && (
+                <ReviewCommitPanel
+                  canvasNodes={canvasNodes}
+                  containers={overlay.containers}
+                  sizeMapping={overlay.sizeMapping}
+                  boardId={features.boardId}
+                  projectKey={features.projectKey}
+                  onClose={() => setIsCommitOpen(false)}
+                />
+              )}
+              {isAiOpen && (
+                <AiSuggestionPanel canvasNodes={canvasNodes} controller={controller} onClose={() => setIsAiOpen(false)} />
+              )}
+            </div>
+            <CoachPanel
+              controller={controller}
+              selectedNode={selectedNode}
+              wip={wip}
+              onAddContainer={(kind) => controller.addContainer(createProvisionalContainer(kind, overlay.containers.length))}
+              onOpenCommit={() => setIsCommitOpen(true)}
+              isAiUnlocked={isAiUnlocked}
+              onOpenAi={() => setIsAiOpen(true)}
+            />
+          </>
         )}
       </div>
-      <CoachPanel
-        controller={controller}
-        selectedNode={selectedNode}
-        wip={wip}
-        onAddContainer={(kind) => controller.addContainer(createProvisionalContainer(kind, overlay.containers.length))}
-        onOpenCommit={() => setIsCommitOpen(true)}
-        isAiUnlocked={isAiUnlocked}
-        onOpenAi={() => setIsAiOpen(true)}
-      />
     </div>
   );
 }

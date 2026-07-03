@@ -36,10 +36,10 @@ with `npm run test` (Vitest + RTL).
 
 **Purpose**: The JQL-sourced feature path that both Area 1 stories consume.
 
-- [ ] T002 [P] Write RED tests for the JQL data path (mocked `jiraGet`): `fetchFeatureNodesByKeys` returns `BlueprintFeatureNode[]` with `health`/`completionPercent` populated for supplied keys, and `fetchFeatureReviewItemsByJql` returns `FeatureReviewItem[]` with hygiene flags — in `client/src/views/ArtView/blueprintHierarchy.featureNodesByKeys.test.ts` and `client/src/views/SprintDashboard/featureReviewByJql.test.ts`
-- [ ] T003 Export `fetchFeatureNodesByKeys(featureKeys, options?)` from `client/src/views/ArtView/blueprintHierarchy.ts`, reusing the existing private child-discovery JQL and `createBlueprintFeatureNode` (which already calls `computeBlueprintHealth`/`computeCompletionPercent`) — no new health/completion math
-- [ ] T004 Extract a shared `buildFeatureReviewItem(featureNode, featureIssue, ctx)` in `client/src/views/SprintDashboard/featureReview.ts` and refactor the existing `fetchFeatureReviewItems` loop to use it (behavior-preserving; existing tests stay green)
-- [ ] T005 Implement `fetchFeatureReviewItemsByJql(jql, fieldConfig?, customStoryPointsFieldId?)` in `client/src/views/SprintDashboard/featureReview.ts` — run `jiraGet('/rest/api/2/search?jql=…')` for feature/epic issues, call `fetchFeatureNodesByKeys`, build items via T004, reject on bad JQL — to pass T002
+- [X] T002 [P] Write RED tests for the JQL data path (mocked `jiraGet`): `fetchFeatureNodesByKeys` returns `BlueprintFeatureNode[]` with `health`/`completionPercent` populated for supplied keys, and `fetchFeatureReviewItemsByJql` returns `FeatureReviewItem[]` with hygiene flags — in `client/src/views/ArtView/blueprintHierarchy.featureNodesByKeys.test.ts` and `client/src/views/SprintDashboard/featureReviewByJql.test.ts`
+- [X] T003 Export `fetchFeatureNodesByKeys(featureKeys, options?)` from `client/src/views/ArtView/blueprintHierarchy.ts`, reusing the existing private child-discovery JQL and `createBlueprintFeatureNode` (which already calls `computeBlueprintHealth`/`computeCompletionPercent`) — no new health/completion math
+- [X] T004 Extract a shared `buildFeatureReviewItem(featureNode, featureIssue, ctx)` in `client/src/views/SprintDashboard/featureReview.ts` and refactor the existing `fetchFeatureReviewItems` loop to use it (behavior-preserving; existing tests stay green)
+- [X] T005 Implement `fetchFeatureReviewItemsByJql(jql, fieldConfig?, customStoryPointsFieldId?)` in `client/src/views/SprintDashboard/featureReview.ts` — run `jiraGet('/rest/api/2/search?jql=…')` for feature/epic issues, call `fetchFeatureNodesByKeys`, build items via T004, reject on bad JQL — to pass T002
 
 **Checkpoint**: Features can be sourced from an arbitrary query with full enrichment.
 
@@ -54,13 +54,13 @@ surfaced set, and bad queries fail safely.
 Surface; editing to a PI+label query surfaces only matches; a malformed query surfaces nothing with an
 error and leaves the arrangement intact.
 
-- [ ] T006 [P] [US1] Write RED unit tests for `client/src/views/FeatureCanvas/canvas/scopeQuery.test.ts`: `buildDefaultScopeJql` (PI present → includes a **`cf[<num>]` clause** built from `piFieldId` with the `customfield_` prefix stripped, per I2; PI absent → clause omitted; `issuetype in (Feature, Epic)`) and `applyScopeFilters` (label / text substring / status; empty filters are no-ops)
-- [ ] T007 [US1] Implement `client/src/views/FeatureCanvas/canvas/scopeQuery.ts` (pure `buildDefaultScopeJql` targeting the PI field by `cf[<num>]` id + `applyScopeFilters` + `ScopeFilters` type) to pass T006
-- [ ] T008 [US1] Rework `client/src/views/FeatureCanvas/canvas/useCanvasFeatures.ts` to be JQL-driven: hold `jql` + a `surfaceGeneration` trigger, seed the default JQL via `buildDefaultScopeJql` from resolved team/project/PI, fetch via `fetchFeatureReviewItemsByJql` on surface (and once on mount), keep the existing result shape; update its sibling test `useCanvasFeatures.test.ts` (default surface, no-team guard preserved)
-- [ ] T009 [P] [US1] Write RED component test `client/src/views/FeatureCanvas/canvas/SurfaceScopeBar.test.tsx`: renders the pre-filled JQL input, the Surface button triggers a surface, and typing a refine filter narrows the shown set
-- [ ] T010 [US1] Implement `client/src/views/FeatureCanvas/canvas/SurfaceScopeBar.tsx` — JQL input (bound to the scope query), Surface button, and label/text/status refine-filter chips — to pass T009
-- [ ] T011 [US1] Render `SurfaceScopeBar` in a header region of `client/src/views/FeatureCanvas/FeatureCanvasView.tsx`; apply `applyScopeFilters` to surfaced items before mapping; update `FeatureCanvasView.test.tsx` (scope bar present; refine narrows nodes; **re-surfacing to a narrower set preserves the overlay arrangement — position/size/priority/box — of features that remain in scope, per FR-1.4 / U1**)
-- [ ] T012 [US1] Safe-failure handling: a malformed/unauthorized JQL surfaces zero features, shows a clear error, and does not mutate the overlay (FR-1.6); assert in `useCanvasFeatures.test.ts` / `FeatureCanvasView.test.tsx`
+- [X] T006 [P] [US1] Write RED unit tests for `client/src/views/FeatureCanvas/canvas/scopeQuery.test.ts`: `buildDefaultScopeJql` (PI present → includes a **`cf[<num>]` clause** built from `piFieldId` with the `customfield_` prefix stripped, per I2; PI absent → clause omitted; `issuetype in (Feature, Epic)`) and `applyScopeFilters` (label / text substring / status; empty filters are no-ops)
+- [X] T007 [US1] Implement `client/src/views/FeatureCanvas/canvas/scopeQuery.ts` (pure `buildDefaultScopeJql` targeting the PI field by `cf[<num>]` id + `applyScopeFilters` + `ScopeFilters` type) to pass T006
+- [X] T008 [US1] Rework `client/src/views/FeatureCanvas/canvas/useCanvasFeatures.ts` to be JQL-driven: hold `jql` + a `surfaceGeneration` trigger, seed the default JQL via `buildDefaultScopeJql` from resolved team/project/PI, fetch via `fetchFeatureReviewItemsByJql` on surface (and once on mount), keep the existing result shape; update its sibling test `useCanvasFeatures.test.ts` (default surface, no-team guard preserved)
+- [X] T009 [P] [US1] Write RED component test `client/src/views/FeatureCanvas/canvas/SurfaceScopeBar.test.tsx`: renders the pre-filled JQL input, the Surface button triggers a surface, and typing a refine filter narrows the shown set
+- [X] T010 [US1] Implement `client/src/views/FeatureCanvas/canvas/SurfaceScopeBar.tsx` — JQL input (bound to the scope query), Surface button, and label/text/status refine-filter chips — to pass T009
+- [X] T011 [US1] Render `SurfaceScopeBar` in a header region of `client/src/views/FeatureCanvas/FeatureCanvasView.tsx`; apply `applyScopeFilters` to surfaced items before mapping; update `FeatureCanvasView.test.tsx` (scope bar present; refine narrows nodes; **re-surfacing to a narrower set preserves the overlay arrangement — position/size/priority/box — of features that remain in scope, per FR-1.4 / U1**)
+- [X] T012 [US1] Safe-failure handling: a malformed/unauthorized JQL surfaces zero features, shows a clear error, and does not mutate the overlay (FR-1.6); assert in `useCanvasFeatures.test.ts` / `FeatureCanvasView.test.tsx`
 
 **Checkpoint**: Query-driven surfacing works end to end, fully operable with AI locked.
 
@@ -75,9 +75,9 @@ no stage depends on it.
 label" into a proposed JQL the user can accept (fills the box) or reject (no change); a malformed
 reply errors and changes nothing; with AI locked the helper is absent.
 
-- [ ] T013 [P] [US2] Write RED tests in `client/src/views/FeatureCanvas/ai/canvasAiAssist.test.ts` for the new `scopeQuery` kind: prompt embeds project/PI context; parse accepts `{"kind":"scopeQuery","jql":"…"}` and rejects a missing/empty `jql` or wrong kind with a descriptive error
-- [ ] T014 [US2] Add the `scopeQuery` kind to `client/src/views/FeatureCanvas/ai/canvasAiAssist.ts` (`buildCanvasAiPrompt` + `parseCanvasAiResponse` returning `{ jql }`) to pass T013
-- [ ] T015 [US2] Add a passphrase-gated NL→JQL control to `client/src/views/FeatureCanvas/canvas/SurfaceScopeBar.tsx` (guarded by `aiAssistStore.isAiAssistUnlocked`): copy-prompt + paste-reply → propose JQL → accept places it in the box, reject is a no-op; extend `SurfaceScopeBar.test.tsx` (absent when locked; accept fills the box; malformed reply errors and changes nothing)
+- [X] T013 [P] [US2] Write RED tests in `client/src/views/FeatureCanvas/ai/canvasAiAssist.test.ts` for the new `scopeQuery` kind: prompt embeds project/PI context; parse accepts `{"kind":"scopeQuery","jql":"…"}` and rejects a missing/empty `jql` or wrong kind with a descriptive error
+- [X] T014 [US2] Add the `scopeQuery` kind to `client/src/views/FeatureCanvas/ai/canvasAiAssist.ts` (`buildCanvasAiPrompt` + `parseCanvasAiResponse` returning `{ jql }`) to pass T013
+- [X] T015 [US2] Add a passphrase-gated NL→JQL control to `client/src/views/FeatureCanvas/canvas/SurfaceScopeBar.tsx` (guarded by `aiAssistStore.isAiAssistUnlocked`): copy-prompt + paste-reply → propose JQL → accept places it in the box, reject is a no-op; extend `SurfaceScopeBar.test.tsx` (absent when locked; accept fills the box; malformed reply errors and changes nothing)
 
 **Checkpoint**: The owner can scope conversationally; manual parity holds with AI locked.
 
@@ -105,9 +105,9 @@ the AI tools.
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T022 [P] Update `CHANGELOG.md`: an **Added** entry for Area 1 (Surface JQL scoping + refine filters + hidden NL→JQL) and a **Fixed/Changed** entry for Area 2 (removed the admin "Hidden prompt tools" checkbox/flag, fixed the silent admin unlock, gated the Dev Panel behind admin) — Article VI
-- [ ] T023 [P] Run `quickstart.md` scenarios V1–V11 (AI locked and unlocked); fix any gaps
-- [ ] T024 Ensure every **new** source file has a colocated sibling test (pre-commit gate), then run `npm run test`, `npm run lint`, and `npm run build` — all green
+- [X] T022 [P] Update `CHANGELOG.md`: an **Added** entry for Area 1 (Surface JQL scoping + refine filters + hidden NL→JQL) and a **Fixed/Changed** entry for Area 2 (removed the admin "Hidden prompt tools" checkbox/flag, fixed the silent admin unlock, gated the Dev Panel behind admin) — Article VI
+- [X] T023 [P] Run `quickstart.md` scenarios V1–V11 (AI locked and unlocked); fix any gaps
+- [X] T024 Ensure every **new** source file has a colocated sibling test (pre-commit gate), then run `npm run test`, `npm run lint`, and `npm run build` — all green
 
 ---
 

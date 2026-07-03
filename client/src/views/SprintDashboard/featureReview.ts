@@ -14,7 +14,7 @@ import {
   type HygieneFlag,
 } from '../Hygiene/checks/hygieneChecks.ts';
 import { readArtFeatureScopeSettings } from '../ArtView/artFeatureScopeSettings.ts';
-import { type BlueprintFeatureNode, type BlueprintStoryNode } from '../ArtView/blueprintHierarchy.ts';
+import { fetchFeatureNodesByKeys, type BlueprintFeatureNode, type BlueprintStoryNode } from '../ArtView/blueprintHierarchy.ts';
 import type { ArtTeam } from '../ArtView/hooks/useArtData.ts';
 import { fetchScopedTeamFeatures } from './scopedTeamFeatures.ts';
 
@@ -221,25 +221,102 @@ export async function fetchFeatureReviewItems(
     customStoryPointsFieldId,
   );
 
+  const buildContext: FeatureReviewBuildContext = {
+    fieldConfig,
+    enabledBuiltInCheckIds,
+    enabledCustomRules,
+    featureKeysWithPointedStories,
+  };
   return blueprintFeatures.map((featureNode) => {
     const featureIssue = featureIssuesByKey.get(featureNode.key) ?? createFallbackFeatureIssue(featureNode);
-    const allChildStories = [...featureNode.children, ...featureNode.offTrain];
-    const doneChildCount = allChildStories.filter((storyNode) => isDoneStatus(storyNode.status)).length;
-    const blockedChildCount = allChildStories.filter((storyNode) => isBlockedStatus(storyNode.status)).length;
+    return buildFeatureReviewItem(featureNode, featureIssue, buildContext);
+  });
+}
 
-    return {
-      feature: featureNode,
-      featureIssue,
-      hygieneFlags: evaluateHygieneIssue(featureIssue, {
-        customRules: enabledCustomRules,
-        enabledBuiltInCheckIds,
-        featureKeysWithPointedStories,
-        fieldConfig,
-      }),
-      blockedChildCount,
-      doneChildCount,
-      inFlightChildCount: allChildStories.length - doneChildCount,
-      totalChildCount: allChildStories.length,
-    };
+/** Shared inputs the per-feature item builder needs for hygiene evaluation. */
+interface FeatureReviewBuildContext {
+  fieldConfig: HygieneFieldConfig;
+  enabledBuiltInCheckIds: ReturnType<typeof readEnabledBuiltInCheckIds>;
+  enabledCustomRules: ReturnType<typeof readEnabledRequiredFieldRules>;
+  featureKeysWithPointedStories: ReadonlySet<string>;
+}
+
+/** Builds one FeatureReviewItem from a blueprint feature node + its live Jira issue. Shared by the
+ *  PI-scoped and JQL-scoped fetches so child counts and hygiene evaluation stay identical. */
+function buildFeatureReviewItem(
+  featureNode: BlueprintFeatureNode,
+  featureIssue: JiraIssue,
+  buildContext: FeatureReviewBuildContext,
+): FeatureReviewItem {
+  const allChildStories = [...featureNode.children, ...featureNode.offTrain];
+  const doneChildCount = allChildStories.filter((storyNode) => isDoneStatus(storyNode.status)).length;
+  const blockedChildCount = allChildStories.filter((storyNode) => isBlockedStatus(storyNode.status)).length;
+
+  return {
+    feature: featureNode,
+    featureIssue,
+    hygieneFlags: evaluateHygieneIssue(featureIssue, {
+      customRules: buildContext.enabledCustomRules,
+      enabledBuiltInCheckIds: buildContext.enabledBuiltInCheckIds,
+      featureKeysWithPointedStories: buildContext.featureKeysWithPointedStories,
+      fieldConfig: buildContext.fieldConfig,
+    }),
+    blockedChildCount,
+    doneChildCount,
+    inFlightChildCount: allChildStories.length - doneChildCount,
+    totalChildCount: allChildStories.length,
+  };
+}
+
+/**
+ * Loads Feature Review items for an **arbitrary JQL query** instead of the PI rollup. Runs the query
+ * to get matching feature/epic issues (with hygiene fields), builds their blueprint nodes
+ * (health/completion + children) via `fetchFeatureNodesByKeys`, and assembles items with the shared
+ * builder. Rejects if the query is invalid/unauthorized so the caller can surface the error without
+ * touching any local state.
+ */
+export async function fetchFeatureReviewItemsByJql(
+  jql: string,
+  featureReviewFieldConfig?: HygieneFieldConfig,
+  customStoryPointsFieldId = '',
+): Promise<FeatureReviewItem[]> {
+  const fieldConfig = featureReviewFieldConfig ?? await fetchFeatureReviewFieldConfig();
+  const enterpriseRules = loadEnterpriseRulesFromStorage();
+  const enabledBuiltInCheckIds = readEnabledBuiltInCheckIds(enterpriseRules);
+  const enabledCustomRules = readEnabledRequiredFieldRules(enterpriseRules);
+
+  const requestedFieldIds = buildUniqueFieldIds([
+    'summary', 'status', 'assignee', 'description', 'duedate', 'fixVersions', 'parent', 'issuelinks', 'labels', 'issuetype',
+    ...enabledCustomRules.map((customRule) => customRule.fieldId),
+    ...fieldConfig.acceptanceCriteriaFieldIds,
+    ...fieldConfig.applicationFieldIds,
+    ...fieldConfig.featureLinkFieldIds,
+    ...fieldConfig.initiativeTypeFieldIds,
+    ...fieldConfig.parentLinkFieldIds,
+    ...fieldConfig.productOwnerFieldIds,
+    ...fieldConfig.programIncrementFieldIds,
+    ...fieldConfig.targetEndFieldIds,
+    ...fieldConfig.targetStartFieldIds,
+  ]);
+  const searchPath = `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(requestedFieldIds.join(','))}&maxResults=200`;
+  const searchResult = await jiraGet<{ issues?: JiraIssue[] }>(searchPath);
+  const featureIssues = searchResult.issues ?? [];
+  if (featureIssues.length === 0) {
+    return [];
+  }
+  const featureIssuesByKey = new Map(featureIssues.map((featureIssue) => [featureIssue.key, featureIssue]));
+
+  const featureNodes = await fetchFeatureNodesByKeys(featureIssues.map((featureIssue) => featureIssue.key));
+  const featureKeysWithPointedStories = await buildFeatureKeysWithPointedChildren(featureNodes, customStoryPointsFieldId);
+  const buildContext: FeatureReviewBuildContext = {
+    fieldConfig,
+    enabledBuiltInCheckIds,
+    enabledCustomRules,
+    featureKeysWithPointedStories,
+  };
+
+  return featureNodes.map((featureNode) => {
+    const featureIssue = featureIssuesByKey.get(featureNode.key) ?? createFallbackFeatureIssue(featureNode);
+    return buildFeatureReviewItem(featureNode, featureIssue, buildContext);
   });
 }

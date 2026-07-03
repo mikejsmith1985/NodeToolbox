@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildCanvasAiPrompt, extractJsonPayload, parseCanvasAiResponse } from './canvasAiAssist.ts';
+import { buildCanvasAiPrompt, buildScopeQueryPrompt, extractJsonPayload, parseCanvasAiResponse, parseScopeQueryResponse } from './canvasAiAssist.ts';
 
 describe('canvasAiAssist', () => {
   it('builds a prompt that names the issues and demands JSON only', () => {
@@ -40,5 +40,27 @@ describe('canvasAiAssist', () => {
     const set = parseCanvasAiResponse('sprintGrouping', '{"kind":"sprintGrouping","groups":[{"containerTitle":"Sprint 25","issueKeys":["DENP-1","DENP-2"]}]}');
     expect(set.items.map((item) => item.issueKey)).toEqual(['DENP-1', 'DENP-2']);
     expect(set.items[0].proposedValue).toBe('Sprint 25');
+  });
+});
+
+
+describe('scopeQuery NL→JQL round-trip', () => {
+  it('builds a prompt that carries the description and demands JSON only', () => {
+    const prompt = buildScopeQueryPrompt({ projectKey: 'ENCUC', piName: 'PI 26.3', description: 'features with the ENCUC label' });
+    expect(prompt).toContain('ENCUC label');
+    expect(prompt).toContain('valid JSON');
+  });
+
+  it('parses a valid reply into the proposed JQL', () => {
+    const { jql } = parseScopeQueryResponse('{"kind":"scopeQuery","jql":"project = ENCUC AND labels = ENCUC"}');
+    expect(jql).toBe('project = ENCUC AND labels = ENCUC');
+  });
+
+  it('rejects a missing/empty jql', () => {
+    expect(() => parseScopeQueryResponse('{"kind":"scopeQuery","jql":""}')).toThrow(/Missing or empty/);
+  });
+
+  it('rejects a reply whose kind does not match', () => {
+    expect(() => parseScopeQueryResponse('{"kind":"priorityOrder","jql":"x"}')).toThrow(/does not match/);
   });
 });
