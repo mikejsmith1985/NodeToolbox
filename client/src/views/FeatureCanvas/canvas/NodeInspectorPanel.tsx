@@ -108,6 +108,16 @@ function NodeInspectorContent({ node, onClose }: { node: CanvasNode; onClose: ()
         )}
       </div>
 
+      {/* Acceptance criteria — read-only */}
+      <div style={{ marginTop: 8, fontSize: 12 }}>
+        <div style={{ opacity: 0.6 }}>Acceptance criteria</div>
+        {node.acceptanceCriteria ? (
+          <p style={{ margin: '2px 0', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>{node.acceptanceCriteria}</p>
+        ) : (
+          <p style={{ opacity: 0.6, margin: '2px 0' }}>No acceptance criteria.</p>
+        )}
+      </div>
+
       {node.hygieneFlags.length > 0 && (
         <div style={{ marginTop: 8, fontSize: 12 }}>
           <div style={{ opacity: 0.6 }}>Hygiene</div>

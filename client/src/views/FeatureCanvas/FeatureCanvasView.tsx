@@ -151,12 +151,10 @@ export default function FeatureCanvasView(): React.JSX.Element {
             🗑 Clear canvas
           </button>
         )}
+        <CanvasLegend />
         {scope.piName.trim() !== '' && <span style={{ fontSize: 12, opacity: 0.7 }}>PI: {scope.piName}</span>}
         {artRoster.length === 0 && <span style={{ fontSize: 12, opacity: 0.7 }}>No ART teams configured — use Add via JQL.</span>}
         {features.status === 'error' && <span role="alert" style={{ fontSize: 12, color: 'var(--color-danger)' }}>{features.error}</span>}
-        <div style={{ marginLeft: 'auto' }}>
-          <CanvasLegend />
-        </div>
       </div>
       <div style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
         {isPickerOpen && (
