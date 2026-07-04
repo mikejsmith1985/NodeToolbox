@@ -1,6 +1,6 @@
-// useCanvasScope.test.ts — Verifies scope from Team-Dashboard profiles + local team selection (no fetch).
+// useCanvasScope.test.ts — Verifies the active-profile scope resolution (project/PI/board, no fetch).
 
-import { act, renderHook } from '@testing-library/react';
+import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../SprintDashboard/sprintDashboardArtContext.ts', () => ({
@@ -20,37 +20,25 @@ function profile(id: string, name: string, projectKey: string, boardId: string, 
 describe('useCanvasScope', () => {
   beforeEach(() => {
     useSettingsStore.setState({
-      sprintDashboardTeamProfiles: [
-        profile('t1', 'CleanupCrew', 'ENCUC', '42', 'PI 26.3'),
-        profile('t2', 'Transformers', 'ENFCT', '43', 'PI 26.3'),
-      ],
+      sprintDashboardTeamProfiles: [profile('t1', 'CleanupCrew', 'ENCUC', '42', 'PI 26.3')],
       sprintDashboardActiveTeamProfileId: 't1',
     });
   });
 
-  it('lists the Team-Dashboard teams and defaults to the active one', () => {
+  it('resolves the active profile project/PI/board and a default custom-query prefill', () => {
     const { result } = renderHook(() => useCanvasScope());
-    expect(result.current.teams.map((team) => team.name)).toEqual(['CleanupCrew', 'Transformers']);
-    expect(result.current.selectedTeamId).toBe('t1');
-    expect(result.current.team?.name).toBe('CleanupCrew');
     expect(result.current.projectKey).toBe('ENCUC');
+    expect(result.current.piName).toBe('PI 26.3');
+    expect(result.current.boardId).toBe(42);
     expect(result.current.defaultJql).toContain('project = "ENCUC"');
+    expect(result.current.defaultJql).toContain('cf[10301]');
   });
 
-  it('switches scope to another team without touching the dashboard active team', () => {
-    const { result } = renderHook(() => useCanvasScope());
-    act(() => result.current.selectTeam('t2'));
-    expect(result.current.selectedTeamId).toBe('t2');
-    expect(result.current.team?.name).toBe('Transformers');
-    expect(result.current.projectKey).toBe('ENFCT');
-    // The global active profile is unchanged — the switch is canvas-local.
-    expect(useSettingsStore.getState().sprintDashboardActiveTeamProfileId).toBe('t1');
-  });
-
-  it('returns a null team when no profiles are configured', () => {
+  it('falls back to an empty project + fallback PI when no profile is configured', () => {
     useSettingsStore.setState({ sprintDashboardTeamProfiles: [], sprintDashboardActiveTeamProfileId: '' });
     const { result } = renderHook(() => useCanvasScope());
-    expect(result.current.team).toBeNull();
-    expect(result.current.teams).toHaveLength(0);
+    expect(result.current.projectKey).toBe('');
+    expect(result.current.piName).toBe('PI 26.3');
+    expect(result.current.boardId).toBeNull();
   });
 });
