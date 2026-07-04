@@ -81,6 +81,12 @@ export interface WipSnapshot {
   limit: number | null;
   overflow: number;
   parkedCount: number;
+  /**
+   * In-progress child stories across non-parked features — the true concurrent execution load,
+   * shown alongside the feature-level count so a single "in progress" feature hiding many active
+   * stories is visible. Informational only; the WIP limit still governs feature count.
+   */
+  activeStoryCount: number;
 }
 
 /** One proposed Jira write shown in the Review & Commit diff before anything is written. */

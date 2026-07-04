@@ -8,12 +8,14 @@
 import { useMemo, useState } from 'react';
 
 import { useAiAssistStore } from '../../../store/aiAssistStore.ts';
-import type { CanvasNode } from '../logic/canvasTypes.ts';
+import type { CanvasNode, WipSnapshot } from '../logic/canvasTypes.ts';
+import { IN_PROGRESS_STATUS_CATEGORY } from '../logic/wip.ts';
 import type { CanvasOverlayController } from '../overlay/useCanvasOverlay.ts';
 import type { MoscowBucket } from '../overlay/overlayModel.ts';
 import {
   buildCanvasAiPrompt,
   parseCanvasAiResponse,
+  type AiPromptIssue,
   type AiSuggestion,
   type AiSuggestionKind,
 } from './canvasAiAssist.ts';
@@ -23,6 +25,8 @@ import controlStyles from '../canvas/canvasControls.module.css';
 export interface AiSuggestionPanelProps {
   canvasNodes: readonly CanvasNode[];
   controller: CanvasOverlayController;
+  /** Current WIP readout — feeds the Reduce WIP prompt with the limit and in-progress count. */
+  wip: WipSnapshot;
   onClose: () => void;
 }
 
@@ -30,13 +34,19 @@ export interface AiSuggestionPanelProps {
 function applySuggestion(kind: AiSuggestionKind, suggestion: AiSuggestion, controller: CanvasOverlayController): void {
   if (kind === 'priorityOrder') {
     controller.setPriority(suggestion.issueKey, suggestion.proposedValue as MoscowBucket);
-  } else if (kind === 'staleCandidates') {
+  } else if (kind === 'staleCandidates' || kind === 'wipReduction') {
+    // Both analyses recommend deferring work, so accepting one parks the feature (overlay only).
     controller.setParked(suggestion.issueKey, true);
   }
 }
 
+/** Projects a canvas node into the minimal issue shape the AI prompt needs. */
+function toPromptIssue(node: CanvasNode): AiPromptIssue {
+  return { issueKey: node.issueKey, summary: node.summary, status: node.status, storyPoints: node.storyPoints, businessValue: node.businessValue, priority: node.priority };
+}
+
 /** The gated copy-paste AI accelerator. Renders nothing when AI Assist is locked. */
-export function AiSuggestionPanel({ canvasNodes, controller, onClose }: AiSuggestionPanelProps): React.JSX.Element | null {
+export function AiSuggestionPanel({ canvasNodes, controller, wip, onClose }: AiSuggestionPanelProps): React.JSX.Element | null {
   const isUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
   const [kind, setKind] = useState<AiSuggestionKind>('priorityOrder');
   const [responseText, setResponseText] = useState('');
@@ -44,10 +54,15 @@ export function AiSuggestionPanel({ canvasNodes, controller, onClose }: AiSugges
   const [error, setError] = useState<string | null>(null);
 
   const knownKeys = useMemo(() => new Set(canvasNodes.map((node) => node.issueKey)), [canvasNodes]);
-  const prompt = useMemo(
-    () => buildCanvasAiPrompt(kind, canvasNodes.map((node) => ({ issueKey: node.issueKey, summary: node.summary, status: node.status, storyPoints: node.storyPoints, businessValue: node.businessValue }))),
-    [kind, canvasNodes],
-  );
+  const prompt = useMemo(() => {
+    // Reduce WIP reasons only over the features that actually count toward WIP (in progress, not
+    // parked) and is handed the limit + count; every other analysis considers the whole canvas.
+    if (kind === 'wipReduction') {
+      const inProgressNodes = canvasNodes.filter((node) => !node.isParked && node.statusCategoryKey === IN_PROGRESS_STATUS_CATEGORY);
+      return buildCanvasAiPrompt(kind, inProgressNodes.map(toPromptIssue), { wipLimit: wip.limit, inProgressCount: wip.inProgressCount });
+    }
+    return buildCanvasAiPrompt(kind, canvasNodes.map(toPromptIssue));
+  }, [kind, canvasNodes, wip.limit, wip.inProgressCount]);
 
   // Guard: invisible and inert unless the operator has unlocked AI Assist.
   if (!isUnlocked) {
@@ -78,6 +93,7 @@ export function AiSuggestionPanel({ canvasNodes, controller, onClose }: AiSugges
       </div>
       <select value={kind} onChange={(event) => setKind(event.target.value as AiSuggestionKind)} style={{ margin: '8px 0', width: '100%' }}>
         <option value="priorityOrder">Priority order</option>
+        <option value="wipReduction">Reduce WIP (park to limit)</option>
         <option value="staleCandidates">Stale candidates</option>
         <option value="duplicateCandidates">Duplicate candidates</option>
         <option value="sprintGrouping">Sprint grouping</option>

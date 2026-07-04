@@ -26,20 +26,22 @@ const NODES: CanvasNode[] = [{
   childStories: [], dependencies: [], businessValue: null, description: null, attachments: [], effectivePoints: 3,
 }];
 
+const WIP = { inProgressCount: 1, limit: 1, overflow: 0, parkedCount: 0, activeStoryCount: 0 };
+
 describe('AiSuggestionPanel', () => {
   afterEach(() => {
     act(() => setAiAssistUnlocked(false));
   });
 
   it('renders nothing when AI Assist is locked (manual parity)', () => {
-    const { container } = render(<AiSuggestionPanel canvasNodes={NODES} controller={buildController()} onClose={vi.fn()} />);
+    const { container } = render(<AiSuggestionPanel canvasNodes={NODES} controller={buildController()} wip={WIP} onClose={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
   });
 
   it('renders when unlocked and reports a descriptive error on malformed input without applying anything', () => {
     act(() => setAiAssistUnlocked(true));
     const controller = buildController();
-    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} onClose={vi.fn()} />);
+    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} onClose={vi.fn()} />);
 
     expect(screen.getByText(/AI suggestions/)).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), { target: { value: 'not json at all' } });
@@ -47,5 +49,20 @@ describe('AiSuggestionPanel', () => {
 
     expect(screen.getByText(/No JSON object/)).toBeInTheDocument();
     expect(controller.setPriority).not.toHaveBeenCalled();
+  });
+
+  it('parks a feature when a Reduce WIP suggestion is accepted', () => {
+    act(() => setAiAssistUnlocked(true));
+    const controller = buildController();
+    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} onClose={vi.fn()} />);
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'wipReduction' } });
+    fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
+      target: { value: '{"kind":"wipReduction","items":[{"issueKey":"DENP-1","reason":"lowest priority"}]}' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Ingest suggestions/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+
+    expect(controller.setParked).toHaveBeenCalledWith('DENP-1', true);
   });
 });

@@ -59,4 +59,20 @@ describe('computeWipSnapshot', () => {
     ];
     expect(computeWipSnapshot(nodes, 3).inProgressCount).toBe(0);
   });
+
+  it('reports the story-level active load across non-parked features', () => {
+    const activeStory = { key: 's1', summary: '', status: 'In Progress', statusCategoryKey: 'indeterminate', storyPoints: null };
+    const doneStory = { key: 's2', summary: '', status: 'Done', statusCategoryKey: 'done', storyPoints: null };
+    const nodes = [
+      buildNode({ issueKey: 'A', statusCategoryKey: 'indeterminate', childStories: [activeStory, activeStory, doneStory] }),
+      buildNode({ issueKey: 'B', statusCategoryKey: 'new', childStories: [activeStory] }),
+      // Parked features are excluded entirely, including their active stories.
+      buildNode({ issueKey: 'C', statusCategoryKey: 'indeterminate', isParked: true, childStories: [activeStory, activeStory] }),
+    ];
+    const snapshot = computeWipSnapshot(nodes, 5);
+    // Feature count only sees the one non-parked in-progress feature (A); B is 'new', C is parked.
+    expect(snapshot.inProgressCount).toBe(1);
+    // Story count sees 2 active in A + 1 active in B; C's are excluded because it is parked.
+    expect(snapshot.activeStoryCount).toBe(3);
+  });
 });
