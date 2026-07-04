@@ -31,16 +31,26 @@ export interface PickerGroup {
   features: PickerFeature[];
 }
 
-/** Maps a blueprint program-epic hierarchy into picker groups (PE → Feature). */
+/**
+ * Maps a blueprint program-epic hierarchy into picker groups (PE → Feature), scoped to the selected
+ * team. Because the blueprint spans the whole ART, a single team's hierarchy also drags in sibling
+ * features hanging off the same Program Epics that belong to *other* teams — these are flagged
+ * `isExternal`. We drop them so the picker shows only the scoped team's own features (matching ART's
+ * per-team Blueprint count), and any Program Epic left with no features is omitted.
+ */
 export function mapBlueprintToGroups(
   programEpics: readonly BlueprintProgramEpicNode[],
   onCanvasKeys: ReadonlySet<string>,
 ): PickerGroup[] {
-  return programEpics.map((programEpic) => ({
-    programEpicKey: programEpic.key,
-    programEpicSummary: programEpic.summary || programEpic.key,
-    features: programEpic.features.map((featureNode) => blueprintFeatureToPickerFeature(featureNode, programEpic, onCanvasKeys)),
-  }));
+  return programEpics
+    .map((programEpic) => ({
+      programEpicKey: programEpic.key,
+      programEpicSummary: programEpic.summary || programEpic.key,
+      features: programEpic.features
+        .filter((featureNode) => !featureNode.isExternal)
+        .map((featureNode) => blueprintFeatureToPickerFeature(featureNode, programEpic, onCanvasKeys)),
+    }))
+    .filter((group) => group.features.length > 0);
 }
 
 /** Maps a blueprint feature node into a picker row (child count includes off-train children). */

@@ -34,6 +34,20 @@ describe('pickerModel', () => {
     expect(groups[0].features[1]).toMatchObject({ key: 'F-2', childCount: 0, isAlreadyOnCanvas: false });
   });
 
+  it('drops external (other-team) sibling features and any now-empty Program Epic', () => {
+    const withExternal = programEpic();
+    withExternal.features.push({ type: 'feature', key: 'X-9', summary: 'Other team feature', status: 'To Do', health: 'gray', completionPercent: 0, children: [], offTrain: [], isExternal: true });
+    const onlyExternalPe: BlueprintProgramEpicNode = {
+      type: 'pe', key: 'PE-2', summary: 'Foreign', status: null, health: 'gray', completionPercent: 0,
+      features: [{ type: 'feature', key: 'X-10', summary: 'Foreign feature', status: 'To Do', health: 'gray', completionPercent: 0, children: [], offTrain: [], isExternal: true }],
+    };
+
+    const groups = mapBlueprintToGroups([withExternal, onlyExternalPe], new Set());
+    // The external sibling is gone, and the all-external PE is omitted entirely.
+    expect(groups).toHaveLength(1);
+    expect(groups[0].features.map((feature) => feature.key)).toEqual(['F-1', 'F-2']);
+  });
+
   it('maps custom-JQL items into a single ungrouped group', () => {
     const items = [{ feature: { key: 'C-9', summary: 'Custom', status: 'Done', health: 'green' }, totalChildCount: 5 }] as unknown as FeatureReviewItem[];
     const groups = mapJqlItemsToGroups(items, new Set());
