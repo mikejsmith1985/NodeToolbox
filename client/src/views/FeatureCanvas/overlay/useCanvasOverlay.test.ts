@@ -86,4 +86,16 @@ describe('useCanvasOverlay', () => {
     expect(restored.containers).toHaveLength(1);
     expect(restored.stageState.currentStageId).toBe('size');
   });
+
+  it('removeNode drops exactly one node and leaves others and containers untouched', () => {
+    const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+    act(() => result.current.ensureNodeStates([createNodeState('DENP-1', 0, 0), createNodeState('DENP-2', 0, 0)]));
+    act(() => result.current.addContainer(CONTAINER));
+
+    act(() => result.current.removeNode('DENP-1'));
+
+    expect(result.current.overlay.nodes['DENP-1']).toBeUndefined();
+    expect(result.current.overlay.nodes['DENP-2']).toBeDefined();
+    expect(result.current.overlay.containers).toHaveLength(1);
+  });
 });

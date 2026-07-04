@@ -9,9 +9,10 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **canvas-scope-access** (Feature Canvas Surface JQL scoping + hidden NL→JQL; and AI-tools
-  access hardening: remove the admin "Hidden prompt tools" checkbox and fix the silent admin
-  unlock) — plan: `specs/010-canvas-scope-access/plan.md`
+- **surface-picker-expand** (Feature Canvas: blueprint-first cross-project surfacing picker with
+  deliberate selection, an additive/curated canvas with per-node removal, and a read-only side
+  inspector for epic detail + child records; retires feature 010's refine chips) —
+  plan: `specs/011-surface-picker-expand/plan.md`
   (spec, research, data-model, contracts, quickstart in the same directory).
 <!-- SPECKIT END -->
 

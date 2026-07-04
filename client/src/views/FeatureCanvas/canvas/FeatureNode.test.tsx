@@ -1,7 +1,7 @@
 // FeatureNode.test.tsx — Verifies the feature card renders key data and its hygiene badge.
 
 import type { ComponentProps } from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CanvasNode } from '../logic/canvasTypes.ts';
@@ -38,5 +38,15 @@ describe('FeatureNode', () => {
   it('shows no hygiene badge when a feature is clean', () => {
     render(<FeatureNode {...({ data: { node: buildNode({ hygieneFlags: [] }) }, selected: false } as unknown as ComponentProps<typeof FeatureNode>)} />);
     expect(screen.queryByText(/⚑/)).not.toBeInTheDocument();
+  });
+
+  it('renders a remove control that fires onDelete, and omits it when no handler is given', () => {
+    const onDelete = vi.fn();
+    const { rerender } = render(<FeatureNode {...({ data: { node: buildNode(), onDelete }, selected: false } as unknown as ComponentProps<typeof FeatureNode>)} />);
+    fireEvent.click(screen.getByRole('button', { name: /Remove DENP-1 from canvas/ }));
+    expect(onDelete).toHaveBeenCalledTimes(1);
+
+    rerender(<FeatureNode {...({ data: { node: buildNode() }, selected: false } as unknown as ComponentProps<typeof FeatureNode>)} />);
+    expect(screen.queryByRole('button', { name: /Remove/ })).not.toBeInTheDocument();
   });
 });

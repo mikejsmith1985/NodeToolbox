@@ -1,88 +1,56 @@
-// useCanvasFeatures.ts — Loads the feature set the canvas surfaces (Stage 1 data source).
+// useCanvasFeatures.ts — Loads live data for the canvas's curated working set (the overlay's keys).
 //
-// Surfacing is driven by a user-supplied Jira query (pre-filled with a default from the active team
-// + PI) and an explicit "Surface" action, rather than an automatic team+PI fetch. The query runs
-// through the JQL-scoped Feature Review fetch, so features arrive with health, completion, child
-// stories, hygiene flags, and issue links already resolved. A resolved team/project/PI is still kept
-// for the overlay scope key and the commit step. A failed query surfaces an error and nothing else.
+// The canvas renders the persisted working set — the features the user has chosen and kept — not a
+// free-form query result. This hook takes those keys (from the overlay) and fetches their live health,
+// completion, child stories, hygiene flags, and issue links via the JQL-scoped Feature Review fetch,
+// batching so a large set never silently truncates. Adding/removing keys re-fetches; an empty set
+// means an empty canvas. Scope resolution lives in useCanvasScope so the overlay key can be built first.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
-import { useSettingsStore } from '../../../store/settingsStore.ts';
-import { readArtFeatureScopeSettings } from '../../ArtView/artFeatureScopeSettings.ts';
-import type { ArtTeam } from '../../ArtView/hooks/useArtData.ts';
 import { fetchFeatureReviewItemsByJql, type FeatureReviewItem } from '../../SprintDashboard/featureReview.ts';
-import {
-  findMatchingArtTeam,
-  readFallbackSelectedPiName,
-  readStoredArtTeams,
-} from '../../SprintDashboard/sprintDashboardArtContext.ts';
-import { buildDefaultScopeJql } from './scopeQuery.ts';
 
-/** The loading lifecycle of the canvas feature set. */
-export type CanvasFeaturesStatus = 'no-team' | 'loading' | 'ready' | 'error';
+/** The loading lifecycle of the working-set fetch. */
+export type CanvasFeaturesStatus = 'ready' | 'loading' | 'error';
 
-/** The resolved feature set plus the scope-control state and actions. */
+/** The live feature data for the current working set. */
 export interface CanvasFeaturesResult {
   status: CanvasFeaturesStatus;
-  team: ArtTeam | null;
-  projectKey: string;
-  piName: string;
-  boardId: number | null;
   items: FeatureReviewItem[];
   error: string | null;
-  /** The query that will run on the next Surface (editable via setJql). */
-  jql: string;
-  /** The team+PI default query, for a "reset to default" affordance. */
-  defaultJql: string;
-  setJql: (nextJql: string) => void;
-  /** Runs the current query and re-surfaces. */
-  surface: () => void;
 }
 
-/** Resolves the active team/PI scope and the query-driven feature set the canvas surfaces. */
-export function useCanvasFeatures(): CanvasFeaturesResult {
-  const boardIdRaw = useSettingsStore((state) => state.sprintDashboardBoardId);
-  const projectKey = useSettingsStore((state) => state.sprintDashboardProjectKey);
-  const selectedPiValue = useSettingsStore((state) => state.sprintDashboardSelectedPiValue);
+// The JQL-scoped fetch caps at maxResults=200, so a working set beyond that must be fetched in
+// batches and merged — never silently truncated.
+const WORKING_SET_FETCH_BATCH_SIZE = 200;
 
-  const boardId = boardIdRaw.trim() === '' ? null : Number(boardIdRaw);
-  const team = useMemo(() => findMatchingArtTeam(readStoredArtTeams(), boardId, projectKey), [boardId, projectKey]);
-  const piName = selectedPiValue.trim() || readFallbackSelectedPiName();
+/** Fetches feature-review items for the given keys, batching to respect the 200-result fetch cap. */
+async function fetchWorkingSetItems(keys: readonly string[]): Promise<FeatureReviewItem[]> {
+  const mergedItems: FeatureReviewItem[] = [];
+  for (let batchStart = 0; batchStart < keys.length; batchStart += WORKING_SET_FETCH_BATCH_SIZE) {
+    const keyBatch = keys.slice(batchStart, batchStart + WORKING_SET_FETCH_BATCH_SIZE);
+    const batchItems = await fetchFeatureReviewItemsByJql(`issuekey in (${keyBatch.join(',')})`);
+    mergedItems.push(...batchItems);
+  }
+  return mergedItems;
+}
 
-  const defaultJql = useMemo(
-    () => buildDefaultScopeJql({ projectKey, piName, piFieldId: readArtFeatureScopeSettings().piFieldId }),
-    [projectKey, piName],
-  );
+/** Loads live feature data for the working set identified by the given overlay node keys. */
+export function useCanvasFeatures(workingSetKeys: readonly string[]): CanvasFeaturesResult {
+  // Sort so the request identity is stable regardless of key insertion order.
+  const requestKey = useMemo(() => [...workingSetKeys].sort().join(','), [workingSetKeys]);
 
-  // The query the user will run; null until edited, in which case the default is used.
-  const [editedJql, setEditedJql] = useState<string | null>(null);
-  const jql = editedJql ?? defaultJql;
-  const setJql = useCallback((nextJql: string) => setEditedJql(nextJql), []);
-
-  // Surface trigger — bumped when the user presses Surface. Generation 0 drives the initial load.
-  const [surfaceGeneration, setSurfaceGeneration] = useState(0);
-  const surface = useCallback(() => setSurfaceGeneration((generation) => generation + 1), []);
-
-  // Keep the latest query in a ref so the fetch effect reads it at surface time without refetching on
-  // every keystroke — the effect depends on the surface trigger, not the query string.
-  const jqlRef = useRef(jql);
-  useEffect(() => {
-    jqlRef.current = jql;
-  }, [jql]);
-
-  const requestKey = `${team?.id ?? ''}:${surfaceGeneration}`;
   const [result, setResult] = useState<{ key: string; status: 'ready' | 'error'; items: FeatureReviewItem[]; error: string | null }>(
-    { key: '', status: 'ready', items: [], error: null },
+    { key: '__initial__', status: 'ready', items: [], error: null },
   );
 
   useEffect(() => {
-    if (!team) {
-      return undefined;
+    if (requestKey === '') {
+      return undefined; // empty working set — nothing to fetch; derived status below is ready/[]
     }
     let isCancelled = false;
     // setState happens only in the async callbacks, never synchronously in the effect body.
-    fetchFeatureReviewItemsByJql(jqlRef.current)
+    fetchWorkingSetItems(requestKey.split(','))
       .then((loadedItems) => {
         if (!isCancelled) {
           setResult({ key: requestKey, status: 'ready', items: loadedItems, error: null });
@@ -96,12 +64,15 @@ export function useCanvasFeatures(): CanvasFeaturesResult {
     return () => {
       isCancelled = true;
     };
-  }, [team, requestKey]);
+  }, [requestKey]);
 
+  if (requestKey === '') {
+    return { status: 'ready', items: [], error: null };
+  }
   const isResultCurrent = result.key === requestKey;
-  const status: CanvasFeaturesStatus = !team ? 'no-team' : isResultCurrent ? result.status : 'loading';
-  const items = isResultCurrent ? result.items : [];
-  const error = isResultCurrent ? result.error : null;
-
-  return { status, team, projectKey, piName, boardId, items, error, jql, defaultJql, setJql, surface };
+  return {
+    status: isResultCurrent ? result.status : 'loading',
+    items: isResultCurrent ? result.items : [],
+    error: isResultCurrent ? result.error : null,
+  };
 }
