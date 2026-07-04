@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react';
 
 import { NlToJqlControl } from './NlToJqlControl.tsx';
 import { PersonFinder } from './PersonFinder.tsx';
+import controlStyles from './canvasControls.module.css';
 import {
   collectAddableKeys,
   collectSelectableKeys,
@@ -78,15 +79,15 @@ export function SurfacePicker({ piName, projectKey, onCanvasKeys, defaultJql, on
   const isLoading = candidates.status === 'loading';
 
   return (
-    <div role="dialog" aria-label="Add via JQL" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, width: 460, maxHeight: '80vh', background: '#0f172a', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0' }}>
+    <div role="dialog" aria-label="Add via JQL" className={controlStyles.popover} style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, width: 460, maxHeight: '80vh' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <strong>Add via JQL</strong>
-        <button type="button" onClick={onClose} aria-label="Close picker">✕</button>
+        <button type="button" className={controlStyles.iconBtn} onClick={onClose} aria-label="Close picker">✕</button>
       </div>
 
       <textarea aria-label="Custom JQL" value={jql} onChange={(event) => setJql(event.target.value)} rows={2} style={{ width: '100%', fontSize: 12 }} />
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <button type="button" onClick={() => setRunToken((token) => token + 1)}>Run query</button>
+        <button type="button" className={controlStyles.btn} onClick={() => setRunToken((token) => token + 1)}>Run query</button>
         <PersonFinder onInsertClause={insertJqlClause} />
         <NlToJqlControl projectKey={projectKey} piName={piName} onAcceptJql={setJql} />
       </div>
@@ -94,8 +95,8 @@ export function SurfacePicker({ piName, projectKey, onCanvasKeys, defaultJql, on
       <input aria-label="Search features" placeholder="Search by key or summary" value={search} onChange={(event) => setSearch(event.target.value)} style={{ width: '100%' }} />
 
       <div style={{ display: 'flex', gap: 6 }}>
-        <button type="button" onClick={() => setSelectedKeys(new Set(collectSelectableKeys(groups)))}>Select all</button>
-        <button type="button" onClick={() => setSelectedKeys(new Set())}>Clear</button>
+        <button type="button" className={controlStyles.btn} onClick={() => setSelectedKeys(new Set(collectSelectableKeys(groups)))}>Select all</button>
+        <button type="button" className={controlStyles.btn} onClick={() => setSelectedKeys(new Set())}>Clear</button>
       </div>
 
       <div style={{ overflowY: 'auto', flex: 1 }}>
@@ -126,7 +127,7 @@ export function SurfacePicker({ piName, projectKey, onCanvasKeys, defaultJql, on
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-        <button type="button" onClick={handleAdd} disabled={selectedKeys.size === 0}>Add to canvas</button>
+        <button type="button" className={controlStyles.btnPrimary} onClick={handleAdd} disabled={selectedKeys.size === 0}>Add to canvas</button>
       </div>
     </div>
   );

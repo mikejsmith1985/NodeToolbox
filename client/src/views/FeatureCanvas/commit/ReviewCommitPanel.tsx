@@ -11,6 +11,7 @@ import type { CommitDiffItem } from '../logic/canvasTypes.ts';
 import type { CanvasNode } from '../logic/canvasTypes.ts';
 import type { CanvasContainer } from '../overlay/overlayModel.ts';
 import { commitToJira, type CommitResult } from './commitJira.ts';
+import controlStyles from '../canvas/canvasControls.module.css';
 
 /** Props the commit panel needs to build the diff and execute it. */
 export interface ReviewCommitPanelProps {
@@ -57,10 +58,10 @@ export function ReviewCommitPanel(props: ReviewCommitPanelProps): React.JSX.Elem
   const resultById = new Map((results ?? []).map((result) => [result.itemId, result]));
 
   return (
-    <div style={{ position: 'absolute', inset: '40px 360px 40px 40px', background: '#0f172a', border: '1px solid #8b5cf6', borderRadius: 8, padding: 16, overflowY: 'auto', zIndex: 20, color: '#e2e8f0' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+    <div className={controlStyles.popover} style={{ position: 'absolute', inset: '40px 360px 40px 40px', padding: 16, overflowY: 'auto', zIndex: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ margin: 0 }}>Review &amp; Commit</h2>
-        <button type="button" onClick={onClose}>✕</button>
+        <button type="button" className={controlStyles.iconBtn} onClick={onClose} aria-label="Close Review and Commit">✕</button>
       </div>
       <p style={{ opacity: 0.75 }}>Nothing is written to Jira until you press Commit. Uncheck any change you want to skip.</p>
       {diff.length === 0 && <p>No pending changes — arrange features into boxes or size them first.</p>}
@@ -72,18 +73,18 @@ export function ReviewCommitPanel(props: ReviewCommitPanelProps): React.JSX.Elem
               <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input type="checkbox" checked={item.selected} onChange={() => toggleItem(item.id)} disabled={results !== null} />
                 <span>{describeItem(item)}</span>
-                {result && <span style={{ color: result.status === 'success' ? '#22c55e' : result.status === 'skipped' ? '#eab308' : '#ef4444' }}>{result.status}</span>}
+                {result && <span style={{ color: result.status === 'success' ? 'var(--color-success)' : result.status === 'skipped' ? 'var(--color-warning)' : 'var(--color-danger)' }}>{result.status}</span>}
               </label>
             </li>
           );
         })}
       </ul>
       {results === null ? (
-        <button type="button" onClick={handleCommit} disabled={isCommitting || diff.every((item) => !item.selected)}>
+        <button type="button" className={controlStyles.btnPrimary} onClick={handleCommit} disabled={isCommitting || diff.every((item) => !item.selected)}>
           {isCommitting ? 'Committing…' : `Commit ${diff.filter((item) => item.selected).length} change(s)`}
         </button>
       ) : (
-        <button type="button" onClick={onClose}>Done</button>
+        <button type="button" className={controlStyles.btn} onClick={onClose}>Done</button>
       )}
     </div>
   );

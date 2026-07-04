@@ -10,6 +10,7 @@ import type { CanvasOverlayController } from '../overlay/useCanvasOverlay.ts';
 import type { MoscowBucket, StageId, TshirtSize } from '../overlay/overlayModel.ts';
 import type { CanvasNode, WipSnapshot } from '../logic/canvasTypes.ts';
 import { TSHIRT_SIZES } from '../logic/sizing.ts';
+import controlStyles from '../canvas/canvasControls.module.css';
 
 const MOSCOW_BUCKETS: readonly MoscowBucket[] = ['Must', 'Should', 'Could', 'Wont'];
 
@@ -29,12 +30,8 @@ function ActionButton({ label, onClick, isActive }: { label: string; onClick: ()
   return (
     <button
       type="button"
+      className={isActive ? controlStyles.btnPrimary : controlStyles.btn}
       onClick={onClick}
-      style={{
-        padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
-        border: `1px solid ${isActive ? '#8b5cf6' : 'rgba(148,163,184,0.5)'}`,
-        background: isActive ? 'rgba(139,92,246,0.25)' : 'transparent', color: 'inherit',
-      }}
     >
       {label}
     </button>

@@ -409,14 +409,38 @@
   overflow: hidden;
 }
 
+.teamBucketHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: 0.75rem 1rem;
+  background: var(--color-surface-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
 .teamBucketTitle {
   margin: 0;
-  padding: 0.75rem 1rem;
   font-size: 0.9rem;
   font-weight: 700;
   color: var(--color-text-primary);
-  background: var(--color-surface-2);
-  border-bottom: 1px solid var(--color-border);
+}
+
+/* Small secondary control shown only in canvas selection mode, matching the app's button tokens. */
+.teamSelectAllBtn {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-3);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.teamSelectAllBtn:hover {
+  border-color: var(--color-accent);
+  background: var(--color-surface-hover);
 }
 
 /* ── State messages ── */

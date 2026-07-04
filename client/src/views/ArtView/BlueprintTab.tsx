@@ -40,6 +40,8 @@ export interface BlueprintSelectionMode {
   onCanvasKeys: ReadonlySet<string>;
   selectedKeys: ReadonlySet<string>;
   onToggle: (featureKey: string) => void;
+  /** Bulk-selects or clears the given feature keys at once (powers per-team "Select all"). */
+  onSetKeysSelected: (featureKeys: readonly string[], isSelected: boolean) => void;
   onAddToCanvas: () => void;
 }
 
@@ -347,7 +349,10 @@ function BlueprintTeamBuckets({
     <div className={styles.teamBucketList}>
       {featureBucketsByTeamName.map(([teamName, features]) => (
         <section className={styles.teamBucketCard} key={teamName}>
-          <h4 className={styles.teamBucketTitle}>{teamName}</h4>
+          <div className={styles.teamBucketHeader}>
+            <h4 className={styles.teamBucketTitle}>{teamName}</h4>
+            <TeamSelectAllButton teamName={teamName} features={features} />
+          </div>
           <BlueprintFeatureList
             features={features}
             collapsedFeatureKeys={collapsedFeatureKeys}
@@ -357,6 +362,39 @@ function BlueprintTeamBuckets({
         </section>
       ))}
     </div>
+  );
+}
+
+/**
+ * The per-team "Select all / Clear" toggle shown in the By-Team view when the Blueprint is a canvas
+ * selection surface. It acts only on this team's **addable** features (those not already on the
+ * canvas): when they are all selected it clears them, otherwise it selects them all. Renders nothing
+ * outside selection mode, or when the team has no addable features.
+ */
+function TeamSelectAllButton({ teamName, features }: { teamName: string; features: BlueprintFeatureNode[] }): React.JSX.Element | null {
+  const selection = useContext(BlueprintSelectionContext);
+  if (!selection) {
+    return null;
+  }
+
+  // Dedupe keys (a feature can appear once per team bucket) and drop any already on the canvas.
+  const addableKeys = Array.from(new Set(features.map((feature) => feature.key))).filter((featureKey) => !selection.onCanvasKeys.has(featureKey));
+  if (addableKeys.length === 0) {
+    return null;
+  }
+
+  const areAllSelected = addableKeys.every((featureKey) => selection.selectedKeys.has(featureKey));
+  const buttonLabel = areAllSelected ? `Clear (${addableKeys.length})` : `Select all (${addableKeys.length})`;
+
+  return (
+    <button
+      type="button"
+      className={styles.teamSelectAllBtn}
+      aria-label={`${areAllSelected ? 'Clear' : 'Select all'} features for ${teamName}`}
+      onClick={() => selection.onSetKeysSelected(addableKeys, !areAllSelected)}
+    >
+      {buttonLabel}
+    </button>
   );
 }
 

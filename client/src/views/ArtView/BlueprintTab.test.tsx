@@ -187,7 +187,7 @@ describe('BlueprintTab', () => {
       <BlueprintTab
         teams={MOCK_TEAMS}
         selectedPiName="PI 25.1"
-        selectionMode={{ onCanvasKeys: new Set(), selectedKeys: new Set(['FEAT-10']), onToggle, onAddToCanvas }}
+        selectionMode={{ onCanvasKeys: new Set(), selectedKeys: new Set(['FEAT-10']), onToggle, onSetKeysSelected: vi.fn(), onAddToCanvas }}
       />,
     );
 
@@ -201,13 +201,47 @@ describe('BlueprintTab', () => {
     expect(onAddToCanvas).toHaveBeenCalled();
   });
 
+  it('offers a per-team "Select all" that bulk-selects the team\'s addable features', async () => {
+    queueSuccessfulBlueprintHierarchy();
+    const onSetKeysSelected = vi.fn();
+
+    render(
+      <BlueprintTab
+        teams={MOCK_TEAMS}
+        selectedPiName="PI 25.1"
+        selectionMode={{ onCanvasKeys: new Set(), selectedKeys: new Set(), onToggle: vi.fn(), onSetKeysSelected, onAddToCanvas: vi.fn() }}
+      />,
+    );
+
+    const selectAll = await screen.findByRole('button', { name: /Select all features for/ });
+    fireEvent.click(selectAll);
+    expect(onSetKeysSelected).toHaveBeenCalledWith(['FEAT-10'], true);
+  });
+
+  it('the per-team control becomes "Clear" and deselects once all are selected', async () => {
+    queueSuccessfulBlueprintHierarchy();
+    const onSetKeysSelected = vi.fn();
+
+    render(
+      <BlueprintTab
+        teams={MOCK_TEAMS}
+        selectedPiName="PI 25.1"
+        selectionMode={{ onCanvasKeys: new Set(), selectedKeys: new Set(['FEAT-10']), onToggle: vi.fn(), onSetKeysSelected, onAddToCanvas: vi.fn() }}
+      />,
+    );
+
+    const clear = await screen.findByRole('button', { name: /Clear features for/ });
+    fireEvent.click(clear);
+    expect(onSetKeysSelected).toHaveBeenCalledWith(['FEAT-10'], false);
+  });
+
   it('disables the checkbox for a feature already on the canvas', async () => {
     queueSuccessfulBlueprintHierarchy();
     render(
       <BlueprintTab
         teams={MOCK_TEAMS}
         selectedPiName="PI 25.1"
-        selectionMode={{ onCanvasKeys: new Set(['FEAT-10']), selectedKeys: new Set(), onToggle: vi.fn(), onAddToCanvas: vi.fn() }}
+        selectionMode={{ onCanvasKeys: new Set(['FEAT-10']), selectedKeys: new Set(), onToggle: vi.fn(), onSetKeysSelected: vi.fn(), onAddToCanvas: vi.fn() }}
       />,
     );
     await waitFor(() => expect(screen.getByLabelText('Add FEAT-10 to canvas')).toBeInTheDocument());

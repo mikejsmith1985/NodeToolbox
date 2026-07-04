@@ -1,0 +1,75 @@
+/* canvasControls.module.css — Shared button + popover styles for the Feature Canvas.
+ *
+ * The canvas was built with bare <button> elements and hardcoded slate panels, so its controls did
+ * not match the rest of the app or respect the light/dark theme. These token-based classes are the
+ * single source for canvas control styling: a default (secondary) button, a primary action button,
+ * a borderless icon button, and the floating popover surface. All colors come from the app's design
+ * tokens so they theme correctly. */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-3);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  background: var(--color-surface-hover);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Primary action (e.g. "Add features", "Add to canvas") — filled with the accent color. */
+.btnPrimary {
+  composes: btn;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.btnPrimary:hover:not(:disabled) {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  filter: brightness(1.08);
+}
+
+/* Borderless icon control, e.g. the ✕ close on a popover. */
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.iconBtn:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+/* Floating popover surface (person finder, legend, JQL picker, AI panel). */
+.popover {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-floating);
+  color: var(--color-text-primary);
+}

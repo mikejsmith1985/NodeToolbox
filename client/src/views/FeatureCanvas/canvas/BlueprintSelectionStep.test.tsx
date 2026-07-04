@@ -13,6 +13,8 @@ vi.mock('../../ArtView/BlueprintTab.tsx', () => ({
       <span>oncanvas:{[...(selectionMode?.onCanvasKeys ?? [])].join(',')}</span>
       <span>selected:{[...(selectionMode?.selectedKeys ?? [])].join(',')}</span>
       <button type="button" onClick={() => selectionMode?.onToggle('ENCUC-1')}>toggle-ENCUC-1</button>
+      <button type="button" onClick={() => selectionMode?.onSetKeysSelected(['ENCUC-1', 'ENCUC-2'], true)}>select-team</button>
+      <button type="button" onClick={() => selectionMode?.onSetKeysSelected(['ENCUC-1'], false)}>clear-one</button>
       <button type="button" onClick={() => selectionMode?.onAddToCanvas()}>do-add</button>
     </div>
   ),
@@ -34,6 +36,20 @@ describe('BlueprintSelectionStep', () => {
     fireEvent.click(screen.getByRole('button', { name: 'do-add' }));
     expect(onAdd).toHaveBeenCalledWith(['ENCUC-1']);
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('bulk-selects a team then clears one, reflecting the running selection', () => {
+    const onAdd = vi.fn();
+    render(<BlueprintSelectionStep teams={[TEAM]} selectedPiName="PI 26.3" onCanvasKeys={new Set()} onAdd={onAdd} onClose={vi.fn()} hasCanvas={false} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'select-team' }));
+    expect(screen.getByText('selected:ENCUC-1,ENCUC-2')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'clear-one' }));
+    expect(screen.getByText('selected:ENCUC-2')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'do-add' }));
+    expect(onAdd).toHaveBeenCalledWith(['ENCUC-2']);
   });
 
   it('passes the on-canvas keys through and shows Back-to-canvas when a canvas exists', () => {

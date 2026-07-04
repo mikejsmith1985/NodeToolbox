@@ -17,6 +17,7 @@ import {
   type AiSuggestion,
   type AiSuggestionKind,
 } from './canvasAiAssist.ts';
+import controlStyles from '../canvas/canvasControls.module.css';
 
 /** Props for the gated AI accelerator panel. */
 export interface AiSuggestionPanelProps {
@@ -70,10 +71,10 @@ export function AiSuggestionPanel({ canvasNodes, controller, onClose }: AiSugges
   };
 
   return (
-    <div style={{ position: 'absolute', right: 340, top: 16, width: 360, padding: 16, background: '#0f172a', border: '1px solid #8b5cf6', borderRadius: 8, zIndex: 20, color: '#e2e8f0' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+    <div className={controlStyles.popover} style={{ position: 'absolute', right: 340, top: 16, width: 360, padding: 16, zIndex: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <strong>⚡ AI suggestions (optional)</strong>
-        <button type="button" onClick={onClose}>✕</button>
+        <button type="button" className={controlStyles.iconBtn} onClick={onClose} aria-label="Close AI suggestions">✕</button>
       </div>
       <select value={kind} onChange={(event) => setKind(event.target.value as AiSuggestionKind)} style={{ margin: '8px 0', width: '100%' }}>
         <option value="priorityOrder">Priority order</option>
@@ -82,17 +83,17 @@ export function AiSuggestionPanel({ canvasNodes, controller, onClose }: AiSugges
         <option value="sprintGrouping">Sprint grouping</option>
       </select>
       <textarea readOnly value={prompt} rows={4} style={{ width: '100%', fontSize: 11 }} />
-      <button type="button" onClick={() => navigator.clipboard?.writeText(prompt)} style={{ margin: '6px 0' }}>📋 Copy prompt</button>
+      <button type="button" className={controlStyles.btn} onClick={() => navigator.clipboard?.writeText(prompt)} style={{ margin: '6px 0' }}>📋 Copy prompt</button>
       <textarea value={responseText} onChange={(event) => setResponseText(event.target.value)} placeholder="Paste the JSON reply here" rows={4} style={{ width: '100%', fontSize: 11 }} />
-      <button type="button" onClick={handleIngest} style={{ margin: '6px 0' }}>Ingest suggestions</button>
-      {error && <p style={{ color: '#ef4444' }}>{error}</p>}
+      <button type="button" className={controlStyles.btnPrimary} onClick={handleIngest} style={{ margin: '6px 0' }}>Ingest suggestions</button>
+      {error && <p style={{ color: 'var(--color-danger)' }}>{error}</p>}
       <ul style={{ listStyle: 'none', padding: 0, maxHeight: 180, overflowY: 'auto' }}>
         {suggestions.map((suggestion) => (
-          <li key={`${suggestion.issueKey}:${suggestion.proposedValue}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 6, marginBottom: 4 }}>
+          <li key={`${suggestion.issueKey}:${suggestion.proposedValue}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 4 }}>
             <span>{suggestion.issueKey} → {suggestion.proposedValue}</span>
-            <span>
-              <button type="button" onClick={() => acceptSuggestion(suggestion)}>Accept</button>
-              <button type="button" onClick={() => setSuggestions((current) => current.filter((item) => item !== suggestion))}>Reject</button>
+            <span style={{ display: 'inline-flex', gap: 4 }}>
+              <button type="button" className={controlStyles.btnPrimary} onClick={() => acceptSuggestion(suggestion)}>Accept</button>
+              <button type="button" className={controlStyles.btn} onClick={() => setSuggestions((current) => current.filter((item) => item !== suggestion))}>Reject</button>
             </span>
           </li>
         ))}
