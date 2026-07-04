@@ -29,7 +29,7 @@ function buildSelectedNode(): CanvasNode {
   };
 }
 
-const NO_WIP = { inProgressCount: 0, limit: null, overflow: 0, parkedCount: 0 };
+const NO_WIP = { inProgressCount: 0, limit: null, overflow: 0, parkedCount: 0, activeStoryCount: 0 };
 
 describe('CoachPanel', () => {
   it('shows the current stage and jumps to another stage on click', () => {
@@ -62,7 +62,7 @@ describe('CoachPanel', () => {
 
   it('sets a WIP limit and parks the selected node in the Stabilize stage', () => {
     const controller = buildController('stabilize');
-    const wipWithOverflow = { inProgressCount: 12, limit: 3, overflow: 7, parkedCount: 0 };
+    const wipWithOverflow = { inProgressCount: 12, limit: 3, overflow: 7, parkedCount: 0, activeStoryCount: 0 };
     render(<CoachPanel controller={controller} selectedNode={buildSelectedNode()} wip={wipWithOverflow} onAddContainer={vi.fn()} onOpenCommit={vi.fn()} isAiUnlocked={false} onOpenAi={vi.fn()} />);
 
     expect(screen.getByText(/7 over limit/)).toBeInTheDocument();

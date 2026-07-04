@@ -198,7 +198,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
                 />
               )}
               {isAiOpen && (
-                <AiSuggestionPanel canvasNodes={canvasNodes} controller={controller} onClose={() => setIsAiOpen(false)} />
+                <AiSuggestionPanel canvasNodes={canvasNodes} controller={controller} wip={wip} onClose={() => setIsAiOpen(false)} />
               )}
             </div>
             <NodeInspectorPanel node={selectedNode} onClose={() => setSelectedIssueKey(null)} />

@@ -8,7 +8,7 @@
 import type { MoscowBucket } from '../overlay/overlayModel.ts';
 
 /** The analyses the accelerator can pre-fill. */
-export type AiSuggestionKind = 'priorityOrder' | 'staleCandidates' | 'duplicateCandidates' | 'sprintGrouping';
+export type AiSuggestionKind = 'priorityOrder' | 'staleCandidates' | 'duplicateCandidates' | 'sprintGrouping' | 'wipReduction';
 
 /** One proposed change the operator may accept or reject; never applied until accepted. */
 export interface AiSuggestion {
@@ -33,6 +33,14 @@ export interface AiPromptIssue {
   storyPoints: number | null;
   /** Business Value score from Jira; higher means more valuable. Null when the field is unset. */
   businessValue: number | null;
+  /** MoSCoW priority already set on the canvas; drives the Reduce-WIP park order. Null when unset. */
+  priority: MoscowBucket | null;
+}
+
+/** Extra framing some analyses need beyond the issue list (e.g. the WIP limit for Reduce WIP). */
+export interface AiPromptContext {
+  wipLimit: number | null;
+  inProgressCount: number;
 }
 
 const MOSCOW_BUCKETS: readonly MoscowBucket[] = ['Must', 'Should', 'Could', 'Wont'];
@@ -53,18 +61,38 @@ const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
   sprintGrouping:
     'Propose sprint groupings. Respond ONLY with valid JSON: '
     + '{"kind":"sprintGrouping","groups":[{"containerTitle":"Sprint 25","issueKeys":["KEY"]}]}',
+  wipReduction:
+    'These features are all in progress. Recommend which to PARK (defer) to reduce work in progress. '
+    + 'Park the lowest MoSCoW priority first (Wont, then Could, then Should) and, within a bucket, the '
+    + 'lowest Business Value; do not park a Must unless unavoidable. Respond ONLY with valid JSON: '
+    + '{"kind":"wipReduction","items":[{"issueKey":"KEY","reason":"..."}]}',
 };
 
 /** Builds the copy-paste prompt for one analysis over the given candidate issues. */
-export function buildCanvasAiPrompt(kind: AiSuggestionKind, issues: readonly AiPromptIssue[]): string {
+export function buildCanvasAiPrompt(kind: AiSuggestionKind, issues: readonly AiPromptIssue[], context?: AiPromptContext): string {
   const issueLines = issues
     .map((issue) => {
+      const priorityTag = issue.priority !== null ? `, ${issue.priority}` : '';
       const pointsTag = issue.storyPoints !== null ? `, ${issue.storyPoints}pt` : '';
       const valueTag = issue.businessValue !== null ? `, BV ${issue.businessValue}` : '';
-      return `- ${issue.issueKey} [${issue.status}${pointsTag}${valueTag}] ${issue.summary}`;
+      return `- ${issue.issueKey} [${issue.status}${priorityTag}${pointsTag}${valueTag}] ${issue.summary}`;
     })
     .join('\n');
-  return `${PROMPT_INSTRUCTIONS[kind]}\n\nIssues:\n${issueLines}`;
+  return `${buildContextHeader(kind, context)}${PROMPT_INSTRUCTIONS[kind]}\n\nIssues:\n${issueLines}`;
+}
+
+/**
+ * Builds the leading context line for analyses that need it. Reduce WIP states the limit and how
+ * many features must be parked to reach it; every other analysis needs no header.
+ */
+function buildContextHeader(kind: AiSuggestionKind, context?: AiPromptContext): string {
+  if (kind !== 'wipReduction' || context === undefined) {
+    return '';
+  }
+  const limitText = context.wipLimit === null ? 'not set' : String(context.wipLimit);
+  const parkTarget = context.wipLimit === null ? null : Math.max(0, context.inProgressCount - context.wipLimit);
+  const targetText = parkTarget === null ? '' : ` Park at least ${parkTarget} feature(s) to reach the limit.`;
+  return `WIP limit: ${limitText}. Features in progress: ${context.inProgressCount}.${targetText}\n\n`;
 }
 
 /**

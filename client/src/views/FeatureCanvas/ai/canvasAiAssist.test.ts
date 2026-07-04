@@ -6,20 +6,52 @@ import { buildCanvasAiPrompt, buildScopeQueryPrompt, extractJsonPayload, parseCa
 
 describe('canvasAiAssist', () => {
   it('builds a prompt that names the issues and demands JSON only', () => {
-    const prompt = buildCanvasAiPrompt('priorityOrder', [{ issueKey: 'DENP-1', summary: 'Login', status: 'To Do', storyPoints: 3, businessValue: null }]);
+    const prompt = buildCanvasAiPrompt('priorityOrder', [{ issueKey: 'DENP-1', summary: 'Login', status: 'To Do', storyPoints: 3, businessValue: null, priority: null }]);
     expect(prompt).toContain('DENP-1');
     expect(prompt).toContain('valid JSON');
   });
 
   it('includes the Business Value tag and prioritization guidance when a score is present', () => {
-    const prompt = buildCanvasAiPrompt('priorityOrder', [{ issueKey: 'DENP-1', summary: 'Login', status: 'To Do', storyPoints: 3, businessValue: 8 }]);
+    const prompt = buildCanvasAiPrompt('priorityOrder', [{ issueKey: 'DENP-1', summary: 'Login', status: 'To Do', storyPoints: 3, businessValue: 8, priority: null }]);
     expect(prompt).toContain('BV 8');
     expect(prompt).toContain('Business Value');
   });
 
   it('omits the Business Value tag when the score is unset', () => {
-    const prompt = buildCanvasAiPrompt('priorityOrder', [{ issueKey: 'DENP-2', summary: 'Logout', status: 'To Do', storyPoints: 2, businessValue: null }]);
+    const prompt = buildCanvasAiPrompt('priorityOrder', [{ issueKey: 'DENP-2', summary: 'Logout', status: 'To Do', storyPoints: 2, businessValue: null, priority: null }]);
     expect(prompt).not.toContain('BV ');
+  });
+
+  it('builds a Reduce WIP prompt with the limit, the park target, and MoSCoW-aware guidance', () => {
+    const prompt = buildCanvasAiPrompt(
+      'wipReduction',
+      [
+        { issueKey: 'DENP-1', summary: 'Login', status: 'In Progress', storyPoints: 3, businessValue: 8, priority: 'Must' },
+        { issueKey: 'DENP-2', summary: 'Logout', status: 'In Progress', storyPoints: 2, businessValue: 1, priority: 'Could' },
+      ],
+      { wipLimit: 1, inProgressCount: 2 },
+    );
+    expect(prompt).toContain('WIP limit: 1');
+    expect(prompt).toContain('Features in progress: 2');
+    expect(prompt).toContain('Park at least 1');
+    expect(prompt).toContain('Could'); // the MoSCoW tag rides each issue line
+    expect(prompt).toContain('PARK');
+  });
+
+  it('states the limit is not set when no WIP limit is configured', () => {
+    const prompt = buildCanvasAiPrompt(
+      'wipReduction',
+      [{ issueKey: 'DENP-1', summary: 'Login', status: 'In Progress', storyPoints: null, businessValue: null, priority: 'Should' }],
+      { wipLimit: null, inProgressCount: 1 },
+    );
+    expect(prompt).toContain('WIP limit: not set');
+    expect(prompt).not.toContain('Park at least');
+  });
+
+  it('parses a wipReduction reply into park proposals', () => {
+    const set = parseCanvasAiResponse('wipReduction', '{"kind":"wipReduction","items":[{"issueKey":"DENP-2","reason":"lowest priority"}]}');
+    expect(set.kind).toBe('wipReduction');
+    expect(set.items).toEqual([{ issueKey: 'DENP-2', proposedValue: 'lowest priority', rationale: 'lowest priority', accepted: false }]);
   });
 
   it('extracts JSON from a reply wrapped in chatter and code fences', () => {

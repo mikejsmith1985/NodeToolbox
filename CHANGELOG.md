@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Feature Canvas — "Reduce WIP" AI suggestion**: A new analysis in the gated AI accelerator (Ctrl+Alt+Z) that recommends which in-progress **features to park** to get work-in-progress at or under the WIP limit. The prompt is scoped to the features actually counting toward WIP (in progress, not parked) and states the limit + how many must be parked; it instructs the assistant to park the **lowest MoSCoW priority first** (Wont → Could → Should, never a Must unless unavoidable) and the lowest Business Value within a bucket, so run Priority order (or set MoSCoW) first. Accepting a suggestion parks that feature — overlay-only, nothing written to Jira.
+- **Feature Canvas — story-level WIP readout**: The Stabilize-WIP stage now shows the **active story count** alongside the feature count (e.g. "3 features in progress · 47 active stories"). The WIP **limit still governs features** (this is a feature-planning surface); the story count is informational so a single in-progress feature hiding many active stories is visible.
 - **Feature Canvas — per-team "Select all" in step-1 blueprint picker**: In the By-Team view of the "Add features" step, each team bucket now has a **Select all (N)** control that checks all of that team's addable features at once (features already on the canvas are excluded). Once they're all selected it flips to **Clear (N)** to deselect them. Acts only on that team's features, so you can bulk-pick one team without touching others.
 
 ### Changed

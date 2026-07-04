@@ -57,7 +57,10 @@ function StabilizeControls({ controller, selectedNode, wip }: CoachPanelProps): 
           style={{ width: 64 }}
         />
       </label>
-      <p>In progress: {wip.inProgressCount}{wip.overflow > 0 ? ` · ${wip.overflow} over limit` : ''} · Parked: {wip.parkedCount}</p>
+      <p>
+        In progress: {wip.inProgressCount} feature(s){wip.overflow > 0 ? ` · ${wip.overflow} over limit` : ''}
+        {' · '}{wip.activeStoryCount} active story/ies · Parked: {wip.parkedCount}
+      </p>
       {selectedNode ? (
         <ActionButton
           label={selectedNode.isParked ? 'Un-park selected' : 'Park selected'}
