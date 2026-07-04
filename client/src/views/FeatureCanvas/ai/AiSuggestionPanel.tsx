@@ -55,6 +55,8 @@ function toPromptIssue(node: CanvasNode): AiPromptIssue {
     activeChildCount,
     totalChildCount: node.childStories.length,
     blockerCount: node.dependencies.length,
+    description: node.description,
+    acceptanceCriteria: node.acceptanceCriteria,
   };
 }
 

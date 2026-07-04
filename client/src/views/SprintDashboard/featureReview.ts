@@ -2,6 +2,7 @@
 
 import { jiraGet } from '../../services/jiraApi.ts';
 import type { JiraIssue } from '../../types/jira.ts';
+import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import {
   loadEnterpriseRulesFromStorage,
   readEnabledBuiltInCheckIds,
@@ -42,6 +43,8 @@ export interface FeatureReviewItem {
   doneChildCount: number;
   inFlightChildCount: number;
   totalChildCount: number;
+  /** Acceptance-criteria text (plain text), resolved from the instance's configured AC field. Null when absent. */
+  acceptanceCriteria?: string | null;
 }
 
 function buildUniqueFieldIds(fieldIds: readonly string[]): string[] {
@@ -248,6 +251,18 @@ interface FeatureReviewBuildContext {
   featureKeysWithPointedStories: ReadonlySet<string>;
 }
 
+/** Reads the first non-empty acceptance-criteria field (by the instance's resolved ids) as plain text. */
+function readAcceptanceCriteria(featureIssue: JiraIssue, acceptanceCriteriaFieldIds: readonly string[]): string | null {
+  const fields = featureIssue.fields as Record<string, unknown>;
+  for (const fieldId of acceptanceCriteriaFieldIds) {
+    const text = normalizeRichTextToPlainText(fields[fieldId]).trim();
+    if (text !== '') {
+      return text;
+    }
+  }
+  return null;
+}
+
 /** Builds one FeatureReviewItem from a blueprint feature node + its live Jira issue. Shared by the
  *  PI-scoped and JQL-scoped fetches so child counts and hygiene evaluation stay identical. */
 function buildFeatureReviewItem(
@@ -272,6 +287,7 @@ function buildFeatureReviewItem(
     doneChildCount,
     inFlightChildCount: allChildStories.length - doneChildCount,
     totalChildCount: allChildStories.length,
+    acceptanceCriteria: readAcceptanceCriteria(featureIssue, buildContext.fieldConfig.acceptanceCriteriaFieldIds),
   };
 }
 

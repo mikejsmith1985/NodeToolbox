@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Feature Canvas — AI prompts now include description & acceptance criteria**: Building on the real-data change, each issue in the Priority-order and Reduce-WIP prompts now also carries its **description** and **acceptance criteria** (as condensed, truncated sub-lines) — the richest signal for judging scope and value — and the instructions tell the model to weigh them. Acceptance criteria is resolved from the instance's configured AC field (by name, same as the hygiene checks) and surfaced on `FeatureReviewItem`/`CanvasNode`; long text is collapsed and capped so a large canvas still produces a pasteable prompt.
+
 ### Added
 - **Feature Canvas — PI picker in step 1**: The blueprint selection step now has a **Program Increment dropdown** so you can choose which PI to run the exercise on, instead of being locked to the active Team-Dashboard profile's PI. Picking a PI **re-scopes the whole exercise** — the blueprint shown, the persisted canvas overlay (each PI keeps its own plan), the Custom-JQL default, and the commit target — and the active PI is shown in the canvas toolbar. PIs are enumerated with ART's existing lookup (JQL autocomplete → issue-scan fallback); the current PI is always offered even if the lookup misses it.
 

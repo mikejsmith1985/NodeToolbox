@@ -36,6 +36,7 @@ function buildFeatureItem(overrides: Partial<FeatureReviewItem> = {}): FeatureRe
       },
     } as unknown as FeatureReviewItem['featureIssue'],
     hygieneFlags: [{ checkId: 'no-ac', label: 'Missing acceptance criteria', severity: 'warn' }],
+    acceptanceCriteria: 'Given a member, when they log in, then they see the portal.',
     blockedChildCount: 0,
     doneChildCount: 1,
     inFlightChildCount: 0,
@@ -58,6 +59,7 @@ describe('nodeMapping', () => {
     expect(node.dependencies).toEqual([{ targetKey: 'DENP-9', type: 'Blocks', direction: 'inward' }]);
     expect(node.businessValue).toBe(8);
     expect(node.description).toBe('A concise epic description.');
+    expect(node.acceptanceCriteria).toBe('Given a member, when they log in, then they see the portal.');
     expect(node.attachments).toEqual([
       {
         id: '900',
