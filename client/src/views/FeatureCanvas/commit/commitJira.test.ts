@@ -66,6 +66,16 @@ describe('commitToJira', () => {
     expect(results[0].status).toBe('success');
   });
 
+  it('posts the park reason as a Jira comment for a parkComment item', async () => {
+    vi.mocked(jiraPost).mockResolvedValue(undefined as never);
+    const parkComment: CommitDiffItem = { id: 'pc1', kind: 'parkComment', issueKey: 'DENP-7', containerId: null, from: null, to: 'stale — no activity', dependsOn: null, selected: true };
+
+    const results = await commitToJira([parkComment], { containers: [], boardId: null, projectKey: 'DENP' });
+
+    expect(jiraPost).toHaveBeenCalledWith('/rest/api/2/issue/DENP-7/comment', { body: 'Parked on Feature Canvas: stale — no activity' });
+    expect(results[0].status).toBe('success');
+  });
+
   it('does not write deselected items', async () => {
     const deselected: CommitDiffItem = { id: 'p1', kind: 'pointsSet', issueKey: 'DENP-1', containerId: null, from: 2, to: 5, dependsOn: null, selected: false };
 

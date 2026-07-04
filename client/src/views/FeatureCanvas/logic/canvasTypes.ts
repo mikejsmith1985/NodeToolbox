@@ -46,6 +46,8 @@ export interface CanvasNode {
   containerId: string | null;
   isExpanded: boolean;
   isParked: boolean;
+  /** Why this feature was parked; surfaced in the inspector and posted as a Jira comment on commit. */
+  parkReason: string | null;
   // Live Jira/blueprint data (re-fetched, never persisted).
   summary: string;
   status: string;
@@ -94,7 +96,7 @@ export interface WipSnapshot {
 /** One proposed Jira write shown in the Review & Commit diff before anything is written. */
 export interface CommitDiffItem {
   id: string;
-  kind: 'sprintAssign' | 'versionAssign' | 'pointsSet' | 'prioritySet' | 'createSprint' | 'createVersion';
+  kind: 'sprintAssign' | 'versionAssign' | 'pointsSet' | 'prioritySet' | 'createSprint' | 'createVersion' | 'parkComment';
   issueKey: string | null;
   containerId: string | null;
   from: string | number | null;

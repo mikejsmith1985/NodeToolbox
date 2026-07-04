@@ -112,6 +112,65 @@ describe('useCanvasOverlay', () => {
     expect(result.current.overlay.wipLimit).toBe(5);
   });
 
+  describe('box routing (park / complete / assign)', () => {
+    it('parkNode auto-creates the Parking Lot, moves the card in, marks parked, and records the reason', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      act(() => result.current.ensureNodeStates([createNodeState('DENP-1', 0, 0)]));
+
+      act(() => result.current.parkNode('DENP-1', 'stale — no activity in 3 sprints'));
+
+      const lot = result.current.overlay.containers.find((container) => container.kind === 'parkingLot');
+      expect(lot).toBeDefined();
+      const node = result.current.overlay.nodes['DENP-1'];
+      expect(node.isParked).toBe(true);
+      expect(node.parkReason).toBe('stale — no activity in 3 sprints');
+      expect(node.containerId).toBe(lot!.id);
+      // The card was repositioned inside the box, not left at the origin.
+      expect(node.position).not.toEqual({ x: 0, y: 0 });
+    });
+
+    it('reuses a single Parking Lot for multiple parks', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      act(() => result.current.ensureNodeStates([createNodeState('DENP-1', 0, 0), createNodeState('DENP-2', 0, 0)]));
+      act(() => result.current.parkNode('DENP-1'));
+      act(() => result.current.parkNode('DENP-2'));
+      expect(result.current.overlay.containers.filter((container) => container.kind === 'parkingLot')).toHaveLength(1);
+    });
+
+    it('completeNode auto-creates the Complete box and moves the card in (not parked)', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      act(() => result.current.ensureNodeStates([createNodeState('DENP-1', 0, 0)]));
+      act(() => result.current.completeNode('DENP-1'));
+
+      const doneBox = result.current.overlay.containers.find((container) => container.kind === 'complete');
+      expect(doneBox).toBeDefined();
+      expect(result.current.overlay.nodes['DENP-1'].containerId).toBe(doneBox!.id);
+      expect(result.current.overlay.nodes['DENP-1'].isParked).toBe(false);
+    });
+
+    it('assignToContainer moves the card into an existing box and repositions it', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      act(() => result.current.ensureNodeStates([createNodeState('DENP-1', 5, 5)]));
+      act(() => result.current.addContainer(CONTAINER));
+      act(() => result.current.assignToContainer('DENP-1', CONTAINER.id));
+
+      expect(result.current.overlay.nodes['DENP-1'].containerId).toBe(CONTAINER.id);
+      expect(result.current.overlay.nodes['DENP-1'].position).not.toEqual({ x: 5, y: 5 });
+    });
+
+    it('unparkNode clears parked state, reason, and box membership', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      act(() => result.current.ensureNodeStates([createNodeState('DENP-1', 0, 0)]));
+      act(() => result.current.parkNode('DENP-1', 'stale'));
+      act(() => result.current.unparkNode('DENP-1'));
+
+      const node = result.current.overlay.nodes['DENP-1'];
+      expect(node.isParked).toBe(false);
+      expect(node.parkReason).toBeNull();
+      expect(node.containerId).toBeNull();
+    });
+  });
+
   describe('undo / redo', () => {
     it('reports nothing to undo or redo on a fresh overlay', () => {
       const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));

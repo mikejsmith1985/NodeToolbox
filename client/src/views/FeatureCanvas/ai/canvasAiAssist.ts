@@ -9,7 +9,11 @@ import type { MoscowBucket, TshirtSize } from '../overlay/overlayModel.ts';
 import { TSHIRT_SIZES } from '../logic/sizing.ts';
 
 /** The analyses the accelerator can pre-fill. */
-export type AiSuggestionKind = 'priorityOrder' | 'sizeEstimate' | 'staleCandidates' | 'duplicateCandidates' | 'sprintGrouping' | 'wipReduction';
+export type AiSuggestionKind = 'priorityOrder' | 'sizeEstimate' | 'sprintGrouping' | 'parkCandidates';
+
+/** The per-item action a triage (parkCandidates) suggestion recommends. */
+export type TriageAction = 'park' | 'complete' | 'breakout';
+const TRIAGE_ACTIONS: readonly TriageAction[] = ['park', 'complete', 'breakout'];
 
 /** One proposed change the operator may accept or reject; never applied until accepted. */
 export interface AiSuggestion {
@@ -113,22 +117,17 @@ const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
     + 'scope / more stories / higher points = larger size. If scope is unclear from the data, say so in '
     + 'the rationale rather than guessing. Respond ONLY with valid JSON: '
     + '{"kind":"sizeEstimate","items":[{"issueKey":"KEY","size":"L","rationale":"..."}]}',
-  staleCandidates:
-    'List issues that look stale or abandoned. Respond ONLY with valid JSON: '
-    + '{"kind":"staleCandidates","items":[{"issueKey":"KEY","reason":"..."}]}',
-  duplicateCandidates:
-    'List likely duplicate pairs. Respond ONLY with valid JSON: '
-    + '{"kind":"duplicateCandidates","items":[{"issueKey":"KEY","duplicateOfKey":"KEY2","confidence":"high"}]}',
   sprintGrouping:
     'Propose sprint groupings. Respond ONLY with valid JSON: '
     + '{"kind":"sprintGrouping","groups":[{"containerTitle":"Sprint 25","issueKeys":["KEY"]}]}',
-  wipReduction:
-    'These features are all in progress. Recommend which to PARK (defer) to reduce work in progress. '
-    + 'Base your choice ONLY on the data shown per issue. Park the lowest MoSCoW priority first (Wont, '
-    + 'then Could, then Should) and, within a bucket, the lowest Business Value; do not park a Must '
-    + 'unless unavoidable. If MoSCoW/Business Value are absent, prefer parking the least-progressed and '
-    + 'least-blocked features and say so in the reason; do NOT invent values. Respond ONLY with valid '
-    + 'JSON: {"kind":"wipReduction","items":[{"issueKey":"KEY","reason":"..."}]}',
+  parkCandidates:
+    'Triage the features that should leave the active flow. For each, choose an action: "park" (defer '
+    + 'stale, duplicate, or over-WIP work — favor lowest MoSCoW/Business Value and least progress), '
+    + '"complete" (already done, e.g. 100% / a done status — move it to the Complete box), or "breakout" '
+    + '(marked complete but still has active/open child stories — needs splitting). Prefer parking down '
+    + 'to the WIP limit shown above. Use ONLY the data shown; do NOT invent values. Leave a feature out '
+    + 'if it should stay active. Respond ONLY with valid JSON: '
+    + '{"kind":"parkCandidates","items":[{"issueKey":"KEY","action":"park","reason":"..."}]}',
 };
 
 /** Builds the copy-paste prompt for one analysis over the given candidate issues. */
@@ -142,12 +141,12 @@ export function buildCanvasAiPrompt(kind: AiSuggestionKind, issues: readonly AiP
  * many features must be parked to reach it; every other analysis needs no header.
  */
 function buildContextHeader(kind: AiSuggestionKind, context?: AiPromptContext): string {
-  if (kind !== 'wipReduction' || context === undefined) {
+  if (kind !== 'parkCandidates' || context === undefined) {
     return '';
   }
   const limitText = context.wipLimit === null ? 'not set' : String(context.wipLimit);
   const parkTarget = context.wipLimit === null ? null : Math.max(0, context.inProgressCount - context.wipLimit);
-  const targetText = parkTarget === null ? '' : ` Park at least ${parkTarget} feature(s) to reach the limit.`;
+  const targetText = parkTarget === null ? '' : ` Aim to park at least ${parkTarget} in-progress feature(s) to reach the limit.`;
   return `WIP limit: ${limitText}. Features in progress: ${context.inProgressCount}.${targetText}\n\n`;
 }
 
@@ -194,12 +193,14 @@ function readSizeItem(rawItem: Record<string, unknown>): AiSuggestion {
   return { issueKey, proposedValue: size, rationale: (rawItem.rationale as string) ?? '', accepted: false };
 }
 
-/** Validates a generic single-key item (stale/duplicate) into a suggestion. */
-function readGenericItem(rawItem: Record<string, unknown>, valueField: string): AiSuggestion {
+/** Validates a triage (parkCandidates) item, enforcing a known action; proposedValue holds the action. */
+function readActionItem(rawItem: Record<string, unknown>): AiSuggestion {
   const issueKey = readRequiredString(rawItem, 'issueKey');
-  const proposedValue = valueField in rawItem ? String(rawItem[valueField] ?? '') : '';
-  const rationale = (rawItem.reason as string) ?? (rawItem.confidence as string) ?? '';
-  return { issueKey, proposedValue, rationale, accepted: false };
+  const action = readRequiredString(rawItem, 'action') as TriageAction;
+  if (!TRIAGE_ACTIONS.includes(action)) {
+    throw new Error(`Invalid action "${action}" for ${issueKey}; expected ${TRIAGE_ACTIONS.join('/')}.`);
+  }
+  return { issueKey, proposedValue: action, rationale: (rawItem.reason as string) ?? '', accepted: false };
 }
 
 /**
@@ -232,16 +233,13 @@ export function parseCanvasAiResponse(kind: AiSuggestionKind, responseText: stri
   const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
   const items = rawItems.map((rawItem) => {
     const itemRecord = rawItem as Record<string, unknown>;
-    if (kind === 'priorityOrder') {
-      return readPriorityItem(itemRecord);
-    }
     if (kind === 'sizeEstimate') {
       return readSizeItem(itemRecord);
     }
-    if (kind === 'duplicateCandidates') {
-      return readGenericItem(itemRecord, 'duplicateOfKey');
+    if (kind === 'parkCandidates') {
+      return readActionItem(itemRecord);
     }
-    return readGenericItem(itemRecord, 'reason');
+    return readPriorityItem(itemRecord);
   });
   return { kind, items, ignoredUnknownKeyCount: 0 };
 }
@@ -256,14 +254,16 @@ export function describeSuggestionAction(kind: AiSuggestionKind, suggestion: AiS
       return `Set priority to ${suggestion.proposedValue}`;
     case 'sizeEstimate':
       return `Set size to ${suggestion.proposedValue}`;
-    case 'staleCandidates':
-      return 'Park (looks stale/abandoned)';
-    case 'wipReduction':
-      return 'Park to reduce WIP';
-    case 'duplicateCandidates':
-      return suggestion.proposedValue ? `Park — likely duplicate of ${suggestion.proposedValue}` : 'Park — likely duplicate';
     case 'sprintGrouping':
       return `Assign to sprint “${suggestion.proposedValue}”`;
+    case 'parkCandidates':
+      if (suggestion.proposedValue === 'complete') {
+        return 'Move to Complete box (already done)';
+      }
+      if (suggestion.proposedValue === 'breakout') {
+        return 'Break out — marked done but has open work';
+      }
+      return 'Park (defer)';
     default:
       return 'Apply suggestion';
   }

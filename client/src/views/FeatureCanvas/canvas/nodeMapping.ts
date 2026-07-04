@@ -148,6 +148,7 @@ export function mapFeaturesToNodes(items: readonly FeatureReviewItem[], overlay:
       containerId: nodeState?.containerId ?? null,
       isExpanded: nodeState?.isExpanded ?? false,
       isParked: nodeState?.isParked ?? false,
+      parkReason: nodeState?.parkReason ?? null,
       summary: item.feature.summary,
       status: item.feature.status,
       statusCategoryKey: readStatusCategoryKey(item),

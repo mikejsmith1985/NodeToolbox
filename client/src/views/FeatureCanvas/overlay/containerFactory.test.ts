@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { createProvisionalContainer } from './containerFactory.ts';
+import { createCompleteContainer, createParkingLotContainer, createProvisionalContainer, positionInContainer } from './containerFactory.ts';
 
 describe('createProvisionalContainer', () => {
   it('builds a provisional sprint with a default title and a budget', () => {
@@ -26,5 +26,27 @@ describe('createProvisionalContainer', () => {
   it('tiles successive boxes across the band by existing count', () => {
     expect(createProvisionalContainer('sprint', 0).bounds.x).toBe(40);
     expect(createProvisionalContainer('sprint', 1).bounds.x).toBe(480);
+  });
+
+  it('builds the Parking Lot and Complete boxes with no budget', () => {
+    const lot = createParkingLotContainer(0);
+    expect(lot.kind).toBe('parkingLot');
+    expect(lot.title).toBe('Parking Lot');
+    expect(lot.capacityBudget).toBeNull();
+
+    const done = createCompleteContainer(0);
+    expect(done.kind).toBe('complete');
+    expect(done.title).toBe('Complete');
+  });
+});
+
+describe('positionInContainer', () => {
+  it('stacks members in a column below the box header', () => {
+    const box = createProvisionalContainer('sprint', 0); // bounds.x = 40
+    const first = positionInContainer(box, 0);
+    const second = positionInContainer(box, 1);
+    expect(first.x).toBe(box.bounds.x + 16);
+    expect(second.x).toBe(first.x);
+    expect(second.y).toBeGreaterThan(first.y); // each subsequent card sits lower
   });
 });

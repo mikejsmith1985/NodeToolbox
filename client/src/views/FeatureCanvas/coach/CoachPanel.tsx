@@ -64,7 +64,7 @@ function StabilizeControls({ controller, selectedNode, wip }: CoachPanelProps): 
       {selectedNode ? (
         <ActionButton
           label={selectedNode.isParked ? 'Un-park selected' : 'Park selected'}
-          onClick={() => controller.setParked(selectedNode.issueKey, !selectedNode.isParked)}
+          onClick={() => (selectedNode.isParked ? controller.unparkNode(selectedNode.issueKey) : controller.parkNode(selectedNode.issueKey))}
         />
       ) : <SelectHint />}
     </div>

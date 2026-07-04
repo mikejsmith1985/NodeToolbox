@@ -19,8 +19,9 @@ export type MoscowBucket = 'Must' | 'Should' | 'Could' | 'Wont';
 /** The five coaching stages, in their recommended order. */
 export type StageId = 'surface' | 'stabilize' | 'prioritize' | 'size' | 'sequence';
 
-/** Kinds of container box a node can be dropped into. */
-export type ContainerKind = 'release' | 'sprint' | 'parkingLot';
+/** Kinds of container box a node can be dropped into. `complete` collects finished features (never
+ *  committed to Jira); `parkingLot` collects deferred/parked ones (also never committed). */
+export type ContainerKind = 'release' | 'sprint' | 'parkingLot' | 'complete';
 
 /** Default t-shirt → story-point mapping (Fibonacci-adjacent); editable per overlay. */
 export const DEFAULT_SIZE_MAPPING: Record<TshirtSize, number> = { S: 1, M: 3, L: 5, XL: 8 };
@@ -56,6 +57,8 @@ export interface CanvasNodeState {
   containerId: string | null;
   isExpanded: boolean;
   isParked: boolean;
+  /** Why this feature was parked (from AI triage or manual note); posted as a Jira comment on commit. */
+  parkReason?: string | null;
 }
 
 /** Coach progress, enabling resume and non-linear revisit. */

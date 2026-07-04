@@ -16,7 +16,7 @@ function buildController(currentStageId: StageId): CanvasOverlayController {
     ensureNodeStates: vi.fn(), updateNode: vi.fn(), setWipLimit: vi.fn(), setPriority: vi.fn(),
     setSize: vi.fn(), setContainer: vi.fn(), setParked: vi.fn(), addContainer: vi.fn(),
     updateContainer: vi.fn(), removeContainer: vi.fn(), removeNode: vi.fn(), clearNodes: vi.fn(), goToStage: vi.fn(), completeStage: vi.fn(),
-    undo: vi.fn(), redo: vi.fn(), canUndo: false, canRedo: false,
+    assignToContainer: vi.fn(), parkNode: vi.fn(), unparkNode: vi.fn(), completeNode: vi.fn(), undo: vi.fn(), redo: vi.fn(), canUndo: false, canRedo: false,
   };
 }
 
@@ -25,7 +25,7 @@ function buildSelectedNode(): CanvasNode {
     issueKey: 'DENP-1', position: { x: 0, y: 0 }, size: null, priority: null, containerId: null,
     isExpanded: false, isParked: false, summary: '', status: '', statusCategoryKey: 'new',
     assignee: null, storyPoints: null, health: 'green', completionPercent: 0, hygieneFlags: [],
-    childStories: [], dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, attachments: [], effectivePoints: 0,
+    childStories: [], dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null, attachments: [], effectivePoints: 0,
   };
 }
 
@@ -70,7 +70,8 @@ describe('CoachPanel', () => {
     expect(controller.setWipLimit).toHaveBeenCalledWith(5);
 
     fireEvent.click(screen.getByRole('button', { name: /Park selected/ }));
-    expect(controller.setParked).toHaveBeenCalledWith('DENP-1', true);
+    // Parking now routes through parkNode (moves the card into the Parking Lot box), not setParked.
+    expect(controller.parkNode).toHaveBeenCalledWith('DENP-1');
   });
 
   it('assigns a relative size to the selected node in the Size stage', () => {
