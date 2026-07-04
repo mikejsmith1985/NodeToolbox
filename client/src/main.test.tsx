@@ -4,9 +4,12 @@
 // This test verifies the guard throws a clear, actionable error when the expected
 // #root DOM element is absent, preventing a cryptic React crash in deployment.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-const MAIN_ENTRY_TEST_TIMEOUT_MS = 15000;
+// Stub the App tree so importing main.tsx does not transform the entire view graph (App → every
+// view → heavy deps). Only main.tsx's #root guard is under test, and the guard throws before App
+// would ever render — so a trivial stub keeps this test cheap and immune to load-induced timeouts.
+vi.mock('./App.tsx', () => ({ default: () => null }));
 
 describe('main entry point', () => {
   it('throws a clear error when the #root DOM element is missing', async () => {
@@ -19,5 +22,5 @@ describe('main entry point', () => {
     await expect(import('./main.tsx')).rejects.toThrow(
       'Root element #root not found',
     );
-  }, MAIN_ENTRY_TEST_TIMEOUT_MS);
+  });
 });
