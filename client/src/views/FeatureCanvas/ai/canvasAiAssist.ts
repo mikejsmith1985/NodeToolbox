@@ -5,10 +5,11 @@
 // accelerator only — every suggestion is an editable proposal defaulting to un-accepted, and
 // the coaching workflow is fully operable without it. No AI service is called from here.
 
-import type { MoscowBucket } from '../overlay/overlayModel.ts';
+import type { MoscowBucket, TshirtSize } from '../overlay/overlayModel.ts';
+import { TSHIRT_SIZES } from '../logic/sizing.ts';
 
 /** The analyses the accelerator can pre-fill. */
-export type AiSuggestionKind = 'priorityOrder' | 'staleCandidates' | 'duplicateCandidates' | 'sprintGrouping' | 'wipReduction';
+export type AiSuggestionKind = 'priorityOrder' | 'sizeEstimate' | 'staleCandidates' | 'duplicateCandidates' | 'sprintGrouping' | 'wipReduction';
 
 /** One proposed change the operator may accept or reject; never applied until accepted. */
 export interface AiSuggestion {
@@ -106,6 +107,12 @@ const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
     + 'shown for an issue, reason from the other signals and note that in the rationale; do NOT invent '
     + 'values. Respond ONLY with valid JSON: '
     + '{"kind":"priorityOrder","items":[{"issueKey":"KEY","bucket":"Must","rationale":"..."}]}',
+  sizeEstimate:
+    'Assign each issue a relative t-shirt size (S, M, L, XL) for effort, judging scope ONLY from the '
+    + 'data shown — description, acceptance criteria, story counts, and points when present. Larger '
+    + 'scope / more stories / higher points = larger size. If scope is unclear from the data, say so in '
+    + 'the rationale rather than guessing. Respond ONLY with valid JSON: '
+    + '{"kind":"sizeEstimate","items":[{"issueKey":"KEY","size":"L","rationale":"..."}]}',
   staleCandidates:
     'List issues that look stale or abandoned. Respond ONLY with valid JSON: '
     + '{"kind":"staleCandidates","items":[{"issueKey":"KEY","reason":"..."}]}',
@@ -177,6 +184,16 @@ function readPriorityItem(rawItem: Record<string, unknown>): AiSuggestion {
   return { issueKey, proposedValue: bucket, rationale: (rawItem.rationale as string) ?? '', accepted: false };
 }
 
+/** Validates a sizeEstimate item into a suggestion, enforcing a valid t-shirt size. */
+function readSizeItem(rawItem: Record<string, unknown>): AiSuggestion {
+  const issueKey = readRequiredString(rawItem, 'issueKey');
+  const size = readRequiredString(rawItem, 'size') as TshirtSize;
+  if (!TSHIRT_SIZES.includes(size)) {
+    throw new Error(`Invalid size "${size}" for ${issueKey}; expected ${TSHIRT_SIZES.join('/')}.`);
+  }
+  return { issueKey, proposedValue: size, rationale: (rawItem.rationale as string) ?? '', accepted: false };
+}
+
 /** Validates a generic single-key item (stale/duplicate) into a suggestion. */
 function readGenericItem(rawItem: Record<string, unknown>, valueField: string): AiSuggestion {
   const issueKey = readRequiredString(rawItem, 'issueKey');
@@ -218,12 +235,38 @@ export function parseCanvasAiResponse(kind: AiSuggestionKind, responseText: stri
     if (kind === 'priorityOrder') {
       return readPriorityItem(itemRecord);
     }
+    if (kind === 'sizeEstimate') {
+      return readSizeItem(itemRecord);
+    }
     if (kind === 'duplicateCandidates') {
       return readGenericItem(itemRecord, 'duplicateOfKey');
     }
     return readGenericItem(itemRecord, 'reason');
   });
   return { kind, items, ignoredUnknownKeyCount: 0 };
+}
+
+/**
+ * Returns a clear, human-readable statement of what accepting a suggestion will DO, so the operator
+ * is never guessing behind an Accept/Reject. Each kind maps to its concrete overlay action.
+ */
+export function describeSuggestionAction(kind: AiSuggestionKind, suggestion: AiSuggestion): string {
+  switch (kind) {
+    case 'priorityOrder':
+      return `Set priority to ${suggestion.proposedValue}`;
+    case 'sizeEstimate':
+      return `Set size to ${suggestion.proposedValue}`;
+    case 'staleCandidates':
+      return 'Park (looks stale/abandoned)';
+    case 'wipReduction':
+      return 'Park to reduce WIP';
+    case 'duplicateCandidates':
+      return suggestion.proposedValue ? `Park — likely duplicate of ${suggestion.proposedValue}` : 'Park — likely duplicate';
+    case 'sprintGrouping':
+      return `Assign to sprint “${suggestion.proposedValue}”`;
+    default:
+      return 'Apply suggestion';
+  }
 }
 
 // ── NL → JQL scope query (Surface scope helper) ──

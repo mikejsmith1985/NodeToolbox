@@ -11,9 +11,11 @@ import { useAiAssistStore } from '../../../store/aiAssistStore.ts';
 import type { CanvasNode, WipSnapshot } from '../logic/canvasTypes.ts';
 import { IN_PROGRESS_STATUS_CATEGORY } from '../logic/wip.ts';
 import type { CanvasOverlayController } from '../overlay/useCanvasOverlay.ts';
-import type { MoscowBucket } from '../overlay/overlayModel.ts';
+import type { MoscowBucket, TshirtSize } from '../overlay/overlayModel.ts';
+import { createProvisionalContainer } from '../overlay/containerFactory.ts';
 import {
   buildCanvasAiPrompt,
+  describeSuggestionAction,
   parseCanvasAiResponse,
   type AiPromptIssue,
   type AiSuggestion,
@@ -30,13 +32,39 @@ export interface AiSuggestionPanelProps {
   onClose: () => void;
 }
 
+/**
+ * Assigns a feature to the suggested sprint box: reuses an existing sprint of that title, else
+ * creates a provisional one first. All overlay-only — Review & Commit is what writes to Jira.
+ */
+function assignToSuggestedSprint(suggestion: AiSuggestion, controller: CanvasOverlayController): void {
+  const targetTitle = suggestion.proposedValue.trim();
+  if (targetTitle === '') {
+    return;
+  }
+  const existing = controller.overlay.containers.find(
+    (container) => container.kind === 'sprint' && container.title.trim().toLowerCase() === targetTitle.toLowerCase(),
+  );
+  if (existing) {
+    controller.setContainer(suggestion.issueKey, existing.id);
+    return;
+  }
+  const container = createProvisionalContainer('sprint', controller.overlay.containers.length, targetTitle);
+  controller.addContainer(container);
+  controller.setContainer(suggestion.issueKey, container.id);
+}
+
 /** Applies one accepted suggestion to the overlay based on the analysis kind. */
 function applySuggestion(kind: AiSuggestionKind, suggestion: AiSuggestion, controller: CanvasOverlayController): void {
   if (kind === 'priorityOrder') {
     controller.setPriority(suggestion.issueKey, suggestion.proposedValue as MoscowBucket);
-  } else if (kind === 'staleCandidates' || kind === 'wipReduction') {
-    // Both analyses recommend deferring work, so accepting one parks the feature (overlay only).
+  } else if (kind === 'sizeEstimate') {
+    controller.setSize(suggestion.issueKey, suggestion.proposedValue as TshirtSize);
+  } else if (kind === 'staleCandidates' || kind === 'wipReduction' || kind === 'duplicateCandidates') {
+    // All three recommend taking the feature out of active flow, so accepting parks it (reversible,
+    // overlay-only). For duplicates the operator can then ✕-remove it from the canvas if they wish.
     controller.setParked(suggestion.issueKey, true);
+  } else if (kind === 'sprintGrouping') {
+    assignToSuggestedSprint(suggestion, controller);
   }
 }
 
@@ -116,11 +144,12 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, onClose }: AiS
         <button type="button" className={controlStyles.iconBtn} onClick={onClose} aria-label="Close AI suggestions">✕</button>
       </div>
       <select value={kind} onChange={(event) => setKind(event.target.value as AiSuggestionKind)} style={{ margin: '8px 0', width: '100%' }}>
-        <option value="priorityOrder">Priority order</option>
-        <option value="wipReduction">Reduce WIP (park to limit)</option>
-        <option value="staleCandidates">Stale candidates</option>
-        <option value="duplicateCandidates">Duplicate candidates</option>
-        <option value="sprintGrouping">Sprint grouping</option>
+        <option value="priorityOrder">Prioritize — MoSCoW buckets</option>
+        <option value="sizeEstimate">Size — t-shirt estimate</option>
+        <option value="wipReduction">Reduce WIP — park to limit</option>
+        <option value="staleCandidates">Stale candidates — park</option>
+        <option value="duplicateCandidates">Duplicate candidates — park</option>
+        <option value="sprintGrouping">Sprint grouping — assign to sprint</option>
       </select>
       {lacksValueSignals && (
         <p style={{ margin: '4px 0', fontSize: 11, color: 'var(--color-warning)' }}>
@@ -132,11 +161,15 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, onClose }: AiS
       <textarea value={responseText} onChange={(event) => setResponseText(event.target.value)} placeholder="Paste the JSON reply here" rows={4} style={{ width: '100%', fontSize: 11 }} />
       <button type="button" className={controlStyles.btnPrimary} onClick={handleIngest} style={{ margin: '6px 0' }}>Ingest suggestions</button>
       {error && <p style={{ color: 'var(--color-danger)' }}>{error}</p>}
-      <ul style={{ listStyle: 'none', padding: 0, maxHeight: 180, overflowY: 'auto' }}>
+      <ul style={{ listStyle: 'none', padding: 0, maxHeight: 220, overflowY: 'auto' }}>
         {suggestions.map((suggestion) => (
-          <li key={`${suggestion.issueKey}:${suggestion.proposedValue}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-            <span>{suggestion.issueKey} → {suggestion.proposedValue}</span>
-            <span style={{ display: 'inline-flex', gap: 4 }}>
+          <li key={`${suggestion.issueKey}:${suggestion.proposedValue}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {/* Say exactly what Accept will do, then why — so it's never a blind click. */}
+              <div><strong>{suggestion.issueKey}</strong> · {describeSuggestionAction(kind, suggestion)}</div>
+              {suggestion.rationale && <div style={{ fontSize: 11, opacity: 0.7, lineHeight: 1.35 }}>{suggestion.rationale}</div>}
+            </div>
+            <span style={{ display: 'inline-flex', gap: 4, flex: 'none' }}>
               <button type="button" className={controlStyles.btnPrimary} onClick={() => acceptSuggestion(suggestion)}>Accept</button>
               <button type="button" className={controlStyles.btn} onClick={() => setSuggestions((current) => current.filter((item) => item !== suggestion))}>Reject</button>
             </span>

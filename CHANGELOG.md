@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Feature Canvas — "Size" AI analysis + every AI action now applies**: The gated AI accelerator gains a **Size** analysis (proposes a t-shirt size per feature from scope — description, acceptance criteria, story counts, points — Accept sets the size), completing AI help across the stages. Two previously advisory-only analyses now **apply on Accept**: **Sprint grouping** assigns the feature to the suggested sprint box (creating a provisional sprint if none matches), and **Duplicate candidates** parks the suspected duplicate. Each suggestion row now **states the concrete action** it will take ("Set priority to Must", "Set size to L", "Assign to sprint 'Sprint 25'", "Park — likely duplicate of DENP-9") **plus its rationale**, so Accept/Reject is never a blind click; the analysis dropdown is relabeled by what it does.
+
 ### Internal
 - **Test stability**: Fixed a flaky PI Review test that asserted feature-row content synchronously before the region's rows finished rendering; it now awaits the first row content. No behavior change.
 
