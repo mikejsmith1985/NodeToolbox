@@ -13,6 +13,8 @@ import type { CanvasNode } from '../logic/canvasTypes.ts';
 /** React Flow node data payload for a feature card. */
 export interface FeatureNodeData {
   node: CanvasNode;
+  /** Removes this feature from the curated canvas (overlay-only; does not touch Jira). */
+  onDelete?: () => void;
   [key: string]: unknown;
 }
 
@@ -45,7 +47,7 @@ function formatSizeChip(node: CanvasNode): string {
 
 /** Custom React Flow node: a feature triage card. */
 function FeatureNodeComponent({ data, selected }: NodeProps<FeatureRfNode>): React.JSX.Element {
-  const { node } = data;
+  const { node, onDelete } = data;
   const stripeColor = STATUS_CATEGORY_COLORS[node.statusCategoryKey ?? 'new'] ?? STATUS_CATEGORY_COLORS.new;
   const healthColor = HEALTH_COLORS[node.health] ?? HEALTH_COLORS.gray;
   const errorFlagCount = node.hygieneFlags.filter((flag) => flag.severity === 'error').length;
@@ -65,9 +67,23 @@ function FeatureNodeComponent({ data, selected }: NodeProps<FeatureRfNode>): Rea
       }}
     >
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
         <strong>{node.issueKey}</strong>
-        <span title="Feature health" style={{ color: healthColor }}>●</span>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span title="Feature health" style={{ color: healthColor }}>●</span>
+          {onDelete && (
+            <button
+              type="button"
+              className="nodrag"
+              aria-label={`Remove ${node.issueKey} from canvas`}
+              title="Remove from canvas"
+              onClick={(clickEvent) => { clickEvent.stopPropagation(); onDelete(); }}
+              style={{ border: 'none', background: 'transparent', color: 'inherit', cursor: 'pointer', opacity: 0.6, padding: 0, lineHeight: 1 }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
       <div style={{ margin: '4px 0', lineHeight: 1.3 }}>{node.summary}</div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>

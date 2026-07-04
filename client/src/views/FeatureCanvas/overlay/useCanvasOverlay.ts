@@ -29,6 +29,7 @@ export interface CanvasOverlayController {
   addContainer: (container: CanvasContainer) => void;
   updateContainer: (containerId: string, changes: Partial<CanvasContainer>) => void;
   removeContainer: (containerId: string) => void;
+  removeNode: (issueKey: string) => void;
   goToStage: (stageId: StageId) => void;
   completeStage: (stageId: StageId) => void;
 }
@@ -121,6 +122,19 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     });
   }, [mutate]);
 
+  // Removing a node prunes it from the curated working set (the canvas renders from overlay membership),
+  // so it also drops from any commit. Overlay-only — it never touches Jira.
+  const removeNode = useCallback((issueKey: string) => {
+    mutate((previous) => {
+      if (previous.nodes[issueKey] === undefined) {
+        return previous;
+      }
+      const nextNodes = { ...previous.nodes };
+      delete nextNodes[issueKey];
+      return { ...previous, nodes: nextNodes };
+    });
+  }, [mutate]);
+
   const goToStage = useCallback((stageId: StageId) => {
     mutate((previous) => ({ ...previous, stageState: { ...previous.stageState, currentStageId: stageId } }));
   }, [mutate]);
@@ -135,8 +149,8 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
   return useMemo(
     () => ({
       overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize,
-      setContainer, setParked, addContainer, updateContainer, removeContainer, goToStage, completeStage,
+      setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, goToStage, completeStage,
     }),
-    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, goToStage, completeStage],
+    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, goToStage, completeStage],
   );
 }

@@ -5,23 +5,23 @@
 // beside the coaching panel with the Review & Commit and (gated) AI panels. When no ART team is
 // configured it shows the same guidance empty state the Feature Review surface uses.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import { FeatureCanvasBoard } from './canvas/FeatureCanvasBoard.tsx';
-import { collectMissingNodeStates, mapFeaturesToNodes } from './canvas/nodeMapping.ts';
-import { SurfaceScopeBar } from './canvas/SurfaceScopeBar.tsx';
-import { NlToJqlControl } from './canvas/NlToJqlControl.tsx';
-import { applyScopeFilters, EMPTY_SCOPE_FILTERS, type ScopeFilters } from './canvas/scopeQuery.ts';
+import { computeDefaultPosition, mapFeaturesToNodes } from './canvas/nodeMapping.ts';
+import { SurfacePicker } from './canvas/SurfacePicker.tsx';
+import { NodeInspectorPanel } from './canvas/NodeInspectorPanel.tsx';
 import { useCanvasFeatures } from './canvas/useCanvasFeatures.ts';
+import { useCanvasScope } from './canvas/useCanvasScope.ts';
 import { CoachPanel } from './coach/CoachPanel.tsx';
 import { AiSuggestionPanel } from './ai/AiSuggestionPanel.tsx';
 import { ReviewCommitPanel } from './commit/ReviewCommitPanel.tsx';
 import { computeContainerCapacity } from './logic/capacity.ts';
 import type { ContainerCapacity } from './logic/canvasTypes.ts';
 import { computeWipSnapshot } from './logic/wip.ts';
-import type { CanvasContainer, ContainerKind } from './overlay/overlayModel.ts';
+import { createNodeState, type CanvasContainer, type ContainerKind } from './overlay/overlayModel.ts';
 import { deriveScopeKey } from './overlay/overlayStorage.ts';
 import { useCanvasOverlay } from './overlay/useCanvasOverlay.ts';
 
@@ -47,32 +47,35 @@ function CanvasMessage({ text }: { text: string }): React.JSX.Element {
 export default function FeatureCanvasView(): React.JSX.Element {
   const profileId = useSettingsStore((state) => state.sprintDashboardActiveTeamProfileId);
   const isAiUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
-  const features = useCanvasFeatures();
-  const scopeKey = deriveScopeKey(features.projectKey, features.piName);
+
+  // Resolve scope first (no fetch) so the overlay key can be built before the working-set fetch.
+  const scope = useCanvasScope();
+  const scopeKey = deriveScopeKey(scope.projectKey, scope.piName);
   const controller = useCanvasOverlay(profileId, scopeKey);
   const { overlay } = controller;
+
+  // The curated working set is the overlay's node keys; the canvas fetches live data for exactly those.
+  const workingSetKeys = useMemo(() => Object.keys(overlay.nodes), [overlay.nodes]);
+  const features = useCanvasFeatures(workingSetKeys);
 
   const [selectedIssueKey, setSelectedIssueKey] = useState<string | null>(null);
   const [isCommitOpen, setIsCommitOpen] = useState(false);
   const [isAiOpen, setIsAiOpen] = useState(false);
-  const [filters, setFilters] = useState<ScopeFilters>(EMPTY_SCOPE_FILTERS);
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
 
-  // Give every newly-surfaced feature a persisted position so the arrangement survives reloads.
-  useEffect(() => {
-    if (features.status === 'ready') {
-      controller.ensureNodeStates(collectMissingNodeStates(features.items, overlay));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [features.status, features.items, scopeKey]);
+  const onCanvasKeys = useMemo(() => new Set(workingSetKeys), [workingSetKeys]);
+
+  // Adding from the picker seeds a persisted node state per chosen key (additive; dedup is upstream),
+  // which grows the working set and triggers the live fetch for the new features.
+  const handleAddFeatures = (keys: string[]): void => {
+    const existingCount = workingSetKeys.length;
+    controller.ensureNodeStates(keys.map((key, index) => {
+      const position = computeDefaultPosition(existingCount + index);
+      return createNodeState(key, position.x, position.y);
+    }));
+  };
 
   const canvasNodes = useMemo(() => mapFeaturesToNodes(features.items, overlay), [features.items, overlay]);
-  // Refine filters narrow only what the board shows; WIP/capacity/selection still see the full set,
-  // and the overlay arrangement of filtered-out features is retained for when the filter clears.
-  const filteredKeys = useMemo(
-    () => new Set(applyScopeFilters(features.items, filters).map((item) => item.feature.key)),
-    [features.items, filters],
-  );
-  const boardNodes = useMemo(() => canvasNodes.filter((node) => filteredKeys.has(node.issueKey)), [canvasNodes, filteredKeys]);
   const capacities = useMemo(() => {
     const capacityByContainer = new Map<string, ContainerCapacity>();
     for (const container of overlay.containers) {
@@ -97,47 +100,58 @@ export default function FeatureCanvasView(): React.JSX.Element {
     }
   };
 
-  // Without a configured ART team there is nothing to scope a query against, so keep the guidance
-  // empty state as a full-view message (no scope bar).
-  if (features.status === 'no-team') {
-    return <CanvasMessage text="Configure an ART team for this board (in ART settings) to surface its features on the canvas." />;
-  }
+  const isWorkingSetEmpty = workingSetKeys.length === 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 160px)', minHeight: 480 }}>
-      <SurfaceScopeBar
-        jql={features.jql}
-        onJqlChange={features.setJql}
-        onSurface={features.surface}
-        filters={filters}
-        onFiltersChange={setFilters}
-        status={features.status}
-        error={features.error}
-        resultCount={boardNodes.length}
-        aiHelperSlot={<NlToJqlControl projectKey={features.projectKey} piName={features.piName} onAcceptJql={features.setJql} />}
-      />
-      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 4px' }}>
+        <button type="button" onClick={() => setIsPickerOpen(true)}>➕ Add features</button>
+        {!scope.team && <span style={{ fontSize: 12, opacity: 0.7 }}>No ART team configured for this board — use the picker's Custom JQL source.</span>}
+        {features.status === 'error' && <span role="alert" style={{ fontSize: 12, color: '#ef4444' }}>{features.error}</span>}
+      </div>
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
+        {isPickerOpen && (
+          <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 40 }}>
+            <SurfacePicker
+              team={scope.team}
+              piName={scope.piName}
+              projectKey={scope.projectKey}
+              onCanvasKeys={onCanvasKeys}
+              defaultJql={scope.defaultJql}
+              onAdd={handleAddFeatures}
+              onClose={() => setIsPickerOpen(false)}
+            />
+          </div>
+        )}
         {features.status === 'loading' ? (
-          <CanvasMessage text="Surfacing features…" />
+          <CanvasMessage text="Loading features…" />
+        ) : isWorkingSetEmpty ? (
+          <CanvasMessage text="Add features to begin — click “Add features” to pull work from the blueprint onto the canvas." />
         ) : (
           <>
             <div style={{ position: 'relative', flex: 1 }}>
               <FeatureCanvasBoard
-                canvasNodes={boardNodes}
+                canvasNodes={canvasNodes}
                 containers={overlay.containers}
                 capacities={capacities}
                 onSelect={setSelectedIssueKey}
                 onPositionChange={(issueKey, x, y) => controller.updateNode(issueKey, { position: { x, y } })}
                 onDropIntoContainer={handleDropIntoContainer}
                 onDeleteContainer={(containerId) => controller.removeContainer(containerId)}
+                onDeleteNode={(issueKey) => {
+                  controller.removeNode(issueKey);
+                  if (selectedIssueKey === issueKey) {
+                    setSelectedIssueKey(null);
+                  }
+                }}
               />
               {isCommitOpen && (
                 <ReviewCommitPanel
                   canvasNodes={canvasNodes}
                   containers={overlay.containers}
                   sizeMapping={overlay.sizeMapping}
-                  boardId={features.boardId}
-                  projectKey={features.projectKey}
+                  boardId={scope.boardId}
+                  projectKey={scope.projectKey}
                   onClose={() => setIsCommitOpen(false)}
                 />
               )}
@@ -145,6 +159,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
                 <AiSuggestionPanel canvasNodes={canvasNodes} controller={controller} onClose={() => setIsAiOpen(false)} />
               )}
             </div>
+            <NodeInspectorPanel node={selectedNode} onClose={() => setSelectedIssueKey(null)} />
             <CoachPanel
               controller={controller}
               selectedNode={selectedNode}

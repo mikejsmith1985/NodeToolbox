@@ -38,6 +38,7 @@ export interface FeatureCanvasBoardProps {
   onPositionChange: (issueKey: string, x: number, y: number) => void;
   onDropIntoContainer: (issueKey: string, containerId: string | null) => void;
   onDeleteContainer: (containerId: string) => void;
+  onDeleteNode: (issueKey: string) => void;
 }
 
 /** Builds the React Flow node array: container boxes first (behind), then feature cards on top. */
@@ -46,6 +47,7 @@ function buildReactFlowNodes(
   containers: readonly CanvasContainer[],
   capacities: ReadonlyMap<string, ContainerCapacity>,
   onDeleteContainer: (containerId: string) => void,
+  onDeleteNode: (issueKey: string) => void,
 ): Node[] {
   const containerNodes: Node[] = containers.map((container) => ({
     id: container.id,
@@ -68,7 +70,7 @@ function buildReactFlowNodes(
     id: node.issueKey,
     type: 'feature',
     position: node.position,
-    data: { node } satisfies FeatureNodeData,
+    data: { node, onDelete: () => onDeleteNode(node.issueKey) } satisfies FeatureNodeData,
     zIndex: 1,
   }));
 
@@ -86,7 +88,7 @@ function buildNodeSignature(canvasNodes: readonly CanvasNode[], containers: read
 
 /** Inner board that has access to the React Flow instance for intersection hit-testing. */
 function BoardInner(props: FeatureCanvasBoardProps): React.JSX.Element {
-  const { canvasNodes, containers, capacities, onSelect, onPositionChange, onDropIntoContainer, onDeleteContainer } = props;
+  const { canvasNodes, containers, capacities, onSelect, onPositionChange, onDropIntoContainer, onDeleteContainer, onDeleteNode } = props;
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const { getIntersectingNodes } = useReactFlow();
 
@@ -94,7 +96,7 @@ function BoardInner(props: FeatureCanvasBoardProps): React.JSX.Element {
 
   // Rebuild the canvas nodes whenever the underlying feature/container set changes.
   useEffect(() => {
-    setNodes(buildReactFlowNodes(canvasNodes, containers, capacities, onDeleteContainer));
+    setNodes(buildReactFlowNodes(canvasNodes, containers, capacities, onDeleteContainer, onDeleteNode));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeSignature, setNodes]);
 

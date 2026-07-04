@@ -1,63 +1,49 @@
-// useCanvasFeatures.test.ts — Verifies the JQL-driven surfacing hook (no-team, default surface, error).
+// useCanvasFeatures.test.ts — Verifies the key-driven working-set fetch (empty set, fetch, error, batching).
 
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockFindMatchingArtTeam, mockFetchByJql } = vi.hoisted(() => ({
-  mockFindMatchingArtTeam: vi.fn(),
-  mockFetchByJql: vi.fn(),
-}));
-
-vi.mock('../../SprintDashboard/sprintDashboardArtContext.ts', () => ({
-  findMatchingArtTeam: mockFindMatchingArtTeam,
-  readStoredArtTeams: () => [],
-  readFallbackSelectedPiName: () => '',
-}));
-vi.mock('../../SprintDashboard/featureReview.ts', () => ({
-  fetchFeatureReviewItemsByJql: mockFetchByJql,
-}));
-vi.mock('../../ArtView/artFeatureScopeSettings.ts', () => ({
-  readArtFeatureScopeSettings: () => ({ piFieldId: 'customfield_10301', featureProjectKeys: [] }),
-}));
+const { mockFetchByJql } = vi.hoisted(() => ({ mockFetchByJql: vi.fn() }));
+vi.mock('../../SprintDashboard/featureReview.ts', () => ({ fetchFeatureReviewItemsByJql: mockFetchByJql }));
 
 import { useCanvasFeatures } from './useCanvasFeatures.ts';
 
-const TEAM = { id: 'team-1', name: 'Alpha', boardId: '42', projectKey: 'DENP', sprintIssues: [], isLoading: false, loadError: null };
+describe('useCanvasFeatures (working-set fetch)', () => {
+  beforeEach(() => vi.clearAllMocks());
 
-describe('useCanvasFeatures', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    window.localStorage.clear();
-  });
-
-  it('reports the no-team state when no ART team matches the active board', () => {
-    mockFindMatchingArtTeam.mockReturnValue(null);
-    const { result } = renderHook(() => useCanvasFeatures());
-    expect(result.current.status).toBe('no-team');
-    expect(result.current.team).toBeNull();
+  it('fetches nothing and stays ready for an empty working set', () => {
+    const { result } = renderHook(() => useCanvasFeatures([]));
+    expect(result.current.status).toBe('ready');
     expect(result.current.items).toHaveLength(0);
+    expect(mockFetchByJql).not.toHaveBeenCalled();
   });
 
-  it('surfaces the default query on mount and exposes the default JQL', async () => {
-    mockFindMatchingArtTeam.mockReturnValue(TEAM);
-    mockFetchByJql.mockResolvedValue([{ feature: { key: 'DENP-1' } }]);
-
-    const { result } = renderHook(() => useCanvasFeatures());
+  it('fetches live data for the working-set keys via an issuekey query', async () => {
+    mockFetchByJql.mockResolvedValue([{ feature: { key: 'DENP-1' } }, { feature: { key: 'DENP-2' } }]);
+    const { result } = renderHook(() => useCanvasFeatures(['DENP-1', 'DENP-2']));
 
     await waitFor(() => expect(result.current.status).toBe('ready'));
-    expect(result.current.items).toHaveLength(1);
-    expect(result.current.jql).toContain('issuetype in (Feature, Epic)');
-    expect(mockFetchByJql).toHaveBeenCalledWith(result.current.defaultJql);
+    expect(result.current.items).toHaveLength(2);
+    expect(mockFetchByJql).toHaveBeenCalledWith('issuekey in (DENP-1,DENP-2)');
   });
 
-  it('surfaces an error and no items when the query fails, leaving no partial state', async () => {
-    mockFindMatchingArtTeam.mockReturnValue(TEAM);
+  it('surfaces an error and no items when the fetch fails', async () => {
     mockFetchByJql.mockRejectedValue(new Error('jql error 400'));
-
-    const { result } = renderHook(() => useCanvasFeatures());
+    const { result } = renderHook(() => useCanvasFeatures(['DENP-9']));
 
     await waitFor(() => expect(result.current.status).toBe('error'));
     expect(result.current.items).toHaveLength(0);
     expect(result.current.error).toMatch(/jql error/);
+  });
+
+  it('batches a working set larger than 200 keys and merges the results', async () => {
+    const keys = Array.from({ length: 250 }, (_unused, index) => `K-${index}`);
+    mockFetchByJql.mockResolvedValue([{ feature: { key: 'X' } }]);
+    const { result } = renderHook(() => useCanvasFeatures(keys));
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    // 250 keys → two batches (200 + 50), so two fetch calls and two merged items.
+    expect(mockFetchByJql).toHaveBeenCalledTimes(2);
+    expect(result.current.items).toHaveLength(2);
   });
 });
