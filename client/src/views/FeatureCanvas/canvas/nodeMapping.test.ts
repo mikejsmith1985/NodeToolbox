@@ -28,6 +28,11 @@ function buildFeatureItem(overrides: Partial<FeatureReviewItem> = {}): FeatureRe
         status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
         assignee: { displayName: 'Ada Lovelace' },
         issuelinks: [{ type: { name: 'Blocks' }, inwardIssue: { key: 'DENP-9' } }],
+        description: 'A concise epic description.',
+        customfield_10274: 8,
+        attachment: [
+          { id: '900', filename: 'spec.pdf', size: 2048, mimeType: 'application/pdf', content: 'https://jira/secure/attachment/900/spec.pdf', created: '2026-01-02T00:00:00.000+0000', author: { displayName: 'Grace Hopper' } },
+        ],
       },
     } as unknown as FeatureReviewItem['featureIssue'],
     hygieneFlags: [{ checkId: 'no-ac', label: 'Missing acceptance criteria', severity: 'warn' }],
@@ -51,6 +56,34 @@ describe('nodeMapping', () => {
     expect(node.hygieneFlags).toHaveLength(1);
     expect(node.childStories.map((story) => story.key)).toEqual(['DENP-2', 'DENP-3']);
     expect(node.dependencies).toEqual([{ targetKey: 'DENP-9', type: 'Blocks', direction: 'inward' }]);
+    expect(node.businessValue).toBe(8);
+    expect(node.description).toBe('A concise epic description.');
+    expect(node.attachments).toEqual([
+      {
+        id: '900',
+        filename: 'spec.pdf',
+        sizeBytes: 2048,
+        contentUrl: 'https://jira/secure/attachment/900/spec.pdf',
+        mimeType: 'application/pdf',
+        author: 'Grace Hopper',
+        created: '2026-01-02T00:00:00.000+0000',
+      },
+    ]);
+  });
+
+  it('reads Business Value from a numeric string or a Select {value} object, else null', () => {
+    const overlay = createEmptyOverlay('team-a', 'denp:pi-1');
+    const asString = buildFeatureItem();
+    (asString.featureIssue.fields as Record<string, unknown>).customfield_10274 = '13';
+    expect(mapFeaturesToNodes([asString], overlay)[0].businessValue).toBe(13);
+
+    const asSelect = buildFeatureItem();
+    (asSelect.featureIssue.fields as Record<string, unknown>).customfield_10274 = { value: '21' };
+    expect(mapFeaturesToNodes([asSelect], overlay)[0].businessValue).toBe(21);
+
+    const unset = buildFeatureItem();
+    (unset.featureIssue.fields as Record<string, unknown>).customfield_10274 = null;
+    expect(mapFeaturesToNodes([unset], overlay)[0].businessValue).toBeNull();
   });
 
   it('prefers an overlay size over live points for the capacity unit', () => {

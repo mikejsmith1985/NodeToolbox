@@ -18,6 +18,11 @@ import { fetchFeatureNodesByKeys, type BlueprintFeatureNode, type BlueprintStory
 import type { ArtTeam } from '../ArtView/hooks/useArtData.ts';
 import { fetchScopedTeamFeatures } from './scopedTeamFeatures.ts';
 
+// Business Value custom field. Surfaced on canvas nodes so the AI prioritization prompt can weigh
+// value against effort. Instance-specific id; kept here as the single source both the fetch field
+// list and the canvas node mapping read from.
+export const BUSINESS_VALUE_FIELD_ID = 'customfield_10274';
+
 const DONE_STATUS_KEYWORDS = ['done', 'closed', 'resolved', 'complete'];
 const BLOCKED_STATUS_KEYWORDS = ['blocked', 'impediment'];
 // The blueprint hierarchy hardcodes only legacy SP fields; the configured custom field must be
@@ -198,6 +203,8 @@ export async function fetchFeatureReviewItems(
       'duedate',
       'fixVersions',
       'parent',
+      'attachment',
+      BUSINESS_VALUE_FIELD_ID,
       ...enabledCustomRules.map((customRule) => customRule.fieldId),
       ...fieldConfig.acceptanceCriteriaFieldIds,
       ...fieldConfig.applicationFieldIds,
@@ -286,7 +293,7 @@ export async function fetchFeatureReviewItemsByJql(
   const enabledCustomRules = readEnabledRequiredFieldRules(enterpriseRules);
 
   const requestedFieldIds = buildUniqueFieldIds([
-    'summary', 'status', 'assignee', 'description', 'duedate', 'fixVersions', 'parent', 'issuelinks', 'labels', 'issuetype',
+    'summary', 'status', 'assignee', 'description', 'duedate', 'fixVersions', 'parent', 'issuelinks', 'labels', 'issuetype', 'attachment', BUSINESS_VALUE_FIELD_ID,
     ...enabledCustomRules.map((customRule) => customRule.fieldId),
     ...fieldConfig.acceptanceCriteriaFieldIds,
     ...fieldConfig.applicationFieldIds,

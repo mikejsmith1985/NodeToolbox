@@ -18,7 +18,7 @@ function buildNode(): CanvasNode {
     issueKey: 'DENP-1', position: { x: 0, y: 0 }, size: null, priority: null, containerId: 'ctr-1',
     isExpanded: false, isParked: false, summary: '', status: '', statusCategoryKey: 'new',
     assignee: null, storyPoints: null, health: 'green', completionPercent: 0, hygieneFlags: [],
-    childStories: [], dependencies: [], effectivePoints: 0,
+    childStories: [], dependencies: [], businessValue: null, description: null, attachments: [], effectivePoints: 0,
   };
 }
 

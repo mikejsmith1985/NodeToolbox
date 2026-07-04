@@ -31,6 +31,8 @@ export interface AiPromptIssue {
   summary: string;
   status: string;
   storyPoints: number | null;
+  /** Business Value score from Jira; higher means more valuable. Null when the field is unset. */
+  businessValue: number | null;
 }
 
 const MOSCOW_BUCKETS: readonly MoscowBucket[] = ['Must', 'Should', 'Could', 'Wont'];
@@ -38,7 +40,9 @@ const MOSCOW_BUCKETS: readonly MoscowBucket[] = ['Must', 'Should', 'Could', 'Won
 /** Human-readable instruction per analysis kind, embedded in the generated prompt. */
 const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
   priorityOrder:
-    'Assign each issue a MoSCoW bucket (Must, Should, Could, Wont). Respond ONLY with valid JSON: '
+    'Assign each issue a MoSCoW bucket (Must, Should, Could, Wont). Weigh Business Value (higher is '
+    + 'more valuable) against effort (story points) — high value with low effort should rank highest. '
+    + 'Respond ONLY with valid JSON: '
     + '{"kind":"priorityOrder","items":[{"issueKey":"KEY","bucket":"Must","rationale":"..."}]}',
   staleCandidates:
     'List issues that look stale or abandoned. Respond ONLY with valid JSON: '
@@ -54,7 +58,11 @@ const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
 /** Builds the copy-paste prompt for one analysis over the given candidate issues. */
 export function buildCanvasAiPrompt(kind: AiSuggestionKind, issues: readonly AiPromptIssue[]): string {
   const issueLines = issues
-    .map((issue) => `- ${issue.issueKey} [${issue.status}${issue.storyPoints !== null ? `, ${issue.storyPoints}pt` : ''}] ${issue.summary}`)
+    .map((issue) => {
+      const pointsTag = issue.storyPoints !== null ? `, ${issue.storyPoints}pt` : '';
+      const valueTag = issue.businessValue !== null ? `, BV ${issue.businessValue}` : '';
+      return `- ${issue.issueKey} [${issue.status}${pointsTag}${valueTag}] ${issue.summary}`;
+    })
     .join('\n');
   return `${PROMPT_INSTRUCTIONS[kind]}\n\nIssues:\n${issueLines}`;
 }

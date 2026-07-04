@@ -9,6 +9,7 @@ import { memo } from 'react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 
 import type { CanvasNode } from '../logic/canvasTypes.ts';
+import { HEALTH_COLORS, STATUS_CATEGORY_COLORS } from './nodeColors.ts';
 
 /** React Flow node data payload for a feature card. */
 export interface FeatureNodeData {
@@ -20,22 +21,6 @@ export interface FeatureNodeData {
 
 /** A React Flow node typed to carry feature data. */
 export type FeatureRfNode = Node<FeatureNodeData, 'feature'>;
-
-// Status-category → stripe color, matching the product's WIP zone semantics.
-const STATUS_CATEGORY_COLORS: Record<string, string> = {
-  new: '#6b7280',
-  indeterminate: '#3b82f6',
-  done: '#22c55e',
-};
-
-// Feature-health → accent color.
-const HEALTH_COLORS: Record<string, string> = {
-  green: '#22c55e',
-  yellow: '#eab308',
-  red: '#ef4444',
-  blue: '#3b82f6',
-  gray: '#6b7280',
-};
 
 /** Formats the capacity chip: overlay size (if set) else live points else a dash. */
 function formatSizeChip(node: CanvasNode): string {

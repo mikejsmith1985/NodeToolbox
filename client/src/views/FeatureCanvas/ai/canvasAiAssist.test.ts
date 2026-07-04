@@ -6,9 +6,20 @@ import { buildCanvasAiPrompt, buildScopeQueryPrompt, extractJsonPayload, parseCa
 
 describe('canvasAiAssist', () => {
   it('builds a prompt that names the issues and demands JSON only', () => {
-    const prompt = buildCanvasAiPrompt('priorityOrder', [{ issueKey: 'DENP-1', summary: 'Login', status: 'To Do', storyPoints: 3 }]);
+    const prompt = buildCanvasAiPrompt('priorityOrder', [{ issueKey: 'DENP-1', summary: 'Login', status: 'To Do', storyPoints: 3, businessValue: null }]);
     expect(prompt).toContain('DENP-1');
     expect(prompt).toContain('valid JSON');
+  });
+
+  it('includes the Business Value tag and prioritization guidance when a score is present', () => {
+    const prompt = buildCanvasAiPrompt('priorityOrder', [{ issueKey: 'DENP-1', summary: 'Login', status: 'To Do', storyPoints: 3, businessValue: 8 }]);
+    expect(prompt).toContain('BV 8');
+    expect(prompt).toContain('Business Value');
+  });
+
+  it('omits the Business Value tag when the score is unset', () => {
+    const prompt = buildCanvasAiPrompt('priorityOrder', [{ issueKey: 'DENP-2', summary: 'Logout', status: 'To Do', storyPoints: 2, businessValue: null }]);
+    expect(prompt).not.toContain('BV ');
   });
 
   it('extracts JSON from a reply wrapped in chatter and code fences', () => {

@@ -21,7 +21,7 @@ function buildNode(overrides: Partial<CanvasNode> = {}): CanvasNode {
     statusCategoryKey: 'indeterminate', assignee: 'Ada', storyPoints: 5, health: 'yellow',
     completionPercent: 40,
     hygieneFlags: [{ checkId: 'no-ac', label: 'Missing acceptance criteria', severity: 'warn' }],
-    childStories: [], dependencies: [], effectivePoints: 5, ...overrides,
+    childStories: [], dependencies: [], businessValue: null, description: null, attachments: [], effectivePoints: 5, ...overrides,
   };
 }
 
