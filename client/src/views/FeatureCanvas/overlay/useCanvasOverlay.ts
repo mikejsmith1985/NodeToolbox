@@ -33,6 +33,27 @@ export interface CanvasOverlayController {
   clearNodes: () => void;
   goToStage: (stageId: StageId) => void;
   completeStage: (stageId: StageId) => void;
+  /** Reverts the most recent change; no-op when there is nothing to undo. */
+  undo: () => void;
+  /** Re-applies the most recently undone change; no-op when there is nothing to redo. */
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+}
+
+// The most recent overlay snapshots kept for undo. Bounded so a long editing session never grows
+// memory without limit; older states beyond this depth are dropped from the undo stack.
+const MAX_HISTORY_DEPTH = 50;
+
+/**
+ * The overlay plus its undo/redo history. `present` is what the canvas renders; `past` holds prior
+ * snapshots (oldest first) and `future` holds undone snapshots (next-to-redo first). Every
+ * change-recording action already persisted its `present` to storage, so a reload restores it.
+ */
+interface OverlayHistory {
+  present: CanvasOverlay;
+  past: CanvasOverlay[];
+  future: CanvasOverlay[];
 }
 
 /** Persists an overlay after stamping it as the caller's latest save. */
@@ -44,19 +65,32 @@ function persist(overlay: CanvasOverlay, updatedAtIso: string): CanvasOverlay {
 
 /** Loads and manages the planning overlay for the given team profile + scope. */
 export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOverlayController {
-  const [overlay, setOverlay] = useState<CanvasOverlay>(() => loadOverlay(profileId, scopeKey));
+  const [history, setHistory] = useState<OverlayHistory>(() => ({ present: loadOverlay(profileId, scopeKey), past: [], future: [] }));
   const [loadedScopeSignature, setLoadedScopeSignature] = useState(`${profileId}:${scopeKey}`);
+  const overlay = history.present;
 
   // Reload the saved plan when the team/PI scope changes, using React's endorsed
-  // set-state-during-render pattern (not an effect) so each scope shows its own overlay.
+  // set-state-during-render pattern (not an effect) so each scope shows its own overlay. Switching
+  // scope starts a fresh history — undo never crosses from one team+PI plan into another's.
   const currentScopeSignature = `${profileId}:${scopeKey}`;
   if (currentScopeSignature !== loadedScopeSignature) {
     setLoadedScopeSignature(currentScopeSignature);
-    setOverlay(loadOverlay(profileId, scopeKey));
+    setHistory({ present: loadOverlay(profileId, scopeKey), past: [], future: [] });
   }
 
+  // Every mutator funnels through here, so this is the single place that records undo history: a
+  // real change pushes the prior state onto `past` and clears the redo stack; a no-op (the mutator
+  // returned the same reference) records nothing.
   const mutate = useCallback((mutator: (previous: CanvasOverlay) => CanvasOverlay) => {
-    setOverlay((previous) => persist(mutator(previous), new Date().toISOString()));
+    setHistory((current) => {
+      const nextOverlay = mutator(current.present);
+      if (nextOverlay === current.present) {
+        return current;
+      }
+      const persisted = persist(nextOverlay, new Date().toISOString());
+      const trimmedPast = [...current.past, current.present].slice(-MAX_HISTORY_DEPTH);
+      return { present: persisted, past: trimmedPast, future: [] };
+    });
   }, []);
 
   const updateNode = useCallback((issueKey: string, changes: Partial<CanvasNodeState>) => {
@@ -153,11 +187,40 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     }));
   }, [mutate]);
 
+  // Undo: move the newest `past` snapshot into `present` and push the old present onto `future` so
+  // it can be redone. Persist the restored state so a reload keeps the undone result.
+  const undo = useCallback(() => {
+    setHistory((current) => {
+      if (current.past.length === 0) {
+        return current;
+      }
+      const restored = current.past[current.past.length - 1];
+      const persisted = persist(restored, new Date().toISOString());
+      return { present: persisted, past: current.past.slice(0, -1), future: [current.present, ...current.future] };
+    });
+  }, []);
+
+  // Redo: the mirror of undo — take the next `future` snapshot back into `present`.
+  const redo = useCallback(() => {
+    setHistory((current) => {
+      if (current.future.length === 0) {
+        return current;
+      }
+      const restored = current.future[0];
+      const persisted = persist(restored, new Date().toISOString());
+      return { present: persisted, past: [...current.past, current.present], future: current.future.slice(1) };
+    });
+  }, []);
+
+  const canUndo = history.past.length > 0;
+  const canRedo = history.future.length > 0;
+
   return useMemo(
     () => ({
       overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize,
       setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, goToStage, completeStage,
+      undo, redo, canUndo, canRedo,
     }),
-    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, goToStage, completeStage],
+    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, goToStage, completeStage, undo, redo, canUndo, canRedo],
   );
 }

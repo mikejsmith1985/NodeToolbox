@@ -111,4 +111,69 @@ describe('useCanvasOverlay', () => {
     expect(result.current.overlay.containers).toHaveLength(1);
     expect(result.current.overlay.wipLimit).toBe(5);
   });
+
+  describe('undo / redo', () => {
+    it('reports nothing to undo or redo on a fresh overlay', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      expect(result.current.canUndo).toBe(false);
+      expect(result.current.canRedo).toBe(false);
+    });
+
+    it('undo reverts the last change and redo re-applies it', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      act(() => result.current.setWipLimit(5));
+      expect(result.current.overlay.wipLimit).toBe(5);
+      expect(result.current.canUndo).toBe(true);
+
+      act(() => result.current.undo());
+      expect(result.current.overlay.wipLimit).toBeNull();
+      expect(result.current.canUndo).toBe(false);
+      expect(result.current.canRedo).toBe(true);
+
+      act(() => result.current.redo());
+      expect(result.current.overlay.wipLimit).toBe(5);
+      expect(result.current.canRedo).toBe(false);
+    });
+
+    it('steps back through several changes in reverse order', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      act(() => result.current.ensureNodeStates([createNodeState('DENP-1', 0, 0)]));
+      act(() => result.current.setPriority('DENP-1', 'Must'));
+      act(() => result.current.setSize('DENP-1', 'L'));
+
+      act(() => result.current.undo()); // undoes setSize
+      expect(result.current.overlay.nodes['DENP-1'].size).toBeNull();
+      expect(result.current.overlay.nodes['DENP-1'].priority).toBe('Must');
+
+      act(() => result.current.undo()); // undoes setPriority
+      expect(result.current.overlay.nodes['DENP-1'].priority).toBeNull();
+      expect(result.current.overlay.nodes['DENP-1']).toBeDefined();
+    });
+
+    it('a new change after undo clears the redo stack', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      act(() => result.current.setWipLimit(5));
+      act(() => result.current.undo());
+      expect(result.current.canRedo).toBe(true);
+
+      act(() => result.current.setWipLimit(9));
+      expect(result.current.canRedo).toBe(false);
+      expect(result.current.overlay.wipLimit).toBe(9);
+    });
+
+    it('persists the undone state so a reload restores it', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      act(() => result.current.setWipLimit(7));
+      act(() => result.current.undo());
+
+      expect(loadOverlay('team-a', 'denp:pi-1').wipLimit).toBeNull();
+    });
+
+    it('undo and redo are inert when their stacks are empty', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      act(() => result.current.undo());
+      act(() => result.current.redo());
+      expect(result.current.overlay.wipLimit).toBeNull();
+    });
+  });
 });
