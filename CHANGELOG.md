@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+- **Test stability**: Fixed a flaky PI Review test that asserted feature-row content synchronously before the region's rows finished rendering; it now awaits the first row content. No behavior change.
+
 ### Changed
 - **Feature Canvas — AI prompts now include description & acceptance criteria**: Building on the real-data change, each issue in the Priority-order and Reduce-WIP prompts now also carries its **description** and **acceptance criteria** (as condensed, truncated sub-lines) — the richest signal for judging scope and value — and the instructions tell the model to weigh them. Acceptance criteria is resolved from the instance's configured AC field (by name, same as the hygiene checks) **and pinned to `customfield_10200`** so it is captured even when the field's display name doesn't match; it is surfaced on `FeatureReviewItem`/`CanvasNode`. Long text is collapsed and capped so a large canvas still produces a pasteable prompt. The read-only **node inspector now shows Acceptance criteria** alongside Description.
 - **Feature Canvas — legend button grouped with the toolbar**: The **❓ Key** button was floated alone on the far right of the canvas toolbar, reading as disconnected; it now sits with the other toolbar buttons.
