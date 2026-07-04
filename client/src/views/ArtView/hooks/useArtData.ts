@@ -226,7 +226,7 @@ async function fetchPiNamesFromIssues(piFieldId: string, projectKeys: string[]):
     .filter((piName): piName is string => Boolean(piName));
 }
 
-async function loadAvailablePiNamesFromJira(teams: ArtTeam[]): Promise<string[]> {
+export async function loadAvailablePiNamesFromJira(teams: ArtTeam[]): Promise<string[]> {
   if (teams.length === 0) {
     return [];
   }

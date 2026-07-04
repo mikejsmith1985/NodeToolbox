@@ -40,9 +40,22 @@ function applySuggestion(kind: AiSuggestionKind, suggestion: AiSuggestion, contr
   }
 }
 
-/** Projects a canvas node into the minimal issue shape the AI prompt needs. */
+/** Projects a canvas node into the data-rich issue shape the AI prompt needs (real signals only). */
 function toPromptIssue(node: CanvasNode): AiPromptIssue {
-  return { issueKey: node.issueKey, summary: node.summary, status: node.status, storyPoints: node.storyPoints, businessValue: node.businessValue, priority: node.priority };
+  const activeChildCount = node.childStories.filter((child) => child.statusCategoryKey === IN_PROGRESS_STATUS_CATEGORY).length;
+  return {
+    issueKey: node.issueKey,
+    summary: node.summary,
+    status: node.status,
+    storyPoints: node.storyPoints,
+    businessValue: node.businessValue,
+    priority: node.priority,
+    health: node.health,
+    completionPercent: node.completionPercent,
+    activeChildCount,
+    totalChildCount: node.childStories.length,
+    blockerCount: node.dependencies.length,
+  };
 }
 
 /** The gated copy-paste AI accelerator. Renders nothing when AI Assist is locked. */
@@ -63,6 +76,15 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, onClose }: AiS
     }
     return buildCanvasAiPrompt(kind, canvasNodes.map(toPromptIssue));
   }, [kind, canvasNodes, wip.limit, wip.inProgressCount]);
+
+  // For value-driven analyses, warn when no feature carries Business Value or points — the
+  // assistant will then lean on status/health/completion/blockers, which the user should know.
+  const lacksValueSignals = useMemo(
+    () => (kind === 'priorityOrder' || kind === 'wipReduction')
+      && canvasNodes.length > 0
+      && canvasNodes.every((node) => node.businessValue === null && node.storyPoints === null),
+    [kind, canvasNodes],
+  );
 
   // Guard: invisible and inert unless the operator has unlocked AI Assist.
   if (!isUnlocked) {
@@ -98,6 +120,11 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, onClose }: AiS
         <option value="duplicateCandidates">Duplicate candidates</option>
         <option value="sprintGrouping">Sprint grouping</option>
       </select>
+      {lacksValueSignals && (
+        <p style={{ margin: '4px 0', fontSize: 11, color: 'var(--color-warning)' }}>
+          No Business Value or story points found on these features — suggestions will rely on status, health, completion, and blockers.
+        </p>
+      )}
       <textarea readOnly value={prompt} rows={4} style={{ width: '100%', fontSize: 11 }} />
       <button type="button" className={controlStyles.btn} onClick={() => navigator.clipboard?.writeText(prompt)} style={{ margin: '6px 0' }}>📋 Copy prompt</button>
       <textarea value={responseText} onChange={(event) => setResponseText(event.target.value)} placeholder="Paste the JSON reply here" rows={4} style={{ width: '100%', fontSize: 11 }} />

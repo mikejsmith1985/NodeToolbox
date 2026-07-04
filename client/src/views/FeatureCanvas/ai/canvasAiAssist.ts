@@ -25,7 +25,12 @@ export interface AiSuggestionSet {
   ignoredUnknownKeyCount: number;
 }
 
-/** Minimal context a prompt needs: the candidate issues currently on the canvas. */
+/**
+ * The candidate issue context a prompt needs. Beyond key/summary/status it carries every REAL
+ * signal the canvas already has — Business Value, effort, MoSCoW, feature health, completion, active
+ * story load, and blocker count — so the assistant reasons from actual data instead of guessing. The
+ * enrichment fields are optional; the descriptor omits any that are absent.
+ */
 export interface AiPromptIssue {
   issueKey: string;
   summary: string;
@@ -35,6 +40,29 @@ export interface AiPromptIssue {
   businessValue: number | null;
   /** MoSCoW priority already set on the canvas; drives the Reduce-WIP park order. Null when unset. */
   priority: MoscowBucket | null;
+  /** Feature health signal (e.g. green/yellow/red). */
+  health?: string;
+  /** Percent of child work complete (0–100). */
+  completionPercent?: number;
+  /** In-progress child stories — the live execution load on the feature. */
+  activeChildCount?: number;
+  /** Total child stories. */
+  totalChildCount?: number;
+  /** Number of issue links/blockers surfaced on the feature. */
+  blockerCount?: number;
+}
+
+/** Builds one data-rich issue line, including only the signals that are actually present. */
+function buildIssueDescriptor(issue: AiPromptIssue): string {
+  const parts: string[] = [issue.issueKey, `status ${issue.status}`];
+  if (issue.priority !== null) parts.push(`MoSCoW ${issue.priority}`);
+  if (issue.businessValue !== null) parts.push(`BV ${issue.businessValue}`);
+  if (issue.storyPoints !== null) parts.push(`${issue.storyPoints}pt`);
+  if (issue.health) parts.push(`health ${issue.health}`);
+  if (typeof issue.completionPercent === 'number' && issue.completionPercent > 0) parts.push(`${issue.completionPercent}% done`);
+  if (issue.totalChildCount) parts.push(`${issue.activeChildCount ?? 0}/${issue.totalChildCount} stories active`);
+  if (issue.blockerCount) parts.push(`${issue.blockerCount} blocker/link`);
+  return `- ${parts.join(' · ')} — ${issue.summary}`;
 }
 
 /** Extra framing some analyses need beyond the issue list (e.g. the WIP limit for Reduce WIP). */
@@ -48,9 +76,12 @@ const MOSCOW_BUCKETS: readonly MoscowBucket[] = ['Must', 'Should', 'Could', 'Won
 /** Human-readable instruction per analysis kind, embedded in the generated prompt. */
 const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
   priorityOrder:
-    'Assign each issue a MoSCoW bucket (Must, Should, Could, Wont). Weigh Business Value (higher is '
-    + 'more valuable) against effort (story points) — high value with low effort should rank highest. '
-    + 'Respond ONLY with valid JSON: '
+    'Assign each issue a MoSCoW bucket (Must, Should, Could, Wont). Base every decision ONLY on the '
+    + 'data given for each issue below (status, feature health, completion, active stories, blockers, '
+    + 'and Business Value / story points when present). Weigh Business Value (higher is more valuable) '
+    + 'against effort — high value with low effort ranks highest. If Business Value or effort is not '
+    + 'shown for an issue, reason from the other signals and note that in the rationale; do NOT invent '
+    + 'values. Respond ONLY with valid JSON: '
     + '{"kind":"priorityOrder","items":[{"issueKey":"KEY","bucket":"Must","rationale":"..."}]}',
   staleCandidates:
     'List issues that look stale or abandoned. Respond ONLY with valid JSON: '
@@ -63,21 +94,16 @@ const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
     + '{"kind":"sprintGrouping","groups":[{"containerTitle":"Sprint 25","issueKeys":["KEY"]}]}',
   wipReduction:
     'These features are all in progress. Recommend which to PARK (defer) to reduce work in progress. '
-    + 'Park the lowest MoSCoW priority first (Wont, then Could, then Should) and, within a bucket, the '
-    + 'lowest Business Value; do not park a Must unless unavoidable. Respond ONLY with valid JSON: '
-    + '{"kind":"wipReduction","items":[{"issueKey":"KEY","reason":"..."}]}',
+    + 'Base your choice ONLY on the data shown per issue. Park the lowest MoSCoW priority first (Wont, '
+    + 'then Could, then Should) and, within a bucket, the lowest Business Value; do not park a Must '
+    + 'unless unavoidable. If MoSCoW/Business Value are absent, prefer parking the least-progressed and '
+    + 'least-blocked features and say so in the reason; do NOT invent values. Respond ONLY with valid '
+    + 'JSON: {"kind":"wipReduction","items":[{"issueKey":"KEY","reason":"..."}]}',
 };
 
 /** Builds the copy-paste prompt for one analysis over the given candidate issues. */
 export function buildCanvasAiPrompt(kind: AiSuggestionKind, issues: readonly AiPromptIssue[], context?: AiPromptContext): string {
-  const issueLines = issues
-    .map((issue) => {
-      const priorityTag = issue.priority !== null ? `, ${issue.priority}` : '';
-      const pointsTag = issue.storyPoints !== null ? `, ${issue.storyPoints}pt` : '';
-      const valueTag = issue.businessValue !== null ? `, BV ${issue.businessValue}` : '';
-      return `- ${issue.issueKey} [${issue.status}${priorityTag}${pointsTag}${valueTag}] ${issue.summary}`;
-    })
-    .join('\n');
+  const issueLines = issues.map(buildIssueDescriptor).join('\n');
   return `${buildContextHeader(kind, context)}${PROMPT_INSTRUCTIONS[kind]}\n\nIssues:\n${issueLines}`;
 }
 

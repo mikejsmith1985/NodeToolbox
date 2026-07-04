@@ -13,7 +13,6 @@ import { SNOW_RELAY_BOOKMARKLET_CODE } from '../../services/browserRelay.ts'
 import { listGitHubAppInstallations, type GitHubAppInstallation } from '../../services/connectivityConfigApi.ts'
 import { fetchSchedulerValidation, type SchedulerValidationRepoResult } from '../../services/schedulerApi.ts'
 import { useConnectionStore } from '../../store/connectionStore'
-import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts'
 import { useAiAssist } from '../SnowHub/hooks/useAiAssist.ts'
 import DevPanelView from '../DevPanel/DevPanelView.tsx'
 import { HygieneMonitorPanel } from './HygieneMonitorPanel.tsx'
@@ -83,7 +82,6 @@ const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
 const DEV_PANEL_ADMIN_TAB: { key: AdminHubTab; label: string } = { key: 'dev-panel', label: '🛰️ Dev Panel' }
 // Hidden "⚡ AI Assist" tab, appended only while the AI Assist capability is unlocked.
 const AI_ASSIST_ADMIN_TAB: { key: AdminHubTab; label: string } = { key: 'ai-assist', label: '⚡ AI Assist' }
-const HIDDEN_AI_ASSIST_SHORTCUT_KEY = 'z'
 
 type ReportsConfigSubTab = 'scope-change' | 'feature-change' | 'hygiene-monitor'
 
@@ -2687,44 +2685,10 @@ export default function AdminHubView() {
   const [activeAdminTab, setActiveAdminTab] = useState<AdminHubTab>('main')
   const adminHubRootRef = useRef<HTMLDivElement | null>(null)
 
-  // Hidden AI Assist capability: Ctrl+Alt+Z toggles it from ANY Admin Hub tab —
-  // opens the passphrase gate when locked, re-hides everything when unlocked.
-  const { isUnlocked: isAiAssistUnlocked, verifyPassphrase } = useAiAssist()
-  const [isAiAssistPassphraseVisible, setIsAiAssistPassphraseVisible] = useState(false)
-  const [aiAssistPassphraseInput, setAiAssistPassphraseInput] = useState('')
-  const [aiAssistPassphraseError, setAiAssistPassphraseError] = useState<string | null>(null)
-
-  useEffect(() => {
-    function handleKeyDown(keyboardEvent: KeyboardEvent) {
-      const isShortcut =
-        keyboardEvent.ctrlKey && keyboardEvent.altKey && keyboardEvent.key.toLowerCase() === HIDDEN_AI_ASSIST_SHORTCUT_KEY
-      if (!isShortcut) return
-      if (isAiAssistUnlocked) {
-        // Re-hide all AI Assist features (shared store → hides generators + this tab).
-        setAiAssistUnlocked(false)
-        setActiveAdminTab((current) => (current === 'ai-assist' ? 'main' : current))
-        return
-      }
-      setIsAiAssistPassphraseVisible(true)
-      setAiAssistPassphraseInput('')
-      setAiAssistPassphraseError(null)
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isAiAssistUnlocked])
-
-  const handleAiAssistPassphraseSubmit = useCallback(async () => {
-    const isAccepted = await verifyPassphrase(aiAssistPassphraseInput)
-    if (isAccepted) {
-      // verifyPassphrase sets the shared aiAssistStore → the ⚡ AI Assist tab appears.
-      setIsAiAssistPassphraseVisible(false)
-      setAiAssistPassphraseInput('')
-      setAiAssistPassphraseError(null)
-      setActiveAdminTab('ai-assist')
-      return
-    }
-    setAiAssistPassphraseError('Incorrect passphrase')
-  }, [aiAssistPassphraseInput, verifyPassphrase])
+  // The hidden AI Assist capability is unlocked app-wide by <AiAssistUnlockGate> (Ctrl+Alt+Z from
+  // any screen). Admin Hub only reads the shared unlock state to decide whether to offer its
+  // ⚡ AI Assist config tab — it no longer owns the shortcut or the passphrase prompt.
+  const { isUnlocked: isAiAssistUnlocked } = useAiAssist()
 
   // The 🛰️ Dev Panel tab is offered only while Admin Access is unlocked; the ⚡ AI Assist tab only
   // while the passphrase capability is unlocked.
@@ -2782,28 +2746,6 @@ export default function AdminHubView() {
         onChange={setActiveAdminTab}
       />
 
-      {isAiAssistPassphraseVisible && (
-        <div className={styles.sectionCard}>
-          <h2 className={styles.sectionTitle}>🔒 AI Assist Automation</h2>
-          <label className={styles.adminDescription}>
-            Passphrase
-            <input
-              autoFocus
-              className={styles.inputField}
-              type="password"
-              placeholder="Enter passphrase"
-              value={aiAssistPassphraseInput}
-              onChange={(changeEvent) => { setAiAssistPassphraseInput(changeEvent.target.value); setAiAssistPassphraseError(null) }}
-              onKeyDown={(keyboardEvent) => { if (keyboardEvent.key === 'Enter') void handleAiAssistPassphraseSubmit() }}
-            />
-          </label>
-          {aiAssistPassphraseError !== null ? <p className={styles.errorMessage}>{aiAssistPassphraseError}</p> : null}
-          <div>
-            <button className={styles.primaryBtn} onClick={() => void handleAiAssistPassphraseSubmit()} type="button">Unlock AI Assist</button>
-            <button className={styles.secondaryBtn} onClick={() => setIsAiAssistPassphraseVisible(false)} type="button">Cancel</button>
-          </div>
-        </div>
-      )}
 
       {activeAdminTab === 'main' && (
         <section id="admin-hub-main-panel" role="tabpanel" aria-labelledby="admin-hub-main-tab">

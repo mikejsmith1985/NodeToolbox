@@ -1,6 +1,6 @@
 // AdminHubView.test.tsx — Unit tests for the Admin Hub view component.
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -236,46 +236,31 @@ describe('AdminHubView', () => {
     expect(screen.queryByText(/hidden prompt tools/i)).not.toBeInTheDocument();
   });
 
+  // Unlocking itself now lives in the app-wide <AiAssistUnlockGate> (covered by its own test);
+  // Admin Hub only reflects the shared unlock state by offering the ⚡ AI Assist tab + config.
   describe('hidden AI Assist capability', () => {
     it('does not show the ⚡ AI Assist tab while locked', () => {
       renderAdminHubView();
       expect(screen.queryByRole('tab', { name: /AI Assist/i })).not.toBeInTheDocument();
     });
 
-    it('unlocks via Ctrl+Alt+Z + passphrase from any tab and reveals the ⚡ AI Assist tab + config', async () => {
+    it('reveals the ⚡ AI Assist tab + config when the shared unlock is set', async () => {
+      const user = userEvent.setup();
       renderAdminHubView();
-      // Locked: hidden shortcut opens the passphrase gate.
-      fireEvent.keyDown(window, { key: 'z', ctrlKey: true, altKey: true });
-      const passphraseInput = await screen.findByPlaceholderText('Enter passphrase');
-      fireEvent.change(passphraseInput, { target: { value: 'ainow' } });
-      fireEvent.keyDown(passphraseInput, { key: 'Enter' });
+      act(() => setAiAssistUnlocked(true));
 
-      // The ⚡ AI Assist tab appears and its config form mounts.
-      expect(await screen.findByRole('tab', { name: '⚡ AI Assist' })).toBeInTheDocument();
+      const aiAssistTab = await screen.findByRole('tab', { name: '⚡ AI Assist' });
+      await user.click(aiAssistTab);
       expect(await screen.findByText('⚡ AI Assist Automation')).toBeInTheDocument();
     });
 
-    it('re-hides everything on a second Ctrl+Alt+Z', async () => {
+    it('hides the ⚡ AI Assist tab when the shared unlock is cleared', async () => {
       renderAdminHubView();
-      fireEvent.keyDown(window, { key: 'z', ctrlKey: true, altKey: true });
-      const passphraseInput = await screen.findByPlaceholderText('Enter passphrase');
-      fireEvent.change(passphraseInput, { target: { value: 'ainow' } });
-      fireEvent.keyDown(passphraseInput, { key: 'Enter' });
+      act(() => setAiAssistUnlocked(true));
       expect(await screen.findByRole('tab', { name: '⚡ AI Assist' })).toBeInTheDocument();
 
-      // Second shortcut re-hides the capability.
-      fireEvent.keyDown(window, { key: 'z', ctrlKey: true, altKey: true });
+      act(() => setAiAssistUnlocked(false));
       await waitFor(() => expect(screen.queryByRole('tab', { name: '⚡ AI Assist' })).not.toBeInTheDocument());
-    });
-
-    it('rejects an incorrect passphrase', async () => {
-      renderAdminHubView();
-      fireEvent.keyDown(window, { key: 'z', ctrlKey: true, altKey: true });
-      const passphraseInput = await screen.findByPlaceholderText('Enter passphrase');
-      fireEvent.change(passphraseInput, { target: { value: 'wrong' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Unlock AI Assist' }));
-      expect(await screen.findByText('Incorrect passphrase')).toBeInTheDocument();
-      expect(screen.queryByRole('tab', { name: '⚡ AI Assist' })).not.toBeInTheDocument();
     });
   });
 

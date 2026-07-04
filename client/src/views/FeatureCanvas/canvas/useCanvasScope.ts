@@ -20,8 +20,13 @@ export interface CanvasScope {
   defaultJql: string;
 }
 
-/** Resolves the active Team-Dashboard profile's project + PI scope (no fetch). */
-export function useCanvasScope(): CanvasScope {
+/**
+ * Resolves the active Team-Dashboard profile's project + PI scope (no fetch). An optional
+ * `piOverride` lets the canvas run the exercise against a different PI than the profile's default
+ * (chosen in step 1); a non-empty override wins over the profile/fallback PI for the scope key,
+ * commit target, and Custom-JQL default alike.
+ */
+export function useCanvasScope(piOverride?: string | null): CanvasScope {
   const teamProfiles = useSettingsStore((state) => state.sprintDashboardTeamProfiles);
   const activeTeamProfileId = useSettingsStore((state) => state.sprintDashboardActiveTeamProfileId);
 
@@ -31,7 +36,8 @@ export function useCanvasScope(): CanvasScope {
   );
 
   const projectKey = activeProfile?.projectKey ?? '';
-  const piName = (activeProfile?.selectedPiValue ?? '').trim() || readFallbackSelectedPiName();
+  const trimmedOverride = (piOverride ?? '').trim();
+  const piName = trimmedOverride || (activeProfile?.selectedPiValue ?? '').trim() || readFallbackSelectedPiName();
   const boardId = activeProfile?.boardId && activeProfile.boardId.trim() !== '' ? Number(activeProfile.boardId) : null;
 
   const defaultJql = useMemo(
