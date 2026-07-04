@@ -6,10 +6,12 @@
 // This module is pure: given the same inputs it always produces the same nodes.
 
 import type { FeatureReviewItem } from '../../SprintDashboard/featureReview.ts';
+import { BUSINESS_VALUE_FIELD_ID } from '../../SprintDashboard/featureReview.ts';
+import type { JiraAttachment } from '../../../types/jira.ts';
 import type { CanvasOverlay, CanvasNodeState } from '../overlay/overlayModel.ts';
 import { createNodeState } from '../overlay/overlayModel.ts';
 import { resolveEffectivePoints } from '../logic/sizing.ts';
-import type { CanvasChildStory, CanvasNode, CanvasNodeDependency } from '../logic/canvasTypes.ts';
+import type { CanvasAttachment, CanvasChildStory, CanvasNode, CanvasNodeDependency } from '../logic/canvasTypes.ts';
 
 // Default grid layout for features that have never been positioned, so the first surfacing is
 // legible rather than a pile at the origin.
@@ -76,6 +78,44 @@ function readStatusCategoryKey(item: FeatureReviewItem): string | null {
   return status?.statusCategory?.key ?? null;
 }
 
+/**
+ * Reads the Business Value custom field into a plain number for AI prioritization. Jira may return
+ * it as a number, a numeric string, or a Select-type {value} object, so all three are handled;
+ * anything non-numeric (or unset) becomes null so the node simply carries no value signal.
+ */
+function readBusinessValue(item: FeatureReviewItem): number | null {
+  const rawValue = (item.featureIssue.fields as Record<string, unknown>)[BUSINESS_VALUE_FIELD_ID];
+  if (typeof rawValue === 'number') {
+    return Number.isFinite(rawValue) ? rawValue : null;
+  }
+  if (typeof rawValue === 'string') {
+    const parsed = Number(rawValue);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (rawValue !== null && typeof rawValue === 'object') {
+    const parsed = Number((rawValue as { value?: unknown }).value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+/** Maps the feature's live Jira attachments into the lighter, read-only canvas attachment shape. */
+function mapAttachments(item: FeatureReviewItem): CanvasAttachment[] {
+  const attachments = (item.featureIssue.fields as { attachment?: JiraAttachment[] }).attachment;
+  if (!Array.isArray(attachments)) {
+    return [];
+  }
+  return attachments.map((attachment) => ({
+    id: attachment.id,
+    filename: attachment.filename,
+    sizeBytes: typeof attachment.size === 'number' ? attachment.size : 0,
+    contentUrl: attachment.content,
+    mimeType: attachment.mimeType ?? null,
+    author: attachment.author?.displayName ?? null,
+    created: attachment.created ?? null,
+  }));
+}
+
 /** Returns node states that must be created because a surfaced feature has never been placed. */
 export function collectMissingNodeStates(
   items: readonly FeatureReviewItem[],
@@ -113,11 +153,14 @@ export function mapFeaturesToNodes(items: readonly FeatureReviewItem[], overlay:
       statusCategoryKey: readStatusCategoryKey(item),
       assignee: item.featureIssue.fields.assignee?.displayName ?? null,
       storyPoints: rolledStoryPoints,
+      businessValue: readBusinessValue(item),
+      description: item.featureIssue.fields.description ?? null,
       health: item.feature.health,
       completionPercent: item.feature.completionPercent,
       hygieneFlags: item.hygieneFlags,
       childStories: mapChildStories(item),
       dependencies: mapDependencies(item),
+      attachments: mapAttachments(item),
       effectivePoints: resolveEffectivePoints(size, rolledStoryPoints, overlay.sizeMapping),
     };
   });

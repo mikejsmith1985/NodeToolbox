@@ -24,6 +24,9 @@ function buildNode(overrides: Partial<CanvasNode>): CanvasNode {
     hygieneFlags: [],
     childStories: [],
     dependencies: [],
+    businessValue: null,
+    description: null,
+    attachments: [],
     effectivePoints: 0,
     ...overrides,
   };

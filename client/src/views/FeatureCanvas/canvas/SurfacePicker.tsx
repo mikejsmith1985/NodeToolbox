@@ -8,6 +8,7 @@
 import { useMemo, useState } from 'react';
 
 import { NlToJqlControl } from './NlToJqlControl.tsx';
+import { PersonFinder } from './PersonFinder.tsx';
 import {
   collectAddableKeys,
   collectSelectableKeys,
@@ -56,6 +57,15 @@ export function SurfacePicker({ piName, projectKey, onCanvasKeys, defaultJql, on
     });
   };
 
+  // Appends a Person-finder clause to the current query with AND, or seeds the box when it's empty,
+  // so the resolved `assignee = "<id>"` composes with whatever the user already typed.
+  const insertJqlClause = (clause: string): void => {
+    setJql((current) => {
+      const trimmedCurrent = current.trim();
+      return trimmedCurrent === '' ? clause : `${trimmedCurrent} AND ${clause}`;
+    });
+  };
+
   const handleAdd = (): void => {
     const addableKeys = collectAddableKeys(selectedKeys, onCanvasKeys);
     if (addableKeys.length > 0) {
@@ -77,6 +87,7 @@ export function SurfacePicker({ piName, projectKey, onCanvasKeys, defaultJql, on
       <textarea aria-label="Custom JQL" value={jql} onChange={(event) => setJql(event.target.value)} rows={2} style={{ width: '100%', fontSize: 12 }} />
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <button type="button" onClick={() => setRunToken((token) => token + 1)}>Run query</button>
+        <PersonFinder onInsertClause={insertJqlClause} />
         <NlToJqlControl projectKey={projectKey} piName={piName} onAcceptJql={setJql} />
       </div>
 

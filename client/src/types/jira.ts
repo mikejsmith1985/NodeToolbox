@@ -35,6 +35,20 @@ export interface JiraComment {
   created?: string;
 }
 
+/** Jira attachment metadata returned on an issue's `attachment` field. */
+export interface JiraAttachment {
+  id: string;
+  filename: string;
+  /** File size in bytes as reported by Jira. */
+  size: number;
+  /** MIME type, e.g. "image/png"; absent on some Data Center versions. */
+  mimeType?: string;
+  /** Absolute URL Jira serves the file from (used for a read-only download link). */
+  content: string;
+  created?: string;
+  author?: { displayName?: string } | null;
+}
+
 /** Jira issue payload returned by the backend proxy. */
 export interface JiraIssue {
   id: string;
@@ -71,6 +85,10 @@ export interface JiraIssue {
     customfield_10201?: { id?: string; value?: string; name?: string } | null;
     /** Story-point estimate from the Jira custom field; null when unestimated. */
     customfield_10016?: number | null;
+    /** Business Value custom field used by the Feature Canvas AI prioritization prompt. */
+    customfield_10274?: number | string | { value?: string } | null;
+    /** Files attached to the issue, surfaced read-only in the Feature Canvas inspector. */
+    attachment?: JiraAttachment[];
     /** Alternate story-point field used by some Jira instances. */
     customfield_10028?: number | null;
     /** Legacy impediment / flagged field used by some Team Dashboard parity views. */

@@ -44,7 +44,7 @@ export function AiSuggestionPanel({ canvasNodes, controller, onClose }: AiSugges
 
   const knownKeys = useMemo(() => new Set(canvasNodes.map((node) => node.issueKey)), [canvasNodes]);
   const prompt = useMemo(
-    () => buildCanvasAiPrompt(kind, canvasNodes.map((node) => ({ issueKey: node.issueKey, summary: node.summary, status: node.status, storyPoints: node.storyPoints }))),
+    () => buildCanvasAiPrompt(kind, canvasNodes.map((node) => ({ issueKey: node.issueKey, summary: node.summary, status: node.status, storyPoints: node.storyPoints, businessValue: node.businessValue }))),
     [kind, canvasNodes],
   );
 

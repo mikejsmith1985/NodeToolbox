@@ -15,6 +15,18 @@ export interface CanvasNodeDependency {
   direction: 'inward' | 'outward';
 }
 
+/** A file attached to a feature, surfaced read-only in the node inspector. */
+export interface CanvasAttachment {
+  id: string;
+  filename: string;
+  sizeBytes: number;
+  /** Absolute Jira URL the file downloads from. */
+  contentUrl: string;
+  mimeType: string | null;
+  author: string | null;
+  created: string | null;
+}
+
 /** A child story revealed when a feature node is expanded; also the unit committed to sprints. */
 export interface CanvasChildStory {
   key: string;
@@ -40,11 +52,16 @@ export interface CanvasNode {
   statusCategoryKey: string | null;
   assignee: string | null;
   storyPoints: number | null;
+  /** Live Business Value custom-field score; feeds AI prioritization. Null when unset. */
+  businessValue: number | null;
+  /** Live plain-text-normalizable description; rendered read-only in the inspector. */
+  description: string | null;
   health: string;
   completionPercent: number;
   hygieneFlags: HygieneFlag[];
   childStories: CanvasChildStory[];
   dependencies: CanvasNodeDependency[];
+  attachments: CanvasAttachment[];
   // Derived capacity unit: overlay size (mapped to points) when set, else live story points.
   effectivePoints: number;
 }

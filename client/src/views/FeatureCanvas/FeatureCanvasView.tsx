@@ -12,6 +12,7 @@ import { useSettingsStore } from '../../store/settingsStore.ts';
 import { FeatureCanvasBoard } from './canvas/FeatureCanvasBoard.tsx';
 import { computeDefaultPosition, mapFeaturesToNodes } from './canvas/nodeMapping.ts';
 import { SurfacePicker } from './canvas/SurfacePicker.tsx';
+import { CanvasLegend } from './canvas/CanvasLegend.tsx';
 import { BlueprintSelectionStep } from './canvas/BlueprintSelectionStep.tsx';
 import { NodeInspectorPanel } from './canvas/NodeInspectorPanel.tsx';
 import { useCanvasFeatures } from './canvas/useCanvasFeatures.ts';
@@ -143,6 +144,9 @@ export default function FeatureCanvasView(): React.JSX.Element {
         )}
         {artRoster.length === 0 && <span style={{ fontSize: 12, opacity: 0.7 }}>No ART teams configured — use Add via JQL.</span>}
         {features.status === 'error' && <span role="alert" style={{ fontSize: 12, color: '#ef4444' }}>{features.error}</span>}
+        <div style={{ marginLeft: 'auto' }}>
+          <CanvasLegend />
+        </div>
       </div>
       <div style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
         {isPickerOpen && (
