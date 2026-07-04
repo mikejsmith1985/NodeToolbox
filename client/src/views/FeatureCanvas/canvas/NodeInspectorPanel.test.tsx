@@ -63,10 +63,12 @@ describe('NodeInspectorPanel', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 
-  it('shows description, business value, and attachment download links', () => {
+  it('shows description, acceptance criteria, business value, and attachment download links', () => {
     setComments([]);
-    renderInspector(buildNode());
+    renderInspector(buildNode({ acceptanceCriteria: 'Given SSO, when a member logs in, then a session starts.' }));
     expect(screen.getByText('The epic goal in prose.')).toBeInTheDocument();
+    expect(screen.getByText('Acceptance criteria')).toBeInTheDocument();
+    expect(screen.getByText('Given SSO, when a member logs in, then a session starts.')).toBeInTheDocument();
     expect(screen.getByText('Business value')).toBeInTheDocument();
     expect(screen.getByText('8')).toBeInTheDocument();
     expect(screen.getByText(/Attachments \(1\)/)).toBeInTheDocument();
@@ -84,8 +86,9 @@ describe('NodeInspectorPanel', () => {
 
   it('shows empty-state notes when there is no description or attachments', () => {
     setComments([]);
-    renderInspector(buildNode({ description: null, attachments: [] }));
+    renderInspector(buildNode({ description: null, acceptanceCriteria: null, attachments: [] }));
     expect(screen.getByText('No description.')).toBeInTheDocument();
+    expect(screen.getByText('No acceptance criteria.')).toBeInTheDocument();
     expect(screen.getByText('No attachments.')).toBeInTheDocument();
     expect(screen.getByText(/Attachments \(0\)/)).toBeInTheDocument();
   });

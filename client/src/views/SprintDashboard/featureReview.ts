@@ -24,6 +24,10 @@ import { fetchScopedTeamFeatures } from './scopedTeamFeatures.ts';
 // list and the canvas node mapping read from.
 export const BUSINESS_VALUE_FIELD_ID = 'customfield_10274';
 
+// Acceptance Criteria custom field. Also resolved by display name for other instances, but pinned
+// here so it is always fetched and read even when the field's name does not match the lookup.
+export const ACCEPTANCE_CRITERIA_FIELD_ID = 'customfield_10200';
+
 const DONE_STATUS_KEYWORDS = ['done', 'closed', 'resolved', 'complete'];
 const BLOCKED_STATUS_KEYWORDS = ['blocked', 'impediment'];
 // The blueprint hierarchy hardcodes only legacy SP fields; the configured custom field must be
@@ -208,6 +212,7 @@ export async function fetchFeatureReviewItems(
       'parent',
       'attachment',
       BUSINESS_VALUE_FIELD_ID,
+      ACCEPTANCE_CRITERIA_FIELD_ID,
       ...enabledCustomRules.map((customRule) => customRule.fieldId),
       ...fieldConfig.acceptanceCriteriaFieldIds,
       ...fieldConfig.applicationFieldIds,
@@ -287,7 +292,10 @@ function buildFeatureReviewItem(
     doneChildCount,
     inFlightChildCount: allChildStories.length - doneChildCount,
     totalChildCount: allChildStories.length,
-    acceptanceCriteria: readAcceptanceCriteria(featureIssue, buildContext.fieldConfig.acceptanceCriteriaFieldIds),
+    acceptanceCriteria: readAcceptanceCriteria(
+      featureIssue,
+      buildUniqueFieldIds([...buildContext.fieldConfig.acceptanceCriteriaFieldIds, ACCEPTANCE_CRITERIA_FIELD_ID]),
+    ),
   };
 }
 
@@ -309,7 +317,7 @@ export async function fetchFeatureReviewItemsByJql(
   const enabledCustomRules = readEnabledRequiredFieldRules(enterpriseRules);
 
   const requestedFieldIds = buildUniqueFieldIds([
-    'summary', 'status', 'assignee', 'description', 'duedate', 'fixVersions', 'parent', 'issuelinks', 'labels', 'issuetype', 'attachment', BUSINESS_VALUE_FIELD_ID,
+    'summary', 'status', 'assignee', 'description', 'duedate', 'fixVersions', 'parent', 'issuelinks', 'labels', 'issuetype', 'attachment', BUSINESS_VALUE_FIELD_ID, ACCEPTANCE_CRITERIA_FIELD_ID,
     ...enabledCustomRules.map((customRule) => customRule.fieldId),
     ...fieldConfig.acceptanceCriteriaFieldIds,
     ...fieldConfig.applicationFieldIds,
