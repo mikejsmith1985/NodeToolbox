@@ -56,6 +56,8 @@ export interface CanvasNode {
   businessValue: number | null;
   /** Live plain-text-normalizable description; rendered read-only in the inspector. */
   description: string | null;
+  /** Acceptance-criteria text (plain text) from the instance's configured AC field; null when absent. */
+  acceptanceCriteria: string | null;
   health: string;
   completionPercent: number;
   hygieneFlags: HygieneFlag[];

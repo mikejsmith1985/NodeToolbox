@@ -50,9 +50,23 @@ export interface AiPromptIssue {
   totalChildCount?: number;
   /** Number of issue links/blockers surfaced on the feature. */
   blockerCount?: number;
+  /** Feature description (plain text) — the richest content signal for a priority call. */
+  description?: string | null;
+  /** Acceptance-criteria text (plain text). */
+  acceptanceCriteria?: string | null;
 }
 
-/** Builds one data-rich issue line, including only the signals that are actually present. */
+// Descriptions and acceptance criteria can be long; cap each so a big canvas still yields a prompt
+// small enough to paste, while keeping enough text for the assistant to judge scope and value.
+const MAX_TEXT_SIGNAL_LENGTH = 300;
+
+/** Trims and collapses whitespace in a free-text signal, truncating to keep the prompt manageable. */
+function condenseText(text: string): string {
+  const collapsed = text.replace(/\s+/g, ' ').trim();
+  return collapsed.length > MAX_TEXT_SIGNAL_LENGTH ? `${collapsed.slice(0, MAX_TEXT_SIGNAL_LENGTH)}…` : collapsed;
+}
+
+/** Builds one data-rich issue block, including only the signals that are actually present. */
 function buildIssueDescriptor(issue: AiPromptIssue): string {
   const parts: string[] = [issue.issueKey, `status ${issue.status}`];
   if (issue.priority !== null) parts.push(`MoSCoW ${issue.priority}`);
@@ -62,7 +76,15 @@ function buildIssueDescriptor(issue: AiPromptIssue): string {
   if (typeof issue.completionPercent === 'number' && issue.completionPercent > 0) parts.push(`${issue.completionPercent}% done`);
   if (issue.totalChildCount) parts.push(`${issue.activeChildCount ?? 0}/${issue.totalChildCount} stories active`);
   if (issue.blockerCount) parts.push(`${issue.blockerCount} blocker/link`);
-  return `- ${parts.join(' · ')} — ${issue.summary}`;
+
+  // The one-line header carries the structured signals; description and acceptance criteria (the
+  // richest content) follow as indented sub-lines so the assistant can judge scope and intent.
+  const lines = [`- ${parts.join(' · ')} — ${issue.summary}`];
+  const description = issue.description ? condenseText(issue.description) : '';
+  const acceptanceCriteria = issue.acceptanceCriteria ? condenseText(issue.acceptanceCriteria) : '';
+  if (description) lines.push(`    description: ${description}`);
+  if (acceptanceCriteria) lines.push(`    acceptance criteria: ${acceptanceCriteria}`);
+  return lines.join('\n');
 }
 
 /** Extra framing some analyses need beyond the issue list (e.g. the WIP limit for Reduce WIP). */
@@ -78,7 +100,8 @@ const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
   priorityOrder:
     'Assign each issue a MoSCoW bucket (Must, Should, Could, Wont). Base every decision ONLY on the '
     + 'data given for each issue below (status, feature health, completion, active stories, blockers, '
-    + 'and Business Value / story points when present). Weigh Business Value (higher is more valuable) '
+    + 'the description and acceptance criteria, and Business Value / story points when present). Weigh '
+    + 'the description/acceptance criteria for scope and intent, and Business Value (higher is more valuable) '
     + 'against effort — high value with low effort ranks highest. If Business Value or effort is not '
     + 'shown for an issue, reason from the other signals and note that in the rationale; do NOT invent '
     + 'values. Respond ONLY with valid JSON: '

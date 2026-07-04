@@ -67,6 +67,26 @@ describe('canvasAiAssist', () => {
     expect(prompt).toContain('do NOT invent');
   });
 
+  it('includes the description and acceptance criteria as sub-lines, condensed', () => {
+    const prompt = buildCanvasAiPrompt('priorityOrder', [{
+      issueKey: 'DENP-1', summary: 'Login', status: 'In Progress', storyPoints: null, businessValue: null, priority: null,
+      description: 'Members must authenticate\n   with SSO   before access.',
+      acceptanceCriteria: 'Given SSO, when a member logs in, then a session starts.',
+    }]);
+    expect(prompt).toContain('description: Members must authenticate with SSO before access.');
+    expect(prompt).toContain('acceptance criteria: Given SSO, when a member logs in, then a session starts.');
+  });
+
+  it('truncates a very long description so the prompt stays pasteable', () => {
+    const longText = 'x'.repeat(500);
+    const prompt = buildCanvasAiPrompt('priorityOrder', [{
+      issueKey: 'DENP-1', summary: 'Login', status: 'To Do', storyPoints: null, businessValue: null, priority: null,
+      description: longText,
+    }]);
+    expect(prompt).toContain('…');
+    expect(prompt).not.toContain(longText);
+  });
+
   it('extracts JSON from a reply wrapped in chatter and code fences', () => {
     const reply = 'Sure! Here you go:\n```json\n{"kind":"priorityOrder","items":[]}\n```\nHope that helps.';
     expect(extractJsonPayload(reply)).toBe('{"kind":"priorityOrder","items":[]}');

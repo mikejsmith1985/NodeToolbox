@@ -26,6 +26,7 @@ function buildNode(overrides: Partial<CanvasNode>): CanvasNode {
     dependencies: [],
     businessValue: null,
     description: null,
+    acceptanceCriteria: null,
     attachments: [],
     effectivePoints: 0,
     ...overrides,

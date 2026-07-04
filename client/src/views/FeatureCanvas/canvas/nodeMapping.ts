@@ -155,6 +155,7 @@ export function mapFeaturesToNodes(items: readonly FeatureReviewItem[], overlay:
       storyPoints: rolledStoryPoints,
       businessValue: readBusinessValue(item),
       description: item.featureIssue.fields.description ?? null,
+      acceptanceCriteria: item.acceptanceCriteria ?? null,
       health: item.feature.health,
       completionPercent: item.feature.completionPercent,
       hygieneFlags: item.hygieneFlags,
