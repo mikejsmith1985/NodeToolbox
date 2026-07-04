@@ -105,8 +105,16 @@ export default function FeatureCanvasView(): React.JSX.Element {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 160px)', minHeight: 480 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 4px' }}>
+        {scope.teams.length > 0 && (
+          <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+            Team
+            <select aria-label="Canvas team scope" value={scope.selectedTeamId} onChange={(event) => scope.selectTeam(event.target.value)}>
+              {scope.teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+            </select>
+          </label>
+        )}
         <button type="button" onClick={() => setIsPickerOpen(true)}>➕ Add features</button>
-        {!scope.team && <span style={{ fontSize: 12, opacity: 0.7 }}>No ART team configured for this board — use the picker's Custom JQL source.</span>}
+        {!scope.team && <span style={{ fontSize: 12, opacity: 0.7 }}>No team configured — use the picker's Custom JQL source.</span>}
         {features.status === 'error' && <span role="alert" style={{ fontSize: 12, color: '#ef4444' }}>{features.error}</span>}
       </div>
       <div style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>

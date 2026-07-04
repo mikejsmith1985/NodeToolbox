@@ -63,7 +63,13 @@ function buildItem(key: string): FeatureReviewItem {
   };
 }
 
-const SCOPE: CanvasScope = { team: { id: 't', name: 'A', boardId: '42', projectKey: 'DENP', sprintIssues: [], isLoading: false, loadError: null } as never, projectKey: 'DENP', piName: 'PI 26.3', boardId: 42, defaultJql: 'project = "DENP" AND issuetype in (Feature, Epic)' };
+const SCOPE: CanvasScope = {
+  teams: [{ id: 't', name: 'CleanupCrew' }, { id: 't2', name: 'Transformers' }],
+  selectedTeamId: 't',
+  selectTeam: vi.fn(),
+  team: { id: 't', name: 'CleanupCrew', boardId: '42', projectKey: 'DENP', sprintIssues: [], isLoading: false, loadError: null } as never,
+  projectKey: 'DENP', piName: 'PI 26.3', boardId: 42, defaultJql: 'project = "DENP" AND issuetype in (Feature, Epic)',
+};
 
 describe('FeatureCanvasView', () => {
   beforeEach(() => {
@@ -79,11 +85,23 @@ describe('FeatureCanvasView', () => {
     expect(screen.getByRole('button', { name: /Add features/ })).toBeInTheDocument();
   });
 
-  it('hints at the Custom-JQL fallback when no ART team is configured', () => {
-    mockUseCanvasScope.mockReturnValue({ ...SCOPE, team: null });
+  it('hints at the Custom-JQL fallback when no team is configured', () => {
+    mockUseCanvasScope.mockReturnValue({ ...SCOPE, team: null, teams: [] });
     mockUseCanvasFeatures.mockReturnValue({ status: 'ready', items: [], error: null });
     render(<FeatureCanvasView />);
-    expect(screen.getByText(/No ART team configured/)).toBeInTheDocument();
+    expect(screen.getByText(/No team configured/)).toBeInTheDocument();
+  });
+
+  it('renders a team scope dropdown and switches team on selection', () => {
+    const selectTeam = vi.fn();
+    mockUseCanvasScope.mockReturnValue({ ...SCOPE, selectTeam });
+    mockUseCanvasFeatures.mockReturnValue({ status: 'ready', items: [], error: null });
+    render(<FeatureCanvasView />);
+
+    const dropdown = screen.getByLabelText('Canvas team scope') as HTMLSelectElement;
+    expect(Array.from(dropdown.options).map((option) => option.text)).toEqual(['CleanupCrew', 'Transformers']);
+    fireEvent.change(dropdown, { target: { value: 't2' } });
+    expect(selectTeam).toHaveBeenCalledWith('t2');
   });
 
   it('opens the picker and additively adds a chosen feature to the working set', () => {
