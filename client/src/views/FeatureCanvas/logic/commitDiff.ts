@@ -24,8 +24,9 @@ function createItemId(containerId: string): string {
 
 /** Emits the create-sprint / create-version items for every provisional container, ordered first. */
 function buildContainerCreateItems(containers: readonly CanvasContainer[]): CommitDiffItem[] {
+  // Parking Lot and Complete boxes are canvas-only organizers — never created as Jira sprints/versions.
   return containers
-    .filter((container) => container.provenance.state === 'provisional' && container.kind !== 'parkingLot')
+    .filter((container) => container.provenance.state === 'provisional' && container.kind !== 'parkingLot' && container.kind !== 'complete')
     .map((container) => ({
       id: createItemId(container.id),
       kind: container.kind === 'sprint' ? 'createSprint' : 'createVersion',
@@ -94,6 +95,23 @@ function buildPointsItem(node: CanvasNode, sizeMapping: Record<TshirtSize, numbe
   };
 }
 
+/** Builds a "post the park reason as a comment" item for a parked feature that has a reason. */
+function buildParkCommentItem(node: CanvasNode): CommitDiffItem | null {
+  if (!node.isParked || node.parkReason === null || node.parkReason.trim() === '') {
+    return null;
+  }
+  return {
+    id: `parkComment:${node.issueKey}`,
+    kind: 'parkComment',
+    issueKey: node.issueKey,
+    containerId: null,
+    from: null,
+    to: node.parkReason.trim(),
+    dependsOn: null,
+    selected: true,
+  };
+}
+
 /** Builds a priority write only when the user opted into a MoSCoW→Jira priority mapping. */
 function buildPriorityItem(node: CanvasNode, options: CommitDiffOptions): CommitDiffItem | null {
   if (node.priority === null || !options.priorityToJira) {
@@ -145,6 +163,10 @@ export function buildCommitDiff(
     const priorityItem = buildPriorityItem(node, options);
     if (priorityItem) {
       assignmentItems.push(priorityItem);
+    }
+    const parkCommentItem = buildParkCommentItem(node);
+    if (parkCommentItem) {
+      assignmentItems.push(parkCommentItem);
     }
   }
 

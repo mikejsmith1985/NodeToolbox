@@ -11,7 +11,7 @@ function buildNode(overrides: Partial<CanvasNode> = {}): CanvasNode {
     issueKey: 'DENP-1', position: { x: 0, y: 0 }, size: null, priority: null, containerId: null,
     isExpanded: false, isParked: false, summary: '', status: '', statusCategoryKey: 'new',
     assignee: null, storyPoints: null, health: 'green', completionPercent: 0, hygieneFlags: [],
-    childStories: [], dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, attachments: [], effectivePoints: 0, ...overrides,
+    childStories: [], dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null, attachments: [], effectivePoints: 0, ...overrides,
   };
 }
 
@@ -25,6 +25,28 @@ function buildContainer(overrides: Partial<CanvasContainer> = {}): CanvasContain
 }
 
 describe('buildCommitDiff', () => {
+  it('emits a parkComment for a parked feature that has a reason', () => {
+    const parked = buildNode({ issueKey: 'DENP-9', isParked: true, parkReason: 'stale — no activity in 3 sprints' });
+    const diff = buildCommitDiff([parked], []);
+    const comment = diff.find((item) => item.kind === 'parkComment');
+    expect(comment).toMatchObject({ issueKey: 'DENP-9', to: 'stale — no activity in 3 sprints' });
+  });
+
+  it('does not comment on a parked feature with no reason', () => {
+    const parked = buildNode({ isParked: true, parkReason: null });
+    expect(buildCommitDiff([parked], []).some((item) => item.kind === 'parkComment')).toBe(false);
+  });
+
+  it('never creates a Jira object for Parking Lot or Complete boxes', () => {
+    const lot = buildContainer({ id: 'ctr-lot', kind: 'parkingLot', provenance: { state: 'provisional', jiraSprintId: null, jiraVersionName: null, startDateIso: null, endDateIso: null } });
+    const done = buildContainer({ id: 'ctr-done', kind: 'complete', provenance: { state: 'provisional', jiraSprintId: null, jiraVersionName: null, startDateIso: null, endDateIso: null } });
+    const inDone = buildNode({ issueKey: 'DENP-3', containerId: 'ctr-done' });
+    const diff = buildCommitDiff([inDone], [lot, done]);
+    expect(diff.some((item) => item.kind === 'createSprint' || item.kind === 'createVersion')).toBe(false);
+    // A Complete-box member generates no assignment either.
+    expect(diff.some((item) => item.kind === 'sprintAssign' || item.kind === 'versionAssign')).toBe(false);
+  });
+
   it('expands a feature→sprint into one sprintAssign per child story (FR-6.1a)', () => {
     const sprint = buildContainer({ id: 'ctr-s', kind: 'sprint' });
     const feature = buildNode({

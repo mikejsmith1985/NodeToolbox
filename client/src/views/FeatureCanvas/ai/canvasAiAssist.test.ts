@@ -22,9 +22,9 @@ describe('canvasAiAssist', () => {
     expect(prompt).not.toContain('BV ');
   });
 
-  it('builds a Reduce WIP prompt with the limit, the park target, and MoSCoW-aware guidance', () => {
+  it('builds a Triage prompt with the WIP limit, the park target, and park/complete/breakout actions', () => {
     const prompt = buildCanvasAiPrompt(
-      'wipReduction',
+      'parkCandidates',
       [
         { issueKey: 'DENP-1', summary: 'Login', status: 'In Progress', storyPoints: 3, businessValue: 8, priority: 'Must' },
         { issueKey: 'DENP-2', summary: 'Logout', status: 'In Progress', storyPoints: 2, businessValue: 1, priority: 'Could' },
@@ -33,19 +33,20 @@ describe('canvasAiAssist', () => {
     );
     expect(prompt).toContain('WIP limit: 1');
     expect(prompt).toContain('Features in progress: 2');
-    expect(prompt).toContain('Park at least 1');
+    expect(prompt).toContain('park at least 1');
     expect(prompt).toContain('Could'); // the MoSCoW tag rides each issue line
-    expect(prompt).toContain('PARK');
+    expect(prompt).toContain('"complete"');
+    expect(prompt).toContain('"breakout"');
   });
 
   it('states the limit is not set when no WIP limit is configured', () => {
     const prompt = buildCanvasAiPrompt(
-      'wipReduction',
+      'parkCandidates',
       [{ issueKey: 'DENP-1', summary: 'Login', status: 'In Progress', storyPoints: null, businessValue: null, priority: 'Should' }],
       { wipLimit: null, inProgressCount: 1 },
     );
     expect(prompt).toContain('WIP limit: not set');
-    expect(prompt).not.toContain('Park at least');
+    expect(prompt).not.toContain('park at least');
   });
 
   it('parses a sizeEstimate reply and rejects an invalid size', () => {
@@ -57,16 +58,17 @@ describe('canvasAiAssist', () => {
   it('describes each suggestion action in plain language', () => {
     expect(describeSuggestionAction('priorityOrder', { issueKey: 'A', proposedValue: 'Must', rationale: '', accepted: false })).toBe('Set priority to Must');
     expect(describeSuggestionAction('sizeEstimate', { issueKey: 'A', proposedValue: 'L', rationale: '', accepted: false })).toBe('Set size to L');
-    expect(describeSuggestionAction('wipReduction', { issueKey: 'A', proposedValue: '', rationale: '', accepted: false })).toBe('Park to reduce WIP');
-    expect(describeSuggestionAction('staleCandidates', { issueKey: 'A', proposedValue: '', rationale: '', accepted: false })).toContain('Park');
-    expect(describeSuggestionAction('duplicateCandidates', { issueKey: 'A', proposedValue: 'DENP-9', rationale: '', accepted: false })).toBe('Park — likely duplicate of DENP-9');
     expect(describeSuggestionAction('sprintGrouping', { issueKey: 'A', proposedValue: 'Sprint 25', rationale: '', accepted: false })).toBe('Assign to sprint “Sprint 25”');
+    expect(describeSuggestionAction('parkCandidates', { issueKey: 'A', proposedValue: 'park', rationale: '', accepted: false })).toBe('Park (defer)');
+    expect(describeSuggestionAction('parkCandidates', { issueKey: 'A', proposedValue: 'complete', rationale: '', accepted: false })).toContain('Complete box');
+    expect(describeSuggestionAction('parkCandidates', { issueKey: 'A', proposedValue: 'breakout', rationale: '', accepted: false })).toContain('Break out');
   });
 
-  it('parses a wipReduction reply into park proposals', () => {
-    const set = parseCanvasAiResponse('wipReduction', '{"kind":"wipReduction","items":[{"issueKey":"DENP-2","reason":"lowest priority"}]}');
-    expect(set.kind).toBe('wipReduction');
-    expect(set.items).toEqual([{ issueKey: 'DENP-2', proposedValue: 'lowest priority', rationale: 'lowest priority', accepted: false }]);
+  it('parses a parkCandidates reply and rejects an invalid action', () => {
+    const set = parseCanvasAiResponse('parkCandidates', '{"kind":"parkCandidates","items":[{"issueKey":"DENP-2","action":"park","reason":"lowest priority"}]}');
+    expect(set.kind).toBe('parkCandidates');
+    expect(set.items).toEqual([{ issueKey: 'DENP-2', proposedValue: 'park', rationale: 'lowest priority', accepted: false }]);
+    expect(() => parseCanvasAiResponse('parkCandidates', '{"kind":"parkCandidates","items":[{"issueKey":"DENP-2","action":"delete"}]}')).toThrow(/Invalid action/);
   });
 
   it('includes the real feature signals (health, completion, active stories, blockers) in each line', () => {

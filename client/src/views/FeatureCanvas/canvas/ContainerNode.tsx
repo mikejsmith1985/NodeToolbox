@@ -28,6 +28,7 @@ const KIND_ACCENT: Record<ContainerKind, string> = {
   release: '#f59e0b',
   sprint: '#3b82f6',
   parkingLot: '#6b7280',
+  complete: '#22c55e',
 };
 
 /** Renders the capacity meter text and color for a sprint/release box. */

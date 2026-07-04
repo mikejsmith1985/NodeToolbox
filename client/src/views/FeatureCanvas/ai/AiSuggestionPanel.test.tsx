@@ -15,7 +15,7 @@ function buildController(): CanvasOverlayController {
     ensureNodeStates: vi.fn(), updateNode: vi.fn(), setWipLimit: vi.fn(), setPriority: vi.fn(),
     setSize: vi.fn(), setContainer: vi.fn(), setParked: vi.fn(), addContainer: vi.fn(),
     updateContainer: vi.fn(), removeContainer: vi.fn(), removeNode: vi.fn(), clearNodes: vi.fn(), goToStage: vi.fn(), completeStage: vi.fn(),
-    undo: vi.fn(), redo: vi.fn(), canUndo: false, canRedo: false,
+    assignToContainer: vi.fn(), parkNode: vi.fn(), unparkNode: vi.fn(), completeNode: vi.fn(), undo: vi.fn(), redo: vi.fn(), canUndo: false, canRedo: false,
   };
 }
 
@@ -23,7 +23,7 @@ const NODES: CanvasNode[] = [{
   issueKey: 'DENP-1', position: { x: 0, y: 0 }, size: null, priority: null, containerId: null,
   isExpanded: false, isParked: false, summary: 'Login', status: 'To Do', statusCategoryKey: 'new',
   assignee: null, storyPoints: 3, health: 'green', completionPercent: 0, hygieneFlags: [],
-  childStories: [], dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, attachments: [], effectivePoints: 3,
+  childStories: [], dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null, attachments: [], effectivePoints: 3,
 }];
 
 const WIP = { inProgressCount: 1, limit: 1, overflow: 0, parkedCount: 0, activeStoryCount: 0 };
@@ -51,19 +51,36 @@ describe('AiSuggestionPanel', () => {
     expect(controller.setPriority).not.toHaveBeenCalled();
   });
 
-  it('parks a feature when a Reduce WIP suggestion is accepted', () => {
+  it('parks a feature (with reason) when a Triage "park" suggestion is accepted', () => {
     act(() => setAiAssistUnlocked(true));
     const controller = buildController();
     render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} onClose={vi.fn()} />);
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'wipReduction' } });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'parkCandidates' } });
     fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
-      target: { value: '{"kind":"wipReduction","items":[{"issueKey":"DENP-1","reason":"lowest priority"}]}' },
+      target: { value: '{"kind":"parkCandidates","items":[{"issueKey":"DENP-1","action":"park","reason":"lowest priority"}]}' },
     });
     fireEvent.click(screen.getByRole('button', { name: /Ingest suggestions/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
 
-    expect(controller.setParked).toHaveBeenCalledWith('DENP-1', true);
+    expect(controller.parkNode).toHaveBeenCalledWith('DENP-1', 'lowest priority');
+  });
+
+  it('moves a done feature to Complete when a Triage "complete" suggestion is accepted', () => {
+    act(() => setAiAssistUnlocked(true));
+    const controller = buildController();
+    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} onClose={vi.fn()} />);
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'parkCandidates' } });
+    fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
+      target: { value: '{"kind":"parkCandidates","items":[{"issueKey":"DENP-1","action":"complete","reason":"100% done"}]}' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Ingest suggestions/ }));
+    expect(screen.getByText(/Move to Complete box/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+
+    expect(controller.completeNode).toHaveBeenCalledWith('DENP-1');
+    expect(controller.parkNode).not.toHaveBeenCalled();
   });
 
   it('shows a clear action label + rationale per suggestion instead of a bare value', () => {
@@ -92,22 +109,7 @@ describe('AiSuggestionPanel', () => {
     expect(controller.setSize).toHaveBeenCalledWith('DENP-1', 'L');
   });
 
-  it('parks the duplicate when a Duplicate suggestion is accepted', () => {
-    act(() => setAiAssistUnlocked(true));
-    const controller = buildController();
-    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} onClose={vi.fn()} />);
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'duplicateCandidates' } });
-    fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
-      target: { value: '{"kind":"duplicateCandidates","items":[{"issueKey":"DENP-1","duplicateOfKey":"DENP-9","confidence":"high"}]}' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /Ingest suggestions/ }));
-    expect(screen.getByText(/likely duplicate of DENP-9/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
-
-    expect(controller.setParked).toHaveBeenCalledWith('DENP-1', true);
-  });
-
-  it('creates and assigns a sprint box when a Sprint-grouping suggestion is accepted', () => {
+  it('creates and assigns a sprint box (moving the card in) when a Sprint-grouping suggestion is accepted', () => {
     act(() => setAiAssistUnlocked(true));
     const controller = buildController();
     render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} onClose={vi.fn()} />);
@@ -119,6 +121,7 @@ describe('AiSuggestionPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
 
     expect(controller.addContainer).toHaveBeenCalledWith(expect.objectContaining({ kind: 'sprint', title: 'Sprint 25' }));
-    expect(controller.setContainer).toHaveBeenCalledWith('DENP-1', expect.any(String));
+    // assignToContainer (not setContainer) — it repositions the card inside the box.
+    expect(controller.assignToContainer).toHaveBeenCalledWith('DENP-1', expect.any(String));
   });
 });

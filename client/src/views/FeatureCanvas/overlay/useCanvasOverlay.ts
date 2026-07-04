@@ -15,6 +15,7 @@ import {
   type TshirtSize,
 } from './overlayModel.ts';
 import { loadOverlay, saveOverlay } from './overlayStorage.ts';
+import { createCompleteContainer, createParkingLotContainer, positionInContainer } from './containerFactory.ts';
 
 /** The overlay state plus the stable mutators the canvas uses to change it. */
 export interface CanvasOverlayController {
@@ -31,6 +32,14 @@ export interface CanvasOverlayController {
   removeContainer: (containerId: string) => void;
   removeNode: (issueKey: string) => void;
   clearNodes: () => void;
+  /** Moves a feature into an existing box, repositioning its card inside the box's bounds. */
+  assignToContainer: (issueKey: string, containerId: string) => void;
+  /** Parks a feature: auto-creates the Parking Lot box if needed, moves the card in, records the reason. */
+  parkNode: (issueKey: string, reason?: string) => void;
+  /** Un-parks a feature: clears parked state + reason and removes it from its box. */
+  unparkNode: (issueKey: string) => void;
+  /** Marks a feature done: auto-creates the Complete box if needed and moves the card in. */
+  completeNode: (issueKey: string) => void;
   goToStage: (stageId: StageId) => void;
   completeStage: (stageId: StageId) => void;
   /** Reverts the most recent change; no-op when there is nothing to undo. */
@@ -176,6 +185,75 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     mutate((previous) => (Object.keys(previous.nodes).length === 0 ? previous : { ...previous, nodes: {} }));
   }, [mutate]);
 
+  // Counts a container's current members, excluding the node being (re)assigned so its own slot
+  // isn't double-counted when it is already inside the box.
+  const countMembers = (nodes: CanvasOverlay['nodes'], containerId: string, movingKey: string): number =>
+    Object.values(nodes).filter((nodeState) => nodeState.containerId === containerId && nodeState.issueKey !== movingKey).length;
+
+  // Moves a feature into an existing box and snaps its card to the next slot inside the box — the
+  // fix for "assigned but the card never moved into the box". Parking-lot membership marks it parked.
+  const assignToContainer = useCallback((issueKey: string, containerId: string) => {
+    mutate((previous) => {
+      const node = previous.nodes[issueKey];
+      const container = previous.containers.find((candidate) => candidate.id === containerId);
+      if (!node || !container) {
+        return previous;
+      }
+      const position = positionInContainer(container, countMembers(previous.nodes, container.id, issueKey));
+      const isParked = container.kind === 'parkingLot';
+      return {
+        ...previous,
+        nodes: { ...previous.nodes, [issueKey]: { ...node, containerId, position, isParked, parkReason: isParked ? node.parkReason ?? null : null } },
+      };
+    });
+  }, [mutate]);
+
+  const parkNode = useCallback((issueKey: string, reason?: string) => {
+    mutate((previous) => {
+      const node = previous.nodes[issueKey];
+      if (!node) {
+        return previous;
+      }
+      const existingLot = previous.containers.find((candidate) => candidate.kind === 'parkingLot');
+      const lot = existingLot ?? createParkingLotContainer(previous.containers.length);
+      const containers = existingLot ? previous.containers : [...previous.containers, lot];
+      const position = positionInContainer(lot, countMembers(previous.nodes, lot.id, issueKey));
+      return {
+        ...previous,
+        containers,
+        nodes: { ...previous.nodes, [issueKey]: { ...node, containerId: lot.id, isParked: true, parkReason: reason ?? null, position } },
+      };
+    });
+  }, [mutate]);
+
+  const unparkNode = useCallback((issueKey: string) => {
+    mutate((previous) => {
+      const node = previous.nodes[issueKey];
+      if (!node || (!node.isParked && node.containerId === null)) {
+        return previous;
+      }
+      return { ...previous, nodes: { ...previous.nodes, [issueKey]: { ...node, isParked: false, parkReason: null, containerId: null } } };
+    });
+  }, [mutate]);
+
+  const completeNode = useCallback((issueKey: string) => {
+    mutate((previous) => {
+      const node = previous.nodes[issueKey];
+      if (!node) {
+        return previous;
+      }
+      const existingBox = previous.containers.find((candidate) => candidate.kind === 'complete');
+      const doneBox = existingBox ?? createCompleteContainer(previous.containers.length);
+      const containers = existingBox ? previous.containers : [...previous.containers, doneBox];
+      const position = positionInContainer(doneBox, countMembers(previous.nodes, doneBox.id, issueKey));
+      return {
+        ...previous,
+        containers,
+        nodes: { ...previous.nodes, [issueKey]: { ...node, containerId: doneBox.id, isParked: false, parkReason: null, position } },
+      };
+    });
+  }, [mutate]);
+
   const goToStage = useCallback((stageId: StageId) => {
     mutate((previous) => ({ ...previous, stageState: { ...previous.stageState, currentStageId: stageId } }));
   }, [mutate]);
@@ -218,9 +296,10 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
   return useMemo(
     () => ({
       overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize,
-      setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, goToStage, completeStage,
+      setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes,
+      assignToContainer, parkNode, unparkNode, completeNode, goToStage, completeStage,
       undo, redo, canUndo, canRedo,
     }),
-    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, goToStage, completeStage, undo, redo, canUndo, canRedo],
+    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, assignToContainer, parkNode, unparkNode, completeNode, goToStage, completeStage, undo, redo, canUndo, canRedo],
   );
 }

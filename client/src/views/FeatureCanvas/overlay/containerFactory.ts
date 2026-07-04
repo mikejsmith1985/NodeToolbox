@@ -6,6 +6,20 @@
 
 import type { CanvasContainer } from './overlayModel.ts';
 
+// How member cards stack inside a box: a single column below the box header. Simple and legible; a
+// long list overflows the box height, which is fine — the box is a visual guide, not a hard frame.
+const MEMBER_PAD_X = 16;
+const MEMBER_HEADER_OFFSET = 44;
+const MEMBER_SLOT_HEIGHT = 84;
+
+/** Computes the canvas position for the Nth card placed inside a container, stacked below its header. */
+export function positionInContainer(container: CanvasContainer, memberIndex: number): { x: number; y: number } {
+  return {
+    x: container.bounds.x + MEMBER_PAD_X,
+    y: container.bounds.y + MEMBER_HEADER_OFFSET + memberIndex * MEMBER_SLOT_HEIGHT,
+  };
+}
+
 // Layout: new boxes tile across a lower band of the canvas so they don't cover the feature grid.
 const CONTAINER_COLUMN_COUNT = 3;
 const CONTAINER_COLUMN_WIDTH = 440;
@@ -38,6 +52,32 @@ export function createProvisionalContainer(
       height: CONTAINER_HEIGHT,
     },
     capacityBudget: kind === 'sprint' ? DEFAULT_SPRINT_BUDGET : null,
+    provenance: { state: 'provisional', jiraSprintId: null, jiraVersionName: null, startDateIso: null, endDateIso: null },
+  };
+}
+
+/** Builds the single Parking Lot box that collects deferred features. Never committed to Jira. */
+export function createParkingLotContainer(existingCount: number): CanvasContainer {
+  const columnIndex = existingCount % CONTAINER_COLUMN_COUNT;
+  return {
+    id: `ctr-${Date.now()}-parkingLot`,
+    kind: 'parkingLot',
+    title: 'Parking Lot',
+    bounds: { x: CONTAINER_BAND_X + columnIndex * CONTAINER_COLUMN_WIDTH, y: CONTAINER_BAND_Y, width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT },
+    capacityBudget: null,
+    provenance: { state: 'provisional', jiraSprintId: null, jiraVersionName: null, startDateIso: null, endDateIso: null },
+  };
+}
+
+/** Builds the single Complete box that collects finished features. Never committed to Jira. */
+export function createCompleteContainer(existingCount: number): CanvasContainer {
+  const columnIndex = existingCount % CONTAINER_COLUMN_COUNT;
+  return {
+    id: `ctr-${Date.now()}-complete`,
+    kind: 'complete',
+    title: 'Complete',
+    bounds: { x: CONTAINER_BAND_X + columnIndex * CONTAINER_COLUMN_WIDTH, y: CONTAINER_BAND_Y, width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT },
+    capacityBudget: null,
     provenance: { state: 'provisional', jiraSprintId: null, jiraVersionName: null, startDateIso: null, endDateIso: null },
   };
 }

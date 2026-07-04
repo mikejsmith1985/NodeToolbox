@@ -45,12 +45,13 @@ function assignToSuggestedSprint(suggestion: AiSuggestion, controller: CanvasOve
     (container) => container.kind === 'sprint' && container.title.trim().toLowerCase() === targetTitle.toLowerCase(),
   );
   if (existing) {
-    controller.setContainer(suggestion.issueKey, existing.id);
+    controller.assignToContainer(suggestion.issueKey, existing.id);
     return;
   }
+  // Create the provisional sprint, then move the card inside it (assignToContainer repositions).
   const container = createProvisionalContainer('sprint', controller.overlay.containers.length, targetTitle);
   controller.addContainer(container);
-  controller.setContainer(suggestion.issueKey, container.id);
+  controller.assignToContainer(suggestion.issueKey, container.id);
 }
 
 /** Applies one accepted suggestion to the overlay based on the analysis kind. */
@@ -59,12 +60,16 @@ function applySuggestion(kind: AiSuggestionKind, suggestion: AiSuggestion, contr
     controller.setPriority(suggestion.issueKey, suggestion.proposedValue as MoscowBucket);
   } else if (kind === 'sizeEstimate') {
     controller.setSize(suggestion.issueKey, suggestion.proposedValue as TshirtSize);
-  } else if (kind === 'staleCandidates' || kind === 'wipReduction' || kind === 'duplicateCandidates') {
-    // All three recommend taking the feature out of active flow, so accepting parks it (reversible,
-    // overlay-only). For duplicates the operator can then ✕-remove it from the canvas if they wish.
-    controller.setParked(suggestion.issueKey, true);
   } else if (kind === 'sprintGrouping') {
     assignToSuggestedSprint(suggestion, controller);
+  } else if (kind === 'parkCandidates') {
+    // proposedValue holds the triage action. Park → Parking Lot with reason; complete → Complete box;
+    // breakout is advisory only (the feature needs splitting in Jira — nothing to move here).
+    if (suggestion.proposedValue === 'complete') {
+      controller.completeNode(suggestion.issueKey);
+    } else if (suggestion.proposedValue === 'park') {
+      controller.parkNode(suggestion.issueKey, suggestion.rationale);
+    }
   }
 }
 
@@ -98,11 +103,10 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, onClose }: AiS
 
   const knownKeys = useMemo(() => new Set(canvasNodes.map((node) => node.issueKey)), [canvasNodes]);
   const prompt = useMemo(() => {
-    // Reduce WIP reasons only over the features that actually count toward WIP (in progress, not
-    // parked) and is handed the limit + count; every other analysis considers the whole canvas.
-    if (kind === 'wipReduction') {
-      const inProgressNodes = canvasNodes.filter((node) => !node.isParked && node.statusCategoryKey === IN_PROGRESS_STATUS_CATEGORY);
-      return buildCanvasAiPrompt(kind, inProgressNodes.map(toPromptIssue), { wipLimit: wip.limit, inProgressCount: wip.inProgressCount });
+    // Triage considers the whole canvas (so done features can be routed to Complete) and is handed the
+    // WIP limit + count to prioritize parking. Every other analysis also considers the whole canvas.
+    if (kind === 'parkCandidates') {
+      return buildCanvasAiPrompt(kind, canvasNodes.map(toPromptIssue), { wipLimit: wip.limit, inProgressCount: wip.inProgressCount });
     }
     return buildCanvasAiPrompt(kind, canvasNodes.map(toPromptIssue));
   }, [kind, canvasNodes, wip.limit, wip.inProgressCount]);
@@ -110,7 +114,7 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, onClose }: AiS
   // For value-driven analyses, warn when no feature carries Business Value or points — the
   // assistant will then lean on status/health/completion/blockers, which the user should know.
   const lacksValueSignals = useMemo(
-    () => (kind === 'priorityOrder' || kind === 'wipReduction')
+    () => (kind === 'priorityOrder' || kind === 'parkCandidates')
       && canvasNodes.length > 0
       && canvasNodes.every((node) => node.businessValue === null && node.storyPoints === null),
     [kind, canvasNodes],
@@ -146,9 +150,7 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, onClose }: AiS
       <select value={kind} onChange={(event) => setKind(event.target.value as AiSuggestionKind)} style={{ margin: '8px 0', width: '100%' }}>
         <option value="priorityOrder">Prioritize — MoSCoW buckets</option>
         <option value="sizeEstimate">Size — t-shirt estimate</option>
-        <option value="wipReduction">Reduce WIP — park to limit</option>
-        <option value="staleCandidates">Stale candidates — park</option>
-        <option value="duplicateCandidates">Duplicate candidates — park</option>
+        <option value="parkCandidates">Triage — park / complete / break out</option>
         <option value="sprintGrouping">Sprint grouping — assign to sprint</option>
       </select>
       {lacksValueSignals && (
