@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react';
 import { searchUsers } from '../../../services/jiraApi.ts';
 import type { JiraUser } from '../../../types/jira.ts';
 import { buildAssigneeClause } from './assigneeClause.ts';
+import controlStyles from './canvasControls.module.css';
 
 /** Props for the person finder. */
 export interface PersonFinderProps {
@@ -91,11 +92,11 @@ export function PersonFinder({ onInsertClause }: PersonFinderProps): React.JSX.E
 
   return (
     <div style={{ position: 'relative' }}>
-      <button type="button" onClick={() => setIsOpen((open) => !open)} title="Find a person to filter by assignee" style={{ padding: '4px 10px', borderRadius: 6, cursor: 'pointer', border: '1px solid #334155', background: 'transparent', color: 'inherit' }}>
+      <button type="button" className={controlStyles.btn} onClick={() => setIsOpen((open) => !open)} title="Find a person to filter by assignee">
         👤 Find person
       </button>
       {isOpen && (
-        <div style={{ position: 'absolute', left: 0, top: 36, width: 300, padding: 12, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, zIndex: 30, color: '#e2e8f0' }}>
+        <div className={controlStyles.popover} style={{ position: 'absolute', left: 0, top: 36, width: 300, padding: 12, zIndex: 30 }}>
           <input
             aria-label="Search people by name or email"
             value={query}

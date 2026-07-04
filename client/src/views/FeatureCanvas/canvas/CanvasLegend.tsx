@@ -8,6 +8,7 @@
 import { useState } from 'react';
 
 import { HEALTH_COLORS, STATUS_CATEGORY_COLORS } from './nodeColors.ts';
+import controlStyles from './canvasControls.module.css';
 
 /** One labeled swatch row in the legend. */
 interface LegendEntry {
@@ -68,14 +69,14 @@ export function CanvasLegend(): React.JSX.Element {
 
   return (
     <div style={{ position: 'relative' }}>
-      <button type="button" onClick={() => setIsOpen((open) => !open)} aria-expanded={isOpen} title="What do the card markings mean?">
+      <button type="button" className={controlStyles.btn} onClick={() => setIsOpen((open) => !open)} aria-expanded={isOpen} title="What do the card markings mean?">
         ❓ Key
       </button>
       {isOpen && (
-        <div role="dialog" aria-label="Canvas legend" style={{ position: 'absolute', top: 32, left: 0, zIndex: 40, width: 280, padding: 12, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0', fontSize: 12 }}>
+        <div role="dialog" aria-label="Canvas legend" className={controlStyles.popover} style={{ position: 'absolute', top: 36, left: 0, zIndex: 40, width: 280, padding: 12, fontSize: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <strong>Card key</strong>
-            <button type="button" onClick={() => setIsOpen(false)} aria-label="Close legend">✕</button>
+            <button type="button" className={controlStyles.iconBtn} onClick={() => setIsOpen(false)} aria-label="Close legend">✕</button>
           </div>
 
           <LegendSection title="Left stripe — status" entries={STATUS_STRIPE_ENTRIES} isDot={false} />

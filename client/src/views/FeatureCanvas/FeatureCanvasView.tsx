@@ -13,6 +13,7 @@ import { FeatureCanvasBoard } from './canvas/FeatureCanvasBoard.tsx';
 import { computeDefaultPosition, mapFeaturesToNodes } from './canvas/nodeMapping.ts';
 import { SurfacePicker } from './canvas/SurfacePicker.tsx';
 import { CanvasLegend } from './canvas/CanvasLegend.tsx';
+import controlStyles from './canvas/canvasControls.module.css';
 import { BlueprintSelectionStep } from './canvas/BlueprintSelectionStep.tsx';
 import { NodeInspectorPanel } from './canvas/NodeInspectorPanel.tsx';
 import { useCanvasFeatures } from './canvas/useCanvasFeatures.ts';
@@ -127,13 +128,14 @@ export default function FeatureCanvasView(): React.JSX.Element {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 160px)', minHeight: 480 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 4px' }}>
-        <button type="button" onClick={() => setIsSelecting(true)}>➕ Add features</button>
-        <button type="button" onClick={() => setIsPickerOpen(true)}>Add via JQL</button>
-        <button type="button" onClick={() => controller.undo()} disabled={!controller.canUndo} title="Undo the last canvas change">↩️ Undo</button>
-        <button type="button" onClick={() => controller.redo()} disabled={!controller.canRedo} title="Redo the last undone change">↪️ Redo</button>
+        <button type="button" className={controlStyles.btnPrimary} onClick={() => setIsSelecting(true)}>➕ Add features</button>
+        <button type="button" className={controlStyles.btn} onClick={() => setIsPickerOpen(true)}>Add via JQL</button>
+        <button type="button" className={controlStyles.btn} onClick={() => controller.undo()} disabled={!controller.canUndo} title="Undo the last canvas change">↩️ Undo</button>
+        <button type="button" className={controlStyles.btn} onClick={() => controller.redo()} disabled={!controller.canRedo} title="Redo the last undone change">↪️ Redo</button>
         {!isWorkingSetEmpty && (
           <button
             type="button"
+            className={controlStyles.btn}
             onClick={() => {
               if (window.confirm(`Remove all ${workingSetKeys.length} feature(s) from the canvas? This clears the canvas only — nothing changes in Jira.`)) {
                 controller.clearNodes();

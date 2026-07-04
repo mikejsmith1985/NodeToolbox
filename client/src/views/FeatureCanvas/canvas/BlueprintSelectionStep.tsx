@@ -9,6 +9,7 @@ import { useState } from 'react';
 
 import BlueprintTab from '../../ArtView/BlueprintTab.tsx';
 import type { ArtTeam } from '../../ArtView/hooks/useArtData.ts';
+import controlStyles from './canvasControls.module.css';
 
 /** Props for the blueprint selection step. */
 export interface BlueprintSelectionStepProps {
@@ -39,6 +40,21 @@ export function BlueprintSelectionStep({ teams, selectedPiName, onCanvasKeys, on
     });
   };
 
+  // Bulk add/remove for the per-team "Select all" / "Clear" control.
+  const handleSetKeysSelected = (featureKeys: readonly string[], isSelected: boolean): void => {
+    setSelectedKeys((previous) => {
+      const next = new Set(previous);
+      for (const featureKey of featureKeys) {
+        if (isSelected) {
+          next.add(featureKey);
+        } else {
+          next.delete(featureKey);
+        }
+      }
+      return next;
+    });
+  };
+
   const handleAddToCanvas = (): void => {
     if (selectedKeys.size > 0) {
       onAdd([...selectedKeys]);
@@ -51,13 +67,13 @@ export function BlueprintSelectionStep({ teams, selectedPiName, onCanvasKeys, on
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 8px' }}>
         <strong>Step 1 — pick features from the blueprint</strong>
-        {hasCanvas && <button type="button" onClick={onClose}>← Back to canvas</button>}
+        {hasCanvas && <button type="button" className={controlStyles.btn} onClick={onClose}>← Back to canvas</button>}
       </div>
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         <BlueprintTab
           teams={teams}
           selectedPiName={selectedPiName}
-          selectionMode={{ onCanvasKeys, selectedKeys, onToggle: handleToggle, onAddToCanvas: handleAddToCanvas }}
+          selectionMode={{ onCanvasKeys, selectedKeys, onToggle: handleToggle, onSetKeysSelected: handleSetKeysSelected, onAddToCanvas: handleAddToCanvas }}
         />
       </div>
     </div>

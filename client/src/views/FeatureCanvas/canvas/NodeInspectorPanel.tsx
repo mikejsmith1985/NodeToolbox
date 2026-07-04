@@ -10,6 +10,7 @@ import { useIssueComments } from '../../../hooks/useIssueComments.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 import CommentThread from '../../../components/CommentThread/CommentThread.tsx';
 import type { CanvasAttachment, CanvasNode } from '../logic/canvasTypes.ts';
+import controlStyles from './canvasControls.module.css';
 
 /** Props for the read-only node inspector. */
 export interface NodeInspectorPanelProps {
@@ -75,10 +76,10 @@ function NodeInspectorContent({ node, onClose }: { node: CanvasNode; onClose: ()
   const normalizedDescription = normalizeRichTextToPlainText(node.description);
 
   return (
-    <aside aria-label={`Inspector for ${node.issueKey}`} style={{ width: 300, padding: 12, overflowY: 'auto', background: '#0f172a', borderLeft: '1px solid #334155', color: '#e2e8f0' }}>
+    <aside aria-label={`Inspector for ${node.issueKey}`} style={{ width: 300, padding: 12, overflowY: 'auto', background: 'var(--color-surface-1)', borderLeft: '1px solid var(--color-border)', color: 'var(--color-text-primary)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
         <strong>{node.issueKey}</strong>
-        <button type="button" onClick={onClose} aria-label="Close inspector">✕</button>
+        <button type="button" className={controlStyles.iconBtn} onClick={onClose} aria-label="Close inspector">✕</button>
       </div>
 
       <h3 style={{ fontSize: 14, margin: '8px 0', lineHeight: 1.3 }}>{node.summary}</h3>
