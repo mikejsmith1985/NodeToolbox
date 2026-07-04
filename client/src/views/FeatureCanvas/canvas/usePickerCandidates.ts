@@ -1,41 +1,30 @@
-// usePickerCandidates.ts — Fetches the Surface picker's candidate features for the active source.
+// usePickerCandidates.ts — Fetches candidate features for the canvas's Custom-JQL "add more" path.
 //
-// Two sources: the cross-project **blueprint** (the parent-walk for the active team + PI, grouped by
-// Program Epic) and a **custom JQL** query. The hook returns the raw source data (program epics or
-// feature-review items); the component maps them to selectable rows with the live on-canvas set. When
-// no ART team is resolved, the blueprint source reports "no-team" so the picker can show guidance while
-// the custom-JQL source still works as a fallback.
+// The blueprint selection now lives in the reused BlueprintTab (step 1); this hook only serves the
+// secondary Custom-JQL source on the board (step 2), so a user can pull in features the blueprint
+// doesn't surface. A malformed query surfaces an error and adds nothing.
 
 import { useEffect, useRef, useState } from 'react';
 
-import { fetchBlueprintHierarchy, type BlueprintProgramEpicNode } from '../../ArtView/blueprintHierarchy.ts';
-import type { ArtTeam } from '../../ArtView/hooks/useArtData.ts';
 import { fetchFeatureReviewItemsByJql, type FeatureReviewItem } from '../../SprintDashboard/featureReview.ts';
 
-/** Which candidate source the picker is showing. */
-export type PickerSource = 'blueprint' | 'jql';
-
-/** Inputs the picker feeds the candidates hook. */
+/** Inputs for the Custom-JQL candidate fetch. */
 export interface PickerCandidatesInput {
-  source: PickerSource;
-  team: ArtTeam | null;
-  piName: string;
   jql: string;
-  /** Bumped when the user runs the custom query, so JQL fetches only on demand (not per keystroke). */
+  /** Bumped when the user runs the query, so it fetches on demand (not per keystroke). */
   runToken: number;
 }
 
-/** Raw candidate data for the active source, plus lifecycle. */
+/** Candidate items for the custom query, plus lifecycle. */
 export interface PickerCandidatesResult {
-  status: 'no-team' | 'loading' | 'ready' | 'error';
-  programEpics: BlueprintProgramEpicNode[];
+  status: 'idle' | 'loading' | 'ready' | 'error';
   jqlItems: FeatureReviewItem[];
   error: string | null;
 }
 
-/** Fetches candidate features for the active picker source. */
+/** Fetches feature-review items for the user's custom JQL when they run it. */
 export function usePickerCandidates(input: PickerCandidatesInput): PickerCandidatesResult {
-  const { source, team, piName, runToken } = input;
+  const { runToken } = input;
 
   // The JQL text is read at fetch time (via a ref) so typing does not refetch — only runToken does.
   const jqlRef = useRef(input.jql);
@@ -43,44 +32,37 @@ export function usePickerCandidates(input: PickerCandidatesInput): PickerCandida
     jqlRef.current = input.jql;
   }, [input.jql]);
 
-  const [result, setResult] = useState<{ key: string; status: 'ready' | 'error'; programEpics: BlueprintProgramEpicNode[]; jqlItems: FeatureReviewItem[]; error: string | null }>(
-    { key: '', status: 'ready', programEpics: [], jqlItems: [], error: null },
+  const [result, setResult] = useState<{ token: number; status: 'ready' | 'error'; jqlItems: FeatureReviewItem[]; error: string | null }>(
+    { token: -1, status: 'ready', jqlItems: [], error: null },
   );
 
-  const requestKey = source === 'blueprint' ? `blueprint:${team?.id ?? ''}:${piName}` : `jql:${runToken}`;
-
   useEffect(() => {
-    if (source === 'blueprint' && !team) {
-      return undefined; // derived status below reports "no-team"
+    if (runToken === 0) {
+      return undefined; // nothing run yet
     }
     let isCancelled = false;
-    const fetchPromise = source === 'blueprint'
-      ? fetchBlueprintHierarchy([team as ArtTeam], piName).then((programEpics) => ({ programEpics, jqlItems: [] as FeatureReviewItem[] }))
-      : fetchFeatureReviewItemsByJql(jqlRef.current).then((jqlItems) => ({ programEpics: [] as BlueprintProgramEpicNode[], jqlItems }));
-
-    fetchPromise
-      .then((data) => {
+    fetchFeatureReviewItemsByJql(jqlRef.current)
+      .then((jqlItems) => {
         if (!isCancelled) {
-          setResult({ key: requestKey, status: 'ready', programEpics: data.programEpics, jqlItems: data.jqlItems, error: null });
+          setResult({ token: runToken, status: 'ready', jqlItems, error: null });
         }
       })
       .catch((fetchError: unknown) => {
         if (!isCancelled) {
-          setResult({ key: requestKey, status: 'error', programEpics: [], jqlItems: [], error: fetchError instanceof Error ? fetchError.message : 'Failed to load candidates.' });
+          setResult({ token: runToken, status: 'error', jqlItems: [], error: fetchError instanceof Error ? fetchError.message : 'Failed to load candidates.' });
         }
       });
     return () => {
       isCancelled = true;
     };
-  }, [source, team, piName, requestKey]);
+  }, [runToken]);
 
-  const isResultCurrent = result.key === requestKey;
-  const status: PickerCandidatesResult['status'] = source === 'blueprint' && !team
-    ? 'no-team'
-    : isResultCurrent ? result.status : 'loading';
+  if (runToken === 0) {
+    return { status: 'idle', jqlItems: [], error: null };
+  }
+  const isResultCurrent = result.token === runToken;
   return {
-    status,
-    programEpics: isResultCurrent ? result.programEpics : [],
+    status: isResultCurrent ? result.status : 'loading',
     jqlItems: isResultCurrent ? result.jqlItems : [],
     error: isResultCurrent ? result.error : null,
   };

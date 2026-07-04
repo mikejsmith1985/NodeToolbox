@@ -12,9 +12,11 @@ import { useSettingsStore } from '../../store/settingsStore.ts';
 import { FeatureCanvasBoard } from './canvas/FeatureCanvasBoard.tsx';
 import { computeDefaultPosition, mapFeaturesToNodes } from './canvas/nodeMapping.ts';
 import { SurfacePicker } from './canvas/SurfacePicker.tsx';
+import { BlueprintSelectionStep } from './canvas/BlueprintSelectionStep.tsx';
 import { NodeInspectorPanel } from './canvas/NodeInspectorPanel.tsx';
 import { useCanvasFeatures } from './canvas/useCanvasFeatures.ts';
 import { useCanvasScope } from './canvas/useCanvasScope.ts';
+import { readStoredArtTeams } from '../SprintDashboard/sprintDashboardArtContext.ts';
 import { CoachPanel } from './coach/CoachPanel.tsx';
 import { AiSuggestionPanel } from './ai/AiSuggestionPanel.tsx';
 import { ReviewCommitPanel } from './commit/ReviewCommitPanel.tsx';
@@ -62,8 +64,11 @@ export default function FeatureCanvasView(): React.JSX.Element {
   const [isCommitOpen, setIsCommitOpen] = useState(false);
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [isSelecting, setIsSelecting] = useState(false);
 
   const onCanvasKeys = useMemo(() => new Set(workingSetKeys), [workingSetKeys]);
+  // Step 1 (blueprint selection) is fed the full ART roster so its per-team buckets match ART's counts.
+  const artRoster = useMemo(() => readStoredArtTeams(), []);
 
   // Adding from the picker seeds a persisted node state per chosen key (additive; dedup is upstream),
   // which grows the working set and triggers the live fetch for the new features.
@@ -102,26 +107,34 @@ export default function FeatureCanvasView(): React.JSX.Element {
 
   const isWorkingSetEmpty = workingSetKeys.length === 0;
 
+  // Step 1 — pick features from the reused blueprint. Short-circuits the board while active.
+  if (isSelecting) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 160px)', minHeight: 480 }}>
+        <BlueprintSelectionStep
+          teams={artRoster}
+          selectedPiName={scope.piName}
+          onCanvasKeys={onCanvasKeys}
+          onAdd={handleAddFeatures}
+          onClose={() => setIsSelecting(false)}
+          hasCanvas={!isWorkingSetEmpty}
+        />
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 160px)', minHeight: 480 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 4px' }}>
-        {scope.teams.length > 0 && (
-          <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-            Team
-            <select aria-label="Canvas team scope" value={scope.selectedTeamId} onChange={(event) => scope.selectTeam(event.target.value)}>
-              {scope.teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
-            </select>
-          </label>
-        )}
-        <button type="button" onClick={() => setIsPickerOpen(true)}>➕ Add features</button>
-        {!scope.team && <span style={{ fontSize: 12, opacity: 0.7 }}>No team configured — use the picker's Custom JQL source.</span>}
+        <button type="button" onClick={() => setIsSelecting(true)}>➕ Add features</button>
+        <button type="button" onClick={() => setIsPickerOpen(true)}>Add via JQL</button>
+        {artRoster.length === 0 && <span style={{ fontSize: 12, opacity: 0.7 }}>No ART teams configured — use Add via JQL.</span>}
         {features.status === 'error' && <span role="alert" style={{ fontSize: 12, color: '#ef4444' }}>{features.error}</span>}
       </div>
       <div style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
         {isPickerOpen && (
           <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 40 }}>
             <SurfacePicker
-              team={scope.team}
               piName={scope.piName}
               projectKey={scope.projectKey}
               onCanvasKeys={onCanvasKeys}

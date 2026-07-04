@@ -1,6 +1,6 @@
 // BlueprintTab.tsx — React renderer for the legacy-style Program Epic → Feature → Story Blueprint hierarchy.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ArtTeam } from './hooks/useArtData.ts';
 import {
@@ -30,6 +30,22 @@ const VIEW_MODE_LABELS: Array<{ key: BlueprintViewMode; label: string }> = [
   { key: 'features', label: 'Features Only' },
   { key: 'flat', label: 'Flat List' },
 ];
+
+/**
+ * Optional selection state supplied when the Blueprint is embedded as the Feature Canvas's "step 1"
+ * picker. When present, each feature row gains a checkbox; features already on the canvas are shown
+ * disabled. Absent for the normal ART-view usage, which stays read-only.
+ */
+export interface BlueprintSelectionMode {
+  onCanvasKeys: ReadonlySet<string>;
+  selectedKeys: ReadonlySet<string>;
+  onToggle: (featureKey: string) => void;
+  onAddToCanvas: () => void;
+}
+
+// Shared through context so the per-feature checkbox reaches BlueprintFeatureRow without threading
+// selection props through every intermediate list/card/bucket component.
+const BlueprintSelectionContext = createContext<BlueprintSelectionMode | null>(null);
 
 function readStatusToneClassName(statusName: string): string {
   const normalizedStatusName = statusName.toLowerCase();
@@ -168,9 +184,21 @@ function BlueprintFeatureRow({
   showStories: boolean;
 }) {
   const storyCount = feature.children.length + feature.offTrain.length;
+  const selection = useContext(BlueprintSelectionContext);
+  const isOnCanvas = selection?.onCanvasKeys.has(feature.key) ?? false;
   return (
     <div className={styles.blueprintFeatureBlock}>
       <div className={styles.blueprintFeatureRow}>
+        {selection && (
+          <input
+            type="checkbox"
+            aria-label={`Add ${feature.key} to canvas`}
+            checked={isOnCanvas || selection.selectedKeys.has(feature.key)}
+            disabled={isOnCanvas}
+            onChange={() => selection.onToggle(feature.key)}
+            style={{ marginRight: 4 }}
+          />
+        )}
         <button
           className={styles.blueprintChevron}
           onClick={() => onToggleCollapse(feature.key)}
@@ -186,6 +214,7 @@ function BlueprintFeatureRow({
         <span className={styles.featureStatus}>{feature.status}</span>
         <span className={styles.storyCount}>{storyCount} {storyCount === 1 ? 'story' : 'stories'}</span>
         {feature.isExternal && <span className={styles.externalBadge}>External</span>}
+        {isOnCanvas && <span style={{ fontSize: 11, opacity: 0.6 }}>on canvas</span>}
       </div>
       {!isCollapsed && showStories && (
         <BlueprintStoryList stories={feature.children} offTrainStories={feature.offTrain} />
@@ -334,11 +363,14 @@ function BlueprintTeamBuckets({
 interface BlueprintTabProps {
   teams: ArtTeam[];
   selectedPiName: string;
+  /** When provided, the tab is a canvas selection surface: feature rows gain add-to-canvas checkboxes. */
+  selectionMode?: BlueprintSelectionMode;
 }
 
 /** Blueprint tab: displays the bottom-up Program Epic hierarchy derived from ART team issues. */
-export default function BlueprintTab({ teams, selectedPiName }: BlueprintTabProps) {
-  const [viewMode, setViewMode] = useState<BlueprintViewMode>('hierarchy');
+export default function BlueprintTab({ teams, selectedPiName, selectionMode }: BlueprintTabProps) {
+  // Default to the By-Team view in selection mode so users land on the per-team buckets immediately.
+  const [viewMode, setViewMode] = useState<BlueprintViewMode>(selectionMode ? 'by-team' : 'hierarchy');
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [programEpics, setProgramEpics] = useState<BlueprintProgramEpicNode[] | null>(null);
@@ -435,11 +467,17 @@ export default function BlueprintTab({ teams, selectedPiName }: BlueprintTabProp
     : flattenedFeatures.length > 0;
 
   return (
+    <BlueprintSelectionContext.Provider value={selectionMode ?? null}>
     <div className={styles.blueprintTab}>
       <div className={styles.blueprintToolbar}>
         <button className={styles.loadBtn} onClick={handleLoadBlueprint} disabled={isLoading} type="button">
           {isLoading ? 'Loading…' : hasLoadedData ? 'Reload Blueprint' : 'Load Blueprint'}
         </button>
+        {selectionMode && (
+          <button className={styles.loadBtn} type="button" disabled={selectionMode.selectedKeys.size === 0} onClick={selectionMode.onAddToCanvas}>
+            Add to canvas ({selectionMode.selectedKeys.size})
+          </button>
+        )}
         <BlueprintViewModeSwitcher viewMode={viewMode} onSetViewMode={setViewMode} />
         <input
           type="text"
@@ -498,5 +536,6 @@ export default function BlueprintTab({ teams, selectedPiName }: BlueprintTabProp
         />
       )}
     </div>
+    </BlueprintSelectionContext.Provider>
   );
 }
