@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildCanvasAiPrompt, buildScopeQueryPrompt, extractJsonPayload, parseCanvasAiResponse, parseScopeQueryResponse } from './canvasAiAssist.ts';
+import { buildCanvasAiPrompt, describeSuggestionAction, buildScopeQueryPrompt, extractJsonPayload, parseCanvasAiResponse, parseScopeQueryResponse } from './canvasAiAssist.ts';
 
 describe('canvasAiAssist', () => {
   it('builds a prompt that names the issues and demands JSON only', () => {
@@ -46,6 +46,21 @@ describe('canvasAiAssist', () => {
     );
     expect(prompt).toContain('WIP limit: not set');
     expect(prompt).not.toContain('Park at least');
+  });
+
+  it('parses a sizeEstimate reply and rejects an invalid size', () => {
+    const set = parseCanvasAiResponse('sizeEstimate', '{"kind":"sizeEstimate","items":[{"issueKey":"DENP-1","size":"L","rationale":"broad scope"}]}');
+    expect(set.items).toEqual([{ issueKey: 'DENP-1', proposedValue: 'L', rationale: 'broad scope', accepted: false }]);
+    expect(() => parseCanvasAiResponse('sizeEstimate', '{"kind":"sizeEstimate","items":[{"issueKey":"DENP-1","size":"HUGE"}]}')).toThrow(/Invalid size/);
+  });
+
+  it('describes each suggestion action in plain language', () => {
+    expect(describeSuggestionAction('priorityOrder', { issueKey: 'A', proposedValue: 'Must', rationale: '', accepted: false })).toBe('Set priority to Must');
+    expect(describeSuggestionAction('sizeEstimate', { issueKey: 'A', proposedValue: 'L', rationale: '', accepted: false })).toBe('Set size to L');
+    expect(describeSuggestionAction('wipReduction', { issueKey: 'A', proposedValue: '', rationale: '', accepted: false })).toBe('Park to reduce WIP');
+    expect(describeSuggestionAction('staleCandidates', { issueKey: 'A', proposedValue: '', rationale: '', accepted: false })).toContain('Park');
+    expect(describeSuggestionAction('duplicateCandidates', { issueKey: 'A', proposedValue: 'DENP-9', rationale: '', accepted: false })).toBe('Park — likely duplicate of DENP-9');
+    expect(describeSuggestionAction('sprintGrouping', { issueKey: 'A', proposedValue: 'Sprint 25', rationale: '', accepted: false })).toBe('Assign to sprint “Sprint 25”');
   });
 
   it('parses a wipReduction reply into park proposals', () => {

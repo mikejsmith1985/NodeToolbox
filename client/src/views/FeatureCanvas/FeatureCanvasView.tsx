@@ -25,22 +25,10 @@ import { ReviewCommitPanel } from './commit/ReviewCommitPanel.tsx';
 import { computeContainerCapacity } from './logic/capacity.ts';
 import type { ContainerCapacity } from './logic/canvasTypes.ts';
 import { computeWipSnapshot } from './logic/wip.ts';
-import { createNodeState, type CanvasContainer, type ContainerKind } from './overlay/overlayModel.ts';
+import { createNodeState, type ContainerKind } from './overlay/overlayModel.ts';
+import { createProvisionalContainer } from './overlay/containerFactory.ts';
 import { deriveScopeKey } from './overlay/overlayStorage.ts';
 import { useCanvasOverlay } from './overlay/useCanvasOverlay.ts';
-
-/** Builds a provisional container box positioned in a lower band of the canvas. */
-function createProvisionalContainer(kind: 'sprint' | 'release', existingCount: number): CanvasContainer {
-  const columnIndex = existingCount % 3;
-  return {
-    id: `ctr-${Date.now()}-${kind}`,
-    kind,
-    title: kind === 'sprint' ? 'New sprint' : 'New release',
-    bounds: { x: 40 + columnIndex * 440, y: 720, width: 400, height: 260 },
-    capacityBudget: kind === 'sprint' ? 20 : null,
-    provenance: { state: 'provisional', jiraSprintId: null, jiraVersionName: null, startDateIso: null, endDateIso: null },
-  };
-}
 
 /** A centered guidance message used by the empty/loading/error states. */
 function CanvasMessage({ text }: { text: string }): React.JSX.Element {
