@@ -14,7 +14,7 @@ function buildController(): CanvasOverlayController {
     overlay: createEmptyOverlay('team-a', 'denp:pi-1'),
     ensureNodeStates: vi.fn(), updateNode: vi.fn(), setWipLimit: vi.fn(), setPriority: vi.fn(),
     setSize: vi.fn(), setContainer: vi.fn(), setParked: vi.fn(), addContainer: vi.fn(),
-    updateContainer: vi.fn(), removeContainer: vi.fn(), removeNode: vi.fn(), goToStage: vi.fn(), completeStage: vi.fn(),
+    updateContainer: vi.fn(), removeContainer: vi.fn(), removeNode: vi.fn(), clearNodes: vi.fn(), goToStage: vi.fn(), completeStage: vi.fn(),
   };
 }
 

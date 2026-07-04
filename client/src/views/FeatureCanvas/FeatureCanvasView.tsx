@@ -128,6 +128,19 @@ export default function FeatureCanvasView(): React.JSX.Element {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 4px' }}>
         <button type="button" onClick={() => setIsSelecting(true)}>➕ Add features</button>
         <button type="button" onClick={() => setIsPickerOpen(true)}>Add via JQL</button>
+        {!isWorkingSetEmpty && (
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm(`Remove all ${workingSetKeys.length} feature(s) from the canvas? This clears the canvas only — nothing changes in Jira.`)) {
+                controller.clearNodes();
+                setSelectedIssueKey(null);
+              }
+            }}
+          >
+            🗑 Clear canvas
+          </button>
+        )}
         {artRoster.length === 0 && <span style={{ fontSize: 12, opacity: 0.7 }}>No ART teams configured — use Add via JQL.</span>}
         {features.status === 'error' && <span role="alert" style={{ fontSize: 12, color: '#ef4444' }}>{features.error}</span>}
       </div>

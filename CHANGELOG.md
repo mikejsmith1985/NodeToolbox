@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Feature Canvas — "Clear canvas" action**: The canvas working set persists per team+PI, so a canvas built (or auto-seeded by older versions) stays until cleared. A **Clear canvas** button (shown when the board has features) empties the working set after a confirmation, so you can start blank and add only what you select from the blueprint. It clears the canvas only — nothing changes in Jira, and your boxes/stage/config are kept. Fixes stale features (e.g. 54 issues auto-seeded by a pre-0.30 version) lingering on the board.
+
 ### Changed
 - **Feature Canvas — blueprint selection is now step 1, reusing the ART Blueprint page**: Replaced the canvas's re-derived blueprint picker (which showed wrong per-team counts — e.g. 54 instead of ART's 21 — because a single-team fetch can't reproduce the Blueprint's cross-team bucketing) with the **actual ART Blueprint component** embedded as a selection step. Adding features is now a two-step flow: **step 1** shows the real Blueprint (defaulting to the By-Team view, fed the full ART roster so its per-team counts exactly match ART's) with an **add-to-canvas checkbox** on each feature; **step 2** is the canvas board as before. This reuses proven logic instead of duplicating it, so team counts are correct with no team-scoping guesswork. The **Custom-JQL add path** is retained on the board ("Add via JQL") for pulling in features the blueprint doesn't surface. Removed the v0.30.1 canvas team dropdown and the `isExternal` picker filter (both artifacts of the wrong single-team approach). `BlueprintTab` gains an optional, additive selection mode; its normal ART-view usage is unchanged.
 

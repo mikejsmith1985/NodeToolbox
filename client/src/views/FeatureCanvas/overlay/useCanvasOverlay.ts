@@ -30,6 +30,7 @@ export interface CanvasOverlayController {
   updateContainer: (containerId: string, changes: Partial<CanvasContainer>) => void;
   removeContainer: (containerId: string) => void;
   removeNode: (issueKey: string) => void;
+  clearNodes: () => void;
   goToStage: (stageId: StageId) => void;
   completeStage: (stageId: StageId) => void;
 }
@@ -135,6 +136,12 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     });
   }, [mutate]);
 
+  // Empties the curated working set (all feature nodes) so the user can start blank and add only what
+  // they select. Overlay-only — it never touches Jira. Containers/stage/config are left intact.
+  const clearNodes = useCallback(() => {
+    mutate((previous) => (Object.keys(previous.nodes).length === 0 ? previous : { ...previous, nodes: {} }));
+  }, [mutate]);
+
   const goToStage = useCallback((stageId: StageId) => {
     mutate((previous) => ({ ...previous, stageState: { ...previous.stageState, currentStageId: stageId } }));
   }, [mutate]);
@@ -149,8 +156,8 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
   return useMemo(
     () => ({
       overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize,
-      setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, goToStage, completeStage,
+      setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, goToStage, completeStage,
     }),
-    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, goToStage, completeStage],
+    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, goToStage, completeStage],
   );
 }
