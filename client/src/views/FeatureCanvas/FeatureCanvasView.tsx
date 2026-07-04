@@ -52,8 +52,12 @@ export default function FeatureCanvasView(): React.JSX.Element {
   const profileId = useSettingsStore((state) => state.sprintDashboardActiveTeamProfileId);
   const isAiUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
 
+  // A user-chosen PI for this exercise (step 1), overriding the active profile's PI when set. Null
+  // means "use the profile default". Changing it re-scopes the overlay, commit target, and blueprint.
+  const [piOverride, setPiOverride] = useState<string | null>(null);
+
   // Resolve scope first (no fetch) so the overlay key can be built before the working-set fetch.
-  const scope = useCanvasScope();
+  const scope = useCanvasScope(piOverride);
   const scopeKey = deriveScopeKey(scope.projectKey, scope.piName);
   const controller = useCanvasOverlay(profileId, scopeKey);
   const { overlay } = controller;
@@ -116,6 +120,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
         <BlueprintSelectionStep
           teams={artRoster}
           selectedPiName={scope.piName}
+          onPiChange={setPiOverride}
           onCanvasKeys={onCanvasKeys}
           onAdd={handleAddFeatures}
           onClose={() => setIsSelecting(false)}
@@ -146,8 +151,9 @@ export default function FeatureCanvasView(): React.JSX.Element {
             🗑 Clear canvas
           </button>
         )}
+        {scope.piName.trim() !== '' && <span style={{ fontSize: 12, opacity: 0.7 }}>PI: {scope.piName}</span>}
         {artRoster.length === 0 && <span style={{ fontSize: 12, opacity: 0.7 }}>No ART teams configured — use Add via JQL.</span>}
-        {features.status === 'error' && <span role="alert" style={{ fontSize: 12, color: '#ef4444' }}>{features.error}</span>}
+        {features.status === 'error' && <span role="alert" style={{ fontSize: 12, color: 'var(--color-danger)' }}>{features.error}</span>}
         <div style={{ marginLeft: 'auto' }}>
           <CanvasLegend />
         </div>

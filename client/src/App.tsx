@@ -6,6 +6,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 
+import { AiAssistUnlockGate } from './components/AiAssistUnlockGate/index.tsx';
 import { ConnectionBar } from './components/ConnectionBar/index.ts';
 import { ToastProvider } from './components/Toast/ToastProvider.tsx';
 import { useProxyStatus } from './hooks/useProxyStatus.ts';
@@ -117,6 +118,8 @@ export default function App() {
 
   return (
     <ToastProvider>
+      {/* App-wide hidden AI Assist unlock (Ctrl+Alt+Z) — works from every screen. */}
+      <AiAssistUnlockGate />
       <div className={styles.appShell}>
         <header className={styles.topBar}>
           {/* Left side: app title links back to home — single, standard UX pattern */}

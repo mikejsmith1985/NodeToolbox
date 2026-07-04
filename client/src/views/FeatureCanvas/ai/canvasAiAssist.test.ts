@@ -54,6 +54,19 @@ describe('canvasAiAssist', () => {
     expect(set.items).toEqual([{ issueKey: 'DENP-2', proposedValue: 'lowest priority', rationale: 'lowest priority', accepted: false }]);
   });
 
+  it('includes the real feature signals (health, completion, active stories, blockers) in each line', () => {
+    const prompt = buildCanvasAiPrompt('priorityOrder', [{
+      issueKey: 'DENP-1', summary: 'Login', status: 'In Progress', storyPoints: null, businessValue: null, priority: null,
+      health: 'red', completionPercent: 40, activeChildCount: 2, totalChildCount: 5, blockerCount: 1,
+    }]);
+    expect(prompt).toContain('health red');
+    expect(prompt).toContain('40% done');
+    expect(prompt).toContain('2/5 stories active');
+    expect(prompt).toContain('1 blocker/link');
+    // And it instructs the model not to fabricate the missing Business Value / effort.
+    expect(prompt).toContain('do NOT invent');
+  });
+
   it('extracts JSON from a reply wrapped in chatter and code fences', () => {
     const reply = 'Sure! Here you go:\n```json\n{"kind":"priorityOrder","items":[]}\n```\nHope that helps.';
     expect(extractJsonPayload(reply)).toBe('{"kind":"priorityOrder","items":[]}');

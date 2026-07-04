@@ -41,4 +41,15 @@ describe('useCanvasScope', () => {
     expect(result.current.piName).toBe('PI 26.3');
     expect(result.current.boardId).toBeNull();
   });
+
+  it('lets a non-empty PI override the profile PI for the scope key and default query', () => {
+    const { result } = renderHook(() => useCanvasScope('PI 26.4'));
+    expect(result.current.piName).toBe('PI 26.4');
+    expect(result.current.defaultJql).toContain('"PI 26.4"');
+  });
+
+  it('ignores an empty/whitespace override and keeps the profile PI', () => {
+    const { result } = renderHook(() => useCanvasScope('   '));
+    expect(result.current.piName).toBe('PI 26.3');
+  });
 });
