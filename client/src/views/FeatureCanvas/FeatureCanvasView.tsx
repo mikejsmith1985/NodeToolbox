@@ -25,6 +25,7 @@ import { ReviewCommitPanel } from './commit/ReviewCommitPanel.tsx';
 import { computeContainerCapacity } from './logic/capacity.ts';
 import type { ContainerCapacity } from './logic/canvasTypes.ts';
 import { computeWipSnapshot } from './logic/wip.ts';
+import { isSameFilter, type CanvasNodeFilter } from './logic/nodeFilter.ts';
 import { createNodeState, type ContainerKind } from './overlay/overlayModel.ts';
 import { createProvisionalContainer } from './overlay/containerFactory.ts';
 import { deriveScopeKey } from './overlay/overlayStorage.ts';
@@ -59,6 +60,11 @@ export default function FeatureCanvasView(): React.JSX.Element {
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
+  // Legend focus filter: clicking a key entry dims the non-matching cards; clicking it again clears.
+  const [activeFilter, setActiveFilter] = useState<CanvasNodeFilter | null>(null);
+  const toggleFilter = (filter: CanvasNodeFilter): void => {
+    setActiveFilter((current) => (isSameFilter(current, filter) ? null : filter));
+  };
 
   const onCanvasKeys = useMemo(() => new Set(workingSetKeys), [workingSetKeys]);
   // Step 1 (blueprint selection) is fed the full ART roster so its per-team buckets match ART's counts.
@@ -139,7 +145,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
             🗑 Clear canvas
           </button>
         )}
-        <CanvasLegend />
+        <CanvasLegend activeFilter={activeFilter} onToggleFilter={toggleFilter} />
         {scope.piName.trim() !== '' && <span style={{ fontSize: 12, opacity: 0.7 }}>PI: {scope.piName}</span>}
         {artRoster.length === 0 && <span style={{ fontSize: 12, opacity: 0.7 }}>No ART teams configured — use Add via JQL.</span>}
         {features.status === 'error' && <span role="alert" style={{ fontSize: 12, color: 'var(--color-danger)' }}>{features.error}</span>}
@@ -168,6 +174,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
                 canvasNodes={canvasNodes}
                 containers={overlay.containers}
                 capacities={capacities}
+                filter={activeFilter}
                 onSelect={setSelectedIssueKey}
                 onPositionChange={(issueKey, x, y) => controller.updateNode(issueKey, { position: { x, y } })}
                 onDropIntoContainer={handleDropIntoContainer}
