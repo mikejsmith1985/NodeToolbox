@@ -98,4 +98,17 @@ describe('useCanvasOverlay', () => {
     expect(result.current.overlay.nodes['DENP-2']).toBeDefined();
     expect(result.current.overlay.containers).toHaveLength(1);
   });
+
+  it('clearNodes empties the working set but keeps containers and config', () => {
+    const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+    act(() => result.current.ensureNodeStates([createNodeState('DENP-1', 0, 0), createNodeState('DENP-2', 0, 0)]));
+    act(() => result.current.addContainer(CONTAINER));
+    act(() => result.current.setWipLimit(5));
+
+    act(() => result.current.clearNodes());
+
+    expect(Object.keys(result.current.overlay.nodes)).toHaveLength(0);
+    expect(result.current.overlay.containers).toHaveLength(1);
+    expect(result.current.overlay.wipLimit).toBe(5);
+  });
 });

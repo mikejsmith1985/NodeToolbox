@@ -82,6 +82,35 @@ describe('FeatureCanvasView', () => {
     expect(screen.getByText('node-DENP-1')).toBeInTheDocument();
   });
 
+  it('clears the canvas (working set) after confirmation', () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    mockUseCanvasFeatures.mockReturnValue({ status: 'ready', items: [buildItem('DENP-1')], error: null });
+    render(<FeatureCanvasView />);
+    // Seed one node so the working set is non-empty.
+    fireEvent.click(screen.getByRole('button', { name: /Add features/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'bp-add' }));
+    expect(screen.getByText('node-DENP-1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Clear canvas/ }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(screen.queryByText('node-DENP-1')).not.toBeInTheDocument();
+    expect(screen.getByText(/Add features to begin/)).toBeInTheDocument();
+    confirmSpy.mockRestore();
+  });
+
+  it('does not clear the canvas when confirmation is declined', () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    mockUseCanvasFeatures.mockReturnValue({ status: 'ready', items: [buildItem('DENP-1')], error: null });
+    render(<FeatureCanvasView />);
+    fireEvent.click(screen.getByRole('button', { name: /Add features/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'bp-add' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Clear canvas/ }));
+    expect(screen.getByText('node-DENP-1')).toBeInTheDocument();
+    confirmSpy.mockRestore();
+  });
+
   it('opens the Custom-JQL picker from the board', () => {
     mockUseCanvasFeatures.mockReturnValue({ status: 'ready', items: [], error: null });
     render(<FeatureCanvasView />);
