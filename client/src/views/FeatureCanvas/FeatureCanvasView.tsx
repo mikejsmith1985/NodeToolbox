@@ -129,6 +129,8 @@ export default function FeatureCanvasView(): React.JSX.Element {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 4px' }}>
         <button type="button" onClick={() => setIsSelecting(true)}>➕ Add features</button>
         <button type="button" onClick={() => setIsPickerOpen(true)}>Add via JQL</button>
+        <button type="button" onClick={() => controller.undo()} disabled={!controller.canUndo} title="Undo the last canvas change">↩️ Undo</button>
+        <button type="button" onClick={() => controller.redo()} disabled={!controller.canRedo} title="Redo the last undone change">↪️ Redo</button>
         {!isWorkingSetEmpty && (
           <button
             type="button"
