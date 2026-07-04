@@ -409,7 +409,10 @@ describe('PiReviewTab', () => {
     renderPiReviewTab([DEFAULT_TEAMS[0]]);
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
-    expect(within(alphaSection).getByText(/26\.3 Enrollment Support/i)).toBeInTheDocument();
+    // The region shell appears before its feature rows finish rendering, so await the first piece of
+    // row content (findBy polls) before the synchronous assertions below — otherwise this races and
+    // flakes under parallel test load.
+    expect(await within(alphaSection).findByText(/26\.3 Enrollment Support/i, undefined, { timeout: 4000 })).toBeInTheDocument();
     expect(within(alphaSection).getByRole('link', { name: 'DENP-1352' })).toHaveAttribute(
       'href',
       'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/DENP-1352',
