@@ -16,8 +16,14 @@ export interface FeatureNodeData {
   node: CanvasNode;
   /** Removes this feature from the curated canvas (overlay-only; does not touch Jira). */
   onDelete?: () => void;
+  /** True when a legend focus filter is active and this card does not match — it dims back. */
+  isDimmed?: boolean;
   [key: string]: unknown;
 }
+
+// How far non-matching cards fade when a legend focus filter is active.
+const DIMMED_OPACITY = 0.15;
+const PARKED_OPACITY = 0.6;
 
 /** A React Flow node typed to carry feature data. */
 export type FeatureRfNode = Node<FeatureNodeData, 'feature'>;
@@ -32,10 +38,12 @@ function formatSizeChip(node: CanvasNode): string {
 
 /** Custom React Flow node: a feature triage card. */
 function FeatureNodeComponent({ data, selected }: NodeProps<FeatureRfNode>): React.JSX.Element {
-  const { node, onDelete } = data;
+  const { node, onDelete, isDimmed } = data;
   const stripeColor = STATUS_CATEGORY_COLORS[node.statusCategoryKey ?? 'new'] ?? STATUS_CATEGORY_COLORS.new;
   const healthColor = HEALTH_COLORS[node.health] ?? HEALTH_COLORS.gray;
   const errorFlagCount = node.hygieneFlags.filter((flag) => flag.severity === 'error').length;
+  // A legend focus filter dims non-matching cards hardest; otherwise parked cards read as muted.
+  const cardOpacity = isDimmed ? DIMMED_OPACITY : node.isParked ? PARKED_OPACITY : 1;
 
   return (
     <div
@@ -47,7 +55,8 @@ function FeatureNodeComponent({ data, selected }: NodeProps<FeatureRfNode>): Rea
         background: 'var(--tbx-canvas-node-bg, #1e293b)',
         color: 'var(--tbx-canvas-node-fg, #e2e8f0)',
         padding: '8px 10px',
-        opacity: node.isParked ? 0.6 : 1,
+        opacity: cardOpacity,
+        transition: 'opacity 150ms ease',
         fontSize: 12,
       }}
     >

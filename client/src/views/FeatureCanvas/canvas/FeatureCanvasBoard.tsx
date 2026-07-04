@@ -23,6 +23,7 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import type { CanvasNode, ContainerCapacity } from '../logic/canvasTypes.ts';
+import { nodeMatchesFilter, type CanvasNodeFilter } from '../logic/nodeFilter.ts';
 import type { CanvasContainer } from '../overlay/overlayModel.ts';
 import { ContainerNode, type ContainerNodeData } from './ContainerNode.tsx';
 import { FeatureNode, type FeatureNodeData } from './FeatureNode.tsx';
@@ -39,6 +40,8 @@ export interface FeatureCanvasBoardProps {
   onDropIntoContainer: (issueKey: string, containerId: string | null) => void;
   onDeleteContainer: (containerId: string) => void;
   onDeleteNode: (issueKey: string) => void;
+  /** Active legend focus filter; non-matching feature cards dim back. Null shows all at full strength. */
+  filter?: CanvasNodeFilter | null;
 }
 
 /** Builds the React Flow node array: container boxes first (behind), then feature cards on top. */
@@ -48,6 +51,7 @@ function buildReactFlowNodes(
   capacities: ReadonlyMap<string, ContainerCapacity>,
   onDeleteContainer: (containerId: string) => void,
   onDeleteNode: (issueKey: string) => void,
+  filter: CanvasNodeFilter | null,
 ): Node[] {
   const containerNodes: Node[] = containers.map((container) => ({
     id: container.id,
@@ -70,7 +74,7 @@ function buildReactFlowNodes(
     id: node.issueKey,
     type: 'feature',
     position: node.position,
-    data: { node, onDelete: () => onDeleteNode(node.issueKey) } satisfies FeatureNodeData,
+    data: { node, onDelete: () => onDeleteNode(node.issueKey), isDimmed: !nodeMatchesFilter(node, filter) } satisfies FeatureNodeData,
     zIndex: 1,
   }));
 
@@ -78,25 +82,27 @@ function buildReactFlowNodes(
 }
 
 /** A signature that changes only when the rendered node set meaningfully changes. */
-function buildNodeSignature(canvasNodes: readonly CanvasNode[], containers: readonly CanvasContainer[]): string {
+function buildNodeSignature(canvasNodes: readonly CanvasNode[], containers: readonly CanvasContainer[], filter: CanvasNodeFilter | null): string {
   const featurePart = canvasNodes
     .map((node) => `${node.issueKey}:${node.size}:${node.priority}:${node.containerId}:${node.isParked}`)
     .join('|');
   const containerPart = containers.map((container) => `${container.id}:${container.capacityBudget}`).join('|');
-  return `${featurePart}##${containerPart}`;
+  // Include the filter so the cards rebuild (dim/undim) when the user focuses a legend entry.
+  const filterPart = filter ? `${filter.dimension}=${filter.value}` : 'none';
+  return `${featurePart}##${containerPart}##${filterPart}`;
 }
 
 /** Inner board that has access to the React Flow instance for intersection hit-testing. */
 function BoardInner(props: FeatureCanvasBoardProps): React.JSX.Element {
-  const { canvasNodes, containers, capacities, onSelect, onPositionChange, onDropIntoContainer, onDeleteContainer, onDeleteNode } = props;
+  const { canvasNodes, containers, capacities, onSelect, onPositionChange, onDropIntoContainer, onDeleteContainer, onDeleteNode, filter = null } = props;
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const { getIntersectingNodes } = useReactFlow();
 
-  const nodeSignature = useMemo(() => buildNodeSignature(canvasNodes, containers), [canvasNodes, containers]);
+  const nodeSignature = useMemo(() => buildNodeSignature(canvasNodes, containers, filter), [canvasNodes, containers, filter]);
 
   // Rebuild the canvas nodes whenever the underlying feature/container set changes.
   useEffect(() => {
-    setNodes(buildReactFlowNodes(canvasNodes, containers, capacities, onDeleteContainer, onDeleteNode));
+    setNodes(buildReactFlowNodes(canvasNodes, containers, capacities, onDeleteContainer, onDeleteNode, filter));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeSignature, setNodes]);
 
