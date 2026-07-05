@@ -16,7 +16,39 @@ import {
   type TshirtSize,
 } from './overlayModel.ts';
 import { loadOverlay, saveOverlay } from './overlayStorage.ts';
-import { createCompleteContainer, createParkingLotContainer, createProvisionalContainer, positionInContainer } from './containerFactory.ts';
+import { boxHeightForCount, createCompleteContainer, createLaterContainer, createParkingLotContainer, createProvisionalContainer, layoutBoxes, positionInContainer } from './containerFactory.ts';
+
+// Layout order for the two-column auto-tidy: active sprints/releases first, then Later, then the
+// canvas-only Parking Lot and Complete organizers.
+const CONTAINER_LAYOUT_ORDER: Record<CanvasContainer['kind'], number> = { sprint: 0, release: 1, later: 2, parkingLot: 3, complete: 4 };
+
+/**
+ * Recomputes every box's bounds (two columns, each sized to its card count, no overlap) and snaps
+ * each box's member cards inside. Pure — used by the Tidy action and after a master-plan apply.
+ */
+function relaidOverlay(overlay: CanvasOverlay): CanvasOverlay {
+  if (overlay.containers.length === 0) {
+    return overlay;
+  }
+  const memberCount = (containerId: string): number =>
+    Object.values(overlay.nodes).filter((nodeState) => nodeState.containerId === containerId).length;
+  const orderedIds = [...overlay.containers]
+    .sort((left, right) => (CONTAINER_LAYOUT_ORDER[left.kind] - CONTAINER_LAYOUT_ORDER[right.kind]) || left.title.localeCompare(right.title))
+    .map((container) => ({ id: container.id, memberCount: memberCount(container.id) }));
+  const bounds = layoutBoxes(orderedIds);
+  const containers = overlay.containers.map((container) => {
+    const next = bounds.get(container.id);
+    return next ? { ...container, bounds: next } : container;
+  });
+  const nodes = { ...overlay.nodes };
+  for (const container of containers) {
+    const members = Object.values(nodes)
+      .filter((nodeState) => nodeState.containerId === container.id)
+      .sort((left, right) => left.issueKey.localeCompare(right.issueKey));
+    members.forEach((member, index) => { nodes[member.issueKey] = { ...member, position: positionInContainer(container, index) }; });
+  }
+  return { ...overlay, containers, nodes };
+}
 
 /** One feature's full cross-phase plan, applied in a single overlay mutation (one undo step). */
 export interface MasterPlanChange {
@@ -55,6 +87,8 @@ export interface CanvasOverlayController {
   moveContainer: (containerId: string, x: number, y: number) => void;
   /** Applies a whole master plan (size + priority + triage + sprint per feature) in one undo step. */
   applyMasterPlan: (changes: readonly MasterPlanChange[]) => void;
+  /** Re-tidies all boxes into two columns, each sized to its card count, with cards snapped inside. */
+  relayoutBoxes: () => void;
   goToStage: (stageId: StageId) => void;
   completeStage: (stageId: StageId) => void;
   /** Reverts the most recent change; no-op when there is nothing to undo. */
@@ -211,6 +245,15 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
   const countMembers = (nodes: CanvasOverlay['nodes'], containerId: string, movingKey: string): number =>
     Object.values(nodes).filter((nodeState) => nodeState.containerId === containerId && nodeState.issueKey !== movingKey).length;
 
+  // Grows a box's height to fit `memberCount` cards (never shrinks below a manual resize) so cards
+  // dropped in never spill outside the box.
+  const growContainer = (containers: readonly CanvasContainer[], containerId: string, memberCount: number): CanvasContainer[] =>
+    containers.map((container) => (
+      container.id === containerId
+        ? { ...container, bounds: { ...container.bounds, height: Math.max(container.bounds.height, boxHeightForCount(memberCount)) } }
+        : container
+    ));
+
   // Moves a feature into an existing box and snaps its card to the next slot inside the box — the
   // fix for "assigned but the card never moved into the box". Parking-lot membership marks it parked.
   const assignToContainer = useCallback((issueKey: string, containerId: string) => {
@@ -220,10 +263,12 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
       if (!node || !container) {
         return previous;
       }
-      const position = positionInContainer(container, countMembers(previous.nodes, container.id, issueKey));
+      const memberIndex = countMembers(previous.nodes, container.id, issueKey);
+      const position = positionInContainer(container, memberIndex);
       const isParked = container.kind === 'parkingLot';
       return {
         ...previous,
+        containers: growContainer(previous.containers, container.id, memberIndex + 1),
         nodes: { ...previous.nodes, [issueKey]: { ...node, containerId, position, isParked, parkReason: isParked ? node.parkReason ?? null : null } },
       };
     });
@@ -237,11 +282,12 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
       }
       const existingLot = previous.containers.find((candidate) => candidate.kind === 'parkingLot');
       const lot = existingLot ?? createParkingLotContainer(previous.containers.length);
-      const containers = existingLot ? previous.containers : [...previous.containers, lot];
-      const position = positionInContainer(lot, countMembers(previous.nodes, lot.id, issueKey));
+      const baseContainers = existingLot ? previous.containers : [...previous.containers, lot];
+      const memberIndex = countMembers(previous.nodes, lot.id, issueKey);
+      const position = positionInContainer(lot, memberIndex);
       return {
         ...previous,
-        containers,
+        containers: growContainer(baseContainers, lot.id, memberIndex + 1),
         nodes: { ...previous.nodes, [issueKey]: { ...node, containerId: lot.id, isParked: true, parkReason: reason ?? null, position } },
       };
     });
@@ -265,11 +311,12 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
       }
       const existingBox = previous.containers.find((candidate) => candidate.kind === 'complete');
       const doneBox = existingBox ?? createCompleteContainer(previous.containers.length);
-      const containers = existingBox ? previous.containers : [...previous.containers, doneBox];
-      const position = positionInContainer(doneBox, countMembers(previous.nodes, doneBox.id, issueKey));
+      const baseContainers = existingBox ? previous.containers : [...previous.containers, doneBox];
+      const memberIndex = countMembers(previous.nodes, doneBox.id, issueKey);
+      const position = positionInContainer(doneBox, memberIndex);
       return {
         ...previous,
-        containers,
+        containers: growContainer(baseContainers, doneBox.id, memberIndex + 1),
         nodes: { ...previous.nodes, [issueKey]: { ...node, containerId: doneBox.id, isParked: false, parkReason: null, position } },
       };
     });
@@ -347,11 +394,20 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
         } else if (change.sprint !== null) {
           const sprint = ensureSprintByTitle(change.sprint);
           next = { ...next, containerId: sprint.id, isParked: false, position: positionInContainer(sprint, memberCount(sprint.id, change.issueKey)) };
+        } else {
+          // Kept (or break-out) but not sequenced this PI → the Later box, so NOTHING is left loose.
+          const later = ensureByKind('later', createLaterContainer);
+          next = { ...next, containerId: later.id, isParked: false, parkReason: null, position: positionInContainer(later, memberCount(later.id, change.issueKey)) };
         }
         nodes[change.issueKey] = next;
       }
-      return { ...previous, containers, nodes };
+      // Tidy the whole board so boxes are sized to their cards and laid out in two clean columns.
+      return relaidOverlay({ ...previous, containers, nodes });
     });
+  }, [mutate]);
+
+  const relayoutBoxes = useCallback(() => {
+    mutate((previous) => relaidOverlay(previous));
   }, [mutate]);
 
   const goToStage = useCallback((stageId: StageId) => {
@@ -397,9 +453,9 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     () => ({
       overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize,
       setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes,
-      assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, goToStage, completeStage,
+      assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, relayoutBoxes, goToStage, completeStage,
       undo, redo, canUndo, canRedo,
     }),
-    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, goToStage, completeStage, undo, redo, canUndo, canRedo],
+    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, relayoutBoxes, goToStage, completeStage, undo, redo, canUndo, canRedo],
   );
 }

@@ -12,6 +12,8 @@ const MEMBER_PAD_X = 16;
 const MEMBER_HEADER_OFFSET = 44;
 const MEMBER_SLOT_HEIGHT = 84;
 
+const MEMBER_BOTTOM_PAD = 16;
+
 /** Computes the canvas position for the Nth card placed inside a container, stacked below its header. */
 export function positionInContainer(container: CanvasContainer, memberIndex: number): { x: number; y: number } {
   return {
@@ -20,8 +22,58 @@ export function positionInContainer(container: CanvasContainer, memberIndex: num
   };
 }
 
+/** The height a box needs to hold `memberCount` stacked cards without overflow (min one slot tall). */
+export function boxHeightForCount(memberCount: number): number {
+  return MEMBER_HEADER_OFFSET + Math.max(1, memberCount) * MEMBER_SLOT_HEIGHT + MEMBER_BOTTOM_PAD;
+}
+
+// Auto-layout: two columns of boxes, each sized to its card count, stacked without overlap.
+const LAYOUT_COLUMNS = 2;
+const LAYOUT_WIDTH = 300;
+const LAYOUT_COL_GAP = 60;
+const LAYOUT_ROW_GAP = 48;
+const LAYOUT_ORIGIN_X = 40;
+const LAYOUT_ORIGIN_Y = 40;
+
+/** A box's member count, the only input the layout needs to size and place it. */
+export interface BoxLayoutInput {
+  id: string;
+  memberCount: number;
+}
+
+/** Bounds assigned to a box by the auto-layout. */
+export interface BoxBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Lays boxes out in two columns, each box sized to its card count, filling the shorter column so
+ * nothing overlaps. Returns the new bounds per box id (in the given order). The caller repositions
+ * each box's member cards afterwards (via positionInContainer against the new bounds).
+ */
+export function layoutBoxes(boxes: readonly BoxLayoutInput[]): Map<string, BoxBounds> {
+  const columnBottoms = Array.from({ length: LAYOUT_COLUMNS }, () => LAYOUT_ORIGIN_Y);
+  const bounds = new Map<string, BoxBounds>();
+  for (const box of boxes) {
+    let column = 0;
+    for (let candidate = 1; candidate < LAYOUT_COLUMNS; candidate += 1) {
+      if (columnBottoms[candidate] < columnBottoms[column]) {
+        column = candidate;
+      }
+    }
+    const height = boxHeightForCount(box.memberCount);
+    const boxBounds: BoxBounds = { x: LAYOUT_ORIGIN_X + column * (LAYOUT_WIDTH + LAYOUT_COL_GAP), y: columnBottoms[column], width: LAYOUT_WIDTH, height };
+    bounds.set(box.id, boxBounds);
+    columnBottoms[column] = boxBounds.y + height + LAYOUT_ROW_GAP;
+  }
+  return bounds;
+}
+
 // Layout: new boxes tile across a lower band of the canvas so they don't cover the feature grid.
-const CONTAINER_COLUMN_COUNT = 3;
+const CONTAINER_COLUMN_COUNT = 2;
 const CONTAINER_COLUMN_WIDTH = 440;
 const CONTAINER_BAND_Y = 720;
 const CONTAINER_BAND_X = 40;
@@ -109,6 +161,19 @@ export function createCompleteContainer(existingCount: number): CanvasContainer 
     id: `ctr-${Date.now()}-complete`,
     kind: 'complete',
     title: 'Complete',
+    bounds: { x: slot.x, y: slot.y, width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT },
+    capacityBudget: null,
+    provenance: { state: 'provisional', jiraSprintId: null, jiraVersionName: null, startDateIso: null, endDateIso: null },
+  };
+}
+
+/** Builds the single Later box for features kept active but not sequenced into a sprint this PI. */
+export function createLaterContainer(existingCount: number): CanvasContainer {
+  const slot = bandSlot(existingCount);
+  return {
+    id: `ctr-${Date.now()}-later`,
+    kind: 'later',
+    title: 'Later',
     bounds: { x: slot.x, y: slot.y, width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT },
     capacityBudget: null,
     provenance: { state: 'provisional', jiraSprintId: null, jiraVersionName: null, startDateIso: null, endDateIso: null },

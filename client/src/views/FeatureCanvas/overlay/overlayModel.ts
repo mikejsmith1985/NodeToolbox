@@ -19,9 +19,10 @@ export type MoscowBucket = 'Must' | 'Should' | 'Could' | 'Wont';
 /** The five coaching stages, in their recommended order. */
 export type StageId = 'surface' | 'stabilize' | 'prioritize' | 'size' | 'sequence';
 
-/** Kinds of container box a node can be dropped into. `complete` collects finished features (never
- *  committed to Jira); `parkingLot` collects deferred/parked ones (also never committed). */
-export type ContainerKind = 'release' | 'sprint' | 'parkingLot' | 'complete';
+/** Kinds of container box a node can be dropped into. `complete`/`parkingLot`/`later` are canvas-only
+ *  organizers (never committed to Jira): complete = finished, parkingLot = deferred, later = kept but
+ *  not sequenced into a sprint this PI. */
+export type ContainerKind = 'release' | 'sprint' | 'parkingLot' | 'complete' | 'later';
 
 /** Default t-shirt → story-point mapping (Fibonacci-adjacent); editable per overlay. */
 export const DEFAULT_SIZE_MAPPING: Record<TshirtSize, number> = { S: 1, M: 3, L: 5, XL: 8 };
