@@ -8,12 +8,27 @@
 import type { MoscowBucket, TshirtSize } from '../overlay/overlayModel.ts';
 import { TSHIRT_SIZES } from '../logic/sizing.ts';
 
-/** The analyses the accelerator can pre-fill. */
-export type AiSuggestionKind = 'priorityOrder' | 'sizeEstimate' | 'sprintGrouping' | 'parkCandidates';
+/** The analyses the accelerator can pre-fill. `masterPlan` runs all phases in one round-trip. */
+export type AiSuggestionKind = 'priorityOrder' | 'sizeEstimate' | 'sprintGrouping' | 'parkCandidates' | 'masterPlan';
 
 /** The per-item action a triage (parkCandidates) suggestion recommends. */
 export type TriageAction = 'park' | 'complete' | 'breakout';
 const TRIAGE_ACTIONS: readonly TriageAction[] = ['park', 'complete', 'breakout'];
+
+/** A master-plan action per feature: keep active, park, complete, or flag for break-out. */
+export type MasterTriage = 'keep' | TriageAction;
+const MASTER_TRIAGE: readonly MasterTriage[] = ['keep', 'park', 'complete', 'breakout'];
+
+/** One feature's full cross-phase plan: size + priority + triage + sprint, all at once. */
+export interface MasterPlanItem {
+  issueKey: string;
+  size: TshirtSize | null;
+  bucket: MoscowBucket | null;
+  triage: MasterTriage;
+  /** Sprint name to sequence into; null when parked/complete/not ready. */
+  sprint: string | null;
+  reason: string;
+}
 
 /** One proposed change the operator may accept or reject; never applied until accepted. */
 export interface AiSuggestion {
@@ -138,6 +153,16 @@ const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
     + 'ONLY the data shown; do NOT invent values. Leave a feature out if it should stay active. Respond '
     + 'ONLY with valid JSON: '
     + '{"kind":"parkCandidates","items":[{"issueKey":"KEY","action":"park","reason":"..."}]}',
+  masterPlan:
+    'Produce a COMPLETE plan for EVERY feature in one pass, as if running all five phases. For each '
+    + 'feature return: "size" (S/M/L/XL, from scope); "bucket" (Must/Should/Could/Wont, weighing value '
+    + 'against size and PI time-to-DoD); "triage" ("keep" to keep active, "park" to defer stale/duplicate/'
+    + 'over-WIP work, "complete" if it already meets Definition of Done — dev-complete + delivered to '
+    + 'integration testing, not production, "breakout" if marked done but has open child stories); and '
+    + '"sprint" (the sprint name to sequence it into, or null when parked/complete/not ready). Honor the '
+    + 'WIP limit and PI days-left shown above; NEVER sequence a parked or complete feature, and never park '
+    + 'work that is nearly done. Use ONLY the data shown; do NOT invent values. Respond ONLY with valid '
+    + 'JSON: {"kind":"masterPlan","items":[{"issueKey":"KEY","size":"L","bucket":"Must","triage":"keep","sprint":"Sprint 25","reason":"..."}]}',
 };
 
 /** Builds the copy-paste prompt for one analysis over the given candidate issues. */
@@ -158,7 +183,7 @@ function buildContextHeader(kind: AiSuggestionKind, context?: AiPromptContext): 
 
   // PI time pressure informs prioritization and triage (not sizing/grouping). Definition of Done is
   // dev-complete + delivered to integration testing — NOT production — so time-to-DoD is what counts.
-  if ((kind === 'priorityOrder' || kind === 'parkCandidates') && context.daysRemainingInPi !== null && context.daysRemainingInPi !== undefined) {
+  if ((kind === 'priorityOrder' || kind === 'parkCandidates' || kind === 'masterPlan') && context.daysRemainingInPi !== null && context.daysRemainingInPi !== undefined) {
     lines.push(
       `PI "${context.piName ?? ''}" has ${context.daysRemainingInPi} day(s) left. A feature meets Definition `
       + 'of Done when it is dev-complete and delivered to integration testing (it does NOT need to be in '
@@ -167,7 +192,7 @@ function buildContextHeader(kind: AiSuggestionKind, context?: AiPromptContext): 
     );
   }
 
-  if (kind === 'parkCandidates') {
+  if (kind === 'parkCandidates' || kind === 'masterPlan') {
     const limitText = context.wipLimit === null ? 'not set' : String(context.wipLimit);
     const parkTarget = context.wipLimit === null ? null : Math.max(0, context.inProgressCount - context.wipLimit);
     const targetText = parkTarget === null ? '' : ` Aim to park at least ${parkTarget} in-progress feature(s) to reach the limit.`;
@@ -269,6 +294,34 @@ export function parseCanvasAiResponse(kind: AiSuggestionKind, responseText: stri
     return readPriorityItem(itemRecord);
   });
   return { kind, items, ignoredUnknownKeyCount: 0 };
+}
+
+/**
+ * Parses a master-plan reply into per-feature plans. Lenient by design (it applies to the whole
+ * canvas at once): an absent or invalid size/bucket is dropped to null rather than failing the batch,
+ * and an unknown triage falls back to "keep". Only a missing issueKey skips the item. Throws only when
+ * the JSON is unreadable or the kind does not match.
+ */
+export function parseMasterPlan(responseText: string): MasterPlanItem[] {
+  const parsed = JSON.parse(extractJsonPayload(responseText)) as Record<string, unknown>;
+  if (parsed.kind !== 'masterPlan') {
+    throw new Error(`Response kind "${String(parsed.kind)}" does not match the requested "masterPlan".`);
+  }
+  const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
+  const plans: MasterPlanItem[] = [];
+  for (const rawItem of rawItems) {
+    const item = rawItem as Record<string, unknown>;
+    const issueKey = typeof item.issueKey === 'string' ? item.issueKey.trim() : '';
+    if (issueKey === '') {
+      continue;
+    }
+    const size = TSHIRT_SIZES.includes(item.size as TshirtSize) ? (item.size as TshirtSize) : null;
+    const bucket = MOSCOW_BUCKETS.includes(item.bucket as MoscowBucket) ? (item.bucket as MoscowBucket) : null;
+    const triage = MASTER_TRIAGE.includes(item.triage as MasterTriage) ? (item.triage as MasterTriage) : 'keep';
+    const sprint = typeof item.sprint === 'string' && item.sprint.trim() !== '' ? item.sprint.trim() : null;
+    plans.push({ issueKey, size, bucket, triage, sprint, reason: typeof item.reason === 'string' ? item.reason : '' });
+  }
+  return plans;
 }
 
 /**

@@ -16,7 +16,17 @@ import {
   type TshirtSize,
 } from './overlayModel.ts';
 import { loadOverlay, saveOverlay } from './overlayStorage.ts';
-import { createCompleteContainer, createParkingLotContainer, positionInContainer } from './containerFactory.ts';
+import { createCompleteContainer, createParkingLotContainer, createProvisionalContainer, positionInContainer } from './containerFactory.ts';
+
+/** One feature's full cross-phase plan, applied in a single overlay mutation (one undo step). */
+export interface MasterPlanChange {
+  issueKey: string;
+  size: TshirtSize | null;
+  bucket: MoscowBucket | null;
+  triage: 'keep' | 'park' | 'complete' | 'breakout';
+  sprint: string | null;
+  reason: string;
+}
 
 /** The overlay state plus the stable mutators the canvas uses to change it. */
 export interface CanvasOverlayController {
@@ -43,6 +53,8 @@ export interface CanvasOverlayController {
   completeNode: (issueKey: string) => void;
   /** Moves a box to a new position, shifting every card inside it by the same delta so they follow. */
   moveContainer: (containerId: string, x: number, y: number) => void;
+  /** Applies a whole master plan (size + priority + triage + sprint per feature) in one undo step. */
+  applyMasterPlan: (changes: readonly MasterPlanChange[]) => void;
   goToStage: (stageId: StageId) => void;
   completeStage: (stageId: StageId) => void;
   /** Reverts the most recent change; no-op when there is nothing to undo. */
@@ -286,6 +298,62 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     });
   }, [mutate]);
 
+  // Applies an entire cross-phase plan in ONE mutation: sets size/priority, routes parked→Parking Lot
+  // and done→Complete (auto-creating those boxes), and sequences the rest into their named sprint
+  // (reusing an existing sprint of that title or creating a provisional one). One undo reverts it all.
+  const applyMasterPlan = useCallback((changes: readonly MasterPlanChange[]) => {
+    mutate((previous) => {
+      let containers = [...previous.containers];
+      const nodes = { ...previous.nodes };
+      const ensureByKind = (kind: CanvasContainer['kind'], create: (count: number) => CanvasContainer): CanvasContainer => {
+        const found = containers.find((container) => container.kind === kind);
+        if (found) {
+          return found;
+        }
+        const created = create(containers.length);
+        containers = [...containers, created];
+        return created;
+      };
+      const ensureSprintByTitle = (title: string): CanvasContainer => {
+        const found = containers.find((container) => container.kind === 'sprint' && container.title.trim().toLowerCase() === title.trim().toLowerCase());
+        if (found) {
+          return found;
+        }
+        const created = createProvisionalContainer('sprint', containers.length, title);
+        containers = [...containers, created];
+        return created;
+      };
+      const memberCount = (containerId: string, movingKey: string): number =>
+        Object.values(nodes).filter((nodeState) => nodeState.containerId === containerId && nodeState.issueKey !== movingKey).length;
+
+      for (const change of changes) {
+        const node = nodes[change.issueKey];
+        if (!node) {
+          continue;
+        }
+        let next = { ...node };
+        if (change.size !== null) {
+          next.size = change.size;
+        }
+        if (change.bucket !== null) {
+          next.priority = change.bucket;
+        }
+        if (change.triage === 'park') {
+          const lot = ensureByKind('parkingLot', createParkingLotContainer);
+          next = { ...next, containerId: lot.id, isParked: true, parkReason: change.reason || null, position: positionInContainer(lot, memberCount(lot.id, change.issueKey)) };
+        } else if (change.triage === 'complete') {
+          const done = ensureByKind('complete', createCompleteContainer);
+          next = { ...next, containerId: done.id, isParked: false, parkReason: null, position: positionInContainer(done, memberCount(done.id, change.issueKey)) };
+        } else if (change.sprint !== null) {
+          const sprint = ensureSprintByTitle(change.sprint);
+          next = { ...next, containerId: sprint.id, isParked: false, position: positionInContainer(sprint, memberCount(sprint.id, change.issueKey)) };
+        }
+        nodes[change.issueKey] = next;
+      }
+      return { ...previous, containers, nodes };
+    });
+  }, [mutate]);
+
   const goToStage = useCallback((stageId: StageId) => {
     mutate((previous) => ({ ...previous, stageState: { ...previous.stageState, currentStageId: stageId } }));
   }, [mutate]);
@@ -329,9 +397,9 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     () => ({
       overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize,
       setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes,
-      assignToContainer, parkNode, unparkNode, completeNode, moveContainer, goToStage, completeStage,
+      assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, goToStage, completeStage,
       undo, redo, canUndo, canRedo,
     }),
-    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, assignToContainer, parkNode, unparkNode, completeNode, moveContainer, goToStage, completeStage, undo, redo, canUndo, canRedo],
+    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, goToStage, completeStage, undo, redo, canUndo, canRedo],
   );
 }

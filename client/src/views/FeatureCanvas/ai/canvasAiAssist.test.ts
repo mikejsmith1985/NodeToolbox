@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildCanvasAiPrompt, describeSuggestionAction, buildScopeQueryPrompt, extractJsonPayload, parseCanvasAiResponse, parseScopeQueryResponse } from './canvasAiAssist.ts';
+import { buildCanvasAiPrompt, describeSuggestionAction, buildScopeQueryPrompt, extractJsonPayload, parseCanvasAiResponse, parseMasterPlan, parseScopeQueryResponse } from './canvasAiAssist.ts';
 
 describe('canvasAiAssist', () => {
   it('builds a prompt that names the issues and demands JSON only', () => {
@@ -82,6 +82,34 @@ describe('canvasAiAssist', () => {
     expect(describeSuggestionAction('parkCandidates', { issueKey: 'A', proposedValue: 'park', rationale: '', accepted: false })).toBe('Park (defer)');
     expect(describeSuggestionAction('parkCandidates', { issueKey: 'A', proposedValue: 'complete', rationale: '', accepted: false })).toContain('Complete box');
     expect(describeSuggestionAction('parkCandidates', { issueKey: 'A', proposedValue: 'breakout', rationale: '', accepted: false })).toContain('Break out');
+  });
+
+  it('builds a Master plan prompt covering size, bucket, triage, and sprint', () => {
+    const prompt = buildCanvasAiPrompt(
+      'masterPlan',
+      [{ issueKey: 'DENP-1', summary: 'x', status: 'In Progress', storyPoints: 3, businessValue: null, priority: null }],
+      { wipLimit: 2, inProgressCount: 3, daysRemainingInPi: 24, piName: 'PI 26.3' },
+    );
+    expect(prompt).toContain('"size"');
+    expect(prompt).toContain('"triage"');
+    expect(prompt).toContain('"sprint"');
+    expect(prompt).toContain('24 day(s) left'); // PI context
+    expect(prompt).toContain('WIP limit: 2'); // WIP context
+  });
+
+  it('parses a master plan leniently — valid fields kept, bad size/bucket dropped, unknown triage → keep', () => {
+    const plan = parseMasterPlan('{"kind":"masterPlan","items":['
+      + '{"issueKey":"A","size":"L","bucket":"Must","triage":"park","sprint":null,"reason":"stale"},'
+      + '{"issueKey":"B","size":"HUGE","bucket":"Nope","triage":"weird","sprint":"Sprint 25"},'
+      + '{"sprint":"x"}]}'); // missing issueKey → skipped
+    expect(plan).toEqual([
+      { issueKey: 'A', size: 'L', bucket: 'Must', triage: 'park', sprint: null, reason: 'stale' },
+      { issueKey: 'B', size: null, bucket: null, triage: 'keep', sprint: 'Sprint 25', reason: '' },
+    ]);
+  });
+
+  it('parseMasterPlan throws when the kind does not match', () => {
+    expect(() => parseMasterPlan('{"kind":"sizeEstimate","items":[]}')).toThrow(/does not match/);
   });
 
   it('parses a parkCandidates reply and rejects an invalid action', () => {

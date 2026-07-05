@@ -178,6 +178,32 @@ describe('useCanvasOverlay', () => {
       expect(result.current.overlay.nodes['OUT-1'].position).toEqual({ x: 999, y: 999 });
     });
 
+    it('applyMasterPlan sizes, prioritizes, routes to boxes, and sequences in one undo step', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      act(() => result.current.ensureNodeStates([createNodeState('KEEP-1', 0, 0), createNodeState('PARK-1', 0, 0), createNodeState('DONE-1', 0, 0)]));
+
+      act(() => result.current.applyMasterPlan([
+        { issueKey: 'KEEP-1', size: 'L', bucket: 'Must', triage: 'keep', sprint: 'Sprint 25', reason: '' },
+        { issueKey: 'PARK-1', size: 'S', bucket: 'Wont', triage: 'park', sprint: null, reason: 'stale' },
+        { issueKey: 'DONE-1', size: null, bucket: null, triage: 'complete', sprint: null, reason: '' },
+      ]));
+
+      const overlay = result.current.overlay;
+      const sprint = overlay.containers.find((container) => container.kind === 'sprint' && container.title === 'Sprint 25');
+      const lot = overlay.containers.find((container) => container.kind === 'parkingLot');
+      const done = overlay.containers.find((container) => container.kind === 'complete');
+      expect(sprint && lot && done).toBeTruthy();
+
+      expect(overlay.nodes['KEEP-1']).toMatchObject({ size: 'L', priority: 'Must', containerId: sprint!.id, isParked: false });
+      expect(overlay.nodes['PARK-1']).toMatchObject({ size: 'S', priority: 'Wont', containerId: lot!.id, isParked: true, parkReason: 'stale' });
+      expect(overlay.nodes['DONE-1']).toMatchObject({ containerId: done!.id, isParked: false });
+
+      // The whole plan is one undo step.
+      act(() => result.current.undo());
+      expect(result.current.overlay.containers).toHaveLength(0);
+      expect(result.current.overlay.nodes['KEEP-1'].containerId).toBeNull();
+    });
+
     it('unparkNode clears parked state, reason, and box membership', () => {
       const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
       act(() => result.current.ensureNodeStates([createNodeState('DENP-1', 0, 0)]));
