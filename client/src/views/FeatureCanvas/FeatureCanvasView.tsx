@@ -183,6 +183,9 @@ export default function FeatureCanvasView(): React.JSX.Element {
         <button type="button" className={controlStyles.btn} onClick={() => setIsPickerOpen(true)}>Add via JQL</button>
         <button type="button" className={controlStyles.btn} onClick={() => controller.undo()} disabled={!controller.canUndo} title="Undo the last canvas change">↩️ Undo</button>
         <button type="button" className={controlStyles.btn} onClick={() => controller.redo()} disabled={!controller.canRedo} title="Redo the last undone change">↪️ Redo</button>
+        {overlay.containers.length > 0 && (
+          <button type="button" className={controlStyles.btn} onClick={() => controller.relayoutBoxes()} title="Tidy boxes into two columns, each sized to its cards">🧹 Tidy boxes</button>
+        )}
         {!isWorkingSetEmpty && (
           <button
             type="button"

@@ -178,30 +178,57 @@ describe('useCanvasOverlay', () => {
       expect(result.current.overlay.nodes['OUT-1'].position).toEqual({ x: 999, y: 999 });
     });
 
-    it('applyMasterPlan sizes, prioritizes, routes to boxes, and sequences in one undo step', () => {
+    it('applyMasterPlan sizes, prioritizes, routes every feature to a box (Later for unsequenced), in one undo step', () => {
       const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
-      act(() => result.current.ensureNodeStates([createNodeState('KEEP-1', 0, 0), createNodeState('PARK-1', 0, 0), createNodeState('DONE-1', 0, 0)]));
+      act(() => result.current.ensureNodeStates([createNodeState('KEEP-1', 0, 0), createNodeState('PARK-1', 0, 0), createNodeState('DONE-1', 0, 0), createNodeState('LATER-1', 0, 0)]));
 
       act(() => result.current.applyMasterPlan([
         { issueKey: 'KEEP-1', size: 'L', bucket: 'Must', triage: 'keep', sprint: 'Sprint 25', reason: '' },
         { issueKey: 'PARK-1', size: 'S', bucket: 'Wont', triage: 'park', sprint: null, reason: 'stale' },
         { issueKey: 'DONE-1', size: null, bucket: null, triage: 'complete', sprint: null, reason: '' },
+        { issueKey: 'LATER-1', size: 'M', bucket: 'Could', triage: 'keep', sprint: null, reason: '' }, // kept but no sprint → Later
       ]));
 
       const overlay = result.current.overlay;
       const sprint = overlay.containers.find((container) => container.kind === 'sprint' && container.title === 'Sprint 25');
       const lot = overlay.containers.find((container) => container.kind === 'parkingLot');
       const done = overlay.containers.find((container) => container.kind === 'complete');
-      expect(sprint && lot && done).toBeTruthy();
+      const later = overlay.containers.find((container) => container.kind === 'later');
+      expect(sprint && lot && done && later).toBeTruthy();
 
       expect(overlay.nodes['KEEP-1']).toMatchObject({ size: 'L', priority: 'Must', containerId: sprint!.id, isParked: false });
       expect(overlay.nodes['PARK-1']).toMatchObject({ size: 'S', priority: 'Wont', containerId: lot!.id, isParked: true, parkReason: 'stale' });
       expect(overlay.nodes['DONE-1']).toMatchObject({ containerId: done!.id, isParked: false });
+      expect(overlay.nodes['LATER-1']).toMatchObject({ containerId: later!.id, isParked: false });
+      // Nothing left loose.
+      expect(Object.values(overlay.nodes).every((node) => node.containerId !== null)).toBe(true);
 
       // The whole plan is one undo step.
       act(() => result.current.undo());
       expect(result.current.overlay.containers).toHaveLength(0);
       expect(result.current.overlay.nodes['KEEP-1'].containerId).toBeNull();
+    });
+
+    it('relayoutBoxes tidies boxes into two columns sized to their cards', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      // Explicit ids so the two boxes never collide (createProvisionalContainer keys off Date.now()).
+      const box = (id: string, title: string): CanvasContainer => ({
+        id, kind: 'sprint', title, bounds: { x: 0, y: 0, width: 400, height: 260 }, capacityBudget: 20,
+        provenance: { state: 'provisional', jiraSprintId: null, jiraVersionName: null, startDateIso: null, endDateIso: null },
+      });
+      act(() => result.current.ensureNodeStates([createNodeState('A', 0, 0), createNodeState('B', 0, 0)]));
+      act(() => result.current.addContainer(box('c-a', 'S1')));
+      act(() => result.current.addContainer(box('c-b', 'S2')));
+      act(() => result.current.assignToContainer('A', 'c-a'));
+      act(() => result.current.assignToContainer('B', 'c-a'));
+
+      act(() => result.current.relayoutBoxes());
+
+      const first = result.current.overlay.containers.find((container) => container.id === 'c-a')!;
+      const second = result.current.overlay.containers.find((container) => container.id === 'c-b')!;
+      // Two boxes → two columns; the two-card box is taller than the empty one.
+      expect(first.bounds.x).not.toBe(second.bounds.x);
+      expect(first.bounds.height).toBeGreaterThan(second.bounds.height);
     });
 
     it('unparkNode clears parked state, reason, and box membership', () => {

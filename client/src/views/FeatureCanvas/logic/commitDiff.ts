@@ -24,9 +24,9 @@ function createItemId(containerId: string): string {
 
 /** Emits the create-sprint / create-version items for every provisional container, ordered first. */
 function buildContainerCreateItems(containers: readonly CanvasContainer[]): CommitDiffItem[] {
-  // Parking Lot and Complete boxes are canvas-only organizers — never created as Jira sprints/versions.
+  // Parking Lot / Complete / Later boxes are canvas-only organizers — never created as Jira sprints/versions.
   return containers
-    .filter((container) => container.provenance.state === 'provisional' && container.kind !== 'parkingLot' && container.kind !== 'complete')
+    .filter((container) => container.provenance.state === 'provisional' && container.kind !== 'parkingLot' && container.kind !== 'complete' && container.kind !== 'later')
     .map((container) => ({
       id: createItemId(container.id),
       kind: container.kind === 'sprint' ? 'createSprint' : 'createVersion',

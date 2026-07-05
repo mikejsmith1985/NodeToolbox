@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { createCompleteContainer, createParkingLotContainer, createProvisionalContainer, createRealSprintContainer, positionInContainer } from './containerFactory.ts';
+import { boxHeightForCount, createCompleteContainer, createLaterContainer, createParkingLotContainer, createProvisionalContainer, createRealSprintContainer, layoutBoxes, positionInContainer } from './containerFactory.ts';
 
 describe('createProvisionalContainer', () => {
   it('builds a provisional sprint with a default title and a budget', () => {
@@ -36,11 +36,18 @@ describe('createProvisionalContainer', () => {
     expect(createProvisionalContainer('sprint', 1).bounds.x).toBe(480);
   });
 
+  it('builds the canvas-only Later box', () => {
+    const later = createLaterContainer(0);
+    expect(later.kind).toBe('later');
+    expect(later.title).toBe('Later');
+    expect(later.provenance.state).toBe('provisional');
+  });
+
   it('wraps into a new row so boxes never overlap the previous row', () => {
     const first = createProvisionalContainer('sprint', 0);
-    const fourth = createProvisionalContainer('sprint', 3); // wraps to column 0, row 2
-    expect(fourth.bounds.x).toBe(first.bounds.x); // same column as the first
-    expect(fourth.bounds.y).toBeGreaterThan(first.bounds.y + first.bounds.height); // but a full row lower — no overlap
+    const third = createProvisionalContainer('sprint', 2); // two columns → index 2 wraps to column 0, row 2
+    expect(third.bounds.x).toBe(first.bounds.x); // same column as the first
+    expect(third.bounds.y).toBeGreaterThan(first.bounds.y + first.bounds.height); // but a full row lower — no overlap
   });
 
   it('builds the Parking Lot and Complete boxes with no budget', () => {
@@ -63,5 +70,25 @@ describe('positionInContainer', () => {
     expect(first.x).toBe(box.bounds.x + 16);
     expect(second.x).toBe(first.x);
     expect(second.y).toBeGreaterThan(first.y); // each subsequent card sits lower
+  });
+});
+
+describe('boxHeightForCount / layoutBoxes', () => {
+  it('sizes a box taller for more cards (and at least one slot when empty)', () => {
+    expect(boxHeightForCount(0)).toBe(boxHeightForCount(1)); // min one slot
+    expect(boxHeightForCount(5)).toBeGreaterThan(boxHeightForCount(2));
+  });
+
+  it('lays boxes into two columns, each sized to its cards, filling the shorter column', () => {
+    const bounds = layoutBoxes([
+      { id: 'a', memberCount: 5 }, // tall → column 0
+      { id: 'b', memberCount: 1 }, // column 1
+      { id: 'c', memberCount: 1 }, // column 1 was shorter → still column 1, stacked under b
+    ]);
+    const columnXs = new Set([bounds.get('a')!.x, bounds.get('b')!.x, bounds.get('c')!.x]);
+    expect(columnXs.size).toBe(2); // exactly two columns
+    expect(bounds.get('a')!.height).toBeGreaterThan(bounds.get('b')!.height); // sized to card count
+    expect(bounds.get('b')!.x).toBe(bounds.get('c')!.x); // b and c share a column
+    expect(bounds.get('c')!.y).toBeGreaterThan(bounds.get('b')!.y); // c stacked below b, no overlap
   });
 });
