@@ -1,9 +1,10 @@
 // stages.ts — The five-stage coaching journey definitions (pure data, no AI references).
 //
 // Each stage has a single job and a single visible output, sized for one ~30-minute working
-// session. The order is the recommended recovery sequence for a chaotic backlog: you cannot
-// prioritize before you can see, or plan before you can size. Guidance is written to the USER;
-// nothing here references or depends on AI.
+// session. The order is the recommended recovery sequence for a chaotic backlog: surface the work,
+// size and prioritize it, THEN stabilize WIP with that context (so you never park high-value or
+// nearly-done work), and only then box it into a plan. Guidance is written to the USER; nothing
+// here references or depends on AI.
 
 import type { StageId } from '../overlay/overlayModel.ts';
 
@@ -28,28 +29,28 @@ export const COACH_STAGES: readonly CoachStage[] = [
     output: 'Every feature is a node you can move.',
   },
   {
-    id: 'stabilize',
+    id: 'size',
     order: 2,
-    title: 'Stabilize WIP',
-    job: 'Stop the bleeding.',
-    decision: 'Set a WIP limit, then drag everything above it into the Parking Lot.',
-    output: 'A bounded active set and an explicit list of what you are pausing.',
+    title: 'Size',
+    job: 'Make it estimable.',
+    decision: 'Give each feature a quick relative size (S / M / L / XL) — so priority and WIP calls can weigh effort against value and completion.',
+    output: 'Every in-scope feature carries a size so capacity and WIP math work.',
   },
   {
     id: 'prioritize',
     order: 3,
     title: 'Prioritize',
     job: 'Find the signal.',
-    decision: 'Sort each feature into Must, Should, Could, or Won’t.',
+    decision: 'Sort each feature into Must, Should, Could, or Won’t — weighing value against the size you just set.',
     output: 'An unambiguous, visible order of what matters.',
   },
   {
-    id: 'size',
+    id: 'stabilize',
     order: 4,
-    title: 'Size',
-    job: 'Make it estimable.',
-    decision: 'Give each prioritized feature a quick relative size (S / M / L / XL).',
-    output: 'Every in-scope feature carries a size so capacity math works.',
+    title: 'Stabilize WIP',
+    job: 'Stop the bleeding — deliberately.',
+    decision: 'Move finished features to Complete (always safe), then park the lowest-priority / least-progressed work above your WIP limit. Never park what is nearly done or high value.',
+    output: 'A bounded active set and an explicit, reasoned parked list.',
   },
   {
     id: 'sequence',

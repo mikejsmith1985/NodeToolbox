@@ -7,10 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Feature Canvas — phases reordered (Size & Prioritize before Stabilize WIP)**: The coaching journey is now **Surface → Size → Prioritize → Stabilize WIP → Sequence & Box**. Stabilizing WIP after sizing and prioritizing means every park/complete call is made with effort, value, and completion in view — so you never park high-value or nearly-done work. The Stabilize copy now frames **"move done → Complete" as always-safe** and only **"park to limit"** as the judgment call, and the **AI analysis dropdown reorders to match** (Size → Prioritize → Triage → Sequence). The Triage prompt is also told **never to park a feature that's nearly done or cheap to finish** — finishing it clears WIP faster.
+
 ### Fixed
+- **Feature Canvas — Clear canvas now fully resets**: "Clear canvas" previously left the boxes, WIP limit, and the 5 "✓ complete" phase marks in place (so a re-scoped canvas still showed old sprint boxes). It now removes all cards **and boxes**, clears the WIP limit, and resets the phases — a truly blank canvas. Config (size mapping) is kept; nothing changes in Jira.
+- **Feature Canvas — boxes no longer overlap**: New boxes previously piled onto the same spot. They now tile into their own grid cells (columns that wrap into new rows), so every box gets unique space.
 - **Feature Canvas — assigned features now actually move into their box**: Assigning a feature to a sprint/box previously only set a hidden link, so AI Sprint-grouping "assigned" work but every card stayed up in the grid and the boxes looked empty. Assignment (AI accept **and** parking/completing) now **repositions the card inside the box**, so Sequence & Box finally reflects the plan visually.
 
 ### Added
+- **Feature Canvas — resizable, movable boxes**: Boxes can now be **resized** by dragging a handle (select a box to reveal them) so cards fit, and **dragging a box moves all the cards inside it with it** — while you can still drag an individual card out into a different box. Resize/move persist to the overlay (undoable).
 - **Feature Canvas — Parking Lot & Complete boxes**: Parked features now collect in an auto-created **Parking Lot** box (moved in, not just dimmed), and finished features route to an auto-created **Complete** box. Both are canvas-only organizers — **never** committed to Jira as sprints/versions.
 - **Feature Canvas — one "Triage" AI analysis (park / complete / break out)**: The three separate park analyses (Reduce WIP, Stale, Duplicate) are merged into a single **Triage** analysis — one prompt. Per feature it recommends **park** (defer stale/duplicate/over-WIP, favoring lowest MoSCoW/value), **complete** (already done → move to the Complete box), or **break out** (marked done but has open child stories — needs splitting). Accepting applies the matching move; each row states its action + reason.
 - **Feature Canvas — park reason committed as a Jira comment**: When you commit, each parked feature that carries a reason gets a **Jira comment** ("Parked on Feature Canvas: …"), so the "why" is preserved on the issue. Parking/Complete boxes themselves are still never written to Jira.

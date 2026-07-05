@@ -99,17 +99,21 @@ describe('useCanvasOverlay', () => {
     expect(result.current.overlay.containers).toHaveLength(1);
   });
 
-  it('clearNodes empties the working set but keeps containers and config', () => {
+  it('clearNodes resets the whole canvas — nodes, boxes, WIP limit, and the coaching stages', () => {
     const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
     act(() => result.current.ensureNodeStates([createNodeState('DENP-1', 0, 0), createNodeState('DENP-2', 0, 0)]));
     act(() => result.current.addContainer(CONTAINER));
     act(() => result.current.setWipLimit(5));
+    act(() => result.current.goToStage('size'));
+    act(() => result.current.completeStage('surface'));
 
     act(() => result.current.clearNodes());
 
     expect(Object.keys(result.current.overlay.nodes)).toHaveLength(0);
-    expect(result.current.overlay.containers).toHaveLength(1);
-    expect(result.current.overlay.wipLimit).toBe(5);
+    expect(result.current.overlay.containers).toHaveLength(0);
+    expect(result.current.overlay.wipLimit).toBeNull();
+    expect(result.current.overlay.stageState.currentStageId).toBe('surface');
+    expect(result.current.overlay.stageState.completed.surface).toBe(false);
   });
 
   describe('box routing (park / complete / assign)', () => {
@@ -156,6 +160,22 @@ describe('useCanvasOverlay', () => {
 
       expect(result.current.overlay.nodes['DENP-1'].containerId).toBe(CONTAINER.id);
       expect(result.current.overlay.nodes['DENP-1'].position).not.toEqual({ x: 5, y: 5 });
+    });
+
+    it('moveContainer shifts the box and every card inside it by the same delta', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      act(() => result.current.ensureNodeStates([createNodeState('DENP-1', 0, 0), createNodeState('OUT-1', 999, 999)]));
+      act(() => result.current.addContainer(CONTAINER)); // bounds x:0 y:0
+      act(() => result.current.assignToContainer('DENP-1', CONTAINER.id));
+      const memberBefore = result.current.overlay.nodes['DENP-1'].position;
+
+      act(() => result.current.moveContainer(CONTAINER.id, 100, 60));
+
+      const box = result.current.overlay.containers.find((container) => container.id === CONTAINER.id)!;
+      expect(box.bounds).toMatchObject({ x: 100, y: 60 });
+      // The member moved by the same delta (+100, +60); a non-member did not move.
+      expect(result.current.overlay.nodes['DENP-1'].position).toEqual({ x: memberBefore.x + 100, y: memberBefore.y + 60 });
+      expect(result.current.overlay.nodes['OUT-1'].position).toEqual({ x: 999, y: 999 });
     });
 
     it('unparkNode clears parked state, reason, and box membership', () => {

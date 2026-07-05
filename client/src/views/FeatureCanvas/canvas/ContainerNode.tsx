@@ -6,10 +6,14 @@
 // drawn with a dashed border to distinguish them from real sprints/versions.
 
 import { memo } from 'react';
-import { type Node, type NodeProps } from '@xyflow/react';
+import { NodeResizer, type Node, type NodeProps } from '@xyflow/react';
 
 import type { ContainerCapacity } from '../logic/canvasTypes.ts';
 import type { ContainerKind } from '../overlay/overlayModel.ts';
+
+// Minimum box size so a resized box never collapses below a card's footprint.
+const MIN_BOX_WIDTH = 260;
+const MIN_BOX_HEIGHT = 140;
 
 /** React Flow node data payload for a container box. */
 export interface ContainerNodeData {
@@ -18,6 +22,8 @@ export interface ContainerNodeData {
   isProvisional: boolean;
   capacity: ContainerCapacity | null;
   onDelete?: () => void;
+  /** Persists a resize: called with the box's new bounds when the user finishes dragging a handle. */
+  onResize?: (bounds: { x: number; y: number; width: number; height: number }) => void;
   [key: string]: unknown;
 }
 
@@ -43,7 +49,7 @@ function CapacityMeter({ capacity }: { capacity: ContainerCapacity }): React.JSX
 }
 
 /** Custom React Flow node: a container box that features are dropped into. */
-function ContainerNodeComponent({ data }: NodeProps<ContainerRfNode>): React.JSX.Element {
+function ContainerNodeComponent({ data, selected }: NodeProps<ContainerRfNode>): React.JSX.Element {
   const accent = KIND_ACCENT[data.kind];
   return (
     <div
@@ -58,6 +64,14 @@ function ContainerNodeComponent({ data }: NodeProps<ContainerRfNode>): React.JSX
         boxSizing: 'border-box',
       }}
     >
+      {/* Resize handles appear when the box is selected; on release we persist the new bounds. */}
+      <NodeResizer
+        color={accent}
+        isVisible={selected}
+        minWidth={MIN_BOX_WIDTH}
+        minHeight={MIN_BOX_HEIGHT}
+        onResizeEnd={(_event, params) => data.onResize?.({ x: params.x, y: params.y, width: params.width, height: params.height })}
+      />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600 }}>
         <span style={{ color: accent }}>
           {data.title}

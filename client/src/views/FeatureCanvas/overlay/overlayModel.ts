@@ -27,7 +27,7 @@ export type ContainerKind = 'release' | 'sprint' | 'parkingLot' | 'complete';
 export const DEFAULT_SIZE_MAPPING: Record<TshirtSize, number> = { S: 1, M: 3, L: 5, XL: 8 };
 
 /** The ordered stage identifiers, exposed for coach navigation and completion tracking. */
-export const STAGE_ORDER: readonly StageId[] = ['surface', 'stabilize', 'prioritize', 'size', 'sequence'];
+export const STAGE_ORDER: readonly StageId[] = ['surface', 'size', 'prioritize', 'stabilize', 'sequence'];
 
 /** How a container box maps (or does not yet map) to a real Jira sprint/fixVersion. */
 export interface ContainerProvenance {

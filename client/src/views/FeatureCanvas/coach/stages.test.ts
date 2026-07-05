@@ -6,7 +6,7 @@ import { COACH_STAGES, findStage } from './stages.ts';
 
 describe('coach stages', () => {
   it('defines exactly the five recovery stages in order', () => {
-    expect(COACH_STAGES.map((stage) => stage.id)).toEqual(['surface', 'stabilize', 'prioritize', 'size', 'sequence']);
+    expect(COACH_STAGES.map((stage) => stage.id)).toEqual(['surface', 'size', 'prioritize', 'stabilize', 'sequence']);
     expect(COACH_STAGES.map((stage) => stage.order)).toEqual([1, 2, 3, 4, 5]);
   });
 

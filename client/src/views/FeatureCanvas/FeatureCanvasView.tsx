@@ -136,7 +136,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
             type="button"
             className={controlStyles.btn}
             onClick={() => {
-              if (window.confirm(`Remove all ${workingSetKeys.length} feature(s) from the canvas? This clears the canvas only — nothing changes in Jira.`)) {
+              if (window.confirm(`Reset the canvas? This removes all ${workingSetKeys.length} feature(s) and every box, clears the WIP limit, and resets the 5 phases. It changes nothing in Jira.`)) {
                 controller.clearNodes();
                 setSelectedIssueKey(null);
               }
@@ -185,6 +185,8 @@ export default function FeatureCanvasView(): React.JSX.Element {
                     setSelectedIssueKey(null);
                   }
                 }}
+                onMoveContainer={(containerId, x, y) => controller.moveContainer(containerId, x, y)}
+                onResizeContainer={(containerId, bounds) => controller.updateContainer(containerId, { bounds })}
               />
               {isCommitOpen && (
                 <ReviewCommitPanel
