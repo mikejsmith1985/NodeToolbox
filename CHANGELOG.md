@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Feature Canvas — PI choice now persists, and the Sprint Dashboard bridge lands on the same PI**: The step-1 PI picker used transient state, so leaving the canvas (e.g. via the Sprint Dashboard bridge) lost the chosen PI — the canvas came back **empty** (it had re-scoped to the profile's old PI) and the dashboard opened on a **different PI/context**. The picker now writes the PI to the **active team profile** — the same source the Sprint Dashboard reads — so the choice persists across navigation (your canvas is intact on return) and the bridge opens the dashboard on the matching team + PI.
+
 ### Added
 - **Feature Canvas — story-level sprint load at Review & Commit**: Since Jira sprints hold **stories, not features**, the commit already expands a feature→sprint into per-child-story assignments. Review & Commit now makes that a real planning step: it shows each story's **points** and a live **per-sprint load** (selected points vs the sprint's capacity, red when over). Uncheck the stories that shouldn't ship this sprint and watch the load update — selective, story-altitude planning that reuses the child data already fetched (no new board).
 - **Feature Canvas — bridge to the Sprint Dashboard**: A **Plan stories in Sprint Dashboard →** action (in the Sequence stage and after a commit) hands off to the existing Sprint Dashboard for per-story sequencing/pointing/capacity, rather than rebuilding story planning inside the canvas. The canvas produces the PI plan; the Sprint Dashboard executes it.

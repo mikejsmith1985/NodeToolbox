@@ -31,10 +31,11 @@ vi.mock('./canvas/FeatureCanvasBoard.tsx', () => ({
 
 // Stub step-1 (blueprint) and the JQL picker so we can drive onAdd without their fetches.
 vi.mock('./canvas/BlueprintSelectionStep.tsx', () => ({
-  BlueprintSelectionStep: ({ onAdd, onClose }: { onAdd: (keys: string[]) => void; onClose: () => void }) => (
+  BlueprintSelectionStep: ({ onAdd, onClose, onPiChange }: { onAdd: (keys: string[]) => void; onClose: () => void; onPiChange: (pi: string) => void }) => (
     <div>
       <span>blueprint-step</span>
       <button type="button" onClick={() => { onAdd(['DENP-1']); onClose(); }}>bp-add</button>
+      <button type="button" onClick={() => onPiChange('PI 27.1')}>bp-pi-change</button>
     </div>
   ),
 }));
@@ -43,6 +44,7 @@ vi.mock('./canvas/SurfacePicker.tsx', () => ({
 }));
 
 import FeatureCanvasView from './FeatureCanvasView.tsx';
+import { useSettingsStore } from '../../store/settingsStore.ts';
 
 function buildItem(key: string): FeatureReviewItem {
   return {
@@ -129,6 +131,22 @@ describe('FeatureCanvasView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'remove-DENP-1' }));
     expect(screen.queryByText('node-DENP-1')).not.toBeInTheDocument();
     expect(screen.getByText(/Add features to begin/)).toBeInTheDocument();
+  });
+
+  it('persists a PI pick to the active team profile (so it survives navigation and syncs the dashboard)', () => {
+    useSettingsStore.setState({
+      sprintDashboardTeamProfiles: [{ id: 't1', name: 'Team A', projectKey: 'DENP', boardId: '42', boardName: '', boardType: '', scopeMode: 'pi', selectedSprintId: '', selectedFixVersion: '', selectedFixVersionName: '', selectedPiValue: 'PI 26.3' } as never],
+      sprintDashboardActiveTeamProfileId: 't1',
+    });
+    mockUseCanvasFeatures.mockReturnValue({ status: 'ready', items: [], error: null });
+    render(<MemoryRouter><FeatureCanvasView /></MemoryRouter>);
+
+    fireEvent.click(screen.getByRole('button', { name: /Add features/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'bp-pi-change' }));
+
+    // The pick is written to the persisted profile — not lost transient state.
+    const profile = useSettingsStore.getState().sprintDashboardTeamProfiles.find((teamProfile) => teamProfile.id === 't1');
+    expect(profile?.selectedPiValue).toBe('PI 27.1');
   });
 
   it('opens the read-only inspector for the selected node and closes it', () => {
