@@ -8,6 +8,7 @@ NodeToolbox is a local-first delivery operations workspace built on an Express p
 
 - **Team Dashboard** — board-level workspace for sprint execution, blockers, defects, standup, metrics, pipeline, planning, pointing, Feature Review, PI Review, releases, and settings.
 - **ART View** — release-train workspace for overview, impediments, predictability, releases, PI Review, blueprint mapping, dependencies, board prep, SoS, monthly reporting, and ART settings.
+- **Feature Canvas** — spatial PI-planning board that recovers a chaotic backlog through five guided phases (Surface → Size → Prioritize → Stabilize WIP → Sequence & Box), with sprint/release/Parking Lot/Complete boxes, an optional AI accelerator, and an explicit Review & Commit before anything is written to Jira.
 - **My Issues** — personal issue management with report, hygiene, and settings views plus linked Jira/ServiceNow context.
 - **Daily Standup Board** — focused daily status view with filters, grouped sections, and issue detail tools.
 - **Reports Hub** — portfolio and leadership reporting across feature delivery, defects, risks, flow, quality, sprint health, throughput, and individual views.
@@ -115,6 +116,48 @@ The sections below explain what each major tool is for, who usually uses it, and
 - ART leadership needs a cross-team picture instead of a single board view
 - PI Review information must be reviewed, exported, or reconciled with Jira
 - you need to inspect dependencies or blueprint relationships above the team level
+
+### Feature Canvas
+
+**What it covers:** a spatial, drag-and-drop planning board for turning a chaotic backlog into a committed PI plan. Features/epics render as movable cards; the work flows through five guided phases and ends at an explicit Review & Commit that is the only thing that writes to Jira.
+
+**The five phases** (the coaching journey on the right, resumable and non-linear):
+1. **Surface** — pull the candidate features onto the canvas (blueprint picker, or Add via JQL with a person-finder and hidden NL→JQL helper).
+2. **Size** — give each feature a relative t-shirt size (S/M/L/XL) so later phases can weigh effort.
+3. **Prioritize** — sort features into MoSCoW buckets (Must/Should/Could/Wont), weighing value against size and PI time.
+4. **Stabilize WIP** — set a WIP limit, then move finished work to the **Complete** box and park the lowest-value/least-progressed excess into the **Parking Lot** (never work that is nearly done). Shows both feature and active-story counts.
+5. **Sequence & Box** — drag sized features into **sprint** and **release** boxes within capacity. Pull the board's real sprints in with **↧ Pull sprints from board**, or add provisional ones.
+
+**Boxes and cards**
+- Boxes are **resizable** (select to reveal handles) and **movable** — dragging a box carries its cards with it, and you can still drag a single card out into another box. Boxes auto-tile so they don't overlap.
+- **Parking Lot** and **Complete** boxes auto-create and are canvas-only (never committed to Jira).
+- Each card shows a status stripe, a health dot, size/points, MoSCoW, % complete, and hygiene/parked badges. The **❓ Key** explains every marking and lets you click a status/health color to **focus** the canvas on those cards.
+- The toolbar has a **Team** selector (swaps the active team, shared with Team Dashboard), a **PI** picker (step 1), the active **days-left in the PI**, **Undo/Redo**, and **Clear canvas** (a full reset).
+
+**AI accelerator (optional, passphrase-gated via Ctrl+Alt+Z)**
+- A copy-prompt / paste-JSON round-trip — no data leaves the app automatically, and every suggestion is a proposal you accept or reject.
+- Per-phase analyses (Size, Prioritize, Triage, Sequence) plus a **★ Master plan** that returns size + priority + triage + sprint for every feature and applies the whole plan in a single, undoable step.
+- Prompts are fed the real signals the canvas already has — description, acceptance criteria, health, completion, story load, blockers, Business Value, PI days-left — and encode the Definition of Done (dev-complete + delivered to integration testing, not production).
+
+**Review & Commit** (the only Jira write)
+- Shows an itemized, per-item-toggleable diff. Feature→sprint expands to **per child story** (Jira sprints hold stories, not epics), with a live **per-sprint story-point load** vs capacity so you can uncheck stories that should not ship this sprint.
+- Parked features can post their **park reason as a Jira comment**; provisional sprints/releases are created before assignments; Parking Lot/Complete boxes are never written.
+- **Plan stories in Sprint Dashboard →** hands off to the Team Dashboard for per-story sequencing, pointing, and capacity.
+
+**Common workflows**
+1. **Recover a backlog:** Add features → run the phases (or the Master plan) → arrange into sprint boxes → Review & Commit.
+2. **Stabilize a runaway sprint:** set a WIP limit in Stabilize, use Triage to complete/park the excess, and watch the active-story count drop.
+3. **Plan a sprint's stories:** at Review & Commit, check the per-sprint load and uncheck stories that overflow, then hand off to the Sprint Dashboard.
+
+**Troubleshooting**
+- If the canvas is empty after switching context, confirm the **Team** and **PI** selectors point at the plan you built (each team+PI keeps its own overlay).
+- If the AI options are missing, unlock AI Assist with **Ctrl+Alt+Z** (per browser tab).
+- If a box looks empty after an AI assignment, the cards move into the box on accept — check you accepted the Sequence/Master-plan suggestions.
+
+**Use this tool when**
+- a Scrum Master inherits a chaotic backlog and needs a deliberate way to recover it
+- you want a visual PI plan (Now/Next/Later) before touching Jira
+- you want AI help sizing, prioritizing, and sequencing without giving up final say
 
 ### My Issues
 
