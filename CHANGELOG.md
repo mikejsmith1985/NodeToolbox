@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Feature Canvas — story-level sprint planning ("Plan stories")**: Since Jira sprints hold stories (not epics), real sprint planning happens at the story level. A new **🧩 Plan stories** view expands every canvas box into the child stories placed there and lets you move stories between boxes — **splitting one feature across multiple sprints** — with a live points-vs-capacity readout per sprint. It's all sandboxed (per-story placement lives in the overlay); Review & Commit now assigns **each story to its own placed sprint**, so a feature's stories can land in different sprints. Stays in the canvas by design — the Sprint Dashboard's Planning tab remains a view of what's actually in Jira.
+
 ### Changed
 - **Feature Canvas — Master plan marks all phases complete and requires a WIP limit**: Applying a Master plan now marks all five coaching phases complete and lands the coach on the final stage (it does perform every phase), so the phase chips no longer read "incomplete" afterward. Because the plan performs the Stabilize-WIP phase, it now **requires a WIP limit** before it can run — the ⚡ panel gates the prompt/ingest until one is set and lets you set it inline.
 

@@ -24,7 +24,7 @@ function buildNode(overrides: Partial<CanvasNode> = {}): CanvasNode {
     issueKey: 'ENFCT-1', position: { x: 0, y: 0 }, size: 'L', priority: 'Must', containerId: null,
     isExpanded: false, isParked: false, summary: 'Login redesign', status: 'In Progress',
     statusCategoryKey: 'indeterminate', assignee: 'Ada', storyPoints: 5,
-    businessValue: 8, description: 'The epic goal in prose.', acceptanceCriteria: null, parkReason: null,
+    businessValue: 8, description: 'The epic goal in prose.', acceptanceCriteria: null, parkReason: null, storyPlacements: {},
     health: 'yellow', completionPercent: 40,
     hygieneFlags: [], dependencies: [],
     attachments: [

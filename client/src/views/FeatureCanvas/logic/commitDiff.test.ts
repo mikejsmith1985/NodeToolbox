@@ -11,7 +11,7 @@ function buildNode(overrides: Partial<CanvasNode> = {}): CanvasNode {
     issueKey: 'DENP-1', position: { x: 0, y: 0 }, size: null, priority: null, containerId: null,
     isExpanded: false, isParked: false, summary: '', status: '', statusCategoryKey: 'new',
     assignee: null, storyPoints: null, health: 'green', completionPercent: 0, hygieneFlags: [],
-    childStories: [], dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null, attachments: [], effectivePoints: 0, ...overrides,
+    childStories: [], dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null, storyPlacements: {}, attachments: [], effectivePoints: 0, ...overrides,
   };
 }
 
@@ -58,6 +58,38 @@ describe('buildCommitDiff', () => {
     });
     const diff = buildCommitDiff([feature], [sprint]);
     expect(diff.filter((item) => item.kind === 'sprintAssign').map((item) => item.issueKey)).toEqual(['DENP-2', 'DENP-3']);
+  });
+
+  it('splits a feature across sprints per story placement (story-level planning)', () => {
+    const sprintA = buildContainer({ id: 'ctr-a', kind: 'sprint', title: 'Sprint 24' });
+    const sprintB = buildContainer({ id: 'ctr-b', kind: 'sprint', title: 'Sprint 25' });
+    const feature = buildNode({
+      issueKey: 'DENP-1', containerId: 'ctr-a', // feature's box is Sprint 24 by default
+      childStories: [
+        { key: 'DENP-2', summary: '', status: '', statusCategoryKey: null, storyPoints: null },
+        { key: 'DENP-3', summary: '', status: '', statusCategoryKey: null, storyPoints: null },
+      ],
+      storyPlacements: { 'DENP-3': 'ctr-b' }, // but DENP-3 was pulled into Sprint 25
+    });
+    const diff = buildCommitDiff([feature], [sprintA, sprintB]);
+    const assigns = diff.filter((item) => item.kind === 'sprintAssign');
+    expect(assigns).toContainEqual(expect.objectContaining({ issueKey: 'DENP-2', to: 'Sprint 24' }));
+    expect(assigns).toContainEqual(expect.objectContaining({ issueKey: 'DENP-3', to: 'Sprint 25' }));
+  });
+
+  it('does not sprint-assign a story placed in a non-sprint box (e.g. Later)', () => {
+    const sprint = buildContainer({ id: 'ctr-s', kind: 'sprint' });
+    const later = buildContainer({ id: 'ctr-l', kind: 'later', provenance: { state: 'provisional', jiraSprintId: null, jiraVersionName: null, startDateIso: null, endDateIso: null } });
+    const feature = buildNode({
+      issueKey: 'DENP-1', containerId: 'ctr-s',
+      childStories: [
+        { key: 'DENP-2', summary: '', status: '', statusCategoryKey: null, storyPoints: null },
+        { key: 'DENP-3', summary: '', status: '', statusCategoryKey: null, storyPoints: null },
+      ],
+      storyPlacements: { 'DENP-3': 'ctr-l' }, // deferred to Later → not committed to any sprint
+    });
+    const assigns = buildCommitDiff([feature], [sprint, later]).filter((item) => item.kind === 'sprintAssign');
+    expect(assigns.map((item) => item.issueKey)).toEqual(['DENP-2']);
   });
 
   it('assigns a childless feature to the sprint directly', () => {

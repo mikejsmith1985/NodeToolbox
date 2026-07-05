@@ -89,6 +89,8 @@ export interface CanvasOverlayController {
   applyMasterPlan: (changes: readonly MasterPlanChange[]) => void;
   /** Re-tidies all boxes into two columns, each sized to its card count, with cards snapped inside. */
   relayoutBoxes: () => void;
+  /** Places one child story into a box (null clears the override → inherit the feature's box). */
+  setStoryPlacement: (issueKey: string, storyKey: string, containerId: string | null) => void;
   goToStage: (stageId: StageId) => void;
   completeStage: (stageId: StageId) => void;
   /** Reverts the most recent change; no-op when there is nothing to undo. */
@@ -419,6 +421,25 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     mutate((previous) => relaidOverlay(previous));
   }, [mutate]);
 
+  // Places a single child story into a box during story-level planning. `containerId` null clears the
+  // override so the story falls back to inheriting its feature's box. This is what lets one feature's
+  // stories be split across sprints without moving the feature card itself.
+  const setStoryPlacement = useCallback((issueKey: string, storyKey: string, containerId: string | null) => {
+    mutate((previous) => {
+      const node = previous.nodes[issueKey];
+      if (!node) {
+        return previous;
+      }
+      const placements = { ...(node.storyPlacements ?? {}) };
+      if (containerId === null) {
+        delete placements[storyKey];
+      } else {
+        placements[storyKey] = containerId;
+      }
+      return { ...previous, nodes: { ...previous.nodes, [issueKey]: { ...node, storyPlacements: placements } } };
+    });
+  }, [mutate]);
+
   const goToStage = useCallback((stageId: StageId) => {
     mutate((previous) => ({ ...previous, stageState: { ...previous.stageState, currentStageId: stageId } }));
   }, [mutate]);
@@ -462,9 +483,9 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     () => ({
       overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize,
       setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes,
-      assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, relayoutBoxes, goToStage, completeStage,
+      assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, relayoutBoxes, setStoryPlacement, goToStage, completeStage,
       undo, redo, canUndo, canRedo,
     }),
-    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, relayoutBoxes, goToStage, completeStage, undo, redo, canUndo, canRedo],
+    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, relayoutBoxes, setStoryPlacement, goToStage, completeStage, undo, redo, canUndo, canRedo],
   );
 }
