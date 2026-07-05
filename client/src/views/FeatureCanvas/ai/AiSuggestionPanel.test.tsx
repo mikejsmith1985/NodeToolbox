@@ -126,6 +126,20 @@ describe('AiSuggestionPanel', () => {
     expect(controller.assignToContainer).toHaveBeenCalledWith('DENP-1', expect.any(String));
   });
 
+  it('requires a WIP limit before the master plan can run, and lets you set it inline', () => {
+    act(() => setAiAssistUnlocked(true));
+    const controller = buildController();
+    const noWip = { inProgressCount: 3, limit: null, overflow: 0, parkedCount: 0, activeStoryCount: 0 };
+    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={noWip} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'masterPlan' } });
+    expect(screen.getByText(/Set a WIP limit/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ingest & apply plan/ })).toBeDisabled();
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'WIP limit' }), { target: { value: '4' } });
+    expect(controller.setWipLimit).toHaveBeenCalledWith(4);
+  });
+
   it('applies the whole master plan in one shot on ingest and shows a summary', () => {
     act(() => setAiAssistUnlocked(true));
     const controller = buildController();

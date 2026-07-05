@@ -202,6 +202,9 @@ describe('useCanvasOverlay', () => {
       expect(overlay.nodes['LATER-1']).toMatchObject({ containerId: later!.id, isParked: false });
       // Nothing left loose.
       expect(Object.values(overlay.nodes).every((node) => node.containerId !== null)).toBe(true);
+      // The master plan performs all five phases, so the whole journey is marked complete.
+      expect(overlay.stageState.completed).toEqual({ surface: true, size: true, prioritize: true, stabilize: true, sequence: true });
+      expect(overlay.stageState.currentStageId).toBe('sequence');
 
       // The whole plan is one undo step.
       act(() => result.current.undo());

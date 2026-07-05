@@ -402,7 +402,16 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
         nodes[change.issueKey] = next;
       }
       // Tidy the whole board so boxes are sized to their cards and laid out in two clean columns.
-      return relaidOverlay({ ...previous, containers, nodes });
+      const tidied = relaidOverlay({ ...previous, containers, nodes });
+      // The master plan performs all five phases at once, so mark the whole journey complete and
+      // land the coach on the final stage — the phase chips shouldn't still read "incomplete".
+      return {
+        ...tidied,
+        stageState: {
+          currentStageId: 'sequence',
+          completed: { surface: true, size: true, prioritize: true, stabilize: true, sequence: true },
+        },
+      };
     });
   }, [mutate]);
 
