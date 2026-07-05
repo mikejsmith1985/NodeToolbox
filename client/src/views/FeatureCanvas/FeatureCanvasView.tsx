@@ -48,12 +48,14 @@ export default function FeatureCanvasView(): React.JSX.Element {
   // Sprint Dashboard (per-story sequencing, pointing, capacity) rather than rebuilding it here.
   const openSprintDashboard = (): void => { void navigate('/sprint-dashboard'); };
 
-  // A user-chosen PI for this exercise (step 1), overriding the active profile's PI when set. Null
-  // means "use the profile default". Changing it re-scopes the overlay, commit target, and blueprint.
-  const [piOverride, setPiOverride] = useState<string | null>(null);
+  // The PI is the active team profile's selectedPiValue — the SAME source the Sprint Dashboard reads.
+  // Step 1's PI picker writes here (not to transient state), so the choice persists across navigation
+  // (the canvas isn't empty when you return) and the Sprint Dashboard bridge lands on the same PI.
+  const updateActiveTeamProfile = useSettingsStore((state) => state.updateActiveSprintDashboardTeamProfile);
+  const changePi = (piName: string): void => updateActiveTeamProfile({ selectedPiValue: piName });
 
   // Resolve scope first (no fetch) so the overlay key can be built before the working-set fetch.
-  const scope = useCanvasScope(piOverride);
+  const scope = useCanvasScope();
   const scopeKey = deriveScopeKey(scope.projectKey, scope.piName);
   const controller = useCanvasOverlay(profileId, scopeKey);
   const { overlay } = controller;
@@ -149,7 +151,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
         <BlueprintSelectionStep
           teams={artRoster}
           selectedPiName={scope.piName}
-          onPiChange={setPiOverride}
+          onPiChange={changePi}
           onCanvasKeys={onCanvasKeys}
           onAdd={handleAddFeatures}
           onClose={() => setIsSelecting(false)}
