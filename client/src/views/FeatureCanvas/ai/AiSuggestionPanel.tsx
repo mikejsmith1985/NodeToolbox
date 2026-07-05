@@ -105,9 +105,16 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onClos
   const [error, setError] = useState<string | null>(null);
 
   const knownKeys = useMemo(() => new Set(canvasNodes.map((node) => node.issueKey)), [canvasNodes]);
+  // Features that are parked or already in the Complete box are OUT of active flow — never sequence
+  // them into sprints (that was the "why is my parked/done work in a sprint?" bug).
+  const completeBoxIds = useMemo(
+    () => new Set(controller.overlay.containers.filter((container) => container.kind === 'complete').map((container) => container.id)),
+    [controller.overlay.containers],
+  );
+
   const prompt = useMemo(() => {
     // Prioritize and Triage get PI time-remaining (days to DoD) as context; Triage also gets the WIP
-    // limit. Sizing/grouping need no header. Days-left is read from the PI name's date range at render.
+    // limit. Days-left is read from the PI name's date range at render.
     if (kind === 'priorityOrder' || kind === 'parkCandidates') {
       const context = {
         wipLimit: wip.limit,
@@ -117,8 +124,13 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onClos
       };
       return buildCanvasAiPrompt(kind, canvasNodes.map(toPromptIssue), context);
     }
+    // Sequence (sprint grouping) considers only active features — never parked or completed ones.
+    if (kind === 'sprintGrouping') {
+      const sequenceable = canvasNodes.filter((node) => !node.isParked && !completeBoxIds.has(node.containerId ?? ''));
+      return buildCanvasAiPrompt(kind, sequenceable.map(toPromptIssue));
+    }
     return buildCanvasAiPrompt(kind, canvasNodes.map(toPromptIssue));
-  }, [kind, canvasNodes, wip.limit, wip.inProgressCount, piName]);
+  }, [kind, canvasNodes, wip.limit, wip.inProgressCount, piName, completeBoxIds]);
 
   // For value-driven analyses, warn when no feature carries Business Value or points — the
   // assistant will then lean on status/health/completion/blockers, which the user should know.

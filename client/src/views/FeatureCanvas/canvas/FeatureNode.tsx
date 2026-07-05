@@ -50,8 +50,14 @@ function FeatureNodeComponent({ data, selected }: NodeProps<FeatureRfNode>): Rea
       style={{
         width: 240,
         borderRadius: 8,
-        border: `2px solid ${selected ? '#8b5cf6' : 'rgba(148,163,184,0.4)'}`,
+        // Keep the border longhand-stable: the `border` shorthand would reset `borderLeft` (the status
+        // stripe) whenever selection toggled, making the stripe vanish. Selection is a boxShadow ring
+        // instead, so the stripe always persists.
+        borderTop: '2px solid rgba(148,163,184,0.4)',
+        borderRight: '2px solid rgba(148,163,184,0.4)',
+        borderBottom: '2px solid rgba(148,163,184,0.4)',
         borderLeft: `6px solid ${stripeColor}`,
+        boxShadow: selected ? '0 0 0 2px #8b5cf6' : undefined,
         background: 'var(--tbx-canvas-node-bg, #1e293b)',
         color: 'var(--tbx-canvas-node-fg, #e2e8f0)',
         padding: '8px 10px',

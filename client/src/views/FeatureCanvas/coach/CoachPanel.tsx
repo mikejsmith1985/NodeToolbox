@@ -20,6 +20,8 @@ export interface CoachPanelProps {
   selectedNode: CanvasNode | null;
   wip: WipSnapshot;
   onAddContainer: (kind: 'sprint' | 'release') => void;
+  /** Pulls the board's existing active/future sprints in as boxes. */
+  onPullSprints: () => void;
   onOpenCommit: () => void;
   isAiUnlocked: boolean;
   onOpenAi: () => void;
@@ -110,10 +112,11 @@ function SizeControls({ controller, selectedNode }: CoachPanelProps): React.JSX.
 }
 
 /** Stage 5 controls: create release/sprint boxes and open the commit review. */
-function SequenceControls({ onAddContainer, onOpenCommit }: CoachPanelProps): React.JSX.Element {
+function SequenceControls({ onAddContainer, onPullSprints, onOpenCommit }: CoachPanelProps): React.JSX.Element {
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
       <ActionButton label="+ Sprint box" onClick={() => onAddContainer('sprint')} />
+      <ActionButton label="↧ Pull sprints from board" onClick={onPullSprints} />
       <ActionButton label="+ Release box" onClick={() => onAddContainer('release')} />
       <ActionButton label="Review & Commit →" onClick={onOpenCommit} />
     </div>
