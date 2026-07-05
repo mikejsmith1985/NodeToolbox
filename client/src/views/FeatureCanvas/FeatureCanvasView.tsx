@@ -26,6 +26,7 @@ import { computeContainerCapacity } from './logic/capacity.ts';
 import type { ContainerCapacity } from './logic/canvasTypes.ts';
 import { computeWipSnapshot } from './logic/wip.ts';
 import { isSameFilter, type CanvasNodeFilter } from './logic/nodeFilter.ts';
+import { daysRemainingInPi } from './logic/piSchedule.ts';
 import { createNodeState, type ContainerKind } from './overlay/overlayModel.ts';
 import { createProvisionalContainer } from './overlay/containerFactory.ts';
 import { deriveScopeKey } from './overlay/overlayStorage.ts';
@@ -146,7 +147,19 @@ export default function FeatureCanvasView(): React.JSX.Element {
           </button>
         )}
         <CanvasLegend activeFilter={activeFilter} onToggleFilter={toggleFilter} />
-        {scope.piName.trim() !== '' && <span style={{ fontSize: 12, opacity: 0.7 }}>PI: {scope.piName}</span>}
+        {scope.piName.trim() !== '' && (
+          <span style={{ fontSize: 12, opacity: 0.7 }}>
+            PI: {scope.piName}
+            {(() => {
+              // Days-to-PI-end (from the PI name's date range) — the same time signal fed to the AI.
+              const daysLeft = daysRemainingInPi(scope.piName, new Date().toISOString().slice(0, 10));
+              if (daysLeft === null) {
+                return null;
+              }
+              return <span style={{ marginLeft: 6 }}>· {daysLeft < 0 ? 'PI ended' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}</span>;
+            })()}
+          </span>
+        )}
         {artRoster.length === 0 && <span style={{ fontSize: 12, opacity: 0.7 }}>No ART teams configured — use Add via JQL.</span>}
         {features.status === 'error' && <span role="alert" style={{ fontSize: 12, color: 'var(--color-danger)' }}>{features.error}</span>}
       </div>
@@ -199,7 +212,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
                 />
               )}
               {isAiOpen && (
-                <AiSuggestionPanel canvasNodes={canvasNodes} controller={controller} wip={wip} onClose={() => setIsAiOpen(false)} />
+                <AiSuggestionPanel canvasNodes={canvasNodes} controller={controller} wip={wip} piName={scope.piName} onClose={() => setIsAiOpen(false)} />
               )}
             </div>
             <NodeInspectorPanel node={selectedNode} onClose={() => setSelectedIssueKey(null)} />

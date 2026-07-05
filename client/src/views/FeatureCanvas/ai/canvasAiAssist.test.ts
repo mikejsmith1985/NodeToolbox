@@ -39,6 +39,26 @@ describe('canvasAiAssist', () => {
     expect(prompt).toContain('"breakout"');
   });
 
+  it('adds PI days-left and the Definition of Done to Prioritize and Triage prompts', () => {
+    const context = { wipLimit: 3, inProgressCount: 4, daysRemainingInPi: 24, piName: 'PI 26.3' };
+    const prioritize = buildCanvasAiPrompt('priorityOrder', [{ issueKey: 'DENP-1', summary: 'x', status: 'In Progress', storyPoints: null, businessValue: null, priority: null }], context);
+    expect(prioritize).toContain('24 day(s) left');
+    expect(prioritize).toContain('integration testing');
+    expect(prioritize).toContain('Definition');
+
+    const triage = buildCanvasAiPrompt('parkCandidates', [{ issueKey: 'DENP-1', summary: 'x', status: 'In Progress', storyPoints: null, businessValue: null, priority: null }], context);
+    expect(triage).toContain('24 day(s) left');
+    expect(triage).toContain('WIP limit: 3'); // triage keeps the WIP line too
+  });
+
+  it('omits the PI time line when days-remaining is unknown, and from Size prompts entirely', () => {
+    const noDays = buildCanvasAiPrompt('priorityOrder', [{ issueKey: 'DENP-1', summary: 'x', status: 'To Do', storyPoints: null, businessValue: null, priority: null }], { wipLimit: null, inProgressCount: 0, daysRemainingInPi: null, piName: 'PI 26.3' });
+    expect(noDays).not.toContain('day(s) left');
+
+    const size = buildCanvasAiPrompt('sizeEstimate', [{ issueKey: 'DENP-1', summary: 'x', status: 'To Do', storyPoints: null, businessValue: null, priority: null }], { wipLimit: 3, inProgressCount: 1, daysRemainingInPi: 24, piName: 'PI 26.3' });
+    expect(size).not.toContain('day(s) left'); // sizing ignores the PI-time header
+  });
+
   it('states the limit is not set when no WIP limit is configured', () => {
     const prompt = buildCanvasAiPrompt(
       'parkCandidates',

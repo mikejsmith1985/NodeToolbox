@@ -26,12 +26,15 @@ const STATUS_STRIPE_ENTRIES: LegendEntry[] = [
   { color: STATUS_CATEGORY_COLORS.done, label: 'Done', value: 'done' },
 ];
 
-// Health-dot meanings. The dot is the small ● in the card's top-right corner.
+// Health-dot meanings. The dot is the small ● in the card's top-right corner. Thresholds mirror the
+// blueprint health calc: red = any blocked child; green ≥70% done; yellow 40–70%; blue <40% (early);
+// gray = no child stories yet.
 const HEALTH_DOT_ENTRIES: LegendEntry[] = [
-  { color: HEALTH_COLORS.green, label: 'Healthy', value: 'green' },
-  { color: HEALTH_COLORS.yellow, label: 'At risk', value: 'yellow' },
-  { color: HEALTH_COLORS.red, label: 'Blocked / critical', value: 'red' },
-  { color: HEALTH_COLORS.gray, label: 'Unknown', value: 'gray' },
+  { color: HEALTH_COLORS.green, label: 'Healthy — ≥70% of stories done', value: 'green' },
+  { color: HEALTH_COLORS.yellow, label: 'At risk — 40–70% done', value: 'yellow' },
+  { color: HEALTH_COLORS.blue, label: 'Early — under 40% done', value: 'blue' },
+  { color: HEALTH_COLORS.red, label: 'Blocked — a child story is blocked', value: 'red' },
+  { color: HEALTH_COLORS.gray, label: 'Unknown — no child stories yet', value: 'gray' },
 ];
 
 /** Props for the canvas legend. When the filter props are supplied, entries become focus toggles. */

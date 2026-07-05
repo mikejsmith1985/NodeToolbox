@@ -34,14 +34,14 @@ describe('AiSuggestionPanel', () => {
   });
 
   it('renders nothing when AI Assist is locked (manual parity)', () => {
-    const { container } = render(<AiSuggestionPanel canvasNodes={NODES} controller={buildController()} wip={WIP} onClose={vi.fn()} />);
+    const { container } = render(<AiSuggestionPanel canvasNodes={NODES} controller={buildController()} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
   });
 
   it('renders when unlocked and reports a descriptive error on malformed input without applying anything', () => {
     act(() => setAiAssistUnlocked(true));
     const controller = buildController();
-    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} onClose={vi.fn()} />);
+    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
 
     expect(screen.getByText(/AI suggestions/)).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), { target: { value: 'not json at all' } });
@@ -54,7 +54,7 @@ describe('AiSuggestionPanel', () => {
   it('parks a feature (with reason) when a Triage "park" suggestion is accepted', () => {
     act(() => setAiAssistUnlocked(true));
     const controller = buildController();
-    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} onClose={vi.fn()} />);
+    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
 
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'parkCandidates' } });
     fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
@@ -69,7 +69,7 @@ describe('AiSuggestionPanel', () => {
   it('moves a done feature to Complete when a Triage "complete" suggestion is accepted', () => {
     act(() => setAiAssistUnlocked(true));
     const controller = buildController();
-    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} onClose={vi.fn()} />);
+    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
 
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'parkCandidates' } });
     fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
@@ -85,7 +85,7 @@ describe('AiSuggestionPanel', () => {
 
   it('shows a clear action label + rationale per suggestion instead of a bare value', () => {
     act(() => setAiAssistUnlocked(true));
-    render(<AiSuggestionPanel canvasNodes={NODES} controller={buildController()} wip={WIP} onClose={vi.fn()} />);
+    render(<AiSuggestionPanel canvasNodes={NODES} controller={buildController()} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'priorityOrder' } });
     fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
       target: { value: '{"kind":"priorityOrder","items":[{"issueKey":"DENP-1","bucket":"Must","rationale":"blocks downstream work"}]}' },
@@ -99,7 +99,7 @@ describe('AiSuggestionPanel', () => {
   it('sets the size when a Size suggestion is accepted', () => {
     act(() => setAiAssistUnlocked(true));
     const controller = buildController();
-    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} onClose={vi.fn()} />);
+    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'sizeEstimate' } });
     fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
       target: { value: '{"kind":"sizeEstimate","items":[{"issueKey":"DENP-1","size":"L","rationale":"broad"}]}' },
@@ -113,7 +113,7 @@ describe('AiSuggestionPanel', () => {
   it('creates and assigns a sprint box (moving the card in) when a Sprint-grouping suggestion is accepted', () => {
     act(() => setAiAssistUnlocked(true));
     const controller = buildController();
-    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} onClose={vi.fn()} />);
+    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'sprintGrouping' } });
     fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
       target: { value: '{"kind":"sprintGrouping","groups":[{"containerTitle":"Sprint 25","issueKeys":["DENP-1"]}]}' },

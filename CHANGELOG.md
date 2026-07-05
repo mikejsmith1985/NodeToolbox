@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Feature Canvas — PI time-remaining drives prioritization (with the real DoD)**: The PI name's embedded date range (e.g. "PI 26.3 (05/21/26 - 07/29/26)") is now parsed to compute **days left in the PI**, shown in the toolbar and fed into the **Prioritize** and **Triage** AI prompts. The prompts encode the real Definition of Done — a feature is done when it is **dev-complete and delivered to integration testing (not necessarily in production)** — so the AI favors work that can realistically reach DoD in the time left and treats integration-test/done items as complete.
+- **Feature Canvas — blue health dot explained in the key**: The ❓ Key now documents the **blue** corner dot (**Early — under 40% of child stories done**), which was previously undefined; the health section now lists all five states with their thresholds (green ≥70%, yellow 40–70%, blue <40%, red = blocked child, gray = no stories).
+
 ### Changed
 - **Feature Canvas — phases reordered (Size & Prioritize before Stabilize WIP)**: The coaching journey is now **Surface → Size → Prioritize → Stabilize WIP → Sequence & Box**. Stabilizing WIP after sizing and prioritizing means every park/complete call is made with effort, value, and completion in view — so you never park high-value or nearly-done work. The Stabilize copy now frames **"move done → Complete" as always-safe** and only **"park to limit"** as the judgment call, and the **AI analysis dropdown reorders to match** (Size → Prioritize → Triage → Sequence). The Triage prompt is also told **never to park a feature that's nearly done or cheap to finish** — finishing it clears WIP faster.
 
