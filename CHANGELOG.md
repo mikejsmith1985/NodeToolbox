@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Feature Canvas — story-level sprint load at Review & Commit**: Since Jira sprints hold **stories, not features**, the commit already expands a feature→sprint into per-child-story assignments. Review & Commit now makes that a real planning step: it shows each story's **points** and a live **per-sprint load** (selected points vs the sprint's capacity, red when over). Uncheck the stories that shouldn't ship this sprint and watch the load update — selective, story-altitude planning that reuses the child data already fetched (no new board).
+- **Feature Canvas — bridge to the Sprint Dashboard**: A **Plan stories in Sprint Dashboard →** action (in the Sequence stage and after a commit) hands off to the existing Sprint Dashboard for per-story sequencing/pointing/capacity, rather than rebuilding story planning inside the canvas. The canvas produces the PI plan; the Sprint Dashboard executes it.
 - **Feature Canvas — pull existing sprints from the board**: The Sequence & Box stage gains **↧ Pull sprints from board**, which loads the board's **active + future** Jira sprints as boxes (real, not provisional — committing assigns stories to those existing sprints instead of creating new ones). Sprints already on the canvas are skipped; closed sprints are excluded.
 
 ### Fixed

@@ -1,6 +1,6 @@
 // ReviewCommitPanel.test.tsx — Verifies the pre-commit diff lists changes and writes nothing until commit.
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CanvasNode } from '../logic/canvasTypes.ts';
@@ -37,6 +37,38 @@ describe('ReviewCommitPanel', () => {
     expect(screen.getByText(/DENP-1 → sprint "Sprint 24"/)).toBeInTheDocument();
     expect(screen.getByText(/Nothing is written to Jira until you press Commit/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Commit 1 change/ })).toBeInTheDocument();
+  });
+
+  it('shows per-sprint story-point load from selected child stories, recomputing as they toggle', () => {
+    // A feature in the sprint with two 3pt child stories → 6pt of load against the 20pt budget.
+    const feature: CanvasNode = {
+      ...buildNode(),
+      childStories: [
+        { key: 'DENP-2', summary: 'A', status: 'To Do', statusCategoryKey: 'new', storyPoints: 3 },
+        { key: 'DENP-3', summary: 'B', status: 'To Do', statusCategoryKey: 'new', storyPoints: 3 },
+      ],
+    };
+    render(
+      <ReviewCommitPanel canvasNodes={[feature]} containers={[SPRINT]} sizeMapping={{ S: 1, M: 3, L: 5, XL: 8 }} boardId={10} projectKey="DENP" onClose={vi.fn()} onPlanSprints={vi.fn()} />,
+    );
+
+    expect(screen.getByText(/Sprint load/)).toBeInTheDocument();
+    expect(screen.getByText(/Sprint 24: 6 \/ 20 pt/)).toBeInTheDocument();
+
+    // Unchecking one 3pt story drops the load to 3.
+    fireEvent.click(screen.getByRole('checkbox', { name: /DENP-2/ }));
+    expect(screen.getByText(/Sprint 24: 3 \/ 20 pt/)).toBeInTheDocument();
+  });
+
+  it('offers the Sprint Dashboard bridge after a commit', async () => {
+    const onPlanSprints = vi.fn();
+    render(
+      <ReviewCommitPanel canvasNodes={[buildNode()]} containers={[SPRINT]} sizeMapping={{ S: 1, M: 3, L: 5, XL: 8 }} boardId={10} projectKey="DENP" onClose={vi.fn()} onPlanSprints={onPlanSprints} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Commit 1 change/ }));
+    const bridge = await screen.findByRole('button', { name: /Plan in Sprint Dashboard/ });
+    fireEvent.click(bridge);
+    expect(onPlanSprints).toHaveBeenCalled();
   });
 
   it('shows an empty-state message when there are no pending changes', () => {
