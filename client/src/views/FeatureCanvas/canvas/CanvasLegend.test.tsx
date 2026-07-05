@@ -50,8 +50,14 @@ describe('CanvasLegend', () => {
     render(<CanvasLegend activeFilter={{ dimension: 'health', value: 'red' }} onToggleFilter={onToggleFilter} />);
     fireEvent.click(screen.getByRole('button', { name: /Key/ }));
 
-    expect(screen.getByRole('button', { name: /Blocked \/ critical/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /Blocked/ })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(screen.getByRole('button', { name: 'Show all' }));
     expect(onToggleFilter).toHaveBeenCalledWith({ dimension: 'health', value: 'red' });
+  });
+
+  it('documents the blue (early / low-completion) health dot', () => {
+    render(<CanvasLegend />);
+    fireEvent.click(screen.getByRole('button', { name: /Key/ }));
+    expect(screen.getByText(/Early — under 40% done/)).toBeInTheDocument();
   });
 });

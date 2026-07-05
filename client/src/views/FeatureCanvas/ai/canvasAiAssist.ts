@@ -92,10 +92,14 @@ function buildIssueDescriptor(issue: AiPromptIssue): string {
   return lines.join('\n');
 }
 
-/** Extra framing some analyses need beyond the issue list (e.g. the WIP limit for Reduce WIP). */
+/** Extra framing some analyses need beyond the issue list (WIP limit, PI time remaining). */
 export interface AiPromptContext {
   wipLimit: number | null;
   inProgressCount: number;
+  /** Whole days left until the PI ends (from the PI name's date range); null when unknown. */
+  daysRemainingInPi?: number | null;
+  /** The PI name, for naming the deadline in the prompt. */
+  piName?: string;
 }
 
 const MOSCOW_BUCKETS: readonly MoscowBucket[] = ['Must', 'Should', 'Could', 'Wont'];
@@ -107,7 +111,9 @@ const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
     + 'data given for each issue below (status, feature health, completion, active stories, blockers, '
     + 'the description and acceptance criteria, and Business Value / story points when present). Weigh '
     + 'the description/acceptance criteria for scope and intent, and Business Value (higher is more valuable) '
-    + 'against effort — high value with low effort ranks highest. If Business Value or effort is not '
+    + 'against effort — high value with low effort ranks highest. When PI time-remaining is shown above, '
+    + 'also favor features that can realistically reach Definition of Done (dev-complete + delivered to '
+    + 'integration testing, not production) within the days left. If Business Value or effort is not '
     + 'shown for an issue, reason from the other signals and note that in the rationale; do NOT invent '
     + 'values. Respond ONLY with valid JSON: '
     + '{"kind":"priorityOrder","items":[{"issueKey":"KEY","bucket":"Must","rationale":"..."}]}',
@@ -123,7 +129,9 @@ const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
   parkCandidates:
     'Triage the features that should leave the active flow. For each, choose an action: "park" (defer '
     + 'stale, duplicate, or over-WIP work — favor lowest MoSCoW/Business Value and least progress), '
-    + '"complete" (already done, e.g. 100% / a done status — move it to the Complete box), or "breakout" '
+    + '"complete" (already meets Definition of Done — dev-complete and delivered to integration testing, '
+    + 'not necessarily in production; e.g. 100% or an integration-test/done status — move it to the '
+    + 'Complete box), or "breakout" '
     + '(marked complete but still has active/open child stories — needs splitting). Prefer parking down '
     + 'to the WIP limit shown above. NEVER park a feature that is nearly done or would take little effort '
     + 'to finish (high completion % and/or small size) — finishing it clears WIP faster than parking. Use '
@@ -143,13 +151,30 @@ export function buildCanvasAiPrompt(kind: AiSuggestionKind, issues: readonly AiP
  * many features must be parked to reach it; every other analysis needs no header.
  */
 function buildContextHeader(kind: AiSuggestionKind, context?: AiPromptContext): string {
-  if (kind !== 'parkCandidates' || context === undefined) {
+  if (context === undefined) {
     return '';
   }
-  const limitText = context.wipLimit === null ? 'not set' : String(context.wipLimit);
-  const parkTarget = context.wipLimit === null ? null : Math.max(0, context.inProgressCount - context.wipLimit);
-  const targetText = parkTarget === null ? '' : ` Aim to park at least ${parkTarget} in-progress feature(s) to reach the limit.`;
-  return `WIP limit: ${limitText}. Features in progress: ${context.inProgressCount}.${targetText}\n\n`;
+  const lines: string[] = [];
+
+  // PI time pressure informs prioritization and triage (not sizing/grouping). Definition of Done is
+  // dev-complete + delivered to integration testing — NOT production — so time-to-DoD is what counts.
+  if ((kind === 'priorityOrder' || kind === 'parkCandidates') && context.daysRemainingInPi !== null && context.daysRemainingInPi !== undefined) {
+    lines.push(
+      `PI "${context.piName ?? ''}" has ${context.daysRemainingInPi} day(s) left. A feature meets Definition `
+      + 'of Done when it is dev-complete and delivered to integration testing (it does NOT need to be in '
+      + 'production). Favor features that can realistically reach DoD in the days left; deprioritize (or park) '
+      + 'work that cannot finish in time.',
+    );
+  }
+
+  if (kind === 'parkCandidates') {
+    const limitText = context.wipLimit === null ? 'not set' : String(context.wipLimit);
+    const parkTarget = context.wipLimit === null ? null : Math.max(0, context.inProgressCount - context.wipLimit);
+    const targetText = parkTarget === null ? '' : ` Aim to park at least ${parkTarget} in-progress feature(s) to reach the limit.`;
+    lines.push(`WIP limit: ${limitText}. Features in progress: ${context.inProgressCount}.${targetText}`);
+  }
+
+  return lines.length > 0 ? `${lines.join('\n')}\n\n` : '';
 }
 
 /**

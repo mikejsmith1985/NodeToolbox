@@ -10,6 +10,7 @@ import { useMemo, useState } from 'react';
 import { useAiAssistStore } from '../../../store/aiAssistStore.ts';
 import type { CanvasNode, WipSnapshot } from '../logic/canvasTypes.ts';
 import { IN_PROGRESS_STATUS_CATEGORY } from '../logic/wip.ts';
+import { daysRemainingInPi } from '../logic/piSchedule.ts';
 import type { CanvasOverlayController } from '../overlay/useCanvasOverlay.ts';
 import type { MoscowBucket, TshirtSize } from '../overlay/overlayModel.ts';
 import { createProvisionalContainer } from '../overlay/containerFactory.ts';
@@ -29,6 +30,8 @@ export interface AiSuggestionPanelProps {
   controller: CanvasOverlayController;
   /** Current WIP readout — feeds the Reduce WIP prompt with the limit and in-progress count. */
   wip: WipSnapshot;
+  /** Active PI name (may carry a date range) — drives the days-left signal in the prompts. */
+  piName: string;
   onClose: () => void;
 }
 
@@ -94,7 +97,7 @@ function toPromptIssue(node: CanvasNode): AiPromptIssue {
 }
 
 /** The gated copy-paste AI accelerator. Renders nothing when AI Assist is locked. */
-export function AiSuggestionPanel({ canvasNodes, controller, wip, onClose }: AiSuggestionPanelProps): React.JSX.Element | null {
+export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onClose }: AiSuggestionPanelProps): React.JSX.Element | null {
   const isUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
   const [kind, setKind] = useState<AiSuggestionKind>('sizeEstimate');
   const [responseText, setResponseText] = useState('');
@@ -103,13 +106,19 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, onClose }: AiS
 
   const knownKeys = useMemo(() => new Set(canvasNodes.map((node) => node.issueKey)), [canvasNodes]);
   const prompt = useMemo(() => {
-    // Triage considers the whole canvas (so done features can be routed to Complete) and is handed the
-    // WIP limit + count to prioritize parking. Every other analysis also considers the whole canvas.
-    if (kind === 'parkCandidates') {
-      return buildCanvasAiPrompt(kind, canvasNodes.map(toPromptIssue), { wipLimit: wip.limit, inProgressCount: wip.inProgressCount });
+    // Prioritize and Triage get PI time-remaining (days to DoD) as context; Triage also gets the WIP
+    // limit. Sizing/grouping need no header. Days-left is read from the PI name's date range at render.
+    if (kind === 'priorityOrder' || kind === 'parkCandidates') {
+      const context = {
+        wipLimit: wip.limit,
+        inProgressCount: wip.inProgressCount,
+        daysRemainingInPi: daysRemainingInPi(piName, new Date().toISOString().slice(0, 10)),
+        piName,
+      };
+      return buildCanvasAiPrompt(kind, canvasNodes.map(toPromptIssue), context);
     }
     return buildCanvasAiPrompt(kind, canvasNodes.map(toPromptIssue));
-  }, [kind, canvasNodes, wip.limit, wip.inProgressCount]);
+  }, [kind, canvasNodes, wip.limit, wip.inProgressCount, piName]);
 
   // For value-driven analyses, warn when no feature carries Business Value or points — the
   // assistant will then lean on status/health/completion/blockers, which the user should know.
