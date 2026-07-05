@@ -26,25 +26,47 @@ interface PlaceableStory {
   storyKey: string;
   summary: string;
   points: number | null;
+  status: string;
+  statusCategoryKey: string | null;
+  issueType: string | null;
+  assignee: string | null;
+  subtaskCount: number;
   /** The box this story currently sits in — its own placement override, else its feature's box. */
   effectiveContainerId: string | null;
 }
 
 const UNASSIGNED = '__unassigned__';
 
+/** Maps a story's status category to a badge colour, so To Do / In Progress / Done read at a glance. */
+function statusColor(statusCategoryKey: string | null): string {
+  if (statusCategoryKey === 'done') {
+    return '#22c55e';
+  }
+  if (statusCategoryKey === 'indeterminate') {
+    return '#3b82f6';
+  }
+  return '#6b7280';
+}
+
 /** Flattens every feature into its placeable stories (childless features act as a single story). */
 function collectStories(canvasNodes: readonly CanvasNode[]): PlaceableStory[] {
   const stories: PlaceableStory[] = [];
   for (const node of canvasNodes) {
     const units = node.childStories.length > 0
-      ? node.childStories.map((child) => ({ storyKey: child.key, summary: child.summary, points: child.storyPoints }))
-      : [{ storyKey: node.issueKey, summary: node.summary, points: node.storyPoints }];
+      ? node.childStories.map((child) => ({
+        storyKey: child.key, summary: child.summary, points: child.storyPoints,
+        status: child.status, statusCategoryKey: child.statusCategoryKey,
+        issueType: child.issueType ?? null, assignee: child.assignee ?? null, subtaskCount: child.subtaskCount ?? 0,
+      }))
+      : [{
+        storyKey: node.issueKey, summary: node.summary, points: node.storyPoints,
+        status: node.status, statusCategoryKey: node.statusCategoryKey,
+        issueType: 'Feature', assignee: node.assignee, subtaskCount: 0,
+      }];
     for (const unit of units) {
       stories.push({
         featureKey: node.issueKey,
-        storyKey: unit.storyKey,
-        summary: unit.summary,
-        points: unit.points,
+        ...unit,
         effectiveContainerId: node.storyPlacements[unit.storyKey] ?? node.containerId,
       });
     }
@@ -92,26 +114,40 @@ export function StoryPlanningPanel({ canvasNodes, controller, onClose }: StoryPl
           const isOver = isSprint && budget !== null && points > budget;
           const title = column.container ? column.container.title : 'Unassigned';
           return (
-            <section key={column.id} aria-label={`Box ${title}`} style={{ flex: '0 0 240px', border: '1px solid var(--color-border)', borderRadius: 8, padding: 8 }}>
-              <header style={{ marginBottom: 6 }}>
-                <strong style={{ fontSize: 13 }}>{title}</strong>
+            <section key={column.id} aria-label={`Box ${title}`} style={{ flex: '0 0 320px', border: '1px solid var(--color-border)', borderRadius: 8, padding: 10, background: 'var(--color-surface)' }}>
+              <header style={{ marginBottom: 8 }}>
+                <strong style={{ fontSize: 14 }}>{title}</strong>
                 {isSprint && (
-                  <div style={{ fontSize: 11, color: isOver ? 'var(--color-danger)' : 'var(--color-text-muted, inherit)', fontWeight: isOver ? 700 : 400 }}>
-                    {points}{budget !== null ? ` / ${budget}` : ''} pt{isOver ? ' · over capacity' : ''}
+                  <div style={{ fontSize: 12, color: isOver ? 'var(--color-danger)' : 'inherit', fontWeight: isOver ? 700 : 400 }}>
+                    {points}{budget !== null ? ` / ${budget}` : ''} pt{isOver ? ' · over capacity' : ''} · {storiesInColumn(column.id).length} stories
                   </div>
                 )}
               </header>
-              <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {storiesInColumn(column.id).map((story) => (
-                  <li key={story.storyKey} style={{ border: '1px solid var(--color-border)', borderRadius: 6, padding: 6, fontSize: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+                  <li key={story.storyKey} style={{ border: '1px solid var(--color-border)', borderRadius: 6, padding: 8, fontSize: 12, background: 'var(--color-bg-surface, var(--color-bg))' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'baseline' }}>
                       <strong>{story.storyKey}</strong>
-                      <span style={{ opacity: 0.7 }}>{story.points !== null ? `${story.points}pt` : '—'}</span>
+                      {/* Story points are the primary complexity signal; show a clear dash when unpointed. */}
+                      <span style={{ fontWeight: 700, color: story.points === null ? 'var(--color-warning)' : 'inherit' }}>
+                        {story.points !== null ? `${story.points} pt` : 'unpointed'}
+                      </span>
                     </div>
-                    <div style={{ opacity: 0.7, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{story.summary}</div>
-                    <div style={{ opacity: 0.5, fontSize: 10 }}>in {story.featureKey}</div>
-                    <label style={{ display: 'block', marginTop: 4 }}>
-                      <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Move {story.storyKey} to box</span>
+                    {/* Full summary (wraps) — the biggest missing signal before. */}
+                    <div style={{ lineHeight: 1.35, margin: '3px 0' }}>{story.summary}</div>
+                    {/* Complexity/ownership signals: type, status, assignee, subtask count. */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 11, opacity: 0.85 }}>
+                      {story.issueType && <span>{story.issueType}</span>}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusColor(story.statusCategoryKey) }} />
+                        {story.status || '—'}
+                      </span>
+                      {story.subtaskCount > 0 && <span>· {story.subtaskCount} subtask{story.subtaskCount === 1 ? '' : 's'}</span>}
+                      <span>· 👤 {story.assignee ?? 'Unassigned'}</span>
+                    </div>
+                    <div style={{ opacity: 0.55, fontSize: 10, marginTop: 2 }}>in {story.featureKey}</div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 11 }}>
+                      Move to:
                       <select
                         aria-label={`Move ${story.storyKey} to box`}
                         value={story.effectiveContainerId ?? UNASSIGNED}
@@ -120,7 +156,7 @@ export function StoryPlanningPanel({ canvasNodes, controller, onClose }: StoryPl
                           story.storyKey,
                           event.target.value === UNASSIGNED ? null : event.target.value,
                         )}
-                        style={{ width: '100%', fontSize: 11 }}
+                        style={{ flex: 1, fontSize: 11 }}
                       >
                         <option value={UNASSIGNED}>Inherit feature&apos;s box</option>
                         {containers.map((container) => <option key={container.id} value={container.id}>{container.title}</option>)}
@@ -128,6 +164,7 @@ export function StoryPlanningPanel({ canvasNodes, controller, onClose }: StoryPl
                     </label>
                   </li>
                 ))}
+                {storiesInColumn(column.id).length === 0 && <li style={{ opacity: 0.5, fontSize: 12 }}>No stories.</li>}
               </ul>
             </section>
           );

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Feature Canvas — "Plan stories" cards now show real complexity detail**: Each story card was near-empty (a key, a truncated summary, and a sprint dropdown). Cards now show the **full summary**, **story points** (highlighted when unpointed), **issue type**, a **status** badge, **subtask count**, and **assignee** — the signals you need to gauge complexity while planning. Columns are wider and each sprint header shows its story count too.
+
 ### Fixed
 - **Feature Canvas — "Plan stories" is now a solid full-screen surface**: The story-planning view was a translucent floating popover, so the canvas bled through and columns past the first were clipped and half-rendered when scrolling. It's now a solid, full-viewport planning surface with a single clean scroll container, so every sprint column is fully rendered and reachable.
 

@@ -46,6 +46,9 @@ function mapChildStories(item: FeatureReviewItem): CanvasChildStory[] {
     status: childStory.status,
     statusCategoryKey: childStory.statusCategoryKey ?? null,
     storyPoints: childStory.storyPoints,
+    assignee: childStory.assignee,
+    issueType: childStory.issueType,
+    subtaskCount: childStory.subtasks.length,
   }));
 }
 
