@@ -6,6 +6,7 @@
 // configured it shows the same guidance empty state the Feature Review surface uses.
 
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
@@ -42,6 +43,10 @@ function CanvasMessage({ text }: { text: string }): React.JSX.Element {
 export default function FeatureCanvasView(): React.JSX.Element {
   const profileId = useSettingsStore((state) => state.sprintDashboardActiveTeamProfileId);
   const isAiUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
+  const navigate = useNavigate();
+  // Bridge to story-altitude planning: the canvas hands off the committed sprints to the existing
+  // Sprint Dashboard (per-story sequencing, pointing, capacity) rather than rebuilding it here.
+  const openSprintDashboard = (): void => { void navigate('/sprint-dashboard'); };
 
   // A user-chosen PI for this exercise (step 1), overriding the active profile's PI when set. Null
   // means "use the profile default". Changing it re-scopes the overlay, commit target, and blueprint.
@@ -239,6 +244,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
                   boardId={scope.boardId}
                   projectKey={scope.projectKey}
                   onClose={() => setIsCommitOpen(false)}
+                  onPlanSprints={openSprintDashboard}
                 />
               )}
               {isAiOpen && (
@@ -252,6 +258,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
               wip={wip}
               onAddContainer={(kind) => controller.addContainer(createProvisionalContainer(kind, overlay.containers.length))}
               onPullSprints={() => void handlePullSprints()}
+              onOpenSprintDashboard={openSprintDashboard}
               onOpenCommit={() => setIsCommitOpen(true)}
               isAiUnlocked={isAiUnlocked}
               onOpenAi={() => setIsAiOpen(true)}

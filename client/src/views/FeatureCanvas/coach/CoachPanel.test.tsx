@@ -34,7 +34,7 @@ const NO_WIP = { inProgressCount: 0, limit: null, overflow: 0, parkedCount: 0, a
 describe('CoachPanel', () => {
   it('shows the current stage and jumps to another stage on click', () => {
     const controller = buildController('surface');
-    render(<CoachPanel controller={controller} selectedNode={null} wip={NO_WIP} onAddContainer={vi.fn()} onPullSprints={vi.fn()} onOpenCommit={vi.fn()} isAiUnlocked={false} onOpenAi={vi.fn()} />);
+    render(<CoachPanel controller={controller} selectedNode={null} wip={NO_WIP} onAddContainer={vi.fn()} onPullSprints={vi.fn()} onOpenSprintDashboard={vi.fn()} onOpenCommit={vi.fn()} isAiUnlocked={false} onOpenAi={vi.fn()} />);
 
     expect(screen.getByRole('heading', { name: /1\. Surface/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /3\. Prioritize/ }));
@@ -43,7 +43,7 @@ describe('CoachPanel', () => {
 
   it('assigns a MoSCoW bucket to the selected node in the Prioritize stage', () => {
     const controller = buildController('prioritize');
-    render(<CoachPanel controller={controller} selectedNode={buildSelectedNode()} wip={NO_WIP} onAddContainer={vi.fn()} onPullSprints={vi.fn()} onOpenCommit={vi.fn()} isAiUnlocked={false} onOpenAi={vi.fn()} />);
+    render(<CoachPanel controller={controller} selectedNode={buildSelectedNode()} wip={NO_WIP} onAddContainer={vi.fn()} onPullSprints={vi.fn()} onOpenSprintDashboard={vi.fn()} onOpenCommit={vi.fn()} isAiUnlocked={false} onOpenAi={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Must' }));
     expect(controller.setPriority).toHaveBeenCalledWith('DENP-1', 'Must');
@@ -51,11 +51,11 @@ describe('CoachPanel', () => {
 
   it('hides the AI action when locked and shows it when unlocked', () => {
     const locked = buildController('surface');
-    const { rerender } = render(<CoachPanel controller={locked} selectedNode={null} wip={NO_WIP} onAddContainer={vi.fn()} onPullSprints={vi.fn()} onOpenCommit={vi.fn()} isAiUnlocked={false} onOpenAi={vi.fn()} />);
+    const { rerender } = render(<CoachPanel controller={locked} selectedNode={null} wip={NO_WIP} onAddContainer={vi.fn()} onPullSprints={vi.fn()} onOpenSprintDashboard={vi.fn()} onOpenCommit={vi.fn()} isAiUnlocked={false} onOpenAi={vi.fn()} />);
     expect(screen.queryByRole('button', { name: /AI suggestions/ })).not.toBeInTheDocument();
 
     const onOpenAi = vi.fn();
-    rerender(<CoachPanel controller={locked} selectedNode={null} wip={NO_WIP} onAddContainer={vi.fn()} onPullSprints={vi.fn()} onOpenCommit={vi.fn()} isAiUnlocked onOpenAi={onOpenAi} />);
+    rerender(<CoachPanel controller={locked} selectedNode={null} wip={NO_WIP} onAddContainer={vi.fn()} onPullSprints={vi.fn()} onOpenSprintDashboard={vi.fn()} onOpenCommit={vi.fn()} isAiUnlocked onOpenAi={onOpenAi} />);
     fireEvent.click(screen.getByRole('button', { name: /AI suggestions/ }));
     expect(onOpenAi).toHaveBeenCalled();
   });
@@ -63,7 +63,7 @@ describe('CoachPanel', () => {
   it('sets a WIP limit and parks the selected node in the Stabilize stage', () => {
     const controller = buildController('stabilize');
     const wipWithOverflow = { inProgressCount: 12, limit: 3, overflow: 7, parkedCount: 0, activeStoryCount: 0 };
-    render(<CoachPanel controller={controller} selectedNode={buildSelectedNode()} wip={wipWithOverflow} onAddContainer={vi.fn()} onPullSprints={vi.fn()} onOpenCommit={vi.fn()} isAiUnlocked={false} onOpenAi={vi.fn()} />);
+    render(<CoachPanel controller={controller} selectedNode={buildSelectedNode()} wip={wipWithOverflow} onAddContainer={vi.fn()} onPullSprints={vi.fn()} onOpenSprintDashboard={vi.fn()} onOpenCommit={vi.fn()} isAiUnlocked={false} onOpenAi={vi.fn()} />);
 
     expect(screen.getByText(/7 over limit/)).toBeInTheDocument();
     fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '5' } });
@@ -76,7 +76,7 @@ describe('CoachPanel', () => {
 
   it('assigns a relative size to the selected node in the Size stage', () => {
     const controller = buildController('size');
-    render(<CoachPanel controller={controller} selectedNode={buildSelectedNode()} wip={NO_WIP} onAddContainer={vi.fn()} onPullSprints={vi.fn()} onOpenCommit={vi.fn()} isAiUnlocked={false} onOpenAi={vi.fn()} />);
+    render(<CoachPanel controller={controller} selectedNode={buildSelectedNode()} wip={NO_WIP} onAddContainer={vi.fn()} onPullSprints={vi.fn()} onOpenSprintDashboard={vi.fn()} onOpenCommit={vi.fn()} isAiUnlocked={false} onOpenAi={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'L' }));
     expect(controller.setSize).toHaveBeenCalledWith('DENP-1', 'L');

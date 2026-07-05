@@ -22,6 +22,8 @@ export interface CoachPanelProps {
   onAddContainer: (kind: 'sprint' | 'release') => void;
   /** Pulls the board's existing active/future sprints in as boxes. */
   onPullSprints: () => void;
+  /** Opens the Sprint Dashboard to continue at story level (per-story sequencing, pointing, capacity). */
+  onOpenSprintDashboard: () => void;
   onOpenCommit: () => void;
   isAiUnlocked: boolean;
   onOpenAi: () => void;
@@ -112,13 +114,14 @@ function SizeControls({ controller, selectedNode }: CoachPanelProps): React.JSX.
 }
 
 /** Stage 5 controls: create release/sprint boxes and open the commit review. */
-function SequenceControls({ onAddContainer, onPullSprints, onOpenCommit }: CoachPanelProps): React.JSX.Element {
+function SequenceControls({ onAddContainer, onPullSprints, onOpenSprintDashboard, onOpenCommit }: CoachPanelProps): React.JSX.Element {
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
       <ActionButton label="+ Sprint box" onClick={() => onAddContainer('sprint')} />
       <ActionButton label="↧ Pull sprints from board" onClick={onPullSprints} />
       <ActionButton label="+ Release box" onClick={() => onAddContainer('release')} />
       <ActionButton label="Review & Commit →" onClick={onOpenCommit} />
+      <ActionButton label="Plan stories in Sprint Dashboard →" onClick={onOpenSprintDashboard} />
     </div>
   );
 }

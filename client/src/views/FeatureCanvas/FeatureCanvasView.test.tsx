@@ -1,6 +1,7 @@
 // FeatureCanvasView.test.tsx — Verifies the two-step flow (blueprint select → board), add/remove, inspector.
 
 import { fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { FeatureReviewItem } from '../SprintDashboard/featureReview.ts';
@@ -63,7 +64,7 @@ describe('FeatureCanvasView', () => {
 
   it('shows the empty state and the two add affordances when the working set is empty', () => {
     mockUseCanvasFeatures.mockReturnValue({ status: 'ready', items: [], error: null });
-    render(<FeatureCanvasView />);
+    render(<MemoryRouter><FeatureCanvasView /></MemoryRouter>);
     expect(screen.getByText(/Add features to begin/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Add features/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add via JQL' })).toBeInTheDocument();
@@ -71,7 +72,7 @@ describe('FeatureCanvasView', () => {
 
   it('opens the blueprint selection step and additively adds a chosen feature', () => {
     mockUseCanvasFeatures.mockReturnValue({ status: 'ready', items: [buildItem('DENP-1')], error: null });
-    render(<FeatureCanvasView />);
+    render(<MemoryRouter><FeatureCanvasView /></MemoryRouter>);
 
     fireEvent.click(screen.getByRole('button', { name: /Add features/ }));
     expect(screen.getByText('blueprint-step')).toBeInTheDocument();
@@ -85,7 +86,7 @@ describe('FeatureCanvasView', () => {
   it('clears the canvas (working set) after confirmation', () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     mockUseCanvasFeatures.mockReturnValue({ status: 'ready', items: [buildItem('DENP-1')], error: null });
-    render(<FeatureCanvasView />);
+    render(<MemoryRouter><FeatureCanvasView /></MemoryRouter>);
     // Seed one node so the working set is non-empty.
     fireEvent.click(screen.getByRole('button', { name: /Add features/ }));
     fireEvent.click(screen.getByRole('button', { name: 'bp-add' }));
@@ -102,7 +103,7 @@ describe('FeatureCanvasView', () => {
   it('does not clear the canvas when confirmation is declined', () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
     mockUseCanvasFeatures.mockReturnValue({ status: 'ready', items: [buildItem('DENP-1')], error: null });
-    render(<FeatureCanvasView />);
+    render(<MemoryRouter><FeatureCanvasView /></MemoryRouter>);
     fireEvent.click(screen.getByRole('button', { name: /Add features/ }));
     fireEvent.click(screen.getByRole('button', { name: 'bp-add' }));
 
@@ -113,14 +114,14 @@ describe('FeatureCanvasView', () => {
 
   it('opens the Custom-JQL picker from the board', () => {
     mockUseCanvasFeatures.mockReturnValue({ status: 'ready', items: [], error: null });
-    render(<FeatureCanvasView />);
+    render(<MemoryRouter><FeatureCanvasView /></MemoryRouter>);
     fireEvent.click(screen.getByRole('button', { name: 'Add via JQL' }));
     expect(screen.getByText('jql-picker')).toBeInTheDocument();
   });
 
   it('removes a node from the working set so it leaves the board', () => {
     mockUseCanvasFeatures.mockReturnValue({ status: 'ready', items: [buildItem('DENP-1')], error: null });
-    render(<FeatureCanvasView />);
+    render(<MemoryRouter><FeatureCanvasView /></MemoryRouter>);
     fireEvent.click(screen.getByRole('button', { name: /Add features/ }));
     fireEvent.click(screen.getByRole('button', { name: 'bp-add' }));
     expect(screen.getByText('node-DENP-1')).toBeInTheDocument();
@@ -132,7 +133,7 @@ describe('FeatureCanvasView', () => {
 
   it('opens the read-only inspector for the selected node and closes it', () => {
     mockUseCanvasFeatures.mockReturnValue({ status: 'ready', items: [buildItem('DENP-1')], error: null });
-    render(<FeatureCanvasView />);
+    render(<MemoryRouter><FeatureCanvasView /></MemoryRouter>);
     fireEvent.click(screen.getByRole('button', { name: /Add features/ }));
     fireEvent.click(screen.getByRole('button', { name: 'bp-add' }));
 
