@@ -40,6 +40,10 @@ export interface FeatureCanvasBoardProps {
   onDropIntoContainer: (issueKey: string, containerId: string | null) => void;
   onDeleteContainer: (containerId: string) => void;
   onDeleteNode: (issueKey: string) => void;
+  /** Moves a box (and its member cards) when the user drags the box. */
+  onMoveContainer: (containerId: string, x: number, y: number) => void;
+  /** Persists a box resize (new bounds). */
+  onResizeContainer: (containerId: string, bounds: { x: number; y: number; width: number; height: number }) => void;
   /** Active legend focus filter; non-matching feature cards dim back. Null shows all at full strength. */
   filter?: CanvasNodeFilter | null;
 }
@@ -51,6 +55,7 @@ function buildReactFlowNodes(
   capacities: ReadonlyMap<string, ContainerCapacity>,
   onDeleteContainer: (containerId: string) => void,
   onDeleteNode: (issueKey: string) => void,
+  onResizeContainer: (containerId: string, bounds: { x: number; y: number; width: number; height: number }) => void,
   filter: CanvasNodeFilter | null,
 ): Node[] {
   const containerNodes: Node[] = containers.map((container) => ({
@@ -63,10 +68,12 @@ function buildReactFlowNodes(
       isProvisional: container.provenance.state === 'provisional',
       capacity: capacities.get(container.id) ?? null,
       onDelete: () => onDeleteContainer(container.id),
+      onResize: (bounds) => onResizeContainer(container.id, bounds),
     } satisfies ContainerNodeData,
     style: { width: container.bounds.width, height: container.bounds.height },
     draggable: true,
-    selectable: false,
+    // Selectable so the resize handles (shown on selection) appear when the user clicks a box.
+    selectable: true,
     zIndex: 0,
   }));
 
@@ -86,7 +93,11 @@ function buildNodeSignature(canvasNodes: readonly CanvasNode[], containers: read
   const featurePart = canvasNodes
     .map((node) => `${node.issueKey}:${node.size}:${node.priority}:${node.containerId}:${node.isParked}`)
     .join('|');
-  const containerPart = containers.map((container) => `${container.id}:${container.capacityBudget}`).join('|');
+  // Bounds are in the signature so moving/resizing a box rebuilds the nodes — which is how a box's
+  // member cards visually follow it (their overlay positions were shifted by moveContainer).
+  const containerPart = containers
+    .map((container) => `${container.id}:${container.capacityBudget}:${container.bounds.x},${container.bounds.y},${container.bounds.width},${container.bounds.height}`)
+    .join('|');
   // Include the filter so the cards rebuild (dim/undim) when the user focuses a legend entry.
   const filterPart = filter ? `${filter.dimension}=${filter.value}` : 'none';
   return `${featurePart}##${containerPart}##${filterPart}`;
@@ -94,7 +105,7 @@ function buildNodeSignature(canvasNodes: readonly CanvasNode[], containers: read
 
 /** Inner board that has access to the React Flow instance for intersection hit-testing. */
 function BoardInner(props: FeatureCanvasBoardProps): React.JSX.Element {
-  const { canvasNodes, containers, capacities, onSelect, onPositionChange, onDropIntoContainer, onDeleteContainer, onDeleteNode, filter = null } = props;
+  const { canvasNodes, containers, capacities, onSelect, onPositionChange, onDropIntoContainer, onDeleteContainer, onDeleteNode, onMoveContainer, onResizeContainer, filter = null } = props;
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const { getIntersectingNodes } = useReactFlow();
 
@@ -102,7 +113,7 @@ function BoardInner(props: FeatureCanvasBoardProps): React.JSX.Element {
 
   // Rebuild the canvas nodes whenever the underlying feature/container set changes.
   useEffect(() => {
-    setNodes(buildReactFlowNodes(canvasNodes, containers, capacities, onDeleteContainer, onDeleteNode, filter));
+    setNodes(buildReactFlowNodes(canvasNodes, containers, capacities, onDeleteContainer, onDeleteNode, onResizeContainer, filter));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeSignature, setNodes]);
 
@@ -113,6 +124,11 @@ function BoardInner(props: FeatureCanvasBoardProps): React.JSX.Element {
   };
 
   const handleNodeDragStop = (_event: unknown, node: Node): void => {
+    // Dragging a box moves it and pulls its member cards along (moveContainer shifts them by the delta).
+    if (node.type === 'container') {
+      onMoveContainer(node.id, node.position.x, node.position.y);
+      return;
+    }
     if (node.type !== 'feature') {
       return;
     }

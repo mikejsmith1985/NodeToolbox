@@ -29,7 +29,7 @@ describe('overlayModel', () => {
   });
 
   it('exposes the five stages in recovery order', () => {
-    expect(STAGE_ORDER).toEqual(['surface', 'stabilize', 'prioritize', 'size', 'sequence']);
+    expect(STAGE_ORDER).toEqual(['surface', 'size', 'prioritize', 'stabilize', 'sequence']);
   });
 
   it('creates an unsized, unranked, loose node at the given position', () => {

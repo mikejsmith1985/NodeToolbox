@@ -2,13 +2,19 @@
 
 import type { ComponentProps } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
+import { ReactFlowProvider } from '@xyflow/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ContainerNode, type ContainerNodeData } from './ContainerNode.tsx';
 
 function renderContainer(data: ContainerNodeData): void {
-  // ContainerNode only reads `data`; the rest of NodeProps is irrelevant to this unit.
-  render(<ContainerNode {...({ data } as unknown as ComponentProps<typeof ContainerNode>)} />);
+  // ContainerNode only reads `data`; the rest of NodeProps is irrelevant to this unit. It embeds a
+  // React Flow NodeResizer, which needs the RF store context, so wrap in ReactFlowProvider.
+  render(
+    <ReactFlowProvider>
+      <ContainerNode {...({ data } as unknown as ComponentProps<typeof ContainerNode>)} />
+    </ReactFlowProvider>,
+  );
 }
 
 describe('ContainerNode', () => {

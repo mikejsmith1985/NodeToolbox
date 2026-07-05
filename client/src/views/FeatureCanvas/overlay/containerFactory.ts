@@ -27,8 +27,23 @@ const CONTAINER_BAND_Y = 720;
 const CONTAINER_BAND_X = 40;
 const CONTAINER_WIDTH = 400;
 const CONTAINER_HEIGHT = 260;
+// Vertical gap between box rows so a wrapped grid of boxes never overlaps.
+const CONTAINER_ROW_GAP = 48;
 // Default sprint capacity in points; releases have no default budget.
 const DEFAULT_SPRINT_BUDGET = 20;
+
+/**
+ * Computes a unique, non-overlapping slot for the Nth box: tiles left-to-right across columns and
+ * wraps down into new rows, so every box lands in its own cell instead of stacking on the last one.
+ */
+function bandSlot(existingCount: number): { x: number; y: number } {
+  const columnIndex = existingCount % CONTAINER_COLUMN_COUNT;
+  const rowIndex = Math.floor(existingCount / CONTAINER_COLUMN_COUNT);
+  return {
+    x: CONTAINER_BAND_X + columnIndex * CONTAINER_COLUMN_WIDTH,
+    y: CONTAINER_BAND_Y + rowIndex * (CONTAINER_HEIGHT + CONTAINER_ROW_GAP),
+  };
+}
 
 /**
  * Builds a provisional container box. `existingCount` tiles the new box across the band; an optional
@@ -39,18 +54,13 @@ export function createProvisionalContainer(
   existingCount: number,
   title?: string,
 ): CanvasContainer {
-  const columnIndex = existingCount % CONTAINER_COLUMN_COUNT;
+  const slot = bandSlot(existingCount);
   const defaultTitle = kind === 'sprint' ? 'New sprint' : 'New release';
   return {
     id: `ctr-${Date.now()}-${kind}`,
     kind,
     title: title?.trim() ? title.trim() : defaultTitle,
-    bounds: {
-      x: CONTAINER_BAND_X + columnIndex * CONTAINER_COLUMN_WIDTH,
-      y: CONTAINER_BAND_Y,
-      width: CONTAINER_WIDTH,
-      height: CONTAINER_HEIGHT,
-    },
+    bounds: { x: slot.x, y: slot.y, width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT },
     capacityBudget: kind === 'sprint' ? DEFAULT_SPRINT_BUDGET : null,
     provenance: { state: 'provisional', jiraSprintId: null, jiraVersionName: null, startDateIso: null, endDateIso: null },
   };
@@ -58,12 +68,12 @@ export function createProvisionalContainer(
 
 /** Builds the single Parking Lot box that collects deferred features. Never committed to Jira. */
 export function createParkingLotContainer(existingCount: number): CanvasContainer {
-  const columnIndex = existingCount % CONTAINER_COLUMN_COUNT;
+  const slot = bandSlot(existingCount);
   return {
     id: `ctr-${Date.now()}-parkingLot`,
     kind: 'parkingLot',
     title: 'Parking Lot',
-    bounds: { x: CONTAINER_BAND_X + columnIndex * CONTAINER_COLUMN_WIDTH, y: CONTAINER_BAND_Y, width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT },
+    bounds: { x: slot.x, y: slot.y, width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT },
     capacityBudget: null,
     provenance: { state: 'provisional', jiraSprintId: null, jiraVersionName: null, startDateIso: null, endDateIso: null },
   };
@@ -71,12 +81,12 @@ export function createParkingLotContainer(existingCount: number): CanvasContaine
 
 /** Builds the single Complete box that collects finished features. Never committed to Jira. */
 export function createCompleteContainer(existingCount: number): CanvasContainer {
-  const columnIndex = existingCount % CONTAINER_COLUMN_COUNT;
+  const slot = bandSlot(existingCount);
   return {
     id: `ctr-${Date.now()}-complete`,
     kind: 'complete',
     title: 'Complete',
-    bounds: { x: CONTAINER_BAND_X + columnIndex * CONTAINER_COLUMN_WIDTH, y: CONTAINER_BAND_Y, width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT },
+    bounds: { x: slot.x, y: slot.y, width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT },
     capacityBudget: null,
     provenance: { state: 'provisional', jiraSprintId: null, jiraVersionName: null, startDateIso: null, endDateIso: null },
   };

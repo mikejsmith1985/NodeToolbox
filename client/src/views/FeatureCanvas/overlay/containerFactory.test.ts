@@ -28,6 +28,13 @@ describe('createProvisionalContainer', () => {
     expect(createProvisionalContainer('sprint', 1).bounds.x).toBe(480);
   });
 
+  it('wraps into a new row so boxes never overlap the previous row', () => {
+    const first = createProvisionalContainer('sprint', 0);
+    const fourth = createProvisionalContainer('sprint', 3); // wraps to column 0, row 2
+    expect(fourth.bounds.x).toBe(first.bounds.x); // same column as the first
+    expect(fourth.bounds.y).toBeGreaterThan(first.bounds.y + first.bounds.height); // but a full row lower — no overlap
+  });
+
   it('builds the Parking Lot and Complete boxes with no budget', () => {
     const lot = createParkingLotContainer(0);
     expect(lot.kind).toBe('parkingLot');

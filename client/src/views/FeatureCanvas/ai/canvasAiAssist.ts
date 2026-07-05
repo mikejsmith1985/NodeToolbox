@@ -125,8 +125,10 @@ const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
     + 'stale, duplicate, or over-WIP work — favor lowest MoSCoW/Business Value and least progress), '
     + '"complete" (already done, e.g. 100% / a done status — move it to the Complete box), or "breakout" '
     + '(marked complete but still has active/open child stories — needs splitting). Prefer parking down '
-    + 'to the WIP limit shown above. Use ONLY the data shown; do NOT invent values. Leave a feature out '
-    + 'if it should stay active. Respond ONLY with valid JSON: '
+    + 'to the WIP limit shown above. NEVER park a feature that is nearly done or would take little effort '
+    + 'to finish (high completion % and/or small size) — finishing it clears WIP faster than parking. Use '
+    + 'ONLY the data shown; do NOT invent values. Leave a feature out if it should stay active. Respond '
+    + 'ONLY with valid JSON: '
     + '{"kind":"parkCandidates","items":[{"issueKey":"KEY","action":"park","reason":"..."}]}',
 };
 

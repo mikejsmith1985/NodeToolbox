@@ -96,7 +96,7 @@ function toPromptIssue(node: CanvasNode): AiPromptIssue {
 /** The gated copy-paste AI accelerator. Renders nothing when AI Assist is locked. */
 export function AiSuggestionPanel({ canvasNodes, controller, wip, onClose }: AiSuggestionPanelProps): React.JSX.Element | null {
   const isUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
-  const [kind, setKind] = useState<AiSuggestionKind>('priorityOrder');
+  const [kind, setKind] = useState<AiSuggestionKind>('sizeEstimate');
   const [responseText, setResponseText] = useState('');
   const [suggestions, setSuggestions] = useState<AiSuggestion[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -148,10 +148,11 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, onClose }: AiS
         <button type="button" className={controlStyles.iconBtn} onClick={onClose} aria-label="Close AI suggestions">✕</button>
       </div>
       <select value={kind} onChange={(event) => setKind(event.target.value as AiSuggestionKind)} style={{ margin: '8px 0', width: '100%' }}>
-        <option value="priorityOrder">Prioritize — MoSCoW buckets</option>
+        {/* Ordered to match the coaching phases: Size → Prioritize → Stabilize (Triage) → Sequence. */}
         <option value="sizeEstimate">Size — t-shirt estimate</option>
-        <option value="parkCandidates">Triage — park / complete / break out</option>
-        <option value="sprintGrouping">Sprint grouping — assign to sprint</option>
+        <option value="priorityOrder">Prioritize — MoSCoW buckets</option>
+        <option value="parkCandidates">Stabilize WIP — triage (park / complete / break out)</option>
+        <option value="sprintGrouping">Sequence — assign to sprint</option>
       </select>
       {lacksValueSignals && (
         <p style={{ margin: '4px 0', fontSize: 11, color: 'var(--color-warning)' }}>

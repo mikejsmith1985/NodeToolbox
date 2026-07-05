@@ -7,6 +7,7 @@
 import { useCallback, useMemo, useState } from 'react';
 
 import {
+  createInitialStageState,
   type CanvasContainer,
   type CanvasNodeState,
   type CanvasOverlay,
@@ -40,6 +41,8 @@ export interface CanvasOverlayController {
   unparkNode: (issueKey: string) => void;
   /** Marks a feature done: auto-creates the Complete box if needed and moves the card in. */
   completeNode: (issueKey: string) => void;
+  /** Moves a box to a new position, shifting every card inside it by the same delta so they follow. */
+  moveContainer: (containerId: string, x: number, y: number) => void;
   goToStage: (stageId: StageId) => void;
   completeStage: (stageId: StageId) => void;
   /** Reverts the most recent change; no-op when there is nothing to undo. */
@@ -179,10 +182,16 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     });
   }, [mutate]);
 
-  // Empties the curated working set (all feature nodes) so the user can start blank and add only what
-  // they select. Overlay-only — it never touches Jira. Containers/stage/config are left intact.
+  // Resets the canvas to blank: removes all feature nodes AND boxes, clears the WIP limit, and resets
+  // the coaching journey to stage 1 (nothing completed). Size mapping/config is kept. Overlay-only —
+  // it never touches Jira. No-op when already fully blank so it doesn't add a spurious undo step.
   const clearNodes = useCallback(() => {
-    mutate((previous) => (Object.keys(previous.nodes).length === 0 ? previous : { ...previous, nodes: {} }));
+    mutate((previous) => {
+      if (Object.keys(previous.nodes).length === 0 && previous.containers.length === 0) {
+        return previous;
+      }
+      return { ...previous, nodes: {}, containers: [], wipLimit: null, stageState: createInitialStageState() };
+    });
   }, [mutate]);
 
   // Counts a container's current members, excluding the node being (re)assigned so its own slot
@@ -254,6 +263,29 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     });
   }, [mutate]);
 
+  // Moves a box and drags its members along: shift every card whose containerId matches by the same
+  // delta as the box moved, so a box and its contents travel together (in one undo step).
+  const moveContainer = useCallback((containerId: string, x: number, y: number) => {
+    mutate((previous) => {
+      const container = previous.containers.find((candidate) => candidate.id === containerId);
+      if (!container || (container.bounds.x === x && container.bounds.y === y)) {
+        return previous;
+      }
+      const deltaX = x - container.bounds.x;
+      const deltaY = y - container.bounds.y;
+      const nextNodes: typeof previous.nodes = {};
+      for (const [issueKey, nodeState] of Object.entries(previous.nodes)) {
+        nextNodes[issueKey] = nodeState.containerId === containerId
+          ? { ...nodeState, position: { x: nodeState.position.x + deltaX, y: nodeState.position.y + deltaY } }
+          : nodeState;
+      }
+      const containers = previous.containers.map((candidate) => (
+        candidate.id === containerId ? { ...candidate, bounds: { ...candidate.bounds, x, y } } : candidate
+      ));
+      return { ...previous, containers, nodes: nextNodes };
+    });
+  }, [mutate]);
+
   const goToStage = useCallback((stageId: StageId) => {
     mutate((previous) => ({ ...previous, stageState: { ...previous.stageState, currentStageId: stageId } }));
   }, [mutate]);
@@ -297,9 +329,9 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     () => ({
       overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize,
       setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes,
-      assignToContainer, parkNode, unparkNode, completeNode, goToStage, completeStage,
+      assignToContainer, parkNode, unparkNode, completeNode, moveContainer, goToStage, completeStage,
       undo, redo, canUndo, canRedo,
     }),
-    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, assignToContainer, parkNode, unparkNode, completeNode, goToStage, completeStage, undo, redo, canUndo, canRedo],
+    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, assignToContainer, parkNode, unparkNode, completeNode, moveContainer, goToStage, completeStage, undo, redo, canUndo, canRedo],
   );
 }
