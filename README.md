@@ -144,13 +144,12 @@ The sections below explain what each major tool is for, who usually uses it, and
 
 **Review & Commit** (the only Jira write)
 - Shows an itemized, per-item-toggleable diff. Feature→sprint expands to **per child story** (Jira sprints hold stories, not epics), with a live **per-sprint story-point load** vs capacity so you can uncheck stories that should not ship this sprint.
-- Parked features can post their **park reason as a Jira comment**; provisional sprints/releases are created before assignments; Parking Lot/Complete boxes are never written.
-- **Plan stories in Sprint Dashboard →** hands off to the Team Dashboard for per-story sequencing, pointing, and capacity.
+- Parked features can post their **park reason as a Jira comment**; provisional sprints/releases are created before assignments; Parking Lot/Complete/Later boxes are never written.
 
 **Common workflows**
 1. **Recover a backlog:** Add features → run the phases (or the Master plan) → arrange into sprint boxes → Review & Commit.
 2. **Stabilize a runaway sprint:** set a WIP limit in Stabilize, use Triage to complete/park the excess, and watch the active-story count drop.
-3. **Plan a sprint's stories:** at Review & Commit, check the per-sprint load and uncheck stories that overflow, then hand off to the Sprint Dashboard.
+3. **Plan a sprint's stories:** open **🧩 Plan stories**, move child stories between sprint boxes to fit capacity (a feature can span sprints), then Review & Commit assigns each story to its placed sprint.
 
 **Troubleshooting**
 - If the canvas is empty after switching context, confirm the **Team** and **PI** selectors point at the plan you built (each team+PI keeps its own overlay).
