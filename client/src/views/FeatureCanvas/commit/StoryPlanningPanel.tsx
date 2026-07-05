@@ -70,17 +70,21 @@ export function StoryPlanningPanel({ canvasNodes, controller, onClose }: StoryPl
     storiesInColumn(columnId).reduce((total, story) => total + (story.points ?? 0), 0);
 
   return (
-    <div className={controlStyles.popover} style={{ position: 'absolute', inset: '40px 40px 40px 40px', padding: 16, overflow: 'auto', zIndex: 20 }}>
+    // A solid, full-viewport planning surface — not a translucent floating popover — so the canvas
+    // never bleeds through and every column is reachable via one clean scroll container.
+    <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'var(--color-bg-surface, var(--color-bg))', color: 'var(--color-text-primary)', display: 'flex', flexDirection: 'column', padding: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ margin: 0 }}>Plan stories</h2>
-        <button type="button" className={controlStyles.iconBtn} onClick={onClose} aria-label="Close story planning">✕</button>
+        <button type="button" className={controlStyles.iconBtn} onClick={onClose} aria-label="Close story planning">✕ Close</button>
       </div>
-      <p style={{ opacity: 0.75 }}>
+      <p style={{ opacity: 0.75, margin: '8px 0' }}>
         Move child stories between boxes to plan each sprint at the story level — a feature can span sprints.
         This stays in the sandbox; Review &amp; Commit assigns each story to its placed sprint.
       </p>
 
-      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 8 }}>
+      {/* One scroll container for the whole board; min-width:max-content stops columns being clipped. */}
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', minWidth: 'max-content', paddingBottom: 8 }}>
         {columns.map((column) => {
           const isSprint = column.container?.kind === 'sprint';
           const budget = column.container?.capacityBudget ?? null;
@@ -128,6 +132,7 @@ export function StoryPlanningPanel({ canvasNodes, controller, onClose }: StoryPl
             </section>
           );
         })}
+        </div>
       </div>
     </div>
   );

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Feature Canvas — "Plan stories" is now a solid full-screen surface**: The story-planning view was a translucent floating popover, so the canvas bled through and columns past the first were clipped and half-rendered when scrolling. It's now a solid, full-viewport planning surface with a single clean scroll container, so every sprint column is fully rendered and reachable.
+
 ### Removed
 - **Feature Canvas — the "Plan in Sprint Dashboard" bridge**: Now that story-level planning lives in the canvas ("Plan stories"), the hand-off links to the Sprint Dashboard (from the Sequence stage and after commit) are gone — they pointed at a Jira-backed view that couldn't show the canvas's provisional sprints. The Sprint Dashboard remains reachable from the main navigation for planning what's actually in Jira.
 
