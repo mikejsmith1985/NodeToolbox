@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { jiraGet, jiraPost, jiraPut, searchIssuesByLabels, searchUsers, type JiraApiEventDetail } from './jiraApi.ts';
+import { getBoardSprints, jiraGet, jiraPost, jiraPut, searchIssuesByLabels, searchUsers, type JiraApiEventDetail } from './jiraApi.ts';
 
 const JIRA_PATH = '/rest/api/3/issue/ABC-123';
 const JIRA_RESPONSE = { key: 'ABC-123' };
@@ -42,6 +42,17 @@ describe('jiraApi', () => {
 
     await expect(jiraGet<typeof JIRA_RESPONSE>(JIRA_PATH)).resolves.toEqual(JIRA_RESPONSE);
     expect(fetch).toHaveBeenCalledWith(`/jira-proxy${JIRA_PATH}`);
+  });
+
+  it('getBoardSprints requests active+future sprints and maps id/name/state', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ values: [{ id: 42, name: 'Sprint 25', state: 'active', startDate: '2026-05-21' }] })),
+      headers: JSON_RESPONSE_HEADERS,
+    } as unknown as Response);
+
+    await expect(getBoardSprints(7)).resolves.toEqual([{ id: 42, name: 'Sprint 25', state: 'active', startDate: '2026-05-21', endDate: undefined }]);
+    expect(fetch).toHaveBeenCalledWith('/jira-proxy/rest/agile/1.0/board/7/sprint?state=active,future&maxResults=50');
   });
 
   it('jiraGet throws on an error response', async () => {

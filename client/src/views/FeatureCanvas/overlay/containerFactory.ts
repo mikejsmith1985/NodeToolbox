@@ -66,6 +66,29 @@ export function createProvisionalContainer(
   };
 }
 
+/**
+ * Builds a box for an EXISTING Jira sprint (provenance 'real' + its sprint id), so committing assigns
+ * stories to that real sprint rather than creating a new one. The id is derived from the sprint id so
+ * pulling the same sprint twice is a no-op the caller can dedupe on.
+ */
+export function createRealSprintContainer(
+  sprintId: number,
+  name: string,
+  existingCount: number,
+  startDateIso: string | null = null,
+  endDateIso: string | null = null,
+): CanvasContainer {
+  const slot = bandSlot(existingCount);
+  return {
+    id: `sprint-${sprintId}`,
+    kind: 'sprint',
+    title: name,
+    bounds: { x: slot.x, y: slot.y, width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT },
+    capacityBudget: DEFAULT_SPRINT_BUDGET,
+    provenance: { state: 'real', jiraSprintId: sprintId, jiraVersionName: null, startDateIso, endDateIso },
+  };
+}
+
 /** Builds the single Parking Lot box that collects deferred features. Never committed to Jira. */
 export function createParkingLotContainer(existingCount: number): CanvasContainer {
   const slot = bandSlot(existingCount);

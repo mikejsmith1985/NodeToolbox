@@ -35,6 +35,15 @@ describe('FeatureNode', () => {
     expect(screen.getByText(/⚑ 1/)).toBeInTheDocument();
   });
 
+  it('keeps the status stripe (left border) when the card is selected', () => {
+    const { container } = render(<FeatureNode {...({ data: { node: buildNode() }, selected: true } as unknown as ComponentProps<typeof FeatureNode>)} />);
+    const card = container.querySelector('div');
+    // The blue in-progress stripe must survive selection (regression: the `border` shorthand used to
+    // clobber it). Selection is a boxShadow ring, and the 6px left border remains.
+    expect(card).toHaveStyle({ borderLeft: '6px solid #3b82f6' });
+    expect(card?.style.boxShadow).toContain('#8b5cf6');
+  });
+
   it('shows no hygiene badge when a feature is clean', () => {
     render(<FeatureNode {...({ data: { node: buildNode({ hygieneFlags: [] }) }, selected: false } as unknown as ComponentProps<typeof FeatureNode>)} />);
     expect(screen.queryByText(/⚑/)).not.toBeInTheDocument();

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Feature Canvas — pull existing sprints from the board**: The Sequence & Box stage gains **↧ Pull sprints from board**, which loads the board's **active + future** Jira sprints as boxes (real, not provisional — committing assigns stories to those existing sprints instead of creating new ones). Sprints already on the canvas are skipped; closed sprints are excluded.
+
+### Fixed
+- **Feature Canvas — status stripe no longer disappears when a card is selected**: Selecting a card (e.g. one with the blue in-progress stripe) used to wipe the stripe — the CSS `border` shorthand clobbered the `borderLeft` stripe on selection. Selection is now a `boxShadow` ring and the border is set per-side, so the stripe always persists (and card-vs-box selection reads more clearly).
+- **Feature Canvas — parked/complete features are never sequenced into sprints**: The Sprint-grouping (Sequence) AI now considers **only active features** — features you've parked or moved to the Complete box are excluded, so it no longer suggests putting deferred or finished work into a sprint.
+
+### Added
 - **Feature Canvas — PI time-remaining drives prioritization (with the real DoD)**: The PI name's embedded date range (e.g. "PI 26.3 (05/21/26 - 07/29/26)") is now parsed to compute **days left in the PI**, shown in the toolbar and fed into the **Prioritize** and **Triage** AI prompts. The prompts encode the real Definition of Done — a feature is done when it is **dev-complete and delivered to integration testing (not necessarily in production)** — so the AI favors work that can realistically reach DoD in the time left and treats integration-test/done items as complete.
 - **Feature Canvas — blue health dot explained in the key**: The ❓ Key now documents the **blue** corner dot (**Early — under 40% of child stories done**), which was previously undefined; the health section now lists all five states with their thresholds (green ≥70%, yellow 40–70%, blue <40%, red = blocked child, gray = no stories).
 

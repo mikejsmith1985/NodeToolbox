@@ -28,7 +28,8 @@ import { computeWipSnapshot } from './logic/wip.ts';
 import { isSameFilter, type CanvasNodeFilter } from './logic/nodeFilter.ts';
 import { daysRemainingInPi } from './logic/piSchedule.ts';
 import { createNodeState, type ContainerKind } from './overlay/overlayModel.ts';
-import { createProvisionalContainer } from './overlay/containerFactory.ts';
+import { createProvisionalContainer, createRealSprintContainer } from './overlay/containerFactory.ts';
+import { getBoardSprints } from '../../services/jiraApi.ts';
 import { deriveScopeKey } from './overlay/overlayStorage.ts';
 import { useCanvasOverlay } from './overlay/useCanvasOverlay.ts';
 
@@ -106,6 +107,34 @@ export default function FeatureCanvasView(): React.JSX.Element {
     }
   };
 
+  // Pulls the board's real active/future sprints in as boxes (provenance 'real', so committing
+  // assigns to the existing sprint instead of creating one). Skips sprints already on the canvas.
+  const [sprintPullError, setSprintPullError] = useState<string | null>(null);
+  const handlePullSprints = async (): Promise<void> => {
+    setSprintPullError(null);
+    if (scope.boardId === null) {
+      setSprintPullError('No board configured for this team — cannot pull sprints.');
+      return;
+    }
+    try {
+      const sprints = await getBoardSprints(scope.boardId);
+      const existingSprintIds = new Set(overlay.containers.map((container) => container.provenance.jiraSprintId).filter((id): id is number => id !== null));
+      let boxCount = overlay.containers.length;
+      for (const sprint of sprints) {
+        if (existingSprintIds.has(sprint.id)) {
+          continue;
+        }
+        controller.addContainer(createRealSprintContainer(sprint.id, sprint.name, boxCount, sprint.startDate ?? null, sprint.endDate ?? null));
+        boxCount += 1;
+      }
+      if (sprints.length === 0) {
+        setSprintPullError('No active or future sprints found on this board.');
+      }
+    } catch (pullError) {
+      setSprintPullError(pullError instanceof Error ? pullError.message : 'Failed to load sprints from the board.');
+    }
+  };
+
   const isWorkingSetEmpty = workingSetKeys.length === 0;
 
   // Step 1 — pick features from the reused blueprint. Short-circuits the board while active.
@@ -162,6 +191,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
         )}
         {artRoster.length === 0 && <span style={{ fontSize: 12, opacity: 0.7 }}>No ART teams configured — use Add via JQL.</span>}
         {features.status === 'error' && <span role="alert" style={{ fontSize: 12, color: 'var(--color-danger)' }}>{features.error}</span>}
+        {sprintPullError !== null && <span role="alert" style={{ fontSize: 12, color: 'var(--color-danger)' }}>{sprintPullError}</span>}
       </div>
       <div style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
         {isPickerOpen && (
@@ -221,6 +251,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
               selectedNode={selectedNode}
               wip={wip}
               onAddContainer={(kind) => controller.addContainer(createProvisionalContainer(kind, overlay.containers.length))}
+              onPullSprints={() => void handlePullSprints()}
               onOpenCommit={() => setIsCommitOpen(true)}
               isAiUnlocked={isAiUnlocked}
               onOpenAi={() => setIsAiOpen(true)}

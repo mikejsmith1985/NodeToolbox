@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { createCompleteContainer, createParkingLotContainer, createProvisionalContainer, positionInContainer } from './containerFactory.ts';
+import { createCompleteContainer, createParkingLotContainer, createProvisionalContainer, createRealSprintContainer, positionInContainer } from './containerFactory.ts';
 
 describe('createProvisionalContainer', () => {
   it('builds a provisional sprint with a default title and a budget', () => {
@@ -15,6 +15,14 @@ describe('createProvisionalContainer', () => {
 
   it('uses a supplied title (trimmed) when given — e.g. from AI Sprint grouping', () => {
     expect(createProvisionalContainer('sprint', 0, '  Sprint 25  ').title).toBe('Sprint 25');
+  });
+
+  it('builds a real sprint box from an existing Jira sprint (id-derived, provenance real)', () => {
+    const box = createRealSprintContainer(42, 'Sprint 25', 0, '2026-05-21', '2026-06-03');
+    expect(box.id).toBe('sprint-42');
+    expect(box.kind).toBe('sprint');
+    expect(box.title).toBe('Sprint 25');
+    expect(box.provenance).toMatchObject({ state: 'real', jiraSprintId: 42, startDateIso: '2026-05-21', endDateIso: '2026-06-03' });
   });
 
   it('builds a release with no default budget', () => {

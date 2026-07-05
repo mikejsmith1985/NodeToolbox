@@ -197,6 +197,38 @@ export async function createSprint(input: CreateSprintInput): Promise<{ id: numb
   return jiraPost<{ id: number; name: string }>('/rest/agile/1.0/sprint', input);
 }
 
+/** One existing Jira sprint on a board, as surfaced to the Feature Canvas "pull sprints" action. */
+export interface BoardSprint {
+  id: number;
+  name: string;
+  state: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+/** Raw shape of the Jira Agile board-sprints response we consume. */
+interface BoardSprintResponse {
+  values?: Array<{ id: number; name: string; state?: string; startDate?: string; endDate?: string }>;
+}
+
+/**
+ * Lists the active + future sprints on an Agile board, so the Feature Canvas can pull in the
+ * project's real sprints as boxes instead of only creating provisional ones. Closed sprints are
+ * excluded — you sequence into current/upcoming sprints, not past ones.
+ */
+export async function getBoardSprints(boardId: number): Promise<BoardSprint[]> {
+  const response = await jiraGet<BoardSprintResponse>(
+    `/rest/agile/1.0/board/${boardId}/sprint?state=active,future&maxResults=50`,
+  );
+  return (response.values ?? []).map((sprint) => ({
+    id: sprint.id,
+    name: sprint.name,
+    state: sprint.state ?? '',
+    startDate: sprint.startDate,
+    endDate: sprint.endDate,
+  }));
+}
+
 /**
  * Creates a Jira version (fixVersion) in the given project. Used only at commit time to turn a
  * provisional Feature Canvas release box into a real fixVersion before it is assigned to features.
