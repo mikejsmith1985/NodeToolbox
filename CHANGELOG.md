@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Feature Canvas — "Master plan" AI analysis (all five phases at once)**: A new top option in the ⚡ AI panel generates a single prompt covering **size + MoSCoW + triage (keep/park/complete/break-out) + sprint** for every feature, with the PI days-left, DoD, and WIP context baked in. Ingesting it **applies the whole plan in one shot** (all recommendations accepted): features get sized, prioritized, parked/completed, and sequenced into their sprints in a **single Undo step**. A summary reports what changed.
+- **Feature Canvas — team selector (swap the master view)**: A **Team** dropdown in the toolbar swaps which team the canvas plans. It sets the shared active team profile — the same one the Sprint Dashboard uses — so switching re-scopes the canvas (blueprint, overlay, board, PI) and keeps the two tools in sync.
+
 ### Fixed
 - **Feature Canvas — PI choice now persists, and the Sprint Dashboard bridge lands on the same PI**: The step-1 PI picker used transient state, so leaving the canvas (e.g. via the Sprint Dashboard bridge) lost the chosen PI — the canvas came back **empty** (it had re-scoped to the profile's old PI) and the dashboard opened on a **different PI/context**. The picker now writes the PI to the **active team profile** — the same source the Sprint Dashboard reads — so the choice persists across navigation (your canvas is intact on return) and the bridge opens the dashboard on the matching team + PI.
 

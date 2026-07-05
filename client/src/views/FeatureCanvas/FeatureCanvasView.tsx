@@ -42,6 +42,8 @@ function CanvasMessage({ text }: { text: string }): React.JSX.Element {
 /** The Feature Canvas view. Default export so it can be lazy-loaded from the router. */
 export default function FeatureCanvasView(): React.JSX.Element {
   const profileId = useSettingsStore((state) => state.sprintDashboardActiveTeamProfileId);
+  const teamProfiles = useSettingsStore((state) => state.sprintDashboardTeamProfiles);
+  const setActiveTeamProfileId = useSettingsStore((state) => state.setSprintDashboardActiveTeamProfileId);
   const isAiUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
   const navigate = useNavigate();
   // Bridge to story-altitude planning: the canvas hands off the committed sprints to the existing
@@ -164,6 +166,19 @@ export default function FeatureCanvasView(): React.JSX.Element {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 160px)', minHeight: 480 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 4px' }}>
+        {teamProfiles.length > 0 && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+            Team:
+            <select
+              aria-label="Active team"
+              value={profileId}
+              onChange={(event) => setActiveTeamProfileId(event.target.value)}
+              title="Swap the team this canvas plans (also the Sprint Dashboard's active team)"
+            >
+              {teamProfiles.map((teamProfile) => <option key={teamProfile.id} value={teamProfile.id}>{teamProfile.name}</option>)}
+            </select>
+          </label>
+        )}
         <button type="button" className={controlStyles.btnPrimary} onClick={() => setIsSelecting(true)}>➕ Add features</button>
         <button type="button" className={controlStyles.btn} onClick={() => setIsPickerOpen(true)}>Add via JQL</button>
         <button type="button" className={controlStyles.btn} onClick={() => controller.undo()} disabled={!controller.canUndo} title="Undo the last canvas change">↩️ Undo</button>

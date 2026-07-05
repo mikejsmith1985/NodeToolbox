@@ -149,6 +149,21 @@ describe('FeatureCanvasView', () => {
     expect(profile?.selectedPiValue).toBe('PI 27.1');
   });
 
+  it('swaps the active team (master view) via the toolbar team selector', () => {
+    useSettingsStore.setState({
+      sprintDashboardTeamProfiles: [
+        { id: 't1', name: 'Team A', projectKey: 'DENP', boardId: '42', boardName: '', boardType: '', scopeMode: 'pi', selectedSprintId: '', selectedFixVersion: '', selectedFixVersionName: '', selectedPiValue: 'PI 26.3' } as never,
+        { id: 't2', name: 'Team B', projectKey: 'DASP', boardId: '43', boardName: '', boardType: '', scopeMode: 'pi', selectedSprintId: '', selectedFixVersion: '', selectedFixVersionName: '', selectedPiValue: 'PI 26.3' } as never,
+      ],
+      sprintDashboardActiveTeamProfileId: 't1',
+    });
+    mockUseCanvasFeatures.mockReturnValue({ status: 'ready', items: [], error: null });
+    render(<MemoryRouter><FeatureCanvasView /></MemoryRouter>);
+
+    fireEvent.change(screen.getByLabelText('Active team'), { target: { value: 't2' } });
+    expect(useSettingsStore.getState().sprintDashboardActiveTeamProfileId).toBe('t2');
+  });
+
   it('opens the read-only inspector for the selected node and closes it', () => {
     mockUseCanvasFeatures.mockReturnValue({ status: 'ready', items: [buildItem('DENP-1')], error: null });
     render(<MemoryRouter><FeatureCanvasView /></MemoryRouter>);

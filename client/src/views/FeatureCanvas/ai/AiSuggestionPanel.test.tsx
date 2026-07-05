@@ -15,7 +15,7 @@ function buildController(): CanvasOverlayController {
     ensureNodeStates: vi.fn(), updateNode: vi.fn(), setWipLimit: vi.fn(), setPriority: vi.fn(),
     setSize: vi.fn(), setContainer: vi.fn(), setParked: vi.fn(), addContainer: vi.fn(),
     updateContainer: vi.fn(), removeContainer: vi.fn(), removeNode: vi.fn(), clearNodes: vi.fn(), goToStage: vi.fn(), completeStage: vi.fn(),
-    assignToContainer: vi.fn(), parkNode: vi.fn(), unparkNode: vi.fn(), completeNode: vi.fn(), moveContainer: vi.fn(), undo: vi.fn(), redo: vi.fn(), canUndo: false, canRedo: false,
+    assignToContainer: vi.fn(), parkNode: vi.fn(), unparkNode: vi.fn(), completeNode: vi.fn(), moveContainer: vi.fn(), applyMasterPlan: vi.fn(), undo: vi.fn(), redo: vi.fn(), canUndo: false, canRedo: false,
   };
 }
 
@@ -124,5 +124,24 @@ describe('AiSuggestionPanel', () => {
     expect(controller.addContainer).toHaveBeenCalledWith(expect.objectContaining({ kind: 'sprint', title: 'Sprint 25' }));
     // assignToContainer (not setContainer) — it repositions the card inside the box.
     expect(controller.assignToContainer).toHaveBeenCalledWith('DENP-1', expect.any(String));
+  });
+
+  it('applies the whole master plan in one shot on ingest and shows a summary', () => {
+    act(() => setAiAssistUnlocked(true));
+    const controller = buildController();
+    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'masterPlan' } });
+    fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
+      target: { value: '{"kind":"masterPlan","items":[{"issueKey":"DENP-1","size":"L","bucket":"Must","triage":"keep","sprint":"Sprint 25","reason":"core"}]}' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Ingest & apply plan/ }));
+
+    expect(controller.applyMasterPlan).toHaveBeenCalledWith([
+      { issueKey: 'DENP-1', size: 'L', bucket: 'Must', triage: 'keep', sprint: 'Sprint 25', reason: 'core' },
+    ]);
+    expect(screen.getByText(/Applied to 1 feature/)).toBeInTheDocument();
+    // No accept/reject rows for the master plan — it's applied directly.
+    expect(screen.queryByRole('button', { name: 'Accept' })).not.toBeInTheDocument();
   });
 });
