@@ -212,6 +212,18 @@ describe('useCanvasOverlay', () => {
       expect(result.current.overlay.nodes['KEEP-1'].containerId).toBeNull();
     });
 
+    it('setStoryPlacement sets and clears a per-story box override', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      act(() => result.current.ensureNodeStates([createNodeState('DENP-1', 0, 0)]));
+
+      act(() => result.current.setStoryPlacement('DENP-1', 'DENP-2', 'ctr-b'));
+      expect(result.current.overlay.nodes['DENP-1'].storyPlacements).toEqual({ 'DENP-2': 'ctr-b' });
+
+      // null clears the override so the story falls back to inheriting its feature's box.
+      act(() => result.current.setStoryPlacement('DENP-1', 'DENP-2', null));
+      expect(result.current.overlay.nodes['DENP-1'].storyPlacements).toEqual({});
+    });
+
     it('relayoutBoxes tidies boxes into two columns sized to their cards', () => {
       const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
       // Explicit ids so the two boxes never collide (createProvisionalContainer keys off Date.now()).

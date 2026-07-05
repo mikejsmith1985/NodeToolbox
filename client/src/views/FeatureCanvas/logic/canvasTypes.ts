@@ -48,6 +48,9 @@ export interface CanvasNode {
   isParked: boolean;
   /** Why this feature was parked; surfaced in the inspector and posted as a Jira comment on commit. */
   parkReason: string | null;
+  /** Per-child-story box overrides (storyKey → containerId). Absent story inherits the feature's box;
+   *  this is what lets a feature's stories be split across sprints during story-level planning. */
+  storyPlacements: Record<string, string>;
   // Live Jira/blueprint data (re-fetched, never persisted).
   summary: string;
   status: string;

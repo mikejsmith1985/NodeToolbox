@@ -36,7 +36,7 @@ describe('overlayModel', () => {
     const nodeState = createNodeState('DENP-1', 12, 34);
     expect(nodeState).toEqual({
       issueKey: 'DENP-1', position: { x: 12, y: 34 }, size: null, priority: null,
-      containerId: null, isExpanded: false, isParked: false,
+      containerId: null, isExpanded: false, isParked: false, storyPlacements: {},
     });
   });
 });

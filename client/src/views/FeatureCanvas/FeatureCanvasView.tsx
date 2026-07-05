@@ -23,6 +23,7 @@ import { readStoredArtTeams } from '../SprintDashboard/sprintDashboardArtContext
 import { CoachPanel } from './coach/CoachPanel.tsx';
 import { AiSuggestionPanel } from './ai/AiSuggestionPanel.tsx';
 import { ReviewCommitPanel } from './commit/ReviewCommitPanel.tsx';
+import { StoryPlanningPanel } from './commit/StoryPlanningPanel.tsx';
 import { computeContainerCapacity } from './logic/capacity.ts';
 import type { ContainerCapacity } from './logic/canvasTypes.ts';
 import { computeWipSnapshot } from './logic/wip.ts';
@@ -68,6 +69,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
 
   const [selectedIssueKey, setSelectedIssueKey] = useState<string | null>(null);
   const [isCommitOpen, setIsCommitOpen] = useState(false);
+  const [isStoryPlanOpen, setIsStoryPlanOpen] = useState(false);
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
@@ -186,6 +188,9 @@ export default function FeatureCanvasView(): React.JSX.Element {
         {overlay.containers.length > 0 && (
           <button type="button" className={controlStyles.btn} onClick={() => controller.relayoutBoxes()} title="Tidy boxes into two columns, each sized to its cards">🧹 Tidy boxes</button>
         )}
+        {overlay.containers.some((container) => container.kind === 'sprint') && (
+          <button type="button" className={controlStyles.btn} onClick={() => setIsStoryPlanOpen(true)} title="Plan each sprint at the story level — move child stories between boxes">🧩 Plan stories</button>
+        )}
         {!isWorkingSetEmpty && (
           <button
             type="button"
@@ -266,6 +271,9 @@ export default function FeatureCanvasView(): React.JSX.Element {
                   onClose={() => setIsCommitOpen(false)}
                   onPlanSprints={openSprintDashboard}
                 />
+              )}
+              {isStoryPlanOpen && (
+                <StoryPlanningPanel canvasNodes={canvasNodes} controller={controller} onClose={() => setIsStoryPlanOpen(false)} />
               )}
               {isAiOpen && (
                 <AiSuggestionPanel canvasNodes={canvasNodes} controller={controller} wip={wip} piName={scope.piName} onClose={() => setIsAiOpen(false)} />

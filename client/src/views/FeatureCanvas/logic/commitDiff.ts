@@ -44,20 +44,33 @@ function resolveDependsOn(container: CanvasContainer): string | null {
   return container.provenance.state === 'provisional' ? createItemId(container.id) : null;
 }
 
-/** Expands one feature assigned to a sprint into per-child-story sprintAssign items (FR-6.1a). */
-function buildSprintAssignItems(node: CanvasNode, container: CanvasContainer): CommitDiffItem[] {
-  const dependsOn = resolveDependsOn(container);
+/**
+ * Expands a feature into per-child-story sprintAssign items (FR-6.1a: Jira sprints hold stories,
+ * not epics). Each story goes to the sprint of its EFFECTIVE box — its own story-level placement when
+ * set, otherwise the feature's box — so a feature's stories can be split across sprints. Stories whose
+ * effective box is not a sprint (Parking Lot / Complete / Later / release / none) are not assigned.
+ */
+function buildSprintAssignItems(node: CanvasNode, containersById: Map<string, CanvasContainer>): CommitDiffItem[] {
   const targetKeys = node.childStories.length > 0 ? node.childStories.map((story) => story.key) : [node.issueKey];
-  return targetKeys.map((targetKey) => ({
-    id: `sprintAssign:${targetKey}:${container.id}`,
-    kind: 'sprintAssign',
-    issueKey: targetKey,
-    containerId: container.id,
-    from: null,
-    to: container.title,
-    dependsOn,
-    selected: true,
-  }));
+  const items: CommitDiffItem[] = [];
+  for (const targetKey of targetKeys) {
+    const effectiveContainerId = node.storyPlacements[targetKey] ?? node.containerId;
+    const container = effectiveContainerId ? containersById.get(effectiveContainerId) : undefined;
+    if (!container || container.kind !== 'sprint') {
+      continue;
+    }
+    items.push({
+      id: `sprintAssign:${targetKey}:${container.id}`,
+      kind: 'sprintAssign',
+      issueKey: targetKey,
+      containerId: container.id,
+      from: null,
+      to: container.title,
+      dependsOn: resolveDependsOn(container),
+      selected: true,
+    });
+  }
+  return items;
 }
 
 /** Builds the fixVersion assignment for a feature dropped into a release box. */
@@ -148,11 +161,12 @@ export function buildCommitDiff(
   const assignmentItems: CommitDiffItem[] = [];
 
   for (const node of nodes) {
+    // Sprint membership is resolved per child story (so a feature can span sprints); release
+    // membership stays feature-level (fixVersion is set on the feature itself).
+    assignmentItems.push(...buildSprintAssignItems(node, containersById));
     if (node.containerId !== null) {
       const container = containersById.get(node.containerId);
-      if (container && container.kind === 'sprint') {
-        assignmentItems.push(...buildSprintAssignItems(node, container));
-      } else if (container && container.kind === 'release') {
+      if (container && container.kind === 'release') {
         assignmentItems.push(buildVersionAssignItem(node, container));
       }
     }

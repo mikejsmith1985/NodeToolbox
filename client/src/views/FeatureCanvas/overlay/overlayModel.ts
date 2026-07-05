@@ -60,6 +60,9 @@ export interface CanvasNodeState {
   isParked: boolean;
   /** Why this feature was parked (from AI triage or manual note); posted as a Jira comment on commit. */
   parkReason?: string | null;
+  /** Per-child-story box overrides (storyKey → containerId) set during story-level planning. Absent
+   *  keys inherit the feature's own box; this lets one feature's stories be split across sprints. */
+  storyPlacements?: Record<string, string>;
 }
 
 /** Coach progress, enabling resume and non-linear revisit. */
@@ -109,5 +112,5 @@ export function createEmptyOverlay(profileId: string, scopeKey: string): CanvasO
 
 /** Builds a fresh node-arrangement record positioned at the given canvas coordinates. */
 export function createNodeState(issueKey: string, x: number, y: number): CanvasNodeState {
-  return { issueKey, position: { x, y }, size: null, priority: null, containerId: null, isExpanded: false, isParked: false };
+  return { issueKey, position: { x, y }, size: null, priority: null, containerId: null, isExpanded: false, isParked: false, storyPlacements: {} };
 }

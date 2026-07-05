@@ -139,6 +139,9 @@ The sections below explain what each major tool is for, who usually uses it, and
 - Per-phase analyses (Size, Prioritize, Triage, Sequence) plus a **★ Master plan** that returns size + priority + triage + sprint for every feature and applies the whole plan in a single, undoable step.
 - Prompts are fed the real signals the canvas already has — description, acceptance criteria, health, completion, story load, blockers, Business Value, PI days-left — and encode the Definition of Done (dev-complete + delivered to integration testing, not production).
 
+**Plan stories (story-level)**
+- **🧩 Plan stories** expands every box into the child stories placed there and lets you move stories between boxes — **splitting a feature across sprints** — with a live points-vs-capacity readout per sprint. It's sandboxed (per-story placement in the overlay); Review & Commit assigns each story to its placed sprint. The Sprint Dashboard's Planning tab stays a view of what's actually in Jira.
+
 **Review & Commit** (the only Jira write)
 - Shows an itemized, per-item-toggleable diff. Feature→sprint expands to **per child story** (Jira sprints hold stories, not epics), with a live **per-sprint story-point load** vs capacity so you can uncheck stories that should not ship this sprint.
 - Parked features can post their **park reason as a Jira comment**; provisional sprints/releases are created before assignments; Parking Lot/Complete boxes are never written.
