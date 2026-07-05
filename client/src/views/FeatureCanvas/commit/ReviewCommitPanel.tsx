@@ -21,8 +21,6 @@ export interface ReviewCommitPanelProps {
   boardId: number | null;
   projectKey: string;
   onClose: () => void;
-  /** Opens the Sprint Dashboard to plan the just-committed stories at story altitude. */
-  onPlanSprints?: () => void;
 }
 
 /** One sprint's selected-vs-budget story-point tally, from the currently-checked story assignments. */
@@ -49,7 +47,7 @@ function describeItem(item: CommitDiffItem): string {
 
 /** The Review & Commit modal. */
 export function ReviewCommitPanel(props: ReviewCommitPanelProps): React.JSX.Element {
-  const { canvasNodes, containers, sizeMapping, boardId, projectKey, onClose, onPlanSprints } = props;
+  const { canvasNodes, containers, sizeMapping, boardId, projectKey, onClose } = props;
   const initialDiff = useMemo(() => buildCommitDiff(canvasNodes, containers, { sizeMapping }), [canvasNodes, containers, sizeMapping]);
   const [diff, setDiff] = useState<CommitDiffItem[]>(initialDiff);
   const [results, setResults] = useState<CommitResult[] | null>(null);
@@ -144,14 +142,7 @@ export function ReviewCommitPanel(props: ReviewCommitPanelProps): React.JSX.Elem
           {isCommitting ? 'Committing…' : `Commit ${diff.filter((item) => item.selected).length} change(s)`}
         </button>
       ) : (
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button type="button" className={controlStyles.btn} onClick={onClose}>Done</button>
-          {onPlanSprints && (
-            <button type="button" className={controlStyles.btnPrimary} onClick={onPlanSprints} title="Continue at story level in the Sprint Dashboard">
-              Plan in Sprint Dashboard →
-            </button>
-          )}
-        </div>
+        <button type="button" className={controlStyles.btn} onClick={onClose}>Done</button>
       )}
     </div>
   );

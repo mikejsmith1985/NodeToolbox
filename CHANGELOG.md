@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Feature Canvas — the "Plan in Sprint Dashboard" bridge**: Now that story-level planning lives in the canvas ("Plan stories"), the hand-off links to the Sprint Dashboard (from the Sequence stage and after commit) are gone — they pointed at a Jira-backed view that couldn't show the canvas's provisional sprints. The Sprint Dashboard remains reachable from the main navigation for planning what's actually in Jira.
+
 ### Added
 - **Feature Canvas — story-level sprint planning ("Plan stories")**: Since Jira sprints hold stories (not epics), real sprint planning happens at the story level. A new **🧩 Plan stories** view expands every canvas box into the child stories placed there and lets you move stories between boxes — **splitting one feature across multiple sprints** — with a live points-vs-capacity readout per sprint. It's all sandboxed (per-story placement lives in the overlay); Review & Commit now assigns **each story to its own placed sprint**, so a feature's stories can land in different sprints. Stays in the canvas by design — the Sprint Dashboard's Planning tab remains a view of what's actually in Jira.
 

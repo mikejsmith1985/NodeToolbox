@@ -6,7 +6,6 @@
 // configured it shows the same guidance empty state the Feature Review surface uses.
 
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
@@ -46,14 +45,10 @@ export default function FeatureCanvasView(): React.JSX.Element {
   const teamProfiles = useSettingsStore((state) => state.sprintDashboardTeamProfiles);
   const setActiveTeamProfileId = useSettingsStore((state) => state.setSprintDashboardActiveTeamProfileId);
   const isAiUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
-  const navigate = useNavigate();
-  // Bridge to story-altitude planning: the canvas hands off the committed sprints to the existing
-  // Sprint Dashboard (per-story sequencing, pointing, capacity) rather than rebuilding it here.
-  const openSprintDashboard = (): void => { void navigate('/sprint-dashboard'); };
 
   // The PI is the active team profile's selectedPiValue — the SAME source the Sprint Dashboard reads.
   // Step 1's PI picker writes here (not to transient state), so the choice persists across navigation
-  // (the canvas isn't empty when you return) and the Sprint Dashboard bridge lands on the same PI.
+  // (the canvas isn't empty when you return) and stays in sync with the team's other tools.
   const updateActiveTeamProfile = useSettingsStore((state) => state.updateActiveSprintDashboardTeamProfile);
   const changePi = (piName: string): void => updateActiveTeamProfile({ selectedPiValue: piName });
 
@@ -269,7 +264,6 @@ export default function FeatureCanvasView(): React.JSX.Element {
                   boardId={scope.boardId}
                   projectKey={scope.projectKey}
                   onClose={() => setIsCommitOpen(false)}
-                  onPlanSprints={openSprintDashboard}
                 />
               )}
               {isStoryPlanOpen && (
@@ -286,7 +280,6 @@ export default function FeatureCanvasView(): React.JSX.Element {
               wip={wip}
               onAddContainer={(kind) => controller.addContainer(createProvisionalContainer(kind, overlay.containers.length))}
               onPullSprints={() => void handlePullSprints()}
-              onOpenSprintDashboard={openSprintDashboard}
               onOpenCommit={() => setIsCommitOpen(true)}
               isAiUnlocked={isAiUnlocked}
               onOpenAi={() => setIsAiOpen(true)}

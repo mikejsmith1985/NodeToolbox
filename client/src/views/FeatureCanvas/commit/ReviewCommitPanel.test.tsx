@@ -49,7 +49,7 @@ describe('ReviewCommitPanel', () => {
       ],
     };
     render(
-      <ReviewCommitPanel canvasNodes={[feature]} containers={[SPRINT]} sizeMapping={{ S: 1, M: 3, L: 5, XL: 8 }} boardId={10} projectKey="DENP" onClose={vi.fn()} onPlanSprints={vi.fn()} />,
+      <ReviewCommitPanel canvasNodes={[feature]} containers={[SPRINT]} sizeMapping={{ S: 1, M: 3, L: 5, XL: 8 }} boardId={10} projectKey="DENP" onClose={vi.fn()} />,
     );
 
     expect(screen.getByText(/Sprint load/)).toBeInTheDocument();
@@ -58,17 +58,6 @@ describe('ReviewCommitPanel', () => {
     // Unchecking one 3pt story drops the load to 3.
     fireEvent.click(screen.getByRole('checkbox', { name: /DENP-2/ }));
     expect(screen.getByText(/Sprint 24: 3 \/ 20 pt/)).toBeInTheDocument();
-  });
-
-  it('offers the Sprint Dashboard bridge after a commit', async () => {
-    const onPlanSprints = vi.fn();
-    render(
-      <ReviewCommitPanel canvasNodes={[buildNode()]} containers={[SPRINT]} sizeMapping={{ S: 1, M: 3, L: 5, XL: 8 }} boardId={10} projectKey="DENP" onClose={vi.fn()} onPlanSprints={onPlanSprints} />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: /Commit 1 change/ }));
-    const bridge = await screen.findByRole('button', { name: /Plan in Sprint Dashboard/ });
-    fireEvent.click(bridge);
-    expect(onPlanSprints).toHaveBeenCalled();
   });
 
   it('shows an empty-state message when there are no pending changes', () => {
