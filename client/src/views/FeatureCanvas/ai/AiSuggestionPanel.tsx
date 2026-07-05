@@ -144,6 +144,10 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onClos
     [kind, canvasNodes],
   );
 
+  // The master plan performs the Stabilize-WIP phase, so it REQUIRES a WIP limit to know how much to
+  // park. Block the prompt/ingest until one is set (settable inline below).
+  const needsWipLimit = kind === 'masterPlan' && wip.limit === null;
+
   // Guard: invisible and inert unless the operator has unlocked AI Assist.
   if (!isUnlocked) {
     return null;
@@ -200,15 +204,33 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onClos
         <option value="parkCandidates">Stabilize WIP — triage (park / complete / break out)</option>
         <option value="sprintGrouping">Sequence — assign to sprint</option>
       </select>
+      {kind === 'masterPlan' && (
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '4px 0', fontSize: 12 }}>
+          WIP limit (required):
+          <input
+            type="number"
+            min={1}
+            aria-label="WIP limit"
+            value={wip.limit ?? ''}
+            onChange={(event) => controller.setWipLimit(event.target.value === '' ? null : Number(event.target.value))}
+            style={{ width: 70 }}
+          />
+        </label>
+      )}
+      {needsWipLimit && (
+        <p style={{ margin: '4px 0', fontSize: 11, color: 'var(--color-warning)' }}>
+          Set a WIP limit — the master plan needs it to decide how much to park.
+        </p>
+      )}
       {lacksValueSignals && (
         <p style={{ margin: '4px 0', fontSize: 11, color: 'var(--color-warning)' }}>
           No Business Value or story points found on these features — suggestions will rely on status, health, completion, and blockers.
         </p>
       )}
       <textarea readOnly value={prompt} rows={4} style={{ width: '100%', fontSize: 11 }} />
-      <button type="button" className={controlStyles.btn} onClick={() => navigator.clipboard?.writeText(prompt)} style={{ margin: '6px 0' }}>📋 Copy prompt</button>
+      <button type="button" className={controlStyles.btn} onClick={() => navigator.clipboard?.writeText(prompt)} disabled={needsWipLimit} style={{ margin: '6px 0' }}>📋 Copy prompt</button>
       <textarea value={responseText} onChange={(event) => setResponseText(event.target.value)} placeholder="Paste the JSON reply here" rows={4} style={{ width: '100%', fontSize: 11 }} />
-      <button type="button" className={controlStyles.btnPrimary} onClick={handleIngest} style={{ margin: '6px 0' }}>
+      <button type="button" className={controlStyles.btnPrimary} onClick={handleIngest} disabled={needsWipLimit} style={{ margin: '6px 0' }}>
         {kind === 'masterPlan' ? 'Ingest & apply plan' : 'Ingest suggestions'}
       </button>
       {error && <p style={{ color: 'var(--color-danger)' }}>{error}</p>}

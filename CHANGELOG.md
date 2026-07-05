@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Feature Canvas — Master plan marks all phases complete and requires a WIP limit**: Applying a Master plan now marks all five coaching phases complete and lands the coach on the final stage (it does perform every phase), so the phase chips no longer read "incomplete" afterward. Because the plan performs the Stabilize-WIP phase, it now **requires a WIP limit** before it can run — the ⚡ panel gates the prompt/ingest until one is set and lets you set it inline.
+
 ### Added
 - **Feature Canvas — auto-tidy box layout + "Later" box**: The Master plan (and any arrangement) no longer leaves features loose or boxes overlapping. Every feature now lands in a box — kept-but-unsequenced ones go to a new canvas-only **Later** box — and boxes are laid out in **two clean columns**, each **sized to its card count** so cards never spill outside. A **🧹 Tidy boxes** toolbar button re-tidies on demand, and boxes grow to fit as you drop cards in. The Later box (like Parking Lot/Complete) is never written to Jira.
 - **Feature Canvas — "Master plan" AI analysis (all five phases at once)**: A new top option in the ⚡ AI panel generates a single prompt covering **size + MoSCoW + triage (keep/park/complete/break-out) + sprint** for every feature, with the PI days-left, DoD, and WIP context baked in. Ingesting it **applies the whole plan in one shot** (all recommendations accepted): features get sized, prioritized, parked/completed, and sequenced into their sprints in a **single Undo step**. A summary reports what changed.
