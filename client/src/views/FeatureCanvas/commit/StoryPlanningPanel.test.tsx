@@ -33,8 +33,8 @@ const NODE: CanvasNode = {
   isExpanded: false, isParked: false, summary: 'Login', status: '', statusCategoryKey: 'new',
   assignee: null, storyPoints: null, health: 'green', completionPercent: 0, hygieneFlags: [],
   childStories: [
-    { key: 'DENP-2', summary: 'API', status: '', statusCategoryKey: null, storyPoints: 3 },
-    { key: 'DENP-3', summary: 'UI', status: '', statusCategoryKey: null, storyPoints: 3 },
+    { key: 'DENP-2', summary: 'Build the API', status: 'In Progress', statusCategoryKey: 'indeterminate', storyPoints: 3, assignee: 'Ada Lovelace', issueType: 'Story', subtaskCount: 2 },
+    { key: 'DENP-3', summary: 'Build the UI', status: 'To Do', statusCategoryKey: 'new', storyPoints: 3, assignee: null, issueType: 'Story', subtaskCount: 0 },
   ],
   dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null, storyPlacements: {}, attachments: [], effectivePoints: 0,
 };
@@ -47,6 +47,15 @@ describe('StoryPlanningPanel', () => {
     expect(within(sprintA).getByText(/6 \/ 5 pt · over capacity/)).toBeInTheDocument();
     expect(within(sprintA).getByText('DENP-2')).toBeInTheDocument();
     expect(within(sprintA).getByText('DENP-3')).toBeInTheDocument();
+  });
+
+  it('surfaces per-story complexity/ownership detail (summary, points, status, subtasks, assignee)', () => {
+    render(<StoryPlanningPanel canvasNodes={[NODE]} controller={buildController()} onClose={vi.fn()} />);
+    const sprintA = screen.getByRole('region', { name: 'Box Sprint 24' });
+    expect(within(sprintA).getByText('Build the API')).toBeInTheDocument(); // full summary, not truncated away
+    expect(within(sprintA).getByText(/2 subtasks/)).toBeInTheDocument();
+    expect(within(sprintA).getByText(/Ada Lovelace/)).toBeInTheDocument();
+    expect(within(sprintA).getByText(/Unassigned/)).toBeInTheDocument(); // DENP-3 has no assignee
   });
 
   it('moves a story to another sprint via its box selector', () => {

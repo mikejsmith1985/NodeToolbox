@@ -34,6 +34,10 @@ export interface CanvasChildStory {
   status: string;
   statusCategoryKey: string | null;
   storyPoints: number | null;
+  /** Complexity/ownership signals surfaced during story-level planning (optional; from the blueprint). */
+  assignee?: string | null;
+  issueType?: string | null;
+  subtaskCount?: number;
 }
 
 /** The full render/logic projection of one feature node (overlay arrangement + live Jira data). */
