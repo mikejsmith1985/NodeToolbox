@@ -77,6 +77,34 @@ function applySuggestion(kind: AiSuggestionKind, suggestion: AiSuggestion, contr
   }
 }
 
+/**
+ * Copies text to the clipboard with a fallback: `navigator.clipboard` is undefined in non-secure
+ * contexts (e.g. the packaged app served over a LAN IP or a restricted webview), which made the Copy
+ * button silently do nothing. The hidden-textarea + execCommand path works there.
+ */
+function copyToClipboard(text: string): void {
+  if (navigator.clipboard?.writeText) {
+    void navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+    return;
+  }
+  fallbackCopy(text);
+}
+
+/** Legacy clipboard write via a transient off-screen textarea and document.execCommand('copy'). */
+function fallbackCopy(text: string): void {
+  const scratch = document.createElement('textarea');
+  scratch.value = text;
+  scratch.style.position = 'fixed';
+  scratch.style.left = '-9999px';
+  document.body.appendChild(scratch);
+  scratch.select();
+  try {
+    document.execCommand('copy');
+  } finally {
+    document.body.removeChild(scratch);
+  }
+}
+
 /** Projects a canvas node into the data-rich issue shape the AI prompt needs (real signals only). */
 function toPromptIssue(node: CanvasNode): AiPromptIssue {
   const activeChildCount = node.childStories.filter((child) => child.statusCategoryKey === IN_PROGRESS_STATUS_CATEGORY).length;
@@ -151,12 +179,11 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onClos
     [kind, canvasNodes],
   );
 
-  // The master plan performs the Stabilize-WIP phase, so it REQUIRES a WIP limit to know how much to
-  // park. Block the prompt/ingest until one is set (settable inline below).
+  // Advisories (not hard blocks) for the master plan: a WIP limit sharpens the park decision, and
+  // pulling sprints lets it sequence (without them, every feature lands in Later). The buttons stay
+  // enabled either way — applyMasterPlan only ever matches EXISTING sprints, so nothing is invented.
   const needsWipLimit = kind === 'masterPlan' && wip.limit === null;
-  // The master plan sequences into the board's real sprints, so at least one sprint box must exist.
   const needsSprints = kind === 'masterPlan' && sprintNames.length === 0;
-  const isMasterPlanBlocked = needsWipLimit || needsSprints;
 
   // Guard: invisible and inert unless the operator has unlocked AI Assist.
   if (!isUnlocked) {
@@ -234,7 +261,7 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onClos
       )}
       {needsSprints && (
         <p style={{ margin: '4px 0', fontSize: 11, color: 'var(--color-warning)' }}>
-          Pull your sprints from the board first (Sequence &amp; Box → “↧ Pull sprints from board”) — the master plan sequences into your real sprints, not invented ones.
+          No sprints pulled yet — features won’t be sequenced (they’ll go to Later). Pull sprints (Sequence &amp; Box → “↧ Pull sprints from board”) to sequence into your real sprints.
         </p>
       )}
       {lacksValueSignals && (
@@ -243,9 +270,9 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onClos
         </p>
       )}
       <textarea readOnly value={prompt} rows={4} style={{ width: '100%', fontSize: 11 }} />
-      <button type="button" className={controlStyles.btn} onClick={() => navigator.clipboard?.writeText(prompt)} disabled={isMasterPlanBlocked} style={{ margin: '6px 0' }}>📋 Copy prompt</button>
+      <button type="button" className={controlStyles.btn} onClick={() => copyToClipboard(prompt)} style={{ margin: '6px 0' }}>📋 Copy prompt</button>
       <textarea value={responseText} onChange={(event) => setResponseText(event.target.value)} placeholder="Paste the JSON reply here" rows={4} style={{ width: '100%', fontSize: 11 }} />
-      <button type="button" className={controlStyles.btnPrimary} onClick={handleIngest} disabled={isMasterPlanBlocked} style={{ margin: '6px 0' }}>
+      <button type="button" className={controlStyles.btnPrimary} onClick={handleIngest} style={{ margin: '6px 0' }}>
         {kind === 'masterPlan' ? 'Ingest & apply plan' : 'Ingest suggestions'}
       </button>
       {error && <p style={{ color: 'var(--color-danger)' }}>{error}</p>}
