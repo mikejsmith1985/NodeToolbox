@@ -9,7 +9,7 @@ import { useMemo, useState } from 'react';
 import { buildCommitDiff } from '../logic/commitDiff.ts';
 import type { CommitDiffItem } from '../logic/canvasTypes.ts';
 import type { CanvasNode } from '../logic/canvasTypes.ts';
-import type { CanvasContainer } from '../overlay/overlayModel.ts';
+import type { CanvasContainer, TshirtSize } from '../overlay/overlayModel.ts';
 import { commitToJira, type CommitResult } from './commitJira.ts';
 import controlStyles from '../canvas/canvasControls.module.css';
 
@@ -17,7 +17,7 @@ import controlStyles from '../canvas/canvasControls.module.css';
 export interface ReviewCommitPanelProps {
   canvasNodes: readonly CanvasNode[];
   containers: readonly CanvasContainer[];
-  sizeMapping: Record<'S' | 'M' | 'L' | 'XL', number>;
+  sizeMapping: Record<TshirtSize, number>;
   boardId: number | null;
   projectKey: string;
   onClose: () => void;

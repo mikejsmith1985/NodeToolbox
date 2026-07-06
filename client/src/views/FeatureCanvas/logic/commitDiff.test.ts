@@ -120,11 +120,11 @@ describe('buildCommitDiff', () => {
   });
 
   it('emits a pointsSet only when a size maps to a value differing from live points', () => {
-    const sized = buildNode({ issueKey: 'DENP-1', size: 'L', storyPoints: 2 });
-    const alreadyCorrect = buildNode({ issueKey: 'DENP-2', size: 'M', storyPoints: 3 });
+    const sized = buildNode({ issueKey: 'DENP-1', size: 'L', storyPoints: 2 }); // L=60 ≠ 2 → pointsSet
+    const alreadyCorrect = buildNode({ issueKey: 'DENP-2', size: 'M', storyPoints: 40 }); // M=40 → no change
     const pointsItems = buildCommitDiff([sized, alreadyCorrect], []).filter((item) => item.kind === 'pointsSet');
     expect(pointsItems).toHaveLength(1);
-    expect(pointsItems[0]).toMatchObject({ issueKey: 'DENP-1', to: 5 });
+    expect(pointsItems[0]).toMatchObject({ issueKey: 'DENP-1', to: 60 });
   });
 
   it('does not commit parking-lot membership', () => {
