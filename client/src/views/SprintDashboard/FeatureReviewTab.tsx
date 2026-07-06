@@ -699,14 +699,19 @@ export default function FeatureReviewTab({
 }: FeatureReviewTabProps) {
   const { showToast } = useToast();
   const storedArtTeams = useMemo(() => readStoredArtTeams(), []);
-  const matchedArtTeam = useMemo(
-    () => findMatchingArtTeam(storedArtTeams, boardId, projectKey),
-    [boardId, projectKey, storedArtTeams],
-  );
-  const effectiveSelectedPiName = selectedPiName.trim() || readFallbackSelectedPiName();
   const activeDashboardTeamProfileId = useSettingsStore(
     (storeState) => storeState.sprintDashboardActiveTeamProfileId,
   );
+  // The selected team's name disambiguates the ART team when several share a project key — without it
+  // the rollup could show a different team's features (e.g. "Transformers" showing "Cleanup Crew").
+  const activeTeamName = useSettingsStore(
+    (storeState) => storeState.sprintDashboardTeamProfiles.find((profile) => profile.id === storeState.sprintDashboardActiveTeamProfileId)?.name ?? '',
+  );
+  const matchedArtTeam = useMemo(
+    () => findMatchingArtTeam(storedArtTeams, boardId, projectKey, activeTeamName),
+    [boardId, projectKey, storedArtTeams, activeTeamName],
+  );
+  const effectiveSelectedPiName = selectedPiName.trim() || readFallbackSelectedPiName();
   const customStoryPointsFieldId = loadDashboardConfigFromStorage(activeDashboardTeamProfileId).customStoryPointsFieldId ?? '';
   const boardLabel = readBoardLabel(boardName, boardId);
   const [featureReviewItems, setFeatureReviewItems] = useState<FeatureReviewItem[]>([]);

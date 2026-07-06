@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Team Dashboard — Feature Review/PI Review showed another team's features**: when several teams share a Jira project key, the ART-team lookup fell back to a project-key match and returned the **first** team with that project — so e.g. "Transformers" could show "Cleanup Crew" features. Team resolution now disambiguates by the **selected team's name** first (then board+project), so the rollup matches the team you actually picked.
+
 ### Added
 - **ART View — AI draft (Copilot) for the Monthly Report**: each report card now has a **🤖 Draft with Copilot** helper — it builds a prompt from the team's Jira context (done/total, %, points, impediments) and the report questions, you copy it into Copilot, and paste the JSON reply back to fill the narrative fields (initiative, product areas, accomplishments, outcomes, stakeholders). No live call — copy-paste, consistent with the app's other AI accelerators.
 
