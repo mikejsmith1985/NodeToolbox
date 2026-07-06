@@ -10,8 +10,14 @@ import { createEmptyOverlay } from '../overlay/overlayModel.ts';
 import { AiSuggestionPanel } from './AiSuggestionPanel.tsx';
 
 function buildController(): CanvasOverlayController {
+  // The master plan requires at least one sprint box (it sequences into real sprints), so seed one.
+  const overlay = createEmptyOverlay('team-a', 'denp:pi-1');
+  overlay.containers = [{
+    id: 'sprint-25', kind: 'sprint', title: 'Sprint 25', bounds: { x: 0, y: 0, width: 400, height: 260 }, capacityBudget: 20,
+    provenance: { state: 'real', jiraSprintId: 25, jiraVersionName: null, startDateIso: null, endDateIso: null },
+  }];
   return {
-    overlay: createEmptyOverlay('team-a', 'denp:pi-1'),
+    overlay,
     ensureNodeStates: vi.fn(), updateNode: vi.fn(), setWipLimit: vi.fn(), setPriority: vi.fn(),
     setSize: vi.fn(), setContainer: vi.fn(), setParked: vi.fn(), addContainer: vi.fn(),
     updateContainer: vi.fn(), removeContainer: vi.fn(), removeNode: vi.fn(), clearNodes: vi.fn(), goToStage: vi.fn(), completeStage: vi.fn(),
@@ -115,13 +121,14 @@ describe('AiSuggestionPanel', () => {
     const controller = buildController();
     render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'sprintGrouping' } });
+    // A title that does NOT match the seeded sprint, so this exercises creating a NEW box.
     fireEvent.change(screen.getByPlaceholderText(/Paste the JSON reply/), {
-      target: { value: '{"kind":"sprintGrouping","groups":[{"containerTitle":"Sprint 25","issueKeys":["DENP-1"]}]}' },
+      target: { value: '{"kind":"sprintGrouping","groups":[{"containerTitle":"Sprint 30","issueKeys":["DENP-1"]}]}' },
     });
     fireEvent.click(screen.getByRole('button', { name: /Ingest suggestions/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
 
-    expect(controller.addContainer).toHaveBeenCalledWith(expect.objectContaining({ kind: 'sprint', title: 'Sprint 25' }));
+    expect(controller.addContainer).toHaveBeenCalledWith(expect.objectContaining({ kind: 'sprint', title: 'Sprint 30' }));
     // assignToContainer (not setContainer) — it repositions the card inside the box.
     expect(controller.assignToContainer).toHaveBeenCalledWith('DENP-1', expect.any(String));
   });
@@ -138,6 +145,24 @@ describe('AiSuggestionPanel', () => {
 
     fireEvent.change(screen.getByRole('spinbutton', { name: 'WIP limit' }), { target: { value: '4' } });
     expect(controller.setWipLimit).toHaveBeenCalledWith(4);
+  });
+
+  it('requires sprint boxes before the master plan can run (sequences into real sprints)', () => {
+    act(() => setAiAssistUnlocked(true));
+    const controller = buildController();
+    controller.overlay.containers = []; // no sprints pulled from the board yet
+    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'masterPlan' } });
+    expect(screen.getByText(/Pull your sprints from the board first/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ingest & apply plan/ })).toBeDisabled();
+  });
+
+  it('lists the real sprints in the master prompt so the AI never invents sprint names', () => {
+    act(() => setAiAssistUnlocked(true));
+    render(<AiSuggestionPanel canvasNodes={NODES} controller={buildController()} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'masterPlan' } });
+    expect(screen.getByDisplayValue(/Available sprints .* "Sprint 25"/s)).toBeInTheDocument();
   });
 
   it('applies the whole master plan in one shot on ingest and shows a summary', () => {

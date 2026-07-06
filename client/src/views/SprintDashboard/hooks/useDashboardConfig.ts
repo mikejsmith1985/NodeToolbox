@@ -21,6 +21,7 @@ const DEFAULT_SPRINT_WINDOW = 6;
 const DEFAULT_KANBAN_PERIOD_DAYS = 14;
 const DEFAULT_CYCLE_TIME_BASELINE_DAYS = 0;
 const DEFAULT_CUSTOM_STORY_POINTS_FIELD_ID = 'story_points';
+const DEFAULT_SPRINT_POINT_CAPACITY = 20;
 const DEFAULT_CUSTOM_EPIC_LINK_FIELD_ID = 'epic_link';
 const DEFAULT_RISK_IMPACT_DATE_FIELD_ID = '';
 const DEFAULT_RISK_RESPONSE_FIELD_ID = '';
@@ -45,6 +46,8 @@ export interface DashboardConfig {
   kanbanPeriodDays: number;
   /** Jira custom field ID used for story points (fallback when customfield_10016 is absent). */
   customStoryPointsFieldId: string;
+  /** Story-point capacity of one sprint, used as the Feature Canvas sprint-box budget. */
+  sprintPointCapacity: number;
   /** Jira custom field ID used for the epic link. */
   customEpicLinkFieldId: string;
   /** Jira custom field ID for Risk Impact Date on Risk issue types. */
@@ -69,6 +72,7 @@ export const DEFAULT_DASHBOARD_CONFIG: DashboardConfig = {
   cycleTimeBaselineDays: DEFAULT_CYCLE_TIME_BASELINE_DAYS,
   kanbanPeriodDays: DEFAULT_KANBAN_PERIOD_DAYS,
   customStoryPointsFieldId: DEFAULT_CUSTOM_STORY_POINTS_FIELD_ID,
+  sprintPointCapacity: DEFAULT_SPRINT_POINT_CAPACITY,
   customEpicLinkFieldId: DEFAULT_CUSTOM_EPIC_LINK_FIELD_ID,
   riskImpactDateFieldId: DEFAULT_RISK_IMPACT_DATE_FIELD_ID,
   riskResponseFieldId: DEFAULT_RISK_RESPONSE_FIELD_ID,

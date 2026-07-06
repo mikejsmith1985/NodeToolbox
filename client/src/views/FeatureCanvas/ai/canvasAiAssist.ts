@@ -115,6 +115,8 @@ export interface AiPromptContext {
   daysRemainingInPi?: number | null;
   /** The PI name, for naming the deadline in the prompt. */
   piName?: string;
+  /** The real sprint boxes on the canvas — the ONLY sprint names the master plan may sequence into. */
+  availableSprints?: readonly string[];
 }
 
 const MOSCOW_BUCKETS: readonly MoscowBucket[] = ['Must', 'Should', 'Could', 'Wont'];
@@ -159,7 +161,8 @@ const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
     + 'against size and PI time-to-DoD); "triage" ("keep" to keep active, "park" to defer stale/duplicate/'
     + 'over-WIP work, "complete" if it already meets Definition of Done — dev-complete + delivered to '
     + 'integration testing, not production, "breakout" if marked done but has open child stories); and '
-    + '"sprint" (the sprint name to sequence it into, or null when parked/complete/not ready). Honor the '
+    + '"sprint" (one of the EXACT sprint names listed above to sequence it into, or null when '
+    + 'parked/complete/not ready — never invent a sprint name). Honor the '
     + 'WIP limit and PI days-left shown above; NEVER sequence a parked or complete feature, and never park '
     + 'work that is nearly done. Use ONLY the data shown; do NOT invent values. Respond ONLY with valid '
     + 'JSON: {"kind":"masterPlan","items":[{"issueKey":"KEY","size":"L","bucket":"Must","triage":"keep","sprint":"Sprint 25","reason":"..."}]}',
@@ -197,6 +200,12 @@ function buildContextHeader(kind: AiSuggestionKind, context?: AiPromptContext): 
     const parkTarget = context.wipLimit === null ? null : Math.max(0, context.inProgressCount - context.wipLimit);
     const targetText = parkTarget === null ? '' : ` Aim to park at least ${parkTarget} in-progress feature(s) to reach the limit.`;
     lines.push(`WIP limit: ${limitText}. Features in progress: ${context.inProgressCount}.${targetText}`);
+  }
+
+  // The master plan may only sequence into the team's REAL sprints (pulled from the board), never
+  // invented names — so list them and constrain the "sprint" field to this exact set.
+  if (kind === 'masterPlan' && context.availableSprints && context.availableSprints.length > 0) {
+    lines.push(`Available sprints (use one of these EXACT names for "sprint", or null): ${context.availableSprints.map((name) => `"${name}"`).join(', ')}. Never invent a sprint name.`);
   }
 
   return lines.length > 0 ? `${lines.join('\n')}\n\n` : '';

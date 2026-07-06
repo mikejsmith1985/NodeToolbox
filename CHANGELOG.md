@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Feature Canvas — Master plan sequences into your real board sprints (no more invented ones)**: the master plan now lists the sprint boxes on the canvas (pulled from the board) in its prompt and constrains the AI to those exact names; on ingest it matches each feature to an **existing** sprint and never fabricates a "Sprint 25". It now also requires at least one sprint box to exist first (pull them from the Sequence stage), the same way it requires a WIP limit. An unmatched/again-null sprint routes the feature to the Later box.
+- **Feature Canvas — sprint point capacity is configurable per team**: sprint boxes now use a **Sprint Point Capacity** value from Team Dashboard settings (default 20) as their budget, instead of a hardcoded 20 — so the per-sprint load reads against your real capacity.
+
 ### Fixed
 - **Feature Canvas — story points now read the team's configured field** (was hardcoded to the legacy field): the canvas took child-story points only from `customfield_10016`/`10028`, ignoring the story-points field configured in Team Dashboard settings. Teams pointing on a different field saw **everything as unpointed** — which also silently fed **zero effort into the AI prompts** (Master plan, Prioritize, Triage), skewing those recommendations. The canvas now resolves points from the same configured field the Sprint Dashboard uses (falling back to the legacy field), so points show correctly across features, story planning, capacity, and the AI.
 

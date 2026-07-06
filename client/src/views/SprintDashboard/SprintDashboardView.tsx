@@ -2709,6 +2709,12 @@ function AdvancedConfigFields({
         placeholder="Story Points field"
         value={config.customStoryPointsFieldId}
       />
+      <ConfigNumberField
+        id="sd-cfg-sprint-capacity"
+        label="Sprint Point Capacity"
+        onChange={(value) => onConfigChange({ sprintPointCapacity: value })}
+        value={config.sprintPointCapacity}
+      />
       <JiraFieldPicker
         id="sd-cfg-epic-field"
         label="Epic Link Field"

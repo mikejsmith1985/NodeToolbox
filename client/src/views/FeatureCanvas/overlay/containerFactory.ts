@@ -105,6 +105,7 @@ export function createProvisionalContainer(
   kind: 'sprint' | 'release',
   existingCount: number,
   title?: string,
+  sprintCapacity: number = DEFAULT_SPRINT_BUDGET,
 ): CanvasContainer {
   const slot = bandSlot(existingCount);
   const defaultTitle = kind === 'sprint' ? 'New sprint' : 'New release';
@@ -113,7 +114,7 @@ export function createProvisionalContainer(
     kind,
     title: title?.trim() ? title.trim() : defaultTitle,
     bounds: { x: slot.x, y: slot.y, width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT },
-    capacityBudget: kind === 'sprint' ? DEFAULT_SPRINT_BUDGET : null,
+    capacityBudget: kind === 'sprint' ? sprintCapacity : null,
     provenance: { state: 'provisional', jiraSprintId: null, jiraVersionName: null, startDateIso: null, endDateIso: null },
   };
 }
@@ -129,6 +130,7 @@ export function createRealSprintContainer(
   existingCount: number,
   startDateIso: string | null = null,
   endDateIso: string | null = null,
+  sprintCapacity: number = DEFAULT_SPRINT_BUDGET,
 ): CanvasContainer {
   const slot = bandSlot(existingCount);
   return {
@@ -136,7 +138,7 @@ export function createRealSprintContainer(
     kind: 'sprint',
     title: name,
     bounds: { x: slot.x, y: slot.y, width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT },
-    capacityBudget: DEFAULT_SPRINT_BUDGET,
+    capacityBudget: sprintCapacity,
     provenance: { state: 'real', jiraSprintId: sprintId, jiraVersionName: null, startDateIso, endDateIso },
   };
 }
