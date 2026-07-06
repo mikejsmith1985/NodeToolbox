@@ -20,6 +20,7 @@ import { useCanvasFeatures } from './canvas/useCanvasFeatures.ts';
 import { useCanvasScope } from './canvas/useCanvasScope.ts';
 import { readStoredArtTeams } from '../SprintDashboard/sprintDashboardArtContext.ts';
 import { loadDashboardConfigFromStorage } from '../SprintDashboard/hooks/useDashboardConfig.ts';
+import { fetchTeamVelocity } from '../SprintDashboard/fetchTeamVelocity.ts';
 import { CoachPanel } from './coach/CoachPanel.tsx';
 import { AiSuggestionPanel } from './ai/AiSuggestionPanel.tsx';
 import { ReviewCommitPanel } from './commit/ReviewCommitPanel.tsx';
@@ -65,8 +66,10 @@ export default function FeatureCanvasView(): React.JSX.Element {
   // points read the right field; otherwise everything looks unpointed and the AI plans on zero effort.
   const teamConfig = useMemo(() => loadDashboardConfigFromStorage(profileId), [profileId]);
   const customStoryPointsFieldId = teamConfig.customStoryPointsFieldId;
-  // Sprint boxes use the team's configured point capacity as their budget (not a hardcoded 20).
-  const sprintPointCapacity = teamConfig.sprintPointCapacity;
+  // Sprint-box capacity: default to the team's real velocity (avg completed points over the last N
+  // closed sprints), resolved when sprints are pulled; the Team Dashboard setting is the fallback for
+  // brand-new boards with no closed-sprint history. Starts at the fallback until velocity resolves.
+  const [resolvedSprintCapacity, setResolvedSprintCapacity] = useState(teamConfig.sprintPointCapacity);
   const features = useCanvasFeatures(workingSetKeys, customStoryPointsFieldId);
 
   const [selectedIssueKey, setSelectedIssueKey] = useState<string | null>(null);
@@ -130,6 +133,11 @@ export default function FeatureCanvasView(): React.JSX.Element {
       return;
     }
     try {
+      // Capacity defaults to the team's real velocity over the last N closed sprints; fall back to the
+      // configured value for boards with no closed-sprint history. Resolved once, reused for later adds.
+      const velocity = await fetchTeamVelocity(scope.boardId, teamConfig.sprintWindow).catch(() => null);
+      const capacity = velocity ?? teamConfig.sprintPointCapacity;
+      setResolvedSprintCapacity(capacity);
       const sprints = await getBoardSprints(scope.boardId);
       const existingSprintIds = new Set(overlay.containers.map((container) => container.provenance.jiraSprintId).filter((id): id is number => id !== null));
       let boxCount = overlay.containers.length;
@@ -137,7 +145,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
         if (existingSprintIds.has(sprint.id)) {
           continue;
         }
-        controller.addContainer(createRealSprintContainer(sprint.id, sprint.name, boxCount, sprint.startDate ?? null, sprint.endDate ?? null, sprintPointCapacity));
+        controller.addContainer(createRealSprintContainer(sprint.id, sprint.name, boxCount, sprint.startDate ?? null, sprint.endDate ?? null, capacity));
         boxCount += 1;
       }
       if (sprints.length === 0) {
@@ -285,7 +293,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
               controller={controller}
               selectedNode={selectedNode}
               wip={wip}
-              onAddContainer={(kind) => controller.addContainer(createProvisionalContainer(kind, overlay.containers.length, undefined, sprintPointCapacity))}
+              onAddContainer={(kind) => controller.addContainer(createProvisionalContainer(kind, overlay.containers.length, undefined, resolvedSprintCapacity))}
               onPullSprints={() => void handlePullSprints()}
               onOpenCommit={() => setIsCommitOpen(true)}
               isAiUnlocked={isAiUnlocked}
