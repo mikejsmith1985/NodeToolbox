@@ -6,12 +6,18 @@
 // capacity readout per sprint. It mutates ONLY the overlay (per-story placement); nothing is written
 // to Jira until Review & Commit, which already expands each story to its placed sprint.
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 import type { CanvasNode } from '../logic/canvasTypes.ts';
-import type { CanvasContainer } from '../overlay/overlayModel.ts';
+import type { ContainerKind } from '../overlay/overlayModel.ts';
 import type { CanvasOverlayController } from '../overlay/useCanvasOverlay.ts';
+import { StoryInspectorPanel } from './StoryInspectorPanel.tsx';
 import controlStyles from '../canvas/canvasControls.module.css';
+
+// Story-level planning is about sequencing into sprints (and deferring to Later). Parked, Complete,
+// and release boxes are feature-level triage outcomes — their stories are NOT being sprint-planned,
+// so they are excluded from this board entirely.
+const PLANNABLE_KINDS: readonly ContainerKind[] = ['sprint', 'later'];
 
 /** Props for the story-level planning panel. */
 export interface StoryPlanningPanelProps {
@@ -74,19 +80,17 @@ function collectStories(canvasNodes: readonly CanvasNode[]): PlaceableStory[] {
   return stories;
 }
 
-/** The story-level planning board. Columns are boxes; cards are child stories you can reassign. */
+/** The story-level planning board. Columns are sprint/Later boxes; cards are child stories to reassign. */
 export function StoryPlanningPanel({ canvasNodes, controller, onClose }: StoryPlanningPanelProps): React.JSX.Element {
   const containers = controller.overlay.containers;
   const stories = useMemo(() => collectStories(canvasNodes), [canvasNodes]);
+  const [selectedStory, setSelectedStory] = useState<PlaceableStory | null>(null);
 
-  // Columns: every box, plus an Unassigned column for stories whose feature has no box yet.
-  const columns = useMemo(() => {
-    const boxColumns = containers.map((container) => ({ id: container.id, container }));
-    return [...boxColumns, { id: UNASSIGNED, container: null as CanvasContainer | null }];
-  }, [containers]);
+  // Only sprint/Later boxes are planning targets and columns — never Parking Lot/Complete/release.
+  const plannableContainers = useMemo(() => containers.filter((container) => PLANNABLE_KINDS.includes(container.kind)), [containers]);
 
   const storiesInColumn = (columnId: string): PlaceableStory[] =>
-    stories.filter((story) => (story.effectiveContainerId ?? UNASSIGNED) === columnId);
+    stories.filter((story) => story.effectiveContainerId === columnId);
 
   const columnPoints = (columnId: string): number =>
     storiesInColumn(columnId).reduce((total, story) => total + (story.points ?? 0), 0);
@@ -100,76 +104,86 @@ export function StoryPlanningPanel({ canvasNodes, controller, onClose }: StoryPl
         <button type="button" className={controlStyles.iconBtn} onClick={onClose} aria-label="Close story planning">✕ Close</button>
       </div>
       <p style={{ opacity: 0.75, margin: '8px 0' }}>
-        Move child stories between boxes to plan each sprint at the story level — a feature can span sprints.
-        This stays in the sandbox; Review &amp; Commit assigns each story to its placed sprint.
+        Move child stories between sprints (or defer to Later) to plan each sprint at the story level — a
+        feature can span sprints. Click a story for its full detail. This stays in the sandbox; Review &amp;
+        Commit assigns each story to its placed sprint.
       </p>
 
-      {/* One scroll container for the whole board; min-width:max-content stops columns being clipped. */}
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', minWidth: 'max-content', paddingBottom: 8 }}>
-        {columns.map((column) => {
-          const isSprint = column.container?.kind === 'sprint';
-          const budget = column.container?.capacityBudget ?? null;
-          const points = columnPoints(column.id);
-          const isOver = isSprint && budget !== null && points > budget;
-          const title = column.container ? column.container.title : 'Unassigned';
-          return (
-            <section key={column.id} aria-label={`Box ${title}`} style={{ flex: '0 0 320px', border: '1px solid var(--color-border)', borderRadius: 8, padding: 10, background: 'var(--color-surface)' }}>
-              <header style={{ marginBottom: 8 }}>
-                <strong style={{ fontSize: 14 }}>{title}</strong>
-                {isSprint && (
-                  <div style={{ fontSize: 12, color: isOver ? 'var(--color-danger)' : 'inherit', fontWeight: isOver ? 700 : 400 }}>
-                    {points}{budget !== null ? ` / ${budget}` : ''} pt{isOver ? ' · over capacity' : ''} · {storiesInColumn(column.id).length} stories
-                  </div>
-                )}
-              </header>
-              <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {storiesInColumn(column.id).map((story) => (
-                  <li key={story.storyKey} style={{ border: '1px solid var(--color-border)', borderRadius: 6, padding: 8, fontSize: 12, background: 'var(--color-bg-surface, var(--color-bg))' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'baseline' }}>
-                      <strong>{story.storyKey}</strong>
-                      {/* Story points are the primary complexity signal; show a clear dash when unpointed. */}
-                      <span style={{ fontWeight: 700, color: story.points === null ? 'var(--color-warning)' : 'inherit' }}>
-                        {story.points !== null ? `${story.points} pt` : 'unpointed'}
-                      </span>
+      {plannableContainers.length === 0 && <p style={{ opacity: 0.6 }}>Add a sprint box first, then come back to plan its stories.</p>}
+
+      {/* Board (left, scrolls) + the docked story inspector (right, when a card is selected). */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', minWidth: 'max-content', paddingBottom: 8 }}>
+          {plannableContainers.map((container) => {
+            const isSprint = container.kind === 'sprint';
+            const budget = container.capacityBudget;
+            const points = columnPoints(container.id);
+            const isOver = isSprint && budget !== null && points > budget;
+            return (
+              <section key={container.id} aria-label={`Box ${container.title}`} style={{ flex: '0 0 320px', border: '1px solid var(--color-border)', borderRadius: 8, padding: 10, background: 'var(--color-surface)' }}>
+                <header style={{ marginBottom: 8 }}>
+                  <strong style={{ fontSize: 14 }}>{container.title}</strong>
+                  {isSprint && (
+                    <div style={{ fontSize: 12, color: isOver ? 'var(--color-danger)' : 'inherit', fontWeight: isOver ? 700 : 400 }}>
+                      {points}{budget !== null ? ` / ${budget}` : ''} pt{isOver ? ' · over capacity' : ''} · {storiesInColumn(container.id).length} stories
                     </div>
-                    {/* Full summary (wraps) — the biggest missing signal before. */}
-                    <div style={{ lineHeight: 1.35, margin: '3px 0' }}>{story.summary}</div>
-                    {/* Complexity/ownership signals: type, status, assignee, subtask count. */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 11, opacity: 0.85 }}>
-                      {story.issueType && <span>{story.issueType}</span>}
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusColor(story.statusCategoryKey) }} />
-                        {story.status || '—'}
-                      </span>
-                      {story.subtaskCount > 0 && <span>· {story.subtaskCount} subtask{story.subtaskCount === 1 ? '' : 's'}</span>}
-                      <span>· 👤 {story.assignee ?? 'Unassigned'}</span>
-                    </div>
-                    <div style={{ opacity: 0.55, fontSize: 10, marginTop: 2 }}>in {story.featureKey}</div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 11 }}>
-                      Move to:
-                      <select
-                        aria-label={`Move ${story.storyKey} to box`}
-                        value={story.effectiveContainerId ?? UNASSIGNED}
-                        onChange={(event) => controller.setStoryPlacement(
-                          story.featureKey,
-                          story.storyKey,
-                          event.target.value === UNASSIGNED ? null : event.target.value,
-                        )}
-                        style={{ flex: 1, fontSize: 11 }}
+                  )}
+                </header>
+                <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {storiesInColumn(container.id).map((story) => (
+                    <li key={story.storyKey} style={{ border: `1px solid ${selectedStory?.storyKey === story.storyKey ? 'var(--color-accent, #8b5cf6)' : 'var(--color-border)'}`, borderRadius: 6, padding: 8, fontSize: 12, background: 'var(--color-bg-surface, var(--color-bg))' }}>
+                      {/* Click anywhere on the card body to inspect its full detail (description/AC/comments). */}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStory(story)}
+                        style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%' }}
+                        title={`Open ${story.storyKey} detail`}
                       >
-                        <option value={UNASSIGNED}>Inherit feature&apos;s box</option>
-                        {containers.map((container) => <option key={container.id} value={container.id}>{container.title}</option>)}
-                      </select>
-                    </label>
-                  </li>
-                ))}
-                {storiesInColumn(column.id).length === 0 && <li style={{ opacity: 0.5, fontSize: 12 }}>No stories.</li>}
-              </ul>
-            </section>
-          );
-        })}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'baseline' }}>
+                          <strong>{story.storyKey}</strong>
+                          <span style={{ fontWeight: 700, color: story.points === null ? 'var(--color-warning)' : 'inherit' }}>
+                            {story.points !== null ? `${story.points} pt` : 'unpointed'}
+                          </span>
+                        </div>
+                        <div style={{ lineHeight: 1.35, margin: '3px 0' }}>{story.summary}</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 11, opacity: 0.85 }}>
+                          {story.issueType && <span>{story.issueType}</span>}
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusColor(story.statusCategoryKey) }} />
+                            {story.status || '—'}
+                          </span>
+                          {story.subtaskCount > 0 && <span>· {story.subtaskCount} subtask{story.subtaskCount === 1 ? '' : 's'}</span>}
+                          <span>· 👤 {story.assignee ?? 'Unassigned'}</span>
+                        </div>
+                        <div style={{ opacity: 0.55, fontSize: 10, marginTop: 2 }}>in {story.featureKey}</div>
+                      </button>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 11 }}>
+                        Move to:
+                        <select
+                          aria-label={`Move ${story.storyKey} to box`}
+                          value={story.effectiveContainerId ?? UNASSIGNED}
+                          onChange={(event) => controller.setStoryPlacement(
+                            story.featureKey,
+                            story.storyKey,
+                            event.target.value === UNASSIGNED ? null : event.target.value,
+                          )}
+                          style={{ flex: 1, fontSize: 11 }}
+                        >
+                          <option value={UNASSIGNED}>Inherit feature&apos;s box</option>
+                          {plannableContainers.map((target) => <option key={target.id} value={target.id}>{target.title}</option>)}
+                        </select>
+                      </label>
+                    </li>
+                  ))}
+                  {storiesInColumn(container.id).length === 0 && <li style={{ opacity: 0.5, fontSize: 12 }}>No stories.</li>}
+                </ul>
+              </section>
+            );
+          })}
+          </div>
         </div>
+        {selectedStory && <StoryInspectorPanel story={selectedStory} onClose={() => setSelectedStory(null)} />}
       </div>
     </div>
   );

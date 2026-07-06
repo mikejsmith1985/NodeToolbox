@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Feature Canvas — story inspector in "Plan stories" (feature-parity detail)**: Clicking a story now opens a read-only inspector — the same experience the canvas gives features — with the story's **description, acceptance criteria, and comment thread** fetched on demand, plus type/status/assignee/points/subtasks. So you can actually read the work before deciding which sprint it belongs in.
+
 ### Changed
+- **Feature Canvas — "Plan stories" is scoped to sprint sequencing**: The board now shows **only sprint and Later boxes** — Parking Lot, Complete, and the nonsensical "Unassigned" column are gone (their stories aren't being sprint-planned). Move targets are limited to the same, so you can only place a story where it can actually go.
 - **Feature Canvas — "Plan stories" cards now show real complexity detail**: Each story card was near-empty (a key, a truncated summary, and a sprint dropdown). Cards now show the **full summary**, **story points** (highlighted when unpointed), **issue type**, a **status** badge, **subtask count**, and **assignee** — the signals you need to gauge complexity while planning. Columns are wider and each sprint header shows its story count too.
 
 ### Fixed
