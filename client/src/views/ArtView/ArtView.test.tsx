@@ -782,6 +782,20 @@ describe('ArtView', () => {
     expect(screen.getByLabelText(/sme \/ point of contact \(po\)/i)).toBeInTheDocument();
   });
 
+  it('drafts monthly report narrative fields from a pasted Copilot JSON reply', () => {
+    mockState.activeTab = 'monthly';
+    renderArtView();
+    // Open the first card's AI draft panel, paste a JSON reply, and apply it.
+    fireEvent.click(screen.getAllByRole('button', { name: /Draft with Copilot/i })[0]);
+    fireEvent.change(screen.getByLabelText('AI response'), {
+      target: { value: '{"accomplished":"• Shipped the thing","outcomes":"Cost savings"}' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Apply AI draft/i }));
+
+    const accomplished = screen.getAllByLabelText(/what was accomplished\?/i)[0] as HTMLTextAreaElement;
+    expect(accomplished.value).toContain('Shipped the thing');
+  });
+
   // ── Monthly Report parity: pillar filter ──
 
   it('renders a pillar filter dropdown in the Monthly Report toolbar', () => {

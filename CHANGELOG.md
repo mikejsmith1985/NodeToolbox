@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **ART View — AI draft (Copilot) for the Monthly Report**: each report card now has a **🤖 Draft with Copilot** helper — it builds a prompt from the team's Jira context (done/total, %, points, impediments) and the report questions, you copy it into Copilot, and paste the JSON reply back to fill the narrative fields (initiative, product areas, accomplishments, outcomes, stakeholders). No live call — copy-paste, consistent with the app's other AI accelerators.
+
 ### Fixed
+- **ART View — "Select Pillar" dropdown was white-on-white**: the per-team pillar select hardcoded a translucent-white background and white text (unreadable in both light and dark). It now uses the theme tokens, and its options are explicitly colored so the dropdown is readable in both modes.
 - **Feature Canvas — Master plan now actually sequences into your pulled sprints**: with real sprints on the canvas, features were still all landing in Later because the plan matched sprints by **exact title** and the AI rarely echoes a long sprint name verbatim. Matching is now forgiving — exact (normalized) title, the sprint's **number** (1-based, from the enumerated list now shown in the prompt), or a substring either way. It also **auto-pulls the board's sprints** when you pick Master plan and none exist yet, so the flow works without a manual pull.
 
 ### Added
