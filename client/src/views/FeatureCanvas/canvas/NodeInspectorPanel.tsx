@@ -10,13 +10,21 @@ import { useIssueComments } from '../../../hooks/useIssueComments.ts';
 import { normalizeRichTextToPlainText } from '../../../utils/richTextPlainText.ts';
 import CommentThread from '../../../components/CommentThread/CommentThread.tsx';
 import type { CanvasAttachment, CanvasNode } from '../logic/canvasTypes.ts';
+import type { MoscowBucket, TshirtSize } from '../overlay/overlayModel.ts';
+import { TSHIRT_SIZES } from '../logic/sizing.ts';
 import controlStyles from './canvasControls.module.css';
 
-/** Props for the read-only node inspector. */
+/** Props for the node inspector. Priority/size are editable here (any stage) when handlers are given. */
 export interface NodeInspectorPanelProps {
   node: CanvasNode | null;
   onClose: () => void;
+  /** Sets the feature's MoSCoW priority (null clears). When omitted, priority is read-only. */
+  onSetPriority?: (issueKey: string, priority: MoscowBucket | null) => void;
+  /** Sets the feature's t-shirt size (null clears). When omitted, size is read-only. */
+  onSetSize?: (issueKey: string, size: TshirtSize | null) => void;
 }
+
+const MOSCOW_BUCKETS: readonly MoscowBucket[] = ['Must', 'Should', 'Could', 'Wont'];
 
 const BYTES_PER_UNIT = 1024;
 const SIZE_UNITS = ['B', 'KB', 'MB', 'GB'] as const;
@@ -60,18 +68,18 @@ function AttachmentList({ attachments }: { attachments: CanvasAttachment[] }): R
   );
 }
 
-/** The docked, read-only inspector for the currently selected node. */
-export function NodeInspectorPanel({ node, onClose }: NodeInspectorPanelProps): React.JSX.Element | null {
+/** The docked inspector for the currently selected node. */
+export function NodeInspectorPanel({ node, onClose, onSetPriority, onSetSize }: NodeInspectorPanelProps): React.JSX.Element | null {
   if (node === null) {
     return null;
   }
 
   // Remount on key change so the comment fetch and any transient state reset to the new node.
-  return <NodeInspectorContent key={node.issueKey} node={node} onClose={onClose} />;
+  return <NodeInspectorContent key={node.issueKey} node={node} onClose={onClose} onSetPriority={onSetPriority} onSetSize={onSetSize} />;
 }
 
 /** Owns the on-demand comment fetch for one specific node; only mounted when a node is selected. */
-function NodeInspectorContent({ node, onClose }: { node: CanvasNode; onClose: () => void }): React.JSX.Element {
+function NodeInspectorContent({ node, onClose, onSetPriority, onSetSize }: { node: CanvasNode; onClose: () => void; onSetPriority?: (issueKey: string, priority: MoscowBucket | null) => void; onSetSize?: (issueKey: string, size: TshirtSize | null) => void }): React.JSX.Element {
   const { comments, isLoading: isLoadingComments, loadError: commentsLoadError } = useIssueComments(node.issueKey);
   const normalizedDescription = normalizeRichTextToPlainText(node.description);
 
@@ -97,6 +105,44 @@ function NodeInspectorContent({ node, onClose }: { node: CanvasNode; onClose: ()
         <dt style={{ opacity: 0.6 }}>Health</dt><dd style={{ margin: 0 }}>{node.health}</dd>
         <dt style={{ opacity: 0.6 }}>Completion</dt><dd style={{ margin: 0 }}>{node.completionPercent}%</dd>
       </dl>
+
+      {/* Priority (MoSCoW) — editable from the inspector so it can be changed in any stage. */}
+      {onSetPriority && (
+        <div style={{ marginTop: 8, fontSize: 12 }}>
+          <div style={{ opacity: 0.6, marginBottom: 3 }}>Priority (MoSCoW)</div>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {MOSCOW_BUCKETS.map((bucket) => (
+              <button
+                key={bucket}
+                type="button"
+                className={node.priority === bucket ? controlStyles.btnPrimary : controlStyles.btn}
+                onClick={() => onSetPriority(node.issueKey, node.priority === bucket ? null : bucket)}
+              >
+                {bucket}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Size (t-shirt) — editable here too. */}
+      {onSetSize && (
+        <div style={{ marginTop: 8, fontSize: 12 }}>
+          <div style={{ opacity: 0.6, marginBottom: 3 }}>Size</div>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {TSHIRT_SIZES.map((size) => (
+              <button
+                key={size}
+                type="button"
+                className={node.size === size ? controlStyles.btnPrimary : controlStyles.btn}
+                onClick={() => onSetSize(node.issueKey, node.size === size ? null : size)}
+              >
+                {size}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Description — read-only, normalized to plain text */}
       <div style={{ marginTop: 8, fontSize: 12 }}>

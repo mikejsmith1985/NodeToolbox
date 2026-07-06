@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Feature Canvas — set MoSCoW priority & size from the node inspector (any stage)**: previously priority/size could only be changed in the Prioritize/Size coaching stages with the feature selected. Click any feature to open the inspector and change its **MoSCoW priority** and **t-shirt size** directly — no need to jump back to a specific stage.
+
 ### Changed
 - **ART View — Monthly Report AI is now consistent with the app's "AI suggestions"**: the draft helper is gated behind the same **AI Assist unlock** (Ctrl+Alt+Z) as every other accelerator and its button is rebranded from "🤖 Draft with Copilot" to **⚡ AI suggestions**, matching the Feature Canvas.
 
