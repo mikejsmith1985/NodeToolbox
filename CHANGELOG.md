@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **ART View — Monthly Report AI is now consistent with the app's "AI suggestions"**: the draft helper is gated behind the same **AI Assist unlock** (Ctrl+Alt+Z) as every other accelerator and its button is rebranded from "🤖 Draft with Copilot" to **⚡ AI suggestions**, matching the Feature Canvas.
+
 ### Added
 - **Feature Canvas — "Auto-balance sprints" + an "Over Capacity" bucket**: Plan stories gains a **⚖️ Auto-balance sprints** action that fills each sprint up to its point capacity in **MoSCoW priority order**, and sends everything that doesn't fit — plus unestimated stories — to a new **Over Capacity** box. This separates the two kinds of "not now": **Parking Lot** = deprioritized (not critical), **Over Capacity** = no room this PI (must be re-prioritized). The result reports what actually fits vs. what's deferred, e.g. "142 pt fit across 2 sprints · 480 pt (178 stories) → Over Capacity."
 - **Feature Canvas — sprint capacity override**: the Team Dashboard **Sprint Point Capacity** now **overrides** computed velocity when set (>0); `0` = auto (use velocity). So a team whose auto-velocity reads low can pin a realistic number (e.g. 20).

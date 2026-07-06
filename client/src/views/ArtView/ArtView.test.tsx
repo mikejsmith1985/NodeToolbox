@@ -96,6 +96,7 @@ vi.mock('../../services/confluenceApi.ts', () => ({
 }));
 
 import ArtView from './ArtView.tsx';
+import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
 
 const mockClipboardWrite = vi.fn().mockResolvedValue(undefined);
 const mockClipboardWriteText = vi.fn().mockResolvedValue(undefined);
@@ -782,11 +783,19 @@ describe('ArtView', () => {
     expect(screen.getByLabelText(/sme \/ point of contact \(po\)/i)).toBeInTheDocument();
   });
 
-  it('drafts monthly report narrative fields from a pasted Copilot JSON reply', () => {
+  it('does not show AI suggestions on the monthly report until AI Assist is unlocked', () => {
     mockState.activeTab = 'monthly';
+    setAiAssistUnlocked(false);
     renderArtView();
-    // Open the first card's AI draft panel, paste a JSON reply, and apply it.
-    fireEvent.click(screen.getAllByRole('button', { name: /Draft with Copilot/i })[0]);
+    expect(screen.queryByRole('button', { name: /AI suggestions/i })).not.toBeInTheDocument();
+  });
+
+  it('drafts monthly report narrative fields from a pasted Copilot JSON reply (AI Assist unlocked)', () => {
+    mockState.activeTab = 'monthly';
+    setAiAssistUnlocked(true);
+    renderArtView();
+    // Open the first card's AI suggestions panel, paste a JSON reply, and apply it.
+    fireEvent.click(screen.getAllByRole('button', { name: /AI suggestions/i })[0]);
     fireEvent.change(screen.getByLabelText('AI response'), {
       target: { value: '{"accomplished":"• Shipped the thing","outcomes":"Cost savings"}' },
     });
