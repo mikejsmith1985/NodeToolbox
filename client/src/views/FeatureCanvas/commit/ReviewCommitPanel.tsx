@@ -41,6 +41,7 @@ function describeItem(item: CommitDiffItem): string {
     case 'pointsSet': return `${item.issueKey} points → ${item.to}`;
     case 'prioritySet': return `${item.issueKey} priority → ${item.to}`;
     case 'parkComment': return `${item.issueKey} → comment "Parked: ${item.to}"`;
+    case 'comment': return `${item.issueKey} → comment "${item.to}"`;
     default: return item.id;
   }
 }

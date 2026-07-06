@@ -108,6 +108,23 @@ function buildPointsItem(node: CanvasNode, sizeMapping: Record<TshirtSize, numbe
   };
 }
 
+/** Builds a "post this canvas-drafted comment to Jira" item when the feature has a pending comment. */
+function buildCommentItem(node: CanvasNode): CommitDiffItem | null {
+  if (node.pendingComment.trim() === '') {
+    return null;
+  }
+  return {
+    id: `comment:${node.issueKey}`,
+    kind: 'comment',
+    issueKey: node.issueKey,
+    containerId: null,
+    from: null,
+    to: node.pendingComment.trim(),
+    dependsOn: null,
+    selected: true,
+  };
+}
+
 /** Builds a "post the park reason as a comment" item for a parked feature that has a reason. */
 function buildParkCommentItem(node: CanvasNode): CommitDiffItem | null {
   if (!node.isParked || node.parkReason === null || node.parkReason.trim() === '') {
@@ -181,6 +198,10 @@ export function buildCommitDiff(
     const parkCommentItem = buildParkCommentItem(node);
     if (parkCommentItem) {
       assignmentItems.push(parkCommentItem);
+    }
+    const commentItem = buildCommentItem(node);
+    if (commentItem) {
+      assignmentItems.push(commentItem);
     }
   }
 

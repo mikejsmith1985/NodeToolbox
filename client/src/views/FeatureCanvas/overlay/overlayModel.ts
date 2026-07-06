@@ -63,6 +63,8 @@ export interface CanvasNodeState {
   /** Per-child-story box overrides (storyKey → containerId) set during story-level planning. Absent
    *  keys inherit the feature's own box; this lets one feature's stories be split across sprints. */
   storyPlacements?: Record<string, string>;
+  /** A comment drafted on the canvas to post to this feature's Jira issue on Review & Commit. */
+  pendingComment?: string;
 }
 
 /** Coach progress, enabling resume and non-linear revisit. */

@@ -308,6 +308,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
               onClose={() => setSelectedIssueKey(null)}
               onSetPriority={(issueKey, priority) => controller.setPriority(issueKey, priority)}
               onSetSize={(issueKey, size) => controller.setSize(issueKey, size)}
+              onSetComment={(issueKey, comment) => controller.updateNode(issueKey, { pendingComment: comment })}
             />
             <CoachPanel
               controller={controller}

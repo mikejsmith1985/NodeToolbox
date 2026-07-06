@@ -11,7 +11,7 @@ function buildNode(overrides: Partial<CanvasNode> = {}): CanvasNode {
     issueKey: 'DENP-1', position: { x: 0, y: 0 }, size: null, priority: null, containerId: null,
     isExpanded: false, isParked: false, summary: '', status: '', statusCategoryKey: 'new',
     assignee: null, storyPoints: null, health: 'green', completionPercent: 0, hygieneFlags: [],
-    childStories: [], dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null, storyPlacements: {}, attachments: [], effectivePoints: 0, ...overrides,
+    childStories: [], dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null, storyPlacements: {}, pendingComment: "", attachments: [], effectivePoints: 0, ...overrides,
   };
 }
 
@@ -30,6 +30,12 @@ describe('buildCommitDiff', () => {
     const diff = buildCommitDiff([parked], []);
     const comment = diff.find((item) => item.kind === 'parkComment');
     expect(comment).toMatchObject({ issueKey: 'DENP-9', to: 'stale — no activity in 3 sprints' });
+  });
+
+  it('emits a comment item for a canvas-drafted pending comment', () => {
+    const node = buildNode({ issueKey: 'DENP-5', pendingComment: 'Please review the AC' });
+    const comment = buildCommitDiff([node], []).find((item) => item.kind === 'comment');
+    expect(comment).toMatchObject({ issueKey: 'DENP-5', to: 'Please review the AC' });
   });
 
   it('does not comment on a parked feature with no reason', () => {

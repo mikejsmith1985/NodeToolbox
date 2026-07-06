@@ -90,7 +90,7 @@ describe('nodeMapping', () => {
 
   it('prefers an overlay size over live points for the capacity unit', () => {
     const overlay = createEmptyOverlay('team-a', 'denp:pi-1');
-    overlay.nodes['DENP-1'] = { issueKey: 'DENP-1', position: { x: 7, y: 8 }, size: 'XL', priority: null, containerId: null, isExpanded: false, isParked: false, storyPlacements: {} };
+    overlay.nodes['DENP-1'] = { issueKey: 'DENP-1', position: { x: 7, y: 8 }, size: 'XL', priority: null, containerId: null, isExpanded: false, isParked: false, storyPlacements: {}, pendingComment: "" };
     const [node] = mapFeaturesToNodes([buildFeatureItem()], overlay);
     expect(node.position).toEqual({ x: 7, y: 8 });
     expect(node.effectivePoints).toBe(80);

@@ -153,6 +153,7 @@ export function mapFeaturesToNodes(items: readonly FeatureReviewItem[], overlay:
       isParked: nodeState?.isParked ?? false,
       parkReason: nodeState?.parkReason ?? null,
       storyPlacements: nodeState?.storyPlacements ?? {},
+      pendingComment: nodeState?.pendingComment ?? '',
       summary: item.feature.summary,
       status: item.feature.status,
       statusCategoryKey: readStatusCategoryKey(item),
