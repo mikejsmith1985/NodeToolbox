@@ -5,7 +5,7 @@
 // an accept/reject proposal. Accepting mutates ONLY the overlay; nothing here touches Jira, and
 // the whole workflow is fully usable without ever opening this panel.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAiAssistStore } from '../../../store/aiAssistStore.ts';
 import type { CanvasNode, WipSnapshot } from '../logic/canvasTypes.ts';
@@ -33,6 +33,8 @@ export interface AiSuggestionPanelProps {
   wip: WipSnapshot;
   /** Active PI name (may carry a date range) — drives the days-left signal in the prompts. */
   piName: string;
+  /** Pulls the board's real sprints in if none exist yet — called automatically for the master plan. */
+  onEnsureSprints?: () => void;
   onClose: () => void;
 }
 
@@ -126,7 +128,7 @@ function toPromptIssue(node: CanvasNode): AiPromptIssue {
 }
 
 /** The gated copy-paste AI accelerator. Renders nothing when AI Assist is locked. */
-export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onClose }: AiSuggestionPanelProps): React.JSX.Element | null {
+export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onEnsureSprints, onClose }: AiSuggestionPanelProps): React.JSX.Element | null {
   const isUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
   const [kind, setKind] = useState<AiSuggestionKind>('sizeEstimate');
   const [responseText, setResponseText] = useState('');
@@ -184,6 +186,17 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onClos
   // enabled either way — applyMasterPlan only ever matches EXISTING sprints, so nothing is invented.
   const needsWipLimit = kind === 'masterPlan' && wip.limit === null;
   const needsSprints = kind === 'masterPlan' && sprintNames.length === 0;
+
+  // Make the master plan "just work": when it's selected and no sprints have been pulled yet, pull the
+  // board's real sprints automatically (once) so the prompt lists them and features get sequenced
+  // instead of all landing in Later. The once-guard means the callback's identity can't re-fire it.
+  const hasAutoPulledRef = useRef(false);
+  useEffect(() => {
+    if (kind === 'masterPlan' && sprintNames.length === 0 && !hasAutoPulledRef.current) {
+      hasAutoPulledRef.current = true;
+      onEnsureSprints?.();
+    }
+  }, [kind, sprintNames.length, onEnsureSprints]);
 
   // Guard: invisible and inert unless the operator has unlocked AI Assist.
   if (!isUnlocked) {

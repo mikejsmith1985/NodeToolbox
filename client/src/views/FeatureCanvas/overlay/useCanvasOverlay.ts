@@ -363,13 +363,35 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
         containers = [...containers, created];
         return created;
       };
-      // The plan may only sequence into sprints that ALREADY exist (real sprints pulled from the board);
-      // it never invents a sprint. An unmatched name falls through to the Later box.
-      const matchExistingSprint = (title: string | null): CanvasContainer | undefined => (
-        title === null
-          ? undefined
-          : containers.find((container) => container.kind === 'sprint' && container.title.trim().toLowerCase() === title.trim().toLowerCase())
-      );
+      // The plan sequences into sprints that ALREADY exist (real sprints pulled from the board); it
+      // never invents one. Matching is forgiving because the AI rarely echoes a long sprint name
+      // verbatim: we accept an exact (normalized) title, a 1-based index into the sprint list, or a
+      // substring either way. Anything unmatched falls through to the Later box.
+      const normalize = (value: string): string => value.trim().toLowerCase().replace(/^["']+|["']+$/g, '').replace(/\s+/g, ' ');
+      const sprintContainers = containers.filter((container) => container.kind === 'sprint');
+      const matchExistingSprint = (rawTitle: string | null): CanvasContainer | undefined => {
+        if (rawTitle === null || rawTitle.trim() === '') {
+          return undefined;
+        }
+        const target = normalize(rawTitle);
+        const exact = sprintContainers.find((container) => normalize(container.title) === target);
+        if (exact) {
+          return exact;
+        }
+        // The AI answered with the sprint's position (e.g. "1", "Sprint 2") — map it to that box.
+        const indexMatch = /(\d+)\s*$/.exec(target);
+        if (indexMatch) {
+          const ordinal = Number(indexMatch[1]);
+          if (Number.isInteger(ordinal) && ordinal >= 1 && ordinal <= sprintContainers.length) {
+            return sprintContainers[ordinal - 1];
+          }
+        }
+        // Last resort: one title contains the other (handles prefixes/suffixes like "ENCUC — Sprint 25").
+        return sprintContainers.find((container) => {
+          const name = normalize(container.title);
+          return name.includes(target) || target.includes(name);
+        });
+      };
       const memberCount = (containerId: string, movingKey: string): number =>
         Object.values(nodes).filter((nodeState) => nodeState.containerId === containerId && nodeState.issueKey !== movingKey).length;
 

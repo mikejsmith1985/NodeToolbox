@@ -208,7 +208,8 @@ function buildContextHeader(kind: AiSuggestionKind, context?: AiPromptContext): 
   if (kind === 'masterPlan') {
     const sprints = context.availableSprints ?? [];
     if (sprints.length > 0) {
-      lines.push(`Available sprints (use one of these EXACT names for "sprint", or null): ${sprints.map((name) => `"${name}"`).join(', ')}. Never invent a sprint name.`);
+      const numbered = sprints.map((name, index) => `${index + 1}) "${name}"`).join('; ');
+      lines.push(`Available sprints — set "sprint" to a sprint's EXACT name OR its number: ${numbered}. Use null if a feature is parked/complete/not ready. Never invent a sprint name.`);
     } else {
       lines.push('No sprints are available — set "sprint" to null for every feature (they will be placed in Later). Do NOT invent sprint names.');
     }

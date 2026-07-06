@@ -285,7 +285,19 @@ export default function FeatureCanvasView(): React.JSX.Element {
                 <StoryPlanningPanel canvasNodes={canvasNodes} controller={controller} onClose={() => setIsStoryPlanOpen(false)} />
               )}
               {isAiOpen && (
-                <AiSuggestionPanel canvasNodes={canvasNodes} controller={controller} wip={wip} piName={scope.piName} onClose={() => setIsAiOpen(false)} />
+                <AiSuggestionPanel
+                  canvasNodes={canvasNodes}
+                  controller={controller}
+                  wip={wip}
+                  piName={scope.piName}
+                  onEnsureSprints={() => {
+                    // Master plan asks for this when no sprints exist yet — pull the board's real ones.
+                    if (scope.boardId !== null && !overlay.containers.some((container) => container.kind === 'sprint')) {
+                      void handlePullSprints();
+                    }
+                  }}
+                  onClose={() => setIsAiOpen(false)}
+                />
               )}
             </div>
             <NodeInspectorPanel node={selectedNode} onClose={() => setSelectedIssueKey(null)} />
