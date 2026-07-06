@@ -148,16 +148,19 @@ describe('AiSuggestionPanel', () => {
     expect(controller.setWipLimit).toHaveBeenCalledWith(4);
   });
 
-  it('warns when no sprints are pulled (advisory, not a block)', () => {
+  it('warns when no sprints are pulled (advisory, not a block) and auto-pulls them', () => {
     act(() => setAiAssistUnlocked(true));
     const controller = buildController();
     controller.overlay.containers = []; // no sprints pulled from the board yet
-    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
+    const onEnsureSprints = vi.fn();
+    render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onEnsureSprints={onEnsureSprints} onClose={vi.fn()} />);
 
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'masterPlan' } });
     expect(screen.getByText(/No sprints pulled yet/)).toBeInTheDocument();
     // Advisory only — the plan still runs (features go to Later); buttons stay enabled.
     expect(screen.getByRole('button', { name: /Ingest & apply plan/ })).not.toBeDisabled();
+    // Selecting the master plan with no sprints auto-pulls them so the flow just works.
+    expect(onEnsureSprints).toHaveBeenCalled();
   });
 
   it('lists the real sprints in the master prompt so the AI never invents sprint names', () => {

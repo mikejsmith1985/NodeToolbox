@@ -217,6 +217,29 @@ describe('useCanvasOverlay', () => {
       expect(result.current.overlay.nodes['KEEP-1'].containerId).toBeNull();
     });
 
+    it('applyMasterPlan matches sprints forgivingly (exact, index, or substring), not just exact titles', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      const realSprint = (id: number, title: string): CanvasContainer => ({
+        id: `sprint-${id}`, kind: 'sprint', title, bounds: { x: 0, y: 0, width: 400, height: 260 }, capacityBudget: 20,
+        provenance: { state: 'real', jiraSprintId: id, jiraVersionName: null, startDateIso: null, endDateIso: null },
+      });
+      act(() => result.current.ensureNodeStates([createNodeState('SUB', 0, 0), createNodeState('IDX', 0, 0), createNodeState('NOPE', 0, 0)]));
+      act(() => result.current.addContainer(realSprint(1, 'ENCUC — Sprint 25.3.1')));
+      act(() => result.current.addContainer(realSprint(2, 'ENCUC — Sprint 25.3.2')));
+
+      act(() => result.current.applyMasterPlan([
+        { issueKey: 'SUB', size: null, bucket: null, triage: 'keep', sprint: 'Sprint 25.3.1', reason: '' }, // substring of box 1
+        { issueKey: 'IDX', size: null, bucket: null, triage: 'keep', sprint: '2', reason: '' }, // 1-based index → box 2
+        { issueKey: 'NOPE', size: null, bucket: null, triage: 'keep', sprint: 'Sprint 99', reason: '' }, // no match → Later
+      ]));
+
+      const overlay = result.current.overlay;
+      expect(overlay.nodes['SUB'].containerId).toBe('sprint-1');
+      expect(overlay.nodes['IDX'].containerId).toBe('sprint-2');
+      const later = overlay.containers.find((container) => container.kind === 'later');
+      expect(overlay.nodes['NOPE'].containerId).toBe(later?.id);
+    });
+
     it('setStoryPlacement sets and clears a per-story box override', () => {
       const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
       act(() => result.current.ensureNodeStates([createNodeState('DENP-1', 0, 0)]));

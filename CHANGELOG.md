@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Feature Canvas — Master plan now actually sequences into your pulled sprints**: with real sprints on the canvas, features were still all landing in Later because the plan matched sprints by **exact title** and the AI rarely echoes a long sprint name verbatim. Matching is now forgiving — exact (normalized) title, the sprint's **number** (1-based, from the enumerated list now shown in the prompt), or a substring either way. It also **auto-pulls the board's sprints** when you pick Master plan and none exist yet, so the flow works without a manual pull.
+
 ### Added
 - **Admin Hub — roll back to an earlier version**: Update Management now has a "Roll back to a previous version" picker listing the **last 10 published releases** (new `GET /api/releases`). Choosing one downloads that release and restarts, reusing the existing update/restart pipeline (the installer was already version-parameterized). A confirm dialog notes that plans/settings created in a newer version may not load. The manual update-to-latest flow is unchanged.
 
