@@ -38,6 +38,9 @@ const RESTART_HANDOFF_ARGUMENT = '--restart-handoff';
 /** Public GitHub API endpoint for the latest NodeToolbox release metadata. */
 const VERSION_CHECK_API_URL = 'https://api.github.com/repos/mikejsmith1985/NodeToolbox/releases/latest';
 
+/** Public GitHub API endpoint listing recent releases (newest first), for the rollback picker. */
+const RELEASES_LIST_API_URL = 'https://api.github.com/repos/mikejsmith1985/NodeToolbox/releases?per_page=10';
+
 /** Public GitHub release redirect used as a lightweight fallback when the API is slow. */
 const VERSION_CHECK_REDIRECT_URL = 'https://github.com/mikejsmith1985/NodeToolbox/releases/latest';
 
@@ -509,6 +512,18 @@ function createApiRouter(configuration, lifecycleHandlers = {}) {
   router.get('/api/version-check', async (_req, res) => {
     const versionCheckResult = await resolveVersionCheckResult();
     res.json(versionCheckResult);
+  });
+
+  // ── GET /api/releases ─────────────────────────────────────────────────────
+  // Lists the most recent published releases (newest first) for the Admin Hub
+  // rollback picker. `currentVersion` lets the UI mark/skip the running build.
+  router.get('/api/releases', async (_req, res) => {
+    try {
+      const releases = await fetchRecentReleasesFromApi();
+      res.json({ currentVersion: APP_VERSION, releases });
+    } catch (releasesError) {
+      res.status(502).json({ error: releasesError instanceof Error ? releasesError.message : 'Failed to load releases.' });
+    }
   });
 
   // ── GET /api/logs ─────────────────────────────────────────────────────────
@@ -1656,6 +1671,39 @@ async function fetchLatestReleaseFromApi() {
     latestVersion,
     releaseNotes: releasePayload.body || '',
   };
+}
+
+/**
+ * Reads the most recent published releases from GitHub for the rollback picker — newest first, with
+ * the version tag, name, publish date, and notes. Prereleases and drafts are excluded.
+ *
+ * @returns {Promise<Array<{ version: string, name: string, publishedAt: string, notes: string }>>}
+ */
+async function fetchRecentReleasesFromApi() {
+  const apiResponse = await requestHttpsText(RELEASES_LIST_API_URL, {
+    requestLabel: 'GitHub API releases list',
+  });
+  if (apiResponse.statusCode < 200 || apiResponse.statusCode >= 300) {
+    throw new Error(`GitHub API returned HTTP ${apiResponse.statusCode}.`);
+  }
+  let releasesPayload;
+  try {
+    releasesPayload = JSON.parse(apiResponse.body);
+  } catch {
+    throw new Error('Could not parse GitHub releases data.');
+  }
+  if (!Array.isArray(releasesPayload)) {
+    throw new Error('GitHub releases data was not a list.');
+  }
+  return releasesPayload
+    .filter((release) => !release.draft && !release.prerelease)
+    .map((release) => ({
+      version: String(release.tag_name || '').replace(/^v/, ''),
+      name: String(release.name || release.tag_name || ''),
+      publishedAt: String(release.published_at || ''),
+      notes: String(release.body || ''),
+    }))
+    .filter((release) => release.version !== '');
 }
 
 /**

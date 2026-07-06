@@ -423,6 +423,57 @@ describe('installUpdate', () => {
   });
 });
 
+describe('loadReleases + rollbackToVersion', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('loadReleases fetches /api/releases and stores the releases + current version', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        currentVersion: '0.45.0',
+        releases: [
+          { version: '0.45.0', name: 'v0.45.0', publishedAt: '2026-07-06T00:00:00Z', notes: '' },
+          { version: '0.44.0', name: 'v0.44.0', publishedAt: '2026-07-05T00:00:00Z', notes: '' },
+        ],
+      }),
+    } as Response);
+
+    const { result } = renderHook(() => useAdminHubState());
+    await act(async () => { await result.current.actions.loadReleases(); });
+
+    expect(result.current.state.availableReleases).toHaveLength(2);
+    expect(result.current.state.currentAppVersion).toBe('0.45.0');
+    expect(result.current.state.releasesError).toBeNull();
+  });
+
+  it('loadReleases surfaces an error and empties the list when the fetch fails', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({ ok: false, status: 502 } as Response);
+    const { result } = renderHook(() => useAdminHubState());
+    await act(async () => { await result.current.actions.loadReleases(); });
+    expect(result.current.state.releasesError).toContain('502');
+    expect(result.current.state.availableReleases).toEqual([]);
+  });
+
+  it('rollbackToVersion posts the chosen version to /api/update', async () => {
+    // Return a 500 for /api/update so the flow ends with an error instead of polling for a restart.
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: false, status: 500, text: async () => 'boom',
+    } as Response);
+
+    const { result } = renderHook(() => useAdminHubState());
+    await act(async () => { await result.current.actions.rollbackToVersion('0.43.1'); });
+
+    expect(fetchSpy).toHaveBeenCalledWith('/api/update', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ version: '0.43.1' }),
+    }));
+    expect(result.current.state.isInstallingUpdate).toBe(false);
+    expect(result.current.state.updateInstallError).toContain('500');
+  });
+});
+
 describe('pollUntilServerRestarts', () => {
   afterEach(() => {
     vi.useRealTimers()
