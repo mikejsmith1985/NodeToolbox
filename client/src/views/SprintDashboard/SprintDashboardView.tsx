@@ -2742,7 +2742,7 @@ function AdvancedConfigFields({
       />
       <ConfigNumberField
         id="sd-cfg-sprint-capacity"
-        label="Sprint Point Capacity"
+        label="Sprint Point Capacity (0 = auto from velocity)"
         onChange={(value) => onConfigChange({ sprintPointCapacity: value })}
         value={config.sprintPointCapacity}
       />

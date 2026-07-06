@@ -36,6 +36,9 @@ import { getBoardSprints } from '../../services/jiraApi.ts';
 import { deriveScopeKey } from './overlay/overlayStorage.ts';
 import { useCanvasOverlay } from './overlay/useCanvasOverlay.ts';
 
+// Ultimate sprint-capacity fallback when there is neither a configured override nor a computed velocity.
+const DEFAULT_SPRINT_CAPACITY_FALLBACK = 20;
+
 /** A centered guidance message used by the empty/loading/error states. */
 function CanvasMessage({ text }: { text: string }): React.JSX.Element {
   return <div style={{ padding: 48, textAlign: 'center', opacity: 0.8 }}>{text}</div>;
@@ -66,10 +69,9 @@ export default function FeatureCanvasView(): React.JSX.Element {
   // points read the right field; otherwise everything looks unpointed and the AI plans on zero effort.
   const teamConfig = useMemo(() => loadDashboardConfigFromStorage(profileId), [profileId]);
   const customStoryPointsFieldId = teamConfig.customStoryPointsFieldId;
-  // Sprint-box capacity: default to the team's real velocity (avg completed points over the last N
-  // closed sprints), resolved when sprints are pulled; the Team Dashboard setting is the fallback for
-  // brand-new boards with no closed-sprint history. Starts at the fallback until velocity resolves.
-  const [resolvedSprintCapacity, setResolvedSprintCapacity] = useState(teamConfig.sprintPointCapacity);
+  // Sprint-box capacity resolution: a configured Sprint Point Capacity (>0) OVERRIDES everything;
+  // otherwise use the team's real velocity (resolved when sprints are pulled); ultimate fallback 20.
+  const [resolvedSprintCapacity, setResolvedSprintCapacity] = useState(teamConfig.sprintPointCapacity > 0 ? teamConfig.sprintPointCapacity : DEFAULT_SPRINT_CAPACITY_FALLBACK);
   const features = useCanvasFeatures(workingSetKeys, customStoryPointsFieldId);
 
   const [selectedIssueKey, setSelectedIssueKey] = useState<string | null>(null);
@@ -136,7 +138,8 @@ export default function FeatureCanvasView(): React.JSX.Element {
       // Capacity defaults to the team's real velocity over the last N closed sprints; fall back to the
       // configured value for boards with no closed-sprint history. Resolved once, reused for later adds.
       const velocity = await fetchTeamVelocity(scope.boardId, teamConfig.sprintWindow).catch(() => null);
-      const capacity = velocity ?? teamConfig.sprintPointCapacity;
+      // A configured capacity (>0) overrides the computed velocity; otherwise use velocity, else 20.
+      const capacity = teamConfig.sprintPointCapacity > 0 ? teamConfig.sprintPointCapacity : (velocity ?? DEFAULT_SPRINT_CAPACITY_FALLBACK);
       setResolvedSprintCapacity(capacity);
       const sprints = await getBoardSprints(scope.boardId);
       const existingSprintIds = new Set(overlay.containers.map((container) => container.provenance.jiraSprintId).filter((id): id is number => id !== null));

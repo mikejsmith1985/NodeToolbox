@@ -50,6 +50,13 @@ function relaidOverlay(overlay: CanvasOverlay): CanvasOverlay {
   return { ...overlay, containers, nodes };
 }
 
+/** One story→box placement from the auto-balancer (null sprint = the Over Capacity box). */
+export interface StoryPlacementAssignment {
+  featureKey: string;
+  storyKey: string;
+  sprintId: string | null;
+}
+
 /** One feature's full cross-phase plan, applied in a single overlay mutation (one undo step). */
 export interface MasterPlanChange {
   issueKey: string;
@@ -91,6 +98,8 @@ export interface CanvasOverlayController {
   relayoutBoxes: () => void;
   /** Places one child story into a box (null clears the override → inherit the feature's box). */
   setStoryPlacement: (issueKey: string, storyKey: string, containerId: string | null) => void;
+  /** Applies a computed sprint balance (per-story placements; null sprint → Over Capacity) in one step. */
+  autoBalanceSprints: (assignments: readonly StoryPlacementAssignment[]) => void;
   goToStage: (stageId: StageId) => void;
   completeStage: (stageId: StageId) => void;
   /** Reverts the most recent change; no-op when there is nothing to undo. */
@@ -444,6 +453,31 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     mutate((previous) => relaidOverlay(previous));
   }, [mutate]);
 
+  // Applies a computed sprint balance in ONE undo step: each story is placed into its assigned sprint,
+  // and anything with a null sprint (over capacity / unestimated) goes to the auto-created Over Capacity
+  // box. Points come from the caller (live data), so this only writes per-story placements.
+  const autoBalanceSprints = useCallback((assignments: readonly StoryPlacementAssignment[]) => {
+    mutate((previous) => {
+      let containers = [...previous.containers];
+      const nodes = { ...previous.nodes };
+      const needsOverflow = assignments.some((assignment) => assignment.sprintId === null);
+      let overflowBox = containers.find((container) => container.kind === 'later');
+      if (needsOverflow && !overflowBox) {
+        overflowBox = createLaterContainer(containers.length);
+        containers = [...containers, overflowBox];
+      }
+      for (const assignment of assignments) {
+        const node = nodes[assignment.featureKey];
+        const targetId = assignment.sprintId ?? overflowBox?.id;
+        if (!node || !targetId) {
+          continue;
+        }
+        nodes[assignment.featureKey] = { ...node, storyPlacements: { ...(node.storyPlacements ?? {}), [assignment.storyKey]: targetId } };
+      }
+      return relaidOverlay({ ...previous, containers, nodes });
+    });
+  }, [mutate]);
+
   // Places a single child story into a box during story-level planning. `containerId` null clears the
   // override so the story falls back to inheriting its feature's box. This is what lets one feature's
   // stories be split across sprints without moving the feature card itself.
@@ -506,9 +540,9 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     () => ({
       overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize,
       setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes,
-      assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, relayoutBoxes, setStoryPlacement, goToStage, completeStage,
+      assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, relayoutBoxes, setStoryPlacement, autoBalanceSprints, goToStage, completeStage,
       undo, redo, canUndo, canRedo,
     }),
-    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, relayoutBoxes, setStoryPlacement, goToStage, completeStage, undo, redo, canUndo, canRedo],
+    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, relayoutBoxes, setStoryPlacement, autoBalanceSprints, goToStage, completeStage, undo, redo, canUndo, canRedo],
   );
 }

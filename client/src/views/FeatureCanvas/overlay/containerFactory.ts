@@ -169,13 +169,13 @@ export function createCompleteContainer(existingCount: number): CanvasContainer 
   };
 }
 
-/** Builds the single Later box for features kept active but not sequenced into a sprint this PI. */
+/** Builds the single "Over Capacity" box for work that doesn't fit the sprints' capacity this PI. */
 export function createLaterContainer(existingCount: number): CanvasContainer {
   const slot = bandSlot(existingCount);
   return {
     id: `ctr-${Date.now()}-later`,
     kind: 'later',
-    title: 'Later',
+    title: 'Over Capacity',
     bounds: { x: slot.x, y: slot.y, width: CONTAINER_WIDTH, height: CONTAINER_HEIGHT },
     capacityBudget: null,
     provenance: { state: 'provisional', jiraSprintId: null, jiraVersionName: null, startDateIso: null, endDateIso: null },
