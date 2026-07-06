@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 
 import IssueDetailPanel from '../../components/IssueDetailPanel/index.tsx';
+import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { jiraGet, jiraPost } from '../../services/jiraApi.ts';
 import {
   createConfluenceDatabase,
@@ -2658,6 +2659,8 @@ function MonthlyReportCardEditor({ card, jiraIssues, onChange }: MonthlyReportCa
   const [isAiDraftOpen, setIsAiDraftOpen] = useState(false);
   const [aiDraftResponse, setAiDraftResponse] = useState('');
   const [aiDraftError, setAiDraftError] = useState<string | null>(null);
+  // Same gate as every other AI accelerator: only shown when AI Assist is unlocked (Ctrl+Alt+Z).
+  const isAiAssistUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
   const aiPrompt = buildMonthlyReportAiPrompt(card, jiraStats);
 
   function handleApplyAiDraft() {
@@ -2731,14 +2734,16 @@ function MonthlyReportCardEditor({ card, jiraIssues, onChange }: MonthlyReportCa
         </div>
       )}
 
-      {/* AI draft (Copilot) — copy the prompt, paste the JSON reply, apply to the narrative fields. */}
+      {/* AI Suggestions — copy the prompt, paste the JSON reply, apply to the narrative fields. Gated
+          behind the app-wide AI Assist unlock and branded like every other AI accelerator. */}
+      {isAiAssistUnlocked && (
       <div className={styles.monthlyAiDraft}>
         <button
           className={styles.monthlyJiraGenerateBtn}
           onClick={() => setIsAiDraftOpen((open) => !open)}
           type="button"
         >
-          🤖 {isAiDraftOpen ? 'Hide AI draft' : 'Draft with Copilot'}
+          ⚡ {isAiDraftOpen ? 'Hide AI suggestions' : 'AI suggestions'}
         </button>
         {isAiDraftOpen && (
           <div className={styles.monthlyAiDraftPanel}>
@@ -2767,6 +2772,7 @@ function MonthlyReportCardEditor({ card, jiraIssues, onChange }: MonthlyReportCa
           </div>
         )}
       </div>
+      )}
 
       {/* Hint shown when the team has not had its Jira data loaded yet */}
       {!hasJiraData && (
