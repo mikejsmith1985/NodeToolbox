@@ -3,6 +3,9 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+// The story inspector fetches description/AC/comments on open — keep those calls inert in tests.
+vi.mock('../../../services/jiraApi.ts', () => ({ jiraGet: vi.fn().mockResolvedValue({ fields: {} }) }));
+
 import type { CanvasNode } from '../logic/canvasTypes.ts';
 import type { CanvasContainer } from '../overlay/overlayModel.ts';
 import { createEmptyOverlay } from '../overlay/overlayModel.ts';
@@ -63,5 +66,27 @@ describe('StoryPlanningPanel', () => {
     render(<StoryPlanningPanel canvasNodes={[NODE]} controller={controller} onClose={vi.fn()} />);
     fireEvent.change(screen.getByRole('combobox', { name: 'Move DENP-3 to box' }), { target: { value: 'ctr-b' } });
     expect(controller.setStoryPlacement).toHaveBeenCalledWith('DENP-1', 'DENP-3', 'ctr-b');
+  });
+
+  it('opens the story inspector (description/AC/comments experience) when a card is clicked', () => {
+    render(<StoryPlanningPanel canvasNodes={[NODE]} controller={buildController()} onClose={vi.fn()} />);
+    expect(screen.queryByLabelText('Inspector for DENP-2')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('Open DENP-2 detail'));
+    const inspector = screen.getByLabelText('Inspector for DENP-2');
+    expect(within(inspector).getByText('Description')).toBeInTheDocument();
+    expect(within(inspector).getByText('Acceptance criteria')).toBeInTheDocument();
+  });
+
+  it('excludes Parking Lot / Complete boxes from the planning board', () => {
+    const controller = buildController();
+    controller.overlay.containers = [
+      ...controller.overlay.containers,
+      { ...SPRINT_A, id: 'ctr-lot', kind: 'parkingLot', title: 'Parking Lot' },
+      { ...SPRINT_A, id: 'ctr-done', kind: 'complete', title: 'Complete' },
+    ];
+    render(<StoryPlanningPanel canvasNodes={[NODE]} controller={controller} onClose={vi.fn()} />);
+    expect(screen.queryByRole('region', { name: 'Box Parking Lot' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Box Complete' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Box Sprint 24' })).toBeInTheDocument();
   });
 });
