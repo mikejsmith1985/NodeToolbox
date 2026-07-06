@@ -2568,6 +2568,60 @@ function monthlyCardHasDraftContent(card: MonthlyReportCard): boolean {
   );
 }
 
+// The free-text narrative fields worth drafting with AI (factual/select fields stay manual). Typed as
+// its own union so the parsed draft is known-string and spreads cleanly onto the card (no pillar).
+type MonthlyReportAiField = 'initiativeName' | 'productAreas' | 'accomplished' | 'outcomes' | 'stakeholders';
+const MONTHLY_REPORT_AI_FIELDS: MonthlyReportAiField[] = ['initiativeName', 'productAreas', 'accomplished', 'outcomes', 'stakeholders'];
+
+/**
+ * Builds a copy-paste prompt so an external assistant (e.g. Copilot) can draft the monthly report's
+ * narrative fields from the team's Jira context and any current drafts. No live AI call — the operator
+ * copies this, pastes the JSON reply back, and applies it.
+ */
+function buildMonthlyReportAiPrompt(card: MonthlyReportCard, jiraStats: ReturnType<typeof computeMonthlyJiraStats> | null): string {
+  const contextLine = jiraStats
+    ? `Jira context: ${jiraStats.doneIssueCount}/${jiraStats.totalIssueCount} issues done (${jiraStats.completionPercent}%)`
+      + (jiraStats.committedPoints > 0 ? `, ${jiraStats.velocityPoints}/${jiraStats.committedPoints} points delivered` : '')
+      + (jiraStats.impedimentCount > 0 ? `, ${jiraStats.impedimentCount} impediment(s)` : '')
+      + '.'
+    : 'No Jira metrics were loaded — base the draft on the current drafts and general delivery context.';
+  const questions = MONTHLY_REPORT_TEMPLATE_ROWS
+    .filter((row) => (MONTHLY_REPORT_AI_FIELDS as readonly string[]).includes(row.fieldName))
+    .map((row) => {
+      const current = readMonthlyTemplateFieldValue(card, row.fieldName).trim();
+      return `- "${row.fieldName}": ${row.label}${current ? ` (current draft to refine: ${current})` : ''}`;
+    });
+  return [
+    `Help write the monthly delivery report for the team "${card.teamName}".`,
+    contextLine,
+    'Draft concise, business-focused answers for each field below. Use "• " bullet lines where a list fits. Do NOT invent specific metrics that are not provided.',
+    'Respond ONLY with a JSON object keyed by the exact field names, e.g. {"accomplished":"• Shipped X\\n• Fixed Y","outcomes":"..."}. Fields:',
+    ...questions,
+  ].join('\n');
+}
+
+/** Extracts the first JSON object substring from a possibly-fenced assistant reply. */
+function extractJsonObject(text: string): string {
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace === -1 || lastBrace <= firstBrace) {
+    throw new Error('No JSON object found in the response.');
+  }
+  return text.slice(firstBrace, lastBrace + 1);
+}
+
+/** Parses an assistant reply into the report's known narrative fields (ignores anything else). */
+function parseMonthlyReportAiDraft(responseText: string): Partial<Record<MonthlyReportAiField, string>> {
+  const parsed = JSON.parse(extractJsonObject(responseText)) as Record<string, unknown>;
+  const draft: Partial<Record<MonthlyReportAiField, string>> = {};
+  for (const field of MONTHLY_REPORT_AI_FIELDS) {
+    if (typeof parsed[field] === 'string') {
+      draft[field] = parsed[field] as string;
+    }
+  }
+  return draft;
+}
+
 interface MonthlyReportCardEditorProps {
   card: MonthlyReportCard;
   /** Sprint issues loaded for this team from Jira — empty array when data has not been fetched. */
@@ -2597,6 +2651,29 @@ function MonthlyReportCardEditor({ card, jiraIssues, onChange }: MonthlyReportCa
       ...card,
       accomplished: generatedAccomplished || card.accomplished,
     });
+  }
+
+  // AI draft (copy-paste Copilot flow): build a prompt from the questions + Jira context, then ingest
+  // the JSON reply into the narrative fields. No live call — the operator drives copy/paste.
+  const [isAiDraftOpen, setIsAiDraftOpen] = useState(false);
+  const [aiDraftResponse, setAiDraftResponse] = useState('');
+  const [aiDraftError, setAiDraftError] = useState<string | null>(null);
+  const aiPrompt = buildMonthlyReportAiPrompt(card, jiraStats);
+
+  function handleApplyAiDraft() {
+    try {
+      const draft = parseMonthlyReportAiDraft(aiDraftResponse);
+      if (Object.keys(draft).length === 0) {
+        setAiDraftError('No recognized fields found in the response.');
+        return;
+      }
+      onChange({ ...card, ...draft });
+      setAiDraftError(null);
+      setAiDraftResponse('');
+      setIsAiDraftOpen(false);
+    } catch (draftError) {
+      setAiDraftError(draftError instanceof Error ? draftError.message : 'Could not read the response.');
+    }
   }
 
   return (
@@ -2653,6 +2730,43 @@ function MonthlyReportCardEditor({ card, jiraIssues, onChange }: MonthlyReportCa
           </button>
         </div>
       )}
+
+      {/* AI draft (Copilot) — copy the prompt, paste the JSON reply, apply to the narrative fields. */}
+      <div className={styles.monthlyAiDraft}>
+        <button
+          className={styles.monthlyJiraGenerateBtn}
+          onClick={() => setIsAiDraftOpen((open) => !open)}
+          type="button"
+        >
+          🤖 {isAiDraftOpen ? 'Hide AI draft' : 'Draft with Copilot'}
+        </button>
+        {isAiDraftOpen && (
+          <div className={styles.monthlyAiDraftPanel}>
+            <label className={styles.monthlyFieldLabel}>1. Copy this prompt into Copilot</label>
+            <textarea className={styles.monthlyTextarea} readOnly value={aiPrompt} rows={5} aria-label="AI prompt" />
+            <button
+              className={styles.secondaryBtn}
+              type="button"
+              onClick={() => { void copyMonthlyReportToClipboard(aiPrompt, aiPrompt); }}
+            >
+              📋 Copy prompt
+            </button>
+            <label className={styles.monthlyFieldLabel}>2. Paste Copilot&apos;s JSON reply</label>
+            <textarea
+              className={styles.monthlyTextarea}
+              value={aiDraftResponse}
+              onChange={(event) => setAiDraftResponse(event.target.value)}
+              rows={5}
+              placeholder='{"accomplished": "• …", "outcomes": "…"}'
+              aria-label="AI response"
+            />
+            <button className={styles.monthlyJiraGenerateBtn} type="button" onClick={handleApplyAiDraft}>
+              Apply AI draft
+            </button>
+            {aiDraftError !== null && <p className={styles.monthlyAiDraftError}>⚠️ {aiDraftError}</p>}
+          </div>
+        )}
+      </div>
 
       {/* Hint shown when the team has not had its Jira data loaded yet */}
       {!hasJiraData && (
