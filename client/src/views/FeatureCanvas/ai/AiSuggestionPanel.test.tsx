@@ -133,7 +133,7 @@ describe('AiSuggestionPanel', () => {
     expect(controller.assignToContainer).toHaveBeenCalledWith('DENP-1', expect.any(String));
   });
 
-  it('requires a WIP limit before the master plan can run, and lets you set it inline', () => {
+  it('warns when no WIP limit is set (advisory, not a block) and lets you set it inline', () => {
     act(() => setAiAssistUnlocked(true));
     const controller = buildController();
     const noWip = { inProgressCount: 3, limit: null, overflow: 0, parkedCount: 0, activeStoryCount: 0 };
@@ -141,21 +141,23 @@ describe('AiSuggestionPanel', () => {
 
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'masterPlan' } });
     expect(screen.getByText(/Set a WIP limit/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Ingest & apply plan/ })).toBeDisabled();
+    // Advisory only — the buttons still work.
+    expect(screen.getByRole('button', { name: /Ingest & apply plan/ })).not.toBeDisabled();
 
     fireEvent.change(screen.getByRole('spinbutton', { name: 'WIP limit' }), { target: { value: '4' } });
     expect(controller.setWipLimit).toHaveBeenCalledWith(4);
   });
 
-  it('requires sprint boxes before the master plan can run (sequences into real sprints)', () => {
+  it('warns when no sprints are pulled (advisory, not a block)', () => {
     act(() => setAiAssistUnlocked(true));
     const controller = buildController();
     controller.overlay.containers = []; // no sprints pulled from the board yet
     render(<AiSuggestionPanel canvasNodes={NODES} controller={controller} wip={WIP} piName="PI 26.3 (05/21/26 - 07/29/26)" onClose={vi.fn()} />);
 
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'masterPlan' } });
-    expect(screen.getByText(/Pull your sprints from the board first/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Ingest & apply plan/ })).toBeDisabled();
+    expect(screen.getByText(/No sprints pulled yet/)).toBeInTheDocument();
+    // Advisory only — the plan still runs (features go to Later); buttons stay enabled.
+    expect(screen.getByRole('button', { name: /Ingest & apply plan/ })).not.toBeDisabled();
   });
 
   it('lists the real sprints in the master prompt so the AI never invents sprint names', () => {

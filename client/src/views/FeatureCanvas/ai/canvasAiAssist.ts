@@ -203,9 +203,15 @@ function buildContextHeader(kind: AiSuggestionKind, context?: AiPromptContext): 
   }
 
   // The master plan may only sequence into the team's REAL sprints (pulled from the board), never
-  // invented names — so list them and constrain the "sprint" field to this exact set.
-  if (kind === 'masterPlan' && context.availableSprints && context.availableSprints.length > 0) {
-    lines.push(`Available sprints (use one of these EXACT names for "sprint", or null): ${context.availableSprints.map((name) => `"${name}"`).join(', ')}. Never invent a sprint name.`);
+  // invented names — so list them and constrain the "sprint" field to this exact set. With no sprints
+  // pulled, tell the model to leave every "sprint" null (those features land in Later on ingest).
+  if (kind === 'masterPlan') {
+    const sprints = context.availableSprints ?? [];
+    if (sprints.length > 0) {
+      lines.push(`Available sprints (use one of these EXACT names for "sprint", or null): ${sprints.map((name) => `"${name}"`).join(', ')}. Never invent a sprint name.`);
+    } else {
+      lines.push('No sprints are available — set "sprint" to null for every feature (they will be placed in Later). Do NOT invent sprint names.');
+    }
   }
 
   return lines.length > 0 ? `${lines.join('\n')}\n\n` : '';
