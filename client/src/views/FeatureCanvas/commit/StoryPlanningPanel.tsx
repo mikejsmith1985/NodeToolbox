@@ -6,7 +6,8 @@
 // capacity readout per sprint. It mutates ONLY the overlay (per-story placement); nothing is written
 // to Jira until Review & Commit, which already expands each story to its placed sprint.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { CanvasNode } from '../logic/canvasTypes.ts';
 import type { ContainerKind } from '../overlay/overlayModel.ts';
@@ -95,13 +96,26 @@ export function StoryPlanningPanel({ canvasNodes, controller, onClose }: StoryPl
   const columnPoints = (columnId: string): number =>
     storiesInColumn(columnId).reduce((total, story) => total + (story.points ?? 0), 0);
 
-  return (
+  // Esc always closes the planner — a keyboard escape hatch alongside the visible Close button.
+  useEffect(() => {
+    const handleKeyDown = (keyEvent: KeyboardEvent): void => {
+      if (keyEvent.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  // Portal to <body> so `position: fixed` is relative to the viewport (React Flow's transformed
+  // ancestor would otherwise scope it to the board and hide the Close button off-screen).
+  return createPortal(
     // A solid, full-viewport planning surface — not a translucent floating popover — so the canvas
     // never bleeds through and every column is reachable via one clean scroll container.
-    <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'var(--color-bg-surface, var(--color-bg))', color: 'var(--color-text-primary)', display: 'flex', flexDirection: 'column', padding: 16 }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'var(--color-bg-surface, var(--color-bg))', color: 'var(--color-text-primary)', display: 'flex', flexDirection: 'column', padding: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ margin: 0 }}>Plan stories</h2>
-        <button type="button" className={controlStyles.iconBtn} onClick={onClose} aria-label="Close story planning">✕ Close</button>
+        <button type="button" className={controlStyles.btnPrimary} onClick={onClose} aria-label="Close story planning">✕ Close</button>
       </div>
       <p style={{ opacity: 0.75, margin: '8px 0' }}>
         Move child stories between sprints (or defer to Later) to plan each sprint at the story level — a
@@ -185,6 +199,7 @@ export function StoryPlanningPanel({ canvasNodes, controller, onClose }: StoryPl
         </div>
         {selectedStory && <StoryInspectorPanel story={selectedStory} onClose={() => setSelectedStory(null)} />}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Feature Canvas — "Plan stories" overlay can always be closed**: the full-screen planner sat under React Flow's transformed ancestor, so its `position: fixed` resolved as `absolute` — the overlay didn't cover the viewport and the ✕ Close button ended up off-screen, leaving the app's home button as the only exit. It now renders via a portal to the page body (true full-screen), closes on **Esc**, and has a prominent Close button.
 - **Team Dashboard — Feature Review/PI Review showed another team's features**: when several teams share a Jira project key, the ART-team lookup fell back to a project-key match and returned the **first** team with that project — so e.g. "Transformers" could show "Cleanup Crew" features. Team resolution now disambiguates by the **selected team's name** first (then board+project), so the rollup matches the team you actually picked.
 
 ### Added
