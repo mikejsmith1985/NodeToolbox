@@ -10,6 +10,7 @@ import PiFeatureRemapPanel from './PiFeatureRemapPanel.tsx';
 import RiskManagementSection from './RiskManagementSection.tsx';
 import { buildCapacitySummary } from './capacityModel.ts';
 import { useCapacityStore } from './hooks/useCapacityStore.ts';
+import { useSettingsStore } from '../../store/settingsStore.ts';
 import {
   findMatchingArtTeam,
   readFallbackSelectedPiName,
@@ -57,9 +58,13 @@ export default function SprintDashboardPiReviewTab({
   const capacityStartDate = useCapacityStore((state) => state.startDate);
   const capacityEndDate = useCapacityStore((state) => state.endDate);
   const capacityRows = useCapacityStore((state) => state.rows);
+  // The selected team's name disambiguates the ART team when several share a project key.
+  const activeTeamName = useSettingsStore(
+    (storeState) => storeState.sprintDashboardTeamProfiles.find((profile) => profile.id === storeState.sprintDashboardActiveTeamProfileId)?.name ?? '',
+  );
   const matchedArtTeam = useMemo(
-    () => findMatchingArtTeam(storedArtTeams, boardId, projectKey),
-    [boardId, projectKey, storedArtTeams],
+    () => findMatchingArtTeam(storedArtTeams, boardId, projectKey, activeTeamName),
+    [boardId, projectKey, storedArtTeams, activeTeamName],
   );
   const effectiveSelectedPiName = selectedPiName.trim() || readFallbackSelectedPiName();
 

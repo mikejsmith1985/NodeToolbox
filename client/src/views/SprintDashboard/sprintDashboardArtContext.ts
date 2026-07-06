@@ -63,9 +63,20 @@ export function readFallbackSelectedPiName(): string {
 }
 
 /** Matches the current Team Dashboard board/project pair to the configured ART team record. */
-export function findMatchingArtTeam(artTeams: ArtTeam[], boardId: number | null, projectKey: string): ArtTeam | null {
+export function findMatchingArtTeam(artTeams: ArtTeam[], boardId: number | null, projectKey: string, teamName = ''): ArtTeam | null {
   const normalizedBoardId = boardId === null ? '' : String(boardId);
   const normalizedProjectKey = projectKey.trim().toUpperCase();
+  const normalizedTeamName = teamName.trim().toLowerCase();
+
+  // Most specific: the team the user explicitly selected, matched by name. This prevents a DIFFERENT
+  // team that merely shares the project key from being picked (the project-key fallback below) when
+  // the active board doesn't line up exactly with a stored ART team's board.
+  if (normalizedTeamName !== '') {
+    const nameMatch = artTeams.find((team) => team.name.trim().toLowerCase() === normalizedTeamName);
+    if (nameMatch) {
+      return nameMatch;
+    }
+  }
 
   if (normalizedBoardId !== '' && normalizedProjectKey !== '') {
     const exactMatch = artTeams.find((team) =>
