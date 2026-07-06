@@ -99,4 +99,17 @@ describe('NodeInspectorPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /Close inspector/ }));
     expect(onClose).toHaveBeenCalled();
   });
+
+  it('lets you change MoSCoW priority and size from the inspector (any stage)', () => {
+    setComments([]);
+    const onSetPriority = vi.fn();
+    const onSetSize = vi.fn();
+    render(<NodeInspectorPanel node={buildNode()} onClose={vi.fn()} onSetPriority={onSetPriority} onSetSize={onSetSize} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Should' }));
+    expect(onSetPriority).toHaveBeenCalledWith('ENFCT-1', 'Should');
+
+    fireEvent.click(screen.getByRole('button', { name: 'M' }));
+    expect(onSetSize).toHaveBeenCalledWith('ENFCT-1', 'M');
+  });
 });

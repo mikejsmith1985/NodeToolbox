@@ -303,7 +303,12 @@ export default function FeatureCanvasView(): React.JSX.Element {
                 />
               )}
             </div>
-            <NodeInspectorPanel node={selectedNode} onClose={() => setSelectedIssueKey(null)} />
+            <NodeInspectorPanel
+              node={selectedNode}
+              onClose={() => setSelectedIssueKey(null)}
+              onSetPriority={(issueKey, priority) => controller.setPriority(issueKey, priority)}
+              onSetSize={(issueKey, size) => controller.setSize(issueKey, size)}
+            />
             <CoachPanel
               controller={controller}
               selectedNode={selectedNode}
