@@ -790,19 +790,22 @@ describe('ArtView', () => {
     expect(screen.queryByRole('button', { name: /AI suggestions/i })).not.toBeInTheDocument();
   });
 
-  it('drafts monthly report narrative fields from a pasted Copilot JSON reply (AI Assist unlocked)', () => {
+  it('splits a pasted Copilot reply into one form per pillar (AI Assist unlocked)', () => {
     mockState.activeTab = 'monthly';
     setAiAssistUnlocked(true);
     renderArtView();
-    // Open the first card's AI suggestions panel, paste a JSON reply, and apply it.
+    // Open the first team's AI suggestions panel and paste a two-pillar reply.
     fireEvent.click(screen.getAllByRole('button', { name: /AI suggestions/i })[0]);
     fireEvent.change(screen.getByLabelText('AI response'), {
-      target: { value: '{"accomplished":"• Shipped the thing","outcomes":"Cost savings"}' },
+      target: { value: '[{"pillar":"Growth","accomplished":"• Grew signups"},{"pillar":"Affordability","accomplished":"• Cut costs"}]' },
     });
     fireEvent.click(screen.getByRole('button', { name: /Apply AI draft/i }));
 
-    const accomplished = screen.getAllByLabelText(/what was accomplished\?/i)[0] as HTMLTextAreaElement;
-    expect(accomplished.value).toContain('Shipped the thing');
+    // Two pillar forms now exist, each with its own accomplishment.
+    const accomplishedFields = screen.getAllByLabelText(/what was accomplished\?/i) as HTMLTextAreaElement[];
+    const values = accomplishedFields.map((field) => field.value);
+    expect(values.some((value) => value.includes('Grew signups'))).toBe(true);
+    expect(values.some((value) => value.includes('Cut costs'))).toBe(true);
   });
 
   // ── Monthly Report parity: pillar filter ──
