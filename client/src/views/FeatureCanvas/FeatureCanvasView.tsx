@@ -63,7 +63,10 @@ export default function FeatureCanvasView(): React.JSX.Element {
   const workingSetKeys = useMemo(() => Object.keys(overlay.nodes), [overlay.nodes]);
   // Use the active team's configured story-points field (same as the Sprint Dashboard) so child
   // points read the right field; otherwise everything looks unpointed and the AI plans on zero effort.
-  const customStoryPointsFieldId = useMemo(() => loadDashboardConfigFromStorage(profileId).customStoryPointsFieldId, [profileId]);
+  const teamConfig = useMemo(() => loadDashboardConfigFromStorage(profileId), [profileId]);
+  const customStoryPointsFieldId = teamConfig.customStoryPointsFieldId;
+  // Sprint boxes use the team's configured point capacity as their budget (not a hardcoded 20).
+  const sprintPointCapacity = teamConfig.sprintPointCapacity;
   const features = useCanvasFeatures(workingSetKeys, customStoryPointsFieldId);
 
   const [selectedIssueKey, setSelectedIssueKey] = useState<string | null>(null);
@@ -134,7 +137,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
         if (existingSprintIds.has(sprint.id)) {
           continue;
         }
-        controller.addContainer(createRealSprintContainer(sprint.id, sprint.name, boxCount, sprint.startDate ?? null, sprint.endDate ?? null));
+        controller.addContainer(createRealSprintContainer(sprint.id, sprint.name, boxCount, sprint.startDate ?? null, sprint.endDate ?? null, sprintPointCapacity));
         boxCount += 1;
       }
       if (sprints.length === 0) {
@@ -282,7 +285,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
               controller={controller}
               selectedNode={selectedNode}
               wip={wip}
-              onAddContainer={(kind) => controller.addContainer(createProvisionalContainer(kind, overlay.containers.length))}
+              onAddContainer={(kind) => controller.addContainer(createProvisionalContainer(kind, overlay.containers.length, undefined, sprintPointCapacity))}
               onPullSprints={() => void handlePullSprints()}
               onOpenCommit={() => setIsCommitOpen(true)}
               isAiUnlocked={isAiUnlocked}

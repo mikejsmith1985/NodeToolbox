@@ -114,6 +114,12 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onClos
     () => new Set(controller.overlay.containers.filter((container) => container.kind === 'complete').map((container) => container.id)),
     [controller.overlay.containers],
   );
+  // The sprint boxes on the canvas — the only sprints the master plan may sequence into. These come
+  // from "Pull sprints from board" (real Jira sprints), so the AI never invents sprint names.
+  const sprintNames = useMemo(
+    () => controller.overlay.containers.filter((container) => container.kind === 'sprint').map((container) => container.title),
+    [controller.overlay.containers],
+  );
 
   const prompt = useMemo(() => {
     // Prioritize and Triage get PI time-remaining (days to DoD) as context; Triage also gets the WIP
@@ -124,6 +130,7 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onClos
         inProgressCount: wip.inProgressCount,
         daysRemainingInPi: daysRemainingInPi(piName, new Date().toISOString().slice(0, 10)),
         piName,
+        availableSprints: sprintNames,
       };
       return buildCanvasAiPrompt(kind, canvasNodes.map(toPromptIssue), context);
     }
@@ -133,7 +140,7 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onClos
       return buildCanvasAiPrompt(kind, sequenceable.map(toPromptIssue));
     }
     return buildCanvasAiPrompt(kind, canvasNodes.map(toPromptIssue));
-  }, [kind, canvasNodes, wip.limit, wip.inProgressCount, piName, completeBoxIds]);
+  }, [kind, canvasNodes, wip.limit, wip.inProgressCount, piName, completeBoxIds, sprintNames]);
 
   // For value-driven analyses, warn when no feature carries Business Value or points — the
   // assistant will then lean on status/health/completion/blockers, which the user should know.
@@ -147,6 +154,9 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onClos
   // The master plan performs the Stabilize-WIP phase, so it REQUIRES a WIP limit to know how much to
   // park. Block the prompt/ingest until one is set (settable inline below).
   const needsWipLimit = kind === 'masterPlan' && wip.limit === null;
+  // The master plan sequences into the board's real sprints, so at least one sprint box must exist.
+  const needsSprints = kind === 'masterPlan' && sprintNames.length === 0;
+  const isMasterPlanBlocked = needsWipLimit || needsSprints;
 
   // Guard: invisible and inert unless the operator has unlocked AI Assist.
   if (!isUnlocked) {
@@ -222,15 +232,20 @@ export function AiSuggestionPanel({ canvasNodes, controller, wip, piName, onClos
           Set a WIP limit — the master plan needs it to decide how much to park.
         </p>
       )}
+      {needsSprints && (
+        <p style={{ margin: '4px 0', fontSize: 11, color: 'var(--color-warning)' }}>
+          Pull your sprints from the board first (Sequence &amp; Box → “↧ Pull sprints from board”) — the master plan sequences into your real sprints, not invented ones.
+        </p>
+      )}
       {lacksValueSignals && (
         <p style={{ margin: '4px 0', fontSize: 11, color: 'var(--color-warning)' }}>
           No Business Value or story points found on these features — suggestions will rely on status, health, completion, and blockers.
         </p>
       )}
       <textarea readOnly value={prompt} rows={4} style={{ width: '100%', fontSize: 11 }} />
-      <button type="button" className={controlStyles.btn} onClick={() => navigator.clipboard?.writeText(prompt)} disabled={needsWipLimit} style={{ margin: '6px 0' }}>📋 Copy prompt</button>
+      <button type="button" className={controlStyles.btn} onClick={() => navigator.clipboard?.writeText(prompt)} disabled={isMasterPlanBlocked} style={{ margin: '6px 0' }}>📋 Copy prompt</button>
       <textarea value={responseText} onChange={(event) => setResponseText(event.target.value)} placeholder="Paste the JSON reply here" rows={4} style={{ width: '100%', fontSize: 11 }} />
-      <button type="button" className={controlStyles.btnPrimary} onClick={handleIngest} disabled={needsWipLimit} style={{ margin: '6px 0' }}>
+      <button type="button" className={controlStyles.btnPrimary} onClick={handleIngest} disabled={isMasterPlanBlocked} style={{ margin: '6px 0' }}>
         {kind === 'masterPlan' ? 'Ingest & apply plan' : 'Ingest suggestions'}
       </button>
       {error && <p style={{ color: 'var(--color-danger)' }}>{error}</p>}

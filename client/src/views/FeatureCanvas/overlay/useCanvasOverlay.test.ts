@@ -181,6 +181,11 @@ describe('useCanvasOverlay', () => {
     it('applyMasterPlan sizes, prioritizes, routes every feature to a box (Later for unsequenced), in one undo step', () => {
       const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
       act(() => result.current.ensureNodeStates([createNodeState('KEEP-1', 0, 0), createNodeState('PARK-1', 0, 0), createNodeState('DONE-1', 0, 0), createNodeState('LATER-1', 0, 0)]));
+      // The plan only sequences into EXISTING sprints, so the target sprint must already be on the board.
+      act(() => result.current.addContainer({
+        id: 'sprint-25', kind: 'sprint', title: 'Sprint 25', bounds: { x: 0, y: 0, width: 400, height: 260 }, capacityBudget: 20,
+        provenance: { state: 'real', jiraSprintId: 25, jiraVersionName: null, startDateIso: null, endDateIso: null },
+      }));
 
       act(() => result.current.applyMasterPlan([
         { issueKey: 'KEEP-1', size: 'L', bucket: 'Must', triage: 'keep', sprint: 'Sprint 25', reason: '' },
@@ -206,9 +211,9 @@ describe('useCanvasOverlay', () => {
       expect(overlay.stageState.completed).toEqual({ surface: true, size: true, prioritize: true, stabilize: true, sequence: true });
       expect(overlay.stageState.currentStageId).toBe('sequence');
 
-      // The whole plan is one undo step.
+      // The whole plan is one undo step — reverts back to just the pre-existing sprint box.
       act(() => result.current.undo());
-      expect(result.current.overlay.containers).toHaveLength(0);
+      expect(result.current.overlay.containers).toHaveLength(1);
       expect(result.current.overlay.nodes['KEEP-1'].containerId).toBeNull();
     });
 

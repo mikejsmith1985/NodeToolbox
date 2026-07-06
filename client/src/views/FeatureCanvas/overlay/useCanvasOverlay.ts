@@ -16,7 +16,7 @@ import {
   type TshirtSize,
 } from './overlayModel.ts';
 import { loadOverlay, saveOverlay } from './overlayStorage.ts';
-import { boxHeightForCount, createCompleteContainer, createLaterContainer, createParkingLotContainer, createProvisionalContainer, layoutBoxes, positionInContainer } from './containerFactory.ts';
+import { boxHeightForCount, createCompleteContainer, createLaterContainer, createParkingLotContainer, layoutBoxes, positionInContainer } from './containerFactory.ts';
 
 // Layout order for the two-column auto-tidy: active sprints/releases first, then Later, then the
 // canvas-only Parking Lot and Complete organizers.
@@ -363,15 +363,13 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
         containers = [...containers, created];
         return created;
       };
-      const ensureSprintByTitle = (title: string): CanvasContainer => {
-        const found = containers.find((container) => container.kind === 'sprint' && container.title.trim().toLowerCase() === title.trim().toLowerCase());
-        if (found) {
-          return found;
-        }
-        const created = createProvisionalContainer('sprint', containers.length, title);
-        containers = [...containers, created];
-        return created;
-      };
+      // The plan may only sequence into sprints that ALREADY exist (real sprints pulled from the board);
+      // it never invents a sprint. An unmatched name falls through to the Later box.
+      const matchExistingSprint = (title: string | null): CanvasContainer | undefined => (
+        title === null
+          ? undefined
+          : containers.find((container) => container.kind === 'sprint' && container.title.trim().toLowerCase() === title.trim().toLowerCase())
+      );
       const memberCount = (containerId: string, movingKey: string): number =>
         Object.values(nodes).filter((nodeState) => nodeState.containerId === containerId && nodeState.issueKey !== movingKey).length;
 
@@ -393,13 +391,16 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
         } else if (change.triage === 'complete') {
           const done = ensureByKind('complete', createCompleteContainer);
           next = { ...next, containerId: done.id, isParked: false, parkReason: null, position: positionInContainer(done, memberCount(done.id, change.issueKey)) };
-        } else if (change.sprint !== null) {
-          const sprint = ensureSprintByTitle(change.sprint);
-          next = { ...next, containerId: sprint.id, isParked: false, position: positionInContainer(sprint, memberCount(sprint.id, change.issueKey)) };
         } else {
-          // Kept (or break-out) but not sequenced this PI → the Later box, so NOTHING is left loose.
-          const later = ensureByKind('later', createLaterContainer);
-          next = { ...next, containerId: later.id, isParked: false, parkReason: null, position: positionInContainer(later, memberCount(later.id, change.issueKey)) };
+          // Sequence into a matching REAL sprint; if the name doesn't match one (or is null), the
+          // feature is kept but not sequenced this PI → the Later box, so NOTHING is left loose.
+          const matchedSprint = matchExistingSprint(change.sprint);
+          if (matchedSprint) {
+            next = { ...next, containerId: matchedSprint.id, isParked: false, position: positionInContainer(matchedSprint, memberCount(matchedSprint.id, change.issueKey)) };
+          } else {
+            const later = ensureByKind('later', createLaterContainer);
+            next = { ...next, containerId: later.id, isParked: false, parkReason: null, position: positionInContainer(later, memberCount(later.id, change.issueKey)) };
+          }
         }
         nodes[change.issueKey] = next;
       }
