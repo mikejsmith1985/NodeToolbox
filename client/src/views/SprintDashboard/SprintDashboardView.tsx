@@ -42,6 +42,8 @@ import {
 } from './storyPointEstimator.ts';
 import type { IssueFeatureVector } from './storyPointEstimator.ts';
 import BoardPicker from './BoardPicker.tsx';
+import { assessBoardHealth, computeAverageVelocity } from './sprintMetrics.ts';
+import { parsePiDateRange, timeElapsedFraction } from '../FeatureCanvas/logic/piSchedule.ts';
 import FeatureReviewTab from './FeatureReviewTab.tsx';
 import MoveToSprintButton from './MoveToSprintButton.tsx';
 import RosterTab from './RosterTab.tsx';
@@ -1654,19 +1656,37 @@ function FlowStatsBar({ issues }: { issues: JiraIssue[] }) {
   );
 }
 
-/** Renders the health badge based on blocked issue count. */
-function HealthBadge({ issues }: { issues: JiraIssue[] }) {
+/**
+ * Renders the delivery-health badge from schedule progress AND blockers — not blockers alone. A board
+ * that has burned far fewer points than the fraction of the sprint/PI window elapsed is behind, even
+ * with zero blockers. `timeElapsedFraction` is null when no date window is known (falls back to blockers).
+ */
+function HealthBadge({
+  issues,
+  customStoryPointsFieldId,
+  windowElapsedFraction,
+}: {
+  issues: JiraIssue[];
+  customStoryPointsFieldId: string;
+  windowElapsedFraction: number | null;
+}) {
   const blockedCount = issues.filter(isBlockedIssue).length;
+  const pointsTotal = issues.reduce((sum, issue) => sum + readStoryPoints(issue, customStoryPointsFieldId), 0);
+  const pointsDone = issues.filter(isDoneIssue).reduce((sum, issue) => sum + readStoryPoints(issue, customStoryPointsFieldId), 0);
+  const status = assessBoardHealth({ pointsDone, pointsTotal, timeElapsedFraction: windowElapsedFraction, blockedCount });
 
-  if (blockedCount === 0) {
-    return <span className={`${styles.healthBadge} ${styles.healthOnTrack}`}>🟢 On Track</span>;
+  // A short "why" so the verdict is transparent (e.g. "32% done · 67% elapsed").
+  const detail = windowElapsedFraction !== null && pointsTotal > 0
+    ? ` — ${Math.round((pointsDone / pointsTotal) * 100)}% done · ${Math.round(windowElapsedFraction * 100)}% elapsed`
+    : blockedCount > 0 ? ` — ${blockedCount} blocked` : '';
+
+  if (status === 'on-track') {
+    return <span className={`${styles.healthBadge} ${styles.healthOnTrack}`}>🟢 On Track{detail}</span>;
   }
-
-  if (blockedCount <= 2) {
-    return <span className={`${styles.healthBadge} ${styles.healthWatch}`}>🟡 Watch</span>;
+  if (status === 'watch') {
+    return <span className={`${styles.healthBadge} ${styles.healthWatch}`}>🟡 Watch{detail}</span>;
   }
-
-  return <span className={`${styles.healthBadge} ${styles.healthAtRisk}`}>🔴 At Risk</span>;
+  return <span className={`${styles.healthBadge} ${styles.healthAtRisk}`}>🔴 At Risk{detail}</span>;
 }
 
 /** Renders the burn-down chart using recharts. */
@@ -1778,6 +1798,17 @@ function OverviewTab({
   const groupedIssues = groupIssuesByOverviewSection(issues);
   const shouldRenderBoardSummary = sprintInfo !== null || issues.length > 0 || sprintState.boardId !== null;
 
+  // How far through the current window we are — a sprint's own dates when scoped to a sprint, else the
+  // PI's date range parsed from its name (sprints have no PI field; they just fall within the dates).
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const windowElapsedFraction = (() => {
+    if (sprintInfo?.startDate && sprintInfo?.endDate) {
+      return timeElapsedFraction(sprintInfo.startDate.slice(0, 10), sprintInfo.endDate.slice(0, 10), todayIso);
+    }
+    const piRange = parsePiDateRange(sprintState.selectedPiValue);
+    return piRange ? timeElapsedFraction(piRange.startIso, piRange.endIso, todayIso) : null;
+  })();
+
   return (
     <div>
       {shouldRenderBoardSummary ? (
@@ -1795,7 +1826,7 @@ function OverviewTab({
             customStoryPointsFieldId={configState.customStoryPointsFieldId}
             issues={issues}
           />
-          <HealthBadge issues={issues} />
+          <HealthBadge issues={issues} customStoryPointsFieldId={configState.customStoryPointsFieldId} windowElapsedFraction={windowElapsedFraction} />
           <FlowStatsBar issues={issues} />
           {sprintInfo && <BurnDownChart issues={issues} sprintInfo={sprintInfo} />}
         </>
@@ -2870,17 +2901,33 @@ function MetricsTab({
           boardTypeLabel,
         };
 
-        if (detectedBoardType === 'scrum' && scopeMode === DASHBOARD_SCOPE_MODE_SPRINT) {
-          const closedSprintResponse = await jiraGet<{ values?: Array<{ id: number; name: string; startDate?: string }> }>(
-            `/rest/agile/1.0/board/${boardId}/sprint?state=closed&maxResults=${config.sprintWindow}&orderBy=startDate`,
-          );
-          const closedSprints = (closedSprintResponse.values ?? [])
-            .sort(
-              (leftSprint, rightSprint) =>
-                new Date(leftSprint.startDate ?? '').getTime()
-                - new Date(rightSprint.startDate ?? '').getTime(),
-            )
-            .slice(-config.sprintWindow);
+        // Velocity/throughput are BOARD history, not scope-dependent: sprints carry no PI field, they
+        // simply fall within a PI's dates. So load the most-recent closed sprints regardless of whether
+        // the dashboard is scoped to a Sprint, PI, or Fix Version — otherwise these go blank in PI scope.
+        // Paginate and sort so we always get the latest N (a single maxResults page can return the
+        // OLDEST sprints instead of the most recent).
+        const fetchRecentClosedSprints = async (): Promise<Array<{ id: number; name: string; startDate?: string }>> => {
+          const collected: Array<{ id: number; name: string; startDate?: string }> = [];
+          let startAt = 0;
+          for (let page = 0; page < 20; page += 1) {
+            const response = await jiraGet<{ values?: Array<{ id: number; name: string; startDate?: string }>; isLast?: boolean }>(
+              `/rest/agile/1.0/board/${boardId}/sprint?state=closed&startAt=${startAt}&maxResults=50`,
+            );
+            const values = response.values ?? [];
+            collected.push(...values);
+            if (response.isLast || values.length === 0) {
+              break;
+            }
+            startAt += values.length;
+          }
+          return collected
+            .sort((leftSprint, rightSprint) => new Date(rightSprint.startDate ?? '').getTime() - new Date(leftSprint.startDate ?? '').getTime())
+            .slice(0, config.sprintWindow)
+            .reverse(); // most-recent N, back in chronological order for the chart
+        };
+
+        if (detectedBoardType === 'scrum') {
+          const closedSprints = await fetchRecentClosedSprints();
 
           nextState.predictabilityRows = await Promise.all(
             closedSprints.map(async (closedSprint) => {
@@ -3158,17 +3205,8 @@ function MetricsTab({
               : rightEntry.averageDays - leftEntry.averageDays;
           });
 
-        if (detectedBoardType === 'scrum' && scopeMode === DASHBOARD_SCOPE_MODE_SPRINT) {
-          const closedSprintResponse = await jiraGet<{ values?: Array<{ id: number; name: string; startDate?: string }> }>(
-            `/rest/agile/1.0/board/${boardId}/sprint?state=closed&maxResults=${config.sprintWindow}`,
-          );
-          const closedSprints = (closedSprintResponse.values ?? [])
-            .sort(
-              (leftSprint, rightSprint) =>
-                new Date(leftSprint.startDate ?? '').getTime()
-                - new Date(rightSprint.startDate ?? '').getTime(),
-            )
-            .slice(-config.sprintWindow);
+        if (detectedBoardType === 'scrum') {
+          const closedSprints = await fetchRecentClosedSprints();
 
           nextState.throughputRows = await Promise.all(
             closedSprints.map(async (closedSprint) => {
@@ -3270,6 +3308,8 @@ function MetricsTab({
         metricsState.throughputRows.reduce((sum, row) => sum + row.itemCount, 0)
         / metricsState.throughputRows.length
       );
+  // Running average of completed points per sprint across the window — the team's velocity.
+  const averageVelocityPoints = computeAverageVelocity(metricsState.predictabilityRows);
   const maxThroughput = Math.max(...metricsState.throughputRows.map((row) => row.itemCount), 1);
   const maxPredictabilityPoints = Math.max(
     ...metricsState.predictabilityRows.map((row) => row.committedPoints || row.committedItems || 1),
@@ -3290,7 +3330,7 @@ function MetricsTab({
               <h3 className={styles.blockersSectionTitle}>Predictability</h3>
               {metricsState.predictabilityRows.length > 0 && (
                 <span className={styles.issueMetaText}>
-                  <strong>{predictabilityAverage}% avg</strong> · 80% target
+                  <strong>{predictabilityAverage}% avg</strong> · <strong>{averageVelocityPoints} pts</strong> avg velocity ({metricsState.predictabilityRows.length} sprints) · 80% target
                 </span>
               )}
             </div>

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Team Dashboard — "On Track" health is now schedule-aware (was blockers-only)**: the Overview health badge used to read 🟢 On Track whenever nothing was flagged blocked — so a PI 32% burned with 67% of the time gone still showed green. It now weighs **point progress against how far through the sprint/PI window you are** (plus blockers): behind pace → 🟡 Watch or 🔴 At Risk, with a short "32% done · 67% elapsed" reason on the badge.
+- **Team Dashboard — Metrics/velocity work in PI (and Fix Version) scope**: velocity, predictability, and throughput were gated to Sprint scope, so in PI scope they showed "No closed sprints found." They're **board history** (sprints just fall within a PI's dates), so they now load regardless of scope, and the closed-sprint fetch paginates + sorts to reliably pull the most-recent N.
+
+### Added
+- **Team Dashboard — running-average team velocity**: the Metrics → Predictability header now shows the **average completed points/sprint** across the velocity window (e.g. "35 pts avg velocity (6 sprints)").
+
 ### Changed
 - **Feature Canvas — Master plan sequences into your real board sprints (no more invented ones)**: the master plan now lists the sprint boxes on the canvas (pulled from the board) in its prompt and constrains the AI to those exact names; on ingest it matches each feature to an **existing** sprint and never fabricates a "Sprint 25". It now also requires at least one sprint box to exist first (pull them from the Sequence stage), the same way it requires a WIP limit. An unmatched/again-null sprint routes the feature to the Later box.
 - **Feature Canvas — sprint point capacity is configurable per team**: sprint boxes now use a **Sprint Point Capacity** value from Team Dashboard settings (default 20) as their budget, instead of a hardcoded 20 — so the per-sprint load reads against your real capacity.

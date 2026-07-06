@@ -34,6 +34,20 @@ export function parsePiDateRange(piName: string): PiDateRange | null {
 }
 
 /**
+ * Fraction (0..1) of a date window that has elapsed as of `todayIso`, clamped to the window. Null
+ * when any date is unparseable or the window is non-positive. Pure — the caller injects "today".
+ */
+export function timeElapsedFraction(startIso: string, endIso: string, todayIso: string): number | null {
+  const startMs = Date.parse(`${startIso}T00:00:00Z`);
+  const endMs = Date.parse(`${endIso}T00:00:00Z`);
+  const todayMs = Date.parse(`${todayIso}T00:00:00Z`);
+  if (Number.isNaN(startMs) || Number.isNaN(endMs) || Number.isNaN(todayMs) || endMs <= startMs) {
+    return null;
+  }
+  return Math.max(0, Math.min(1, (todayMs - startMs) / (endMs - startMs)));
+}
+
+/**
  * Days from `todayIso` to the PI's end date (negative if the PI has ended). Null when the PI name
  * carries no parseable range. Both dates are compared at UTC midnight so the result is whole days.
  */
