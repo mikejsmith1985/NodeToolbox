@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Feature Canvas — draft comments from the canvas (post on commit)**: the node inspector now has an **Add a comment** box. What you type is saved to the sandbox (persisted, marked "pending, posts on commit") and posted to the feature's Jira issue at Review & Commit — nothing is written to Jira until then. Existing Jira comments still show read-only above it.
 - **Feature Canvas — set MoSCoW priority & size from the node inspector (any stage)**: previously priority/size could only be changed in the Prioritize/Size coaching stages with the feature selected. Click any feature to open the inspector and change its **MoSCoW priority** and **t-shirt size** directly — no need to jump back to a specific stage.
 
 ### Changed

@@ -24,7 +24,7 @@ function buildNode(overrides: Partial<CanvasNode> = {}): CanvasNode {
     issueKey: 'ENFCT-1', position: { x: 0, y: 0 }, size: 'L', priority: 'Must', containerId: null,
     isExpanded: false, isParked: false, summary: 'Login redesign', status: 'In Progress',
     statusCategoryKey: 'indeterminate', assignee: 'Ada', storyPoints: 5,
-    businessValue: 8, description: 'The epic goal in prose.', acceptanceCriteria: null, parkReason: null, storyPlacements: {},
+    businessValue: 8, description: 'The epic goal in prose.', acceptanceCriteria: null, parkReason: null, storyPlacements: {}, pendingComment: "",
     health: 'yellow', completionPercent: 40,
     hygieneFlags: [], dependencies: [],
     attachments: [
@@ -111,5 +111,13 @@ describe('NodeInspectorPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'M' }));
     expect(onSetSize).toHaveBeenCalledWith('ENFCT-1', 'M');
+  });
+
+  it('lets you draft a comment from the canvas (posts to Jira on commit)', () => {
+    setComments([]);
+    const onSetComment = vi.fn();
+    render(<NodeInspectorPanel node={buildNode()} onClose={vi.fn()} onSetComment={onSetComment} />);
+    fireEvent.change(screen.getByLabelText('Add a comment'), { target: { value: 'Ready for review' } });
+    expect(onSetComment).toHaveBeenCalledWith('ENFCT-1', 'Ready for review');
   });
 });

@@ -39,7 +39,7 @@ const NODE: CanvasNode = {
     { key: 'DENP-2', summary: 'Build the API', status: 'In Progress', statusCategoryKey: 'indeterminate', storyPoints: 3, assignee: 'Ada Lovelace', issueType: 'Story', subtaskCount: 2 },
     { key: 'DENP-3', summary: 'Build the UI', status: 'To Do', statusCategoryKey: 'new', storyPoints: 3, assignee: null, issueType: 'Story', subtaskCount: 0 },
   ],
-  dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null, storyPlacements: {}, attachments: [], effectivePoints: 0,
+  dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null, storyPlacements: {}, pendingComment: "", attachments: [], effectivePoints: 0,
 };
 
 describe('StoryPlanningPanel', () => {

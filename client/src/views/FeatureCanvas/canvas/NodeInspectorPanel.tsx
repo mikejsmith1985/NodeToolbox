@@ -22,6 +22,8 @@ export interface NodeInspectorPanelProps {
   onSetPriority?: (issueKey: string, priority: MoscowBucket | null) => void;
   /** Sets the feature's t-shirt size (null clears). When omitted, size is read-only. */
   onSetSize?: (issueKey: string, size: TshirtSize | null) => void;
+  /** Saves a canvas-drafted comment (posted to Jira on commit). When omitted, no compose box shows. */
+  onSetComment?: (issueKey: string, comment: string) => void;
 }
 
 const MOSCOW_BUCKETS: readonly MoscowBucket[] = ['Must', 'Should', 'Could', 'Wont'];
@@ -69,17 +71,17 @@ function AttachmentList({ attachments }: { attachments: CanvasAttachment[] }): R
 }
 
 /** The docked inspector for the currently selected node. */
-export function NodeInspectorPanel({ node, onClose, onSetPriority, onSetSize }: NodeInspectorPanelProps): React.JSX.Element | null {
+export function NodeInspectorPanel({ node, onClose, onSetPriority, onSetSize, onSetComment }: NodeInspectorPanelProps): React.JSX.Element | null {
   if (node === null) {
     return null;
   }
 
   // Remount on key change so the comment fetch and any transient state reset to the new node.
-  return <NodeInspectorContent key={node.issueKey} node={node} onClose={onClose} onSetPriority={onSetPriority} onSetSize={onSetSize} />;
+  return <NodeInspectorContent key={node.issueKey} node={node} onClose={onClose} onSetPriority={onSetPriority} onSetSize={onSetSize} onSetComment={onSetComment} />;
 }
 
 /** Owns the on-demand comment fetch for one specific node; only mounted when a node is selected. */
-function NodeInspectorContent({ node, onClose, onSetPriority, onSetSize }: { node: CanvasNode; onClose: () => void; onSetPriority?: (issueKey: string, priority: MoscowBucket | null) => void; onSetSize?: (issueKey: string, size: TshirtSize | null) => void }): React.JSX.Element {
+function NodeInspectorContent({ node, onClose, onSetPriority, onSetSize, onSetComment }: { node: CanvasNode; onClose: () => void; onSetPriority?: (issueKey: string, priority: MoscowBucket | null) => void; onSetSize?: (issueKey: string, size: TshirtSize | null) => void; onSetComment?: (issueKey: string, comment: string) => void }): React.JSX.Element {
   const { comments, isLoading: isLoadingComments, loadError: commentsLoadError } = useIssueComments(node.issueKey);
   const normalizedDescription = normalizeRichTextToPlainText(node.description);
 
@@ -195,6 +197,21 @@ function NodeInspectorContent({ node, onClose, onSetPriority, onSetSize }: { nod
         <div style={{ opacity: 0.6 }}>Comments{comments.length > 0 ? ` (${comments.length})` : ''}</div>
         <CommentThread comments={comments} isLoading={isLoadingComments} loadError={commentsLoadError} />
       </div>
+
+      {/* Draft a comment on the canvas — saved to the sandbox and posted to Jira on Review & Commit. */}
+      {onSetComment && (
+        <div style={{ marginTop: 8, fontSize: 12 }}>
+          <div style={{ opacity: 0.6 }}>Add a comment {node.pendingComment.trim() !== '' && <span style={{ color: 'var(--color-success)' }}>· pending, posts on commit</span>}</div>
+          <textarea
+            aria-label="Add a comment"
+            value={node.pendingComment}
+            onChange={(event) => onSetComment(node.issueKey, event.target.value)}
+            rows={3}
+            placeholder="Type a comment — it posts to Jira when you Review & Commit."
+            style={{ width: '100%', fontSize: 12, marginTop: 2, boxSizing: 'border-box' }}
+          />
+        </div>
+      )}
 
       {/* Child records — read-only */}
       <div style={{ marginTop: 8, fontSize: 12 }}>

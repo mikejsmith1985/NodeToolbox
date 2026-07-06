@@ -93,6 +93,8 @@ async function executeAssignment(
       await jiraPut(`/rest/api/2/issue/${item.issueKey}`, { fields: { priority: { name: String(item.to) } } });
     } else if (item.kind === 'parkComment' && item.issueKey) {
       await jiraPost(`/rest/api/2/issue/${item.issueKey}/comment`, { body: `Parked on Feature Canvas: ${String(item.to)}` });
+    } else if (item.kind === 'comment' && item.issueKey) {
+      await jiraPost(`/rest/api/2/issue/${item.issueKey}/comment`, { body: String(item.to) });
     } else {
       return { itemId: item.id, status: 'skipped', message: 'Unresolved target.' };
     }

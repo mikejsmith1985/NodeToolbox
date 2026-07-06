@@ -42,7 +42,7 @@ function buildNode(issueKey: string): CanvasNode {
     issueKey, position: { x: 0, y: 0 }, size: null, priority: null, containerId: null,
     isExpanded: false, isParked: false, summary: `Summary ${issueKey}`, status: 'To Do',
     statusCategoryKey: 'new', assignee: null, storyPoints: null, health: 'green',
-    completionPercent: 0, hygieneFlags: [], childStories: [], dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null, storyPlacements: {}, attachments: [], effectivePoints: 0,
+    completionPercent: 0, hygieneFlags: [], childStories: [], dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null, storyPlacements: {}, pendingComment: "", attachments: [], effectivePoints: 0,
   };
 }
 
