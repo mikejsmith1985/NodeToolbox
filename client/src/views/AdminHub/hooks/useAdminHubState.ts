@@ -203,6 +203,14 @@ export interface UpdateCheckResult {
   releaseNotes: string
 }
 
+/** One release in the rollback picker (from GET /api/releases). */
+export interface ReleaseSummary {
+  version: string
+  name: string
+  publishedAt: string
+  notes: string
+}
+
 /** All reactive state fields managed by this hook. */
 export interface AdminHubState {
   proxyUrls: ProxyUrlConfig
@@ -239,6 +247,11 @@ export interface AdminHubState {
   updateInstallProgressPercent: number
   updateInstallError: string | null
   isUpdateSectionCollapsed: boolean
+  // ── Rollback ──
+  availableReleases: ReleaseSummary[] | null
+  isLoadingReleases: boolean
+  releasesError: string | null
+  currentAppVersion: string
   // ── Advanced unlock (Feature Flags, Client Diagnostics, Backup/Restore) ──
   isAdvancedUnlocked: boolean
   // ── Service Connectivity ──
@@ -303,6 +316,8 @@ export interface AdminHubActions {
   // ── Update Management ──
   checkForUpdates(): Promise<void>
   installUpdate(): Promise<void>
+  loadReleases(): Promise<void>
+  rollbackToVersion(version: string): Promise<void>
   setUpdateSectionCollapsed(isCollapsed: boolean): void
   // ── Advanced unlock ──
   advancedLock(): void
@@ -561,6 +576,11 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
   const [updateInstallProgressPercent, setUpdateInstallProgressPercent] = useState(0)
   const [updateInstallError, setUpdateInstallError] = useState<string | null>(null)
   const [isUpdateSectionCollapsed, setIsUpdateSectionCollapsed] = useState(false)
+  // ── Rollback state ──
+  const [availableReleases, setAvailableReleases] = useState<ReleaseSummary[] | null>(null)
+  const [isLoadingReleases, setIsLoadingReleases] = useState(false)
+  const [releasesError, setReleasesError] = useState<string | null>(null)
+  const [currentAppVersion, setCurrentAppVersion] = useState('')
 
   // ── Service Connectivity state ──
   const [connectivityConfig, setConnectivityConfig] = useState<ConnectivityConfigResult | null>(null)
@@ -637,6 +657,10 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     updateInstallProgressPercent,
     updateInstallError,
     isUpdateSectionCollapsed,
+    availableReleases,
+    isLoadingReleases,
+    releasesError,
+    currentAppVersion,
     isAdvancedUnlocked,
     connectivityConfig,
     isConnectivityConfigLoading,
@@ -954,17 +978,21 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
    * Triggers the server-side update process and waits for the server to restart.
    * After the server comes back online, the page reloads to run the new version.
    */
-  const installUpdate = useCallback(async () => {
-    if (updateCheckResult === null || !updateCheckResult.hasUpdate) return
+  /**
+   * Installs a specific version (used by both "Install Update" → latest and rollback → an older
+   * release). Downloads via the server, waits for the restarted server to report `targetVersion`,
+   * then reloads. Works for downgrades too: the restarted (older) server reports the target version.
+   */
+  const installVersion = useCallback(async (targetVersion: string, actionLabel: string) => {
     setIsInstallingUpdate(true)
     setUpdateInstallError(null)
-    setUpdateInstallPhaseMessage('Preparing the update package download…')
+    setUpdateInstallPhaseMessage(`Preparing ${actionLabel} to v${targetVersion}…`)
     setUpdateInstallProgressPercent(UPDATE_INSTALL_PROGRESS_PREPARING)
     try {
       const updateResponse = await fetch('/api/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ version: updateCheckResult.latestVersion }),
+        body: JSON.stringify({ version: targetVersion }),
         signal: AbortSignal.timeout(UPDATE_REQUEST_TIMEOUT_MS),
       })
       if (!updateResponse.ok) {
@@ -975,25 +1003,53 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
       setUpdateInstallPhaseMessage('Waiting for the current server to stop…')
       setUpdateInstallProgressPercent(UPDATE_INSTALL_PROGRESS_WAITING_FOR_SHUTDOWN)
       await pollUntilServerRestarts({
-        expectedVersion: updateCheckResult.latestVersion,
+        expectedVersion: targetVersion,
         onWaitingForStartup: () => {
-          setUpdateInstallPhaseMessage('Waiting for the updated server to restart…')
+          setUpdateInstallPhaseMessage('Waiting for the server to restart…')
           setUpdateInstallProgressPercent(UPDATE_INSTALL_PROGRESS_WAITING_FOR_STARTUP)
         },
       })
-      setUpdateInstallPhaseMessage('Reloading the updated app…')
+      setUpdateInstallPhaseMessage('Reloading the app…')
       setUpdateInstallProgressPercent(UPDATE_INSTALL_PROGRESS_RELOADING)
       window.location.reload()
     } catch (installError) {
       const errorMessage = installError instanceof Error ? installError.message : 'Unknown error'
-      setUpdateInstallError(
-        `Update failed: ${errorMessage}. Please restart NodeToolbox manually.`,
-      )
+      setUpdateInstallError(`${actionLabel} failed: ${errorMessage}. Please restart NodeToolbox manually.`)
       setIsInstallingUpdate(false)
       setUpdateInstallPhaseMessage(null)
       setUpdateInstallProgressPercent(0)
     }
-  }, [updateCheckResult])
+  }, [])
+
+  const installUpdate = useCallback(async () => {
+    if (updateCheckResult === null || !updateCheckResult.hasUpdate) return
+    await installVersion(updateCheckResult.latestVersion, 'update')
+  }, [updateCheckResult, installVersion])
+
+  /** Loads the most recent releases from the server for the rollback picker. */
+  const loadReleases = useCallback(async () => {
+    setIsLoadingReleases(true)
+    setReleasesError(null)
+    try {
+      const response = await fetch('/api/releases')
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`)
+      }
+      const payload = await response.json() as { currentVersion: string; releases: ReleaseSummary[] }
+      setAvailableReleases(payload.releases ?? [])
+      setCurrentAppVersion(payload.currentVersion ?? '')
+    } catch (loadError) {
+      setReleasesError(loadError instanceof Error ? loadError.message : 'Failed to load releases.')
+      setAvailableReleases([])
+    } finally {
+      setIsLoadingReleases(false)
+    }
+  }, [])
+
+  /** Rolls back (or forward) to a chosen released version via the shared install flow. */
+  const rollbackToVersion = useCallback(async (targetVersion: string) => {
+    await installVersion(targetVersion, 'rollback')
+  }, [installVersion])
 
   /**
    * Prompts the user for the admin passphrase to unlock the advanced sections.
@@ -1511,6 +1567,8 @@ export function useAdminHubState(): { state: AdminHubState; actions: AdminHubAct
     setHygieneSectionCollapsed: setIsHygieneSectionCollapsed,
     checkForUpdates,
     installUpdate,
+    loadReleases,
+    rollbackToVersion,
     setUpdateSectionCollapsed: setIsUpdateSectionCollapsed,
     advancedLock,
     loadConnectivityConfig,

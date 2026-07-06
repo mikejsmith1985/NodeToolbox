@@ -1155,3 +1155,50 @@ describe('PATCH /api/snow-relay/change/:changeKey', () => {
     expect(capturedPatchRequest.body.end_date).toBe('');
   });
 });
+
+// ── /api/releases ───────────────────────────────────────────────────────────
+
+describe('GET /api/releases', () => {
+  afterEach(() => nock.cleanAll());
+
+  it('lists recent published releases, filtering out prereleases/drafts', async () => {
+    nock('https://api.github.com')
+      .get('/repos/mikejsmith1985/NodeToolbox/releases')
+      .query({ per_page: '10' })
+      .reply(200, [
+        { tag_name: 'v0.45.0', name: 'v0.45.0', published_at: '2026-07-06T00:00:00Z', body: 'notes', draft: false, prerelease: false },
+        { tag_name: 'v0.44.0', name: 'v0.44.0', published_at: '2026-07-05T00:00:00Z', body: '', draft: false, prerelease: false },
+        { tag_name: 'v0.99.0', name: 'beta', published_at: '2026-07-07T00:00:00Z', body: '', draft: false, prerelease: true },
+        { tag_name: 'v0.98.0', name: 'draft', published_at: '2026-07-08T00:00:00Z', body: '', draft: true, prerelease: false },
+      ]);
+
+    const configuration = {
+      jira:   { baseUrl: 'https://acme.atlassian.net', pat: 'jira-pat' },
+      snow:   { baseUrl: '', username: '', password: '' },
+      github: { baseUrl: 'https://api.github.com', pat: '' },
+      sslVerify: true,
+    };
+    const response = await request(buildTestApp(configuration)).get('/api/releases');
+
+    expect(response.status).toBe(200);
+    expect(response.body.currentVersion).toBeTruthy();
+    expect(response.body.releases.map((release) => release.version)).toEqual(['0.45.0', '0.44.0']);
+  });
+
+  it('returns 502 when GitHub is unreachable', async () => {
+    nock('https://api.github.com')
+      .get('/repos/mikejsmith1985/NodeToolbox/releases')
+      .query({ per_page: '10' })
+      .reply(500, 'boom');
+
+    const configuration = {
+      jira:   { baseUrl: 'https://acme.atlassian.net', pat: 'jira-pat' },
+      snow:   { baseUrl: '', username: '', password: '' },
+      github: { baseUrl: 'https://api.github.com', pat: '' },
+      sslVerify: true,
+    };
+    const response = await request(buildTestApp(configuration)).get('/api/releases');
+    expect(response.status).toBe(502);
+    expect(response.body.error).toBeTruthy();
+  });
+});

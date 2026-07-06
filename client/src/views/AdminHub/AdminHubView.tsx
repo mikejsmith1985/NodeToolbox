@@ -33,6 +33,7 @@ import type {
   NotificationTeamConfig,
   NotificationArtRollupConfig,
   UpdateCheckResult,
+  ReleaseSummary,
 } from './hooks/useAdminHubState.ts'
 
 /**
@@ -867,8 +868,14 @@ interface UpdateManagementSectionProps {
   updateInstallProgressPercent: number
   updateInstallError: string | null
   isUpdateSectionCollapsed: boolean
+  availableReleases: ReleaseSummary[] | null
+  isLoadingReleases: boolean
+  releasesError: string | null
+  currentVersion: string
   onCheckForUpdates(): void
   onInstallUpdate(): void
+  onLoadReleases(): void
+  onRollback(version: string): void
   onSetCollapsed(isCollapsed: boolean): void
 }
 
@@ -887,11 +894,20 @@ function UpdateManagementSection({
   updateInstallProgressPercent,
   updateInstallError,
   isUpdateSectionCollapsed,
+  availableReleases,
+  isLoadingReleases,
+  releasesError,
+  currentVersion,
   onCheckForUpdates,
   onInstallUpdate,
+  onLoadReleases,
+  onRollback,
   onSetCollapsed,
 }: UpdateManagementSectionProps) {
   const hasAvailableUpdate = updateCheckResult?.hasUpdate === true;
+  const [selectedRollbackVersion, setSelectedRollbackVersion] = useState('');
+  // Offer every listed release except the one currently running.
+  const rollbackChoices = (availableReleases ?? []).filter((release) => release.version !== currentVersion);
 
   return (
     <section className={styles.sectionCard}>
@@ -1001,6 +1017,49 @@ function UpdateManagementSection({
               )}
             </>
           )}
+
+          {/* Roll back to an earlier release — downloads that version and restarts, same as an update. */}
+          <div className={styles.fieldRow} style={{ marginTop: 12, borderTop: '1px solid var(--color-border)', paddingTop: 12 }}>
+            <span className={styles.fieldLabel}>↩️ Roll back to a previous version</span>
+            {availableReleases === null ? (
+              <button className={styles.actionButton} onClick={onLoadReleases} disabled={isLoadingReleases || isInstallingUpdate}>
+                {isLoadingReleases ? '⏳ Loading…' : 'Show previous releases'}
+              </button>
+            ) : (
+              <div className={styles.devUtilitiesRow}>
+                <select
+                  aria-label="Previous version"
+                  value={selectedRollbackVersion}
+                  onChange={(changeEvent) => setSelectedRollbackVersion(changeEvent.target.value)}
+                  disabled={isInstallingUpdate}
+                >
+                  <option value="">Select a version…</option>
+                  {rollbackChoices.map((release) => (
+                    <option key={release.version} value={release.version}>
+                      v{release.version}{release.publishedAt !== '' ? ` — ${release.publishedAt.slice(0, 10)}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className={styles.actionButton}
+                  disabled={selectedRollbackVersion === '' || isInstallingUpdate}
+                  onClick={() => {
+                    if (window.confirm(`Roll back to v${selectedRollbackVersion}? The app will download that version and restart. Note: plans or settings created in a newer version may not load correctly.`)) {
+                      onRollback(selectedRollbackVersion)
+                    }
+                  }}
+                >
+                  ↩️ Roll back
+                </button>
+              </div>
+            )}
+            {releasesError !== null && (
+              <p className={styles.updateStatusError} role="alert">⚠️ {releasesError}</p>
+            )}
+            {availableReleases !== null && rollbackChoices.length === 0 && releasesError === null && (
+              <p className={styles.fieldLabel}>No other releases available.</p>
+            )}
+          </div>
         </>
       )}
     </section>
@@ -2618,8 +2677,14 @@ function AdminHubMainContent({ state, actions }: AdminHubMainContentProps) {
         updateInstallProgressPercent={state.updateInstallProgressPercent}
         updateInstallError={state.updateInstallError}
         isUpdateSectionCollapsed={state.isUpdateSectionCollapsed}
+        availableReleases={state.availableReleases}
+        isLoadingReleases={state.isLoadingReleases}
+        releasesError={state.releasesError}
+        currentVersion={state.currentAppVersion}
         onCheckForUpdates={actions.checkForUpdates}
         onInstallUpdate={actions.installUpdate}
+        onLoadReleases={actions.loadReleases}
+        onRollback={actions.rollbackToVersion}
         onSetCollapsed={actions.setUpdateSectionCollapsed}
       />
 

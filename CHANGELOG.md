@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Admin Hub — roll back to an earlier version**: Update Management now has a "Roll back to a previous version" picker listing the **last 10 published releases** (new `GET /api/releases`). Choosing one downloads that release and restarts, reusing the existing update/restart pipeline (the installer was already version-parameterized). A confirm dialog notes that plans/settings created in a newer version may not load. The manual update-to-latest flow is unchanged.
+
 ### Fixed
 - **Feature Canvas — Master plan Copy/Ingest buttons work again**: the WIP-limit and sprint prerequisites hard-**disabled** both buttons, so the master plan looked broken when either was unmet. They're now **advisories** (warnings, not blocks) — the buttons always work. Running without pulled sprints is safe: ingest only matches existing sprints (never invents), so unsequenced features go to Later, and the prompt now tells the model to use null sprints when none exist. Copy also gained a clipboard fallback so it works in the packaged app / restricted webviews where `navigator.clipboard` is unavailable.
 - **Team Dashboard — "On Track" health is now schedule-aware (was blockers-only)**: the Overview health badge used to read 🟢 On Track whenever nothing was flagged blocked — so a PI 32% burned with 67% of the time gone still showed green. It now weighs **point progress against how far through the sprint/PI window you are** (plus blockers): behind pace → 🟡 Watch or 🔴 At Risk, with a short "32% done · 67% elapsed" reason on the badge.
