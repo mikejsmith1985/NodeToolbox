@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Team Dashboard — running-average team velocity**: the Metrics → Predictability header now shows the **average completed points/sprint** across the velocity window (e.g. "35 pts avg velocity (6 sprints)").
 
 ### Changed
+- **Feature Canvas — sprint capacity now defaults to real velocity**: when you pull sprints from the board, each sprint box's point capacity is set to the team's **average velocity over the last N closed sprints** (N = the Scrum velocity window, default 6) instead of a fixed number. The Team Dashboard "Sprint Point Capacity" setting is kept as the **fallback** for brand-new boards with no closed-sprint history.
+
+### Changed
 - **Feature Canvas — Master plan sequences into your real board sprints (no more invented ones)**: the master plan now lists the sprint boxes on the canvas (pulled from the board) in its prompt and constrains the AI to those exact names; on ingest it matches each feature to an **existing** sprint and never fabricates a "Sprint 25". It now also requires at least one sprint box to exist first (pull them from the Sequence stage), the same way it requires a WIP limit. An unmatched/again-null sprint routes the feature to the Later box.
 - **Feature Canvas — sprint point capacity is configurable per team**: sprint boxes now use a **Sprint Point Capacity** value from Team Dashboard settings (default 20) as their budget, instead of a hardcoded 20 — so the per-sprint load reads against your real capacity.
 
