@@ -299,6 +299,39 @@ describe('fetchFeatureReviewItemsByJql', () => {
     expect(Array.isArray(items[0].hygieneFlags)).toBe(true);
   });
 
+  it('overrides child story points with the configured custom field (not just the legacy field)', async () => {
+    mockJiraGet.mockImplementation((path: string) => {
+      const decoded = decodeURIComponent(path);
+      // The per-story fetch for the configured SP field returns different (correct) values.
+      if (decoded.includes('customfield_10236')) {
+        return Promise.resolve({ issues: [
+          { key: 'S-1', fields: { customfield_10236: 8 } },
+          { key: 'S-2', fields: { customfield_10236: 5 } },
+        ] });
+      }
+      if (decoded.includes('project = TEST')) {
+        return Promise.resolve({ issues: [{ key: 'F-1', fields: { summary: 'Feature One', status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } } } }] });
+      }
+      if (decoded.includes('key in (')) {
+        return Promise.resolve({ issues: [{ key: 'F-1', fields: { summary: 'Feature One', status: { name: 'In Progress' } } }] });
+      }
+      // Blueprint child discovery: children carry only the LEGACY field (customfield_10016).
+      return Promise.resolve({ issues: [
+        { key: 'S-1', fields: { summary: 'S1', status: { name: 'To Do', statusCategory: { key: 'new' } }, parent: { key: 'F-1' }, customfield_10016: 1 } },
+        { key: 'S-2', fields: { summary: 'S2', status: { name: 'To Do', statusCategory: { key: 'new' } }, parent: { key: 'F-1' }, customfield_10016: 2 } },
+      ] });
+    });
+
+    const items = await fetchFeatureReviewItemsByJql('project = TEST', EMPTY_FIELD_CONFIG, 'customfield_10236');
+
+    const allChildren = [...items[0].feature.children, ...items[0].feature.offTrain];
+    const child1 = allChildren.find((child) => child.key === 'S-1');
+    const child2 = allChildren.find((child) => child.key === 'S-2');
+    // Points come from the configured field (8, 5), not the legacy blueprint values (1, 2).
+    expect(child1?.storyPoints).toBe(8);
+    expect(child2?.storyPoints).toBe(5);
+  });
+
   it('returns an empty list when the query matches nothing', async () => {
     mockJiraGet.mockResolvedValue({ issues: [] });
     expect(await fetchFeatureReviewItemsByJql('project = EMPTY', EMPTY_FIELD_CONFIG)).toEqual([]);

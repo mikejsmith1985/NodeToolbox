@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Feature Canvas — story points now read the team's configured field** (was hardcoded to the legacy field): the canvas took child-story points only from `customfield_10016`/`10028`, ignoring the story-points field configured in Team Dashboard settings. Teams pointing on a different field saw **everything as unpointed** — which also silently fed **zero effort into the AI prompts** (Master plan, Prioritize, Triage), skewing those recommendations. The canvas now resolves points from the same configured field the Sprint Dashboard uses (falling back to the legacy field), so points show correctly across features, story planning, capacity, and the AI.
+
 ### Added
 - **Feature Canvas — story inspector in "Plan stories" (feature-parity detail)**: Clicking a story now opens a read-only inspector — the same experience the canvas gives features — with the story's **description, acceptance criteria, and comment thread** fetched on demand, plus type/status/assignee/points/subtasks. So you can actually read the work before deciding which sprint it belongs in.
 

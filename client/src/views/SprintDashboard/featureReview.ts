@@ -109,28 +109,33 @@ function hasPositiveStoryPoints(storyNode: BlueprintStoryNode): boolean {
   return typeof storyNode.storyPoints === 'number' && storyNode.storyPoints > 0;
 }
 
-// Handles plain numbers, numeric strings, and Jira Select-type {id, value} objects.
-function hasPositiveFieldValue(fieldValue: unknown): boolean {
-  if (fieldValue === null || fieldValue === undefined || fieldValue === '') return false;
-  if (typeof fieldValue === 'number') return fieldValue > 0;
+
+/** Reads a Jira field value into a plain number (handles number, numeric string, and {value} shapes). */
+function readNumericFieldValue(fieldValue: unknown): number | null {
+  if (typeof fieldValue === 'number') {
+    return Number.isFinite(fieldValue) ? fieldValue : null;
+  }
   if (typeof fieldValue === 'string') {
     const parsed = Number(fieldValue);
-    return Number.isFinite(parsed) && parsed > 0;
+    return Number.isFinite(parsed) && fieldValue.trim() !== '' ? parsed : null;
   }
-  if (Array.isArray(fieldValue)) return false;
-  if (typeof fieldValue === 'object') {
-    return hasPositiveFieldValue((fieldValue as Record<string, unknown>).value);
+  if (fieldValue !== null && typeof fieldValue === 'object') {
+    return readNumericFieldValue((fieldValue as { value?: unknown }).value);
   }
-  return false;
+  return null;
 }
 
 /**
- * Builds the set of feature keys that have at least one child story with positive story points.
+ * Builds the set of feature keys that have at least one child story with positive story points, AND
+ * — when a real Jira custom field is configured (e.g. customfield_10236) — OVERRIDES each blueprint
+ * child story's `storyPoints` with the value from that field in place.
  *
- * When a real Jira custom field is configured (e.g. customfield_10236), the blueprint hierarchy's
- * pre-computed storyPoints only covers customfield_10016/10028 and will miss that field. In that
- * case we fetch the configured field directly for the story keys the blueprint already knows about,
- * avoiding fragile JQL-based child discovery that depends on Jira field naming conventions.
+ * The blueprint hierarchy pre-computes storyPoints only from customfield_10016/10028, so any team
+ * that points on a different field would otherwise see everything as unpointed. Because the blueprint
+ * story nodes are the same objects used to assemble the returned items, mutating them here corrects
+ * the child points everywhere downstream: the feature roll-up, the canvas display, the AI prompts,
+ * and the commit's per-story point load. We use the blueprint's known story keys directly rather than
+ * re-discovering parent-child links through JQL, which varies across Jira setups.
  */
 async function buildFeatureKeysWithPointedChildren(
   blueprintFeatures: BlueprintFeatureNode[],
@@ -138,45 +143,42 @@ async function buildFeatureKeysWithPointedChildren(
 ): Promise<Set<string>> {
   const isRealCustomField = customStoryPointsFieldId.startsWith('customfield_');
 
-  // Without a real custom field, the blueprint's pre-computed storyPoints is sufficient.
-  if (!isRealCustomField) {
-    return new Set(
-      blueprintFeatures
-        .filter((featureNode) => [...featureNode.children, ...featureNode.offTrain].some(hasPositiveStoryPoints))
-        .map((featureNode) => featureNode.key),
-    );
-  }
-
-  // The blueprint hierarchy already knows which stories belong to which feature — use it directly
-  // instead of re-discovering parent-child links through JQL, which varies across Jira setups.
-  const storyKeyToFeatureKey = new Map<string, string>();
-  for (const featureNode of blueprintFeatures) {
-    for (const storyNode of [...featureNode.children, ...featureNode.offTrain]) {
-      storyKeyToFeatureKey.set(storyNode.key, featureNode.key);
+  // With a real custom field, fetch its value per story and override the blueprint node in place.
+  if (isRealCustomField) {
+    const storyNodeByKey = new Map<string, BlueprintStoryNode>();
+    for (const featureNode of blueprintFeatures) {
+      for (const storyNode of [...featureNode.children, ...featureNode.offTrain]) {
+        storyNodeByKey.set(storyNode.key, storyNode);
+      }
     }
-  }
+    const allStoryKeys = Array.from(storyNodeByKey.keys());
 
-  const allStoryKeys = Array.from(storyKeyToFeatureKey.keys());
-  if (allStoryKeys.length === 0) return new Set<string>();
+    // Fetch the configured SP field for the known story keys, chunked to respect JQL length limits.
+    for (let startIndex = 0; startIndex < allStoryKeys.length; startIndex += STORY_POINTS_QUERY_CHUNK_SIZE) {
+      const keyChunk = allStoryKeys.slice(startIndex, startIndex + STORY_POINTS_QUERY_CHUNK_SIZE);
+      const encodedKeys = keyChunk.map((storyKey) => `"${storyKey}"`).join(',');
+      const response = await jiraGet<{ issues?: Array<{ key?: string; fields: Record<string, unknown> }> }>(
+        `/rest/api/2/search?jql=${encodeURIComponent(`issueKey in (${encodedKeys})`)}&fields=${encodeURIComponent(customStoryPointsFieldId)}&maxResults=${STORY_POINTS_QUERY_CHUNK_SIZE}`,
+      ).catch(() => ({ issues: [] as Array<{ key?: string; fields: Record<string, unknown> }> }));
 
-  // Fetch the configured SP field for the known story keys, chunked to respect JQL length limits.
-  const pointedFeatureKeys = new Set<string>();
-  for (let startIndex = 0; startIndex < allStoryKeys.length; startIndex += STORY_POINTS_QUERY_CHUNK_SIZE) {
-    const keyChunk = allStoryKeys.slice(startIndex, startIndex + STORY_POINTS_QUERY_CHUNK_SIZE);
-    const encodedKeys = keyChunk.map((storyKey) => `"${storyKey}"`).join(',');
-    const response = await jiraGet<{ issues?: Array<{ key?: string; fields: Record<string, unknown> }> }>(
-      `/rest/api/2/search?jql=${encodeURIComponent(`issueKey in (${encodedKeys})`)}&fields=${encodeURIComponent(customStoryPointsFieldId)}&maxResults=${STORY_POINTS_QUERY_CHUNK_SIZE}`,
-    ).catch(() => ({ issues: [] as Array<{ key?: string; fields: Record<string, unknown> }> }));
-
-    for (const story of response.issues ?? []) {
-      if (!story.key || !hasPositiveFieldValue(story.fields[customStoryPointsFieldId])) continue;
-      const featureKey = storyKeyToFeatureKey.get(story.key);
-      if (featureKey) {
-        pointedFeatureKeys.add(featureKey);
+      for (const story of response.issues ?? []) {
+        const storyNode = story.key ? storyNodeByKey.get(story.key) : undefined;
+        const configuredPoints = readNumericFieldValue(story.fields[customStoryPointsFieldId]);
+        // Only override when the configured field actually holds a value, so stories that use the
+        // legacy field still fall back to the blueprint's pre-computed points.
+        if (storyNode && configuredPoints !== null) {
+          storyNode.storyPoints = configuredPoints;
+        }
       }
     }
   }
-  return pointedFeatureKeys;
+
+  // Derive the pointed-feature set from the (now possibly-overridden) blueprint story points.
+  return new Set(
+    blueprintFeatures
+      .filter((featureNode) => [...featureNode.children, ...featureNode.offTrain].some(hasPositiveStoryPoints))
+      .map((featureNode) => featureNode.key),
+  );
 }
 
 function isDoneStatus(statusName: string): boolean {

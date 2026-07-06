@@ -20,11 +20,12 @@ describe('useCanvasFeatures (working-set fetch)', () => {
 
   it('fetches live data for the working-set keys via an issuekey query', async () => {
     mockFetchByJql.mockResolvedValue([{ feature: { key: 'DENP-1' } }, { feature: { key: 'DENP-2' } }]);
-    const { result } = renderHook(() => useCanvasFeatures(['DENP-1', 'DENP-2']));
+    const { result } = renderHook(() => useCanvasFeatures(['DENP-1', 'DENP-2'], 'customfield_10236'));
 
     await waitFor(() => expect(result.current.status).toBe('ready'));
     expect(result.current.items).toHaveLength(2);
-    expect(mockFetchByJql).toHaveBeenCalledWith('issuekey in (DENP-1,DENP-2)');
+    // The configured story-points field is threaded through so child points read the right field.
+    expect(mockFetchByJql).toHaveBeenCalledWith('issuekey in (DENP-1,DENP-2)', undefined, 'customfield_10236');
   });
 
   it('surfaces an error and no items when the fetch fails', async () => {

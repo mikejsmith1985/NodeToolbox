@@ -19,6 +19,7 @@ import { NodeInspectorPanel } from './canvas/NodeInspectorPanel.tsx';
 import { useCanvasFeatures } from './canvas/useCanvasFeatures.ts';
 import { useCanvasScope } from './canvas/useCanvasScope.ts';
 import { readStoredArtTeams } from '../SprintDashboard/sprintDashboardArtContext.ts';
+import { loadDashboardConfigFromStorage } from '../SprintDashboard/hooks/useDashboardConfig.ts';
 import { CoachPanel } from './coach/CoachPanel.tsx';
 import { AiSuggestionPanel } from './ai/AiSuggestionPanel.tsx';
 import { ReviewCommitPanel } from './commit/ReviewCommitPanel.tsx';
@@ -60,7 +61,10 @@ export default function FeatureCanvasView(): React.JSX.Element {
 
   // The curated working set is the overlay's node keys; the canvas fetches live data for exactly those.
   const workingSetKeys = useMemo(() => Object.keys(overlay.nodes), [overlay.nodes]);
-  const features = useCanvasFeatures(workingSetKeys);
+  // Use the active team's configured story-points field (same as the Sprint Dashboard) so child
+  // points read the right field; otherwise everything looks unpointed and the AI plans on zero effort.
+  const customStoryPointsFieldId = useMemo(() => loadDashboardConfigFromStorage(profileId).customStoryPointsFieldId, [profileId]);
+  const features = useCanvasFeatures(workingSetKeys, customStoryPointsFieldId);
 
   const [selectedIssueKey, setSelectedIssueKey] = useState<string | null>(null);
   const [isCommitOpen, setIsCommitOpen] = useState(false);
