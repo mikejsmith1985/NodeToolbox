@@ -28,7 +28,7 @@ describe('ReviewCommitPanel', () => {
       <ReviewCommitPanel
         canvasNodes={[buildNode()]}
         containers={[SPRINT]}
-        sizeMapping={{ S: 1, M: 3, L: 5, XL: 8 }}
+        sizeMapping={{ XS: 10, S: 20, M: 40, L: 60, XL: 80, XXL: 100 }}
         boardId={10}
         projectKey="DENP"
         onClose={vi.fn()}
@@ -49,7 +49,7 @@ describe('ReviewCommitPanel', () => {
       ],
     };
     render(
-      <ReviewCommitPanel canvasNodes={[feature]} containers={[SPRINT]} sizeMapping={{ S: 1, M: 3, L: 5, XL: 8 }} boardId={10} projectKey="DENP" onClose={vi.fn()} />,
+      <ReviewCommitPanel canvasNodes={[feature]} containers={[SPRINT]} sizeMapping={{ XS: 10, S: 20, M: 40, L: 60, XL: 80, XXL: 100 }} boardId={10} projectKey="DENP" onClose={vi.fn()} />,
     );
 
     expect(screen.getByText(/Sprint load/)).toBeInTheDocument();
@@ -62,7 +62,7 @@ describe('ReviewCommitPanel', () => {
 
   it('shows an empty-state message when there are no pending changes', () => {
     render(
-      <ReviewCommitPanel canvasNodes={[]} containers={[]} sizeMapping={{ S: 1, M: 3, L: 5, XL: 8 }} boardId={null} projectKey="DENP" onClose={vi.fn()} />,
+      <ReviewCommitPanel canvasNodes={[]} containers={[]} sizeMapping={{ XS: 10, S: 20, M: 40, L: 60, XL: 80, XXL: 100 }} boardId={null} projectKey="DENP" onClose={vi.fn()} />,
     );
     expect(screen.getByText(/No pending changes/)).toBeInTheDocument();
   });

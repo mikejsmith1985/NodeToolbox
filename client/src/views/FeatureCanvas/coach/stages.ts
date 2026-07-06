@@ -33,7 +33,7 @@ export const COACH_STAGES: readonly CoachStage[] = [
     order: 2,
     title: 'Size',
     job: 'Make it estimable.',
-    decision: 'Give each feature a quick relative size (S / M / L / XL) — so priority and WIP calls can weigh effort against value and completion.',
+    decision: 'Give each feature a quick relative size (XS / S / M / L / XL / XXL) — so priority and WIP calls can weigh effort against value and completion.',
     output: 'Every in-scope feature carries a size so capacity and WIP math work.',
   },
   {

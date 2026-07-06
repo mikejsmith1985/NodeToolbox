@@ -58,7 +58,7 @@ describe('overlayStorage', () => {
     window.localStorage.setItem(buildOverlayStorageKey('team-a', 'denp:pi-1'), JSON.stringify({ schemaVersion: 0, nodes: null }));
     const loaded = loadOverlay('team-a', 'denp:pi-1');
     expect(loaded.schemaVersion).toBe(1);
-    expect(loaded.sizeMapping).toEqual({ S: 1, M: 3, L: 5, XL: 8 });
+    expect(loaded.sizeMapping).toEqual({ XS: 10, S: 20, M: 40, L: 60, XL: 80, XXL: 100 });
   });
 
   it('degrades corrupt JSON to a valid empty overlay', () => {

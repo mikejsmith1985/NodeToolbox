@@ -135,7 +135,7 @@ const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
     + 'values. Respond ONLY with valid JSON: '
     + '{"kind":"priorityOrder","items":[{"issueKey":"KEY","bucket":"Must","rationale":"..."}]}',
   sizeEstimate:
-    'Assign each issue a relative t-shirt size (S, M, L, XL) for effort, judging scope ONLY from the '
+    'Assign each issue a relative t-shirt size (XS, S, M, L, XL, XXL) for effort, judging scope ONLY from the '
     + 'data shown — description, acceptance criteria, story counts, and points when present. Larger '
     + 'scope / more stories / higher points = larger size. If scope is unclear from the data, say so in '
     + 'the rationale rather than guessing. Respond ONLY with valid JSON: '
@@ -157,7 +157,7 @@ const PROMPT_INSTRUCTIONS: Record<AiSuggestionKind, string> = {
     + '{"kind":"parkCandidates","items":[{"issueKey":"KEY","action":"park","reason":"..."}]}',
   masterPlan:
     'Produce a COMPLETE plan for EVERY feature in one pass, as if running all five phases. For each '
-    + 'feature return: "size" (S/M/L/XL, from scope); "bucket" (Must/Should/Could/Wont, weighing value '
+    + 'feature return: "size" (XS/S/M/L/XL/XXL, from scope); "bucket" (Must/Should/Could/Wont, weighing value '
     + 'against size and PI time-to-DoD); "triage" ("keep" to keep active, "park" to defer stale/duplicate/'
     + 'over-WIP work, "complete" if it already meets Definition of Done — dev-complete + delivered to '
     + 'integration testing, not production, "breakout" if marked done but has open child stories); and '

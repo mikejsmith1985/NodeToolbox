@@ -10,8 +10,8 @@
 /** Current persisted overlay schema version. Bump when the stored shape changes. */
 export const OVERLAY_SCHEMA_VERSION = 1;
 
-/** Relative sizing scale used when a feature has no story points yet. */
-export type TshirtSize = 'S' | 'M' | 'L' | 'XL';
+/** Feature t-shirt sizing scale (per the MA Growth Portfolio Feature Sizing Guidance). */
+export type TshirtSize = 'XS' | 'S' | 'M' | 'L' | 'XL' | 'XXL';
 
 /** MoSCoW prioritization buckets applied to nodes during Stage 3. */
 export type MoscowBucket = 'Must' | 'Should' | 'Could' | 'Wont';
@@ -24,8 +24,8 @@ export type StageId = 'surface' | 'stabilize' | 'prioritize' | 'size' | 'sequenc
  *  not sequenced into a sprint this PI. */
 export type ContainerKind = 'release' | 'sprint' | 'parkingLot' | 'complete' | 'later';
 
-/** Default t-shirt → story-point mapping (Fibonacci-adjacent); editable per overlay. */
-export const DEFAULT_SIZE_MAPPING: Record<TshirtSize, number> = { S: 1, M: 3, L: 5, XL: 8 };
+/** Default t-shirt → feature-points mapping (MA Growth Portfolio Feature Sizing Guidance). */
+export const DEFAULT_SIZE_MAPPING: Record<TshirtSize, number> = { XS: 10, S: 20, M: 40, L: 60, XL: 80, XXL: 100 };
 
 /** The ordered stage identifiers, exposed for coach navigation and completion tracking. */
 export const STAGE_ORDER: readonly StageId[] = ['surface', 'size', 'prioritize', 'stabilize', 'sequence'];
