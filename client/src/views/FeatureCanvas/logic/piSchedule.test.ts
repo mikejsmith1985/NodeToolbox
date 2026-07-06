@@ -2,7 +2,25 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { daysRemainingInPi, parsePiDateRange } from './piSchedule.ts';
+import { daysRemainingInPi, parsePiDateRange, timeElapsedFraction } from './piSchedule.ts';
+
+describe('timeElapsedFraction', () => {
+  it('returns the clamped fraction of the window elapsed', () => {
+    // 05/21 → 07/29 is 69 days; 07/06 is 46 days in → ~0.667.
+    const fraction = timeElapsedFraction('2026-05-21', '2026-07-29', '2026-07-06');
+    expect(fraction).toBeCloseTo(46 / 69, 2);
+  });
+
+  it('clamps before the start (0) and after the end (1)', () => {
+    expect(timeElapsedFraction('2026-05-21', '2026-07-29', '2026-05-01')).toBe(0);
+    expect(timeElapsedFraction('2026-05-21', '2026-07-29', '2026-08-15')).toBe(1);
+  });
+
+  it('is null for an unparseable or non-positive window', () => {
+    expect(timeElapsedFraction('bad', '2026-07-29', '2026-07-06')).toBeNull();
+    expect(timeElapsedFraction('2026-07-29', '2026-05-21', '2026-07-06')).toBeNull();
+  });
+});
 
 describe('parsePiDateRange', () => {
   it('parses a MM/DD/YY range embedded in the PI name', () => {
