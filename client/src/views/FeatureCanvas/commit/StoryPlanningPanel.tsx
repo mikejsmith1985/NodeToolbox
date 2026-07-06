@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom';
 import type { CanvasNode } from '../logic/canvasTypes.ts';
 import type { ContainerKind } from '../overlay/overlayModel.ts';
 import type { CanvasOverlayController } from '../overlay/useCanvasOverlay.ts';
+import { balanceStoriesAcrossSprints, type BalanceStoryInput } from '../logic/sprintBalance.ts';
 import { StoryInspectorPanel } from './StoryInspectorPanel.tsx';
 import controlStyles from '../canvas/canvasControls.module.css';
 
@@ -86,9 +87,40 @@ export function StoryPlanningPanel({ canvasNodes, controller, onClose }: StoryPl
   const containers = controller.overlay.containers;
   const stories = useMemo(() => collectStories(canvasNodes), [canvasNodes]);
   const [selectedStory, setSelectedStory] = useState<PlaceableStory | null>(null);
+  const [balanceSummary, setBalanceSummary] = useState<string | null>(null);
 
   // Only sprint/Later boxes are planning targets and columns — never Parking Lot/Complete/release.
   const plannableContainers = useMemo(() => containers.filter((container) => PLANNABLE_KINDS.includes(container.kind)), [containers]);
+  const sprintContainers = useMemo(() => containers.filter((container) => container.kind === 'sprint'), [containers]);
+  const completeBoxIds = useMemo(
+    () => new Set(containers.filter((container) => container.kind === 'complete').map((container) => container.id)),
+    [containers],
+  );
+
+  // Auto-balance: fill each sprint to capacity (priority order), overflow → Over Capacity. Only stories
+  // of features that are NOT parked/complete are candidates — that's the work being scheduled this PI.
+  function handleAutoBalance(): void {
+    const candidateStories: BalanceStoryInput[] = [];
+    for (const node of canvasNodes) {
+      if (node.isParked || completeBoxIds.has(node.containerId ?? '')) {
+        continue;
+      }
+      const units = node.childStories.length > 0
+        ? node.childStories.map((child) => ({ storyKey: child.key, points: child.storyPoints }))
+        : [{ storyKey: node.issueKey, points: node.storyPoints }];
+      for (const unit of units) {
+        candidateStories.push({ featureKey: node.issueKey, storyKey: unit.storyKey, points: unit.points, priority: node.priority });
+      }
+    }
+    const sprintInputs = sprintContainers.map((container) => ({ id: container.id, capacity: container.capacityBudget ?? 0 }));
+    const result = balanceStoriesAcrossSprints(candidateStories, sprintInputs);
+    controller.autoBalanceSprints(result.assignments);
+    const unestimatedNote = result.unestimatedCount > 0 ? ` (incl. ${result.unestimatedCount} unestimated)` : '';
+    setBalanceSummary(
+      `${result.fitPoints} pt (${result.fitCount} stories) fit across ${sprintInputs.length} sprint(s). `
+      + `${result.overflowPoints} pt (${result.overflowCount} stories)${unestimatedNote} → Over Capacity — re-prioritize.`,
+    );
+  }
 
   const storiesInColumn = (columnId: string): PlaceableStory[] =>
     stories.filter((story) => story.effectiveContainerId === columnId);
@@ -118,10 +150,19 @@ export function StoryPlanningPanel({ canvasNodes, controller, onClose }: StoryPl
         <button type="button" className={controlStyles.btnPrimary} onClick={onClose} aria-label="Close story planning">✕ Close</button>
       </div>
       <p style={{ opacity: 0.75, margin: '8px 0' }}>
-        Move child stories between sprints (or defer to Later) to plan each sprint at the story level — a
-        feature can span sprints. Click a story for its full detail. This stays in the sandbox; Review &amp;
-        Commit assigns each story to its placed sprint.
+        Move child stories between sprints (or defer to Over Capacity) to plan each sprint at the story
+        level — a feature can span sprints. Click a story for its full detail. This stays in the sandbox;
+        Review &amp; Commit assigns each story to its placed sprint.
       </p>
+
+      {sprintContainers.length > 0 && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', margin: '4px 0 8px' }}>
+          <button type="button" className={controlStyles.btnPrimary} onClick={handleAutoBalance} title="Fill each sprint to capacity in priority order; overflow goes to Over Capacity">
+            ⚖️ Auto-balance sprints
+          </button>
+          {balanceSummary && <span style={{ fontSize: 12, color: 'var(--color-text-muted, inherit)' }}>{balanceSummary}</span>}
+        </div>
+      )}
 
       {plannableContainers.length === 0 && <p style={{ opacity: 0.6 }}>Add a sprint box first, then come back to plan its stories.</p>}
 

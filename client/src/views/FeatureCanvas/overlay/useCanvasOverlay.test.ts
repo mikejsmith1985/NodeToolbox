@@ -240,6 +240,26 @@ describe('useCanvasOverlay', () => {
       expect(overlay.nodes['NOPE'].containerId).toBe(later?.id);
     });
 
+    it('autoBalanceSprints applies per-story placements and routes overflow to an auto-created Over Capacity box', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      act(() => result.current.ensureNodeStates([createNodeState('F1', 0, 0)]));
+      act(() => result.current.addContainer({
+        id: 'sprint-1', kind: 'sprint', title: 'S1', bounds: { x: 0, y: 0, width: 400, height: 260 }, capacityBudget: 20,
+        provenance: { state: 'real', jiraSprintId: 1, jiraVersionName: null, startDateIso: null, endDateIso: null },
+      }));
+
+      act(() => result.current.autoBalanceSprints([
+        { featureKey: 'F1', storyKey: 'S-1', sprintId: 'sprint-1' },
+        { featureKey: 'F1', storyKey: 'S-2', sprintId: null }, // over capacity → Over Capacity box
+      ]));
+
+      const overCapacity = result.current.overlay.containers.find((container) => container.kind === 'later');
+      expect(overCapacity).toBeTruthy();
+      const placements = result.current.overlay.nodes['F1'].storyPlacements ?? {};
+      expect(placements['S-1']).toBe('sprint-1');
+      expect(placements['S-2']).toBe(overCapacity!.id);
+    });
+
     it('setStoryPlacement sets and clears a per-story box override', () => {
       const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
       act(() => result.current.ensureNodeStates([createNodeState('DENP-1', 0, 0)]));

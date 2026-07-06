@@ -36,10 +36,10 @@ describe('createProvisionalContainer', () => {
     expect(createProvisionalContainer('sprint', 1).bounds.x).toBe(480);
   });
 
-  it('builds the canvas-only Later box', () => {
+  it('builds the canvas-only Over Capacity box', () => {
     const later = createLaterContainer(0);
     expect(later.kind).toBe('later');
-    expect(later.title).toBe('Later');
+    expect(later.title).toBe('Over Capacity');
     expect(later.provenance.state).toBe('provisional');
   });
 

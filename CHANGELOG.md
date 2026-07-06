@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Feature Canvas — "Auto-balance sprints" + an "Over Capacity" bucket**: Plan stories gains a **⚖️ Auto-balance sprints** action that fills each sprint up to its point capacity in **MoSCoW priority order**, and sends everything that doesn't fit — plus unestimated stories — to a new **Over Capacity** box. This separates the two kinds of "not now": **Parking Lot** = deprioritized (not critical), **Over Capacity** = no room this PI (must be re-prioritized). The result reports what actually fits vs. what's deferred, e.g. "142 pt fit across 2 sprints · 480 pt (178 stories) → Over Capacity."
+- **Feature Canvas — sprint capacity override**: the Team Dashboard **Sprint Point Capacity** now **overrides** computed velocity when set (>0); `0` = auto (use velocity). So a team whose auto-velocity reads low can pin a realistic number (e.g. 20).
+
 ### Changed
 - **Feature Canvas — feature t-shirt sizes now follow the portfolio Feature Sizing Guidance**: the size scale is now **XS=10, S=20, M=40, L=60, XL=80, XXL=100** (was S/M/L/XL mapped to 1/3/5/8). The Size stage, AI size/master-plan prompts, and capacity math all use the new scale, so sized-feature points line up with the portfolio standard.
 

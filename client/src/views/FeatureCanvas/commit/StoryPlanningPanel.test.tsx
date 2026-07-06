@@ -26,7 +26,7 @@ function buildController(): CanvasOverlayController {
     ensureNodeStates: vi.fn(), updateNode: vi.fn(), setWipLimit: vi.fn(), setPriority: vi.fn(),
     setSize: vi.fn(), setContainer: vi.fn(), setParked: vi.fn(), addContainer: vi.fn(),
     updateContainer: vi.fn(), removeContainer: vi.fn(), removeNode: vi.fn(), clearNodes: vi.fn(), goToStage: vi.fn(), completeStage: vi.fn(),
-    assignToContainer: vi.fn(), parkNode: vi.fn(), unparkNode: vi.fn(), completeNode: vi.fn(), moveContainer: vi.fn(), applyMasterPlan: vi.fn(), relayoutBoxes: vi.fn(), setStoryPlacement: vi.fn(), undo: vi.fn(), redo: vi.fn(), canUndo: false, canRedo: false,
+    assignToContainer: vi.fn(), parkNode: vi.fn(), unparkNode: vi.fn(), completeNode: vi.fn(), moveContainer: vi.fn(), applyMasterPlan: vi.fn(), relayoutBoxes: vi.fn(), setStoryPlacement: vi.fn(), autoBalanceSprints: vi.fn(), undo: vi.fn(), redo: vi.fn(), canUndo: false, canRedo: false,
   };
 }
 
@@ -75,6 +75,19 @@ describe('StoryPlanningPanel', () => {
     const inspector = screen.getByLabelText('Inspector for DENP-2');
     expect(within(inspector).getByText('Description')).toBeInTheDocument();
     expect(within(inspector).getByText('Acceptance criteria')).toBeInTheDocument();
+  });
+
+  it('auto-balances stories across sprints and reports the fit/overflow summary', () => {
+    const controller = buildController();
+    // Two 3pt stories, sprint capacity 5 → one fits (3), the other overflows (would be 6 > 5).
+    render(<StoryPlanningPanel canvasNodes={[NODE]} controller={controller} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Auto-balance sprints/ }));
+
+    expect(controller.autoBalanceSprints).toHaveBeenCalled();
+    const assignments = (controller.autoBalanceSprints as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Array<{ storyKey: string; sprintId: string | null }>;
+    expect(assignments).toHaveLength(2);
+    // The summary reports what fit vs what spilled (unique "re-prioritize" wording).
+    expect(screen.getByText(/fit across .* sprint\(s\).*re-prioritize/)).toBeInTheDocument();
   });
 
   it('excludes Parking Lot / Complete boxes from the planning board', () => {
