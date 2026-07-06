@@ -25,32 +25,41 @@ export interface CanvasFeaturesResult {
 const WORKING_SET_FETCH_BATCH_SIZE = 200;
 
 /** Fetches feature-review items for the given keys, batching to respect the 200-result fetch cap. */
-async function fetchWorkingSetItems(keys: readonly string[]): Promise<FeatureReviewItem[]> {
+async function fetchWorkingSetItems(keys: readonly string[], customStoryPointsFieldId: string): Promise<FeatureReviewItem[]> {
   const mergedItems: FeatureReviewItem[] = [];
   for (let batchStart = 0; batchStart < keys.length; batchStart += WORKING_SET_FETCH_BATCH_SIZE) {
     const keyBatch = keys.slice(batchStart, batchStart + WORKING_SET_FETCH_BATCH_SIZE);
-    const batchItems = await fetchFeatureReviewItemsByJql(`issuekey in (${keyBatch.join(',')})`);
+    // Pass the team's configured story-points field so child points read that field, not just the
+    // hardcoded legacy fields — otherwise every story looks unpointed and the AI plans on zero effort.
+    const batchItems = await fetchFeatureReviewItemsByJql(`issuekey in (${keyBatch.join(',')})`, undefined, customStoryPointsFieldId);
     mergedItems.push(...batchItems);
   }
   return mergedItems;
 }
 
 /** Loads live feature data for the working set identified by the given overlay node keys. */
-export function useCanvasFeatures(workingSetKeys: readonly string[]): CanvasFeaturesResult {
-  // Sort so the request identity is stable regardless of key insertion order.
-  const requestKey = useMemo(() => [...workingSetKeys].sort().join(','), [workingSetKeys]);
+export function useCanvasFeatures(workingSetKeys: readonly string[], customStoryPointsFieldId = ''): CanvasFeaturesResult {
+  // Sort so the request identity is stable regardless of key insertion order; include the SP field so
+  // switching teams (and thus configured field) re-fetches with the correct points.
+  const requestKey = useMemo(
+    () => `${customStoryPointsFieldId}::${[...workingSetKeys].sort().join(',')}`,
+    [workingSetKeys, customStoryPointsFieldId],
+  );
 
   const [result, setResult] = useState<{ key: string; status: 'ready' | 'error'; items: FeatureReviewItem[]; error: string | null }>(
     { key: '__initial__', status: 'ready', items: [], error: null },
   );
 
+  // The request key is "<fieldId>::<comma-separated sorted keys>"; the keys live after the separator.
+  const joinedKeys = requestKey.split('::')[1] ?? '';
+
   useEffect(() => {
-    if (requestKey === '') {
+    if (joinedKeys === '') {
       return undefined; // empty working set — nothing to fetch; derived status below is ready/[]
     }
     let isCancelled = false;
     // setState happens only in the async callbacks, never synchronously in the effect body.
-    fetchWorkingSetItems(requestKey.split(','))
+    fetchWorkingSetItems(joinedKeys.split(','), customStoryPointsFieldId)
       .then((loadedItems) => {
         if (!isCancelled) {
           setResult({ key: requestKey, status: 'ready', items: loadedItems, error: null });
@@ -64,9 +73,9 @@ export function useCanvasFeatures(workingSetKeys: readonly string[]): CanvasFeat
     return () => {
       isCancelled = true;
     };
-  }, [requestKey]);
+  }, [requestKey, joinedKeys, customStoryPointsFieldId]);
 
-  if (requestKey === '') {
+  if (joinedKeys === '') {
     return { status: 'ready', items: [], error: null };
   }
   const isResultCurrent = result.key === requestKey;
