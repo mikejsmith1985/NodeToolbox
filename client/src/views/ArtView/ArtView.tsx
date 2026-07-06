@@ -2165,6 +2165,8 @@ interface MonthlyReportTemplateRow {
 
 /** Editable fields that form a single team's monthly report card. */
 interface MonthlyReportCard {
+  /** Unique per (team, pillar) so a team can have several cards — one per pillar. Base card = teamId. */
+  cardId: string;
   teamId: string;
   teamName: string;
   reportTeamName: string;
@@ -2265,6 +2267,7 @@ const PILLAR_OPTIONS: MonthlyReportPillar[] = ['', 'Growth', 'Affordability', 'O
 
 function createDefaultMonthlyReportCard(team: ArtTeam): MonthlyReportCard {
   return {
+    cardId: team.id,
     teamId: team.id,
     teamName: team.name,
     reportTeamName: team.name,
@@ -2301,8 +2304,10 @@ function normalizeStoredMonthlyReportCard(team: ArtTeam, storedCard: unknown): M
     ? storedPillar as MonthlyReportPillar
     : '';
 
+  const storedCardId = readStoredMonthlyText(storedCardRecord.cardId).trim();
   return {
     ...defaultCard,
+    cardId: storedCardId || defaultCard.cardId,
     reportTeamName,
     initiativeName: readStoredMonthlyText(storedCardRecord.initiativeName),
     code: readStoredMonthlyText(storedCardRecord.code),
@@ -2337,22 +2342,28 @@ function buildMonthlyReportStorageKey(teamId: string, yearMonth: string): string
   return `tbxMonthlyReport_${teamId}_${yearMonth}`;
 }
 
-/** Loads a stored monthly report card or returns an empty default. */
-function loadMonthlyReportCard(team: ArtTeam, yearMonth: string): MonthlyReportCard {
+/**
+ * Loads a team's stored monthly report cards for the month. A team can have several cards (one per
+ * pillar). Migrates the legacy single-object shape to a one-element array.
+ */
+function loadMonthlyReportCards(team: ArtTeam, yearMonth: string): MonthlyReportCard[] {
   try {
     const stored = localStorage.getItem(buildMonthlyReportStorageKey(team.id, yearMonth));
     if (stored) {
-      return normalizeStoredMonthlyReportCard(team, JSON.parse(stored));
+      const parsed = JSON.parse(stored);
+      const rawCards = Array.isArray(parsed) ? parsed : [parsed];
+      const cards = rawCards.map((rawCard) => normalizeStoredMonthlyReportCard(team, rawCard));
+      return cards.length > 0 ? cards : [createDefaultMonthlyReportCard(team)];
     }
   } catch {
     // Fall through to default
   }
-  return createDefaultMonthlyReportCard(team);
+  return [createDefaultMonthlyReportCard(team)];
 }
 
-/** Saves a monthly report card to localStorage. */
-function saveMonthlyReportCard(teamId: string, yearMonth: string, card: MonthlyReportCard): void {
-  localStorage.setItem(buildMonthlyReportStorageKey(teamId, yearMonth), JSON.stringify(card));
+/** Saves all of a team's monthly report cards (the whole per-team array) for the month. */
+function saveMonthlyReportCardsForTeam(teamId: string, yearMonth: string, teamCards: MonthlyReportCard[]): void {
+  localStorage.setItem(buildMonthlyReportStorageKey(teamId, yearMonth), JSON.stringify(teamCards));
 }
 
 function readMonthlyTemplateFieldValue(card: MonthlyReportCard, fieldName: MonthlyReportTemplateFieldName): string {
@@ -2574,10 +2585,15 @@ function monthlyCardHasDraftContent(card: MonthlyReportCard): boolean {
 type MonthlyReportAiField = 'initiativeName' | 'productAreas' | 'accomplished' | 'outcomes' | 'stakeholders';
 const MONTHLY_REPORT_AI_FIELDS: MonthlyReportAiField[] = ['initiativeName', 'productAreas', 'accomplished', 'outcomes', 'stakeholders'];
 
+/** One AI-drafted pillar entry: the narrative fields plus the pillar it classified the work into. */
+interface MonthlyReportAiEntry extends Partial<Record<MonthlyReportAiField, string>> {
+  pillar: MonthlyReportPillar;
+}
+
 /**
- * Builds a copy-paste prompt so an external assistant (e.g. Copilot) can draft the monthly report's
- * narrative fields from the team's Jira context and any current drafts. No live AI call — the operator
- * copies this, pastes the JSON reply back, and applies it.
+ * Builds a copy-paste prompt so an external assistant (e.g. Copilot) can draft the monthly report.
+ * The assistant CLASSIFIES the work into pillars (Growth / Affordability / Operating Model) and
+ * returns one entry per pillar present — so a team spanning multiple pillars yields multiple forms.
  */
 function buildMonthlyReportAiPrompt(card: MonthlyReportCard, jiraStats: ReturnType<typeof computeMonthlyJiraStats> | null): string {
   const contextLine = jiraStats
@@ -2595,32 +2611,88 @@ function buildMonthlyReportAiPrompt(card: MonthlyReportCard, jiraStats: ReturnTy
   return [
     `Help write the monthly delivery report for the team "${card.teamName}".`,
     contextLine,
-    'Draft concise, business-focused answers for each field below. Use "• " bullet lines where a list fits. Do NOT invent specific metrics that are not provided.',
-    'Respond ONLY with a JSON object keyed by the exact field names, e.g. {"accomplished":"• Shipped X\\n• Fixed Y","outcomes":"..."}. Fields:',
+    'Classify the work into business pillars — "Growth", "Affordability", or "Operating Model" — based on its intent. If the work spans more than one pillar, return SEPARATE entries, one per pillar, splitting the accomplishments accordingly.',
+    'For each pillar entry, draft concise, business-focused answers. Use "• " bullet lines where a list fits. Do NOT invent specific metrics that are not provided.',
+    'Respond ONLY with a JSON ARRAY of entries. Each entry has a "pillar" plus the fields below, e.g. '
+    + '[{"pillar":"Growth","initiativeName":"...","accomplished":"• ...","outcomes":"...","productAreas":"...","stakeholders":"..."}]. Fields:',
     ...questions,
   ].join('\n');
 }
 
-/** Extracts the first JSON object substring from a possibly-fenced assistant reply. */
-function extractJsonObject(text: string): string {
+/** Extracts the first JSON array or object substring from a possibly-fenced assistant reply. */
+function extractJsonPayload(text: string): string {
+  const firstBracket = text.indexOf('[');
+  const lastBracket = text.lastIndexOf(']');
+  if (firstBracket !== -1 && lastBracket > firstBracket) {
+    return text.slice(firstBracket, lastBracket + 1);
+  }
   const firstBrace = text.indexOf('{');
   const lastBrace = text.lastIndexOf('}');
   if (firstBrace === -1 || lastBrace <= firstBrace) {
-    throw new Error('No JSON object found in the response.');
+    throw new Error('No JSON found in the response.');
   }
   return text.slice(firstBrace, lastBrace + 1);
 }
 
-/** Parses an assistant reply into the report's known narrative fields (ignores anything else). */
-function parseMonthlyReportAiDraft(responseText: string): Partial<Record<MonthlyReportAiField, string>> {
-  const parsed = JSON.parse(extractJsonObject(responseText)) as Record<string, unknown>;
-  const draft: Partial<Record<MonthlyReportAiField, string>> = {};
+/** Reads one pillar entry's narrative fields + validated pillar from a raw object. */
+function readMonthlyAiEntry(raw: Record<string, unknown>): MonthlyReportAiEntry {
+  const rawPillar = typeof raw.pillar === 'string' ? raw.pillar : '';
+  const entry: MonthlyReportAiEntry = {
+    pillar: PILLAR_OPTIONS.includes(rawPillar as MonthlyReportPillar) ? (rawPillar as MonthlyReportPillar) : '',
+  };
   for (const field of MONTHLY_REPORT_AI_FIELDS) {
-    if (typeof parsed[field] === 'string') {
-      draft[field] = parsed[field] as string;
+    if (typeof raw[field] === 'string') {
+      entry[field] = raw[field] as string;
     }
   }
-  return draft;
+  return entry;
+}
+
+/** Parses an assistant reply into one-or-more per-pillar entries (accepts an array or a single object). */
+function parseMonthlyReportAiDraft(responseText: string): MonthlyReportAiEntry[] {
+  const parsed = JSON.parse(extractJsonPayload(responseText)) as unknown;
+  const rawEntries = Array.isArray(parsed) ? parsed : [parsed];
+  return rawEntries
+    .filter((rawEntry): rawEntry is Record<string, unknown> => Boolean(rawEntry) && typeof rawEntry === 'object')
+    .map((rawEntry) => readMonthlyAiEntry(rawEntry));
+}
+
+/** The team's Point of Contact, derived from the most common assignee across its loaded issues. */
+function readTeamPointOfContact(jiraIssues: JiraIssue[]): string {
+  const counts = new Map<string, number>();
+  for (const issue of jiraIssues) {
+    const assignee = issue.fields.assignee?.displayName;
+    if (assignee) {
+      counts.set(assignee, (counts.get(assignee) ?? 0) + 1);
+    }
+  }
+  let topAssignee = '';
+  let topCount = 0;
+  for (const [assignee, count] of counts) {
+    if (count > topCount) {
+      topAssignee = assignee;
+      topCount = count;
+    }
+  }
+  return topAssignee;
+}
+
+/** The delivered date, taken from the (released, else latest) fix version's release date. */
+function readTeamDeliveredDate(jiraIssues: JiraIssue[]): string {
+  const releaseDates: Array<{ date: string; released: boolean }> = [];
+  for (const issue of jiraIssues) {
+    for (const fixVersion of issue.fields.fixVersions ?? []) {
+      if (fixVersion.releaseDate) {
+        releaseDates.push({ date: fixVersion.releaseDate, released: fixVersion.released ?? false });
+      }
+    }
+  }
+  if (releaseDates.length === 0) {
+    return '';
+  }
+  const released = releaseDates.filter((entry) => entry.released);
+  const pool = released.length > 0 ? released : releaseDates;
+  return pool.map((entry) => entry.date).sort().at(-1) ?? '';
 }
 
 interface MonthlyReportCardEditorProps {
@@ -2628,10 +2700,12 @@ interface MonthlyReportCardEditorProps {
   /** Sprint issues loaded for this team from Jira — empty array when data has not been fetched. */
   jiraIssues: JiraIssue[];
   onChange: (updatedCard: MonthlyReportCard) => void;
+  /** Replaces all of the team's cards — used when the AI splits the report into one card per pillar. */
+  onReplaceTeamCards: (teamId: string, replacementCards: MonthlyReportCard[]) => void;
 }
 
 /** Renders a single editable monthly report card for one team. */
-function MonthlyReportCardEditor({ card, jiraIssues, onChange }: MonthlyReportCardEditorProps) {
+function MonthlyReportCardEditor({ card, jiraIssues, onChange, onReplaceTeamCards }: MonthlyReportCardEditorProps) {
   function handleFieldChange(fieldName: keyof MonthlyReportCard, value: string) {
     onChange({ ...card, [fieldName]: value });
   }
@@ -2665,12 +2739,28 @@ function MonthlyReportCardEditor({ card, jiraIssues, onChange }: MonthlyReportCa
 
   function handleApplyAiDraft() {
     try {
-      const draft = parseMonthlyReportAiDraft(aiDraftResponse);
-      if (Object.keys(draft).length === 0) {
-        setAiDraftError('No recognized fields found in the response.');
+      const entries = parseMonthlyReportAiDraft(aiDraftResponse);
+      if (entries.length === 0) {
+        setAiDraftError('No recognized entries found in the response.');
         return;
       }
-      onChange({ ...card, ...draft });
+      // Pull the factual fields from Jira, applied to every pillar card for this team.
+      const pointOfContact = readTeamPointOfContact(jiraIssues) || card.pointOfContact;
+      const deliveredDate = readTeamDeliveredDate(jiraIssues) || card.deliveredDate;
+      // Build one card per pillar entry. Carry over the base card's manual factual fields.
+      const replacementCards: MonthlyReportCard[] = entries.map((entry, index) => ({
+        ...card,
+        cardId: entry.pillar ? `${card.teamId}::${entry.pillar}` : `${card.teamId}::entry-${index}`,
+        pillar: entry.pillar,
+        initiativeName: entry.initiativeName ?? card.initiativeName,
+        productAreas: entry.productAreas ?? card.productAreas,
+        accomplished: entry.accomplished ?? card.accomplished,
+        outcomes: entry.outcomes ?? card.outcomes,
+        stakeholders: entry.stakeholders ?? card.stakeholders,
+        pointOfContact,
+        deliveredDate,
+      }));
+      onReplaceTeamCards(card.teamId, replacementCards);
       setAiDraftError(null);
       setAiDraftResponse('');
       setIsAiDraftOpen(false);
@@ -2845,9 +2935,9 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
   const [teamFilter, setTeamFilter] = useState('all');
   const [pillarFilter, setPillarFilter] = useState<MonthlyReportPillar>('');
 
-  // Load cards for all teams for the current month, initialising from localStorage
+  // Load cards for all teams for the current month (a team may have several — one per pillar).
   const [cards, setCards] = useState<MonthlyReportCard[]>(() =>
-    teams.map((team) => loadMonthlyReportCard(team, selectedYearMonth)),
+    teams.flatMap((team) => loadMonthlyReportCards(team, selectedYearMonth)),
   );
 
   // Build a stable teamId → sprintIssues map so editors receive the latest loaded Jira issues.
@@ -2859,14 +2949,29 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
   function handleMonthChange(newYearMonth: string) {
     setSelectedYearMonth(newYearMonth);
     savePersistedMonthSelection(newYearMonth);
-    setCards(teams.map((team) => loadMonthlyReportCard(team, newYearMonth)));
+    setCards(teams.flatMap((team) => loadMonthlyReportCards(team, newYearMonth)));
+  }
+
+  // Persists every card belonging to one team (the per-team array) after a change.
+  function persistTeamCards(teamId: string, allCards: MonthlyReportCard[]): void {
+    saveMonthlyReportCardsForTeam(teamId, selectedYearMonth, allCards.filter((card) => card.teamId === teamId));
   }
 
   function handleCardChange(updatedCard: MonthlyReportCard) {
-    setCards((previous) =>
-      previous.map((card) => (card.teamId === updatedCard.teamId ? updatedCard : card)),
-    );
-    saveMonthlyReportCard(updatedCard.teamId, selectedYearMonth, updatedCard);
+    setCards((previous) => {
+      const next = previous.map((card) => (card.cardId === updatedCard.cardId ? updatedCard : card));
+      persistTeamCards(updatedCard.teamId, next);
+      return next;
+    });
+  }
+
+  // Replaces all of a team's cards (used when the AI splits the report into one card per pillar).
+  function handleReplaceTeamCards(teamId: string, replacementCards: MonthlyReportCard[]) {
+    setCards((previous) => {
+      const next = [...previous.filter((card) => card.teamId !== teamId), ...replacementCards];
+      persistTeamCards(teamId, next);
+      return next;
+    });
   }
 
   // Apply team filter first, then pillar filter
@@ -2965,10 +3070,11 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
       <div className={styles.monthlyCardList}>
         {visibleCards.map((card) => (
           <MonthlyReportCardEditor
-            key={card.teamId}
+            key={card.cardId}
             card={card}
             jiraIssues={issuesByTeamId.get(card.teamId) ?? []}
             onChange={handleCardChange}
+            onReplaceTeamCards={handleReplaceTeamCards}
           />
         ))}
       </div>
