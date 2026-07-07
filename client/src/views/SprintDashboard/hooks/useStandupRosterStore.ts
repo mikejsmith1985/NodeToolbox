@@ -20,6 +20,12 @@ export interface RosterRoleCapabilities {
   canDevelop: boolean;
   canInternalTest: boolean;
   canExternalTest: boolean;
+  // Coordination / leadership roles. Optional so rosters persisted before these existed stay valid
+  // (an absent flag reads as false). SM/PO/SA/Dev Lead give the re-allocation planner fuller context.
+  canScrumMaster?: boolean;
+  canProductOwner?: boolean;
+  canSolutionArchitect?: boolean;
+  canDevLead?: boolean;
 }
 
 export interface StandupRosterMember {
@@ -110,7 +116,11 @@ function isValidRoleCapabilities(value: unknown): value is RosterRoleCapabilitie
   return (
     (candidate.canDevelop === undefined || typeof candidate.canDevelop === 'boolean') &&
     (candidate.canInternalTest === undefined || typeof candidate.canInternalTest === 'boolean') &&
-    (candidate.canExternalTest === undefined || typeof candidate.canExternalTest === 'boolean')
+    (candidate.canExternalTest === undefined || typeof candidate.canExternalTest === 'boolean') &&
+    (candidate.canScrumMaster === undefined || typeof candidate.canScrumMaster === 'boolean') &&
+    (candidate.canProductOwner === undefined || typeof candidate.canProductOwner === 'boolean') &&
+    (candidate.canSolutionArchitect === undefined || typeof candidate.canSolutionArchitect === 'boolean') &&
+    (candidate.canDevLead === undefined || typeof candidate.canDevLead === 'boolean')
   );
 }
 

@@ -111,19 +111,29 @@ describe('RosterTab', () => {
     // Before toggling, the only "Developer" text is the toggle label (no chip yet).
     expect(screen.getAllByText('Developer')).toHaveLength(1);
 
+    // The four coordination roles (Scrum Master / Product Owner / Solution Architect / Dev Lead) also render.
+    expect(screen.getByRole('checkbox', { name: 'Scrum Master' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Dev Lead' })).toBeInTheDocument();
+
     fireEvent.click(developerToggle);
 
     const aliceMember = useStandupRosterStore.getState().rosterMembers.find(
       (rosterMember) => rosterMember.displayName === 'Alice Adams',
     );
-    expect(aliceMember?.roleCapabilities).toEqual({
-      canDevelop: true,
-      canInternalTest: false,
-      canExternalTest: false,
-    });
+    // The persisted object is complete (every role flag present); the toggled one is true, the rest false.
+    expect(aliceMember?.roleCapabilities).toEqual(
+      expect.objectContaining({ canDevelop: true, canInternalTest: false, canExternalTest: false, canDevLead: false }),
+    );
     expect(screen.getByRole('checkbox', { name: 'Developer' })).toBeChecked();
     // The set role now also renders as a chip → toggle label + chip = two "Developer" nodes.
     expect(screen.getAllByText('Developer')).toHaveLength(2);
+
+    // A coordination role toggles and persists just like a delivery role.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Scrum Master' }));
+    const aliceAfterSm = useStandupRosterStore.getState().rosterMembers.find(
+      (rosterMember) => rosterMember.displayName === 'Alice Adams',
+    );
+    expect(aliceAfterSm?.roleCapabilities?.canScrumMaster).toBe(true);
   });
 
   it('adds sprint assignees to the roster from the quick-pick list', () => {

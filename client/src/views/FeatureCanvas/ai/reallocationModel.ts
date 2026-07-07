@@ -11,7 +11,10 @@ import { daysRemainingInPi, parsePiDateRange } from '../logic/piSchedule.ts';
 
 const MS_PER_DAY = 86_400_000;
 const UNASSIGNED_DISPLAY_NAME = 'Unassigned';
-const NO_ROLES: RosterRoleCapabilities = { canDevelop: false, canInternalTest: false, canExternalTest: false };
+const NO_ROLES: RosterRoleCapabilities = {
+  canDevelop: false, canInternalTest: false, canExternalTest: false,
+  canScrumMaster: false, canProductOwner: false, canSolutionArchitect: false, canDevLead: false,
+};
 
 /** One child work item as the re-allocation reasoner sees it. */
 export interface ReallocationWorkItem {
