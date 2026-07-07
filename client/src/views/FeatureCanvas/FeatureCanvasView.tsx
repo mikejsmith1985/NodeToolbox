@@ -24,6 +24,7 @@ import { fetchTeamVelocity } from '../SprintDashboard/fetchTeamVelocity.ts';
 import { CoachPanel } from './coach/CoachPanel.tsx';
 import { AiSuggestionPanel } from './ai/AiSuggestionPanel.tsx';
 import { WorkReallocationPanel } from './ai/WorkReallocationPanel.tsx';
+import { CapacityPlanPanel } from './planner/CapacityPlanPanel.tsx';
 import {
   filterRosterMembersByActiveTeam,
   useStandupRosterStore,
@@ -93,6 +94,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
   const [isStoryPlanOpen, setIsStoryPlanOpen] = useState(false);
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isReallocOpen, setIsReallocOpen] = useState(false);
+  const [isCapacityPlanOpen, setIsCapacityPlanOpen] = useState(false);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
   // Legend focus filter: clicking a key entry dims the non-matching cards; clicking it again clears.
@@ -234,6 +236,9 @@ export default function FeatureCanvasView(): React.JSX.Element {
           <button type="button" className={controlStyles.btn} onClick={() => setIsReallocOpen(true)} title="Generate a role-aware work re-allocation prompt for a target sprint (copy into your assistant)">⚖️ Re-allocation plan</button>
         )}
         {!isWorkingSetEmpty && (
+          <button type="button" className={controlStyles.btn} onClick={() => setIsCapacityPlanOpen(true)} title="Build a deterministic, read-only capacity plan from the selected priority buckets and the team roster">📅 Build capacity plan</button>
+        )}
+        {!isWorkingSetEmpty && (
           <button
             type="button"
             className={controlStyles.btn}
@@ -340,6 +345,16 @@ export default function FeatureCanvasView(): React.JSX.Element {
                   teamProfileId={profileId}
                   projectKey={scope.projectKey}
                   onClose={() => setIsReallocOpen(false)}
+                />
+              )}
+              {isCapacityPlanOpen && (
+                <CapacityPlanPanel
+                  canvasNodes={canvasNodes}
+                  rosterMembers={reallocRoster}
+                  projectKey={scope.projectKey}
+                  piName={scope.piName}
+                  storyPointsFieldId={customStoryPointsFieldId}
+                  onClose={() => setIsCapacityPlanOpen(false)}
                 />
               )}
             </div>
