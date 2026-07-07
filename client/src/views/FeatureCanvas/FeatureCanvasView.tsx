@@ -23,6 +23,11 @@ import { loadDashboardConfigFromStorage } from '../SprintDashboard/hooks/useDash
 import { fetchTeamVelocity } from '../SprintDashboard/fetchTeamVelocity.ts';
 import { CoachPanel } from './coach/CoachPanel.tsx';
 import { AiSuggestionPanel } from './ai/AiSuggestionPanel.tsx';
+import { WorkReallocationPanel } from './ai/WorkReallocationPanel.tsx';
+import {
+  filterRosterMembersByActiveTeam,
+  useStandupRosterStore,
+} from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import { ReviewCommitPanel } from './commit/ReviewCommitPanel.tsx';
 import { StoryPlanningPanel } from './commit/StoryPlanningPanel.tsx';
 import { computeContainerCapacity } from './logic/capacity.ts';
@@ -49,6 +54,8 @@ export default function FeatureCanvasView(): React.JSX.Element {
   const profileId = useSettingsStore((state) => state.sprintDashboardActiveTeamProfileId);
   const teamProfiles = useSettingsStore((state) => state.sprintDashboardTeamProfiles);
   const setActiveTeamProfileId = useSettingsStore((state) => state.setSprintDashboardActiveTeamProfileId);
+  const activeTeamName = useSettingsStore((state) => state.sprintDashboardActiveTeam);
+  const allRosterMembers = useStandupRosterStore((state) => state.rosterMembers);
   const isAiUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
 
   // The PI is the active team profile's selectedPiValue — the SAME source the Sprint Dashboard reads.
@@ -78,6 +85,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
   const [isCommitOpen, setIsCommitOpen] = useState(false);
   const [isStoryPlanOpen, setIsStoryPlanOpen] = useState(false);
   const [isAiOpen, setIsAiOpen] = useState(false);
+  const [isReallocOpen, setIsReallocOpen] = useState(false);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
   // Legend focus filter: clicking a key entry dims the non-matching cards; clicking it again clears.
@@ -109,6 +117,17 @@ export default function FeatureCanvasView(): React.JSX.Element {
     return capacityByContainer;
   }, [overlay.containers, canvasNodes]);
   const wip = useMemo(() => computeWipSnapshot(canvasNodes, overlay.wipLimit), [canvasNodes, overlay.wipLimit]);
+
+  // The active-team roster (with role capabilities) and the canvas's sprint boxes feed the gated
+  // Work Re-Allocation planner — the roster is scoped exactly like the Team Dashboard's roster view.
+  const reallocRoster = useMemo(
+    () => filterRosterMembersByActiveTeam(allRosterMembers, activeTeamName, { includeTeamlessMembers: true }),
+    [allRosterMembers, activeTeamName],
+  );
+  const sprintContainers = useMemo(
+    () => overlay.containers.filter((container) => container.kind === 'sprint'),
+    [overlay.containers],
+  );
 
   const selectedNode = canvasNodes.find((node) => node.issueKey === selectedIssueKey) ?? null;
 
@@ -203,6 +222,9 @@ export default function FeatureCanvasView(): React.JSX.Element {
         )}
         {overlay.containers.some((container) => container.kind === 'sprint') && (
           <button type="button" className={controlStyles.btn} onClick={() => setIsStoryPlanOpen(true)} title="Plan each sprint at the story level — move child stories between boxes">🧩 Plan stories</button>
+        )}
+        {isAiUnlocked && !isWorkingSetEmpty && (
+          <button type="button" className={controlStyles.btn} onClick={() => setIsReallocOpen(true)} title="Generate a role-aware work re-allocation prompt for a target sprint (copy into your assistant)">⚖️ Re-allocation plan</button>
         )}
         {!isWorkingSetEmpty && (
           <button
@@ -300,6 +322,17 @@ export default function FeatureCanvasView(): React.JSX.Element {
                     }
                   }}
                   onClose={() => setIsAiOpen(false)}
+                />
+              )}
+              {isReallocOpen && (
+                <WorkReallocationPanel
+                  canvasNodes={canvasNodes}
+                  sprintContainers={sprintContainers}
+                  rosterMembers={reallocRoster}
+                  piName={scope.piName}
+                  teamProfileId={profileId}
+                  projectKey={scope.projectKey}
+                  onClose={() => setIsReallocOpen(false)}
                 />
               )}
             </div>

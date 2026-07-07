@@ -586,6 +586,31 @@ describe('fetchFeatureNodesByKeys', () => {
     expect(nodes[0].completionPercent).toBeGreaterThan(0);
   });
 
+  it('carries statuscategorychangedate onto each child story as statusChangedIso (null when absent)', async () => {
+    mockJiraGet.mockImplementation((path: string) => {
+      const decoded = decodeURIComponent(path);
+      if (decoded.includes('key in (')) {
+        return Promise.resolve({ issues: [{ key: 'F-9', fields: { summary: 'Feature Nine', status: { name: 'In Progress' } } }] });
+      }
+      // Child discovery — one child carries the field, one omits it.
+      return Promise.resolve({
+        issues: [
+          { key: 'S-9', fields: { summary: 'Dated', status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } }, parent: { key: 'F-9' }, statuscategorychangedate: '2026-07-01T09:00:00.000+0000' } },
+          { key: 'S-10', fields: { summary: 'Undated', status: { name: 'To Do', statusCategory: { key: 'new' } }, parent: { key: 'F-9' } } },
+        ],
+      });
+    });
+
+    const nodes = await fetchFeatureNodesByKeys(['F-9']);
+    const childrenByKey = new Map(nodes[0].children.map((childStory) => [childStory.key, childStory]));
+
+    expect(childrenByKey.get('S-9')?.statusChangedIso).toBe('2026-07-01T09:00:00.000+0000');
+    expect(childrenByKey.get('S-10')?.statusChangedIso).toBeNull();
+    // The fetch must request the new system field so the value is available to thread downstream.
+    const childRequestPath = String(mockJiraGet.mock.calls.find((call) => decodeURIComponent(String(call[0])).includes('parent in ('))?.[0] ?? '');
+    expect(decodeURIComponent(childRequestPath)).toContain('statuscategorychangedate');
+  });
+
   it('treats a childless feature as gray / 0% (superset of the old rollup)', async () => {
     mockJiraGet.mockImplementation((path: string) => {
       const decoded = decodeURIComponent(path);

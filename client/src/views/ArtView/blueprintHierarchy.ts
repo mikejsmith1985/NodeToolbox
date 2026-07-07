@@ -20,6 +20,8 @@ interface BlueprintIssueLinkObject extends DependencySourceIssueLink {
 interface BlueprintIssueFields {
   summary?: string;
   status?: { name?: string; statusCategory?: { key?: string } };
+  /** ISO datetime Jira last moved this issue's status *category* (To Do → In Progress → Done). */
+  statuscategorychangedate?: string | null;
   issuetype?: { name?: string };
   assignee?: {
     displayName?: string;
@@ -72,6 +74,8 @@ export interface BlueprintStoryNode {
   summary: string;
   status: string;
   statusCategoryKey?: string | null;
+  /** ISO datetime the status category last changed; a soft time-in-status signal. Null when absent. */
+  statusChangedIso?: string | null;
   issueType: string;
   assignee: string | null;
   assigneeAvatar: string | null;
@@ -337,6 +341,7 @@ function createTeamIssueSearchFields(
   return readUniqueFieldIds([
     'summary',
     'status',
+    'statuscategorychangedate',
     'issuetype',
     'assignee',
     'priority',
@@ -378,6 +383,7 @@ function createChildIssueFields(featureLinkField: string, piFieldId: string): st
   return readUniqueFieldIds([
     'summary',
     'status',
+    'statuscategorychangedate',
     'issuetype',
     'assignee',
     'priority',
@@ -654,6 +660,7 @@ function createBlueprintStoryNode(
     summary: issue.fields.summary ?? issue.key,
     status: issue.fields.status?.name ?? 'Unknown',
     statusCategoryKey: issue.fields.status?.statusCategory?.key ?? null,
+    statusChangedIso: issue.fields.statuscategorychangedate ?? null,
     issueType: issue.fields.issuetype?.name ?? 'Story',
     assignee: issue.fields.assignee?.displayName ?? null,
     assigneeAvatar: issue.fields.assignee?.avatarUrls?.['24x24']

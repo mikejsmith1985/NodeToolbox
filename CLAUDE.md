@@ -9,10 +9,12 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **surface-picker-expand** (Feature Canvas: blueprint-first cross-project surfacing picker with
-  deliberate selection, an additive/curated canvas with per-node removal, and a read-only side
-  inspector for epic detail + child records; retires feature 010's refine chips) —
-  plan: `specs/011-surface-picker-expand/plan.md`
+- **roster-roles-reallocation** (Feature Canvas: role-aware roster — Developer / Internal Tester /
+  External Tester capabilities on each team member — plus a passphrase-gated, copy-out "Work
+  Re-Allocation Plan" AI prompt that assembles the roster, a chosen target sprint's assigned work
+  with time-in-status, the PI runway, and free-text constraints for Copilot to plan re-allocation and
+  risks) —
+  plan: `specs/012-roster-roles-reallocation/plan.md`
   (spec, research, data-model, contracts, quickstart in the same directory).
 <!-- SPECKIT END -->
 

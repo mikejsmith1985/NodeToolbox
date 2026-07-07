@@ -11,6 +11,17 @@ import {
 
 const STANDUP_ROSTER_STORAGE_KEY = 'tbxSprintDashboardRoster';
 
+/**
+ * The three independent role capabilities a team member may perform, used by the Feature Canvas
+ * work re-allocation planner to reason about who can take which kind of work. Any combination is
+ * valid (including none). This is distinct from the free-text `roleName` job-title label.
+ */
+export interface RosterRoleCapabilities {
+  canDevelop: boolean;
+  canInternalTest: boolean;
+  canExternalTest: boolean;
+}
+
 export interface StandupRosterMember {
   id: string;
   displayName: string;
@@ -20,6 +31,8 @@ export interface StandupRosterMember {
   snowUserSysId?: string;
   teamName?: string;
   roleName?: string;
+  /** Which of the three roles this person can perform; absent means none are set. */
+  roleCapabilities?: RosterRoleCapabilities;
   emailAddress?: string;
   locationTimeZone?: string;
   lanId?: string;
@@ -34,6 +47,7 @@ export interface StandupRosterMemberDraft {
   snowUserSysId?: string;
   teamName?: string;
   roleName?: string;
+  roleCapabilities?: RosterRoleCapabilities;
   emailAddress?: string;
   locationTimeZone?: string;
   lanId?: string;
@@ -51,6 +65,7 @@ interface StandupRosterState extends PersistedStandupRosterState {
   upsertRosterMembers: (memberDrafts: StandupRosterMemberDraft[]) => void;
   replaceRosterMembers: (memberDrafts: StandupRosterMemberDraft[]) => void;
   removeRosterMember: (memberId: string) => void;
+  setRosterMemberRoles: (memberId: string, capabilities: RosterRoleCapabilities) => void;
 }
 
 interface RosterTeamFilterOptions {
@@ -81,12 +96,37 @@ function createRosterMemberId(assigneeQueryValue: string): string {
   return `roster-member:${normalizeAssigneeQueryValue(assigneeQueryValue)}`;
 }
 
+/**
+ * Reports whether a persisted `roleCapabilities` value is structurally sound: it must be a plain
+ * object whose three known flags, when present, are booleans. Anything else (a string, an array,
+ * a non-boolean flag) is considered malformed so the caller can safely drop it to "no roles".
+ */
+function isValidRoleCapabilities(value: unknown): value is RosterRoleCapabilities {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    (candidate.canDevelop === undefined || typeof candidate.canDevelop === 'boolean') &&
+    (candidate.canInternalTest === undefined || typeof candidate.canInternalTest === 'boolean') &&
+    (candidate.canExternalTest === undefined || typeof candidate.canExternalTest === 'boolean')
+  );
+}
+
 function isStandupRosterMember(value: unknown): value is StandupRosterMember {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
 
   const candidate = value as Record<string, unknown>;
+
+  // Tolerant read: a malformed persisted role-capabilities value is coerced to "no roles" (undefined)
+  // in place so the member still loads. Role data is never allowed to reject an otherwise-valid member.
+  if (candidate.roleCapabilities !== undefined && !isValidRoleCapabilities(candidate.roleCapabilities)) {
+    delete candidate.roleCapabilities;
+  }
+
   return (
     typeof candidate.id === 'string' &&
     typeof candidate.displayName === 'string' &&
@@ -174,6 +214,9 @@ function createRosterMember(memberDraft: StandupRosterMemberDraft): StandupRoste
     roleName: buildOptionalRosterField(memberDraft.roleName),
     teamName: buildOptionalRosterField(memberDraft.teamName),
     workingHours: buildOptionalRosterField(memberDraft.workingHours),
+    // Role capabilities are carried through verbatim so a draft→member rebuild (e.g. upsert, SNow
+    // linking) never silently drops a person's roles. Absent stays absent (treated as "no roles").
+    roleCapabilities: memberDraft.roleCapabilities,
   };
 }
 
@@ -343,6 +386,15 @@ export const useStandupRosterStore = create<StandupRosterState>((setState, getSt
   },
   removeRosterMember: (memberId) => {
     const rosterMembers = getState().rosterMembers.filter((rosterMember) => rosterMember.id !== memberId);
+    setState({ rosterMembers });
+    writeStoredStandupRosterMembers(rosterMembers, getState().dashboardTeamProfileId);
+  },
+  setRosterMemberRoles: (memberId, capabilities) => {
+    // Replace one member's role triple, then re-persist through the same write path as
+    // removeRosterMember so the team-scoped roster stays the single source of truth.
+    const rosterMembers = getState().rosterMembers.map((rosterMember) =>
+      rosterMember.id === memberId ? { ...rosterMember, roleCapabilities: capabilities } : rosterMember,
+    );
     setState({ rosterMembers });
     writeStoredStandupRosterMembers(rosterMembers, getState().dashboardTeamProfileId);
   },

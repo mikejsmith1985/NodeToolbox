@@ -8,6 +8,7 @@ import { snowFetch } from '../../services/snowApi.ts';
 import { useConnectionStore } from '../../store/connectionStore.ts';
 import type { JiraIssue } from '../../types/jira.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
+import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { useStandupRosterStore } from './hooks/useStandupRosterStore.ts';
 import RosterTab from './RosterTab.tsx';
 
@@ -89,6 +90,40 @@ describe('RosterTab', () => {
     });
     vi.mocked(jiraGet).mockReset();
     vi.mocked(snowFetch).mockReset();
+    // Default to AI Assist LOCKED so every test proves the roster works without any AI unlock.
+    useAiAssistStore.setState({ isAiAssistUnlocked: false });
+  });
+
+  it('shows three role toggles per current-roster member, persists a toggle, and shows the set role as a chip while AI Assist is locked', () => {
+    useStandupRosterStore.getState().replaceRosterMembers([
+      { displayName: 'Alice Adams', assigneeQueryValue: 'Alice Adams', teamName: 'Transformers' },
+    ]);
+    useSettingsStore.getState().setSprintDashboardActiveTeam('Transformers');
+    // Guard the AI-independence requirement (FR-2.3, SC-7): roles must work with AI locked.
+    useAiAssistStore.setState({ isAiAssistUnlocked: false });
+
+    render(<RosterTab issues={[]} projectKey="TBX" />);
+
+    const developerToggle = screen.getByRole('checkbox', { name: 'Developer' });
+    expect(developerToggle).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Internal Tester' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'External Tester' })).toBeInTheDocument();
+    // Before toggling, the only "Developer" text is the toggle label (no chip yet).
+    expect(screen.getAllByText('Developer')).toHaveLength(1);
+
+    fireEvent.click(developerToggle);
+
+    const aliceMember = useStandupRosterStore.getState().rosterMembers.find(
+      (rosterMember) => rosterMember.displayName === 'Alice Adams',
+    );
+    expect(aliceMember?.roleCapabilities).toEqual({
+      canDevelop: true,
+      canInternalTest: false,
+      canExternalTest: false,
+    });
+    expect(screen.getByRole('checkbox', { name: 'Developer' })).toBeChecked();
+    // The set role now also renders as a chip → toggle label + chip = two "Developer" nodes.
+    expect(screen.getAllByText('Developer')).toHaveLength(2);
   });
 
   it('adds sprint assignees to the roster from the quick-pick list', () => {

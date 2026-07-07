@@ -14,6 +14,7 @@ import { daysRemainingInPi } from '../logic/piSchedule.ts';
 import type { CanvasOverlayController } from '../overlay/useCanvasOverlay.ts';
 import type { MoscowBucket, TshirtSize } from '../overlay/overlayModel.ts';
 import { createProvisionalContainer } from '../overlay/containerFactory.ts';
+import { copyToClipboard } from './clipboard.ts';
 import {
   buildCanvasAiPrompt,
   describeSuggestionAction,
@@ -76,34 +77,6 @@ function applySuggestion(kind: AiSuggestionKind, suggestion: AiSuggestion, contr
     } else if (suggestion.proposedValue === 'park') {
       controller.parkNode(suggestion.issueKey, suggestion.rationale);
     }
-  }
-}
-
-/**
- * Copies text to the clipboard with a fallback: `navigator.clipboard` is undefined in non-secure
- * contexts (e.g. the packaged app served over a LAN IP or a restricted webview), which made the Copy
- * button silently do nothing. The hidden-textarea + execCommand path works there.
- */
-function copyToClipboard(text: string): void {
-  if (navigator.clipboard?.writeText) {
-    void navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
-    return;
-  }
-  fallbackCopy(text);
-}
-
-/** Legacy clipboard write via a transient off-screen textarea and document.execCommand('copy'). */
-function fallbackCopy(text: string): void {
-  const scratch = document.createElement('textarea');
-  scratch.value = text;
-  scratch.style.position = 'fixed';
-  scratch.style.left = '-9999px';
-  document.body.appendChild(scratch);
-  scratch.select();
-  try {
-    document.execCommand('copy');
-  } finally {
-    document.body.removeChild(scratch);
   }
 }
 
