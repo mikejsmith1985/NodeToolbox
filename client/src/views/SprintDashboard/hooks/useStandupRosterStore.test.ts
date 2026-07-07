@@ -254,4 +254,121 @@ describe('useStandupRosterStore', () => {
     expect(useStandupRosterStore.getState().rosterMembers).toEqual([]);
     expect(buildStandupRosterAssigneeClause()).toBeNull();
   });
+
+  it('round-trips role capabilities through persistence when a member is added', () => {
+    const roleCapabilities = { canDevelop: true, canInternalTest: false, canExternalTest: true };
+    useStandupRosterStore.getState().addRosterMember({
+      displayName: 'Rhea Roles',
+      assigneeQueryValue: 'Rhea Roles',
+      roleCapabilities,
+    });
+
+    expect(useStandupRosterStore.getState().rosterMembers[0].roleCapabilities).toEqual(roleCapabilities);
+    expect(readStoredStandupRosterMembers()[0].roleCapabilities).toEqual(roleCapabilities);
+  });
+
+  it('preserves role capabilities through upsertRosterMembers', () => {
+    useStandupRosterStore.getState().upsertRosterMembers([
+      {
+        displayName: 'Rhea Roles',
+        assigneeQueryValue: 'Rhea Roles',
+        roleCapabilities: { canDevelop: false, canInternalTest: true, canExternalTest: false },
+      },
+    ]);
+
+    expect(useStandupRosterStore.getState().rosterMembers[0].roleCapabilities).toEqual({
+      canDevelop: false,
+      canInternalTest: true,
+      canExternalTest: false,
+    });
+  });
+
+  it('preserves role capabilities through replaceRosterMembers', () => {
+    useStandupRosterStore.getState().replaceRosterMembers([
+      {
+        displayName: 'Rhea Roles',
+        assigneeQueryValue: 'Rhea Roles',
+        roleCapabilities: { canDevelop: true, canInternalTest: true, canExternalTest: false },
+      },
+    ]);
+
+    expect(useStandupRosterStore.getState().rosterMembers[0].roleCapabilities).toEqual({
+      canDevelop: true,
+      canInternalTest: true,
+      canExternalTest: false,
+    });
+  });
+
+  it('reads a legacy member with no role capabilities field as having no roles set', () => {
+    localStorage.setItem('tbxSprintDashboardRoster', JSON.stringify({
+      rosterMembers: [
+        {
+          id: 'roster-member:legacy person',
+          displayName: 'Legacy Person',
+          assigneeQueryValue: 'Legacy Person',
+        },
+      ],
+    }));
+
+    const [legacyMember] = readStoredStandupRosterMembers();
+
+    expect(legacyMember.roleCapabilities).toBeUndefined();
+  });
+
+  it('coerces a malformed persisted role capabilities value to undefined while still loading the member', () => {
+    localStorage.setItem('tbxSprintDashboardRoster', JSON.stringify({
+      rosterMembers: [
+        {
+          id: 'roster-member:broken one',
+          displayName: 'Broken One',
+          assigneeQueryValue: 'Broken One',
+          roleCapabilities: 'not-an-object',
+        },
+        {
+          id: 'roster-member:broken two',
+          displayName: 'Broken Two',
+          assigneeQueryValue: 'Broken Two',
+          roleCapabilities: { canDevelop: 'yes', canInternalTest: true, canExternalTest: false },
+        },
+      ],
+    }));
+
+    const loadedMembers = readStoredStandupRosterMembers();
+
+    expect(loadedMembers).toHaveLength(2);
+    expect(loadedMembers[0].roleCapabilities).toBeUndefined();
+    expect(loadedMembers[1].roleCapabilities).toBeUndefined();
+  });
+
+  it('updates exactly one member and re-persists via setRosterMemberRoles', () => {
+    useStandupRosterStore.getState().replaceRosterMembers([
+      { displayName: 'Alice Adams', assigneeQueryValue: 'Alice Adams' },
+      { displayName: 'Bob Brown', assigneeQueryValue: 'Bob Brown' },
+    ]);
+
+    useStandupRosterStore.getState().setRosterMemberRoles('roster-member:alice adams', {
+      canDevelop: true,
+      canInternalTest: false,
+      canExternalTest: true,
+    });
+
+    const rosterMembers = useStandupRosterStore.getState().rosterMembers;
+    const aliceMember = rosterMembers.find((rosterMember) => rosterMember.id === 'roster-member:alice adams');
+    const bobMember = rosterMembers.find((rosterMember) => rosterMember.id === 'roster-member:bob brown');
+    expect(aliceMember?.roleCapabilities).toEqual({
+      canDevelop: true,
+      canInternalTest: false,
+      canExternalTest: true,
+    });
+    expect(bobMember?.roleCapabilities).toBeUndefined();
+
+    const persistedMembers = readStoredStandupRosterMembers();
+    expect(
+      persistedMembers.find((rosterMember) => rosterMember.id === 'roster-member:alice adams')?.roleCapabilities,
+    ).toEqual({
+      canDevelop: true,
+      canInternalTest: false,
+      canExternalTest: true,
+    });
+  });
 });

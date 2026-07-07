@@ -38,6 +38,9 @@ export interface CanvasChildStory {
   assignee?: string | null;
   issueType?: string | null;
   subtaskCount?: number;
+  /** ISO datetime the story's status *category* last changed; a soft time-in-status signal. Null when
+   *  the instance does not return statuscategorychangedate. */
+  statusChangedIso?: string | null;
 }
 
 /** The full render/logic projection of one feature node (overlay arrangement + live Jira data). */

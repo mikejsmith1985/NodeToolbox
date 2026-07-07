@@ -18,7 +18,7 @@ function buildFeatureItem(overrides: Partial<FeatureReviewItem> = {}): FeatureRe
       isExternal: false,
       offTrain: [],
       children: [
-        { type: 'story', key: 'DENP-2', summary: 'S1', status: 'Done', statusCategoryKey: 'done', issueType: 'Story', assignee: null, assigneeAvatar: null, storyPoints: 3, teamName: null, isOffTrain: false, offTrainReasons: [], subtasks: [] },
+        { type: 'story', key: 'DENP-2', summary: 'S1', status: 'Done', statusCategoryKey: 'done', statusChangedIso: '2026-06-30T12:00:00.000+0000', issueType: 'Story', assignee: null, assigneeAvatar: null, storyPoints: 3, teamName: null, isOffTrain: false, offTrainReasons: [], subtasks: [] },
         { type: 'story', key: 'DENP-3', summary: 'S2', status: 'To Do', statusCategoryKey: 'new', issueType: 'Story', assignee: null, assigneeAvatar: null, storyPoints: 2, teamName: null, isOffTrain: false, offTrainReasons: [], subtasks: [] },
       ],
     },
@@ -56,6 +56,8 @@ describe('nodeMapping', () => {
     expect(node.effectivePoints).toBe(5);
     expect(node.hygieneFlags).toHaveLength(1);
     expect(node.childStories.map((story) => story.key)).toEqual(['DENP-2', 'DENP-3']);
+    // The time-in-status signal is threaded through from the blueprint child (null when absent).
+    expect(node.childStories.map((story) => story.statusChangedIso)).toEqual(['2026-06-30T12:00:00.000+0000', null]);
     expect(node.dependencies).toEqual([{ targetKey: 'DENP-9', type: 'Blocks', direction: 'inward' }]);
     expect(node.businessValue).toBe(8);
     expect(node.description).toBe('A concise epic description.');

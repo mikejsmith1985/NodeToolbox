@@ -13,6 +13,7 @@ import {
   filterRosterMembersByActiveTeam,
   readAvailableRosterTeamNames,
   resolveActiveRosterTeamName,
+  type RosterRoleCapabilities,
   type StandupRosterMember,
   type StandupRosterMemberDraft,
   useStandupRosterStore,
@@ -34,6 +35,14 @@ const MAX_SNOW_RECORDS_PER_TYPE = 25;
 const SNOW_ROSTER_WORK_FIELDS =
   'sys_id,number,short_description,state,priority,sys_class_name,opened_at,problem_statement';
 const SNOW_ROSTER_RECORD_TYPES: SnowIssueType[] = ['incident', 'problem', 'sc_task', 'change_request'];
+
+// The three editable role capabilities shown on each current-roster member, in display order.
+// Each maps a human label to the matching boolean flag on RosterRoleCapabilities.
+const ROSTER_ROLE_OPTIONS: Array<{ capabilityKey: keyof RosterRoleCapabilities; label: string }> = [
+  { capabilityKey: 'canDevelop', label: 'Developer' },
+  { capabilityKey: 'canInternalTest', label: 'Internal Tester' },
+  { capabilityKey: 'canExternalTest', label: 'External Tester' },
+];
 
 interface RosterSnowReference {
   sysId: string;
@@ -77,6 +86,7 @@ interface RosterCardProps {
     | 'lanId'
     | 'locationTimeZone'
     | 'roleName'
+    | 'roleCapabilities'
     | 'teamName'
     | 'workingHours'
   >;
@@ -352,6 +362,66 @@ async function loadRecentlyActiveAssignees(
   return searchResults;
 }
 
+/**
+ * Produces the full role triple with a single flag flipped, defaulting any absent flag to false.
+ * This keeps every persisted `roleCapabilities` a complete object even when the member started
+ * with no roles set, so downstream readers never have to special-case partial data.
+ */
+function buildUpdatedRoleCapabilities(
+  currentCapabilities: RosterRoleCapabilities | undefined,
+  changedCapabilityKey: keyof RosterRoleCapabilities,
+  isEnabled: boolean,
+): RosterRoleCapabilities {
+  return {
+    canDevelop: currentCapabilities?.canDevelop ?? false,
+    canInternalTest: currentCapabilities?.canInternalTest ?? false,
+    canExternalTest: currentCapabilities?.canExternalTest ?? false,
+    [changedCapabilityKey]: isEnabled,
+  };
+}
+
+interface RosterRoleControlsProps {
+  rosterMember: StandupRosterMember;
+  onRolesChange: (capabilities: RosterRoleCapabilities) => void;
+}
+
+/**
+ * Renders the three role-capability checkboxes (Developer / Internal Tester / External Tester) for a
+ * current-roster member. Each toggle reflects the member's stored flag and, on change, persists the
+ * whole updated triple through the roster store. This UI has no dependency on the AI Assist unlock.
+ */
+function RosterRoleControls({ rosterMember, onRolesChange }: RosterRoleControlsProps) {
+  const roleCapabilities = rosterMember.roleCapabilities;
+
+  return (
+    <fieldset className={styles.rosterRoleFieldset}>
+      <legend className={styles.rosterRoleLegend}>Roles</legend>
+      <div className={styles.rosterRoleToggleRow}>
+        {ROSTER_ROLE_OPTIONS.map((roleOption) => {
+          const isRoleEnabled = roleCapabilities?.[roleOption.capabilityKey] ?? false;
+          return (
+            <label className={styles.rosterRoleToggle} key={roleOption.capabilityKey}>
+              <input
+                checked={isRoleEnabled}
+                onChange={(changeEvent) =>
+                  onRolesChange(
+                    buildUpdatedRoleCapabilities(
+                      roleCapabilities,
+                      roleOption.capabilityKey,
+                      changeEvent.target.checked,
+                    ),
+                  )}
+                type="checkbox"
+              />
+              <span>{roleOption.label}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
 function RosterCard({ rosterMember, actionAriaLabel, actionLabel, onAction, children }: RosterCardProps) {
   const primaryMetaLine = buildRosterCardMetaLine(rosterMember.emailAddress);
   const jiraMetaLine = buildRosterCardMetaLine(
@@ -380,6 +450,11 @@ function RosterCard({ rosterMember, actionAriaLabel, actionLabel, onAction, chil
               <span className={styles.rosterDetailChip}>Needs team</span>
             )}
             {rosterMember.roleName ? <span className={styles.rosterDetailChip}>{rosterMember.roleName}</span> : null}
+            {ROSTER_ROLE_OPTIONS.filter(
+              (roleOption) => rosterMember.roleCapabilities?.[roleOption.capabilityKey],
+            ).map((roleOption) => (
+              <span className={styles.rosterRoleChip} key={roleOption.capabilityKey}>{roleOption.label}</span>
+            ))}
             {rosterMember.snowUserSysId ? <span className={styles.rosterDetailChip}>SNow linked</span> : null}
           </div>
         </div>
@@ -508,6 +583,7 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
   const rosterMembers = useStandupRosterStore((state) => state.rosterMembers);
   const addRosterMember = useStandupRosterStore((state) => state.addRosterMember);
   const removeRosterMember = useStandupRosterStore((state) => state.removeRosterMember);
+  const setRosterMemberRoles = useStandupRosterStore((state) => state.setRosterMemberRoles);
   const upsertRosterMembers = useStandupRosterStore((state) => state.upsertRosterMembers);
   const isSnowRelayConnected = useConnectionStore((state) => state.relayBridgeStatus?.isConnected ?? false);
   const storedActiveTeamName = useSettingsStore((state) => state.sprintDashboardActiveTeam);
@@ -790,6 +866,7 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
         lanId: rosterMember.lanId,
         locationTimeZone: rosterMember.locationTimeZone,
         roleName: rosterMember.roleName,
+        roleCapabilities: rosterMember.roleCapabilities,
         teamName: rosterMember.teamName,
         workingHours: rosterMember.workingHours,
       },
@@ -1060,6 +1137,10 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
                 onAction={() => removeRosterMember(rosterMember.id)}
                 rosterMember={rosterMember}
               >
+                <RosterRoleControls
+                  onRolesChange={(capabilities) => setRosterMemberRoles(rosterMember.id, capabilities)}
+                  rosterMember={rosterMember}
+                />
                 <RosterLinkedWorkPanel
                   hasLoadedSnowWork={Object.prototype.hasOwnProperty.call(snowWorkByRosterMemberId, rosterMember.id)}
                   isSnowRelayConnected={isSnowRelayConnected}

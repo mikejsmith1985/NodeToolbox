@@ -2046,6 +2046,50 @@
   color: var(--color-text-secondary);
 }
 
+/* Role-capability chip — mirrors the detail chip shape but tinted with the accent so a member's
+   set roles (Developer / Internal Tester / External Tester) read as a distinct, glanceable group. */
+.rosterRoleChip {
+  padding: 2px var(--spacing-xs);
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-success, var(--color-accent)) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-success, var(--color-accent)) 30%, var(--color-border));
+  color: var(--color-success, var(--color-accent));
+}
+
+/* Role toggle group shown on each current-roster member card. */
+.rosterRoleFieldset {
+  margin: 0;
+  padding: var(--spacing-xs) 0 0;
+  border: 0;
+}
+
+.rosterRoleLegend {
+  padding: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rosterRoleToggleRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+}
+
+.rosterRoleToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
 .rosterMemberPrimaryMeta,
 .rosterMemberSecondaryMeta {
   margin: 0;
