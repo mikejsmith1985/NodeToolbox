@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Team roster — track who can Develop / Internal-Test / External-Test**: each roster member now carries three independent role capabilities (Developer, Internal Tester, External Tester), set and shown as chips on the roster. This is separate from the existing free-text role label and works with or without AI. *(feature 012, part 1)*
 - **Feature Canvas — "Work Re-Allocation Plan" AI prompt**: a passphrase-gated, copy-out prompt that assembles the team roster (with roles), a chosen target sprint's assigned work (status, time-in-status, points, grouped by person), the PI runway, and free-text constraints (e.g. "ESI only has two devs") — for Copilot to document how to re-allocate the work and what the risks are to completing that sprint. One-way: nothing is written to the canvas or Jira. *(feature 012, part 2)*
 
+### Fixed
+- **Feature Canvas — roster roles now reach the Work Re-Allocation plan**: the canvas read the roster without scoping it to the canvas's active team profile, so the planner could load people with their **role capabilities missing** and show everyone as "no roles." The canvas now scopes the roster store to its active team (the same way the Team Dashboard does), so the roles you set are the roles the plan sees.
+- **Team roster — re-importing users no longer wipes their roles**: bulk-adding project users / recent assignees rebuilt existing members from role-less drafts, silently clearing role capabilities already set. An upsert now preserves an existing member's roles when the re-import doesn't specify any.
+
 ### Changed
 - **ART View — Monthly Report AI splits by pillar and pulls PO + delivered date**: the AI now **classifies the work into pillars** (Growth / Affordability / Operating Model) and returns one entry per pillar — a team spanning multiple pillars becomes **one form per pillar**. It also auto-fills **Point of Contact** from the team's issue assignees and **Date Delivered** from the fix-version release date (no longer left blank). A team's report is now stored as a set of per-pillar cards.
 
