@@ -164,18 +164,24 @@ role pool. Unassigned items are sized but await a proposed assignee (FR-9).
 
 ### Area 3 — Role classification (structure-first, context fallback)
 
-**FR-7: Structured classification.** The tool classifies each item's role from structure: **internal testing** =
-a **QA sub-task** (issue type / name convention); **external testing** = an **external-test issue link** (e.g. a
-link to an INTTEST-style project or a named link type); **development** = anything not matching. The exact
-issue-type names / project key / link type are configuration, confirmed against the instance.
+**FR-7: Assignee-role-first classification (confirmed 2026-07-07).** Each issue is labeled by:
+1. **External test** — the issue is in project **DIP** and linked to one of the team's stories/features, **or**
+   its assignee holds the **External Tester** role.
+2. **Internal test** — its assignee holds the **Internal Tester** role, **or** (when unassigned or assigned to
+   someone without a delivery role) the issue is a **sub-task**.
+3. **Development** — everything else (stories/defects assigned to a Developer/Dev Lead, or unassigned non-sub-tasks).
 
-**FR-8: Context fallback.** Only when an item matches **no** structured rule does the tool fall back to reading its
-**summary/description** to classify it. This fallback is the sole place AI/heuristics may be used in classification,
-and each fallback decision is labeled as inferred.
+**Defects** are issue type **Defect** and are planable work items, labeled by the same three rules. Each issue's
+story points are charged to its assignee's matching role capacity.
 
-**FR-8a: Synthesized test cost.** When a dev item has **no** associated QA sub-task or external-test link, the
-planner **adds an estimated internal-testing cost** — a **configurable fraction of the item's dev points (default
-50%)** — visibly flagged as an estimate so the operator knows it is synthesized.
+**FR-8: Structural, not textual.** Classification is deterministic from the fields above (assignee's role, issue
+type/sub-task flag, project key, links) — no summary/description reading is required in v1. (A future textual
+fallback remains possible for genuinely ambiguous items but is out of scope now.)
+
+**FR-8a: Synthesized internal-test cost (Option A, confirmed).** When a **dev** item has **no** associated QA
+sub-task, the planner **adds an estimated internal-testing cost** — a **configurable fraction of its dev points
+(default 50%)** — flagged as an estimate. Real QA sub-tasks and linked DIP external-test issues are counted as
+their own items (not synthesized), so testing effort is never double-counted.
 
 ### Area 4 — Deterministic planner
 
@@ -250,11 +256,10 @@ not the assistant; narration never changes them.
   dev, Internal Tester → internal test, External Tester → external test.
 - **A2**: A story point equals one estimated day of work; effective capacity is **8 points/person/2-week sprint**
   (overhead already baked in), overriding the story-point-days×10 arithmetic.
-- **A3**: The instance exposes structured signals for testing work — a **QA sub-task** issue type/name and an
-  **external-test link** (INTTEST-style project or named link type). Exact names/keys are configuration confirmed
-  against the instance during planning. *(Confirm the concrete values.)*
-- **A4**: **Defects** are planable work items surfaced alongside stories (as feature children and/or the canvas's
-  existing surfacing). *(Confirm the exact defect source — feature children vs. a dedicated query — during planning.)*
+- **A3** *(confirmed)*: Classification is assignee-role-first (FR-7). External-test work is identified by project
+  **DIP** issues linked to the team's stories/features (or an External Tester assignee); internal test by an
+  Internal Tester assignee or an unassigned/other-assignee **sub-task**. No summary/description reading in v1.
+- **A4** *(confirmed)*: **Defects** are issue type **Defect**, planable work items labeled by the same rules.
 - **A5**: Data fetch expands to include **sub-tasks** (points, assignee, type) and **child issue links**, which the
   canvas does not fully fetch today; this is a planning-phase data task.
 - **A6**: Assignment changes are **proposals only** in v1; the planner never writes to Jira.
