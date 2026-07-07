@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Feature Canvas — capacity planner engine (in progress)**: internal, deterministic engine that projects role-aware, priority-ordered sprints from team capacity (8 pts/person), sequences dev → internal test → external test, surfaces the testing bottleneck (and how many more testers are needed), and projects sprints past the PI end to a realistic finish date. Not yet wired to the UI. *(feature 013, part 1 of several)*
 - **Team roster — track who can Develop / Internal-Test / External-Test**: each roster member now carries three independent role capabilities (Developer, Internal Tester, External Tester), set and shown as chips on the roster. This is separate from the existing free-text role label and works with or without AI. *(feature 012, part 1)*
 - **Feature Canvas — "Work Re-Allocation Plan" AI prompt**: a passphrase-gated, copy-out prompt that assembles the team roster (with roles), a chosen target sprint's assigned work (status, time-in-status, points, grouped by person), the PI runway, and free-text constraints (e.g. "ESI only has two devs") — for Copilot to document how to re-allocate the work and what the risks are to completing that sprint. One-way: nothing is written to the canvas or Jira. *(feature 012, part 2)*
 
