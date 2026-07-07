@@ -195,7 +195,9 @@ describe('buildCapacityPlan — bottleneck and projection (SC-4, SC-5)', () => {
     const result = buildCapacityPlan(makeInput(items, people, 'PI 26.3 (05/21/26 - 06/04/26)'), TODAY_ISO);
 
     expect(result.bottleneck.limitingRole).toBe('internalTest');
-    expect(result.bottleneck.additionalToMatchThroughput).toBe(2);
+    // Demand-based keep-pace: dev 48 pts / 3 devs = 2 dev-sprints; 24 internal-test pts in 2 sprints = 12/
+    // sprint; (12 - 8)/8 = ceil(0.5) = 1 more tester.
+    expect(result.bottleneck.additionalToMatchThroughput).toBe(1);
     expect(result.bottleneck.additionalToFinishByPiEnd).toBe(2);
     expect(result.completionSprintIndex).toBe(3);
     expect(result.sprintsBeyondPiEnd).toBeGreaterThanOrEqual(1);

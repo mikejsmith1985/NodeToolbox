@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Feature Canvas — capacity plan: pick which features to plan + more honest tester math**: the Build capacity plan panel now lets you narrow a plan to **specific features** (e.g. your top few "priority one" items) instead of a whole MoSCoW bucket — with Select all / Clear all. And the "how many more testers to match dev throughput" figure is now based on the actual **testing demand rate** rather than raw developer head-count, which was over-counting (e.g. reporting +9 where the honest figure is ~+4). *(feature 013)*
+
 ### Added
 - **Feature Canvas — capacity planner core (in progress)**: internal, deterministic engine + role classification + Jira fetch that projects role-aware, priority-ordered sprints from team capacity (8 pts/person), classifies each issue by its assignee's role (sub-task = internal test, project DIP link = external test, Defect type), sequences dev → internal test → external test, surfaces the testing bottleneck (and how many more testers are needed), and projects sprints past the PI end to a realistic finish date. *(feature 013, engine + classification + fetch layers)*
 - **Feature Canvas — "Build capacity plan" read-only projection**: a new toolbar button opens a read-only panel where you pick which MoSCoW buckets to include (Must/Should/Could on, Won't off) and build the deterministic plan. It shows the internal-testing bottleneck and how many more testers are needed (to match dev throughput and to finish by the PI end), the projected completion date (flagging any sprints beyond the PI end), each projected 2-week sprint's per-person load (dev / internal / external points), plus assignment proposals and any unschedulable items. A "Copy summary" button copies the whole projection as plain text. Nothing is written to the canvas or Jira. *(feature 013, Layer 4a — UI)*

@@ -169,10 +169,29 @@ export function CapacityPlanPanel({
   const [includedBuckets, setIncludedBuckets] = useState<Set<IncludableBucket>>(
     () => new Set(DEFAULT_INCLUDED_BUCKETS),
   );
+  // Track which eligible features the operator has UN-checked. Selected = eligible minus this set, so
+  // the default is "plan everything" and changing buckets doesn't clobber the operator's exclusions.
+  const [deselectedFeatureKeys, setDeselectedFeatureKeys] = useState<Set<string>>(() => new Set());
+
+  // The features the operator can choose from: those with a MoSCoW priority in the included buckets,
+  // ordered by bucket then key so the list is stable and scannable.
+  const eligibleFeatures = useMemo(
+    () => canvasNodes
+      .filter((node) => node.priority !== null && includedBuckets.has(node.priority))
+      .sort((first, second) => first.issueKey.localeCompare(second.issueKey)),
+    [canvasNodes, includedBuckets],
+  );
+
+  // The feature keys actually planned = eligible minus the operator's exclusions. This is what lets the
+  // operator narrow a huge "Must" bucket down to just their top few "priority one" features.
+  const selectedFeatureKeys = useMemo(
+    () => new Set(eligibleFeatures.map((feature) => feature.issueKey).filter((key) => !deselectedFeatureKeys.has(key))),
+    [eligibleFeatures, deselectedFeatureKeys],
+  );
 
   const planParams = useMemo(
-    () => ({ canvasNodes, rosterMembers, projectKey, piName, storyPointsFieldId, includedBuckets }),
-    [canvasNodes, rosterMembers, projectKey, piName, storyPointsFieldId, includedBuckets],
+    () => ({ canvasNodes, rosterMembers, projectKey, piName, storyPointsFieldId, includedBuckets, selectedFeatureKeys }),
+    [canvasNodes, rosterMembers, projectKey, piName, storyPointsFieldId, includedBuckets, selectedFeatureKeys],
   );
   const { status, result, error, run } = useCapacityPlan(planParams);
 
@@ -187,6 +206,23 @@ export function CapacityPlanPanel({
       return next;
     });
   };
+
+  const toggleFeature = (featureKey: string): void => {
+    setDeselectedFeatureKeys((current) => {
+      const next = new Set(current);
+      if (next.has(featureKey)) {
+        next.delete(featureKey);
+      } else {
+        next.add(featureKey);
+      }
+      return next;
+    });
+  };
+
+  /** Selects every eligible feature (clears all exclusions). */
+  const selectAllFeatures = (): void => setDeselectedFeatureKeys(new Set());
+  /** Excludes every eligible feature, so the operator can then check just the few they want. */
+  const clearAllFeatures = (): void => setDeselectedFeatureKeys(new Set(eligibleFeatures.map((feature) => feature.issueKey)));
 
   return (
     <div
@@ -215,11 +251,42 @@ export function CapacityPlanPanel({
         </div>
       </fieldset>
 
+      <fieldset style={{ border: 'none', padding: 0, margin: '6px 0' }}>
+        <legend style={{ fontSize: 12, marginBottom: 4 }}>
+          Features to plan ({selectedFeatureKeys.size} of {eligibleFeatures.length}):
+        </legend>
+        {eligibleFeatures.length === 0 ? (
+          <div style={{ fontSize: 11, opacity: 0.6 }}>No prioritized features in the selected buckets.</div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+              <button type="button" className={controlStyles.btn} onClick={selectAllFeatures} style={{ fontSize: 11 }}>Select all</button>
+              <button type="button" className={controlStyles.btn} onClick={clearAllFeatures} style={{ fontSize: 11 }}>Clear all</button>
+            </div>
+            <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: 6, padding: 6 }}>
+              {eligibleFeatures.map((feature) => (
+                <label key={feature.issueKey} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '1px 0' }}>
+                  <input
+                    type="checkbox"
+                    aria-label={feature.issueKey}
+                    checked={!deselectedFeatureKeys.has(feature.issueKey)}
+                    onChange={() => toggleFeature(feature.issueKey)}
+                  />
+                  <span style={{ fontWeight: 600 }}>{feature.issueKey}</span>
+                  {feature.priority !== null && <span style={{ opacity: 0.6 }}>[{BUCKET_LABELS[feature.priority]}]</span>}
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{feature.summary}</span>
+                </label>
+              ))}
+            </div>
+          </>
+        )}
+      </fieldset>
+
       <button
         type="button"
         className={controlStyles.btnPrimary}
         onClick={run}
-        disabled={status === 'loading' || includedBuckets.size === 0}
+        disabled={status === 'loading' || includedBuckets.size === 0 || (eligibleFeatures.length > 0 && selectedFeatureKeys.size === 0)}
         style={{ margin: '6px 0' }}
       >
         {status === 'loading' ? 'Building…' : '⚙️ Build plan'}

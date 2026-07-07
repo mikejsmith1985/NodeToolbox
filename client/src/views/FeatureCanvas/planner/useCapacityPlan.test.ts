@@ -45,4 +45,17 @@ describe('buildChildBucketRankMap', () => {
     const map = buildChildBucketRankMap(nodes, new Set<MoscowBucket>(['Must', 'Should', 'Could', 'Wont']));
     expect(map.has('DENP-21')).toBe(false);
   });
+
+  it('restricts planning to the selected feature keys when provided (plan just the top few)', () => {
+    const nodes = [
+      buildFeature('DENP-1', 'Must', ['DENP-11']),
+      buildFeature('DENP-2', 'Must', ['DENP-21']),
+      buildFeature('DENP-3', 'Must', ['DENP-31']),
+    ];
+    // Operator narrows a big Must bucket down to just DENP-1 and DENP-3.
+    const map = buildChildBucketRankMap(nodes, new Set<MoscowBucket>(['Must']), new Set(['DENP-1', 'DENP-3']));
+    expect(map.has('DENP-11')).toBe(true);
+    expect(map.has('DENP-31')).toBe(true);
+    expect(map.has('DENP-21')).toBe(false);
+  });
 });
