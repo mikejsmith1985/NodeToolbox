@@ -134,8 +134,12 @@ include that role)`. (A multi-role person counts toward each role they hold; the
 - **Limiting role**: the delivery role whose total demand ÷ its per-sprint capacity yields the most sprints (i.e.
   the role that stretches the schedule longest). Null if no role's demand exceeds what finishes within the dev-driven
   span.
-- **additionalToMatchThroughput** = `max(0, ceil((upstreamCapacityPerSprint − limitingCapacityPerSprint) / pool))`
-  where upstream = `dev` for a testing bottleneck. Makes the limiting role able to keep pace with dev output.
+- **additionalToMatchThroughput** — demand-based (people so the limiting role finishes within development's
+  span, i.e. keeps pace with the *rate* testable work is produced, not with dev's raw head-count):
+  `devSprints = ceil(demand.dev / (pool × devCount))`; `requiredPerSprint = devSprints ≤ 0 ? 0 : ceil(limitingDemand / devSprints)`;
+  result = `max(0, ceil((requiredPerSprint − limitingCapacityPerSprint) / pool))`. (Matching to raw dev
+  capacity, as an earlier draft did, over-provisions by the test:dev ratio — e.g. it reported +9 where the
+  demand-based figure is +4.)
 - **additionalToFinishByPiEnd**: `sprintsToPiEnd = max(1, floor(daysFromAnchorToPiEnd / sprintLengthDays))`;
   `requiredPerSprint = ceil(limitingRoleTotalPoints / sprintsToPiEnd)`;
   result = `max(0, ceil((requiredPerSprint − limitingCapacityPerSprint) / pool))`. Zero when the scope already

@@ -44,6 +44,12 @@ export interface UseCapacityPlanParams {
   storyPointsFieldId: string;
   /** Which priority buckets to include; only features in these buckets are planned. */
   includedBuckets: ReadonlySet<IncludableBucket>;
+  /**
+   * Optional set of feature issue keys to restrict the plan to — so the operator can plan just their
+   * top few "priority one" features instead of an entire (often huge) MoSCoW bucket. When undefined,
+   * every feature in the included buckets is planned; when provided, only these features are.
+   */
+  selectedFeatureKeys?: ReadonlySet<string>;
   /** Optional override for the synthesized internal-test fraction (defaults to 0.5). */
   syntheticTestFraction?: number;
 }
@@ -70,18 +76,24 @@ interface BucketRank {
 
 /**
  * Builds the child-story → {bucket, rankInBucket} map from the canvas. A feature contributes its child
- * stories only when its MoSCoW priority is in `includedBuckets`; features with no priority are excluded
- * from v1 planning. `rankInBucket` is the feature's stable index within its bucket (features sorted by
- * issueKey), so every child of one feature shares that feature's bucket and rank.
+ * stories only when its MoSCoW priority is in `includedBuckets` and (when `selectedFeatureKeys` is given)
+ * its key is in that selection; features with no priority are excluded from v1 planning. `rankInBucket` is
+ * the feature's stable index within its bucket (features sorted by issueKey), so every child of one feature
+ * shares that feature's bucket and rank.
  */
 export function buildChildBucketRankMap(
   canvasNodes: readonly CanvasNode[],
   includedBuckets: ReadonlySet<IncludableBucket>,
+  selectedFeatureKeys?: ReadonlySet<string>,
 ): Map<string, BucketRank> {
   // Group the eligible features by bucket so each bucket can be ranked independently.
   const featuresByBucket = new Map<MoscowBucket, CanvasNode[]>();
   for (const node of canvasNodes) {
     if (node.priority === null || !includedBuckets.has(node.priority)) {
+      continue;
+    }
+    // When the operator narrowed the plan to specific features, skip anything not chosen.
+    if (selectedFeatureKeys !== undefined && !selectedFeatureKeys.has(node.issueKey)) {
       continue;
     }
     const bucketFeatures = featuresByBucket.get(node.priority) ?? [];
@@ -133,7 +145,7 @@ export function useCapacityPlan(params: UseCapacityPlanParams): UseCapacityPlanR
   const [result, setResult] = useState<PlanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const { canvasNodes, rosterMembers, projectKey, piName, storyPointsFieldId, includedBuckets } = params;
+  const { canvasNodes, rosterMembers, projectKey, piName, storyPointsFieldId, includedBuckets, selectedFeatureKeys } = params;
   const syntheticTestFraction = params.syntheticTestFraction ?? DEFAULT_SYNTHETIC_TEST_FRACTION;
 
   const run = useCallback(() => {
@@ -152,12 +164,12 @@ export function useCapacityPlan(params: UseCapacityPlanParams): UseCapacityPlanR
       return;
     }
 
-    const childBucketRankMap = buildChildBucketRankMap(canvasNodes, includedBuckets);
+    const childBucketRankMap = buildChildBucketRankMap(canvasNodes, includedBuckets, selectedFeatureKeys);
     const primaryKeys = [...childBucketRankMap.keys()];
     if (primaryKeys.length === 0) {
       setStatus('error');
       setResult(null);
-      setError('No planable work: none of the selected priority buckets contain features with child stories.');
+      setError('No planable work: none of the selected features/buckets contain features with child stories.');
       return;
     }
 
@@ -190,7 +202,7 @@ export function useCapacityPlan(params: UseCapacityPlanParams): UseCapacityPlanR
         setError(caught instanceof Error ? caught.message : 'Failed to build the capacity plan.');
       }
     })();
-  }, [canvasNodes, rosterMembers, projectKey, piName, storyPointsFieldId, includedBuckets, syntheticTestFraction]);
+  }, [canvasNodes, rosterMembers, projectKey, piName, storyPointsFieldId, includedBuckets, selectedFeatureKeys, syntheticTestFraction]);
 
   return { status, result, error, run };
 }

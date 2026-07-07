@@ -92,12 +92,17 @@ export function computeBottleneck(
   }
 
   const limitingCapacityPerSprint = pool * counts[limitingRole];
-  const upstreamCapacityPerSprint = pool * counts.dev;
 
-  // People needed so the limiting role can absorb development's per-sprint output without falling behind.
+  // People needed so the limiting role's work finishes within the SAME span development takes — i.e. it
+  // keeps pace with the rate testable work is produced, NOT with development's raw head-count. Testing
+  // demand is typically a fraction of dev output, so this is the honest "keep pace" number (matching to
+  // dev capacity would over-provision by that fraction). When there is no dev work, there is nothing to
+  // keep pace with, so no testers are required on this target.
+  const devSprints = sprintsNeededForRole(demand.dev, pool * counts.dev);
+  const requiredToKeepPace = devSprints <= 0 ? 0 : Math.ceil(demand[limitingRole] / devSprints);
   const additionalToMatchThroughput = Math.max(
     0,
-    Math.ceil((upstreamCapacityPerSprint - limitingCapacityPerSprint) / pool),
+    Math.ceil((requiredToKeepPace - limitingCapacityPerSprint) / pool),
   );
 
   // People needed so the limiting role's whole demand fits inside the sprints left before the PI end.
