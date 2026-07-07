@@ -5,7 +5,7 @@
 // beside the coaching panel with the Review & Commit and (gated) AI panels. When no ART team is
 // configured it shows the same guidance empty state the Feature Review surface uses.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
@@ -57,6 +57,13 @@ export default function FeatureCanvasView(): React.JSX.Element {
   const activeTeamName = useSettingsStore((state) => state.sprintDashboardActiveTeam);
   const allRosterMembers = useStandupRosterStore((state) => state.rosterMembers);
   const isAiUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked);
+
+  // Scope the shared roster store to THIS canvas's active team profile. The Team Dashboard scopes it
+  // when it is open; without this the canvas could read a different profile's roster (people present
+  // but their role capabilities missing), so the re-allocation planner saw everyone as "no roles".
+  useEffect(() => {
+    useStandupRosterStore.getState().setDashboardTeamProfileId(profileId);
+  }, [profileId]);
 
   // The PI is the active team profile's selectedPiValue — the SAME source the Sprint Dashboard reads.
   // Step 1's PI picker writes here (not to transient state), so the choice persists across navigation

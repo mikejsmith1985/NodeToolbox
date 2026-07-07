@@ -269,7 +269,14 @@ function upsertRosterMembersInList(
   );
 
   for (const memberDraft of memberDrafts) {
-    const nextRosterMember = createRosterMember(memberDraft);
+    // Preserve an existing member's role capabilities when the incoming draft carries none. Re-imports
+    // from Jira (project users, recent assignees, quick-add) build role-less drafts, so without this a
+    // bulk re-import would silently wipe roles a user already set on people already on the roster.
+    const existingMember = rosterMembersByLookupKey.get(createRosterMemberLookupKey(memberDraft.assigneeQueryValue));
+    const draftWithPreservedRoles = memberDraft.roleCapabilities === undefined && existingMember?.roleCapabilities !== undefined
+      ? { ...memberDraft, roleCapabilities: existingMember.roleCapabilities }
+      : memberDraft;
+    const nextRosterMember = createRosterMember(draftWithPreservedRoles);
     if (nextRosterMember === null) {
       continue;
     }

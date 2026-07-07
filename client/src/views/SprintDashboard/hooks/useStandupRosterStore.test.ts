@@ -371,4 +371,31 @@ describe('useStandupRosterStore', () => {
       canExternalTest: true,
     });
   });
+
+  it('does not wipe existing roles when a role-less draft re-imports the same member', () => {
+    // Set roles on a member, then re-import that person from Jira (a draft with no roleCapabilities,
+    // as the project-user / recent-assignee / quick-add paths build). The roles must survive.
+    useStandupRosterStore.getState().replaceRosterMembers([
+      { displayName: 'Ada Lovelace', assigneeQueryValue: 'Ada Lovelace' },
+    ]);
+    useStandupRosterStore.getState().setRosterMemberRoles('roster-member:ada lovelace', {
+      canDevelop: true,
+      canInternalTest: true,
+      canExternalTest: false,
+    });
+
+    useStandupRosterStore.getState().upsertRosterMembers([
+      { displayName: 'Ada Lovelace', assigneeQueryValue: 'Ada Lovelace', jiraAccountId: 'acc-1' },
+    ]);
+
+    const adaMember = useStandupRosterStore
+      .getState()
+      .rosterMembers.find((rosterMember) => rosterMember.id === 'roster-member:ada lovelace');
+    expect(adaMember?.jiraAccountId).toBe('acc-1');
+    expect(adaMember?.roleCapabilities).toEqual({
+      canDevelop: true,
+      canInternalTest: true,
+      canExternalTest: false,
+    });
+  });
 });
