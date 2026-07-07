@@ -94,6 +94,29 @@ describe('buildReallocationPrompt', () => {
     expect(prompt.toLowerCase()).toMatch(/spare capacity|no.*work/);
   });
 
+  it('4b. renders the coordination roles (Scrum Master, Product Owner, Solution Architect, Dev Lead)', () => {
+    const prompt = buildReallocationPrompt(
+      createContext({
+        rosterWithoutWork: [
+          {
+            displayName: 'Lead Lucy',
+            roles: {
+              canDevelop: true, canInternalTest: false, canExternalTest: false,
+              canScrumMaster: true, canProductOwner: true, canSolutionArchitect: true, canDevLead: true,
+            },
+          },
+        ],
+      }),
+      '',
+    );
+    expect(prompt).toContain('Scrum Master');
+    expect(prompt).toContain('Product Owner');
+    expect(prompt).toContain('Solution Architect');
+    expect(prompt).toContain('Dev Lead');
+    // The instruction tells the assistant to treat coordination roles as context, not delivery capacity.
+    expect(prompt.toLowerCase()).toMatch(/coordination/);
+  });
+
   it('5. lists per-person work with key, summary, points, raw status (+category), and days-in-status', () => {
     const prompt = buildReallocationPrompt(createContext(), '');
     expect(prompt).toContain('S-1');

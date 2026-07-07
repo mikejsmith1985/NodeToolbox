@@ -8,10 +8,19 @@
 import type { ReallocationContext, ReallocationPersonLoad, ReallocationWorkItem } from './reallocationModel.ts';
 import type { RosterRoleCapabilities } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
 
-const DEVELOPER_ROLE_LABEL = 'Developer';
-const INTERNAL_TESTER_ROLE_LABEL = 'Internal Tester';
-const EXTERNAL_TESTER_ROLE_LABEL = 'External Tester';
 const NO_ROLES_LABEL = 'no roles set';
+
+// Each role flag paired with its human label, in display order. Delivery roles (dev/test) gate work
+// moves; the coordination roles that follow are context for the plan.
+const ROLE_LABELS: Array<{ capabilityKey: keyof RosterRoleCapabilities; label: string }> = [
+  { capabilityKey: 'canDevelop', label: 'Developer' },
+  { capabilityKey: 'canInternalTest', label: 'Internal Tester' },
+  { capabilityKey: 'canExternalTest', label: 'External Tester' },
+  { capabilityKey: 'canScrumMaster', label: 'Scrum Master' },
+  { capabilityKey: 'canProductOwner', label: 'Product Owner' },
+  { capabilityKey: 'canSolutionArchitect', label: 'Solution Architect' },
+  { capabilityKey: 'canDevLead', label: 'Dev Lead' },
+];
 
 // The estimation conventions, output shape, and guardrails are fixed instruction text (item 3, 7, 8).
 const ESTIMATION_CONVENTIONS_SECTION =
@@ -22,8 +31,11 @@ const ESTIMATION_CONVENTIONS_SECTION =
 
 const OUTPUT_INSTRUCTION_SECTION =
   'Produce:\n'
-  + '1. A re-allocation plan grouped by person — move each work item only to someone who holds a role that '
-  + 'matches the work (development, internal testing, or external testing), using the remaining PI days.\n'
+  + '1. A re-allocation plan grouped by person — move each work item only to someone whose roles cover that '
+  + 'work: development to a Developer or Dev Lead, internal testing to an Internal Tester, external testing to '
+  + 'an External Tester. Scrum Master, Product Owner, and Solution Architect are coordination roles — treat '
+  + 'them as context (who to involve, who has spare bandwidth), not as delivery capacity unless the person '
+  + 'also holds a delivery role. Use the remaining PI days.\n'
   + '2. An explicit risk assessment for completing the sprint — call out role bottlenecks, overloaded people, '
   + 'unstaffed testing, and any unassigned or blocked work.';
 
@@ -36,16 +48,9 @@ function formatRoles(roles: RosterRoleCapabilities | null): string {
   if (roles === null) {
     return '';
   }
-  const roleLabels: string[] = [];
-  if (roles.canDevelop) {
-    roleLabels.push(DEVELOPER_ROLE_LABEL);
-  }
-  if (roles.canInternalTest) {
-    roleLabels.push(INTERNAL_TESTER_ROLE_LABEL);
-  }
-  if (roles.canExternalTest) {
-    roleLabels.push(EXTERNAL_TESTER_ROLE_LABEL);
-  }
+  const roleLabels = ROLE_LABELS
+    .filter((roleLabel) => roles[roleLabel.capabilityKey])
+    .map((roleLabel) => roleLabel.label);
   return roleLabels.length > 0 ? roleLabels.join(', ') : NO_ROLES_LABEL;
 }
 

@@ -42,6 +42,10 @@ const ROSTER_ROLE_OPTIONS: Array<{ capabilityKey: keyof RosterRoleCapabilities; 
   { capabilityKey: 'canDevelop', label: 'Developer' },
   { capabilityKey: 'canInternalTest', label: 'Internal Tester' },
   { capabilityKey: 'canExternalTest', label: 'External Tester' },
+  { capabilityKey: 'canScrumMaster', label: 'Scrum Master' },
+  { capabilityKey: 'canProductOwner', label: 'Product Owner' },
+  { capabilityKey: 'canSolutionArchitect', label: 'Solution Architect' },
+  { capabilityKey: 'canDevLead', label: 'Dev Lead' },
 ];
 
 interface RosterSnowReference {
@@ -363,21 +367,23 @@ async function loadRecentlyActiveAssignees(
 }
 
 /**
- * Produces the full role triple with a single flag flipped, defaulting any absent flag to false.
- * This keeps every persisted `roleCapabilities` a complete object even when the member started
- * with no roles set, so downstream readers never have to special-case partial data.
+ * Produces a complete role object with a single flag flipped, defaulting any absent flag to false.
+ * Built by iterating ROSTER_ROLE_OPTIONS so it always covers every defined role (no hardcoded key
+ * list to keep in sync), keeping every persisted `roleCapabilities` complete regardless of how many
+ * roles exist, so downstream readers never have to special-case partial data.
  */
 function buildUpdatedRoleCapabilities(
   currentCapabilities: RosterRoleCapabilities | undefined,
   changedCapabilityKey: keyof RosterRoleCapabilities,
   isEnabled: boolean,
 ): RosterRoleCapabilities {
-  return {
-    canDevelop: currentCapabilities?.canDevelop ?? false,
-    canInternalTest: currentCapabilities?.canInternalTest ?? false,
-    canExternalTest: currentCapabilities?.canExternalTest ?? false,
-    [changedCapabilityKey]: isEnabled,
-  };
+  const nextCapabilities = {} as Record<keyof RosterRoleCapabilities, boolean>;
+  for (const roleOption of ROSTER_ROLE_OPTIONS) {
+    nextCapabilities[roleOption.capabilityKey] = roleOption.capabilityKey === changedCapabilityKey
+      ? isEnabled
+      : currentCapabilities?.[roleOption.capabilityKey] ?? false;
+  }
+  return nextCapabilities;
 }
 
 interface RosterRoleControlsProps {
@@ -386,9 +392,10 @@ interface RosterRoleControlsProps {
 }
 
 /**
- * Renders the three role-capability checkboxes (Developer / Internal Tester / External Tester) for a
- * current-roster member. Each toggle reflects the member's stored flag and, on change, persists the
- * whole updated triple through the roster store. This UI has no dependency on the AI Assist unlock.
+ * Renders the role-capability checkboxes (Developer, Internal/External Tester, Scrum Master, Product
+ * Owner, Solution Architect, Dev Lead) for a current-roster member. Each toggle reflects the member's
+ * stored flag and, on change, persists the whole updated role set through the roster store. This UI
+ * has no dependency on the AI Assist unlock.
  */
 function RosterRoleControls({ rosterMember, onRolesChange }: RosterRoleControlsProps) {
   const roleCapabilities = rosterMember.roleCapabilities;
