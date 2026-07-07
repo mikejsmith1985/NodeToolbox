@@ -146,9 +146,11 @@ with a **stable, drag-editable order within each bucket**. The intra-bucket orde
 **FR-2: Work items include sub-tasks and defects.** Planable items are **stories, sub-tasks, and defects** — not
 only stories. The prioritizer and planner operate at this item granularity.
 
-**FR-3: Sprint-boxing retired.** The manual sprint/release container flow is removed from the planning path;
-sprints are an **output** of the planner, not a manual arrangement. (Any existing overlay data is migrated or
-ignored gracefully.)
+**FR-3: Sprint-boxing hidden behind the planner (confirmed 2026-07-07).** The board's front-line flow becomes
+prioritize → **Build plan** → read-only projection; the manual sprint/release **container UI is hidden** (Stage 5
+"Sequence & Box", Pull sprints, Plan stories). The underlying container model and the **Review & Commit** write
+path are **retained** (not deleted) so committing sprint/fixVersion assignments still works — the manual boxing is
+demoted, not removed. Sprints are primarily an **output** of the planner.
 
 ### Area 2 — Capacity & role model
 
