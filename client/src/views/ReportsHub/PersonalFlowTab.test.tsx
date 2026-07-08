@@ -3,7 +3,7 @@
 // and cycle-time cards plus a per-issue row, guards an empty person, and surfaces
 // fetch failures as an alert. The metric math itself is covered by personalFlow.test.ts.
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // A single mock for the Jira client, routed by request path so one implementation can
@@ -14,6 +14,11 @@ vi.mock('../../services/jiraApi.ts', () => ({
   jiraGet: mockJiraGet,
 }));
 
+import { useSettingsStore } from '../../store/settingsStore.ts';
+import {
+  useStandupRosterStore,
+  type StandupRosterMember,
+} from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import { PersonalFlowTab } from './PersonalFlowTab.tsx';
 
 // Status ids mapped to their Jira category so the changelog transitions read declaratively.
@@ -65,12 +70,41 @@ function readStatCardValue(labelText: string): string {
   return labelNode.nextElementSibling?.textContent ?? '';
 }
 
+/** Builds a minimal roster member for seeding the standup roster store in tests. */
+function buildRosterMember(displayName: string, teamName: string): StandupRosterMember {
+  return {
+    id: `roster-member:${displayName.toLowerCase()}`,
+    displayName,
+    assigneeQueryValue: displayName,
+    teamName,
+  };
+}
+
+/** Seeds the roster store with the given members and marks the given team active. */
+function seedRoster(members: StandupRosterMember[], activeTeamName: string): void {
+  useStandupRosterStore.setState({ rosterMembers: members });
+  useSettingsStore.setState({ sprintDashboardActiveTeam: activeTeamName });
+}
+
+/** Reads the text of every cell in the comparison-table row that names the given person. */
+function readTeamRowCells(personName: string): string[] {
+  const row = screen.getByText(personName).closest('tr');
+  if (row === null) {
+    return [];
+  }
+  return Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent ?? '');
+}
+
 describe('PersonalFlowTab', () => {
   beforeEach(() => {
     // Fake only Date so the injected `todayIso` is deterministic while promises/timers stay real.
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-07-08T00:00:00.000Z'));
     mockJiraGet.mockReset();
+    // Reset the shared roster + settings stores so each test starts from an empty roster
+    // and no active team, keeping the single-person tests independent of roster state.
+    useStandupRosterStore.setState({ rosterMembers: [] });
+    useSettingsStore.setState({ sprintDashboardActiveTeam: '' });
   });
 
   afterEach(() => {
@@ -140,5 +174,88 @@ describe('PersonalFlowTab', () => {
 
     const alertNode = await screen.findByRole('alert');
     expect(alertNode).toHaveTextContent(/500/);
+  });
+
+  it('shows roster suggestions as you type and clicking one fills the person field', async () => {
+    seedRoster(
+      [buildRosterMember('Jane Dev', 'Team Rocket'), buildRosterMember('John QA', 'Team Rocket')],
+      'Team Rocket',
+    );
+
+    render(<PersonalFlowTab />);
+    const personInput = screen.getByLabelText(/person \(jira assignee\)/i);
+    fireEvent.change(personInput, { target: { value: 'Jane' } });
+
+    // The roster suggestion for the matching member appears instantly from the store.
+    const suggestion = await screen.findByRole('option', { name: /Jane Dev/i });
+    fireEvent.click(suggestion);
+
+    // Clicking the suggestion writes that person's assignee value into the field.
+    expect(personInput).toHaveValue('Jane Dev');
+  });
+
+  it('runs for the team roster and renders a comparison row per member', async () => {
+    seedRoster(
+      [buildRosterMember('Jane Dev', 'Team Rocket'), buildRosterMember('John QA', 'Team Rocket')],
+      'Team Rocket',
+    );
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve([]);
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(buildSearchResponse());
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+
+    // One comparison row per active-team roster member, each with its computed totals.
+    await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
+    expect(screen.getByText('John QA')).toBeInTheDocument();
+
+    // Columns: Person | Issues | Points | Issues/Wk | Points/Wk | Avg Cycle | Median Cycle.
+    const janeCells = readTeamRowCells('Jane Dev');
+    expect(janeCells[1]).toBe('2'); // two closed issues in the search response
+    expect(janeCells[2]).toBe('8'); // 5 + 3 story points
+    const johnCells = readTeamRowCells('John QA');
+    expect(johnCells[1]).toBe('2');
+    expect(johnCells[2]).toBe('8');
+
+    // Each member was searched with their own assignee value.
+    const searchedAssignees = mockJiraGet.mock.calls
+      .map(([path]) => decodeURIComponent(String(path)))
+      .filter((path) => path.includes('/rest/api/2/search'));
+    expect(searchedAssignees.some((path) => path.includes('assignee = "Jane Dev"'))).toBe(true);
+    expect(searchedAssignees.some((path) => path.includes('assignee = "John QA"'))).toBe(true);
+  });
+
+  it('records a per-person error row without aborting the whole team run', async () => {
+    seedRoster(
+      [buildRosterMember('Jane Dev', 'Team Rocket'), buildRosterMember('John QA', 'Team Rocket')],
+      'Team Rocket',
+    );
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve([]);
+      if (path.includes('John%20QA') || path.includes('John QA')) {
+        return Promise.reject(new Error('Jira GET search failed: 500'));
+      }
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(buildSearchResponse());
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+
+    // The healthy member still renders a full row, the failing member shows an inline error.
+    await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
+    expect(readTeamRowCells('Jane Dev')[1]).toBe('2');
+    const johnRow = screen.getByText('John QA').closest('tr');
+    expect(within(johnRow as HTMLElement).getByText(/500/)).toBeInTheDocument();
+  });
+
+  it('disables Run for team roster when the active-team roster is empty', () => {
+    render(<PersonalFlowTab />);
+    expect(screen.getByRole('button', { name: /run for team roster/i })).toBeDisabled();
   });
 });
