@@ -328,6 +328,55 @@ describe('PersonalFlowTab', () => {
     expect(diagnostic).toHaveTextContent('2 credited');
   });
 
+  it('renders the issue-audit breakdown with the excluded count and a friendly reason label', async () => {
+    // A WIP issue Jane still holds and never finished: it is fetched but not credited, so the audit
+    // section must list it with the "in progress, still assigned" reason alongside the credited pair.
+    const wipIssue = {
+      key: 'TBX-WIP',
+      fields: {
+        summary: 'Still in progress',
+        created: '2026-07-01T00:00:00.000Z',
+        status: { id: '3' },
+        assignee: { name: 'jane.dev', displayName: 'jane.dev' },
+        customfield_10236: 2,
+      },
+      changelog: {
+        histories: [
+          {
+            created: '2026-07-01T00:00:00.000Z',
+            items: [
+              { field: 'assignee', from: null, fromString: null, to: 'jane.dev', toString: 'jane.dev' },
+              { field: 'status', from: '1', fromString: null, to: '3', toString: null },
+            ],
+          },
+        ],
+      },
+    };
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) {
+        // Two credited issues (TBX-1, TBX-2) plus the not-credited WIP issue.
+        const creditedPair = buildSearchResponseFor(JANE_STAMP);
+        return Promise.resolve({ issues: [...creditedPair.issues, wipIssue] });
+      }
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.change(screen.getByLabelText(/person \(jira assignee\)/i), {
+      target: { value: 'Jane Dev' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /run report/i }));
+
+    await waitFor(() => expect(screen.getByText('TBX-1')).toBeInTheDocument());
+    // The audit header, the credited-vs-excluded counts, and the excluded row with its reason label.
+    expect(screen.getByText('Issue audit')).toBeInTheDocument();
+    expect(screen.getByText(/Credited 2 · Excluded 1/)).toBeInTheDocument();
+    expect(screen.getByText('TBX-WIP')).toBeInTheDocument();
+    expect(screen.getByText('In progress, still assigned (WIP)')).toBeInTheDocument();
+  });
+
   it('uses a selected Jira suggestion machine id directly for the query', async () => {
     mockJiraGet.mockImplementation((path: string) => {
       if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);

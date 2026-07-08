@@ -339,6 +339,97 @@ function buildReassignedAwayIssue(key: string, reassignedIso: string): PersonalF
   });
 }
 
+// ── Exclusion-reason audit breakdown ─────────────────────────────────────────
+
+describe('computePersonalFlow — per-issue exclusion reasons', () => {
+  // A credited issue plus one issue for each exclusion reason, so a single run exercises every branch.
+  const creditedIssue = makeFlowIssue({
+    key: 'CRED-1',
+    storyPoints: 5,
+    createdIso: '2026-06-30T00:00:00.000Z',
+    initialStatusId: 'inProgress',
+    initiallyAssignedToTarget: false,
+    ownershipTransitions: [
+      { assignedToTarget: true, atIso: '2026-07-01T00:00:00.000Z' }, // gains it Wed
+      { assignedToTarget: false, atIso: '2026-07-03T00:00:00.000Z' }, // loses it Fri (2 business days)
+    ],
+  });
+  // Never appears in the ownership timeline — no interval is ever assigned to the target.
+  const notOwnedIssue = makeFlowIssue({
+    key: 'NOTOWNED-1',
+    initialStatusId: 'inProgress',
+    initiallyAssignedToTarget: false,
+    ownershipTransitions: [],
+  });
+  // Assigned and in progress, but never handed off and never done — a still-open WIP stint.
+  const wipOpenIssue = makeFlowIssue({
+    key: 'WIP-1',
+    initialStatusId: 'inProgress',
+    initiallyAssignedToTarget: true,
+    ownershipTransitions: [],
+    statusTransitions: [],
+  });
+  // Owned and reassigned away, but only ever in a "new" status — zero hands-on in-progress time.
+  const noInProgressIssue = makeFlowIssue({
+    key: 'NOTIME-1',
+    initialStatusId: 'todo',
+    ownershipTransitions: [
+      { assignedToTarget: true, atIso: '2026-07-01T00:00:00.000Z' },
+      { assignedToTarget: false, atIso: '2026-07-03T00:00:00.000Z' },
+    ],
+  });
+  // A completed stint whose end (2026-03-01) is long before the 90-day window began (~2026-04-09).
+  const outOfWindowIssue = makeFlowIssue({
+    key: 'OOW-1',
+    createdIso: '2026-02-20T00:00:00.000Z',
+    initialStatusId: 'inProgress',
+    ownershipTransitions: [
+      { assignedToTarget: true, atIso: '2026-02-22T00:00:00.000Z' },
+      { assignedToTarget: false, atIso: '2026-03-01T00:00:00.000Z' },
+    ],
+  });
+
+  it('reports the correct reason for every non-credited issue and credits only the qualifier', () => {
+    const result = computePersonalFlow(
+      makeInput([creditedIssue, notOwnedIssue, wipOpenIssue, noInProgressIssue, outOfWindowIssue]),
+    );
+
+    const reasonByKey = Object.fromEntries(result.excludedIssues.map((row) => [row.key, row.reason]));
+    expect(reasonByKey).toEqual({
+      'NOTOWNED-1': 'not-owned',
+      'WIP-1': 'wip-open',
+      'NOTIME-1': 'no-in-progress-time',
+      'OOW-1': 'completed-out-of-window',
+    });
+    expect(result.excludedIssues).toHaveLength(4);
+    // Each excluded row carries the issue summary for the audit table.
+    expect(result.excludedIssues.find((row) => row.key === 'WIP-1')?.summary).toBe('Issue WIP-1');
+  });
+
+  it('leaves the credited issue byte-for-byte unchanged from the pre-audit behaviour', () => {
+    const result = computePersonalFlow(
+      makeInput([creditedIssue, notOwnedIssue, wipOpenIssue, noInProgressIssue, outOfWindowIssue]),
+    );
+
+    // Only the qualifier is credited; the four excluded issues never inflate the counts.
+    expect(result.issueCount).toBe(1);
+    expect(result.perIssue).toHaveLength(1);
+    expect(result.perIssue[0].key).toBe('CRED-1');
+    expect(result.perIssue[0].cycleTimeDays).toBeCloseTo(2, 10);
+    expect(result.perIssue[0].lastActiveIso?.slice(0, 10)).toBe('2026-07-03');
+    expect(result.perIssue[0].storyPoints).toBe(5);
+    expect(result.totalStoryPoints).toBe(5);
+  });
+
+  it('preserves the original fetch order of the excluded issues (deterministic audit list)', () => {
+    // Feed the excluded issues in a scrambled order; the audit must echo that exact order back.
+    const scrambledOrder = [outOfWindowIssue, wipOpenIssue, notOwnedIssue, noInProgressIssue];
+    const result = computePersonalFlow(makeInput(scrambledOrder));
+
+    expect(result.excludedIssues.map((row) => row.key)).toEqual(['OOW-1', 'WIP-1', 'NOTOWNED-1', 'NOTIME-1']);
+  });
+});
+
 // ── Determinism & edge cases ─────────────────────────────────────────────────
 
 describe('computePersonalFlow — determinism and edges', () => {
@@ -366,6 +457,7 @@ describe('computePersonalFlow — determinism and edges', () => {
     });
     expect(result.cycleTime).toEqual({ averageDays: null, medianDays: null, countWithCycleTime: 0 });
     expect(result.perIssue).toEqual([]);
+    expect(result.excludedIssues).toEqual([]);
   });
 
   it('clamps a non-positive windowDays to 1 to avoid divide-by-zero', () => {

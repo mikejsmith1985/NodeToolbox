@@ -17,6 +17,7 @@ import {
 } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import {
   computePersonalFlow,
+  type PersonalFlowExclusionReason,
   type PersonalFlowIssue,
   type PersonalFlowOwnershipTransition,
   type PersonalFlowResult,
@@ -452,6 +453,48 @@ function StatCard({ label, value }: { label: string; value: string }): React.JSX
   );
 }
 
+/** Human-friendly, non-technical label for each exclusion reason, shown in the issue-audit table. */
+const EXCLUSION_REASON_LABELS: Record<PersonalFlowExclusionReason, string> = {
+  'not-owned': 'Not matched to this person',
+  'wip-open': 'In progress, still assigned (WIP)',
+  'no-in-progress-time': 'No in-progress time recorded',
+  'completed-out-of-window': 'Completed before the window',
+};
+
+/**
+ * A transparency section under the single-person result: it names how many fetched issues were
+ * credited versus excluded, then lists each excluded issue with the plain-English reason it was
+ * dropped — so a reviewer can confirm no genuine contribution was silently lost.
+ */
+function IssueAuditSection({ result }: { result: PersonalFlowResult }): React.JSX.Element {
+  return (
+    <section style={{ marginTop: 16 }}>
+      <h4 style={{ fontSize: 12, opacity: 0.7, fontWeight: 600, margin: '0 0 6px' }}>Issue audit</h4>
+      <p style={{ fontSize: 12, opacity: 0.7, margin: '0 0 8px' }}>
+        Credited {result.issueCount} · Excluded {result.excludedIssues.length}
+      </p>
+      {result.excludedIssues.length > 0 && (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ textAlign: 'left', opacity: 0.6 }}>
+              <th>Issue</th><th>Summary</th><th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {result.excludedIssues.map((excludedIssue) => (
+              <tr key={excludedIssue.key} style={{ borderTop: '1px solid var(--color-border)' }}>
+                <td>{excludedIssue.key}</td>
+                <td>{excludedIssue.summary}</td>
+                <td>{EXCLUSION_REASON_LABELS[excludedIssue.reason]}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
 /** Renders the throughput, cycle-time, and volume cards plus the per-issue breakdown table. */
 function PersonalFlowResultView({ result }: { result: PersonalFlowResult }): React.JSX.Element {
   const { throughput, cycleTime } = result;
@@ -493,6 +536,8 @@ function PersonalFlowResultView({ result }: { result: PersonalFlowResult }): Rea
           </tbody>
         </table>
       )}
+
+      <IssueAuditSection result={result} />
     </div>
   );
 }

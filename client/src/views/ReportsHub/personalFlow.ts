@@ -106,6 +106,26 @@ export interface PersonalFlowIssueMetric {
   lastActiveIso: string | null; // ISO of the latest in-window completion moment
 }
 
+/**
+ * Why a fetched issue was NOT credited, in the order the engine tests them:
+ *   • 'not-owned'               — the target never appears in the issue's ownership timeline.
+ *   • 'wip-open'                — she still holds it and it never reached done (a WIP, still-open stint).
+ *   • 'completed-out-of-window' — her stint completed, but before the reporting window began.
+ *   • 'no-in-progress-time'     — completed in-window, but with zero Mon–Fri in-progress working time.
+ */
+export type PersonalFlowExclusionReason =
+  | 'not-owned'
+  | 'wip-open'
+  | 'no-in-progress-time'
+  | 'completed-out-of-window';
+
+/** One fetched-but-not-credited issue, carrying the reason it was dropped for the audit breakdown. */
+export interface PersonalFlowExcludedIssue {
+  key: string;
+  summary: string;
+  reason: PersonalFlowExclusionReason;
+}
+
 /** The full Personal Flow result: window summary, throughput, cycle time, and per-issue rows. */
 export interface PersonalFlowResult {
   windowDays: number;
@@ -113,7 +133,8 @@ export interface PersonalFlowResult {
   totalStoryPoints: number; // summed over those issues (null points = 0)
   throughput: PersonalFlowThroughput;
   cycleTime: PersonalFlowCycleTime;
-  perIssue: PersonalFlowIssueMetric[]; // one row per qualifying issue, most-recently-active first
+  perIssue: PersonalFlowIssueMetric[]; // one row per CREDITED issue, most-recently-active first
+  excludedIssues: PersonalFlowExcludedIssue[]; // fetched issues that were not credited, in fetch order, with why
 }
 
 // ── Internal types ───────────────────────────────────────────────────────────
@@ -137,6 +158,15 @@ interface CompletedContribution {
   handsOnDays: number;
 }
 
+/**
+ * The outcome of evaluating one issue: either a CREDITED metric, or an exclusion with its reason.
+ * Discriminating on `kind` lets the caller split the fetched issues into the credited per-issue rows
+ * and the audit list of what was dropped and why — without a second, duplicate evaluation pass.
+ */
+type IssueEvaluation =
+  | { readonly kind: 'credited'; readonly metric: PersonalFlowIssueMetric }
+  | { readonly kind: 'excluded'; readonly reason: PersonalFlowExclusionReason };
+
 // ── Public entry point ───────────────────────────────────────────────────────
 
 /**
@@ -152,7 +182,7 @@ export function computePersonalFlow(input: PersonalFlowInput): PersonalFlowResul
   const todayMs = Date.parse(input.todayIso);
   const windowStartMs = todayMs - effectiveWindowDays * MILLISECONDS_PER_DAY;
 
-  const perIssue = buildQualifyingMetrics(
+  const { perIssue, excludedIssues } = buildIssueBreakdown(
     input.issues,
     input.statusCategoryByStatusId,
     windowStartMs,
@@ -168,6 +198,7 @@ export function computePersonalFlow(input: PersonalFlowInput): PersonalFlowResul
     throughput: buildThroughput(issueCount, totalStoryPoints, effectiveWindowDays),
     cycleTime: buildCycleTimeStats(perIssue),
     perIssue,
+    excludedIssues,
   };
 }
 
@@ -212,55 +243,68 @@ function isWorkday(instantMs: number): boolean {
 // ── Per-issue evaluation ─────────────────────────────────────────────────────
 
 /**
- * Maps every issue to an optional qualifying metric and returns the survivors,
- * sorted most-recently-active first (tie-broken by key) for a deterministic order.
+ * Splits every fetched issue into the CREDITED per-issue metrics and the EXCLUDED audit rows.
+ * Credited rows are sorted most-recently-active first (tie-broken by key); excluded rows keep the
+ * original fetch order so the audit reads in the same sequence Jira returned — both deterministic.
  */
-function buildQualifyingMetrics(
+function buildIssueBreakdown(
   issues: readonly PersonalFlowIssue[],
   statusCategoryByStatusId: Readonly<Record<string, string>>,
   windowStartMs: number,
   todayMs: number,
-): PersonalFlowIssueMetric[] {
-  const metrics: PersonalFlowIssueMetric[] = [];
+): { perIssue: PersonalFlowIssueMetric[]; excludedIssues: PersonalFlowExcludedIssue[] } {
+  const perIssue: PersonalFlowIssueMetric[] = [];
+  const excludedIssues: PersonalFlowExcludedIssue[] = [];
   for (const issue of issues) {
-    const metric = evaluateIssue(issue, statusCategoryByStatusId, windowStartMs, todayMs);
-    if (metric !== null) metrics.push(metric);
+    const evaluation = evaluateIssue(issue, statusCategoryByStatusId, windowStartMs, todayMs);
+    if (evaluation.kind === 'credited') {
+      perIssue.push(evaluation.metric);
+    } else {
+      excludedIssues.push({ key: issue.key, summary: issue.summary, reason: evaluation.reason });
+    }
   }
-  return metrics.sort(compareByLastActiveThenKey);
+  perIssue.sort(compareByLastActiveThenKey);
+  return { perIssue, excludedIssues };
 }
 
 /**
- * Evaluates one issue into a metric, or null when it does not qualify. An issue
- * qualifies only when it has at least one COMPLETED ownership stint whose completion
- * falls in the window AND whose hands-on in-progress working time is greater than
- * zero — i.e. the target actually advanced real in-progress work she then finished
- * or handed off inside the window.
+ * Evaluates one issue into a CREDITED metric or an EXCLUDED reason. An issue qualifies only when it
+ * has at least one COMPLETED ownership stint whose completion falls in the window AND whose hands-on
+ * in-progress working time is greater than zero. The reasons are tested in a fixed precedence so a
+ * dropped issue reports the FIRST gate it failed — never owned, then still WIP, then out of window,
+ * then no in-progress time. The credited outcome is identical to the pre-audit behaviour.
  */
 function evaluateIssue(
   issue: PersonalFlowIssue,
   statusCategoryByStatusId: Readonly<Record<string, string>>,
   windowStartMs: number,
   todayMs: number,
-): PersonalFlowIssueMetric | null {
+): IssueEvaluation {
   const originMs = resolveOriginMs(issue, todayMs);
   const categorySegments = buildCategorySegments(issue, statusCategoryByStatusId, originMs, todayMs);
   const ownershipIntervals = buildOwnershipIntervals(issue, originMs, todayMs);
-  const doneTimesMs = collectDoneTimesMs(issue, statusCategoryByStatusId);
+  if (ownershipIntervals.length === 0) return { kind: 'excluded', reason: 'not-owned' };
 
+  const doneTimesMs = collectDoneTimesMs(issue, statusCategoryByStatusId);
   const contributions = collectCompletedContributions(ownershipIntervals, categorySegments, doneTimesMs, todayMs);
+  if (contributions.length === 0) return { kind: 'excluded', reason: 'wip-open' };
+
   const inWindow = contributions.filter((one) => one.endMs >= windowStartMs && one.endMs <= todayMs);
-  if (inWindow.length === 0) return null;
+  if (inWindow.length === 0) return { kind: 'excluded', reason: 'completed-out-of-window' };
 
   const cycleTimeDays = inWindow.reduce((runningTotal, one) => runningTotal + one.handsOnDays, 0);
-  if (cycleTimeDays <= 0) return null; // completed, but no real in-progress work -> not counted
+  if (cycleTimeDays <= 0) return { kind: 'excluded', reason: 'no-in-progress-time' };
 
   const lastActiveMs = inWindow.reduce((latest, one) => Math.max(latest, one.endMs), Number.NEGATIVE_INFINITY);
   return {
-    key: issue.key,
-    summary: issue.summary,
-    storyPoints: issue.storyPoints,
-    cycleTimeDays,
-    lastActiveIso: new Date(lastActiveMs).toISOString(),
+    kind: 'credited',
+    metric: {
+      key: issue.key,
+      summary: issue.summary,
+      storyPoints: issue.storyPoints,
+      cycleTimeDays,
+      lastActiveIso: new Date(lastActiveMs).toISOString(),
+    },
   };
 }
 
