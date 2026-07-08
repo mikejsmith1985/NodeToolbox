@@ -60,6 +60,7 @@ describe('FeatureCanvasBoard', () => {
         onDeleteNode={vi.fn()}
         onMoveContainer={vi.fn()}
         onResizeContainer={vi.fn()}
+        onRenameContainer={vi.fn()}
       />,
     );
     expect(screen.getAllByTestId('rf-feature')).toHaveLength(3);
@@ -80,6 +81,7 @@ describe('FeatureCanvasBoard', () => {
         onDeleteNode={vi.fn()}
         onMoveContainer={vi.fn()}
         onResizeContainer={vi.fn()}
+        onRenameContainer={vi.fn()}
       />,
     );
     expect(screen.getAllByTestId('rf-feature')).toHaveLength(200);

@@ -46,4 +46,29 @@ describe('ContainerNode', () => {
     renderContainer({ kind: 'sprint', title: 'Sprint 24', isProvisional: false, capacity: null });
     expect(screen.queryByRole('button', { name: /Delete/ })).not.toBeInTheDocument();
   });
+
+  it('renames the box via the ✎ button, committing the new title on Enter', () => {
+    const onRename = vi.fn();
+    renderContainer({ kind: 'sprint', title: 'Sprint 24', isProvisional: false, capacity: null, onRename });
+    fireEvent.click(screen.getByRole('button', { name: /Rename Sprint 24/ }));
+    const input = screen.getByRole('textbox', { name: /Rename Sprint 24/ });
+    fireEvent.change(input, { target: { value: 'Hardening Sprint' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onRename).toHaveBeenCalledWith('Hardening Sprint');
+  });
+
+  it('does not call onRename when the edit is cancelled with Escape', () => {
+    const onRename = vi.fn();
+    renderContainer({ kind: 'sprint', title: 'Sprint 24', isProvisional: false, capacity: null, onRename });
+    fireEvent.click(screen.getByRole('button', { name: /Rename Sprint 24/ }));
+    const input = screen.getByRole('textbox', { name: /Rename Sprint 24/ });
+    fireEvent.change(input, { target: { value: 'Discarded' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(onRename).not.toHaveBeenCalled();
+  });
+
+  it('renders no rename affordance when onRename is absent', () => {
+    renderContainer({ kind: 'sprint', title: 'Sprint 24', isProvisional: false, capacity: null });
+    expect(screen.queryByRole('button', { name: /Rename/ })).not.toBeInTheDocument();
+  });
 });

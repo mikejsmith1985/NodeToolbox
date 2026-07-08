@@ -307,6 +307,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
                 }}
                 onMoveContainer={(containerId, x, y) => controller.moveContainer(containerId, x, y)}
                 onResizeContainer={(containerId, bounds) => controller.updateContainer(containerId, { bounds })}
+                onRenameContainer={(containerId, title) => controller.updateContainer(containerId, { title })}
               />
               {isCommitOpen && (
                 <ReviewCommitPanel

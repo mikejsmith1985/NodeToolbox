@@ -44,6 +44,8 @@ export interface FeatureCanvasBoardProps {
   onMoveContainer: (containerId: string, x: number, y: number) => void;
   /** Persists a box resize (new bounds). */
   onResizeContainer: (containerId: string, bounds: { x: number; y: number; width: number; height: number }) => void;
+  /** Persists a box rename (new title). */
+  onRenameContainer: (containerId: string, title: string) => void;
   /** Active legend focus filter; non-matching feature cards dim back. Null shows all at full strength. */
   filter?: CanvasNodeFilter | null;
 }
@@ -56,6 +58,7 @@ function buildReactFlowNodes(
   onDeleteContainer: (containerId: string) => void,
   onDeleteNode: (issueKey: string) => void,
   onResizeContainer: (containerId: string, bounds: { x: number; y: number; width: number; height: number }) => void,
+  onRenameContainer: (containerId: string, title: string) => void,
   filter: CanvasNodeFilter | null,
 ): Node[] {
   const containerNodes: Node[] = containers.map((container) => ({
@@ -69,6 +72,7 @@ function buildReactFlowNodes(
       capacity: capacities.get(container.id) ?? null,
       onDelete: () => onDeleteContainer(container.id),
       onResize: (bounds) => onResizeContainer(container.id, bounds),
+      onRename: (title) => onRenameContainer(container.id, title),
     } satisfies ContainerNodeData,
     style: { width: container.bounds.width, height: container.bounds.height },
     draggable: true,
@@ -96,7 +100,7 @@ function buildNodeSignature(canvasNodes: readonly CanvasNode[], containers: read
   // Bounds are in the signature so moving/resizing a box rebuilds the nodes — which is how a box's
   // member cards visually follow it (their overlay positions were shifted by moveContainer).
   const containerPart = containers
-    .map((container) => `${container.id}:${container.capacityBudget}:${container.bounds.x},${container.bounds.y},${container.bounds.width},${container.bounds.height}`)
+    .map((container) => `${container.id}:${container.title}:${container.capacityBudget}:${container.bounds.x},${container.bounds.y},${container.bounds.width},${container.bounds.height}`)
     .join('|');
   // Include the filter so the cards rebuild (dim/undim) when the user focuses a legend entry.
   const filterPart = filter ? `${filter.dimension}=${filter.value}` : 'none';
@@ -105,7 +109,7 @@ function buildNodeSignature(canvasNodes: readonly CanvasNode[], containers: read
 
 /** Inner board that has access to the React Flow instance for intersection hit-testing. */
 function BoardInner(props: FeatureCanvasBoardProps): React.JSX.Element {
-  const { canvasNodes, containers, capacities, onSelect, onPositionChange, onDropIntoContainer, onDeleteContainer, onDeleteNode, onMoveContainer, onResizeContainer, filter = null } = props;
+  const { canvasNodes, containers, capacities, onSelect, onPositionChange, onDropIntoContainer, onDeleteContainer, onDeleteNode, onMoveContainer, onResizeContainer, onRenameContainer, filter = null } = props;
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const { getIntersectingNodes } = useReactFlow();
 
@@ -113,7 +117,7 @@ function BoardInner(props: FeatureCanvasBoardProps): React.JSX.Element {
 
   // Rebuild the canvas nodes whenever the underlying feature/container set changes.
   useEffect(() => {
-    setNodes(buildReactFlowNodes(canvasNodes, containers, capacities, onDeleteContainer, onDeleteNode, onResizeContainer, filter));
+    setNodes(buildReactFlowNodes(canvasNodes, containers, capacities, onDeleteContainer, onDeleteNode, onResizeContainer, onRenameContainer, filter));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeSignature, setNodes]);
 

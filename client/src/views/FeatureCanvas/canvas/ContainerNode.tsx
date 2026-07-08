@@ -5,7 +5,7 @@
 // user can see over-commitment without doing arithmetic. Provisional boxes (not yet in Jira) are
 // drawn with a dashed border to distinguish them from real sprints/versions.
 
-import { memo } from 'react';
+import { memo, useRef, useState } from 'react';
 import { NodeResizer, type Node, type NodeProps } from '@xyflow/react';
 
 import type { ContainerCapacity } from '../logic/canvasTypes.ts';
@@ -24,6 +24,8 @@ export interface ContainerNodeData {
   onDelete?: () => void;
   /** Persists a resize: called with the box's new bounds when the user finishes dragging a handle. */
   onResize?: (bounds: { x: number; y: number; width: number; height: number }) => void;
+  /** Persists a rename: called with the new title when the user finishes editing the box name. */
+  onRename?: (title: string) => void;
   [key: string]: unknown;
 }
 
@@ -52,6 +54,38 @@ function CapacityMeter({ capacity }: { capacity: ContainerCapacity }): React.JSX
 /** Custom React Flow node: a container box that features are dropped into. */
 function ContainerNodeComponent({ data, selected }: NodeProps<ContainerRfNode>): React.JSX.Element {
   const accent = KIND_ACCENT[data.kind];
+  // Inline rename: double-click the title (or the ✎ button) to edit; Enter/blur commits, Escape cancels.
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(data.title);
+  // Set by Escape so the input's blur-on-unmount commit is skipped (Escape must discard, not save).
+  const isCancellingRename = useRef(false);
+
+  const beginRename = (): void => {
+    if (!data.onRename) {
+      return;
+    }
+    setDraftTitle(data.title);
+    setIsEditingTitle(true);
+  };
+
+  const commitRename = (): void => {
+    if (isCancellingRename.current) {
+      isCancellingRename.current = false;
+      setIsEditingTitle(false);
+      return;
+    }
+    const nextTitle = draftTitle.trim();
+    if (nextTitle !== '' && nextTitle !== data.title) {
+      data.onRename?.(nextTitle);
+    }
+    setIsEditingTitle(false);
+  };
+
+  const cancelRename = (): void => {
+    isCancellingRename.current = true;
+    setIsEditingTitle(false);
+  };
+
   return (
     <div
       style={{
@@ -74,10 +108,43 @@ function ContainerNodeComponent({ data, selected }: NodeProps<ContainerRfNode>):
         onResizeEnd={(_event, params) => data.onResize?.({ x: params.x, y: params.y, width: params.width, height: params.height })}
       />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600 }}>
-        <span style={{ color: accent }}>
-          {data.title}
-          {data.isProvisional ? ' (proposed)' : ''}
-        </span>
+        {isEditingTitle ? (
+          <input
+            className="nodrag"
+            aria-label={`Rename ${data.title}`}
+            autoFocus
+            value={draftTitle}
+            onChange={(changeEvent) => setDraftTitle(changeEvent.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(keyEvent) => {
+              if (keyEvent.key === 'Enter') {
+                commitRename();
+              } else if (keyEvent.key === 'Escape') {
+                cancelRename();
+              }
+            }}
+            style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600 }}
+          />
+        ) : (
+          <span style={{ color: accent, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span onDoubleClick={beginRename} title={data.onRename ? 'Double-click to rename' : undefined}>
+              {data.title}
+              {data.isProvisional ? ' (proposed)' : ''}
+            </span>
+            {data.onRename && (
+              <button
+                type="button"
+                className="nodrag"
+                aria-label={`Rename ${data.title}`}
+                title="Rename box"
+                onClick={(clickEvent) => { clickEvent.stopPropagation(); beginRename(); }}
+                style={{ cursor: 'pointer', border: 'none', background: 'transparent', color: 'inherit', fontSize: 12, lineHeight: 1 }}
+              >
+                ✎
+              </button>
+            )}
+          </span>
+        )}
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {data.capacity && <CapacityMeter capacity={data.capacity} />}
           {data.onDelete && (

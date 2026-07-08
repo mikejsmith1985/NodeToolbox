@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Feature Canvas — rename Sprint / release boxes**: each container box (sprint, release, parking lot, complete, later) can now be renamed in place — double-click its name or click the ✎ button, edit, and press Enter (Escape cancels). The new name is saved to the canvas sandbox like any other change. *(feature 014)*
+
 ### Changed
 - **Feature Canvas — capacity plan: DoD = internal test, custom window, and operator constraints**: (1) the completion date and bottleneck now treat **internal testing as Definition of Done** — external-test work is still shown but no longer stretches "when are we done" or gets flagged as the bottleneck; (2) a **Start date** (defaults to today, editable) and a **Target PI picker** (real PI list) let you choose the planning window, with the partial first sprint prorated to the days actually left in it; and (3) an **Additional details** box for real-world constraints Jira can't hold (e.g. "internal test must finish DENP-1353 exclusively first") that is injected verbatim into the **Copy prompt for Copilot** as rules the assistant must honor. *(feature 013)*
 - **Feature Canvas — capacity plan now projects from today + a Copilot prompt**: the plan is **anchored at today's date** (not the PI start), so the projected sprints reflect what can still be done in the remaining PI versus what carries into the next PI — instead of replaying sprints that have already elapsed. And a new **🤖 Copy prompt for Copilot** button copies the plan wrapped with its assumptions and an "evaluate and improve this plan" instruction, so you can get advanced reasoning (risks, role-legal re-allocations, PI-vs-carryover, staffing) on top of the deterministic numbers. *(feature 013)*
