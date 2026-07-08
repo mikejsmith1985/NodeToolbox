@@ -89,18 +89,19 @@ describe('ReportsHubView', () => {
     expect(mockActions.loadAllReports).toHaveBeenCalledTimes(1);
   });
 
-  it('renders 10 tab buttons including the Defect Dashboard tab', () => {
+  it('renders the tab buttons including the Defect Dashboard and Personal Flow tabs', () => {
     render(<ReportsHubView />);
     expect(screen.getByRole('tab', { name: /defect dashboard/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /feature report/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /defect tracker/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /risk board/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /flow/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /🌊 Flow/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /impact/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /individual/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /quality/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /sprint health/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /throughput/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /personal flow/i })).toBeInTheDocument();
   });
 
   it('shows the dashboard widget layout when dashboard tab is active', () => {
