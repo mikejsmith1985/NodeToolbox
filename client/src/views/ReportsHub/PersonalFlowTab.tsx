@@ -221,8 +221,9 @@ interface RawJiraUser { displayName?: string; name?: string; accountId?: string 
 /** A single person the picker can offer, with the value to write into the person field when chosen. */
 interface PersonSuggestion {
   key: string;
-  label: string; // human name shown in the dropdown
-  assigneeValue: string; // what the JQL `assignee WAS "…"` clause expects
+  label: string; // human name shown in the dropdown (always the friendly display name)
+  queryValue: string; // a Jira machine id (username/accountId) when known, else the display name
+  isMachineId: boolean; // true when `queryValue` is a machine id ready to query without a further lookup
   sourceLabel: string; // 'Roster' or 'Jira', so the user knows where a match came from
 }
 
@@ -257,6 +258,35 @@ async function searchJiraUsers(query: string): Promise<RawJiraUser[]> {
   return Array.isArray(byQuery) ? byQuery : [];
 }
 
+/** Collapses internal whitespace runs to a single space and lowercases, for tolerant name comparison. */
+function normalizeForComparison(text: string): string {
+  return text.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/**
+ * Resolves a person's DISPLAY NAME to a Jira MACHINE IDENTIFIER the assignee field can match.
+ *
+ * Jira rejects a display name in an `assignee WAS "…"` clause (it wants a Server username or a
+ * Cloud accountId), so a free-typed or roster display string must be translated before it is queried.
+ * It searches Jira for the person, prefers the candidate whose username or display name matches exactly
+ * (whitespace-collapsed, case-insensitive), and otherwise takes the first result. Returns the chosen
+ * user's Server username when present, else the Cloud accountId, and null when no user matches at all.
+ */
+async function resolvePersonQueryValue(person: string): Promise<string | null> {
+  const candidates = await searchJiraUsers(person);
+  if (candidates.length === 0) {
+    return null;
+  }
+  const needle = normalizeForComparison(person);
+  const exactMatch = candidates.find(
+    (candidate) =>
+      normalizeForComparison(candidate.name ?? '') === needle
+      || normalizeForComparison(candidate.displayName ?? '') === needle,
+  );
+  const chosen = exactMatch ?? candidates[0];
+  return chosen.name ?? chosen.accountId ?? null;
+}
+
 /** Builds roster suggestions whose display name or assignee value contains the typed text (case-insensitive). */
 function buildRosterSuggestionMatches(
   rosterMembers: readonly StandupRosterMember[],
@@ -273,23 +303,28 @@ function buildRosterSuggestionMatches(
     .map((rosterMember) => ({
       key: `roster:${rosterMember.id}`,
       label: rosterMember.displayName,
-      assigneeValue: rosterMember.assigneeQueryValue,
+      // Prefer the roster's stored machine id; fall back to its query value (which may be a display name).
+      queryValue: rosterMember.jiraAccountId ?? rosterMember.assigneeQueryValue,
+      isMachineId: Boolean(rosterMember.jiraAccountId),
       sourceLabel: 'Roster',
     }));
 }
 
-/** Maps raw Jira user-search results to picker suggestions, using the display name as the assignee value. */
+/** Maps raw Jira user-search results to picker suggestions, carrying each user's machine id for querying. */
 function mapJiraUsersToSuggestions(jiraUsers: readonly RawJiraUser[]): PersonSuggestion[] {
   const suggestions: PersonSuggestion[] = [];
   for (const jiraUser of jiraUsers) {
-    const assigneeValue = (jiraUser.displayName ?? jiraUser.name ?? '').trim();
-    if (assigneeValue === '') {
+    const displayName = (jiraUser.displayName ?? jiraUser.name ?? '').trim();
+    if (displayName === '') {
       continue;
     }
+    // Server username first, Cloud accountId next; both are machine ids the assignee field can match.
+    const machineId = jiraUser.name ?? jiraUser.accountId;
     suggestions.push({
-      key: `jira:${jiraUser.accountId ?? jiraUser.name ?? assigneeValue}`,
-      label: assigneeValue,
-      assigneeValue,
+      key: `jira:${jiraUser.accountId ?? jiraUser.name ?? displayName}`,
+      label: displayName,
+      queryValue: machineId ?? displayName,
+      isMachineId: Boolean(machineId),
       sourceLabel: 'Jira',
     });
   }
@@ -302,13 +337,13 @@ function buildPersonSuggestions(
   jiraMatches: readonly PersonSuggestion[],
 ): PersonSuggestion[] {
   const mergedSuggestions: PersonSuggestion[] = [];
-  const seenAssigneeValues = new Set<string>();
+  const seenQueryValues = new Set<string>();
   for (const suggestion of [...rosterMatches, ...jiraMatches]) {
-    const dedupeKey = suggestion.assigneeValue.trim().toLowerCase();
-    if (dedupeKey === '' || seenAssigneeValues.has(dedupeKey)) {
+    const dedupeKey = suggestion.queryValue.trim().toLowerCase();
+    if (dedupeKey === '' || seenQueryValues.has(dedupeKey)) {
       continue;
     }
-    seenAssigneeValues.add(dedupeKey);
+    seenQueryValues.add(dedupeKey);
     mergedSuggestions.push(suggestion);
   }
   return mergedSuggestions;
@@ -325,9 +360,13 @@ async function buildTeamFlowRow(
   todayIso: string,
 ): Promise<TeamFlowRow> {
   try {
-    const person = rosterMember.assigneeQueryValue;
-    const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(buildSearchPath(person, windowDays));
-    const issues = (searchResponse.issues ?? []).map((issue) => toPersonalFlowIssue(issue, person));
+    // Query by the roster's stored machine id when present, else resolve the display name to one.
+    const queryValue = rosterMember.jiraAccountId ?? await resolvePersonQueryValue(rosterMember.assigneeQueryValue);
+    if (queryValue === null) {
+      return { personDisplayName: rosterMember.displayName, result: null, errorMessage: 'No matching Jira user' };
+    }
+    const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(buildSearchPath(queryValue, windowDays));
+    const issues = (searchResponse.issues ?? []).map((issue) => toPersonalFlowIssue(issue, queryValue));
     const result = computePersonalFlow({ issues, statusCategoryByStatusId, windowDays, todayIso });
     return { personDisplayName: rosterMember.displayName, result, errorMessage: null };
   } catch (caughtError) {
@@ -400,7 +439,7 @@ function PersonSuggestionsDropdown({
   onSelect,
 }: {
   suggestions: readonly PersonSuggestion[];
-  onSelect: (assigneeValue: string) => void;
+  onSelect: (suggestion: PersonSuggestion) => void;
 }): React.JSX.Element {
   return (
     <ul
@@ -417,7 +456,7 @@ function PersonSuggestionsDropdown({
           key={suggestion.key}
           role="option"
           aria-selected={false}
-          onClick={() => onSelect(suggestion.assigneeValue)}
+          onClick={() => onSelect(suggestion)}
           style={{ cursor: 'pointer', padding: '4px 8px', display: 'flex', justifyContent: 'space-between', gap: 8 }}
         >
           <span>{suggestion.label}</span>
@@ -479,6 +518,9 @@ export function PersonalFlowTab(): React.JSX.Element {
   const [result, setResult] = useState<PersonalFlowResult | null>(null);
   const [areSuggestionsOpen, setAreSuggestionsOpen] = useState(false);
   const [jiraUserSuggestions, setJiraUserSuggestions] = useState<RawJiraUser[]>([]);
+  // The machine id (username/accountId) resolved from a picked suggestion. Null means "look it up at run
+  // time" — free-typed text is always a display name that must be resolved before it can be queried.
+  const [resolvedQueryValue, setResolvedQueryValue] = useState<string | null>(null);
   const [teamRows, setTeamRows] = useState<TeamFlowRow[]>([]);
   const [isTeamLoading, setIsTeamLoading] = useState(false);
   const [teamError, setTeamError] = useState<string | null>(null);
@@ -524,11 +566,15 @@ export function PersonalFlowTab(): React.JSX.Element {
 
   const handlePersonChange = (nextPerson: string): void => {
     setPerson(nextPerson);
+    // Free-typed text is a display name; drop any previously resolved id so Run looks the person up fresh.
+    setResolvedQueryValue(null);
     setAreSuggestionsOpen(true);
   };
 
-  const handleSelectSuggestion = (assigneeValue: string): void => {
-    setPerson(assigneeValue);
+  const handleSelectSuggestion = (suggestion: PersonSuggestion): void => {
+    setPerson(suggestion.label); // show the friendly name in the field
+    // Keep the machine id only when the suggestion already carries one; otherwise resolve it at run time.
+    setResolvedQueryValue(suggestion.isMachineId ? suggestion.queryValue : null);
     setAreSuggestionsOpen(false);
   };
 
@@ -544,10 +590,17 @@ export function PersonalFlowTab(): React.JSX.Element {
     setTeamRows([]); // a fresh single-person run clears the team comparison so the two views never collide
     setTeamError(null);
     try {
+      // Resolve the person to a machine id BEFORE querying — Jira rejects a display name for the assignee
+      // field. A picked suggestion may already carry one; free-typed text is looked up here.
+      const queryValue = resolvedQueryValue ?? await resolvePersonQueryValue(trimmedPerson);
+      if (queryValue === null) {
+        setError(`No Jira user matches "${trimmedPerson}". Pick a name from the suggestions.`);
+        return;
+      }
       const statuses = await jiraGet<RawStatus[]>('/rest/api/2/status');
       const statusCategoryByStatusId = buildStatusCategoryMap(Array.isArray(statuses) ? statuses : []);
-      const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(buildSearchPath(trimmedPerson, windowDays));
-      const issues = (searchResponse.issues ?? []).map((issue) => toPersonalFlowIssue(issue, trimmedPerson));
+      const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(buildSearchPath(queryValue, windowDays));
+      const issues = (searchResponse.issues ?? []).map((issue) => toPersonalFlowIssue(issue, queryValue));
       // The clock read is fine here (the pure engine takes today as an argument, staying deterministic).
       const todayIso = new Date().toISOString().slice(0, 10);
       setResult(computePersonalFlow({ issues, statusCategoryByStatusId, windowDays, todayIso }));

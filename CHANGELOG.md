@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Reports Hub — Personal Flow: "value does not exist for the field 'assignee'" (400)**: the report was querying Jira with the person's **display name** (e.g. `Somagutta, Bhargavi (CTR)`), which Jira's assignee field cannot resolve, so runs failed for both Jira-picked and roster-picked people. It now resolves the person to a **machine identifier** (Server username / Cloud accountId) before querying — via the picked suggestion's id, the roster member's `jiraAccountId`, or a Jira user lookup for free-typed names — and queries `assignee WAS "<id>"`. If no Jira user matches, it shows a clear "No Jira user matches…" message instead of a raw 400. *(feature 016)*
+
 ### Changed
 - **Reports Hub — Personal Flow: hands-on, reassignment-aware cycle time**: cycle time now credits only the **working time (Mon–Fri) an issue spent in an In-Progress status *while assigned to the selected person***, reconstructed from the changelog's status **and assignee** history. Work she advanced and then handed off (e.g. reassigned to an external tester) is credited to her for exactly the days she held it; time the ticket sat with someone else never is. The report now pulls **every issue she was ever assigned to** (`assignee WAS`), so handed-off work — not just tickets she personally closed — is counted, dated by when her segment ended. Throughput/story-point rates stay calendar-based (per day/week/2 weeks). Story points now read from **`customfield_10236`**. The per-issue table shows "Hands-on (days)" and "Last active"; cards read "Issues Advanced" / "Story Points". *(feature 016)*
 
