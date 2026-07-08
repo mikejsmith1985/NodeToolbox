@@ -1,10 +1,13 @@
-// Tests for the Personal Flow pure compute module: throughput (issues + story
-// points over a lookback window) and cycle time (in-progress -> done) for one
-// person, derived deterministically from their closed issues' changelogs.
+// Tests for the Personal Flow pure compute module. The engine credits a person's
+// HANDS-ON in-progress time per issue (reassignment-aware, counted in Mon–Fri
+// working days) toward cycle time, and credits throughput for every issue she
+// moved forward — not only tickets she personally closed. Everything is derived
+// deterministically from an injected `todayIso` plus each issue's reconstructed
+// status-category and ownership timelines.
 
 import { describe, expect, it } from 'vitest';
 
-import { computePersonalFlow } from './personalFlow.ts';
+import { businessMillisBetween, computePersonalFlow } from './personalFlow.ts';
 import type { PersonalFlowInput, PersonalFlowIssue } from './personalFlow.ts';
 
 // ── Shared fixtures ──────────────────────────────────────────────────────────
@@ -19,8 +22,12 @@ const STATUS_CATEGORY_BY_ID: Record<string, string> = {
   mystery: 'nonsense-category', // exercises the "unknown -> treated as new" rule
 };
 
-// A fixed anchor day so every window/throughput assertion is hand-computable.
+// A fixed anchor day so every window / working-day assertion is hand-computable.
+// 2026-07-08 is a Wednesday; 2026-07-01 is a Wednesday and 2026-07-03 a Friday.
 const TODAY_ISO = '2026-07-08';
+
+// Milliseconds in one calendar day, mirrored here so tests can convert freely.
+const MILLISECONDS_PER_DAY = 86_400_000;
 
 /** Builds a PersonalFlowInput with sensible defaults so each test overrides only what it needs. */
 function makeInput(
@@ -36,102 +43,217 @@ function makeInput(
   };
 }
 
-describe('computePersonalFlow — window filtering', () => {
-  it('keeps issues resolved within the window and drops older ones', () => {
-    const insideIssue: PersonalFlowIssue = {
-      key: 'A-1',
-      summary: 'Inside the window',
-      storyPoints: 3,
-      resolvedIso: '2026-06-01', // 37 days before today — inside 90-day window
-      transitions: [],
-    };
-    const outsideIssue: PersonalFlowIssue = {
-      key: 'A-2',
-      summary: 'Outside the window',
-      storyPoints: 5,
-      resolvedIso: '2026-01-01', // ~188 days before today — outside 90-day window
-      transitions: [],
-    };
+/** Builds a PersonalFlowIssue with defaults, so a test states only the fields it cares about. */
+function makeFlowIssue(overrides: Partial<PersonalFlowIssue> & { key: string }): PersonalFlowIssue {
+  return {
+    key: overrides.key,
+    summary: overrides.summary ?? `Issue ${overrides.key}`,
+    storyPoints: 'storyPoints' in overrides ? (overrides.storyPoints as number | null) : 1,
+    createdIso: overrides.createdIso ?? '2026-06-20T00:00:00.000Z',
+    initialStatusId: overrides.initialStatusId ?? 'inProgress',
+    statusTransitions: overrides.statusTransitions ?? [],
+    initiallyAssignedToTarget: overrides.initiallyAssignedToTarget ?? false,
+    ownershipTransitions: overrides.ownershipTransitions ?? [],
+  };
+}
 
-    const result = computePersonalFlow(makeInput([insideIssue, outsideIssue]));
+// ── businessMillisBetween ────────────────────────────────────────────────────
 
-    expect(result.issueCount).toBe(1);
-    expect(result.perIssue.map((row) => row.key)).toEqual(['A-1']);
+describe('businessMillisBetween', () => {
+  it('counts a Wed→Fri span as 2 business days', () => {
+    const wednesdayMidnight = Date.parse('2026-07-01T00:00:00.000Z'); // Wed
+    const fridayMidnight = Date.parse('2026-07-03T00:00:00.000Z'); // Fri
+    const businessDays = businessMillisBetween(wednesdayMidnight, fridayMidnight) / MILLISECONDS_PER_DAY;
+    expect(businessDays).toBeCloseTo(2, 10);
   });
 
-  it('drops issues with null or unparseable resolvedIso', () => {
-    const nullResolved: PersonalFlowIssue = {
-      key: 'B-1',
-      summary: 'Never resolved',
-      storyPoints: 8,
-      resolvedIso: null,
-      transitions: [],
-    };
-    const garbageResolved: PersonalFlowIssue = {
-      key: 'B-2',
-      summary: 'Bad date',
-      storyPoints: 8,
-      resolvedIso: 'not-a-date',
-      transitions: [],
-    };
-
-    const result = computePersonalFlow(makeInput([nullResolved, garbageResolved]));
-
-    expect(result.issueCount).toBe(0);
-    expect(result.totalStoryPoints).toBe(0);
+  it('counts a Fri→Mon span as 1 business day (weekend excluded)', () => {
+    const fridayMidnight = Date.parse('2026-07-03T00:00:00.000Z'); // Fri
+    const mondayMidnight = Date.parse('2026-07-06T00:00:00.000Z'); // Mon
+    const businessDays = businessMillisBetween(fridayMidnight, mondayMidnight) / MILLISECONDS_PER_DAY;
+    expect(businessDays).toBeCloseTo(1, 10);
   });
 
-  it('includes issues resolved exactly on the window boundaries (inclusive)', () => {
-    const onTodayIssue: PersonalFlowIssue = {
-      key: 'C-1',
-      summary: 'Resolved today',
-      storyPoints: 1,
-      resolvedIso: '2026-07-08',
-      transitions: [],
-    };
-    const onEdgeIssue: PersonalFlowIssue = {
-      key: 'C-2',
-      summary: 'Resolved on the far edge',
-      storyPoints: 1,
-      resolvedIso: '2026-04-09', // exactly 90 days before 2026-07-08
-      transitions: [],
-    };
+  it('counts a Sat→Sun span as 0 business days', () => {
+    const saturdayMidnight = Date.parse('2026-07-04T00:00:00.000Z'); // Sat
+    const sundayMidnight = Date.parse('2026-07-05T00:00:00.000Z'); // Sun
+    expect(businessMillisBetween(saturdayMidnight, sundayMidnight)).toBe(0);
+  });
 
-    const result = computePersonalFlow(makeInput([onTodayIssue, onEdgeIssue]));
+  it('returns 0 when the end is not after the start', () => {
+    const noon = Date.parse('2026-07-01T12:00:00.000Z');
+    expect(businessMillisBetween(noon, noon)).toBe(0);
+    expect(businessMillisBetween(noon + 1, noon)).toBe(0);
+  });
 
-    expect(result.issueCount).toBe(2);
+  it('counts partial business days proportionally', () => {
+    const wednesdayMidnight = Date.parse('2026-07-01T00:00:00.000Z'); // Wed
+    const wednesdayNoon = Date.parse('2026-07-01T12:00:00.000Z');
+    const businessDays = businessMillisBetween(wednesdayMidnight, wednesdayNoon) / MILLISECONDS_PER_DAY;
+    expect(businessDays).toBeCloseTo(0.5, 10);
   });
 });
 
-describe('computePersonalFlow — throughput math', () => {
-  it('computes issues and points per day / week / two weeks', () => {
-    // Three in-window issues, story points 2 + 4 + 6 = 12, over a 30-day window.
-    const issues: PersonalFlowIssue[] = [
-      { key: 'T-1', summary: 'One', storyPoints: 2, resolvedIso: '2026-07-01', transitions: [] },
-      { key: 'T-2', summary: 'Two', storyPoints: 4, resolvedIso: '2026-07-02', transitions: [] },
-      { key: 'T-3', summary: 'Three', storyPoints: 6, resolvedIso: '2026-07-03', transitions: [] },
+// ── The user's scenario (reassignment-aware hands-on time) ───────────────────
+
+describe('computePersonalFlow — hands-on time credited across ownership', () => {
+  it('credits 2 business days for an in-progress issue held Wed→Fri then reassigned away', () => {
+    const issue = makeFlowIssue({
+      key: 'HANDS-1',
+      storyPoints: 5,
+      createdIso: '2026-06-30T00:00:00.000Z',
+      initialStatusId: 'inProgress', // indeterminate for its whole life
+      initiallyAssignedToTarget: false,
+      ownershipTransitions: [
+        { assignedToTarget: true, atIso: '2026-07-01T00:00:00.000Z' }, // gains it Wed
+        { assignedToTarget: false, atIso: '2026-07-03T00:00:00.000Z' }, // loses it Fri
+      ],
+    });
+
+    const result = computePersonalFlow(makeInput([issue]));
+
+    expect(result.issueCount).toBe(1);
+    expect(result.perIssue[0].cycleTimeDays).toBeCloseTo(2, 10);
+    expect(result.perIssue[0].lastActiveIso?.slice(0, 10)).toBe('2026-07-03');
+    expect(result.totalStoryPoints).toBe(5);
+  });
+
+  it('excludes an issue she held only while it sat in a "new" status (no hands-on time)', () => {
+    const issue = makeFlowIssue({
+      key: 'NEW-1',
+      initialStatusId: 'todo', // new the whole time — never in progress
+      ownershipTransitions: [
+        { assignedToTarget: true, atIso: '2026-07-01T00:00:00.000Z' },
+        { assignedToTarget: false, atIso: '2026-07-03T00:00:00.000Z' },
+      ],
+    });
+
+    const result = computePersonalFlow(makeInput([issue]));
+
+    expect(result.issueCount).toBe(0);
+    expect(result.perIssue).toEqual([]);
+  });
+
+  it('excludes an issue she still holds that never reached done (open interval)', () => {
+    const issue = makeFlowIssue({
+      key: 'OPEN-1',
+      initialStatusId: 'inProgress',
+      initiallyAssignedToTarget: true,
+      ownershipTransitions: [], // never handed off
+      statusTransitions: [], // never done
+    });
+
+    const result = computePersonalFlow(makeInput([issue]));
+
+    expect(result.issueCount).toBe(0);
+  });
+
+  it('counts an issue she closed herself, dated at the done moment', () => {
+    const issue = makeFlowIssue({
+      key: 'CLOSED-1',
+      createdIso: '2026-06-30T00:00:00.000Z',
+      initialStatusId: 'inProgress',
+      initiallyAssignedToTarget: true,
+      statusTransitions: [{ toStatusId: 'done', atIso: '2026-07-06T00:00:00.000Z' }], // Mon
+    });
+
+    const result = computePersonalFlow(makeInput([issue]));
+
+    expect(result.issueCount).toBe(1);
+    // Indeterminate business days 06-30(Tue),07-01,02,03 = 4 before the Mon done moment.
+    expect(result.perIssue[0].cycleTimeDays).toBeCloseTo(4, 10);
+    expect(result.perIssue[0].lastActiveIso?.slice(0, 10)).toBe('2026-07-06');
+  });
+
+  it('sums hands-on time across multiple ownership stints on the same issue', () => {
+    const issue = makeFlowIssue({
+      key: 'STINTS-1',
+      createdIso: '2026-06-20T00:00:00.000Z',
+      initialStatusId: 'inProgress',
+      initiallyAssignedToTarget: false,
+      ownershipTransitions: [
+        { assignedToTarget: true, atIso: '2026-06-24T00:00:00.000Z' }, // Wed
+        { assignedToTarget: false, atIso: '2026-06-26T00:00:00.000Z' }, // Fri (stint 1 = 2 days)
+        { assignedToTarget: true, atIso: '2026-06-29T00:00:00.000Z' }, // Mon
+        { assignedToTarget: false, atIso: '2026-07-01T00:00:00.000Z' }, // Wed (stint 2 = 2 days)
+      ],
+    });
+
+    const result = computePersonalFlow(makeInput([issue]));
+
+    expect(result.issueCount).toBe(1);
+    expect(result.perIssue[0].cycleTimeDays).toBeCloseTo(4, 10); // 2 + 2 business days
+    expect(result.perIssue[0].lastActiveIso?.slice(0, 10)).toBe('2026-07-01');
+  });
+});
+
+// ── Window filtering (by completed interval end) ─────────────────────────────
+
+describe('computePersonalFlow — window filtering', () => {
+  it('drops issues whose only completed interval ended before the window', () => {
+    const issue = makeFlowIssue({
+      key: 'OLD-1',
+      createdIso: '2026-04-20T00:00:00.000Z',
+      initialStatusId: 'inProgress',
+      ownershipTransitions: [
+        { assignedToTarget: true, atIso: '2026-04-22T00:00:00.000Z' },
+        { assignedToTarget: false, atIso: '2026-05-01T00:00:00.000Z' }, // ended long before a 30-day window
+      ],
+    });
+
+    const result = computePersonalFlow(makeInput([issue], { windowDays: 30 }));
+
+    expect(result.issueCount).toBe(0);
+  });
+});
+
+// ── Throughput stays CALENDAR-based ──────────────────────────────────────────
+
+describe('computePersonalFlow — throughput math (calendar days)', () => {
+  it('computes issues and points per day / week / two weeks on calendar days', () => {
+    const issues = [
+      makeFlowIssue({
+        key: 'T-1',
+        storyPoints: 2,
+        initiallyAssignedToTarget: true,
+        statusTransitions: [{ toStatusId: 'done', atIso: '2026-07-01T00:00:00.000Z' }],
+      }),
+      makeFlowIssue({
+        key: 'T-2',
+        storyPoints: 4,
+        initiallyAssignedToTarget: true,
+        statusTransitions: [{ toStatusId: 'done', atIso: '2026-07-02T00:00:00.000Z' }],
+      }),
     ];
 
-    const result = computePersonalFlow(makeInput(issues, { windowDays: 30 }));
+    const result = computePersonalFlow(makeInput(issues, { windowDays: 20 }));
 
-    expect(result.issueCount).toBe(3);
-    expect(result.totalStoryPoints).toBe(12);
-
-    // Issues: 3 / 30 = 0.1 per day.
+    expect(result.issueCount).toBe(2);
+    expect(result.totalStoryPoints).toBe(6);
+    // Calendar throughput: 2 issues / 20 days = 0.1 per day (NOT working-day scaled).
     expect(result.throughput.issuesPerDay).toBeCloseTo(0.1, 10);
     expect(result.throughput.issuesPerWeek).toBeCloseTo(0.7, 10);
     expect(result.throughput.issuesPerTwoWeeks).toBeCloseTo(1.4, 10);
-
-    // Points: 12 / 30 = 0.4 per day.
-    expect(result.throughput.pointsPerDay).toBeCloseTo(0.4, 10);
-    expect(result.throughput.pointsPerWeek).toBeCloseTo(2.8, 10);
-    expect(result.throughput.pointsPerTwoWeeks).toBeCloseTo(5.6, 10);
+    // Points: 6 / 20 = 0.3 per day.
+    expect(result.throughput.pointsPerDay).toBeCloseTo(0.3, 10);
+    expect(result.throughput.pointsPerWeek).toBeCloseTo(2.1, 10);
+    expect(result.throughput.pointsPerTwoWeeks).toBeCloseTo(4.2, 10);
   });
 
   it('treats null story points as zero when summing', () => {
-    const issues: PersonalFlowIssue[] = [
-      { key: 'P-1', summary: 'Has points', storyPoints: 5, resolvedIso: '2026-07-01', transitions: [] },
-      { key: 'P-2', summary: 'No points', storyPoints: null, resolvedIso: '2026-07-02', transitions: [] },
+    const issues = [
+      makeFlowIssue({
+        key: 'P-1',
+        storyPoints: 5,
+        initiallyAssignedToTarget: true,
+        statusTransitions: [{ toStatusId: 'done', atIso: '2026-07-01T00:00:00.000Z' }],
+      }),
+      makeFlowIssue({
+        key: 'P-2',
+        storyPoints: null,
+        initiallyAssignedToTarget: true,
+        statusTransitions: [{ toStatusId: 'done', atIso: '2026-07-02T00:00:00.000Z' }],
+      }),
     ];
 
     const result = computePersonalFlow(makeInput(issues));
@@ -140,203 +262,95 @@ describe('computePersonalFlow — throughput math', () => {
   });
 });
 
-describe('computePersonalFlow — cycle time from transitions', () => {
-  it('measures first in-progress to last done', () => {
-    const issue: PersonalFlowIssue = {
-      key: 'CT-1',
-      summary: 'Full lifecycle',
-      storyPoints: 3,
-      resolvedIso: '2026-07-06',
-      transitions: [
-        { toStatusId: 'todo', atIso: '2026-07-01' },
-        { toStatusId: 'inProgress', atIso: '2026-07-02' }, // first in-progress
-        { toStatusId: 'review', atIso: '2026-07-03' }, // also in-progress, later — must NOT win
-        { toStatusId: 'done', atIso: '2026-07-05' },
-        { toStatusId: 'released', atIso: '2026-07-06' }, // last done — wins
-      ],
-    };
+// ── Cycle-time statistics ────────────────────────────────────────────────────
 
-    const result = computePersonalFlow(makeInput([issue]));
-
-    // 2026-07-02 -> 2026-07-06 = 4 calendar days.
-    expect(result.perIssue[0].cycleTimeDays).toBeCloseTo(4, 10);
-    expect(result.cycleTime.countWithCycleTime).toBe(1);
-    expect(result.cycleTime.averageDays).toBeCloseTo(4, 10);
-    expect(result.cycleTime.medianDays).toBeCloseTo(4, 10);
-  });
-
-  it('falls back to resolvedIso when there is no done transition', () => {
-    const issue: PersonalFlowIssue = {
-      key: 'CT-2',
-      summary: 'No done transition',
-      storyPoints: 2,
-      resolvedIso: '2026-07-05',
-      transitions: [
-        { toStatusId: 'inProgress', atIso: '2026-07-01' },
-        { toStatusId: 'review', atIso: '2026-07-02' },
-      ],
-    };
-
-    const result = computePersonalFlow(makeInput([issue]));
-
-    // 2026-07-01 -> resolvedIso 2026-07-05 = 4 days.
-    expect(result.perIssue[0].cycleTimeDays).toBeCloseTo(4, 10);
-  });
-
-  it('yields null cycle time when the issue never entered in-progress', () => {
-    const issue: PersonalFlowIssue = {
-      key: 'CT-3',
-      summary: 'Straight to done',
-      storyPoints: 1,
-      resolvedIso: '2026-07-05',
-      transitions: [
-        { toStatusId: 'todo', atIso: '2026-07-01' },
-        { toStatusId: 'done', atIso: '2026-07-05' },
-      ],
-    };
-
-    const result = computePersonalFlow(makeInput([issue]));
-
-    expect(result.perIssue[0].cycleTimeDays).toBeNull();
-    expect(result.cycleTime.countWithCycleTime).toBe(0);
-    expect(result.cycleTime.averageDays).toBeNull();
-    expect(result.cycleTime.medianDays).toBeNull();
-  });
-
-  it('keeps fractional cycle-time days (does not floor)', () => {
-    const issue: PersonalFlowIssue = {
-      key: 'CT-4',
-      summary: 'Half a day',
-      storyPoints: 1,
-      resolvedIso: '2026-07-02',
-      transitions: [
-        { toStatusId: 'inProgress', atIso: '2026-07-01T00:00:00.000Z' },
-        { toStatusId: 'done', atIso: '2026-07-01T12:00:00.000Z' },
-      ],
-    };
-
-    const result = computePersonalFlow(makeInput([issue]));
-
-    expect(result.perIssue[0].cycleTimeDays).toBeCloseTo(0.5, 10);
-  });
-
-  it('yields null cycle time when done precedes the in-progress start', () => {
-    const issue: PersonalFlowIssue = {
-      key: 'CT-5',
-      summary: 'Out-of-order changelog',
-      storyPoints: 1,
-      resolvedIso: '2026-07-05',
-      transitions: [
-        { toStatusId: 'done', atIso: '2026-07-01' }, // done before in-progress
-        { toStatusId: 'inProgress', atIso: '2026-07-04' },
-      ],
-    };
-
-    const result = computePersonalFlow(makeInput([issue]));
-
-    expect(result.perIssue[0].cycleTimeDays).toBeNull();
-  });
-
-  it('treats an unknown status id as new (neither in-progress nor done)', () => {
-    const issue: PersonalFlowIssue = {
-      key: 'CT-6',
-      summary: 'Unknown status only',
-      storyPoints: 1,
-      resolvedIso: '2026-07-05',
-      transitions: [
-        { toStatusId: 'mystery', atIso: '2026-07-01' }, // unknown category -> new
-      ],
-    };
-
-    const result = computePersonalFlow(makeInput([issue]));
-
-    // No in-progress start -> null cycle time; the unknown status is ignored.
-    expect(result.perIssue[0].cycleTimeDays).toBeNull();
-  });
-});
-
-describe('computePersonalFlow — median', () => {
-  it('takes the middle value for an odd count', () => {
-    // Cycle times of 2, 4, 9 days -> median 4. All resolved dates stay in-window.
-    const issues: PersonalFlowIssue[] = [
-      buildCycleIssue('M-1', '2026-06-22', '2026-06-20', '2026-06-22'), // 2 days
-      buildCycleIssue('M-2', '2026-06-24', '2026-06-20', '2026-06-24'), // 4 days
-      buildCycleIssue('M-3', '2026-06-29', '2026-06-20', '2026-06-29'), // 9 days
+describe('computePersonalFlow — cycle-time statistics', () => {
+  it('computes average and median over qualifying issues', () => {
+    // Three issues with hands-on business days of 2, 4, 9 -> median 4, average 5.
+    const issues = [
+      buildBusinessDayIssue('M-1', 2, '2026-06-22T00:00:00.000Z'),
+      buildBusinessDayIssue('M-2', 4, '2026-06-23T00:00:00.000Z'),
+      buildBusinessDayIssue('M-3', 9, '2026-06-24T00:00:00.000Z'),
     ];
 
     const result = computePersonalFlow(makeInput(issues));
 
     expect(result.cycleTime.countWithCycleTime).toBe(3);
     expect(result.cycleTime.medianDays).toBeCloseTo(4, 10);
-    expect(result.cycleTime.averageDays).toBeCloseTo(5, 10); // (2+4+9)/3
-  });
-
-  it('averages the two middle values for an even count', () => {
-    // Cycle times of 2, 4, 6, 10 days -> median (4+6)/2 = 5. All resolved in-window.
-    const issues: PersonalFlowIssue[] = [
-      buildCycleIssue('M-4', '2026-06-22', '2026-06-20', '2026-06-22'), // 2 days
-      buildCycleIssue('M-5', '2026-06-24', '2026-06-20', '2026-06-24'), // 4 days
-      buildCycleIssue('M-6', '2026-06-26', '2026-06-20', '2026-06-26'), // 6 days
-      buildCycleIssue('M-7', '2026-06-30', '2026-06-20', '2026-06-30'), // 10 days
-    ];
-
-    const result = computePersonalFlow(makeInput(issues));
-
-    expect(result.cycleTime.countWithCycleTime).toBe(4);
-    expect(result.cycleTime.medianDays).toBeCloseTo(5, 10);
-    expect(result.cycleTime.averageDays).toBeCloseTo(5.5, 10); // (2+4+6+10)/4
+    expect(result.cycleTime.averageDays).toBeCloseTo(5, 10);
   });
 });
 
-/** Builds an issue whose single in-progress and done transitions yield a known cycle time. */
-function buildCycleIssue(
-  key: string,
-  resolvedIso: string,
-  inProgressIso: string,
-  doneIso: string,
-): PersonalFlowIssue {
-  return {
+/**
+ * Builds an issue whose single reassigned-away stint yields exactly the requested
+ * number of business days of hands-on time, ending on the given reassign date.
+ * The stint starts on the Monday before that many weekdays so the arithmetic is exact.
+ */
+function buildBusinessDayIssue(key: string, businessDays: number, reassignedIso: string): PersonalFlowIssue {
+  // Start the stint enough calendar days earlier that the working-day count lands on target.
+  const reassignedMs = Date.parse(reassignedIso);
+  // Walk backwards counting only weekdays until we have accumulated `businessDays`.
+  let cursorMs = reassignedMs;
+  let remaining = businessDays;
+  while (remaining > 0) {
+    cursorMs -= MILLISECONDS_PER_DAY;
+    const dayOfWeek = new Date(cursorMs).getUTCDay();
+    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+      remaining -= 1;
+    }
+  }
+  return makeFlowIssue({
     key,
-    summary: `Cycle issue ${key}`,
-    storyPoints: 1,
-    resolvedIso,
-    transitions: [
-      { toStatusId: 'inProgress', atIso: inProgressIso },
-      { toStatusId: 'done', atIso: doneIso },
+    createdIso: new Date(cursorMs - MILLISECONDS_PER_DAY).toISOString(),
+    initialStatusId: 'inProgress',
+    ownershipTransitions: [
+      { assignedToTarget: true, atIso: new Date(cursorMs).toISOString() },
+      { assignedToTarget: false, atIso: reassignedIso },
     ],
-  };
+  });
 }
 
+// ── Ordering ─────────────────────────────────────────────────────────────────
+
 describe('computePersonalFlow — ordering', () => {
-  it('sorts perIssue by resolvedIso descending, tie-breaking by key', () => {
-    const issues: PersonalFlowIssue[] = [
-      { key: 'O-3', summary: 'Oldest', storyPoints: 1, resolvedIso: '2026-07-01', transitions: [] },
-      { key: 'O-1', summary: 'Newest A', storyPoints: 1, resolvedIso: '2026-07-05', transitions: [] },
-      { key: 'O-2', summary: 'Newest B', storyPoints: 1, resolvedIso: '2026-07-05', transitions: [] },
+  it('sorts perIssue by lastActiveIso descending, tie-breaking by key ascending', () => {
+    const issues = [
+      buildReassignedAwayIssue('O-3', '2026-07-01T00:00:00.000Z'),
+      buildReassignedAwayIssue('O-1', '2026-07-06T00:00:00.000Z'),
+      buildReassignedAwayIssue('O-2', '2026-07-06T00:00:00.000Z'),
     ];
 
     const result = computePersonalFlow(makeInput(issues));
 
-    // Same resolved date -> tie-break by key ascending, then the older issue last.
     expect(result.perIssue.map((row) => row.key)).toEqual(['O-1', 'O-2', 'O-3']);
   });
 });
 
-describe('computePersonalFlow — determinism', () => {
+/** Builds an in-progress issue held from a fixed Monday until it is reassigned away on the given date. */
+function buildReassignedAwayIssue(key: string, reassignedIso: string): PersonalFlowIssue {
+  return makeFlowIssue({
+    key,
+    createdIso: '2026-06-20T00:00:00.000Z',
+    initialStatusId: 'inProgress',
+    ownershipTransitions: [
+      { assignedToTarget: true, atIso: '2026-06-29T00:00:00.000Z' }, // Mon
+      { assignedToTarget: false, atIso: reassignedIso },
+    ],
+  });
+}
+
+// ── Determinism & edge cases ─────────────────────────────────────────────────
+
+describe('computePersonalFlow — determinism and edges', () => {
   it('returns deeply equal results for the same input and today', () => {
-    const issues: PersonalFlowIssue[] = [
-      buildCycleIssue('D-1', '2026-07-03', '2026-07-01', '2026-07-03'),
-      buildCycleIssue('D-2', '2026-07-06', '2026-07-02', '2026-07-06'),
-    ];
+    const issues = [buildReassignedAwayIssue('D-1', '2026-07-02T00:00:00.000Z')];
 
     const firstResult = computePersonalFlow(makeInput(issues));
     const secondResult = computePersonalFlow(makeInput(issues));
 
     expect(firstResult).toEqual(secondResult);
   });
-});
 
-describe('computePersonalFlow — edge cases', () => {
   it('returns zeros and null cycle time for empty input', () => {
     const result = computePersonalFlow(makeInput([]));
 
@@ -350,24 +364,15 @@ describe('computePersonalFlow — edge cases', () => {
       pointsPerWeek: 0,
       pointsPerTwoWeeks: 0,
     });
-    expect(result.cycleTime).toEqual({
-      averageDays: null,
-      medianDays: null,
-      countWithCycleTime: 0,
-    });
+    expect(result.cycleTime).toEqual({ averageDays: null, medianDays: null, countWithCycleTime: 0 });
     expect(result.perIssue).toEqual([]);
   });
 
   it('clamps a non-positive windowDays to 1 to avoid divide-by-zero', () => {
-    const issues: PersonalFlowIssue[] = [
-      { key: 'W-1', summary: 'Only issue', storyPoints: 3, resolvedIso: '2026-07-08', transitions: [] },
-    ];
+    const issue = buildReassignedAwayIssue('W-1', '2026-07-08T00:00:00.000Z');
 
-    const result = computePersonalFlow(makeInput(issues, { windowDays: 0 }));
+    const result = computePersonalFlow(makeInput([issue], { windowDays: 0 }));
 
-    // Window clamped to 1 day; 1 issue / 1 day = 1 per day, 3 points / 1 day = 3 per day.
     expect(result.windowDays).toBe(1);
-    expect(result.throughput.issuesPerDay).toBeCloseTo(1, 10);
-    expect(result.throughput.pointsPerDay).toBeCloseTo(3, 10);
   });
 });

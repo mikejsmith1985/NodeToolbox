@@ -1,7 +1,8 @@
 // PersonalFlowTab.test.tsx — Verifies the Personal Flow tab wires the pure compute
-// core to Jira: it fetches statuses + a person's closed issues, renders throughput
-// and cycle-time cards plus a per-issue row, guards an empty person, and surfaces
-// fetch failures as an alert. The metric math itself is covered by personalFlow.test.ts.
+// core to Jira: it fetches statuses + every issue a person was assigned to, maps the
+// changelog into status + ownership timelines, renders throughput and hands-on
+// cycle-time cards plus a per-issue row, guards an empty person, and surfaces fetch
+// failures as an alert. The metric math itself is covered by personalFlow.test.ts.
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,40 +29,58 @@ const STATUSES = [
   { id: '5', statusCategory: { key: 'done' } },
 ];
 
-/** Two closed issues, each moving into in-progress (id 3) then done (id 5), with story points. */
-function buildSearchResponse() {
+/**
+ * Two issues the given person owned and finished: each is assigned to her on 2026-06-30 (moving into
+ * in-progress, id 3), then reaches done (id 5). The assignee changelog carries the person's name in
+ * both the machine (`to`) and display (`toString`) fields so ownership resolves regardless of form.
+ */
+function buildSearchResponseFor(person: string) {
+  const assignedInProgress = {
+    created: '2026-06-30T00:00:00.000Z',
+    items: [
+      { field: 'assignee', from: null, fromString: null, to: person, toString: person },
+      { field: 'status', from: '1', fromString: null, to: '3', toString: null },
+    ],
+  };
   return {
     issues: [
       {
         key: 'TBX-1',
         fields: {
           summary: 'Build login page',
-          resolutiondate: '2026-07-05T12:00:00.000Z',
-          customfield_10028: 5,
+          created: '2026-06-29T00:00:00.000Z',
+          resolutiondate: '2026-07-03T00:00:00.000Z',
+          status: { id: '5' },
+          assignee: { displayName: person, name: person },
+          customfield_10236: 5,
         },
         changelog: {
-          histories: [
-            { created: '2026-07-01T09:00:00.000Z', items: [{ field: 'status', to: '3' }] },
-            { created: '2026-07-05T12:00:00.000Z', items: [{ field: 'status', to: '5' }] },
-          ],
+          histories: [assignedInProgress, { created: '2026-07-03T00:00:00.000Z', items: [{ field: 'status', from: '3', fromString: null, to: '5', toString: null }] }],
         },
       },
       {
         key: 'TBX-2',
         fields: {
           summary: 'Fix logout defect',
-          resolutiondate: '2026-07-06T12:00:00.000Z',
+          created: '2026-06-29T00:00:00.000Z',
+          resolutiondate: '2026-07-06T00:00:00.000Z',
+          status: { id: '5' },
+          assignee: { displayName: person, name: person },
           customfield_10016: 3,
         },
         changelog: {
-          histories: [
-            { created: '2026-07-03T09:00:00.000Z', items: [{ field: 'status', to: '3' }] },
-            { created: '2026-07-06T12:00:00.000Z', items: [{ field: 'status', to: '5' }] },
-          ],
+          histories: [assignedInProgress, { created: '2026-07-06T00:00:00.000Z', items: [{ field: 'status', from: '3', fromString: null, to: '5', toString: null }] }],
         },
       },
     ],
   };
+}
+
+/** Returns the search response for whichever person the JQL `assignee WAS "…"` clause names. */
+function searchResponseForPath(path: string) {
+  const decoded = decodeURIComponent(path);
+  if (decoded.includes('John QA')) return buildSearchResponseFor('John QA');
+  return buildSearchResponseFor('Jane Dev');
 }
 
 /** Reads the value rendered next to a stat-card label (label and value are sibling elements). */
@@ -125,7 +144,7 @@ describe('PersonalFlowTab', () => {
   it('fetches, computes, and renders throughput/cycle-time cards and per-issue rows', async () => {
     mockJiraGet.mockImplementation((path: string) => {
       if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
-      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(buildSearchResponse());
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
       return Promise.reject(new Error(`unexpected path ${path}`));
     });
 
@@ -146,17 +165,17 @@ describe('PersonalFlowTab', () => {
     expect(screen.getByText('Issues / Week')).toBeInTheDocument();
     expect(screen.getByText('Points / Week')).toBeInTheDocument();
     expect(screen.getByText('Avg Cycle Time (days)')).toBeInTheDocument();
-    expect(readStatCardValue('Issues Closed')).toBe('2');
+    expect(readStatCardValue('Issues Advanced')).toBe('2');
+    expect(readStatCardValue('Story Points')).toBe('8'); // 5 + 3 story points
     expect(readStatCardValue('Issues With Cycle Time')).toBe('2 of 2');
 
-    // The request used the person, window, and Done filter in the JQL.
+    // The request used the reassignment-aware `assignee WAS`, the window, and expanded the changelog.
     const searchCall = mockJiraGet.mock.calls.find(([path]) =>
       String(path).includes('/rest/api/2/search'),
     );
     const decodedSearch = decodeURIComponent(String(searchCall?.[0]));
-    expect(decodedSearch).toContain('assignee = "Jane Dev"');
-    expect(decodedSearch).toContain('statusCategory = Done');
-    expect(decodedSearch).toContain('resolved >= -60d');
+    expect(decodedSearch).toContain('assignee WAS "Jane Dev"');
+    expect(decodedSearch).toContain('updated >= -60d');
     expect(decodedSearch).toContain('expand=changelog');
   });
 
@@ -202,7 +221,7 @@ describe('PersonalFlowTab', () => {
     mockJiraGet.mockImplementation((path: string) => {
       if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
       if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve([]);
-      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(buildSearchResponse());
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
       return Promise.reject(new Error(`unexpected path ${path}`));
     });
 
@@ -215,18 +234,18 @@ describe('PersonalFlowTab', () => {
 
     // Columns: Person | Issues | Points | Issues/Wk | Points/Wk | Avg Cycle | Median Cycle.
     const janeCells = readTeamRowCells('Jane Dev');
-    expect(janeCells[1]).toBe('2'); // two closed issues in the search response
+    expect(janeCells[1]).toBe('2'); // two advanced issues in the search response
     expect(janeCells[2]).toBe('8'); // 5 + 3 story points
     const johnCells = readTeamRowCells('John QA');
     expect(johnCells[1]).toBe('2');
     expect(johnCells[2]).toBe('8');
 
-    // Each member was searched with their own assignee value.
+    // Each member was searched with their own assignee value via `assignee WAS`.
     const searchedAssignees = mockJiraGet.mock.calls
       .map(([path]) => decodeURIComponent(String(path)))
       .filter((path) => path.includes('/rest/api/2/search'));
-    expect(searchedAssignees.some((path) => path.includes('assignee = "Jane Dev"'))).toBe(true);
-    expect(searchedAssignees.some((path) => path.includes('assignee = "John QA"'))).toBe(true);
+    expect(searchedAssignees.some((path) => path.includes('assignee WAS "Jane Dev"'))).toBe(true);
+    expect(searchedAssignees.some((path) => path.includes('assignee WAS "John QA"'))).toBe(true);
   });
 
   it('records a per-person error row without aborting the whole team run', async () => {
@@ -240,7 +259,7 @@ describe('PersonalFlowTab', () => {
       if (path.includes('John%20QA') || path.includes('John QA')) {
         return Promise.reject(new Error('Jira GET search failed: 500'));
       }
-      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(buildSearchResponse());
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
       return Promise.reject(new Error(`unexpected path ${path}`));
     });
 
