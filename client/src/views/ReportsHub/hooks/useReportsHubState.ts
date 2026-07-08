@@ -52,6 +52,7 @@ export type ReportsHubTab =
   | 'scopeChange'
   | 'featureChange'
   | 'hygiene'
+  | 'personalFlow'
 
 /** A single ART team configuration loaded from localStorage. */
 export interface ArtTeamConfig {
