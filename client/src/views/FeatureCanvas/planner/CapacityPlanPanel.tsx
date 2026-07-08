@@ -203,6 +203,9 @@ export function CapacityPlanPanel({
 }: CapacityPlanPanelProps): React.JSX.Element {
   const [ingestText, setIngestText] = useState('');
   const [ingestMessage, setIngestMessage] = useState<string | null>(null);
+  // Whether the write-back may also propose new assignees. Off by default so the operator opts in
+  // deliberately before any reassignment can be staged — reassignments are the riskier write.
+  const [includeReassignments, setIncludeReassignments] = useState(false);
   const [includedBuckets, setIncludedBuckets] = useState<Set<IncludableBucket>>(
     () => new Set(DEFAULT_INCLUDED_BUCKETS),
   );
@@ -296,7 +299,7 @@ export function CapacityPlanPanel({
    * Nothing reaches Jira here — the operator commits via Review & Commit. Reports what applied and skipped.
    */
   const handleApplyIngest = (): void => {
-    const parsed = parsePlanIngest(ingestText, { validSprintNames, allowAssignee: false });
+    const parsed = parsePlanIngest(ingestText, { validSprintNames, allowAssignee: includeReassignments });
     const { placements, unknownIssueKeys } = resolveIngestPlacements(parsed.assignments, canvasNodes);
 
     // Reuse an existing sprint box by name; otherwise create a provisional one (committed later).
@@ -319,6 +322,7 @@ export function CapacityPlanPanel({
       return container.id;
     };
 
+    let stagedReassignments = 0;
     for (const placement of placements) {
       const containerId = ensureSprintBox(placement.sprint);
       if (placement.storyKey !== null) {
@@ -326,9 +330,16 @@ export function CapacityPlanPanel({
       } else {
         controller.setContainer(placement.featureKey, containerId);
       }
+      // Stage a proposed reassignee onto the target (the story, or the feature itself when childless).
+      // It is only ever written to Jira through Review & Commit, where unknown users are skipped.
+      if (placement.assignee !== undefined && placement.assignee !== '') {
+        const targetKey = placement.storyKey ?? placement.featureKey;
+        controller.setStoryAssignee(placement.featureKey, targetKey, placement.assignee);
+        stagedReassignments += 1;
+      }
     }
 
-    const messageParts = [`Applied ${placements.length} placement(s)${createdBoxes > 0 ? ` · created ${createdBoxes} sprint box(es)` : ''}.`];
+    const messageParts = [`Applied ${placements.length} placement(s)${createdBoxes > 0 ? ` · created ${createdBoxes} sprint box(es)` : ''}${stagedReassignments > 0 ? ` · staged ${stagedReassignments} reassignment(s)` : ''}.`];
     if (unknownIssueKeys.length > 0) {
       messageParts.push(`Skipped ${unknownIssueKeys.length} not on the canvas: ${unknownIssueKeys.slice(0, 6).join(', ')}${unknownIssueKeys.length > 6 ? '…' : ''}.`);
     }
@@ -485,10 +496,19 @@ export function CapacityPlanPanel({
           <p style={{ margin: '2px 0 6px', fontSize: 11, opacity: 0.75 }}>
             Once you and Copilot agree the plan, copy the translate prompt into that same chat, then paste Copilot’s JSON reply below and apply it to the canvas. You then write it to Jira from Review &amp; Commit.
           </p>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, margin: '2px 0 6px' }}>
+            <input
+              type="checkbox"
+              aria-label="Include reassignments (writes assignees)"
+              checked={includeReassignments}
+              onChange={() => setIncludeReassignments((current) => !current)}
+            />
+            Include reassignments (writes assignees)
+          </label>
           <button
             type="button"
             className={controlStyles.btn}
-            onClick={() => copyToClipboard(buildTranslatePrompt(validSprintNames, rosterNames, { allowAssignee: false }))}
+            onClick={() => copyToClipboard(buildTranslatePrompt(validSprintNames, rosterNames, { allowAssignee: includeReassignments }))}
           >
             📤 Copy translate prompt
           </button>

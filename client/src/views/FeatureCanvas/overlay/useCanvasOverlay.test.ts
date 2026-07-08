@@ -272,6 +272,18 @@ describe('useCanvasOverlay', () => {
       expect(result.current.overlay.nodes['DENP-1'].storyPlacements).toEqual({});
     });
 
+    it('setStoryAssignee stages and clears a per-target proposed reassignee (round-trip)', () => {
+      const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
+      act(() => result.current.ensureNodeStates([createNodeState('DENP-1', 0, 0)]));
+
+      act(() => result.current.setStoryAssignee('DENP-1', 'DENP-2', 'Jane Doe'));
+      expect(result.current.overlay.nodes['DENP-1'].storyAssignees).toEqual({ 'DENP-2': 'Jane Doe' });
+
+      // null clears the proposal so nothing is staged for that target.
+      act(() => result.current.setStoryAssignee('DENP-1', 'DENP-2', null));
+      expect(result.current.overlay.nodes['DENP-1'].storyAssignees).toEqual({});
+    });
+
     it('relayoutBoxes tidies boxes into two columns sized to their cards', () => {
       const { result } = renderHook(() => useCanvasOverlay('team-a', 'denp:pi-1'));
       // Explicit ids so the two boxes never collide (createProvisionalContainer keys off Date.now()).

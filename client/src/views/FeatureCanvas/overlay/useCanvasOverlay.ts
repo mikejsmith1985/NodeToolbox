@@ -98,6 +98,8 @@ export interface CanvasOverlayController {
   relayoutBoxes: () => void;
   /** Places one child story into a box (null clears the override → inherit the feature's box). */
   setStoryPlacement: (issueKey: string, storyKey: string, containerId: string | null) => void;
+  /** Stages a proposed reassignee for one target (story or feature); null clears the proposal. */
+  setStoryAssignee: (issueKey: string, storyKey: string, assignee: string | null) => void;
   /** Applies a computed sprint balance (per-story placements; null sprint → Over Capacity) in one step. */
   autoBalanceSprints: (assignments: readonly StoryPlacementAssignment[]) => void;
   goToStage: (stageId: StageId) => void;
@@ -497,6 +499,25 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     });
   }, [mutate]);
 
+  // Stages a proposed reassignee for one target (a child story, or the feature's own key when childless).
+  // `assignee` null removes the proposal. Overlay-only — the reassignment is written to Jira only through
+  // the reviewed Review & Commit diff, so an unwanted proposal can always be dropped before it reaches Jira.
+  const setStoryAssignee = useCallback((issueKey: string, storyKey: string, assignee: string | null) => {
+    mutate((previous) => {
+      const node = previous.nodes[issueKey];
+      if (!node) {
+        return previous;
+      }
+      const assignees = { ...(node.storyAssignees ?? {}) };
+      if (assignee === null) {
+        delete assignees[storyKey];
+      } else {
+        assignees[storyKey] = assignee;
+      }
+      return { ...previous, nodes: { ...previous.nodes, [issueKey]: { ...node, storyAssignees: assignees } } };
+    });
+  }, [mutate]);
+
   const goToStage = useCallback((stageId: StageId) => {
     mutate((previous) => ({ ...previous, stageState: { ...previous.stageState, currentStageId: stageId } }));
   }, [mutate]);
@@ -540,9 +561,9 @@ export function useCanvasOverlay(profileId: string, scopeKey: string): CanvasOve
     () => ({
       overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize,
       setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes,
-      assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, relayoutBoxes, setStoryPlacement, autoBalanceSprints, goToStage, completeStage,
+      assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, relayoutBoxes, setStoryPlacement, setStoryAssignee, autoBalanceSprints, goToStage, completeStage,
       undo, redo, canUndo, canRedo,
     }),
-    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, relayoutBoxes, setStoryPlacement, autoBalanceSprints, goToStage, completeStage, undo, redo, canUndo, canRedo],
+    [overlay, ensureNodeStates, updateNode, setWipLimit, setPriority, setSize, setContainer, setParked, addContainer, updateContainer, removeContainer, removeNode, clearNodes, assignToContainer, parkNode, unparkNode, completeNode, moveContainer, applyMasterPlan, relayoutBoxes, setStoryPlacement, setStoryAssignee, autoBalanceSprints, goToStage, completeStage, undo, redo, canUndo, canRedo],
   );
 }

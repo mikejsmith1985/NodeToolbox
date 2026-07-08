@@ -142,6 +142,46 @@ function buildParkCommentItem(node: CanvasNode): CommitDiffItem | null {
   };
 }
 
+/**
+ * Builds one assigneeSet item per target whose staged reassignment differs from its live owner.
+ * Targets are the feature's child-story keys (Jira assigns owners at the story level), or the feature's
+ * own key when it has no children. A proposal is emitted only when it is a non-empty display name that
+ * differs from the live assignee, so an unchanged owner never produces a spurious write. The name→id
+ * lookup (and the skip of any unknown user) happens later at commit time — never here.
+ */
+function buildAssigneeItems(node: CanvasNode): CommitDiffItem[] {
+  const hasChildStories = node.childStories.length > 0;
+  const targetKeys = hasChildStories ? node.childStories.map((story) => story.key) : [node.issueKey];
+  const liveAssigneeByKey = new Map<string, string | null>();
+  if (hasChildStories) {
+    for (const story of node.childStories) {
+      liveAssigneeByKey.set(story.key, story.assignee ?? null);
+    }
+  } else {
+    liveAssigneeByKey.set(node.issueKey, node.assignee);
+  }
+
+  const items: CommitDiffItem[] = [];
+  for (const targetKey of targetKeys) {
+    const proposedAssignee = node.storyAssignees[targetKey];
+    const liveAssignee = liveAssigneeByKey.get(targetKey) ?? null;
+    if (typeof proposedAssignee !== 'string' || proposedAssignee === '' || proposedAssignee === (liveAssignee ?? '')) {
+      continue;
+    }
+    items.push({
+      id: `assigneeSet:${targetKey}`,
+      kind: 'assigneeSet',
+      issueKey: targetKey,
+      containerId: null,
+      from: liveAssignee,
+      to: proposedAssignee,
+      dependsOn: null,
+      selected: true,
+    });
+  }
+  return items;
+}
+
 /** Builds a priority write only when the user opted into a MoSCoW→Jira priority mapping. */
 function buildPriorityItem(node: CanvasNode, options: CommitDiffOptions): CommitDiffItem | null {
   if (node.priority === null || !options.priorityToJira) {
@@ -195,6 +235,7 @@ export function buildCommitDiff(
     if (priorityItem) {
       assignmentItems.push(priorityItem);
     }
+    assignmentItems.push(...buildAssigneeItems(node));
     const parkCommentItem = buildParkCommentItem(node);
     if (parkCommentItem) {
       assignmentItems.push(parkCommentItem);

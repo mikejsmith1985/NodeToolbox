@@ -22,6 +22,9 @@ export interface CommitContext {
   containers: readonly CanvasContainer[];
   boardId: number | null;
   projectKey: string;
+  /** Maps a proposed assignee's display/query name → its Jira user id, so a reassignment can be written.
+   *  A name absent from this map is an unknown user and its reassignment is SKIPPED, never mis-assigned. */
+  assigneeIdByName?: Record<string, string>;
 }
 
 /** Resolved real ids for a container after Phase A. */
@@ -77,6 +80,7 @@ async function reconcileContainers(
 async function executeAssignment(
   item: CommitDiffItem,
   resolved: Map<string, ResolvedContainer>,
+  context: CommitContext,
 ): Promise<CommitResult> {
   const container = item.containerId ? resolved.get(item.containerId) : undefined;
   if (item.dependsOn && container?.createFailed) {
@@ -91,6 +95,14 @@ async function executeAssignment(
       await saveFeatureReviewStoryPoints(item.issueKey, String(item.to));
     } else if (item.kind === 'prioritySet' && item.issueKey) {
       await jiraPut(`/rest/api/2/issue/${item.issueKey}`, { fields: { priority: { name: String(item.to) } } });
+    } else if (item.kind === 'assigneeSet' && item.issueKey) {
+      // Resolve the proposed display/query name to a real Jira user id. An unknown name is SKIPPED so a
+      // reassignment can never land on the wrong person — the safety guarantee for this whole feature.
+      const userId = context.assigneeIdByName?.[String(item.to)];
+      if (!userId) {
+        return { itemId: item.id, status: 'skipped', message: `No Jira user id for "${item.to}" — reassignment skipped.` };
+      }
+      await jiraPut(`/rest/api/2/issue/${item.issueKey}`, { fields: { assignee: { name: userId } } });
     } else if (item.kind === 'parkComment' && item.issueKey) {
       await jiraPost(`/rest/api/2/issue/${item.issueKey}/comment`, { body: `Parked on Feature Canvas: ${String(item.to)}` });
     } else if (item.kind === 'comment' && item.issueKey) {
@@ -117,7 +129,7 @@ export async function commitToJira(diff: readonly CommitDiffItem[], context: Com
     if (item.kind === 'createSprint' || item.kind === 'createVersion') {
       continue;
     }
-    results.push(await executeAssignment(item, resolved));
+    results.push(await executeAssignment(item, resolved, context));
   }
   return results;
 }

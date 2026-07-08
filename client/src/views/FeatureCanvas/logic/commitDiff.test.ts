@@ -11,7 +11,7 @@ function buildNode(overrides: Partial<CanvasNode> = {}): CanvasNode {
     issueKey: 'DENP-1', position: { x: 0, y: 0 }, size: null, priority: null, containerId: null,
     isExpanded: false, isParked: false, summary: '', status: '', statusCategoryKey: 'new',
     assignee: null, storyPoints: null, health: 'green', completionPercent: 0, hygieneFlags: [],
-    childStories: [], dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null, storyPlacements: {}, pendingComment: "", attachments: [], effectivePoints: 0, ...overrides,
+    childStories: [], dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null, storyPlacements: {}, storyAssignees: {}, pendingComment: "", attachments: [], effectivePoints: 0, ...overrides,
   };
 }
 
@@ -144,5 +144,49 @@ describe('buildCommitDiff', () => {
     expect(buildCommitDiff([node], [])).toHaveLength(0);
     const mapped = buildCommitDiff([node], [], { priorityToJira: { Must: 'Highest' } });
     expect(mapped.filter((item) => item.kind === 'prioritySet')[0].to).toBe('Highest');
+  });
+
+  describe('assigneeSet (reassignment write-back)', () => {
+    it('emits one assigneeSet per child story whose proposed owner differs from its live owner', () => {
+      const feature = buildNode({
+        issueKey: 'DENP-1',
+        childStories: [
+          { key: 'DENP-2', summary: '', status: '', statusCategoryKey: null, storyPoints: null, assignee: 'Old Owner' },
+          { key: 'DENP-3', summary: '', status: '', statusCategoryKey: null, storyPoints: null, assignee: 'Stable Owner' },
+        ],
+        // DENP-2 is reassigned; DENP-3's proposal equals its live owner so it must NOT produce a write.
+        storyAssignees: { 'DENP-2': 'New Owner', 'DENP-3': 'Stable Owner' },
+      });
+      const assigneeItems = buildCommitDiff([feature], []).filter((item) => item.kind === 'assigneeSet');
+      expect(assigneeItems).toHaveLength(1);
+      expect(assigneeItems[0]).toMatchObject({ id: 'assigneeSet:DENP-2', issueKey: 'DENP-2', from: 'Old Owner', to: 'New Owner' });
+    });
+
+    it('reassigns a childless feature at the feature level, keyed by the feature key', () => {
+      const feature = buildNode({ issueKey: 'DENP-9', assignee: 'Ada', childStories: [], storyAssignees: { 'DENP-9': 'Grace' } });
+      const assigneeItems = buildCommitDiff([feature], []).filter((item) => item.kind === 'assigneeSet');
+      expect(assigneeItems).toHaveLength(1);
+      expect(assigneeItems[0]).toMatchObject({ issueKey: 'DENP-9', from: 'Ada', to: 'Grace' });
+    });
+
+    it('emits nothing when there is no staged proposal, or the proposal is empty', () => {
+      const noneStaged = buildNode({ issueKey: 'DENP-1', assignee: 'Ada' });
+      const emptyStaged = buildNode({ issueKey: 'DENP-2', assignee: 'Ada', storyAssignees: { 'DENP-2': '' } });
+      const diff = buildCommitDiff([noneStaged, emptyStaged], []);
+      expect(diff.some((item) => item.kind === 'assigneeSet')).toBe(false);
+    });
+
+    it('treats a proposal equal to an absent live owner (both empty) as no change', () => {
+      // Live owner is null (unassigned); proposing an empty string is not a real change.
+      const feature = buildNode({ issueKey: 'DENP-1', assignee: null, storyAssignees: { 'DENP-1': '' } });
+      expect(buildCommitDiff([feature], []).some((item) => item.kind === 'assigneeSet')).toBe(false);
+    });
+
+    it('emits an assigneeSet against a previously-unassigned feature (live owner null)', () => {
+      const feature = buildNode({ issueKey: 'DENP-1', assignee: null, storyAssignees: { 'DENP-1': 'New Owner' } });
+      const assigneeItems = buildCommitDiff([feature], []).filter((item) => item.kind === 'assigneeSet');
+      expect(assigneeItems).toHaveLength(1);
+      expect(assigneeItems[0]).toMatchObject({ from: null, to: 'New Owner' });
+    });
   });
 });

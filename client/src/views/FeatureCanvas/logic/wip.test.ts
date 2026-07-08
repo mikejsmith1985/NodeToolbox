@@ -28,7 +28,7 @@ function buildNode(overrides: Partial<CanvasNode>): CanvasNode {
     description: null,
     acceptanceCriteria: null,
     parkReason: null,
-    storyPlacements: {}, pendingComment: "",
+    storyPlacements: {}, storyAssignees: {}, pendingComment: "",
     attachments: [],
     effectivePoints: 0,
     ...overrides,

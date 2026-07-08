@@ -9,7 +9,7 @@ import { buildTranslatePrompt, parsePlanIngest, resolveIngestPlacements } from '
 function buildNode(issueKey: string, childKeys: string[]): CanvasNode {
   return {
     issueKey, position: { x: 0, y: 0 }, size: null, priority: null, containerId: null,
-    isExpanded: false, isParked: false, parkReason: null, storyPlacements: {}, pendingComment: '',
+    isExpanded: false, isParked: false, parkReason: null, storyPlacements: {}, storyAssignees: {}, pendingComment: '',
     summary: issueKey, status: 'To Do', statusCategoryKey: 'new', assignee: null, storyPoints: null,
     businessValue: null, description: null, acceptanceCriteria: null, health: 'green', completionPercent: 0,
     hygieneFlags: [], dependencies: [], attachments: [], effectivePoints: 0,
@@ -261,5 +261,24 @@ describe('resolveIngestPlacements', () => {
     );
     expect(placements).toEqual([]);
     expect(unknownIssueKeys).toEqual(['GHOST-9']);
+  });
+
+  it('carries a proposed assignee onto a story-level placement', () => {
+    const { placements } = resolveIngestPlacements(
+      [{ issueKey: 'DENP-11', sprint: '26.3.4', assignee: 'Jane Doe' }], nodes,
+    );
+    expect(placements).toEqual([{ featureKey: 'DENP-1', storyKey: 'DENP-11', sprint: '26.3.4', assignee: 'Jane Doe' }]);
+  });
+
+  it('carries a proposed assignee onto a feature-level placement', () => {
+    const { placements } = resolveIngestPlacements(
+      [{ issueKey: 'DENP-2', sprint: '26.4.1', assignee: 'Alan Turing' }], nodes,
+    );
+    expect(placements).toEqual([{ featureKey: 'DENP-2', storyKey: null, sprint: '26.4.1', assignee: 'Alan Turing' }]);
+  });
+
+  it('leaves assignee undefined when the assignment carries none', () => {
+    const { placements } = resolveIngestPlacements([{ issueKey: 'DENP-11', sprint: '26.3.4' }], nodes);
+    expect(placements[0].assignee).toBeUndefined();
   });
 });
