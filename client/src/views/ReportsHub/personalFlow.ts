@@ -139,6 +139,11 @@ export interface PersonalFlowResult {
   cycleTime: PersonalFlowCycleTime;
   perIssue: PersonalFlowIssueMetric[]; // one row per CREDITED issue, most-recently-active first
   excludedIssues: PersonalFlowExcludedIssue[]; // fetched issues that were not credited, in fetch order, with why
+  // Diagnostic partition of the SAME credited hands-on time, split by the individual in-progress status id it
+  // was spent in (statusId -> hands-on DAYS), aggregated across all credited issues. It reveals WHERE the
+  // hands-on days land — e.g. how much sat in a queue-like "Ready to Work" status versus a real "Working" one.
+  // It only partitions the existing total: the sum of its values equals the sum of the credited cycle-time days.
+  handsOnDaysByStatusId: Record<string, number>;
 }
 
 // ── Internal types ───────────────────────────────────────────────────────────
@@ -160,6 +165,9 @@ interface OwnershipInterval {
 interface CompletedContribution {
   endMs: number;
   handsOnDays: number;
+  // The same hands-on time as `handsOnDays`, but kept in milliseconds and split by the in-progress status id
+  // it was spent in — so the credited total can be partitioned by status without re-deriving it.
+  handsOnMillisByStatusId: Record<string, number>;
 }
 
 /**
@@ -168,7 +176,13 @@ interface CompletedContribution {
  * and the audit list of what was dropped and why — without a second, duplicate evaluation pass.
  */
 type IssueEvaluation =
-  | { readonly kind: 'credited'; readonly metric: PersonalFlowIssueMetric }
+  | {
+      readonly kind: 'credited';
+      readonly metric: PersonalFlowIssueMetric;
+      // The credited hands-on time (milliseconds) split by in-progress status id, so the aggregate can
+      // partition the grand total by status. Not surfaced on the per-issue row — it feeds the summary only.
+      readonly handsOnMillisByStatusId: Record<string, number>;
+    }
   | { readonly kind: 'excluded'; readonly reason: PersonalFlowExclusionReason };
 
 // ── Public entry point ───────────────────────────────────────────────────────
@@ -186,7 +200,7 @@ export function computePersonalFlow(input: PersonalFlowInput): PersonalFlowResul
   const todayMs = Date.parse(input.todayIso);
   const windowStartMs = todayMs - effectiveWindowDays * MILLISECONDS_PER_DAY;
 
-  const { perIssue, excludedIssues } = buildIssueBreakdown(
+  const { perIssue, excludedIssues, handsOnDaysByStatusId } = buildIssueBreakdown(
     input.issues,
     input.statusCategoryByStatusId,
     windowStartMs,
@@ -203,6 +217,7 @@ export function computePersonalFlow(input: PersonalFlowInput): PersonalFlowResul
     cycleTime: buildCycleTimeStats(perIssue),
     perIssue,
     excludedIssues,
+    handsOnDaysByStatusId,
   };
 }
 
@@ -256,19 +271,29 @@ function buildIssueBreakdown(
   statusCategoryByStatusId: Readonly<Record<string, string>>,
   windowStartMs: number,
   todayMs: number,
-): { perIssue: PersonalFlowIssueMetric[]; excludedIssues: PersonalFlowExcludedIssue[] } {
+): {
+  perIssue: PersonalFlowIssueMetric[];
+  excludedIssues: PersonalFlowExcludedIssue[];
+  handsOnDaysByStatusId: Record<string, number>;
+} {
   const perIssue: PersonalFlowIssueMetric[] = [];
   const excludedIssues: PersonalFlowExcludedIssue[] = [];
+  const totalHandsOnMillisByStatusId: Record<string, number> = {};
   for (const issue of issues) {
     const evaluation = evaluateIssue(issue, statusCategoryByStatusId, windowStartMs, todayMs);
     if (evaluation.kind === 'credited') {
       perIssue.push(evaluation.metric);
+      addMillisByStatusId(totalHandsOnMillisByStatusId, evaluation.handsOnMillisByStatusId);
     } else {
       excludedIssues.push({ key: issue.key, summary: issue.summary, reason: evaluation.reason });
     }
   }
   perIssue.sort(compareByLastActiveThenKey);
-  return { perIssue, excludedIssues };
+  return {
+    perIssue,
+    excludedIssues,
+    handsOnDaysByStatusId: convertMillisByStatusIdToDays(totalHandsOnMillisByStatusId),
+  };
 }
 
 /**
@@ -285,12 +310,14 @@ function evaluateIssue(
   todayMs: number,
 ): IssueEvaluation {
   const originMs = resolveOriginMs(issue, todayMs);
-  const categorySegments = buildCategorySegments(issue, statusCategoryByStatusId, originMs, todayMs);
+  const statusIdSegments = buildStatusIdSegments(issue, originMs, todayMs);
   const ownershipIntervals = buildOwnershipIntervals(issue, originMs, todayMs);
   if (ownershipIntervals.length === 0) return { kind: 'excluded', reason: 'not-owned' };
 
   const doneTimesMs = collectDoneTimesMs(issue, statusCategoryByStatusId);
-  const contributions = collectCompletedContributions(ownershipIntervals, categorySegments, doneTimesMs, todayMs);
+  const contributions = collectCompletedContributions(
+    ownershipIntervals, statusIdSegments, statusCategoryByStatusId, doneTimesMs, todayMs,
+  );
   if (contributions.length === 0) return { kind: 'excluded', reason: 'wip-open' };
 
   const inWindow = contributions.filter((one) => one.endMs >= windowStartMs && one.endMs <= todayMs);
@@ -312,6 +339,7 @@ function evaluateIssue(
       cycleTimeDays,
       lastActiveIso: new Date(lastActiveMs).toISOString(),
     },
+    handsOnMillisByStatusId: sumContributionMillisByStatusId(inWindow),
   };
 }
 
@@ -334,21 +362,24 @@ function resolveOriginMs(issue: PersonalFlowIssue, todayMs: number): number {
 
 // ── Timeline reconstruction ──────────────────────────────────────────────────
 
-/** Builds the issue's status-category segments from its initial status and later status changes. */
-function buildCategorySegments(
+/**
+ * Builds the issue's status-id segments from its initial status and later status changes. Each segment
+ * carries the raw status id it held over that span (null = created with no recorded status); a segment's
+ * category is derived on demand via `categoryFor`, so the one timeline serves both the category-based
+ * accounting and the per-status hands-on breakdown without a second reconstruction pass.
+ */
+function buildStatusIdSegments(
   issue: PersonalFlowIssue,
-  statusCategoryByStatusId: Readonly<Record<string, string>>,
   originMs: number,
   todayMs: number,
-): StateSegment<string>[] {
-  const initialCategory = categoryFor(issue.initialStatusId, statusCategoryByStatusId);
+): StateSegment<string | null>[] {
   const changePoints = issue.statusTransitions
     .map((transition) => ({
       atMs: parseIsoOrNull(transition.atIso),
-      value: categoryFor(transition.toStatusId, statusCategoryByStatusId),
+      value: transition.toStatusId as string | null,
     }))
-    .filter((point): point is { atMs: number; value: string } => point.atMs !== null);
-  return buildStateSegments(originMs, initialCategory, changePoints, todayMs);
+    .filter((point): point is { atMs: number; value: string | null } => point.atMs !== null);
+  return buildStateSegments(originMs, issue.initialStatusId, changePoints, todayMs);
 }
 
 /** Builds the maximal spans during which the issue was assigned to the target person. */
@@ -409,13 +440,16 @@ function buildStateSegments<TValue>(
 /** Evaluates every ownership interval into a completed contribution, dropping the still-open ones. */
 function collectCompletedContributions(
   intervals: readonly OwnershipInterval[],
-  categorySegments: readonly StateSegment<string>[],
+  statusIdSegments: readonly StateSegment<string | null>[],
+  statusCategoryByStatusId: Readonly<Record<string, string>>,
   doneTimesMs: readonly number[],
   todayMs: number,
 ): CompletedContribution[] {
   const contributions: CompletedContribution[] = [];
   for (const interval of intervals) {
-    const contribution = evaluateInterval(interval, categorySegments, doneTimesMs, todayMs);
+    const contribution = evaluateInterval(
+      interval, statusIdSegments, statusCategoryByStatusId, doneTimesMs, todayMs,
+    );
     if (contribution !== null) contributions.push(contribution);
   }
   return contributions;
@@ -429,7 +463,8 @@ function collectCompletedContributions(
  */
 function evaluateInterval(
   interval: OwnershipInterval,
-  categorySegments: readonly StateSegment<string>[],
+  statusIdSegments: readonly StateSegment<string | null>[],
+  statusCategoryByStatusId: Readonly<Record<string, string>>,
   doneTimesMs: readonly number[],
   todayMs: number,
 ): CompletedContribution | null {
@@ -438,13 +473,16 @@ function evaluateInterval(
   if (firstDoneMs === null && !wasReassignedAway) return null;
 
   const endMs = pickEarliestEnd(firstDoneMs, wasReassignedAway ? interval.endMs : null);
-  const handsOnMs = businessMillisInCategory(
-    categorySegments,
+  // Split the Mon–Fri in-progress time over the ownership interval by status id; the total hands-on time
+  // is just the sum of that split, so the credited cycle time and its per-status breakdown always agree.
+  const handsOnMillisByStatusId = inProgressBusinessMillisByStatusId(
+    statusIdSegments,
     interval.startMs,
     interval.endMs,
-    STATUS_CATEGORY_IN_PROGRESS,
+    statusCategoryByStatusId,
   );
-  return { endMs, handsOnDays: handsOnMs / MILLISECONDS_PER_DAY };
+  const handsOnMs = sumRecordValues(handsOnMillisByStatusId);
+  return { endMs, handsOnDays: handsOnMs / MILLISECONDS_PER_DAY, handsOnMillisByStatusId };
 }
 
 /** Returns the earliest done timestamp that falls inside the interval, or null when none do. */
@@ -462,23 +500,60 @@ function pickEarliestEnd(firstCandidate: number | null, secondCandidate: number 
   return Math.min(firstCandidate, secondCandidate);
 }
 
-/** Sums the Mon–Fri milliseconds the category-timeline spent in the given category within a range. */
-function businessMillisInCategory(
-  categorySegments: readonly StateSegment<string>[],
+/**
+ * Splits the Mon–Fri business milliseconds spent in an IN-PROGRESS status within [rangeStart, rangeEnd] by
+ * the individual status id (statusId -> milliseconds). Only statuses whose category is 'indeterminate' are
+ * counted, so the summed values equal the total in-progress business time for the same range — this
+ * partitions the hands-on time by status without changing it.
+ */
+function inProgressBusinessMillisByStatusId(
+  statusIdSegments: readonly StateSegment<string | null>[],
   rangeStartMs: number,
   rangeEndMs: number,
-  category: string,
-): number {
-  let total = 0;
-  for (const segment of categorySegments) {
-    if (segment.value !== category) continue;
+  statusCategoryByStatusId: Readonly<Record<string, string>>,
+): Record<string, number> {
+  const millisByStatusId: Record<string, number> = {};
+  for (const segment of statusIdSegments) {
+    const statusId = segment.value;
+    // A null status id can never be 'indeterminate' (it maps to 'new'); skip it so the key is always real.
+    if (statusId === null) continue;
+    if (categoryFor(statusId, statusCategoryByStatusId) !== STATUS_CATEGORY_IN_PROGRESS) continue;
     const overlapStartMs = Math.max(segment.startMs, rangeStartMs);
     const overlapEndMs = Math.min(segment.endMs, rangeEndMs);
-    if (overlapEndMs > overlapStartMs) {
-      total += businessMillisBetween(overlapStartMs, overlapEndMs);
-    }
+    if (overlapEndMs <= overlapStartMs) continue;
+    millisByStatusId[statusId] = (millisByStatusId[statusId] ?? 0) + businessMillisBetween(overlapStartMs, overlapEndMs);
   }
-  return total;
+  return millisByStatusId;
+}
+
+/** Merges each contribution's per-status hands-on milliseconds into one map for a single issue. */
+function sumContributionMillisByStatusId(contributions: readonly CompletedContribution[]): Record<string, number> {
+  const millisByStatusId: Record<string, number> = {};
+  for (const contribution of contributions) {
+    addMillisByStatusId(millisByStatusId, contribution.handsOnMillisByStatusId);
+  }
+  return millisByStatusId;
+}
+
+/** Adds every statusId -> milliseconds entry from `source` into the running `target` map, in place. */
+function addMillisByStatusId(target: Record<string, number>, source: Readonly<Record<string, number>>): void {
+  for (const [statusId, millis] of Object.entries(source)) {
+    target[statusId] = (target[statusId] ?? 0) + millis;
+  }
+}
+
+/** Converts a statusId -> milliseconds map into a statusId -> DAYS map (milliseconds / one calendar day). */
+function convertMillisByStatusIdToDays(millisByStatusId: Readonly<Record<string, number>>): Record<string, number> {
+  const daysByStatusId: Record<string, number> = {};
+  for (const [statusId, millis] of Object.entries(millisByStatusId)) {
+    daysByStatusId[statusId] = millis / MILLISECONDS_PER_DAY;
+  }
+  return daysByStatusId;
+}
+
+/** Sums the numeric values of a statusId -> number map (used to total a per-status millisecond split). */
+function sumRecordValues(record: Readonly<Record<string, number>>): number {
+  return Object.values(record).reduce((runningTotal, value) => runningTotal + value, 0);
 }
 
 /** Collects, ascending, the timestamps at which the issue transitioned into a done-category status. */

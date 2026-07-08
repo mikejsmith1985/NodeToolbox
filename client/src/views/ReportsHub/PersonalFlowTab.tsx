@@ -50,7 +50,7 @@ const WINDOW_OPTIONS: readonly { value: number; label: string }[] = [
 
 // ── Jira response shapes (only the fields this report reads) ──
 
-interface RawStatus { id?: string; statusCategory?: { key?: string } }
+interface RawStatus { id?: string; name?: string; statusCategory?: { key?: string } }
 interface RawAssignee { displayName?: string; name?: string; key?: string; accountId?: string }
 // A changelog item's `from`/`to` carry the account id (Cloud) or username (Server); the *String variants
 // carry the display name. `toString`/`fromString` may be absent, so they are read defensively as unknown.
@@ -77,6 +77,17 @@ function buildStatusCategoryMap(statuses: readonly RawStatus[]): Record<string, 
     }
   }
   return statusCategoryByStatusId;
+}
+
+/** Builds the statusId → human status name map, so the per-status hands-on breakdown reads as names, not ids. */
+function buildStatusNameMap(statuses: readonly RawStatus[]): Record<string, string> {
+  const statusNameByStatusId: Record<string, string> = {};
+  for (const status of statuses) {
+    if (typeof status.id === 'string' && typeof status.name === 'string') {
+      statusNameByStatusId[status.id] = status.name;
+    }
+  }
+  return statusNameByStatusId;
 }
 
 /** Reads the first numeric story-points value across the known custom fields, or null when none is set. */
@@ -494,8 +505,75 @@ function IssueAuditSection({ result }: { result: PersonalFlowResult }): React.JS
   );
 }
 
+/** One row of the hands-on-by-status breakdown: the human status name (or a fallback) and its day total. */
+interface HandsOnStatusRow {
+  statusId: string;
+  statusLabel: string;
+  days: number;
+}
+
+/**
+ * Turns the engine's statusId → hands-on-days map into display rows: drops zero-day statuses, resolves each
+ * id to its human status name (falling back to the raw id when the instance did not report a name), and
+ * sorts the biggest bucket first so the dominant status reads at the top.
+ */
+function buildHandsOnStatusRows(
+  handsOnDaysByStatusId: Readonly<Record<string, number>>,
+  statusNameById: Readonly<Record<string, string>>,
+): HandsOnStatusRow[] {
+  return Object.entries(handsOnDaysByStatusId)
+    .filter(([, days]) => days > 0)
+    .map(([statusId, days]) => ({ statusId, statusLabel: statusNameById[statusId] ?? statusId, days }))
+    .sort((first, second) => second.days - first.days);
+}
+
+/**
+ * A diagnostic section under the single-person result: it partitions the SAME credited hands-on days by the
+ * individual status each day was spent in. It reveals WHERE the hands-on time concentrated — a large queue-y
+ * "Ready to Work" bucket flags time that inflates cycle time without being real working time. It reports the
+ * exact same total as the credited cycle time, so it explains that number rather than changing it.
+ */
+function HandsOnByStatusSection({
+  result,
+  statusNameById,
+}: {
+  result: PersonalFlowResult;
+  statusNameById: Readonly<Record<string, string>>;
+}): React.JSX.Element | null {
+  const statusRows = buildHandsOnStatusRows(result.handsOnDaysByStatusId, statusNameById);
+  if (statusRows.length === 0) {
+    return null;
+  }
+  return (
+    <section style={{ marginTop: 16 }}>
+      <h4 style={{ fontSize: 12, opacity: 0.7, fontWeight: 600, margin: '0 0 6px' }}>Hands-on time by status</h4>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <thead>
+          <tr style={{ textAlign: 'left', opacity: 0.6 }}>
+            <th>Status</th><th>Hands-on (days)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {statusRows.map((statusRow) => (
+            <tr key={statusRow.statusId} style={{ borderTop: '1px solid var(--color-border)' }}>
+              <td>{statusRow.statusLabel}</td>
+              <td>{formatNumber(statusRow.days)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
 /** Renders the throughput, cycle-time, and volume cards plus the per-issue breakdown table. */
-function PersonalFlowResultView({ result }: { result: PersonalFlowResult }): React.JSX.Element {
+function PersonalFlowResultView({
+  result,
+  statusNameById,
+}: {
+  result: PersonalFlowResult;
+  statusNameById: Readonly<Record<string, string>>;
+}): React.JSX.Element {
   const { throughput, cycleTime } = result;
   return (
     <div style={{ marginTop: 12 }}>
@@ -535,6 +613,8 @@ function PersonalFlowResultView({ result }: { result: PersonalFlowResult }): Rea
           </tbody>
         </table>
       )}
+
+      <HandsOnByStatusSection result={result} statusNameById={statusNameById} />
 
       <IssueAuditSection result={result} />
     </div>
@@ -624,6 +704,9 @@ export function PersonalFlowTab(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PersonalFlowResult | null>(null);
+  // statusId → human status name, built alongside the category map from /rest/api/2/status, so the
+  // hands-on-by-status breakdown can show friendly names instead of raw numeric status ids.
+  const [statusNameById, setStatusNameById] = useState<Record<string, string>>({});
   const [areSuggestionsOpen, setAreSuggestionsOpen] = useState(false);
   const [jiraUserSuggestions, setJiraUserSuggestions] = useState<RawJiraUser[]>([]);
   // The full identity resolved from a picked suggestion. Null means "resolve at run time" — free-typed
@@ -710,7 +793,9 @@ export function PersonalFlowTab(): React.JSX.Element {
         return;
       }
       const statuses = await jiraGet<RawStatus[]>('/rest/api/2/status');
-      const statusCategoryByStatusId = buildStatusCategoryMap(Array.isArray(statuses) ? statuses : []);
+      const safeStatuses = Array.isArray(statuses) ? statuses : [];
+      const statusCategoryByStatusId = buildStatusCategoryMap(safeStatuses);
+      setStatusNameById(buildStatusNameMap(safeStatuses));
       const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(buildSearchPath(identity.queryValue, windowDays));
       const rawIssues = searchResponse.issues ?? [];
       const issues = rawIssues.map((issue) => toPersonalFlowIssue(issue, identity));
@@ -816,7 +901,7 @@ export function PersonalFlowTab(): React.JSX.Element {
         </p>
       )}
 
-      {result !== null && <PersonalFlowResultView result={result} />}
+      {result !== null && <PersonalFlowResultView result={result} statusNameById={statusNameById} />}
 
       {isTeamLoading && teamRows.length === 0 && (
         <p style={{ marginTop: 12, fontSize: 12, opacity: 0.7 }}>Building the team comparison…</p>

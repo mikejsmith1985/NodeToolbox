@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Reports Hub — Personal Flow: "Hands-on time by status" breakdown**: under a single-person result the report now shows how the credited hands-on days split across the individual statuses they were spent in (real status names, largest first). This makes visible how much of a person's "in progress" time actually sits in queue-like statuses — e.g. a "To Do" or "Ready to Work" status that Jira nonetheless categorizes as in-progress — versus genuine working statuses, so you can judge whether the live status-category basis is accurate enough or whether a finer active-work mapping is worth it. Purely diagnostic: it partitions the existing hands-on total and changes no metric. *(feature 016)*
 - **Reports Hub — Personal Flow: per-issue audit breakdown**: under a single-person result the report now lists **every fetched issue that was NOT credited, with the reason** — "In progress, still assigned (WIP)", "Completed before the window", or "Not matched to this person" — alongside a `Credited N · Excluded M` summary. This makes the numbers fully auditable: you can see exactly why each issue did or didn't count, rather than trusting a single total. *(feature 016)*
 
 ### Fixed
