@@ -457,7 +457,6 @@ function StatCard({ label, value }: { label: string; value: string }): React.JSX
 const EXCLUSION_REASON_LABELS: Record<PersonalFlowExclusionReason, string> = {
   'not-owned': 'Not matched to this person',
   'wip-open': 'In progress, still assigned (WIP)',
-  'no-in-progress-time': 'No in-progress time recorded',
   'completed-out-of-window': 'Completed before the window',
 };
 

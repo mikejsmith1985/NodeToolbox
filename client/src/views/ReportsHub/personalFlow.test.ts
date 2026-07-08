@@ -118,20 +118,43 @@ describe('computePersonalFlow — hands-on time credited across ownership', () =
     expect(result.totalStoryPoints).toBe(5);
   });
 
-  it('excludes an issue she held only while it sat in a "new" status (no hands-on time)', () => {
+  it('credits an issue she completed with no measurable hands-on time, with a null cycle time', () => {
     const issue = makeFlowIssue({
       key: 'NEW-1',
-      initialStatusId: 'todo', // new the whole time — never in progress
+      initialStatusId: 'todo', // new the whole time — never in progress, so zero hands-on time
       ownershipTransitions: [
         { assignedToTarget: true, atIso: '2026-07-01T00:00:00.000Z' },
-        { assignedToTarget: false, atIso: '2026-07-03T00:00:00.000Z' },
+        { assignedToTarget: false, atIso: '2026-07-03T00:00:00.000Z' }, // completed by reassign-away in window
       ],
     });
 
     const result = computePersonalFlow(makeInput([issue]));
 
-    expect(result.issueCount).toBe(0);
-    expect(result.perIssue).toEqual([]);
+    // The completion counts toward throughput even though no in-progress time could be measured.
+    expect(result.issueCount).toBe(1);
+    expect(result.perIssue).toHaveLength(1);
+    expect(result.perIssue[0].cycleTimeDays).toBeNull();
+    // A null cycle time never feeds the duration statistics.
+    expect(result.cycleTime.countWithCycleTime).toBe(0);
+    expect(result.cycleTime.averageDays).toBeNull();
+    expect(result.cycleTime.medianDays).toBeNull();
+  });
+
+  it('credits a done issue moved To-Do → Done under the person with no in-progress phase', () => {
+    const issue = makeFlowIssue({
+      key: 'JUMP-1',
+      createdIso: '2026-06-30T00:00:00.000Z',
+      initialStatusId: 'todo', // never entered an in-progress status
+      initiallyAssignedToTarget: true,
+      statusTransitions: [{ toStatusId: 'done', atIso: '2026-07-06T00:00:00.000Z' }], // To-Do → Done directly
+    });
+
+    const result = computePersonalFlow(makeInput([issue]));
+
+    expect(result.issueCount).toBe(1);
+    expect(result.perIssue[0].cycleTimeDays).toBeNull();
+    expect(result.perIssue[0].lastActiveIso?.slice(0, 10)).toBe('2026-07-06');
+    expect(result.cycleTime.countWithCycleTime).toBe(0);
   });
 
   it('excludes an issue she still holds that never reached done (open interval)', () => {
@@ -279,6 +302,32 @@ describe('computePersonalFlow — cycle-time statistics', () => {
     expect(result.cycleTime.medianDays).toBeCloseTo(4, 10);
     expect(result.cycleTime.averageDays).toBeCloseTo(5, 10);
   });
+
+  it('leaves average and median untouched when a null-cycle completion joins measured issues', () => {
+    // The same 2/4/9 measured issues, plus one completed issue with no measurable hands-on time.
+    const zeroTimeCompletion = makeFlowIssue({
+      key: 'NULLCYCLE-1',
+      initialStatusId: 'todo', // never in progress — zero hands-on, so a null cycle time
+      ownershipTransitions: [
+        { assignedToTarget: true, atIso: '2026-06-22T00:00:00.000Z' },
+        { assignedToTarget: false, atIso: '2026-06-24T00:00:00.000Z' },
+      ],
+    });
+    const issues = [
+      buildBusinessDayIssue('M-1', 2, '2026-06-22T00:00:00.000Z'),
+      buildBusinessDayIssue('M-2', 4, '2026-06-23T00:00:00.000Z'),
+      buildBusinessDayIssue('M-3', 9, '2026-06-24T00:00:00.000Z'),
+      zeroTimeCompletion,
+    ];
+
+    const result = computePersonalFlow(makeInput(issues));
+
+    // The null-cycle issue counts as advanced but does not perturb the duration statistics.
+    expect(result.issueCount).toBe(4);
+    expect(result.cycleTime.countWithCycleTime).toBe(3);
+    expect(result.cycleTime.medianDays).toBeCloseTo(4, 10);
+    expect(result.cycleTime.averageDays).toBeCloseTo(5, 10);
+  });
 });
 
 /**
@@ -342,7 +391,8 @@ function buildReassignedAwayIssue(key: string, reassignedIso: string): PersonalF
 // ── Exclusion-reason audit breakdown ─────────────────────────────────────────
 
 describe('computePersonalFlow — per-issue exclusion reasons', () => {
-  // A credited issue plus one issue for each exclusion reason, so a single run exercises every branch.
+  // A measured credited issue, a zero-time credited completion, and one issue for each of the three
+  // surviving exclusion reasons — so a single run exercises every credit and exclusion branch.
   const creditedIssue = makeFlowIssue({
     key: 'CRED-1',
     storyPoints: 5,
@@ -369,8 +419,9 @@ describe('computePersonalFlow — per-issue exclusion reasons', () => {
     ownershipTransitions: [],
     statusTransitions: [],
   });
-  // Owned and reassigned away, but only ever in a "new" status — zero hands-on in-progress time.
-  const noInProgressIssue = makeFlowIssue({
+  // Owned and reassigned away in-window, but only ever in a "new" status — zero hands-on in-progress
+  // time. It is now CREDITED (with a null cycle time), NOT excluded, so it is not part of the audit list.
+  const completedNoTimeIssue = makeFlowIssue({
     key: 'NOTIME-1',
     initialStatusId: 'todo',
     ownershipTransitions: [
@@ -389,44 +440,52 @@ describe('computePersonalFlow — per-issue exclusion reasons', () => {
     ],
   });
 
-  it('reports the correct reason for every non-credited issue and credits only the qualifier', () => {
+  it('reports only the three surviving reasons; a zero-time completion is credited, not excluded', () => {
     const result = computePersonalFlow(
-      makeInput([creditedIssue, notOwnedIssue, wipOpenIssue, noInProgressIssue, outOfWindowIssue]),
+      makeInput([creditedIssue, notOwnedIssue, wipOpenIssue, completedNoTimeIssue, outOfWindowIssue]),
     );
 
     const reasonByKey = Object.fromEntries(result.excludedIssues.map((row) => [row.key, row.reason]));
     expect(reasonByKey).toEqual({
       'NOTOWNED-1': 'not-owned',
       'WIP-1': 'wip-open',
-      'NOTIME-1': 'no-in-progress-time',
       'OOW-1': 'completed-out-of-window',
     });
-    expect(result.excludedIssues).toHaveLength(4);
+    expect(result.excludedIssues).toHaveLength(3);
+    // The zero-hands-on completion never lands in the exclusion audit — it is credited instead.
+    expect(result.excludedIssues.some((row) => row.key === 'NOTIME-1')).toBe(false);
     // Each excluded row carries the issue summary for the audit table.
     expect(result.excludedIssues.find((row) => row.key === 'WIP-1')?.summary).toBe('Issue WIP-1');
   });
 
-  it('leaves the credited issue byte-for-byte unchanged from the pre-audit behaviour', () => {
+  it('credits both the measured qualifier and the zero-time completion, only one with a cycle time', () => {
     const result = computePersonalFlow(
-      makeInput([creditedIssue, notOwnedIssue, wipOpenIssue, noInProgressIssue, outOfWindowIssue]),
+      makeInput([creditedIssue, notOwnedIssue, wipOpenIssue, completedNoTimeIssue, outOfWindowIssue]),
     );
 
-    // Only the qualifier is credited; the four excluded issues never inflate the counts.
-    expect(result.issueCount).toBe(1);
-    expect(result.perIssue).toHaveLength(1);
-    expect(result.perIssue[0].key).toBe('CRED-1');
-    expect(result.perIssue[0].cycleTimeDays).toBeCloseTo(2, 10);
-    expect(result.perIssue[0].lastActiveIso?.slice(0, 10)).toBe('2026-07-03');
-    expect(result.perIssue[0].storyPoints).toBe(5);
-    expect(result.totalStoryPoints).toBe(5);
+    // Two issues are credited: CRED-1 (measured) and NOTIME-1 (completed, unmeasured).
+    expect(result.issueCount).toBe(2);
+    expect(result.perIssue.map((row) => row.key).sort()).toEqual(['CRED-1', 'NOTIME-1']);
+
+    const creditedRow = result.perIssue.find((row) => row.key === 'CRED-1');
+    expect(creditedRow?.cycleTimeDays).toBeCloseTo(2, 10);
+    expect(creditedRow?.lastActiveIso?.slice(0, 10)).toBe('2026-07-03');
+    expect(creditedRow?.storyPoints).toBe(5);
+
+    const unmeasuredRow = result.perIssue.find((row) => row.key === 'NOTIME-1');
+    expect(unmeasuredRow?.cycleTimeDays).toBeNull();
+
+    // Only the measured issue feeds the duration statistics.
+    expect(result.cycleTime.countWithCycleTime).toBe(1);
   });
 
   it('preserves the original fetch order of the excluded issues (deterministic audit list)', () => {
     // Feed the excluded issues in a scrambled order; the audit must echo that exact order back.
-    const scrambledOrder = [outOfWindowIssue, wipOpenIssue, notOwnedIssue, noInProgressIssue];
+    const scrambledOrder = [outOfWindowIssue, wipOpenIssue, notOwnedIssue, completedNoTimeIssue];
     const result = computePersonalFlow(makeInput(scrambledOrder));
 
-    expect(result.excludedIssues.map((row) => row.key)).toEqual(['OOW-1', 'WIP-1', 'NOTOWNED-1', 'NOTIME-1']);
+    // NOTIME-1 is now credited, so only the three genuine exclusions remain, in fetch order.
+    expect(result.excludedIssues.map((row) => row.key)).toEqual(['OOW-1', 'WIP-1', 'NOTOWNED-1']);
   });
 });
 

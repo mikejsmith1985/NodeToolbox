@@ -102,7 +102,10 @@ export interface PersonalFlowIssueMetric {
   key: string;
   summary: string;
   storyPoints: number | null;
-  cycleTimeDays: number | null; // summed hands-on working days across in-window completed stints
+  // Summed hands-on working days across in-window completed stints. Null means the issue COMPLETED
+  // under the person but no in-progress time could be measured (e.g. To-Do → Done, or an unmapped
+  // status) — it still counts as advanced, but is excluded from the cycle-time average/median.
+  cycleTimeDays: number | null;
   lastActiveIso: string | null; // ISO of the latest in-window completion moment
 }
 
@@ -111,12 +114,13 @@ export interface PersonalFlowIssueMetric {
  *   • 'not-owned'               — the target never appears in the issue's ownership timeline.
  *   • 'wip-open'                — she still holds it and it never reached done (a WIP, still-open stint).
  *   • 'completed-out-of-window' — her stint completed, but before the reporting window began.
- *   • 'no-in-progress-time'     — completed in-window, but with zero Mon–Fri in-progress working time.
+ *
+ * A completed, in-window issue is now ALWAYS credited — even with zero measurable in-progress time —
+ * so "no in-progress time" is no longer an exclusion reason. Such issues carry a null cycle time instead.
  */
 export type PersonalFlowExclusionReason =
   | 'not-owned'
   | 'wip-open'
-  | 'no-in-progress-time'
   | 'completed-out-of-window';
 
 /** One fetched-but-not-credited issue, carrying the reason it was dropped for the audit breakdown. */
@@ -173,8 +177,8 @@ type IssueEvaluation =
  * Computes one person's hands-on cycle time and calendar throughput from her issues.
  *
  * The pipeline clamps the window, evaluates each issue into an optional qualifying
- * metric (a completed, in-window stint with real in-progress working time), then
- * aggregates throughput and cycle-time statistics over the survivors. It never
+ * metric (any completed, in-window stint — with or without measurable hands-on time),
+ * then aggregates throughput and cycle-time statistics over the survivors. It never
  * reads the clock — `input.todayIso` anchors the window — so it is a pure function.
  */
 export function computePersonalFlow(input: PersonalFlowInput): PersonalFlowResult {
@@ -268,11 +272,11 @@ function buildIssueBreakdown(
 }
 
 /**
- * Evaluates one issue into a CREDITED metric or an EXCLUDED reason. An issue qualifies only when it
- * has at least one COMPLETED ownership stint whose completion falls in the window AND whose hands-on
- * in-progress working time is greater than zero. The reasons are tested in a fixed precedence so a
- * dropped issue reports the FIRST gate it failed — never owned, then still WIP, then out of window,
- * then no in-progress time. The credited outcome is identical to the pre-audit behaviour.
+ * Evaluates one issue into a CREDITED metric or an EXCLUDED reason. An issue qualifies whenever it has
+ * at least one COMPLETED ownership stint whose completion falls in the window — regardless of how much
+ * hands-on in-progress time was measured. The reasons are tested in a fixed precedence so a dropped
+ * issue reports the FIRST gate it failed: never owned, then still WIP, then completed out of window.
+ * A completed issue with zero measurable hands-on time is still credited, with a null cycle time.
  */
 function evaluateIssue(
   issue: PersonalFlowIssue,
@@ -292,8 +296,11 @@ function evaluateIssue(
   const inWindow = contributions.filter((one) => one.endMs >= windowStartMs && one.endMs <= todayMs);
   if (inWindow.length === 0) return { kind: 'excluded', reason: 'completed-out-of-window' };
 
-  const cycleTimeDays = inWindow.reduce((runningTotal, one) => runningTotal + one.handsOnDays, 0);
-  if (cycleTimeDays <= 0) return { kind: 'excluded', reason: 'no-in-progress-time' };
+  // The issue completed in-window, so it counts. A summed hands-on total of zero means no in-progress
+  // time could be measured (e.g. To-Do → Done under her); record that as null, not a misleading 0.00,
+  // so the issue still advances throughput while staying out of the honest cycle-time average/median.
+  const summedHandsOnDays = inWindow.reduce((runningTotal, one) => runningTotal + one.handsOnDays, 0);
+  const cycleTimeDays = summedHandsOnDays > 0 ? summedHandsOnDays : null;
 
   const lastActiveMs = inWindow.reduce((latest, one) => Math.max(latest, one.endMs), Number.NEGATIVE_INFINITY);
   return {

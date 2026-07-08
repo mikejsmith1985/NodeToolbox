@@ -377,6 +377,60 @@ describe('PersonalFlowTab', () => {
     expect(screen.getByText('In progress, still assigned (WIP)')).toBeInTheDocument();
   });
 
+  it('credits a zero-hands-on completion: renders "—", counts it Advanced, keeps it out of cycle time', async () => {
+    // Jane moved this issue straight from To-Do (id 1) to Done (id 5) with no in-progress phase, so no
+    // hands-on time can be measured. It must still count as advanced, with an em-dash hands-on cell, and
+    // must NOT inflate the "Issues With Cycle Time" count that the two measured issues make up.
+    const jumpToDoneIssue = {
+      key: 'TBX-JUMP',
+      fields: {
+        summary: 'Straight to done',
+        created: '2026-06-29T00:00:00.000Z',
+        resolutiondate: '2026-07-03T00:00:00.000Z',
+        status: { id: '5' },
+        assignee: { name: 'jane.dev', displayName: 'jane.dev' },
+        customfield_10236: 4,
+      },
+      changelog: {
+        histories: [
+          {
+            created: '2026-06-30T00:00:00.000Z',
+            items: [
+              { field: 'assignee', from: null, fromString: null, to: 'jane.dev', toString: 'jane.dev' },
+              { field: 'status', from: '1', fromString: null, to: '5', toString: null }, // To-Do → Done directly
+            ],
+          },
+        ],
+      },
+    };
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) {
+        // Two measured credited issues (TBX-1, TBX-2) plus the zero-hands-on completion.
+        const measuredPair = buildSearchResponseFor(JANE_STAMP);
+        return Promise.resolve({ issues: [...measuredPair.issues, jumpToDoneIssue] });
+      }
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.change(screen.getByLabelText(/person \(jira assignee\)/i), {
+      target: { value: 'Jane Dev' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /run report/i }));
+
+    await waitFor(() => expect(screen.getByText('TBX-JUMP')).toBeInTheDocument());
+    // The unmeasured completion still counts as advanced, but only the two measured issues have a cycle time.
+    expect(readStatCardValue('Issues Advanced')).toBe('3');
+    expect(readStatCardValue('Issues With Cycle Time')).toBe('2 of 3');
+
+    // Its hands-on cell (column index 3: Issue | Summary | Last active | Hands-on | Points) reads "—".
+    const jumpRow = screen.getByText('TBX-JUMP').closest('tr');
+    const jumpCells = Array.from((jumpRow as HTMLElement).querySelectorAll('td')).map((cell) => cell.textContent ?? '');
+    expect(jumpCells[3]).toBe('—');
+  });
+
   it('uses a selected Jira suggestion machine id directly for the query', async () => {
     mockJiraGet.mockImplementation((path: string) => {
       if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
