@@ -114,17 +114,38 @@ const EVALUATION_INSTRUCTION = [
   'Be specific — reference issue keys and people from the plan. Do not invent data.',
 ].join('\n');
 
-/**
- * Wraps the plain-text plan summary in the context (assumptions) and instruction an external assistant
- * (e.g. Copilot) needs to critique and improve the plan with advanced reasoning. Pure — `todayIso` is
- * passed in so the same plan + date always yields the same prompt.
- */
-export function buildPlanEvaluationPrompt(result: PlanResult, piName: string, todayIso: string): string {
+/** Renders the operator's free-text constraints as a section the assistant must honor; omitted when blank. */
+function formatOperatorConstraints(additionalDetails: string): string | null {
+  const trimmed = additionalDetails.trim();
+  if (trimmed === '') {
+    return null;
+  }
   return [
+    'OPERATOR CONSTRAINTS — real-world details not captured in Jira that you MUST honor when finalising the plan:',
+    trimmed,
+  ].join('\n');
+}
+
+/**
+ * Wraps the plain-text plan summary in the context (assumptions), the operator's own constraints, and the
+ * instruction an external assistant (e.g. Copilot) needs to critique and improve the plan with advanced
+ * reasoning. `additionalDetails` is free text the operator typed (e.g. "internal test must finish DENP-1353
+ * exclusively before any other feature") — injected verbatim so the assistant honours it. Pure: same inputs
+ * always yield the same prompt.
+ */
+export function buildPlanEvaluationPrompt(
+  result: PlanResult,
+  piName: string,
+  todayIso: string,
+  additionalDetails = '',
+): string {
+  const sections: (string | null)[] = [
     `You are helping a Scrum Master evaluate and improve a capacity plan for ${piName || 'the current PI'}. Today is ${todayIso}.`,
     EVALUATION_ASSUMPTIONS,
+    formatOperatorConstraints(additionalDetails),
     'THE PLAN:',
     formatPlanSummary(result, piName),
     EVALUATION_INSTRUCTION,
-  ].join('\n\n');
+  ];
+  return sections.filter((section): section is string => section !== null).join('\n\n');
 }

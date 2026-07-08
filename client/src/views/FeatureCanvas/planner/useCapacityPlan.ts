@@ -50,6 +50,8 @@ export interface UseCapacityPlanParams {
    * every feature in the included buckets is planned; when provided, only these features are.
    */
   selectedFeatureKeys?: ReadonlySet<string>;
+  /** Date the plan starts from (ISO). Defaults to today; the first sprint is prorated when mid-sprint. */
+  planStartIso?: string;
   /** Optional override for the synthesized internal-test fraction (defaults to 0.5). */
   syntheticTestFraction?: number;
 }
@@ -145,7 +147,7 @@ export function useCapacityPlan(params: UseCapacityPlanParams): UseCapacityPlanR
   const [result, setResult] = useState<PlanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const { canvasNodes, rosterMembers, projectKey, piName, storyPointsFieldId, includedBuckets, selectedFeatureKeys } = params;
+  const { canvasNodes, rosterMembers, projectKey, piName, storyPointsFieldId, includedBuckets, selectedFeatureKeys, planStartIso } = params;
   const syntheticTestFraction = params.syntheticTestFraction ?? DEFAULT_SYNTHETIC_TEST_FRACTION;
 
   const run = useCallback(() => {
@@ -191,7 +193,7 @@ export function useCapacityPlan(params: UseCapacityPlanParams): UseCapacityPlanR
           return;
         }
         const planResult = buildCapacityPlan(
-          { items, people, piName, sprintLengthDays: SPRINT_LENGTH_DAYS, syntheticTestFraction },
+          { items, people, piName, sprintLengthDays: SPRINT_LENGTH_DAYS, syntheticTestFraction, planStartIso: planStartIso ?? todayIso },
           todayIso,
         );
         setResult(planResult);
@@ -202,7 +204,7 @@ export function useCapacityPlan(params: UseCapacityPlanParams): UseCapacityPlanR
         setError(caught instanceof Error ? caught.message : 'Failed to build the capacity plan.');
       }
     })();
-  }, [canvasNodes, rosterMembers, projectKey, piName, storyPointsFieldId, includedBuckets, selectedFeatureKeys, syntheticTestFraction]);
+  }, [canvasNodes, rosterMembers, projectKey, piName, storyPointsFieldId, includedBuckets, selectedFeatureKeys, planStartIso, syntheticTestFraction]);
 
   return { status, result, error, run };
 }

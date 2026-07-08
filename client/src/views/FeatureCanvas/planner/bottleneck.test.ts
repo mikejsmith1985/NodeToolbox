@@ -66,17 +66,17 @@ describe('computeBottleneck', () => {
     expect(report.additionalToFinishByPiEnd).toBe(0);
   });
 
-  it('detects external testing as the bottleneck when it stretches longest', () => {
-    // dev 16/2 people = 1 sprint; external 24 pts / 8 (1 person) = 3 sprints > dev span.
+  it('never flags external testing as the bottleneck (DoD = internal test complete)', () => {
+    // External test stretches far longer than dev, but DoD does not include external testing, so it is
+    // NOT a bottleneck — only internal testing can gate delivery.
     const report = computeBottleneck(
       { dev: 16, internalTest: 0, externalTest: 24 },
       { dev: 2, internalTest: 0, externalTest: 1 },
       POOL,
       2,
     );
-    expect(report.limitingRole).toBe('externalTest');
-    // dev 16/2 = 1 dev-sprint; 24 ext pts in 1 sprint needs 24/sprint; (24-8)/8 = 2 more.
-    expect(report.additionalToMatchThroughput).toBe(2);
+    expect(report.limitingRole).toBeNull();
+    expect(report.additionalToMatchThroughput).toBe(0);
   });
 
   it('does not over-provision the way matching to raw dev capacity would (the +9 over-count fix)', () => {

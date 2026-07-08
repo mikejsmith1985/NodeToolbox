@@ -7,15 +7,17 @@
 // "Copy summary" button reproduces the whole projection as shareable text. Rendering of a ready plan is
 // factored into the presentational <PlanProjectionView> so it can be tested directly with a fixture.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type { StandupRosterMember } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
+import { loadAvailablePiNamesFromJira, type ArtTeam } from '../../ArtView/hooks/useArtData.ts';
 import type { MoscowBucket } from '../overlay/overlayModel.ts';
 import type { CanvasNode } from '../logic/canvasTypes.ts';
 import controlStyles from '../canvas/canvasControls.module.css';
 import { copyToClipboard } from '../ai/clipboard.ts';
 import type { DeliveryRole, PlanResult, ProjectedSprint } from './capacityTypes.ts';
 import { buildPlanEvaluationPrompt, formatPlanSummary } from './planSummary.ts';
+import { useCapacityDetailsStore } from './useCapacityDetailsStore.ts';
 import { useCapacityPlan, type IncludableBucket } from './useCapacityPlan.ts';
 
 // ── Named constants ──────────────────────────────────────────────────────────
@@ -28,6 +30,14 @@ const DEFAULT_INCLUDED_BUCKETS: readonly MoscowBucket[] = ['Must', 'Should', 'Co
 const BUCKET_LABELS: Record<MoscowBucket, string> = { Must: 'Must', Should: 'Should', Could: 'Could', Wont: "Won't" };
 /** Plain-English label for each delivery role, used in the bottleneck read-out. */
 const ROLE_LABELS: Record<DeliveryRole, string> = { dev: 'development', internalTest: 'internal testing', externalTest: 'external testing' };
+/** Example placeholder guiding the operator toward the kind of real-world constraint to type. */
+const ADDITIONAL_DETAILS_PLACEHOLDER =
+  'e.g. Internal test must finish DENP-1353 exclusively before any other feature; DoD = internal test complete.';
+
+/** Returns today's date as an ISO calendar day (YYYY-MM-DD) — the single clock read for the date default. */
+function readTodayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 /** Props for the read-only Capacity Plan panel. */
 export interface CapacityPlanPanelProps {
@@ -37,10 +47,14 @@ export interface CapacityPlanPanelProps {
   rosterMembers: readonly StandupRosterMember[];
   /** Active project key — passed through to the fetch for scope symmetry. */
   projectKey: string;
-  /** Active PI name — drives the projection's PI window. */
+  /** Active PI name — the default target PI, always offered in the Target PI picker. */
   piName: string;
   /** The team's configured story-points field id. */
   storyPointsFieldId: string;
+  /** The ART roster, used to enumerate the selectable Program Increments for the Target PI picker. */
+  artTeams: ArtTeam[];
+  /** Active team profile id — scopes the persisted operator constraints to this canvas. */
+  teamProfileId: string;
   onClose: () => void;
 }
 
@@ -52,6 +66,8 @@ export interface PlanProjectionViewProps {
   piName: string;
   /** Today's date (ISO), used in the Copilot evaluation prompt so it reasons about PI-vs-carryover. */
   todayIso: string;
+  /** Operator constraints (free text) injected verbatim into the Copilot evaluation prompt. */
+  additionalDetails: string;
 }
 
 /** Formats one person's per-role load line inside a projected sprint. */
@@ -86,7 +102,7 @@ function SprintCard({ sprint }: { sprint: ProjectedSprint }): React.JSX.Element 
  * completion projection, each projected sprint's per-person load, and any proposals / unschedulable
  * items. The "Copy summary" button copies the same projection as plain text. Never writes anything.
  */
-export function PlanProjectionView({ result, piName, todayIso }: PlanProjectionViewProps): React.JSX.Element {
+export function PlanProjectionView({ result, piName, todayIso, additionalDetails }: PlanProjectionViewProps): React.JSX.Element {
   const { bottleneck, sprints, proposals, unschedulableItemKeys } = result;
   return (
     <div>
@@ -153,7 +169,7 @@ export function PlanProjectionView({ result, piName, todayIso }: PlanProjectionV
         <button
           type="button"
           className={controlStyles.btnPrimary}
-          onClick={() => copyToClipboard(buildPlanEvaluationPrompt(result, piName, todayIso))}
+          onClick={() => copyToClipboard(buildPlanEvaluationPrompt(result, piName, todayIso, additionalDetails))}
           title="Copy a prompt (plan + context + instructions) to paste into Copilot to evaluate and improve this plan"
         >
           🤖 Copy prompt for Copilot
@@ -175,6 +191,8 @@ export function CapacityPlanPanel({
   projectKey,
   piName,
   storyPointsFieldId,
+  artTeams,
+  teamProfileId,
   onClose,
 }: CapacityPlanPanelProps): React.JSX.Element {
   const [includedBuckets, setIncludedBuckets] = useState<Set<IncludableBucket>>(
@@ -185,6 +203,46 @@ export function CapacityPlanPanel({
   const [deselectedFeatureKeys, setDeselectedFeatureKeys] = useState<Set<string>>(() => new Set());
   // Today's date for the Copilot evaluation prompt (a display-time read; the pure engine gets its own).
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  // The date the projection starts from — defaults to today; the operator can plan from a future date.
+  const [startDateIso, setStartDateIso] = useState<string>(() => readTodayIso());
+  // The PI the plan targets — its window/cadence drive the projection. Defaults to the active PI.
+  const [selectedPiName, setSelectedPiName] = useState<string>(piName);
+  // The Program Increments the operator can pick from, enumerated from the ART roster (see effect below).
+  const [availablePiNames, setAvailablePiNames] = useState<string[]>([]);
+
+  // Persisted operator constraints (real-world details Jira can't express), scoped to this exact canvas.
+  const additionalDetails = useCapacityDetailsStore((state) => state.additionalDetails);
+  const setDetailsScope = useCapacityDetailsStore((state) => state.setScope);
+  const setAdditionalDetails = useCapacityDetailsStore((state) => state.setAdditionalDetails);
+
+  // Point the persisted details box at this canvas's scope (team + project + selected PI). Memoized on the
+  // scope inputs so the constraints stay aligned as the operator swaps the target PI, mirroring the
+  // reallocation panel's pattern.
+  useMemo(
+    () => setDetailsScope(teamProfileId, projectKey, selectedPiName),
+    [setDetailsScope, teamProfileId, projectKey, selectedPiName],
+  );
+
+  // Load the selectable PIs once per ART roster, reusing ART's PI enumeration (autocomplete → issue-scan
+  // fallback). Guarded on an empty roster and cancelled on unmount so a late resolve never sets state on a
+  // torn-down panel. The active PI is merged in below so the picker never hides the current scope.
+  useEffect(() => {
+    if (artTeams.length === 0) {
+      return undefined;
+    }
+    let isCancelled = false;
+    loadAvailablePiNamesFromJira(artTeams)
+      .then((piNames) => { if (!isCancelled) { setAvailablePiNames(piNames); } })
+      .catch(() => { if (!isCancelled) { setAvailablePiNames([]); } });
+    return () => { isCancelled = true; };
+  }, [artTeams]);
+
+  // Merge the active PI in so it is always selectable, even before/after the async lookup resolves.
+  const piOptions = useMemo(
+    () => Array.from(new Set([piName, ...availablePiNames].map((name) => name.trim()).filter(Boolean))),
+    [piName, availablePiNames],
+  );
 
   // The features the operator can choose from: those with a MoSCoW priority in the included buckets,
   // ordered by bucket then key so the list is stable and scannable.
@@ -203,8 +261,17 @@ export function CapacityPlanPanel({
   );
 
   const planParams = useMemo(
-    () => ({ canvasNodes, rosterMembers, projectKey, piName, storyPointsFieldId, includedBuckets, selectedFeatureKeys }),
-    [canvasNodes, rosterMembers, projectKey, piName, storyPointsFieldId, includedBuckets, selectedFeatureKeys],
+    () => ({
+      canvasNodes,
+      rosterMembers,
+      projectKey,
+      piName: selectedPiName,
+      storyPointsFieldId,
+      includedBuckets,
+      selectedFeatureKeys,
+      planStartIso: startDateIso,
+    }),
+    [canvasNodes, rosterMembers, projectKey, selectedPiName, storyPointsFieldId, includedBuckets, selectedFeatureKeys, startDateIso],
   );
   const { status, result, error, run } = useCapacityPlan(planParams);
 
@@ -295,6 +362,41 @@ export function CapacityPlanPanel({
         )}
       </fieldset>
 
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '6px 0' }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 }}>
+          Start date
+          <input
+            type="date"
+            aria-label="Plan start date"
+            value={startDateIso}
+            onChange={(event) => setStartDateIso(event.target.value)}
+          />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 }}>
+          Target PI
+          <select
+            aria-label="Target PI"
+            value={selectedPiName}
+            onChange={(event) => setSelectedPiName(event.target.value)}
+          >
+            {selectedPiName.trim() === '' && <option value="">— Select a PI —</option>}
+            {piOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+        </label>
+      </div>
+
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12, margin: '6px 0' }}>
+        Additional details (constraints)
+        <textarea
+          aria-label="Additional details"
+          value={additionalDetails}
+          onChange={(event) => setAdditionalDetails(event.target.value)}
+          placeholder={ADDITIONAL_DETAILS_PLACEHOLDER}
+          rows={3}
+          style={{ width: '100%', fontSize: 11 }}
+        />
+      </label>
+
       <button
         type="button"
         className={controlStyles.btnPrimary}
@@ -309,7 +411,9 @@ export function CapacityPlanPanel({
         <p role="alert" style={{ margin: '6px 0', fontSize: 12, color: 'var(--color-danger)' }}>{error}</p>
       )}
 
-      {status === 'ready' && result !== null && <PlanProjectionView result={result} piName={piName} todayIso={todayIso} />}
+      {status === 'ready' && result !== null && (
+        <PlanProjectionView result={result} piName={selectedPiName} todayIso={todayIso} additionalDetails={additionalDetails} />
+      )}
 
       <p style={{ margin: '8px 0 0', fontSize: 11, opacity: 0.7 }}>
         Read-only projection — nothing here is written to the canvas or Jira.

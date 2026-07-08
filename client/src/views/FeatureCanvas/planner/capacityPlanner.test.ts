@@ -216,6 +216,49 @@ describe('buildCapacityPlan — bottleneck and projection (SC-4, SC-5)', () => {
   });
 });
 
+describe('buildCapacityPlan — PI-aligned partial first sprint (custom plan start)', () => {
+  it('prorates the first sprint when the plan start lands mid-sprint, spilling to sprint 2', () => {
+    // PI 05/21–07/29, 14-day cadence aligned to the PI start. Plan starts 07/08, which sits inside the
+    // sprint running 07/02–07/16 → only 8 of 14 days remain, a fraction of 8/14. One dev's sprint-1 pool
+    // is therefore round(8 * 8/14) = 5, so an 8-point item places 5 in sprint 1 and spills 3 into sprint 2.
+    const items = [makeItem({ key: 'A', devPoints: 8, assignee: 'Dev' })];
+    const input: PlanInput = {
+      ...makeInput(items, [makePerson('Dev', ['dev'])], 'PI 26.3 (05/21/26 - 07/29/26)'),
+      planStartIso: '2026-07-08',
+    };
+    const result = buildCapacityPlan(input, TODAY_ISO);
+
+    expect(result.sprints[0]?.startIso).toBe('2026-07-08');
+    expect(result.sprints[1]?.startIso).toBe('2026-07-16');
+    const sprint1Dev = result.sprints[0]?.loads.find((load) => load.displayName === 'Dev');
+    const sprint2Dev = result.sprints[1]?.loads.find((load) => load.displayName === 'Dev');
+    expect(sprint1Dev?.devPoints).toBe(5); // round(8 * 8/14)
+    expect(sprint2Dev?.devPoints).toBe(3); // remaining 8 - 5
+  });
+
+  it('uses input.planStartIso in preference to the injected todayIso for the first sprint date', () => {
+    // planStartIso (07/08) differs from todayIso (05/21); the projection must follow the explicit start.
+    const items = [makeItem({ key: 'A', devPoints: 4, assignee: 'Dev' })];
+    const input: PlanInput = {
+      ...makeInput(items, [makePerson('Dev', ['dev'])], 'PI 26.3 (05/21/26 - 07/29/26)'),
+      planStartIso: '2026-07-08',
+    };
+    const result = buildCapacityPlan(input, TODAY_ISO);
+    expect(result.sprints[0]?.startIso).toBe('2026-07-08');
+  });
+
+  it('produces a deeply-equal result for the same input and today (determinism, SC-1)', () => {
+    const items = [makeItem({ key: 'A', devPoints: 8, assignee: 'Dev' })];
+    const input: PlanInput = {
+      ...makeInput(items, [makePerson('Dev', ['dev'])], 'PI 26.3 (05/21/26 - 07/29/26)'),
+      planStartIso: '2026-07-08',
+    };
+    const first = buildCapacityPlan(input, TODAY_ISO);
+    const second = buildCapacityPlan(input, TODAY_ISO);
+    expect(first).toEqual(second);
+  });
+});
+
 describe('buildCapacityPlan — unschedulable work and loop guards', () => {
   it('surfaces items whose required role has zero capacity instead of dropping them', () => {
     // The team has no internal tester, so an item needing internal testing cannot be scheduled.

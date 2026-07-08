@@ -28,6 +28,8 @@ const DEFAULT_SYNTHETIC_TEST_FRACTION = 0.5; // Internal-test cost synthesized a
 const MAX_PROJECTED_SPRINTS = 200;        // Safety cap so a bad input can never loop forever.
 const MINIMUM_SPRINTS_TO_PI_END = 1;      // The PI-end budget is always at least one sprint.
 const MS_PER_DAY = 86_400_000;
+const FIRST_SPRINT_NUMBER = 1;            // Only this sprint is prorated; every later sprint is full.
+const FULL_SPRINT_FRACTION = 1;           // A whole sprint — the fallback when nothing needs proration.
 
 // The three delivery roles, in the fixed order the engine assigns and sequences them.
 const DELIVERY_ROLES: DeliveryRole[] = ['dev', 'internalTest', 'externalTest'];
@@ -80,6 +82,8 @@ interface WorkingSprint {
 interface FillContext {
   sprints: WorkingSprint[]; // index 0 is sprint number 1
   poolByPerson: Map<string, number>;
+  /** Fraction (0..1] of a full sprint that the partial first sprint offers; 1 when the plan starts on a boundary. */
+  firstSprintFraction: number;
 }
 
 /** Result of placing one role's points for one item: where it finished, or that it could not fit. */
@@ -247,8 +251,8 @@ function placeWork(
   if (points <= 0) {
     return { completionSprintNumber: 0, isUnschedulable: false };
   }
-  const personPool = context.poolByPerson.get(assigneeName) ?? 0;
-  if (personPool <= 0) {
+  const basePool = context.poolByPerson.get(assigneeName) ?? 0;
+  if (basePool <= 0) {
     return { completionSprintNumber: 0, isUnschedulable: true };
   }
   const loadField = ROLE_TO_LOAD_FIELD[role];
@@ -259,8 +263,12 @@ function placeWork(
     if (sprintNumber > MAX_PROJECTED_SPRINTS) {
       return { completionSprintNumber: lastUsedSprint, isUnschedulable: true };
     }
+    // Sprint 1 may be a partial (prorated) sprint; every later sprint offers the full pool. When the
+    // prorated sprint-1 pool rounds to 0, no work fits here and it naturally flows to sprint 2 below.
+    const sprintPool =
+      sprintNumber === FIRST_SPRINT_NUMBER ? Math.round(basePool * context.firstSprintFraction) : basePool;
     const load = getWorkingLoad(context, sprintNumber, assigneeName);
-    const poolRemaining = personPool - load.usedTotal;
+    const poolRemaining = sprintPool - load.usedTotal;
     if (poolRemaining > 0) {
       const placedPoints = Math.min(remainingPoints, poolRemaining);
       load[loadField] += placedPoints;
@@ -339,16 +347,22 @@ function buildSprintLoads(sprint: WorkingSprint): SprintPersonLoad[] {
     .sort((first, second) => first.displayName.localeCompare(second.displayName));
 }
 
-/** Projects each working sprint into a dated ProjectedSprint, flagging those beyond the PI end. */
+/**
+ * Projects each working sprint into a dated ProjectedSprint against the PI-aligned boundaries. Sprint 1
+ * runs from the effective start (which may be mid-sprint) to the current sprint boundary; every later
+ * sprint is a full cadence sprint hung off that boundary. Sprints starting past the PI end are flagged.
+ */
 function buildProjectedSprints(
   context: FillContext,
-  anchorMs: number,
-  sprintLengthDays: number,
+  effectiveStartMs: number,
+  firstSprintEndMs: number,
+  sprintMs: number,
   piEndMs: number | null,
 ): ProjectedSprint[] {
   return context.sprints.map((sprint, index): ProjectedSprint => {
-    const startMs = anchorMs + index * sprintLengthDays * MS_PER_DAY;
-    const endMs = startMs + (sprintLengthDays - 1) * MS_PER_DAY;
+    const isFirstSprint = index === 0;
+    const startMs = isFirstSprint ? effectiveStartMs : firstSprintEndMs + (index - 1) * sprintMs;
+    const endMs = (isFirstSprint ? firstSprintEndMs : startMs + sprintMs) - MS_PER_DAY;
     const loads = buildSprintLoads(sprint);
     const scheduledPoints = loads.reduce(
       (sum, load) => sum + load.devPoints + load.internalTestPoints + load.externalTestPoints,
@@ -388,32 +402,73 @@ function countPeopleByRole(capableByRole: Map<DeliveryRole, string[]>): { dev: n
   };
 }
 
-/**
- * Resolves the plan anchor, PI end, and whole-sprint budget to the PI end. The projection is anchored at
- * TODAY — not the PI start — so it shows what can still be done from now on (the remaining PI capacity vs.
- * what carries into the next PI), rather than replaying sprints that have already elapsed. When today
- * precedes the PI start (planning a future PI), the PI start is used so no sprint lands before the PI opens.
- */
-function resolveSprintTiming(
-  piName: string,
-  todayIso: string,
-  sprintLengthDays: number,
-): { anchorMs: number; piEndMs: number | null; sprintsToPiEnd: number } {
-  const piWindow = parsePiDateRange(piName);
-  const todayMs = Date.parse(`${todayIso}T00:00:00Z`);
-  const piStartMs = piWindow ? Date.parse(`${piWindow.startIso}T00:00:00Z`) : Number.NaN;
-  // Anchor = the later of today and the PI start (so we plan forward from now, not from a past PI start).
-  const anchorMs = !Number.isNaN(piStartMs) && piStartMs > todayMs ? piStartMs : todayMs;
-  const piEndMs = piWindow ? Date.parse(`${piWindow.endIso}T00:00:00Z`) : null;
-  let sprintsToPiEnd = MINIMUM_SPRINTS_TO_PI_END;
-  if (piEndMs !== null && !Number.isNaN(anchorMs)) {
-    const daysToPiEnd = Math.floor((piEndMs - anchorMs) / MS_PER_DAY);
-    sprintsToPiEnd = Math.max(MINIMUM_SPRINTS_TO_PI_END, Math.floor(daysToPiEnd / sprintLengthDays));
+/** Clamps a raw sprint fraction into (0, 1]; a non-finite or non-positive value falls back to a full sprint. */
+function clampFirstSprintFraction(rawFraction: number): number {
+  if (!Number.isFinite(rawFraction) || rawFraction <= 0) {
+    return FULL_SPRINT_FRACTION;
   }
-  return { anchorMs, piEndMs, sprintsToPiEnd };
+  return Math.min(FULL_SPRINT_FRACTION, rawFraction);
 }
 
-/** Finds the last sprint holding scheduled work and how many scheduled sprints fall beyond the PI end. */
+/** The resolved sprint calendar: where the plan starts, where sprint 1 ends, its proration, and the PI end. */
+interface SprintTiming {
+  effectiveStartMs: number;      // first sprint's start (never before the PI opens)
+  firstSprintEndMs: number;      // the PI-aligned boundary that closes sprint 1
+  firstSprintFraction: number;   // (0..1] — the share of a full sprint that sprint 1 offers
+  piEndMs: number | null;        // PI end instant, or null when the PI name has no window
+  sprintsToPiEnd: number;        // whole-sprint budget from the effective start to the PI end
+}
+
+/**
+ * Resolves the sprint calendar for the projection. Sprint boundaries align to the PI start (so every
+ * sprint but the first is a full cadence sprint), while planning begins at `planStartIso`. When that
+ * start lands mid-sprint, the first sprint is prorated to the days remaining in it. Without a PI window
+ * the boundaries align to the start date instead, and the first sprint is always full. Malformed dates
+ * fall back to a full, un-prorated first sprint so a bad PI name never throws.
+ */
+function resolveSprintTiming(piName: string, planStartIso: string, sprintLengthDays: number): SprintTiming {
+  const piWindow = parsePiDateRange(piName);
+  const sprintMs = sprintLengthDays * MS_PER_DAY;
+  const parsedPlanStartMs = Date.parse(`${planStartIso}T00:00:00Z`);
+  const planStartMs = Number.isNaN(parsedPlanStartMs) ? 0 : parsedPlanStartMs;
+  const parsedPiStartMs = piWindow ? Date.parse(`${piWindow.startIso}T00:00:00Z`) : Number.NaN;
+  const parsedPiEndMs = piWindow ? Date.parse(`${piWindow.endIso}T00:00:00Z`) : Number.NaN;
+  const piEndMs = Number.isNaN(parsedPiEndMs) ? null : parsedPiEndMs;
+
+  // Cadence anchors on the PI start when there is one; otherwise on the plan start. The effective start
+  // is never earlier than that anchor, so no sprint lands before the PI opens.
+  const hasPiCadence = piWindow !== null && !Number.isNaN(parsedPiStartMs);
+  const cadenceAnchorMs = hasPiCadence ? parsedPiStartMs : planStartMs;
+  const effectiveStartMs = Math.max(planStartMs, cadenceAnchorMs);
+
+  let firstSprintEndMs = effectiveStartMs + sprintMs;
+  let firstSprintFraction = FULL_SPRINT_FRACTION;
+  if (hasPiCadence) {
+    // Snap back to the PI-aligned boundary that contains the effective start, then measure the remainder.
+    const elapsedWholeSprints = Math.floor((effectiveStartMs - cadenceAnchorMs) / sprintMs);
+    const currentSprintStartMs = cadenceAnchorMs + elapsedWholeSprints * sprintMs;
+    firstSprintEndMs = currentSprintStartMs + sprintMs;
+    firstSprintFraction = clampFirstSprintFraction((firstSprintEndMs - effectiveStartMs) / sprintMs);
+  }
+
+  let sprintsToPiEnd = MINIMUM_SPRINTS_TO_PI_END;
+  if (piEndMs !== null) {
+    sprintsToPiEnd = Math.max(MINIMUM_SPRINTS_TO_PI_END, Math.floor((piEndMs - effectiveStartMs) / sprintMs));
+  }
+  return { effectiveStartMs, firstSprintEndMs, firstSprintFraction, piEndMs, sprintsToPiEnd };
+}
+
+/** DoD-relevant points in a sprint: development + internal testing. External testing does NOT gate the
+ *  Definition of Done, so it is excluded from the completion projection (external work is still shown). */
+function sprintDefinitionOfDonePoints(sprint: ProjectedSprint): number {
+  return sprint.loads.reduce((sum, load) => sum + load.devPoints + load.internalTestPoints, 0);
+}
+
+/**
+ * Finds the last sprint that completes DoD-relevant work (dev or internal testing) and how many such
+ * sprints fall beyond the PI end. Because DoD = internal test complete, a trailing sprint that holds only
+ * external-test work does not push the completion date out.
+ */
 function computeCompletion(sprints: ProjectedSprint[]): {
   completionSprintIndex: number;
   completionDateIso: string | null;
@@ -423,7 +478,7 @@ function computeCompletion(sprints: ProjectedSprint[]): {
   let completionDateIso: string | null = null;
   let sprintsBeyondPiEnd = 0;
   for (const sprint of sprints) {
-    if (sprint.scheduledPoints > 0) {
+    if (sprintDefinitionOfDonePoints(sprint) > 0) {
       completionSprintIndex = sprint.index;
       completionDateIso = sprint.endIso;
       if (sprint.isBeyondPiEnd) {
@@ -446,6 +501,8 @@ function computeCompletion(sprints: ProjectedSprint[]): {
 export function buildCapacityPlan(input: PlanInput, todayIso: string): PlanResult {
   const syntheticTestFraction = input.syntheticTestFraction ?? DEFAULT_SYNTHETIC_TEST_FRACTION;
   const sprintLengthDays = input.sprintLengthDays > 0 ? input.sprintLengthDays : DEFAULT_SPRINT_LENGTH_DAYS;
+  // Planning starts from the caller's explicit date when given, otherwise from the injected "today".
+  const planStartIso = input.planStartIso ?? todayIso;
 
   const preparedItems = prepareItems(input.items, syntheticTestFraction);
   const capableByRole = buildCapableByRole(input.people);
@@ -462,15 +519,24 @@ export function buildCapacityPlan(input: PlanInput, todayIso: string): PlanResul
 
   const { assignments, proposals } = buildAssignments(schedulableItems, input.people, capableByRole);
 
-  const fillContext: FillContext = { sprints: [], poolByPerson: buildPoolByPerson(input.people) };
+  // Resolve the sprint calendar BEFORE the fill so the greedy placement can prorate the first sprint.
+  const timing = resolveSprintTiming(input.piName, planStartIso, sprintLengthDays);
+  const sprintMs = sprintLengthDays * MS_PER_DAY;
+
+  const fillContext: FillContext = {
+    sprints: [],
+    poolByPerson: buildPoolByPerson(input.people),
+    firstSprintFraction: timing.firstSprintFraction,
+  };
   runGreedyFill(schedulableItems, assignments, fillContext, unschedulable);
 
-  const { anchorMs, piEndMs, sprintsToPiEnd } = resolveSprintTiming(input.piName, todayIso, sprintLengthDays);
-  const sprints = buildProjectedSprints(fillContext, anchorMs, sprintLengthDays, piEndMs);
+  const sprints = buildProjectedSprints(
+    fillContext, timing.effectiveStartMs, timing.firstSprintEndMs, sprintMs, timing.piEndMs,
+  );
 
   const demand = sumDemandByRole(schedulableItems, unschedulable);
   const bottleneck: BottleneckReport = computeBottleneck(
-    demand, countPeopleByRole(capableByRole), DEFAULT_POINTS_PER_SPRINT, sprintsToPiEnd,
+    demand, countPeopleByRole(capableByRole), DEFAULT_POINTS_PER_SPRINT, timing.sprintsToPiEnd,
   );
 
   const { completionSprintIndex, completionDateIso, sprintsBeyondPiEnd } = computeCompletion(sprints);

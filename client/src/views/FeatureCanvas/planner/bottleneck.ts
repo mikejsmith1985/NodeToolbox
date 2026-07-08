@@ -21,8 +21,9 @@ export interface RolePeopleCounts {
   externalTest: number;
 }
 
-// The only downstream roles that can be a staffing bottleneck; development is always the upstream baseline.
-const DOWNSTREAM_ROLES: DeliveryRole[] = ['internalTest', 'externalTest'];
+// The downstream role that can gate delivery: internal testing. Definition of Done = internal test
+// complete, so external testing does NOT count toward success and is never treated as the bottleneck.
+const DOWNSTREAM_ROLES: DeliveryRole[] = ['internalTest'];
 
 /** Number of sprints a role needs: demand ÷ its per-sprint capacity, or Infinity when demand has no capacity. */
 function sprintsNeededForRole(demandPoints: number, capacityPerSprint: number): number {

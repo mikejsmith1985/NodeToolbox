@@ -108,4 +108,16 @@ describe('buildPlanEvaluationPrompt', () => {
     expect(prompt.toLowerCase()).toContain('carries into the next pi');
     expect(prompt.toLowerCase()).toContain('role-legal');
   });
+
+  it('injects operator constraints verbatim as a must-honor section', () => {
+    const constraint = 'Internal test must work DENP-1353 exclusively until complete before any other feature.';
+    const prompt = buildPlanEvaluationPrompt(buildResult(), PI_NAME, '2026-07-08', constraint);
+    expect(prompt).toContain('OPERATOR CONSTRAINTS');
+    expect(prompt).toContain(constraint);
+  });
+
+  it('omits the operator-constraints section when no details are given', () => {
+    const prompt = buildPlanEvaluationPrompt(buildResult(), PI_NAME, '2026-07-08', '   ');
+    expect(prompt).not.toContain('OPERATOR CONSTRAINTS');
+  });
 });
