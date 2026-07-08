@@ -43,6 +43,12 @@ export interface PlanInput {
   sprintLengthDays: number;      // default 14
   /** Default fraction of dev points used to synthesize internal-test cost when absent (default 0.5). */
   syntheticTestFraction: number;
+  /**
+   * The calendar date (YYYY-MM-DD) planning starts from. Sprint boundaries stay aligned to the PI
+   * start, so a start date that lands mid-sprint yields a prorated (partial) first sprint. When
+   * omitted, buildCapacityPlan falls back to the injected `todayIso`, preserving prior behavior.
+   */
+  planStartIso?: string;
 }
 
 /** One person's scheduled load within one sprint, split by role. */

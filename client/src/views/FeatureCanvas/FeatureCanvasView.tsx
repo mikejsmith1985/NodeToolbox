@@ -354,6 +354,8 @@ export default function FeatureCanvasView(): React.JSX.Element {
                   projectKey={scope.projectKey}
                   piName={scope.piName}
                   storyPointsFieldId={customStoryPointsFieldId}
+                  artTeams={artRoster}
+                  teamProfileId={profileId}
                   onClose={() => setIsCapacityPlanOpen(false)}
                 />
               )}
