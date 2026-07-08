@@ -5,9 +5,15 @@
 // much they complete per day / week / two weeks (issues AND story points) and how long work takes from
 // the first In-Progress status category to Done. It is read-only — it never writes to Jira.
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { jiraGet } from '../../services/jiraApi.ts';
+import { useSettingsStore } from '../../store/settingsStore.ts';
+import {
+  filterRosterMembersByActiveTeam,
+  type StandupRosterMember,
+  useStandupRosterStore,
+} from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import {
   computePersonalFlow,
   type PersonalFlowIssue,
@@ -22,6 +28,13 @@ const MAX_ISSUES = 100;
 const DEFAULT_WINDOW_DAYS = 90;
 // The "All history" option maps to ~10 years so the window effectively stops filtering.
 const ALL_HISTORY_WINDOW_DAYS = 3650;
+
+// Smallest typed query that triggers a Jira user search — one or two letters match too much to be useful.
+const MIN_USER_SEARCH_LENGTH = 2;
+// How long to wait after the last keystroke before firing the Jira user search, so typing is not blocked.
+const USER_SEARCH_DEBOUNCE_MS = 300;
+// Cap on Jira user-search suggestions requested per keystroke; the roster matches are shown alongside these.
+const MAX_USER_SEARCH_RESULTS = 20;
 
 /** The lookback windows offered in the picker; label shown to the user, value used in the JQL. */
 const WINDOW_OPTIONS: readonly { value: number; label: string }[] = [
@@ -108,6 +121,133 @@ function formatNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
+// ── Person search (roster + Jira) ────────────────────────────────────────────
+
+/** The minimal Jira user fields the assignee search returns and this tab reads. */
+interface RawJiraUser { displayName?: string; name?: string; accountId?: string }
+
+/** A single person the picker can offer, with the value to write into the assignee field when chosen. */
+interface PersonSuggestion {
+  key: string;
+  label: string; // human name shown in the dropdown
+  assigneeValue: string; // what the JQL `assignee = "…"` clause expects
+  sourceLabel: string; // 'Roster' or 'Jira', so the user knows where a match came from
+}
+
+/**
+ * A per-person row of the team comparison table: either a computed flow result or an inline error.
+ * A single person's fetch failing produces an error row instead of aborting the whole team run.
+ */
+interface TeamFlowRow {
+  personDisplayName: string;
+  result: PersonalFlowResult | null;
+  errorMessage: string | null;
+}
+
+/**
+ * Searches Jira for users matching the typed text. Jira Server expects `username=` while Jira Cloud
+ * expects `query=`, so this mirrors the roster search: try `username=` first and fall back to `query=`
+ * when it yields nothing. The search is a convenience, so any error is swallowed to an empty list and
+ * never blocks typing.
+ */
+async function searchJiraUsers(query: string): Promise<RawJiraUser[]> {
+  const byUsername = await jiraGet<RawJiraUser[] | null>(
+    `/rest/api/2/user/search?username=${encodeURIComponent(query)}&maxResults=${MAX_USER_SEARCH_RESULTS}`,
+  ).catch(() => null);
+  const usernameUsers = Array.isArray(byUsername) ? byUsername : [];
+  if (usernameUsers.length > 0) {
+    return usernameUsers;
+  }
+
+  const byQuery = await jiraGet<RawJiraUser[] | null>(
+    `/rest/api/2/user/search?query=${encodeURIComponent(query)}&maxResults=${MAX_USER_SEARCH_RESULTS}`,
+  ).catch(() => null);
+  return Array.isArray(byQuery) ? byQuery : [];
+}
+
+/** Builds roster suggestions whose display name or assignee value contains the typed text (case-insensitive). */
+function buildRosterSuggestionMatches(
+  rosterMembers: readonly StandupRosterMember[],
+  typedText: string,
+): PersonSuggestion[] {
+  const needle = typedText.trim().toLowerCase();
+  if (needle === '') {
+    return [];
+  }
+  return rosterMembers
+    .filter((rosterMember) =>
+      rosterMember.displayName.toLowerCase().includes(needle)
+      || rosterMember.assigneeQueryValue.toLowerCase().includes(needle))
+    .map((rosterMember) => ({
+      key: `roster:${rosterMember.id}`,
+      label: rosterMember.displayName,
+      assigneeValue: rosterMember.assigneeQueryValue,
+      sourceLabel: 'Roster',
+    }));
+}
+
+/** Maps raw Jira user-search results to picker suggestions, using the display name as the assignee value. */
+function mapJiraUsersToSuggestions(jiraUsers: readonly RawJiraUser[]): PersonSuggestion[] {
+  const suggestions: PersonSuggestion[] = [];
+  for (const jiraUser of jiraUsers) {
+    const assigneeValue = (jiraUser.displayName ?? jiraUser.name ?? '').trim();
+    if (assigneeValue === '') {
+      continue;
+    }
+    suggestions.push({
+      key: `jira:${jiraUser.accountId ?? jiraUser.name ?? assigneeValue}`,
+      label: assigneeValue,
+      assigneeValue,
+      sourceLabel: 'Jira',
+    });
+  }
+  return suggestions;
+}
+
+/** Merges roster and Jira suggestions, keeping the roster entry first and dropping duplicate assignee values. */
+function buildPersonSuggestions(
+  rosterMatches: readonly PersonSuggestion[],
+  jiraMatches: readonly PersonSuggestion[],
+): PersonSuggestion[] {
+  const mergedSuggestions: PersonSuggestion[] = [];
+  const seenAssigneeValues = new Set<string>();
+  for (const suggestion of [...rosterMatches, ...jiraMatches]) {
+    const dedupeKey = suggestion.assigneeValue.trim().toLowerCase();
+    if (dedupeKey === '' || seenAssigneeValues.has(dedupeKey)) {
+      continue;
+    }
+    seenAssigneeValues.add(dedupeKey);
+    mergedSuggestions.push(suggestion);
+  }
+  return mergedSuggestions;
+}
+
+/**
+ * Fetches and computes one roster member's flow for the team comparison. A fetch failure is captured
+ * as an error row (never thrown) so one unreachable person cannot abort the whole team run.
+ */
+async function buildTeamFlowRow(
+  rosterMember: StandupRosterMember,
+  statusCategoryByStatusId: Record<string, string>,
+  windowDays: number,
+  todayIso: string,
+): Promise<TeamFlowRow> {
+  try {
+    const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(
+      buildSearchPath(rosterMember.assigneeQueryValue, windowDays),
+    );
+    const issues = (searchResponse.issues ?? []).map(toPersonalFlowIssue);
+    const result = computePersonalFlow({ issues, statusCategoryByStatusId, windowDays, todayIso });
+    return { personDisplayName: rosterMember.displayName, result, errorMessage: null };
+  } catch (caughtError) {
+    return {
+      personDisplayName: rosterMember.displayName,
+      result: null,
+      errorMessage: caughtError instanceof Error ? caughtError.message : 'Failed to build this person’s flow.',
+    };
+  }
+}
+
 /** One labelled statistic; label and value are siblings so the value reads independently of the label. */
 function StatCard({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
@@ -163,6 +303,82 @@ function PersonalFlowResultView({ result }: { result: PersonalFlowResult }): Rea
   );
 }
 
+/** A dropdown of person suggestions (roster + Jira) rendered under the person field; each is selectable. */
+function PersonSuggestionsDropdown({
+  suggestions,
+  onSelect,
+}: {
+  suggestions: readonly PersonSuggestion[];
+  onSelect: (assigneeValue: string) => void;
+}): React.JSX.Element {
+  return (
+    <ul
+      role="listbox"
+      aria-label="Person suggestions"
+      style={{
+        position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, margin: '2px 0 0', padding: 4,
+        listStyle: 'none', maxHeight: 220, overflowY: 'auto', background: 'var(--color-surface, #fff)',
+        border: '1px solid var(--color-border)', borderRadius: 6,
+      }}
+    >
+      {suggestions.map((suggestion) => (
+        <li
+          key={suggestion.key}
+          role="option"
+          aria-selected={false}
+          onClick={() => onSelect(suggestion.assigneeValue)}
+          style={{ cursor: 'pointer', padding: '4px 8px', display: 'flex', justifyContent: 'space-between', gap: 8 }}
+        >
+          <span>{suggestion.label}</span>
+          <span style={{ fontSize: 10, opacity: 0.6 }}>{suggestion.sourceLabel}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Renders one comparison-table row: a full metrics row, or the person's name plus an inline error. */
+function TeamFlowComparisonRow({ row }: { row: TeamFlowRow }): React.JSX.Element {
+  if (row.result === null) {
+    return (
+      <tr style={{ borderTop: '1px solid var(--color-border)' }}>
+        <td>{row.personDisplayName}</td>
+        <td colSpan={6} style={{ color: 'var(--color-danger)' }}>{row.errorMessage ?? 'No result.'}</td>
+      </tr>
+    );
+  }
+
+  const { throughput, cycleTime } = row.result;
+  return (
+    <tr style={{ borderTop: '1px solid var(--color-border)' }}>
+      <td>{row.personDisplayName}</td>
+      <td>{String(row.result.issueCount)}</td>
+      <td>{formatNumber(row.result.totalStoryPoints)}</td>
+      <td>{formatNumber(throughput.issuesPerWeek)}</td>
+      <td>{formatNumber(throughput.pointsPerWeek)}</td>
+      <td>{cycleTime.averageDays === null ? '—' : formatNumber(cycleTime.averageDays)}</td>
+      <td>{cycleTime.medianDays === null ? '—' : formatNumber(cycleTime.medianDays)}</td>
+    </tr>
+  );
+}
+
+/** The side-by-side team comparison table: one row per roster member, distinct from the single-person view. */
+function TeamFlowComparisonView({ rows }: { rows: readonly TeamFlowRow[] }): React.JSX.Element {
+  return (
+    <table style={{ marginTop: 12, width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+      <thead>
+        <tr style={{ textAlign: 'left', opacity: 0.7 }}>
+          <th>Person</th><th>Issues</th><th>Points</th><th>Issues/Wk</th>
+          <th>Points/Wk</th><th>Avg Cycle (days)</th><th>Median Cycle (days)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => <TeamFlowComparisonRow key={row.personDisplayName} row={row} />)}
+      </tbody>
+    </table>
+  );
+}
+
 /** The Personal Flow report tab: pick a person + window, run, and read their throughput + cycle time. */
 export function PersonalFlowTab(): React.JSX.Element {
   const [person, setPerson] = useState('');
@@ -170,15 +386,72 @@ export function PersonalFlowTab(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PersonalFlowResult | null>(null);
+  const [areSuggestionsOpen, setAreSuggestionsOpen] = useState(false);
+  const [jiraUserSuggestions, setJiraUserSuggestions] = useState<RawJiraUser[]>([]);
+  const [teamRows, setTeamRows] = useState<TeamFlowRow[]>([]);
+  const [isTeamLoading, setIsTeamLoading] = useState(false);
+  const [teamError, setTeamError] = useState<string | null>(null);
+
+  // The active-team roster drives both the suggestion list and the "Run for team roster" mode. It is read
+  // the same way RosterTab does: the persisted active team name filters the shared standup roster store.
+  const rosterMembers = useStandupRosterStore((state) => state.rosterMembers);
+  const storedActiveTeamName = useSettingsStore((state) => state.sprintDashboardActiveTeam);
+  const activeTeamRosterMembers = useMemo(
+    () => filterRosterMembersByActiveTeam(rosterMembers, storedActiveTeamName, { includeTeamlessMembers: true }),
+    [rosterMembers, storedActiveTeamName],
+  );
+
+  const personSuggestions = useMemo(
+    () => buildPersonSuggestions(
+      buildRosterSuggestionMatches(activeTeamRosterMembers, person),
+      mapJiraUsersToSuggestions(jiraUserSuggestions),
+    ),
+    [activeTeamRosterMembers, person, jiraUserSuggestions],
+  );
+
+  // Debounce the Jira user search so every keystroke does not fire a request; the roster matches remain
+  // instant. The effect self-cancels on the next keystroke or unmount so a stale response cannot land.
+  useEffect(() => {
+    const trimmedQuery = person.trim();
+    if (trimmedQuery.length < MIN_USER_SEARCH_LENGTH) {
+      setJiraUserSuggestions([]);
+      return;
+    }
+    let isEffectActive = true;
+    const debounceTimerId = setTimeout(() => {
+      void searchJiraUsers(trimmedQuery).then((jiraUsers) => {
+        if (isEffectActive) {
+          setJiraUserSuggestions(jiraUsers);
+        }
+      });
+    }, USER_SEARCH_DEBOUNCE_MS);
+    return () => {
+      isEffectActive = false;
+      clearTimeout(debounceTimerId);
+    };
+  }, [person]);
+
+  const handlePersonChange = (nextPerson: string): void => {
+    setPerson(nextPerson);
+    setAreSuggestionsOpen(true);
+  };
+
+  const handleSelectSuggestion = (assigneeValue: string): void => {
+    setPerson(assigneeValue);
+    setAreSuggestionsOpen(false);
+  };
 
   const runReport = async (): Promise<void> => {
     const trimmedPerson = person.trim();
     if (trimmedPerson === '') {
       return;
     }
+    setAreSuggestionsOpen(false);
     setIsLoading(true);
     setError(null);
     setResult(null);
+    setTeamRows([]); // a fresh single-person run clears the team comparison so the two views never collide
+    setTeamError(null);
     try {
       const statuses = await jiraGet<RawStatus[]>('/rest/api/2/status');
       const statusCategoryByStatusId = buildStatusCategoryMap(Array.isArray(statuses) ? statuses : []);
@@ -194,17 +467,50 @@ export function PersonalFlowTab(): React.JSX.Element {
     }
   };
 
+  const runTeamReport = async (): Promise<void> => {
+    if (activeTeamRosterMembers.length === 0) {
+      return;
+    }
+    setAreSuggestionsOpen(false);
+    setIsTeamLoading(true);
+    setTeamError(null);
+    setResult(null); // a fresh team run clears the single-person view so the two never show at once
+    setError(null);
+    setTeamRows([]);
+    try {
+      const statuses = await jiraGet<RawStatus[]>('/rest/api/2/status');
+      const statusCategoryByStatusId = buildStatusCategoryMap(Array.isArray(statuses) ? statuses : []);
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const nextTeamRows: TeamFlowRow[] = [];
+      // Sequential per-person fetches keep the load gentle on Jira; each is independent and self-contained.
+      for (const rosterMember of activeTeamRosterMembers) {
+        nextTeamRows.push(await buildTeamFlowRow(rosterMember, statusCategoryByStatusId, windowDays, todayIso));
+      }
+      setTeamRows(nextTeamRows);
+    } catch (caughtError) {
+      setTeamError(caughtError instanceof Error ? caughtError.message : 'Failed to build the team flow report.');
+    } finally {
+      setIsTeamLoading(false);
+    }
+  };
+
+  const isSuggestionsVisible = areSuggestionsOpen && person.trim() !== '' && personSuggestions.length > 0;
+
   return (
     <div style={{ padding: '8px 4px' }}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, gap: 4 }}>
+        <label style={{ position: 'relative', display: 'flex', flexDirection: 'column', fontSize: 12, gap: 4 }}>
           Person (Jira assignee)
           <input
             value={person}
-            onChange={(event) => setPerson(event.target.value)}
+            onChange={(event) => handlePersonChange(event.target.value)}
+            onFocus={() => setAreSuggestionsOpen(true)}
             placeholder="e.g. Rajaram, Rajasekar"
             style={{ minWidth: 220 }}
           />
+          {isSuggestionsVisible && (
+            <PersonSuggestionsDropdown suggestions={personSuggestions} onSelect={handleSelectSuggestion} />
+          )}
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, gap: 4 }}>
           Lookback window
@@ -214,13 +520,29 @@ export function PersonalFlowTab(): React.JSX.Element {
             ))}
           </select>
         </label>
-        <button type="button" onClick={() => void runReport()} disabled={person.trim() === '' || isLoading}>
+        <button
+          type="button"
+          onClick={() => void runReport()}
+          disabled={person.trim() === '' || isLoading || isTeamLoading}
+        >
           {isLoading ? 'Running…' : 'Run report'}
+        </button>
+        <button
+          type="button"
+          onClick={() => void runTeamReport()}
+          disabled={activeTeamRosterMembers.length === 0 || isLoading || isTeamLoading}
+          title={activeTeamRosterMembers.length === 0 ? 'Add roster members for the active team first' : undefined}
+        >
+          {isTeamLoading ? 'Running team…' : 'Run for team roster'}
         </button>
       </div>
 
       {error !== null && (
         <p role="alert" style={{ marginTop: 10, fontSize: 12, color: 'var(--color-danger)' }}>{error}</p>
+      )}
+
+      {teamError !== null && (
+        <p role="alert" style={{ marginTop: 10, fontSize: 12, color: 'var(--color-danger)' }}>{teamError}</p>
       )}
 
       {result !== null && result.issueCount === MAX_ISSUES && (
@@ -230,6 +552,12 @@ export function PersonalFlowTab(): React.JSX.Element {
       )}
 
       {result !== null && <PersonalFlowResultView result={result} />}
+
+      {isTeamLoading && teamRows.length === 0 && (
+        <p style={{ marginTop: 12, fontSize: 12, opacity: 0.7 }}>Building the team comparison…</p>
+      )}
+
+      {teamRows.length > 0 && <TeamFlowComparisonView rows={teamRows} />}
     </div>
   );
 }
