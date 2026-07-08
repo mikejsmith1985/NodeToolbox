@@ -26,7 +26,7 @@ function buildController(): CanvasOverlayController {
     ensureNodeStates: vi.fn(), updateNode: vi.fn(), setWipLimit: vi.fn(), setPriority: vi.fn(),
     setSize: vi.fn(), setContainer: vi.fn(), setParked: vi.fn(), addContainer: vi.fn(),
     updateContainer: vi.fn(), removeContainer: vi.fn(), removeNode: vi.fn(), clearNodes: vi.fn(), goToStage: vi.fn(), completeStage: vi.fn(),
-    assignToContainer: vi.fn(), parkNode: vi.fn(), unparkNode: vi.fn(), completeNode: vi.fn(), moveContainer: vi.fn(), applyMasterPlan: vi.fn(), relayoutBoxes: vi.fn(), setStoryPlacement: vi.fn(), autoBalanceSprints: vi.fn(), undo: vi.fn(), redo: vi.fn(), canUndo: false, canRedo: false,
+    assignToContainer: vi.fn(), parkNode: vi.fn(), unparkNode: vi.fn(), completeNode: vi.fn(), moveContainer: vi.fn(), applyMasterPlan: vi.fn(), relayoutBoxes: vi.fn(), setStoryPlacement: vi.fn(), setStoryAssignee: vi.fn(), autoBalanceSprints: vi.fn(), undo: vi.fn(), redo: vi.fn(), canUndo: false, canRedo: false,
   };
 }
 
@@ -39,7 +39,7 @@ const NODE: CanvasNode = {
     { key: 'DENP-2', summary: 'Build the API', status: 'In Progress', statusCategoryKey: 'indeterminate', storyPoints: 3, assignee: 'Ada Lovelace', issueType: 'Story', subtaskCount: 2 },
     { key: 'DENP-3', summary: 'Build the UI', status: 'To Do', statusCategoryKey: 'new', storyPoints: 3, assignee: null, issueType: 'Story', subtaskCount: 0 },
   ],
-  dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null, storyPlacements: {}, pendingComment: "", attachments: [], effectivePoints: 0,
+  dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null, storyPlacements: {}, storyAssignees: {}, pendingComment: "", attachments: [], effectivePoints: 0,
 };
 
 describe('StoryPlanningPanel', () => {

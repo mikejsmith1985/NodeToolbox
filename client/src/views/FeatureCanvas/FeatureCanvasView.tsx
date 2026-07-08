@@ -316,6 +316,7 @@ export default function FeatureCanvasView(): React.JSX.Element {
                   sizeMapping={overlay.sizeMapping}
                   boardId={scope.boardId}
                   projectKey={scope.projectKey}
+                  rosterMembers={reallocRoster}
                   onClose={() => setIsCommitOpen(false)}
                 />
               )}

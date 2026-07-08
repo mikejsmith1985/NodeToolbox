@@ -14,7 +14,7 @@ import { buildChildBucketRankMap } from './useCapacityPlan.ts';
 function buildFeature(issueKey: string, priority: MoscowBucket | null, childKeys: string[]): CanvasNode {
   return {
     issueKey, position: { x: 0, y: 0 }, size: null, priority, containerId: null,
-    isExpanded: false, isParked: false, parkReason: null, storyPlacements: {}, pendingComment: '',
+    isExpanded: false, isParked: false, parkReason: null, storyPlacements: {}, storyAssignees: {}, pendingComment: '',
     summary: issueKey, status: 'To Do', statusCategoryKey: 'new', assignee: null, storyPoints: null,
     businessValue: null, description: null, acceptanceCriteria: null, health: 'green', completionPercent: 0,
     hygieneFlags: [], dependencies: [], attachments: [], effectivePoints: 0,

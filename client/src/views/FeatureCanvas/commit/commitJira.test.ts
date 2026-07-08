@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createSprint, jiraPost } from '../../../services/jiraApi.ts';
+import { createSprint, jiraPost, jiraPut } from '../../../services/jiraApi.ts';
 import { saveFeatureReviewStoryPoints } from '../../SprintDashboard/featureReviewFixes.ts';
 import type { CanvasContainer } from '../overlay/overlayModel.ts';
 import type { CommitDiffItem } from '../logic/canvasTypes.ts';
@@ -74,6 +74,26 @@ describe('commitToJira', () => {
 
     expect(jiraPost).toHaveBeenCalledWith('/rest/api/2/issue/DENP-7/comment', { body: 'Parked on Feature Canvas: stale — no activity' });
     expect(results[0].status).toBe('success');
+  });
+
+  it('writes an assigneeSet by resolving the display name to a Jira user id', async () => {
+    vi.mocked(jiraPut).mockResolvedValue(undefined as never);
+    const assigneeItem: CommitDiffItem = { id: 'as1', kind: 'assigneeSet', issueKey: 'DENP-2', containerId: null, from: 'Old Owner', to: 'Jane Doe', dependsOn: null, selected: true };
+
+    const results = await commitToJira([assigneeItem], { containers: [], boardId: null, projectKey: 'DENP', assigneeIdByName: { 'Jane Doe': 'user-123' } });
+
+    expect(jiraPut).toHaveBeenCalledWith('/rest/api/2/issue/DENP-2', { fields: { assignee: { name: 'user-123' } } });
+    expect(results[0].status).toBe('success');
+  });
+
+  it('SKIPS an assigneeSet for an unknown user rather than mis-assigning it', async () => {
+    const assigneeItem: CommitDiffItem = { id: 'as2', kind: 'assigneeSet', issueKey: 'DENP-2', containerId: null, from: null, to: 'Ghost User', dependsOn: null, selected: true };
+
+    const results = await commitToJira([assigneeItem], { containers: [], boardId: null, projectKey: 'DENP', assigneeIdByName: { 'Jane Doe': 'user-123' } });
+
+    expect(jiraPut).not.toHaveBeenCalled();
+    expect(results[0].status).toBe('skipped');
+    expect(results[0].message).toContain('Ghost User');
   });
 
   it('does not write deselected items', async () => {

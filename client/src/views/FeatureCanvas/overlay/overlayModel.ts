@@ -63,6 +63,10 @@ export interface CanvasNodeState {
   /** Per-child-story box overrides (storyKey → containerId) set during story-level planning. Absent
    *  keys inherit the feature's own box; this lets one feature's stories be split across sprints. */
   storyPlacements?: Record<string, string>;
+  /** Proposed reassignments (targetKey → new assignee DISPLAY name) staged from a capacity plan.
+   *  The targetKey is a child-story key (or the feature's own key for a childless feature). These
+   *  only ever reach Jira through the reviewed Review & Commit diff, never automatically. */
+  storyAssignees?: Record<string, string>;
   /** A comment drafted on the canvas to post to this feature's Jira issue on Review & Commit. */
   pendingComment?: string;
 }

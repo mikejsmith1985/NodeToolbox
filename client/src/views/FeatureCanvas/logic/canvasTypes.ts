@@ -58,6 +58,10 @@ export interface CanvasNode {
   /** Per-child-story box overrides (storyKey → containerId). Absent story inherits the feature's box;
    *  this is what lets a feature's stories be split across sprints during story-level planning. */
   storyPlacements: Record<string, string>;
+  /** Proposed reassignments (targetKey → new assignee DISPLAY name) staged from a capacity plan. The
+   *  targetKey is a child-story key, or the feature's own key for a childless feature. Empty when none;
+   *  each proposal is written to Jira only through the reviewed Review & Commit diff. */
+  storyAssignees: Record<string, string>;
   /** A comment drafted on the canvas, posted to Jira on Review & Commit. Empty string when none. */
   pendingComment: string;
   // Live Jira/blueprint data (re-fetched, never persisted).
@@ -108,7 +112,7 @@ export interface WipSnapshot {
 /** One proposed Jira write shown in the Review & Commit diff before anything is written. */
 export interface CommitDiffItem {
   id: string;
-  kind: 'sprintAssign' | 'versionAssign' | 'pointsSet' | 'prioritySet' | 'createSprint' | 'createVersion' | 'parkComment' | 'comment';
+  kind: 'sprintAssign' | 'versionAssign' | 'pointsSet' | 'prioritySet' | 'assigneeSet' | 'createSprint' | 'createVersion' | 'parkComment' | 'comment';
   issueKey: string | null;
   containerId: string | null;
   from: string | number | null;

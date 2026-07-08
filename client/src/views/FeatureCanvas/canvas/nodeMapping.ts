@@ -154,6 +154,7 @@ export function mapFeaturesToNodes(items: readonly FeatureReviewItem[], overlay:
       isParked: nodeState?.isParked ?? false,
       parkReason: nodeState?.parkReason ?? null,
       storyPlacements: nodeState?.storyPlacements ?? {},
+      storyAssignees: nodeState?.storyAssignees ?? {},
       pendingComment: nodeState?.pendingComment ?? '',
       summary: item.feature.summary,
       status: item.feature.status,

@@ -186,6 +186,8 @@ export interface IngestPlacement {
   storyKey: string | null;
   /** The target sprint name (a valid sprint the caller maps to / creates a box for). */
   sprint: string;
+  /** The proposed new owner's display name, carried through only when reassignment was enabled. */
+  assignee?: string;
 }
 
 /**
@@ -212,9 +214,9 @@ export function resolveIngestPlacements(
   for (const assignment of assignments) {
     const owningFeatureKey = featureKeyByStoryKey.get(assignment.issueKey);
     if (owningFeatureKey !== undefined) {
-      placements.push({ featureKey: owningFeatureKey, storyKey: assignment.issueKey, sprint: assignment.sprint });
+      placements.push({ featureKey: owningFeatureKey, storyKey: assignment.issueKey, sprint: assignment.sprint, assignee: assignment.assignee });
     } else if (featureKeys.has(assignment.issueKey)) {
-      placements.push({ featureKey: assignment.issueKey, storyKey: null, sprint: assignment.sprint });
+      placements.push({ featureKey: assignment.issueKey, storyKey: null, sprint: assignment.sprint, assignee: assignment.assignee });
     } else {
       unknownIssueKeys.push(assignment.issueKey);
     }

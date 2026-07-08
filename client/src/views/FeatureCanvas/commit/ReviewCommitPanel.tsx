@@ -10,6 +10,7 @@ import { buildCommitDiff } from '../logic/commitDiff.ts';
 import type { CommitDiffItem } from '../logic/canvasTypes.ts';
 import type { CanvasNode } from '../logic/canvasTypes.ts';
 import type { CanvasContainer, TshirtSize } from '../overlay/overlayModel.ts';
+import type { StandupRosterMember } from '../../SprintDashboard/hooks/useStandupRosterStore.ts';
 import { commitToJira, type CommitResult } from './commitJira.ts';
 import controlStyles from '../canvas/canvasControls.module.css';
 
@@ -20,7 +21,27 @@ export interface ReviewCommitPanelProps {
   sizeMapping: Record<TshirtSize, number>;
   boardId: number | null;
   projectKey: string;
+  /** The active-team roster; supplies the name→Jira-id lookup that lets a reassignment be written. */
+  rosterMembers: readonly StandupRosterMember[];
   onClose: () => void;
+}
+
+/**
+ * Builds the display/query-name → Jira user-id lookup a reassignment write needs. Each roster member
+ * contributes BOTH their display name and their assignee query value (so either form the AI echoed
+ * resolves), but only when the member actually has a Jira account id — a member without one stays
+ * absent from the map so their reassignment is safely skipped rather than mis-targeted.
+ */
+function buildAssigneeIdByName(rosterMembers: readonly StandupRosterMember[]): Record<string, string> {
+  const assigneeIdByName: Record<string, string> = {};
+  for (const member of rosterMembers) {
+    if (member.jiraAccountId === undefined || member.jiraAccountId === '') {
+      continue;
+    }
+    assigneeIdByName[member.displayName] = member.jiraAccountId;
+    assigneeIdByName[member.assigneeQueryValue] = member.jiraAccountId;
+  }
+  return assigneeIdByName;
 }
 
 /** One sprint's selected-vs-budget story-point tally, from the currently-checked story assignments. */
@@ -40,6 +61,7 @@ function describeItem(item: CommitDiffItem): string {
     case 'versionAssign': return `${item.issueKey} → release "${item.to}"`;
     case 'pointsSet': return `${item.issueKey} points → ${item.to}`;
     case 'prioritySet': return `${item.issueKey} priority → ${item.to}`;
+    case 'assigneeSet': return `${item.issueKey} assignee → ${item.to}`;
     case 'parkComment': return `${item.issueKey} → comment "Parked: ${item.to}"`;
     case 'comment': return `${item.issueKey} → comment "${item.to}"`;
     default: return item.id;
@@ -48,8 +70,10 @@ function describeItem(item: CommitDiffItem): string {
 
 /** The Review & Commit modal. */
 export function ReviewCommitPanel(props: ReviewCommitPanelProps): React.JSX.Element {
-  const { canvasNodes, containers, sizeMapping, boardId, projectKey, onClose } = props;
+  const { canvasNodes, containers, sizeMapping, boardId, projectKey, rosterMembers, onClose } = props;
   const initialDiff = useMemo(() => buildCommitDiff(canvasNodes, containers, { sizeMapping }), [canvasNodes, containers, sizeMapping]);
+  // Name→Jira-id lookup for reassignment writes; recomputed only when the roster changes.
+  const assigneeIdByName = useMemo(() => buildAssigneeIdByName(rosterMembers), [rosterMembers]);
   const [diff, setDiff] = useState<CommitDiffItem[]>(initialDiff);
   const [results, setResults] = useState<CommitResult[] | null>(null);
   const [isCommitting, setIsCommitting] = useState(false);
@@ -78,7 +102,7 @@ export function ReviewCommitPanel(props: ReviewCommitPanelProps): React.JSX.Elem
 
   const handleCommit = async (): Promise<void> => {
     setIsCommitting(true);
-    const commitResults = await commitToJira(diff, { containers, boardId, projectKey });
+    const commitResults = await commitToJira(diff, { containers, boardId, projectKey, assigneeIdByName });
     setResults(commitResults);
     setIsCommitting(false);
   };

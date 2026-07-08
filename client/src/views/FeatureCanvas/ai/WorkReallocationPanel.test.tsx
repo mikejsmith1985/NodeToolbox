@@ -31,7 +31,7 @@ function buildNode(): CanvasNode {
       { key: 'DENP-3', summary: 'Write tests', status: 'To Do', statusCategoryKey: 'new', storyPoints: 2, assignee: null, statusChangedIso: null },
     ],
     dependencies: [], businessValue: null, description: null, acceptanceCriteria: null, parkReason: null,
-    storyPlacements: {}, pendingComment: '', attachments: [], effectivePoints: 5,
+    storyPlacements: {}, storyAssignees: {}, pendingComment: '', attachments: [], effectivePoints: 5,
   };
 }
 

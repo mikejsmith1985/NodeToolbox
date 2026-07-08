@@ -14,6 +14,7 @@ function createCanvasNode(overrides: {
   issueKey: string;
   containerId: string | null;
   storyPlacements?: Record<string, string>;
+  storyAssignees?: Record<string, string>;
   childStories: CanvasChildStory[];
 }): CanvasNode {
   return {
@@ -26,6 +27,7 @@ function createCanvasNode(overrides: {
     isParked: false,
     parkReason: null,
     storyPlacements: overrides.storyPlacements ?? {},
+    storyAssignees: overrides.storyAssignees ?? {},
     pendingComment: '',
     summary: overrides.issueKey,
     status: 'In Progress',
