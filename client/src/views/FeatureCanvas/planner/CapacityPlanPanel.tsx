@@ -15,7 +15,7 @@ import type { CanvasNode } from '../logic/canvasTypes.ts';
 import controlStyles from '../canvas/canvasControls.module.css';
 import { copyToClipboard } from '../ai/clipboard.ts';
 import type { DeliveryRole, PlanResult, ProjectedSprint } from './capacityTypes.ts';
-import { formatPlanSummary } from './planSummary.ts';
+import { buildPlanEvaluationPrompt, formatPlanSummary } from './planSummary.ts';
 import { useCapacityPlan, type IncludableBucket } from './useCapacityPlan.ts';
 
 // ── Named constants ──────────────────────────────────────────────────────────
@@ -46,10 +46,12 @@ export interface CapacityPlanPanelProps {
 
 // ── Presentational projection view (pure of network/state — fixture-testable) ─
 
-/** Props for the presentational projection: a ready PlanResult and the PI name for the copy-out header. */
+/** Props for the presentational projection: a ready PlanResult, the PI name, and today (for the copy-outs). */
 export interface PlanProjectionViewProps {
   result: PlanResult;
   piName: string;
+  /** Today's date (ISO), used in the Copilot evaluation prompt so it reasons about PI-vs-carryover. */
+  todayIso: string;
 }
 
 /** Formats one person's per-role load line inside a projected sprint. */
@@ -84,7 +86,7 @@ function SprintCard({ sprint }: { sprint: ProjectedSprint }): React.JSX.Element 
  * completion projection, each projected sprint's per-person load, and any proposals / unschedulable
  * items. The "Copy summary" button copies the same projection as plain text. Never writes anything.
  */
-export function PlanProjectionView({ result, piName }: PlanProjectionViewProps): React.JSX.Element {
+export function PlanProjectionView({ result, piName, todayIso }: PlanProjectionViewProps): React.JSX.Element {
   const { bottleneck, sprints, proposals, unschedulableItemKeys } = result;
   return (
     <div>
@@ -140,14 +142,23 @@ export function PlanProjectionView({ result, piName }: PlanProjectionViewProps):
         </section>
       )}
 
-      <button
-        type="button"
-        className={controlStyles.btn}
-        onClick={() => copyToClipboard(formatPlanSummary(result, piName))}
-        style={{ marginTop: 6 }}
-      >
-        📋 Copy summary
-      </button>
+      <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className={controlStyles.btn}
+          onClick={() => copyToClipboard(formatPlanSummary(result, piName))}
+        >
+          📋 Copy summary
+        </button>
+        <button
+          type="button"
+          className={controlStyles.btnPrimary}
+          onClick={() => copyToClipboard(buildPlanEvaluationPrompt(result, piName, todayIso))}
+          title="Copy a prompt (plan + context + instructions) to paste into Copilot to evaluate and improve this plan"
+        >
+          🤖 Copy prompt for Copilot
+        </button>
+      </div>
     </div>
   );
 }
@@ -172,6 +183,8 @@ export function CapacityPlanPanel({
   // Track which eligible features the operator has UN-checked. Selected = eligible minus this set, so
   // the default is "plan everything" and changing buckets doesn't clobber the operator's exclusions.
   const [deselectedFeatureKeys, setDeselectedFeatureKeys] = useState<Set<string>>(() => new Set());
+  // Today's date for the Copilot evaluation prompt (a display-time read; the pure engine gets its own).
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   // The features the operator can choose from: those with a MoSCoW priority in the included buckets,
   // ordered by bucket then key so the list is stable and scannable.
@@ -296,7 +309,7 @@ export function CapacityPlanPanel({
         <p role="alert" style={{ margin: '6px 0', fontSize: 12, color: 'var(--color-danger)' }}>{error}</p>
       )}
 
-      {status === 'ready' && result !== null && <PlanProjectionView result={result} piName={piName} />}
+      {status === 'ready' && result !== null && <PlanProjectionView result={result} piName={piName} todayIso={todayIso} />}
 
       <p style={{ margin: '8px 0 0', fontSize: 11, opacity: 0.7 }}>
         Read-only projection — nothing here is written to the canvas or Jira.

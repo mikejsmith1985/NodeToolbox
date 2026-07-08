@@ -388,15 +388,22 @@ function countPeopleByRole(capableByRole: Map<DeliveryRole, string[]>): { dev: n
   };
 }
 
-/** Resolves the plan anchor, PI end, and whole-sprint budget to the PI end from the PI window (or today). */
+/**
+ * Resolves the plan anchor, PI end, and whole-sprint budget to the PI end. The projection is anchored at
+ * TODAY — not the PI start — so it shows what can still be done from now on (the remaining PI capacity vs.
+ * what carries into the next PI), rather than replaying sprints that have already elapsed. When today
+ * precedes the PI start (planning a future PI), the PI start is used so no sprint lands before the PI opens.
+ */
 function resolveSprintTiming(
   piName: string,
   todayIso: string,
   sprintLengthDays: number,
 ): { anchorMs: number; piEndMs: number | null; sprintsToPiEnd: number } {
   const piWindow = parsePiDateRange(piName);
-  const anchorIso = piWindow ? piWindow.startIso : todayIso;
-  const anchorMs = Date.parse(`${anchorIso}T00:00:00Z`);
+  const todayMs = Date.parse(`${todayIso}T00:00:00Z`);
+  const piStartMs = piWindow ? Date.parse(`${piWindow.startIso}T00:00:00Z`) : Number.NaN;
+  // Anchor = the later of today and the PI start (so we plan forward from now, not from a past PI start).
+  const anchorMs = !Number.isNaN(piStartMs) && piStartMs > todayMs ? piStartMs : todayMs;
   const piEndMs = piWindow ? Date.parse(`${piWindow.endIso}T00:00:00Z`) : null;
   let sprintsToPiEnd = MINIMUM_SPRINTS_TO_PI_END;
   if (piEndMs !== null && !Number.isNaN(anchorMs)) {

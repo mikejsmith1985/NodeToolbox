@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Feature Canvas — capacity plan now projects from today + a Copilot prompt**: the plan is **anchored at today's date** (not the PI start), so the projected sprints reflect what can still be done in the remaining PI versus what carries into the next PI — instead of replaying sprints that have already elapsed. And a new **🤖 Copy prompt for Copilot** button copies the plan wrapped with its assumptions and an "evaluate and improve this plan" instruction, so you can get advanced reasoning (risks, role-legal re-allocations, PI-vs-carryover, staffing) on top of the deterministic numbers. *(feature 013)*
 - **Feature Canvas — capacity plan: pick which features to plan + more honest tester math**: the Build capacity plan panel now lets you narrow a plan to **specific features** (e.g. your top few "priority one" items) instead of a whole MoSCoW bucket — with Select all / Clear all. And the "how many more testers to match dev throughput" figure is now based on the actual **testing demand rate** rather than raw developer head-count, which was over-counting (e.g. reporting +9 where the honest figure is ~+4). *(feature 013)*
 
 ### Added

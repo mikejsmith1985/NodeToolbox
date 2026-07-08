@@ -203,6 +203,17 @@ describe('buildCapacityPlan — bottleneck and projection (SC-4, SC-5)', () => {
     expect(result.sprintsBeyondPiEnd).toBeGreaterThanOrEqual(1);
     assertNoPersonOverPool(result);
   });
+
+  it('anchors the projection at TODAY (mid-PI), not the PI start', () => {
+    // PI runs 05/21–07/29; planning on 07/08 (mid-PI) must start Sprint 1 on 07/08, not replay from 05/21,
+    // so the projection reflects the time actually left in the PI plus what carries over.
+    const items = [makeItem({ key: 'A', devPoints: 4, assignee: 'Dev' })];
+    const result = buildCapacityPlan(
+      makeInput(items, [makePerson('Dev', ['dev'])], 'PI 26.3 (05/21/26 - 07/29/26)'),
+      '2026-07-08',
+    );
+    expect(result.sprints[0]?.startIso).toBe('2026-07-08');
+  });
 });
 
 describe('buildCapacityPlan — unschedulable work and loop guards', () => {

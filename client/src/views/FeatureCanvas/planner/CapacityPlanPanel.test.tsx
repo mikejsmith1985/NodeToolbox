@@ -42,7 +42,7 @@ function buildFixtureResult(): PlanResult {
 
 describe('PlanProjectionView (presentational)', () => {
   it('renders the bottleneck statement, a sprint, and a person load from a fixture', () => {
-    render(<PlanProjectionView result={buildFixtureResult()} piName="PI 26.3" />);
+    render(<PlanProjectionView result={buildFixtureResult()} piName="PI 26.3" todayIso="2026-07-08" />);
     expect(screen.getByText(/Internal testing is the bottleneck/)).toBeInTheDocument();
     expect(screen.getByText(/2026-05-21 → 2026-06-03/)).toBeInTheDocument();
     expect(screen.getByText(/Dana Dev — 8 dev \/ 0 int \/ 0 ext/)).toBeInTheDocument();
@@ -52,7 +52,7 @@ describe('PlanProjectionView (presentational)', () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
 
-    render(<PlanProjectionView result={buildFixtureResult()} piName="PI 26.3" />);
+    render(<PlanProjectionView result={buildFixtureResult()} piName="PI 26.3" todayIso="2026-07-08" />);
     fireEvent.click(screen.getByRole('button', { name: /Copy summary/ }));
 
     expect(writeText).toHaveBeenCalledTimes(1);
