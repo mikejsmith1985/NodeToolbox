@@ -20,6 +20,8 @@ const STATUS_CATEGORY_BY_ID: Record<string, string> = {
   done: 'done',
   released: 'done',
   mystery: 'nonsense-category', // exercises the "unknown -> treated as new" rule
+  '10': 'indeterminate', // a queue-like "Ready to Work" status Jira still categorises as in-progress
+  '11': 'indeterminate', // a real "Working" status — the hands-on time we most want to see land here
 };
 
 // A fixed anchor day so every window / working-day assertion is hand-computable.
@@ -207,6 +209,102 @@ describe('computePersonalFlow — hands-on time credited across ownership', () =
     expect(result.issueCount).toBe(1);
     expect(result.perIssue[0].cycleTimeDays).toBeCloseTo(4, 10); // 2 + 2 business days
     expect(result.perIssue[0].lastActiveIso?.slice(0, 10)).toBe('2026-07-01');
+  });
+});
+
+// ── Hands-on time broken down by status id (diagnostic partition) ────────────
+
+describe('computePersonalFlow — hands-on time by status id', () => {
+  it('splits an issue\'s hands-on days across the individual in-progress statuses it sat in', () => {
+    // Owned from creation on Mon 06-29 in status 10, moved to status 11 on Wed 07-01, reassigned away
+    // on Mon 07-06. Status 10 held Mon+Tue = 2 business days; status 11 held Wed+Thu+Fri = 3 business days.
+    const issue = makeFlowIssue({
+      key: 'SPLIT-1',
+      createdIso: '2026-06-29T00:00:00.000Z',
+      initialStatusId: '10',
+      initiallyAssignedToTarget: true,
+      statusTransitions: [{ toStatusId: '11', atIso: '2026-07-01T00:00:00.000Z' }],
+      ownershipTransitions: [{ assignedToTarget: false, atIso: '2026-07-06T00:00:00.000Z' }],
+    });
+
+    const result = computePersonalFlow(makeInput([issue]));
+
+    // The partition names each status id with its hands-on days; the two sum to the credited cycle time.
+    expect(result.handsOnDaysByStatusId['10']).toBeCloseTo(2, 10);
+    expect(result.handsOnDaysByStatusId['11']).toBeCloseTo(3, 10);
+    expect(result.perIssue[0].cycleTimeDays).toBeCloseTo(5, 10);
+  });
+
+  it('sums the per-status days to exactly the sum of the credited non-null cycle-time days (invariant)', () => {
+    // A mix: two measured single-status issues, one two-status split issue, plus non-credited noise.
+    const measuredA = buildBusinessDayIssue('INV-A', 2, '2026-06-23T00:00:00.000Z'); // 2 days in 'inProgress'
+    const measuredB = buildBusinessDayIssue('INV-B', 4, '2026-06-24T00:00:00.000Z'); // 4 days in 'inProgress'
+    const splitIssue = makeFlowIssue({
+      key: 'INV-SPLIT',
+      createdIso: '2026-06-29T00:00:00.000Z',
+      initialStatusId: '10',
+      initiallyAssignedToTarget: true,
+      statusTransitions: [{ toStatusId: '11', atIso: '2026-07-01T00:00:00.000Z' }],
+      ownershipTransitions: [{ assignedToTarget: false, atIso: '2026-07-06T00:00:00.000Z' }],
+    });
+
+    const result = computePersonalFlow(makeInput([measuredA, measuredB, splitIssue]));
+
+    const summedStatusDays = Object.values(result.handsOnDaysByStatusId).reduce((total, days) => total + days, 0);
+    const summedCreditedCycleDays = result.perIssue
+      .map((row) => row.cycleTimeDays)
+      .filter((days): days is number => days !== null)
+      .reduce((total, days) => total + days, 0);
+    expect(summedStatusDays).toBeCloseTo(summedCreditedCycleDays, 9);
+    expect(summedStatusDays).toBeCloseTo(2 + 4 + 5, 9); // 2 + 4 measured, 2+3 split
+  });
+
+  it('excludes not-owned, WIP, and out-of-window issues from the per-status breakdown entirely', () => {
+    // Only CRED-SPLIT is credited; the other three are dropped, so nothing they touched appears in the map.
+    const creditedSplit = makeFlowIssue({
+      key: 'CRED-SPLIT',
+      createdIso: '2026-06-29T00:00:00.000Z',
+      initialStatusId: '10',
+      initiallyAssignedToTarget: true,
+      statusTransitions: [{ toStatusId: '11', atIso: '2026-07-01T00:00:00.000Z' }],
+      ownershipTransitions: [{ assignedToTarget: false, atIso: '2026-07-06T00:00:00.000Z' }],
+    });
+    const notOwned = makeFlowIssue({ key: 'NO-1', initialStatusId: '11', initiallyAssignedToTarget: false });
+    const wipOpen = makeFlowIssue({ key: 'WIP-1', initialStatusId: '11', initiallyAssignedToTarget: true });
+    const outOfWindow = makeFlowIssue({
+      key: 'OOW-1',
+      createdIso: '2026-02-20T00:00:00.000Z',
+      initialStatusId: '11', // spends time in status 11, but its stint ends long before the window
+      ownershipTransitions: [
+        { assignedToTarget: true, atIso: '2026-02-23T00:00:00.000Z' },
+        { assignedToTarget: false, atIso: '2026-02-27T00:00:00.000Z' },
+      ],
+    });
+
+    const result = computePersonalFlow(makeInput([creditedSplit, notOwned, wipOpen, outOfWindow]));
+
+    // The out-of-window issue also used status 11, but only the credited issue's 3 days for 11 are counted.
+    expect(result.handsOnDaysByStatusId).toEqual({ '10': 2, '11': 3 });
+    expect(result.issueCount).toBe(1);
+  });
+
+  it('leaves cycleTime, issueCount, and perIssue exactly as before when the breakdown is added', () => {
+    // The same 2/4/9 fixture the cycle-time suite asserts — proving the additive field perturbs nothing.
+    const issues = [
+      buildBusinessDayIssue('M-1', 2, '2026-06-22T00:00:00.000Z'),
+      buildBusinessDayIssue('M-2', 4, '2026-06-23T00:00:00.000Z'),
+      buildBusinessDayIssue('M-3', 9, '2026-06-24T00:00:00.000Z'),
+    ];
+
+    const result = computePersonalFlow(makeInput(issues));
+
+    expect(result.issueCount).toBe(3);
+    expect(result.cycleTime.countWithCycleTime).toBe(3);
+    expect(result.cycleTime.medianDays).toBeCloseTo(4, 10);
+    expect(result.cycleTime.averageDays).toBeCloseTo(5, 10);
+    expect(result.perIssue.map((row) => row.cycleTimeDays)).toEqual([9, 4, 2]);
+    // All three measured issues sat in 'inProgress', so the whole 15 credited days land under that one id.
+    expect(result.handsOnDaysByStatusId).toEqual({ inProgress: 2 + 4 + 9 });
   });
 });
 

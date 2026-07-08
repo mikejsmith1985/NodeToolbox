@@ -30,9 +30,9 @@ import { PersonalFlowTab } from './PersonalFlowTab.tsx';
 
 // Status ids mapped to their Jira category so the changelog transitions read declaratively.
 const STATUSES = [
-  { id: '1', statusCategory: { key: 'new' } },
-  { id: '3', statusCategory: { key: 'indeterminate' } },
-  { id: '5', statusCategory: { key: 'done' } },
+  { id: '1', name: 'To Do', statusCategory: { key: 'new' } },
+  { id: '3', name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+  { id: '5', name: 'Done', statusCategory: { key: 'done' } },
 ];
 
 // The Jira users the mock user-search knows about. Jane is a plain username person; John also carries a
@@ -429,6 +429,33 @@ describe('PersonalFlowTab', () => {
     const jumpRow = screen.getByText('TBX-JUMP').closest('tr');
     const jumpCells = Array.from((jumpRow as HTMLElement).querySelectorAll('td')).map((cell) => cell.textContent ?? '');
     expect(jumpCells[3]).toBe('—');
+  });
+
+  it('renders the hands-on-by-status breakdown, resolving the status id to its human NAME', async () => {
+    // Both credited issues sat in status id 3 ("In Progress"): TBX-1 for 3 business days, TBX-2 for 4, so
+    // the diagnostic must show the NAME "In Progress" (never the raw id "3") with the summed 7 hands-on days.
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.change(screen.getByLabelText(/person \(jira assignee\)/i), {
+      target: { value: 'Jane Dev' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /run report/i }));
+
+    await waitFor(() => expect(screen.getByText('TBX-1')).toBeInTheDocument());
+    const heading = screen.getByText('Hands-on time by status');
+    const section = heading.closest('section') as HTMLElement;
+    // The human status name is shown, resolved from /rest/api/2/status — not the numeric status id.
+    expect(within(section).getByText('In Progress')).toBeInTheDocument();
+    expect(within(section).queryByText('3')).not.toBeInTheDocument();
+    // Its day total (3 + 4 business days across the two credited issues) renders next to the name.
+    const statusRow = within(section).getByText('In Progress').closest('tr') as HTMLElement;
+    expect(within(statusRow).getByText('7')).toBeInTheDocument();
   });
 
   it('uses a selected Jira suggestion machine id directly for the query', async () => {
