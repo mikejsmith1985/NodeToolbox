@@ -15,7 +15,10 @@ import type { MoscowBucket } from '../overlay/overlayModel.ts';
 import type { CanvasNode } from '../logic/canvasTypes.ts';
 import controlStyles from '../canvas/canvasControls.module.css';
 import { copyToClipboard } from '../ai/clipboard.ts';
+import { createProvisionalContainer } from '../overlay/containerFactory.ts';
+import type { CanvasOverlayController } from '../overlay/useCanvasOverlay.ts';
 import type { DeliveryRole, PlanResult, ProjectedSprint } from './capacityTypes.ts';
+import { buildTranslatePrompt, parsePlanIngest, resolveIngestPlacements } from './planIngest.ts';
 import { buildPlanEvaluationPrompt, formatPlanSummary } from './planSummary.ts';
 import { useCapacityDetailsStore } from './useCapacityDetailsStore.ts';
 import { useCapacityPlan, type IncludableBucket } from './useCapacityPlan.ts';
@@ -55,6 +58,8 @@ export interface CapacityPlanPanelProps {
   artTeams: ArtTeam[];
   /** Active team profile id — scopes the persisted operator constraints to this canvas. */
   teamProfileId: string;
+  /** The canvas overlay controller — used to stage an ingested plan's sprint placements onto the canvas. */
+  controller: CanvasOverlayController;
   onClose: () => void;
 }
 
@@ -193,8 +198,11 @@ export function CapacityPlanPanel({
   storyPointsFieldId,
   artTeams,
   teamProfileId,
+  controller,
   onClose,
 }: CapacityPlanPanelProps): React.JSX.Element {
+  const [ingestText, setIngestText] = useState('');
+  const [ingestMessage, setIngestMessage] = useState<string | null>(null);
   const [includedBuckets, setIncludedBuckets] = useState<Set<IncludableBucket>>(
     () => new Set(DEFAULT_INCLUDED_BUCKETS),
   );
@@ -274,6 +282,62 @@ export function CapacityPlanPanel({
     [canvasNodes, rosterMembers, projectKey, selectedPiName, storyPointsFieldId, includedBuckets, selectedFeatureKeys, startDateIso],
   );
   const { status, result, error, run } = useCapacityPlan(planParams);
+
+  // The exact sprint + roster names the translate prompt offers Copilot and the ingest validates against.
+  const validSprintNames = useMemo(
+    () => (result === null ? [] : [...new Set(result.sprints.map((sprint) => sprint.name))]),
+    [result],
+  );
+  const rosterNames = useMemo(() => rosterMembers.map((member) => member.displayName), [rosterMembers]);
+
+  /**
+   * Parses Copilot's ingest JSON and stages it onto the canvas: each valid assignment moves its story (or
+   * feature) into a sprint box named for the target sprint, creating a provisional box when none exists.
+   * Nothing reaches Jira here — the operator commits via Review & Commit. Reports what applied and skipped.
+   */
+  const handleApplyIngest = (): void => {
+    const parsed = parsePlanIngest(ingestText, { validSprintNames, allowAssignee: false });
+    const { placements, unknownIssueKeys } = resolveIngestPlacements(parsed.assignments, canvasNodes);
+
+    // Reuse an existing sprint box by name; otherwise create a provisional one (committed later).
+    const containerIdBySprintName = new Map<string, string>();
+    for (const container of controller.overlay.containers) {
+      if (container.kind === 'sprint') {
+        containerIdBySprintName.set(container.title, container.id);
+      }
+    }
+    let createdBoxes = 0;
+    const ensureSprintBox = (sprintName: string): string => {
+      const existingId = containerIdBySprintName.get(sprintName);
+      if (existingId !== undefined) {
+        return existingId;
+      }
+      const container = createProvisionalContainer('sprint', controller.overlay.containers.length + createdBoxes, sprintName);
+      controller.addContainer(container);
+      containerIdBySprintName.set(sprintName, container.id);
+      createdBoxes += 1;
+      return container.id;
+    };
+
+    for (const placement of placements) {
+      const containerId = ensureSprintBox(placement.sprint);
+      if (placement.storyKey !== null) {
+        controller.setStoryPlacement(placement.featureKey, placement.storyKey, containerId);
+      } else {
+        controller.setContainer(placement.featureKey, containerId);
+      }
+    }
+
+    const messageParts = [`Applied ${placements.length} placement(s)${createdBoxes > 0 ? ` · created ${createdBoxes} sprint box(es)` : ''}.`];
+    if (unknownIssueKeys.length > 0) {
+      messageParts.push(`Skipped ${unknownIssueKeys.length} not on the canvas: ${unknownIssueKeys.slice(0, 6).join(', ')}${unknownIssueKeys.length > 6 ? '…' : ''}.`);
+    }
+    if (parsed.errors.length > 0) {
+      messageParts.push(`${parsed.errors.length} parse issue(s): ${parsed.errors[0]}`);
+    }
+    messageParts.push('Open Review & Commit to write these sprint assignments to Jira.');
+    setIngestMessage(messageParts.join(' '));
+  };
 
   const toggleBucket = (bucket: IncludableBucket): void => {
     setIncludedBuckets((current) => {
@@ -415,8 +479,42 @@ export function CapacityPlanPanel({
         <PlanProjectionView result={result} piName={selectedPiName} todayIso={todayIso} additionalDetails={additionalDetails} />
       )}
 
+      {status === 'ready' && result !== null && (
+        <section style={{ marginTop: 10, borderTop: '1px solid var(--color-border)', paddingTop: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 600 }}>Write the plan back</div>
+          <p style={{ margin: '2px 0 6px', fontSize: 11, opacity: 0.75 }}>
+            Once you and Copilot agree the plan, copy the translate prompt into that same chat, then paste Copilot’s JSON reply below and apply it to the canvas. You then write it to Jira from Review &amp; Commit.
+          </p>
+          <button
+            type="button"
+            className={controlStyles.btn}
+            onClick={() => copyToClipboard(buildTranslatePrompt(validSprintNames, rosterNames, { allowAssignee: false }))}
+          >
+            📤 Copy translate prompt
+          </button>
+          <textarea
+            aria-label="Paste plan JSON to ingest"
+            value={ingestText}
+            onChange={(event) => setIngestText(event.target.value)}
+            placeholder="Paste Copilot's capacityPlanIngest JSON here"
+            rows={4}
+            style={{ width: '100%', marginTop: 6, fontSize: 11 }}
+          />
+          <button
+            type="button"
+            className={controlStyles.btnPrimary}
+            onClick={handleApplyIngest}
+            disabled={ingestText.trim() === ''}
+            style={{ marginTop: 4 }}
+          >
+            📥 Apply to canvas
+          </button>
+          {ingestMessage !== null && <p style={{ margin: '6px 0 0', fontSize: 11 }}>{ingestMessage}</p>}
+        </section>
+      )}
+
       <p style={{ margin: '8px 0 0', fontSize: 11, opacity: 0.7 }}>
-        Read-only projection — nothing here is written to the canvas or Jira.
+        The projection is read-only. Applying an ingested plan stages sprint assignments onto the canvas — nothing is written to Jira until you confirm Review &amp; Commit.
       </p>
     </div>
   );

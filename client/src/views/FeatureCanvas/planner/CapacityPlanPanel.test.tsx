@@ -92,6 +92,14 @@ describe('CapacityPlanPanel (controls)', () => {
     useCapacityDetailsStore.getState().setAdditionalDetails('');
   });
 
+  // A minimal overlay controller stub — the control tests never trigger an ingest apply.
+  const stubController = {
+    overlay: { containers: [] },
+    addContainer: vi.fn(),
+    setStoryPlacement: vi.fn(),
+    setContainer: vi.fn(),
+  } as unknown as React.ComponentProps<typeof CapacityPlanPanel>['controller'];
+
   function renderPanel(overrides: Partial<React.ComponentProps<typeof CapacityPlanPanel>> = {}) {
     return render(
       <CapacityPlanPanel
@@ -102,6 +110,7 @@ describe('CapacityPlanPanel (controls)', () => {
         storyPointsFieldId={overrides.storyPointsFieldId ?? 'customfield_10016'}
         artTeams={overrides.artTeams ?? []}
         teamProfileId={overrides.teamProfileId ?? 'team-profile-1'}
+        controller={overrides.controller ?? stubController}
         onClose={overrides.onClose ?? vi.fn()}
       />,
     );
