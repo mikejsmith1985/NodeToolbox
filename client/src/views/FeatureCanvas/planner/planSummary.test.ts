@@ -13,6 +13,7 @@ function buildResult(overrides: Partial<PlanResult> = {}): PlanResult {
     sprints: [
       {
         index: 1,
+        name: '26.3.1',
         startIso: '2026-05-21',
         endIso: '2026-06-03',
         isBeyondPiEnd: false,
@@ -24,6 +25,7 @@ function buildResult(overrides: Partial<PlanResult> = {}): PlanResult {
       },
       {
         index: 2,
+        name: '26.3.2',
         startIso: '2026-06-04',
         endIso: '2026-06-17',
         isBeyondPiEnd: true,
@@ -67,8 +69,8 @@ describe('formatPlanSummary', () => {
 
   it('renders every sprint with its date range and each person load', () => {
     const summary = formatPlanSummary(buildResult(), PI_NAME);
-    expect(summary).toContain('Sprint 1 (2026-05-21 → 2026-06-03)');
-    expect(summary).toContain('Sprint 2 (2026-06-04 → 2026-06-17) (beyond PI end)');
+    expect(summary).toContain('26.3.1 (2026-05-21 → 2026-06-03)');
+    expect(summary).toContain('26.3.2 (2026-06-04 → 2026-06-17) (beyond PI end)');
     expect(summary).toContain('Dana Dev — 8 dev / 0 int / 0 ext');
     expect(summary).toContain('Tina Test — 0 dev / 4 int / 0 ext');
   });
@@ -102,7 +104,7 @@ describe('buildPlanEvaluationPrompt', () => {
     expect(prompt).toContain('anchored at TODAY');
     // The embedded plan.
     expect(prompt).toContain('Internal testing is the bottleneck');
-    expect(prompt).toContain('Sprint 1 (2026-05-21');
+    expect(prompt).toContain('26.3.1 (2026-05-21');
     // The instruction to evaluate + improve + split PI vs carryover.
     expect(prompt.toLowerCase()).toContain('risks');
     expect(prompt.toLowerCase()).toContain('carries into the next pi');
