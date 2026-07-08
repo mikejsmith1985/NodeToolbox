@@ -1,9 +1,10 @@
-// PersonalFlowTab.tsx — Per-person throughput + cycle-time report for the Reports Hub.
+// PersonalFlowTab.tsx — Per-person throughput + hands-on cycle-time report for the Reports Hub.
 //
-// Given one Jira assignee and a lookback window, this fetches their closed issues (with changelog)
-// and the instance's status→category map, then feeds the pure `computePersonalFlow` core to show how
-// much they complete per day / week / two weeks (issues AND story points) and how long work takes from
-// the first In-Progress status category to Done. It is read-only — it never writes to Jira.
+// Given one Jira person and a lookback window, this fetches every issue she was ever the assignee of
+// within the window (with changelog) plus the instance's status→category map, then feeds the pure
+// `computePersonalFlow` core. Cycle time credits her HANDS-ON in-progress working time per issue —
+// reassignment-aware, in Mon–Fri days — and throughput credits every issue she moved forward, not just
+// tickets she personally closed. It is read-only — it never writes to Jira.
 
 import { useEffect, useMemo, useState } from 'react';
 
@@ -17,13 +18,14 @@ import {
 import {
   computePersonalFlow,
   type PersonalFlowIssue,
+  type PersonalFlowOwnershipTransition,
   type PersonalFlowResult,
-  type PersonalFlowTransition,
+  type PersonalFlowStatusTransition,
 } from './personalFlow.ts';
 
-// Story-points custom fields this instance uses (same ids the rest of the app reads); the first numeric wins.
-const STORY_POINTS_FIELD_IDS: readonly string[] = ['customfield_10016', 'customfield_10028'];
-// One page of up to this many closed issues — plenty for a personal report; flagged when it caps out.
+// Story-points custom fields this instance uses; 10236 is primary, the rest are fallbacks. First numeric wins.
+const STORY_POINTS_FIELD_IDS: readonly string[] = ['customfield_10236', 'customfield_10016', 'customfield_10028'];
+// One page of up to this many issues — plenty for a personal report; flagged when it caps out.
 const MAX_ISSUES = 100;
 const DEFAULT_WINDOW_DAYS = 90;
 // The "All history" option maps to ~10 years so the window effectively stops filtering.
@@ -48,11 +50,20 @@ const WINDOW_OPTIONS: readonly { value: number; label: string }[] = [
 // ── Jira response shapes (only the fields this report reads) ──
 
 interface RawStatus { id?: string; statusCategory?: { key?: string } }
-interface RawChangeItem { field?: string; to?: string | number | null }
+interface RawAssignee { displayName?: string; name?: string; key?: string; accountId?: string }
+// A changelog item's `from`/`to` carry the account id (Cloud) or username (Server); the *String variants
+// carry the display name. `toString`/`fromString` may be absent, so they are read defensively as unknown.
+interface RawChangeItem { field?: string; from?: string | number | null; to?: string | number | null }
 interface RawHistory { created?: string; items?: RawChangeItem[] }
 interface RawIssue {
   key?: string;
-  fields?: Record<string, unknown> & { summary?: string; resolutiondate?: string | null };
+  fields?: Record<string, unknown> & {
+    summary?: string;
+    created?: string | null;
+    resolutiondate?: string | null;
+    status?: { id?: string };
+    assignee?: RawAssignee | null;
+  };
   changelog?: { histories?: RawHistory[] };
 }
 
@@ -81,38 +92,119 @@ function readStoryPoints(fields: Record<string, unknown>): number | null {
   return null;
 }
 
-/** Extracts the status transitions (field === 'status') from an issue's changelog, as {toStatusId, atIso}. */
-function readTransitions(issue: RawIssue): PersonalFlowTransition[] {
-  const transitions: PersonalFlowTransition[] = [];
-  for (const history of issue.changelog?.histories ?? []) {
-    if (typeof history.created !== 'string') {
-      continue;
-    }
-    for (const item of history.items ?? []) {
-      if (item.field === 'status' && item.to != null) {
-        transitions.push({ toStatusId: String(item.to), atIso: history.created });
-      }
-    }
-  }
-  return transitions;
+/**
+ * Reports whether a changelog/user identity matches the target person. It compares, case-insensitively
+ * and trimmed, against BOTH the machine id (account id / username) and the human display name, because
+ * a roster's `assigneeQueryValue` may be either form and Jira search results carry the display name.
+ */
+function personMatches(person: string, candidateId: unknown, candidateDisplay: unknown): boolean {
+  const needle = person.trim().toLowerCase();
+  if (needle === '') return false;
+  return matchesText(needle, candidateId) || matchesText(needle, candidateDisplay);
 }
 
-/** Maps a raw Jira issue to the compute core's issue shape. */
-function toPersonalFlowIssue(issue: RawIssue): PersonalFlowIssue {
+/** Trimmed, case-insensitive equality of a candidate against an already-normalised needle; non-strings never match. */
+function matchesText(needle: string, candidate: unknown): boolean {
+  if (typeof candidate !== 'string') return false;
+  return candidate.trim().toLowerCase() === needle;
+}
+
+/** Reads a possibly-absent string property (e.g. `toString`) from a changelog item without hitting the prototype. */
+function readChangeItemText(item: RawChangeItem, propertyName: 'fromString' | 'toString'): string | undefined {
+  const value = (item as Record<string, unknown>)[propertyName];
+  return typeof value === 'string' ? value : undefined;
+}
+
+/** Returns the changelog histories with a valid timestamp, sorted oldest → newest by their `created` time. */
+function readSortedHistories(issue: RawIssue): RawHistory[] {
+  return (issue.changelog?.histories ?? [])
+    .filter((history): history is RawHistory & { created: string } => typeof history.created === 'string')
+    .sort((first, second) => Date.parse(first.created) - Date.parse(second.created));
+}
+
+/** Reconstructs the status-category inputs: each status change and the issue's status at creation. */
+function readStatusHistory(
+  histories: readonly RawHistory[],
+  fields: RawIssue['fields'],
+): Pick<PersonalFlowIssue, 'initialStatusId' | 'statusTransitions'> {
+  const statusTransitions: PersonalFlowStatusTransition[] = [];
+  let initialStatusId: string | null = null;
+  let hasStatusChange = false;
+  for (const history of histories) {
+    for (const item of history.items ?? []) {
+      if (item.field !== 'status') continue;
+      if (!hasStatusChange) {
+        initialStatusId = item.from != null ? String(item.from) : null; // status the issue was created in
+        hasStatusChange = true;
+      }
+      if (item.to != null) statusTransitions.push({ toStatusId: String(item.to), atIso: history.created ?? '' });
+    }
+  }
+  if (!hasStatusChange) initialStatusId = fields?.status?.id ?? null; // no changes -> still in its current status
+  return { initialStatusId, statusTransitions };
+}
+
+/** Reconstructs the ownership inputs relative to the target: each assignee change and who held it at creation. */
+function readOwnershipHistory(
+  histories: readonly RawHistory[],
+  fields: RawIssue['fields'],
+  person: string,
+): Pick<PersonalFlowIssue, 'initiallyAssignedToTarget' | 'ownershipTransitions'> {
+  const ownershipTransitions: PersonalFlowOwnershipTransition[] = [];
+  let firstAssigneeItem: RawChangeItem | null = null;
+  for (const history of histories) {
+    for (const item of history.items ?? []) {
+      if (item.field !== 'assignee') continue;
+      if (firstAssigneeItem === null) firstAssigneeItem = item;
+      const assignedToTarget = personMatches(person, item.to, readChangeItemText(item, 'toString'));
+      ownershipTransitions.push({ assignedToTarget, atIso: history.created ?? '' });
+    }
+  }
+  return {
+    initiallyAssignedToTarget: readInitialAssignment(firstAssigneeItem, fields?.assignee ?? null, person),
+    ownershipTransitions,
+  };
+}
+
+/**
+ * Decides whether the target held the issue at creation: from the FIRST assignee change's `from` side
+ * when any change exists, otherwise from the CURRENT assignee (the issue was never reassigned).
+ */
+function readInitialAssignment(
+  firstAssigneeItem: RawChangeItem | null,
+  currentAssignee: RawAssignee | null,
+  person: string,
+): boolean {
+  if (firstAssigneeItem !== null) {
+    return personMatches(person, firstAssigneeItem.from, readChangeItemText(firstAssigneeItem, 'fromString'));
+  }
+  if (currentAssignee === null) return false;
+  const currentId = currentAssignee.name ?? currentAssignee.key ?? currentAssignee.accountId;
+  return personMatches(person, currentId, currentAssignee.displayName);
+}
+
+/** Maps a raw Jira issue to the compute core's issue shape, resolving ownership relative to `person`. */
+function toPersonalFlowIssue(issue: RawIssue, person: string): PersonalFlowIssue {
   const fields = issue.fields ?? {};
+  const histories = readSortedHistories(issue);
   return {
     key: issue.key ?? '',
     summary: fields.summary ?? issue.key ?? '',
     storyPoints: readStoryPoints(fields),
-    resolvedIso: fields.resolutiondate ?? null,
-    transitions: readTransitions(issue),
+    createdIso: fields.created ?? null,
+    ...readStatusHistory(histories, fields),
+    ...readOwnershipHistory(histories, fields, person),
   };
 }
 
-/** Builds the closed-issue search path for one person over a window, expanding the changelog. */
+/**
+ * Builds the search path for every issue the person was ever assigned to within the window.
+ * `assignee WAS` (not `=`) captures work she has since handed off; `updated >= -Nd` is a cheap superset —
+ * the engine does the exact windowing by each completed stint's end, so an over-broad fetch is harmless.
+ */
 function buildSearchPath(person: string, windowDays: number): string {
-  const jql = `assignee = "${person}" AND statusCategory = Done AND resolved >= -${windowDays}d ORDER BY resolved DESC`;
-  const fields = ['summary', 'resolutiondate', 'status', 'assignee', ...STORY_POINTS_FIELD_IDS].join(',');
+  const jql = `assignee WAS "${person}" AND updated >= -${windowDays}d ORDER BY updated DESC`;
+  const fields = ['summary', 'created', 'assignee', 'status', 'resolutiondate', ...STORY_POINTS_FIELD_IDS].join(',');
   return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&expand=changelog&fields=${fields}&maxResults=${MAX_ISSUES}`;
 }
 
@@ -126,11 +218,11 @@ function formatNumber(value: number): string {
 /** The minimal Jira user fields the assignee search returns and this tab reads. */
 interface RawJiraUser { displayName?: string; name?: string; accountId?: string }
 
-/** A single person the picker can offer, with the value to write into the assignee field when chosen. */
+/** A single person the picker can offer, with the value to write into the person field when chosen. */
 interface PersonSuggestion {
   key: string;
   label: string; // human name shown in the dropdown
-  assigneeValue: string; // what the JQL `assignee = "…"` clause expects
+  assigneeValue: string; // what the JQL `assignee WAS "…"` clause expects
   sourceLabel: string; // 'Roster' or 'Jira', so the user knows where a match came from
 }
 
@@ -233,10 +325,9 @@ async function buildTeamFlowRow(
   todayIso: string,
 ): Promise<TeamFlowRow> {
   try {
-    const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(
-      buildSearchPath(rosterMember.assigneeQueryValue, windowDays),
-    );
-    const issues = (searchResponse.issues ?? []).map(toPersonalFlowIssue);
+    const person = rosterMember.assigneeQueryValue;
+    const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(buildSearchPath(person, windowDays));
+    const issues = (searchResponse.issues ?? []).map((issue) => toPersonalFlowIssue(issue, person));
     const result = computePersonalFlow({ issues, statusCategoryByStatusId, windowDays, todayIso });
     return { personDisplayName: rosterMember.displayName, result, errorMessage: null };
   } catch (caughtError) {
@@ -272,18 +363,18 @@ function PersonalFlowResultView({ result }: { result: PersonalFlowResult }): Rea
         <StatCard label="Points / 2 Weeks" value={formatNumber(throughput.pointsPerTwoWeeks)} />
         <StatCard label="Avg Cycle Time (days)" value={cycleTime.averageDays === null ? '—' : formatNumber(cycleTime.averageDays)} />
         <StatCard label="Median Cycle Time (days)" value={cycleTime.medianDays === null ? '—' : formatNumber(cycleTime.medianDays)} />
-        <StatCard label="Issues Closed" value={String(result.issueCount)} />
-        <StatCard label="Story Points Closed" value={formatNumber(result.totalStoryPoints)} />
+        <StatCard label="Issues Advanced" value={String(result.issueCount)} />
+        <StatCard label="Story Points" value={formatNumber(result.totalStoryPoints)} />
         <StatCard label="Issues With Cycle Time" value={`${cycleTime.countWithCycleTime} of ${result.issueCount}`} />
       </div>
 
       {result.perIssue.length === 0 ? (
-        <p style={{ marginTop: 12, fontSize: 12, opacity: 0.7 }}>No closed issues for this person in the selected window.</p>
+        <p style={{ marginTop: 12, fontSize: 12, opacity: 0.7 }}>No issues this person advanced in the selected window.</p>
       ) : (
         <table style={{ marginTop: 12, width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ textAlign: 'left', opacity: 0.7 }}>
-              <th>Issue</th><th>Summary</th><th>Resolved</th><th>Cycle (days)</th><th>Points</th>
+              <th>Issue</th><th>Summary</th><th>Last active</th><th>Hands-on (days)</th><th>Points</th>
             </tr>
           </thead>
           <tbody>
@@ -291,7 +382,7 @@ function PersonalFlowResultView({ result }: { result: PersonalFlowResult }): Rea
               <tr key={issue.key} style={{ borderTop: '1px solid var(--color-border)' }}>
                 <td>{issue.key}</td>
                 <td>{issue.summary}</td>
-                <td>{issue.resolvedIso === null ? '—' : issue.resolvedIso.slice(0, 10)}</td>
+                <td>{issue.lastActiveIso === null ? '—' : issue.lastActiveIso.slice(0, 10)}</td>
                 <td>{issue.cycleTimeDays === null ? '—' : formatNumber(issue.cycleTimeDays)}</td>
                 <td>{issue.storyPoints === null ? '—' : formatNumber(issue.storyPoints)}</td>
               </tr>
@@ -379,7 +470,7 @@ function TeamFlowComparisonView({ rows }: { rows: readonly TeamFlowRow[] }): Rea
   );
 }
 
-/** The Personal Flow report tab: pick a person + window, run, and read their throughput + cycle time. */
+/** The Personal Flow report tab: pick a person + window, run, and read their throughput + hands-on cycle time. */
 export function PersonalFlowTab(): React.JSX.Element {
   const [person, setPerson] = useState('');
   const [windowDays, setWindowDays] = useState(DEFAULT_WINDOW_DAYS);
@@ -456,7 +547,7 @@ export function PersonalFlowTab(): React.JSX.Element {
       const statuses = await jiraGet<RawStatus[]>('/rest/api/2/status');
       const statusCategoryByStatusId = buildStatusCategoryMap(Array.isArray(statuses) ? statuses : []);
       const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(buildSearchPath(trimmedPerson, windowDays));
-      const issues = (searchResponse.issues ?? []).map(toPersonalFlowIssue);
+      const issues = (searchResponse.issues ?? []).map((issue) => toPersonalFlowIssue(issue, trimmedPerson));
       // The clock read is fine here (the pure engine takes today as an argument, staying deterministic).
       const todayIso = new Date().toISOString().slice(0, 10);
       setResult(computePersonalFlow({ issues, statusCategoryByStatusId, windowDays, todayIso }));
@@ -547,7 +638,7 @@ export function PersonalFlowTab(): React.JSX.Element {
 
       {result !== null && result.issueCount === MAX_ISSUES && (
         <p style={{ marginTop: 8, fontSize: 11, opacity: 0.7 }}>
-          Showing the most recent {MAX_ISSUES} closed issues — narrow the window for a complete picture.
+          Showing at most {MAX_ISSUES} issues — narrow the window for a complete picture.
         </p>
       )}
 
