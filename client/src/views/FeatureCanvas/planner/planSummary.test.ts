@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PlanResult } from './capacityTypes.ts';
-import { formatPlanSummary } from './planSummary.ts';
+import { buildPlanEvaluationPrompt, formatPlanSummary } from './planSummary.ts';
 
 const PI_NAME = 'PI 26.3';
 
@@ -88,5 +88,24 @@ describe('formatPlanSummary', () => {
     );
     expect(summary).toContain('No role is a bottleneck.');
     expect(summary).not.toContain('match dev throughput');
+  });
+});
+
+describe('buildPlanEvaluationPrompt', () => {
+  it('wraps the plan with today, the assumptions, and an evaluate-and-improve instruction', () => {
+    const prompt = buildPlanEvaluationPrompt(buildResult(), PI_NAME, '2026-07-08');
+    // Today's date and PI carried for PI-vs-carryover reasoning.
+    expect(prompt).toContain('Today is 2026-07-08');
+    expect(prompt).toContain(PI_NAME);
+    // The generation assumptions (so the assistant reasons correctly).
+    expect(prompt).toContain('8 story points per 2-week sprint');
+    expect(prompt).toContain('anchored at TODAY');
+    // The embedded plan.
+    expect(prompt).toContain('Internal testing is the bottleneck');
+    expect(prompt).toContain('Sprint 1 (2026-05-21');
+    // The instruction to evaluate + improve + split PI vs carryover.
+    expect(prompt.toLowerCase()).toContain('risks');
+    expect(prompt.toLowerCase()).toContain('carries into the next pi');
+    expect(prompt.toLowerCase()).toContain('role-legal');
   });
 });

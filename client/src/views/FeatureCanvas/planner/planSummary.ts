@@ -89,3 +89,42 @@ export function formatPlanSummary(result: PlanResult, piName: string): string {
 
   return sections.join('\n\n');
 }
+
+// ── Copilot evaluation prompt (wraps the summary so an assistant can critique + enhance the plan) ─
+
+/** How the deterministic plan was generated — context an assistant needs to reason about it correctly. */
+const EVALUATION_ASSUMPTIONS = [
+  'How this plan was generated (deterministic — the numbers are computed, not guessed):',
+  '- Capacity: each person delivers ~8 story points per 2-week sprint, as one pool spendable across the roles they hold.',
+  '- Roles gate work: development → Developers/Dev Leads; internal testing → Internal Testers; external testing → External Testers. Scrum Master / Product Owner / Solution Architect add no delivery capacity.',
+  "- Internal-test effort: from QA sub-tasks where they exist, otherwise estimated at ~50% of the item's dev points.",
+  '- Sequencing: an item is internally tested after it is developed (slipping to a later sprint when the tester is full); external testing follows internal testing.',
+  '- The projection is anchored at TODAY; sprints flagged "beyond PI end" are carryover into the next PI.',
+  '- Assignment changes shown are PROPOSALS only — nothing has been written to Jira.',
+].join('\n');
+
+/** What we ask the assistant to produce from the plan + assumptions. */
+const EVALUATION_INSTRUCTION = [
+  'Using ONLY the plan and assumptions above, and today’s date:',
+  "1. Evaluate the plan and call out the top risks to completing this PI's committed scope.",
+  '2. Recommend concrete, role-legal re-allocations to relieve the bottleneck — move work only to someone who holds the matching role and has spare capacity.',
+  '3. State clearly what can realistically finish IN THIS PI (on or before the PI end date) versus what carries into the next PI.',
+  '4. Suggest any re-prioritisation or sequencing changes that would deliver more value sooner.',
+  '5. If more people in the limiting role are the answer, quantify how many and where they have the most impact.',
+  'Be specific — reference issue keys and people from the plan. Do not invent data.',
+].join('\n');
+
+/**
+ * Wraps the plain-text plan summary in the context (assumptions) and instruction an external assistant
+ * (e.g. Copilot) needs to critique and improve the plan with advanced reasoning. Pure — `todayIso` is
+ * passed in so the same plan + date always yields the same prompt.
+ */
+export function buildPlanEvaluationPrompt(result: PlanResult, piName: string, todayIso: string): string {
+  return [
+    `You are helping a Scrum Master evaluate and improve a capacity plan for ${piName || 'the current PI'}. Today is ${todayIso}.`,
+    EVALUATION_ASSUMPTIONS,
+    'THE PLAN:',
+    formatPlanSummary(result, piName),
+    EVALUATION_INSTRUCTION,
+  ].join('\n\n');
+}
