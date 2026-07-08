@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Feature Canvas — capacity plan uses real sprint names (YY.PI#.Sprint#)**: projected sprints are now labelled with the org convention (e.g. 26.3.4, 26.3.5, then 26.4.1…) derived from the PI name + its date window — 5 sprints per PI, 5 PIs per year, rolling the year after 26.5.5 → 27.1.1. The names show in the projection, the copy summary, and the Copilot prompt. *(feature 015, sprint naming — groundwork for plan ingest/write-back)*
 - **Feature Canvas — rename Sprint / release boxes**: each container box (sprint, release, parking lot, complete, later) can now be renamed in place — double-click its name or click the ✎ button, edit, and press Enter (Escape cancels). The new name is saved to the canvas sandbox like any other change. *(feature 014)*
 
 ### Changed

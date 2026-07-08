@@ -64,6 +64,8 @@ export interface SprintPersonLoad {
 /** One projected 2-week sprint, possibly beyond the PI end. */
 export interface ProjectedSprint {
   index: number;               // 1-based
+  /** Org sprint name (YY.PI#.Sprint#, e.g. "26.3.4"); falls back to "Sprint <index>" when unnameable. */
+  name: string;
   startIso: string;
   endIso: string;
   isBeyondPiEnd: boolean;

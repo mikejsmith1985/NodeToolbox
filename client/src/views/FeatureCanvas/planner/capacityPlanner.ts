@@ -7,6 +7,7 @@
 // (today is injected), and yields the identical result for identical input — so it is fully unit-testable.
 
 import { parsePiDateRange } from '../logic/piSchedule.ts';
+import { buildSprintName } from './sprintNaming.ts';
 import { computeBottleneck } from './bottleneck.ts';
 import type {
   AssignmentProposal,
@@ -358,11 +359,13 @@ function buildProjectedSprints(
   firstSprintEndMs: number,
   sprintMs: number,
   piEndMs: number | null,
+  piName: string,
 ): ProjectedSprint[] {
   return context.sprints.map((sprint, index): ProjectedSprint => {
     const isFirstSprint = index === 0;
     const startMs = isFirstSprint ? effectiveStartMs : firstSprintEndMs + (index - 1) * sprintMs;
     const endMs = (isFirstSprint ? firstSprintEndMs : startMs + sprintMs) - MS_PER_DAY;
+    const startIso = formatIsoDate(startMs);
     const loads = buildSprintLoads(sprint);
     const scheduledPoints = loads.reduce(
       (sum, load) => sum + load.devPoints + load.internalTestPoints + load.externalTestPoints,
@@ -370,7 +373,9 @@ function buildProjectedSprints(
     );
     return {
       index: index + 1,
-      startIso: formatIsoDate(startMs),
+      // The org's YY.PI#.Sprint# name when the PI name allows it; a plain number otherwise.
+      name: buildSprintName(piName, startIso) ?? `Sprint ${index + 1}`,
+      startIso,
       endIso: formatIsoDate(endMs),
       isBeyondPiEnd: piEndMs !== null && startMs > piEndMs,
       loads,
@@ -531,7 +536,7 @@ export function buildCapacityPlan(input: PlanInput, todayIso: string): PlanResul
   runGreedyFill(schedulableItems, assignments, fillContext, unschedulable);
 
   const sprints = buildProjectedSprints(
-    fillContext, timing.effectiveStartMs, timing.firstSprintEndMs, sprintMs, timing.piEndMs,
+    fillContext, timing.effectiveStartMs, timing.firstSprintEndMs, sprintMs, timing.piEndMs, input.piName,
   );
 
   const demand = sumDemandByRole(schedulableItems, unschedulable);

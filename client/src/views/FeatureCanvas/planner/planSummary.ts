@@ -32,7 +32,7 @@ function formatPersonLoad(load: SprintPersonLoad): string {
 /** Renders one projected sprint: its number, date range, beyond-PI flag, and every person's load. */
 function formatSprint(sprint: ProjectedSprint): string {
   const beyondFlag = sprint.isBeyondPiEnd ? ' (beyond PI end)' : '';
-  const header = `Sprint ${sprint.index} (${sprint.startIso} → ${sprint.endIso})${beyondFlag} — ${sprint.scheduledPoints} pts`;
+  const header = `${sprint.name} (${sprint.startIso} → ${sprint.endIso})${beyondFlag} — ${sprint.scheduledPoints} pts`;
   const personLines = sprint.loads.map(formatPersonLoad);
   return [header, ...personLines].join('\n');
 }

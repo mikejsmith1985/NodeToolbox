@@ -27,6 +27,7 @@ function buildFixtureResult(): PlanResult {
     sprints: [
       {
         index: 1,
+        name: '26.3.1',
         startIso: '2026-05-21',
         endIso: '2026-06-03',
         isBeyondPiEnd: false,

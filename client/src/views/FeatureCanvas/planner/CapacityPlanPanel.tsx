@@ -80,7 +80,7 @@ function SprintCard({ sprint }: { sprint: ProjectedSprint }): React.JSX.Element 
   return (
     <div style={{ margin: '6px 0', padding: '6px 8px', border: '1px solid var(--color-border)', borderRadius: 6 }}>
       <div style={{ fontSize: 12, fontWeight: 600 }}>
-        Sprint {sprint.index} · {sprint.startIso} → {sprint.endIso}
+        {sprint.name} · {sprint.startIso} → {sprint.endIso}
         {sprint.isBeyondPiEnd && <span style={{ marginLeft: 6, color: 'var(--color-warning)' }}>· beyond PI end</span>}
         <span style={{ marginLeft: 6, opacity: 0.6, fontWeight: 400 }}>({sprint.scheduledPoints} pts)</span>
       </div>
