@@ -1,11 +1,14 @@
 // PersonalFlowTab.test.tsx — Verifies the Personal Flow tab wires the pure compute
-// core to Jira: it resolves the chosen person to a Jira MACHINE IDENTIFIER (username /
-// accountId) before querying — because Jira rejects a display name in the assignee
-// field — then fetches statuses + every issue that machine id was assigned to, maps the
-// changelog into status + ownership timelines, renders throughput and hands-on
-// cycle-time cards plus a per-issue row, guards an empty person, surfaces a friendly
-// "no match" alert, and surfaces fetch failures as an alert. The metric math itself is
-// covered by personalFlow.test.ts.
+// core to Jira: it resolves the chosen person to a full IDENTITY (query machine id plus
+// the set of every username / user key / display name / accountId Jira might store),
+// queries by the machine id — because Jira rejects a display name in the assignee field —
+// then fetches statuses + every issue that id was assigned to, and credits ownership by
+// matching the changelog against the WHOLE identity set. That last part is the fix: on
+// Jira Server a changelog stores a user KEY in `to`/`from` and the DISPLAY NAME in
+// `toString`/`fromString`, so the username alone matches neither side. It also renders
+// throughput and hands-on cycle-time cards, a per-issue row, a diagnostic line, guards an
+// empty person, and surfaces friendly "no match" and fetch-failure alerts. The metric
+// math itself is covered by personalFlow.test.ts.
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -32,40 +35,49 @@ const STATUSES = [
   { id: '5', statusCategory: { key: 'done' } },
 ];
 
-// Each test person's friendly DISPLAY NAME mapped to the Jira USERNAME the resolver should return.
-// The whole point of the fix: the display name is never sent to Jira — the username is.
-const USERNAME_BY_DISPLAY_NAME: Record<string, string> = {
-  'Jane Dev': 'jane.dev',
-  'John QA': 'john.qa',
-};
+// The Jira users the mock user-search knows about. Jane is a plain username person; John also carries a
+// user KEY (JIRAUSER22200) — Jira Server stores that key in changelog `to`/`from`, so his fixture exercises
+// the key-vs-username mismatch the fix targets. The display name is never sent to Jira — the username is.
+interface FakeJiraUser { displayName: string; name: string; key?: string }
+const JIRA_USERS: FakeJiraUser[] = [
+  { displayName: 'Jane Dev', name: 'jane.dev' },
+  { displayName: 'John QA', name: 'john.qa', key: 'JIRAUSER22200' },
+];
 
 /**
- * Answers `/rest/api/2/user/search` like Jira would: returns the users whose display name or username
- * CONTAINS the typed term. Both `resolvePersonQueryValue` and the live suggestion debounce hit this path.
+ * Answers `/rest/api/2/user/search` like Jira would: returns the users whose display name, username, or
+ * key CONTAINS the typed term. Both `resolvePersonIdentity` and the live suggestion debounce hit this path.
  */
-function userSearchResponseForPath(path: string) {
+function userSearchResponseForPath(path: string): FakeJiraUser[] {
   const queryString = path.split('?')[1] ?? '';
   const params = new URLSearchParams(queryString);
   const term = (params.get('username') ?? params.get('query') ?? '').toLowerCase();
   if (term === '') {
     return [];
   }
-  return Object.entries(USERNAME_BY_DISPLAY_NAME)
-    .filter(([displayName, username]) =>
-      displayName.toLowerCase().includes(term) || username.toLowerCase().includes(term))
-    .map(([displayName, username]) => ({ displayName, name: username }));
+  return JIRA_USERS.filter((user) =>
+    user.displayName.toLowerCase().includes(term)
+    || user.name.toLowerCase().includes(term)
+    || (user.key ?? '').toLowerCase().includes(term));
+}
+
+/** The assignee-side identifiers a changelog stores for a person: the machine value and the human string. */
+interface OwnershipStamp {
+  machineValue: string; // `to`/`from` value — a USERNAME on Cloud, but a user KEY on Jira Server
+  humanValue: string; // `toString`/`fromString` value — always the DISPLAY NAME
+  assignee: { name?: string; key?: string; displayName?: string }; // the issue's current-assignee object
 }
 
 /**
- * Two issues the given machine id owned and finished: each is assigned to that username on 2026-06-30
- * (moving into in-progress, id 3), then reaches done (id 5). The assignee changelog carries the USERNAME
- * (not a display name) in both `to` and `toString` so the engine credits the resolved machine id.
+ * Two issues the given person owned and finished: each is assigned to them on 2026-06-30 (moving into
+ * in-progress, id 3), then reaches done (id 5). The assignee changelog carries `machineValue` in `to` and
+ * `humanValue` in `toString`, mirroring how Jira Server records ownership.
  */
-function buildSearchResponseFor(assigneeMachineId: string) {
+function buildSearchResponseFor(stamp: OwnershipStamp) {
   const assignedInProgress = {
     created: '2026-06-30T00:00:00.000Z',
     items: [
-      { field: 'assignee', from: null, fromString: null, to: assigneeMachineId, toString: assigneeMachineId },
+      { field: 'assignee', from: null, fromString: null, to: stamp.machineValue, toString: stamp.humanValue },
       { field: 'status', from: '1', fromString: null, to: '3', toString: null },
     ],
   };
@@ -78,7 +90,7 @@ function buildSearchResponseFor(assigneeMachineId: string) {
           created: '2026-06-29T00:00:00.000Z',
           resolutiondate: '2026-07-03T00:00:00.000Z',
           status: { id: '5' },
-          assignee: { displayName: assigneeMachineId, name: assigneeMachineId },
+          assignee: stamp.assignee,
           customfield_10236: 5,
         },
         changelog: {
@@ -92,7 +104,7 @@ function buildSearchResponseFor(assigneeMachineId: string) {
           created: '2026-06-29T00:00:00.000Z',
           resolutiondate: '2026-07-06T00:00:00.000Z',
           status: { id: '5' },
-          assignee: { displayName: assigneeMachineId, name: assigneeMachineId },
+          assignee: stamp.assignee,
           customfield_10016: 3,
         },
         changelog: {
@@ -103,11 +115,21 @@ function buildSearchResponseFor(assigneeMachineId: string) {
   };
 }
 
+// Jane's changelog uses her USERNAME on both sides — the simple case that already worked.
+const JANE_STAMP: OwnershipStamp = {
+  machineValue: 'jane.dev', humanValue: 'jane.dev', assignee: { name: 'jane.dev', displayName: 'jane.dev' },
+};
+// John's changelog uses his user KEY in `to` and his DISPLAY NAME in `toString` — the Server form the fix
+// must handle, since his username 'john.qa' matches neither the key nor the display name.
+const JOHN_STAMP: OwnershipStamp = {
+  machineValue: 'JIRAUSER22200', humanValue: 'John QA', assignee: { key: 'JIRAUSER22200', displayName: 'John QA' },
+};
+
 /** Returns the search response for whichever RESOLVED USERNAME the JQL `assignee WAS "…"` clause names. */
 function searchResponseForPath(path: string) {
   const decoded = decodeURIComponent(path);
-  if (decoded.includes('john.qa')) return buildSearchResponseFor('john.qa');
-  return buildSearchResponseFor('jane.dev');
+  if (decoded.includes('john.qa')) return buildSearchResponseFor(JOHN_STAMP);
+  return buildSearchResponseFor(JANE_STAMP);
 }
 
 /** Reads the value rendered next to a stat-card label (label and value are sibling elements). */
@@ -229,6 +251,81 @@ describe('PersonalFlowTab', () => {
 
     await waitFor(() => expect(decodedSearchPaths().length).toBeGreaterThan(0));
     expect(decodedSearchPaths()[0]).toContain('assignee WAS "jane.dev"');
+  });
+
+  it('credits an issue when the changelog stores a user KEY that differs from the username (Jira Server)', async () => {
+    // The live-data bug: JQL resolves the display name to username C7G2G7 (which the fetch matches), but the
+    // changelog records ownership as `to: JIRAUSER10100` / `toString: "Doe, John (CTR)"`. The username alone
+    // matches NEITHER the key nor the display name, so naive matching drops every issue. The identity set —
+    // {C7G2G7, JIRAUSER10100, "Doe, John (CTR)"} — must still credit it via the key or the display name.
+    const keyDifferingIssue = {
+      key: 'TBX-9',
+      fields: {
+        summary: 'Server-form ownership',
+        created: '2026-06-29T00:00:00.000Z',
+        resolutiondate: '2026-07-03T00:00:00.000Z',
+        status: { id: '5' },
+        assignee: { key: 'JIRAUSER10100', displayName: 'Doe, John (CTR)' },
+        customfield_10236: 8,
+      },
+      changelog: {
+        histories: [
+          {
+            created: '2026-06-30T00:00:00.000Z',
+            items: [
+              // `to` is the user KEY (not the username); `toString` is the display name.
+              { field: 'assignee', from: null, fromString: null, to: 'JIRAUSER10100', toString: 'Doe, John (CTR)' },
+              { field: 'status', from: '1', fromString: null, to: '3', toString: null },
+            ],
+          },
+          { created: '2026-07-03T00:00:00.000Z', items: [{ field: 'status', from: '3', fromString: null, to: '5', toString: null }] },
+        ],
+      },
+    };
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      // The typed display name resolves to a user whose username, key, and display name all differ.
+      if (path.startsWith('/rest/api/2/user/search')) {
+        return Promise.resolve([{ name: 'C7G2G7', key: 'JIRAUSER10100', displayName: 'Doe, John (CTR)' }]);
+      }
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve({ issues: [keyDifferingIssue] });
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.change(screen.getByLabelText(/person \(jira assignee\)/i), {
+      target: { value: 'Doe, John (CTR)' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /run report/i }));
+
+    // The issue IS credited — matching succeeded via the key or the display name, not the username.
+    await waitFor(() => expect(screen.getByText('TBX-9')).toBeInTheDocument());
+    expect(Number(readStatCardValue('Issues Advanced'))).toBeGreaterThanOrEqual(1);
+
+    // JQL still queries by the machine id the fetch understands, not the key or the display name.
+    const decodedSearch = decodedSearchPaths()[0] ?? '';
+    expect(decodedSearch).toContain('assignee WAS "C7G2G7"');
+  });
+
+  it('shows a diagnostic line with the queried machine id and the fetched vs credited counts', async () => {
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.change(screen.getByLabelText(/person \(jira assignee\)/i), {
+      target: { value: 'Jane Dev' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /run report/i }));
+
+    // The muted diagnostic names the resolved machine id, the raw fetched count, and the credited count.
+    const diagnostic = await screen.findByText(/Queried Jira as/i);
+    expect(diagnostic).toHaveTextContent('Queried Jira as "jane.dev"');
+    expect(diagnostic).toHaveTextContent('fetched 2 issues');
+    expect(diagnostic).toHaveTextContent('2 credited');
   });
 
   it('uses a selected Jira suggestion machine id directly for the query', async () => {

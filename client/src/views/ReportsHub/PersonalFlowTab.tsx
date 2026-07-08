@@ -93,20 +93,39 @@ function readStoryPoints(fields: Record<string, unknown>): number | null {
 }
 
 /**
- * Reports whether a changelog/user identity matches the target person. It compares, case-insensitively
- * and trimmed, against BOTH the machine id (account id / username) and the human display name, because
- * a roster's `assigneeQueryValue` may be either form and Jira search results carry the display name.
+ * A person's full identity: the machine id used to build the JQL query, plus the normalized set of
+ * every identifier Jira might store for them (username, user key, display name, accountId). Ownership
+ * matching tests changelog values against this WHOLE set — critical on Jira Server, where a changelog's
+ * `to`/`from` is a user KEY (e.g. JIRAUSER10100) while `toString`/`fromString` is the DISPLAY NAME, so
+ * the username alone matches neither side and the person would be wrongly judged to never own the issue.
  */
-function personMatches(person: string, candidateId: unknown, candidateDisplay: unknown): boolean {
-  const needle = person.trim().toLowerCase();
-  if (needle === '') return false;
-  return matchesText(needle, candidateId) || matchesText(needle, candidateDisplay);
+interface PersonIdentity {
+  queryValue: string; // the machine id (username or accountId) the JQL `assignee WAS "…"` clause uses
+  identifiers: Set<string>; // normalized username, user key, display name, accountId — any may appear in a changelog
 }
 
-/** Trimmed, case-insensitive equality of a candidate against an already-normalised needle; non-strings never match. */
-function matchesText(needle: string, candidate: unknown): boolean {
+/**
+ * Reports whether a changelog/assignee value pair matches the target identity. The machine side
+ * (`to`/`from`, or an assignee's name/key/accountId) and the human side (`toString`/`fromString`, or an
+ * assignee's display name) are each normalized and tested against the identity's identifier set. This is
+ * what fixes the mis-attribution: a KEY on the machine side or a DISPLAY NAME on the human side both count.
+ */
+function identityMatches(identity: PersonIdentity, machineValue: unknown, displayValue: unknown): boolean {
+  return matchesIdentity(identity, machineValue) || matchesIdentity(identity, displayValue);
+}
+
+/** Normalizes a single candidate value and reports whether it is one of the identity's known identifiers. */
+function matchesIdentity(identity: PersonIdentity, candidate: unknown): boolean {
   if (typeof candidate !== 'string') return false;
-  return candidate.trim().toLowerCase() === needle;
+  const normalized = normalizeForComparison(candidate);
+  return normalized !== '' && identity.identifiers.has(normalized);
+}
+
+/** Adds a normalized, non-empty identifier to the set; ignores non-strings and blanks so the set stays clean. */
+function addIdentifier(identifiers: Set<string>, rawIdentifier: unknown): void {
+  if (typeof rawIdentifier !== 'string') return;
+  const normalized = normalizeForComparison(rawIdentifier);
+  if (normalized !== '') identifiers.add(normalized);
 }
 
 /** Reads a possibly-absent string property (e.g. `toString`) from a changelog item without hitting the prototype. */
@@ -148,7 +167,7 @@ function readStatusHistory(
 function readOwnershipHistory(
   histories: readonly RawHistory[],
   fields: RawIssue['fields'],
-  person: string,
+  identity: PersonIdentity,
 ): Pick<PersonalFlowIssue, 'initiallyAssignedToTarget' | 'ownershipTransitions'> {
   const ownershipTransitions: PersonalFlowOwnershipTransition[] = [];
   let firstAssigneeItem: RawChangeItem | null = null;
@@ -156,12 +175,13 @@ function readOwnershipHistory(
     for (const item of history.items ?? []) {
       if (item.field !== 'assignee') continue;
       if (firstAssigneeItem === null) firstAssigneeItem = item;
-      const assignedToTarget = personMatches(person, item.to, readChangeItemText(item, 'toString'));
+      // The machine side (`to`) may be a user KEY; the human side (`toString`) the display name — match either.
+      const assignedToTarget = identityMatches(identity, item.to, readChangeItemText(item, 'toString'));
       ownershipTransitions.push({ assignedToTarget, atIso: history.created ?? '' });
     }
   }
   return {
-    initiallyAssignedToTarget: readInitialAssignment(firstAssigneeItem, fields?.assignee ?? null, person),
+    initiallyAssignedToTarget: readInitialAssignment(firstAssigneeItem, fields?.assignee ?? null, identity),
     ownershipTransitions,
   };
 }
@@ -173,18 +193,18 @@ function readOwnershipHistory(
 function readInitialAssignment(
   firstAssigneeItem: RawChangeItem | null,
   currentAssignee: RawAssignee | null,
-  person: string,
+  identity: PersonIdentity,
 ): boolean {
   if (firstAssigneeItem !== null) {
-    return personMatches(person, firstAssigneeItem.from, readChangeItemText(firstAssigneeItem, 'fromString'));
+    return identityMatches(identity, firstAssigneeItem.from, readChangeItemText(firstAssigneeItem, 'fromString'));
   }
   if (currentAssignee === null) return false;
-  const currentId = currentAssignee.name ?? currentAssignee.key ?? currentAssignee.accountId;
-  return personMatches(person, currentId, currentAssignee.displayName);
+  const currentMachineId = currentAssignee.name ?? currentAssignee.key ?? currentAssignee.accountId;
+  return identityMatches(identity, currentMachineId, currentAssignee.displayName);
 }
 
-/** Maps a raw Jira issue to the compute core's issue shape, resolving ownership relative to `person`. */
-function toPersonalFlowIssue(issue: RawIssue, person: string): PersonalFlowIssue {
+/** Maps a raw Jira issue to the compute core's issue shape, resolving ownership relative to `identity`. */
+function toPersonalFlowIssue(issue: RawIssue, identity: PersonIdentity): PersonalFlowIssue {
   const fields = issue.fields ?? {};
   const histories = readSortedHistories(issue);
   return {
@@ -193,7 +213,7 @@ function toPersonalFlowIssue(issue: RawIssue, person: string): PersonalFlowIssue
     storyPoints: readStoryPoints(fields),
     createdIso: fields.created ?? null,
     ...readStatusHistory(histories, fields),
-    ...readOwnershipHistory(histories, fields, person),
+    ...readOwnershipHistory(histories, fields, identity),
   };
 }
 
@@ -215,15 +235,15 @@ function formatNumber(value: number): string {
 
 // ── Person search (roster + Jira) ────────────────────────────────────────────
 
-/** The minimal Jira user fields the assignee search returns and this tab reads. */
-interface RawJiraUser { displayName?: string; name?: string; accountId?: string }
+/** The minimal Jira user fields the assignee search returns and this tab reads (Server includes `key`). */
+interface RawJiraUser { displayName?: string; name?: string; key?: string; accountId?: string }
 
-/** A single person the picker can offer, with the value to write into the person field when chosen. */
+/** A single person the picker can offer, carrying the full identity to use when chosen. */
 interface PersonSuggestion {
   key: string;
   label: string; // human name shown in the dropdown (always the friendly display name)
-  queryValue: string; // a Jira machine id (username/accountId) when known, else the display name
-  isMachineId: boolean; // true when `queryValue` is a machine id ready to query without a further lookup
+  identity: PersonIdentity; // the built identity (query value + identifier set) this suggestion resolves to
+  isResolved: boolean; // true when `identity.queryValue` is a real machine id ready to query without a further lookup
   sourceLabel: string; // 'Roster' or 'Jira', so the user knows where a match came from
 }
 
@@ -264,15 +284,45 @@ function normalizeForComparison(text: string): string {
 }
 
 /**
- * Resolves a person's DISPLAY NAME to a Jira MACHINE IDENTIFIER the assignee field can match.
- *
- * Jira rejects a display name in an `assignee WAS "…"` clause (it wants a Server username or a
- * Cloud accountId), so a free-typed or roster display string must be translated before it is queried.
- * It searches Jira for the person, prefers the candidate whose username or display name matches exactly
- * (whitespace-collapsed, case-insensitive), and otherwise takes the first result. Returns the chosen
- * user's Server username when present, else the Cloud accountId, and null when no user matches at all.
+ * Builds a full identity from a Jira user object. The JQL query value prefers the Server username, then
+ * the Cloud accountId, then the display name as a last resort; the identifier set collects every non-empty
+ * form (username, user key, display name, accountId) so ownership matching succeeds whichever one a
+ * changelog stored.
  */
-async function resolvePersonQueryValue(person: string): Promise<string | null> {
+function buildIdentityFromJiraUser(user: RawJiraUser): PersonIdentity {
+  const queryValue = user.name ?? user.accountId ?? user.displayName ?? '';
+  const identifiers = new Set<string>();
+  addIdentifier(identifiers, user.name);
+  addIdentifier(identifiers, user.key);
+  addIdentifier(identifiers, user.displayName);
+  addIdentifier(identifiers, user.accountId);
+  return { queryValue, identifiers };
+}
+
+/**
+ * Builds an identity straight from a roster member, without touching Jira. The query value prefers the
+ * stored Jira accountId (a real machine id) and falls back to the roster's assignee query value; the
+ * identifier set collects the accountId, the assignee query value, and the display name.
+ */
+function buildRosterIdentity(member: StandupRosterMember): PersonIdentity {
+  const queryValue = member.jiraAccountId ?? member.assigneeQueryValue;
+  const identifiers = new Set<string>();
+  addIdentifier(identifiers, member.jiraAccountId);
+  addIdentifier(identifiers, member.assigneeQueryValue);
+  addIdentifier(identifiers, member.displayName);
+  return { queryValue, identifiers };
+}
+
+/**
+ * Resolves a person's DISPLAY NAME (or username) to a full Jira identity the assignee field can match.
+ *
+ * Jira rejects a display name in an `assignee WAS "…"` clause (it wants a Server username or a Cloud
+ * accountId), so a free-typed or roster display string must be translated before it is queried. It
+ * searches Jira for the person, prefers the candidate whose username or display name matches exactly
+ * (whitespace-collapsed, case-insensitive), and otherwise takes the first result. Returns null when no
+ * user matches at all so the caller can show a friendly message without firing a search.
+ */
+async function resolvePersonIdentity(person: string): Promise<PersonIdentity | null> {
   const candidates = await searchJiraUsers(person);
   if (candidates.length === 0) {
     return null;
@@ -283,8 +333,22 @@ async function resolvePersonQueryValue(person: string): Promise<string | null> {
       normalizeForComparison(candidate.name ?? '') === needle
       || normalizeForComparison(candidate.displayName ?? '') === needle,
   );
-  const chosen = exactMatch ?? candidates[0];
-  return chosen.name ?? chosen.accountId ?? null;
+  return buildIdentityFromJiraUser(exactMatch ?? candidates[0]);
+}
+
+/**
+ * Resolves the identity to query a roster member by. When the member carries a real Jira accountId that
+ * machine id is trusted directly; otherwise the member's assignee value is resolved against Jira so the
+ * JQL gets a real machine id, falling back to the roster identity only when Jira finds no match.
+ */
+async function resolveRosterIdentity(member: StandupRosterMember): Promise<PersonIdentity | null> {
+  if (member.jiraAccountId !== undefined && member.jiraAccountId.trim() !== '') {
+    return buildRosterIdentity(member);
+  }
+  const resolved = await resolvePersonIdentity(member.assigneeQueryValue);
+  const identity = resolved ?? buildRosterIdentity(member);
+  // A member with no accountId, no Jira match, and a blank assignee value has nothing to query by.
+  return identity.queryValue.trim() === '' ? null : identity;
 }
 
 /** Builds roster suggestions whose display name or assignee value contains the typed text (case-insensitive). */
@@ -303,9 +367,9 @@ function buildRosterSuggestionMatches(
     .map((rosterMember) => ({
       key: `roster:${rosterMember.id}`,
       label: rosterMember.displayName,
-      // Prefer the roster's stored machine id; fall back to its query value (which may be a display name).
-      queryValue: rosterMember.jiraAccountId ?? rosterMember.assigneeQueryValue,
-      isMachineId: Boolean(rosterMember.jiraAccountId),
+      identity: buildRosterIdentity(rosterMember),
+      // Ready to query directly only when the roster stored a real Jira machine id; else resolve at run.
+      isResolved: Boolean(rosterMember.jiraAccountId),
       sourceLabel: 'Roster',
     }));
 }
@@ -318,13 +382,13 @@ function mapJiraUsersToSuggestions(jiraUsers: readonly RawJiraUser[]): PersonSug
     if (displayName === '') {
       continue;
     }
-    // Server username first, Cloud accountId next; both are machine ids the assignee field can match.
-    const machineId = jiraUser.name ?? jiraUser.accountId;
+    // A Server username or Cloud accountId means the identity is ready to query without a further lookup.
+    const hasMachineId = Boolean(jiraUser.name ?? jiraUser.accountId);
     suggestions.push({
       key: `jira:${jiraUser.accountId ?? jiraUser.name ?? displayName}`,
       label: displayName,
-      queryValue: machineId ?? displayName,
-      isMachineId: Boolean(machineId),
+      identity: buildIdentityFromJiraUser(jiraUser),
+      isResolved: hasMachineId,
       sourceLabel: 'Jira',
     });
   }
@@ -339,7 +403,7 @@ function buildPersonSuggestions(
   const mergedSuggestions: PersonSuggestion[] = [];
   const seenQueryValues = new Set<string>();
   for (const suggestion of [...rosterMatches, ...jiraMatches]) {
-    const dedupeKey = suggestion.queryValue.trim().toLowerCase();
+    const dedupeKey = suggestion.identity.queryValue.trim().toLowerCase();
     if (dedupeKey === '' || seenQueryValues.has(dedupeKey)) {
       continue;
     }
@@ -360,13 +424,13 @@ async function buildTeamFlowRow(
   todayIso: string,
 ): Promise<TeamFlowRow> {
   try {
-    // Query by the roster's stored machine id when present, else resolve the display name to one.
-    const queryValue = rosterMember.jiraAccountId ?? await resolvePersonQueryValue(rosterMember.assigneeQueryValue);
-    if (queryValue === null) {
+    // Resolve the member to a full identity: trust a stored accountId, else look the name up in Jira.
+    const identity = await resolveRosterIdentity(rosterMember);
+    if (identity === null) {
       return { personDisplayName: rosterMember.displayName, result: null, errorMessage: 'No matching Jira user' };
     }
-    const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(buildSearchPath(queryValue, windowDays));
-    const issues = (searchResponse.issues ?? []).map((issue) => toPersonalFlowIssue(issue, queryValue));
+    const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(buildSearchPath(identity.queryValue, windowDays));
+    const issues = (searchResponse.issues ?? []).map((issue) => toPersonalFlowIssue(issue, identity));
     const result = computePersonalFlow({ issues, statusCategoryByStatusId, windowDays, todayIso });
     return { personDisplayName: rosterMember.displayName, result, errorMessage: null };
   } catch (caughtError) {
@@ -518,9 +582,12 @@ export function PersonalFlowTab(): React.JSX.Element {
   const [result, setResult] = useState<PersonalFlowResult | null>(null);
   const [areSuggestionsOpen, setAreSuggestionsOpen] = useState(false);
   const [jiraUserSuggestions, setJiraUserSuggestions] = useState<RawJiraUser[]>([]);
-  // The machine id (username/accountId) resolved from a picked suggestion. Null means "look it up at run
-  // time" — free-typed text is always a display name that must be resolved before it can be queried.
-  const [resolvedQueryValue, setResolvedQueryValue] = useState<string | null>(null);
+  // The full identity resolved from a picked suggestion. Null means "resolve at run time" — free-typed
+  // text is always a display name that must be looked up before it can be queried.
+  const [selectedIdentity, setSelectedIdentity] = useState<PersonIdentity | null>(null);
+  // A transparency line for the last single-person run: which machine id was queried and how many issues
+  // were fetched, so the user can see resolution + fetch vs credited at a glance. Null hides the line.
+  const [diagnostic, setDiagnostic] = useState<{ queryValue: string; rawIssueCount: number } | null>(null);
   const [teamRows, setTeamRows] = useState<TeamFlowRow[]>([]);
   const [isTeamLoading, setIsTeamLoading] = useState(false);
   const [teamError, setTeamError] = useState<string | null>(null);
@@ -566,15 +633,15 @@ export function PersonalFlowTab(): React.JSX.Element {
 
   const handlePersonChange = (nextPerson: string): void => {
     setPerson(nextPerson);
-    // Free-typed text is a display name; drop any previously resolved id so Run looks the person up fresh.
-    setResolvedQueryValue(null);
+    // Free-typed text is a display name; drop any picked identity so Run looks the person up fresh.
+    setSelectedIdentity(null);
     setAreSuggestionsOpen(true);
   };
 
   const handleSelectSuggestion = (suggestion: PersonSuggestion): void => {
     setPerson(suggestion.label); // show the friendly name in the field
-    // Keep the machine id only when the suggestion already carries one; otherwise resolve it at run time.
-    setResolvedQueryValue(suggestion.isMachineId ? suggestion.queryValue : null);
+    // Keep the identity only when it already carries a real machine id; otherwise resolve it at run time.
+    setSelectedIdentity(suggestion.isResolved ? suggestion.identity : null);
     setAreSuggestionsOpen(false);
   };
 
@@ -587,23 +654,26 @@ export function PersonalFlowTab(): React.JSX.Element {
     setIsLoading(true);
     setError(null);
     setResult(null);
+    setDiagnostic(null);
     setTeamRows([]); // a fresh single-person run clears the team comparison so the two views never collide
     setTeamError(null);
     try {
-      // Resolve the person to a machine id BEFORE querying — Jira rejects a display name for the assignee
-      // field. A picked suggestion may already carry one; free-typed text is looked up here.
-      const queryValue = resolvedQueryValue ?? await resolvePersonQueryValue(trimmedPerson);
-      if (queryValue === null) {
+      // Resolve the person to a full identity BEFORE querying — Jira rejects a display name for the
+      // assignee field. A picked suggestion may already carry one; free-typed text is looked up here.
+      const identity = selectedIdentity ?? await resolvePersonIdentity(trimmedPerson);
+      if (identity === null) {
         setError(`No Jira user matches "${trimmedPerson}". Pick a name from the suggestions.`);
         return;
       }
       const statuses = await jiraGet<RawStatus[]>('/rest/api/2/status');
       const statusCategoryByStatusId = buildStatusCategoryMap(Array.isArray(statuses) ? statuses : []);
-      const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(buildSearchPath(queryValue, windowDays));
-      const issues = (searchResponse.issues ?? []).map((issue) => toPersonalFlowIssue(issue, queryValue));
+      const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(buildSearchPath(identity.queryValue, windowDays));
+      const rawIssues = searchResponse.issues ?? [];
+      const issues = rawIssues.map((issue) => toPersonalFlowIssue(issue, identity));
       // The clock read is fine here (the pure engine takes today as an argument, staying deterministic).
       const todayIso = new Date().toISOString().slice(0, 10);
       setResult(computePersonalFlow({ issues, statusCategoryByStatusId, windowDays, todayIso }));
+      setDiagnostic({ queryValue: identity.queryValue, rawIssueCount: rawIssues.length });
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Failed to build the personal flow report.');
     } finally {
@@ -619,6 +689,7 @@ export function PersonalFlowTab(): React.JSX.Element {
     setIsTeamLoading(true);
     setTeamError(null);
     setResult(null); // a fresh team run clears the single-person view so the two never show at once
+    setDiagnostic(null);
     setError(null);
     setTeamRows([]);
     try {
@@ -692,6 +763,12 @@ export function PersonalFlowTab(): React.JSX.Element {
       {result !== null && result.issueCount === MAX_ISSUES && (
         <p style={{ marginTop: 8, fontSize: 11, opacity: 0.7 }}>
           Showing at most {MAX_ISSUES} issues — narrow the window for a complete picture.
+        </p>
+      )}
+
+      {result !== null && diagnostic !== null && (
+        <p style={{ marginTop: 8, fontSize: 11, opacity: 0.6 }}>
+          Queried Jira as "{diagnostic.queryValue}" · fetched {diagnostic.rawIssueCount} issues · {result.issueCount} credited
         </p>
       )}
 
