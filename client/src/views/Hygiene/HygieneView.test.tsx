@@ -13,7 +13,7 @@ vi.mock('./hooks/useHygieneState.ts', async () => {
 
 import HygieneView from './HygieneView.tsx';
 import { useHygieneState } from './hooks/useHygieneState.ts';
-import type { HygieneFinding, HygieneSummary } from './checks/hygieneChecks.ts';
+import { resolveHygieneFieldConfig, type HygieneFinding, type HygieneSummary } from './checks/hygieneChecks.ts';
 
 const mockUseHygieneState = vi.mocked(useHygieneState);
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -93,6 +93,7 @@ function buildHookState(overrides: OverrideHookState = {}): ReturnType<typeof us
     selectedFilter: overrides.selectedFilter ?? null,
     availableCheckIds: overrides.availableCheckIds ?? Object.keys((overrides.summary ?? buildSummary()).countByCheck),
     checkLabelsById: overrides.checkLabelsById ?? {},
+    fieldConfig: resolveHygieneFieldConfig(),
     isLoading: overrides.isLoading ?? false,
     loadError: overrides.loadError ?? null,
     setProjectKey: vi.fn(),

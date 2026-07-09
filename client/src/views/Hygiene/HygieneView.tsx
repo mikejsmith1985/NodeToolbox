@@ -5,11 +5,14 @@
 // drill into flagged issues by check type without depending on legacy ToolBox state.
 
 import {
+  resolveHygieneFieldConfig,
+  type HygieneFieldConfig,
   type HygieneFinding,
   type HygieneFlag,
 } from './checks/hygieneChecks.ts';
 import { useEffect, useRef, useState } from 'react';
 import { useAiAssistStore } from '../../store/aiAssistStore.ts';
+import { HygieneFixControl } from './HygieneFixControl.tsx';
 import { HygieneMonitorPanel } from './components/HygieneMonitorPanel.tsx';
 import { useHygieneState } from './hooks/useHygieneState.ts';
 import { buildCheckIssueKeys, buildJiraIssueNavigatorUrl } from './utils/buildHygieneJqlUrl.ts';
@@ -63,6 +66,9 @@ export default function HygieneView({ isTeamMode = false, initialExtraJql = '', 
   const shouldShowNoFlags = !hygieneState.isLoading && hasProjectKey && !hasVisibleFindings;
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
   const [copiedCheckId, setCopiedCheckId] = useState<string | null>(null);
+  // Fall back to defaults so the inline fix controls still resolve system fields before the first
+  // Jira-name-resolved config lands (and so tests that stub the hook without a config keep working).
+  const fixFieldConfig = hygieneState.fieldConfig ?? resolveHygieneFieldConfig();
 
   function handleToggleIssueExpand(issueKey: string) {
     setExpandedIssueKey((currentKey) => (currentKey === issueKey ? null : issueKey));
@@ -177,6 +183,7 @@ export default function HygieneView({ isTeamMode = false, initialExtraJql = '', 
             <FindingRow
               key={finding.issue.key}
               finding={finding}
+              fieldConfig={fixFieldConfig}
               isExpanded={expandedIssueKey === finding.issue.key}
               onToggleExpand={() => handleToggleIssueExpand(finding.issue.key)}
               onIssueUpdated={() => {
@@ -244,12 +251,13 @@ function renderSummaryTile(
 
 interface FindingRowProps {
   finding: HygieneFinding;
+  fieldConfig: HygieneFieldConfig;
   isExpanded: boolean;
   onToggleExpand: () => void;
   onIssueUpdated: () => void;
 }
 
-function FindingRow({ finding, isExpanded, onToggleExpand, onIssueUpdated }: FindingRowProps) {
+function FindingRow({ finding, fieldConfig, isExpanded, onToggleExpand, onIssueUpdated }: FindingRowProps) {
   function handleKeyDown(keyEvent: React.KeyboardEvent) {
     if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
       keyEvent.preventDefault();
@@ -282,7 +290,18 @@ function FindingRow({ finding, isExpanded, onToggleExpand, onIssueUpdated }: Fin
           </div>
           <h2 className={styles.issueSummary}>{readIssueSummary(finding)}</h2>
         </div>
-        <div className={styles.flagList}>{finding.flags.map(renderFlagChip)}</div>
+        <div
+          className={styles.flagList}
+          onClick={(clickEvent) => clickEvent.stopPropagation()}
+          role="presentation"
+        >
+          {finding.flags.map((flag) => (
+            <div key={flag.checkId} className={styles.flagFixRow}>
+              {renderFlagChip(flag)}
+              <HygieneFixControl issue={finding.issue} flag={flag} fieldConfig={fieldConfig} onFixed={onIssueUpdated} />
+            </div>
+          ))}
+        </div>
         <dl className={styles.issueMeta}>
           <div>
             <dt>Type</dt>

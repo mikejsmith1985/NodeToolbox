@@ -78,6 +78,8 @@ export interface HygieneState {
   selectedFilter: string | null;
   availableCheckIds: string[];
   checkLabelsById: Record<string, string>;
+  /** Resolved Jira field-id lists so the inline fix controls can target the right custom fields. */
+  fieldConfig: HygieneFieldConfig;
   isLoading: boolean;
   loadError: string | null;
 }
@@ -188,6 +190,9 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
   const [selectedFilter, setSelectedFilter] = useState<string | null>(() => readStoredFilter());
   const [availableCheckIds, setAvailableCheckIds] = useState<string[]>(() => readEnabledEnterpriseCheckDefinitions().map((checkDefinition) => checkDefinition.checkId));
   const [checkLabelsById, setCheckLabelsById] = useState<Record<string, string>>(() => buildCheckLabelsById(readEnabledEnterpriseCheckDefinitions()));
+  // The resolved field config powers the inline fix controls; it starts at defaults and is replaced
+  // with the Jira-name-resolved config once a Hygiene load completes.
+  const [fieldConfig, setFieldConfig] = useState<HygieneFieldConfig>(() => resolveHygieneFieldConfig());
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -234,6 +239,7 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
       const enabledCustomRules = readEnabledRequiredFieldRules(enterpriseRules);
       const enabledBuiltInCheckIds = readEnabledBuiltInCheckIds(enterpriseRules);
       const hygieneFieldConfig = await loadHygieneFieldConfig();
+      setFieldConfig(hygieneFieldConfig);
       setAvailableCheckIds(enabledCheckDefinitions.map((checkDefinition) => checkDefinition.checkId));
       setCheckLabelsById(buildCheckLabelsById(enabledCheckDefinitions));
 
@@ -286,6 +292,7 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
     selectedFilter,
     availableCheckIds,
     checkLabelsById,
+    fieldConfig,
     isLoading,
     loadError,
     setProjectKey: setStandaloneProjectKey,
