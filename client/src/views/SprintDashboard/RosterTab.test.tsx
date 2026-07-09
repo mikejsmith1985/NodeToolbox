@@ -170,6 +170,34 @@ describe('RosterTab', () => {
     expect(screen.queryByLabelText('Paste team roster')).not.toBeInTheDocument();
   });
 
+  it('hides the "Needs team" chip when no roster member uses the optional per-member team label', () => {
+    // The roster is already scoped to a team profile, so with no per-member team labels in use the
+    // "Needs team" nudge is misleading noise and must not appear.
+    useStandupRosterStore.getState().replaceRosterMembers([
+      { displayName: 'Alice Adams', assigneeQueryValue: 'Alice Adams' },
+      { displayName: 'Bob Brown', assigneeQueryValue: 'Bob Brown' },
+    ]);
+
+    render(<RosterTab issues={[]} projectKey="TBX" />);
+
+    expect(screen.getByText('Alice Adams')).toBeInTheDocument();
+    expect(screen.queryByText('Needs team')).not.toBeInTheDocument();
+  });
+
+  it('shows "Needs team" only for teamless members when per-member teams are actually in use', () => {
+    useStandupRosterStore.getState().replaceRosterMembers([
+      { displayName: 'Alice Adams', assigneeQueryValue: 'Alice Adams', teamName: 'Transformers' },
+      { displayName: 'Bob Brown', assigneeQueryValue: 'Bob Brown' },
+    ]);
+    useSettingsStore.getState().setSprintDashboardActiveTeam('Transformers');
+
+    render(<RosterTab issues={[]} projectKey="TBX" />);
+
+    // Bob has no per-member team while Alice does, so the nudge is meaningful and appears for Bob.
+    expect(screen.getByText('Bob Brown')).toBeInTheDocument();
+    expect(screen.getByText('Needs team')).toBeInTheDocument();
+  });
+
   it('filters visible roster cards to the active team and assigns quick-add members to that team', () => {
     useStandupRosterStore.getState().replaceRosterMembers([
       {
