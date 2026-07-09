@@ -15,6 +15,7 @@ import type { ReportSurface } from '../../api/reportDelivery.ts'
 import { copyElementImageToClipboard } from '../../utils/downloadElementImage.ts'
 import { buildFeatureChangeSendPayload, buildScopeChangeSendPayload, surfaceForTab } from './buildSendPayload.ts'
 import { PersonalFlowTab } from './PersonalFlowTab.tsx'
+import { IssueAgingTab } from './IssueAgingTab.tsx'
 import { findPiNameForDate } from '../ArtView/hooks/artHelpers.ts'
 import type {
   ArtTeamFeatureChangeResult,
@@ -54,6 +55,7 @@ const TAB_OPTIONS: { key: ReportsHubTab; label: string }[] = [
   { key: 'featureChange', label: '🎯 Feature Change' },
   { key: 'hygiene', label: '🧹 Hygiene' },
   { key: 'personalFlow', label: '⏱️ Personal Flow' },
+  { key: 'issueAging', label: '⏳ Aging' },
 ]
 
 const ALL_PIS_LABEL = 'All PIs'
@@ -169,6 +171,11 @@ const TAB_DESCRIPTIONS: Record<ReportsHubTab, string[]> = {
     'Per-person delivery report: pick a Jira assignee and a lookback window to see their throughput — issues AND story points completed per day, per week, and per two weeks.',
     'Cycle time is measured from each issue\'s first move into an In-Progress status category to when it reaches Done, read from the issue changelog; the report shows the average and median.',
     'Use for: capacity/velocity input, 1:1 coaching, and spotting where work sits in progress too long.',
+  ],
+  issueAging: [
+    'Open-item aging report: for a scope JQL, ages every NOT-Done issue by the calendar days since it was created, grouped by issue type.',
+    'Per type it shows the open count and the average, median, and oldest age; an overall headline gives the total open count and overall average age.',
+    'Use for: backlog health reviews, spotting stale work by type, and prioritising which open items have aged the longest.',
   ],
 }
 
@@ -2602,6 +2609,8 @@ export default function ReportsHubView() {
         return <HygieneReportTab teamName={state.teamFilter} />
       case 'personalFlow':
         return <PersonalFlowTab />
+      case 'issueAging':
+        return <IssueAgingTab />
       default:
         return null
     }

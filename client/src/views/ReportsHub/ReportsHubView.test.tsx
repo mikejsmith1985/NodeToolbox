@@ -102,6 +102,7 @@ describe('ReportsHubView', () => {
     expect(screen.getByRole('tab', { name: /sprint health/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /throughput/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /personal flow/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /⏳ Aging/ })).toBeInTheDocument();
   });
 
   it('shows the dashboard widget layout when dashboard tab is active', () => {
