@@ -835,6 +835,14 @@ describe('PersonalFlowTab', () => {
 
   // ── Internal Testing Bottleneck panel ──────────────────────────────────────
 
+  // The instance's real Jira statuses the bottleneck picker loads on mount. Includes two internal-testing
+  // statuses ("Testing", "Ready for Testing") so the multi-select can offer valid, typo-proof choices.
+  const BOTTLENECK_STATUSES = [
+    { id: '3', name: 'Testing', statusCategory: { key: 'indeterminate' } },
+    { id: '7', name: 'Ready for Testing', statusCategory: { key: 'indeterminate' } },
+    { id: '1', name: 'To Do', statusCategory: { key: 'new' } },
+  ];
+
   // Two issues currently sitting in the Testing status, both held by one tester — the bottleneck. Each
   // entered testing from an In Progress dev status, so the panel measures the wait from the testing entry.
   const BOTTLENECK_SEARCH_RESPONSE = {
@@ -872,8 +880,10 @@ describe('PersonalFlowTab', () => {
     ],
   };
 
-  it('runs the bottleneck: renders the backlog headline, an assignee row, and the exact JQL used', async () => {
+  it('runs the bottleneck: picks statuses from the fetched list and queries the exact JQL', async () => {
     mockJiraGet.mockImplementation((path: string) => {
+      // The picker loads the instance's real statuses on mount so the user can only pick valid names.
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(BOTTLENECK_STATUSES);
       // The bottleneck search is the only path carrying a `status in (...)` clause.
       if (path.includes('/rest/api/2/search') && decodeURIComponent(path).includes('status in')) {
         return Promise.resolve(BOTTLENECK_SEARCH_RESPONSE);
@@ -882,8 +892,12 @@ describe('PersonalFlowTab', () => {
     });
 
     render(<PersonalFlowTab />);
+    // Wait for the status checkboxes to appear once /rest/api/2/status resolves, then pick two of them.
+    const testingCheckbox = await screen.findByRole('checkbox', { name: 'Testing' });
+    const readyForTestingCheckbox = screen.getByRole('checkbox', { name: 'Ready for Testing' });
     fireEvent.change(screen.getByLabelText(/scope jql/i), { target: { value: 'project = ENCUC' } });
-    fireEvent.change(screen.getByLabelText(/internal-testing statuses/i), { target: { value: 'Testing' } });
+    fireEvent.click(testingCheckbox);
+    fireEvent.click(readyForTestingCheckbox);
     fireEvent.click(screen.getByRole('button', { name: /run bottleneck/i }));
 
     // The headline names the backlog count of two issues stuck in internal testing.
@@ -893,41 +907,85 @@ describe('PersonalFlowTab', () => {
     expect(screen.getAllByText('Tester One').length).toBeGreaterThan(0);
     expect(screen.getByText('ENC-1')).toBeInTheDocument();
 
-    // The displayed JQL uses the entered scope and the quoted status name, so it is the string that ran.
-    const jqlNode = await screen.findByText(/status in \("Testing"\)/i);
+    // The fetched search JQL names BOTH selected statuses (alphabetical build order) and the scope.
+    const bottleneckSearch = decodedSearchPaths().find((path) => path.includes('status in')) ?? '';
+    expect(bottleneckSearch).toContain('status in ("Ready for Testing","Testing")');
+    expect(bottleneckSearch).toContain('project = ENCUC');
+
+    // The displayed JQL mirrors the exact string that ran.
+    const jqlNode = await screen.findByText(/status in \("Ready for Testing","Testing"\)/i);
     expect(jqlNode).toHaveTextContent('project = ENCUC');
   });
 
-  it('persists the bottleneck scope + status inputs to localStorage as they are edited', () => {
+  it('persists the selected statuses to localStorage as a statusNames array', async () => {
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(BOTTLENECK_STATUSES);
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
     render(<PersonalFlowTab />);
     fireEvent.change(screen.getByLabelText(/scope jql/i), { target: { value: 'project = ENCUC' } });
-    fireEvent.change(screen.getByLabelText(/internal-testing statuses/i), { target: { value: 'Testing, Ready for Testing' } });
+    const testingCheckbox = await screen.findByRole('checkbox', { name: 'Testing' });
+    fireEvent.click(testingCheckbox);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Ready for Testing' }));
 
+    // Persisted under the SAME key, now as a `statusNames` array (not the old comma text).
     const persisted = JSON.parse(localStorage.getItem('tbxPersonalFlowBottleneck') ?? '{}');
     expect(persisted.scopeJql).toBe('project = ENCUC');
-    expect(persisted.statusNamesText).toBe('Testing, Ready for Testing');
+    expect(persisted.statusNames).toEqual(['Ready for Testing', 'Testing']);
   });
 
-  it('hydrates the bottleneck inputs from the persisted localStorage key on mount', () => {
+  it('hydrates the scope and pre-selects persisted statusNames from the localStorage key on mount', async () => {
     localStorage.setItem(
       'tbxPersonalFlowBottleneck',
-      JSON.stringify({ scopeJql: 'project = SAVED', statusNamesText: 'Integrated Test' }),
+      JSON.stringify({ scopeJql: 'project = SAVED', statusNames: ['Testing'] }),
     );
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(BOTTLENECK_STATUSES);
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
 
     render(<PersonalFlowTab />);
 
     expect(screen.getByLabelText(/scope jql/i)).toHaveValue('project = SAVED');
-    expect(screen.getByLabelText(/internal-testing statuses/i)).toHaveValue('Integrated Test');
+    const testingCheckbox = await screen.findByRole('checkbox', { name: 'Testing' });
+    expect(testingCheckbox).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Ready for Testing' })).not.toBeChecked();
   });
 
-  it('disables Run bottleneck until both a scope and at least one status name are entered', () => {
+  it('migrates an older statusNamesText value into a pre-selected status on mount', async () => {
+    // A user who saved inputs before the multi-select existed has the old comma text form. Their selection
+    // must survive: the comma-split names become pre-checked once the status list loads.
+    localStorage.setItem(
+      'tbxPersonalFlowBottleneck',
+      JSON.stringify({ scopeJql: 'project = OLD', statusNamesText: 'Testing' }),
+    );
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(BOTTLENECK_STATUSES);
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+
+    const testingCheckbox = await screen.findByRole('checkbox', { name: 'Testing' });
+    expect(testingCheckbox).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Ready for Testing' })).not.toBeChecked();
+  });
+
+  it('disables Run bottleneck until both a scope and at least one status are selected', async () => {
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(BOTTLENECK_STATUSES);
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
     render(<PersonalFlowTab />);
     const runButton = screen.getByRole('button', { name: /run bottleneck/i });
     expect(runButton).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText(/scope jql/i), { target: { value: 'project = ENCUC' } });
-    expect(runButton).toBeDisabled(); // still no status names
-    fireEvent.change(screen.getByLabelText(/internal-testing statuses/i), { target: { value: 'Testing' } });
+    expect(runButton).toBeDisabled(); // still no statuses selected
+    const testingCheckbox = await screen.findByRole('checkbox', { name: 'Testing' });
+    fireEvent.click(testingCheckbox);
     expect(runButton).toBeEnabled();
   });
 });
