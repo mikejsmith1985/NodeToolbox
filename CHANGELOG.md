@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Reports Hub — Personal Flow: per-person JQL in the team roster run**: the "Run for team roster" comparison now shows each member's resolved Jira id and a **Copy JQL** button on their row, so you can paste any one person's exact `assignee WAS "<id>" AND updated >= -Nd ORDER BY updated DESC` query into Jira and validate that person's numbers. Unresolved members show "—" (the run still completes for everyone else). *(feature 016)*
 
 ### Changed
+- **Team roster: no more misleading "Needs team" chip**: the roster is already scoped to a team profile (switching teams loads that team's roster), so the per-member "Needs team" nudge — which checked a separate, optional per-member team label most setups never use — was confusing. It now appears **only when the per-member team sub-grouping is actually in use** (at least one member in the current roster has a team label); otherwise it is hidden. Search-result and import-preview cards no longer show it at all. No change for anyone who does use per-member team labels. *(feature 016)*
 - **Reports Hub — Personal Flow: Internal Testing Bottleneck statuses are now a picklist**: the internal-testing statuses are chosen from a **multi-select of the instance's real Jira statuses** (loaded live, with a Reload button) instead of a hand-typed comma-separated list — so an invalid or misspelled status name can no longer produce empty/incorrect results. Existing typed selections are migrated automatically. *(feature 016)*
 
 ### Added

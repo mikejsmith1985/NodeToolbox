@@ -100,6 +100,10 @@ interface RosterCardProps {
   actionLabel?: string;
   onAction?: () => void;
   children?: ReactNode;
+  // True only when at least one member in the current roster uses the optional per-member team label.
+  // The roster is already scoped to a team profile, so the "Needs team" nudge is only meaningful when
+  // that secondary sub-grouping is actually in use; otherwise it is misleading noise and is hidden.
+  areMemberTeamsInUse?: boolean;
 }
 
 interface RosterLinkedWorkPanelProps {
@@ -431,7 +435,14 @@ function RosterRoleControls({ rosterMember, onRolesChange }: RosterRoleControlsP
   );
 }
 
-function RosterCard({ rosterMember, actionAriaLabel, actionLabel, onAction, children }: RosterCardProps) {
+function RosterCard({
+  rosterMember,
+  actionAriaLabel,
+  actionLabel,
+  onAction,
+  children,
+  areMemberTeamsInUse = false,
+}: RosterCardProps) {
   const primaryMetaLine = buildRosterCardMetaLine(rosterMember.emailAddress);
   const jiraMetaLine = buildRosterCardMetaLine(
     `Jira: ${rosterMember.assigneeQueryValue}`,
@@ -455,9 +466,9 @@ function RosterCard({ rosterMember, actionAriaLabel, actionLabel, onAction, chil
           <div className={styles.rosterChipRow}>
             {rosterMember.teamName ? (
               <span className={styles.rosterTeamBadge}>{rosterMember.teamName}</span>
-            ) : (
+            ) : areMemberTeamsInUse ? (
               <span className={styles.rosterDetailChip}>Needs team</span>
-            )}
+            ) : null}
             {rosterMember.roleName ? <span className={styles.rosterDetailChip}>{rosterMember.roleName}</span> : null}
             {ROSTER_ROLE_OPTIONS.filter(
               (roleOption) => rosterMember.roleCapabilities?.[roleOption.capabilityKey],
@@ -1142,6 +1153,7 @@ export default function RosterTab({ issues, projectKey }: RosterTabProps) {
             {visibleRosterMembers.map((rosterMember) => (
               <RosterCard
                 actionLabel="Remove"
+                areMemberTeamsInUse={availableRosterTeamNames.length > 0}
                 key={rosterMember.id}
                 onAction={() => removeRosterMember(rosterMember.id)}
                 rosterMember={rosterMember}
