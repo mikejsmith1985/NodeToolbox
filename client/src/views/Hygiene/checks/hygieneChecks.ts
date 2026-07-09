@@ -20,7 +20,7 @@ const FEATURE_LINK_REQUIRED_ISSUE_TYPE_NAMES = new Set(['story', 'task', 'bug', 
 const STORY_POINTS_UNSUPPORTED_ISSUE_TYPE_NAMES = new Set(['risk']);
 const ACCEPTANCE_CRITERIA_PLACEHOLDER_VALUES = new Set(['tbd', 'to be determined']);
 
-type BuiltInHygieneCheckId =
+export type BuiltInHygieneCheckId =
   | 'missing-summary'
   | 'missing-feature-link'
   | 'missing-parent-link'

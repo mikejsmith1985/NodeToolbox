@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Hygiene: fix findings inline, without leaving the app**: every Hygiene flag now shows a "fix it here" control next to it. **18 of 20 built-in checks** are fixable in place — set the summary, assignee, acceptance criteria, due date, target start/end, product owner, story points, fix version, PI, initiative type, or application; link a feature/parent; or **move the issue's status** to clear a stale/overdue flag — and the finding refreshes when it's fixed. Writes reuse the same proven, instance-correct Jira helpers as the Feature Review tab (editmeta-driven option matching, correct user/link/version payloads), and every write surfaces Jira's actual response. Field-write flags gracefully fall back to an **Open in Jira** link when the target custom field isn't configured on the instance; `old-in-sprint` and `missing-pointed-child` (whose fix lives on a different issue) are link-only by design. *(feature 016)*
+
 ### Fixed
 - **Issue detail panel: unreadable white-on-white status dropdown**: when expanding an issue card and opening the **status/transition** dropdown, the option list rendered near-white text on the browser's default white background. The options now pin an explicit background and text color so the open list is readable in both light and dark themes. *(feature 016)*
 

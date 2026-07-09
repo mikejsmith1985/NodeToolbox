@@ -525,3 +525,79 @@
   cursor: not-allowed;
   opacity: 0.5;
 }
+
+/* ── Inline per-flag fix controls (HygieneFixControl) ── */
+
+/* Each flag chip sits on its own line with its inline fix editor beneath it. */
+.flagFixRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-xs);
+}
+
+/* The row of inputs + Fix button for one flag's inline editor. */
+.fixControl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.fixInput,
+.fixSelect {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface, #fff);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  max-width: 14rem;
+}
+
+.fixButton {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-accent, #2563eb);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-accent, #2563eb);
+  color: #fff;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.fixButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.fixSuccess {
+  color: var(--color-success, #16a34a);
+  font-size: var(--font-size-sm);
+}
+
+.fixError {
+  color: var(--color-danger, #dc2626);
+  font-size: var(--font-size-sm);
+}
+
+.fixOpenInJira {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+}
+
+.fixOpenInJiraLink {
+  color: var(--color-accent, #2563eb);
+  font-size: var(--font-size-sm);
+  text-decoration: none;
+}
+
+.fixOpenInJiraLink:hover {
+  text-decoration: underline;
+}
+
+.fixNote {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs, 0.75rem);
+}
