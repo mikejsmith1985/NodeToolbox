@@ -6,7 +6,7 @@
 // reassignment-aware, in Mon–Fri days — and throughput credits every issue she moved forward, not just
 // tickets she personally closed. It is read-only — it never writes to Jira.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { jiraGet } from '../../services/jiraApi.ts';
 import { copyToClipboard } from '../FeatureCanvas/ai/clipboard.ts';
@@ -864,22 +864,54 @@ function RoleThroughputSection({ rows }: { rows: readonly TeamFlowRow[] }): Reac
 
 // ── Internal Testing Bottleneck panel ────────────────────────────────────────
 
-/** The scope JQL + internal-testing status names the bottleneck panel persists between runs. */
+/** Longest a status-picker scroll box grows before it scrolls internally, so a long status list stays compact. */
+const STATUS_PICKER_MAX_HEIGHT_PX = 160;
+// Soft hints shown under an empty status picker — never an error, since the panel still works when statuses
+// fail to load (the user can retry with the Reload button).
+const STATUS_LOAD_FAILED_NOTE = 'Could not load statuses — click Reload statuses to try again.';
+const STATUS_LOAD_EMPTY_NOTE = 'Statuses not loaded — click Reload statuses.';
+
+/** The scope JQL + the chosen internal-testing status names the bottleneck panel persists between runs. */
 interface BottleneckSettings {
   scopeJql: string;
-  statusNamesText: string;
+  statusNames: string[];
+}
+
+/** One offerable status in the multi-select picker: its exact Jira name plus its category key (shown as a tag). */
+interface StatusPickerOption {
+  name: string;
+  categoryKey: string;
+}
+
+/**
+ * Reads the persisted status names, tolerating three shapes: the current `statusNames` array, an older
+ * `statusNamesText` comma string (migrated so a pre-multi-select user keeps their picks), or neither. Any
+ * non-string array entry is dropped so a corrupted store can never seed a bogus status.
+ */
+function readPersistedStatusNames(stored: { statusNames?: unknown; statusNamesText?: unknown }): string[] {
+  if (Array.isArray(stored.statusNames)) {
+    return stored.statusNames.filter((name): name is string => typeof name === 'string');
+  }
+  if (typeof stored.statusNamesText === 'string') {
+    return parseStatusNames(stored.statusNamesText); // migrate the older comma-separated text form
+  }
+  return [];
 }
 
 /**
  * Reads the bottleneck panel's persisted inputs, falling back to blanks when nothing is stored or the
- * stored JSON cannot be parsed. Read at RUN time so an edit is picked up on the next run without a reload.
+ * stored JSON cannot be parsed. Migrates a pre-multi-select `statusNamesText` value into `statusNames`.
  */
 function readBottleneckSettings(): BottleneckSettings {
   try {
-    const stored = JSON.parse(localStorage.getItem(BOTTLENECK_SETTINGS_STORAGE_KEY) || '{}') as Partial<BottleneckSettings>;
-    return { scopeJql: stored.scopeJql ?? '', statusNamesText: stored.statusNamesText ?? '' };
+    const stored = JSON.parse(localStorage.getItem(BOTTLENECK_SETTINGS_STORAGE_KEY) || '{}') as {
+      scopeJql?: string;
+      statusNames?: unknown;
+      statusNamesText?: unknown;
+    };
+    return { scopeJql: stored.scopeJql ?? '', statusNames: readPersistedStatusNames(stored) };
   } catch {
-    return { scopeJql: '', statusNamesText: '' };
+    return { scopeJql: '', statusNames: [] };
   }
 }
 
@@ -892,9 +924,34 @@ function writeBottleneckSettings(settings: BottleneckSettings): void {
   }
 }
 
-/** Splits the comma-separated status-names input into trimmed, non-empty status names. */
+/** Splits a comma-separated status-names string into trimmed, non-empty status names (used to migrate old data). */
 function parseStatusNames(statusNamesText: string): string[] {
   return statusNamesText.split(',').map((name) => name.trim()).filter((name) => name !== '');
+}
+
+/**
+ * Builds the picker's options from the instance's raw status list: keeps each named status once (first
+ * category wins on a duplicate name), drops blanks, and sorts alphabetically so the checkbox list is stable
+ * and de-duplicated. Names come straight from Jira, so the user can only ever pick a real, correctly-spelled
+ * status — the whole point of replacing the free-text input.
+ */
+function buildStatusPickerOptions(statuses: readonly RawStatus[]): StatusPickerOption[] {
+  const optionByName = new Map<string, StatusPickerOption>();
+  for (const status of statuses) {
+    if (typeof status.name !== 'string' || status.name.trim() === '' || optionByName.has(status.name)) {
+      continue;
+    }
+    optionByName.set(status.name, { name: status.name, categoryKey: status.statusCategory?.key ?? 'new' });
+  }
+  return Array.from(optionByName.values()).sort((first, second) => first.name.localeCompare(second.name));
+}
+
+/** Toggles a status name in the selected set, returning a new alphabetically-sorted array (stable JQL order). */
+function toggleStatusName(selectedStatusNames: readonly string[], statusName: string): string[] {
+  const nextSelected = selectedStatusNames.includes(statusName)
+    ? selectedStatusNames.filter((existing) => existing !== statusName)
+    : [...selectedStatusNames, statusName];
+  return [...nextSelected].sort((first, second) => first.localeCompare(second));
 }
 
 /**
@@ -1066,38 +1123,136 @@ function BottleneckResultView({ result }: { result: InternalTestingBottleneckRes
   );
 }
 
+/** One selectable status: a checkbox labelled with the exact status name plus a muted category-key tag. */
+function StatusCheckboxRow({
+  option,
+  isChecked,
+  onToggle,
+}: {
+  option: StatusPickerOption;
+  isChecked: boolean;
+  onToggle: (statusName: string) => void;
+}): React.JSX.Element {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0', cursor: 'pointer' }}>
+      <input type="checkbox" aria-label={option.name} checked={isChecked} onChange={() => onToggle(option.name)} />
+      <span>{option.name}</span>
+      <span
+        style={{
+          fontSize: 10, opacity: 0.55, border: '1px solid var(--color-border)', borderRadius: 4, padding: '0 4px',
+        }}
+      >
+        {option.categoryKey}
+      </span>
+    </label>
+  );
+}
+
 /**
- * The Internal Testing Bottleneck panel: an independent scope JQL + status-name form with its own Run button,
- * state, and error handling. It queries every issue currently in the named internal-testing statuses and
- * shows how many are stuck and how long they have waited — hard evidence a single tester is a bottleneck.
+ * The scrollable multi-select of internal-testing statuses, populated from the instance's real Jira
+ * statuses so only valid names can be picked (no typos). Shows a "{n} selected" indicator and a Reload
+ * button so a failed or late status load can be retried; when nothing is loaded it shows a soft hint.
+ */
+function StatusMultiSelect({
+  options,
+  selectedStatusNames,
+  onToggle,
+  loadNote,
+  onReload,
+}: {
+  options: readonly StatusPickerOption[];
+  selectedStatusNames: readonly string[];
+  onToggle: (statusName: string) => void;
+  loadNote: string | null;
+  onReload: () => void;
+}): React.JSX.Element {
+  const selectedSet = new Set(selectedStatusNames);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', fontSize: 12, gap: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span>Internal-testing statuses</span>
+        <span style={{ opacity: 0.6 }}>{selectedStatusNames.length} selected</span>
+        <button type="button" onClick={onReload} style={{ fontSize: 11, padding: '1px 6px', cursor: 'pointer' }}>
+          Reload statuses
+        </button>
+      </div>
+      {options.length === 0 ? (
+        <p style={{ fontSize: 12, opacity: 0.6, margin: 0, minWidth: 260 }}>{loadNote ?? STATUS_LOAD_EMPTY_NOTE}</p>
+      ) : (
+        <div
+          style={{
+            maxHeight: STATUS_PICKER_MAX_HEIGHT_PX, overflowY: 'auto', minWidth: 260,
+            border: '1px solid var(--color-border)', borderRadius: 6, padding: '4px 8px',
+          }}
+        >
+          {options.map((option) => (
+            <StatusCheckboxRow
+              key={option.name}
+              option={option}
+              isChecked={selectedSet.has(option.name)}
+              onToggle={onToggle}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The Internal Testing Bottleneck panel: an independent scope JQL + status multi-select form with its own Run
+ * button, state, and error handling. It queries every issue currently in the chosen internal-testing statuses
+ * and shows how many are stuck and how long they have waited — hard evidence a single tester is a bottleneck.
  * Read-only: it only reads Jira. Kept self-contained so it never touches the person/team runs above it.
  */
 function InternalTestingBottleneckPanel(): React.JSX.Element {
   const persistedSettings = useMemo(readBottleneckSettings, []);
   const [scopeJql, setScopeJql] = useState(persistedSettings.scopeJql);
-  const [statusNamesText, setStatusNamesText] = useState(persistedSettings.statusNamesText);
+  const [selectedStatusNames, setSelectedStatusNames] = useState<string[]>(persistedSettings.statusNames);
+  // The instance's real statuses offered in the picker, loaded on mount and re-loadable via the Reload button.
+  const [statusOptions, setStatusOptions] = useState<StatusPickerOption[]>([]);
+  const [statusLoadNote, setStatusLoadNote] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<InternalTestingBottleneckResult | null>(null);
   const [queriedJql, setQueriedJql] = useState<string | null>(null);
   const [wasCapped, setWasCapped] = useState(false);
 
-  const canRun = scopeJql.trim() !== '' && parseStatusNames(statusNamesText).length > 0;
+  // Load the instance's statuses for the picker. Fully error-tolerant: a failure leaves an empty list plus a
+  // soft note, never throws, so the rest of the tab (and its tests) are unaffected by a status-load hiccup.
+  const loadStatuses = useCallback(async (): Promise<void> => {
+    try {
+      const statuses = await jiraGet<RawStatus[]>('/rest/api/2/status');
+      const options = buildStatusPickerOptions(Array.isArray(statuses) ? statuses : []);
+      setStatusOptions(options);
+      setStatusLoadNote(options.length === 0 ? STATUS_LOAD_EMPTY_NOTE : null);
+    } catch {
+      setStatusOptions([]);
+      setStatusLoadNote(STATUS_LOAD_FAILED_NOTE);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadStatuses();
+  }, [loadStatuses]);
+
+  const canRun = scopeJql.trim() !== '' && selectedStatusNames.length > 0;
 
   const handleScopeChange = (nextScopeJql: string): void => {
     setScopeJql(nextScopeJql);
-    writeBottleneckSettings({ scopeJql: nextScopeJql, statusNamesText });
+    writeBottleneckSettings({ scopeJql: nextScopeJql, statusNames: selectedStatusNames });
   };
 
-  const handleStatusNamesChange = (nextStatusNamesText: string): void => {
-    setStatusNamesText(nextStatusNamesText);
-    writeBottleneckSettings({ scopeJql, statusNamesText: nextStatusNamesText });
+  const handleToggleStatus = (statusName: string): void => {
+    const nextSelected = toggleStatusName(selectedStatusNames, statusName);
+    setSelectedStatusNames(nextSelected);
+    writeBottleneckSettings({ scopeJql, statusNames: nextSelected });
   };
 
   const runBottleneck = async (): Promise<void> => {
-    // Read the inputs fresh at run time so the latest edits are used (and any persisted change is picked up).
+    // Read the inputs fresh at run time so the latest edits are used; sort for a stable, deterministic JQL.
     const trimmedScopeJql = scopeJql.trim();
-    const statusNames = parseStatusNames(statusNamesText);
+    const statusNames = [...selectedStatusNames].sort((first, second) => first.localeCompare(second));
     if (trimmedScopeJql === '' || statusNames.length === 0) {
       return;
     }
@@ -1139,15 +1294,13 @@ function InternalTestingBottleneckPanel(): React.JSX.Element {
             style={{ minWidth: 220 }}
           />
         </label>
-        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, gap: 4 }}>
-          Internal-testing statuses (comma-separated)
-          <input
-            value={statusNamesText}
-            onChange={(event) => handleStatusNamesChange(event.target.value)}
-            placeholder="Integrated Test, Ready for Testing, Testing"
-            style={{ minWidth: 300 }}
-          />
-        </label>
+        <StatusMultiSelect
+          options={statusOptions}
+          selectedStatusNames={selectedStatusNames}
+          onToggle={handleToggleStatus}
+          loadNote={statusLoadNote}
+          onReload={() => void loadStatuses()}
+        />
         <button type="button" onClick={() => void runBottleneck()} disabled={!canRun || isLoading}>
           {isLoading ? 'Running…' : 'Run bottleneck'}
         </button>
