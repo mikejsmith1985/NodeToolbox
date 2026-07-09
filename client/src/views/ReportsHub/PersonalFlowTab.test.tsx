@@ -72,6 +72,9 @@ interface OwnershipStamp {
  * Two issues the given person owned and finished: each is assigned to them on 2026-06-30 (moving into
  * in-progress, id 3), then reaches done (id 5). The assignee changelog carries `machineValue` in `to` and
  * `humanValue` in `toString`, mirroring how Jira Server records ownership.
+ *
+ * TBX-1's story-points field is the DROPDOWN/SELECT OBJECT shape Jira returns for a select custom field
+ * (`{ value: '3' }`), exercising the unwrap fix; TBX-2's is a plain number (5), proving both still read.
  */
 function buildSearchResponseFor(stamp: OwnershipStamp) {
   const assignedInProgress = {
@@ -91,7 +94,7 @@ function buildSearchResponseFor(stamp: OwnershipStamp) {
           resolutiondate: '2026-07-03T00:00:00.000Z',
           status: { id: '5' },
           assignee: stamp.assignee,
-          customfield_10236: 5,
+          customfield_10236: { value: '3' }, // dropdown/select object — must unwrap to 3 points
         },
         changelog: {
           histories: [assignedInProgress, { created: '2026-07-03T00:00:00.000Z', items: [{ field: 'status', from: '3', fromString: null, to: '5', toString: null }] }],
@@ -105,7 +108,7 @@ function buildSearchResponseFor(stamp: OwnershipStamp) {
           resolutiondate: '2026-07-06T00:00:00.000Z',
           status: { id: '5' },
           assignee: stamp.assignee,
-          customfield_10016: 3,
+          customfield_10236: 5, // plain numeric value on the same configured field — still read
         },
         changelog: {
           histories: [assignedInProgress, { created: '2026-07-06T00:00:00.000Z', items: [{ field: 'status', from: '3', fromString: null, to: '5', toString: null }] }],
@@ -180,10 +183,14 @@ describe('PersonalFlowTab', () => {
     // and no active team, keeping the single-person tests independent of roster state.
     useStandupRosterStore.setState({ rosterMembers: [] });
     useSettingsStore.setState({ sprintDashboardActiveTeam: '' });
+    // Clear any configured story-points field so tests default to customfield_10236 unless one opts in.
+    localStorage.removeItem('tbxARTSettings');
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    // Remove any ART settings a test set, so a custom spFieldId never leaks into another test.
+    localStorage.removeItem('tbxARTSettings');
   });
 
   it('disables Run until a person is entered (empty-person guard)', () => {
@@ -223,8 +230,17 @@ describe('PersonalFlowTab', () => {
     expect(screen.getByText('Points / Week')).toBeInTheDocument();
     expect(screen.getByText('Avg Cycle Time (days)')).toBeInTheDocument();
     expect(readStatCardValue('Issues Advanced')).toBe('2');
-    expect(readStatCardValue('Story Points')).toBe('8'); // 5 + 3 story points
+    expect(readStatCardValue('Story Points')).toBe('8'); // 3 (dropdown object) + 5 (plain number)
     expect(readStatCardValue('Issues With Cycle Time')).toBe('2 of 2');
+
+    // The DROPDOWN OBJECT field `{ value: '3' }` on TBX-1 is unwrapped to 3 in its per-issue Points cell
+    // (columns: Issue | Summary | Last active | Hands-on | Points → index 4), proving the object is read.
+    const tbx1Cells = Array.from((screen.getByText('TBX-1').closest('tr') as HTMLElement).querySelectorAll('td'))
+      .map((cell) => cell.textContent ?? '');
+    expect(tbx1Cells[4]).toBe('3');
+    const tbx2Cells = Array.from((screen.getByText('TBX-2').closest('tr') as HTMLElement).querySelectorAll('td'))
+      .map((cell) => cell.textContent ?? '');
+    expect(tbx2Cells[4]).toBe('5');
 
     // The JQL carries the RESOLVED USERNAME, not the display name, plus the window and changelog expand.
     const decodedSearch = decodedSearchPaths()[0] ?? '';
@@ -232,6 +248,9 @@ describe('PersonalFlowTab', () => {
     expect(decodedSearch).not.toContain('assignee WAS "Jane Dev"');
     expect(decodedSearch).toContain('updated >= -60d');
     expect(decodedSearch).toContain('expand=changelog');
+    // The requested fields list names the configured story-points field id (the default here).
+    expect(decodedSearch).toContain('fields=');
+    expect(decodedSearch).toContain('customfield_10236');
   });
 
   it('resolves a free-typed display name to the username before querying', async () => {
@@ -591,6 +610,109 @@ describe('PersonalFlowTab', () => {
     expect(readTeamRowCells('Jane Dev')[1]).toBe('2');
     const johnRow = screen.getByText('John QA').closest('tr');
     expect(within(johnRow as HTMLElement).getByText(/500/)).toBeInTheDocument();
+  });
+
+  it('renders "—" and adds no points for an issue whose story-points field is absent', async () => {
+    // Jane finished this issue but it carries no story-points field at all, so its Points cell must read
+    // "—" and it must not add to the Story Points total the two pointed issues (3 + 5 = 8) already make up.
+    const unpointedIssue = {
+      key: 'TBX-NOPTS',
+      fields: {
+        summary: 'No points set',
+        created: '2026-06-29T00:00:00.000Z',
+        resolutiondate: '2026-07-03T00:00:00.000Z',
+        status: { id: '5' },
+        assignee: { name: 'jane.dev', displayName: 'jane.dev' },
+        // No customfield_10236 key at all — reads as null.
+      },
+      changelog: {
+        histories: [
+          {
+            created: '2026-06-30T00:00:00.000Z',
+            items: [
+              { field: 'assignee', from: null, fromString: null, to: 'jane.dev', toString: 'jane.dev' },
+              { field: 'status', from: '1', fromString: null, to: '3', toString: null },
+            ],
+          },
+          { created: '2026-07-03T00:00:00.000Z', items: [{ field: 'status', from: '3', fromString: null, to: '5', toString: null }] },
+        ],
+      },
+    };
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) {
+        const pointedPair = buildSearchResponseFor(JANE_STAMP);
+        return Promise.resolve({ issues: [...pointedPair.issues, unpointedIssue] });
+      }
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.change(screen.getByLabelText(/person \(jira assignee\)/i), {
+      target: { value: 'Jane Dev' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /run report/i }));
+
+    await waitFor(() => expect(screen.getByText('TBX-NOPTS')).toBeInTheDocument());
+    // The unpointed issue's Points cell (column index 4) reads "—" and totals stay at the pointed pair's 8.
+    const noPtsCells = Array.from((screen.getByText('TBX-NOPTS').closest('tr') as HTMLElement).querySelectorAll('td'))
+      .map((cell) => cell.textContent ?? '');
+    expect(noPtsCells[4]).toBe('—');
+    expect(readStatCardValue('Story Points')).toBe('8');
+  });
+
+  it('reads and requests the custom spFieldId configured in the ART settings (tbxARTSettings)', async () => {
+    // The Team Dashboard/ART settings can point on a different field; here it is customfield_99999. The
+    // report must request THAT field in the search and read its dropdown object value, ignoring the default.
+    localStorage.setItem('tbxARTSettings', JSON.stringify({ spFieldId: 'customfield_99999' }));
+    const customFieldIssue = {
+      key: 'TBX-CFG',
+      fields: {
+        summary: 'Custom points field',
+        created: '2026-06-29T00:00:00.000Z',
+        resolutiondate: '2026-07-03T00:00:00.000Z',
+        status: { id: '5' },
+        assignee: { name: 'jane.dev', displayName: 'jane.dev' },
+        customfield_99999: { value: '7' }, // dropdown object on the CONFIGURED field
+        customfield_10236: 2, // the default field is present but must be ignored
+      },
+      changelog: {
+        histories: [
+          {
+            created: '2026-06-30T00:00:00.000Z',
+            items: [
+              { field: 'assignee', from: null, fromString: null, to: 'jane.dev', toString: 'jane.dev' },
+              { field: 'status', from: '1', fromString: null, to: '3', toString: null },
+            ],
+          },
+          { created: '2026-07-03T00:00:00.000Z', items: [{ field: 'status', from: '3', fromString: null, to: '5', toString: null }] },
+        ],
+      },
+    };
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve({ issues: [customFieldIssue] });
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.change(screen.getByLabelText(/person \(jira assignee\)/i), {
+      target: { value: 'Jane Dev' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /run report/i }));
+
+    await waitFor(() => expect(screen.getByText('TBX-CFG')).toBeInTheDocument());
+    // The configured field's value (7) is credited, not the default field's 2.
+    expect(readStatCardValue('Story Points')).toBe('7');
+    const cfgCells = Array.from((screen.getByText('TBX-CFG').closest('tr') as HTMLElement).querySelectorAll('td'))
+      .map((cell) => cell.textContent ?? '');
+    expect(cfgCells[4]).toBe('7');
+    // The search requested the configured field id, not the default one.
+    const decodedSearch = decodedSearchPaths()[0] ?? '';
+    expect(decodedSearch).toContain('customfield_99999');
+    expect(decodedSearch).not.toContain('customfield_10236');
   });
 
   it('disables Run for team roster when the active-team roster is empty', () => {

@@ -24,8 +24,11 @@ import {
   type PersonalFlowStatusTransition,
 } from './personalFlow.ts';
 
-// Story-points custom fields this instance uses; 10236 is primary, the rest are fallbacks. First numeric wins.
-const STORY_POINTS_FIELD_IDS: readonly string[] = ['customfield_10236', 'customfield_10016', 'customfield_10028'];
+// The team's known story-points custom field, used when the ART settings do not override it. This field is
+// a dropdown/select on this instance, so Jira returns it as an object ({ value: "3" }) rather than a number.
+const DEFAULT_STORY_POINTS_FIELD_ID = 'customfield_10236';
+// localStorage key + property the Team Dashboard/ART settings write the configured story-points field id under.
+const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
 // One page of up to this many issues — plenty for a personal report; flagged when it caps out.
 const MAX_ISSUES = 100;
 const DEFAULT_WINDOW_DAYS = 90;
@@ -90,18 +93,43 @@ function buildStatusNameMap(statuses: readonly RawStatus[]): Record<string, stri
   return statusNameByStatusId;
 }
 
-/** Reads the first numeric story-points value across the known custom fields, or null when none is set. */
-function readStoryPoints(fields: Record<string, unknown>): number | null {
-  for (const fieldId of STORY_POINTS_FIELD_IDS) {
-    const value = fields[fieldId];
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
-    }
-    if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) {
-      return Number(value);
-    }
+/**
+ * Reads a numeric value from a Jira field however Jira shaped it: a finite number is taken as-is, a
+ * non-empty numeric string is parsed, and a select/dropdown OBJECT (e.g. `{ value: "3" }`) is unwrapped by
+ * recursing into its `.value`. Everything else — null, blank, non-numeric — reads as no value. This is what
+ * lets a dropdown story-points field yield its number instead of being discarded as an object.
+ */
+function readNumericFieldValue(fieldValue: unknown): number | null {
+  if (typeof fieldValue === 'number') {
+    return Number.isFinite(fieldValue) ? fieldValue : null;
+  }
+  if (typeof fieldValue === 'string') {
+    const parsed = Number(fieldValue);
+    return Number.isFinite(parsed) && fieldValue.trim() !== '' ? parsed : null;
+  }
+  if (fieldValue !== null && typeof fieldValue === 'object') {
+    return readNumericFieldValue((fieldValue as { value?: unknown }).value);
   }
   return null;
+}
+
+/**
+ * Reads the configured story-points field id the Team Dashboard/ART settings persisted, falling back to the
+ * team's known default when nothing is set or the stored JSON cannot be parsed. Read at RUN time so a
+ * settings change is picked up on the next report without reloading the app.
+ */
+function readConfiguredStoryPointsFieldId(): string {
+  try {
+    const storedSettings = JSON.parse(localStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as { spFieldId?: string };
+    return storedSettings.spFieldId?.trim() || DEFAULT_STORY_POINTS_FIELD_ID;
+  } catch {
+    return DEFAULT_STORY_POINTS_FIELD_ID;
+  }
+}
+
+/** Reads the story-points value from the single configured field, unwrapping a dropdown object, or null. */
+function readStoryPoints(fields: Record<string, unknown>, storyPointsFieldId: string): number | null {
+  return readNumericFieldValue(fields[storyPointsFieldId]);
 }
 
 /**
@@ -216,13 +244,13 @@ function readInitialAssignment(
 }
 
 /** Maps a raw Jira issue to the compute core's issue shape, resolving ownership relative to `identity`. */
-function toPersonalFlowIssue(issue: RawIssue, identity: PersonIdentity): PersonalFlowIssue {
+function toPersonalFlowIssue(issue: RawIssue, identity: PersonIdentity, storyPointsFieldId: string): PersonalFlowIssue {
   const fields = issue.fields ?? {};
   const histories = readSortedHistories(issue);
   return {
     key: issue.key ?? '',
     summary: fields.summary ?? issue.key ?? '',
-    storyPoints: readStoryPoints(fields),
+    storyPoints: readStoryPoints(fields, storyPointsFieldId),
     createdIso: fields.created ?? null,
     ...readStatusHistory(histories, fields),
     ...readOwnershipHistory(histories, fields, identity),
@@ -234,9 +262,9 @@ function toPersonalFlowIssue(issue: RawIssue, identity: PersonIdentity): Persona
  * `assignee WAS` (not `=`) captures work she has since handed off; `updated >= -Nd` is a cheap superset —
  * the engine does the exact windowing by each completed stint's end, so an over-broad fetch is harmless.
  */
-function buildSearchPath(person: string, windowDays: number): string {
+function buildSearchPath(person: string, windowDays: number, storyPointsFieldId: string): string {
   const jql = `assignee WAS "${person}" AND updated >= -${windowDays}d ORDER BY updated DESC`;
-  const fields = ['summary', 'created', 'assignee', 'status', 'resolutiondate', ...STORY_POINTS_FIELD_IDS].join(',');
+  const fields = ['summary', 'created', 'assignee', 'status', 'resolutiondate', storyPointsFieldId].join(',');
   return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&expand=changelog&fields=${fields}&maxResults=${MAX_ISSUES}`;
 }
 
@@ -434,6 +462,7 @@ async function buildTeamFlowRow(
   statusCategoryByStatusId: Record<string, string>,
   windowDays: number,
   todayIso: string,
+  storyPointsFieldId: string,
 ): Promise<TeamFlowRow> {
   try {
     // Resolve the member to a full identity: trust a stored accountId, else look the name up in Jira.
@@ -441,8 +470,10 @@ async function buildTeamFlowRow(
     if (identity === null) {
       return { personDisplayName: rosterMember.displayName, result: null, errorMessage: 'No matching Jira user' };
     }
-    const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(buildSearchPath(identity.queryValue, windowDays));
-    const issues = (searchResponse.issues ?? []).map((issue) => toPersonalFlowIssue(issue, identity));
+    const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(
+      buildSearchPath(identity.queryValue, windowDays, storyPointsFieldId),
+    );
+    const issues = (searchResponse.issues ?? []).map((issue) => toPersonalFlowIssue(issue, identity, storyPointsFieldId));
     const result = computePersonalFlow({ issues, statusCategoryByStatusId, windowDays, todayIso });
     return { personDisplayName: rosterMember.displayName, result, errorMessage: null };
   } catch (caughtError) {
@@ -796,9 +827,13 @@ export function PersonalFlowTab(): React.JSX.Element {
       const safeStatuses = Array.isArray(statuses) ? statuses : [];
       const statusCategoryByStatusId = buildStatusCategoryMap(safeStatuses);
       setStatusNameById(buildStatusNameMap(safeStatuses));
-      const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(buildSearchPath(identity.queryValue, windowDays));
+      // Read the configured story-points field once per run so a settings change is picked up next run.
+      const storyPointsFieldId = readConfiguredStoryPointsFieldId();
+      const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(
+        buildSearchPath(identity.queryValue, windowDays, storyPointsFieldId),
+      );
       const rawIssues = searchResponse.issues ?? [];
-      const issues = rawIssues.map((issue) => toPersonalFlowIssue(issue, identity));
+      const issues = rawIssues.map((issue) => toPersonalFlowIssue(issue, identity, storyPointsFieldId));
       // The clock read is fine here (the pure engine takes today as an argument, staying deterministic).
       const todayIso = new Date().toISOString().slice(0, 10);
       setResult(computePersonalFlow({ issues, statusCategoryByStatusId, windowDays, todayIso }));
@@ -825,10 +860,14 @@ export function PersonalFlowTab(): React.JSX.Element {
       const statuses = await jiraGet<RawStatus[]>('/rest/api/2/status');
       const statusCategoryByStatusId = buildStatusCategoryMap(Array.isArray(statuses) ? statuses : []);
       const todayIso = new Date().toISOString().slice(0, 10);
+      // Resolve the configured story-points field once and reuse it for every member of this team run.
+      const storyPointsFieldId = readConfiguredStoryPointsFieldId();
       const nextTeamRows: TeamFlowRow[] = [];
       // Sequential per-person fetches keep the load gentle on Jira; each is independent and self-contained.
       for (const rosterMember of activeTeamRosterMembers) {
-        nextTeamRows.push(await buildTeamFlowRow(rosterMember, statusCategoryByStatusId, windowDays, todayIso));
+        nextTeamRows.push(
+          await buildTeamFlowRow(rosterMember, statusCategoryByStatusId, windowDays, todayIso, storyPointsFieldId),
+        );
       }
       setTeamRows(nextTeamRows);
     } catch (caughtError) {
