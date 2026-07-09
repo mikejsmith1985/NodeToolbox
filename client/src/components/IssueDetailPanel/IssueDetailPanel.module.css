@@ -117,6 +117,17 @@
   font-size: var(--font-size-sm, 0.875rem);
 }
 
+/*
+ * The native option list is rendered by the OS/browser, which defaults to a white background.
+ * Without an explicit color here the options inherit the select's near-white text, producing
+ * unreadable white-on-white text when the status dropdown is opened. Pin both so the open list
+ * stays readable in either theme.
+ */
+.select option {
+  background: var(--field-elevation-bg, var(--color-input-bg, #161b22));
+  color: var(--color-text-primary, #e6edf3);
+}
+
 .textarea {
   width: 100%;
   min-height: 60px;
