@@ -32,6 +32,7 @@ vi.mock('../FeatureCanvas/ai/clipboard.ts', () => ({
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import {
   useStandupRosterStore,
+  type RosterRoleCapabilities,
   type StandupRosterMember,
 } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import { PersonalFlowTab } from './PersonalFlowTab.tsx';
@@ -157,6 +158,15 @@ function buildRosterMember(displayName: string, teamName: string): StandupRoster
     assigneeQueryValue: displayName,
     teamName,
   };
+}
+
+/** Builds a roster member carrying role capabilities, for the "throughput by role" rollup tests. */
+function buildRosterMemberWithRoles(
+  displayName: string,
+  teamName: string,
+  roleCapabilities: RosterRoleCapabilities,
+): StandupRosterMember {
+  return { ...buildRosterMember(displayName, teamName), roleCapabilities };
 }
 
 /** Seeds the roster store with the given members and marks the given team active. */
@@ -628,13 +638,13 @@ describe('PersonalFlowTab', () => {
     await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
     expect(screen.getByText('John QA')).toBeInTheDocument();
 
-    // Columns: Person | Issues | Points | Issues/Wk | Points/Wk | Avg Cycle | Median Cycle.
+    // Columns: Person | Role(s) | Issues | Points | Issues/Wk | Points/Wk | Avg Cycle | Median Cycle.
     const janeCells = readTeamRowCells('Jane Dev');
-    expect(janeCells[1]).toBe('2'); // two advanced issues in the search response
-    expect(janeCells[2]).toBe('8'); // 5 + 3 story points
+    expect(janeCells[2]).toBe('2'); // two advanced issues in the search response
+    expect(janeCells[3]).toBe('8'); // 5 + 3 story points
     const johnCells = readTeamRowCells('John QA');
-    expect(johnCells[1]).toBe('2');
-    expect(johnCells[2]).toBe('8');
+    expect(johnCells[2]).toBe('2');
+    expect(johnCells[3]).toBe('8');
 
     // Each member was resolved to their USERNAME and searched with it via `assignee WAS`.
     const searchedAssignees = decodedSearchPaths();
@@ -661,7 +671,8 @@ describe('PersonalFlowTab', () => {
 
     // The healthy member still renders a full row, the failing member shows an inline error.
     await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
-    expect(readTeamRowCells('Jane Dev')[1]).toBe('2');
+    // Columns shifted by the new Role(s) column: Issues is now at index 2 (Person | Role(s) | Issues | …).
+    expect(readTeamRowCells('Jane Dev')[2]).toBe('2');
     const johnRow = screen.getByText('John QA').closest('tr');
     expect(within(johnRow as HTMLElement).getByText(/500/)).toBeInTheDocument();
   });
@@ -767,6 +778,50 @@ describe('PersonalFlowTab', () => {
     const decodedSearch = decodedSearchPaths()[0] ?? '';
     expect(decodedSearch).toContain('customfield_99999');
     expect(decodedSearch).not.toContain('customfield_10236');
+  });
+
+  it('renders the Role(s) column and the "Throughput by role" rollup for a team run', async () => {
+    // Jane can Develop, John can Internal Test. Each advances the two issues the search response carries,
+    // so the Developer role and the Internal Tester role each roll up to 2 issues — the contrast the
+    // rollup exists to surface (many developers feeding a single tester) in miniature.
+    const developerCapabilities: RosterRoleCapabilities = {
+      canDevelop: true, canInternalTest: false, canExternalTest: false,
+    };
+    const internalTesterCapabilities: RosterRoleCapabilities = {
+      canDevelop: false, canInternalTest: true, canExternalTest: false,
+    };
+    seedRoster(
+      [
+        buildRosterMemberWithRoles('Jane Dev', 'Team Rocket', developerCapabilities),
+        buildRosterMemberWithRoles('John QA', 'Team Rocket', internalTesterCapabilities),
+      ],
+      'Team Rocket',
+    );
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+
+    await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
+
+    // The per-person comparison row shows Jane's role label in the new "Role(s)" column.
+    expect(readTeamRowCells('Jane Dev').some((cell) => cell.includes('Developer'))).toBe(true);
+
+    // The "Throughput by role" rollup section renders a Developer row summing Jane's 2 advanced issues.
+    const rollupHeading = screen.getByText('Throughput by role');
+    const rollupSection = rollupHeading.closest('section') as HTMLElement;
+    const developerRow = within(rollupSection).getByText('Developer').closest('tr') as HTMLElement;
+    const developerCells = Array.from(developerRow.querySelectorAll('td')).map((cell) => cell.textContent ?? '');
+    // Columns: Role | People | Issues | Story Points | Issues/Wk | Points/Wk | Avg Cycle | Median Cycle.
+    expect(developerCells[1]).toBe('1'); // one developer
+    expect(developerCells[2]).toBe('2'); // two issues advanced
+    // The Internal Tester role also rolls up, so the bottleneck contrast is visible side by side.
+    expect(within(rollupSection).getByText('Internal Tester')).toBeInTheDocument();
   });
 
   it('disables Run for team roster when the active-team roster is empty', () => {
