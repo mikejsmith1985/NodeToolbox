@@ -37,8 +37,10 @@ export const TEAM_ROLE_DEFINITIONS: ReadonlyArray<{ key: keyof RosterRoleCapabil
   { key: 'canExternalTest', label: 'External Tester' },
   { key: 'canScrumMaster', label: 'Scrum Master' },
   { key: 'canProductOwner', label: 'Product Owner' },
+  { key: 'canSystemsAnalyst', label: 'Systems Analyst' },
   { key: 'canSolutionArchitect', label: 'Solution Architect' },
   { key: 'canDevLead', label: 'Dev Lead' },
+  { key: 'canReleaseTrainEngineer', label: 'Release Train Engineer' },
 ];
 
 /** A person to fold into the rollup: their role capabilities plus their computed flow result (null = skip). */

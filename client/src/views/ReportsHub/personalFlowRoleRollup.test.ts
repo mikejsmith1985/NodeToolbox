@@ -83,8 +83,10 @@ describe('TEAM_ROLE_DEFINITIONS', () => {
       'canExternalTest',
       'canScrumMaster',
       'canProductOwner',
+      'canSystemsAnalyst',
       'canSolutionArchitect',
       'canDevLead',
+      'canReleaseTrainEngineer',
     ]);
     expect(TEAM_ROLE_DEFINITIONS.map((definition) => definition.label)).toEqual([
       'Developer',
@@ -92,8 +94,10 @@ describe('TEAM_ROLE_DEFINITIONS', () => {
       'External Tester',
       'Scrum Master',
       'Product Owner',
+      'Systems Analyst',
       'Solution Architect',
       'Dev Lead',
+      'Release Train Engineer',
     ]);
   });
 });
@@ -233,6 +237,36 @@ describe('rollUpThroughputByRole', () => {
     // The null-result person is not counted; only the person with a real result contributes.
     expect(developerRow.peopleCount).toBe(1);
     expect(developerRow.issueCount).toBe(3);
+  });
+
+  it('produces Systems Analyst and Release Train Engineer rows when members hold those roles', () => {
+    const systemsAnalyst = {
+      roleCapabilities: roles('canSystemsAnalyst'),
+      result: buildResult({ issueCount: 2, totalStoryPoints: 5, issuesPerWeek: 1, pointsPerWeek: 2, cycleTimeDays: [] }),
+    };
+    const releaseTrainEngineer = {
+      roleCapabilities: roles('canReleaseTrainEngineer'),
+      result: buildResult({ issueCount: 3, totalStoryPoints: 7, issuesPerWeek: 1.5, pointsPerWeek: 3, cycleTimeDays: [] }),
+    };
+
+    const rows = rollUpThroughputByRole([systemsAnalyst, releaseTrainEngineer]);
+
+    expect(rowFor(rows, 'canSystemsAnalyst').roleLabel).toBe('Systems Analyst');
+    expect(rowFor(rows, 'canReleaseTrainEngineer').roleLabel).toBe('Release Train Engineer');
+    expect(rowFor(rows, 'canSystemsAnalyst').issueCount).toBe(2);
+    expect(rowFor(rows, 'canReleaseTrainEngineer').issueCount).toBe(3);
+  });
+
+  it('omits Systems Analyst and Release Train Engineer rows when nobody holds those roles', () => {
+    const developerOnly = {
+      roleCapabilities: roles('canDevelop'),
+      result: buildResult({ issueCount: 1, totalStoryPoints: 0, issuesPerWeek: 0, pointsPerWeek: 0, cycleTimeDays: [] }),
+    };
+
+    const rows = rollUpThroughputByRole([developerOnly]);
+
+    expect(rows.map((row) => row.roleKey)).not.toContain('canSystemsAnalyst');
+    expect(rows.map((row) => row.roleKey)).not.toContain('canReleaseTrainEngineer');
   });
 
   it('exposes the bottleneck: eight developers\' throughput dwarfs one internal tester\'s', () => {
