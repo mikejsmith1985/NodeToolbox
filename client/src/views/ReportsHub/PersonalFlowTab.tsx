@@ -342,6 +342,12 @@ interface TeamFlowRow {
   // The member's role capabilities, carried through so the comparison table can show a "Role(s)" column
   // and the "Throughput by role" rollup can regroup people by the roles they can perform.
   roleCapabilities?: RosterRoleCapabilities;
+  // The resolved machine id the JQL `assignee WAS "…"` clause used for this member, shown so a reviewer can
+  // see WHO each row was queried as. Null when the member never resolved to a queryable id (unmatched/error).
+  queryValue: string | null;
+  // The exact JQL this member's search ran, built from the SAME id + window as `buildSearchPath`, so a
+  // reviewer can copy it and paste it straight into Jira to validate the team numbers. Null when unresolved.
+  jql: string | null;
   result: PersonalFlowResult | null;
   errorMessage: string | null;
 }
@@ -518,18 +524,29 @@ async function buildTeamFlowRow(
     // Resolve the member to a full identity: trust a stored accountId, else look the name up in Jira.
     const identity = await resolveRosterIdentity(rosterMember);
     if (identity === null) {
-      return { personDisplayName: rosterMember.displayName, roleCapabilities, result: null, errorMessage: 'No matching Jira user' };
+      return {
+        personDisplayName: rosterMember.displayName, roleCapabilities,
+        queryValue: null, jql: null, result: null, errorMessage: 'No matching Jira user',
+      };
     }
     const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(
       buildSearchPath(identity.queryValue, windowDays, storyPointsFieldId),
     );
     const issues = (searchResponse.issues ?? []).map((issue) => toPersonalFlowIssue(issue, identity, storyPointsFieldId));
     const result = computePersonalFlow({ issues, statusCategoryByStatusId, windowDays, todayIso });
-    return { personDisplayName: rosterMember.displayName, roleCapabilities, result, errorMessage: null };
+    // Record the exact id + JQL that ran — buildSearchJql takes the SAME id + window buildSearchPath queried,
+    // so the JQL the row shows is guaranteed to be the one that produced these numbers.
+    return {
+      personDisplayName: rosterMember.displayName, roleCapabilities,
+      queryValue: identity.queryValue, jql: buildSearchJql(identity.queryValue, windowDays),
+      result, errorMessage: null,
+    };
   } catch (caughtError) {
     return {
       personDisplayName: rosterMember.displayName,
       roleCapabilities,
+      queryValue: null,
+      jql: null,
       result: null,
       errorMessage: caughtError instanceof Error ? caughtError.message : 'Failed to build this person’s flow.',
     };
@@ -767,6 +784,32 @@ function PersonSuggestionsDropdown({
   );
 }
 
+/**
+ * The comparison-table "Query" cell: the resolved machine id in muted monospace plus a compact Copy button
+ * that copies THIS person's exact JQL — so a reviewer can paste one individual's query into Jira and confirm
+ * the team numbers. Shows a muted dash and no button when the member never resolved to a queryable id.
+ */
+function TeamFlowQueryCell({ row }: { row: TeamFlowRow }): React.JSX.Element {
+  // Both fields are set together in buildTeamFlowRow, so a null jql means there is nothing to copy.
+  if (row.jql === null || row.queryValue === null) {
+    return <td style={{ opacity: 0.6 }}>—</td>;
+  }
+  const jqlToCopy = row.jql;
+  return (
+    <td style={{ whiteSpace: 'nowrap' }}>
+      <span style={{ fontFamily: 'monospace', opacity: 0.6, userSelect: 'all' }}>{row.queryValue}</span>
+      <button
+        type="button"
+        aria-label={`Copy JQL for ${row.personDisplayName}`}
+        onClick={() => copyToClipboard(jqlToCopy)}
+        style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', cursor: 'pointer' }}
+      >
+        Copy
+      </button>
+    </td>
+  );
+}
+
 /** Renders one comparison-table row: a full metrics row, or the person's name plus an inline error. */
 function TeamFlowComparisonRow({ row }: { row: TeamFlowRow }): React.JSX.Element {
   const roleLabels = formatRoleLabels(row.roleCapabilities);
@@ -776,6 +819,7 @@ function TeamFlowComparisonRow({ row }: { row: TeamFlowRow }): React.JSX.Element
         <td>{row.personDisplayName}</td>
         <td>{roleLabels}</td>
         <td colSpan={6} style={{ color: 'var(--color-danger)' }}>{row.errorMessage ?? 'No result.'}</td>
+        <TeamFlowQueryCell row={row} />
       </tr>
     );
   }
@@ -791,24 +835,30 @@ function TeamFlowComparisonRow({ row }: { row: TeamFlowRow }): React.JSX.Element
       <td>{formatNumber(throughput.pointsPerWeek)}</td>
       <td>{cycleTime.averageDays === null ? '—' : formatNumber(cycleTime.averageDays)}</td>
       <td>{cycleTime.medianDays === null ? '—' : formatNumber(cycleTime.medianDays)}</td>
+      <TeamFlowQueryCell row={row} />
     </tr>
   );
 }
 
-/** The side-by-side team comparison table: one row per roster member, distinct from the single-person view. */
+/**
+ * The side-by-side team comparison table: one row per roster member, distinct from the single-person view.
+ * Wrapped in a horizontal-scroll container so the extra "Query" column can never force page-level overflow.
+ */
 function TeamFlowComparisonView({ rows }: { rows: readonly TeamFlowRow[] }): React.JSX.Element {
   return (
-    <table style={{ marginTop: 12, width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-      <thead>
-        <tr style={{ textAlign: 'left', opacity: 0.7 }}>
-          <th>Person</th><th>Role(s)</th><th>Issues</th><th>Points</th><th>Issues/Wk</th>
-          <th>Points/Wk</th><th>Avg Cycle (days)</th><th>Median Cycle (days)</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => <TeamFlowComparisonRow key={row.personDisplayName} row={row} />)}
-      </tbody>
-    </table>
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ marginTop: 12, width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <thead>
+          <tr style={{ textAlign: 'left', opacity: 0.7 }}>
+            <th>Person</th><th>Role(s)</th><th>Issues</th><th>Points</th><th>Issues/Wk</th>
+            <th>Points/Wk</th><th>Avg Cycle (days)</th><th>Median Cycle (days)</th><th>Query</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => <TeamFlowComparisonRow key={row.personDisplayName} row={row} />)}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

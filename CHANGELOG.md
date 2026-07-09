@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Reports Hub — Personal Flow: per-person JQL in the team roster run**: the "Run for team roster" comparison now shows each member's resolved Jira id and a **Copy JQL** button on their row, so you can paste any one person's exact `assignee WAS "<id>" AND updated >= -Nd ORDER BY updated DESC` query into Jira and validate that person's numbers. Unresolved members show "—" (the run still completes for everyone else). *(feature 016)*
+
 ### Changed
 - **Reports Hub — Personal Flow: Internal Testing Bottleneck statuses are now a picklist**: the internal-testing statuses are chosen from a **multi-select of the instance's real Jira statuses** (loaded live, with a Reload button) instead of a hand-typed comma-separated list — so an invalid or misspelled status name can no longer produce empty/incorrect results. Existing typed selections are migrated automatically. *(feature 016)*
 

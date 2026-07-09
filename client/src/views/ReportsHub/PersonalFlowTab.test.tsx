@@ -656,6 +656,68 @@ describe('PersonalFlowTab', () => {
     expect(searchedAssignees.some((path) => path.includes('assignee WAS "john.qa"'))).toBe(true);
   });
 
+  it('surfaces each resolved person\'s exact JQL with a per-row Copy button in the team comparison', async () => {
+    seedRoster(
+      [buildRosterMember('Jane Dev', 'Team Rocket'), buildRosterMember('John QA', 'Team Rocket')],
+      'Team Rocket',
+    );
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+
+    await waitFor(() => expect(screen.getByText('Jane Dev')).toBeInTheDocument());
+
+    // The resolved machine id (not the display name) renders in each person's Query cell.
+    const janeRow = screen.getByText('Jane Dev').closest('tr') as HTMLElement;
+    expect(within(janeRow).getByText('jane.dev')).toBeInTheDocument();
+    const johnRow = screen.getByText('John QA').closest('tr') as HTMLElement;
+    expect(within(johnRow).getByText('john.qa')).toBeInTheDocument();
+
+    // Clicking a person's Copy button copies THAT person's exact JQL — same id + default 90-day window the
+    // search ran with, ORDER BY intact — so it can be pasted straight into Jira to validate the row.
+    fireEvent.click(within(janeRow).getByRole('button', { name: /copy jql for jane dev/i }));
+    expect(mockCopyToClipboard).toHaveBeenCalledWith(
+      'assignee WAS "jane.dev" AND updated >= -90d ORDER BY updated DESC',
+    );
+
+    fireEvent.click(within(johnRow).getByRole('button', { name: /copy jql for john qa/i }));
+    expect(mockCopyToClipboard).toHaveBeenCalledWith(
+      'assignee WAS "john.qa" AND updated >= -90d ORDER BY updated DESC',
+    );
+  });
+
+  it('shows a muted dash and no Copy button for a team member that resolves to no queryable id', async () => {
+    // A roster member with no accountId and a BLANK assignee value has nothing to query by, so it becomes a
+    // "No matching Jira user" row: its Query cell must read "—" with no Copy button, never a bogus JQL.
+    const unqueryableMember: StandupRosterMember = {
+      id: 'roster-member:ghost', displayName: 'Ghost Member', assigneeQueryValue: '', teamName: 'Team Rocket',
+    };
+    seedRoster([buildRosterMember('Jane Dev', 'Team Rocket'), unqueryableMember], 'Team Rocket');
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.click(screen.getByRole('button', { name: /run for team roster/i }));
+
+    await waitFor(() => expect(screen.getByText('Ghost Member')).toBeInTheDocument());
+    const ghostRow = screen.getByText('Ghost Member').closest('tr') as HTMLElement;
+    expect(within(ghostRow).getByText('No matching Jira user')).toBeInTheDocument();
+    // No Copy button for the unresolved member; the resolved member still has one.
+    expect(within(ghostRow).queryByRole('button', { name: /copy jql for/i })).toBeNull();
+    const janeRow = screen.getByText('Jane Dev').closest('tr') as HTMLElement;
+    expect(within(janeRow).getByRole('button', { name: /copy jql for jane dev/i })).toBeInTheDocument();
+  });
+
   it('records a per-person error row without aborting the whole team run', async () => {
     seedRoster(
       [buildRosterMember('Jane Dev', 'Team Rocket'), buildRosterMember('John QA', 'Team Rocket')],
