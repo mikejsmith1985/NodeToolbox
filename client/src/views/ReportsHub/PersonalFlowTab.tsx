@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { jiraGet } from '../../services/jiraApi.ts';
+import { copyToClipboard } from '../FeatureCanvas/ai/clipboard.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import {
   filterRosterMembersByActiveTeam,
@@ -258,12 +259,22 @@ function toPersonalFlowIssue(issue: RawIssue, identity: PersonIdentity, storyPoi
 }
 
 /**
- * Builds the search path for every issue the person was ever assigned to within the window.
- * `assignee WAS` (not `=`) captures work she has since handed off; `updated >= -Nd` is a cheap superset —
- * the engine does the exact windowing by each completed stint's end, so an over-broad fetch is harmless.
+ * Builds the exact JQL the report queries for a person + window. Factored out so the same string can be
+ * BOTH queried (by `buildSearchPath`) and shown to the user for cross-checking in Jira — guaranteeing the
+ * displayed JQL never drifts from what actually ran. `assignee WAS` (not `=`) captures work she has since
+ * handed off; `updated >= -Nd` is a cheap superset — the engine does the exact windowing by each completed
+ * stint's end, so an over-broad fetch is harmless.
+ */
+function buildSearchJql(person: string, windowDays: number): string {
+  return `assignee WAS "${person}" AND updated >= -${windowDays}d ORDER BY updated DESC`;
+}
+
+/**
+ * Builds the search path for every issue the person was ever assigned to within the window, wrapping the
+ * shared `buildSearchJql` clause with the changelog expand, the requested fields, and the page cap.
  */
 function buildSearchPath(person: string, windowDays: number, storyPointsFieldId: string): string {
-  const jql = `assignee WAS "${person}" AND updated >= -${windowDays}d ORDER BY updated DESC`;
+  const jql = buildSearchJql(person, windowDays);
   const fields = ['summary', 'created', 'assignee', 'status', 'resolutiondate', storyPointsFieldId].join(',');
   return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&expand=changelog&fields=${fields}&maxResults=${MAX_ISSUES}`;
 }
@@ -483,6 +494,36 @@ async function buildTeamFlowRow(
       errorMessage: caughtError instanceof Error ? caughtError.message : 'Failed to build this person’s flow.',
     };
   }
+}
+
+/**
+ * Shows the exact JQL the report ran, in selectable monospace, with a Copy button — so a reviewer can
+ * paste it straight into Jira's issue search and cross-check a run. Read-only: it only reflects the query
+ * that already executed. Styled to match the muted diagnostic line above it, and the JQL wraps rather than
+ * forcing horizontal page overflow.
+ */
+function QueriedJqlBlock({ jql }: { jql: string }): React.JSX.Element {
+  return (
+    <div style={{ marginTop: 4, display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 11, opacity: 0.6 }}>
+      <span style={{ fontWeight: 600, flex: '0 0 auto' }}>JQL</span>
+      <code
+        style={{
+          flex: '1 1 auto', minWidth: 0, fontFamily: 'monospace', fontSize: 11, whiteSpace: 'pre-wrap',
+          overflowWrap: 'anywhere', userSelect: 'all',
+        }}
+      >
+        {jql}
+      </code>
+      <button
+        type="button"
+        aria-label="Copy JQL"
+        onClick={() => copyToClipboard(jql)}
+        style={{ flex: '0 0 auto', fontSize: 11, padding: '1px 6px', cursor: 'pointer' }}
+      >
+        Copy
+      </button>
+    </div>
+  );
 }
 
 /** One labelled statistic; label and value are siblings so the value reads independently of the label. */
@@ -745,7 +786,7 @@ export function PersonalFlowTab(): React.JSX.Element {
   const [selectedIdentity, setSelectedIdentity] = useState<PersonIdentity | null>(null);
   // A transparency line for the last single-person run: which machine id was queried and how many issues
   // were fetched, so the user can see resolution + fetch vs credited at a glance. Null hides the line.
-  const [diagnostic, setDiagnostic] = useState<{ queryValue: string; rawIssueCount: number } | null>(null);
+  const [diagnostic, setDiagnostic] = useState<{ queryValue: string; rawIssueCount: number; jql: string } | null>(null);
   const [teamRows, setTeamRows] = useState<TeamFlowRow[]>([]);
   const [isTeamLoading, setIsTeamLoading] = useState(false);
   const [teamError, setTeamError] = useState<string | null>(null);
@@ -837,7 +878,12 @@ export function PersonalFlowTab(): React.JSX.Element {
       // The clock read is fine here (the pure engine takes today as an argument, staying deterministic).
       const todayIso = new Date().toISOString().slice(0, 10);
       setResult(computePersonalFlow({ issues, statusCategoryByStatusId, windowDays, todayIso }));
-      setDiagnostic({ queryValue: identity.queryValue, rawIssueCount: rawIssues.length });
+      // Capture the EXACT JQL that ran (same id + window passed to buildSearchPath) so the UI can show it.
+      setDiagnostic({
+        queryValue: identity.queryValue,
+        rawIssueCount: rawIssues.length,
+        jql: buildSearchJql(identity.queryValue, windowDays),
+      });
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Failed to build the personal flow report.');
     } finally {
@@ -939,6 +985,8 @@ export function PersonalFlowTab(): React.JSX.Element {
           Queried Jira as "{diagnostic.queryValue}" · fetched {diagnostic.rawIssueCount} issues · {result.issueCount} credited
         </p>
       )}
+
+      {result !== null && diagnostic !== null && <QueriedJqlBlock jql={diagnostic.jql} />}
 
       {result !== null && <PersonalFlowResultView result={result} statusNameById={statusNameById} />}
 

@@ -21,6 +21,14 @@ vi.mock('../../services/jiraApi.ts', () => ({
   jiraGet: mockJiraGet,
 }));
 
+// The clipboard helper the "Copy JQL" button calls; mocked so the click can be asserted without a
+// real clipboard in jsdom, and so we can confirm the exact JQL string is what gets copied.
+const { mockCopyToClipboard } = vi.hoisted(() => ({ mockCopyToClipboard: vi.fn() }));
+
+vi.mock('../FeatureCanvas/ai/clipboard.ts', () => ({
+  copyToClipboard: mockCopyToClipboard,
+}));
+
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import {
   useStandupRosterStore,
@@ -179,6 +187,7 @@ describe('PersonalFlowTab', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-07-08T00:00:00.000Z'));
     mockJiraGet.mockReset();
+    mockCopyToClipboard.mockReset();
     // Reset the shared roster + settings stores so each test starts from an empty roster
     // and no active team, keeping the single-person tests independent of roster state.
     useStandupRosterStore.setState({ rosterMembers: [] });
@@ -345,6 +354,51 @@ describe('PersonalFlowTab', () => {
     expect(diagnostic).toHaveTextContent('Queried Jira as "jane.dev"');
     expect(diagnostic).toHaveTextContent('fetched 2 issues');
     expect(diagnostic).toHaveTextContent('2 credited');
+  });
+
+  it('surfaces the exact JQL it ran, using the resolved machine id and the selected window', async () => {
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.change(screen.getByLabelText(/person \(jira assignee\)/i), {
+      target: { value: 'Jane Dev' },
+    });
+    fireEvent.change(screen.getByLabelText(/lookback window/i), { target: { value: '60' } });
+    fireEvent.click(screen.getByRole('button', { name: /run report/i }));
+
+    // The displayed JQL uses the RESOLVED machine id (jane.dev), not the typed display name, plus the
+    // selected 60-day window — proving it is the same string the search actually queried.
+    const jqlNode = await screen.findByText(/assignee WAS "jane.dev"/i);
+    expect(jqlNode).toHaveTextContent('updated >= -60d');
+  });
+
+  it('copies the exact JQL to the clipboard when the Copy JQL button is clicked', async () => {
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path.startsWith('/rest/api/2/status')) return Promise.resolve(STATUSES);
+      if (path.startsWith('/rest/api/2/user/search')) return Promise.resolve(userSearchResponseForPath(path));
+      if (path.startsWith('/rest/api/2/search')) return Promise.resolve(searchResponseForPath(path));
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.change(screen.getByLabelText(/person \(jira assignee\)/i), {
+      target: { value: 'Jane Dev' },
+    });
+    fireEvent.change(screen.getByLabelText(/lookback window/i), { target: { value: '60' } });
+    fireEvent.click(screen.getByRole('button', { name: /run report/i }));
+
+    const copyButton = await screen.findByRole('button', { name: /copy jql/i });
+    fireEvent.click(copyButton);
+
+    // The clipboard receives the same JQL the report ran — resolved id, window, and ORDER BY intact.
+    expect(mockCopyToClipboard).toHaveBeenCalledWith(
+      'assignee WAS "jane.dev" AND updated >= -60d ORDER BY updated DESC',
+    );
   });
 
   it('renders the issue-audit breakdown with the excluded count and a friendly reason label', async () => {
