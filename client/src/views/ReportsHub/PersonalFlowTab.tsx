@@ -13,6 +13,7 @@ import { copyToClipboard } from '../FeatureCanvas/ai/clipboard.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import {
   filterRosterMembersByActiveTeam,
+  type RosterRoleCapabilities,
   type StandupRosterMember,
   useStandupRosterStore,
 } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
@@ -24,6 +25,11 @@ import {
   type PersonalFlowResult,
   type PersonalFlowStatusTransition,
 } from './personalFlow.ts';
+import {
+  rollUpThroughputByRole,
+  TEAM_ROLE_DEFINITIONS,
+  type RoleThroughput,
+} from './personalFlowRoleRollup.ts';
 
 // The team's known story-points custom field, used when the ART settings do not override it. This field is
 // a dropdown/select on this instance, so Jira returns it as an object ({ value: "3" }) rather than a number.
@@ -284,6 +290,24 @@ function formatNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
+// Shown in the "Role(s)" cell when a member has no role capabilities set, so the column never reads blank.
+const NO_ROLES_PLACEHOLDER = '—';
+
+/**
+ * Formats a member's role capabilities into a comma-joined list of human role labels, in the canonical
+ * TEAM_ROLE_DEFINITIONS order, or a placeholder dash when the member can perform none. Kept in one place so
+ * the comparison table's "Role(s)" column always names roles the same way the rollup section does.
+ */
+function formatRoleLabels(roleCapabilities: RosterRoleCapabilities | undefined): string {
+  if (roleCapabilities === undefined) {
+    return NO_ROLES_PLACEHOLDER;
+  }
+  const enabledLabels = TEAM_ROLE_DEFINITIONS
+    .filter((definition) => roleCapabilities[definition.key] === true)
+    .map((definition) => definition.label);
+  return enabledLabels.length === 0 ? NO_ROLES_PLACEHOLDER : enabledLabels.join(', ');
+}
+
 // ── Person search (roster + Jira) ────────────────────────────────────────────
 
 /** The minimal Jira user fields the assignee search returns and this tab reads (Server includes `key`). */
@@ -304,6 +328,9 @@ interface PersonSuggestion {
  */
 interface TeamFlowRow {
   personDisplayName: string;
+  // The member's role capabilities, carried through so the comparison table can show a "Role(s)" column
+  // and the "Throughput by role" rollup can regroup people by the roles they can perform.
+  roleCapabilities?: RosterRoleCapabilities;
   result: PersonalFlowResult | null;
   errorMessage: string | null;
 }
@@ -475,21 +502,23 @@ async function buildTeamFlowRow(
   todayIso: string,
   storyPointsFieldId: string,
 ): Promise<TeamFlowRow> {
+  const roleCapabilities = rosterMember.roleCapabilities;
   try {
     // Resolve the member to a full identity: trust a stored accountId, else look the name up in Jira.
     const identity = await resolveRosterIdentity(rosterMember);
     if (identity === null) {
-      return { personDisplayName: rosterMember.displayName, result: null, errorMessage: 'No matching Jira user' };
+      return { personDisplayName: rosterMember.displayName, roleCapabilities, result: null, errorMessage: 'No matching Jira user' };
     }
     const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(
       buildSearchPath(identity.queryValue, windowDays, storyPointsFieldId),
     );
     const issues = (searchResponse.issues ?? []).map((issue) => toPersonalFlowIssue(issue, identity, storyPointsFieldId));
     const result = computePersonalFlow({ issues, statusCategoryByStatusId, windowDays, todayIso });
-    return { personDisplayName: rosterMember.displayName, result, errorMessage: null };
+    return { personDisplayName: rosterMember.displayName, roleCapabilities, result, errorMessage: null };
   } catch (caughtError) {
     return {
       personDisplayName: rosterMember.displayName,
+      roleCapabilities,
       result: null,
       errorMessage: caughtError instanceof Error ? caughtError.message : 'Failed to build this person’s flow.',
     };
@@ -729,10 +758,12 @@ function PersonSuggestionsDropdown({
 
 /** Renders one comparison-table row: a full metrics row, or the person's name plus an inline error. */
 function TeamFlowComparisonRow({ row }: { row: TeamFlowRow }): React.JSX.Element {
+  const roleLabels = formatRoleLabels(row.roleCapabilities);
   if (row.result === null) {
     return (
       <tr style={{ borderTop: '1px solid var(--color-border)' }}>
         <td>{row.personDisplayName}</td>
+        <td>{roleLabels}</td>
         <td colSpan={6} style={{ color: 'var(--color-danger)' }}>{row.errorMessage ?? 'No result.'}</td>
       </tr>
     );
@@ -742,6 +773,7 @@ function TeamFlowComparisonRow({ row }: { row: TeamFlowRow }): React.JSX.Element
   return (
     <tr style={{ borderTop: '1px solid var(--color-border)' }}>
       <td>{row.personDisplayName}</td>
+      <td>{roleLabels}</td>
       <td>{String(row.result.issueCount)}</td>
       <td>{formatNumber(row.result.totalStoryPoints)}</td>
       <td>{formatNumber(throughput.issuesPerWeek)}</td>
@@ -758,7 +790,7 @@ function TeamFlowComparisonView({ rows }: { rows: readonly TeamFlowRow[] }): Rea
     <table style={{ marginTop: 12, width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
       <thead>
         <tr style={{ textAlign: 'left', opacity: 0.7 }}>
-          <th>Person</th><th>Issues</th><th>Points</th><th>Issues/Wk</th>
+          <th>Person</th><th>Role(s)</th><th>Issues</th><th>Points</th><th>Issues/Wk</th>
           <th>Points/Wk</th><th>Avg Cycle (days)</th><th>Median Cycle (days)</th>
         </tr>
       </thead>
@@ -766,6 +798,56 @@ function TeamFlowComparisonView({ rows }: { rows: readonly TeamFlowRow[] }): Rea
         {rows.map((row) => <TeamFlowComparisonRow key={row.personDisplayName} row={row} />)}
       </tbody>
     </table>
+  );
+}
+
+/** Renders one "Throughput by role" row: the role plus its summed volume, rates, and pooled cycle stats. */
+function RoleThroughputRow({ roleThroughput }: { roleThroughput: RoleThroughput }): React.JSX.Element {
+  return (
+    <tr style={{ borderTop: '1px solid var(--color-border)' }}>
+      <td>{roleThroughput.roleLabel}</td>
+      <td>{String(roleThroughput.peopleCount)}</td>
+      <td>{String(roleThroughput.issueCount)}</td>
+      <td>{formatNumber(roleThroughput.totalStoryPoints)}</td>
+      <td>{formatNumber(roleThroughput.issuesPerWeek)}</td>
+      <td>{formatNumber(roleThroughput.pointsPerWeek)}</td>
+      <td>{roleThroughput.averageCycleDays === null ? '—' : formatNumber(roleThroughput.averageCycleDays)}</td>
+      <td>{roleThroughput.medianCycleDays === null ? '—' : formatNumber(roleThroughput.medianCycleDays)}</td>
+    </tr>
+  );
+}
+
+/**
+ * The "Throughput by role" rollup under the per-person comparison: it regroups the team's flow results by
+ * the roles each member can perform and sums the throughput per role. This is the view that surfaces a
+ * staffing bottleneck — e.g. many developers feeding a single internal tester makes the Developer role's
+ * throughput visibly dwarf the Internal Tester role's. Renders nothing until there is at least one row.
+ */
+function RoleThroughputSection({ rows }: { rows: readonly TeamFlowRow[] }): React.JSX.Element | null {
+  const roleThroughputs = rollUpThroughputByRole(rows);
+  if (roleThroughputs.length === 0) {
+    return null;
+  }
+  return (
+    <section style={{ marginTop: 16 }}>
+      <h4 style={{ fontSize: 12, opacity: 0.7, fontWeight: 600, margin: '0 0 6px' }}>Throughput by role</h4>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <thead>
+          <tr style={{ textAlign: 'left', opacity: 0.6 }}>
+            <th>Role</th><th>People</th><th>Issues</th><th>Story Points</th><th>Issues/Wk</th>
+            <th>Points/Wk</th><th>Avg Cycle (days)</th><th>Median Cycle (days)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {roleThroughputs.map((roleThroughput) => (
+            <RoleThroughputRow key={roleThroughput.roleKey} roleThroughput={roleThroughput} />
+          ))}
+        </tbody>
+      </table>
+      <p style={{ marginTop: 6, fontSize: 11, opacity: 0.6 }}>
+        People with multiple roles are counted under each of their roles.
+      </p>
+    </section>
   );
 }
 
@@ -995,6 +1077,8 @@ export function PersonalFlowTab(): React.JSX.Element {
       )}
 
       {teamRows.length > 0 && <TeamFlowComparisonView rows={teamRows} />}
+
+      {teamRows.length > 0 && <RoleThroughputSection rows={teamRows} />}
     </div>
   );
 }
