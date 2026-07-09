@@ -13,7 +13,8 @@ const MS_PER_DAY = 86_400_000;
 const UNASSIGNED_DISPLAY_NAME = 'Unassigned';
 const NO_ROLES: RosterRoleCapabilities = {
   canDevelop: false, canInternalTest: false, canExternalTest: false,
-  canScrumMaster: false, canProductOwner: false, canSolutionArchitect: false, canDevLead: false,
+  canScrumMaster: false, canProductOwner: false, canSystemsAnalyst: false,
+  canSolutionArchitect: false, canDevLead: false, canReleaseTrainEngineer: false,
 };
 
 /** One child work item as the re-allocation reasoner sees it. */

@@ -117,6 +117,26 @@ describe('buildReallocationPrompt', () => {
     expect(prompt.toLowerCase()).toMatch(/coordination/);
   });
 
+  it('4c. renders the Systems Analyst and Release Train Engineer roles for a member that holds them', () => {
+    const prompt = buildReallocationPrompt(
+      createContext({
+        rosterWithoutWork: [
+          {
+            displayName: 'Sam Analyst',
+            roles: {
+              canDevelop: false, canInternalTest: false, canExternalTest: false,
+              canScrumMaster: false, canProductOwner: false, canSystemsAnalyst: true,
+              canSolutionArchitect: false, canDevLead: false, canReleaseTrainEngineer: true,
+            },
+          },
+        ],
+      }),
+      '',
+    );
+    expect(prompt).toContain('Systems Analyst');
+    expect(prompt).toContain('Release Train Engineer');
+  });
+
   it('5. lists per-person work with key, summary, points, raw status (+category), and days-in-status', () => {
     const prompt = buildReallocationPrompt(createContext(), '');
     expect(prompt).toContain('S-1');

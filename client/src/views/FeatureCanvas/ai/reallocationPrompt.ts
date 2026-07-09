@@ -18,8 +18,10 @@ const ROLE_LABELS: Array<{ capabilityKey: keyof RosterRoleCapabilities; label: s
   { capabilityKey: 'canExternalTest', label: 'External Tester' },
   { capabilityKey: 'canScrumMaster', label: 'Scrum Master' },
   { capabilityKey: 'canProductOwner', label: 'Product Owner' },
+  { capabilityKey: 'canSystemsAnalyst', label: 'Systems Analyst' },
   { capabilityKey: 'canSolutionArchitect', label: 'Solution Architect' },
   { capabilityKey: 'canDevLead', label: 'Dev Lead' },
+  { capabilityKey: 'canReleaseTrainEngineer', label: 'Release Train Engineer' },
 ];
 
 // The estimation conventions, output shape, and guardrails are fixed instruction text (item 3, 7, 8).

@@ -267,6 +267,34 @@ describe('useStandupRosterStore', () => {
     expect(readStoredStandupRosterMembers()[0].roleCapabilities).toEqual(roleCapabilities);
   });
 
+  it('accepts and round-trips the Systems Analyst and Release Train Engineer capabilities', () => {
+    // A persisted member carrying the two extended coordination roles must pass validation on read
+    // (isValidRoleCapabilities accepts them as optional booleans) and must not be stripped.
+    const roleCapabilities = {
+      canDevelop: false,
+      canInternalTest: false,
+      canExternalTest: false,
+      canSystemsAnalyst: true,
+      canReleaseTrainEngineer: true,
+    };
+    localStorage.setItem('tbxSprintDashboardRoster', JSON.stringify({
+      rosterMembers: [
+        {
+          id: 'roster-member:sam analyst',
+          displayName: 'Sam Analyst',
+          assigneeQueryValue: 'Sam Analyst',
+          roleCapabilities,
+        },
+      ],
+    }));
+
+    const [loadedMember] = readStoredStandupRosterMembers();
+
+    expect(loadedMember.roleCapabilities).toEqual(roleCapabilities);
+    expect(loadedMember.roleCapabilities?.canSystemsAnalyst).toBe(true);
+    expect(loadedMember.roleCapabilities?.canReleaseTrainEngineer).toBe(true);
+  });
+
   it('preserves role capabilities through upsertRosterMembers', () => {
     useStandupRosterStore.getState().upsertRosterMembers([
       {

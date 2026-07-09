@@ -21,11 +21,14 @@ export interface RosterRoleCapabilities {
   canInternalTest: boolean;
   canExternalTest: boolean;
   // Coordination / leadership roles. Optional so rosters persisted before these existed stay valid
-  // (an absent flag reads as false). SM/PO/SA/Dev Lead give the re-allocation planner fuller context.
+  // (an absent flag reads as false). SM/PO/Systems Analyst/SA/Dev Lead/RTE give the re-allocation
+  // planner fuller context.
   canScrumMaster?: boolean;
   canProductOwner?: boolean;
+  canSystemsAnalyst?: boolean;
   canSolutionArchitect?: boolean;
   canDevLead?: boolean;
+  canReleaseTrainEngineer?: boolean;
 }
 
 export interface StandupRosterMember {
@@ -119,8 +122,10 @@ function isValidRoleCapabilities(value: unknown): value is RosterRoleCapabilitie
     (candidate.canExternalTest === undefined || typeof candidate.canExternalTest === 'boolean') &&
     (candidate.canScrumMaster === undefined || typeof candidate.canScrumMaster === 'boolean') &&
     (candidate.canProductOwner === undefined || typeof candidate.canProductOwner === 'boolean') &&
+    (candidate.canSystemsAnalyst === undefined || typeof candidate.canSystemsAnalyst === 'boolean') &&
     (candidate.canSolutionArchitect === undefined || typeof candidate.canSolutionArchitect === 'boolean') &&
-    (candidate.canDevLead === undefined || typeof candidate.canDevLead === 'boolean')
+    (candidate.canDevLead === undefined || typeof candidate.canDevLead === 'boolean') &&
+    (candidate.canReleaseTrainEngineer === undefined || typeof candidate.canReleaseTrainEngineer === 'boolean')
   );
 }
 

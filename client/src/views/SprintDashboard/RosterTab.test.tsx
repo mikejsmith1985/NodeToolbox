@@ -111,9 +111,13 @@ describe('RosterTab', () => {
     // Before toggling, the only "Developer" text is the toggle label (no chip yet).
     expect(screen.getAllByText('Developer')).toHaveLength(1);
 
-    // The four coordination roles (Scrum Master / Product Owner / Solution Architect / Dev Lead) also render.
+    // The coordination roles (Scrum Master / Product Owner / Systems Analyst / Solution Architect /
+    // Dev Lead / Release Train Engineer) also render as selectable toggles.
     expect(screen.getByRole('checkbox', { name: 'Scrum Master' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Systems Analyst' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Solution Architect' })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Dev Lead' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Release Train Engineer' })).toBeInTheDocument();
 
     fireEvent.click(developerToggle);
 
