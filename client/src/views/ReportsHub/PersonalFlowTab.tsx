@@ -30,6 +30,12 @@ import {
   TEAM_ROLE_DEFINITIONS,
   type RoleThroughput,
 } from './personalFlowRoleRollup.ts';
+import {
+  computeInternalTestingBottleneck,
+  type BottleneckIssueInput,
+  type BottleneckStatusTransition,
+  type InternalTestingBottleneckResult,
+} from './internalTestingBottleneck.ts';
 
 // The team's known story-points custom field, used when the ART settings do not override it. This field is
 // a dropdown/select on this instance, so Jira returns it as an object ({ value: "3" }) rather than a number.
@@ -38,6 +44,11 @@ const DEFAULT_STORY_POINTS_FIELD_ID = 'customfield_10236';
 const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
 // One page of up to this many issues — plenty for a personal report; flagged when it caps out.
 const MAX_ISSUES = 100;
+// localStorage key the Internal Testing Bottleneck panel persists its scope JQL + status names under, so a
+// user's inputs survive a reload. Read at RUN time so an edit is picked up on the next run without a reload.
+const BOTTLENECK_SETTINGS_STORAGE_KEY = 'tbxPersonalFlowBottleneck';
+// Most rows the bottleneck "oldest issues" table renders before truncating, so a huge backlog stays readable.
+const MAX_BOTTLENECK_ROWS = 25;
 const DEFAULT_WINDOW_DAYS = 90;
 // The "All history" option maps to ~10 years so the window effectively stops filtering.
 const ALL_HISTORY_WINDOW_DAYS = 3650;
@@ -851,6 +862,314 @@ function RoleThroughputSection({ rows }: { rows: readonly TeamFlowRow[] }): Reac
   );
 }
 
+// ── Internal Testing Bottleneck panel ────────────────────────────────────────
+
+/** The scope JQL + internal-testing status names the bottleneck panel persists between runs. */
+interface BottleneckSettings {
+  scopeJql: string;
+  statusNamesText: string;
+}
+
+/**
+ * Reads the bottleneck panel's persisted inputs, falling back to blanks when nothing is stored or the
+ * stored JSON cannot be parsed. Read at RUN time so an edit is picked up on the next run without a reload.
+ */
+function readBottleneckSettings(): BottleneckSettings {
+  try {
+    const stored = JSON.parse(localStorage.getItem(BOTTLENECK_SETTINGS_STORAGE_KEY) || '{}') as Partial<BottleneckSettings>;
+    return { scopeJql: stored.scopeJql ?? '', statusNamesText: stored.statusNamesText ?? '' };
+  } catch {
+    return { scopeJql: '', statusNamesText: '' };
+  }
+}
+
+/** Persists the bottleneck panel's inputs so they survive a reload; failures are swallowed (storage is a convenience). */
+function writeBottleneckSettings(settings: BottleneckSettings): void {
+  try {
+    localStorage.setItem(BOTTLENECK_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // Ignore storage errors (private mode, quota) — the panel still works without persistence.
+  }
+}
+
+/** Splits the comma-separated status-names input into trimmed, non-empty status names. */
+function parseStatusNames(statusNamesText: string): string[] {
+  return statusNamesText.split(',').map((name) => name.trim()).filter((name) => name !== '');
+}
+
+/**
+ * Builds the exact JQL the bottleneck panel queries: the user's scope wrapped in parentheses, ANDed with a
+ * `status in (...)` clause naming every internal-testing status (each quoted), oldest-created first. Factored
+ * out so the same string is BOTH queried and shown to the user, guaranteeing the displayed JQL never drifts.
+ */
+function buildBottleneckJql(scopeJql: string, statusNames: readonly string[]): string {
+  const quotedStatuses = statusNames.map((name) => `"${name}"`).join(',');
+  return `(${scopeJql}) AND status in (${quotedStatuses}) ORDER BY created ASC`;
+}
+
+/** Wraps the bottleneck JQL with the changelog expand, requested fields, and the page cap into a search path. */
+function buildBottleneckSearchPath(scopeJql: string, statusNames: readonly string[]): string {
+  const jql = buildBottleneckJql(scopeJql, statusNames);
+  return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&expand=changelog&fields=summary,status,assignee,created&maxResults=${MAX_ISSUES}`;
+}
+
+/** Reads a raw issue's current status NAME from its status field, defaulting to an empty string when absent. */
+function readCurrentStatusName(fields: RawIssue['fields']): string {
+  const statusName = (fields?.status as { name?: string } | undefined)?.name;
+  return typeof statusName === 'string' ? statusName : '';
+}
+
+/** Reconstructs an issue's status-name transitions from its changelog, oldest first, for the bottleneck engine. */
+function readBottleneckStatusTransitions(issue: RawIssue): BottleneckStatusTransition[] {
+  const transitions: BottleneckStatusTransition[] = [];
+  for (const history of readSortedHistories(issue)) {
+    for (const item of history.items ?? []) {
+      if (item.field !== 'status') continue;
+      const toStatusName = readChangeItemText(item, 'toString');
+      if (toStatusName === undefined) continue; // a status change with no name string can't seed the timeline
+      transitions.push({ toStatusName, atIso: history.created ?? '' });
+    }
+  }
+  return transitions;
+}
+
+/** Maps a raw Jira issue to the bottleneck engine's issue shape (current status, assignee, created, timeline). */
+function toBottleneckIssue(issue: RawIssue): BottleneckIssueInput {
+  const fields = issue.fields ?? {};
+  return {
+    key: issue.key ?? '',
+    summary: fields.summary ?? issue.key ?? '',
+    currentStatusName: readCurrentStatusName(fields),
+    assigneeDisplayName: fields.assignee?.displayName ?? null,
+    createdIso: fields.created ?? null,
+    statusTransitions: readBottleneckStatusTransitions(issue),
+  };
+}
+
+/** One row of a count rollup (status or assignee): the label and how many issues fall under it. */
+interface BottleneckCountRow {
+  label: string;
+  count: number;
+}
+
+/** Turns a label → count map into rows sorted by count descending (ties broken by label) for display. */
+function buildCountRows(countByLabel: Readonly<Record<string, number>>): BottleneckCountRow[] {
+  return Object.entries(countByLabel)
+    .map(([label, count]) => ({ label, count }))
+    .sort((first, second) => (second.count - first.count) || (first.label < second.label ? -1 : 1));
+}
+
+/** A labelled mini-table of counts, reused for the by-status and by-assignee bottleneck rollups. */
+function BottleneckCountTable({
+  heading,
+  labelColumn,
+  rows,
+}: {
+  heading: string;
+  labelColumn: string;
+  rows: readonly BottleneckCountRow[];
+}): React.JSX.Element {
+  return (
+    <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+      <h5 style={{ fontSize: 12, opacity: 0.7, fontWeight: 600, margin: '0 0 6px' }}>{heading}</h5>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ textAlign: 'left', opacity: 0.6 }}>
+              <th>{labelColumn}</th><th>Count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.label} style={{ borderTop: '1px solid var(--color-border)' }}>
+                <td>{row.label}</td>
+                <td>{String(row.count)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** Formats a nullable statistic for the headline, showing an em-dash when there is no value. */
+function formatNullableDays(value: number | null): string {
+  return value === null ? '—' : formatNumber(value);
+}
+
+/** The bottleneck headline: backlog size plus average, median, and oldest wait in days. */
+function BottleneckHeadline({ result }: { result: InternalTestingBottleneckResult }): React.JSX.Element {
+  return (
+    <p style={{ marginTop: 12, fontSize: 14, fontWeight: 600 }}>
+      {result.backlogCount} issues in Internal Testing · avg {formatNullableDays(result.averageWaitingDays)}d
+      · median {formatNullableDays(result.medianWaitingDays)}d · oldest {formatNullableDays(result.oldestWaitingDays)}d waiting
+    </p>
+  );
+}
+
+/** The "oldest issues" table: the longest-waiting issues, capped so a large backlog stays readable. */
+function BottleneckOldestIssues({ result }: { result: InternalTestingBottleneckResult }): React.JSX.Element {
+  const visibleIssues = result.issues.slice(0, MAX_BOTTLENECK_ROWS);
+  const hiddenCount = result.issues.length - visibleIssues.length;
+  return (
+    <section style={{ marginTop: 16 }}>
+      <h5 style={{ fontSize: 12, opacity: 0.7, fontWeight: 600, margin: '0 0 6px' }}>Oldest issues</h5>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ textAlign: 'left', opacity: 0.6 }}>
+              <th>Issue</th><th>Summary</th><th>Current status</th><th>Assignee</th><th>Waiting (days)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleIssues.map((issue) => (
+              <tr key={issue.key} style={{ borderTop: '1px solid var(--color-border)' }}>
+                <td>{issue.key}</td>
+                <td>{issue.summary}</td>
+                <td>{issue.currentStatusName}</td>
+                <td>{issue.assigneeDisplayName ?? 'Unassigned'}</td>
+                <td>{formatNumber(issue.waitingDays)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {hiddenCount > 0 && (
+        <p style={{ marginTop: 6, fontSize: 11, opacity: 0.6 }}>
+          Showing the {MAX_BOTTLENECK_ROWS} longest-waiting of {result.issues.length} issues.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** The full bottleneck result view: headline, by-status + by-assignee rollups, and the oldest-issues table. */
+function BottleneckResultView({ result }: { result: InternalTestingBottleneckResult }): React.JSX.Element {
+  return (
+    <div>
+      <BottleneckHeadline result={result} />
+      {result.backlogCount === 0 ? (
+        <p style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}>
+          No issues are currently sitting in the named internal-testing statuses.
+        </p>
+      ) : (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, marginTop: 12 }}>
+            <BottleneckCountTable heading="By status" labelColumn="Status" rows={buildCountRows(result.countByStatus)} />
+            <BottleneckCountTable heading="By assignee" labelColumn="Assignee" rows={buildCountRows(result.countByAssignee)} />
+          </div>
+          <BottleneckOldestIssues result={result} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The Internal Testing Bottleneck panel: an independent scope JQL + status-name form with its own Run button,
+ * state, and error handling. It queries every issue currently in the named internal-testing statuses and
+ * shows how many are stuck and how long they have waited — hard evidence a single tester is a bottleneck.
+ * Read-only: it only reads Jira. Kept self-contained so it never touches the person/team runs above it.
+ */
+function InternalTestingBottleneckPanel(): React.JSX.Element {
+  const persistedSettings = useMemo(readBottleneckSettings, []);
+  const [scopeJql, setScopeJql] = useState(persistedSettings.scopeJql);
+  const [statusNamesText, setStatusNamesText] = useState(persistedSettings.statusNamesText);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<InternalTestingBottleneckResult | null>(null);
+  const [queriedJql, setQueriedJql] = useState<string | null>(null);
+  const [wasCapped, setWasCapped] = useState(false);
+
+  const canRun = scopeJql.trim() !== '' && parseStatusNames(statusNamesText).length > 0;
+
+  const handleScopeChange = (nextScopeJql: string): void => {
+    setScopeJql(nextScopeJql);
+    writeBottleneckSettings({ scopeJql: nextScopeJql, statusNamesText });
+  };
+
+  const handleStatusNamesChange = (nextStatusNamesText: string): void => {
+    setStatusNamesText(nextStatusNamesText);
+    writeBottleneckSettings({ scopeJql, statusNamesText: nextStatusNamesText });
+  };
+
+  const runBottleneck = async (): Promise<void> => {
+    // Read the inputs fresh at run time so the latest edits are used (and any persisted change is picked up).
+    const trimmedScopeJql = scopeJql.trim();
+    const statusNames = parseStatusNames(statusNamesText);
+    if (trimmedScopeJql === '' || statusNames.length === 0) {
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
+    setResult(null);
+    setQueriedJql(null);
+    try {
+      const searchResponse = await jiraGet<{ issues?: RawIssue[] }>(
+        buildBottleneckSearchPath(trimmedScopeJql, statusNames),
+      );
+      const rawIssues = searchResponse.issues ?? [];
+      const issues = rawIssues.map(toBottleneckIssue);
+      const todayIso = new Date().toISOString().slice(0, 10);
+      setResult(computeInternalTestingBottleneck({ issues, internalTestingStatusNames: statusNames, todayIso }));
+      setQueriedJql(buildBottleneckJql(trimmedScopeJql, statusNames));
+      setWasCapped(rawIssues.length === MAX_ISSUES);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'Failed to build the internal testing bottleneck.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <section style={{ marginTop: 28, paddingTop: 16, borderTop: '1px solid var(--color-border)', opacity: 0.95 }}>
+      <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 4px' }}>Internal Testing Bottleneck</h3>
+      <p style={{ fontSize: 12, opacity: 0.7, margin: '0 0 10px' }}>
+        How many issues are stuck in the team's internal-testing statuses right now, how long they have been
+        waiting, and who holds them.
+      </p>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, gap: 4 }}>
+          Scope JQL
+          <input
+            value={scopeJql}
+            onChange={(event) => handleScopeChange(event.target.value)}
+            placeholder="project = ENCUC"
+            style={{ minWidth: 220 }}
+          />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, gap: 4 }}>
+          Internal-testing statuses (comma-separated)
+          <input
+            value={statusNamesText}
+            onChange={(event) => handleStatusNamesChange(event.target.value)}
+            placeholder="Integrated Test, Ready for Testing, Testing"
+            style={{ minWidth: 300 }}
+          />
+        </label>
+        <button type="button" onClick={() => void runBottleneck()} disabled={!canRun || isLoading}>
+          {isLoading ? 'Running…' : 'Run bottleneck'}
+        </button>
+      </div>
+
+      {error !== null && (
+        <p role="alert" style={{ marginTop: 10, fontSize: 12, color: 'var(--color-danger)' }}>{error}</p>
+      )}
+
+      {wasCapped && result !== null && (
+        <p style={{ marginTop: 8, fontSize: 11, opacity: 0.7 }}>
+          Showing at most {MAX_ISSUES} issues — narrow the scope for a complete picture.
+        </p>
+      )}
+
+      {result !== null && <BottleneckResultView result={result} />}
+
+      {queriedJql !== null && <QueriedJqlBlock jql={queriedJql} />}
+    </section>
+  );
+}
+
 /** The Personal Flow report tab: pick a person + window, run, and read their throughput + hands-on cycle time. */
 export function PersonalFlowTab(): React.JSX.Element {
   const [person, setPerson] = useState('');
@@ -1079,6 +1398,8 @@ export function PersonalFlowTab(): React.JSX.Element {
       {teamRows.length > 0 && <TeamFlowComparisonView rows={teamRows} />}
 
       {teamRows.length > 0 && <RoleThroughputSection rows={teamRows} />}
+
+      <InternalTestingBottleneckPanel />
     </div>
   );
 }

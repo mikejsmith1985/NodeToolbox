@@ -204,12 +204,16 @@ describe('PersonalFlowTab', () => {
     useSettingsStore.setState({ sprintDashboardActiveTeam: '' });
     // Clear any configured story-points field so tests default to customfield_10236 unless one opts in.
     localStorage.removeItem('tbxARTSettings');
+    // Clear the bottleneck panel's persisted inputs so each test starts from empty scope + status fields.
+    localStorage.removeItem('tbxPersonalFlowBottleneck');
   });
 
   afterEach(() => {
     vi.useRealTimers();
     // Remove any ART settings a test set, so a custom spFieldId never leaks into another test.
     localStorage.removeItem('tbxARTSettings');
+    // Remove any bottleneck inputs a test persisted, so they never leak into another test.
+    localStorage.removeItem('tbxPersonalFlowBottleneck');
   });
 
   it('disables Run until a person is entered (empty-person guard)', () => {
@@ -827,5 +831,103 @@ describe('PersonalFlowTab', () => {
   it('disables Run for team roster when the active-team roster is empty', () => {
     render(<PersonalFlowTab />);
     expect(screen.getByRole('button', { name: /run for team roster/i })).toBeDisabled();
+  });
+
+  // ── Internal Testing Bottleneck panel ──────────────────────────────────────
+
+  // Two issues currently sitting in the Testing status, both held by one tester — the bottleneck. Each
+  // entered testing from an In Progress dev status, so the panel measures the wait from the testing entry.
+  const BOTTLENECK_SEARCH_RESPONSE = {
+    issues: [
+      {
+        key: 'ENC-1',
+        fields: {
+          summary: 'Awaiting internal test',
+          created: '2026-06-20T00:00:00.000Z',
+          status: { id: '3', name: 'Testing' },
+          assignee: { displayName: 'Tester One' },
+        },
+        changelog: {
+          histories: [
+            { created: '2026-06-25T00:00:00.000Z', items: [{ field: 'status', from: '1', to: '3', toString: 'In Progress' }] },
+            { created: '2026-07-01T00:00:00.000Z', items: [{ field: 'status', from: '3', to: '5', toString: 'Testing' }] },
+          ],
+        },
+      },
+      {
+        key: 'ENC-2',
+        fields: {
+          summary: 'Also waiting on test',
+          created: '2026-06-22T00:00:00.000Z',
+          status: { id: '3', name: 'Testing' },
+          assignee: { displayName: 'Tester One' },
+        },
+        changelog: {
+          histories: [
+            { created: '2026-06-26T00:00:00.000Z', items: [{ field: 'status', from: '1', to: '3', toString: 'In Progress' }] },
+            { created: '2026-07-03T00:00:00.000Z', items: [{ field: 'status', from: '3', to: '5', toString: 'Testing' }] },
+          ],
+        },
+      },
+    ],
+  };
+
+  it('runs the bottleneck: renders the backlog headline, an assignee row, and the exact JQL used', async () => {
+    mockJiraGet.mockImplementation((path: string) => {
+      // The bottleneck search is the only path carrying a `status in (...)` clause.
+      if (path.includes('/rest/api/2/search') && decodeURIComponent(path).includes('status in')) {
+        return Promise.resolve(BOTTLENECK_SEARCH_RESPONSE);
+      }
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<PersonalFlowTab />);
+    fireEvent.change(screen.getByLabelText(/scope jql/i), { target: { value: 'project = ENCUC' } });
+    fireEvent.change(screen.getByLabelText(/internal-testing statuses/i), { target: { value: 'Testing' } });
+    fireEvent.click(screen.getByRole('button', { name: /run bottleneck/i }));
+
+    // The headline names the backlog count of two issues stuck in internal testing.
+    await waitFor(() => expect(screen.getByText(/2 issues in Internal Testing/i)).toBeInTheDocument());
+    // The by-assignee rollup surfaces the single tester holding both issues — the bottleneck punchline.
+    // The name appears in both the by-assignee rollup and the oldest-issues table, so match all of them.
+    expect(screen.getAllByText('Tester One').length).toBeGreaterThan(0);
+    expect(screen.getByText('ENC-1')).toBeInTheDocument();
+
+    // The displayed JQL uses the entered scope and the quoted status name, so it is the string that ran.
+    const jqlNode = await screen.findByText(/status in \("Testing"\)/i);
+    expect(jqlNode).toHaveTextContent('project = ENCUC');
+  });
+
+  it('persists the bottleneck scope + status inputs to localStorage as they are edited', () => {
+    render(<PersonalFlowTab />);
+    fireEvent.change(screen.getByLabelText(/scope jql/i), { target: { value: 'project = ENCUC' } });
+    fireEvent.change(screen.getByLabelText(/internal-testing statuses/i), { target: { value: 'Testing, Ready for Testing' } });
+
+    const persisted = JSON.parse(localStorage.getItem('tbxPersonalFlowBottleneck') ?? '{}');
+    expect(persisted.scopeJql).toBe('project = ENCUC');
+    expect(persisted.statusNamesText).toBe('Testing, Ready for Testing');
+  });
+
+  it('hydrates the bottleneck inputs from the persisted localStorage key on mount', () => {
+    localStorage.setItem(
+      'tbxPersonalFlowBottleneck',
+      JSON.stringify({ scopeJql: 'project = SAVED', statusNamesText: 'Integrated Test' }),
+    );
+
+    render(<PersonalFlowTab />);
+
+    expect(screen.getByLabelText(/scope jql/i)).toHaveValue('project = SAVED');
+    expect(screen.getByLabelText(/internal-testing statuses/i)).toHaveValue('Integrated Test');
+  });
+
+  it('disables Run bottleneck until both a scope and at least one status name are entered', () => {
+    render(<PersonalFlowTab />);
+    const runButton = screen.getByRole('button', { name: /run bottleneck/i });
+    expect(runButton).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/scope jql/i), { target: { value: 'project = ENCUC' } });
+    expect(runButton).toBeDisabled(); // still no status names
+    fireEvent.change(screen.getByLabelText(/internal-testing statuses/i), { target: { value: 'Testing' } });
+    expect(runButton).toBeEnabled();
   });
 });
