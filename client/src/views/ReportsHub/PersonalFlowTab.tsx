@@ -16,6 +16,7 @@ import {
   buildPersonalFlowCoachingPrompt,
   parsePersonalFlowCoachingResponse,
   type PersonalFlowCoaching,
+  type PersonalFlowCoachingInput,
 } from './personalFlowCoaching.ts';
 import styles from './ReportsHubView.module.css';
 import {
