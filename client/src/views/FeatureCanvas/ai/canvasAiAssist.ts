@@ -7,6 +7,9 @@
 
 import type { MoscowBucket, TshirtSize } from '../overlay/overlayModel.ts';
 import { TSHIRT_SIZES } from '../logic/sizing.ts';
+// The JSON-extraction helper now lives in shared utils so every AI round-trip (canvas, aging triage,
+// coaching) uses one implementation; re-exported below to keep this module's long-standing import path.
+import { extractJsonPayload } from '../../../utils/extractJsonPayload.ts';
 
 /** The analyses the accelerator can pre-fill. `masterPlan` runs all phases in one round-trip. */
 export type AiSuggestionKind = 'priorityOrder' | 'sizeEstimate' | 'sprintGrouping' | 'parkCandidates' | 'masterPlan';
@@ -218,19 +221,9 @@ function buildContextHeader(kind: AiSuggestionKind, context?: AiPromptContext): 
   return lines.length > 0 ? `${lines.join('\n')}\n\n` : '';
 }
 
-/**
- * Strips assistant chatter and markdown fences and narrows to the outermost JSON object, so a
- * reply wrapped in prose or ```json fences still parses. Returns the raw JSON substring.
- */
-export function extractJsonPayload(responseText: string): string {
-  const withoutFences = responseText.replace(/```(?:json)?/gi, '');
-  const firstBrace = withoutFences.indexOf('{');
-  const lastBrace = withoutFences.lastIndexOf('}');
-  if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) {
-    throw new Error('No JSON object found in the assistant response.');
-  }
-  return withoutFences.slice(firstBrace, lastBrace + 1);
-}
+// Re-exported from shared utils so existing importers (AiSuggestionPanel, tests) keep their import path
+// while the implementation stays single-sourced. See ../../../utils/extractJsonPayload.ts.
+export { extractJsonPayload };
 
 /** Reads a required non-empty string field, throwing a descriptive error when absent. */
 function readRequiredString(source: Record<string, unknown>, fieldName: string): string {

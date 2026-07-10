@@ -88,8 +88,10 @@ describe('IssueAgingTab', () => {
     fireEvent.change(screen.getByLabelText(/scope jql/i), { target: { value: 'project = ENCUC' } });
     fireEvent.click(screen.getByRole('button', { name: /run report/i }));
 
-    // The overall headline names the total count and overall average age (3+20+120)/3 ≈ 47.67.
-    await waitFor(() => expect(screen.getByText(/3 open issues · overall avg age 47.67d/i)).toBeInTheDocument());
+    // The overall headline KPI cards name the total open count and the overall average age (3+20+120)/3 ≈ 47.67.
+    await waitFor(() => expect(screen.getByText('Open issues')).toBeInTheDocument());
+    expect(screen.getByText('Open issues').nextElementSibling?.textContent).toBe('3');
+    expect(screen.getByText(/overall avg age/i).nextElementSibling?.textContent).toBe('47.67');
 
     // Columns: Type | Count | Avg | Median | Oldest | 0–7d | 8–30d | 31–90d | 90+d.
     // The Bug row (oldest average, sorts first): its Oldest cell shows the age AND the issue key.
@@ -141,8 +143,8 @@ describe('IssueAgingTab', () => {
     fireEvent.change(screen.getByLabelText(/scope jql/i), { target: { value: 'project = ENCUC' } });
     fireEvent.click(screen.getByRole('button', { name: /run report/i }));
 
-    // All 150 issues across both pages are counted in the headline.
-    await waitFor(() => expect(screen.getByText(/150 open issues/i)).toBeInTheDocument());
+    // All 150 issues across both pages are counted in the headline's "Open issues" KPI card.
+    await waitFor(() => expect(screen.getByText('Open issues').nextElementSibling?.textContent).toBe('150'));
     // Both a first page (startAt=0) and a second page (startAt=100) were fetched.
     const searchPaths = decodedSearchPaths();
     expect(searchPaths.some((path) => path.includes('startAt=0'))).toBe(true);
