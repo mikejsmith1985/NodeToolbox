@@ -47,6 +47,24 @@ if (Test-Path "frontend/package.json") {
     Pop-Location
 }
 
+# ── Client (React SPA) Typecheck ────────────────────────────────────────
+# This repo's SPA lives in client/ (not frontend/). Run the SAME project build the
+# release uses — `tsc -b` — so a type error that `tsc --noEmit` or `vite build` tolerate
+# (e.g. a missing type import) is caught here, before it can reach main and break a release.
+if (Test-Path "client/package.json") {
+    Write-Host "  [Client] Typechecking (tsc -b)..." -ForegroundColor Cyan
+    Push-Location client
+    $typecheckOutput = npx tsc -b 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $failures += "CLIENT TYPECHECK: npx tsc -b failed"
+        Write-Host "  [Client] Typecheck FAILED" -ForegroundColor Red
+        Write-Host $typecheckOutput -ForegroundColor Red
+    } else {
+        Write-Host "  [Client] Typecheck passed" -ForegroundColor Green
+    }
+    Pop-Location
+}
+
 # ── Report ──────────────────────────────────────────────────────────────
 if ($failures.Count -gt 0) {
     Write-Host ""
