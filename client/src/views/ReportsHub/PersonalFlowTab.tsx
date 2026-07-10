@@ -11,6 +11,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { jiraGet } from '../../services/jiraApi.ts';
 import { copyToClipboard } from '../FeatureCanvas/ai/clipboard.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
+import { ReportAiPanel } from './ReportAiPanel.tsx';
+import {
+  buildPersonalFlowCoachingPrompt,
+  parsePersonalFlowCoachingResponse,
+  type PersonalFlowCoaching,
+} from './personalFlowCoaching.ts';
+import styles from './ReportsHubView.module.css';
 import {
   filterRosterMembersByActiveTeam,
   type RosterRoleCapabilities,
@@ -561,22 +568,17 @@ async function buildTeamFlowRow(
  */
 function QueriedJqlBlock({ jql }: { jql: string }): React.JSX.Element {
   return (
-    <div style={{ marginTop: 4, display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 11, opacity: 0.6 }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }} className={styles.captionText}>
       <span style={{ fontWeight: 600, flex: '0 0 auto' }}>JQL</span>
       <code
         style={{
-          flex: '1 1 auto', minWidth: 0, fontFamily: 'monospace', fontSize: 11, whiteSpace: 'pre-wrap',
+          flex: '1 1 auto', minWidth: 0, fontFamily: 'monospace', whiteSpace: 'pre-wrap',
           overflowWrap: 'anywhere', userSelect: 'all',
         }}
       >
         {jql}
       </code>
-      <button
-        type="button"
-        aria-label="Copy JQL"
-        onClick={() => copyToClipboard(jql)}
-        style={{ flex: '0 0 auto', fontSize: 11, padding: '1px 6px', cursor: 'pointer' }}
-      >
+      <button type="button" aria-label="Copy JQL" onClick={() => copyToClipboard(jql)} className={styles.actionButton} style={{ flex: '0 0 auto' }}>
         Copy
       </button>
     </div>
@@ -586,9 +588,9 @@ function QueriedJqlBlock({ jql }: { jql: string }): React.JSX.Element {
 /** One labelled statistic; label and value are siblings so the value reads independently of the label. */
 function StatCard({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
-    <div style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '8px 12px', minWidth: 130 }}>
-      <div style={{ fontSize: 11, opacity: 0.7 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700 }}>{value}</div>
+    <div className={styles.kpiCard}>
+      <span className={styles.kpiLabel}>{label}</span>
+      <span className={styles.kpiValue}>{value}</span>
     </div>
   );
 }
@@ -608,27 +610,29 @@ const EXCLUSION_REASON_LABELS: Record<PersonalFlowExclusionReason, string> = {
 function IssueAuditSection({ result }: { result: PersonalFlowResult }): React.JSX.Element {
   return (
     <section style={{ marginTop: 16 }}>
-      <h4 style={{ fontSize: 12, opacity: 0.7, fontWeight: 600, margin: '0 0 6px' }}>Issue audit</h4>
-      <p style={{ fontSize: 12, opacity: 0.7, margin: '0 0 8px' }}>
+      <h4 className={styles.tabSectionHeading}>Issue audit</h4>
+      <p className={styles.captionText} style={{ marginTop: 0 }}>
         Credited {result.issueCount} · Excluded {result.excludedIssues.length}
       </p>
       {result.excludedIssues.length > 0 && (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-          <thead>
-            <tr style={{ textAlign: 'left', opacity: 0.6 }}>
-              <th>Issue</th><th>Summary</th><th>Reason</th>
-            </tr>
-          </thead>
-          <tbody>
-            {result.excludedIssues.map((excludedIssue) => (
-              <tr key={excludedIssue.key} style={{ borderTop: '1px solid var(--color-border)' }}>
-                <td>{excludedIssue.key}</td>
-                <td>{excludedIssue.summary}</td>
-                <td>{EXCLUSION_REASON_LABELS[excludedIssue.reason]}</td>
+        <div className={styles.tableWrapper}>
+          <table className={styles.reportTable}>
+            <thead>
+              <tr>
+                <th>Issue</th><th>Summary</th><th>Reason</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {result.excludedIssues.map((excludedIssue) => (
+                <tr key={excludedIssue.key}>
+                  <td>{excludedIssue.key}</td>
+                  <td>{excludedIssue.summary}</td>
+                  <td>{EXCLUSION_REASON_LABELS[excludedIssue.reason]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );
@@ -675,22 +679,24 @@ function HandsOnByStatusSection({
   }
   return (
     <section style={{ marginTop: 16 }}>
-      <h4 style={{ fontSize: 12, opacity: 0.7, fontWeight: 600, margin: '0 0 6px' }}>Hands-on time by status</h4>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-        <thead>
-          <tr style={{ textAlign: 'left', opacity: 0.6 }}>
-            <th>Status</th><th>Hands-on (days)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {statusRows.map((statusRow) => (
-            <tr key={statusRow.statusId} style={{ borderTop: '1px solid var(--color-border)' }}>
-              <td>{statusRow.statusLabel}</td>
-              <td>{formatNumber(statusRow.days)}</td>
+      <h4 className={styles.tabSectionHeading}>Hands-on time by status</h4>
+      <div className={styles.tableWrapper}>
+        <table className={styles.reportTable}>
+          <thead>
+            <tr>
+              <th>Status</th><th>Hands-on (days)</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {statusRows.map((statusRow) => (
+              <tr key={statusRow.statusId}>
+                <td>{statusRow.statusLabel}</td>
+                <td>{formatNumber(statusRow.days)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -706,7 +712,7 @@ function PersonalFlowResultView({
   const { throughput, cycleTime } = result;
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      <div className={styles.kpiGrid}>
         <StatCard label="Issues / Day" value={formatNumber(throughput.issuesPerDay)} />
         <StatCard label="Issues / Week" value={formatNumber(throughput.issuesPerWeek)} />
         <StatCard label="Issues / 2 Weeks" value={formatNumber(throughput.issuesPerTwoWeeks)} />
@@ -721,32 +727,137 @@ function PersonalFlowResultView({
       </div>
 
       {result.perIssue.length === 0 ? (
-        <p style={{ marginTop: 12, fontSize: 12, opacity: 0.7 }}>No issues this person advanced in the selected window.</p>
+        <p className={styles.captionText}>No issues this person advanced in the selected window.</p>
       ) : (
-        <table style={{ marginTop: 12, width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-          <thead>
-            <tr style={{ textAlign: 'left', opacity: 0.7 }}>
-              <th>Issue</th><th>Summary</th><th>Last active</th><th>Hands-on (days)</th><th>Points</th>
-            </tr>
-          </thead>
-          <tbody>
-            {result.perIssue.map((issue) => (
-              <tr key={issue.key} style={{ borderTop: '1px solid var(--color-border)' }}>
-                <td>{issue.key}</td>
-                <td>{issue.summary}</td>
-                <td>{issue.lastActiveIso === null ? '—' : issue.lastActiveIso.slice(0, 10)}</td>
-                <td>{issue.cycleTimeDays === null ? '—' : formatNumber(issue.cycleTimeDays)}</td>
-                <td>{issue.storyPoints === null ? '—' : formatNumber(issue.storyPoints)}</td>
+        <div className={styles.tableWrapper} style={{ marginTop: 12 }}>
+          <table className={styles.reportTable}>
+            <thead>
+              <tr>
+                <th>Issue</th><th>Summary</th><th>Last active</th><th>Hands-on (days)</th><th>Points</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {result.perIssue.map((issue) => (
+                <tr key={issue.key}>
+                  <td>{issue.key}</td>
+                  <td>{issue.summary}</td>
+                  <td>{issue.lastActiveIso === null ? '—' : issue.lastActiveIso.slice(0, 10)}</td>
+                  <td>{issue.cycleTimeDays === null ? '—' : formatNumber(issue.cycleTimeDays)}</td>
+                  <td>{issue.storyPoints === null ? '—' : formatNumber(issue.storyPoints)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <HandsOnByStatusSection result={result} statusNameById={statusNameById} />
 
       <IssueAuditSection result={result} />
     </div>
+  );
+}
+
+// ── AI coaching summary (passphrase-gated) ──────────────────────────────────────
+
+/** Rounds a rate to two decimals so the coaching prompt reads cleanly instead of trailing many digits. */
+function roundToTwo(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** Projects the computed result plus who/how-long into the coaching prompt's flat input shape. */
+function toCoachingInput(
+  result: PersonalFlowResult,
+  personName: string,
+  windowDays: number,
+  statusNameById: Readonly<Record<string, string>>,
+): PersonalFlowCoachingInput {
+  const statusRows = buildHandsOnStatusRows(result.handsOnDaysByStatusId, statusNameById);
+  return {
+    personName,
+    windowDays,
+    issuesAdvanced: result.issueCount,
+    totalStoryPoints: roundToTwo(result.totalStoryPoints),
+    issuesPerWeek: roundToTwo(result.throughput.issuesPerWeek),
+    pointsPerWeek: roundToTwo(result.throughput.pointsPerWeek),
+    averageCycleTimeDays: result.cycleTime.averageDays === null ? null : roundToTwo(result.cycleTime.averageDays),
+    medianCycleTimeDays: result.cycleTime.medianDays === null ? null : roundToTwo(result.cycleTime.medianDays),
+    // The status that absorbed the most hands-on time — a big queue-like bucket is a coaching signal.
+    topStatusByHandsOnDays: statusRows.length > 0 ? statusRows[0].statusLabel : null,
+  };
+}
+
+/** Renders one labelled bullet list in the coaching narrative, or nothing when the list is empty. */
+function CoachingList({ title, items }: { title: string; items: readonly string[] }): React.JSX.Element | null {
+  if (items.length === 0) {
+    return null;
+  }
+  return (
+    <>
+      <h5 className={styles.coachingSectionTitle}>{title}</h5>
+      <ul className={styles.coachingList}>
+        {items.map((item) => <li key={item}>{item}</li>)}
+      </ul>
+    </>
+  );
+}
+
+/** Renders the ingested coaching read: a headline summary plus strengths, concerns, and recommendations. */
+function CoachingNarrative({ coaching }: { coaching: PersonalFlowCoaching }): React.JSX.Element {
+  return (
+    <div style={{ marginTop: 8 }}>
+      <p className={styles.coachingSummary}>{coaching.summary}</p>
+      <CoachingList title="Strengths" items={coaching.strengths} />
+      <CoachingList title="Concerns" items={coaching.concerns} />
+      <CoachingList title="Recommendations" items={coaching.recommendations} />
+    </div>
+  );
+}
+
+/**
+ * The passphrase-gated AI coaching accelerator for a single-person result. It assembles a copy-paste
+ * prompt from the already-computed flow figures and ingests a strict JSON coaching read. Advisory only —
+ * it neither calls an AI service nor writes to Jira, and stays hidden until AI Assist is unlocked.
+ */
+function PersonalFlowCoachingSection({
+  result,
+  personName,
+  windowDays,
+  statusNameById,
+}: {
+  result: PersonalFlowResult;
+  personName: string;
+  windowDays: number;
+  statusNameById: Readonly<Record<string, string>>;
+}): React.JSX.Element {
+  const [coaching, setCoaching] = useState<PersonalFlowCoaching | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const prompt = useMemo(
+    () => buildPersonalFlowCoachingPrompt(toCoachingInput(result, personName, windowDays, statusNameById)),
+    [result, personName, windowDays, statusNameById],
+  );
+
+  const ingestCoaching = (responseText: string): void => {
+    try {
+      setCoaching(parsePersonalFlowCoachingResponse(responseText));
+      setError(null);
+    } catch (caughtError) {
+      setCoaching(null);
+      setError(caughtError instanceof Error ? caughtError.message : 'Could not read the response.');
+    }
+  };
+
+  return (
+    <ReportAiPanel
+      title="AI coaching summary"
+      prompt={prompt}
+      ingestLabel="Ingest coaching"
+      onIngest={ingestCoaching}
+      error={error}
+    >
+      {coaching !== null && <CoachingNarrative coaching={coaching} />}
+    </ReportAiPanel>
   );
 }
 
@@ -802,7 +913,8 @@ function TeamFlowQueryCell({ row }: { row: TeamFlowRow }): React.JSX.Element {
         type="button"
         aria-label={`Copy JQL for ${row.personDisplayName}`}
         onClick={() => copyToClipboard(jqlToCopy)}
-        style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', cursor: 'pointer' }}
+        className={styles.actionButton}
+        style={{ marginLeft: 6 }}
       >
         Copy
       </button>
@@ -815,10 +927,10 @@ function TeamFlowComparisonRow({ row }: { row: TeamFlowRow }): React.JSX.Element
   const roleLabels = formatRoleLabels(row.roleCapabilities);
   if (row.result === null) {
     return (
-      <tr style={{ borderTop: '1px solid var(--color-border)' }}>
+      <tr>
         <td>{row.personDisplayName}</td>
         <td>{roleLabels}</td>
-        <td colSpan={6} style={{ color: 'var(--color-danger)' }}>{row.errorMessage ?? 'No result.'}</td>
+        <td colSpan={6} className={styles.warningText}>{row.errorMessage ?? 'No result.'}</td>
         <TeamFlowQueryCell row={row} />
       </tr>
     );
@@ -826,7 +938,7 @@ function TeamFlowComparisonRow({ row }: { row: TeamFlowRow }): React.JSX.Element
 
   const { throughput, cycleTime } = row.result;
   return (
-    <tr style={{ borderTop: '1px solid var(--color-border)' }}>
+    <tr>
       <td>{row.personDisplayName}</td>
       <td>{roleLabels}</td>
       <td>{String(row.result.issueCount)}</td>
@@ -846,10 +958,10 @@ function TeamFlowComparisonRow({ row }: { row: TeamFlowRow }): React.JSX.Element
  */
 function TeamFlowComparisonView({ rows }: { rows: readonly TeamFlowRow[] }): React.JSX.Element {
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ marginTop: 12, width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+    <div className={styles.tableWrapper} style={{ marginTop: 12 }}>
+      <table className={styles.reportTable}>
         <thead>
-          <tr style={{ textAlign: 'left', opacity: 0.7 }}>
+          <tr>
             <th>Person</th><th>Role(s)</th><th>Issues</th><th>Points</th><th>Issues/Wk</th>
             <th>Points/Wk</th><th>Avg Cycle (days)</th><th>Median Cycle (days)</th><th>Query</th>
           </tr>
@@ -865,7 +977,7 @@ function TeamFlowComparisonView({ rows }: { rows: readonly TeamFlowRow[] }): Rea
 /** Renders one "Throughput by role" row: the role plus its summed volume, rates, and pooled cycle stats. */
 function RoleThroughputRow({ roleThroughput }: { roleThroughput: RoleThroughput }): React.JSX.Element {
   return (
-    <tr style={{ borderTop: '1px solid var(--color-border)' }}>
+    <tr>
       <td>{roleThroughput.roleLabel}</td>
       <td>{String(roleThroughput.peopleCount)}</td>
       <td>{String(roleThroughput.issueCount)}</td>
@@ -891,21 +1003,23 @@ function RoleThroughputSection({ rows }: { rows: readonly TeamFlowRow[] }): Reac
   }
   return (
     <section style={{ marginTop: 16 }}>
-      <h4 style={{ fontSize: 12, opacity: 0.7, fontWeight: 600, margin: '0 0 6px' }}>Throughput by role</h4>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-        <thead>
-          <tr style={{ textAlign: 'left', opacity: 0.6 }}>
-            <th>Role</th><th>People</th><th>Issues</th><th>Story Points</th><th>Issues/Wk</th>
-            <th>Points/Wk</th><th>Avg Cycle (days)</th><th>Median Cycle (days)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {roleThroughputs.map((roleThroughput) => (
-            <RoleThroughputRow key={roleThroughput.roleKey} roleThroughput={roleThroughput} />
-          ))}
-        </tbody>
-      </table>
-      <p style={{ marginTop: 6, fontSize: 11, opacity: 0.6 }}>
+      <h4 className={styles.tabSectionHeading}>Throughput by role</h4>
+      <div className={styles.tableWrapper}>
+        <table className={styles.reportTable}>
+          <thead>
+            <tr>
+              <th>Role</th><th>People</th><th>Issues</th><th>Story Points</th><th>Issues/Wk</th>
+              <th>Points/Wk</th><th>Avg Cycle (days)</th><th>Median Cycle (days)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {roleThroughputs.map((roleThroughput) => (
+              <RoleThroughputRow key={roleThroughput.roleKey} roleThroughput={roleThroughput} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className={styles.captionText}>
         People with multiple roles are counted under each of their roles.
       </p>
     </section>
@@ -1078,17 +1192,17 @@ function BottleneckCountTable({
 }): React.JSX.Element {
   return (
     <div style={{ flex: '1 1 220px', minWidth: 0 }}>
-      <h5 style={{ fontSize: 12, opacity: 0.7, fontWeight: 600, margin: '0 0 6px' }}>{heading}</h5>
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+      <h5 className={styles.tabSectionHeading}>{heading}</h5>
+      <div className={styles.tableWrapper}>
+        <table className={styles.reportTable}>
           <thead>
-            <tr style={{ textAlign: 'left', opacity: 0.6 }}>
+            <tr>
               <th>{labelColumn}</th><th>Count</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.label} style={{ borderTop: '1px solid var(--color-border)' }}>
+              <tr key={row.label}>
                 <td>{row.label}</td>
                 <td>{String(row.count)}</td>
               </tr>
@@ -1121,17 +1235,17 @@ function BottleneckOldestIssues({ result }: { result: InternalTestingBottleneckR
   const hiddenCount = result.issues.length - visibleIssues.length;
   return (
     <section style={{ marginTop: 16 }}>
-      <h5 style={{ fontSize: 12, opacity: 0.7, fontWeight: 600, margin: '0 0 6px' }}>Oldest issues</h5>
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+      <h5 className={styles.tabSectionHeading}>Oldest issues</h5>
+      <div className={styles.tableWrapper}>
+        <table className={styles.reportTable}>
           <thead>
-            <tr style={{ textAlign: 'left', opacity: 0.6 }}>
+            <tr>
               <th>Issue</th><th>Summary</th><th>Current status</th><th>Assignee</th><th>Waiting (days)</th>
             </tr>
           </thead>
           <tbody>
             {visibleIssues.map((issue) => (
-              <tr key={issue.key} style={{ borderTop: '1px solid var(--color-border)' }}>
+              <tr key={issue.key}>
                 <td>{issue.key}</td>
                 <td>{issue.summary}</td>
                 <td>{issue.currentStatusName}</td>
@@ -1143,7 +1257,7 @@ function BottleneckOldestIssues({ result }: { result: InternalTestingBottleneckR
         </table>
       </div>
       {hiddenCount > 0 && (
-        <p style={{ marginTop: 6, fontSize: 11, opacity: 0.6 }}>
+        <p className={styles.captionText}>
           Showing the {MAX_BOTTLENECK_ROWS} longest-waiting of {result.issues.length} issues.
         </p>
       )}
@@ -1328,19 +1442,20 @@ function InternalTestingBottleneckPanel(): React.JSX.Element {
   };
 
   return (
-    <section style={{ marginTop: 28, paddingTop: 16, borderTop: '1px solid var(--color-border)', opacity: 0.95 }}>
-      <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 4px' }}>Internal Testing Bottleneck</h3>
-      <p style={{ fontSize: 12, opacity: 0.7, margin: '0 0 10px' }}>
+    <section style={{ marginTop: 28, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
+      <h3 className={styles.tabSectionHeading}>Internal Testing Bottleneck</h3>
+      <p className={styles.captionText} style={{ marginTop: 0, marginBottom: 10 }}>
         How many issues are stuck in the team's internal-testing statuses right now, how long they have been
         waiting, and who holds them.
       </p>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, gap: 4 }}>
+      <div className={styles.controlRow}>
+        <label className={styles.controlLabel}>
           Scope JQL
           <input
             value={scopeJql}
             onChange={(event) => handleScopeChange(event.target.value)}
             placeholder="project = ENCUC"
+            className={styles.textInput}
             style={{ minWidth: 220 }}
           />
         </label>
@@ -1351,17 +1466,22 @@ function InternalTestingBottleneckPanel(): React.JSX.Element {
           loadNote={statusLoadNote}
           onReload={() => void loadStatuses()}
         />
-        <button type="button" onClick={() => void runBottleneck()} disabled={!canRun || isLoading}>
+        <button
+          type="button"
+          onClick={() => void runBottleneck()}
+          disabled={!canRun || isLoading}
+          className={`${styles.actionButton} ${styles.primaryButton}`}
+        >
           {isLoading ? 'Running…' : 'Run bottleneck'}
         </button>
       </div>
 
       {error !== null && (
-        <p role="alert" style={{ marginTop: 10, fontSize: 12, color: 'var(--color-danger)' }}>{error}</p>
+        <p role="alert" className={styles.warningText} style={{ marginTop: 10 }}>{error}</p>
       )}
 
       {wasCapped && result !== null && (
-        <p style={{ marginTop: 8, fontSize: 11, opacity: 0.7 }}>
+        <p className={styles.captionText}>
           Showing at most {MAX_ISSUES} issues — narrow the scope for a complete picture.
         </p>
       )}
@@ -1531,23 +1651,24 @@ export function PersonalFlowTab(): React.JSX.Element {
 
   return (
     <div style={{ padding: '8px 4px' }}>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <label style={{ position: 'relative', display: 'flex', flexDirection: 'column', fontSize: 12, gap: 4 }}>
+      <div className={styles.controlRow}>
+        <label className={styles.controlLabel} style={{ position: 'relative' }}>
           Person (Jira assignee)
           <input
             value={person}
             onChange={(event) => handlePersonChange(event.target.value)}
             onFocus={() => setAreSuggestionsOpen(true)}
             placeholder="e.g. Rajaram, Rajasekar"
+            className={styles.textInput}
             style={{ minWidth: 220 }}
           />
           {isSuggestionsVisible && (
             <PersonSuggestionsDropdown suggestions={personSuggestions} onSelect={handleSelectSuggestion} />
           )}
         </label>
-        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, gap: 4 }}>
+        <label className={styles.controlLabel}>
           Lookback window
-          <select value={windowDays} onChange={(event) => setWindowDays(Number(event.target.value))}>
+          <select value={windowDays} onChange={(event) => setWindowDays(Number(event.target.value))} className={styles.filterSelect}>
             {WINDOW_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
@@ -1557,6 +1678,7 @@ export function PersonalFlowTab(): React.JSX.Element {
           type="button"
           onClick={() => void runReport()}
           disabled={person.trim() === '' || isLoading || isTeamLoading}
+          className={`${styles.actionButton} ${styles.primaryButton}`}
         >
           {isLoading ? 'Running…' : 'Run report'}
         </button>
@@ -1565,27 +1687,28 @@ export function PersonalFlowTab(): React.JSX.Element {
           onClick={() => void runTeamReport()}
           disabled={activeTeamRosterMembers.length === 0 || isLoading || isTeamLoading}
           title={activeTeamRosterMembers.length === 0 ? 'Add roster members for the active team first' : undefined}
+          className={styles.actionButton}
         >
           {isTeamLoading ? 'Running team…' : 'Run for team roster'}
         </button>
       </div>
 
       {error !== null && (
-        <p role="alert" style={{ marginTop: 10, fontSize: 12, color: 'var(--color-danger)' }}>{error}</p>
+        <p role="alert" className={styles.warningText} style={{ marginTop: 10 }}>{error}</p>
       )}
 
       {teamError !== null && (
-        <p role="alert" style={{ marginTop: 10, fontSize: 12, color: 'var(--color-danger)' }}>{teamError}</p>
+        <p role="alert" className={styles.warningText} style={{ marginTop: 10 }}>{teamError}</p>
       )}
 
       {result !== null && result.issueCount === MAX_ISSUES && (
-        <p style={{ marginTop: 8, fontSize: 11, opacity: 0.7 }}>
+        <p className={styles.captionText}>
           Showing at most {MAX_ISSUES} issues — narrow the window for a complete picture.
         </p>
       )}
 
       {result !== null && diagnostic !== null && (
-        <p style={{ marginTop: 8, fontSize: 11, opacity: 0.6 }}>
+        <p className={styles.captionText}>
           Queried Jira as "{diagnostic.queryValue}" · fetched {diagnostic.rawIssueCount} issues · {result.issueCount} credited
         </p>
       )}
@@ -1594,8 +1717,17 @@ export function PersonalFlowTab(): React.JSX.Element {
 
       {result !== null && <PersonalFlowResultView result={result} statusNameById={statusNameById} />}
 
+      {result !== null && (
+        <PersonalFlowCoachingSection
+          result={result}
+          personName={person.trim()}
+          windowDays={windowDays}
+          statusNameById={statusNameById}
+        />
+      )}
+
       {isTeamLoading && teamRows.length === 0 && (
-        <p style={{ marginTop: 12, fontSize: 12, opacity: 0.7 }}>Building the team comparison…</p>
+        <p className={styles.captionText}>Building the team comparison…</p>
       )}
 
       {teamRows.length > 0 && <TeamFlowComparisonView rows={teamRows} />}

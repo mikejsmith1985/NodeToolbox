@@ -661,3 +661,148 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Shared report form controls (Personal Flow, Aging) ── */
+
+.controlRow {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.controlLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.textInput {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-input-bg, var(--color-surface));
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+/* Muted helper/caption text under a control or table (replaces ad-hoc opacity styling). */
+.captionText {
+  margin-top: var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+/* The oldest/aggregate "All" row emphasised at the top of the aging table. */
+.emphasisRow td {
+  font-weight: 700;
+  border-top: 2px solid var(--color-border);
+}
+
+/* ── Passphrase-gated AI accelerator panel (advisory copy-prompt → paste-reply) ── */
+
+.aiPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-lg);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-accent);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: var(--color-surface);
+}
+
+.aiPanelHeader {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.aiPanelHint {
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.aiTextarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: monospace;
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.aiPanelActions {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+/* ── AI verdict badges (Aging triage) ── */
+
+.verdictBadge {
+  display: inline-block;
+  padding: 2px var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Safe to cancel — a removal signal, tinted danger-red. */
+.verdictCancelSafe {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f87171;
+}
+
+/* Needs a human look — tinted warning-amber. */
+.verdictReview {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+}
+
+/* Keep it — tinted success-green. */
+.verdictMustRemain {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+}
+
+/* ── AI coaching narrative (Personal Flow) ── */
+
+.coachingSummary {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  color: var(--color-text-primary);
+}
+
+.coachingSectionTitle {
+  margin: var(--spacing-sm) 0 var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.coachingList {
+  margin: 0;
+  padding-left: var(--spacing-lg);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
