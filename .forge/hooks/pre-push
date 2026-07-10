@@ -47,6 +47,24 @@ if [[ -f "frontend/package.json" ]]; then
     popd > /dev/null
 fi
 
+# ── Client (React SPA) Typecheck ────────────────────────────────────────
+# This repo's SPA lives in client/ (not frontend/). Run the SAME project build the
+# release uses — `tsc -b` — so a type error that `tsc --noEmit` or `vite build` tolerate
+# (e.g. a missing type import) is caught here, before it can reach main and break a release.
+if [[ -f "client/package.json" ]]; then
+    echo -e "  \033[36m[Client] Typechecking (tsc -b)...\033[0m"
+    pushd client > /dev/null
+    typecheck_output=$(npx tsc -b 2>&1)
+    if [[ $? -ne 0 ]]; then
+        failures+=("CLIENT TYPECHECK: npx tsc -b failed")
+        echo -e "  \033[31m[Client] Typecheck FAILED\033[0m"
+        echo "$typecheck_output"
+    else
+        echo -e "  \033[32m[Client] Typecheck passed\033[0m"
+    fi
+    popd > /dev/null
+fi
+
 # ── Report ──────────────────────────────────────────────────────────────
 if [[ ${#failures[@]} -gt 0 ]]; then
     echo -e "\n\033[31mPRE-PUSH FAILURES (blocking):\033[0m"
