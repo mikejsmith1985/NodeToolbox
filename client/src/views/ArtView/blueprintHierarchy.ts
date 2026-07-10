@@ -1,6 +1,14 @@
 // blueprintHierarchy.ts — Legacy-compatible bottom-up Jira query flow for the Art View Blueprint tab.
 
 import { jiraGet } from '../../services/jiraApi.ts';
+// The feature-link resolution (candidate field order, value-shape handling) is shared with the reports so
+// a child is linked to its feature identically everywhere. Aliased to the long-standing local names.
+import {
+  FEATURE_LINK_DEFAULT_FIELD as DEFAULT_FEATURE_LINK_FIELD,
+  EPIC_LINK_FIELD as DEFAULT_EPIC_LINK_FIELD,
+  extractIssueKeyFromLinkValue,
+  featureLinkCandidateFieldIds,
+} from '../../utils/featureLink.ts';
 import type { DependencySourceIssue, DependencySourceIssueLink } from './dependencyGraph.ts';
 import type { ArtTeam } from './hooks/useArtData.ts';
 
@@ -125,9 +133,7 @@ interface BlueprintQuerySourceData {
   artProjectKeys: string[];
 }
 
-const DEFAULT_FEATURE_LINK_FIELD = 'customfield_10108';
 const DEFAULT_PARENT_LINK_FIELD = 'customfield_10100';
-const DEFAULT_EPIC_LINK_FIELD = 'customfield_10014';
 const DEFAULT_PI_FIELD_ID = 'customfield_10301';
 const PI_ISSUE_MAX_RESULTS = 500;
 const OPEN_SPRINT_MAX_RESULTS = 200;
@@ -156,32 +162,12 @@ function readUniqueFieldIds(fieldIds: Array<string | undefined>): string[] {
   return Array.from(new Set(fieldIds.filter((fieldId): fieldId is string => Boolean(fieldId))));
 }
 
-function extractIssueKeyFromLinkValue(rawValue: unknown): string | null {
-  if (typeof rawValue === 'string' && rawValue.includes('-')) {
-    return rawValue;
-  }
-
-  if (!rawValue || typeof rawValue !== 'object') {
-    return null;
-  }
-
-  const linkedIssueValue = rawValue as BlueprintLinkedIssueValue;
-  return linkedIssueValue.key
-    ?? linkedIssueValue.data?.key
-    ?? linkedIssueValue.inwardIssue?.key
-    ?? null;
-}
-
-function readFeatureLinkCandidateKeys(featureLinkField: string): string[] {
-  return readUniqueFieldIds([featureLinkField, DEFAULT_FEATURE_LINK_FIELD, DEFAULT_EPIC_LINK_FIELD]);
-}
-
 function readParentLinkCandidateKeys(parentLinkField: string): string[] {
   return readUniqueFieldIds([parentLinkField, DEFAULT_PARENT_LINK_FIELD]);
 }
 
 function extractFeatureKeyFromIssue(issueFields: BlueprintIssueFields, featureLinkField: string): string | null {
-  for (const fieldId of readFeatureLinkCandidateKeys(featureLinkField)) {
+  for (const fieldId of featureLinkCandidateFieldIds(featureLinkField)) {
     const linkedIssueKey = extractIssueKeyFromLinkValue(issueFields[fieldId]);
     if (linkedIssueKey) {
       return linkedIssueKey;

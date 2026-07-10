@@ -3,8 +3,10 @@
 // input shape, and renders the overall headline plus a per-issue-type row of computed ages. It also
 // confirms the scope persists to localStorage. The age math itself is covered by issueAging.test.ts.
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
 
 // A single mock for the Jira client, routed by request path so one implementation answers the search.
 const { mockJiraGet } = vi.hoisted(() => ({ mockJiraGet: vi.fn() }));
@@ -58,6 +60,7 @@ describe('IssueAgingTab', () => {
   afterEach(() => {
     vi.useRealTimers();
     localStorage.removeItem(SCOPE_STORAGE_KEY);
+    act(() => setAiAssistUnlocked(false));
   });
 
   it('disables Run until a scope is entered', () => {
@@ -88,8 +91,10 @@ describe('IssueAgingTab', () => {
     fireEvent.change(screen.getByLabelText(/scope jql/i), { target: { value: 'project = ENCUC' } });
     fireEvent.click(screen.getByRole('button', { name: /run report/i }));
 
-    // The overall headline names the total count and overall average age (3+20+120)/3 ≈ 47.67.
-    await waitFor(() => expect(screen.getByText(/3 open issues · overall avg age 47.67d/i)).toBeInTheDocument());
+    // The overall headline KPI cards name the total open count and the overall average age (3+20+120)/3 ≈ 47.67.
+    await waitFor(() => expect(screen.getByText('Open issues')).toBeInTheDocument());
+    expect(screen.getByText('Open issues').nextElementSibling?.textContent).toBe('3');
+    expect(screen.getByText(/overall avg age/i).nextElementSibling?.textContent).toBe('47.67');
 
     // Columns: Type | Count | Avg | Median | Oldest | 0–7d | 8–30d | 31–90d | 90+d.
     // The Bug row (oldest average, sorts first): its Oldest cell shows the age AND the issue key.
@@ -141,8 +146,8 @@ describe('IssueAgingTab', () => {
     fireEvent.change(screen.getByLabelText(/scope jql/i), { target: { value: 'project = ENCUC' } });
     fireEvent.click(screen.getByRole('button', { name: /run report/i }));
 
-    // All 150 issues across both pages are counted in the headline.
-    await waitFor(() => expect(screen.getByText(/150 open issues/i)).toBeInTheDocument());
+    // All 150 issues across both pages are counted in the headline's "Open issues" KPI card.
+    await waitFor(() => expect(screen.getByText('Open issues').nextElementSibling?.textContent).toBe('150'));
     // Both a first page (startAt=0) and a second page (startAt=100) were fetched.
     const searchPaths = decodedSearchPaths();
     expect(searchPaths.some((path) => path.includes('startAt=0'))).toBe(true);
@@ -166,6 +171,51 @@ describe('IssueAgingTab', () => {
 
     const persisted = JSON.parse(localStorage.getItem(SCOPE_STORAGE_KEY) ?? '{}');
     expect(persisted.scopeJql).toBe('project = SAVED');
+  });
+
+  it('when AI Assist is unlocked, resolves each issue\'s feature via the feature-link field and puts the feature + its status in the triage prompt', async () => {
+    act(() => setAiAssistUnlocked(true));
+    mockJiraGet.mockImplementation((path: string) => {
+      const decoded = decodeURIComponent(path);
+      if (decoded.includes('/rest/api/2/search')) {
+        // The backlog page: one open Story linked to feature FEAT-1 via the default Feature Link field
+        // (customfield_10108) — NOT the native parent, which this instance does not use.
+        if (decoded.includes('statusCategory != Done')) {
+          return Promise.resolve({
+            issues: [{
+              key: 'ENCUC-1',
+              fields: {
+                issuetype: { name: 'Story' },
+                created: new Date(Date.parse('2026-07-09T00:00:00.000Z') - 200 * 86_400_000).toISOString(),
+                status: { name: 'To Do' },
+                priority: { name: 'Low' },
+                customfield_10108: 'FEAT-1',
+              },
+            }],
+            total: 1,
+          });
+        }
+        // The follow-up feature-info fetch (`key in (FEAT-1)`) resolves the feature's own summary + status.
+        if (decoded.includes('key in (FEAT-1)')) {
+          return Promise.resolve({ issues: [{ key: 'FEAT-1', fields: { summary: 'Reporting feature', status: { name: 'Done' } } }] });
+        }
+      }
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    render(<IssueAgingTab />);
+    fireEvent.change(screen.getByLabelText(/scope jql/i), { target: { value: 'project = ENCUC' } });
+    fireEvent.click(screen.getByRole('button', { name: /run report/i }));
+
+    // The gated triage prompt names the issue, its linked feature, and — the point of the second fetch —
+    // that feature's own status (Done), which is what makes an item a strong cancel-safe candidate.
+    const promptBox = await screen.findByLabelText(/ai cleanup triage prompt/i);
+    await waitFor(() => expect((promptBox as HTMLTextAreaElement).value).toContain('feature FEAT-1'));
+    expect((promptBox as HTMLTextAreaElement).value).toContain('Done');
+    expect((promptBox as HTMLTextAreaElement).value).toContain('ENCUC-1');
+
+    // A `key in (...)` follow-up fetch was actually issued to resolve the feature status.
+    expect(decodedSearchPaths().some((searchPath) => searchPath.includes('key in (FEAT-1)'))).toBe(true);
   });
 
   it('copies the exact queried JQL to the clipboard when Copy JQL is clicked', async () => {
