@@ -10,6 +10,12 @@
 import { useMemo, useState } from 'react';
 
 import { jiraGet } from '../../services/jiraApi.ts';
+import {
+  extractFeatureKeyFromIssueFields,
+  featureLinkCandidateFieldIds,
+  loadConfiguredFeatureLinkFieldId,
+  type FeatureLinkFields,
+} from '../../utils/featureLink.ts';
 import { copyToClipboard } from '../FeatureCanvas/ai/clipboard.ts';
 import { ReportAiPanel } from './ReportAiPanel.tsx';
 import {
@@ -47,14 +53,22 @@ interface RawAgingIssue {
   fields?: {
     issuetype?: { name?: string } | null;
     created?: string | null;
-    // The extra signals the AI triage leans on beyond aging: current status, recent activity, importance,
-    // and the parent feature (with its own status). All optional — a plain aging run needs none of them.
+    // The extra signals the AI triage leans on beyond aging: current status, recent activity, and
+    // importance. All optional — a plain aging run needs none of them. The feature-link custom fields are
+    // read dynamically by id (they vary per instance), hence the index signature.
     status?: { name?: string } | null;
     updated?: string | null;
     summary?: string | null;
     priority?: { name?: string } | null;
-    parent?: { key?: string; fields?: { summary?: string | null; status?: { name?: string } | null } | null } | null;
+    parent?: { key?: string } | null;
+    [fieldId: string]: unknown;
   };
+}
+
+/** A linked feature's own summary and status, resolved by a follow-up fetch keyed on the feature's key. */
+interface FeatureInfo {
+  summary: string;
+  status: string;
 }
 
 interface RawAgingSearchResponse {
@@ -80,10 +94,8 @@ function buildAgingJql(scopeJql: string): string {
 }
 
 /** Wraps the aging JQL with the requested fields and the page window into a single search request path. */
-function buildAgingSearchPath(jql: string, startAt: number): string {
-  // `parent` carries the feature link and its status; `updated`/`priority`/`summary` feed the AI triage.
-  const fields = 'issuetype,created,status,updated,summary,priority,parent';
-  return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${fields}&startAt=${startAt}&maxResults=${PAGE_SIZE}`;
+function buildAgingSearchPath(jql: string, startAt: number, fields: string): string {
+  return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(fields)}&startAt=${startAt}&maxResults=${PAGE_SIZE}`;
 }
 
 /**
@@ -92,11 +104,11 @@ function buildAgingSearchPath(jql: string, startAt: number): string {
  * (`startAt + returned >= total`) or the MAX_TOTAL_ISSUES safety cap is reached, in which case it flags the
  * result as capped. Any fetch error propagates to the caller so the run can surface it and stop.
  */
-async function fetchOpenBacklog(jql: string): Promise<FetchedBacklog> {
+async function fetchOpenBacklog(jql: string, fields: string): Promise<FetchedBacklog> {
   const rawIssues: RawAgingIssue[] = [];
   let startAt = 0;
   while (true) {
-    const response = await jiraGet<RawAgingSearchResponse>(buildAgingSearchPath(jql, startAt));
+    const response = await jiraGet<RawAgingSearchResponse>(buildAgingSearchPath(jql, startAt, fields));
     const pageIssues = response.issues ?? [];
     rawIssues.push(...pageIssues);
     startAt += pageIssues.length;
@@ -109,6 +121,34 @@ async function fetchOpenBacklog(jql: string): Promise<FetchedBacklog> {
       return { rawIssues, wasCapped: true };
     }
   }
+}
+
+// How many feature keys to resolve per follow-up request when reading their summaries and statuses.
+const FEATURE_INFO_BATCH_SIZE = 50;
+
+/**
+ * Follow-up fetch that resolves each linked feature's own summary and status by key — the same second-hop
+ * the blueprint does, since a feature-link field only yields a key. Batched, and fully error-tolerant: a
+ * failed batch simply leaves those features unresolved (their status shows as unknown in the triage) rather
+ * than failing the whole aging run.
+ */
+async function fetchFeatureInfoByKey(featureKeys: readonly string[]): Promise<Map<string, FeatureInfo>> {
+  const featureInfoByKey = new Map<string, FeatureInfo>();
+  for (let batchStart = 0; batchStart < featureKeys.length; batchStart += FEATURE_INFO_BATCH_SIZE) {
+    const batch = featureKeys.slice(batchStart, batchStart + FEATURE_INFO_BATCH_SIZE);
+    const jql = `key in (${batch.join(',')})`;
+    const path = `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=summary,status&maxResults=${FEATURE_INFO_BATCH_SIZE}`;
+    const response = await jiraGet<RawAgingSearchResponse>(path).catch(() => ({ issues: [] as RawAgingIssue[] }));
+    for (const featureIssue of response.issues ?? []) {
+      if (featureIssue.key) {
+        featureInfoByKey.set(featureIssue.key, {
+          summary: featureIssue.fields?.summary ?? '',
+          status: featureIssue.fields?.status?.name ?? '',
+        });
+      }
+    }
+  }
+  return featureInfoByKey;
 }
 
 /** Maps a raw Jira issue to the aging engine's input shape (issue key, type name, and creation date). */
@@ -134,11 +174,17 @@ function calendarDaysBetween(iso: string | null | undefined, todayMs: number): n
 
 /**
  * Projects a raw Jira issue into the AI triage's data-rich shape: its age, days since last activity,
- * importance (priority), and the parent feature plus that feature's status. Issues with an unparseable
- * created date get an age of 0 so they still appear (their staleness simply cannot be judged).
+ * importance (priority), and the linked feature (resolved via the blueprint's feature-link field) plus that
+ * feature's status. Issues with an unparseable created date get an age of 0 so they still appear (their
+ * staleness simply cannot be judged), and an unresolved feature leaves the feature fields null.
  */
-function toTriageIssue(issue: RawAgingIssue, todayMs: number): AgingTriageIssue {
-  const parent = issue.fields?.parent ?? null;
+function toTriageIssue(
+  issue: RawAgingIssue,
+  todayMs: number,
+  featureKey: string | null,
+  featureInfoByKey: ReadonlyMap<string, FeatureInfo>,
+): AgingTriageIssue {
+  const featureInfo = featureKey !== null ? featureInfoByKey.get(featureKey) ?? null : null;
   return {
     issueKey: issue.key ?? '',
     issueType: issue.fields?.issuetype?.name ?? 'Unknown',
@@ -147,9 +193,9 @@ function toTriageIssue(issue: RawAgingIssue, todayMs: number): AgingTriageIssue 
     ageDays: calendarDaysBetween(issue.fields?.created, todayMs) ?? 0,
     daysSinceUpdate: calendarDaysBetween(issue.fields?.updated, todayMs),
     priority: issue.fields?.priority?.name ?? null,
-    featureKey: parent?.key ?? null,
-    featureSummary: parent?.fields?.summary ?? null,
-    featureStatus: parent?.fields?.status?.name ?? null,
+    featureKey,
+    featureSummary: featureInfo?.summary ?? null,
+    featureStatus: featureInfo?.status ?? null,
   };
 }
 
@@ -384,13 +430,25 @@ export function IssueAgingTab(): React.JSX.Element {
     setTriageError(null);
     try {
       const jql = buildAgingJql(trimmedScope);
-      const { rawIssues, wasCapped: capped } = await fetchOpenBacklog(jql);
+      // Resolve the feature-link field the same way the blueprint does (ART setting → default), and request
+      // its candidate custom fields alongside the aging/triage fields so each issue's feature can be read.
+      const featureLinkField = loadConfiguredFeatureLinkFieldId();
+      const fields = ['issuetype', 'created', 'status', 'updated', 'summary', 'priority', 'parent', ...featureLinkCandidateFieldIds(featureLinkField)].join(',');
+      const { rawIssues, wasCapped: capped } = await fetchOpenBacklog(jql, fields);
       const issues = rawIssues.map(toAgingIssueInput);
       // The clock read is fine here — the pure engine takes today as an argument, staying deterministic.
       const todayIso = new Date().toISOString().slice(0, 10);
       const todayMs = Date.parse(todayIso);
       setResult(computeIssueAging({ issues, todayIso }));
-      setTriageIssues(rawIssues.map((issue) => toTriageIssue(issue, todayMs)));
+
+      // Resolve each issue's parent feature via the feature-link field, then a single follow-up fetch reads
+      // those features' own statuses/summaries (a link field yields only a key) so the triage can weigh them.
+      const featureKeyByIssue = rawIssues.map((issue) =>
+        extractFeatureKeyFromIssueFields((issue.fields ?? {}) as FeatureLinkFields, featureLinkField));
+      const uniqueFeatureKeys = Array.from(new Set(featureKeyByIssue.filter((key): key is string => key !== null)));
+      const featureInfoByKey = await fetchFeatureInfoByKey(uniqueFeatureKeys);
+      setTriageIssues(rawIssues.map((issue, index) => toTriageIssue(issue, todayMs, featureKeyByIssue[index], featureInfoByKey)));
+
       setQueriedJql(jql);
       setWasCapped(capped);
     } catch (caughtError) {
