@@ -10,6 +10,8 @@
 import { useMemo, useState } from 'react';
 
 import { jiraGet } from '../../services/jiraApi.ts';
+import type { JiraIssue } from '../../types/jira.ts';
+import { resolveAcceptanceCriteriaFieldIds } from '../../utils/acceptanceCriteria.ts';
 import {
   extractFeatureKeyFromIssueFields,
   featureLinkCandidateFieldIds,
@@ -17,14 +19,15 @@ import {
   type FeatureLinkFields,
 } from '../../utils/featureLink.ts';
 import { copyToClipboard } from '../FeatureCanvas/ai/clipboard.ts';
+import { AgingTriageActionTable } from './AgingTriageActionTable.tsx';
 import { ReportAiPanel } from './ReportAiPanel.tsx';
 import {
   buildAgingTriagePrompt,
   parseAgingTriageResponse,
   type AgingTriageIssue,
   type AgingTriageSuggestion,
-  type AgingTriageVerdict,
 } from './agingTriage.ts';
+import { buildTriageActionModel } from './agingTriageActionModel.ts';
 import {
   computeIssueAging,
   type IssueAgingIssueInput,
@@ -335,49 +338,6 @@ function AgingByTypeTable({ result }: { result: IssueAgingResult }): React.JSX.E
   );
 }
 
-// ── AI triage results ──────────────────────────────────────────────────────────
-
-/** Human label and badge class for each verdict, so the results read clearly and are colour-coded. */
-const VERDICT_META: Record<AgingTriageVerdict, { label: string; badgeClass: string }> = {
-  'cancel-safe': { label: 'Cancel-safe', badgeClass: styles.verdictCancelSafe },
-  review: { label: 'Review', badgeClass: styles.verdictReview },
-  'must-remain': { label: 'Must remain', badgeClass: styles.verdictMustRemain },
-};
-
-/** One-line tally of how many issues fell into each verdict, shown above the detail rows. */
-function summariseVerdicts(suggestions: readonly AgingTriageSuggestion[]): string {
-  const cancelSafe = suggestions.filter((item) => item.verdict === 'cancel-safe').length;
-  const review = suggestions.filter((item) => item.verdict === 'review').length;
-  const mustRemain = suggestions.filter((item) => item.verdict === 'must-remain').length;
-  return `${cancelSafe} cancel-safe · ${review} to review · ${mustRemain} must remain`;
-}
-
-/** Renders the ingested triage verdicts as colour-coded rows with the assistant's rationale. */
-function AgingTriageResults({ suggestions }: { suggestions: readonly AgingTriageSuggestion[] }): React.JSX.Element | null {
-  if (suggestions.length === 0) {
-    return null;
-  }
-  return (
-    <div style={{ marginTop: 8 }}>
-      <p className={styles.captionText}>{summariseVerdicts(suggestions)}</p>
-      <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {suggestions.map((suggestion) => {
-          const meta = VERDICT_META[suggestion.verdict];
-          return (
-            <li key={suggestion.issueKey} style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-              <span className={`${styles.verdictBadge} ${meta.badgeClass}`}>{meta.label}</span>
-              <span>
-                <strong>{suggestion.issueKey}</strong>
-                {suggestion.rationale !== '' && <span className={styles.captionText} style={{ marginLeft: 6 }}>{suggestion.rationale}</span>}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
 // ── Tab ────────────────────────────────────────────────────────────────────────
 
 /** The Aging report tab: enter a scope JQL, run, and read the NOT-Done backlog's age by issue type. */
@@ -393,6 +353,10 @@ export function IssueAgingTab(): React.JSX.Element {
   const [triageIssues, setTriageIssues] = useState<AgingTriageIssue[]>([]);
   const [triageSuggestions, setTriageSuggestions] = useState<AgingTriageSuggestion[]>([]);
   const [triageError, setTriageError] = useState<string | null>(null);
+  // The full fetched issue objects (keyed by issue key) and the resolved Acceptance Criteria field ids —
+  // both feed the actionable table's inline detail after verdicts are ingested.
+  const [issuesByKey, setIssuesByKey] = useState<Map<string, JiraIssue>>(new Map());
+  const [acceptanceCriteriaFieldIds, setAcceptanceCriteriaFieldIds] = useState<string[]>([]);
 
   const handleScopeChange = (nextScope: string): void => {
     setScopeJql(nextScope);
@@ -400,6 +364,8 @@ export function IssueAgingTab(): React.JSX.Element {
   };
 
   const triagePrompt = useMemo(() => buildAgingTriagePrompt(triageIssues), [triageIssues]);
+  // The ingested verdicts rolled up into the recommendation → feature → issue table (empty until ingest).
+  const triageActionModel = useMemo(() => buildTriageActionModel(triageSuggestions, triageIssues), [triageSuggestions, triageIssues]);
 
   /** Parses a pasted assistant reply into verdicts, keeping only issues that were actually shown. */
   const ingestTriage = (responseText: string): void => {
@@ -428,12 +394,20 @@ export function IssueAgingTab(): React.JSX.Element {
     setTriageIssues([]);
     setTriageSuggestions([]);
     setTriageError(null);
+    setIssuesByKey(new Map());
     try {
       const jql = buildAgingJql(trimmedScope);
-      // Resolve the feature-link field the same way the blueprint does (ART setting → default), and request
-      // its candidate custom fields alongside the aging/triage fields so each issue's feature can be read.
+      // Resolve the feature-link field the same way the blueprint does (ART setting → default) and the
+      // instance's Acceptance Criteria field (by name) so both the triage and the inline detail work. Request
+      // the aging/triage signals plus the detail fields (assignee/description/points/AC) in one search.
       const featureLinkField = loadConfiguredFeatureLinkFieldId();
-      const fields = ['issuetype', 'created', 'status', 'updated', 'summary', 'priority', 'parent', ...featureLinkCandidateFieldIds(featureLinkField)].join(',');
+      const acFieldIds = await resolveAcceptanceCriteriaFieldIds();
+      setAcceptanceCriteriaFieldIds(acFieldIds);
+      const fields = Array.from(new Set([
+        'issuetype', 'created', 'status', 'updated', 'summary', 'priority', 'parent',
+        'assignee', 'description', 'customfield_10016',
+        ...acFieldIds, ...featureLinkCandidateFieldIds(featureLinkField),
+      ])).join(',');
       const { rawIssues, wasCapped: capped } = await fetchOpenBacklog(jql, fields);
       const issues = rawIssues.map(toAgingIssueInput);
       // The clock read is fine here — the pure engine takes today as an argument, staying deterministic.
@@ -441,10 +415,13 @@ export function IssueAgingTab(): React.JSX.Element {
       const todayMs = Date.parse(todayIso);
       setResult(computeIssueAging({ issues, todayIso }));
 
+      // Keep the full issue objects so the actionable table can show inline detail without re-fetching.
+      setIssuesByKey(new Map(rawIssues.filter((issue) => Boolean(issue.key)).map((issue) => [issue.key as string, issue as unknown as JiraIssue])));
+
       // Resolve each issue's parent feature via the feature-link field, then a single follow-up fetch reads
       // those features' own statuses/summaries (a link field yields only a key) so the triage can weigh them.
       const featureKeyByIssue = rawIssues.map((issue) =>
-        extractFeatureKeyFromIssueFields((issue.fields ?? {}) as FeatureLinkFields, featureLinkField));
+        extractFeatureKeyFromIssueFields((issue.fields ?? {}) as unknown as FeatureLinkFields, featureLinkField));
       const uniqueFeatureKeys = Array.from(new Set(featureKeyByIssue.filter((key): key is string => key !== null)));
       const featureInfoByKey = await fetchFeatureInfoByKey(uniqueFeatureKeys);
       setTriageIssues(rawIssues.map((issue, index) => toTriageIssue(issue, todayMs, featureKeyByIssue[index], featureInfoByKey)));
@@ -516,7 +493,13 @@ export function IssueAgingTab(): React.JSX.Element {
           onIngest={ingestTriage}
           error={triageError}
         >
-          <AgingTriageResults suggestions={triageSuggestions} />
+          {triageSuggestions.length > 0 && (
+            <AgingTriageActionTable
+              model={triageActionModel}
+              issuesByKey={issuesByKey}
+              acceptanceCriteriaFieldIds={acceptanceCriteriaFieldIds}
+            />
+          )}
         </ReportAiPanel>
       )}
     </div>

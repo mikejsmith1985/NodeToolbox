@@ -30,6 +30,11 @@ export interface IssueDetailPanelProps {
   onCommentPosted?: () => void;
   /** When true, the panel shows without a close button so the parent controls visibility. */
   isEmbedded?: boolean;
+  /**
+   * Pre-resolved Acceptance Criteria plain text to show under the description. Optional because most callers
+   * do not fetch the instance-specific AC field; when provided (and non-empty) an AC block is rendered.
+   */
+  acceptanceCriteria?: string | null;
 }
 
 /**
@@ -40,6 +45,7 @@ export default function IssueDetailPanel({
   onIssueUpdated,
   onCommentPosted,
   isEmbedded = false,
+  acceptanceCriteria,
 }: IssueDetailPanelProps) {
   const issuePanelStateKey = `${issue.key}:${issue.fields.customfield_10016 ?? ''}`;
 
@@ -50,6 +56,7 @@ export default function IssueDetailPanel({
       issue={issue}
       onIssueUpdated={onIssueUpdated}
       onCommentPosted={onCommentPosted}
+      acceptanceCriteria={acceptanceCriteria}
     />
   );
 }
@@ -63,6 +70,7 @@ function IssueDetailPanelContent({
   onIssueUpdated,
   onCommentPosted,
   isEmbedded = false,
+  acceptanceCriteria,
 }: IssueDetailPanelProps) {
   const [isPanelOpen, setIsPanelOpen] = useState(true);
   const [isLoadingTransitions, setIsLoadingTransitions] = useState(true);
@@ -218,6 +226,13 @@ function IssueDetailPanelContent({
     ? normalizedDescription.slice(0, DESCRIPTION_PREVIEW_LENGTH)
     : null;
   const hasTruncatedDescription = normalizedDescription.length > DESCRIPTION_PREVIEW_LENGTH;
+  // Acceptance Criteria is passed in already-resolved (the AC field id is instance-specific). Shown only
+  // when the caller supplied non-empty text, so callers that don't fetch AC see no empty label.
+  const normalizedAcceptanceCriteria = (acceptanceCriteria ?? '').trim();
+  const acceptanceCriteriaPreview = normalizedAcceptanceCriteria
+    ? normalizedAcceptanceCriteria.slice(0, DESCRIPTION_PREVIEW_LENGTH)
+    : null;
+  const hasTruncatedAcceptanceCriteria = normalizedAcceptanceCriteria.length > DESCRIPTION_PREVIEW_LENGTH;
   const hasTransitions = availableTransitions.length > 0;
   const hasValidStoryPointsInput = storyPointsInput.trim() !== '' && !Number.isNaN(Number(storyPointsInput));
   const selectPlaceholder = isLoadingTransitions || hasTransitions
@@ -268,6 +283,12 @@ function IssueDetailPanelContent({
       {descriptionPreview && (
         <div className={styles.description}>
           Description: {descriptionPreview}{hasTruncatedDescription ? '…' : ''}
+        </div>
+      )}
+
+      {acceptanceCriteriaPreview && (
+        <div className={styles.description}>
+          Acceptance Criteria: {acceptanceCriteriaPreview}{hasTruncatedAcceptanceCriteria ? '…' : ''}
         </div>
       )}
 
