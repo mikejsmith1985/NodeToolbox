@@ -44,12 +44,11 @@ import {
   type BottleneckStatusTransition,
   type InternalTestingBottleneckResult,
 } from './internalTestingBottleneck.ts';
+import {
+  readConfiguredStoryPointsFieldId,
+  readStoryPoints,
+} from './storyPointsField.ts';
 
-// The team's known story-points custom field, used when the ART settings do not override it. This field is
-// a dropdown/select on this instance, so Jira returns it as an object ({ value: "3" }) rather than a number.
-const DEFAULT_STORY_POINTS_FIELD_ID = 'customfield_10236';
-// localStorage key + property the Team Dashboard/ART settings write the configured story-points field id under.
-const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
 // One page of up to this many issues — plenty for a personal report; flagged when it caps out.
 const MAX_ISSUES = 100;
 // localStorage key the Internal Testing Bottleneck panel persists its scope JQL + status names under, so a
@@ -119,44 +118,8 @@ function buildStatusNameMap(statuses: readonly RawStatus[]): Record<string, stri
   return statusNameByStatusId;
 }
 
-/**
- * Reads a numeric value from a Jira field however Jira shaped it: a finite number is taken as-is, a
- * non-empty numeric string is parsed, and a select/dropdown OBJECT (e.g. `{ value: "3" }`) is unwrapped by
- * recursing into its `.value`. Everything else — null, blank, non-numeric — reads as no value. This is what
- * lets a dropdown story-points field yield its number instead of being discarded as an object.
- */
-function readNumericFieldValue(fieldValue: unknown): number | null {
-  if (typeof fieldValue === 'number') {
-    return Number.isFinite(fieldValue) ? fieldValue : null;
-  }
-  if (typeof fieldValue === 'string') {
-    const parsed = Number(fieldValue);
-    return Number.isFinite(parsed) && fieldValue.trim() !== '' ? parsed : null;
-  }
-  if (fieldValue !== null && typeof fieldValue === 'object') {
-    return readNumericFieldValue((fieldValue as { value?: unknown }).value);
-  }
-  return null;
-}
-
-/**
- * Reads the configured story-points field id the Team Dashboard/ART settings persisted, falling back to the
- * team's known default when nothing is set or the stored JSON cannot be parsed. Read at RUN time so a
- * settings change is picked up on the next report without reloading the app.
- */
-function readConfiguredStoryPointsFieldId(): string {
-  try {
-    const storedSettings = JSON.parse(localStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as { spFieldId?: string };
-    return storedSettings.spFieldId?.trim() || DEFAULT_STORY_POINTS_FIELD_ID;
-  } catch {
-    return DEFAULT_STORY_POINTS_FIELD_ID;
-  }
-}
-
-/** Reads the story-points value from the single configured field, unwrapping a dropdown object, or null. */
-function readStoryPoints(fields: Record<string, unknown>, storyPointsFieldId: string): number | null {
-  return readNumericFieldValue(fields[storyPointsFieldId]);
-}
+// Story-points reading (configured field id + dropdown-object unwrapping) is shared with the Aging triage
+// in ./storyPointsField.ts so the two Reports Hub siblings can never drift.
 
 /**
  * A person's full identity: the machine id used to build the JQL query, plus the normalized set of
