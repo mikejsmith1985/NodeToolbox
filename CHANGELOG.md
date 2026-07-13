@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Team Dashboard — Backlog Remediation panel (feature 014, in progress)**: the actionable Aging cleanup triage is moving out of the Reports Hub into a per-team, persistent panel on the Team Dashboard, so each team keeps its own resumable remediation queue and handled work does not resurface. This entry will be completed as the feature lands; the Aging metrics report stays in the Reports Hub. *(feature 014)*
+
 ### Fixed
 - **Reports Hub — Aging AI triage: story points were always blank, and the triage was too timid**: two problems made the cleanup triage over-conservative (e.g. 121 of 149 items marked "must-remain" despite many being 60+ days stale). First, the triage read story points from a hard-coded numeric field id — but this team's points live in a **dropdown** field configured via the ART settings (returned as `{ value: "3" }`), so **every issue read as unestimated** and the AI never saw size. The triage now reads the **same configured field Personal Flow uses**, unwrapping the dropdown object, via a shared reader so the two reports can't drift. Second, the prompt's posture was rebalanced to be **aggressively cleanup-oriented**: "must-remain" now has to be *earned* by a positive sign of active work (assigned and recently moved status, high priority with recent activity, or a clearly in-progress parent), while staleness, no owner, and no description/acceptance-criteria push an issue toward cancel/review instead of defaulting to keep. Expect noticeably more **cancel-safe** and **review** verdicts. *(feature 016)*
 
