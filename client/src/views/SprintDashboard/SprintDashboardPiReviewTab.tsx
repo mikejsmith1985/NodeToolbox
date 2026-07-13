@@ -67,8 +67,12 @@ export default function SprintDashboardPiReviewTab({
     [boardId, projectKey, storedArtTeams, activeTeamName],
   );
   const effectiveSelectedPiName = selectedPiName.trim() || readFallbackSelectedPiName();
+  // The team is ready for authoring once it has at least one PI Review page with a URL.
+  const hasConfiguredPiReviewPage = (matchedArtTeam?.piReviewPages ?? []).some(
+    (page) => page.pageUrl.trim() !== '',
+  );
 
-  if (!matchedArtTeam || !matchedArtTeam.piReviewPageUrl) {
+  if (!matchedArtTeam || !hasConfiguredPiReviewPage) {
     return (
       <section className={styles.piReviewAuthoringCard}>
         <h2 className={styles.settingsSectionTitle}>PI Review authoring</h2>

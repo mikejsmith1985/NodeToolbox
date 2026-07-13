@@ -19,7 +19,7 @@ import BlueprintTab from './BlueprintTab.tsx';
 import DependenciesTab from './DependenciesTab.tsx';
 import PiReviewTab from './PiReviewTab.tsx';
 import { formatFeatureProjectKeysInput, parseFeatureProjectKeysInput } from './artFeatureScopeSettings.ts';
-import type { ArtTab, ArtTeam, ArtBoardPrepIssue, PiProgressStats } from './hooks/useArtData.ts';
+import type { ArtTab, ArtTeam, ArtBoardPrepIssue, PiProgressStats, PiReviewPageAssociation } from './hooks/useArtData.ts';
 import { useArtData } from './hooks/useArtData.ts';
 import type { ImpedimentReason, ImpedimentStaleTier } from './hooks/artHelpers.ts';
 import {
@@ -162,13 +162,16 @@ export default function ArtView() {
         {state.activeTab === 'settings' && (
           <SettingsPanel
             teams={state.teams}
+            availablePiNames={state.availablePiNames}
             onAddTeam={actions.addTeam}
             onReloadPiOptions={actions.loadPiOptions}
             onReplaceTeams={actions.replaceTeams}
             onRemoveTeam={actions.removeTeam}
             onSaveTeams={actions.saveTeams}
             onUpdateTeamSosKey={actions.updateTeamSosKey}
-            onUpdateTeamPiReviewPageUrl={actions.updateTeamPiReviewPageUrl}
+            onAddTeamPiReviewPage={actions.addTeamPiReviewPage}
+            onUpdateTeamPiReviewPage={actions.updateTeamPiReviewPage}
+            onRemoveTeamPiReviewPage={actions.removeTeamPiReviewPage}
             onUpdateTeamJiraLabel={actions.updateTeamJiraLabel}
           />
         )}
@@ -3084,6 +3087,8 @@ function MonthlyReportPanel({ teams }: TeamsPanelProps) {
 
 interface SettingsPanelProps {
   teams: ArtTeam[];
+  /** Program Increment names offered in each team's PI Review page dropdown. */
+  availablePiNames: string[];
   onAddTeam: (name: string, boardId: string, projectKey?: string, boardName?: string, sosIssueKey?: string) => void;
   onReloadPiOptions: () => Promise<void>;
   onReplaceTeams: (teams: Array<Partial<ArtTeam>>) => void;
@@ -3091,8 +3096,12 @@ interface SettingsPanelProps {
   onSaveTeams: () => void;
   /** Updates the SoS Jira issue key for a specific team without requiring a full Save Teams. */
   onUpdateTeamSosKey: (teamId: string, sosIssueKey: string) => void;
-  /** Updates the PI Review Confluence page URL for a specific team without requiring a full Save Teams. */
-  onUpdateTeamPiReviewPageUrl: (teamId: string, piReviewPageUrl: string) => void;
+  /** Appends a blank PI Review page row to a team so another PI can be configured. */
+  onAddTeamPiReviewPage: (teamId: string) => void;
+  /** Updates the PI name and/or page URL of one of a team's PI Review pages by index. */
+  onUpdateTeamPiReviewPage: (teamId: string, pageIndex: number, changes: Partial<PiReviewPageAssociation>) => void;
+  /** Removes one PI Review page from a team by index. */
+  onRemoveTeamPiReviewPage: (teamId: string, pageIndex: number) => void;
   /** Updates the Jira label for a specific team used in Feature Change report queries. */
   onUpdateTeamJiraLabel: (teamId: string, jiraLabel: string) => void;
 }
@@ -3195,7 +3204,7 @@ const SHARED_ART_TEAM_FIELD_NAMES = [
   'boardId',
   'boardName',
   'projectKey',
-  'piReviewPageUrl',
+  'piReviewPages',
   'sosIssueKey',
 ] as const;
 /**
@@ -3263,6 +3272,8 @@ interface SharedArtWorkspacePayload {
     boardId: string;
     boardName?: string;
     projectKey?: string;
+    piReviewPages?: Array<{ piName: string; pageUrl: string }>;
+    /** Legacy single-page field (schema v1) — read on import, no longer written. */
     piReviewPageUrl?: string;
     sosIssueKey?: string;
   }>;
@@ -3348,7 +3359,8 @@ function buildSharedArtWorkspacePayload(
   settings: ArtAdvancedSettings,
 ): SharedArtWorkspacePayload {
   return {
-    schemaVersion: 1,
+    // Schema v2 carries the multi-PI page list; v1 workspaces still import via migration.
+    schemaVersion: 2,
     artKey: artKey.trim(),
     artName: artName.trim() || artKey.trim(),
     updatedAt: new Date().toISOString(),
@@ -3358,7 +3370,7 @@ function buildSharedArtWorkspacePayload(
       boardId: team.boardId,
       boardName: team.boardName,
       projectKey: team.projectKey,
-      piReviewPageUrl: team.piReviewPageUrl,
+      piReviewPages: team.piReviewPages ?? [],
       sosIssueKey: team.sosIssueKey,
     })),
     settings: {
@@ -3581,13 +3593,16 @@ function readDependencyLinkTypeNames(issueLinkTypes: JiraIssueLinkTypeOption[]):
 /** Renders the Settings tab for managing ART team roster, board IDs, and advanced field configuration. */
 function SettingsPanel({
   teams,
+  availablePiNames,
   onAddTeam,
   onReloadPiOptions,
   onReplaceTeams,
   onRemoveTeam,
   onSaveTeams,
   onUpdateTeamSosKey,
-  onUpdateTeamPiReviewPageUrl,
+  onAddTeamPiReviewPage,
+  onUpdateTeamPiReviewPage,
+  onRemoveTeamPiReviewPage,
   onUpdateTeamJiraLabel,
 }: SettingsPanelProps) {
   const { showToast } = useToast();
@@ -4112,7 +4127,8 @@ function SettingsPanel({
 
       <div className={styles.teamList}>
         <p className={styles.settingsSectionHint}>
-          Each team row can carry its own PI Review page URL. The PI Review tab loads one Confluence page per configured team.
+          Each team can carry one PI Review page per Program Increment. Add a page for every PI you are
+          planning concurrently — the PI Review tab shows one sub-tab per configured PI.
         </p>
         {teams.length === 0 && (
           <p className={styles.emptyState}>No teams configured yet.</p>
@@ -4133,14 +4149,50 @@ function SettingsPanel({
               type="text"
               value={team.sosIssueKey ?? ''}
             />
-            <input
-              aria-label={`PI Review Page URL for ${team.name}`}
-              className={styles.textInput}
-              onChange={(event) => onUpdateTeamPiReviewPageUrl(team.id, event.target.value)}
-              placeholder="PI Review Page URL"
-              type="text"
-              value={team.piReviewPageUrl ?? ''}
-            />
+            {/* Per-team PI Review pages — one Confluence page per PI so several PIs run concurrently */}
+            <div className={styles.piReviewPagesEditor}>
+              {(team.piReviewPages ?? []).map((piReviewPage, pageIndex) => (
+                <div key={pageIndex} className={styles.piReviewPageRow}>
+                  <select
+                    aria-label={`PI for PI Review page ${pageIndex + 1} of ${team.name}`}
+                    className={styles.textInput}
+                    onChange={(event) => onUpdateTeamPiReviewPage(team.id, pageIndex, { piName: event.target.value })}
+                    value={piReviewPage.piName}
+                  >
+                    <option value="">— Select PI —</option>
+                    {availablePiNames.map((availablePiName) => (
+                      <option key={availablePiName} value={availablePiName}>{availablePiName}</option>
+                    ))}
+                    {/* Keep a previously-saved PI selectable even if it is no longer in the live options list. */}
+                    {piReviewPage.piName.trim() !== '' && !availablePiNames.includes(piReviewPage.piName) && (
+                      <option value={piReviewPage.piName}>{piReviewPage.piName}</option>
+                    )}
+                  </select>
+                  <input
+                    aria-label={`PI Review Page URL ${pageIndex + 1} for ${team.name}`}
+                    className={styles.textInput}
+                    onChange={(event) => onUpdateTeamPiReviewPage(team.id, pageIndex, { pageUrl: event.target.value })}
+                    placeholder="PI Review Page URL"
+                    type="text"
+                    value={piReviewPage.pageUrl}
+                  />
+                  <button
+                    className={styles.removeBtn}
+                    onClick={() => onRemoveTeamPiReviewPage(team.id, pageIndex)}
+                    type="button"
+                  >
+                    Remove PI
+                  </button>
+                </div>
+              ))}
+              <button
+                className={styles.secondaryBtn}
+                onClick={() => onAddTeamPiReviewPage(team.id)}
+                type="button"
+              >
+                + Add PI
+              </button>
+            </div>
             <input
               aria-label={`Jira Label for ${team.name}`}
               className={styles.textInput}
