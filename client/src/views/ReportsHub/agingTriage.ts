@@ -23,9 +23,11 @@ export type AgingTriageVerdict = 'cancel-safe' | 'review' | 'must-remain';
 const AGING_TRIAGE_VERDICTS: readonly AgingTriageVerdict[] = ['cancel-safe', 'review', 'must-remain'];
 
 /**
- * One open backlog issue with every real signal the triage decision leans on: how old it is, how
- * recently it saw activity, how important it looks (Jira priority), and which parent feature it belongs
- * to plus that feature's status. The feature signals are nullable because not every issue has a parent.
+ * One open backlog issue with every real signal the triage decision leans on: how old it is, how long it
+ * has sat in its current status, how recently it saw any activity, whether anyone owns it, how big it is
+ * (story points), how important it looks (Jira priority), whether it is even defined (description /
+ * acceptance criteria), and which parent feature it belongs to plus that feature's status. Nullable signals
+ * are absent for that issue (no assignee, no estimate, no parent) rather than merely unknown.
  */
 export interface AgingTriageIssue {
   issueKey: string;
@@ -34,8 +36,18 @@ export interface AgingTriageIssue {
   status: string;
   /** Calendar days since the issue was created — the report's aging measure. */
   ageDays: number;
-  /** Calendar days since the issue was last updated — the "recent activity" signal. Null when unknown. */
+  /** Calendar days the issue has sat in its current status category — the sharpest staleness signal. Null when unknown. */
+  daysInStatus: number | null;
+  /** Calendar days since the issue was last updated — a coarse "any activity" signal. Null when unknown. */
   daysSinceUpdate: number | null;
+  /** Who the issue is assigned to. Null when unassigned — an unowned, long-idle issue is a strong cancel signal. */
+  assignee: string | null;
+  /** The issue's story-point estimate — its size/effort. Null when unestimated. */
+  storyPoints: number | null;
+  /** Whether the issue has any description text — an empty issue looks like abandoned scaffolding. */
+  hasDescription: boolean;
+  /** Whether the issue has any acceptance-criteria content — an undefined issue favors cancel-safe. */
+  hasAcceptanceCriteria: boolean;
   /** Jira priority name (e.g. High/Low) — the "importance" signal. Null when unset. */
   priority: string | null;
   /** The parent feature/epic key this issue rolls up to. Null when the issue has no parent. */
@@ -64,20 +76,44 @@ const AGING_TRIAGE_INSTRUCTION =
   + 'can be safely canceled;\n'
   + '  • "review" — unclear; a human should confirm before canceling or keeping it;\n'
   + '  • "must-remain" — clearly still needed and should stay in the backlog.\n'
-  + 'Weigh how recently the issue saw activity (long-idle favors cancel-safe), how important it looks '
-  + '(priority), how old it is, and which feature it belongs to and that feature\'s status (a Done or '
-  + 'abandoned parent strongly favors cancel-safe). Use ONLY the data shown for each issue; do NOT invent '
+  + 'Weigh how long it has sat in its current status and how recently it saw any activity (long-idle favors '
+  + 'cancel-safe), whether anyone is assigned (an unassigned, long-idle issue favors cancel-safe), its size '
+  + '(story points), how important it looks (priority), how old it is, whether it is even defined at all (no '
+  + 'description and no acceptance criteria favors cancel-safe), and which feature it belongs to and that '
+  + 'feature\'s status (a Done or abandoned parent strongly favors cancel-safe). Use ONLY the data shown for each issue; do NOT invent '
   + 'values, and when a signal is missing say so in the rationale rather than guessing. Respond ONLY with '
   + 'valid JSON: {"kind":"agingTriage","items":[{"issueKey":"KEY","verdict":"cancel-safe","rationale":"..."}]}';
 
 /** Builds one issue's data line, including only the signals that are actually present. */
 function buildTriageIssueLine(issue: AgingTriageIssue): string {
-  const parts: string[] = [`${issue.issueKey} (${issue.issueType})`, `status ${issue.status}`, `${formatDays(issue.ageDays)} old`];
+  const hasAssignee = issue.assignee !== null && issue.assignee.trim() !== '';
+  const parts: string[] = [
+    `${issue.issueKey} (${issue.issueType})`,
+    `status ${issue.status}`,
+    // Ownership is a first-class triage signal, so we always state it explicitly: an unowned, long-idle
+    // issue is a strong cancel candidate, and silently omitting the assignee would hide that.
+    hasAssignee ? `assignee ${issue.assignee}` : 'unassigned',
+    `${formatDays(issue.ageDays)} old`,
+  ];
+  if (issue.daysInStatus !== null) {
+    parts.push(`in status ${formatDays(issue.daysInStatus)}`);
+  }
   if (issue.daysSinceUpdate !== null) {
     parts.push(`updated ${formatDays(issue.daysSinceUpdate)} ago`);
   }
+  if (issue.storyPoints !== null) {
+    parts.push(`${issue.storyPoints} pts`);
+  }
   if (issue.priority !== null && issue.priority.trim() !== '') {
     parts.push(`priority ${issue.priority}`);
+  }
+  // For definition, EMPTINESS is the signal: a ticket with no description and no acceptance criteria looks
+  // like low-value or abandoned scaffolding, so we flag the absence rather than the (normal) presence.
+  if (!issue.hasDescription) {
+    parts.push('no description');
+  }
+  if (!issue.hasAcceptanceCriteria) {
+    parts.push('no acceptance criteria');
   }
   if (issue.featureKey !== null && issue.featureKey.trim() !== '') {
     // The parent feature and its status are the strongest cancel signal, so they ride the same line.

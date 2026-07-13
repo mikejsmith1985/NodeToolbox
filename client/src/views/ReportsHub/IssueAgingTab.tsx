@@ -11,7 +11,8 @@ import { useMemo, useState } from 'react';
 
 import { jiraGet } from '../../services/jiraApi.ts';
 import type { JiraIssue } from '../../types/jira.ts';
-import { resolveAcceptanceCriteriaFieldIds } from '../../utils/acceptanceCriteria.ts';
+import { readAcceptanceCriteriaText, resolveAcceptanceCriteriaFieldIds } from '../../utils/acceptanceCriteria.ts';
+import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import {
   extractFeatureKeyFromIssueFields,
   featureLinkCandidateFieldIds,
@@ -48,6 +49,9 @@ const PAGE_SIZE = 100;
 const MAX_TOTAL_ISSUES = 2000;
 // Milliseconds in one calendar day, used to convert an epoch difference into a whole-day age.
 const MILLISECONDS_PER_DAY = 86_400_000;
+// The Jira custom field that carries a Story's point estimate on this instance's boards — read as the
+// triage "size/effort" signal, and requested in the same search so it costs no extra round-trip.
+const STORY_POINTS_FIELD_ID = 'customfield_10016';
 
 // ── Jira response shapes (only the fields this report reads) ──
 
@@ -61,8 +65,16 @@ interface RawAgingIssue {
     // read dynamically by id (they vary per instance), hence the index signature.
     status?: { name?: string } | null;
     updated?: string | null;
+    // When the issue's status category last changed — the basis for "days in current status", a sharper
+    // staleness measure than `updated` (which any minor edit bumps).
+    statuscategorychangedate?: string | null;
     summary?: string | null;
     priority?: { name?: string } | null;
+    // Who owns the issue; absent/null means unassigned, itself a cancel signal. Description drives the
+    // "is this even defined" signal. Story points and acceptance-criteria fields are read via the index
+    // signature below (their ids vary per instance).
+    assignee?: { displayName?: string } | null;
+    description?: unknown;
     parent?: { key?: string } | null;
     [fieldId: string]: unknown;
   };
@@ -176,16 +188,19 @@ function calendarDaysBetween(iso: string | null | undefined, todayMs: number): n
 }
 
 /**
- * Projects a raw Jira issue into the AI triage's data-rich shape: its age, days since last activity,
- * importance (priority), and the linked feature (resolved via the blueprint's feature-link field) plus that
- * feature's status. Issues with an unparseable created date get an age of 0 so they still appear (their
- * staleness simply cannot be judged), and an unresolved feature leaves the feature fields null.
+ * Projects a raw Jira issue into the AI triage's data-rich shape: its age, time in its current status,
+ * days since any activity, ownership, size (story points), importance (priority), whether it is even
+ * defined (description / acceptance criteria), and the linked feature (resolved via the blueprint's
+ * feature-link field) plus that feature's status. Issues with an unparseable created date get an age of 0
+ * so they still appear (their staleness simply cannot be judged), and an unresolved feature leaves the
+ * feature fields null. `acFieldIds` are the instance's acceptance-criteria field ids resolved once per run.
  */
 function toTriageIssue(
   issue: RawAgingIssue,
   todayMs: number,
   featureKey: string | null,
   featureInfoByKey: ReadonlyMap<string, FeatureInfo>,
+  acFieldIds: readonly string[],
 ): AgingTriageIssue {
   const featureInfo = featureKey !== null ? featureInfoByKey.get(featureKey) ?? null : null;
   return {
@@ -194,12 +209,30 @@ function toTriageIssue(
     summary: issue.fields?.summary ?? '',
     status: issue.fields?.status?.name ?? 'Unknown',
     ageDays: calendarDaysBetween(issue.fields?.created, todayMs) ?? 0,
+    daysInStatus: calendarDaysBetween(issue.fields?.statuscategorychangedate, todayMs),
     daysSinceUpdate: calendarDaysBetween(issue.fields?.updated, todayMs),
+    assignee: readAssigneeName(issue),
+    storyPoints: readStoryPoints(issue),
+    hasDescription: normalizeRichTextToPlainText(issue.fields?.description).trim() !== '',
+    // Reuse Hygiene's AC reader so "has acceptance criteria" means exactly what the detail panel shows.
+    hasAcceptanceCriteria: readAcceptanceCriteriaText(issue as unknown as JiraIssue, acFieldIds) !== null,
     priority: issue.fields?.priority?.name ?? null,
     featureKey,
     featureSummary: featureInfo?.summary ?? null,
     featureStatus: featureInfo?.status ?? null,
   };
+}
+
+/** Reads the issue's assignee display name, or null when it is unassigned or the name is blank. */
+function readAssigneeName(issue: RawAgingIssue): string | null {
+  const displayName = issue.fields?.assignee?.displayName;
+  return typeof displayName === 'string' && displayName.trim() !== '' ? displayName.trim() : null;
+}
+
+/** Reads the issue's story-point estimate as a number, or null when it is unset or non-numeric. */
+function readStoryPoints(issue: RawAgingIssue): number | null {
+  const rawPoints = issue.fields?.[STORY_POINTS_FIELD_ID];
+  return typeof rawPoints === 'number' && Number.isFinite(rawPoints) ? rawPoints : null;
 }
 
 /** Reads the persisted scope JQL, tolerating a missing or corrupt store by falling back to an empty string. */
@@ -404,8 +437,8 @@ export function IssueAgingTab(): React.JSX.Element {
       const acFieldIds = await resolveAcceptanceCriteriaFieldIds();
       setAcceptanceCriteriaFieldIds(acFieldIds);
       const fields = Array.from(new Set([
-        'issuetype', 'created', 'status', 'updated', 'summary', 'priority', 'parent',
-        'assignee', 'description', 'customfield_10016',
+        'issuetype', 'created', 'status', 'statuscategorychangedate', 'updated', 'summary', 'priority', 'parent',
+        'assignee', 'description', STORY_POINTS_FIELD_ID,
         ...acFieldIds, ...featureLinkCandidateFieldIds(featureLinkField),
       ])).join(',');
       const { rawIssues, wasCapped: capped } = await fetchOpenBacklog(jql, fields);
@@ -424,7 +457,7 @@ export function IssueAgingTab(): React.JSX.Element {
         extractFeatureKeyFromIssueFields((issue.fields ?? {}) as unknown as FeatureLinkFields, featureLinkField));
       const uniqueFeatureKeys = Array.from(new Set(featureKeyByIssue.filter((key): key is string => key !== null)));
       const featureInfoByKey = await fetchFeatureInfoByKey(uniqueFeatureKeys);
-      setTriageIssues(rawIssues.map((issue, index) => toTriageIssue(issue, todayMs, featureKeyByIssue[index], featureInfoByKey)));
+      setTriageIssues(rawIssues.map((issue, index) => toTriageIssue(issue, todayMs, featureKeyByIssue[index], featureInfoByKey, acFieldIds)));
 
       setQueriedJql(jql);
       setWasCapped(capped);
