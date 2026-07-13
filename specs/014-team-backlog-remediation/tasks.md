@@ -138,16 +138,16 @@ remembered for that team only; a team with no derivable scope is prompted for a 
 
 ### Tests for User Story 3 (write first — must FAIL) ⚠️
 
-- [ ] T013 [P] [US3] Unit test `resolveTeamScope` — override wins (wrapped by `buildAgingJql`); derived
+- [x] T013 [P] [US3] Unit test `resolveTeamScope` — override wins (wrapped by `buildAgingJql`); derived
   `project = KEY` clause; project + roster `assignee in (...)` clause; empty `jql` when nothing derivable — per
   contracts/scope-resolution.md, in `client/src/views/SprintDashboard/backlogRemediation/remediationScope.test.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T014 [US3] Implement `resolveTeamScope(...)` reusing `buildAgingJql` and
+- [x] T014 [US3] Implement `resolveTeamScope(...)` reusing `buildAgingJql` and
   `buildStandupRosterAssigneeClause` — in `client/src/views/SprintDashboard/backlogRemediation/remediationScope.ts`
   (depends on T002)
-- [ ] T015 [US3] Wire scope into the panel: derive the fetch JQL via `resolveTeamScope`, add the per-team JQL
+- [x] T015 [US3] Wire scope into the panel: derive the fetch JQL via `resolveTeamScope`, add the per-team JQL
   override input bound to `store.setScopeOverrideJql`, and prompt for a JQL when the derived `jql` is empty — in
   `client/src/views/SprintDashboard/backlogRemediation/BacklogRemediationPanel.tsx` (depends on T009, T014)
 

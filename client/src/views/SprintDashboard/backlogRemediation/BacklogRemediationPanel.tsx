@@ -19,7 +19,9 @@ import {
 } from '../../ReportsHub/agingTriage.ts';
 import { buildTriageActionModel } from '../../ReportsHub/agingTriageActionModel.ts';
 import styles from '../../ReportsHub/ReportsHubView.module.css';
+import { useStandupRosterStore } from '../hooks/useStandupRosterStore.ts';
 import { reconcile } from './remediationReconcile.ts';
+import { resolveTeamScope } from './remediationScope.ts';
 import type { ItemFingerprint, RemediationItem } from './remediationTypes.ts';
 import { useBacklogRemediationStore } from './useBacklogRemediationStore.ts';
 
@@ -47,9 +49,12 @@ function toSuggestion(item: RemediationItem): AgingTriageSuggestion | null {
  */
 export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: BacklogRemediationPanelProps): React.JSX.Element {
   const items = useBacklogRemediationStore((state) => state.items);
+  const scopeOverrideJql = useBacklogRemediationStore((state) => state.scopeOverrideJql);
   const setScope = useBacklogRemediationStore((state) => state.setScope);
   const applyReconcile = useBacklogRemediationStore((state) => state.applyReconcile);
   const ingestVerdicts = useBacklogRemediationStore((state) => state.ingestVerdicts);
+  const setScopeOverrideJql = useBacklogRemediationStore((state) => state.setScopeOverrideJql);
+  const rosterMembers = useStandupRosterStore((state) => state.rosterMembers);
 
   // The full issue objects + AC field ids from the last fetch, for the table's inline detail. Empty on a pure
   // resume (no fetch yet) — the verdicts still render from the persisted queue.
@@ -64,8 +69,12 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
     setScope(teamProfileId, projectKey, piName);
   }, [setScope, teamProfileId, projectKey, piName]);
 
-  // Until US3 wires the full team-scope resolver, derive a simple project-scoped query.
-  const scopeJql = projectKey.trim() === '' ? '' : `project = ${projectKey}`;
+  // Derive the backlog scope from the team profile (project-first), honouring the per-team JQL override. Empty
+  // when nothing is derivable and no override is set — the panel then prompts for a JQL.
+  const scopeJql = useMemo(
+    () => resolveTeamScope({ teamProfileId, projectKey, piName, rosterMembers, activeRosterTeamName: null, scopeOverrideJql }).jql,
+    [teamProfileId, projectKey, piName, rosterMembers, scopeOverrideJql],
+  );
 
   const actionableItems = useMemo(() => items.filter(isActionable), [items]);
   const actionableSignals = useMemo<AgingTriageIssue[]>(() => actionableItems.map((item) => item.signals), [actionableItems]);
@@ -120,6 +129,22 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
       onIngest={handleIngest}
       error={ingestError}
     >
+      <label className={styles.controlLabel}>
+        Scope override (JQL)
+        <input
+          value={scopeOverrideJql ?? ''}
+          onChange={(event) => setScopeOverrideJql(event.target.value.trim() === '' ? null : event.target.value)}
+          placeholder="leave blank to scope by the team's project"
+          className={styles.textInput}
+          style={{ minWidth: 260 }}
+          aria-label="Backlog remediation scope override"
+        />
+      </label>
+      {scopeJql === '' && (
+        <p className={styles.captionText}>
+          This team has no project or roster to scope from — enter a JQL override above to load its backlog.
+        </p>
+      )}
       <div className={styles.aiPanelActions}>
         <button
           type="button"
