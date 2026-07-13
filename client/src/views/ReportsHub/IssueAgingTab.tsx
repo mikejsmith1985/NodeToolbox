@@ -29,6 +29,7 @@ import {
   type AgingTriageSuggestion,
 } from './agingTriage.ts';
 import { buildTriageActionModel } from './agingTriageActionModel.ts';
+import { readConfiguredStoryPointsFieldId, readStoryPoints } from './storyPointsField.ts';
 import {
   computeIssueAging,
   type IssueAgingIssueInput,
@@ -49,9 +50,6 @@ const PAGE_SIZE = 100;
 const MAX_TOTAL_ISSUES = 2000;
 // Milliseconds in one calendar day, used to convert an epoch difference into a whole-day age.
 const MILLISECONDS_PER_DAY = 86_400_000;
-// The Jira custom field that carries a Story's point estimate on this instance's boards — read as the
-// triage "size/effort" signal, and requested in the same search so it costs no extra round-trip.
-const STORY_POINTS_FIELD_ID = 'customfield_10016';
 
 // ── Jira response shapes (only the fields this report reads) ──
 
@@ -201,6 +199,7 @@ function toTriageIssue(
   featureKey: string | null,
   featureInfoByKey: ReadonlyMap<string, FeatureInfo>,
   acFieldIds: readonly string[],
+  storyPointsFieldId: string,
 ): AgingTriageIssue {
   const featureInfo = featureKey !== null ? featureInfoByKey.get(featureKey) ?? null : null;
   return {
@@ -212,7 +211,9 @@ function toTriageIssue(
     daysInStatus: calendarDaysBetween(issue.fields?.statuscategorychangedate, todayMs),
     daysSinceUpdate: calendarDaysBetween(issue.fields?.updated, todayMs),
     assignee: readAssigneeName(issue),
-    storyPoints: readStoryPoints(issue),
+    // Read the CONFIGURED story-points field (a dropdown on this instance), the same way Personal Flow
+    // does — a hardcoded numeric field id read every issue as unestimated and hid size from the triage.
+    storyPoints: readStoryPoints((issue.fields ?? {}) as Record<string, unknown>, storyPointsFieldId),
     hasDescription: normalizeRichTextToPlainText(issue.fields?.description).trim() !== '',
     // Reuse Hygiene's AC reader so "has acceptance criteria" means exactly what the detail panel shows.
     hasAcceptanceCriteria: readAcceptanceCriteriaText(issue as unknown as JiraIssue, acFieldIds) !== null,
@@ -227,12 +228,6 @@ function toTriageIssue(
 function readAssigneeName(issue: RawAgingIssue): string | null {
   const displayName = issue.fields?.assignee?.displayName;
   return typeof displayName === 'string' && displayName.trim() !== '' ? displayName.trim() : null;
-}
-
-/** Reads the issue's story-point estimate as a number, or null when it is unset or non-numeric. */
-function readStoryPoints(issue: RawAgingIssue): number | null {
-  const rawPoints = issue.fields?.[STORY_POINTS_FIELD_ID];
-  return typeof rawPoints === 'number' && Number.isFinite(rawPoints) ? rawPoints : null;
 }
 
 /** Reads the persisted scope JQL, tolerating a missing or corrupt store by falling back to an empty string. */
@@ -436,9 +431,12 @@ export function IssueAgingTab(): React.JSX.Element {
       const featureLinkField = loadConfiguredFeatureLinkFieldId();
       const acFieldIds = await resolveAcceptanceCriteriaFieldIds();
       setAcceptanceCriteriaFieldIds(acFieldIds);
+      // Resolve the instance's configured story-points field (a dropdown here) so the triage sees real
+      // sizes — the same field Personal Flow reads — and request it in the same search.
+      const storyPointsFieldId = readConfiguredStoryPointsFieldId();
       const fields = Array.from(new Set([
         'issuetype', 'created', 'status', 'statuscategorychangedate', 'updated', 'summary', 'priority', 'parent',
-        'assignee', 'description', STORY_POINTS_FIELD_ID,
+        'assignee', 'description', storyPointsFieldId,
         ...acFieldIds, ...featureLinkCandidateFieldIds(featureLinkField),
       ])).join(',');
       const { rawIssues, wasCapped: capped } = await fetchOpenBacklog(jql, fields);
@@ -457,7 +455,7 @@ export function IssueAgingTab(): React.JSX.Element {
         extractFeatureKeyFromIssueFields((issue.fields ?? {}) as unknown as FeatureLinkFields, featureLinkField));
       const uniqueFeatureKeys = Array.from(new Set(featureKeyByIssue.filter((key): key is string => key !== null)));
       const featureInfoByKey = await fetchFeatureInfoByKey(uniqueFeatureKeys);
-      setTriageIssues(rawIssues.map((issue, index) => toTriageIssue(issue, todayMs, featureKeyByIssue[index], featureInfoByKey, acFieldIds)));
+      setTriageIssues(rawIssues.map((issue, index) => toTriageIssue(issue, todayMs, featureKeyByIssue[index], featureInfoByKey, acFieldIds, storyPointsFieldId)));
 
       setQueriedJql(jql);
       setWasCapped(capped);

@@ -49,6 +49,13 @@ describe('buildAgingTriagePrompt', () => {
     expect(prompt).toContain('Done'); // the parent feature's status rides the issue line
   });
 
+  it('frames the triage aggressively — must-remain must be earned and absence leans cancel', () => {
+    const prompt = buildAgingTriagePrompt([makeIssue()]);
+    expect(prompt).toMatch(/aggressively/i);
+    expect(prompt).toMatch(/do NOT default to must-remain/i);
+    expect(prompt).toMatch(/EARNS its place|positive.*sign it is active/i);
+  });
+
   it('surfaces the ownership, time-in-status, and size signals', () => {
     const prompt = buildAgingTriagePrompt([makeIssue({ assignee: 'Jane Dev', daysInStatus: 45, storyPoints: 8 })]);
     expect(prompt).toContain('assignee Jane Dev');

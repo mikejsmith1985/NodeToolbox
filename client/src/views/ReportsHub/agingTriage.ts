@@ -69,19 +69,32 @@ export interface AgingTriageSuggestion {
 
 // The task instruction embedded at the top of every generated prompt. It defines each verdict and the
 // signals to weigh, then pins the reply to a single strict JSON shape so ingestion can validate it.
+//
+// Posture: AGGRESSIVE. The point of this report is to CLEAN UP a bloated backlog, so the assistant must
+// actively look for cancellation candidates instead of defaulting to "keep". "must-remain" has to be
+// EARNED by a positive sign of ongoing need; staleness, no owner, and no definition are on their own
+// enough to pull an issue down to at least "review".
 const AGING_TRIAGE_INSTRUCTION =
-  'You are triaging a team\'s NOT-Done Jira backlog to decide what can be cleaned up. For EACH issue '
-  + 'below, assign exactly one verdict:\n'
-  + '  • "cancel-safe" — stale and low-importance, or its parent feature is already Done/abandoned, so it '
-  + 'can be safely canceled;\n'
-  + '  • "review" — unclear; a human should confirm before canceling or keeping it;\n'
-  + '  • "must-remain" — clearly still needed and should stay in the backlog.\n'
-  + 'Weigh how long it has sat in its current status and how recently it saw any activity (long-idle favors '
-  + 'cancel-safe), whether anyone is assigned (an unassigned, long-idle issue favors cancel-safe), its size '
-  + '(story points), how important it looks (priority), how old it is, whether it is even defined at all (no '
-  + 'description and no acceptance criteria favors cancel-safe), and which feature it belongs to and that '
-  + 'feature\'s status (a Done or abandoned parent strongly favors cancel-safe). Use ONLY the data shown for each issue; do NOT invent '
-  + 'values, and when a signal is missing say so in the rationale rather than guessing. Respond ONLY with '
+  'You are aggressively triaging a team\'s NOT-Done Jira backlog to CLEAN IT UP — this backlog is bloated '
+  + 'and the goal is to cancel or flag as much dead weight as the evidence supports, NOT to preserve it. '
+  + 'For EACH issue below, assign exactly one verdict:\n'
+  + '  • "cancel-safe" — dead weight that can be safely canceled: long-idle AND (unassigned OR undefined — '
+  + 'no description and no acceptance criteria OR low/None priority), or its parent feature is already '
+  + 'Done/abandoned. Age alone counts: an issue sitting untouched in the same status for many weeks is a '
+  + 'prime cancel candidate;\n'
+  + '  • "review" — a cleanup candidate that is not clear-cut: it looks stale or neglected but has some '
+  + 'sign of value (an assignee, a high priority, an active parent), so a human should confirm;\n'
+  + '  • "must-remain" — EARNS its place: there is a positive, current sign it is active work — assigned AND '
+  + 'recently moved status, OR high priority with recent activity, OR a clearly in-progress parent. Absent '
+  + 'such a sign, do NOT choose must-remain.\n'
+  + 'Do NOT default to must-remain when a signal is missing — missing owner, missing description, missing '
+  + 'acceptance criteria, and long time-in-status all push AWAY from must-remain. Weigh how long it has sat '
+  + 'in its current status and how recently it saw any activity (long-idle → cancel), whether anyone is '
+  + 'assigned (unassigned → cancel), its size (story points), how important it looks (priority), how old it '
+  + 'is, whether it is even defined at all (no description and no acceptance criteria → cancel), and its '
+  + 'parent feature\'s status (Done/abandoned → cancel). Use ONLY the data shown for each issue; do NOT '
+  + 'invent values, and when a signal is missing treat its absence as the (cancel-leaning) signal it is '
+  + 'rather than guessing a value. Respond ONLY with '
   + 'valid JSON: {"kind":"agingTriage","items":[{"issueKey":"KEY","verdict":"cancel-safe","rationale":"..."}]}';
 
 /** Builds one issue's data line, including only the signals that are actually present. */
