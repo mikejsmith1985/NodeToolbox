@@ -602,4 +602,62 @@ describe('useSprintData', () => {
 
     expect(result.current.state.activeTab).toBe('releases');
   });
+
+  describe('unsaved team-change tracking', () => {
+    it('starts with no unsaved team changes', () => {
+      const { result } = renderHook(() => useSprintData());
+
+      expect(result.current.state.hasUnsavedTeamChanges).toBe(false);
+    });
+
+    it('flags unsaved changes when the user edits the project key', () => {
+      const { result } = renderHook(() => useSprintData());
+
+      act(() => {
+        result.current.actions.setProjectKey('TBX');
+      });
+
+      expect(result.current.state.hasUnsavedTeamChanges).toBe(true);
+    });
+
+    it('does NOT flag unsaved changes merely from switching tabs', () => {
+      const { result } = renderHook(() => useSprintData());
+
+      act(() => {
+        result.current.actions.setActiveTab('blockers');
+      });
+
+      expect(result.current.state.hasUnsavedTeamChanges).toBe(false);
+    });
+
+    it('clears the flag when markTeamChangesSaved is called', () => {
+      const { result } = renderHook(() => useSprintData());
+
+      act(() => {
+        result.current.actions.setProjectKey('TBX');
+      });
+      expect(result.current.state.hasUnsavedTeamChanges).toBe(true);
+
+      act(() => {
+        result.current.actions.markTeamChangesSaved();
+      });
+      expect(result.current.state.hasUnsavedTeamChanges).toBe(false);
+    });
+
+    it('re-hydrates and clears the flag when the hydration nonce changes (Revert)', () => {
+      const { result, rerender } = renderHook(
+        ({ nonce }) => useSprintData('team-a', '', nonce),
+        { initialProps: { nonce: 0 } },
+      );
+
+      act(() => {
+        result.current.actions.setProjectKey('TBX');
+      });
+      expect(result.current.state.hasUnsavedTeamChanges).toBe(true);
+
+      // A revert bumps the nonce; the hook must reset its working state.
+      rerender({ nonce: 1 });
+      expect(result.current.state.hasUnsavedTeamChanges).toBe(false);
+    });
+  });
 });

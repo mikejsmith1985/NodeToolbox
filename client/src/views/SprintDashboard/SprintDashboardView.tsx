@@ -6731,6 +6731,12 @@ export default function SprintDashboardView() {
   const updateActiveDashboardTeamProfile = useSettingsStore(
     (storeState) => storeState.updateActiveSprintDashboardTeamProfile,
   );
+  const revertActiveDashboardTeamProfile = useSettingsStore(
+    (storeState) => storeState.revertActiveSprintDashboardTeamProfile,
+  );
+  const dashboardHydrationNonce = useSettingsStore(
+    (storeState) => storeState.sprintDashboardHydrationNonce,
+  );
   const activeDashboardTeamProfile = useMemo(
     () =>
       dashboardTeamProfiles.find(
@@ -6739,13 +6745,20 @@ export default function SprintDashboardView() {
     [activeDashboardTeamProfileId, dashboardTeamProfiles],
   );
   const { config, actions: configActions } = useDashboardConfig(activeDashboardTeamProfileId);
-  const { state, actions } = useSprintData(activeDashboardTeamProfileId, config.customStoryPointsFieldId);
+  const { state, actions } = useSprintData(
+    activeDashboardTeamProfileId,
+    config.customStoryPointsFieldId,
+    dashboardHydrationNonce,
+  );
   const { loadSprint } = actions;
   const hasAttemptedRestoreLoad = useRef(false);
   const tabPanelRef = useRef<HTMLElement | null>(null);
 
   // Local state for the board picker search field — not persisted, just UI.
   const [boardSearchQuery, setBoardSearchQuery] = useState('');
+  // When the user tries to switch teams with unsaved draft changes, we hold the target team id
+  // here and surface a confirm prompt rather than silently discarding their edits.
+  const [pendingTeamSwitchId, setPendingTeamSwitchId] = useState<string | null>(null);
 
   useEffect(() => {
     useStandupRosterStore.getState().setDashboardTeamProfileId(activeDashboardTeamProfileId);
@@ -6753,36 +6766,11 @@ export default function SprintDashboardView() {
     useCapacityStore.getState().setDashboardTeamProfileId(activeDashboardTeamProfileId);
   }, [activeDashboardTeamProfileId]);
 
+  // Reset the one-shot restore guard whenever the active team changes (id) or the draft is
+  // re-hydrated by a Revert (nonce), so the restored selection reloads.
   useEffect(() => {
     hasAttemptedRestoreLoad.current = false;
-  }, [activeDashboardTeamProfileId]);
-
-  useEffect(() => {
-    if (!activeDashboardTeamProfileId) {
-      return;
-    }
-
-    updateActiveDashboardTeamProfile({
-      projectKey: state.projectKey,
-      boardId: state.boardId === null ? '' : String(state.boardId),
-      boardName: state.selectedBoardName ?? '',
-      boardType: state.boardType ?? '',
-      scopeMode: state.scopeMode,
-      selectedSprintId: state.selectedSprintId === null ? '' : String(state.selectedSprintId),
-      selectedFixVersion: state.selectedFixVersionName,
-      selectedPiValue: state.selectedPiValue,
-    });
-  }, [
-    state.boardId,
-    state.boardType,
-    state.projectKey,
-    state.scopeMode,
-    state.selectedBoardName,
-    state.selectedFixVersionName,
-    state.selectedPiValue,
-    state.selectedSprintId,
-    updateActiveDashboardTeamProfile,
-  ]);
+  }, [activeDashboardTeamProfileId, dashboardHydrationNonce]);
 
   useEffect(() => {
     if (hasAttemptedRestoreLoad.current) {
@@ -6842,6 +6830,55 @@ export default function SprintDashboardView() {
       : dashboardTeamProfiles.filter((teamProfile) => teamProfile.id !== nextTeamProfile.id);
     setDashboardTeamProfiles([...preservedTeamProfiles, nextTeamProfile]);
     setActiveDashboardTeamProfileId(nextTeamProfile.id);
+    // The working selection is now saved to this team, so clear the unsaved-changes flag.
+    actions.markTeamChangesSaved();
+  }
+
+  // Saves the current working selection into the active team profile (the header "Save" action).
+  function handleSaveActiveTeamChanges() {
+    if (!activeDashboardTeamProfile) {
+      return;
+    }
+    updateActiveDashboardTeamProfile({
+      projectKey: state.projectKey,
+      boardId: state.boardId === null ? '' : String(state.boardId),
+      boardName: state.selectedBoardName ?? '',
+      boardType: state.boardType ?? '',
+      scopeMode: state.scopeMode,
+      selectedSprintId: state.selectedSprintId === null ? '' : String(state.selectedSprintId),
+      selectedFixVersion: state.selectedFixVersionName,
+      selectedPiValue: state.selectedPiValue,
+    });
+    actions.markTeamChangesSaved();
+  }
+
+  // Discards unsaved draft edits and reloads the active team's saved configuration.
+  function handleRevertActiveTeamChanges() {
+    revertActiveDashboardTeamProfile();
+  }
+
+  // Routes every team switch through an unsaved-changes guard so a team's saved config is never
+  // silently lost. When the draft is clean, the switch happens immediately.
+  function handleActivateDashboardTeam(teamProfileId: string) {
+    if (teamProfileId === activeDashboardTeamProfileId) {
+      return;
+    }
+    if (state.hasUnsavedTeamChanges) {
+      setPendingTeamSwitchId(teamProfileId);
+      return;
+    }
+    setActiveDashboardTeamProfileId(teamProfileId);
+  }
+
+  function confirmPendingTeamSwitch() {
+    if (pendingTeamSwitchId !== null) {
+      setActiveDashboardTeamProfileId(pendingTeamSwitchId);
+    }
+    setPendingTeamSwitchId(null);
+  }
+
+  function cancelPendingTeamSwitch() {
+    setPendingTeamSwitchId(null);
   }
 
   function handleRemoveDashboardTeam(teamProfileId: string) {
@@ -7053,7 +7090,7 @@ export default function SprintDashboardView() {
         issues={state.sprintIssues}
         isLoadingSprint={state.isLoadingSprint}
         loadError={state.loadError}
-        onActivateDashboardTeam={setActiveDashboardTeamProfileId}
+        onActivateDashboardTeam={handleActivateDashboardTeam}
         onBoardSearchChange={setBoardSearchQuery}
         onConfigChange={configActions.updateConfig}
         onLoadSprint={actions.loadSprint}
@@ -7078,7 +7115,7 @@ export default function SprintDashboardView() {
           <select
             className={styles.settingsInput}
             id="dashboard-team-selector"
-            onChange={(changeEvent) => setActiveDashboardTeamProfileId(changeEvent.target.value)}
+            onChange={(changeEvent) => handleActivateDashboardTeam(changeEvent.target.value)}
             value={activeDashboardTeamProfileId}
           >
             <option value="">
@@ -7090,6 +7127,25 @@ export default function SprintDashboardView() {
               </option>
             ))}
           </select>
+          {activeDashboardTeamProfile && state.hasUnsavedTeamChanges ? (
+            <div className={styles.teamUnsavedBar} role="status">
+              <span className={styles.teamUnsavedBadge}>● Unsaved changes</span>
+              <button
+                className={styles.secondaryButton}
+                onClick={handleSaveActiveTeamChanges}
+                type="button"
+              >
+                Save to {activeDashboardTeamProfile.name}
+              </button>
+              <button
+                className={styles.textActionButton}
+                onClick={handleRevertActiveTeamChanges}
+                type="button"
+              >
+                Revert
+              </button>
+            </div>
+          ) : null}
         </div>
       </header>
 
@@ -7118,6 +7174,26 @@ export default function SprintDashboardView() {
       >
         {renderActiveTabPanel(state.activeTab)}
       </section>
+
+      {pendingTeamSwitchId !== null ? (
+        <div aria-modal="true" className={styles.teamSwitchOverlay} role="dialog">
+          <div className={styles.teamSwitchModal}>
+            <h3 className={styles.teamSwitchTitle}>Discard unsaved changes?</h3>
+            <p className={styles.teamSwitchMessage}>
+              You have unsaved changes to <strong>{activeDashboardTeamProfile?.name ?? 'this team'}</strong>.
+              Switching teams will discard them. Save first if you want to keep this setup.
+            </p>
+            <div className={styles.teamSwitchActions}>
+              <button className={styles.secondaryButton} onClick={confirmPendingTeamSwitch} type="button">
+                Discard and switch
+              </button>
+              <button className={styles.textActionButton} onClick={cancelPendingTeamSwitch} type="button">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

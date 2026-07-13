@@ -1,5 +1,69 @@
 /* SprintDashboardView.module.css — Styles for the Sprint Dashboard view. */
 
+/* Unsaved-changes bar shown under the team selector when the working selection diverges from
+   the saved team profile. Gives the user Save / Revert before the change is lost. */
+.teamUnsavedBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid color-mix(in srgb, var(--color-warning, #d29922) 45%, var(--color-border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-warning, #d29922) 8%, var(--color-surface-1));
+}
+
+.teamUnsavedBadge {
+  color: var(--color-warning, #d29922);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Full-screen confirm prompt shown when switching teams with unsaved draft changes. */
+.teamSwitchOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-md);
+  background: color-mix(in srgb, #000 55%, transparent);
+}
+
+.teamSwitchModal {
+  width: min(30rem, 100%);
+  display: grid;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  box-shadow: var(--shadow-surface);
+}
+
+.teamSwitchTitle {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+}
+
+.teamSwitchMessage {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.teamSwitchActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+}
+
 .sprintDashboardView {
   display: flex;
   flex-direction: column;

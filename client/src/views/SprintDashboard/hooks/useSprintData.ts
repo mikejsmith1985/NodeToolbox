@@ -103,6 +103,12 @@ export interface SprintDataState {
    */
   availableSprints: JiraSprint[] | null;
   isLoadingAvailableSprints: boolean;
+  /**
+   * True once the user has changed the working selection (project, board, or scope) since the
+   * active team was last loaded or saved. Drives the "unsaved changes" prompt and Save/Revert.
+   * Auto-resolution during a load never sets this — only explicit user actions do.
+   */
+  hasUnsavedTeamChanges: boolean;
 }
 
 export interface SprintDataActions {
@@ -123,6 +129,8 @@ export interface SprintDataActions {
   loadAvailableSprints(): Promise<void>;
   /** Moves an issue to a target sprint and removes it from the local sprint issues list. */
   moveIssueToSprint(issueKey: string, targetSprintId: number): Promise<void>;
+  /** Clears the unsaved-changes flag after the working selection has been saved to the team profile. */
+  markTeamChangesSaved(): void;
 }
 
 // ── API response shapes ──
@@ -277,6 +285,7 @@ function createInitialSprintDataState(): SprintDataState {
     availablePiValues: [],
     availableSprints: null,
     isLoadingAvailableSprints: false,
+    hasUnsavedTeamChanges: false,
   };
 }
 
@@ -354,6 +363,7 @@ function sortScopeVersions(scopeVersions: JiraVersion[]): JiraVersion[] {
 export function useSprintData(
   activeDashboardTeamProfileId = '',
   customStoryPointsFieldId = '',
+  hydrationNonce = 0,
 ): { state: SprintDataState; actions: SprintDataActions } {
   const [state, setState] = useState<SprintDataState>(() => createInitialSprintDataState());
 
@@ -364,9 +374,11 @@ export function useSprintData(
     sprintFieldListRef.current = buildSprintIssueFieldList(customStoryPointsFieldId);
   }, [customStoryPointsFieldId]);
 
+  // Re-hydrate the working selection from persisted settings whenever the active team changes
+  // (id) or a Revert re-writes the draft (hydrationNonce). This clears any unsaved-changes flag.
   useEffect(() => {
     setState(createInitialSprintDataState());
-  }, [activeDashboardTeamProfileId]);
+  }, [activeDashboardTeamProfileId, hydrationNonce]);
 
   // ── Synchronous setters ──
 
@@ -400,6 +412,7 @@ export function useSprintData(
       sprintInfo: hasProjectSelectionChanged ? null : previousState.sprintInfo,
       sprintIssues: hasProjectSelectionChanged ? [] : previousState.sprintIssues,
       loadError: hasProjectSelectionChanged ? null : previousState.loadError,
+      hasUnsavedTeamChanges: true,
     }));
   }, []);
 
@@ -806,6 +819,7 @@ export function useSprintData(
       ...previousState,
       scopeMode,
       loadError: null,
+      hasUnsavedTeamChanges: true,
     }));
     await reloadConfiguredScope();
   }, [reloadConfiguredScope]);
@@ -818,6 +832,7 @@ export function useSprintData(
       scopeMode: DASHBOARD_SCOPE_MODE_SPRINT,
       selectedSprintId: sprintId,
       loadError: null,
+      hasUnsavedTeamChanges: true,
     }));
     await reloadConfiguredScope();
   }, [reloadConfiguredScope]);
@@ -830,6 +845,7 @@ export function useSprintData(
       scopeMode: DASHBOARD_SCOPE_MODE_FIX_VERSION,
       selectedFixVersionName: fixVersionName,
       loadError: null,
+      hasUnsavedTeamChanges: true,
     }));
     await reloadConfiguredScope();
   }, [reloadConfiguredScope]);
@@ -842,6 +858,7 @@ export function useSprintData(
       scopeMode: DASHBOARD_SCOPE_MODE_PI,
       selectedPiValue: piValue,
       loadError: null,
+      hasUnsavedTeamChanges: true,
     }));
     await reloadConfiguredScope();
   }, [reloadConfiguredScope]);
@@ -864,6 +881,7 @@ export function useSprintData(
       selectedSprintId: null,
       availableScopeSprints: [],
       availableSprints: null,
+      hasUnsavedTeamChanges: true,
     }));
     await loadForBoardId(boardId, state.projectKey, state.availableBoards);
   }, [loadForBoardId, state.availableBoards, state.projectKey]);
@@ -925,6 +943,10 @@ export function useSprintData(
     }));
   }, []);
 
+  const markTeamChangesSaved = useCallback(() => {
+    setState((previousState) => ({ ...previousState, hasUnsavedTeamChanges: false }));
+  }, []);
+
   const actions = useMemo<SprintDataActions>(
     () => ({
       setProjectKey,
@@ -941,6 +963,7 @@ export function useSprintData(
       selectBoard,
       loadAvailableSprints,
       moveIssueToSprint,
+      markTeamChangesSaved,
     }),
     [
       setProjectKey,
@@ -957,6 +980,7 @@ export function useSprintData(
       selectBoard,
       loadAvailableSprints,
       moveIssueToSprint,
+      markTeamChangesSaved,
     ],
   );
 

@@ -218,7 +218,36 @@ describe('useSettingsStore', () => {
     expect(window.localStorage.getItem(SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY)).toBe('BETA');
   });
 
-  it('updates the active dashboard team profile when Sprint Dashboard setters change', async () => {
+  it('changes the draft but NOT the saved profile when Sprint Dashboard selection setters run', async () => {
+    const { useSettingsStore } = await loadSettingsStoreModule();
+
+    const savedAlphaProfile = {
+      id: 'team-alpha',
+      name: 'Alpha',
+      projectKey: 'ALPHA',
+      boardId: '11',
+      boardName: 'Alpha Board',
+      boardType: 'scrum',
+      scopeMode: 'sprint',
+      selectedSprintId: '101',
+      selectedFixVersion: '',
+      selectedPiValue: '',
+    };
+    useSettingsStore.getState().setSprintDashboardTeamProfiles([savedAlphaProfile]);
+
+    useSettingsStore.getState().setSprintDashboardProjectKey('OMEGA');
+    useSettingsStore.getState().setSprintDashboardBoardId('44');
+    useSettingsStore.getState().setSprintDashboardSelectedPiValue('PI-26.1');
+
+    // The draft (live selection) reflects the edits...
+    expect(useSettingsStore.getState().sprintDashboardProjectKey).toBe('OMEGA');
+    expect(useSettingsStore.getState().sprintDashboardBoardId).toBe('44');
+    expect(useSettingsStore.getState().sprintDashboardSelectedPiValue).toBe('PI-26.1');
+    // ...but the saved Alpha profile is left untouched — no silent overwrite of team config.
+    expect(useSettingsStore.getState().sprintDashboardTeamProfiles).toEqual([savedAlphaProfile]);
+  });
+
+  it('persists the draft into the saved profile only on an explicit updateActive save', async () => {
     const { useSettingsStore } = await loadSettingsStoreModule();
 
     useSettingsStore.getState().setSprintDashboardTeamProfiles([
@@ -236,9 +265,11 @@ describe('useSettingsStore', () => {
       },
     ]);
 
-    useSettingsStore.getState().setSprintDashboardProjectKey('OMEGA');
-    useSettingsStore.getState().setSprintDashboardBoardId('44');
-    useSettingsStore.getState().setSprintDashboardSelectedPiValue('PI-26.1');
+    useSettingsStore.getState().updateActiveSprintDashboardTeamProfile({
+      projectKey: 'OMEGA',
+      boardId: '44',
+      selectedPiValue: 'PI-26.1',
+    });
 
     expect(useSettingsStore.getState().sprintDashboardTeamProfiles).toEqual([
       {
