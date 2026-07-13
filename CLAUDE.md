@@ -9,12 +9,8 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **roster-roles-reallocation** (Feature Canvas: role-aware roster — Developer / Internal Tester /
-  External Tester capabilities on each team member — plus a passphrase-gated, copy-out "Work
-  Re-Allocation Plan" AI prompt that assembles the roster, a chosen target sprint's assigned work
-  with time-in-status, the PI runway, and free-text constraints for Copilot to plan re-allocation and
-  risks) —
-  plan: `specs/012-roster-roles-reallocation/plan.md`
-  (spec, research, data-model, contracts, quickstart in the same directory).
+- _None._ The most recent feature, **012-roster-roles-reallocation** (role-aware roster + canvas
+  Work Re-Allocation Plan), is shipped and closed; its artifacts live in
+  `specs/012-roster-roles-reallocation/` for reference.
 <!-- SPECKIT END -->
 
