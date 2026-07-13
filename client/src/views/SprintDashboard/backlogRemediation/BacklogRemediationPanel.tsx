@@ -64,9 +64,13 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [ingestError, setIngestError] = useState<string | null>(null);
 
-  // Point the store at this team's scope (and load its saved queue) whenever the active scope changes.
+  // Point the store at this team's scope (and load its saved queue) whenever the active team/scope changes. Also
+  // clear the previous team's fetched detail so nothing — queue or inline detail — bleeds across a team switch.
   useEffect(() => {
     setScope(teamProfileId, projectKey, piName);
+    setIssuesByKey(new Map());
+    setAcceptanceCriteriaFieldIds([]);
+    setFetchError(null);
   }, [setScope, teamProfileId, projectKey, piName]);
 
   // Derive the backlog scope from the team profile (project-first), honouring the per-team JQL override. Empty
