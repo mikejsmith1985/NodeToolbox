@@ -9,17 +9,9 @@
 
 import { useMemo, useState } from 'react';
 
-import { jiraGet } from '../../services/jiraApi.ts';
 import type { JiraIssue } from '../../types/jira.ts';
-import { readAcceptanceCriteriaText, resolveAcceptanceCriteriaFieldIds } from '../../utils/acceptanceCriteria.ts';
-import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
-import {
-  extractFeatureKeyFromIssueFields,
-  featureLinkCandidateFieldIds,
-  loadConfiguredFeatureLinkFieldId,
-  type FeatureLinkFields,
-} from '../../utils/featureLink.ts';
 import { copyToClipboard } from '../FeatureCanvas/ai/clipboard.ts';
+import { AGING_BACKLOG_MAX_ISSUES, fetchAgingBacklog } from './agingBacklogFetch.ts';
 import { AgingTriageActionTable } from './AgingTriageActionTable.tsx';
 import { ReportAiPanel } from './ReportAiPanel.tsx';
 import {
@@ -29,10 +21,8 @@ import {
   type AgingTriageSuggestion,
 } from './agingTriage.ts';
 import { buildTriageActionModel } from './agingTriageActionModel.ts';
-import { readConfiguredStoryPointsFieldId, readStoryPoints } from './storyPointsField.ts';
 import {
   computeIssueAging,
-  type IssueAgingIssueInput,
   type IssueAgingResult,
   type IssueTypeAging,
 } from './issueAging.ts';
@@ -43,192 +33,6 @@ import styles from './ReportsHubView.module.css';
 // localStorage key the scope JQL is persisted under, so a user's input survives a reload. Read at RUN
 // time so an edit is picked up on the next run without a reload.
 const SCOPE_STORAGE_KEY = 'tbxIssueAgingScope';
-// One Jira search page — the report pages through the whole backlog in chunks of this size.
-const PAGE_SIZE = 100;
-// Hard safety cap on how many issues the report will fetch, so a huge scope cannot page forever; when it is
-// hit the report shows a clear "capped" note rather than silently reporting a partial picture.
-const MAX_TOTAL_ISSUES = 2000;
-// Milliseconds in one calendar day, used to convert an epoch difference into a whole-day age.
-const MILLISECONDS_PER_DAY = 86_400_000;
-
-// ── Jira response shapes (only the fields this report reads) ──
-
-interface RawAgingIssue {
-  key?: string;
-  fields?: {
-    issuetype?: { name?: string } | null;
-    created?: string | null;
-    // The extra signals the AI triage leans on beyond aging: current status, recent activity, and
-    // importance. All optional — a plain aging run needs none of them. The feature-link custom fields are
-    // read dynamically by id (they vary per instance), hence the index signature.
-    status?: { name?: string } | null;
-    updated?: string | null;
-    // When the issue's status category last changed — the basis for "days in current status", a sharper
-    // staleness measure than `updated` (which any minor edit bumps).
-    statuscategorychangedate?: string | null;
-    summary?: string | null;
-    priority?: { name?: string } | null;
-    // Who owns the issue; absent/null means unassigned, itself a cancel signal. Description drives the
-    // "is this even defined" signal. Story points and acceptance-criteria fields are read via the index
-    // signature below (their ids vary per instance).
-    assignee?: { displayName?: string } | null;
-    description?: unknown;
-    parent?: { key?: string } | null;
-    [fieldId: string]: unknown;
-  };
-}
-
-/** A linked feature's own summary and status, resolved by a follow-up fetch keyed on the feature's key. */
-interface FeatureInfo {
-  summary: string;
-  status: string;
-}
-
-interface RawAgingSearchResponse {
-  issues?: RawAgingIssue[];
-  total?: number;
-}
-
-/** The outcome of paging the backlog: every fetched issue, plus whether the safety cap stopped the paging. */
-interface FetchedBacklog {
-  rawIssues: RawAgingIssue[];
-  wasCapped: boolean;
-}
-
-// ── JQL + fetch helpers ───────────────────────────────────────────────────────
-
-/**
- * Builds the exact JQL the report queries: the user's scope wrapped in parentheses, ANDed with a
- * `statusCategory != Done` clause so only open work is aged, oldest-created first. Factored out so the same
- * string is BOTH queried and shown to the user, guaranteeing the displayed JQL never drifts from what ran.
- */
-function buildAgingJql(scopeJql: string): string {
-  return `(${scopeJql}) AND statusCategory != Done ORDER BY created ASC`;
-}
-
-/** Wraps the aging JQL with the requested fields and the page window into a single search request path. */
-function buildAgingSearchPath(jql: string, startAt: number, fields: string): string {
-  return `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(fields)}&startAt=${startAt}&maxResults=${PAGE_SIZE}`;
-}
-
-/**
- * Pages through the whole NOT-Done backlog for the given JQL so the age statistics cover every open issue,
- * not just the first page. It keeps requesting the next page until Jira reports it has returned everything
- * (`startAt + returned >= total`) or the MAX_TOTAL_ISSUES safety cap is reached, in which case it flags the
- * result as capped. Any fetch error propagates to the caller so the run can surface it and stop.
- */
-async function fetchOpenBacklog(jql: string, fields: string): Promise<FetchedBacklog> {
-  const rawIssues: RawAgingIssue[] = [];
-  let startAt = 0;
-  while (true) {
-    const response = await jiraGet<RawAgingSearchResponse>(buildAgingSearchPath(jql, startAt, fields));
-    const pageIssues = response.issues ?? [];
-    rawIssues.push(...pageIssues);
-    startAt += pageIssues.length;
-
-    const total = typeof response.total === 'number' ? response.total : startAt;
-    if (pageIssues.length === 0 || startAt >= total) {
-      return { rawIssues, wasCapped: false };
-    }
-    if (rawIssues.length >= MAX_TOTAL_ISSUES) {
-      return { rawIssues, wasCapped: true };
-    }
-  }
-}
-
-// How many feature keys to resolve per follow-up request when reading their summaries and statuses.
-const FEATURE_INFO_BATCH_SIZE = 50;
-
-/**
- * Follow-up fetch that resolves each linked feature's own summary and status by key — the same second-hop
- * the blueprint does, since a feature-link field only yields a key. Batched, and fully error-tolerant: a
- * failed batch simply leaves those features unresolved (their status shows as unknown in the triage) rather
- * than failing the whole aging run.
- */
-async function fetchFeatureInfoByKey(featureKeys: readonly string[]): Promise<Map<string, FeatureInfo>> {
-  const featureInfoByKey = new Map<string, FeatureInfo>();
-  for (let batchStart = 0; batchStart < featureKeys.length; batchStart += FEATURE_INFO_BATCH_SIZE) {
-    const batch = featureKeys.slice(batchStart, batchStart + FEATURE_INFO_BATCH_SIZE);
-    const jql = `key in (${batch.join(',')})`;
-    const path = `/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=summary,status&maxResults=${FEATURE_INFO_BATCH_SIZE}`;
-    const response = await jiraGet<RawAgingSearchResponse>(path).catch(() => ({ issues: [] as RawAgingIssue[] }));
-    for (const featureIssue of response.issues ?? []) {
-      if (featureIssue.key) {
-        featureInfoByKey.set(featureIssue.key, {
-          summary: featureIssue.fields?.summary ?? '',
-          status: featureIssue.fields?.status?.name ?? '',
-        });
-      }
-    }
-  }
-  return featureInfoByKey;
-}
-
-/** Maps a raw Jira issue to the aging engine's input shape (issue key, type name, and creation date). */
-function toAgingIssueInput(issue: RawAgingIssue): IssueAgingIssueInput {
-  return {
-    key: issue.key ?? '',
-    issueType: issue.fields?.issuetype?.name ?? '',
-    createdIso: issue.fields?.created ?? null,
-  };
-}
-
-/** Whole calendar-day age between an ISO date and today, or null when the date is missing/unparseable. */
-function calendarDaysBetween(iso: string | null | undefined, todayMs: number): number | null {
-  if (!iso) {
-    return null;
-  }
-  const thenMs = Date.parse(iso);
-  if (Number.isNaN(thenMs)) {
-    return null;
-  }
-  return Math.max(0, Math.round((todayMs - thenMs) / MILLISECONDS_PER_DAY));
-}
-
-/**
- * Projects a raw Jira issue into the AI triage's data-rich shape: its age, time in its current status,
- * days since any activity, ownership, size (story points), importance (priority), whether it is even
- * defined (description / acceptance criteria), and the linked feature (resolved via the blueprint's
- * feature-link field) plus that feature's status. Issues with an unparseable created date get an age of 0
- * so they still appear (their staleness simply cannot be judged), and an unresolved feature leaves the
- * feature fields null. `acFieldIds` are the instance's acceptance-criteria field ids resolved once per run.
- */
-function toTriageIssue(
-  issue: RawAgingIssue,
-  todayMs: number,
-  featureKey: string | null,
-  featureInfoByKey: ReadonlyMap<string, FeatureInfo>,
-  acFieldIds: readonly string[],
-  storyPointsFieldId: string,
-): AgingTriageIssue {
-  const featureInfo = featureKey !== null ? featureInfoByKey.get(featureKey) ?? null : null;
-  return {
-    issueKey: issue.key ?? '',
-    issueType: issue.fields?.issuetype?.name ?? 'Unknown',
-    summary: issue.fields?.summary ?? '',
-    status: issue.fields?.status?.name ?? 'Unknown',
-    ageDays: calendarDaysBetween(issue.fields?.created, todayMs) ?? 0,
-    daysInStatus: calendarDaysBetween(issue.fields?.statuscategorychangedate, todayMs),
-    daysSinceUpdate: calendarDaysBetween(issue.fields?.updated, todayMs),
-    assignee: readAssigneeName(issue),
-    // Read the CONFIGURED story-points field (a dropdown on this instance), the same way Personal Flow
-    // does — a hardcoded numeric field id read every issue as unestimated and hid size from the triage.
-    storyPoints: readStoryPoints((issue.fields ?? {}) as Record<string, unknown>, storyPointsFieldId),
-    hasDescription: normalizeRichTextToPlainText(issue.fields?.description).trim() !== '',
-    // Reuse Hygiene's AC reader so "has acceptance criteria" means exactly what the detail panel shows.
-    hasAcceptanceCriteria: readAcceptanceCriteriaText(issue as unknown as JiraIssue, acFieldIds) !== null,
-    priority: issue.fields?.priority?.name ?? null,
-    featureKey,
-    featureSummary: featureInfo?.summary ?? null,
-    featureStatus: featureInfo?.status ?? null,
-  };
-}
-
-/** Reads the issue's assignee display name, or null when it is unassigned or the name is blank. */
-function readAssigneeName(issue: RawAgingIssue): string | null {
-  const displayName = issue.fields?.assignee?.displayName;
-  return typeof displayName === 'string' && displayName.trim() !== '' ? displayName.trim() : null;
-}
 
 /** Reads the persisted scope JQL, tolerating a missing or corrupt store by falling back to an empty string. */
 function readPersistedScope(): string {
@@ -424,41 +228,17 @@ export function IssueAgingTab(): React.JSX.Element {
     setTriageError(null);
     setIssuesByKey(new Map());
     try {
-      const jql = buildAgingJql(trimmedScope);
-      // Resolve the feature-link field the same way the blueprint does (ART setting → default) and the
-      // instance's Acceptance Criteria field (by name) so both the triage and the inline detail work. Request
-      // the aging/triage signals plus the detail fields (assignee/description/points/AC) in one search.
-      const featureLinkField = loadConfiguredFeatureLinkFieldId();
-      const acFieldIds = await resolveAcceptanceCriteriaFieldIds();
-      setAcceptanceCriteriaFieldIds(acFieldIds);
-      // Resolve the instance's configured story-points field (a dropdown here) so the triage sees real
-      // sizes — the same field Personal Flow reads — and request it in the same search.
-      const storyPointsFieldId = readConfiguredStoryPointsFieldId();
-      const fields = Array.from(new Set([
-        'issuetype', 'created', 'status', 'statuscategorychangedate', 'updated', 'summary', 'priority', 'parent',
-        'assignee', 'description', storyPointsFieldId,
-        ...acFieldIds, ...featureLinkCandidateFieldIds(featureLinkField),
-      ])).join(',');
-      const { rawIssues, wasCapped: capped } = await fetchOpenBacklog(jql, fields);
-      const issues = rawIssues.map(toAgingIssueInput);
       // The clock read is fine here — the pure engine takes today as an argument, staying deterministic.
       const todayIso = new Date().toISOString().slice(0, 10);
-      const todayMs = Date.parse(todayIso);
-      setResult(computeIssueAging({ issues, todayIso }));
-
-      // Keep the full issue objects so the actionable table can show inline detail without re-fetching.
-      setIssuesByKey(new Map(rawIssues.filter((issue) => Boolean(issue.key)).map((issue) => [issue.key as string, issue as unknown as JiraIssue])));
-
-      // Resolve each issue's parent feature via the feature-link field, then a single follow-up fetch reads
-      // those features' own statuses/summaries (a link field yields only a key) so the triage can weigh them.
-      const featureKeyByIssue = rawIssues.map((issue) =>
-        extractFeatureKeyFromIssueFields((issue.fields ?? {}) as unknown as FeatureLinkFields, featureLinkField));
-      const uniqueFeatureKeys = Array.from(new Set(featureKeyByIssue.filter((key): key is string => key !== null)));
-      const featureInfoByKey = await fetchFeatureInfoByKey(uniqueFeatureKeys);
-      setTriageIssues(rawIssues.map((issue, index) => toTriageIssue(issue, todayMs, featureKeyByIssue[index], featureInfoByKey, acFieldIds, storyPointsFieldId)));
-
-      setQueriedJql(jql);
-      setWasCapped(capped);
+      // One enriched fetch feeds both the metrics engine and the triage candidates (shared with the Team
+      // Dashboard's Backlog Remediation panel).
+      const backlog = await fetchAgingBacklog(trimmedScope, todayIso);
+      setResult(computeIssueAging({ issues: backlog.agingInputs, todayIso }));
+      setIssuesByKey(backlog.issuesByKey);
+      setAcceptanceCriteriaFieldIds(backlog.acceptanceCriteriaFieldIds);
+      setTriageIssues(backlog.triageIssues);
+      setQueriedJql(backlog.jql);
+      setWasCapped(backlog.wasCapped);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Failed to build the aging report.');
     } finally {
@@ -499,7 +279,7 @@ export function IssueAgingTab(): React.JSX.Element {
 
       {wasCapped && result !== null && (
         <p className={styles.captionText}>
-          Results were capped at {MAX_TOTAL_ISSUES} issues — narrow the scope for a complete picture.
+          Results were capped at {AGING_BACKLOG_MAX_ISSUES} issues — narrow the scope for a complete picture.
         </p>
       )}
 

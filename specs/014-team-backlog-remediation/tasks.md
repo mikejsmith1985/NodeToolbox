@@ -62,7 +62,7 @@ until these are green.**
   `setScope` / `applyReconcile` / `ingestVerdicts` / `decide` / `snooze` / `reopen` / `setScopeOverrideJql`, all
   write-through and tolerant-load — in `client/src/views/SprintDashboard/backlogRemediation/useBacklogRemediationStore.ts`
   (depends on T002)
-- [ ] T007 [P] Extract the enriched backlog fetch + `toTriageIssue` (paged NOT-Done fetch, feature-link resolution,
+- [x] T007 [P] Extract the enriched backlog fetch + `toTriageIssue` (paged NOT-Done fetch, feature-link resolution,
   AC field resolution, `storyPointsField` read → `AgingTriageIssue[]`) out of
   `client/src/views/ReportsHub/IssueAgingTab.tsx` into a reusable
   `client/src/views/ReportsHub/agingBacklogFetch.ts`; `IssueAgingTab` imports it so its existing tests still pass
