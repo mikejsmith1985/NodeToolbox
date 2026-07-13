@@ -366,3 +366,11 @@ Write-Host "  ✅ Release complete:"
 Write-Host "     ZIP:  $ReleaseZipOutputPath"
 Write-Host "     URL:  https://github.com/mikejsmith1985/NodeToolbox/releases/tag/$GitTag"
 Write-Host ""
+
+# Reaching this line means the release genuinely succeeded: every failure path above
+# throws under $ErrorActionPreference = 'Stop' and never gets here. Without an explicit
+# exit, PowerShell returns the exit code of the last native command run — and the
+# idempotent cleanup steps (deleting an already-absent remote tag or feature branch) can
+# leave a non-zero $LASTEXITCODE behind even when their errors were caught. Exit 0
+# explicitly so a clean release never reports as a failed background task.
+exit 0
