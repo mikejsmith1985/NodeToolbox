@@ -82,19 +82,19 @@ prior state is present without re-running the AI round-trip.
 
 ### Tests for User Story 1 (write first — must FAIL) ⚠️
 
-- [ ] T008 [P] [US1] Component test `BacklogRemediationPanel` — renders `null` when AI locked; on unlock shows the
+- [x] T008 [P] [US1] Component test `BacklogRemediationPanel` — renders `null` when AI locked; on unlock shows the
   copy prompt; ingesting a reply persists verdicts to the store and renders the grouped table; a fresh mount for the
   same scope **resumes** from persisted state without a re-run — in
   `client/src/views/SprintDashboard/backlogRemediation/BacklogRemediationPanel.test.tsx`
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Implement `BacklogRemediationPanel` — wrap in `ReportAiPanel` (AI gate); fetch via
+- [x] T009 [US1] Implement `BacklogRemediationPanel` — wrap in `ReportAiPanel` (AI gate); fetch via
   `agingBacklogFetch`; build the prompt with `buildAgingTriagePrompt`; ingest with `parseAgingTriageResponse` →
   `store.ingestVerdicts`; `store.applyReconcile(reconcile(...), todayIso)` on fetch; render `AgingTriageActionTable`
   over the reconciled queue — in `client/src/views/SprintDashboard/backlogRemediation/BacklogRemediationPanel.tsx`
   (depends on T005, T006, T007)
-- [ ] T010 [US1] Mount the panel as a new Team Dashboard tab: add the tab key to the `DashboardTab` union in
+- [x] T010 [US1] Mount the panel as a new Team Dashboard tab: add the tab key to the `DashboardTab` union in
   `client/src/views/SprintDashboard/hooks/useSprintData.ts`, add the `TAB_OPTIONS` entry and a
   `renderActiveTabPanel` branch (passing `projectKey`/`selectedPiValue`) in
   `client/src/views/SprintDashboard/SprintDashboardView.tsx` (depends on T009)
