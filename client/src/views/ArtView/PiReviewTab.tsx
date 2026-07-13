@@ -57,6 +57,9 @@ import {
   savePiReviewFeatureTransition,
   savePiReviewTransitionRequiredFields,
 } from './piReviewJira.ts';
+import { fetchJiraLabelSuggestions } from '../../services/jiraApi.ts';
+import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
+import { pullPiReviewFeatures, type PiReviewFeatureFilter } from './piReviewPullFeatures.ts';
 import styles from './PiReviewTab.module.css';
 
 const LONG_TEXT_COLUMNS = new Set<PiReviewColumnKey>(['dependency', 'risks', 'notes']);
@@ -695,6 +698,15 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
   const [isUpdatingJiraDates, setIsUpdatingJiraDates] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  // ── "Pull Features from Blueprint" controls ──
+  // Assignee options come from the imported standup roster (not all Jira users), per the roster store.
+  const rosterMembers = useStandupRosterStore((storeState) => storeState.rosterMembers);
+  const [isPullFeaturesOpen, setIsPullFeaturesOpen] = useState(false);
+  const [isPullingFeatures, setIsPullingFeatures] = useState(false);
+  const [pullLabelOptions, setPullLabelOptions] = useState<string[]>([]);
+  const [isLoadingLabelOptions, setIsLoadingLabelOptions] = useState(false);
+  const [selectedPullLabels, setSelectedPullLabels] = useState<string[]>([]);
+  const [selectedPullAssignees, setSelectedPullAssignees] = useState<string[]>([]);
   const [transitionOptionsByFeatureKey, setTransitionOptionsByFeatureKey] = useState<Record<string, JiraTransition[]>>({});
   const [isStatusPickerOpenByFeatureKey, setIsStatusPickerOpenByFeatureKey] = useState<Record<string, boolean>>({});
   const [isLoadingTransitionByFeatureKey, setIsLoadingTransitionByFeatureKey] = useState<Record<string, boolean>>({});
@@ -978,6 +990,76 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to import the PI Review spreadsheet';
       showToast(errorMessage, 'error');
+    }
+  }
+
+  /** Loads valid Jira labels for the Pull Features label picker; a failure just leaves the list empty. */
+  async function loadPullLabelOptions() {
+    setIsLoadingLabelOptions(true);
+    try {
+      setPullLabelOptions(await fetchJiraLabelSuggestions(''));
+    } catch {
+      setPullLabelOptions([]);
+    } finally {
+      setIsLoadingLabelOptions(false);
+    }
+  }
+
+  function handleTogglePullFeatures() {
+    setIsPullFeaturesOpen((currentlyOpen) => {
+      const nextOpen = !currentlyOpen;
+      if (nextOpen && pullLabelOptions.length === 0) {
+        void loadPullLabelOptions();
+      }
+      return nextOpen;
+    });
+  }
+
+  function readSelectedOptionValues(changeEvent: React.ChangeEvent<HTMLSelectElement>): string[] {
+    return Array.from(changeEvent.target.selectedOptions, (option) => option.value);
+  }
+
+  /**
+   * Pulls every Feature for this team + PI into the table (Blueprint discovery ∪ a direct
+   * issuetype=Feature query filtered by the chosen labels/assignees), then reconciles the new
+   * rows with Jira so priority, estimate, dependencies, and risks fill in as on a page load.
+   */
+  async function handlePullFeatures() {
+    if (!tableBinding) {
+      return;
+    }
+    setIsPullingFeatures(true);
+    try {
+      const featureFilter: PiReviewFeatureFilter = {
+        labels: selectedPullLabels,
+        assigneeQueryValues: selectedPullAssignees,
+      };
+      const pullResult = await pullPiReviewFeatures(target.team, effectivePiName, featureFilter, rows);
+      if (pullResult.addedCount === 0) {
+        showToast(
+          pullResult.discoveredCount === 0
+            ? 'No Features found for this team and PI.'
+            : 'All matching Features are already in the table.',
+          'info',
+        );
+        return;
+      }
+
+      const nextRows = [...rows, ...pullResult.rows];
+      const nextJiraIssueMap = await fetchPiReviewFeatureIssues(nextRows);
+      const reconciliationResult = reconcilePiReviewRowsWithJira(nextRows, nextJiraIssueMap);
+      setRows(reconciliationResult.rows);
+      setJiraIssueMap(nextJiraIssueMap);
+      setHasUnsavedChanges(true);
+      showToast(
+        `Added ${pullResult.addedCount} Feature${pullResult.addedCount === 1 ? '' : 's'} for ${effectivePiName || 'this PI'}. Save to Confluence when ready.`,
+        'success',
+      );
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to pull Features from Jira.';
+      showToast(errorMessage, 'error');
+    } finally {
+      setIsPullingFeatures(false);
     }
   }
 
@@ -1522,7 +1604,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
   }
 
   const isExportingPanel = isExportingImage;
-  const isToolbarBusy = isLoading || isSaving || isExportingPanel || isUpdatingJiraDates;
+  const isToolbarBusy = isLoading || isSaving || isExportingPanel || isUpdatingJiraDates || isPullingFeatures;
   const hasPendingConfluenceRewrite = useMemo(() => {
     if (!tableBinding || pageVersionNumber === null || resolvedPageId === '') {
       return false;
@@ -1766,6 +1848,14 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
             <button
               className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
               disabled={isToolbarBusy || !tableBinding}
+              onClick={handleTogglePullFeatures}
+              type="button"
+            >
+              {isPullFeaturesOpen ? 'Hide Pull Features' : 'Pull Features from Blueprint'}
+            </button>
+            <button
+              className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
+              disabled={isToolbarBusy || !tableBinding}
               onClick={handleToggleJiraDatePasteCard}
               type="button"
             >
@@ -1782,6 +1872,65 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
           </>
         )}
       </div>
+      {canEditContent && isPullFeaturesOpen && (
+        <div className={styles.pullFeaturesCard} data-export-exclude="true">
+          <p className={styles.pullFeaturesHint}>
+            Pull every Feature for <strong>{target.team.name}</strong> in{' '}
+            <strong>{effectivePiName.trim() || 'the selected PI'}</strong> into the table. This includes Features
+            with child work (from Blueprint) plus any Feature matching the labels and/or assignees below, so
+            Features without child work are captured too. Existing rows are never duplicated.
+          </p>
+          <div className={styles.pullFeaturesControls}>
+            <label className={styles.pullFeaturesField}>
+              <span className={styles.pullFeaturesFieldLabel}>
+                Labels{isLoadingLabelOptions ? ' (loading…)' : ''}
+              </span>
+              <select
+                aria-label="Filter pulled Features by label"
+                className={styles.pullFeaturesSelect}
+                multiple
+                onChange={(event) => setSelectedPullLabels(readSelectedOptionValues(event))}
+                value={selectedPullLabels}
+              >
+                {pullLabelOptions.map((labelOption) => (
+                  <option key={labelOption} value={labelOption}>{labelOption}</option>
+                ))}
+              </select>
+            </label>
+            <label className={styles.pullFeaturesField}>
+              <span className={styles.pullFeaturesFieldLabel}>Assignees (team roster)</span>
+              <select
+                aria-label="Filter pulled Features by assignee"
+                className={styles.pullFeaturesSelect}
+                multiple
+                onChange={(event) => setSelectedPullAssignees(readSelectedOptionValues(event))}
+                value={selectedPullAssignees}
+              >
+                {rosterMembers.map((rosterMember) => (
+                  <option key={rosterMember.id} value={rosterMember.assigneeQueryValue}>
+                    {rosterMember.displayName}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {rosterMembers.length === 0 && (
+            <p className={styles.pullFeaturesHint}>
+              No roster imported for assignee filtering — you can still pull by label or by PI alone.
+            </p>
+          )}
+          <div className={styles.pullFeaturesActions}>
+            <button
+              className={joinClassNames(styles.actionButton, styles.actionButtonSuccess)}
+              disabled={isToolbarBusy || !tableBinding}
+              onClick={() => void handlePullFeatures()}
+              type="button"
+            >
+              {isPullingFeatures ? 'Pulling…' : 'Pull into table'}
+            </button>
+          </div>
+        </div>
+      )}
       {jiraLoadDeltaDetails.length > 0 && (
         <details className={styles.deltaBanner} data-export-exclude="true">
           <summary className={styles.deltaBannerSummary}>

@@ -13,17 +13,21 @@ import styles from './PiReviewTab.module.css';
 const {
   mockDownloadPiReviewPanelImage,
   mockFetchConfluencePageByReference,
+  mockFetchJiraLabelSuggestions,
   mockJiraGet,
   mockJiraPost,
   mockJiraPut,
+  mockPullPiReviewFeatures,
   mockResolveConfluencePageIdFromReference,
   mockUpdateConfluencePage,
 } = vi.hoisted(() => ({
   mockDownloadPiReviewPanelImage: vi.fn(),
   mockFetchConfluencePageByReference: vi.fn(),
+  mockFetchJiraLabelSuggestions: vi.fn(),
   mockJiraGet: vi.fn(),
   mockJiraPost: vi.fn(),
   mockJiraPut: vi.fn(),
+  mockPullPiReviewFeatures: vi.fn(),
   mockResolveConfluencePageIdFromReference: vi.fn(),
   mockUpdateConfluencePage: vi.fn(),
 }));
@@ -38,6 +42,11 @@ vi.mock('../../services/jiraApi.ts', () => ({
   jiraGet: mockJiraGet,
   jiraPost: mockJiraPost,
   jiraPut: mockJiraPut,
+  fetchJiraLabelSuggestions: mockFetchJiraLabelSuggestions,
+}));
+
+vi.mock('./piReviewPullFeatures.ts', () => ({
+  pullPiReviewFeatures: mockPullPiReviewFeatures,
 }));
 
 vi.mock('./piReviewPdf.ts', () => ({
@@ -262,6 +271,8 @@ describe('PiReviewTab', () => {
     mockJiraGet.mockResolvedValue({ issues: [] });
     mockJiraPost.mockResolvedValue(undefined);
     mockJiraPut.mockResolvedValue(undefined);
+    mockFetchJiraLabelSuggestions.mockResolvedValue([]);
+    mockPullPiReviewFeatures.mockResolvedValue({ rows: [], discoveredCount: 0, addedCount: 0 });
     mockResolveConfluencePageIdFromReference.mockImplementation((pageReference: string) => {
       if (pageReference.includes('12345')) {
         return '12345';
@@ -359,6 +370,48 @@ describe('PiReviewTab', () => {
 
     expect(nextPiSection).toBeVisible();
     expect(within(nextPiSection).getByText('Feature B')).toBeInTheDocument();
+  });
+
+  it('pulls Features into the table for the panel team and PI', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+    mockFetchJiraLabelSuggestions.mockResolvedValue(['Transformers']);
+    mockPullPiReviewFeatures.mockResolvedValue({
+      rows: [{
+        rowId: 'pulled-1', carryOver: '', priority: '', feature: 'ALPHA-9 - Pulled Feature',
+        pointEstimate: '', dependency: '', risks: '', committed: '', notes: '', devWork: '', testSupport: '',
+      }],
+      discoveredCount: 1,
+      addedCount: 1,
+    });
+
+    renderPiReviewTab([{
+      id: 'team-1',
+      name: 'Alpha Team',
+      boardId: '42',
+      projectKey: 'ALPHA',
+      piReviewPages: [{ piName: 'PI 26.3', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha' }],
+      sprintIssues: [],
+      isLoading: false,
+      loadError: null,
+    }]);
+
+    const alphaSection = await screen.findByRole('region', { name: /pi 26\.3 pi review/i });
+    enterEditMode(alphaSection);
+
+    // The Pull Features control only appears in edit mode; opening it reveals the pull panel.
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /pull features from blueprint/i }));
+    const pullButton = await within(alphaSection).findByRole('button', { name: /pull into table/i });
+    fireEvent.click(pullButton);
+
+    await waitFor(() => {
+      expect(mockPullPiReviewFeatures).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'team-1', name: 'Alpha Team', projectKey: 'ALPHA' }),
+        'PI 26.3',
+        { labels: [], assigneeQueryValues: [] },
+        expect.any(Array),
+      );
+    });
+    expect(await screen.findByText(/added 1 feature for pi 26\.3/i)).toBeInTheDocument();
   });
 
   it('defaults to a read-only view mode and only shows structural controls in edit mode', async () => {

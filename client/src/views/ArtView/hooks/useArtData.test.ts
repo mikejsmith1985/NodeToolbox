@@ -12,7 +12,7 @@ vi.mock('../../../services/jiraApi.ts', () => ({
   jiraPost: vi.fn(),
 }));
 
-import { useArtData } from './useArtData.ts';
+import { useArtData, type ArtTeam } from './useArtData.ts';
 
 const MOCK_ISSUE = {
   id: 'TBX-1', key: 'TBX-1',
@@ -210,18 +210,20 @@ describe('useArtData', () => {
       result.current.actions.addTeam('Old Team', '11');
     });
 
+    // A legacy shared record still carries the pre-upgrade single `piReviewPageUrl` field.
+    const legacySharedTeams: Array<Partial<ArtTeam> & { piReviewPageUrl?: string }> = [
+      {
+        id: 'shared-team-1',
+        name: 'Shared Alpha',
+        boardId: '42',
+        boardName: 'Transformers Board',
+        projectKey: 'ALPHA',
+        sosIssueKey: 'ALPHA-1',
+        piReviewPageUrl: 'https://example.atlassian.net/wiki/pages/12345/Shared-Alpha',
+      },
+    ];
     act(() => {
-      result.current.actions.replaceTeams([
-        {
-          id: 'shared-team-1',
-          name: 'Shared Alpha',
-          boardId: '42',
-          boardName: 'Transformers Board',
-          projectKey: 'ALPHA',
-          sosIssueKey: 'ALPHA-1',
-          piReviewPageUrl: 'https://example.atlassian.net/wiki/pages/12345/Shared-Alpha',
-        },
-      ]);
+      result.current.actions.replaceTeams(legacySharedTeams);
     });
 
     expect(result.current.state.teams).toHaveLength(1);
