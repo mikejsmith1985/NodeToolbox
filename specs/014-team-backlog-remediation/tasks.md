@@ -24,9 +24,9 @@ one phase per user story in priority order → Polish. This is a frontend-only c
 
 ## Phase 1: Setup (Shared)
 
-- [ ] T001 Add a `## [Unreleased]` entry to `CHANGELOG.md` naming feature 014 (per-team persistent Backlog
+- [x] T001 Add a `## [Unreleased]` entry to `CHANGELOG.md` naming feature 014 (per-team persistent Backlog
   Remediation panel on the Team Dashboard), to be fleshed out during implementation
-- [ ] T002 [P] Add the remediation domain types — `RemediationStatus`, `ItemFingerprint`, `RemediationItem`,
+- [x] T002 [P] Add the remediation domain types — `RemediationStatus`, `ItemFingerprint`, `RemediationItem`,
   `RemediationQueue`, `TeamScope` — per data-model.md §1–§5, in
   `client/src/views/SprintDashboard/backlogRemediation/remediationTypes.ts` (types only, no behavior)
 
@@ -40,11 +40,11 @@ until these are green.**
 
 ### Tests (write first — must FAIL) ⚠️
 
-- [ ] T003 [P] Unit test `remediationReconcile` — out-of-scope drop, new→pending, snooze elapse (today injected),
+- [x] T003 [P] Unit test `remediationReconcile` — out-of-scope drop, new→pending, snooze elapse (today injected),
   terminal hold, material-change re-entry (status-category change vs reassignment-into-team), cosmetic-no-op, and
   determinism — per contracts/reconciliation.md, in
   `client/src/views/SprintDashboard/backlogRemediation/remediationReconcile.test.ts`
-- [ ] T004 [P] Unit test `useBacklogRemediationStore` — decision round-trip through persistence, **team isolation**
+- [x] T004 [P] Unit test `useBacklogRemediationStore` — decision round-trip through persistence, **team isolation**
   (scope A decision invisible under scope B and vice-versa), tolerant load of a corrupt/missing blob (→ empty, no
   throw), per-team `scopeOverrideJql`, and `ingestVerdicts` updating only matching `pending` items — per
   contracts/remediation-store.md, in
@@ -52,11 +52,11 @@ until these are green.**
 
 ### Implementation
 
-- [ ] T005 Implement pure `reconcile(savedItems, fetched, currentFingerprintByKey, todayIso)` per
+- [x] T005 Implement pure `reconcile(savedItems, fetched, currentFingerprintByKey, todayIso)` per
   contracts/reconciliation.md (drop / new / elapse / hold / material-change / signal-refresh / stable order) — no
   Jira, no React, no clock — in `client/src/views/SprintDashboard/backlogRemediation/remediationReconcile.ts`
   (depends on T002)
-- [ ] T006 Implement `useBacklogRemediationStore` — Zustand store persisted under
+- [x] T006 Implement `useBacklogRemediationStore` — Zustand store persisted under
   `tbxBacklogRemediation:<resolveTeamScopedStorageProfileId(teamProfileId)>:<deriveScopeKey(projectKey,piName)>`
   (reuse `teamScopedStorage.resolveTeamScopedStorageProfileId` and `overlayStorage.deriveScopeKey`), with
   `setScope` / `applyReconcile` / `ingestVerdicts` / `decide` / `snooze` / `reopen` / `setScopeOverrideJql`, all
