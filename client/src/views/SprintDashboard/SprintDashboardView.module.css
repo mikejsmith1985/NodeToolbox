@@ -1434,6 +1434,80 @@
   align-items: flex-start;
 }
 
+/* Dev-skip test-risk assessment panel — mirrors the release-notes card with a caution-tinted edge. */
+.releaseRiskSection {
+  display: grid;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-md);
+  border: 1px solid color-mix(in srgb, var(--color-warning, #d29922) 45%, var(--color-border));
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-warning, #d29922) 8%, var(--color-surface-2)),
+    var(--color-surface-1)
+  );
+  box-shadow: var(--shadow-surface);
+}
+
+.releaseRiskHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  align-items: center;
+}
+
+/* Read-only rendering surface for the AI-formatted Markdown risk report. */
+.releaseRiskMarkdown {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+.releaseRiskMarkdown h3,
+.releaseRiskMarkdown h4,
+.releaseRiskMarkdown h5 {
+  margin: var(--spacing-sm) 0 var(--spacing-xs);
+  color: var(--color-text-primary);
+}
+
+.releaseRiskMarkdown p {
+  margin: 0 0 var(--spacing-sm);
+}
+
+.releaseRiskMarkdown ul,
+.releaseRiskMarkdown ol {
+  margin: 0 0 var(--spacing-sm);
+  padding-left: var(--spacing-lg);
+}
+
+.releaseRiskMarkdown code {
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-2));
+  font-size: var(--font-size-xs);
+}
+
+.releaseRiskMarkdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--spacing-xs) 0 var(--spacing-sm);
+}
+
+.releaseRiskMarkdown th,
+.releaseRiskMarkdown td {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  vertical-align: top;
+  text-align: left;
+}
+
+.releaseRiskMarkdown th {
+  background: var(--color-surface-2);
+  font-weight: 700;
+}
+
 .releaseNotesHeaderActions {
   display: inline-flex;
   flex-wrap: wrap;
