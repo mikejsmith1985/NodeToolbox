@@ -9,11 +9,8 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **team-backlog-remediation** (relocate the Aging AI cleanup triage into a per-team, persistent
-  Backlog Remediation panel on the Team Dashboard — team-profile-scoped, resumable across reloads and
-  team switches, with per-item remediation status so handled work does not resurface; the Aging metrics
-  report stays in the Reports Hub) —
-  plan: `specs/014-team-backlog-remediation/plan.md`
-  (spec, research, data-model, contracts, quickstart in the same directory; ready for `/speckit-tasks`).
+- _None._ The most recent feature, **014-team-backlog-remediation** (per-team persistent Backlog
+  Remediation panel on the Team Dashboard), is shipped and closed; its artifacts live in
+  `specs/014-team-backlog-remediation/` for reference.
 <!-- SPECKIT END -->
 
