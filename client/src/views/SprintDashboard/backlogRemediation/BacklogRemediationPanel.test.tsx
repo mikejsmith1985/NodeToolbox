@@ -12,6 +12,8 @@ const { mockFetchAgingBacklog } = vi.hoisted(() => ({ mockFetchAgingBacklog: vi.
 vi.mock('../../ReportsHub/agingBacklogFetch.ts', () => ({
   fetchAgingBacklog: mockFetchAgingBacklog,
   AGING_BACKLOG_MAX_ISSUES: 2000,
+  // resolveTeamScope (used by the panel) imports buildAgingJql from this module — provide the real wrap.
+  buildAgingJql: (scope: string) => `(${scope}) AND statusCategory != Done ORDER BY created ASC`,
 }));
 
 // Stub the heavy actionable table down to the verdicts it was handed, so assertions stay on the panel's wiring.
