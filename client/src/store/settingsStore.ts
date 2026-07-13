@@ -97,6 +97,11 @@ interface SettingsState {
   sprintDashboardActiveTeam: string;
   sprintDashboardTeamProfiles: SprintDashboardTeamProfile[];
   sprintDashboardActiveTeamProfileId: string;
+  /**
+   * Increments whenever the live draft must be re-hydrated from a saved profile without the active
+   * team id changing — specifically on a Revert. The dashboard hook watches this to reload cleanly.
+   */
+  sprintDashboardHydrationNonce: number;
   myIssuesJql: string;
   myIssuesBoardId: string;
   myIssuesJqlHistory: string[];
@@ -131,6 +136,8 @@ interface SettingsState {
   updateActiveSprintDashboardTeamProfile: (
     profileUpdates: Partial<Omit<SprintDashboardTeamProfile, 'id'>>,
   ) => void;
+  /** Discards unsaved draft edits by re-hydrating the draft from the active saved profile. */
+  revertActiveSprintDashboardTeamProfile: () => void;
   setMyIssuesJql: (jql: string) => void;
   setMyIssuesBoardId: (boardId: string) => void;
   setMyIssuesJqlHistory: (jqlHistory: string[]) => void;
@@ -510,6 +517,7 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
   sprintDashboardActiveTeam: readStoredString(SPRINT_DASHBOARD_ACTIVE_TEAM_STORAGE_KEY, EMPTY_STRING),
   sprintDashboardTeamProfiles: INITIAL_SPRINT_DASHBOARD_TEAM_PROFILES,
   sprintDashboardActiveTeamProfileId: INITIAL_SPRINT_DASHBOARD_ACTIVE_TEAM_PROFILE_ID,
+  sprintDashboardHydrationNonce: 0,
   myIssuesJql: readStoredString(MY_ISSUES_JQL_STORAGE_KEY, EMPTY_STRING),
   myIssuesBoardId: readStoredString(MY_ISSUES_BOARD_ID_STORAGE_KEY, EMPTY_STRING),
   myIssuesJqlHistory: readStoredStringArray(MY_ISSUES_JQL_HISTORY_STORAGE_KEY),
@@ -556,108 +564,40 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
     writeStoredString(DSU_PROJECT_KEY_STORAGE_KEY, projectKey);
     setState({ dsuProjectKey: projectKey });
   },
-  setSprintDashboardProjectKey: (projectKey) =>
-    setState((currentState) => {
-      const activeTeamProfile = readActiveSprintDashboardTeamProfile(currentState);
-      if (activeTeamProfile === null) {
-        writeStoredString(SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY, projectKey);
-        return { sprintDashboardProjectKey: projectKey };
-      }
-
-      const teamProfiles = currentState.sprintDashboardTeamProfiles.map((teamProfile) =>
-        teamProfile.id === activeTeamProfile.id ? { ...teamProfile, projectKey } : teamProfile,
-      );
-      return createSprintDashboardTeamStatePatch(
-        teamProfiles,
-        currentState.sprintDashboardActiveTeamProfileId,
-      );
-    }),
-  setSprintDashboardBoardId: (boardId) =>
-    setState((currentState) => {
-      const activeTeamProfile = readActiveSprintDashboardTeamProfile(currentState);
-      if (activeTeamProfile === null) {
-        writeStoredString(SPRINT_DASHBOARD_BOARD_ID_STORAGE_KEY, boardId);
-        return { sprintDashboardBoardId: boardId };
-      }
-
-      const teamProfiles = currentState.sprintDashboardTeamProfiles.map((teamProfile) =>
-        teamProfile.id === activeTeamProfile.id ? { ...teamProfile, boardId } : teamProfile,
-      );
-      return createSprintDashboardTeamStatePatch(
-        teamProfiles,
-        currentState.sprintDashboardActiveTeamProfileId,
-      );
-    }),
+  // ── Team Dashboard live-selection setters (draft-only) ──
+  //
+  // These write ONLY the working "draft" (the global selection keys). They deliberately do NOT
+  // touch the saved team profile. Mirroring transient selections into the active profile is what
+  // let one team's board silently overwrite another's; a profile now changes only on an explicit
+  // save (updateActiveSprintDashboardTeamProfile) or a revert.
+  setSprintDashboardProjectKey: (projectKey) => {
+    writeStoredString(SPRINT_DASHBOARD_PROJECT_KEY_STORAGE_KEY, projectKey);
+    setState({ sprintDashboardProjectKey: projectKey });
+  },
+  setSprintDashboardBoardId: (boardId) => {
+    writeStoredString(SPRINT_DASHBOARD_BOARD_ID_STORAGE_KEY, boardId);
+    setState({ sprintDashboardBoardId: boardId });
+  },
   setSprintDashboardActiveTab: (activeTab) => {
     writeStoredString(SPRINT_DASHBOARD_ACTIVE_TAB_STORAGE_KEY, activeTab);
     setState({ sprintDashboardActiveTab: activeTab });
   },
-  setSprintDashboardScopeMode: (scopeMode) =>
-    setState((currentState) => {
-      const activeTeamProfile = readActiveSprintDashboardTeamProfile(currentState);
-      if (activeTeamProfile === null) {
-        writeStoredString(SPRINT_DASHBOARD_SCOPE_MODE_STORAGE_KEY, scopeMode);
-        return { sprintDashboardScopeMode: scopeMode };
-      }
-
-      const teamProfiles = currentState.sprintDashboardTeamProfiles.map((teamProfile) =>
-        teamProfile.id === activeTeamProfile.id ? { ...teamProfile, scopeMode } : teamProfile,
-      );
-      return createSprintDashboardTeamStatePatch(
-        teamProfiles,
-        currentState.sprintDashboardActiveTeamProfileId,
-      );
-    }),
-  setSprintDashboardSelectedSprintId: (sprintId) =>
-    setState((currentState) => {
-      const activeTeamProfile = readActiveSprintDashboardTeamProfile(currentState);
-      if (activeTeamProfile === null) {
-        writeStoredString(SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY, sprintId);
-        return { sprintDashboardSelectedSprintId: sprintId };
-      }
-
-      const teamProfiles = currentState.sprintDashboardTeamProfiles.map((teamProfile) =>
-        teamProfile.id === activeTeamProfile.id ? { ...teamProfile, selectedSprintId: sprintId } : teamProfile,
-      );
-      return createSprintDashboardTeamStatePatch(
-        teamProfiles,
-        currentState.sprintDashboardActiveTeamProfileId,
-      );
-    }),
-  setSprintDashboardSelectedFixVersion: (fixVersionName) =>
-    setState((currentState) => {
-      const activeTeamProfile = readActiveSprintDashboardTeamProfile(currentState);
-      if (activeTeamProfile === null) {
-        writeStoredString(SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY, fixVersionName);
-        return { sprintDashboardSelectedFixVersion: fixVersionName };
-      }
-
-      const teamProfiles = currentState.sprintDashboardTeamProfiles.map((teamProfile) =>
-        teamProfile.id === activeTeamProfile.id
-          ? { ...teamProfile, selectedFixVersion: fixVersionName }
-          : teamProfile,
-      );
-      return createSprintDashboardTeamStatePatch(
-        teamProfiles,
-        currentState.sprintDashboardActiveTeamProfileId,
-      );
-    }),
-  setSprintDashboardSelectedPiValue: (piValue) =>
-    setState((currentState) => {
-      const activeTeamProfile = readActiveSprintDashboardTeamProfile(currentState);
-      if (activeTeamProfile === null) {
-        writeStoredString(SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY, piValue);
-        return { sprintDashboardSelectedPiValue: piValue };
-      }
-
-      const teamProfiles = currentState.sprintDashboardTeamProfiles.map((teamProfile) =>
-        teamProfile.id === activeTeamProfile.id ? { ...teamProfile, selectedPiValue: piValue } : teamProfile,
-      );
-      return createSprintDashboardTeamStatePatch(
-        teamProfiles,
-        currentState.sprintDashboardActiveTeamProfileId,
-      );
-    }),
+  setSprintDashboardScopeMode: (scopeMode) => {
+    writeStoredString(SPRINT_DASHBOARD_SCOPE_MODE_STORAGE_KEY, scopeMode);
+    setState({ sprintDashboardScopeMode: scopeMode });
+  },
+  setSprintDashboardSelectedSprintId: (sprintId) => {
+    writeStoredString(SPRINT_DASHBOARD_SELECTED_SPRINT_ID_STORAGE_KEY, sprintId);
+    setState({ sprintDashboardSelectedSprintId: sprintId });
+  },
+  setSprintDashboardSelectedFixVersion: (fixVersionName) => {
+    writeStoredString(SPRINT_DASHBOARD_SELECTED_FIX_VERSION_STORAGE_KEY, fixVersionName);
+    setState({ sprintDashboardSelectedFixVersion: fixVersionName });
+  },
+  setSprintDashboardSelectedPiValue: (piValue) => {
+    writeStoredString(SPRINT_DASHBOARD_SELECTED_PI_VALUE_STORAGE_KEY, piValue);
+    setState({ sprintDashboardSelectedPiValue: piValue });
+  },
   setSprintDashboardActiveTeam: (teamName) => {
     writeStoredString(SPRINT_DASHBOARD_ACTIVE_TEAM_STORAGE_KEY, teamName);
     setState({ sprintDashboardActiveTeam: teamName });
@@ -712,6 +652,19 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
         normalizedTeamProfiles,
         currentState.sprintDashboardActiveTeamProfileId,
       );
+    }),
+  revertActiveSprintDashboardTeamProfile: () =>
+    setState((currentState) => {
+      // Rewrite the draft (global keys) back to the saved profile's values, discarding unsaved
+      // edits, and bump the hydration nonce so the dashboard reloads from the restored draft.
+      const draftPatch = createSprintDashboardTeamStatePatch(
+        currentState.sprintDashboardTeamProfiles,
+        currentState.sprintDashboardActiveTeamProfileId,
+      );
+      return {
+        ...draftPatch,
+        sprintDashboardHydrationNonce: currentState.sprintDashboardHydrationNonce + 1,
+      };
     }),
   setMyIssuesJql: (jql) => {
     writeStoredString(MY_ISSUES_JQL_STORAGE_KEY, jql);
