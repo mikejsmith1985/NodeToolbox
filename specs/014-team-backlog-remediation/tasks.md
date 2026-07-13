@@ -113,13 +113,13 @@ items and decisions; acting in one leaves the other unchanged.
 
 ### Tests for User Story 2 (write first — must FAIL) ⚠️
 
-- [ ] T011 [P] [US2] Component/integration test — changing the active team profile calls `store.setScope(...)` and
+- [x] T011 [P] [US2] Component/integration test — changing the active team profile calls `store.setScope(...)` and
   re-renders the other team's queue; a decision under team A is absent under team B (and vice-versa) — in
   `client/src/views/SprintDashboard/backlogRemediation/BacklogRemediationPanel.teams.test.tsx`
 
 ### Implementation for User Story 2
 
-- [ ] T012 [US2] Propagate the active team profile into the store: call
+- [x] T012 [US2] Propagate the active team profile into the store: call
   `useBacklogRemediationStore.getState().setScope(activeDashboardTeamProfileId, state.projectKey,
   state.selectedPiValue)` from the existing scope-sync effect in
   `client/src/views/SprintDashboard/SprintDashboardView.tsx` (alongside `setDashboardTeamProfileId`) (depends on T010)
