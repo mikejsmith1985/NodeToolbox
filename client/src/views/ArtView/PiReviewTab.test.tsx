@@ -170,7 +170,7 @@ const DEFAULT_TEAMS: ArtTeam[] = [
     id: 'team-1',
     name: 'Alpha Team',
     boardId: '42',
-    piReviewPageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha',
+    piReviewPages: [{ piName: '', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha' }],
     sprintIssues: [],
     isLoading: false,
     loadError: null,
@@ -179,7 +179,7 @@ const DEFAULT_TEAMS: ArtTeam[] = [
     id: 'team-2',
     name: 'Beta Team',
     boardId: '43',
-    piReviewPageUrl: 'https://example.atlassian.net/wiki/pages/67890/Beta',
+    piReviewPages: [{ piName: '', pageUrl: 'https://example.atlassian.net/wiki/pages/67890/Beta' }],
     sprintIssues: [],
     isLoading: false,
     loadError: null,
@@ -319,6 +319,46 @@ describe('PiReviewTab', () => {
     expect(alphaSection).not.toBeVisible();
     expect(betaSection).toBeVisible();
     expect(within(betaSection).getByText('Feature B')).toBeInTheDocument();
+  });
+
+  it('renders one sub-tab per PI when a single team has multiple concurrent PI pages', async () => {
+    mockFetchConfluencePageByReference.mockImplementation((pageReference: string) => {
+      if (pageReference.includes('12345')) {
+        return Promise.resolve(ALPHA_PAGE);
+      }
+      return Promise.resolve(BETA_PAGE);
+    });
+
+    // One team planning two PIs at once — each PI has its own Confluence page.
+    renderPiReviewTab([
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        piReviewPages: [
+          { piName: 'PI 26.3', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha-263' },
+          { piName: 'PI 26.4', pageUrl: 'https://example.atlassian.net/wiki/pages/67890/Alpha-264' },
+        ],
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ]);
+
+    // A single team with two PIs yields two sub-tabs labelled by the PI (not the team).
+    const currentPiSection = await screen.findByRole('region', { name: /pi 26\.3 pi review/i });
+    const nextPiSection = screen.getByRole('region', { name: /pi 26\.4 pi review/i, hidden: true });
+    expect(screen.getByText('2 Confluence pages configured')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /pi 26\.3/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /pi 26\.4/i })).toHaveAttribute('aria-selected', 'false');
+    expect(currentPiSection).toBeVisible();
+    expect(nextPiSection).not.toBeVisible();
+    expect(mockFetchConfluencePageByReference).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole('tab', { name: /pi 26\.4/i }));
+
+    expect(nextPiSection).toBeVisible();
+    expect(within(nextPiSection).getByText('Feature B')).toBeInTheDocument();
   });
 
   it('defaults to a read-only view mode and only shows structural controls in edit mode', async () => {

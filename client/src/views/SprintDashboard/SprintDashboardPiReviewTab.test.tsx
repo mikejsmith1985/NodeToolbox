@@ -24,7 +24,7 @@ vi.mock('../ArtView/PiReviewTab.tsx', () => ({
     mode?: 'authoring' | 'readout';
     selectedPiName: string;
     teamCapacitySummaries?: Record<string, unknown>;
-    teams: Array<{ name: string; piReviewPageUrl?: string }>;
+    teams: Array<{ name: string; piReviewPages?: Array<{ piName: string; pageUrl: string }> }>;
   }) => {
     mockPiReviewTab({ mode, selectedPiName, teamCapacitySummaries, teams });
     return <div>Mock Embedded PI Review</div>;
@@ -94,7 +94,10 @@ describe('SprintDashboardPiReviewTab', () => {
       teams: [
         expect.objectContaining({
           name: 'Alpha Team',
-          piReviewPageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha',
+          // The legacy single page migrates into the multi-PI list before reaching the editor.
+          piReviewPages: [
+            { piName: '', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha' },
+          ],
         }),
       ],
     }));

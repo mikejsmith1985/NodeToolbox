@@ -1,10 +1,31 @@
 // sprintDashboardArtContext.ts — Shared Team Dashboard helpers for resolving the current ART team and PI context.
 
-import type { ArtTeam } from '../ArtView/hooks/useArtData.ts';
+import type { ArtTeam, PiReviewPageAssociation } from '../ArtView/hooks/useArtData.ts';
 
 const ART_TEAMS_STORAGE_KEY = 'nodetoolbox-art-teams';
 const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
 const EMPTY_PI_NAME = '';
+
+/**
+ * Normalizes a stored team's PI Review pages, migrating the legacy single `piReviewPageUrl`
+ * field into the multi-PI list so Team Dashboard matches rosters saved before the upgrade.
+ */
+function normalizeStoredPiReviewPages(
+  team: Partial<ArtTeam> & { piReviewPageUrl?: unknown },
+): PiReviewPageAssociation[] {
+  if (Array.isArray(team.piReviewPages)) {
+    return team.piReviewPages
+      .filter((page): page is PiReviewPageAssociation => typeof page === 'object' && page !== null)
+      .map((page) => ({
+        piName: typeof page.piName === 'string' ? page.piName.trim() : '',
+        pageUrl: typeof page.pageUrl === 'string' ? page.pageUrl.trim() : '',
+      }))
+      .filter((page) => page.pageUrl !== '' || page.piName !== '');
+  }
+
+  const legacyPageUrl = typeof team.piReviewPageUrl === 'string' ? team.piReviewPageUrl.trim() : '';
+  return legacyPageUrl !== '' ? [{ piName: '', pageUrl: legacyPageUrl }] : [];
+}
 
 interface StoredArtSettings {
   piName?: string;
@@ -23,7 +44,7 @@ function normalizeStoredArtTeam(team: Partial<ArtTeam>): ArtTeam | null {
     boardId: teamBoardId,
     boardName: typeof team.boardName === 'string' && team.boardName.trim() !== '' ? team.boardName.trim() : undefined,
     projectKey: typeof team.projectKey === 'string' && team.projectKey.trim() !== '' ? team.projectKey.trim() : undefined,
-    piReviewPageUrl: typeof team.piReviewPageUrl === 'string' && team.piReviewPageUrl.trim() !== '' ? team.piReviewPageUrl.trim() : undefined,
+    piReviewPages: normalizeStoredPiReviewPages(team),
     sprintIssues: [],
     isLoading: false,
     loadError: null,

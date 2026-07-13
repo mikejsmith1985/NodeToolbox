@@ -322,6 +322,18 @@ export type ArtTab =
   | 'monthly'
   | 'settings';
 
+/**
+ * One Program Increment ↔ Confluence page association used by the PI Review tab.
+ * A team can hold several of these so multiple PIs (e.g. the current PI and the next
+ * one being planned) can be reviewed side-by-side instead of one at a time.
+ */
+export interface PiReviewPageAssociation {
+  /** Program Increment name (e.g. "PI 26.4"), chosen from the team's available PI list. */
+  piName: string;
+  /** Full Confluence page URL or bare numeric page ID hosting this PI's review table. */
+  pageUrl: string;
+}
+
 /** Represents a single Agile team in the ART view. */
 export interface ArtTeam {
   id: string;
@@ -331,8 +343,11 @@ export interface ArtTeam {
   boardType?: ArtBoardType;
   /** Optional Jira project key (e.g. "ALPHA") used for Blueprint off-train detection. */
   projectKey?: string;
-  /** Optional Confluence page URL (or bare page ID) used by the PI Review tab for this team. */
-  piReviewPageUrl?: string;
+  /**
+   * Confluence PI Review pages for this team — one entry per Program Increment.
+   * Lets a team run several PIs concurrently on the PI Review tab.
+   */
+  piReviewPages?: PiReviewPageAssociation[];
   /** Active sprint name for Scrum boards — absent for Kanban boards or when Jira does not report an active sprint. */
   activeSprintName?: string;
   /**
@@ -402,10 +417,51 @@ export interface ArtDataActions {
   setBoardPrepTeamFilter: (teamName: string) => void;
   /** Update the SoS Jira issue key for a specific team, persisted with the team roster. */
   updateTeamSosKey: (teamId: string, sosIssueKey: string) => void;
-  /** Update the PI Review Confluence page URL for a specific team, persisted with the team roster. */
-  updateTeamPiReviewPageUrl: (teamId: string, piReviewPageUrl: string) => void;
+  /** Append a blank PI Review page row to a team so another PI can be configured. */
+  addTeamPiReviewPage: (teamId: string) => void;
+  /** Update the PI name and/or page URL of one of a team's PI Review pages by index. */
+  updateTeamPiReviewPage: (teamId: string, pageIndex: number, changes: Partial<PiReviewPageAssociation>) => void;
+  /** Remove one PI Review page from a team by index. */
+  removeTeamPiReviewPage: (teamId: string, pageIndex: number) => void;
   /** Update the Jira label for a specific team, persisted with the team roster. Used by Feature Change reports. */
   updateTeamJiraLabel: (teamId: string, jiraLabel: string) => void;
+}
+
+/** Normalizes a single stored PI Review page entry, dropping fully-empty rows. */
+function normalizeSinglePiReviewPage(association: unknown): PiReviewPageAssociation | null {
+  if (typeof association !== 'object' || association === null) {
+    return null;
+  }
+  const candidate = association as { piName?: unknown; pageUrl?: unknown };
+  const pageUrl = typeof candidate.pageUrl === 'string' ? candidate.pageUrl.trim() : '';
+  const piName = typeof candidate.piName === 'string' ? candidate.piName.trim() : '';
+  // Keep a row if it carries either a chosen PI or a page URL so an in-progress entry is not lost.
+  if (pageUrl === '' && piName === '') {
+    return null;
+  }
+  return { piName, pageUrl };
+}
+
+/**
+ * Normalizes a team's PI Review pages, migrating the legacy single `piReviewPageUrl`
+ * field into the multi-PI list so rosters saved before the upgrade keep working.
+ */
+function normalizePiReviewPages(
+  team: Partial<ArtTeam> & { piReviewPageUrl?: unknown },
+): PiReviewPageAssociation[] {
+  if (Array.isArray(team.piReviewPages)) {
+    return team.piReviewPages
+      .map((association) => normalizeSinglePiReviewPage(association))
+      .filter((association): association is PiReviewPageAssociation => association !== null);
+  }
+
+  // Legacy migration: a single stored page becomes a one-entry list with an unnamed PI.
+  const legacyPageUrl = typeof team.piReviewPageUrl === 'string' ? team.piReviewPageUrl.trim() : '';
+  if (legacyPageUrl !== '') {
+    return [{ piName: '', pageUrl: legacyPageUrl }];
+  }
+
+  return [];
 }
 
 /** Returns a team record safe to persist without volatile loading or issue data. */
@@ -417,7 +473,7 @@ function buildStoredTeamRecord(team: ArtTeam): ArtTeam {
     boardName: team.boardName,
     boardType: team.boardType,
     projectKey: team.projectKey,
-    piReviewPageUrl: team.piReviewPageUrl,
+    piReviewPages: normalizePiReviewPages(team),
     sosIssueKey: team.sosIssueKey,
     jiraLabel: team.jiraLabel,
     sprintIssues: [],
@@ -447,9 +503,7 @@ function normalizeStoredTeamRecord(team: Partial<ArtTeam>): ArtTeam | null {
     projectKey: typeof team.projectKey === 'string' && team.projectKey.trim() !== ''
       ? team.projectKey.trim()
       : undefined,
-    piReviewPageUrl: typeof team.piReviewPageUrl === 'string' && team.piReviewPageUrl.trim() !== ''
-      ? team.piReviewPageUrl.trim()
-      : undefined,
+    piReviewPages: normalizePiReviewPages(team),
     sosIssueKey: typeof team.sosIssueKey === 'string' && team.sosIssueKey.trim() !== ''
       ? team.sosIssueKey.trim()
       : undefined,
@@ -561,6 +615,7 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
       boardName: boardName?.trim() || undefined,
       projectKey: projectKey?.trim() || undefined,
       sosIssueKey: sosIssueKey?.trim() || undefined,
+      piReviewPages: [],
       sprintIssues: [],
       isLoading: false,
       loadError: null,
@@ -855,15 +910,45 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
     );
   }, []);
 
-  /**
-   * Updates the PI Review Confluence page URL for a team in-place.
-   * The URL is stored with the team so the PI Review tab can load one page per configured team.
-   */
-  const updateTeamPiReviewPageUrl = useCallback((teamId: string, piReviewPageUrl: string) => {
+  /** Appends a blank PI Review page row to a team so the user can configure another PI. */
+  const addTeamPiReviewPage = useCallback((teamId: string) => {
     setTeams((previous) =>
       previous.map((team) =>
         team.id === teamId
-          ? { ...team, piReviewPageUrl: piReviewPageUrl.trim() || undefined }
+          ? { ...team, piReviewPages: [...(team.piReviewPages ?? []), { piName: '', pageUrl: '' }] }
+          : team,
+      ),
+    );
+  }, []);
+
+  /**
+   * Updates the PI name and/or page URL of one PI Review page for a team.
+   * Values are stored raw here; trimming and empty-row removal happen at persist time.
+   */
+  const updateTeamPiReviewPage = useCallback(
+    (teamId: string, pageIndex: number, changes: Partial<PiReviewPageAssociation>) => {
+      setTeams((previous) =>
+        previous.map((team) => {
+          if (team.id !== teamId) {
+            return team;
+          }
+          const currentPages = team.piReviewPages ?? [];
+          const nextPages = currentPages.map((association, index) =>
+            index === pageIndex ? { ...association, ...changes } : association,
+          );
+          return { ...team, piReviewPages: nextPages };
+        }),
+      );
+    },
+    [],
+  );
+
+  /** Removes one PI Review page from a team by its position in the list. */
+  const removeTeamPiReviewPage = useCallback((teamId: string, pageIndex: number) => {
+    setTeams((previous) =>
+      previous.map((team) =>
+        team.id === teamId
+          ? { ...team, piReviewPages: (team.piReviewPages ?? []).filter((_, index) => index !== pageIndex) }
           : team,
       ),
     );
@@ -909,7 +994,9 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
       loadBoardPrep,
       setBoardPrepTeamFilter,
       updateTeamSosKey,
-      updateTeamPiReviewPageUrl,
+      addTeamPiReviewPage,
+      updateTeamPiReviewPage,
+      removeTeamPiReviewPage,
       updateTeamJiraLabel,
     },
   };

@@ -71,7 +71,10 @@ const { mockState, mockActions } = vi.hoisted(() => ({
     loadBoardPrep: vi.fn().mockResolvedValue(undefined),
     setBoardPrepTeamFilter: vi.fn(),
     updateTeamSosKey: vi.fn(),
-    updateTeamPiReviewPageUrl: vi.fn(),
+    addTeamPiReviewPage: vi.fn(),
+    updateTeamPiReviewPage: vi.fn(),
+    removeTeamPiReviewPage: vi.fn(),
+    updateTeamJiraLabel: vi.fn(),
   },
 }));
 
@@ -2120,16 +2123,62 @@ describe('ArtView', () => {
     mockState.activeTab = 'overview';
   });
 
-  it('calls updateTeamPiReviewPageUrl when a team PI Review page URL input changes', () => {
+  it('calls updateTeamPiReviewPage when a team PI Review page URL input changes', () => {
     mockState.activeTab = 'settings';
+    mockState.teams = [{
+      id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '',
+      piReviewPages: [{ piName: 'PI-2025-Q1', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha' }],
+      sprintIssues: [], isLoading: false, loadError: null,
+    }] as ArtTeam[];
     renderArtView();
-    fireEvent.change(screen.getByRole('textbox', { name: /pi review page url for alpha team/i }), {
-      target: { value: 'https://example.atlassian.net/wiki/pages/12345/Alpha' },
+    fireEvent.change(screen.getByRole('textbox', { name: /pi review page url 1 for alpha team/i }), {
+      target: { value: 'https://example.atlassian.net/wiki/pages/67890/Alpha-Next' },
     });
-    expect(mockActions.updateTeamPiReviewPageUrl).toHaveBeenCalledWith(
+    expect(mockActions.updateTeamPiReviewPage).toHaveBeenCalledWith(
       'team-1',
-      'https://example.atlassian.net/wiki/pages/12345/Alpha',
+      0,
+      { pageUrl: 'https://example.atlassian.net/wiki/pages/67890/Alpha-Next' },
     );
+    mockState.activeTab = 'overview';
+  });
+
+  it('calls updateTeamPiReviewPage with the chosen PI when the PI dropdown changes', () => {
+    mockState.activeTab = 'settings';
+    mockState.teams = [{
+      id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '',
+      piReviewPages: [{ piName: '', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha' }],
+      sprintIssues: [], isLoading: false, loadError: null,
+    }] as ArtTeam[];
+    renderArtView();
+    fireEvent.change(screen.getByRole('combobox', { name: /pi for pi review page 1 of alpha team/i }), {
+      target: { value: 'PI-2025-Q2' },
+    });
+    expect(mockActions.updateTeamPiReviewPage).toHaveBeenCalledWith('team-1', 0, { piName: 'PI-2025-Q2' });
+    mockState.activeTab = 'overview';
+  });
+
+  it('calls addTeamPiReviewPage when the + Add PI button is clicked', () => {
+    mockState.activeTab = 'settings';
+    mockState.teams = [{
+      id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '',
+      piReviewPages: [], sprintIssues: [], isLoading: false, loadError: null,
+    }] as ArtTeam[];
+    renderArtView();
+    fireEvent.click(screen.getByRole('button', { name: /\+ add pi/i }));
+    expect(mockActions.addTeamPiReviewPage).toHaveBeenCalledWith('team-1');
+    mockState.activeTab = 'overview';
+  });
+
+  it('calls removeTeamPiReviewPage when a PI Review page Remove PI button is clicked', () => {
+    mockState.activeTab = 'settings';
+    mockState.teams = [{
+      id: 'team-1', name: 'Alpha Team', boardId: '42', projectKey: '',
+      piReviewPages: [{ piName: 'PI-2025-Q1', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha' }],
+      sprintIssues: [], isLoading: false, loadError: null,
+    }] as ArtTeam[];
+    renderArtView();
+    fireEvent.click(screen.getByRole('button', { name: /^remove pi$/i }));
+    expect(mockActions.removeTeamPiReviewPage).toHaveBeenCalledWith('team-1', 0);
     mockState.activeTab = 'overview';
   });
 

@@ -261,7 +261,8 @@ describe('saveSharedArtWorkspace', () => {
     const requestBody = JSON.parse(fetchSpy.mock.calls[1][1]?.body as string);
     expect(requestBody.key).toBe(SHARED_ART_DATABASE_PROPERTY_KEY);
     expect(requestBody.value.artKey).toBe('S2E');
-    expect(requestBody.value.schemaVersion).toBe(1);
+    // Saving always stamps the current schema version (v2) regardless of the source payload's version.
+    expect(requestBody.value.schemaVersion).toBe(2);
   });
 
   it('updates the shared ART property when it already exists', async () => {

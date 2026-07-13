@@ -118,6 +118,10 @@ interface PiReviewTabProps {
 
 interface PiReviewLoadTarget {
   teamId: string;
+  /** The full ART team behind this page — carried so Pull Features can query by project + PI. */
+  team: ArtTeam;
+  /** The Program Increment this specific page belongs to (empty for legacy migrated pages). */
+  piName: string;
   targetKey: string;
   targetLabel: string;
   pageReference: string;
@@ -130,15 +134,40 @@ interface PiReviewPagePanelProps {
   capacitySummaryOverride: CapacitySummary | null;
 }
 
+/**
+ * Builds the sub-tab label for one PI Review page. When several teams are shown at once
+ * (ART view) the team name disambiguates; a single team (Team Dashboard) shows just the PI.
+ */
+function buildPiReviewTargetLabel(team: ArtTeam, piName: string, hasMultipleTeams: boolean): string {
+  if (piName === '') {
+    return team.name;
+  }
+  return hasMultipleTeams ? `${team.name} — ${piName}` : piName;
+}
+
+/**
+ * Expands every team's configured PI Review pages into one load target per page, so a team
+ * planning several PIs concurrently gets one Confluence-backed sub-tab per PI.
+ */
 function readConfiguredPiReviewTargets(teams: ArtTeam[]): PiReviewLoadTarget[] {
-  return teams
-    .filter((team) => (team.piReviewPageUrl ?? '').trim() !== '')
-    .map((team) => ({
-      teamId: team.id,
-      targetKey: team.id,
-      targetLabel: team.name,
-      pageReference: team.piReviewPageUrl!.trim(),
-    }));
+  const hasMultipleTeams = teams.length > 1;
+  return teams.flatMap((team) =>
+    (team.piReviewPages ?? [])
+      .filter((page) => page.pageUrl.trim() !== '')
+      .map((page) => {
+        const piName = page.piName.trim();
+        const pageReference = page.pageUrl.trim();
+        return {
+          teamId: team.id,
+          team,
+          piName,
+          // A PI is unique within a team; fall back to the URL for legacy unnamed pages.
+          targetKey: `${team.id}::${piName || pageReference}`,
+          targetLabel: buildPiReviewTargetLabel(team, piName, hasMultipleTeams),
+          pageReference,
+        };
+      }),
+  );
 }
 
 function readDefaultPiReviewTargetKey(configuredTargets: PiReviewLoadTarget[]): string {
@@ -643,6 +672,8 @@ function PiReviewFeatureDatePills({ jiraIssue }: { jiraIssue: JiraIssue | undefi
 }
 
 function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverride }: PiReviewPagePanelProps) {
+  // Each page belongs to its own PI; fall back to the ambient selection only for legacy unnamed pages.
+  const effectivePiName = target.piName.trim() || selectedPiName;
   const { showToast } = useToast();
   const confluenceBaseUrl = useSettingsStore((storeState) => storeState.confluenceUrl);
   const [rows, setRows] = useState<PiReviewRow[]>([]);
@@ -803,14 +834,14 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
   }, [target.pageReference]);
 
   useEffect(() => {
-    const autoLoadKey = `${target.targetKey}|${target.pageReference}|${selectedPiName}`;
+    const autoLoadKey = `${target.targetKey}|${target.pageReference}|${effectivePiName}`;
     if (lastAutoLoadKeyRef.current === autoLoadKey) {
       return;
     }
 
     lastAutoLoadKeyRef.current = autoLoadKey;
     void loadPiReviewPage();
-  }, [loadPiReviewPage, selectedPiName, target.pageReference, target.targetKey]);
+  }, [loadPiReviewPage, effectivePiName, target.pageReference, target.targetKey]);
 
   function handleCellChange(rowId: string, columnKey: PiReviewColumnKey, nextValue: string) {
     setRows((currentRows) =>
@@ -1556,7 +1587,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
         throw new Error('The PI Review panel is no longer available to export.');
       }
 
-      const exportFileName = createPiReviewExportFileName(selectedPiName, target.targetLabel);
+      const exportFileName = createPiReviewExportFileName(effectivePiName, target.targetLabel);
       await downloadPiReviewPanelImage(pagePanelRef.current, exportFileName);
       showToast(`${target.targetLabel} PI Review PNG downloaded.`, 'success');
     } catch (error) {
@@ -1617,7 +1648,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
       <div className={styles.pageSummaryCard}>
         <div>
           <div className={styles.summaryLabel}>Selected PI</div>
-          <div className={styles.summaryValue}>{selectedPiName.trim() || 'No PI selected'}</div>
+          <div className={styles.summaryValue}>{effectivePiName.trim() || 'No PI selected'}</div>
         </div>
         <div>
           <div className={styles.summaryLabel}>Configured page URL or ID</div>
@@ -1672,7 +1703,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
           <button
             className={joinClassNames(styles.actionButton, styles.actionButtonExport)}
             disabled={rows.length === 0 || isToolbarBusy}
-            onClick={() => downloadPiReviewCsv(rows, selectedPiName, target.targetLabel)}
+            onClick={() => downloadPiReviewCsv(rows, effectivePiName, target.targetLabel)}
             type="button"
           >
             Export PI Review CSV

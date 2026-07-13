@@ -85,9 +85,10 @@ describe('useArtData', () => {
     expect(result.current.state.teams).toHaveLength(1);
     expect(result.current.state.teams[0].name).toBe('Stored Team');
     expect(result.current.state.teams[0].projectKey).toBe('ALPHA');
-    expect(result.current.state.teams[0].piReviewPageUrl).toBe(
-      'https://example.atlassian.net/wiki/pages/12345/Stored-Team',
-    );
+    // A legacy single-page record migrates into the multi-PI list as one unnamed-PI entry.
+    expect(result.current.state.teams[0].piReviewPages).toEqual([
+      { piName: '', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Stored-Team' },
+    ]);
   });
 
   it('adds a team when addTeam is called', () => {
@@ -138,25 +139,68 @@ describe('useArtData', () => {
     expect(localStorage.getItem('nodetoolbox-art-teams')).toContain('Alpha Team');
   });
 
-  it('updates and persists a team PI Review page URL', () => {
+  it('adds, updates, and persists multiple PI Review pages for one team', () => {
     const { result } = renderHook(() => useArtData());
 
     act(() => {
       result.current.actions.addTeam('Alpha Team', '42', 'ALPHA');
     });
-
     const teamId = result.current.state.teams[0].id;
+
+    // A newly added team starts with no PI Review pages configured.
+    expect(result.current.state.teams[0].piReviewPages).toEqual([]);
+
+    // Add two concurrent PIs for the same team (e.g. the current PI plus the next being planned).
     act(() => {
-      result.current.actions.updateTeamPiReviewPageUrl(
-        teamId,
-        'https://example.atlassian.net/wiki/pages/12345/Alpha-Team',
-      );
+      result.current.actions.addTeamPiReviewPage(teamId);
+      result.current.actions.addTeamPiReviewPage(teamId);
+    });
+    expect(result.current.state.teams[0].piReviewPages).toHaveLength(2);
+
+    act(() => {
+      result.current.actions.updateTeamPiReviewPage(teamId, 0, {
+        piName: 'PI 26.3',
+        pageUrl: 'https://example.atlassian.net/wiki/pages/111/Alpha-263',
+      });
+      result.current.actions.updateTeamPiReviewPage(teamId, 1, {
+        piName: 'PI 26.4',
+        pageUrl: 'https://example.atlassian.net/wiki/pages/222/Alpha-264',
+      });
     });
 
-    expect(result.current.state.teams[0].piReviewPageUrl).toBe(
-      'https://example.atlassian.net/wiki/pages/12345/Alpha-Team',
-    );
-    expect(localStorage.getItem('nodetoolbox-art-teams')).toContain('https://example.atlassian.net/wiki/pages/12345/Alpha-Team');
+    expect(result.current.state.teams[0].piReviewPages).toEqual([
+      { piName: 'PI 26.3', pageUrl: 'https://example.atlassian.net/wiki/pages/111/Alpha-263' },
+      { piName: 'PI 26.4', pageUrl: 'https://example.atlassian.net/wiki/pages/222/Alpha-264' },
+    ]);
+    const persisted = localStorage.getItem('nodetoolbox-art-teams') ?? '';
+    expect(persisted).toContain('PI 26.4');
+    expect(persisted).toContain('https://example.atlassian.net/wiki/pages/222/Alpha-264');
+  });
+
+  it('removes a PI Review page from a team by index', () => {
+    const { result } = renderHook(() => useArtData());
+
+    act(() => {
+      result.current.actions.addTeam('Alpha Team', '42', 'ALPHA');
+    });
+    const teamId = result.current.state.teams[0].id;
+
+    act(() => {
+      result.current.actions.addTeamPiReviewPage(teamId);
+      result.current.actions.addTeamPiReviewPage(teamId);
+    });
+    act(() => {
+      result.current.actions.updateTeamPiReviewPage(teamId, 0, { piName: 'PI 26.3', pageUrl: 'url-a' });
+      result.current.actions.updateTeamPiReviewPage(teamId, 1, { piName: 'PI 26.4', pageUrl: 'url-b' });
+    });
+
+    act(() => {
+      result.current.actions.removeTeamPiReviewPage(teamId, 0);
+    });
+
+    expect(result.current.state.teams[0].piReviewPages).toEqual([
+      { piName: 'PI 26.4', pageUrl: 'url-b' },
+    ]);
   });
 
   it('replaces the local ART roster with imported shared teams', () => {
@@ -184,6 +228,10 @@ describe('useArtData', () => {
     expect(result.current.state.teams[0].id).toBe('shared-team-1');
     expect(result.current.state.teams[0].name).toBe('Shared Alpha');
     expect(result.current.state.teams[0].projectKey).toBe('ALPHA');
+    // The imported legacy single page migrates into the multi-PI list.
+    expect(result.current.state.teams[0].piReviewPages).toEqual([
+      { piName: '', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Shared-Alpha' },
+    ]);
     expect(localStorage.getItem('nodetoolbox-art-teams')).toContain('Shared Alpha');
     expect(localStorage.getItem('nodetoolbox-art-teams')).not.toContain('Old Team');
   });

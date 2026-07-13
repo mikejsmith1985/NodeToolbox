@@ -341,6 +341,22 @@
   border: 1px solid var(--color-border);
 }
 
+/* Vertical stack of a team's PI Review pages plus its "+ Add PI" button. */
+.piReviewPagesEditor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+/* One configurable PI Review page: PI dropdown + page URL + remove control. */
+.piReviewPageRow {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
 .removeBtn {
   padding: var(--spacing-xs) var(--spacing-sm);
   border: 1px solid var(--color-border);

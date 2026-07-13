@@ -9,7 +9,9 @@ const JSON_CONTENT_TYPE = 'application/json';
 const PAGE_EXPAND_QUERY = 'body.storage,version';
 const CONFLUENCE_PAGE_ID_PATTERN = /^\d+$/;
 const DNS_LOOKUP_FAILURE_PATTERN = /\b(?:getaddrinfo\s+)?ENOTFOUND\b/i;
-const SHARED_ART_WORKSPACE_SCHEMA_VERSION = 1;
+// Bumped to 2 when team records gained the multi-PI `piReviewPages` list (legacy `piReviewPageUrl`
+// is still read on import so workspaces synced by older clients keep loading).
+const SHARED_ART_WORKSPACE_SCHEMA_VERSION = 2;
 export const SHARED_ART_DATABASE_PROPERTY_KEY = 'nodetoolbox-shared-art';
 
 export interface ConfluencePageVersion {
@@ -51,12 +53,21 @@ export interface ConfluenceContentProperty<TValue> {
   version: ConfluenceContentPropertyVersion;
 }
 
+/** One PI ↔ Confluence page association carried in a shared ART workspace team record. */
+export interface SharedArtWorkspacePiReviewPage {
+  piName: string;
+  pageUrl: string;
+}
+
 export interface SharedArtWorkspaceTeamRecord {
   id: string;
   name: string;
   boardId: string;
   boardName?: string;
   projectKey?: string;
+  /** Multi-PI page list (schema v2+). */
+  piReviewPages?: SharedArtWorkspacePiReviewPage[];
+  /** Legacy single-page field (schema v1) — still read on import for back-compat. */
   piReviewPageUrl?: string;
   sosIssueKey?: string;
 }
@@ -323,10 +334,11 @@ export async function loadSharedArtWorkspace(databaseId: string): Promise<Shared
     throw new Error('This Confluence database does not contain a NodeToolbox shared ART workspace yet.');
   }
 
-  if (sharedWorkspaceProperty.value.schemaVersion !== SHARED_ART_WORKSPACE_SCHEMA_VERSION) {
-    throw new Error(
-      `Unsupported shared ART schema version ${sharedWorkspaceProperty.value.schemaVersion}.`,
-    );
+  // Accept any schema at or below the current version; older payloads (e.g. v1's single
+  // piReviewPageUrl) are migrated into the multi-PI shape downstream by team normalization.
+  const loadedSchemaVersion = sharedWorkspaceProperty.value.schemaVersion;
+  if (loadedSchemaVersion < 1 || loadedSchemaVersion > SHARED_ART_WORKSPACE_SCHEMA_VERSION) {
+    throw new Error(`Unsupported shared ART schema version ${loadedSchemaVersion}.`);
   }
 
   return sharedWorkspaceProperty.value;
