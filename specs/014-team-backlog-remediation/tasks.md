@@ -209,14 +209,14 @@ queue records those items as canceled; a reload keeps them canceled.
 
 ## Phase 8: Polish & Cross-Cutting
 
-- [ ] T020 Remove the actionable triage UI from `client/src/views/ReportsHub/IssueAgingTab.tsx` (keep the metrics
+- [x] T020 Remove the actionable triage UI from `client/src/views/ReportsHub/IssueAgingTab.tsx` (keep the metrics
   report; simplify its fetch to the fields `computeIssueAging` needs) and update `IssueAgingTab.test.tsx` so the
   metrics still render and the triage no longer appears there (FR-003)
-- [ ] T021 [P] Finalize the `CHANGELOG.md` entry for feature 014 (per-team persistent remediation panel; triage
+- [x] T021 [P] Finalize the `CHANGELOG.md` entry for feature 014 (per-team persistent remediation panel; triage
   moved off the Reports Hub; metrics unchanged)
-- [ ] T022 Run the `quickstart.md` validation — Parts 1–6 (placement/gating, team-scoped run, persistence/parallel
+- [x] T022 Run the `quickstart.md` validation — Parts 1–6 (placement/gating, team-scoped run, persistence/parallel
   teams, no-resurfacing, enact cleanup, regression guard)
-- [ ] T023 Run `cd client && npm run build` and `cd client && npx vitest run` for the touched suites
+- [x] T023 Run `cd client && npm run build` and `cd client && npx vitest run` for the touched suites
   (reconcile, store, scope, panel + its team/lifecycle/bulkclose tests, IssueAgingTab) — all green
 
 ---

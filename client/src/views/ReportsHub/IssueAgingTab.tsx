@@ -4,23 +4,13 @@
 // this fetches every NOT-Done issue in that scope — paginated so the numbers cover the whole backlog — then
 // feeds the pure `computeIssueAging` core to show, per issue type, how many open items there are and how old
 // they are (average / median / oldest calendar days since creation), plus an overall count and average age.
-// It is read-only — it never writes to Jira. When AI Assist is unlocked (Ctrl+Alt+Z), an advisory cleanup
-// triage panel assembles a copy-paste prompt over the same backlog and ingests cancel/review/keep verdicts.
+// It is read-only — it never writes to Jira. The actionable AI cleanup triage now lives on the Team Dashboard's
+// Backlog Remediation panel; this tab is the metrics report only.
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 
-import type { JiraIssue } from '../../types/jira.ts';
 import { copyToClipboard } from '../FeatureCanvas/ai/clipboard.ts';
-import { AGING_BACKLOG_MAX_ISSUES, fetchAgingBacklog } from './agingBacklogFetch.ts';
-import { AgingTriageActionTable } from './AgingTriageActionTable.tsx';
-import { ReportAiPanel } from './ReportAiPanel.tsx';
-import {
-  buildAgingTriagePrompt,
-  parseAgingTriageResponse,
-  type AgingTriageIssue,
-  type AgingTriageSuggestion,
-} from './agingTriage.ts';
-import { buildTriageActionModel } from './agingTriageActionModel.ts';
+import { AGING_BACKLOG_MAX_ISSUES, fetchAgingMetrics } from './agingBacklogFetch.ts';
 import {
   computeIssueAging,
   type IssueAgingResult,
@@ -180,36 +170,10 @@ export function IssueAgingTab(): React.JSX.Element {
   const [result, setResult] = useState<IssueAgingResult | null>(null);
   const [queriedJql, setQueriedJql] = useState<string | null>(null);
   const [wasCapped, setWasCapped] = useState(false);
-  // The enriched triage candidates from the last run, and the ingested verdicts / parse error. These only
-  // feed the passphrase-gated AI panel; a normal aging run ignores them.
-  const [triageIssues, setTriageIssues] = useState<AgingTriageIssue[]>([]);
-  const [triageSuggestions, setTriageSuggestions] = useState<AgingTriageSuggestion[]>([]);
-  const [triageError, setTriageError] = useState<string | null>(null);
-  // The full fetched issue objects (keyed by issue key) and the resolved Acceptance Criteria field ids —
-  // both feed the actionable table's inline detail after verdicts are ingested.
-  const [issuesByKey, setIssuesByKey] = useState<Map<string, JiraIssue>>(new Map());
-  const [acceptanceCriteriaFieldIds, setAcceptanceCriteriaFieldIds] = useState<string[]>([]);
 
   const handleScopeChange = (nextScope: string): void => {
     setScopeJql(nextScope);
     writePersistedScope(nextScope);
-  };
-
-  const triagePrompt = useMemo(() => buildAgingTriagePrompt(triageIssues), [triageIssues]);
-  // The ingested verdicts rolled up into the recommendation → feature → issue table (empty until ingest).
-  const triageActionModel = useMemo(() => buildTriageActionModel(triageSuggestions, triageIssues), [triageSuggestions, triageIssues]);
-
-  /** Parses a pasted assistant reply into verdicts, keeping only issues that were actually shown. */
-  const ingestTriage = (responseText: string): void => {
-    try {
-      const shownKeys = new Set(triageIssues.map((issue) => issue.issueKey));
-      const parsed = parseAgingTriageResponse(responseText).filter((item) => shownKeys.has(item.issueKey));
-      setTriageSuggestions(parsed);
-      setTriageError(null);
-    } catch (caughtError) {
-      setTriageSuggestions([]);
-      setTriageError(caughtError instanceof Error ? caughtError.message : 'Could not read the response.');
-    }
   };
 
   const runReport = async (): Promise<void> => {
@@ -223,20 +187,11 @@ export function IssueAgingTab(): React.JSX.Element {
     setResult(null);
     setQueriedJql(null);
     setWasCapped(false);
-    setTriageIssues([]);
-    setTriageSuggestions([]);
-    setTriageError(null);
-    setIssuesByKey(new Map());
     try {
       // The clock read is fine here — the pure engine takes today as an argument, staying deterministic.
       const todayIso = new Date().toISOString().slice(0, 10);
-      // One enriched fetch feeds both the metrics engine and the triage candidates (shared with the Team
-      // Dashboard's Backlog Remediation panel).
-      const backlog = await fetchAgingBacklog(trimmedScope, todayIso);
+      const backlog = await fetchAgingMetrics(trimmedScope);
       setResult(computeIssueAging({ issues: backlog.agingInputs, todayIso }));
-      setIssuesByKey(backlog.issuesByKey);
-      setAcceptanceCriteriaFieldIds(backlog.acceptanceCriteriaFieldIds);
-      setTriageIssues(backlog.triageIssues);
       setQueriedJql(backlog.jql);
       setWasCapped(backlog.wasCapped);
     } catch (caughtError) {
@@ -295,24 +250,6 @@ export function IssueAgingTab(): React.JSX.Element {
       )}
 
       {queriedJql !== null && <QueriedJqlBlock jql={queriedJql} />}
-
-      {triageIssues.length > 0 && (
-        <ReportAiPanel
-          title="AI cleanup triage"
-          prompt={triagePrompt}
-          ingestLabel="Ingest verdicts"
-          onIngest={ingestTriage}
-          error={triageError}
-        >
-          {triageSuggestions.length > 0 && (
-            <AgingTriageActionTable
-              model={triageActionModel}
-              issuesByKey={issuesByKey}
-              acceptanceCriteriaFieldIds={acceptanceCriteriaFieldIds}
-            />
-          )}
-        </ReportAiPanel>
-      )}
     </div>
   );
 }

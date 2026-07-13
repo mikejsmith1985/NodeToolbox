@@ -173,49 +173,21 @@ describe('IssueAgingTab', () => {
     expect(persisted.scopeJql).toBe('project = SAVED');
   });
 
-  it('when AI Assist is unlocked, resolves each issue\'s feature via the feature-link field and puts the feature + its status in the triage prompt', async () => {
+  it('no longer renders the AI cleanup triage here — it moved to the Team Dashboard', async () => {
+    // Even with AI Assist unlocked, this tab is metrics-only now; the actionable triage lives on the
+    // Team Dashboard's Backlog Remediation panel.
     act(() => setAiAssistUnlocked(true));
-    mockJiraGet.mockImplementation((path: string) => {
-      const decoded = decodeURIComponent(path);
-      if (decoded.includes('/rest/api/2/search')) {
-        // The backlog page: one open Story linked to feature FEAT-1 via the default Feature Link field
-        // (customfield_10108) — NOT the native parent, which this instance does not use.
-        if (decoded.includes('statusCategory != Done')) {
-          return Promise.resolve({
-            issues: [{
-              key: 'ENCUC-1',
-              fields: {
-                issuetype: { name: 'Story' },
-                created: new Date(Date.parse('2026-07-09T00:00:00.000Z') - 200 * 86_400_000).toISOString(),
-                status: { name: 'To Do' },
-                priority: { name: 'Low' },
-                customfield_10108: 'FEAT-1',
-              },
-            }],
-            total: 1,
-          });
-        }
-        // The follow-up feature-info fetch (`key in (FEAT-1)`) resolves the feature's own summary + status.
-        if (decoded.includes('key in (FEAT-1)')) {
-          return Promise.resolve({ issues: [{ key: 'FEAT-1', fields: { summary: 'Reporting feature', status: { name: 'Done' } } }] });
-        }
-      }
-      return Promise.reject(new Error(`unexpected path ${path}`));
-    });
+    mockJiraGet.mockImplementation(() => Promise.resolve({ issues: [issueAgedDays('Story', 3)], total: 1 }));
 
     render(<IssueAgingTab />);
     fireEvent.change(screen.getByLabelText(/scope jql/i), { target: { value: 'project = ENCUC' } });
     fireEvent.click(screen.getByRole('button', { name: /run report/i }));
 
-    // The gated triage prompt names the issue, its linked feature, and — the point of the second fetch —
-    // that feature's own status (Done), which is what makes an item a strong cancel-safe candidate.
-    const promptBox = await screen.findByLabelText(/ai cleanup triage prompt/i);
-    await waitFor(() => expect((promptBox as HTMLTextAreaElement).value).toContain('feature FEAT-1'));
-    expect((promptBox as HTMLTextAreaElement).value).toContain('Done');
-    expect((promptBox as HTMLTextAreaElement).value).toContain('ENCUC-1');
-
-    // A `key in (...)` follow-up fetch was actually issued to resolve the feature status.
-    expect(decodedSearchPaths().some((searchPath) => searchPath.includes('key in (FEAT-1)'))).toBe(true);
+    // The metrics still render...
+    await waitFor(() => expect(screen.getByText('Open issues')).toBeInTheDocument());
+    // ...but no triage prompt/panel appears, and the metrics fetch is a single search (no `key in` second hop).
+    expect(screen.queryByLabelText(/ai cleanup triage/i)).toBeNull();
+    expect(decodedSearchPaths().some((searchPath) => searchPath.includes('key in ('))).toBe(false);
   });
 
   it('copies the exact queried JQL to the clipboard when Copy JQL is clicked', async () => {
