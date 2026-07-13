@@ -73,6 +73,12 @@ import {
   type ReleaseAiAssistPromptInput,
   type ReleaseAiAssistTableDocument,
 } from './hooks/releaseAiAssistNotes.ts';
+import {
+  buildDevSkipRiskAssistPrompt,
+  summarizeIssueCommentsForPrompt,
+  type ReleaseDevSkipRiskPromptInput,
+} from './hooks/releaseDevSkipRisk.ts';
+import { renderMarkdownReport } from '../../utils/markdownReport.tsx';
 import { useAiAssistExchange } from '../SnowHub/hooks/useAiAssistExchange.ts';
 import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
 import { useSprintData } from './hooks/useSprintData.ts';
@@ -144,7 +150,7 @@ const OVERVIEW_TO_DO_STATUS_TOKENS = ['to do', 'open', 'backlog', 'new'];
 const BLOCKERS_FILTER_LABEL = 'Show:';
 
 const RELEASE_FIELDS =
-  'summary,status,assignee,priority,issuetype,fixVersions,description,customfield_10200';
+  'summary,status,assignee,priority,issuetype,fixVersions,description,customfield_10200,comment';
 const RELEASE_MAX_RESULTS = 50;
 const HIDDEN_AI_ASSIST_SHORTCUT_KEY = 'z';
 const POINTING_AI_ASSIST_ENHANCE_BUTTON_LABEL = '✦ Enhance with AI';
@@ -157,6 +163,10 @@ const RELEASE_IMPORT_BUTTON_LABEL = '↩ Paste AI Assist Response';
 const COPY_RELEASE_PROMPT_BUTTON_LABEL = '📋 Copy Prompt';
 const RENDER_RELEASE_TABLE_BUTTON_LABEL = 'Render Release Notes Table';
 const COPY_RELEASE_NOTES_BUTTON_LABEL = '📋 Copy Release Notes';
+// Dev-skip test-risk assessment: gauges the risk of promoting a release straight to Integration
+// testing without a Dev-environment test pass. Stored per release version, like the release notes.
+const RELEASE_DEV_SKIP_RISK_STORAGE_KEY_PREFIX = 'tbx-release-dev-skip-risk';
+const RELEASE_DEV_SKIP_RISK_BUTTON_LABEL = '✦ Assess Dev-Skip Risk';
 // Shown briefly after a successful clipboard copy so the user knows the image is ready to paste.
 const RELEASE_NOTES_COPIED_CONFIRMATION = 'Copied to clipboard — paste it into your email or chat.';
 const RELEASE_BUCKETS = [
@@ -910,6 +920,36 @@ function buildReleasePromptInput(projectKey: string, releaseEntry: ReleaseRadarE
   };
 }
 
+/**
+ * Maps a Release Radar entry into the dev-skip test-risk prompt input, pulling each ticket's
+ * comment thread (where unit-test evidence usually lives) alongside its description and criteria.
+ */
+function buildDevSkipRiskPromptInput(
+  projectKey: string,
+  releaseEntry: ReleaseRadarEntry,
+): ReleaseDevSkipRiskPromptInput {
+  return {
+    projectKey,
+    releaseName: releaseEntry.version.name,
+    releaseDate: releaseEntry.releaseDate,
+    daysLeft: releaseEntry.daysLeft,
+    completionPercentage: releaseEntry.completionPercentage,
+    doneCount: releaseEntry.doneCount,
+    progressCount: releaseEntry.progressCount,
+    todoCount: releaseEntry.todoCount,
+    issues: releaseEntry.issues.map((issue) => ({
+      issueKey: issue.key,
+      summary: issue.fields.summary,
+      statusName: readIssueStatusName(issue),
+      issueTypeName: issue.fields.issuetype?.name ?? null,
+      priorityName: issue.fields.priority?.name ?? null,
+      description: issue.fields.description,
+      acceptanceCriteria: issue.fields.customfield_10200,
+      comments: summarizeIssueCommentsForPrompt(issue.fields.comment?.comments),
+    })),
+  };
+}
+
 
 
 function buildReleaseNotesStorageKey(projectKey: string): string {
@@ -934,6 +974,37 @@ function readStoredReleaseNotes(projectKey: string): Record<string, ReleaseAiAss
     }
 
     return parsedValue as Record<string, ReleaseAiAssistTableDocument>;
+  } catch {
+    return {};
+  }
+}
+
+function buildDevSkipRiskStorageKey(projectKey: string): string {
+  const normalizedProjectKey = projectKey.trim().toUpperCase() || 'default';
+  return `${RELEASE_DEV_SKIP_RISK_STORAGE_KEY_PREFIX}:${normalizedProjectKey}`;
+}
+
+/**
+ * Loads any previously rendered dev-skip risk reports (raw Markdown keyed by fix-version id) for
+ * this project from session storage, so a rendered assessment survives a tab switch or reload.
+ */
+function readStoredDevSkipRisk(projectKey: string): Record<string, string> {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  try {
+    const storedValue = window.sessionStorage.getItem(buildDevSkipRiskStorageKey(projectKey));
+    if (!storedValue) {
+      return {};
+    }
+
+    const parsedValue = JSON.parse(storedValue);
+    if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) {
+      return {};
+    }
+
+    return parsedValue as Record<string, string>;
   } catch {
     return {};
   }
@@ -5720,15 +5791,25 @@ function ReleasesTab({
   // the parsed table without the manual copy-paste.
   const { isRunning: isReleaseAiAssistRunning, runAiAssistExchange: runReleaseAiAssistExchange } = useAiAssistExchange();
   const [releaseAiAssistAutoStatus, setReleaseAiAssistAutoStatus] = useState<string | null>(null);
+  // Dev-skip test-risk assessment: raw Markdown reports keyed by fix-version id, plus its own
+  // prompt modal and status line. It reuses the shared AI Assist exchange above.
+  const [devSkipRiskByVersionId, setDevSkipRiskByVersionId] = useState<Record<string, string>>(
+    () => readStoredDevSkipRisk(projectKey),
+  );
+  const [devSkipRiskPromptModalState, setDevSkipRiskPromptModalState] = useState<ReleasePromptModalState | null>(null);
+  const [devSkipRiskAutoStatus, setDevSkipRiskAutoStatus] = useState<string | null>(null);
   const passphraseInputRef = useRef<HTMLInputElement | null>(null);
   const releaseNotesSectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
   useEffect(() => {
     setReleaseNotesByVersionId(readStoredReleaseNotes(projectKey));
+    setDevSkipRiskByVersionId(readStoredDevSkipRisk(projectKey));
     setReleaseExportErrorByVersionId({});
     setReleaseCopyConfirmationByVersionId({});
     setReleasePromptModalState(null);
     setReleaseImportModalState(null);
+    setDevSkipRiskPromptModalState(null);
+    setDevSkipRiskAutoStatus(null);
   }, [projectKey]);
 
   useEffect(() => {
@@ -5741,6 +5822,17 @@ function ReleasesTab({
       JSON.stringify(releaseNotesByVersionId),
     );
   }, [projectKey, releaseNotesByVersionId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      buildDevSkipRiskStorageKey(projectKey),
+      JSON.stringify(devSkipRiskByVersionId),
+    );
+  }, [projectKey, devSkipRiskByVersionId]);
 
   useEffect(() => {
     const normalizedProjectKey = projectKey.trim().toUpperCase();
@@ -5992,6 +6084,47 @@ function ReleasesTab({
     }
   }, [releasePromptModalState, runReleaseAiAssistExchange]);
 
+  // Builds the dev-skip test-risk prompt for one release and opens its prompt modal.
+  const handleBuildDevSkipRiskPrompt = useCallback((releaseEntry: ReleaseRadarEntry) => {
+    const normalizedProjectKey = projectKey.trim().toUpperCase();
+    const promptInput = buildDevSkipRiskPromptInput(normalizedProjectKey, releaseEntry);
+    const promptText = buildDevSkipRiskAssistPrompt(promptInput);
+
+    setDevSkipRiskAutoStatus(null);
+    setDevSkipRiskPromptModalState({
+      versionId: releaseEntry.version.id,
+      versionName: releaseEntry.version.name,
+      promptText,
+    });
+  }, [projectKey]);
+
+  // Automated path: dispatch the risk prompt to AI Assist and store the returned Markdown report
+  // as-is (no strict parsing — the assessment is rendered read-only from Markdown).
+  const handleRunDevSkipRiskAuto = useCallback(async () => {
+    if (!devSkipRiskPromptModalState) return;
+    const { versionId, promptText } = devSkipRiskPromptModalState;
+
+    setDevSkipRiskAutoStatus('Sending to AI Assist…');
+    const exchange = await runReleaseAiAssistExchange(promptText);
+    if (!exchange.ok) {
+      setDevSkipRiskAutoStatus(exchange.message);
+      return;
+    }
+
+    const reportMarkdown = (exchange.response ?? '').trim();
+    if (!reportMarkdown) {
+      setDevSkipRiskAutoStatus('AI Assist returned an empty response.');
+      return;
+    }
+
+    setDevSkipRiskByVersionId((previousReports) => ({
+      ...previousReports,
+      [versionId]: reportMarkdown,
+    }));
+    setDevSkipRiskAutoStatus(null);
+    setDevSkipRiskPromptModalState(null);
+  }, [devSkipRiskPromptModalState, runReleaseAiAssistExchange]);
+
   const handleOpenReleaseImportModal = useCallback((releaseEntry: ReleaseRadarEntry) => {
     setReleaseImportModalState({
       versionId: releaseEntry.version.id,
@@ -6147,6 +6280,7 @@ function ReleasesTab({
                     ? 0
                     : Math.round((entry.progressCount / entry.totalCount) * 100);
                   const importedReleaseNotes = releaseNotesByVersionId[entry.version.id] ?? null;
+                  const devSkipRiskReport = devSkipRiskByVersionId[entry.version.id] ?? null;
                   const releaseExportError = releaseExportErrorByVersionId[entry.version.id] ?? '';
                   const releaseCopyConfirmation = releaseCopyConfirmationByVersionId[entry.version.id] ?? '';
                   const issueByKey = new Map(entry.issues.map((issue) => [issue.key, issue]));
@@ -6223,6 +6357,13 @@ function ReleasesTab({
                             type="button"
                           >
                             {RELEASE_IMPORT_BUTTON_LABEL}
+                          </button>
+                          <button
+                            className={styles.secondaryButton}
+                            onClick={() => handleBuildDevSkipRiskPrompt(entry)}
+                            type="button"
+                          >
+                            {RELEASE_DEV_SKIP_RISK_BUTTON_LABEL}
                           </button>
                         </div>
                       )}
@@ -6350,6 +6491,31 @@ function ReleasesTab({
                           </div>
                         </section>
                       )}
+
+                      {devSkipRiskReport && (
+                        <section className={styles.releaseRiskSection}>
+                          <div className={styles.releaseRiskHeader}>
+                            <h4 className={styles.releaseNotesTitle}>
+                              Dev-Skip Test Risk — {entry.version.name}
+                            </h4>
+                            <button
+                              className={styles.textActionButton}
+                              onClick={() =>
+                                setDevSkipRiskByVersionId((previousReports) => {
+                                  const nextReports = { ...previousReports };
+                                  delete nextReports[entry.version.id];
+                                  return nextReports;
+                                })}
+                              type="button"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                          <div className={styles.releaseRiskMarkdown}>
+                            {renderMarkdownReport(devSkipRiskReport)}
+                          </div>
+                        </section>
+                      )}
                     </article>
                   );
                 })}
@@ -6443,6 +6609,57 @@ function ReleasesTab({
             </div>
             {releaseAiAssistAutoStatus !== null ? (
               <p className={styles.releasePromptInstructions} role="status">{releaseAiAssistAutoStatus}</p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {devSkipRiskPromptModalState ? (
+        <div
+          aria-modal="true"
+          className={styles.releasePromptOverlay}
+          role="dialog"
+        >
+          <div className={styles.releasePromptWideModal}>
+            <h3 className={styles.releasePromptTitle}>
+              Dev-Skip Test Risk prompt for {devSkipRiskPromptModalState.versionName}
+            </h3>
+            <p className={styles.releasePromptInstructions}>
+              Assesses the risk of skipping Dev-environment testing and promoting straight to Integration.
+              Run it via AI Assist, or copy the prompt to run it manually — the Markdown report renders below the release.
+            </p>
+            <textarea
+              aria-label="Dev-skip test risk prompt"
+              className={styles.releasePromptTextArea}
+              readOnly
+              value={devSkipRiskPromptModalState.promptText}
+            />
+            <div className={styles.releasePromptActions}>
+              <button
+                className={styles.secondaryButton}
+                disabled={isReleaseAiAssistRunning}
+                onClick={() => void handleRunDevSkipRiskAuto()}
+                type="button"
+              >
+                {isReleaseAiAssistRunning ? '⏳ Running via AI Assist…' : '⚡ Run via AI Assist (auto)'}
+              </button>
+              <button
+                className={styles.secondaryButton}
+                onClick={() => void navigator.clipboard.writeText(devSkipRiskPromptModalState.promptText)}
+                type="button"
+              >
+                {COPY_RELEASE_PROMPT_BUTTON_LABEL}
+              </button>
+              <button
+                className={styles.textActionButton}
+                onClick={() => setDevSkipRiskPromptModalState(null)}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+            {devSkipRiskAutoStatus !== null ? (
+              <p className={styles.releasePromptInstructions} role="status">{devSkipRiskAutoStatus}</p>
             ) : null}
           </div>
         </div>
