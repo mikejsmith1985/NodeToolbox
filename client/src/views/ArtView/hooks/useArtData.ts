@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { jiraGet } from '../../../services/jiraApi.ts';
+import { fetchPiNameSuggestions } from '../../../services/piNameSuggestions.ts';
 import type { JiraIssue } from '../../../types/jira.ts';
 import {
   findPiNameForDate,
@@ -43,7 +44,6 @@ const ART_TEAMS_STORAGE_KEY = 'nodetoolbox-art-teams';
 const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
 const DEFAULT_PI_FIELD_ID = 'customfield_10301';
 const EMPTY_PI_NAME = '';
-const PI_SUGGESTION_YEAR_OFFSETS = [-6, -5, -4, -3, -2, -1, 0, 1] as const;
 
 type ArtBoardType = 'scrum' | 'kanban' | 'simple' | 'unknown';
 
@@ -64,15 +64,6 @@ interface JiraSprintMetadata {
   id: number;
   name: string;
   state: string;
-}
-
-interface JiraAutocompleteSuggestion {
-  value?: string;
-  displayName?: string;
-}
-
-interface JiraAutocompleteResponse {
-  results?: JiraAutocompleteSuggestion[];
 }
 
 interface JiraBoardProjectResponse {
@@ -121,14 +112,6 @@ function normalizeBoardType(boardTypeValue?: string): ArtBoardType {
   return 'unknown';
 }
 
-function buildPiAutocompleteFieldName(piFieldId: string): string {
-  if (piFieldId.startsWith('customfield_')) {
-    return `cf[${piFieldId.replace('customfield_', '')}]`;
-  }
-
-  return piFieldId;
-}
-
 function extractPiNameFromFieldValue(fieldValue: unknown): string | null {
   if (typeof fieldValue === 'string') {
     const trimmedPiName = fieldValue.trim();
@@ -159,15 +142,6 @@ function createUniqueProjectKeys(teams: ArtTeam[]): string[] {
   );
 }
 
-function createPiSuggestionPrefixes(): string[] {
-  const currentTwoDigitYear = new Date().getFullYear() % 100;
-
-  return PI_SUGGESTION_YEAR_OFFSETS
-    .map((yearOffset) => currentTwoDigitYear + yearOffset)
-    .filter((yearNumber) => yearNumber >= 0 && yearNumber <= 99)
-    .map((yearNumber) => `PI ${String(yearNumber).padStart(2, '0')}`);
-}
-
 function sortPiNames(piNames: string[]): string[] {
   return Array.from(new Set(piNames))
     .sort((leftPiName, rightPiName) => {
@@ -186,29 +160,6 @@ function sortPiNames(piNames: string[]): string[] {
       return leftPiName.localeCompare(rightPiName);
     })
     .reverse();
-}
-
-async function fetchPiNamesFromAutocomplete(piFieldId: string): Promise<string[]> {
-  const autocompleteFieldName = buildPiAutocompleteFieldName(piFieldId);
-  const autocompleteResults = await Promise.all(
-    createPiSuggestionPrefixes().map(async (piPrefix) => {
-      try {
-        const response = await jiraGet<JiraAutocompleteResponse>(
-          `/rest/api/2/jql/autocompletedata/suggestions?fieldName=${encodeURIComponent(autocompleteFieldName)}&fieldValue=${encodeURIComponent(piPrefix)}`,
-        );
-
-        return response.results ?? [];
-      } catch {
-        return [];
-      }
-    }),
-  );
-
-  return autocompleteResults.flatMap((resultSet) =>
-    resultSet
-      .map((suggestion) => (suggestion.value ?? suggestion.displayName ?? '').replace(/^"|"$/g, '').trim())
-      .filter((piName) => piName !== ''),
-  );
 }
 
 async function fetchPiNamesFromIssues(piFieldId: string, projectKeys: string[]): Promise<string[]> {
@@ -233,7 +184,7 @@ export async function loadAvailablePiNamesFromJira(teams: ArtTeam[]): Promise<st
 
   const projectKeys = createUniqueProjectKeys(teams);
   const piFieldId = readArtAdvancedSettings().piFieldId?.trim() || DEFAULT_PI_FIELD_ID;
-  const autocompletePiNames = await fetchPiNamesFromAutocomplete(piFieldId);
+  const autocompletePiNames = await fetchPiNameSuggestions(piFieldId);
 
   if (autocompletePiNames.length > 0) {
     return sortPiNames(autocompletePiNames);

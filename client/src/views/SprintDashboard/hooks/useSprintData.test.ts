@@ -3,12 +3,19 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockJiraGet } = vi.hoisted(() => ({
+const { mockJiraGet, mockFetchPiNameSuggestions } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
+  mockFetchPiNameSuggestions: vi.fn(),
 }));
 
 vi.mock('../../../services/jiraApi.ts', () => ({
   jiraGet: mockJiraGet,
+}));
+
+// Mocked at the module boundary so PI-suggestion lookups don't add jiraGet calls to the ordered
+// mock sequences below; the dedicated test overrides its return value.
+vi.mock('../../../services/piNameSuggestions.ts', () => ({
+  fetchPiNameSuggestions: mockFetchPiNameSuggestions,
 }));
 
 import { useSprintData } from './useSprintData.ts';
@@ -65,6 +72,8 @@ const MOCK_ISSUES = [
 describe('useSprintData', () => {
   beforeEach(() => {
     mockJiraGet.mockReset();
+    mockFetchPiNameSuggestions.mockReset();
+    mockFetchPiNameSuggestions.mockResolvedValue([]);
     localStorage.clear();
     useSettingsStore.setState({
       dsuProjectKey: '',
@@ -262,6 +271,47 @@ describe('useSprintData', () => {
       expect(result.current.state.selectedSprintId).toBe(7);
       expect(result.current.state.selectedBoardName).toBe('Board 42');
     });
+  });
+
+  it('narrows available PI values to the planning window and includes field-only future PIs', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 1)); // 2026-06-01: PI 26.3 is the current increment
+
+    const piIssue = (piName: string) => ({
+      id: piName,
+      key: piName,
+      fields: { ...createMockIssue(piName, piName).fields, customfield_10301: piName },
+    });
+
+    mockJiraGet
+      .mockResolvedValueOnce({ values: [MOCK_BOARD] })   // boards list
+      .mockResolvedValueOnce(MOCK_BOARD_INFO_SCRUM)       // board info
+      .mockResolvedValueOnce([])                          // project versions
+      .mockResolvedValueOnce({ issues: [                  // PI values found on issues
+        piIssue('PI 25.6 (11/20/25 - 01/28/26)'),
+        piIssue('PI 26.2 (02/26/26 - 04/29/26)'),
+        piIssue('PI 26.3 (05/21/26 - 07/29/26)'),
+      ] })
+      .mockResolvedValueOnce({ values: [MOCK_SPRINT] })   // board scope sprints
+      .mockResolvedValueOnce({ issues: MOCK_ISSUES });    // sprint issues
+
+    // The PI field also offers a future PI that no issue references yet.
+    mockFetchPiNameSuggestions.mockResolvedValue([
+      'PI 26.3 (05/21/26 - 07/29/26)',
+      'PI 26.4 (08/13/26 - 10/28/26)',
+    ]);
+
+    const { result } = renderHook(() => useSprintData());
+    act(() => { result.current.actions.setProjectKey('TBX'); });
+    await act(async () => { await result.current.actions.loadSprint(); });
+
+    const { availablePiValues } = result.current.state;
+    expect(availablePiValues).toContain('PI 26.3 (05/21/26 - 07/29/26)'); // current
+    expect(availablePiValues).toContain('PI 26.4 (08/13/26 - 10/28/26)'); // future (field-only)
+    expect(availablePiValues).toContain('PI 26.2 (02/26/26 - 04/29/26)'); // one prior kept
+    expect(availablePiValues).not.toContain('PI 25.6 (11/20/25 - 01/28/26)'); // older dropped
+
+    vi.useRealTimers();
   });
 
   it('saves the selected boardId to localStorage after loading', async () => {
