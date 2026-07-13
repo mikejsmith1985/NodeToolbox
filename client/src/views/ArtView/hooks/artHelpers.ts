@@ -254,6 +254,55 @@ export function findPiNameForDate(
   return null;
 }
 
+/**
+ * Narrows PI labels to the planning window a person actually needs when scoping work: the current
+ * PI, every future PI, and the single most-recently-ended prior PI (handy for carry-over reference).
+ * PIs that finished before that prior one are dropped so the selector is not cluttered with
+ * years-old increments. Labels with no parseable date range are kept, because their recency cannot
+ * be judged and silently hiding them would be worse than a little noise.
+ */
+export function filterPiNamesToPlanningWindow(
+  piNames: string[],
+  todayDate: Date = new Date(),
+): string[] {
+  const normalizedTodayTime = createLocalDateAtMidnight(
+    todayDate.getMonth() + 1,
+    todayDate.getDate(),
+    todayDate.getFullYear(),
+  ).getTime();
+
+  const currentOrFuturePiNames: string[] = [];
+  const undatedPiNames: string[] = [];
+  let mostRecentPastPiName: string | null = null;
+  let mostRecentPastEndTime = -Infinity;
+
+  for (const piName of piNames) {
+    const parsedDateRange = parsePiDateRange(piName);
+    if (!parsedDateRange) {
+      undatedPiNames.push(piName);
+      continue;
+    }
+
+    // A PI still in progress or yet to start (end date today or later) is always in the window.
+    if (parsedDateRange.endDate.getTime() >= normalizedTodayTime) {
+      currentOrFuturePiNames.push(piName);
+      continue;
+    }
+
+    // Among already-finished PIs, remember only the one that ended most recently.
+    if (parsedDateRange.endDate.getTime() > mostRecentPastEndTime) {
+      mostRecentPastEndTime = parsedDateRange.endDate.getTime();
+      mostRecentPastPiName = piName;
+    }
+  }
+
+  return [
+    ...(mostRecentPastPiName !== null ? [mostRecentPastPiName] : []),
+    ...currentOrFuturePiNames,
+    ...undatedPiNames,
+  ];
+}
+
 // ── Monthly Report Jira-derived helpers ──
 
 /**

@@ -11,6 +11,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
+import { fetchPiNameSuggestions } from '../../../services/piNameSuggestions.ts';
+import { filterPiNamesToPlanningWindow } from '../../ArtView/hooks/artHelpers.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
 import { useSettingsStore } from '../../../store/settingsStore.ts';
 import type { JiraBoard, JiraIssue, JiraSprint, JiraVersion } from '../../../types/jira.ts';
@@ -21,6 +23,8 @@ const STANDUP_TIMER_SECONDS = 900; // 15 minutes
 const SPRINT_ISSUE_MAX_RESULTS = 200;
 const BOARD_SCOPE_SPRINT_MAX_RESULTS = 50;
 const PI_JQL_FIELD_ID = 'cf[10301]';
+// The same PI field in stored-id form, used to fetch the field's valid values (incl. future PIs).
+const PI_AUTOCOMPLETE_FIELD_ID = 'customfield_10301';
 const DASHBOARD_SCOPE_MODE_SPRINT = 'sprint';
 const DASHBOARD_SCOPE_MODE_FIX_VERSION = 'fixVersion';
 const DASHBOARD_SCOPE_MODE_PI = 'pi';
@@ -463,7 +467,7 @@ export function useSprintData(
       return { availableFixVersions: [], availablePiValues: [] };
     }
 
-    const [versionResponse, piResponse] = await Promise.all([
+    const [versionResponse, piResponse, piSuggestions] = await Promise.all([
       jiraGet<JiraVersion[]>(
         `/rest/api/2/project/${encodeURIComponent(projectKey)}/versions`,
       ).catch(() => []),
@@ -473,13 +477,21 @@ export function useSprintData(
           sprintFieldListRef.current,
         ),
       ).catch(() => ({ issues: [] })),
+      // The field's valid values include future PIs no issue references yet — the issue query can't see those.
+      fetchPiNameSuggestions(PI_AUTOCOMPLETE_FIELD_ID).catch(() => []),
     ]);
+
+    // Combine PIs actually used on issues with the field's valid values, then narrow to the planning
+    // window (current PI + all future PIs + one most-recent prior PI) so the selector is not cluttered
+    // with years-old increments and always offers the upcoming PIs the user needs for planning.
+    const combinedPiValues = [
+      ...(piResponse.issues ?? []).map(readIssuePiValue).filter(Boolean),
+      ...piSuggestions,
+    ];
 
     return {
       availableFixVersions: sortScopeVersions(versionResponse),
-      availablePiValues: createAlphabeticalValues(
-        (piResponse.issues ?? []).map(readIssuePiValue).filter(Boolean),
-      ),
+      availablePiValues: createAlphabeticalValues(filterPiNamesToPlanningWindow(combinedPiValues)),
     };
   }
 

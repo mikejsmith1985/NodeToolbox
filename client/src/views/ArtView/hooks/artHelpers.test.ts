@@ -11,6 +11,7 @@ import {
   computeMonthlyJiraStats,
   computeVelocityPoints,
   detectImpedimentReasons,
+  filterPiNamesToPlanningWindow,
   findPiNameForDate,
   generateMonthlyAccomplishedText,
   generateMonthlyRisksText,
@@ -451,6 +452,46 @@ describe('findPiNameForDate', () => {
     );
 
     expect(matchedPiName).toBe('PI 26.3 (05/21/26 - 07/29/26)');
+  });
+});
+
+describe('filterPiNamesToPlanningWindow', () => {
+  // 2026-06-01: PI 26.3 (05/21–07/29) is current; 26.4/26.5 are future; 26.1/26.2 are past.
+  const TODAY = new Date(2026, 5, 1);
+  const PI_25_6 = 'PI 25.6 (11/20/25 - 01/28/26)';
+  const PI_26_1 = 'PI 26.1 (01/29/26 - 02/25/26)';
+  const PI_26_2 = 'PI 26.2 (02/26/26 - 04/29/26)';
+  const PI_26_3 = 'PI 26.3 (05/21/26 - 07/29/26)';
+  const PI_26_4 = 'PI 26.4 (08/13/26 - 10/28/26)';
+  const PI_26_5 = 'PI 26.5 (11/12/26 - 01/27/27)';
+
+  it('keeps the current PI, all future PIs, and exactly one most-recent prior PI', () => {
+    const filtered = filterPiNamesToPlanningWindow(
+      [PI_25_6, PI_26_1, PI_26_2, PI_26_3, PI_26_4, PI_26_5],
+      TODAY,
+    );
+
+    // 26.2 is the single retained prior PI; 25.6 and 26.1 (older) are dropped.
+    expect(filtered).toContain(PI_26_2);
+    expect(filtered).toContain(PI_26_3);
+    expect(filtered).toContain(PI_26_4);
+    expect(filtered).toContain(PI_26_5);
+    expect(filtered).not.toContain(PI_26_1);
+    expect(filtered).not.toContain(PI_25_6);
+  });
+
+  it('drops every prior PI except the most recent one', () => {
+    const priorPiCount = filterPiNamesToPlanningWindow([PI_25_6, PI_26_1, PI_26_2], TODAY)
+      .filter((piName) => piName === PI_25_6 || piName === PI_26_1 || piName === PI_26_2).length;
+    expect(priorPiCount).toBe(1);
+  });
+
+  it('keeps PI labels with no parseable date range (recency cannot be judged)', () => {
+    expect(filterPiNamesToPlanningWindow(['PI Legacy', PI_26_3], TODAY)).toContain('PI Legacy');
+  });
+
+  it('returns future PIs even when the source list has no current or prior PI', () => {
+    expect(filterPiNamesToPlanningWindow([PI_26_4, PI_26_5], TODAY)).toEqual([PI_26_4, PI_26_5]);
   });
 });
 
