@@ -16,7 +16,12 @@ function makeIssue(overrides: Partial<AgingTriageIssue> = {}): AgingTriageIssue 
     summary: 'Add export button',
     status: 'To Do',
     ageDays: 210,
+    daysInStatus: 120,
     daysSinceUpdate: 190,
+    assignee: 'Jane Dev',
+    storyPoints: 5,
+    hasDescription: true,
+    hasAcceptanceCriteria: true,
     priority: 'Low',
     featureKey: 'ENCUC-1',
     featureSummary: 'Reporting epic',
@@ -44,15 +49,37 @@ describe('buildAgingTriagePrompt', () => {
     expect(prompt).toContain('Done'); // the parent feature's status rides the issue line
   });
 
+  it('surfaces the ownership, time-in-status, and size signals', () => {
+    const prompt = buildAgingTriagePrompt([makeIssue({ assignee: 'Jane Dev', daysInStatus: 45, storyPoints: 8 })]);
+    expect(prompt).toContain('assignee Jane Dev');
+    expect(prompt).toContain('in status 45d');
+    expect(prompt).toContain('8 pts');
+  });
+
+  it('flags an unassigned, undefined issue as explicit cancel signals', () => {
+    const prompt = buildAgingTriagePrompt([
+      makeIssue({ assignee: null, hasDescription: false, hasAcceptanceCriteria: false }),
+    ]);
+    const issueLine = prompt.split('Issues:\n')[1];
+    expect(issueLine).toContain('unassigned');
+    expect(issueLine).toContain('no description');
+    expect(issueLine).toContain('no acceptance criteria');
+  });
+
   it('omits signals that are absent rather than printing empty tags', () => {
     const prompt = buildAgingTriagePrompt([
-      makeIssue({ daysSinceUpdate: null, priority: null, featureKey: null, featureSummary: null, featureStatus: null }),
+      makeIssue({
+        daysInStatus: null, daysSinceUpdate: null, storyPoints: null,
+        priority: null, featureKey: null, featureSummary: null, featureStatus: null,
+      }),
     ]);
     // Assert against the rendered issue data line only — the instruction paragraph legitimately mentions
     // "priority" and "feature", so scope the check to the "- KEY …" line that carries the signal tags.
     const issueLine = prompt.split('Issues:\n')[1];
     expect(issueLine).toContain('ENCUC-100');
+    expect(issueLine).not.toContain('in status');
     expect(issueLine).not.toContain('updated');
+    expect(issueLine).not.toContain('pts');
     expect(issueLine).not.toContain('priority');
     expect(issueLine).not.toContain('feature');
   });

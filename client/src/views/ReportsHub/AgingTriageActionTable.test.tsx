@@ -18,7 +18,9 @@ import type { AgingTriageIssue, AgingTriageSuggestion } from './agingTriage.ts';
 function makeTriageIssue(overrides: Partial<AgingTriageIssue>): AgingTriageIssue {
   return {
     issueKey: 'ENCUC-1', issueType: 'Story', summary: 'A', status: 'To Do', ageDays: 100,
-    daysSinceUpdate: 90, priority: 'Low', featureKey: 'FEAT-1', featureSummary: 'Reporting', featureStatus: 'Done',
+    daysInStatus: 60, daysSinceUpdate: 90, assignee: 'Jane Dev', storyPoints: 3,
+    hasDescription: true, hasAcceptanceCriteria: true,
+    priority: 'Low', featureKey: 'FEAT-1', featureSummary: 'Reporting', featureStatus: 'Done',
     ...overrides,
   };
 }
