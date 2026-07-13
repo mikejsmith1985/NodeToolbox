@@ -214,6 +214,24 @@ function toTriageIssue(
   };
 }
 
+/** The metrics-only fetch result: just the inputs the aging engine needs, plus the JQL and cap flag. */
+export interface AgingMetricsFetchResult {
+  agingInputs: IssueAgingIssueInput[];
+  jql: string;
+  wasCapped: boolean;
+}
+
+/**
+ * The lightweight fetch for the Aging *metrics* report: pages the NOT-Done backlog requesting only the two
+ * fields `computeIssueAging` needs (issue type + created date), with none of the triage enrichment. Kept beside
+ * the enriched fetch so both share the exact JQL + paging.
+ */
+export async function fetchAgingMetrics(scopeJql: string): Promise<AgingMetricsFetchResult> {
+  const jql = buildAgingJql(scopeJql);
+  const { rawIssues, wasCapped } = await fetchOpenBacklog(jql, 'issuetype,created');
+  return { agingInputs: rawIssues.map(toAgingIssueInput), jql, wasCapped };
+}
+
 // ── Public entry point ───────────────────────────────────────────────────────
 
 /**
