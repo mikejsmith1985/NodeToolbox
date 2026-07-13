@@ -27,7 +27,7 @@ type.
 
 **Purpose**: Documentation discipline; no scaffolding or new dependencies (all reuse — see plan.md).
 
-- [ ] T001 Add a `## [Unreleased]` entry to `CHANGELOG.md` naming feature 012 (role-aware roster + canvas Work Re-Allocation Plan), to be fleshed out during implementation
+- [x] T001 Add a `## [Unreleased]` entry to `CHANGELOG.md` naming feature 012 (role-aware roster + canvas Work Re-Allocation Plan), to be fleshed out during implementation
 
 ---
 
@@ -37,7 +37,7 @@ type.
 
 **⚠️ CRITICAL**: US2's model tests cannot compile until this type exists.
 
-- [ ] T002 Add and export the `RosterRoleCapabilities` interface (`canDevelop` / `canInternalTest` / `canExternalTest`: boolean) in `client/src/views/SprintDashboard/hooks/useStandupRosterStore.ts` — type only, no behavior yet (per data-model.md §1, contracts/roster-roles.md)
+- [x] T002 Add and export the `RosterRoleCapabilities` interface (`canDevelop` / `canInternalTest` / `canExternalTest`: boolean) in `client/src/views/SprintDashboard/hooks/useStandupRosterStore.ts` — type only, no behavior yet (per data-model.md §1, contracts/roster-roles.md)
 
 **Checkpoint**: Shared role type available — both user stories can proceed.
 
@@ -54,13 +54,13 @@ panel visible anywhere). Verifiable without any Part-2 work.
 
 ### Tests for User Story 1 (write first — must FAIL) ⚠️
 
-- [ ] T003 [P] [US1] Store test: `roleCapabilities` round-trips through persistence, is preserved across `addRosterMember`/`upsertRosterMembers`/`replaceRosterMembers`/SNow-link, a legacy member (no field) reads as no-roles, and `setRosterMemberRoles` updates one member — in `client/src/views/SprintDashboard/hooks/useStandupRosterStore.test.ts`
-- [ ] T004 [P] [US1] Component test: `RosterTab` shows three role toggles + role chips per Current-roster member, toggling calls the store, and everything renders/works with `useAiAssistStore` locked — in `client/src/views/SprintDashboard/RosterTab.test.tsx`
+- [x] T003 [P] [US1] Store test: `roleCapabilities` round-trips through persistence, is preserved across `addRosterMember`/`upsertRosterMembers`/`replaceRosterMembers`/SNow-link, a legacy member (no field) reads as no-roles, and `setRosterMemberRoles` updates one member — in `client/src/views/SprintDashboard/hooks/useStandupRosterStore.test.ts`
+- [x] T004 [P] [US1] Component test: `RosterTab` shows three role toggles + role chips per Current-roster member, toggling calls the store, and everything renders/works with `useAiAssistStore` locked — in `client/src/views/SprintDashboard/RosterTab.test.tsx`
 
 ### Implementation for User Story 1
 
-- [ ] T005 [US1] Extend `StandupRosterMember` and `StandupRosterMemberDraft` with optional `roleCapabilities`; validate it tolerantly in `isStandupRosterMember` (coerce malformed → `undefined`); preserve it in `createRosterMember` and `upsertRosterMembersInList`; add the `setRosterMemberRoles(memberId, capabilities)` action (mirrors `removeRosterMember`) — in `client/src/views/SprintDashboard/hooks/useStandupRosterStore.ts` (depends on T002)
-- [ ] T006 [US1] Add three role toggle checkboxes + role chips to each Current-roster `RosterCard`, wired to `setRosterMemberRoles`, plus the chip CSS in `client/src/views/SprintDashboard/SprintDashboardView.module.css` — in `client/src/views/SprintDashboard/RosterTab.tsx` (depends on T005)
+- [x] T005 [US1] Extend `StandupRosterMember` and `StandupRosterMemberDraft` with optional `roleCapabilities`; validate it tolerantly in `isStandupRosterMember` (coerce malformed → `undefined`); preserve it in `createRosterMember` and `upsertRosterMembersInList`; add the `setRosterMemberRoles(memberId, capabilities)` action (mirrors `removeRosterMember`) — in `client/src/views/SprintDashboard/hooks/useStandupRosterStore.ts` (depends on T002)
+- [x] T006 [US1] Add three role toggle checkboxes + role chips to each Current-roster `RosterCard`, wired to `setRosterMemberRoles`, plus the chip CSS in `client/src/views/SprintDashboard/SprintDashboardView.module.css` — in `client/src/views/SprintDashboard/RosterTab.tsx` (depends on T005)
 
 **Checkpoint**: Role capabilities are settable, visible, persistent, team-scoped, and AI-independent. MVP shippable.
 
@@ -80,29 +80,29 @@ constraint, and a plan+risk instruction; copying changes nothing on the overlay 
 
 ### Tests for User Story 2 (write first — must FAIL) ⚠️
 
-- [ ] T007 [P] [US2] Unit test `reallocationModel` — resolved-box grouping (`storyPlacements[key] ?? containerId`) selects only the target sprint's child items, groups by assignee, flags unassigned + off-roster assignees, lists `rosterWithoutWork` spare capacity, and computes `daysInStatus` with an injected `today` (null when `statusChangedIso` absent) — in `client/src/views/FeatureCanvas/ai/reallocationModel.test.ts`
-- [ ] T008 [P] [US2] Unit test `reallocationPrompt` — the string contains roster members with roles (incl. no-work members), per-person items (key·summary·points·raw status+category·days-in-status), Unassigned/off-roster buckets, PI start+end+days-remaining, the story-point≈one-day convention, verbatim additional-details, and the plan+risk instruction with "reason only from data; invent nothing" guardrails — in `client/src/views/FeatureCanvas/ai/reallocationPrompt.test.ts`
-- [ ] T009 [P] [US2] Unit test `useReallocationDetailsStore` — persist round-trip + clear-to-empty under the composed key `tbxReallocationDetails:<teamProfileId>:<deriveScopeKey(projectKey,piName)>`, and that a different PI/team yields a different key (no cross-PI bleed) — in `client/src/views/FeatureCanvas/ai/useReallocationDetailsStore.test.ts`
-- [ ] T010 [P] [US2] Component test `WorkReallocationPanel` — renders `null` when AI locked; target-sprint `<select>` from sprint containers; additional-details persists; Copy invokes the clipboard helper; and each empty/degraded state (no roster / no sprint / no assigned work / no roles / unparseable PI) shows its message — in `client/src/views/FeatureCanvas/ai/WorkReallocationPanel.test.tsx`
-- [ ] T011 [P] [US2] Extend the blueprint mapping test to assert `statusChangedIso` is carried onto child stories — in `client/src/views/ArtView/blueprintHierarchy.test.ts`
+- [x] T007 [P] [US2] Unit test `reallocationModel` — resolved-box grouping (`storyPlacements[key] ?? containerId`) selects only the target sprint's child items, groups by assignee, flags unassigned + off-roster assignees, lists `rosterWithoutWork` spare capacity, and computes `daysInStatus` with an injected `today` (null when `statusChangedIso` absent) — in `client/src/views/FeatureCanvas/ai/reallocationModel.test.ts`
+- [x] T008 [P] [US2] Unit test `reallocationPrompt` — the string contains roster members with roles (incl. no-work members), per-person items (key·summary·points·raw status+category·days-in-status), Unassigned/off-roster buckets, PI start+end+days-remaining, the story-point≈one-day convention, verbatim additional-details, and the plan+risk instruction with "reason only from data; invent nothing" guardrails — in `client/src/views/FeatureCanvas/ai/reallocationPrompt.test.ts`
+- [x] T009 [P] [US2] Unit test `useReallocationDetailsStore` — persist round-trip + clear-to-empty under the composed key `tbxReallocationDetails:<teamProfileId>:<deriveScopeKey(projectKey,piName)>`, and that a different PI/team yields a different key (no cross-PI bleed) — in `client/src/views/FeatureCanvas/ai/useReallocationDetailsStore.test.ts`
+- [x] T010 [P] [US2] Component test `WorkReallocationPanel` — renders `null` when AI locked; target-sprint `<select>` from sprint containers; additional-details persists; Copy invokes the clipboard helper; and each empty/degraded state (no roster / no sprint / no assigned work / no roles / unparseable PI) shows its message — in `client/src/views/FeatureCanvas/ai/WorkReallocationPanel.test.tsx`
+- [x] T011 [P] [US2] Extend the blueprint mapping test to assert `statusChangedIso` is carried onto child stories — in `client/src/views/ArtView/blueprintHierarchy.test.ts`
 
 ### Implementation for User Story 2 — data thread (time-in-status)
 
-- [ ] T012 [P] [US2] Add `statuscategorychangedate` to the child-story fetch field lists and set `statusChangedIso` on `BlueprintStoryNode` — in `client/src/views/ArtView/blueprintHierarchy.ts`
-- [ ] T013 [P] [US2] Add `statusChangedIso?: string | null` to `CanvasChildStory` — in `client/src/views/FeatureCanvas/logic/canvasTypes.ts`
-- [ ] T014 [US2] Copy `statusChangedIso` from the blueprint child in `mapChildStories` — in `client/src/views/FeatureCanvas/canvas/nodeMapping.ts` (depends on T012, T013)
+- [x] T012 [P] [US2] Add `statuscategorychangedate` to the child-story fetch field lists and set `statusChangedIso` on `BlueprintStoryNode` — in `client/src/views/ArtView/blueprintHierarchy.ts`
+- [x] T013 [P] [US2] Add `statusChangedIso?: string | null` to `CanvasChildStory` — in `client/src/views/FeatureCanvas/logic/canvasTypes.ts`
+- [x] T014 [US2] Copy `statusChangedIso` from the blueprint child in `mapChildStories` — in `client/src/views/FeatureCanvas/canvas/nodeMapping.ts` (depends on T012, T013)
 
 ### Implementation for User Story 2 — pure logic & store
 
-- [ ] T015 [US2] Implement `buildReallocationContext(...)` — resolved-box target-sprint assembly, per-assignee grouping, unassigned/off-roster flags, `rosterWithoutWork`, `daysInStatus` (today injected) per data-model.md §4 — in `client/src/views/FeatureCanvas/ai/reallocationModel.ts` (depends on T002, T013)
-- [ ] T016 [US2] Implement `buildReallocationPrompt(context, additionalDetails)` — the full copy-out prompt per contracts/reallocation-prompt.md (content items 1–8, guardrails, raw status, no phase inference) — in `client/src/views/FeatureCanvas/ai/reallocationPrompt.ts` (depends on T015)
-- [ ] T017 [P] [US2] Implement `useReallocationDetailsStore` — persisted under `tbxReallocationDetails:<teamProfileId>:<deriveScopeKey(projectKey,piName)>` (reuse `overlayStorage.deriveScopeKey`; own prefix), scoped exactly like the overlay — in `client/src/views/FeatureCanvas/ai/useReallocationDetailsStore.ts` (independent of other tasks)
+- [x] T015 [US2] Implement `buildReallocationContext(...)` — resolved-box target-sprint assembly, per-assignee grouping, unassigned/off-roster flags, `rosterWithoutWork`, `daysInStatus` (today injected) per data-model.md §4 — in `client/src/views/FeatureCanvas/ai/reallocationModel.ts` (depends on T002, T013)
+- [x] T016 [US2] Implement `buildReallocationPrompt(context, additionalDetails)` — the full copy-out prompt per contracts/reallocation-prompt.md (content items 1–8, guardrails, raw status, no phase inference) — in `client/src/views/FeatureCanvas/ai/reallocationPrompt.ts` (depends on T015)
+- [x] T017 [P] [US2] Implement `useReallocationDetailsStore` — persisted under `tbxReallocationDetails:<teamProfileId>:<deriveScopeKey(projectKey,piName)>` (reuse `overlayStorage.deriveScopeKey`; own prefix), scoped exactly like the overlay — in `client/src/views/FeatureCanvas/ai/useReallocationDetailsStore.ts` (independent of other tasks)
 
 ### Implementation for User Story 2 — panel & wiring
 
-- [ ] T018 [US2] Extract `copyToClipboard` + `fallbackCopy` into `client/src/views/FeatureCanvas/ai/clipboard.ts` and update `AiSuggestionPanel.tsx` to import from it (no behavior change; existing `AiSuggestionPanel.test.tsx` must still pass) — new file + `client/src/views/FeatureCanvas/ai/AiSuggestionPanel.tsx`
-- [ ] T019 [US2] Implement `WorkReallocationPanel` — `useAiAssistStore` gate (renders `null` when locked), target-sprint `<select>` (default highest-priority/earliest), additional-details textarea bound to the store, read-only prompt preview, Copy via `clipboard.ts`, and all empty/degraded states — in `client/src/views/FeatureCanvas/ai/WorkReallocationPanel.tsx` (depends on T015, T016, T017, T018)
-- [ ] T020 [US2] Mount `WorkReallocationPanel` beside `AiSuggestionPanel` behind the AI gate, passing canvas nodes, overlay sprint containers, active-team roster, and PI name — in `client/src/views/FeatureCanvas/FeatureCanvasView.tsx` (depends on T019)
+- [x] T018 [US2] Extract `copyToClipboard` + `fallbackCopy` into `client/src/views/FeatureCanvas/ai/clipboard.ts` and update `AiSuggestionPanel.tsx` to import from it (no behavior change; existing `AiSuggestionPanel.test.tsx` must still pass) — new file + `client/src/views/FeatureCanvas/ai/AiSuggestionPanel.tsx`
+- [x] T019 [US2] Implement `WorkReallocationPanel` — `useAiAssistStore` gate (renders `null` when locked), target-sprint `<select>` (default highest-priority/earliest), additional-details textarea bound to the store, read-only prompt preview, Copy via `clipboard.ts`, and all empty/degraded states — in `client/src/views/FeatureCanvas/ai/WorkReallocationPanel.tsx` (depends on T015, T016, T017, T018)
+- [x] T020 [US2] Mount `WorkReallocationPanel` beside `AiSuggestionPanel` behind the AI gate, passing canvas nodes, overlay sprint containers, active-team roster, and PI name — in `client/src/views/FeatureCanvas/FeatureCanvasView.tsx` (depends on T019)
 
 **Checkpoint**: Both stories work independently; existing canvas AI analyses are unchanged.
 
@@ -110,9 +110,9 @@ constraint, and a plan+risk instruction; copying changes nothing on the overlay 
 
 ## Phase 5: Polish & Cross-Cutting
 
-- [ ] T021 [P] Finalize the `CHANGELOG.md` entry for feature 012 (both parts, user-visible behavior)
-- [ ] T022 Run the `quickstart.md` validation — Part 1 (steps 1–4), Part 2 (5–11), empty/degraded (12–16), and the regression guard (17: existing AI analyses unchanged)
-- [ ] T023 Run `cd client && npm run build` and `cd client && npx vitest run` for the touched suites (roster store/tab, blueprint mapping, node mapping, reallocation model/prompt/store, both panels) — all green
+- [x] T021 [P] Finalize the `CHANGELOG.md` entry for feature 012 (both parts, user-visible behavior)
+- [x] T022 Run the `quickstart.md` validation — Part 1 (steps 1–4), Part 2 (5–11), empty/degraded (12–16), and the regression guard (17: existing AI analyses unchanged)
+- [x] T023 Run `cd client && npm run build` and `cd client && npx vitest run` for the touched suites (roster store/tab, blueprint mapping, node mapping, reallocation model/prompt/store, both panels) — all green
 
 ---
 
