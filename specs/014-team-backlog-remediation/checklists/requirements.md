@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,8 +31,7 @@
 
 ## Notes
 
-- One open item: **FR-013** carries a `[NEEDS CLARIFICATION]` on what counts as a "material change" that lets a
-  handled item re-enter the actionable queue. This is the single decision worth confirming before `/speckit-plan`;
-  everything else uses reasonable defaults documented in Assumptions.
+- **All items pass.** FR-013's clarification is resolved: a handled item re-enters the actionable queue only on a
+  **material change** = status-category change **or** reassignment into the team (cosmetic edits do not resurface).
 - Storage-key strings and store names (e.g. `tbxReallocationDetails`) appear only as *pattern references* to reuse,
   not as prescribed implementation — acceptable for this project's spec style.

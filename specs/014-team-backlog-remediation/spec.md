@@ -2,7 +2,7 @@
 
 **Feature short name**: `team-backlog-remediation`
 **Created**: 2026-07-13
-**Status**: Draft — ready for `/speckit-clarify` or `/speckit-plan`
+**Status**: Draft — clarifications resolved (FR-013 = status-category change or reassign-into-team); ready for `/speckit-plan`
 **Builds on**: feature 016's Aging AI cleanup triage (verdicts + bulk close/transition) and the shared
 `storyPointsField` reader; reuses feature 012's per-team persistence pattern
 (`tbxReallocationDetails:<teamProfileId>:<scope>`) and the roster/overlay per-team stores.
@@ -95,8 +95,8 @@ commit) exactly as in today's triage, and the committed outcomes are reflected i
 
 - **Backlog item leaves scope** (already closed in Jira, reassigned out of team): it should drop from the actionable
   queue on refresh without corrupting its recorded history.
-- **A previously handled item legitimately reopens/changes**: define whether a materially changed item may re-enter
-  the actionable queue despite an earlier decision (see FR-013).
+- **A previously handled item legitimately reopens/changes**: a material change — status-category change or
+  reassignment into the team — returns it to `pending`; cosmetic edits do not (FR-013).
 - **Stored state for a deleted team profile**: orphaned queues should not surface under another team.
 - **Corrupt/oversized persisted state**: the panel degrades gracefully (empty queue) rather than erroring, matching
   the tolerant-parse behavior of the other per-team stores.
@@ -137,10 +137,11 @@ commit) exactly as in today's triage, and the committed outcomes are reflected i
   NOT mutate another's.
 - **FR-012**: Persisted state MUST be read tolerantly — malformed or missing state yields an empty queue, never an
   error (consistent with the other per-team stores).
-- **FR-013**: The feature MUST define and honor a **re-entry rule** for handled items: an item whose underlying Jira
-  work materially changed (e.g., reopened, re-pointed, reassigned into the team) MAY return to `pending`; an
-  unchanged handled item MUST NOT. [NEEDS CLARIFICATION: what counts as "materially changed" — any field update, or
-  specific signals like status category change / reassignment?]
+- **FR-013**: The feature MUST honor a **re-entry rule** for handled items: an item returns to `pending` only on a
+  **material change** — defined as either (a) its **status category changed** (e.g. reopened, moved back from a Done
+  category) or (b) it was **reassigned into the team**. Cosmetic edits (label, rank, description, `updated`-only
+  bumps) MUST NOT resurface a handled item. This is captured by a fingerprint of the item's status category and
+  assignee/team membership recorded at decision time (see Key Entities → RemediationItem).
 
 ### Area 4 — Enactment (reused)
 

@@ -13,7 +13,7 @@
   Backlog Remediation panel on the Team Dashboard — team-profile-scoped, resumable across reloads and
   team switches, with per-item remediation status so handled work does not resurface; the Aging metrics
   report stays in the Reports Hub) —
-  spec: `specs/014-team-backlog-remediation/spec.md`
-  (Status: Draft — ready for `/speckit-clarify` or `/speckit-plan`).
+  plan: `specs/014-team-backlog-remediation/plan.md`
+  (spec, research, data-model, contracts, quickstart in the same directory; ready for `/speckit-tasks`).
 <!-- SPECKIT END -->
 
