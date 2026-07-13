@@ -21,6 +21,8 @@ export interface AgingTriageActionTableProps {
   model: TriageActionModel;
   issuesByKey: ReadonlyMap<string, JiraIssue>;
   acceptanceCriteriaFieldIds: readonly string[];
+  /** Called after a bulk close with the keys that actually transitioned, so a host can record them. Optional. */
+  onItemsCanceled?: (issueKeys: string[]) => void;
 }
 
 /** Human label + badge class per verdict, matched to the summary badges used elsewhere in the tab. */
@@ -36,7 +38,7 @@ function featureGroupId(verdict: AgingTriageVerdict, featureKey: string | null):
 }
 
 /** The full actionable table: one collapsible section per recommendation. */
-export function AgingTriageActionTable({ model, issuesByKey, acceptanceCriteriaFieldIds }: AgingTriageActionTableProps): React.JSX.Element {
+export function AgingTriageActionTable({ model, issuesByKey, acceptanceCriteriaFieldIds, onItemsCanceled }: AgingTriageActionTableProps): React.JSX.Element {
   // Which issue rows are expanded to show inline detail, and which feature group's bulk panel is open.
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [openBulkId, setOpenBulkId] = useState<string | null>(null);
@@ -80,6 +82,7 @@ export function AgingTriageActionTable({ model, issuesByKey, acceptanceCriteriaF
           onToggleBulk={setOpenBulkId}
           issuesByKey={issuesByKey}
           acceptanceCriteriaFieldIds={acceptanceCriteriaFieldIds}
+          onItemsCanceled={onItemsCanceled}
         />
       ))}
     </div>
@@ -97,6 +100,7 @@ function VerdictSection({
   onToggleBulk,
   issuesByKey,
   acceptanceCriteriaFieldIds,
+  onItemsCanceled,
 }: {
   verdictGroup: TriageVerdictGroup;
   isCollapsed: boolean;
@@ -107,6 +111,7 @@ function VerdictSection({
   onToggleBulk: (id: string | null) => void;
   issuesByKey: ReadonlyMap<string, JiraIssue>;
   acceptanceCriteriaFieldIds: readonly string[];
+  onItemsCanceled?: (issueKeys: string[]) => void;
 }): React.JSX.Element {
   const meta = VERDICT_META[verdictGroup.verdict];
   return (
@@ -128,6 +133,7 @@ function VerdictSection({
           onToggleBulk={onToggleBulk}
           issuesByKey={issuesByKey}
           acceptanceCriteriaFieldIds={acceptanceCriteriaFieldIds}
+          onItemsCanceled={onItemsCanceled}
         />
       ))}
     </section>
@@ -144,6 +150,7 @@ function FeatureGroupBlock({
   onToggleBulk,
   issuesByKey,
   acceptanceCriteriaFieldIds,
+  onItemsCanceled,
 }: {
   verdict: AgingTriageVerdict;
   featureGroup: TriageFeatureGroup;
@@ -153,6 +160,7 @@ function FeatureGroupBlock({
   onToggleBulk: (id: string | null) => void;
   issuesByKey: ReadonlyMap<string, JiraIssue>;
   acceptanceCriteriaFieldIds: readonly string[];
+  onItemsCanceled?: (issueKeys: string[]) => void;
 }): React.JSX.Element {
   const groupId = featureGroupId(verdict, featureGroup.featureKey);
   const isBulkOpen = openBulkId === groupId;
@@ -183,7 +191,7 @@ function FeatureGroupBlock({
         )}
       </div>
 
-      {isBulkOpen && <AgingBulkClosePanel featureGroup={featureGroup} onClose={() => onToggleBulk(null)} />}
+      {isBulkOpen && <AgingBulkClosePanel featureGroup={featureGroup} onClose={() => onToggleBulk(null)} onItemsClosed={onItemsCanceled} />}
 
       {featureGroup.issues.map((issue) => {
         const isExpanded = expandedKeys.has(issue.issueKey);
