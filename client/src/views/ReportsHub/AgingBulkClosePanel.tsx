@@ -19,10 +19,13 @@ import {
 import type { TriageFeatureGroup } from './agingTriageActionModel.ts';
 import styles from './ReportsHubView.module.css';
 
-/** Props: the cancel-safe feature group to act on, and a callback to close the panel. */
+/** Props: the cancel-safe feature group to act on, a callback to close the panel, and an optional
+ * notification (with the successfully-transitioned issue keys) so a host can record the outcome. */
 export interface AgingBulkClosePanelProps {
   featureGroup: TriageFeatureGroup;
   onClose: () => void;
+  /** Called after commit with the keys that actually transitioned (`done` outcomes only). Optional. */
+  onItemsClosed?: (closedIssueKeys: string[]) => void;
 }
 
 /** One selectable row in the preview: the feature itself or one of its supporting issues. */
@@ -51,7 +54,7 @@ function resultClass(outcome: BulkTransitionResult['outcome']): string {
 }
 
 /** The gated preview → commit panel for moving a feature and its items to one target status. */
-export function AgingBulkClosePanel({ featureGroup, onClose }: AgingBulkClosePanelProps): React.JSX.Element {
+export function AgingBulkClosePanel({ featureGroup, onClose, onItemsClosed }: AgingBulkClosePanelProps): React.JSX.Element {
   const rows = useMemo(() => buildBulkRows(featureGroup), [featureGroup]);
 
   const [transitionsByKey, setTransitionsByKey] = useState<Map<string, JiraTransition[]>>(new Map());
@@ -104,7 +107,13 @@ export function AgingBulkClosePanel({ featureGroup, onClose }: AgingBulkClosePan
     const keysToCommit = rows.filter((row) => selectedKeys.has(row.key)).map((row) => row.key);
     setIsCommitting(true);
     try {
-      setResults(await runBulkTransition(keysToCommit, targetStatus, transitionsByKey, saveFeatureReviewTransition));
+      const commitResults = await runBulkTransition(keysToCommit, targetStatus, transitionsByKey, saveFeatureReviewTransition);
+      setResults(commitResults);
+      // Tell any host which issues actually transitioned, so it can record them (e.g. mark them canceled).
+      const closedIssueKeys = commitResults.filter((result) => result.outcome === 'done').map((result) => result.issueKey);
+      if (closedIssueKeys.length > 0) {
+        onItemsClosed?.(closedIssueKeys);
+      }
     } finally {
       setIsCommitting(false);
     }
