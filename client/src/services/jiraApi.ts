@@ -367,3 +367,24 @@ export async function searchIssuesByLabels(labels: string[], maxResults: number 
   }
   return matches;
 }
+
+/** Shape of Jira's JQL autocomplete suggestions response (only the fields we read). */
+interface JiraAutocompleteSuggestionResponse {
+  results?: Array<{ value?: string; displayName?: string }>;
+}
+
+/**
+ * Fetches valid Jira labels matching a prefix via the JQL autocomplete endpoint. Used to populate
+ * the PI Review "Pull Features" label picker so users choose real labels instead of typing free text.
+ * An empty prefix returns the instance's suggested labels.
+ */
+export async function fetchJiraLabelSuggestions(labelPrefix: string = ''): Promise<string[]> {
+  const response = await jiraGet<JiraAutocompleteSuggestionResponse>(
+    `/rest/api/2/jql/autocompletedata/suggestions?fieldName=labels&fieldValue=${encodeURIComponent(labelPrefix.trim())}`,
+  );
+  // Autocomplete quotes values that contain spaces; strip the surrounding quotes for display + JQL.
+  const suggestedLabels = (response.results ?? [])
+    .map((suggestion) => (suggestion.value ?? suggestion.displayName ?? '').replace(/^"|"$/g, '').trim())
+    .filter((label) => label !== '');
+  return Array.from(new Set(suggestedLabels));
+}

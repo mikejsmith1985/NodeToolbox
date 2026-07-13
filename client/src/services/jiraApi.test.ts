@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getBoardSprints, jiraGet, jiraPost, jiraPut, searchIssuesByLabels, searchUsers, type JiraApiEventDetail } from './jiraApi.ts';
+import { fetchJiraLabelSuggestions, getBoardSprints, jiraGet, jiraPost, jiraPut, searchIssuesByLabels, searchUsers, type JiraApiEventDetail } from './jiraApi.ts';
 
 const JIRA_PATH = '/rest/api/3/issue/ABC-123';
 const JIRA_RESPONSE = { key: 'ABC-123' };
@@ -291,5 +291,19 @@ describe('searchIssuesByLabels', () => {
   it('defaults missing labels to an empty array', async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse({ issues: [{ key: 'ENCUC-2' }] }));
     await expect(searchIssuesByLabels(['intake-x'])).resolves.toEqual([{ key: 'ENCUC-2', labels: [] }]);
+  });
+
+  it('fetchJiraLabelSuggestions calls the labels autocomplete endpoint and strips quotes + duplicates', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({
+      results: [
+        { value: 'Transformers' },
+        { displayName: '"Auto bots"' },
+        { value: 'Transformers' },
+      ],
+    }));
+
+    await expect(fetchJiraLabelSuggestions('Tra')).resolves.toEqual(['Transformers', 'Auto bots']);
+    const calledUrl = vi.mocked(fetch).mock.calls[0][0] as string;
+    expect(calledUrl).toContain('/jira-proxy/rest/api/2/jql/autocompletedata/suggestions?fieldName=labels&fieldValue=Tra');
   });
 });
