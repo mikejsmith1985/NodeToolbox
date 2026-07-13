@@ -169,6 +169,18 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
     snooze(item.issueKey, isoDateDaysAhead(SNOOZE_DAYS));
   };
 
+  /** Records the issues a bulk close actually transitioned in Jira as `canceled` in this team's queue. */
+  const handleItemsCanceled = (issueKeys: readonly string[]): void => {
+    const decidedAtIso = todayIsoDate();
+    const itemByKey = new Map(items.map((item) => [item.issueKey, item]));
+    for (const issueKey of issueKeys) {
+      const item = itemByKey.get(issueKey);
+      if (item !== undefined) {
+        decide(issueKey, 'canceled', fingerprintForItem(item), decidedAtIso);
+      }
+    }
+  };
+
   return (
     <ReportAiPanel
       title="Backlog remediation triage"
@@ -223,6 +235,7 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
         model={triageActionModel}
         issuesByKey={issuesByKey}
         acceptanceCriteriaFieldIds={acceptanceCriteriaFieldIds}
+        onItemsCanceled={handleItemsCanceled}
       />
     </ReportAiPanel>
   );

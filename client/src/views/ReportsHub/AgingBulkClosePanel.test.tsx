@@ -59,6 +59,20 @@ describe('AgingBulkClosePanel', () => {
     expect(mockSaveTransition).toHaveBeenCalledWith('ENCUC-2', '11');
   });
 
+  it('reports only the successfully-transitioned issues to onItemsClosed', async () => {
+    mockFetchTransitions.mockResolvedValue([CANCELLED_TRANSITION]);
+    // ENCUC-2's write fails, so it must NOT be reported as closed.
+    mockSaveTransition.mockImplementation((key: string) => (key === 'ENCUC-2' ? Promise.reject(new Error('nope')) : Promise.resolve(undefined)));
+    const onItemsClosed = vi.fn();
+
+    render(<AgingBulkClosePanel featureGroup={FEATURE_GROUP} onClose={vi.fn()} onItemsClosed={onItemsClosed} />);
+    await waitFor(() => expect(screen.getByRole('combobox')).not.toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: /commit 3 change/i }));
+
+    await waitFor(() => expect(onItemsClosed).toHaveBeenCalledTimes(1));
+    expect(onItemsClosed).toHaveBeenCalledWith(['FEAT-1', 'ENCUC-1']);
+  });
+
   it('excludes a de-selected row from the commit', async () => {
     mockFetchTransitions.mockResolvedValue([CANCELLED_TRANSITION]);
     mockSaveTransition.mockResolvedValue(undefined);

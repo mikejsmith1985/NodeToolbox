@@ -192,13 +192,13 @@ queue records those items as canceled; a reload keeps them canceled.
 
 ### Tests for User Story 5 (write first — must FAIL) ⚠️
 
-- [ ] T018 [P] [US5] Test — a successful bulk-close commit marks exactly the committed issue keys `canceled` in the
+- [x] T018 [P] [US5] Test — a successful bulk-close commit marks exactly the committed issue keys `canceled` in the
   store (skipped/failed items are not marked) — in
   `client/src/views/SprintDashboard/backlogRemediation/BacklogRemediationPanel.bulkclose.test.tsx`
 
 ### Implementation for User Story 5
 
-- [ ] T019 [US5] Wire the reused `AgingBulkClosePanel` commit results (from `runBulkTransition` /
+- [x] T019 [US5] Wire the reused `AgingBulkClosePanel` commit results (from `runBulkTransition` /
   `saveFeatureReviewTransition`) back into `store.decide(key, 'canceled', fingerprint, decidedAtIso)` for each
   `done` outcome — in `client/src/views/SprintDashboard/backlogRemediation/BacklogRemediationPanel.tsx`
   (depends on T009, T017)
