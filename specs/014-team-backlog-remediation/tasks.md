@@ -166,14 +166,14 @@ after its date; a status-category change or reassignment-into-team re-admits an 
 
 ### Tests for User Story 4 (write first — must FAIL) ⚠️
 
-- [ ] T016 [P] [US4] Component test — each actionable row exposes cancel/keep/dismiss/snooze; invoking one calls the
+- [x] T016 [P] [US4] Component test — each actionable row exposes cancel/keep/dismiss/snooze; invoking one calls the
   store with an `ItemFingerprint` captured from the current status-category + assignee; after a re-fetch the handled
   item is not shown as pending (except on material change / elapsed snooze) — in
   `client/src/views/SprintDashboard/backlogRemediation/BacklogRemediationPanel.lifecycle.test.tsx`
 
 ### Implementation for User Story 4
 
-- [ ] T017 [US4] Add per-row decision + snooze controls to the panel that build the `ItemFingerprint`
+- [x] T017 [US4] Add per-row decision + snooze controls to the panel that build the `ItemFingerprint`
   (`{ statusCategoryKey, assigneeKey }`) from the fetched issue and call `store.decide` / `store.snooze`; on each
   refresh compute `currentFingerprintByKey` from the fetch and pass it to `reconcile` — in
   `client/src/views/SprintDashboard/backlogRemediation/BacklogRemediationPanel.tsx` (depends on T009, T005)
