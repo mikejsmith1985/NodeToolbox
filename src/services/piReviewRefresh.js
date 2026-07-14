@@ -160,7 +160,11 @@ async function applyRefresh(engine, deps, jiraConfig, storageValue, features, sh
     nextStorage = engine.writePiReviewCapacitySummary(nextStorage, existingCapacity);
   }
 
-  return { nextStorage, featuresAppended: appendedRows.length, rowsReconciled: parsed.rows.length };
+  // hasChanges drives the "skip the write" decision: true only when a Feature was appended or the
+  // reconcile actually changed a Jira-owned cell. Without this a run would PUT (and bump the page
+  // version) every day even when Jira produced nothing new.
+  const hasChanges = appendedRows.length > 0 || reconciliation.hasChanges;
+  return { nextStorage, featuresAppended: appendedRows.length, rowsReconciled: parsed.rows.length, hasChanges };
 }
 
 /** PUTs the rebuilt storage body with the next version number; returns the HTTP status. */
@@ -237,19 +241,23 @@ async function refreshPiReviewPage({ page, team, deps, configuration }) {
       return makeResult('failed', pageReference, now(), refreshError.message);
     }
 
+    // Nothing new from Jira → don't write, so the page version is not bumped on an idle day.
+    if (!applied.hasChanges) {
+      return makeResult('no-op', pageReference, now(), 'Already up to date — nothing to write.', {
+        featuresAppended: 0,
+        rowsReconciled: applied.rowsReconciled,
+      });
+    }
+
     const putStatus = await writeConfluencePage(
       deps, confluenceConfig, pageId, currentPage.title, currentPage.version + 1, applied.nextStorage, shouldVerifyTls,
     );
 
     if (isSuccessStatus(putStatus)) {
-      const didNothing = applied.featuresAppended === 0 && applied.rowsReconciled === 0;
-      return makeResult(
-        didNothing ? 'no-op' : 'success',
-        pageReference,
-        now(),
-        didNothing ? 'Nothing to update.' : '',
-        { featuresAppended: applied.featuresAppended, rowsReconciled: applied.rowsReconciled },
-      );
+      return makeResult('success', pageReference, now(), '', {
+        featuresAppended: applied.featuresAppended,
+        rowsReconciled: applied.rowsReconciled,
+      });
     }
     // Only a version conflict earns a retry; anything else fails immediately.
     if (putStatus === HTTP_CONFLICT && attempt + 1 < MAX_WRITE_ATTEMPTS) {

@@ -84,6 +84,22 @@ test('INV-1: an empty Feature query is a no-op — the page is never written or 
   assert.match(result.message, /No Features found/);
 });
 
+test('INV-1b: features present but Jira produced no changes → no-op, no PUT (no idle version bump)', async () => {
+  // The one feature is already on the page and Jira matches every reconciled cell exactly, so there
+  // is nothing to append and nothing to change — the run must NOT write (would bump the page version).
+  const unchangedRow = dataRow(['Yes', 'P1', 'ALPHA-1 - Feature One', '8', '', '', 'Yes', '']);
+  const { deps, calls } = makeMocks({
+    storageValue: pageStorage(unchangedRow),
+    features: [{ key: 'ALPHA-1', summary: 'Feature One' }],
+    issueMap: { 'ALPHA-1': { key: 'ALPHA-1', fields: { priority: { name: 'P1' }, customfield_10111: 8, issuelinks: [] } } },
+  });
+
+  const result = await refreshPiReviewPage({ page: PAGE, team: TEAM, deps, configuration: config() });
+
+  assert.equal(result.status, 'no-op');
+  assert.equal(calls.put, 0, 'must not PUT when nothing changed');
+});
+
 test('INV-2/INV-3: refreshes Jira-owned columns, preserves human-curated content + capacity', async () => {
   const existingRow = dataRow(['Yes', 'OLD-PRI', 'ALPHA-1 - Feature One', '8', 'ManualDep', 'ManualRisk', 'Committed', 'ManualNote']);
   const { deps, calls } = makeMocks({

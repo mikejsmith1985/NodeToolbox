@@ -64,12 +64,16 @@ function readAllRunResults() {
   }
 }
 
-/** Records the latest result for one team/page, replacing any prior result for that page. */
-function recordRunResult(teamName, result) {
+/** Records a whole run's per-page results in a single read-modify-write (one file write per run). */
+function recordTeamRunResults(teamName, results) {
+  if (!results.length) {
+    return;
+  }
   const allResults = readAllRunResults();
   const teamKey = teamName || '(unnamed team)';
-  const priorForOtherPages = (allResults[teamKey] || []).filter((entry) => entry.pageUrlOrId !== result.pageUrlOrId);
-  allResults[teamKey] = [...priorForOtherPages, result];
+  const ranPageIds = new Set(results.map((result) => result.pageUrlOrId));
+  const keptForOtherPages = (allResults[teamKey] || []).filter((entry) => !ranPageIds.has(entry.pageUrlOrId));
+  allResults[teamKey] = [...keptForOtherPages, ...results];
   try {
     fs.mkdirSync(path.dirname(getResultsFilePath()), { recursive: true });
     fs.writeFileSync(getResultsFilePath(), JSON.stringify(allResults, null, 2) + '\n', 'utf8');
@@ -137,8 +141,8 @@ async function runPiReviewTeamNow(configuration, teamReference, deps = {}) {
     // eslint-disable-next-line no-await-in-loop -- pages are refreshed sequentially to bound Jira/Confluence load
     const result = await refreshPiReviewPage({ page, team, deps: runDeps, configuration });
     results.push(result);
-    recordRunResult(team.teamName, result);
   }
+  recordTeamRunResults(team.teamName, results); // one file write per run, not per page
   return { ok: results.every((result) => result.status !== 'failed'), teamName: team.teamName || '', results };
 }
 
@@ -208,5 +212,5 @@ module.exports = {
   runPiReviewTeamNow,
   checkAndFireScheduledPiReviews,
   readLastRunResults,
-  recordRunResult,
+  recordTeamRunResults,
 };

@@ -70,6 +70,23 @@ describe('PiReviewSchedulerPanel', () => {
     expect((savedTeams as { productOwnerAssignee: string }[])[0].productOwnerAssignee).toBe('C99999')
   })
 
+  it('disables Run now while there are unsaved edits and re-enables after saving', async () => {
+    installFetch({
+      'GET /api/pi-review-scheduler/config': () => ({ teams: [oneTeam()] }),
+      'GET /api/pi-review-scheduler/status': () => ({ teams: {} }),
+      'POST /api/pi-review-scheduler/config': () => ({ ok: true, teams: [oneTeam()] }),
+    })
+
+    render(<PiReviewSchedulerPanel />)
+    expect(await screen.findByRole('button', { name: /run now/i })).toBeEnabled()
+
+    fireEvent.change(screen.getByLabelText('Product Owner 1'), { target: { value: 'C99999' } })
+    expect(screen.getByRole('button', { name: /run now/i })).toBeDisabled() // dirty → gated
+
+    fireEvent.click(screen.getByRole('button', { name: /save schedules/i }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /run now/i })).toBeEnabled())
+  })
+
   it('runs a team now and shows the outcome', async () => {
     let ranTeamIndex: number | null = null
     installFetch({

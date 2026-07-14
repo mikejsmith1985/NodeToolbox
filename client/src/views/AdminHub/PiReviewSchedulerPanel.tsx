@@ -92,18 +92,31 @@ export function PiReviewSchedulerPanel() {
   const [statusMessage, setStatusMessage] = useState('')
   const [lastRunByTeam, setLastRunByTeam] = useState<Record<string, PiReviewRunResult[]>>({})
   const [isRunningIndex, setIsRunningIndex] = useState<number | null>(null)
+  // True when the panel has edits not yet saved. Run now targets the SERVER's saved config by index,
+  // so it must be disabled while dirty — otherwise a Run now would act on the wrong (or stale) team.
+  const [isDirty, setIsDirty] = useState(false)
 
   const loadEverything = useCallback(async () => {
     // isLoading starts true; we avoid a synchronous setState here so this can be called from an
-    // effect without cascading renders. A re-load (e.g. after Run now) simply refreshes in place.
+    // effect without cascading renders.
     try {
       const [loadedTeams, loadedStatus] = await Promise.all([fetchSchedulerConfig(), fetchStatus()])
       setTeams(loadedTeams)
       setLastRunByTeam(loadedStatus)
+      setIsDirty(false)
     } catch (loadError) {
       setStatusMessage(loadError instanceof Error ? loadError.message : 'Failed to load configuration.')
     } finally {
       setIsLoading(false)
+    }
+  }, [])
+
+  // Refresh only the last-run status (used after Run now) so it never clobbers unsaved edits.
+  const refreshStatus = useCallback(async () => {
+    try {
+      setLastRunByTeam(await fetchStatus())
+    } catch {
+      // Non-fatal: the run already happened; a status refresh failure just leaves stale status.
     }
   }, [])
 
@@ -113,32 +126,39 @@ export function PiReviewSchedulerPanel() {
     return () => clearTimeout(timeoutHandle)
   }, [loadEverything])
 
+  // Mutate one team via a function of its CURRENT state (functional updater), never a stale closure.
+  function updateTeamWith(teamIndex: number, updater: (team: PiReviewSchedulerTeam) => PiReviewSchedulerTeam) {
+    setTeams((currentTeams) => currentTeams.map((team, index) => (index === teamIndex ? updater(team) : team)))
+    setIsDirty(true)
+  }
+
   function updateTeam(teamIndex: number, patch: Partial<PiReviewSchedulerTeam>) {
-    setTeams((currentTeams) => currentTeams.map((team, index) => (index === teamIndex ? { ...team, ...patch } : team)))
+    updateTeamWith(teamIndex, (team) => ({ ...team, ...patch }))
   }
 
   function updatePage(teamIndex: number, pageIndex: number, patch: Partial<PiReviewSchedulerPage>) {
-    setTeams((currentTeams) => currentTeams.map((team, index) => {
-      if (index !== teamIndex) return team
-      const pages = team.pages.map((page, pIndex) => (pIndex === pageIndex ? { ...page, ...patch } : page))
-      return { ...team, pages }
+    updateTeamWith(teamIndex, (team) => ({
+      ...team,
+      pages: team.pages.map((page, pIndex) => (pIndex === pageIndex ? { ...page, ...patch } : page)),
     }))
   }
 
   function addTeam() {
     setTeams((currentTeams) => [...currentTeams, buildDefaultTeam()])
+    setIsDirty(true)
   }
 
   function removeTeam(teamIndex: number) {
     setTeams((currentTeams) => currentTeams.filter((_team, index) => index !== teamIndex))
+    setIsDirty(true)
   }
 
   function addPage(teamIndex: number) {
-    updateTeam(teamIndex, { pages: [...teams[teamIndex].pages, { pageUrlOrId: '', piName: '' }] })
+    updateTeamWith(teamIndex, (team) => ({ ...team, pages: [...team.pages, { pageUrlOrId: '', piName: '' }] }))
   }
 
   function removePage(teamIndex: number, pageIndex: number) {
-    updateTeam(teamIndex, { pages: teams[teamIndex].pages.filter((_page, index) => index !== pageIndex) })
+    updateTeamWith(teamIndex, (team) => ({ ...team, pages: team.pages.filter((_page, index) => index !== pageIndex) }))
   }
 
   async function handleSave() {
@@ -146,6 +166,7 @@ export function PiReviewSchedulerPanel() {
     setStatusMessage('')
     try {
       await saveSchedulerConfig(teams)
+      setIsDirty(false)
       setStatusMessage('Saved.')
     } catch (saveError) {
       setStatusMessage(saveError instanceof Error ? saveError.message : 'Failed to save.')
@@ -160,7 +181,7 @@ export function PiReviewSchedulerPanel() {
     try {
       const outcome = await runTeamNow(teamIndex)
       setStatusMessage(outcome.ok ? 'Run complete.' : (outcome.message || 'Run finished with errors.'))
-      await loadEverything()
+      await refreshStatus() // status only — never reloads config over unsaved edits
     } catch (runError) {
       setStatusMessage(runError instanceof Error ? runError.message : 'Run failed.')
     } finally {
@@ -249,15 +270,17 @@ export function PiReviewSchedulerPanel() {
           <div className={styles.panelActions}>
             <button
               type="button"
-              disabled={isRunningIndex === teamIndex}
+              disabled={isRunningIndex === teamIndex || isDirty}
+              title={isDirty ? 'Save your changes before running — Run now uses the saved configuration.' : undefined}
               onClick={() => void handleRunNow(teamIndex)}
             >
               {isRunningIndex === teamIndex ? 'Running…' : 'Run now'}
             </button>
             <button type="button" onClick={() => removeTeam(teamIndex)}>Remove team</button>
           </div>
+          {isDirty && <p className={styles.panelStatusLine}>Unsaved changes — save before Run now.</p>}
 
-          {(lastRunByTeam[team.teamName] || []).map((result, resultIndex) => (
+          {(lastRunByTeam[team.teamName || '(unnamed team)'] || []).map((result, resultIndex) => (
             <p key={resultIndex} className={styles.panelStatusLine}>
               Last run: <strong>{result.status}</strong> · {result.pageUrlOrId} · {result.ranAtIso}
               {result.message ? ` — ${result.message}` : ''}
