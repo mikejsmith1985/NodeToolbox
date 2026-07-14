@@ -14,7 +14,7 @@ import { jiraGet } from '../../../services/jiraApi.ts';
 import { fetchPiNameSuggestions } from '../../../services/piNameSuggestions.ts';
 import { filterPiNamesToPlanningWindow } from '../../ArtView/hooks/artHelpers.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
-import { useSettingsStore } from '../../../store/settingsStore.ts';
+import { useSettingsStore, type SprintDashboardPiReviewPage } from '../../../store/settingsStore.ts';
 import type { JiraBoard, JiraIssue, JiraSprint, JiraVersion } from '../../../types/jira.ts';
 
 // ── Named constants ──
@@ -113,6 +113,12 @@ export interface SprintDataState {
    * Auto-resolution during a load never sets this — only explicit user actions do.
    */
   hasUnsavedTeamChanges: boolean;
+  /**
+   * Draft PI Review Confluence pages for the active team (one per Program Increment). Editing these
+   * is a genuine team-config change, so the add/update/remove actions flag unsaved changes; Save
+   * persists them onto the team profile, which is the single source of truth.
+   */
+  piReviewPages: SprintDashboardPiReviewPage[];
 }
 
 export interface SprintDataActions {
@@ -135,6 +141,12 @@ export interface SprintDataActions {
   moveIssueToSprint(issueKey: string, targetSprintId: number): Promise<void>;
   /** Clears the unsaved-changes flag after the working selection has been saved to the team profile. */
   markTeamChangesSaved(): void;
+  /** Appends a blank PI Review page row to the draft (flags unsaved changes). */
+  addPiReviewPage(): void;
+  /** Updates the PI name and/or page URL of one draft PI Review page by index (flags unsaved). */
+  updatePiReviewPage(pageIndex: number, changes: Partial<SprintDashboardPiReviewPage>): void;
+  /** Removes one draft PI Review page by index (flags unsaved changes). */
+  removePiReviewPage(pageIndex: number): void;
 }
 
 // ── API response shapes ──
@@ -266,9 +278,19 @@ function persistSelectedPiValue(piValue: string): void {
 
 // ── Internal helpers ──
 
+/** Reads the active team profile's PI Review pages so the draft hydrates from the source of truth. */
+function readPersistedPiReviewPages(): SprintDashboardPiReviewPage[] {
+  const settingsState = useSettingsStore.getState();
+  const activeProfile = settingsState.sprintDashboardTeamProfiles.find(
+    (teamProfile) => teamProfile.id === settingsState.sprintDashboardActiveTeamProfileId,
+  );
+  return activeProfile?.piReviewPages ?? [];
+}
+
 function createInitialSprintDataState(): SprintDataState {
   return {
     projectKey: readPersistedProjectKey(),
+    piReviewPages: readPersistedPiReviewPages(),
     activeTab: readPersistedActiveTab(),
     scopeMode: readPersistedScopeMode(),
     selectedSprintId: readPersistedSelectedSprintId(),
@@ -959,6 +981,35 @@ export function useSprintData(
     setState((previousState) => ({ ...previousState, hasUnsavedTeamChanges: false }));
   }, []);
 
+  const addPiReviewPage = useCallback(() => {
+    setState((previousState) => ({
+      ...previousState,
+      piReviewPages: [...previousState.piReviewPages, { piName: '', pageUrl: '' }],
+      hasUnsavedTeamChanges: true,
+    }));
+  }, []);
+
+  const updatePiReviewPage = useCallback(
+    (pageIndex: number, changes: Partial<SprintDashboardPiReviewPage>) => {
+      setState((previousState) => ({
+        ...previousState,
+        piReviewPages: previousState.piReviewPages.map((page, index) =>
+          index === pageIndex ? { ...page, ...changes } : page,
+        ),
+        hasUnsavedTeamChanges: true,
+      }));
+    },
+    [],
+  );
+
+  const removePiReviewPage = useCallback((pageIndex: number) => {
+    setState((previousState) => ({
+      ...previousState,
+      piReviewPages: previousState.piReviewPages.filter((_, index) => index !== pageIndex),
+      hasUnsavedTeamChanges: true,
+    }));
+  }, []);
+
   const actions = useMemo<SprintDataActions>(
     () => ({
       setProjectKey,
@@ -976,6 +1027,9 @@ export function useSprintData(
       loadAvailableSprints,
       moveIssueToSprint,
       markTeamChangesSaved,
+      addPiReviewPage,
+      updatePiReviewPage,
+      removePiReviewPage,
     }),
     [
       setProjectKey,
@@ -993,6 +1047,9 @@ export function useSprintData(
       loadAvailableSprints,
       moveIssueToSprint,
       markTeamChangesSaved,
+      addPiReviewPage,
+      updatePiReviewPage,
+      removePiReviewPage,
     ],
   );
 

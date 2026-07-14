@@ -53,6 +53,12 @@ export type ToolTextSize =
   | typeof LARGE_TOOL_TEXT_SIZE
   | typeof EXTRA_LARGE_TOOL_TEXT_SIZE;
 
+/** One Program Increment ↔ Confluence page association for a team's PI Review workspace. */
+export interface SprintDashboardPiReviewPage {
+  piName: string;
+  pageUrl: string;
+}
+
 export interface SprintDashboardTeamProfile {
   id: string;
   name: string;
@@ -64,6 +70,12 @@ export interface SprintDashboardTeamProfile {
   selectedSprintId: string;
   selectedFixVersion: string;
   selectedPiValue: string;
+  /**
+   * Confluence PI Review pages for this team — one per Program Increment. This is the single
+   * source of truth for a team's PI Review pages; the ART view reads them from here for display.
+   * Optional so profiles saved before this feature (and hand-built literals) stay valid.
+   */
+  piReviewPages?: SprintDashboardPiReviewPage[];
 }
 
 const EMPTY_TEAM_PROFILE_LIST: SprintDashboardTeamProfile[] = [];
@@ -169,6 +181,29 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((arrayItem) => typeof arrayItem === 'string');
 }
 
+/** Normalizes a stored PI Review page list, dropping fully-empty rows. Blank-URL rows are kept so
+ *  an in-progress entry (PI chosen, URL not yet pasted) is not silently lost on reload. */
+function normalizeSprintDashboardPiReviewPages(pagesCandidate: unknown): SprintDashboardPiReviewPage[] {
+  if (!Array.isArray(pagesCandidate)) {
+    return [];
+  }
+
+  return pagesCandidate
+    .map((pageCandidate) => {
+      if (typeof pageCandidate !== 'object' || pageCandidate === null) {
+        return null;
+      }
+      const pageRecord = pageCandidate as { piName?: unknown; pageUrl?: unknown };
+      const pageUrl = typeof pageRecord.pageUrl === 'string' ? pageRecord.pageUrl.trim() : '';
+      const piName = typeof pageRecord.piName === 'string' ? pageRecord.piName.trim() : '';
+      if (pageUrl === '' && piName === '') {
+        return null;
+      }
+      return { piName, pageUrl };
+    })
+    .filter((page): page is SprintDashboardPiReviewPage => page !== null);
+}
+
 function normalizeSprintDashboardTeamProfile(
   profileCandidate: Partial<SprintDashboardTeamProfile>,
 ): SprintDashboardTeamProfile | null {
@@ -201,6 +236,7 @@ function normalizeSprintDashboardTeamProfile(
       typeof profileCandidate.selectedPiValue === 'string'
         ? profileCandidate.selectedPiValue.trim()
         : '',
+    piReviewPages: normalizeSprintDashboardPiReviewPages(profileCandidate.piReviewPages),
   };
 }
 
@@ -645,6 +681,7 @@ export const useSettingsStore = create<SettingsState>((setState) => ({
                 profileUpdates.selectedFixVersion?.trim() ?? teamProfile.selectedFixVersion,
               selectedPiValue:
                 profileUpdates.selectedPiValue?.trim() ?? teamProfile.selectedPiValue,
+              piReviewPages: profileUpdates.piReviewPages ?? teamProfile.piReviewPages,
             }
           : teamProfile,
       );

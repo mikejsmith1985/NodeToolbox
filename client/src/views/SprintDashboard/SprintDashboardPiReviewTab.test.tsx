@@ -4,6 +4,19 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useCapacityStore } from './hooks/useCapacityStore.ts';
+import { useSettingsStore, type SprintDashboardPiReviewPage } from '../../store/settingsStore.ts';
+
+/** Activates a Team Dashboard team profile with the given PI Review pages (the new source of truth). */
+function activateTeamProfileWithPages(piReviewPages: SprintDashboardPiReviewPage[]): void {
+  useSettingsStore.setState({
+    sprintDashboardTeamProfiles: [{
+      id: 'team-1', name: 'Alpha Team', projectKey: 'TBX', boardId: '42', boardName: 'Alpha Board',
+      boardType: 'scrum', scopeMode: 'pi', selectedSprintId: '', selectedFixVersion: '', selectedPiValue: 'PI 26.3',
+      piReviewPages,
+    }],
+    sprintDashboardActiveTeamProfileId: 'team-1',
+  });
+}
 
 const { mockPiReviewTab, mockPiFeatureRemapPanel } = vi.hoisted(() => ({
   mockPiReviewTab: vi.fn(),
@@ -50,6 +63,7 @@ describe('SprintDashboardPiReviewTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    useSettingsStore.setState({ sprintDashboardTeamProfiles: [], sprintDashboardActiveTeamProfileId: '' });
     useCapacityStore.setState({
       dateMode: 'pi',
       startDate: '',
@@ -58,16 +72,10 @@ describe('SprintDashboardPiReviewTab', () => {
     });
   });
 
-  it('renders the shared PI Review editor in authoring mode for the matched ART team', () => {
-    localStorage.setItem('nodetoolbox-art-teams', JSON.stringify([
-      {
-        id: 'team-1',
-        name: 'Alpha Team',
-        boardId: '42',
-        projectKey: 'TBX',
-        piReviewPageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha',
-      },
-    ]));
+  it('renders the shared PI Review editor in authoring mode for the active team profile', () => {
+    activateTeamProfileWithPages([
+      { piName: 'PI 26.3', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha' },
+    ]);
 
     render(
       <SprintDashboardPiReviewTab
@@ -94,9 +102,9 @@ describe('SprintDashboardPiReviewTab', () => {
       teams: [
         expect.objectContaining({
           name: 'Alpha Team',
-          // The legacy single page migrates into the multi-PI list before reaching the editor.
+          // Pages come straight from the active team profile now.
           piReviewPages: [
-            { piName: '', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha' },
+            { piName: 'PI 26.3', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha' },
           ],
         }),
       ],
@@ -114,15 +122,9 @@ describe('SprintDashboardPiReviewTab', () => {
       ],
     });
 
-    localStorage.setItem('nodetoolbox-art-teams', JSON.stringify([
-      {
-        id: 'team-1',
-        name: 'Alpha Team',
-        boardId: '42',
-        projectKey: 'TBX',
-        piReviewPageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha',
-      },
-    ]));
+    activateTeamProfileWithPages([
+      { piName: 'PI 26.3', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha' },
+    ]);
 
     render(
       <SprintDashboardPiReviewTab
@@ -155,7 +157,7 @@ describe('SprintDashboardPiReviewTab', () => {
     }));
   });
 
-  it('shows guidance when the current dashboard does not map to an ART PI Review page', () => {
+  it('shows guidance when the active team has no PI Review pages configured', () => {
     render(
       <SprintDashboardPiReviewTab
         boardId={42}
@@ -168,8 +170,7 @@ describe('SprintDashboardPiReviewTab', () => {
       />,
     );
 
-    expect(screen.getByText(/does not yet match an art team with a configured pi review page url/i)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /open art settings/i })).toHaveAttribute('href', '/art');
+    expect(screen.getByText(/save a dashboard team first/i)).toBeInTheDocument();
     expect(mockPiFeatureRemapPanel).not.toHaveBeenCalled();
   });
 });

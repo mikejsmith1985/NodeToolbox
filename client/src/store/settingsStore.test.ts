@@ -232,6 +232,7 @@ describe('useSettingsStore', () => {
       selectedSprintId: '101',
       selectedFixVersion: '',
       selectedPiValue: '',
+      piReviewPages: [],
     };
     useSettingsStore.getState().setSprintDashboardTeamProfiles([savedAlphaProfile]);
 
@@ -283,6 +284,7 @@ describe('useSettingsStore', () => {
         selectedSprintId: '101',
         selectedFixVersion: '',
         selectedPiValue: 'PI-26.1',
+        piReviewPages: [],
       },
     ]);
     expect(window.localStorage.getItem(SPRINT_DASHBOARD_TEAM_PROFILES_STORAGE_KEY)).toBe(

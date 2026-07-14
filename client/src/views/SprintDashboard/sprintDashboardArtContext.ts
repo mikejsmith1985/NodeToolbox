@@ -1,6 +1,7 @@
 // sprintDashboardArtContext.ts — Shared Team Dashboard helpers for resolving the current ART team and PI context.
 
 import type { ArtTeam, PiReviewPageAssociation } from '../ArtView/hooks/useArtData.ts';
+import type { SprintDashboardTeamProfile } from '../../store/settingsStore.ts';
 
 const ART_TEAMS_STORAGE_KEY = 'nodetoolbox-art-teams';
 const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
@@ -120,4 +121,80 @@ export function findMatchingArtTeam(artTeams: ArtTeam[], boardId: number | null,
   }
 
   return artTeams.find((team) => (team.projectKey?.trim().toUpperCase() ?? '') === normalizedProjectKey) ?? null;
+}
+
+/**
+ * The reverse of {@link findMatchingArtTeam}: maps an ART team to its Team Dashboard profile so the
+ * ART view can read that team's PI Review pages from the profile (the single source of truth).
+ * Matches by name first, then board+project, then board, then project — mirroring the forward matcher.
+ */
+export function findMatchingTeamProfileForArtTeam(
+  teamProfiles: SprintDashboardTeamProfile[],
+  artTeam: ArtTeam,
+): SprintDashboardTeamProfile | null {
+  const normalizedName = artTeam.name.trim().toLowerCase();
+  const normalizedBoardId = artTeam.boardId.trim();
+  const normalizedProjectKey = (artTeam.projectKey ?? '').trim().toUpperCase();
+
+  if (normalizedName !== '') {
+    const nameMatch = teamProfiles.find((profile) => profile.name.trim().toLowerCase() === normalizedName);
+    if (nameMatch) {
+      return nameMatch;
+    }
+  }
+
+  if (normalizedBoardId !== '' && normalizedProjectKey !== '') {
+    const exactMatch = teamProfiles.find((profile) =>
+      profile.boardId.trim() === normalizedBoardId
+      && profile.projectKey.trim().toUpperCase() === normalizedProjectKey);
+    if (exactMatch) {
+      return exactMatch;
+    }
+  }
+
+  if (normalizedBoardId !== '') {
+    const boardMatch = teamProfiles.find((profile) => profile.boardId.trim() === normalizedBoardId);
+    if (boardMatch) {
+      return boardMatch;
+    }
+  }
+
+  if (normalizedProjectKey === '') {
+    return null;
+  }
+
+  return teamProfiles.find((profile) => profile.projectKey.trim().toUpperCase() === normalizedProjectKey) ?? null;
+}
+
+/**
+ * One-time migration: copies PI Review pages that were configured on the legacy ART team records
+ * onto the matching Team Dashboard profiles (the new source of truth). Only fills profiles that have
+ * no pages yet, so it never clobbers pages a user already set on the profile. Returns the possibly
+ * updated profile list plus whether anything changed, so the caller can persist only when needed.
+ */
+export function migrateArtTeamPiReviewPagesToProfiles(
+  teamProfiles: SprintDashboardTeamProfile[],
+): { migratedProfiles: SprintDashboardTeamProfile[]; didMigrate: boolean } {
+  const storedArtTeams = readStoredArtTeams();
+  let didMigrate = false;
+
+  const migratedProfiles = teamProfiles.map((teamProfile) => {
+    if ((teamProfile.piReviewPages ?? []).length > 0) {
+      return teamProfile;
+    }
+    const matchedArtTeam = findMatchingArtTeam(
+      storedArtTeams,
+      teamProfile.boardId.trim() !== '' ? Number(teamProfile.boardId) : null,
+      teamProfile.projectKey,
+      teamProfile.name,
+    );
+    const artTeamPages = matchedArtTeam?.piReviewPages ?? [];
+    if (artTeamPages.length === 0) {
+      return teamProfile;
+    }
+    didMigrate = true;
+    return { ...teamProfile, piReviewPages: artTeamPages.map((page) => ({ ...page })) };
+  });
+
+  return { migratedProfiles, didMigrate };
 }

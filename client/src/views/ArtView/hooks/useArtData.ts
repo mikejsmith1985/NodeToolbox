@@ -368,12 +368,6 @@ export interface ArtDataActions {
   setBoardPrepTeamFilter: (teamName: string) => void;
   /** Update the SoS Jira issue key for a specific team, persisted with the team roster. */
   updateTeamSosKey: (teamId: string, sosIssueKey: string) => void;
-  /** Append a blank PI Review page row to a team so another PI can be configured. */
-  addTeamPiReviewPage: (teamId: string) => void;
-  /** Update the PI name and/or page URL of one of a team's PI Review pages by index. */
-  updateTeamPiReviewPage: (teamId: string, pageIndex: number, changes: Partial<PiReviewPageAssociation>) => void;
-  /** Remove one PI Review page from a team by index. */
-  removeTeamPiReviewPage: (teamId: string, pageIndex: number) => void;
   /** Update the Jira label for a specific team, persisted with the team roster. Used by Feature Change reports. */
   updateTeamJiraLabel: (teamId: string, jiraLabel: string) => void;
 }
@@ -861,50 +855,6 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
     );
   }, []);
 
-  /** Appends a blank PI Review page row to a team so the user can configure another PI. */
-  const addTeamPiReviewPage = useCallback((teamId: string) => {
-    setTeams((previous) =>
-      previous.map((team) =>
-        team.id === teamId
-          ? { ...team, piReviewPages: [...(team.piReviewPages ?? []), { piName: '', pageUrl: '' }] }
-          : team,
-      ),
-    );
-  }, []);
-
-  /**
-   * Updates the PI name and/or page URL of one PI Review page for a team.
-   * Values are stored raw here; trimming and empty-row removal happen at persist time.
-   */
-  const updateTeamPiReviewPage = useCallback(
-    (teamId: string, pageIndex: number, changes: Partial<PiReviewPageAssociation>) => {
-      setTeams((previous) =>
-        previous.map((team) => {
-          if (team.id !== teamId) {
-            return team;
-          }
-          const currentPages = team.piReviewPages ?? [];
-          const nextPages = currentPages.map((association, index) =>
-            index === pageIndex ? { ...association, ...changes } : association,
-          );
-          return { ...team, piReviewPages: nextPages };
-        }),
-      );
-    },
-    [],
-  );
-
-  /** Removes one PI Review page from a team by its position in the list. */
-  const removeTeamPiReviewPage = useCallback((teamId: string, pageIndex: number) => {
-    setTeams((previous) =>
-      previous.map((team) =>
-        team.id === teamId
-          ? { ...team, piReviewPages: (team.piReviewPages ?? []).filter((_, index) => index !== pageIndex) }
-          : team,
-      ),
-    );
-  }, []);
-
   /** Updates the Jira label for a team in-place. Persisted to localStorage via the next Save Teams click. */
   const updateTeamJiraLabel = useCallback((teamId: string, jiraLabel: string) => {
     setTeams((previous) =>
@@ -945,9 +895,6 @@ export function useArtData(): { state: ArtDataState; actions: ArtDataActions } {
       loadBoardPrep,
       setBoardPrepTeamFilter,
       updateTeamSosKey,
-      addTeamPiReviewPage,
-      updateTeamPiReviewPage,
-      removeTeamPiReviewPage,
       updateTeamJiraLabel,
     },
   };

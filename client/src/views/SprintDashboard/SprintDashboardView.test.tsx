@@ -524,6 +524,7 @@ describe('SprintDashboardView', () => {
       selectedSprintId: '',
       selectedFixVersion: 'Release 25.2',
       selectedPiValue: 'PI-25.2',
+      piReviewPages: [],
     });
   });
 

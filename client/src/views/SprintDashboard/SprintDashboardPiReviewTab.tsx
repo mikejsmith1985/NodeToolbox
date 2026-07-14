@@ -1,7 +1,5 @@
 // SprintDashboardPiReviewTab.tsx — Routes PI Review authoring through Team Dashboard for the current team.
 
-import { useMemo } from 'react';
-
 import type { JiraIssue } from '../../types/jira.ts';
 import PiReviewTab from '../ArtView/PiReviewTab.tsx';
 import type { ArtTeam } from '../ArtView/hooks/useArtData.ts';
@@ -11,14 +9,9 @@ import RiskManagementSection from './RiskManagementSection.tsx';
 import { buildCapacitySummary } from './capacityModel.ts';
 import { useCapacityStore } from './hooks/useCapacityStore.ts';
 import { useSettingsStore } from '../../store/settingsStore.ts';
-import {
-  findMatchingArtTeam,
-  readFallbackSelectedPiName,
-  readStoredArtTeams,
-} from './sprintDashboardArtContext.ts';
+import { readFallbackSelectedPiName } from './sprintDashboardArtContext.ts';
 import styles from './SprintDashboardView.module.css';
 
-const ART_VIEW_ROUTE = '/art';
 const EMPTY_CONTEXT_LABEL = 'Not selected';
 const PI_REVIEW_CAPACITY_INTRO =
   'Plan capacity here first so the same snapshot feeds Feature Scope, Confidence, and the Confluence PI Review save.';
@@ -53,45 +46,46 @@ export default function SprintDashboardPiReviewTab({
   selectedPiName,
   sprintIssues,
 }: SprintDashboardPiReviewTabProps) {
-  const storedArtTeams = useMemo(() => readStoredArtTeams(), []);
   const boardLabel = readCapacityBoardLabel(boardName, boardId);
   const capacityStartDate = useCapacityStore((state) => state.startDate);
   const capacityEndDate = useCapacityStore((state) => state.endDate);
   const capacityRows = useCapacityStore((state) => state.rows);
-  // The selected team's name disambiguates the ART team when several share a project key.
-  const activeTeamName = useSettingsStore(
-    (storeState) => storeState.sprintDashboardTeamProfiles.find((profile) => profile.id === storeState.sprintDashboardActiveTeamProfileId)?.name ?? '',
-  );
-  const matchedArtTeam = useMemo(
-    () => findMatchingArtTeam(storedArtTeams, boardId, projectKey, activeTeamName),
-    [boardId, projectKey, storedArtTeams, activeTeamName],
+  // The active team profile is the single source of truth for this team's PI Review pages.
+  const activeProfile = useSettingsStore(
+    (storeState) =>
+      storeState.sprintDashboardTeamProfiles.find(
+        (profile) => profile.id === storeState.sprintDashboardActiveTeamProfileId,
+      ) ?? null,
   );
   const effectiveSelectedPiName = selectedPiName.trim() || readFallbackSelectedPiName();
+  const configuredPiReviewPages = activeProfile?.piReviewPages ?? [];
   // The team is ready for authoring once it has at least one PI Review page with a URL.
-  const hasConfiguredPiReviewPage = (matchedArtTeam?.piReviewPages ?? []).some(
-    (page) => page.pageUrl.trim() !== '',
-  );
+  const hasConfiguredPiReviewPage = configuredPiReviewPages.some((page) => page.pageUrl.trim() !== '');
 
-  if (!matchedArtTeam || !hasConfiguredPiReviewPage) {
+  if (!activeProfile || !hasConfiguredPiReviewPage) {
     return (
       <section className={styles.piReviewAuthoringCard}>
         <h2 className={styles.settingsSectionTitle}>PI Review authoring</h2>
         <p className={styles.piReviewAuthoringText}>
-          Team Dashboard owns PI Review creation and maintenance, but this dashboard does not yet match an ART team with a configured PI Review page URL.
+          {activeProfile
+            ? 'This team has no PI Review pages configured yet. Add one Confluence page per Program Increment in Settings → Saved Dashboard Teams → PI Review Pages, then Save the team.'
+            : 'Save a dashboard team first (Settings), then add its PI Review pages there.'}
         </p>
         <p className={styles.piReviewAuthoringText}>
           Current dashboard context: board <strong>{boardName || boardId || 'Not selected'}</strong>
           {projectKey.trim() !== '' ? <> in project <strong>{projectKey.trim().toUpperCase()}</strong></> : null}.
         </p>
-        <a className={styles.piReviewAuthoringLink} href={ART_VIEW_ROUTE}>
-          Open ART Settings
-        </a>
       </section>
     );
   }
 
+  // Build the ArtTeam-shaped object the shared PI Review editor expects, sourced from the profile.
   const piReviewTeam: ArtTeam = {
-    ...matchedArtTeam,
+    id: activeProfile.id,
+    name: activeProfile.name,
+    boardId: activeProfile.boardId,
+    projectKey: activeProfile.projectKey || undefined,
+    piReviewPages: configuredPiReviewPages,
     sprintIssues,
     isLoading: false,
     loadError: null,

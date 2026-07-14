@@ -31,6 +31,7 @@ import { ReportsHubRuntimeBoundary } from './views/ReportsHub/ReportsHubRuntimeB
 import SettingsView from './views/Settings/SettingsView.tsx';
 import SnowHubView from './views/SnowHub/SnowHubView.tsx';
 import SprintDashboardView from './views/SprintDashboard/SprintDashboardView.tsx';
+import { migrateArtTeamPiReviewPagesToProfiles } from './views/SprintDashboard/sprintDashboardArtContext.ts';
 import TextToolsView from './views/TextTools/TextToolsView.tsx';
 import styles from './App.module.css';
 
@@ -115,6 +116,18 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-tool-text-size', toolTextSize);
   }, [toolTextSize]);
+
+  // One-time migration: move PI Review pages that lived on legacy ART team records onto the Team
+  // Dashboard team profiles (the new single source of truth) so existing pages keep displaying.
+  useEffect(() => {
+    const settingsState = useSettingsStore.getState();
+    const { migratedProfiles, didMigrate } = migrateArtTeamPiReviewPagesToProfiles(
+      settingsState.sprintDashboardTeamProfiles,
+    );
+    if (didMigrate) {
+      settingsState.setSprintDashboardTeamProfiles(migratedProfiles);
+    }
+  }, []);
 
   return (
     <ToastProvider>
