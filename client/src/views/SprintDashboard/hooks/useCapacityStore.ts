@@ -7,6 +7,7 @@
 import { create } from 'zustand';
 
 import { useSettingsStore } from '../../../store/settingsStore.ts';
+import { coerceLegacyCapacityRole } from '../capacityModel.ts';
 import type { CapacityRow } from '../capacityModel.ts';
 import {
   buildTeamScopedStorageKey,
@@ -36,6 +37,8 @@ interface CapacityState extends PersistedCapacityConfig {
   setEndDate: (endDate: string) => void;
   /** Append a new row to the team composition table. */
   addRow: (newRow: CapacityRow) => void;
+  /** Replace every row at once (used when seeding the team composition from the roster). */
+  setRows: (nextRows: CapacityRow[]) => void;
   /** Apply a partial update to a specific row identified by its id. */
   updateRow: (rowId: string, rowUpdates: Partial<Omit<CapacityRow, 'id'>>) => void;
   /** Remove a row from the team composition table. */
@@ -70,6 +73,20 @@ function isPersistedCapacityConfig(value: unknown): value is PersistedCapacityCo
   );
 }
 
+/**
+ * Normalizes persisted rows to the current role taxonomy: legacy role codes are translated to their
+ * current label and rows whose role no longer counts toward capacity (retired SM/PO/TPO) are dropped.
+ * This overwrites old data with the new format on load — there is no attempt to preserve old semantics.
+ */
+function normalizePersistedRows(persistedRows: CapacityRow[]): CapacityRow[] {
+  return persistedRows
+    .map((persistedRow) => {
+      const normalizedRole = coerceLegacyCapacityRole(persistedRow.role);
+      return normalizedRole === null ? null : { ...persistedRow, role: normalizedRole };
+    })
+    .filter((normalizedRow): normalizedRow is CapacityRow => normalizedRow !== null);
+}
+
 /** Read the persisted capacity config from localStorage, returning null if absent or corrupt. */
 function readPersistedConfig(dashboardTeamProfileId = ''): PersistedCapacityConfig | null {
   if (!canUseLocalStorage()) {
@@ -91,7 +108,7 @@ function readPersistedConfig(dashboardTeamProfileId = ''): PersistedCapacityConf
       dateMode: parsedValue.dateMode === 'custom' ? 'custom' : INITIAL_DATE_MODE,
       startDate: parsedValue.startDate,
       endDate: parsedValue.endDate,
-      rows: parsedValue.rows,
+      rows: normalizePersistedRows(parsedValue.rows),
     };
   } catch {
     // Corrupted storage — fall back to defaults.
@@ -179,6 +196,11 @@ export const useCapacityStore = create<CapacityState>((setState, getState) => ({
     const updatedRows = [...getState().rows, newRow];
     setState({ rows: updatedRows });
     writePersistedConfig({ ...getState(), rows: updatedRows }, getState().dashboardTeamProfileId);
+  },
+
+  setRows: (nextRows) => {
+    setState({ rows: nextRows });
+    writePersistedConfig({ ...getState(), rows: nextRows }, getState().dashboardTeamProfileId);
   },
 
   updateRow: (rowId, rowUpdates) => {

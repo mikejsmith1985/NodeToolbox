@@ -117,8 +117,8 @@ describe('SprintDashboardPiReviewTab', () => {
       startDate: '2026-05-18',
       endDate: '2026-05-22',
       rows: [
-        { id: 'dev-row', role: 'Dev', memberCount: 2, capacityPercentage: 100, totalPtoDays: 0 },
-        { id: 'qe-row', role: 'QE', memberCount: 1, capacityPercentage: 50, totalPtoDays: 0 },
+        { id: 'dev-row', role: 'Developer', memberCount: 2, capacityPercentage: 100, totalPtoDays: 0 },
+        { id: 'qe-row', role: 'External Tester', memberCount: 1, capacityPercentage: 50, totalPtoDays: 0 },
       ],
     });
 
@@ -144,8 +144,8 @@ describe('SprintDashboardPiReviewTab', () => {
     expect(screen.getByText('Team Composition')).toBeInTheDocument();
     expect(screen.getByText('100% Capacity (pts)')).toBeInTheDocument();
     expect(screen.getByText('80% Capacity (pts)')).toBeInTheDocument();
-    expect(screen.getAllByText('Dev').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('QE').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Developer').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('External Tester').length).toBeGreaterThan(0);
     expect(mockPiReviewTab).toHaveBeenCalledWith(expect.objectContaining({
       teamCapacitySummaries: {
         'team-1': expect.objectContaining({

@@ -14,7 +14,7 @@ const TEST_STORAGE_KEY = 'tbxCapacityConfig:legacy-default';
 function buildCapacityRow(overrides: Partial<CapacityRow> = {}): CapacityRow {
   return {
     id: 'row-1',
-    role: 'Dev',
+    role: 'Developer',
     memberCount: 2,
     capacityPercentage: 100,
     totalPtoDays: 0,
@@ -131,7 +131,7 @@ describe('addRow', () => {
 
   it('appends multiple rows in order', () => {
     useCapacityStore.getState().addRow(buildCapacityRow({ id: 'row-a' }));
-    useCapacityStore.getState().addRow(buildCapacityRow({ id: 'row-b', role: 'QE' }));
+    useCapacityStore.getState().addRow(buildCapacityRow({ id: 'row-b', role: 'External Tester' }));
     const { rows } = useCapacityStore.getState();
     expect(rows).toHaveLength(2);
     expect(rows[0].id).toBe('row-a');
@@ -160,7 +160,7 @@ describe('updateRow', () => {
 
   it('does not modify rows with a different id', () => {
     useCapacityStore.getState().addRow(buildCapacityRow({ id: 'row-x' }));
-    useCapacityStore.getState().addRow(buildCapacityRow({ id: 'row-y', role: 'QE' }));
+    useCapacityStore.getState().addRow(buildCapacityRow({ id: 'row-y', role: 'External Tester' }));
     useCapacityStore.getState().updateRow('row-x', { memberCount: 9 });
     const untouchedRow = useCapacityStore.getState().rows.find((row) => row.id === 'row-y');
     expect(untouchedRow?.memberCount).toBe(2); // unchanged fixture value
@@ -179,7 +179,7 @@ describe('updateRow', () => {
 describe('removeRow', () => {
   it('removes the row with the given id', () => {
     useCapacityStore.getState().addRow(buildCapacityRow({ id: 'row-del' }));
-    useCapacityStore.getState().addRow(buildCapacityRow({ id: 'row-keep', role: 'SM' }));
+    useCapacityStore.getState().addRow(buildCapacityRow({ id: 'row-keep', role: 'Dev Lead' }));
     useCapacityStore.getState().removeRow('row-del');
     const { rows } = useCapacityStore.getState();
     expect(rows).toHaveLength(1);
@@ -197,6 +197,29 @@ describe('removeRow', () => {
     useCapacityStore.getState().removeRow('row-del');
     const storedValue = JSON.parse(localStorage.getItem(TEST_STORAGE_KEY) ?? '{}') as { rows: CapacityRow[] };
     expect(storedValue.rows).toHaveLength(0);
+  });
+});
+
+// ── setRows ──
+
+describe('setRows', () => {
+  it('replaces the entire rows array', () => {
+    useCapacityStore.getState().addRow(buildCapacityRow({ id: 'old-1' }));
+    useCapacityStore.getState().addRow(buildCapacityRow({ id: 'old-2', role: 'External Tester' }));
+    const replacementRows = [
+      buildCapacityRow({ id: 'new-1', role: 'Developer', memberCount: 3 }),
+      buildCapacityRow({ id: 'new-2', role: 'Internal Tester', memberCount: 2 }),
+    ];
+    useCapacityStore.getState().setRows(replacementRows);
+    expect(useCapacityStore.getState().rows).toEqual(replacementRows);
+  });
+
+  it('persists the replacement rows to localStorage', () => {
+    useCapacityStore.getState().addRow(buildCapacityRow({ id: 'old-1' }));
+    useCapacityStore.getState().setRows([buildCapacityRow({ id: 'replacement', role: 'External Tester', memberCount: 4 })]);
+    const storedValue = JSON.parse(localStorage.getItem(TEST_STORAGE_KEY) ?? '{}') as { rows: CapacityRow[] };
+    expect(storedValue.rows).toHaveLength(1);
+    expect(storedValue.rows[0].id).toBe('replacement');
   });
 });
 
@@ -218,6 +241,27 @@ describe('team isolation', () => {
       endDate: '2025-01-17',
       rows: [buildCapacityRow({ id: 'legacy-row' })],
     }));
+  });
+
+  it('coerces legacy role codes and drops retired roles when loading persisted rows', () => {
+    localStorage.setItem('tbxCapacityConfig:team-legacy', JSON.stringify({
+      dateMode: 'pi',
+      startDate: '',
+      endDate: '',
+      rows: [
+        { id: 'r-dev', role: 'Dev', memberCount: 2, capacityPercentage: 100, totalPtoDays: 0 },
+        { id: 'r-sl', role: 'SL', memberCount: 1, capacityPercentage: 100, totalPtoDays: 0 },
+        { id: 'r-sm', role: 'SM', memberCount: 1, capacityPercentage: 100, totalPtoDays: 0 },
+      ],
+    }));
+
+    useCapacityStore.getState().setDashboardTeamProfileId('team-legacy');
+
+    // Dev→Developer and SL→Internal Tester are translated; the retired SM row is dropped.
+    expect(useCapacityStore.getState().rows).toEqual([
+      { id: 'r-dev', role: 'Developer', memberCount: 2, capacityPercentage: 100, totalPtoDays: 0 },
+      { id: 'r-sl', role: 'Internal Tester', memberCount: 1, capacityPercentage: 100, totalPtoDays: 0 },
+    ]);
   });
 
   it('does not let a new team inherit the bare legacy capacity config after scoped data exists', () => {

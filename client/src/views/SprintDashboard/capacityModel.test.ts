@@ -8,6 +8,7 @@ import {
   calculateRecommendedCapacity,
   calculateRowCapacity,
   calculateTotalCapacity,
+  coerceLegacyCapacityRole,
   countWorkDays,
   generateCapacityRowId,
   type CapacityRow,
@@ -16,7 +17,7 @@ import {
 function buildCapacityRow(overrides: Partial<CapacityRow> = {}): CapacityRow {
   return {
     id: 'row-1',
-    role: 'Dev',
+    role: 'Developer',
     memberCount: 2,
     capacityPercentage: 100,
     totalPtoDays: 0,
@@ -51,7 +52,7 @@ describe('capacityModel', () => {
   it('sums total capacity and applies the standard planning buffer', () => {
     const capacityRows = [
       buildCapacityRow({ id: 'dev', memberCount: 2, capacityPercentage: 100 }),
-      buildCapacityRow({ id: 'qe', role: 'QE', memberCount: 1, capacityPercentage: 50 }),
+      buildCapacityRow({ id: 'tester', role: 'External Tester', memberCount: 1, capacityPercentage: 50 }),
     ];
 
     const totalCapacity = calculateTotalCapacity(capacityRows, 10);
@@ -61,22 +62,39 @@ describe('capacityModel', () => {
 
   it('builds a reusable capacity summary with per-role totals and date metadata', () => {
     const capacitySummary = buildCapacitySummary('Alpha Team Capacity', [
-      buildCapacityRow({ id: 'dev', role: 'Dev', memberCount: 2, capacityPercentage: 100 }),
-      buildCapacityRow({ id: 'qe', role: 'QE', memberCount: 1, capacityPercentage: 50 }),
+      buildCapacityRow({ id: 'dev', role: 'Developer', memberCount: 2, capacityPercentage: 100 }),
+      buildCapacityRow({ id: 'tester', role: 'External Tester', memberCount: 1, capacityPercentage: 50 }),
     ], '2026-05-18', '2026-05-22');
 
     expect(capacitySummary.summaryLabel).toBe('Alpha Team Capacity');
     expect(capacitySummary.workDayCount).toBe(5);
     expect(capacitySummary.totalCapacityPoints).toBe(12.5);
     expect(capacitySummary.recommendedCapacityPoints).toBe(10);
-    expect(capacitySummary.roleCapacities.Dev).toBe(10);
-    expect(capacitySummary.roleCapacities.QE).toBe(2.5);
+    expect(capacitySummary.roleCapacities.Developer).toBe(10);
+    expect(capacitySummary.roleCapacities['External Tester']).toBe(2.5);
   });
 
-  it('includes the expanded ART role set used by capacity planners', () => {
+  it('exposes exactly the five roster-matched delivery roles', () => {
     expect(ALL_TEAM_ROLES).toEqual(
-      expect.arrayContaining(['Dev Lead', 'Test Lead', 'TPO']),
+      ['Developer', 'Dev Lead', 'Internal Tester', 'External Tester', 'Systems Analyst'],
     );
+  });
+
+  it('translates legacy persisted role codes to the current taxonomy', () => {
+    expect(coerceLegacyCapacityRole('Dev')).toBe('Developer');
+    expect(coerceLegacyCapacityRole('SL')).toBe('Internal Tester');
+    expect(coerceLegacyCapacityRole('QE')).toBe('External Tester');
+    expect(coerceLegacyCapacityRole('BT')).toBe('External Tester');
+    expect(coerceLegacyCapacityRole('Test Lead')).toBe('External Tester');
+    expect(coerceLegacyCapacityRole('SA')).toBe('Systems Analyst');
+    expect(coerceLegacyCapacityRole('Dev Lead')).toBe('Dev Lead');
+  });
+
+  it('drops retired coordination roles and unrecognized values when coercing legacy data', () => {
+    expect(coerceLegacyCapacityRole('SM')).toBeNull();
+    expect(coerceLegacyCapacityRole('PO')).toBeNull();
+    expect(coerceLegacyCapacityRole('TPO')).toBeNull();
+    expect(coerceLegacyCapacityRole('Something Unknown')).toBeNull();
   });
 
   it('generates a row id with the expected prefix', () => {

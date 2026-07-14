@@ -465,16 +465,11 @@ describe('writePiReviewCapacitySummary', () => {
       totalCapacityPoints: 12.5,
       recommendedCapacityPoints: 10,
       roleCapacities: {
-        Dev: 10,
+        Developer: 10,
         'Dev Lead': 0,
-        QE: 2.5,
-        'Test Lead': 0,
-        BT: 0,
-        SL: 0,
-        SA: 0,
-        PO: 0,
-        TPO: 0,
-        SM: 0,
+        'Internal Tester': 0,
+        'External Tester': 2.5,
+        'Systems Analyst': 0,
       },
     });
 
@@ -490,16 +485,11 @@ describe('writePiReviewCapacitySummary', () => {
       totalCapacityPoints: 12.5,
       recommendedCapacityPoints: 10,
       roleCapacities: {
-        Dev: 10,
+        Developer: 10,
         'Dev Lead': 0,
-        QE: 2.5,
-        'Test Lead': 0,
-        BT: 0,
-        SL: 0,
-        SA: 0,
-        PO: 0,
-        TPO: 0,
-        SM: 0,
+        'Internal Tester': 0,
+        'External Tester': 2.5,
+        'Systems Analyst': 0,
       },
     });
   });
@@ -516,7 +506,11 @@ describe('writePiReviewCapacitySummary', () => {
       <p><strong>100% Capacity (pts):</strong> 9</p>
       <p><strong>80% Capacity (pts):</strong> 7.2</p>
       <ul>
-        <li><strong>Dev:</strong> 9 pts</li>
+        <li><strong>Developer:</strong> 9 pts</li>
+        <li><strong>Dev Lead:</strong> 0 pts</li>
+        <li><strong>Internal Tester:</strong> 0 pts</li>
+        <li><strong>External Tester:</strong> 0 pts</li>
+        <li><strong>Systems Analyst:</strong> 0 pts</li>
       </ul>
       <table>
         <tbody>
@@ -542,7 +536,11 @@ describe('writePiReviewCapacitySummary', () => {
       totalCapacityPoints: 9,
       recommendedCapacityPoints: 7.2,
       roleCapacities: {
-        Dev: 9,
+        Developer: 9,
+        'Dev Lead': 0,
+        'Internal Tester': 0,
+        'External Tester': 0,
+        'Systems Analyst': 0,
       },
     });
 
@@ -554,16 +552,11 @@ describe('writePiReviewCapacitySummary', () => {
       totalCapacityPoints: 12,
       recommendedCapacityPoints: 9.5,
       roleCapacities: {
-        Dev: 8,
-        QE: 4,
+        Developer: 8,
         'Dev Lead': 0,
-        'Test Lead': 0,
-        BT: 0,
-        SL: 0,
-        SA: 0,
-        PO: 0,
-        TPO: 0,
-        SM: 0,
+        'Internal Tester': 0,
+        'External Tester': 4,
+        'Systems Analyst': 0,
       },
     });
 

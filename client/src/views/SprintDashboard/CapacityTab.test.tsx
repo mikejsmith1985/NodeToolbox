@@ -6,7 +6,7 @@
 
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   calculateRowCapacity,
@@ -15,6 +15,8 @@ import {
 } from './capacityModel.ts';
 import type { CapacityRow } from './capacityModel.ts';
 import { useCapacityStore } from './hooks/useCapacityStore.ts';
+import { useStandupRosterStore } from './hooks/useStandupRosterStore.ts';
+import type { RosterRoleCapabilities, StandupRosterMember } from './hooks/useStandupRosterStore.ts';
 import CapacityTab from './CapacityTab.tsx';
 
 // ── Helpers ──
@@ -22,7 +24,7 @@ import CapacityTab from './CapacityTab.tsx';
 function buildCapacityRow(overrides: Partial<CapacityRow> = {}): CapacityRow {
   return {
     id: 'row-test',
-    role: 'Dev',
+    role: 'Developer',
     memberCount: 1,
     capacityPercentage: 100,
     totalPtoDays: 0,
@@ -32,11 +34,29 @@ function buildCapacityRow(overrides: Partial<CapacityRow> = {}): CapacityRow {
 
 function resetStore(): void {
   useCapacityStore.setState({ dateMode: 'pi', startDate: '', endDate: '', rows: [] });
+  useStandupRosterStore.setState({ rosterMembers: [] });
+}
+
+let rosterMemberSequence = 0;
+
+/** Builds a minimal roster member carrying only the role capabilities under test. */
+function buildRosterMember(roleCapabilities?: RosterRoleCapabilities): StandupRosterMember {
+  rosterMemberSequence += 1;
+  return {
+    id: `roster-${rosterMemberSequence}`,
+    displayName: `Roster ${rosterMemberSequence}`,
+    assigneeQueryValue: `roster${rosterMemberSequence}`,
+    roleCapabilities,
+  };
 }
 
 beforeEach(() => {
   resetStore();
   localStorage.clear();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 // ── countWorkDays ──
@@ -143,8 +163,8 @@ describe('calculateTotalCapacity', () => {
   it('sums capacity across multiple rows', () => {
     // Dev: 10×5×1.0 = 50; QE: 10×2×0.5 = 10 → total 60
     const rows: CapacityRow[] = [
-      buildCapacityRow({ id: 'r1', role: 'Dev', memberCount: 5, capacityPercentage: 100, totalPtoDays: 0 }),
-      buildCapacityRow({ id: 'r2', role: 'QE', memberCount: 2, capacityPercentage: 50, totalPtoDays: 0 }),
+      buildCapacityRow({ id: 'r1', role: 'Developer', memberCount: 5, capacityPercentage: 100, totalPtoDays: 0 }),
+      buildCapacityRow({ id: 'r2', role: 'External Tester', memberCount: 2, capacityPercentage: 50, totalPtoDays: 0 }),
     ];
     expect(calculateTotalCapacity(rows, 10)).toBe(60);
   });
@@ -152,8 +172,8 @@ describe('calculateTotalCapacity', () => {
   it('accounts for PTO in each row when summing', () => {
     // Dev: (10×1 - 1)×1.0 = 9; SM: (10×1 - 0)×1.0 = 10 → 19
     const rows: CapacityRow[] = [
-      buildCapacityRow({ id: 'r1', role: 'Dev', memberCount: 1, capacityPercentage: 100, totalPtoDays: 1 }),
-      buildCapacityRow({ id: 'r2', role: 'SM', memberCount: 1, capacityPercentage: 100, totalPtoDays: 0 }),
+      buildCapacityRow({ id: 'r1', role: 'Developer', memberCount: 1, capacityPercentage: 100, totalPtoDays: 1 }),
+      buildCapacityRow({ id: 'r2', role: 'Dev Lead', memberCount: 1, capacityPercentage: 100, totalPtoDays: 0 }),
     ];
     expect(calculateTotalCapacity(rows, 10)).toBe(19);
   });
@@ -194,8 +214,8 @@ describe('CapacityTab', () => {
     await user.click(screen.getByRole('button', { name: '+ Add Row' }));
     const roleSelect = screen.getByRole('combobox', { name: 'Role' });
     expect(screen.getByRole('option', { name: 'Dev Lead' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'TPO' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Test Lead' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Internal Tester' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Systems Analyst' })).toBeInTheDocument();
     await user.selectOptions(roleSelect, 'Dev Lead');
     expect(roleSelect).toHaveValue('Dev Lead');
   });
@@ -205,7 +225,7 @@ describe('CapacityTab', () => {
     render(<CapacityTab selectedPiName="" />);
     await user.click(screen.getByRole('button', { name: '+ Add Row' }));
     expect(screen.queryByRole('combobox', { name: 'Role' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Remove Dev row/ }));
+    await user.click(screen.getByRole('button', { name: /Remove Developer row/ }));
     expect(screen.queryByRole('combobox', { name: 'Role' })).not.toBeInTheDocument();
   });
 
@@ -242,5 +262,73 @@ describe('CapacityTab', () => {
 
     expect(startInput).toHaveValue('2026-06-01');
     expect(endInput).toHaveValue('2026-06-13');
+  });
+});
+
+// ── Seed from Roster ──
+
+describe('CapacityTab — Seed from Roster', () => {
+  it('disables the Seed from Roster button when the roster has no counting members', () => {
+    useStandupRosterStore.setState({
+      rosterMembers: [buildRosterMember({ canScrumMaster: true } as RosterRoleCapabilities)],
+    });
+    render(<CapacityTab selectedPiName="" />);
+    expect(screen.getByRole('button', { name: /seed from roster/i })).toBeDisabled();
+  });
+
+  it('seeds one grouped row per counting role when there are no existing rows', async () => {
+    const user = userEvent.setup();
+    useStandupRosterStore.setState({
+      rosterMembers: [
+        buildRosterMember({ canDevelop: true } as RosterRoleCapabilities),
+        buildRosterMember({ canDevelop: true } as RosterRoleCapabilities),
+        buildRosterMember({ canInternalTest: true } as RosterRoleCapabilities),
+        buildRosterMember({ canScrumMaster: true } as RosterRoleCapabilities),
+      ],
+    });
+    render(<CapacityTab selectedPiName="" />);
+
+    await user.click(screen.getByRole('button', { name: /seed from roster/i }));
+
+    const seededRows = useCapacityStore.getState().rows;
+    // Developer (2 developers grouped) + Internal Tester (1); the Scrum Master is excluded.
+    expect(seededRows.map((row) => ({ role: row.role, memberCount: row.memberCount }))).toEqual([
+      { role: 'Developer', memberCount: 2 },
+      { role: 'Internal Tester', memberCount: 1 },
+    ]);
+  });
+
+  it('asks before replacing existing rows and leaves them untouched when cancelled', async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    useCapacityStore.setState({ rows: [buildCapacityRow({ id: 'manual', role: 'Developer', memberCount: 9 })] });
+    useStandupRosterStore.setState({
+      rosterMembers: [buildRosterMember({ canDevelop: true } as RosterRoleCapabilities)],
+    });
+    render(<CapacityTab selectedPiName="" />);
+
+    await user.click(screen.getByRole('button', { name: /seed from roster/i }));
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    // The user cancelled, so the hand-entered row survives unchanged.
+    expect(useCapacityStore.getState().rows).toEqual([
+      { id: 'manual', role: 'Developer', memberCount: 9, capacityPercentage: 100, totalPtoDays: 0 },
+    ]);
+  });
+
+  it('replaces existing rows when the confirmation is accepted', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    useCapacityStore.setState({ rows: [buildCapacityRow({ id: 'manual', role: 'Dev Lead', memberCount: 1 })] });
+    useStandupRosterStore.setState({
+      rosterMembers: [buildRosterMember({ canExternalTest: true } as RosterRoleCapabilities)],
+    });
+    render(<CapacityTab selectedPiName="" />);
+
+    await user.click(screen.getByRole('button', { name: /seed from roster/i }));
+
+    const seededRows = useCapacityStore.getState().rows;
+    expect(seededRows).toHaveLength(1);
+    expect(seededRows[0].role).toBe('External Tester');
   });
 });
