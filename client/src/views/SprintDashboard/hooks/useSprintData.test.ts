@@ -680,6 +680,22 @@ describe('useSprintData', () => {
       expect(result.current.state.hasUnsavedTeamChanges).toBe(false);
     });
 
+    it('does NOT flag unsaved changes when picking a PI/sprint to view (a view choice, not team config)', async () => {
+      mockJiraGet.mockResolvedValue({ issues: [], values: [] });
+      const { result } = renderHook(() => useSprintData());
+
+      // Choosing which PI to look at must not read as an edit to the team's saved configuration.
+      await act(async () => {
+        await result.current.actions.selectPiScope('PI 26.4 (08/13/26 - 10/28/26)');
+      });
+      expect(result.current.state.hasUnsavedTeamChanges).toBe(false);
+
+      await act(async () => {
+        await result.current.actions.setScopeMode('sprint');
+      });
+      expect(result.current.state.hasUnsavedTeamChanges).toBe(false);
+    });
+
     it('clears the flag when markTeamChangesSaved is called', () => {
       const { result } = renderHook(() => useSprintData());
 

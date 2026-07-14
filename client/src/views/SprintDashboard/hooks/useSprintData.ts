@@ -825,13 +825,16 @@ export function useSprintData(
     }
   }, [loadSprint]);
 
+  // Scope selections (mode, sprint, fix version, PI) choose which slice of a team's work to VIEW.
+  // They persist to the shared scope keys so the view survives a reload, but they are not edits to
+  // the team's saved configuration — only project/board changes are — so they must not flag the
+  // profile dirty (otherwise merely picking a PI to look at would prompt a spurious Save/Revert).
   const setScopeMode = useCallback(async (scopeMode: DashboardScopeMode) => {
     persistScopeMode(scopeMode);
     setState((previousState) => ({
       ...previousState,
       scopeMode,
       loadError: null,
-      hasUnsavedTeamChanges: true,
     }));
     await reloadConfiguredScope();
   }, [reloadConfiguredScope]);
@@ -844,7 +847,6 @@ export function useSprintData(
       scopeMode: DASHBOARD_SCOPE_MODE_SPRINT,
       selectedSprintId: sprintId,
       loadError: null,
-      hasUnsavedTeamChanges: true,
     }));
     await reloadConfiguredScope();
   }, [reloadConfiguredScope]);
@@ -857,7 +859,6 @@ export function useSprintData(
       scopeMode: DASHBOARD_SCOPE_MODE_FIX_VERSION,
       selectedFixVersionName: fixVersionName,
       loadError: null,
-      hasUnsavedTeamChanges: true,
     }));
     await reloadConfiguredScope();
   }, [reloadConfiguredScope]);
@@ -870,7 +871,6 @@ export function useSprintData(
       scopeMode: DASHBOARD_SCOPE_MODE_PI,
       selectedPiValue: piValue,
       loadError: null,
-      hasUnsavedTeamChanges: true,
     }));
     await reloadConfiguredScope();
   }, [reloadConfiguredScope]);
