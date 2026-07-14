@@ -1,17 +1,13 @@
 // piReviewPullFeatures.ts — Populates a PI Review table with a team's Program Increment Features.
 //
-// It combines two discovery paths so no Feature is missed:
-//   1. Blueprint's bottom-up discovery (Features that already have child work) — parity with the
-//      Blueprint tab, reusing fetchScopedTeamFeatures.
-//   2. A direct `issuetype = Feature` Jira query filtered by the selected PI plus user-chosen labels
-//      and/or assignees — this catches Features that have no child work yet (which the bottom-up
-//      path cannot see).
-// The two sets are merged and de-duplicated by Feature key, then de-duplicated against the rows
-// already in the table so a pull only ever appends genuinely new Features.
+// Discovery is a single, direct Jira query: every `issuetype = Feature` in the page's PI that is
+// assigned to the team's Product Owner (taken from the roster). This deliberately replaces the older
+// Blueprint bottom-up discovery + label/assignee filter combination — the PI plus the PO uniquely
+// scope a team's Features, so no extra filters are needed. Discovered Features are de-duplicated
+// against the rows already in the table so a pull only ever appends genuinely new Features.
 
 import { jiraGet } from '../../services/jiraApi.ts';
 import type { JiraIssue } from '../../types/jira.ts';
-import { fetchScopedTeamFeatures } from '../SprintDashboard/scopedTeamFeatures.ts';
 import type { ArtTeam } from './hooks/useArtData.ts';
 import { extractPiReviewFeatureKey } from './piReviewJira.ts';
 import { createEmptyPiReviewRow, type PiReviewRow } from './piReviewTable.ts';
@@ -20,27 +16,18 @@ const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
 const DEFAULT_PI_FIELD_ID = 'customfield_10301';
 const DIRECT_FEATURE_SEARCH_MAX_RESULTS = 200;
 // Only the fields needed to build a row; reconciliation fills priority/estimate/etc. afterwards.
-const DIRECT_FEATURE_FIELD_IDS = ['summary', 'status', 'labels', 'assignee'];
+const DIRECT_FEATURE_FIELD_IDS = ['summary', 'status', 'assignee'];
 
-/** The label and assignee filters a user picked for the direct Feature query. */
-export interface PiReviewFeatureFilter {
-  /** Jira labels to match via `labels in (...)`; empty means no label constraint. */
-  labels: readonly string[];
-  /** Roster assignee query values to match via `assignee in (...)`; empty means no assignee constraint. */
-  assigneeQueryValues: readonly string[];
-}
-
-/** ART settings needed to scope the Feature queries; resolved from localStorage by default. */
+/** ART settings needed to scope the Feature query; resolved from localStorage by default. */
 export interface PiReviewPullSettings {
   piFieldId: string;
-  featureProjectKeys: readonly string[];
 }
 
 /** Outcome of a pull: the new rows to append plus counts for user feedback. */
 export interface PullPiReviewFeaturesResult {
   /** New rows to append to the table (already de-duplicated against existing rows). */
   rows: PiReviewRow[];
-  /** Total distinct Features discovered across both sources (before de-duplication vs the table). */
+  /** Total distinct Features discovered by the query (before de-duplication vs the table). */
   discoveredCount: number;
   /** How many of the discovered Features were genuinely new and became rows. */
   addedCount: number;
@@ -51,22 +38,18 @@ interface DiscoveredFeature {
   summary: string;
 }
 
-/** Reads the PI field id and feature project keys from ART settings, falling back to safe defaults. */
+/** Reads the PI field id from ART settings, falling back to the safe default. */
 export function readPiReviewPullSettings(): PiReviewPullSettings {
   try {
     const storedSettings = JSON.parse(localStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as {
       piFieldId?: unknown;
-      featureProjectKeys?: unknown;
     };
     const piFieldId = typeof storedSettings.piFieldId === 'string' && storedSettings.piFieldId.trim() !== ''
       ? storedSettings.piFieldId.trim()
       : DEFAULT_PI_FIELD_ID;
-    const featureProjectKeys = Array.isArray(storedSettings.featureProjectKeys)
-      ? storedSettings.featureProjectKeys.filter((projectKey): projectKey is string => typeof projectKey === 'string')
-      : [];
-    return { piFieldId, featureProjectKeys };
+    return { piFieldId };
   } catch {
-    return { piFieldId: DEFAULT_PI_FIELD_ID, featureProjectKeys: [] };
+    return { piFieldId: DEFAULT_PI_FIELD_ID };
   }
 }
 
@@ -76,61 +59,55 @@ function quoteJqlValue(value: string): string {
 }
 
 /**
- * Builds the direct `issuetype = Feature` JQL for a team + PI + filters.
- * Returns null when the query cannot be meaningfully scoped — no project key, or no PI and no
- * filters (which would pull every Feature in the project).
+ * Builds the assignee clause for the Product Owner(s): `assignee = "x"` for a single PO, or
+ * `assignee in ("x", "y")` when a team lists more than one. Returns null when no PO is supplied.
+ */
+function buildProductOwnerAssigneeClause(poAssigneeQueryValues: readonly string[]): string | null {
+  const assigneeValues = poAssigneeQueryValues.map((assignee) => assignee.trim()).filter(Boolean);
+  if (assigneeValues.length === 0) {
+    return null;
+  }
+  if (assigneeValues.length === 1) {
+    return `assignee = ${quoteJqlValue(assigneeValues[0])}`;
+  }
+  return `assignee in (${assigneeValues.map(quoteJqlValue).join(', ')})`;
+}
+
+/**
+ * Builds the direct `issuetype = Feature` JQL for a team + PI + Product Owner(s).
+ * Returns null when the query cannot be meaningfully scoped — a missing project key, PI, or PO would
+ * each broaden the pull to every Feature in the project, which is never what the user wants.
  */
 export function buildDirectFeatureJql(
   team: ArtTeam,
   piName: string,
-  filter: PiReviewFeatureFilter,
+  poAssigneeQueryValues: readonly string[],
   piFieldId: string,
 ): string | null {
   const projectKey = (team.projectKey ?? '').trim();
-  if (projectKey === '') {
-    return null;
-  }
-
   const trimmedPiName = piName.trim();
-  const labelValues = filter.labels.map((label) => label.trim()).filter(Boolean);
-  const assigneeValues = filter.assigneeQueryValues.map((assignee) => assignee.trim()).filter(Boolean);
-
-  // Guard against an unbounded "every Feature in the project" pull.
-  if (trimmedPiName === '' && labelValues.length === 0 && assigneeValues.length === 0) {
+  const assigneeClause = buildProductOwnerAssigneeClause(poAssigneeQueryValues);
+  if (projectKey === '' || trimmedPiName === '' || assigneeClause === null) {
     return null;
   }
 
-  const jqlClauses = [`project = ${quoteJqlValue(projectKey)}`, 'issuetype = Feature'];
-  if (trimmedPiName !== '') {
-    const piFieldNumber = piFieldId.replace('customfield_', '');
-    jqlClauses.push(`cf[${piFieldNumber}] = ${quoteJqlValue(trimmedPiName)}`);
-  }
-
-  const filterClauses: string[] = [];
-  if (labelValues.length > 0) {
-    filterClauses.push(`labels in (${labelValues.map(quoteJqlValue).join(', ')})`);
-  }
-  if (assigneeValues.length > 0) {
-    filterClauses.push(`assignee in (${assigneeValues.map(quoteJqlValue).join(', ')})`);
-  }
-  // Label OR assignee: broadest capture so a Feature matching either is pulled in.
-  if (filterClauses.length === 1) {
-    jqlClauses.push(filterClauses[0]);
-  } else if (filterClauses.length === 2) {
-    jqlClauses.push(`(${filterClauses[0]} OR ${filterClauses[1]})`);
-  }
-
-  return jqlClauses.join(' AND ');
+  const piFieldNumber = piFieldId.replace('customfield_', '');
+  return [
+    `project = ${quoteJqlValue(projectKey)}`,
+    'issuetype = Feature',
+    `cf[${piFieldNumber}] = ${quoteJqlValue(trimmedPiName)}`,
+    assigneeClause,
+  ].join(' AND ');
 }
 
 /** Runs the direct Feature query and normalizes the issues into discovered Features. */
 async function fetchDirectFeatures(
   team: ArtTeam,
   piName: string,
-  filter: PiReviewFeatureFilter,
+  poAssigneeQueryValues: readonly string[],
   piFieldId: string,
 ): Promise<DiscoveredFeature[]> {
-  const directFeatureJql = buildDirectFeatureJql(team, piName, filter, piFieldId);
+  const directFeatureJql = buildDirectFeatureJql(team, piName, poAssigneeQueryValues, piFieldId);
   if (directFeatureJql === null) {
     return [];
   }
@@ -154,45 +131,23 @@ function createFeatureRow(feature: DiscoveredFeature): PiReviewRow {
 }
 
 /**
- * Pulls all of a team's Features for the given PI (Blueprint bottom-up ∪ direct filtered query),
- * returning the rows that are not already in the table. Errors from one source do not sink the
- * whole pull; only if BOTH sources fail is an error thrown.
+ * Pulls a team's Features for the given PI + Product Owner(s) via a single direct Jira query,
+ * returning the rows that are not already in the table. When the query cannot be scoped (no PO, PI,
+ * or project key) it resolves to an empty result without contacting Jira.
  */
 export async function pullPiReviewFeatures(
   team: ArtTeam,
   piName: string,
-  filter: PiReviewFeatureFilter,
+  poAssigneeQueryValues: readonly string[],
   existingRows: readonly PiReviewRow[],
   settings: PiReviewPullSettings = readPiReviewPullSettings(),
 ): Promise<PullPiReviewFeaturesResult> {
-  const [blueprintOutcome, directOutcome] = await Promise.allSettled([
-    fetchScopedTeamFeatures(team, piName, {
-      piFieldId: settings.piFieldId,
-      featureProjectKeys: settings.featureProjectKeys,
-    }),
-    fetchDirectFeatures(team, piName, filter, settings.piFieldId),
-  ]);
+  const discoveredFeatures = await fetchDirectFeatures(team, piName, poAssigneeQueryValues, settings.piFieldId);
 
-  if (blueprintOutcome.status === 'rejected' && directOutcome.status === 'rejected') {
-    throw blueprintOutcome.reason instanceof Error
-      ? blueprintOutcome.reason
-      : new Error('Failed to fetch Features from Jira.');
-  }
-
-  // Merge both sources, de-duplicating by upper-cased Feature key (Blueprint summaries win on ties).
+  // De-duplicate discovered Features by upper-cased key (Jira can, in theory, echo a key twice).
   const discoveredFeaturesByKey = new Map<string, DiscoveredFeature>();
-  if (directOutcome.status === 'fulfilled') {
-    for (const directFeature of directOutcome.value) {
-      discoveredFeaturesByKey.set(directFeature.key.toUpperCase(), directFeature);
-    }
-  }
-  if (blueprintOutcome.status === 'fulfilled') {
-    for (const scopedRecord of blueprintOutcome.value) {
-      discoveredFeaturesByKey.set(scopedRecord.feature.key.toUpperCase(), {
-        key: scopedRecord.feature.key,
-        summary: scopedRecord.feature.summary,
-      });
-    }
+  for (const discoveredFeature of discoveredFeatures) {
+    discoveredFeaturesByKey.set(discoveredFeature.key.toUpperCase(), discoveredFeature);
   }
 
   const existingFeatureKeys = new Set(
