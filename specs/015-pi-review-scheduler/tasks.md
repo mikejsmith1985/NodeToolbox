@@ -25,9 +25,9 @@ every user story relies on) → one phase per user story in priority order → P
 
 ## Phase 1: Setup (Shared)
 
-- [ ] T001 Add a `## [Unreleased]` stub entry to `CHANGELOG.md` naming feature 015 (scheduled PI Review Save to
+- [X] T001 Add a `## [Unreleased]` stub entry to `CHANGELOG.md` naming feature 015 (scheduled PI Review Save to
   Confluence, Admin Hub-managed), to be fleshed out in Polish
-- [ ] T002 [P] Add `linkedom` to **server** `dependencies` and `esbuild` to `devDependencies` in `package.json` and
+- [X] T002 [P] Add `linkedom` to **server** `dependencies` and `esbuild` to `devDependencies` in `package.json` and
   install; confirm `linkedom` resolves for Node (`node -e "require('linkedom')"`) and is bundled by the pkg build.
   `esbuild` is the bundler for the shared engine (T008)
 
@@ -40,26 +40,31 @@ until these are green.** Delivers the SC-002 "100% preserved" and SC-003 "never 
 
 ### Layer 1 — DOM-agnostic save engine (client) ⚠️ tests first
 
-- [ ] T003 [P] Update/extend `client/src/views/ArtView/piReviewTable.test.ts` to assert engine behavior is unchanged
+- [X] T003 [P] Update/extend `client/src/views/ArtView/piReviewTable.test.ts` to assert engine behavior is unchanged
   when a `DOMParser` is injected, and that the row/cell/element guards accept native DOM nodes — write first, watch
   fail (per research.md R1)
-- [ ] T004 Replace the three runtime `instanceof HTML*Element` guards (lines ~387/401/421/676/682/688/898/1097) with
+- [X] T004 Replace the three runtime `instanceof HTML*Element` guards (lines ~387/401/421/676/682/688/898/1097) with
   small predicates `isElementNode` (`nodeType===1`), `isRowElement` (`tagName==='tr'`), `isCellElement`
   (`td`/`th`) in `client/src/views/ArtView/piReviewTable.ts`
-- [ ] T005 Inject the parser at the single seam: `buildStorageDocument(storageValue, domParser = /* native */ ...)`
+- [X] T005 Inject the parser at the single seam: `buildStorageDocument(storageValue, domParser = /* native */ ...)`
   in `client/src/views/ArtView/piReviewTable.ts`, threading the injected parser only where `buildStorageDocument` is
   called; all existing client callers keep the native `DOMParser` (no behavior change)
-- [ ] T006 Checkpoint: `cd client && npx vitest run` (piReviewTable + PiReviewTab green) and `npm run build` clean —
+- [X] T006 Checkpoint: `cd client && npx vitest run` (piReviewTable + PiReviewTab green) and `npm run build` clean —
   proves the manual save is byte-for-byte unaffected
 
 ### Layer 2a — Server-consumable engine bundle ⚠️ test first
 
-- [ ] T007 [P] Add a server-jest test at `src/services/piReviewEngine.test.js` that `require`s the generated engine
-  (`src/services/generated/piReviewEngine.cjs`), parses a known PI Review storage body under **linkedom**, appends a
-  row + rewrites capacity/table, and asserts: (a) the serialized HTML equals the native-DOM output for the same
-  inputs, and (b) a body with **stacked duplicate Team Capacity blocks collapses to exactly one** after the write, so
-  the server path inherits the dedupe (FR-012) — write first, watch fail
-- [ ] T008 Bundle the shared PI Review engine to a **CommonJS** module via **esbuild** — one source, no
+- [X] T007 [P] `test/server-dom/piReviewEngine.dom.spec.js` (Node `node --test`, real linkedom — see tooling note): requires
+  the generated engine, injects linkedom's `DOMParser`, parses a PI Review table + capacity snapshot server-side, and
+  asserts a body with **stacked duplicate Team Capacity blocks collapses to exactly one** on write (FR-012, server
+  path) plus the project-clause-free JQL. Run via `npm run test:dom`. ✅ green
+> **Tooling note (discovered during T007):** linkedom's transitive `css-select` ships ESM that **Jest's CommonJS
+> runtime cannot load** (Node loads it natively). So **DOM-hosted server tests run on Node's native test runner**
+> (`node --test`, files named `*.dom.spec.js` under `test/server-dom/`, via `npm run test:dom`); **mock-only server
+> tests stay in Jest**. This
+> keeps real-linkedom fidelity without a babel/transform battle. Applies to T007 and T009.
+
+- [X] T008 Bundle the shared PI Review engine to a **CommonJS** module via **esbuild** — one source, no
   hand-maintained twin (research.md R2):
   - Create the entry `client/src/views/ArtView/piReviewEngine.entry.ts` re-exporting the pure functions the server
     needs: from `piReviewTable.ts` (`buildStorageDocument` + `parsePiReviewTable` / `writePiReviewTable` /
@@ -76,8 +81,9 @@ until these are green.** Delivers the SC-002 "100% preserved" and SC-003 "never 
 
 ### Layer 2b — Refresh core (server) ⚠️ tests first
 
-- [ ] T009 [P] Write `src/services/piReviewRefresh.test.js` proving the invariants from contracts/refresh-run.md —
-  mocking `makeJiraApiRequest` / `makeConfluenceApiRequest` + a fixed `nowIso`, but using the **real** generated engine
+- [ ] T009 [P] Write `test/server-dom/piReviewRefresh.dom.spec.js` (Node `node --test`, real linkedom — see tooling note)
+  proving the invariants from contracts/refresh-run.md — passing mocked `makeJiraApiRequest` / `makeConfluenceApiRequest`
+  + a fixed `nowIso` as injected deps, but using the **real** generated engine
   (`src/services/generated/piReviewEngine.cjs`) under linkedom so preserve/reconcile are meaningful: INV-1 (empty
   query → `no-op`, no PUT), INV-2 (capacity/boundary/grouping/
   confidence + carry-over/feature-title/committed preserved), INV-3 (only priority/estimate/dependency/risks/notes may
