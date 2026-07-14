@@ -86,6 +86,7 @@ const { mockState, mockActions, mockConfig, mockConfigActions } = vi.hoisted(() 
       selectedSprintId: 7,
       selectedFixVersionName: '',
       selectedPiValue: '',
+      piReviewPages: [] as Array<{ piName: string; pageUrl: string }>,
       sprintInfo: initialSprintInfo as JiraSprint | null,
       sprintIssues: [
         buildInProgressIssue('TBX-10', 'Wire up the backend', 'Alice'),
@@ -200,6 +201,7 @@ vi.mock('../../utils/downloadElementImage.ts', () => ({
 }));
 
 import SprintDashboardView from './SprintDashboardView.tsx';
+import styles from './SprintDashboardView.module.css';
 import { useSettingsStore } from '../../store/settingsStore.ts';
 import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
 
@@ -309,6 +311,7 @@ describe('SprintDashboardView', () => {
     mockState.selectedSprintId = 7;
     mockState.selectedFixVersionName = '';
     mockState.selectedPiValue = '';
+    mockState.piReviewPages = [];
     mockState.availableBoards = [];
     mockState.boardId = null;
     mockState.selectedBoardName = null;
@@ -359,6 +362,36 @@ describe('SprintDashboardView', () => {
 
     expect(screen.getByText(/load the active sprint/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /load sprint/i })).toBeInTheDocument();
+  });
+
+  it('gives the Confluence URL input the PI Review page row width and renders the section as its own card', () => {
+    mockState.activeTab = 'settings';
+    mockState.piReviewPages = [
+      { piName: 'PI 26.4', pageUrl: 'https://example.atlassian.net/wiki/spaces/X/pages/605126657/Candidate+Features' },
+    ];
+    render(<SprintDashboardView />);
+
+    // The URL input must own the row (flex: 1) instead of being crushed by a full-width PI select.
+    const confluenceUrlInput = screen.getByLabelText('PI Review Page URL 1');
+    expect(confluenceUrlInput).toHaveClass(styles.piReviewPageUrlInput);
+    const piSelect = screen.getByLabelText('PI for PI Review page 1');
+    expect(piSelect).toHaveClass(styles.piReviewPagePiSelect);
+    expect(confluenceUrlInput.closest(`.${styles.piReviewPageRow}`)).not.toBeNull();
+
+    // The PI Review Pages section renders as its own full-width card, outside the narrow form column.
+    const piReviewPagesHeading = screen.getByRole('heading', { name: 'PI Review Pages' });
+    expect(piReviewPagesHeading.closest(`.${styles.settingsSectionCard}`)).not.toBeNull();
+    expect(piReviewPagesHeading.closest(`.${styles.settingsPrimaryColumn}`)).toBeNull();
+  });
+
+  it('separates every Settings section into its own card', () => {
+    mockState.activeTab = 'settings';
+    render(<SprintDashboardView />);
+
+    for (const sectionName of ['Board Settings', 'Saved Dashboard Teams', 'PI Review Pages', 'Advanced Settings', 'Workflow Status Detection']) {
+      const sectionHeading = screen.getByRole('heading', { name: sectionName });
+      expect(sectionHeading.closest(`.${styles.settingsSectionCard}`)).not.toBeNull();
+    }
   });
 
   it('renders Overview tab with sprint info when sprint is loaded', () => {

@@ -2580,7 +2580,8 @@ function SettingsTab({
 
   return (
     <div className={styles.settingsPanel}>
-      <div className={styles.settingsPrimaryColumn}>
+      <section className={styles.settingsSectionCard}>
+        <div className={styles.settingsPrimaryColumn}>
         <div>
           <h2 className={styles.settingsSectionTitle}>{BOARD_SETTINGS_TITLE}</h2>
           <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
@@ -2623,9 +2624,11 @@ function SettingsTab({
             selectedBoardId={boardId}
           />
         )}
+        </div>
+      </section>
 
-        <div className={styles.settingsDivider} />
-
+      <section className={styles.settingsSectionCard}>
+        <div className={styles.settingsPrimaryColumn}>
         <div>
           <h2 className={styles.settingsSectionTitle}>Saved Dashboard Teams</h2>
           <p className={styles.issueMetaText}>
@@ -2701,76 +2704,68 @@ function SettingsTab({
               Save the current project and board selection as your first dashboard team.
             </p>
           )}
+        </div>
+        </div>
+      </section>
 
-          {/* PI Review pages — configured here per team; displayed as sub-tabs in the ART view. */}
-          <div style={{ marginTop: 'var(--spacing-md)' }}>
-            <h3 className={styles.settingsSectionTitle} style={{ fontSize: 'var(--font-size-md)' }}>
-              PI Review Pages
-            </h3>
-            <p className={styles.issueMetaText}>
-              Add one Confluence page per Program Increment. They appear as sub-tabs on the PI Review tab and are
-              shown in the ART view. Remember to <strong>Save</strong> the team to keep them.
-            </p>
-            {(piReviewPages ?? []).map((piReviewPage, pageIndex) => (
-              <div
-                key={pageIndex}
-                style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center', marginBottom: 'var(--spacing-xs)' }}
-              >
-                <select
-                  aria-label={`PI for PI Review page ${pageIndex + 1}`}
-                  className={styles.settingsInput}
-                  onChange={(changeEvent) => onUpdatePiReviewPage(pageIndex, { piName: changeEvent.target.value })}
-                  style={{ flex: '0 0 auto' }}
-                  value={piReviewPage.piName}
-                >
-                  <option value="">— Select PI —</option>
-                  {availablePiValues.map((availablePiValue) => (
-                    <option key={availablePiValue} value={availablePiValue}>{availablePiValue}</option>
-                  ))}
-                  {piReviewPage.piName.trim() !== '' && !availablePiValues.includes(piReviewPage.piName) && (
-                    <option value={piReviewPage.piName}>{piReviewPage.piName}</option>
-                  )}
-                </select>
-                <input
-                  aria-label={`PI Review Page URL ${pageIndex + 1}`}
-                  className={styles.settingsInput}
-                  onChange={(changeEvent) => onUpdatePiReviewPage(pageIndex, { pageUrl: changeEvent.target.value })}
-                  placeholder="Confluence page URL"
-                  style={{ flex: '1 1 auto' }}
-                  type="text"
-                  value={piReviewPage.pageUrl}
-                />
-                <button
-                  className={styles.textActionButton}
-                  onClick={() => onRemovePiReviewPage(pageIndex)}
-                  type="button"
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
+      {/* PI Review pages — configured here per team; displayed as sub-tabs in the ART view.
+          Rendered as a full-width card so long Confluence URLs stay readable while editing. */}
+      <section className={styles.settingsSectionCard}>
+        <h2 className={styles.settingsSectionTitle}>PI Review Pages</h2>
+        <p className={styles.issueMetaText}>
+          Add one Confluence page per Program Increment. They appear as sub-tabs on the PI Review tab and are
+          shown in the ART view. Remember to <strong>Save</strong> the team to keep them.
+        </p>
+        {(piReviewPages ?? []).map((piReviewPage, pageIndex) => (
+          <div className={styles.piReviewPageRow} key={pageIndex}>
+            <select
+              aria-label={`PI for PI Review page ${pageIndex + 1}`}
+              className={`${styles.settingsInput} ${styles.piReviewPagePiSelect}`}
+              onChange={(changeEvent) => onUpdatePiReviewPage(pageIndex, { piName: changeEvent.target.value })}
+              value={piReviewPage.piName}
+            >
+              <option value="">— Select PI —</option>
+              {availablePiValues.map((availablePiValue) => (
+                <option key={availablePiValue} value={availablePiValue}>{availablePiValue}</option>
+              ))}
+              {piReviewPage.piName.trim() !== '' && !availablePiValues.includes(piReviewPage.piName) && (
+                <option value={piReviewPage.piName}>{piReviewPage.piName}</option>
+              )}
+            </select>
+            <input
+              aria-label={`PI Review Page URL ${pageIndex + 1}`}
+              className={`${styles.settingsInput} ${styles.piReviewPageUrlInput}`}
+              onChange={(changeEvent) => onUpdatePiReviewPage(pageIndex, { pageUrl: changeEvent.target.value })}
+              placeholder="Confluence page URL"
+              type="text"
+              value={piReviewPage.pageUrl}
+            />
             <button
-              className={styles.secondaryButton}
-              onClick={onAddPiReviewPage}
-              style={{ marginTop: 'var(--spacing-xs)' }}
+              className={styles.textActionButton}
+              onClick={() => onRemovePiReviewPage(pageIndex)}
               type="button"
             >
-              + Add PI
+              Remove
             </button>
           </div>
-        </div>
+        ))}
+        <button
+          className={styles.secondaryButton}
+          onClick={onAddPiReviewPage}
+          style={{ marginTop: 'var(--spacing-xs)' }}
+          type="button"
+        >
+          + Add PI
+        </button>
+      </section>
 
-        <div className={styles.settingsDivider} />
-
-        <div>
-          <h2 className={styles.settingsSectionTitle}>Advanced Settings</h2>
-        </div>
+      <section className={styles.settingsSectionCard}>
+        <h2 className={styles.settingsSectionTitle}>Advanced Settings</h2>
 
         <AdvancedConfigFields config={config} onConfigChange={onConfigChange} />
+      </section>
 
-        <div className={styles.settingsDivider} />
-
-        <div className={styles.workflowDetectSection}>
+      <section className={`${styles.settingsSectionCard} ${styles.workflowDetectSection}`}>
           <div className={styles.workflowDetectHeader}>
             <h2 className={styles.settingsSectionTitle}>Workflow Status Detection</h2>
             <button
@@ -2813,9 +2808,8 @@ function SettingsTab({
               </div>
             </div>
           ))}
-        </div>
-      </div>
-      <div className={styles.settingsDivider} />
+      </section>
+
       <RosterTab issues={issues} projectKey={projectKey} />
     </div>
   );
