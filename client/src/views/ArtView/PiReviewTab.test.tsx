@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 import { ToastProvider } from '../../components/Toast/ToastProvider.tsx';
 import type { CapacitySummary } from '../SprintDashboard/capacityModel.ts';
 import type { ArtTeam } from './hooks/useArtData.ts';
+import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
 import { writePiReviewCapacitySummary } from './piReviewTable.ts';
 import styles from './PiReviewTab.module.css';
 
@@ -263,6 +264,8 @@ describe('PiReviewTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    // Start each test with an empty roster so the Product Owner-scoped Feature pull is opt-in per test.
+    useStandupRosterStore.getState().replaceRosterMembers([]);
     mockJiraGet.mockResolvedValue({ issues: [] });
     mockJiraPost.mockResolvedValue(undefined);
     mockJiraPut.mockResolvedValue(undefined);
@@ -367,9 +370,21 @@ describe('PiReviewTab', () => {
     expect(within(nextPiSection).getByText('Feature B')).toBeInTheDocument();
   });
 
-  it('pulls Features into the table for the panel team and PI', async () => {
+  it('pulls Features into the table for the panel team, PI, and roster Product Owner', async () => {
     mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
-    mockFetchJiraLabelSuggestions.mockResolvedValue(['Transformers']);
+    // Seed the roster with a Product Owner; their assignee query value scopes the pull.
+    useStandupRosterStore.getState().replaceRosterMembers([
+      {
+        displayName: 'Pat Owner',
+        assigneeQueryValue: 'C73130',
+        roleCapabilities: {
+          canDevelop: false,
+          canInternalTest: false,
+          canExternalTest: false,
+          canProductOwner: true,
+        },
+      },
+    ]);
     mockPullPiReviewFeatures.mockResolvedValue({
       rows: [{
         rowId: 'pulled-1', carryOver: '', priority: '', feature: 'ALPHA-9 - Pulled Feature',
@@ -394,7 +409,7 @@ describe('PiReviewTab', () => {
     enterEditMode(alphaSection);
 
     // The Pull Features control only appears in edit mode; opening it reveals the pull panel.
-    fireEvent.click(within(alphaSection).getByRole('button', { name: /pull features from blueprint/i }));
+    fireEvent.click(within(alphaSection).getByRole('button', { name: /pull features from jira/i }));
     const pullButton = await within(alphaSection).findByRole('button', { name: /pull into table/i });
     fireEvent.click(pullButton);
 
@@ -402,7 +417,7 @@ describe('PiReviewTab', () => {
       expect(mockPullPiReviewFeatures).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'team-1', name: 'Alpha Team', projectKey: 'ALPHA' }),
         'PI 26.3',
-        { labels: [], assigneeQueryValues: [] },
+        ['C73130'],
         expect.any(Array),
       );
     });

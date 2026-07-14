@@ -2,19 +2,14 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockJiraGet, mockFetchScopedTeamFeatures } = vi.hoisted(() => ({
+const { mockJiraGet } = vi.hoisted(() => ({
   mockJiraGet: vi.fn(),
-  mockFetchScopedTeamFeatures: vi.fn(),
 }));
 
 vi.mock('../../services/jiraApi.ts', () => ({
   jiraGet: mockJiraGet,
   jiraPost: vi.fn(),
   jiraPut: vi.fn(),
-}));
-
-vi.mock('../SprintDashboard/scopedTeamFeatures.ts', () => ({
-  fetchScopedTeamFeatures: mockFetchScopedTeamFeatures,
 }));
 
 import type { ArtTeam } from './hooks/useArtData.ts';
@@ -44,74 +39,58 @@ function createRowForFeature(featureCellValue: string): PiReviewRow {
   return row;
 }
 
-const NO_FILTER = { labels: [], assigneeQueryValues: [] };
-const PULL_SETTINGS = { piFieldId: DEFAULT_PI_FIELD_ID, featureProjectKeys: [] as string[] };
+const PULL_SETTINGS = { piFieldId: DEFAULT_PI_FIELD_ID };
 
 describe('buildDirectFeatureJql', () => {
-  it('combines project, issuetype=Feature, PI, and label OR assignee filters', () => {
-    const jql = buildDirectFeatureJql(
-      createTeam(),
-      'PI 26.4',
-      { labels: ['Transformers'], assigneeQueryValues: ['user-1'] },
-      DEFAULT_PI_FIELD_ID,
-    );
+  it('combines project, issuetype=Feature, PI, and a single-PO assignee equality', () => {
+    const jql = buildDirectFeatureJql(createTeam(), 'PI 26.4', ['C73130'], DEFAULT_PI_FIELD_ID);
     expect(jql).toBe(
-      'project = "ALPHA" AND issuetype = Feature AND cf[10301] = "PI 26.4" '
-      + 'AND (labels in ("Transformers") OR assignee in ("user-1"))',
+      'project = "ALPHA" AND issuetype = Feature AND cf[10301] = "PI 26.4" AND assignee = "C73130"',
     );
   });
 
-  it('omits the parentheses when only one filter kind is provided', () => {
-    const jql = buildDirectFeatureJql(
-      createTeam(),
-      'PI 26.4',
-      { labels: ['Transformers'], assigneeQueryValues: [] },
-      DEFAULT_PI_FIELD_ID,
+  it('uses an assignee IN clause when the roster has more than one Product Owner', () => {
+    const jql = buildDirectFeatureJql(createTeam(), 'PI 26.4', ['C73130', 'C99999'], DEFAULT_PI_FIELD_ID);
+    expect(jql).toBe(
+      'project = "ALPHA" AND issuetype = Feature AND cf[10301] = "PI 26.4" '
+      + 'AND assignee in ("C73130", "C99999")',
     );
-    expect(jql).toBe('project = "ALPHA" AND issuetype = Feature AND cf[10301] = "PI 26.4" AND labels in ("Transformers")');
   });
 
   it('returns null without a project key (cannot scope a direct Feature query)', () => {
-    expect(buildDirectFeatureJql(createTeam({ projectKey: '' }), 'PI 26.4', NO_FILTER, DEFAULT_PI_FIELD_ID)).toBeNull();
+    expect(buildDirectFeatureJql(createTeam({ projectKey: '' }), 'PI 26.4', ['C73130'], DEFAULT_PI_FIELD_ID)).toBeNull();
   });
 
-  it('returns null when there is no PI and no filters (would pull every Feature in the project)', () => {
-    expect(buildDirectFeatureJql(createTeam(), '', NO_FILTER, DEFAULT_PI_FIELD_ID)).toBeNull();
+  it('returns null without a PI (the page PI is required to scope the pull)', () => {
+    expect(buildDirectFeatureJql(createTeam(), '', ['C73130'], DEFAULT_PI_FIELD_ID)).toBeNull();
+  });
+
+  it('returns null without a Product Owner (would pull every Feature in the PI)', () => {
+    expect(buildDirectFeatureJql(createTeam(), 'PI 26.4', [], DEFAULT_PI_FIELD_ID)).toBeNull();
   });
 });
 
 describe('pullPiReviewFeatures', () => {
   beforeEach(() => {
     mockJiraGet.mockReset();
-    mockFetchScopedTeamFeatures.mockReset();
   });
 
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  it('merges Blueprint and direct Features, de-duplicates by key, and builds "KEY - summary" rows', async () => {
-    mockFetchScopedTeamFeatures.mockResolvedValue([
-      { feature: { key: 'ALPHA-1', summary: 'Feature One' }, featureIssue: null },
-    ]);
+  it('builds "KEY - summary" rows from the direct Feature query, sorted by key', async () => {
     mockJiraGet.mockResolvedValue({
       issues: [
         { key: 'ALPHA-2', fields: { summary: 'Feature Two' } },
-        { key: 'ALPHA-1', fields: { summary: 'Feature One (from direct)' } },
+        { key: 'ALPHA-1', fields: { summary: 'Feature One' } },
       ],
     });
 
-    const result = await pullPiReviewFeatures(
-      createTeam(),
-      'PI 26.4',
-      { labels: ['Transformers'], assigneeQueryValues: [] },
-      [],
-      PULL_SETTINGS,
-    );
+    const result = await pullPiReviewFeatures(createTeam(), 'PI 26.4', ['C73130'], [], PULL_SETTINGS);
 
     expect(result.discoveredCount).toBe(2);
     expect(result.addedCount).toBe(2);
-    // Sorted by key; Blueprint's summary wins the ALPHA-1 tie.
     expect(result.rows.map((row) => row.feature)).toEqual([
       'ALPHA-1 - Feature One',
       'ALPHA-2 - Feature Two',
@@ -119,15 +98,17 @@ describe('pullPiReviewFeatures', () => {
   });
 
   it('does not re-add Features already present in the table', async () => {
-    mockFetchScopedTeamFeatures.mockResolvedValue([
-      { feature: { key: 'ALPHA-1', summary: 'Feature One' }, featureIssue: null },
-    ]);
-    mockJiraGet.mockResolvedValue({ issues: [{ key: 'ALPHA-2', fields: { summary: 'Feature Two' } }] });
+    mockJiraGet.mockResolvedValue({
+      issues: [
+        { key: 'ALPHA-1', fields: { summary: 'Feature One' } },
+        { key: 'ALPHA-2', fields: { summary: 'Feature Two' } },
+      ],
+    });
 
     const result = await pullPiReviewFeatures(
       createTeam(),
       'PI 26.4',
-      { labels: [], assigneeQueryValues: ['user-1'] },
+      ['C73130'],
       [createRowForFeature('ALPHA-1 - already in the table')],
       PULL_SETTINGS,
     );
@@ -137,30 +118,20 @@ describe('pullPiReviewFeatures', () => {
     expect(result.rows.map((row) => row.feature)).toEqual(['ALPHA-2 - Feature Two']);
   });
 
-  it('still returns results when one source fails (direct query errors, Blueprint succeeds)', async () => {
-    mockFetchScopedTeamFeatures.mockResolvedValue([
-      { feature: { key: 'ALPHA-1', summary: 'Feature One' }, featureIssue: null },
-    ]);
-    mockJiraGet.mockRejectedValue(new Error('Jira 500'));
+  it('returns an empty result without ever calling Jira when no Product Owner is supplied', async () => {
+    const result = await pullPiReviewFeatures(createTeam(), 'PI 26.4', [], [], PULL_SETTINGS);
 
-    const result = await pullPiReviewFeatures(
-      createTeam(),
-      'PI 26.4',
-      { labels: ['Transformers'], assigneeQueryValues: [] },
-      [],
-      PULL_SETTINGS,
-    );
-
-    expect(result.addedCount).toBe(1);
-    expect(result.rows[0].feature).toBe('ALPHA-1 - Feature One');
+    expect(mockJiraGet).not.toHaveBeenCalled();
+    expect(result.discoveredCount).toBe(0);
+    expect(result.addedCount).toBe(0);
+    expect(result.rows).toEqual([]);
   });
 
-  it('throws when both sources fail', async () => {
-    mockFetchScopedTeamFeatures.mockRejectedValue(new Error('Blueprint down'));
+  it('throws when the direct Feature query fails', async () => {
     mockJiraGet.mockRejectedValue(new Error('Jira 500'));
 
     await expect(
-      pullPiReviewFeatures(createTeam(), 'PI 26.4', { labels: ['Transformers'], assigneeQueryValues: [] }, [], PULL_SETTINGS),
-    ).rejects.toThrow();
+      pullPiReviewFeatures(createTeam(), 'PI 26.4', ['C73130'], [], PULL_SETTINGS),
+    ).rejects.toThrow('Jira 500');
   });
 });

@@ -57,9 +57,8 @@ import {
   savePiReviewFeatureTransition,
   savePiReviewTransitionRequiredFields,
 } from './piReviewJira.ts';
-import { fetchJiraLabelSuggestions } from '../../services/jiraApi.ts';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore.ts';
-import { pullPiReviewFeatures, type PiReviewFeatureFilter } from './piReviewPullFeatures.ts';
+import { pullPiReviewFeatures } from './piReviewPullFeatures.ts';
 import styles from './PiReviewTab.module.css';
 
 const LONG_TEXT_COLUMNS = new Set<PiReviewColumnKey>(['dependency', 'risks', 'notes']);
@@ -716,15 +715,11 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
   const [isUpdatingJiraDates, setIsUpdatingJiraDates] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
-  // ── "Pull Features from Blueprint" controls ──
-  // Assignee options come from the imported standup roster (not all Jira users), per the roster store.
+  // ── "Pull Features from Jira" controls ──
+  // A pull is scoped by the page's PI plus the team's Product Owner(s), read from the imported roster.
   const rosterMembers = useStandupRosterStore((storeState) => storeState.rosterMembers);
   const [isPullFeaturesOpen, setIsPullFeaturesOpen] = useState(false);
   const [isPullingFeatures, setIsPullingFeatures] = useState(false);
-  const [pullLabelOptions, setPullLabelOptions] = useState<string[]>([]);
-  const [isLoadingLabelOptions, setIsLoadingLabelOptions] = useState(false);
-  const [selectedPullLabels, setSelectedPullLabels] = useState<string[]>([]);
-  const [selectedPullAssignees, setSelectedPullAssignees] = useState<string[]>([]);
   const [transitionOptionsByFeatureKey, setTransitionOptionsByFeatureKey] = useState<Record<string, JiraTransition[]>>({});
   const [isStatusPickerOpenByFeatureKey, setIsStatusPickerOpenByFeatureKey] = useState<Record<string, boolean>>({});
   const [isLoadingTransitionByFeatureKey, setIsLoadingTransitionByFeatureKey] = useState<Record<string, boolean>>({});
@@ -755,6 +750,12 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
       0,
     ),
     [rows],
+  );
+  // The team's Product Owner(s) — roster members flagged with the Product Owner capability. Their
+  // Jira assignee query values scope a Feature pull to just this team's work.
+  const productOwners = useMemo(
+    () => rosterMembers.filter((rosterMember) => rosterMember.roleCapabilities?.canProductOwner === true),
+    [rosterMembers],
   );
   const isReadoutMode = mode === 'readout';
   const canEditContent = !isReadoutMode && isEditMode;
@@ -1011,48 +1012,31 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
     }
   }
 
-  /** Loads valid Jira labels for the Pull Features label picker; a failure just leaves the list empty. */
-  async function loadPullLabelOptions() {
-    setIsLoadingLabelOptions(true);
-    try {
-      setPullLabelOptions(await fetchJiraLabelSuggestions(''));
-    } catch {
-      setPullLabelOptions([]);
-    } finally {
-      setIsLoadingLabelOptions(false);
-    }
-  }
-
   function handleTogglePullFeatures() {
-    setIsPullFeaturesOpen((currentlyOpen) => {
-      const nextOpen = !currentlyOpen;
-      if (nextOpen && pullLabelOptions.length === 0) {
-        void loadPullLabelOptions();
-      }
-      return nextOpen;
-    });
-  }
-
-  function readSelectedOptionValues(changeEvent: React.ChangeEvent<HTMLSelectElement>): string[] {
-    return Array.from(changeEvent.target.selectedOptions, (option) => option.value);
+    setIsPullFeaturesOpen((currentlyOpen) => !currentlyOpen);
   }
 
   /**
-   * Pulls every Feature for this team + PI into the table (Blueprint discovery ∪ a direct
-   * issuetype=Feature query filtered by the chosen labels/assignees), then reconciles the new
-   * rows with Jira so priority, estimate, dependencies, and risks fill in as on a page load.
+   * Pulls every Feature for this team's PI that is assigned to the team's Product Owner(s) into the
+   * table, then reconciles the new rows with Jira so priority, estimate, dependencies, and risks fill
+   * in as on a page load. The PI and Product Owner together scope the pull; both are required.
    */
   async function handlePullFeatures() {
     if (!tableBinding) {
       return;
     }
+    const productOwnerAssigneeQueryValues = productOwners.map((productOwner) => productOwner.assigneeQueryValue);
+    if (productOwnerAssigneeQueryValues.length === 0) {
+      showToast('Flag a Product Owner in the team roster before pulling Features.', 'error');
+      return;
+    }
+    if (effectivePiName.trim() === '') {
+      showToast('This page has no PI selected — set the PI before pulling Features.', 'error');
+      return;
+    }
     setIsPullingFeatures(true);
     try {
-      const featureFilter: PiReviewFeatureFilter = {
-        labels: selectedPullLabels,
-        assigneeQueryValues: selectedPullAssignees,
-      };
-      const pullResult = await pullPiReviewFeatures(target.team, effectivePiName, featureFilter, rows);
+      const pullResult = await pullPiReviewFeatures(target.team, effectivePiName, productOwnerAssigneeQueryValues, rows);
       if (pullResult.addedCount === 0) {
         showToast(
           pullResult.discoveredCount === 0
@@ -1869,7 +1853,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
               onClick={handleTogglePullFeatures}
               type="button"
             >
-              {isPullFeaturesOpen ? 'Hide Pull Features' : 'Pull Features from Blueprint'}
+              {isPullFeaturesOpen ? 'Hide Pull Features' : 'Pull Features from Jira'}
             </button>
             <button
               className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
@@ -1893,54 +1877,24 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
       {canEditContent && isPullFeaturesOpen && (
         <div className={styles.pullFeaturesCard} data-export-exclude="true">
           <p className={styles.pullFeaturesHint}>
-            Pull every Feature for <strong>{target.team.name}</strong> in{' '}
-            <strong>{effectivePiName.trim() || 'the selected PI'}</strong> into the table. This includes Features
-            with child work (from Blueprint) plus any Feature matching the labels and/or assignees below, so
-            Features without child work are captured too. Existing rows are never duplicated.
+            Pull every <strong>Feature</strong> for <strong>{target.team.name}</strong> in{' '}
+            <strong>{effectivePiName.trim() || 'the selected PI'}</strong> that is assigned to the team's
+            Product Owner into the table. Existing rows are never duplicated.
           </p>
-          <div className={styles.pullFeaturesControls}>
-            <label className={styles.pullFeaturesField}>
-              <span className={styles.pullFeaturesFieldLabel}>
-                Labels{isLoadingLabelOptions ? ' (loading…)' : ''}
-              </span>
-              <select
-                aria-label="Filter pulled Features by label"
-                className={styles.pullFeaturesSelect}
-                multiple
-                onChange={(event) => setSelectedPullLabels(readSelectedOptionValues(event))}
-                value={selectedPullLabels}
-              >
-                {pullLabelOptions.map((labelOption) => (
-                  <option key={labelOption} value={labelOption}>{labelOption}</option>
-                ))}
-              </select>
-            </label>
-            <label className={styles.pullFeaturesField}>
-              <span className={styles.pullFeaturesFieldLabel}>Assignees (team roster)</span>
-              <select
-                aria-label="Filter pulled Features by assignee"
-                className={styles.pullFeaturesSelect}
-                multiple
-                onChange={(event) => setSelectedPullAssignees(readSelectedOptionValues(event))}
-                value={selectedPullAssignees}
-              >
-                {rosterMembers.map((rosterMember) => (
-                  <option key={rosterMember.id} value={rosterMember.assigneeQueryValue}>
-                    {rosterMember.displayName}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          {rosterMembers.length === 0 && (
+          {productOwners.length > 0 ? (
             <p className={styles.pullFeaturesHint}>
-              No roster imported for assignee filtering — you can still pull by label or by PI alone.
+              Product Owner{productOwners.length === 1 ? '' : 's'} (from roster):{' '}
+              <strong>{productOwners.map((productOwner) => productOwner.displayName).join(', ')}</strong>
+            </p>
+          ) : (
+            <p className={styles.pullFeaturesHint}>
+              No Product Owner is flagged in the team roster. Mark a roster member as Product Owner to enable the pull.
             </p>
           )}
           <div className={styles.pullFeaturesActions}>
             <button
               className={joinClassNames(styles.actionButton, styles.actionButtonSuccess)}
-              disabled={isToolbarBusy || !tableBinding}
+              disabled={isToolbarBusy || !tableBinding || productOwners.length === 0}
               onClick={() => void handlePullFeatures()}
               type="button"
             >
