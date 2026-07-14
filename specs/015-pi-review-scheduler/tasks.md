@@ -141,21 +141,21 @@ success/failure result with a timestamp; toggling one team never affects another
 
 ### Tests first ⚠️
 
-- [ ] T016 [P] [US5] Write `src/routes/piReviewScheduler.test.js` per contracts/pi-review-scheduler-api.md — GET/POST
+- [X] T016 [P] [US5] Write `src/routes/piReviewScheduler.test.js` per contracts/pi-review-scheduler-api.md — GET/POST
   `/config` (validation, no credentials echoed), POST `/run-now` (per-page results, skip reasons), and GET `/status`
   returning the **persisted** last-run summary after a simulated restart (FR-019) — write first, watch fail
-- [ ] T017 [P] [US4] Write `client/src/views/AdminHub/PiReviewSchedulerPanel.test.tsx` (RTL) — loads config, edits a
+- [X] T017 [P] [US4] Write `client/src/views/AdminHub/PiReviewSchedulerPanel.test.tsx` (RTL) — loads config, edits a
   team row (enable, time, PO, PI field, pages), saves, runs-now and renders the returned result + last-run status —
   write first, watch fail
 
 ### Implementation
 
-- [ ] T018 [US5] Implement `src/routes/piReviewScheduler.js` (`createPiReviewSchedulerRouter`) with GET/POST `/config`,
+- [X] T018 [US5] Implement `src/routes/piReviewScheduler.js` (`createPiReviewSchedulerRouter`) with GET/POST `/config`,
   POST `/run-now`, GET `/status` per the contract; mount at `/api/pi-review-scheduler` in `server.js`
-- [ ] T019 [US4] Implement `client/src/views/AdminHub/PiReviewSchedulerPanel.tsx` — copy `StandupBriefingPanel.tsx`;
+- [X] T019 [US4] Implement `client/src/views/AdminHub/PiReviewSchedulerPanel.tsx` — copy `StandupBriefingPanel.tsx`;
   per-team rows (enable toggle, `HH:MM`, PO assignee, PI field id, pages list of URL+PI name), Save, Run now, last-run
   status column; direct `fetch` to `/api/pi-review-scheduler/*`
-- [ ] T020 [US4] Register the panel in `client/src/views/AdminHub/AdminHubView.tsx` — add the tab key to the
+- [X] T020 [US4] Register the panel in `client/src/views/AdminHub/AdminHubView.tsx` — add the tab key to the
   `AdminHubTab` union, an entry in `ADMIN_HUB_TAB_OPTIONS`, and a render branch
 
 **Checkpoint**: route + panel tests green; quickstart Scenarios A, B pass end-to-end.
@@ -169,7 +169,7 @@ success/failure result with a timestamp; toggling one team never affects another
 **Independent test**: Manual save produces the same Jira-owned columns a scheduled run would; full PiReviewTab suite
 passes unchanged.
 
-- [ ] T021 [US3] Verification task — confirm `client/src/views/ArtView/PiReviewTab.tsx` and its save path are
+- [X] T021 [US3] Verification task — confirm `client/src/views/ArtView/PiReviewTab.tsx` and its save path are
   untouched by the Layer 1 seams: run the full `client` vitest suite (PiReviewTab + piReviewTable green) and record
   that the native-DOM callers still pass the native parser; note the no-drift guarantee in the CHANGELOG entry
 
@@ -177,11 +177,12 @@ passes unchanged.
 
 ## Phase 6: Polish & Cross-Cutting
 
-- [ ] T022 [P] Flesh out the `CHANGELOG.md` `[Unreleased]` entry: what the scheduler does, the preserve-vs-refresh
+- [X] T022 [P] Flesh out the `CHANGELOG.md` `[Unreleased]` entry: what the scheduler does, the preserve-vs-refresh
   boundary, per-team Admin Hub config + Run now, and that the manual button is unchanged
-- [ ] T023 Run the full suites and builds green: `npm test` (server), `cd client && npx vitest run`,
+- [X] T023 Run the full suites and builds green: `npm test` (server), `cd client && npx vitest run`,
   `cd client && npm run build`; `npx eslint` clean on all changed files
-- [ ] T024 Execute quickstart Scenarios A–E against a real PI Review page and record the evidence (Article X):
+- [ ] T024 ⚠️ **User acceptance (needs a live server + real Jira/Confluence + a real PI Review page — cannot run in
+  this dev environment).** Execute quickstart Scenarios A–E against a real PI Review page and record the evidence (Article X):
   Run-now refresh preserves manual content; no-op leaves rows intact; scheduled fire + catch-up; manual unaffected;
   conflict retry-then-report
 

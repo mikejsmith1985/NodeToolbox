@@ -140,6 +140,14 @@ app.use(createNotificationsRouter(configuration));
 // Standup briefing: /api/standup/*
 app.use(createStandupBriefingRouter(configuration));
 
+// PI Review scheduler: /api/pi-review-scheduler/* (feature 015). Lazy + guarded because it depends on
+// the generated engine bundle — a missing bundle disables the routes rather than crashing startup.
+try {
+  app.use(require('./src/routes/piReviewScheduler')(configuration));
+} catch (piReviewRouteError) {
+  console.error('  ⚠ PI Review scheduler routes unavailable: ' + piReviewRouteError.message);
+}
+
 // Report webhook delivery: POST /api/reports/deliver — server-mediated send of an
 // on-screen report to the team's Atlassian Automation webhook.
 app.use(createReportDeliveryRouter(configuration));
