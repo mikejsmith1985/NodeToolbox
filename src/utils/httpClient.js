@@ -468,10 +468,24 @@ function triggerWebhook(webhookUrl, payload, shouldVerifyTls, webhookSecret) {
   });
 }
 
+/**
+ * Returns the configured Jira username to stamp into a scheduled-report webhook payload as the
+ * trigger identity, so an Atlassian Automation can require the report came from a specific
+ * operator (rather than firing for any instance that can write to the page). Undefined when unset.
+ *
+ * @param {object} jiraConfig - The instance's Jira config (configuration.jira)
+ * @returns {string|undefined}
+ */
+function resolveWebhookTriggeredBy(jiraConfig) {
+  const username = jiraConfig && typeof jiraConfig.username === 'string' ? jiraConfig.username.trim() : '';
+  return username || undefined;
+}
+
 // ── Exports ───────────────────────────────────────────────────────────────────
 
 module.exports = {
   proxyRequest,
+  resolveWebhookTriggeredBy,
   buildAuthHeader,
   buildBasicAuthHeader,
   buildGitHubAuthHeader,

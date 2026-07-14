@@ -10,7 +10,7 @@
 
 'use strict';
 
-const { makeJiraApiRequest, makeConfluenceApiRequest, triggerWebhook } = require('../utils/httpClient');
+const { makeJiraApiRequest, makeConfluenceApiRequest, triggerWebhook, resolveWebhookTriggeredBy } = require('../utils/httpClient');
 const { requestAiAssistText, isAiAssistEnabled } = require('./aiAssistEnrichment');
 const { loadFiredDates, recordFiredDate, isScheduledTimeReached } = require('./schedulerFiredState');
 const { recordDeliveryOutcome } = require('./reportDeliveryStatus');
@@ -846,6 +846,9 @@ async function runFeatureReportDelivery(report, jiraConfig, confluenceConfig, ss
       fixVersionChangeCount: fixVersionEntries.length,
       statusChangeCount:     statusEntries.length,
       scheduleChangeCount:   scheduleEntries.length,
+      // Identity of the instance that fired this — an automation can require it equals your username
+      // so a colleague's instance (with write access to the page) can't trigger your rule.
+      triggeredBy:           resolveWebhookTriggeredBy(jiraConfig),
     };
     console.log('  🔔 Feature Change [' + effectiveLabel + ']: triggering webhook…');
     triggerWebhook(triggerUrl, webhookPayload, sslVerify, triggerSecret || undefined).catch((webhookError) => {
@@ -993,6 +996,7 @@ async function runFeatureChangeArtRollupDelivery(artRollup, teamReports, jiraCon
       generatedAt: new Date().toISOString(),
       teamCount:   teamResults.length,
       totalChanges: totalChangeCount,
+      triggeredBy: resolveWebhookTriggeredBy(jiraConfig),
     };
     console.log('  🔔 Feature Change ART Rollup: triggering webhook…');
     triggerWebhook(triggerUrl, webhookPayload, sslVerify, triggerSecret || undefined).catch((webhookError) => {
