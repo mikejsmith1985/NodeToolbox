@@ -108,24 +108,24 @@ that time and does not run twice; a same-day restart after the time still runs o
 
 ### Tests first ⚠️
 
-- [ ] T011 [P] [US1] Write `src/config/loader.test.js` (or extend) proving `scheduler.piReview` round-trips: defaults
+- [X] T011 [P] [US1] Write `src/config/loader.test.js` (or extend) proving `scheduler.piReview` round-trips: defaults
   present in `buildDefaultConfig`, values merged by `applyFileConfig`, and persisted by `saveConfigToDisk` with **no**
   credential fields — write first, watch fail
-- [ ] T012 [P] [US1] Write `src/services/piReviewScheduler.test.js`: tick fires a due team at its `HH:MM` (clock +
+- [X] T012 [P] [US1] Write `src/services/piReviewScheduler.test.js`: tick fires a due team at its `HH:MM` (clock +
   fired-state injected), once-per-day guard, catch-up after a late start, disabled team skipped, and no-overlap when a
   prior run is still in progress — write first, watch fail
 
 ### Implementation
 
-- [ ] T013 [US1] Implement the `scheduler.piReview` config block in `src/config/loader.js` — defaults in
+- [X] T013 [US1] Implement the `scheduler.piReview` config block in `src/config/loader.js` — defaults in
   `buildDefaultConfig`, merge in `applyFileConfig`, explicit persist in `saveConfigToDisk` (mirror `hygieneMonitor`);
   no `OBFUSCATED_CREDENTIAL_FIELDS` entry
-- [ ] T014 [US1] Implement `src/services/piReviewScheduler.js` — `startPiReviewScheduler(configuration)` (60-s
+- [X] T014 [US1] Implement `src/services/piReviewScheduler.js` — `startPiReviewScheduler(configuration)` (60-s
   `setInterval`, `schedulerFiredState` once-per-day + catch-up, in-memory per-team overlap guard) and
   `runPiReviewTeamNow(configuration, teamRef)`; each page routed through `refreshPiReviewPage`; **persists** the last
   `PiReviewRunResult` (status, timestamp, message, counts) per team/page to the scheduler state store so the Admin Hub
   shows history across restarts (FR-019)
-- [ ] T015 [US1] Import and start `startPiReviewScheduler(configuration)` in `server.js` bootstrap alongside the other
+- [X] T015 [US1] Import and start `startPiReviewScheduler(configuration)` in `server.js` bootstrap alongside the other
   schedulers
 
 **Checkpoint**: scheduler + config tests green; a file-configured team refreshes on the tick (quickstart Scenario C).

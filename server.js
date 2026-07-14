@@ -659,6 +659,14 @@ async function launchServer() {
   startStandupBriefingScheduler(configuration);
   startHygieneMonitorScheduler(configuration);
   startSprintReleaseScheduler(configuration);
+  // PI Review scheduler (feature 015). Lazy-required + guarded: it depends on the generated engine
+  // bundle (built by `prestart`/`prebuild:exe`), so on a raw `node server.js` without that build step
+  // it degrades to "disabled" with a warning rather than crashing the whole server.
+  try {
+    require('./src/services/piReviewScheduler').startPiReviewScheduler(configuration);
+  } catch (piReviewSchedulerError) {
+    console.error('  ⚠ PI Review scheduler unavailable: ' + piReviewSchedulerError.message);
+  }
 
   // Open the dashboard automatically when:
   //   --open      : passed explicitly by Launch Toolbox.bat (zip distribution)
