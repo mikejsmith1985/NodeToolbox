@@ -2714,7 +2714,7 @@ function SettingsTab({
         <h2 className={styles.settingsSectionTitle}>PI Review Pages</h2>
         <p className={styles.issueMetaText}>
           Add one Confluence page per Program Increment. They appear as sub-tabs on the PI Review tab and are
-          shown in the ART view. Remember to <strong>Save</strong> the team to keep them.
+          shown in the ART view. Click <strong>Save PI Review Pages</strong> below to keep your changes.
         </p>
         {(piReviewPages ?? []).map((piReviewPage, pageIndex) => (
           <div className={styles.piReviewPageRow} key={pageIndex}>
@@ -2749,14 +2749,30 @@ function SettingsTab({
             </button>
           </div>
         ))}
-        <button
-          className={styles.secondaryButton}
-          onClick={onAddPiReviewPage}
-          style={{ marginTop: 'var(--spacing-xs)' }}
-          type="button"
-        >
-          + Add PI
-        </button>
+        <div className={styles.piReviewPagesActions}>
+          <button
+            className={styles.secondaryButton}
+            onClick={onAddPiReviewPage}
+            type="button"
+          >
+            + Add PI
+          </button>
+          {/* Persisting the pages saves the whole team profile (their single source of truth), so this
+              reuses the same team-save action as "Update Active Team" — no separate persistence path. */}
+          <button
+            className={styles.secondaryButton}
+            disabled={!canSaveDashboardTeam}
+            onClick={() => onSaveDashboardTeam(dashboardTeamName, false)}
+            type="button"
+          >
+            {activeDashboardTeamProfile ? 'Save PI Review Pages' : 'Save PI Review Pages as New Team'}
+          </button>
+        </div>
+        {!canSaveDashboardTeam ? (
+          <p className={styles.issueMetaText}>
+            Enter a project key and choose a board (in Board Settings above) before saving PI Review pages.
+          </p>
+        ) : null}
       </section>
 
       <section className={styles.settingsSectionCard}>

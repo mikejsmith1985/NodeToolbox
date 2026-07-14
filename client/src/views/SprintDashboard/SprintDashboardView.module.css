@@ -853,6 +853,15 @@
   min-width: 0;
 }
 
+/* Footer row for the PI Review Pages card — keeps "+ Add PI" and "Save PI Review Pages" on one line. */
+.piReviewPagesActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+  margin-top: var(--spacing-sm);
+}
+
 .loadButton {
   padding: var(--spacing-sm) var(--spacing-md);
   background: var(--color-accent);
