@@ -31,7 +31,7 @@
     "pretest": "npm run build:pi-review-engine",
     "test": "jest --testPathPattern='test/' --forceExit",
     "pretest:dom": "npm run build:pi-review-engine",
-    "test:dom": "node --test test/server-dom/piReviewEngine.dom.spec.js",
+    "test:dom": "node --test test/server-dom/piReviewEngine.spec.js test/server-dom/piReviewRefresh.spec.js",
     "test:unit": "jest --testPathPattern='test/unit/' --forceExit",
     "test:integration": "jest --testPathPattern='test/integration/' --forceExit",
     "test:client": "cd client && npm test",

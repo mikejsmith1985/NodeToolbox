@@ -54,13 +54,13 @@ until these are green.** Delivers the SC-002 "100% preserved" and SC-003 "never 
 
 ### Layer 2a — Server-consumable engine bundle ⚠️ test first
 
-- [X] T007 [P] `test/server-dom/piReviewEngine.dom.spec.js` (Node `node --test`, real linkedom — see tooling note): requires
+- [X] T007 [P] `test/server-dom/piReviewEngine.spec.js` (Node `node --test`, real linkedom — see tooling note): requires
   the generated engine, injects linkedom's `DOMParser`, parses a PI Review table + capacity snapshot server-side, and
   asserts a body with **stacked duplicate Team Capacity blocks collapses to exactly one** on write (FR-012, server
   path) plus the project-clause-free JQL. Run via `npm run test:dom`. ✅ green
 > **Tooling note (discovered during T007):** linkedom's transitive `css-select` ships ESM that **Jest's CommonJS
 > runtime cannot load** (Node loads it natively). So **DOM-hosted server tests run on Node's native test runner**
-> (`node --test`, files named `*.dom.spec.js` under `test/server-dom/`, via `npm run test:dom`); **mock-only server
+> (`node --test`, files named `*.spec.js` under `test/server-dom/`, via `npm run test:dom`); **mock-only server
 > tests stay in Jest**. This
 > keeps real-linkedom fidelity without a babel/transform battle. Applies to T007 and T009.
 
@@ -81,7 +81,7 @@ until these are green.** Delivers the SC-002 "100% preserved" and SC-003 "never 
 
 ### Layer 2b — Refresh core (server) ⚠️ tests first
 
-- [ ] T009 [P] Write `test/server-dom/piReviewRefresh.dom.spec.js` (Node `node --test`, real linkedom — see tooling note)
+- [X] T009 [P] Write `test/server-dom/piReviewRefresh.spec.js` (Node `node --test`, real linkedom — see tooling note)
   proving the invariants from contracts/refresh-run.md — passing mocked `makeJiraApiRequest` / `makeConfluenceApiRequest`
   + a fixed `nowIso` as injected deps, but using the **real** generated engine
   (`src/services/generated/piReviewEngine.cjs`) under linkedom so preserve/reconcile are meaningful: INV-1 (empty
@@ -90,7 +90,7 @@ until these are green.** Delivers the SC-002 "100% preserved" and SC-003 "never 
   change, matching `reconcilePiReviewRowsWithJira`), INV-4 (one conflict → retry then succeed; always-conflict →
   `failed`), INV-5 (no row removed), plus skip reasons (blank PO → `skipped`; no Confluence creds → `failed`; invalid
   page → `failed`) — write first, watch fail
-- [ ] T010 Implement `refreshPiReviewPage(page, team, deps, configuration)` in `src/services/piReviewRefresh.js` per
+- [X] T010 Implement `refreshPiReviewPage(page, team, deps, configuration)` in `src/services/piReviewRefresh.js` per
   contracts/refresh-run.md steps 1–8, `require`ing the generated engine (`src/services/generated/piReviewEngine.cjs`)
   for parse/reconcile/write + `buildDirectFeatureJql`; deps injected (`makeJiraApiRequest`, `makeConfluenceApiRequest`,
   `domParser` = linkedom's, `nowIso`); returns a `PiReviewRunResult`
