@@ -415,7 +415,6 @@ describe('PiReviewTab', () => {
 
     await waitFor(() => {
       expect(mockPullPiReviewFeatures).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'team-1', name: 'Alpha Team', projectKey: 'ALPHA' }),
         'PI 26.3',
         ['C73130'],
         expect.any(Array),
