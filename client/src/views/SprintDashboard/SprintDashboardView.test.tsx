@@ -1,6 +1,6 @@
 // SprintDashboardView.test.tsx — Unit tests for the Sprint Dashboard tabbed view component.
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 
@@ -122,6 +122,7 @@ const { mockState, mockActions, mockConfig, mockConfigActions } = vi.hoisted(() 
       selectPiScope: vi.fn().mockResolvedValue(undefined),
       loadAvailableSprints: vi.fn().mockResolvedValue(undefined),
       moveIssueToSprint: vi.fn().mockResolvedValue(undefined),
+      markTeamChangesSaved: vi.fn(),
     },
     mockConfig: {
       staleDaysThreshold: 5,
@@ -392,6 +393,62 @@ describe('SprintDashboardView', () => {
       const sectionHeading = screen.getByRole('heading', { name: sectionName });
       expect(sectionHeading.closest(`.${styles.settingsSectionCard}`)).not.toBeNull();
     }
+  });
+
+  it('saves the configured PI Review pages onto the active team from a Save button in the card', () => {
+    useSettingsStore.getState().setSprintDashboardTeamProfiles([
+      {
+        id: 'team-alpha',
+        name: 'Alpha',
+        projectKey: 'ALPHA',
+        boardId: '11',
+        boardName: 'Alpha Board',
+        boardType: 'scrum',
+        scopeMode: 'sprint',
+        selectedSprintId: '101',
+        selectedFixVersion: '',
+        selectedPiValue: '',
+        piReviewPages: [],
+      },
+    ]);
+    useSettingsStore.getState().setSprintDashboardActiveTeamProfileId('team-alpha');
+    mockState.activeTab = 'settings';
+    mockState.projectKey = 'ALPHA';
+    mockState.boardId = 11;
+    mockState.selectedBoardName = 'Alpha Board';
+    mockState.boardType = 'scrum';
+    mockState.piReviewPages = [
+      { piName: 'PI 26.4', pageUrl: 'https://example.atlassian.net/wiki/spaces/X/pages/605126657/Candidate+Features' },
+    ];
+    render(<SprintDashboardView />);
+
+    // The Save button must live inside the PI Review Pages card, not only up in Saved Dashboard Teams.
+    const piReviewPagesCard = screen.getByRole('heading', { name: 'PI Review Pages' }).closest(`.${styles.settingsSectionCard}`);
+    expect(piReviewPagesCard).not.toBeNull();
+    const savePagesButton = within(piReviewPagesCard as HTMLElement).getByRole('button', { name: /save pi review pages/i });
+
+    act(() => {
+      fireEvent.click(savePagesButton);
+    });
+
+    // Clicking it persists the working pages onto the active team profile (single source of truth).
+    const savedProfile = useSettingsStore
+      .getState()
+      .sprintDashboardTeamProfiles.find((teamProfile) => teamProfile.id === 'team-alpha');
+    expect(savedProfile?.piReviewPages).toEqual([
+      { piName: 'PI 26.4', pageUrl: 'https://example.atlassian.net/wiki/spaces/X/pages/605126657/Candidate+Features' },
+    ]);
+  });
+
+  it('disables the PI Review pages Save button until a project and board are chosen', () => {
+    mockState.activeTab = 'settings';
+    mockState.projectKey = '';
+    mockState.boardId = null;
+    render(<SprintDashboardView />);
+
+    const piReviewPagesCard = screen.getByRole('heading', { name: 'PI Review Pages' }).closest(`.${styles.settingsSectionCard}`);
+    const savePagesButton = within(piReviewPagesCard as HTMLElement).getByRole('button', { name: /save pi review pages/i });
+    expect(savePagesButton).toBeDisabled();
   });
 
   it('renders Overview tab with sprint info when sprint is loaded', () => {
