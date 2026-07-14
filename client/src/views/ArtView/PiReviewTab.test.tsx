@@ -204,16 +204,11 @@ function createTeamCapacitySummary(): CapacitySummary {
     totalCapacityPoints: 12.5,
     recommendedCapacityPoints: 10,
     roleCapacities: {
-      Dev: 10,
+      Developer: 10,
       'Dev Lead': 0,
-      QE: 2.5,
-      'Test Lead': 0,
-      BT: 0,
-      SL: 0,
-      SA: 0,
-      PO: 0,
-      TPO: 0,
-      SM: 0,
+      'Internal Tester': 0,
+      'External Tester': 2.5,
+      'Systems Analyst': 0,
     },
   };
 }
@@ -1011,8 +1006,8 @@ describe('PiReviewTab', () => {
     expect(within(alphaSection).getByRole('heading', { name: /team capacity/i })).toBeInTheDocument();
     expect(within(alphaSection).getByText('Alpha Team Capacity')).toBeInTheDocument();
     expect(within(alphaSection).getByText('12.5')).toBeInTheDocument();
-    expect(within(alphaSection).getByText('Dev: 10 pts')).toBeInTheDocument();
-    expect(within(alphaSection).getByText('QE: 2.5 pts')).toBeInTheDocument();
+    expect(within(alphaSection).getByText('Developer: 10 pts')).toBeInTheDocument();
+    expect(within(alphaSection).getByText('External Tester: 2.5 pts')).toBeInTheDocument();
   });
 
   it('falls back to the saved Confluence capacity snapshot when no live capacity override is provided', async () => {
@@ -1043,7 +1038,7 @@ describe('PiReviewTab', () => {
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
     expect(within(alphaSection).getByText('Alpha Team Capacity')).toBeInTheDocument();
-    expect(within(alphaSection).getByText('Dev: 10 pts')).toBeInTheDocument();
+    expect(within(alphaSection).getByText('Developer: 10 pts')).toBeInTheDocument();
 
     enterEditMode(alphaSection);
     fireEvent.change(within(alphaSection).getByLabelText(/notes for alpha team row 1/i), {
@@ -1055,7 +1050,7 @@ describe('PiReviewTab', () => {
       expect(mockUpdateConfluencePage).toHaveBeenCalledTimes(1);
     });
     expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).toContain('Alpha Team Capacity');
-    expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).toContain('<strong>Dev:</strong> 10 pts');
+    expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).toContain('<strong>Developer:</strong> 10 pts');
   });
 
   it('imports a Confluence XLSX export as an unsaved PI Review draft', async () => {

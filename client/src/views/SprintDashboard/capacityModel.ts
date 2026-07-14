@@ -4,11 +4,49 @@ const SUNDAY_DAY_INDEX = 0;
 const SATURDAY_DAY_INDEX = 6;
 const EIGHTY_PERCENT_MULTIPLIER = 0.8;
 
-/** Supported team roles in the capacity calculator across Team Dashboard and ART View. */
-export type TeamRole = 'Dev' | 'Dev Lead' | 'QE' | 'Test Lead' | 'BT' | 'SL' | 'SA' | 'PO' | 'TPO' | 'SM';
+/**
+ * Supported team roles in the capacity calculator across Team Dashboard and ART View.
+ * These match the roster's delivery-role labels exactly, so seeding from the roster is a 1:1 fill.
+ * Coordination roles (Scrum Master, Product Owner, Solution Architect, Release Train Engineer) are
+ * intentionally excluded — they add no delivery capacity.
+ */
+export type TeamRole = 'Developer' | 'Dev Lead' | 'Internal Tester' | 'External Tester' | 'Systems Analyst';
 
 /** Ordered list of all supported team roles shown in the capacity role dropdowns. */
-export const ALL_TEAM_ROLES: TeamRole[] = ['Dev', 'Dev Lead', 'QE', 'Test Lead', 'BT', 'SL', 'SA', 'PO', 'TPO', 'SM'];
+export const ALL_TEAM_ROLES: TeamRole[] = ['Developer', 'Dev Lead', 'Internal Tester', 'External Tester', 'Systems Analyst'];
+
+/**
+ * Maps a role value read from older persisted capacity data to a current role, or null when the role
+ * no longer counts toward capacity (the retired Scrum Master / Product Owner / Technical PO codes).
+ * We overwrite legacy data with the new format on load rather than preserving the old taxonomy, so
+ * this is a one-way convenience — not a two-way reconciliation.
+ */
+const LEGACY_CAPACITY_ROLE_ALIASES: Record<string, TeamRole | null> = {
+  Dev: 'Developer',
+  SL: 'Internal Tester',
+  QE: 'External Tester',
+  BT: 'External Tester',
+  'Test Lead': 'External Tester',
+  SA: 'Systems Analyst',
+  SM: null,
+  PO: null,
+  TPO: null,
+};
+
+/**
+ * Normalizes any persisted role string to a current TeamRole, or null when it should be dropped.
+ * A value already in the current set passes through unchanged; a known legacy code is translated;
+ * anything unrecognized is dropped so a stale row can never render a broken role dropdown.
+ */
+export function coerceLegacyCapacityRole(role: string): TeamRole | null {
+  if ((ALL_TEAM_ROLES as string[]).includes(role)) {
+    return role as TeamRole;
+  }
+
+  return Object.prototype.hasOwnProperty.call(LEGACY_CAPACITY_ROLE_ALIASES, role)
+    ? LEGACY_CAPACITY_ROLE_ALIASES[role]
+    : null;
+}
 
 /** A reusable capacity snapshot that can be shown in the UI or written into Confluence. */
 export interface CapacitySummary {

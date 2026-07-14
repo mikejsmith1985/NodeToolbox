@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 
 import { parsePiDateRange } from '../ArtView/hooks/artHelpers.ts';
 import { useCapacityStore } from './hooks/useCapacityStore.ts';
+import { useStandupRosterStore } from './hooks/useStandupRosterStore.ts';
 import {
   ALL_TEAM_ROLES,
   calculateRecommendedCapacity,
@@ -17,11 +18,12 @@ import {
   generateCapacityRowId,
 } from './capacityModel.ts';
 import type { CapacityRow, TeamRole } from './capacityModel.ts';
+import { resolveMemberCapacityRole, seedCapacityRowsFromRoster } from './capacityRosterSeed.ts';
 import styles from './CapacityTab.module.css';
 
 // ── Named constants ──
 
-const DEFAULT_ROLE: TeamRole = 'Dev';
+const DEFAULT_ROLE: TeamRole = 'Developer';
 const DEFAULT_MEMBER_COUNT = 1;
 const DEFAULT_CAPACITY_PERCENTAGE = 100;
 const DEFAULT_PTO_DAYS = 0;
@@ -187,8 +189,15 @@ export default function CapacityTab({ selectedPiName }: { selectedPiName: string
   const setStartDate = useCapacityStore((state) => state.setStartDate);
   const setEndDate = useCapacityStore((state) => state.setEndDate);
   const addRow = useCapacityStore((state) => state.addRow);
+  const setRows = useCapacityStore((state) => state.setRows);
   const updateRow = useCapacityStore((state) => state.updateRow);
   const removeRow = useCapacityStore((state) => state.removeRow);
+  // The roster is the source for the team makeup; only members in a counting role can seed a row.
+  const rosterMembers = useStandupRosterStore((state) => state.rosterMembers);
+  const hasSeedableRosterMembers = useMemo(
+    () => rosterMembers.some((rosterMember) => resolveMemberCapacityRole(rosterMember) !== null),
+    [rosterMembers],
+  );
   const parsedPiDateRange = useMemo(() => parsePiDateRange(selectedPiName.trim()), [selectedPiName]);
   const piRangeStartDate = parsedPiDateRange ? formatDateForInput(parsedPiDateRange.startDate) : '';
   const piRangeEndDate = parsedPiDateRange ? formatDateForInput(parsedPiDateRange.endDate) : '';
@@ -219,6 +228,28 @@ export default function CapacityTab({ selectedPiName }: { selectedPiName: string
       totalPtoDays: DEFAULT_PTO_DAYS,
     });
   }, [addRow]);
+
+  // Auto-fills the team makeup (roles + head counts) from the roster. Capacity numbers stay manual, so
+  // a re-seed would wipe any allocation/PTO the planner already entered — hence the confirm guard.
+  const handleSeedFromRoster = useCallback(() => {
+    const seededRows = seedCapacityRowsFromRoster(rosterMembers);
+    if (seededRows.length === 0) {
+      return;
+    }
+
+    if (rows.length > 0) {
+      const shouldReplace = window.confirm(
+        `Replace the current ${rows.length} team composition row${rows.length === 1 ? '' : 's'} with `
+        + `${seededRows.length} row${seededRows.length === 1 ? '' : 's'} from the roster? `
+        + 'Capacity % and PTO Days will reset to defaults and must be re-entered.',
+      );
+      if (!shouldReplace) {
+        return;
+      }
+    }
+
+    setRows(seededRows);
+  }, [rosterMembers, rows.length, setRows]);
 
   return (
     <div className={styles.capacityTab}>
@@ -297,9 +328,24 @@ export default function CapacityTab({ selectedPiName }: { selectedPiName: string
               total days off across the entire row during the planning window.
             </p>
           </div>
-          <button className={styles.addRowButton} onClick={handleAddRow} type="button">
-            + Add Row
-          </button>
+          <div className={styles.teamSectionActions}>
+            <button
+              className={styles.seedFromRosterButton}
+              disabled={!hasSeedableRosterMembers}
+              onClick={handleSeedFromRoster}
+              title={
+                hasSeedableRosterMembers
+                  ? 'Fill the team makeup from the roster (Scrum Master, Product Owner, Solution Architect, and RTE are excluded)'
+                  : 'Add roster members with a delivery role first, then seed the team makeup from them'
+              }
+              type="button"
+            >
+              Seed from Roster
+            </button>
+            <button className={styles.addRowButton} onClick={handleAddRow} type="button">
+              + Add Row
+            </button>
+          </div>
         </div>
 
         {rows.length === 0 ? (
