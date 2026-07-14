@@ -3,12 +3,14 @@
 // Discovery is a single, direct Jira query: every `issuetype = Feature` in the page's PI that is
 // assigned to the team's Product Owner (taken from the roster). This deliberately replaces the older
 // Blueprint bottom-up discovery + label/assignee filter combination — the PI plus the PO uniquely
-// scope a team's Features, so no extra filters are needed. Discovered Features are de-duplicated
-// against the rows already in the table so a pull only ever appends genuinely new Features.
+// scope a team's Features, so no extra filters are needed. Notably the query does NOT constrain by
+// project: a team's Features often live in a different (portfolio/program) project than the team's
+// delivery board, so adding a project clause silently excludes them. The PO assignee is the scope.
+// Discovered Features are de-duplicated against the rows already in the table so a pull only ever
+// appends genuinely new Features.
 
 import { jiraGet } from '../../services/jiraApi.ts';
 import type { JiraIssue } from '../../types/jira.ts';
-import type { ArtTeam } from './hooks/useArtData.ts';
 import { extractPiReviewFeatureKey } from './piReviewJira.ts';
 import { createEmptyPiReviewRow, type PiReviewRow } from './piReviewTable.ts';
 
@@ -74,40 +76,37 @@ function buildProductOwnerAssigneeClause(poAssigneeQueryValues: readonly string[
 }
 
 /**
- * Builds the direct `issuetype = Feature` JQL for a team + PI + Product Owner(s).
- * Returns null when the query cannot be meaningfully scoped — a missing project key, PI, or PO would
- * each broaden the pull to every Feature in the project, which is never what the user wants.
+ * Builds the direct `issuetype = Feature` JQL for a PI + Product Owner(s), mirroring the query a
+ * user would run by hand. Returns null when the query cannot be meaningfully scoped — a missing PI
+ * or PO would broaden the pull to every Feature the assignee owns (or every Feature in the PI),
+ * which is never what the user wants. Deliberately unscoped by project (see file header).
  */
 export function buildDirectFeatureJql(
-  team: ArtTeam,
   piName: string,
   poAssigneeQueryValues: readonly string[],
   piFieldId: string,
 ): string | null {
-  const projectKey = (team.projectKey ?? '').trim();
   const trimmedPiName = piName.trim();
   const assigneeClause = buildProductOwnerAssigneeClause(poAssigneeQueryValues);
-  if (projectKey === '' || trimmedPiName === '' || assigneeClause === null) {
+  if (trimmedPiName === '' || assigneeClause === null) {
     return null;
   }
 
   const piFieldNumber = piFieldId.replace('customfield_', '');
   return [
-    `project = ${quoteJqlValue(projectKey)}`,
     'issuetype = Feature',
-    `cf[${piFieldNumber}] = ${quoteJqlValue(trimmedPiName)}`,
     assigneeClause,
+    `cf[${piFieldNumber}] = ${quoteJqlValue(trimmedPiName)}`,
   ].join(' AND ');
 }
 
 /** Runs the direct Feature query and normalizes the issues into discovered Features. */
 async function fetchDirectFeatures(
-  team: ArtTeam,
   piName: string,
   poAssigneeQueryValues: readonly string[],
   piFieldId: string,
 ): Promise<DiscoveredFeature[]> {
-  const directFeatureJql = buildDirectFeatureJql(team, piName, poAssigneeQueryValues, piFieldId);
+  const directFeatureJql = buildDirectFeatureJql(piName, poAssigneeQueryValues, piFieldId);
   if (directFeatureJql === null) {
     return [];
   }
@@ -132,17 +131,16 @@ function createFeatureRow(feature: DiscoveredFeature): PiReviewRow {
 
 /**
  * Pulls a team's Features for the given PI + Product Owner(s) via a single direct Jira query,
- * returning the rows that are not already in the table. When the query cannot be scoped (no PO, PI,
- * or project key) it resolves to an empty result without contacting Jira.
+ * returning the rows that are not already in the table. When the query cannot be scoped (no PO or
+ * no PI) it resolves to an empty result without contacting Jira.
  */
 export async function pullPiReviewFeatures(
-  team: ArtTeam,
   piName: string,
   poAssigneeQueryValues: readonly string[],
   existingRows: readonly PiReviewRow[],
   settings: PiReviewPullSettings = readPiReviewPullSettings(),
 ): Promise<PullPiReviewFeaturesResult> {
-  const discoveredFeatures = await fetchDirectFeatures(team, piName, poAssigneeQueryValues, settings.piFieldId);
+  const discoveredFeatures = await fetchDirectFeatures(piName, poAssigneeQueryValues, settings.piFieldId);
 
   // De-duplicate discovered Features by upper-cased key (Jira can, in theory, echo a key twice).
   const discoveredFeaturesByKey = new Map<string, DiscoveredFeature>();

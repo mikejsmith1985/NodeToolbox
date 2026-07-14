@@ -1036,7 +1036,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
     }
     setIsPullingFeatures(true);
     try {
-      const pullResult = await pullPiReviewFeatures(target.team, effectivePiName, productOwnerAssigneeQueryValues, rows);
+      const pullResult = await pullPiReviewFeatures(effectivePiName, productOwnerAssigneeQueryValues, rows);
       if (pullResult.addedCount === 0) {
         showToast(
           pullResult.discoveredCount === 0
