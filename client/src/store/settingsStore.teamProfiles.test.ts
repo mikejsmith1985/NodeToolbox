@@ -101,4 +101,20 @@ describe('settingsStore Team Dashboard draft/saved separation', () => {
     expect(currentState.sprintDashboardProjectKey).toBe('TRANS');
     expect(currentState.sprintDashboardHydrationNonce).toBe(startingNonce + 1);
   });
+
+  it('persists a team profile PI Review page list via an explicit updateActive save', () => {
+    useSettingsStore.getState().updateActiveSprintDashboardTeamProfile({
+      piReviewPages: [
+        { piName: 'PI 26.3', pageUrl: 'https://example.atlassian.net/wiki/pages/111/Transformers-263' },
+        { piName: 'PI 26.4', pageUrl: 'https://example.atlassian.net/wiki/pages/222/Transformers-264' },
+      ],
+    });
+
+    expect(readActiveProfile()?.piReviewPages).toEqual([
+      { piName: 'PI 26.3', pageUrl: 'https://example.atlassian.net/wiki/pages/111/Transformers-263' },
+      { piName: 'PI 26.4', pageUrl: 'https://example.atlassian.net/wiki/pages/222/Transformers-264' },
+    ]);
+    // Persisted to the same localStorage key the profiles live under.
+    expect(localStorage.getItem('tbxSprintDashboardTeams')).toContain('Transformers-264');
+  });
 });

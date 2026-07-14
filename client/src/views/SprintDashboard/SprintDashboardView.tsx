@@ -28,6 +28,7 @@ import { PrimaryTabs } from '../../components/PrimaryTabs/PrimaryTabs.tsx';
 import { jiraGet, jiraPost, jiraPut } from '../../services/jiraApi.ts';
 import {
   useSettingsStore,
+  type SprintDashboardPiReviewPage,
   type SprintDashboardTeamProfile,
 } from '../../store/settingsStore.ts';
 import type { JiraComment, JiraIssue, JiraTransition, JiraVersion } from '../../types/jira.ts';
@@ -2454,6 +2455,10 @@ interface SettingsTabProps {
   config: DashboardConfig;
   dashboardTeamProfiles: SprintDashboardTeamProfile[];
   activeDashboardTeamProfileId: string;
+  /** Draft PI Review pages for the active team (edited here; saved onto the profile). */
+  piReviewPages: SprintDashboardPiReviewPage[];
+  /** Program Increment names offered in each PI Review page's dropdown. */
+  availablePiValues: string[];
   onProjectKeyChange: (key: string) => void;
   onLoadSprint: () => void;
   onBoardSearchChange: (query: string) => void;
@@ -2462,6 +2467,9 @@ interface SettingsTabProps {
   onActivateDashboardTeam: (teamProfileId: string) => void;
   onSaveDashboardTeam: (teamName: string, shouldCreateNewTeam: boolean) => void;
   onRemoveDashboardTeam: (teamProfileId: string) => void;
+  onAddPiReviewPage: () => void;
+  onUpdatePiReviewPage: (pageIndex: number, changes: Partial<SprintDashboardPiReviewPage>) => void;
+  onRemovePiReviewPage: (pageIndex: number) => void;
 }
 
 interface DetectedWorkflowIssueType {
@@ -2485,6 +2493,8 @@ function SettingsTab({
   config,
   dashboardTeamProfiles,
   activeDashboardTeamProfileId,
+  piReviewPages,
+  availablePiValues,
   onProjectKeyChange,
   onLoadSprint,
   onBoardSearchChange,
@@ -2493,6 +2503,9 @@ function SettingsTab({
   onActivateDashboardTeam,
   onSaveDashboardTeam,
   onRemoveDashboardTeam,
+  onAddPiReviewPage,
+  onUpdatePiReviewPage,
+  onRemovePiReviewPage,
 }: SettingsTabProps) {
   const settingsCopy = getBoardSettingsCopy(boardType);
   const activeDashboardTeamProfile = useMemo(
@@ -2688,6 +2701,63 @@ function SettingsTab({
               Save the current project and board selection as your first dashboard team.
             </p>
           )}
+
+          {/* PI Review pages — configured here per team; displayed as sub-tabs in the ART view. */}
+          <div style={{ marginTop: 'var(--spacing-md)' }}>
+            <h3 className={styles.settingsSectionTitle} style={{ fontSize: 'var(--font-size-md)' }}>
+              PI Review Pages
+            </h3>
+            <p className={styles.issueMetaText}>
+              Add one Confluence page per Program Increment. They appear as sub-tabs on the PI Review tab and are
+              shown in the ART view. Remember to <strong>Save</strong> the team to keep them.
+            </p>
+            {(piReviewPages ?? []).map((piReviewPage, pageIndex) => (
+              <div
+                key={pageIndex}
+                style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center', marginBottom: 'var(--spacing-xs)' }}
+              >
+                <select
+                  aria-label={`PI for PI Review page ${pageIndex + 1}`}
+                  className={styles.settingsInput}
+                  onChange={(changeEvent) => onUpdatePiReviewPage(pageIndex, { piName: changeEvent.target.value })}
+                  style={{ flex: '0 0 auto' }}
+                  value={piReviewPage.piName}
+                >
+                  <option value="">— Select PI —</option>
+                  {availablePiValues.map((availablePiValue) => (
+                    <option key={availablePiValue} value={availablePiValue}>{availablePiValue}</option>
+                  ))}
+                  {piReviewPage.piName.trim() !== '' && !availablePiValues.includes(piReviewPage.piName) && (
+                    <option value={piReviewPage.piName}>{piReviewPage.piName}</option>
+                  )}
+                </select>
+                <input
+                  aria-label={`PI Review Page URL ${pageIndex + 1}`}
+                  className={styles.settingsInput}
+                  onChange={(changeEvent) => onUpdatePiReviewPage(pageIndex, { pageUrl: changeEvent.target.value })}
+                  placeholder="Confluence page URL"
+                  style={{ flex: '1 1 auto' }}
+                  type="text"
+                  value={piReviewPage.pageUrl}
+                />
+                <button
+                  className={styles.textActionButton}
+                  onClick={() => onRemovePiReviewPage(pageIndex)}
+                  type="button"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            <button
+              className={styles.secondaryButton}
+              onClick={onAddPiReviewPage}
+              style={{ marginTop: 'var(--spacing-xs)' }}
+              type="button"
+            >
+              + Add PI
+            </button>
+          </div>
         </div>
 
         <div className={styles.settingsDivider} />
@@ -6824,6 +6894,7 @@ export default function SprintDashboardView() {
       selectedSprintId: state.selectedSprintId === null ? '' : String(state.selectedSprintId),
       selectedFixVersion: state.selectedFixVersionName,
       selectedPiValue: state.selectedPiValue,
+      piReviewPages: state.piReviewPages,
     };
     const preservedTeamProfiles = shouldCreateNewTeam
       ? dashboardTeamProfiles
@@ -6848,6 +6919,7 @@ export default function SprintDashboardView() {
       selectedSprintId: state.selectedSprintId === null ? '' : String(state.selectedSprintId),
       selectedFixVersion: state.selectedFixVersionName,
       selectedPiValue: state.selectedPiValue,
+      piReviewPages: state.piReviewPages,
     });
     actions.markTeamChangesSaved();
   }
@@ -7098,6 +7170,11 @@ export default function SprintDashboardView() {
         onRemoveDashboardTeam={handleRemoveDashboardTeam}
         onSaveDashboardTeam={handleSaveDashboardTeam}
         onSelectBoard={actions.selectBoard}
+        piReviewPages={state.piReviewPages}
+        availablePiValues={state.availablePiValues}
+        onAddPiReviewPage={actions.addPiReviewPage}
+        onUpdatePiReviewPage={actions.updatePiReviewPage}
+        onRemovePiReviewPage={actions.removePiReviewPage}
         projectKey={state.projectKey}
       />
     );

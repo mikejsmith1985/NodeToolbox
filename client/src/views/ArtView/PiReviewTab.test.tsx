@@ -450,7 +450,7 @@ describe('PiReviewTab', () => {
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
     expect(within(alphaSection).getByText(/readout mode is on/i)).toBeInTheDocument();
     expect(within(alphaSection).queryByRole('button', { name: /edit pi review/i })).not.toBeInTheDocument();
-    const teamDashboardLink = within(alphaSection).getByRole('link', { name: /open in team dashboard/i });
+    const teamDashboardLink = within(alphaSection).getByRole('link', { name: /edit in team dashboard/i });
     expect(teamDashboardLink).toHaveAttribute('href', '/sprint-dashboard');
     expect(within(alphaSection).queryByRole('button', { name: /save to confluence/i })).not.toBeInTheDocument();
   });

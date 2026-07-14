@@ -185,8 +185,26 @@ function readActivePiReviewTargetKey(previousTargetKey: string, configuredTarget
   return readDefaultPiReviewTargetKey(configuredTargets);
 }
 
-function openTeamDashboardPiReviewWorkspace(): void {
-  useSettingsStore.getState().setSprintDashboardActiveTab(TEAM_DASHBOARD_PI_REVIEW_TAB);
+/**
+ * Quick-access edit handoff: activates the ART team's matching Team Dashboard profile and lands on
+ * its PI Review tab, so the user edits pages in the one place they live (the team profile). The
+ * match (by name, then board, then project) is inlined here rather than imported so the ART PI
+ * Review test's module environment stays isolated from the Team Dashboard context helper.
+ */
+function openTeamDashboardPiReviewWorkspace(team: ArtTeam): void {
+  const settingsState = useSettingsStore.getState();
+  const teamProfiles = settingsState.sprintDashboardTeamProfiles;
+  const normalizedName = team.name.trim().toLowerCase();
+  const normalizedBoardId = team.boardId.trim();
+  const normalizedProjectKey = (team.projectKey ?? '').trim().toUpperCase();
+  const matchedProfile =
+    teamProfiles.find((profile) => normalizedName !== '' && profile.name.trim().toLowerCase() === normalizedName)
+    ?? teamProfiles.find((profile) => normalizedBoardId !== '' && profile.boardId.trim() === normalizedBoardId)
+    ?? teamProfiles.find((profile) => normalizedProjectKey !== '' && profile.projectKey.trim().toUpperCase() === normalizedProjectKey);
+  if (matchedProfile) {
+    settingsState.setSprintDashboardActiveTeamProfileId(matchedProfile.id);
+  }
+  settingsState.setSprintDashboardActiveTab(TEAM_DASHBOARD_PI_REVIEW_TAB);
 }
 
 /**
@@ -1719,9 +1737,9 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
             <a
               className={styles.authoringLink}
               href={TEAM_DASHBOARD_ROUTE}
-              onClick={openTeamDashboardPiReviewWorkspace}
+              onClick={() => openTeamDashboardPiReviewWorkspace(target.team)}
             >
-              Open in Team Dashboard
+              Edit in Team Dashboard
             </a>
           )}
         </div>

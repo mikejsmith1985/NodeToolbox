@@ -725,5 +725,33 @@ describe('useSprintData', () => {
       rerender({ nonce: 1 });
       expect(result.current.state.hasUnsavedTeamChanges).toBe(false);
     });
+
+    it('adds, updates, and removes draft PI Review pages and flags unsaved changes', () => {
+      const { result } = renderHook(() => useSprintData());
+
+      act(() => { result.current.actions.addPiReviewPage(); });
+      expect(result.current.state.piReviewPages).toHaveLength(1);
+      expect(result.current.state.hasUnsavedTeamChanges).toBe(true);
+
+      act(() => { result.current.actions.updatePiReviewPage(0, { piName: 'PI 26.4', pageUrl: 'url-264' }); });
+      expect(result.current.state.piReviewPages[0]).toEqual({ piName: 'PI 26.4', pageUrl: 'url-264' });
+
+      act(() => { result.current.actions.removePiReviewPage(0); });
+      expect(result.current.state.piReviewPages).toEqual([]);
+    });
+
+    it('hydrates draft PI Review pages from the active team profile', () => {
+      useSettingsStore.setState({
+        sprintDashboardTeamProfiles: [{
+          id: 'team-a', name: 'A', projectKey: 'A', boardId: '1', boardName: '', boardType: '',
+          scopeMode: 'sprint', selectedSprintId: '', selectedFixVersion: '', selectedPiValue: '',
+          piReviewPages: [{ piName: 'PI 26.3', pageUrl: 'url-263' }],
+        }],
+        sprintDashboardActiveTeamProfileId: 'team-a',
+      });
+
+      const { result } = renderHook(() => useSprintData('team-a'));
+      expect(result.current.state.piReviewPages).toEqual([{ piName: 'PI 26.3', pageUrl: 'url-263' }]);
+    });
   });
 });
