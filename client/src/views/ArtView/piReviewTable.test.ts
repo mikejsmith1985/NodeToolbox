@@ -565,6 +565,79 @@ describe('writePiReviewCapacitySummary', () => {
     expect(nextStorageValue).not.toContain('Previous Capacity');
     expect(nextStorageValue).toContain('data-node-toolbox-pi-review-capacity="summary"');
   });
+
+  it('collapses multiple stacked Team Capacity blocks (legacy + placeholders + canonical) into one', () => {
+    // Mirrors a page that accreted blocks across formats: an old Dev/SL/SA snapshot, two empty
+    // placeholder templates, and a canonical section — all four stacked above the table.
+    const duplicatedStorageValue = `
+      <h1>NodeToolbox PI Review</h1>
+      <p>This page section is managed by NodeToolbox so PI Review data can sync reliably.</p>
+      <h2>Team Capacity</h2>
+      <p>Snapshot pulled from the NodeToolbox Capacity tab.</p>
+      <p><strong>Plan:</strong> Legacy DevSLSA Capacity</p>
+      <p><strong>Date Range:</strong> Not set to Not set</p>
+      <p><strong>Work Days:</strong> 0</p>
+      <p><strong>100% Capacity (pts):</strong> 0</p>
+      <p><strong>80% Capacity (pts):</strong> 0</p>
+      <ul><li><strong>Dev:</strong> 0 pts</li><li><strong>SL:</strong> 0 pts</li><li><strong>SA:</strong> 0 pts</li></ul>
+      <h2>Team Capacity</h2>
+      <p>Capacity from the Toolbox Capacity tab appears here after you save from NodeToolbox.</p>
+      <h2>Team Capacity</h2>
+      <p>Capacity from the Toolbox Capacity tab appears here after you save from NodeToolbox.</p>
+      <section data-node-toolbox-pi-review-capacity="summary" data-node-toolbox-pi-review-capacity-payload="%7B%7D">
+        <h2>Team Capacity</h2>
+        <p>Snapshot pulled from the NodeToolbox Capacity tab.</p>
+        <p><strong>Plan:</strong> Stale Canonical Capacity</p>
+        <p><strong>Date Range:</strong> 2026-05-21 to 2026-07-29</p>
+        <p><strong>Work Days:</strong> 50</p>
+        <p><strong>100% Capacity (pts):</strong> 549.5</p>
+        <p><strong>80% Capacity (pts):</strong> 439</p>
+        <ul><li><strong>Developer:</strong> 432 pts</li></ul>
+      </section>
+      <table>
+        <tbody>
+          <tr>
+            <th>YES - If this is a Carry-Over</th>
+            <th>Priority</th>
+            <th>Feature</th>
+            <th>Point Estimate</th>
+            <th>Dependency</th>
+            <th>Risks</th>
+            <th>Committed to PI?</th>
+            <th>Implementation Notes</th>
+          </tr>
+        </tbody>
+      </table>
+    `;
+
+    const nextStorageValue = writePiReviewCapacitySummary(duplicatedStorageValue, {
+      summaryLabel: 'Transformers Capacity',
+      startDate: '2026-05-21',
+      endDate: '2026-07-29',
+      workDayCount: 50,
+      totalCapacityPoints: 549.5,
+      recommendedCapacityPoints: 439,
+      roleCapacities: {
+        Developer: 432,
+        'Dev Lead': 23.5,
+        'Internal Tester': 47,
+        'External Tester': 0,
+        'Systems Analyst': 47,
+      },
+    });
+
+    // Exactly one Team Capacity heading survives, wrapped in exactly one canonical section.
+    expect(nextStorageValue.match(/Team Capacity/g)).toHaveLength(1);
+    expect(nextStorageValue.match(/data-node-toolbox-pi-review-capacity="summary"/g)).toHaveLength(1);
+    // The fresh snapshot replaces every prior block; no stale variant lingers.
+    expect(nextStorageValue).toContain('Transformers Capacity');
+    expect(nextStorageValue).not.toContain('Legacy DevSLSA Capacity');
+    expect(nextStorageValue).not.toContain('Stale Canonical Capacity');
+    expect(nextStorageValue).not.toContain('appears here after you save');
+    // And it still lands above the PI Review table.
+    expect(nextStorageValue.indexOf('Transformers Capacity'))
+      .toBeLessThan(nextStorageValue.indexOf('<th>YES - If this is a Carry-Over'));
+  });
 });
 
 describe('writePiReviewTable', () => {

@@ -282,6 +282,52 @@ function locateFallbackCapacityElements(documentNode: Document): HTMLElement[] {
   return fallbackCapacityElements;
 }
 
+/**
+ * Collects every Team Capacity block on the page in document order — both canonical `<section>`
+ * wrappers and legacy "loose" blocks (a bare Team Capacity heading followed by its paragraphs/list).
+ * Each inner array is one block's elements. The writer uses this to de-duplicate: a page that
+ * accreted several capacity blocks across older formats collapses back to a single section.
+ */
+function collectCapacityBlocks(documentNode: Document): HTMLElement[][] {
+  const storageWrapperElement = readStorageWrapperElement(documentNode);
+  const wrapperChildren = Array.from(storageWrapperElement.children) as HTMLElement[];
+  const capacitySelector = `[${PI_REVIEW_CAPACITY_SECTION_ATTRIBUTE}="${PI_REVIEW_CAPACITY_SECTION_VALUE}"]`;
+  const capacityBlocks: HTMLElement[][] = [];
+
+  for (let childIndex = 0; childIndex < wrapperChildren.length; childIndex += 1) {
+    const childElement = wrapperChildren[childIndex];
+
+    // A canonical section is self-contained — the one element is the whole block.
+    if (childElement.matches(capacitySelector)) {
+      capacityBlocks.push([childElement]);
+      continue;
+    }
+
+    // A legacy loose block starts at a bare "Team Capacity" heading and runs until the next
+    // heading, table, or canonical section.
+    const isTeamCapacityHeading = childElement.tagName.toLowerCase().startsWith('h')
+      && childElement.textContent?.trim().toLowerCase() === TEAM_CAPACITY_SECTION_TITLE.toLowerCase();
+    if (!isTeamCapacityHeading) {
+      continue;
+    }
+
+    const looseBlockElements: HTMLElement[] = [childElement];
+    let lookaheadIndex = childIndex + 1;
+    for (; lookaheadIndex < wrapperChildren.length; lookaheadIndex += 1) {
+      const followingElement = wrapperChildren[lookaheadIndex];
+      const followingTagName = followingElement.tagName.toLowerCase();
+      if (followingTagName === 'table' || followingTagName.startsWith('h') || followingElement.matches(capacitySelector)) {
+        break;
+      }
+      looseBlockElements.push(followingElement);
+    }
+    capacityBlocks.push(looseBlockElements);
+    childIndex = lookaheadIndex - 1; // resume after the block we just consumed
+  }
+
+  return capacityBlocks;
+}
+
 function parseCapacityNumber(paragraphText: string): number {
   const matchedNumber = paragraphText.match(/:\s*(-?\d+(\.\d+)?)\s*(pts)?\s*$/i);
   return matchedNumber ? Number(matchedNumber[1]) : 0;
@@ -356,18 +402,15 @@ export function writePiReviewCapacitySummary(storageValue: string, capacitySumma
     throw new Error('The PI Review capacity section could not be created');
   }
 
-  const existingCapacitySectionElement = documentNode.querySelector(
-    `[${PI_REVIEW_CAPACITY_SECTION_ATTRIBUTE}="${PI_REVIEW_CAPACITY_SECTION_VALUE}"]`,
-  );
-  if (existingCapacitySectionElement instanceof HTMLElement) {
-    existingCapacitySectionElement.replaceWith(capacitySectionElement);
-    return storageWrapperElement.innerHTML;
-  }
-
-  const fallbackCapacityElements = locateFallbackCapacityElements(documentNode);
-  if (fallbackCapacityElements.length > 0) {
-    fallbackCapacityElements[0].replaceWith(capacitySectionElement);
-    fallbackCapacityElements.slice(1).forEach((fallbackElement) => fallbackElement.remove());
+  // Replace the first existing capacity block with the fresh section and delete every other one, so
+  // duplicate blocks accreted from older page formats collapse back to a single canonical section.
+  const capacityBlocks = collectCapacityBlocks(documentNode);
+  if (capacityBlocks.length > 0) {
+    const [firstBlock, ...remainingBlocks] = capacityBlocks;
+    const [firstElement, ...trailingElements] = firstBlock;
+    firstElement.replaceWith(capacitySectionElement);
+    trailingElements.forEach((trailingElement) => trailingElement.remove());
+    remainingBlocks.forEach((block) => block.forEach((blockElement) => blockElement.remove()));
     return storageWrapperElement.innerHTML;
   }
 
