@@ -900,7 +900,7 @@
   border-radius: 6px;
   padding: 12px;
   margin-bottom: 12px;
-  background: var(--color-surface-2));
+  background: var(--color-surface-2);
 }
 .notificationTeamHeader {
   display: flex;
