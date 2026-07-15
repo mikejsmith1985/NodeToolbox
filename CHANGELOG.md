@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Home — Feature Canvas and Jira Template Maker showed a raw id in "Recently used"**: both tools were missing
+  from the recent-links labels, so visiting either left an entry reading `feature-canvas` or `jira-template-maker`
+  rather than the tool's name. Both are now labelled, and a test fails if any future tool is added without one.
+
 ### Added
 - **PI Review — AI Assistance (feature 016)**: a new **⚡ AI Assistance** panel on the PI Review tab (edit mode, once
   AI Assist is unlocked with Ctrl+Alt+Z) reads every Feature already on your page — its description, acceptance
