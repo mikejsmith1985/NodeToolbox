@@ -6,7 +6,7 @@
 // CategoryResult per catalog entry plus the data the Sprint-Flow snapshot needs. It performs
 // no Jira mutation — its only job is reading and counting.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useMemo, useState } from 'react';
 
 import { jiraGet } from '../../../../services/jiraApi.ts';
 import { useConnectionStore } from '../../../../store/connectionStore.ts';
@@ -85,7 +85,39 @@ interface JiraSearchResponse {
   issues?: JiraIssue[];
 }
 
+/**
+ * The outcome of one Jira fetch, stamped with the request that produced it.
+ *
+ * The stamp is what lets the card's "loading" state be worked out during render instead of being
+ * switched on by hand when a fetch starts: if the data on hand came from an older request than the
+ * one the current inputs call for, a new fetch is by definition still in flight. One value moving
+ * as a unit also removes the window where the issues had been replaced but the error had not.
+ */
+interface SourceResult {
+  /** The requestKey of the fetch that produced this data; never matches REQUEST_NONE. */
+  requestKey: string;
+  issues: JiraIssue[];
+  errorMessage: string | null;
+}
+
+/** Stands for "no fetch has completed yet" — chosen so it can never equal a real request key. */
+const REQUEST_NONE = '';
+
+const EMPTY_SOURCE_RESULT: SourceResult = { requestKey: REQUEST_NONE, issues: [], errorMessage: null };
+
 // ── Pure helpers (module-level so the hook body stays small) ──
+
+/**
+ * Works out a source's status by comparing the data on hand against the request the current inputs
+ * call for. A null requestKey means the inputs cannot support a fetch yet (no connection), which the
+ * cards show as loading rather than as a false "ready" with a zero count.
+ */
+function deriveFetchStatus(requestKey: string | null, result: SourceResult): CategoryStatus {
+  if (requestKey === null) return 'loading';
+  if (result.requestKey !== requestKey) return 'loading';
+  if (result.errorMessage) return 'error';
+  return 'ready';
+}
 
 /** Treats the typed Jira issue as the Hygiene shape the selectors expect (same field names). */
 function toHygieneIssues(issues: JiraIssue[]): HygieneJiraIssue[] {
@@ -186,81 +218,83 @@ export function useTodayDashboard(): TodayDashboardData {
     dashboardConfig.customStoryPointsFieldId,
   );
 
-  const [myIssues, setMyIssues] = useState<JiraIssue[]>([]);
-  const [myIssuesStatus, setMyIssuesStatus] = useState<CategoryStatus>('loading');
-  const [myIssuesError, setMyIssuesError] = useState<string | null>(null);
-  const [untriagedIssues, setUntriagedIssues] = useState<JiraIssue[]>([]);
-  const [untriagedStatus, setUntriagedStatus] = useState<CategoryStatus>('loading');
-  const [untriagedError, setUntriagedError] = useState<string | null>(null);
+  const [myIssuesResult, setMyIssuesResult] = useState<SourceResult>(EMPTY_SOURCE_RESULT);
+  const [untriagedResult, setUntriagedResult] = useState<SourceResult>(EMPTY_SOURCE_RESULT);
   // Bumping this token re-runs the my-issues and untriaged fetches on manual refresh.
   const [reloadToken, setReloadToken] = useState<number>(0);
 
   const isTeamConfigured = sprintState.boardId !== null || Boolean(sprintState.projectKey.trim());
-  const isUntriagedConfigured = Boolean(dsuProjectKey.trim());
+  const trimmedDsuProjectKey = dsuProjectKey.trim();
+  const isUntriagedConfigured = Boolean(trimmedDsuProjectKey);
+
+  // Each key names the exact fetch the current inputs call for, and null means "cannot fetch yet".
+  // Everything the query depends on is in the key, so a changed project key or a refresh both mark
+  // the data on hand as stale automatically — that is what drives the loading state below.
+  const myIssuesRequestKey = isConnectionReady ? `my|${reloadToken}` : null;
+  const untriagedRequestKey =
+    isConnectionReady && isUntriagedConfigured ? `untriaged|${trimmedDsuProjectKey}|${reloadToken}` : null;
+
+  const myIssuesStatus = deriveFetchStatus(myIssuesRequestKey, myIssuesResult);
+  const untriagedStatus = deriveFetchStatus(untriagedRequestKey, untriagedResult);
+  const myIssuesError = myIssuesResult.errorMessage;
+  const untriagedError = untriagedResult.errorMessage;
 
   // ── My-issues fetch (independent source) ──
   useEffect(() => {
-    if (!isConnectionReady) {
+    if (myIssuesRequestKey === null) {
       return;
     }
 
     let isMounted = true;
-    setMyIssuesStatus('loading');
     jiraGet<JiraSearchResponse>(buildMyIssuesSearchPath())
       .then((response) => {
         if (!isMounted) return;
-        setMyIssues(response.issues ?? []);
-        setMyIssuesError(null);
-        setMyIssuesStatus('ready');
+        setMyIssuesResult({ requestKey: myIssuesRequestKey, issues: response.issues ?? [], errorMessage: null });
       })
       .catch((unknownError: unknown) => {
         if (!isMounted) return;
-        setMyIssues([]);
-        setMyIssuesError(extractErrorMessage(unknownError));
-        setMyIssuesStatus('error');
+        setMyIssuesResult({ requestKey: myIssuesRequestKey, issues: [], errorMessage: extractErrorMessage(unknownError) });
       });
 
     return () => {
       isMounted = false;
     };
-  }, [isConnectionReady, reloadToken]);
+  }, [myIssuesRequestKey]);
 
   // ── Untriaged fetch (independent source; own DSU "new" query) ──
   useEffect(() => {
-    if (!isConnectionReady || !isUntriagedConfigured) {
+    if (untriagedRequestKey === null) {
       return;
     }
 
     let isMounted = true;
-    setUntriagedStatus('loading');
-    jiraGet<JiraSearchResponse>(buildUntriagedSearchPath(dsuProjectKey.trim()))
+    jiraGet<JiraSearchResponse>(buildUntriagedSearchPath(trimmedDsuProjectKey))
       .then((response) => {
         if (!isMounted) return;
-        setUntriagedIssues(response.issues ?? []);
-        setUntriagedError(null);
-        setUntriagedStatus('ready');
+        setUntriagedResult({ requestKey: untriagedRequestKey, issues: response.issues ?? [], errorMessage: null });
       })
       .catch((unknownError: unknown) => {
         if (!isMounted) return;
-        setUntriagedIssues([]);
-        setUntriagedError(extractErrorMessage(unknownError));
-        setUntriagedStatus('error');
+        setUntriagedResult({ requestKey: untriagedRequestKey, issues: [], errorMessage: extractErrorMessage(unknownError) });
       });
 
     return () => {
       isMounted = false;
     };
-  }, [isConnectionReady, isUntriagedConfigured, dsuProjectKey, reloadToken]);
+  }, [untriagedRequestKey, trimmedDsuProjectKey]);
 
   // ── Sprint load (independent source) ──
-  // Held in a ref so the load effect does not re-fire every time loadSprint's identity changes.
-  const loadSprintRef = useRef(sprintActions.loadSprint);
-  loadSprintRef.current = sprintActions.loadSprint;
+  // loadSprint gets a new identity on most renders, so calling it through an effect event keeps it
+  // out of the dependency list below: the effect re-fires only when the team or connection actually
+  // changes, while the call itself always reaches the current loadSprint.
+  const loadSprintForCurrentTeam = useEffectEvent(() => {
+    void sprintActions.loadSprint();
+  });
   useEffect(() => {
     if (!isConnectionReady || !isTeamConfigured) {
       return;
     }
-    void loadSprintRef.current();
+    loadSprintForCurrentTeam();
   }, [isConnectionReady, isTeamConfigured, reloadToken]);
 
   const refresh = useCallback(() => {
@@ -269,8 +303,8 @@ export function useTodayDashboard(): TodayDashboardData {
   }, [mentions]);
 
   const teamHygiene = useMemo(() => toHygieneIssues(sprintState.sprintIssues), [sprintState.sprintIssues]);
-  const myHygiene = useMemo(() => toHygieneIssues(myIssues), [myIssues]);
-  const untriagedHygiene = useMemo(() => toHygieneIssues(untriagedIssues), [untriagedIssues]);
+  const myHygiene = useMemo(() => toHygieneIssues(myIssuesResult.issues), [myIssuesResult.issues]);
+  const untriagedHygiene = useMemo(() => toHygieneIssues(untriagedResult.issues), [untriagedResult.issues]);
 
   const categories = useMemo<Record<CategoryId, CategoryResult>>(() => {
     const mentionsStatus = deriveSourceStatus(mentions.isLoading, mentions.loadError);

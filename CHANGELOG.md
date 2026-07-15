@@ -131,6 +131,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Team Dashboard — Backlog Remediation panel**: the actionable Aging cleanup triage now lives on the Team Dashboard as a **per-team, persistent Remediation tab**, so each team keeps its own resumable backlog-cleanup queue and handled work does not resurface. It scopes the backlog from the active team profile automatically (**project-first**, and deliberately not narrowed by assignee so unassigned stale work — the prime cancel candidates — stays visible), with an optional per-team JQL override. Switching teams swaps the panel to that team's own queue with **no cross-team bleed** (verdicts and decisions are fully isolated per team). Each item has **Cancel / Keep / Dismiss / Snooze** controls: a decided item stays out of the queue and does **not** resurface on refresh unless it **materially changed** — its status category changed (e.g. reopened) or it was reassigned into the team — while a snoozed item returns after two weeks. **Bulk-closing** a cancel-safe feature group (preview → opt-out → commit, reusing the proven Feature Review write path) records the issues that actually transitioned as **canceled** in the queue, so they stay resolved across reloads. The whole panel is gated behind AI Assist exactly as the old triage was, and reuses the same copy-prompt → paste-reply round-trip. *(feature 014)*
 
 ### Changed
+- **The Today cards, the PI Risk table, and the Personal Flow status picker no longer flash a wrong state
+  while they load** *(internal)*: each kept its data, its "loading" flag and its error in three separate
+  pieces of state, hand-synced on every fetch, so a render landing between two of those updates could show
+  the previous PI's risks as the current PI's answer, or an empty count as a real zero. Each now keeps one
+  value stamped with the request that produced it, and works out "still loading" by comparing that stamp
+  against what the current inputs ask for — a state that cannot disagree with itself.
 - **Developing the Team Dashboard no longer forces a full page reload on every edit** *(internal)*: the burndown
   calculation was exported from `SprintDashboardView.tsx`, and a module that exports both a component and a plain
   function cannot be hot-swapped — so every keystroke in that 7,000-line view reloaded the whole app. The
