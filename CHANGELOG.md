@@ -33,6 +33,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     a duplicate**. Jira's own required fields are the only hard stop, and they are named before anything is written.
     A Confluence page that cannot be added tells you **which** problem it hit: the page is missing, you lack
     permission, Confluence is unreachable (check the VPN), or it is not set up here.
+  - **Optional AI help on both tabs** *(only once AI Assist is unlocked with Ctrl+Alt+Z — otherwise you will not
+    see it at all, and both tabs work fully without it)*: builds a prompt describing your Feature — or, when
+    composing, **your own words plus everything you gathered** — for you to run in your own assistant. **You read the
+    prompt before it goes anywhere.** Paste the reply back and it lands as **proposals you edit and accept one at a
+    time**; a proposal you do not accept is simply not created. **Nothing reaches Jira until you commit**, exactly as
+    before. A reply meant for a different feature is rejected outright, and one bad suggestion among five never costs
+    you the other four — you are told what was skipped and why.
 - **PI Review — AI Assistance (feature 016)**: a new **⚡ AI Assistance** panel on the PI Review tab (edit mode, once
   AI Assist is unlocked with Ctrl+Alt+Z) reads every Feature already on your page — its description, acceptance
   criteria, priority and linked issues — and comes back with, per Feature: a **point estimate** derived from the

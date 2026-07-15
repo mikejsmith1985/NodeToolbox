@@ -16,6 +16,8 @@ import { getIssueTypeFields, getProjectIssueTypes, jiraGet } from '../../service
 import type { CreateMetaFieldEntry, CreateMetaIssueType } from '../../types/jira.ts';
 import { saveFeatureReviewSimpleField } from '../SprintDashboard/featureReviewFixes.ts';
 import type { JiraIssue as HygieneIssue } from '../Hygiene/checks/hygieneChecks';
+import PoAiPanel from './ai/PoAiPanel';
+import { buildCompositionPrompt, parseCompositionIngest } from './ai/compositionAiAssist';
 import { DEFINITION_OF_READY, FEATURE_WRITING_TIPS } from './coaching/definitionOfReady';
 import {
   createEmptyCompositionDraft,
@@ -274,6 +276,34 @@ export default function FeatureCompositionTab({
     } as HygieneIssue;
     return evaluateDraft(draftAsIssue);
   }, [draft, acceptanceCriteriaFieldId, evaluateDraft]);
+
+  /** The fields an assistant may set — exactly what this project's issue type offers, never more. */
+  const writableFieldNamesById = useMemo(() => {
+    const namesById: Record<string, string> = {};
+    requiredFieldDescriptors
+      .filter((descriptor) => !['project', 'issuetype', 'summary', 'description'].includes(descriptor.fieldId))
+      .forEach((descriptor) => {
+        namesById[descriptor.fieldId] = descriptor.name;
+      });
+    return namesById;
+  }, [requiredFieldDescriptors]);
+
+  /** Applies an AI proposal to the local draft. Nothing here touches Jira (FR-032, INV-J1). */
+  function handleIngestCompositionProposal(responseText: string): { acceptedCount: number; errors: string[] } {
+    const { items, errors } = parseCompositionIngest(responseText, Object.keys(writableFieldNamesById));
+    const proposal = items[0];
+    if (proposal) {
+      // Straight into the same boxes the PO types in, so every word stays editable (FR-032).
+      updateDraft({
+        ...draft,
+        summary: proposal.summary,
+        description: proposal.description,
+        acceptanceCriteria: proposal.acceptanceCriteria,
+        fields: { ...draft.fields, ...proposal.fields },
+      });
+    }
+    return { acceptedCount: items.length, errors };
+  }
 
   const commitDiff = useMemo(
     () =>
@@ -634,6 +664,13 @@ export default function FeatureCompositionTab({
           ) : null}
         </section>
       </div>
+
+      <PoAiPanel
+        title="Draft this Feature"
+        helpText="Builds a prompt from your own description plus everything you have gathered. Paste the reply back and it fills the boxes above — every word stays yours to edit, and nothing reaches Jira until you save."
+        buildPrompt={() => buildCompositionPrompt(draft, DEFINITION_OF_READY, writableFieldNamesById)}
+        onIngest={handleIngestCompositionProposal}
+      />
 
       <section className={styles.panel}>
         <h3 className={styles.panelTitle}>What &quot;ready&quot; looks like</h3>

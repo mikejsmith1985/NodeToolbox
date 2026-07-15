@@ -288,3 +288,9 @@
 .outcomeFailed {
   color: #cf222e;
 }
+
+/* Accept / Reject sit together on a proposed increment. */
+.incrementActions {
+  display: flex;
+  gap: 6px;
+}

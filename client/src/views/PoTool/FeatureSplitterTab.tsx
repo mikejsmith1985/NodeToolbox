@@ -11,6 +11,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getIssueTypeFields } from '../../services/jiraApi.ts';
 import type { CreateMetaFieldEntry } from '../../types/jira.ts';
 import { useToast } from '../../components/Toast/ToastContext.ts';
+import PoAiPanel from './ai/PoAiPanel';
+import { buildSplitPrompt, parseSplitIngest } from './ai/splitAiAssist';
 import { GOOD_INCREMENT_TESTS, SPLIT_HEURISTICS } from './coaching/splitHeuristics';
 import {
   createEmptyIncrement,
@@ -180,6 +182,15 @@ export default function FeatureSplitterTab({ dashboardTeamProfileId }: FeatureSp
     showToast('Split draft discarded.', 'success');
   }
 
+  /** Applies an AI proposal to the local draft. Nothing here touches Jira (FR-021, INV-J1). */
+  function handleIngestSplitProposal(responseText: string): { acceptedCount: number; errors: string[] } {
+    const { items, errors } = parseSplitIngest(responseText, draft.increments);
+    if (items.length > 0) {
+      updateDraft({ ...draft, increments: [...draft.increments, ...items] });
+    }
+    return { acceptedCount: items.length, errors };
+  }
+
   const commitDiff = useMemo(
     () =>
       buildSplitCommit({
@@ -270,17 +281,32 @@ export default function FeatureSplitterTab({ dashboardTeamProfileId }: FeatureSp
         className={`${styles.incrementCard} ${increment.isAccepted ? '' : styles.incrementCardPending}`}
       >
         <div className={styles.incrementHeader}>
-          <span className={styles.incrementIndex}>Increment {incrementIndex + 1}</span>
+          <span className={styles.incrementIndex}>
+            Increment {incrementIndex + 1}
+            {increment.origin === 'ai' && !increment.isAccepted ? ' · proposed' : ''}
+          </span>
           {increment.createdJiraKey ? (
             <span className={styles.createdBadge}>Created as {increment.createdJiraKey}</span>
           ) : (
-            <button
-              className={styles.dangerButton}
-              type="button"
-              onClick={() => handleRemoveIncrement(increment.localId)}
-            >
-              Remove
-            </button>
+            <span className={styles.incrementActions}>
+              {/* A proposal counts for nothing until the PO says so (FR-020). */}
+              {increment.origin === 'ai' && !increment.isAccepted ? (
+                <button
+                  className={styles.secondaryButton}
+                  type="button"
+                  onClick={() => handleChangeIncrement(increment.localId, { isAccepted: true })}
+                >
+                  Accept
+                </button>
+              ) : null}
+              <button
+                className={styles.dangerButton}
+                type="button"
+                onClick={() => handleRemoveIncrement(increment.localId)}
+              >
+                {increment.origin === 'ai' && !increment.isAccepted ? 'Reject' : 'Remove'}
+              </button>
+            </span>
           )}
         </div>
 
@@ -323,6 +349,12 @@ export default function FeatureSplitterTab({ dashboardTeamProfileId }: FeatureSp
             handleChangeIncrement(increment.localId, { acceptanceCriteria: changeEvent.target.value })
           }
         />
+
+        {increment.rationale !== '' ? (
+          <p className={styles.coachingText}>
+            <strong>Why:</strong> {increment.rationale}
+          </p>
+        ) : null}
 
         {hygieneFlags.length > 0 ? (
           <ul className={styles.hygieneList} aria-label={`Hygiene for increment ${incrementIndex + 1}`}>
@@ -525,6 +557,15 @@ export default function FeatureSplitterTab({ dashboardTeamProfileId }: FeatureSp
           </section>
         </div>
       )}
+
+      {draft.sourceSnapshot ? (
+        <PoAiPanel
+          title="Propose a split"
+          helpText="Builds a prompt describing this Feature for your own assistant. Paste the reply back and each proposed increment appears below for you to edit and accept. Nothing reaches Jira until you commit."
+          buildPrompt={() => buildSplitPrompt(draft.sourceSnapshot!, SPLIT_HEURISTICS)}
+          onIngest={handleIngestSplitProposal}
+        />
+      ) : null}
 
       <section className={styles.panel}>
         <h3 className={styles.panelTitle}>How to break this down</h3>

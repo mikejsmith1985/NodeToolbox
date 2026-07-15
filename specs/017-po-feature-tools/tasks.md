@@ -273,33 +273,33 @@ Jira writes** across the whole ingest-and-accept cycle.
 
 ### Tests first ⚠️
 
-- [ ] T051 [P] [US8] Write failing test `client/src/views/PoTool/ai/splitAiAssist.test.ts` — `kind`
+- [X] T051 [P] [US8] Write failing test `client/src/views/PoTool/ai/splitAiAssist.test.ts` — `kind`
   `'featureSplitIngest'`; **wrong kind ⇒ whole payload rejected**; a bad **item** ⇒ only that item errors while good
   ones survive (**partial success**, research R6); items land **`isAccepted: false`**; tolerates code fences and
   assistant prose via the shared `extractJsonPayload` (INV-3, FR-018/020, SC-009)
-- [ ] T052 [P] [US8] Write failing test `client/src/views/PoTool/ai/compositionAiAssist.test.ts` — `kind`
+- [X] T052 [P] [US8] Write failing test `client/src/views/PoTool/ai/compositionAiAssist.test.ts` — `kind`
   `'featureCompositionIngest'`; a `fields` id **not** in the prompt's whitelist is **dropped with an error** (the
   assistant may not invent fields — FR-037); `summary` required
-- [ ] T053 [P] [US8] Write failing test `client/src/views/PoTool/ai/PoAiPanel.test.tsx` — **locked ⇒ renders
+- [X] T053 [P] [US8] Write failing test `client/src/views/PoTool/ai/PoAiPanel.test.tsx` — **locked ⇒ renders
   `null`**; unlocked ⇒ prompt out / paste in / per-item accept-reject-**edit**; accepting mutates **only** the local
   draft (SC-005, SC-010, FR-021)
 
 ### Implementation
 
-- [ ] T054 [P] [US8] Implement `client/src/views/PoTool/ai/splitAiAssist.ts` — `buildSplitPrompt` (embeds the source
+- [X] T054 [P] [US8] Implement `client/src/views/PoTool/ai/splitAiAssist.ts` — `buildSplitPrompt` (embeds the source
   Feature + heuristics + target project; **whitelists valid values verbatim**; ends with its schema inline and
   `Respond ONLY with valid JSON:`) and `parseSplitIngest` returning `{items, errors}` per
   contracts/ai-assist-json.md. **Pin `rationale`** (not `reason`). **No credential ever enters a prompt** (INV-J7)
-- [ ] T055 [P] [US8] Implement `client/src/views/PoTool/ai/compositionAiAssist.ts` — `buildCompositionPrompt`
+- [X] T055 [P] [US8] Implement `client/src/views/PoTool/ai/compositionAiAssist.ts` — `buildCompositionPrompt`
   (includes the PO's **own wording** + every referenced source + the hygiene-required field names per FR-031/033)
   and `parseCompositionIngest`
-- [ ] T056 [US8] Implement `client/src/views/PoTool/ai/PoAiPanel.tsx` — read `useAiAssistStore`'s
+- [X] T056 [US8] Implement `client/src/views/PoTool/ai/PoAiPanel.tsx` — read `useAiAssistStore`'s
   `isAiAssistUnlocked` **directly** and return `null` when locked (do **not** reuse the SnowHub gate hook — its
   `buildPrompt` is change-request-shaped; research R6). Filter unknown Jira keys against live data **in the UI** and
   **report** them (never silently drop)
-- [ ] T057 [US8] Wire the panel into both `FeatureSplitterTab.tsx` and `FeatureCompositionTab.tsx`; ingested items
+- [X] T057 [US8] Wire the panel into both `FeatureSplitterTab.tsx` and `FeatureCompositionTab.tsx`; ingested items
   land unaccepted in the **same** controls the PO edits by hand (FR-020, FR-032)
-- [ ] T058 [US8] Verify quickstart **Scenario E** — the decisive check: **zero POST/PUT in the Dev Panel API log**
+- [X] T058 [US8] Verify quickstart **Scenario E** — the decisive check: **zero POST/PUT in the Dev Panel API log**
   across the entire unlocked ingest-and-accept cycle until Commit (SC-006, INV-J1); and re-locking mid-draft leaves
   the manual draft **fully intact and committable**
 
