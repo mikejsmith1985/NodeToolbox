@@ -9,23 +9,36 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **016-pi-review-ai-assist** — one AI unlock prompt instead of five, plus an AI Assistance panel on the PI Review
-  tab. Plan: `specs/016-pi-review-ai-assist/plan.md`.
-  **Part 1**: four per-view Ctrl+Alt+Z gates (Pointing, Release Notes, Risk Management, SnowHub Create CHG) are
-  functional twins of the app-level `AiAssistUnlockGate` that superseded them — delete their listener/state/modal;
-  views keep reading `aiAssistStore` and keep their AI buttons. Pure deletion.
-  **Part 2**: new `client/src/views/ArtView/ai/` module (mirrors `FeatureCanvas/ai/`) — one prompt covering every
-  Feature, `{kind:'piReview',items[]}` reply keyed by issue key, per-row accept. **An accepted suggestion may touch
-  exactly two cells: `pointEstimate` (replace) and `notes` (append via the existing `appendUniqueNoteLine`).**
-  Dependency/Risks/Priority are Jira mirrors rebuilt every load — the AI never writes them; it supplies the
-  *explanation* as a labelled note line. The model returns a T-shirt **size**; points are derived from the scale
-  (XS 10 · S 20 · M 40 · L 60 · XL 80 · XXL = user-supplied). Reuses `acceptanceCriteria.ts`,
-  `richTextPlainText.ts`, `extractJsonPayload`, `useAiAssistExchange`, `ReportAiPanel` (extended, not forked).
-  Server untouched. Status: planned; next `/speckit-tasks`.
+- **017-po-feature-tools** — a new **PO Tool** that mounts the existing Feature Review + PI Review tabs (same
+  components, own team/PI selection) and adds two authoring tabs: **Feature Splitter** (a Feature → smaller peer
+  Features; original kept + linked, never closed) and **Feature Composition** (uploaded spreadsheets + Confluence
+  pages fetched by URL + pasted notes + Jira keys in one workspace → create or update a Feature). Both have
+  deterministic coaching, live hygiene, cross-session drafts, and a passphrase-gated propose-only AI assist.
+  Plan: `specs/017-po-feature-tools/plan.md`.
+  Key design: **client-only, zero new dependencies, overwhelmingly reuse.** Mount `ArtView/PiReviewTab` directly
+  (zero changes) — **never** `SprintDashboardPiReviewTab` (it drags in the capacity singleton). `FeatureReviewTab`
+  gains **one optional** `dashboardTeamProfileId?` prop (omitted ⇒ byte-identical, so Team Dashboard cannot regress).
+  The PO Tool keeps its own profile id and **never** writes `sprintDashboardActiveTeamProfileId`. SheetJS already
+  ships (dynamic-import it).
+  Contracts: `contracts/tab-reuse.md` (highest risk — the only shipped files touched), `jira-writes.md`,
+  `ai-assist-json.md`. Status: **Setup + Layer 1 + Layer 2 + US1 shipped** (T001–T024 of 62); next T025 (Feature
+  Splitter).
+  **Reconciled with 016 (merged)**: 016 did NOT touch the AI gate (`aiAssistStore` / `useAiAssist` /
+  `AiAssistUnlockGate`), so this feature's gate assumptions hold. 016's reply envelope (`{kind, items[]}` over the
+  shared `extractJsonPayload`, `rationale` per item) matches `ai-assist-json.md` — follow `ArtView/ai/` as the
+  newest precedent when Phase 6 lands. `PiReviewTab`'s props are unchanged, so the PO Tool's mount is unaffected.
+  **Note**: a shipped, non-Spec-Kit CHANGELOG entry (Dev-Skip Test Risk, `d98fec6`) also tags itself "feature 017";
+  it has no `specs/` dir, so spec numbering is unaffected.
+
+- **016-pi-review-ai-assist** — *(shipped — PR #150)* one AI unlock prompt instead of five, plus an AI Assistance
+  panel on the PI Review tab. New `client/src/views/ArtView/ai/` module: one prompt covering every Feature,
+  `{kind:'piReview',items[]}` reply keyed by issue key, per-row accept. An accepted suggestion touches exactly two
+  cells (`pointEstimate` replace, `notes` append) — Dependency/Risks/Priority are Jira mirrors the AI never writes.
+  Plan: `specs/016-pi-review-ai-assist/plan.md`.
 
 - **015-pi-review-scheduler** — *(shipped, PR #148)* server-side scheduled "Save to Confluence" for the PI Review
   tab, managed from an Admin Hub panel. `linkedom` hosts the DOM so the browser save engine (`piReviewTable.ts`) runs
-  server-side. **Constraint feature 016 must respect**: `piReviewJira.ts`/`piReviewTable.ts` are bundled into the
-  server engine (`npm run build:pi-review-engine`), so changes there must keep `npm run test:dom` green.
+  server-side. **Standing constraint**: `piReviewJira.ts`/`piReviewTable.ts` are bundled into the server engine
+  (`npm run build:pi-review-engine`), so changes there must keep `npm run test:dom` green.
 <!-- SPECKIT END -->
 

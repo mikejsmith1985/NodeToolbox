@@ -6,12 +6,17 @@ import { APP_CARDS, APP_SECTIONS, RECENT_VIEW_LABELS } from './homeCardData.ts';
 
 describe('homeCardData', () => {
   it('contains the retained home cards including Reports Hub', () => {
-    expect(APP_CARDS).toHaveLength(13);
+    expect(APP_CARDS).toHaveLength(14);
     expect(APP_CARDS.some((appCard) => appCard.id === 'reports-hub')).toBe(true);
     expect(APP_CARDS.some((appCard) => appCard.id === 'business-helper')).toBe(true);
     expect(APP_CARDS.some((appCard) => appCard.id === 'jira-template-maker')).toBe(true);
     expect(APP_CARDS.some((appCard) => appCard.id === 'jira-intake')).toBe(true);
     expect(APP_CARDS.some((appCard) => appCard.id === 'feature-canvas')).toBe(true);
+    expect(APP_CARDS.some((appCard) => appCard.id === 'po-tool')).toBe(true);
+  });
+
+  it('labels the PO Tool in the recent-links strip so it never shows a raw id', () => {
+    expect(RECENT_VIEW_LABELS['po-tool']).toBeTruthy();
   });
 
   it('labels every card for the recent-links strip, so a recent link never shows a raw id', () => {

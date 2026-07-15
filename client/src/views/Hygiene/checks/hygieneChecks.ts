@@ -412,35 +412,55 @@ export function isFeatureLikeIssue(issue: JiraIssue): boolean {
 }
 
 /** Reads the configured field config with defaults applied so checks can stay deterministic. */
+/**
+ * Merges a caller's configured field ids with the built-in defaults, configured ids FIRST.
+ *
+ * Order carries meaning. Every hygiene check asks "does ANY of these fields have a value?", so order
+ * cannot change whether an issue is flagged. But the direct-fix controls write to the FIRST id in the
+ * list — so if a default led, an admin could configure their team's Program Increment field and watch
+ * fixes populate the built-in default instead, leaving the field they actually use empty.
+ *
+ * The default is kept as a fallback rather than dropped: an instance may hold the value in either, and a
+ * check should still find it.
+ */
+function buildFieldIdsPreferringConfigured(
+  configuredFieldIds: readonly string[] | undefined,
+  defaultFieldIds: readonly string[],
+): string[] {
+  return buildUniqueFieldIds([...(configuredFieldIds ?? []), ...defaultFieldIds]);
+}
+
 export function resolveHygieneFieldConfig(fieldConfig?: Partial<HygieneFieldConfig>): HygieneFieldConfig {
   return {
-    acceptanceCriteriaFieldIds: buildUniqueFieldIds([
-      ...DEFAULT_HYGIENE_FIELD_CONFIG.acceptanceCriteriaFieldIds,
-      ...(fieldConfig?.acceptanceCriteriaFieldIds ?? []),
-    ]),
+    acceptanceCriteriaFieldIds: buildFieldIdsPreferringConfigured(
+      fieldConfig?.acceptanceCriteriaFieldIds,
+      DEFAULT_HYGIENE_FIELD_CONFIG.acceptanceCriteriaFieldIds,
+    ),
+    // Fields with no built-in default stay configured-only: an instance that does not define them must
+    // resolve to an empty list, which is how the matching check knows to skip itself.
     applicationFieldIds: buildUniqueFieldIds(fieldConfig?.applicationFieldIds ?? []),
-    featureLinkFieldIds: buildUniqueFieldIds([
-      ...DEFAULT_HYGIENE_FIELD_CONFIG.featureLinkFieldIds,
-      ...(fieldConfig?.featureLinkFieldIds ?? []),
-    ]),
+    featureLinkFieldIds: buildFieldIdsPreferringConfigured(
+      fieldConfig?.featureLinkFieldIds,
+      DEFAULT_HYGIENE_FIELD_CONFIG.featureLinkFieldIds,
+    ),
     initiativeTypeFieldIds: buildUniqueFieldIds(fieldConfig?.initiativeTypeFieldIds ?? []),
-    parentLinkFieldIds: buildUniqueFieldIds([
-      ...DEFAULT_HYGIENE_FIELD_CONFIG.parentLinkFieldIds,
-      ...(fieldConfig?.parentLinkFieldIds ?? []),
-    ]),
+    parentLinkFieldIds: buildFieldIdsPreferringConfigured(
+      fieldConfig?.parentLinkFieldIds,
+      DEFAULT_HYGIENE_FIELD_CONFIG.parentLinkFieldIds,
+    ),
     productOwnerFieldIds: buildUniqueFieldIds(fieldConfig?.productOwnerFieldIds ?? []),
-    programIncrementFieldIds: buildUniqueFieldIds([
-      ...DEFAULT_HYGIENE_FIELD_CONFIG.programIncrementFieldIds,
-      ...(fieldConfig?.programIncrementFieldIds ?? []),
-    ]),
-    targetEndFieldIds: buildUniqueFieldIds([
-      ...DEFAULT_HYGIENE_FIELD_CONFIG.targetEndFieldIds,
-      ...(fieldConfig?.targetEndFieldIds ?? []),
-    ]),
-    targetStartFieldIds: buildUniqueFieldIds([
-      ...DEFAULT_HYGIENE_FIELD_CONFIG.targetStartFieldIds,
-      ...(fieldConfig?.targetStartFieldIds ?? []),
-    ]),
+    programIncrementFieldIds: buildFieldIdsPreferringConfigured(
+      fieldConfig?.programIncrementFieldIds,
+      DEFAULT_HYGIENE_FIELD_CONFIG.programIncrementFieldIds,
+    ),
+    targetEndFieldIds: buildFieldIdsPreferringConfigured(
+      fieldConfig?.targetEndFieldIds,
+      DEFAULT_HYGIENE_FIELD_CONFIG.targetEndFieldIds,
+    ),
+    targetStartFieldIds: buildFieldIdsPreferringConfigured(
+      fieldConfig?.targetStartFieldIds,
+      DEFAULT_HYGIENE_FIELD_CONFIG.targetStartFieldIds,
+    ),
   };
 }
 
