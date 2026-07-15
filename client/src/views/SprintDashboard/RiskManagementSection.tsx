@@ -22,6 +22,27 @@ const RISK_PI_CF_NUMBER = RISK_PI_CUSTOMFIELD_ID.replace('customfield_', '');
 
 const RISK_MANAGEMENT_MAX_RESULTS = 100;
 
+/**
+ * The risks from one load, stamped with the request that produced them.
+ *
+ * The stamp is what lets "still loading" be worked out during render rather than switched on by hand
+ * when a load starts: risks stamped with an older request than the current PI context calls for are
+ * by definition superseded, so they are not shown as that PI's answer. Keeping the risks and their
+ * error in one value also removes the window where one had been replaced but the other had not.
+ */
+interface RiskLoadResult {
+  /** The riskRequestKey of the load that produced this data; never matches an unloaded section. */
+  requestKey: string;
+  issues: JiraIssue[];
+  errorMessage: string | null;
+}
+
+/** Shared empty list so renders without risks keep a stable identity for the memos that read it. */
+const NO_RISK_ISSUES: JiraIssue[] = [];
+
+/** Starting point: a request key no real load can produce, so the section reads as not-yet-loaded. */
+const NO_RISK_LOAD_RESULT: RiskLoadResult = { requestKey: '', issues: NO_RISK_ISSUES, errorMessage: null };
+
 type RiskSaveProgress = 'idle' | 'saving' | 'saved' | 'error';
 
 // ── Types ──
@@ -210,9 +231,7 @@ export default function RiskManagementSection({
   // passphrase entry unlocks every AI Assist surface, including the Admin Hub config.
   const { isUnlocked: isAiAssistUnlocked } = useAiAssist();
 
-  const [riskIssues, setRiskIssues] = useState<JiraIssue[]>([]);
-  const [isLoadingRisks, setIsLoadingRisks] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [riskLoadResult, setRiskLoadResult] = useState<RiskLoadResult>(NO_RISK_LOAD_RESULT);
 
   const [saveProgressByKey, setSaveProgressByKey] = useState<Record<string, RiskSaveProgress>>({});
   const [saveErrorByKey, setSaveErrorByKey] = useState<Record<string, string>>({});
@@ -231,16 +250,27 @@ export default function RiskManagementSection({
 
   // ── Data loading ──
 
+  // The risk query and the render below read the same normalized context, so it is worked out once.
+  const normalizedProjectKey = projectKey.trim().toUpperCase();
+  const normalizedPiName = selectedPiName.trim();
+  const isContextReady = Boolean(normalizedProjectKey && normalizedPiName);
+
+  // Names the exact fetch the current props call for, or null while there is no PI context to load.
+  // Every input to the query is in the key, so switching PI or changing a field id marks the risks on
+  // hand as belonging to an older request in the same render — which is what the states below read.
+  const riskRequestKey = isContextReady
+    ? `${normalizedProjectKey}|${normalizedPiName}|${riskImpactDateFieldId}|${riskResponseFieldId}`
+    : null;
+
+  const hasRisksForCurrentRequest = riskRequestKey !== null && riskLoadResult.requestKey === riskRequestKey;
+  const riskIssues = hasRisksForCurrentRequest ? riskLoadResult.issues : NO_RISK_ISSUES;
+  const loadError = hasRisksForCurrentRequest ? riskLoadResult.errorMessage : null;
+  const isLoadingRisks = riskRequestKey !== null && !hasRisksForCurrentRequest;
+
   useEffect(() => {
-    const normalizedProjectKey = projectKey.trim().toUpperCase();
-    const normalizedPiName = selectedPiName.trim();
-    if (!normalizedProjectKey || !normalizedPiName) return;
+    if (riskRequestKey === null) return;
 
     let isMounted = true;
-    setIsLoadingRisks(true);
-    setLoadError(null);
-    setRiskIssues([]);
-
     const extraFieldIds = [riskImpactDateFieldId, riskResponseFieldId].filter(Boolean);
     const baseFields = `summary,status,assignee,priority,description,duedate,${RISK_PI_CUSTOMFIELD_ID}`;
     const allFields = extraFieldIds.length > 0 ? `${baseFields},${extraFieldIds.join(',')}` : baseFields;
@@ -253,22 +283,23 @@ export default function RiskManagementSection({
     )
       .then((response) => {
         if (isMounted) {
-          setRiskIssues(response.issues ?? []);
+          setRiskLoadResult({ requestKey: riskRequestKey, issues: response.issues ?? [], errorMessage: null });
         }
       })
       .catch((caughtError: unknown) => {
         if (isMounted) {
-          setLoadError(caughtError instanceof Error ? caughtError.message : 'Failed to load risk issues');
+          setRiskLoadResult({
+            requestKey: riskRequestKey,
+            issues: [],
+            errorMessage: caughtError instanceof Error ? caughtError.message : 'Failed to load risk issues',
+          });
         }
-      })
-      .finally(() => {
-        if (isMounted) setIsLoadingRisks(false);
       });
 
     return () => {
       isMounted = false;
     };
-  }, [projectKey, selectedPiName, riskImpactDateFieldId, riskResponseFieldId]);
+  }, [riskRequestKey, normalizedProjectKey, normalizedPiName, riskImpactDateFieldId, riskResponseFieldId]);
 
   // ── Ctrl+Alt+Z shortcut to reveal the passphrase gate ──
 
@@ -363,10 +394,8 @@ export default function RiskManagementSection({
   }
 
   // ── Derived state ──
+  // normalizedProjectKey / normalizedPiName / isContextReady are worked out with the risk load above.
 
-  const normalizedProjectKey = projectKey.trim().toUpperCase();
-  const normalizedPiName = selectedPiName.trim();
-  const isContextReady = Boolean(normalizedProjectKey && normalizedPiName);
   const hasSaveActivity = Object.keys(saveProgressByKey).length > 0;
 
   return (

@@ -62,6 +62,9 @@ const ALL_HISTORY_WINDOW_DAYS = 3650;
 
 // Smallest typed query that triggers a Jira user search — one or two letters match too much to be useful.
 const MIN_USER_SEARCH_LENGTH = 2;
+
+/** Shared empty list so a too-short query keeps a stable identity for the suggestion memo that reads it. */
+const NO_JIRA_USERS: RawJiraUser[] = [];
 // How long to wait after the last keystroke before firing the Jira user search, so typing is not blocked.
 const USER_SEARCH_DEBOUNCE_MS = 300;
 // Cap on Jira user-search suggestions requested per keystroke; the roster matches are shown alongside these.
@@ -1334,7 +1337,7 @@ function StatusMultiSelect({
  * Read-only: it only reads Jira. Kept self-contained so it never touches the person/team runs above it.
  */
 function InternalTestingBottleneckPanel(): React.JSX.Element {
-  const persistedSettings = useMemo(readBottleneckSettings, []);
+  const persistedSettings = useMemo(() => readBottleneckSettings(), []);
   const [scopeJql, setScopeJql] = useState(persistedSettings.scopeJql);
   const [selectedStatusNames, setSelectedStatusNames] = useState<string[]>(persistedSettings.statusNames);
   // The instance's real statuses offered in the picker, loaded on mount and re-loadable via the Reload button.
@@ -1346,23 +1349,35 @@ function InternalTestingBottleneckPanel(): React.JSX.Element {
   const [queriedJql, setQueriedJql] = useState<string | null>(null);
   const [wasCapped, setWasCapped] = useState(false);
 
-  // Load the instance's statuses for the picker. Fully error-tolerant: a failure leaves an empty list plus a
-  // soft note, never throws, so the rest of the tab (and its tests) are unaffected by a status-load hiccup.
-  const loadStatuses = useCallback(async (): Promise<void> => {
-    try {
-      const statuses = await jiraGet<RawStatus[]>('/rest/api/2/status');
-      const options = buildStatusPickerOptions(Array.isArray(statuses) ? statuses : []);
-      setStatusOptions(options);
-      setStatusLoadNote(options.length === 0 ? STATUS_LOAD_EMPTY_NOTE : null);
-    } catch {
-      setStatusOptions([]);
-      setStatusLoadNote(STATUS_LOAD_FAILED_NOTE);
-    }
-  }, []);
+  // Bumping this token re-runs the status load; the Reload button is the only thing that bumps it.
+  const [statusReloadToken, setStatusReloadToken] = useState(0);
 
+  // Load the instance's statuses for the picker, on mount and on every Reload. Fully error-tolerant: a
+  // failure leaves an empty list plus a soft note, never throws, so the rest of the tab (and its tests)
+  // are unaffected by a status-load hiccup. A reload or unmount abandons any answer still in flight.
   useEffect(() => {
-    void loadStatuses();
-  }, [loadStatuses]);
+    let isActive = true;
+    void (async () => {
+      try {
+        const statuses = await jiraGet<RawStatus[]>('/rest/api/2/status');
+        if (!isActive) return;
+        const options = buildStatusPickerOptions(Array.isArray(statuses) ? statuses : []);
+        setStatusOptions(options);
+        setStatusLoadNote(options.length === 0 ? STATUS_LOAD_EMPTY_NOTE : null);
+      } catch {
+        if (!isActive) return;
+        setStatusOptions([]);
+        setStatusLoadNote(STATUS_LOAD_FAILED_NOTE);
+      }
+    })();
+    return () => {
+      isActive = false;
+    };
+  }, [statusReloadToken]);
+
+  const reloadStatuses = useCallback((): void => {
+    setStatusReloadToken((currentToken) => currentToken + 1);
+  }, []);
 
   const canRun = scopeJql.trim() !== '' && selectedStatusNames.length > 0;
 
@@ -1428,7 +1443,7 @@ function InternalTestingBottleneckPanel(): React.JSX.Element {
           selectedStatusNames={selectedStatusNames}
           onToggle={handleToggleStatus}
           loadNote={statusLoadNote}
-          onReload={() => void loadStatuses()}
+          onReload={reloadStatuses}
         />
         <button
           type="button"
@@ -1468,7 +1483,7 @@ export function PersonalFlowTab(): React.JSX.Element {
   // hands-on-by-status breakdown can show friendly names instead of raw numeric status ids.
   const [statusNameById, setStatusNameById] = useState<Record<string, string>>({});
   const [areSuggestionsOpen, setAreSuggestionsOpen] = useState(false);
-  const [jiraUserSuggestions, setJiraUserSuggestions] = useState<RawJiraUser[]>([]);
+  const [fetchedJiraUsers, setFetchedJiraUsers] = useState<RawJiraUser[]>([]);
   // The full identity resolved from a picked suggestion. Null means "resolve at run time" — free-typed
   // text is always a display name that must be looked up before it can be queried.
   const [selectedIdentity, setSelectedIdentity] = useState<PersonIdentity | null>(null);
@@ -1488,6 +1503,11 @@ export function PersonalFlowTab(): React.JSX.Element {
     [rosterMembers, storedActiveTeamName],
   );
 
+  // Too short a query offers no Jira users at all, which is worked out here rather than by clearing the
+  // fetched list from the effect below — the last fetch's users simply stop being offered.
+  const jiraUserSuggestions =
+    person.trim().length < MIN_USER_SEARCH_LENGTH ? NO_JIRA_USERS : fetchedJiraUsers;
+
   const personSuggestions = useMemo(
     () => buildPersonSuggestions(
       buildRosterSuggestionMatches(activeTeamRosterMembers, person),
@@ -1501,14 +1521,13 @@ export function PersonalFlowTab(): React.JSX.Element {
   useEffect(() => {
     const trimmedQuery = person.trim();
     if (trimmedQuery.length < MIN_USER_SEARCH_LENGTH) {
-      setJiraUserSuggestions([]);
       return;
     }
     let isEffectActive = true;
     const debounceTimerId = setTimeout(() => {
       void searchJiraUsers(trimmedQuery).then((jiraUsers) => {
         if (isEffectActive) {
-          setJiraUserSuggestions(jiraUsers);
+          setFetchedJiraUsers(jiraUsers);
         }
       });
     }, USER_SEARCH_DEBOUNCE_MS);

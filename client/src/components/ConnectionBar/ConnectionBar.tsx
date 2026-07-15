@@ -377,12 +377,19 @@ export function ConnectionBar() {
     return () => document.removeEventListener('mousedown', handleDocumentClick);
   }, []);
 
-  // Close any open admin-only panel immediately if admin locks while a panel is open.
-  useEffect(() => {
+  // Close any open admin-only panel the moment admin locks.
+  //
+  // Adjusted during render rather than in an effect (the pattern React documents for reacting to a
+  // changed value). An effect would render once with the stale panel and then again to close it; this
+  // closes it in the same pass. It cannot be derived instead, because forgetting the choice is the
+  // point: the panel must not spring back open the next time admin is unlocked.
+  const [wasAdminUnlocked, setWasAdminUnlocked] = useState(isAdminUnlocked);
+  if (wasAdminUnlocked !== isAdminUnlocked) {
+    setWasAdminUnlocked(isAdminUnlocked);
     if (!isAdminUnlocked && (activePanel === 'snow' || activePanel === 'github')) {
       setActivePanel(null);
     }
-  }, [isAdminUnlocked, activePanel]);
+  }
 
   return (
     <div ref={barRef} className={styles.connectionBarWrapper}>

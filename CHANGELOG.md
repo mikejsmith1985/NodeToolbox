@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Hygiene — the user and issue pickers briefly showed results for what you had already stopped typing**: the
+  fix controls' search boxes kept whatever the last search returned, with no record of which search it answered,
+  so typing on past "abc" left the "abc" matches on screen until the newer results arrived. Results are now tied
+  to the query that produced them, so they disappear the moment they stop applying.
+- **Panels briefly flashed empty before their spinner appeared**: the Hygiene Monitor, Sprint Release and Jira
+  Intake panels announced "loading" only *after* their first render, so you saw an empty panel for a frame first.
+  They now start in the loading state. They also stop writing to a panel you have already navigated away from.
+- **Team Dashboard — Backlog Remediation could show the previous team's error after switching teams**: switching
+  team cleared three of the panel's five local values, leaving a stale loading state and ingest error behind. The
+  panel now starts fresh on a team switch. The remediation queue itself is unaffected.
 - **Release script — a `-DryRun` was not dry, and a failed version bump still got tagged**: two faults in
   `local-release.ps1`, both hit while cutting v0.69.0. (1) `-DryRun` **wrote the new version to `package.json`**
   before announcing it would only preview — so a preview quietly primed the next real run to bump twice. It now
@@ -121,6 +131,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Team Dashboard — Backlog Remediation panel**: the actionable Aging cleanup triage now lives on the Team Dashboard as a **per-team, persistent Remediation tab**, so each team keeps its own resumable backlog-cleanup queue and handled work does not resurface. It scopes the backlog from the active team profile automatically (**project-first**, and deliberately not narrowed by assignee so unassigned stale work — the prime cancel candidates — stays visible), with an optional per-team JQL override. Switching teams swaps the panel to that team's own queue with **no cross-team bleed** (verdicts and decisions are fully isolated per team). Each item has **Cancel / Keep / Dismiss / Snooze** controls: a decided item stays out of the queue and does **not** resurface on refresh unless it **materially changed** — its status category changed (e.g. reopened) or it was reassigned into the team — while a snoozed item returns after two weeks. **Bulk-closing** a cancel-safe feature group (preview → opt-out → commit, reusing the proven Feature Review write path) records the issues that actually transitioned as **canceled** in the queue, so they stay resolved across reloads. The whole panel is gated behind AI Assist exactly as the old triage was, and reuses the same copy-prompt → paste-reply round-trip. *(feature 014)*
 
 ### Changed
+- **The Today cards, the PI Risk table, and the Personal Flow status picker no longer flash a wrong state
+  while they load** *(internal)*: each kept its data, its "loading" flag and its error in three separate
+  pieces of state, hand-synced on every fetch, so a render landing between two of those updates could show
+  the previous PI's risks as the current PI's answer, or an empty count as a real zero. Each now keeps one
+  value stamped with the request that produced it, and works out "still loading" by comparing that stamp
+  against what the current inputs ask for — a state that cannot disagree with itself.
+- **Developing the Team Dashboard no longer forces a full page reload on every edit** *(internal)*: the burndown
+  calculation was exported from `SprintDashboardView.tsx`, and a module that exports both a component and a plain
+  function cannot be hot-swapped — so every keystroke in that 7,000-line view reloaded the whole app. The
+  calculation now lives in `buildBurnDownData.ts`, where its test always assumed it was. No behaviour change.
 - **Hygiene**: the Jira field-matching that decides which custom fields each hygiene check reads now lives in a shared
   module, so other surfaces can apply the same rules without a second copy drifting out of step. No change in
   behaviour.

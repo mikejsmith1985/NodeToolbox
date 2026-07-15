@@ -136,28 +136,38 @@ export function SprintReleasePanel() {
   const [profile, setProfile] = useState<SprintReleaseProfile>(DEFAULT_PROFILE)
   const [status, setStatus] = useState<SprintReleaseStatus | null>(null)
   const [topologyData, setTopologyData] = useState<WorkflowTopologyData | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  // Starts true: the panel loads on mount, so the spinner is the honest first paint.
+  const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isRunningNow, setIsRunningNow] = useState(false)
   const [isValidatingTopology, setIsValidatingTopology] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  const loadData = useCallback(async () => {
-    setIsLoading(true)
-    setErrorMessage(null)
-    try {
-      const [loadedProfile, loadedStatus] = await Promise.all([fetchProfile(), fetchStatus()])
-      setProfile(loadedProfile)
-      setStatus(loadedStatus)
-    } catch (loadError) {
-      setErrorMessage((loadError as Error).message)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
+  // Load the profile and status once, on mount.
+  //
+  // Every setState happens after the fetches settle, never while the effect body runs: the state
+  // already says loading, so announcing it again would only force a second render and flash the
+  // empty panel first. isActive stops a late response updating a panel the admin has left.
+  useEffect(() => {
+    let isActive = true
 
-  useEffect(() => { void loadData() }, [loadData])
+    Promise.all([fetchProfile(), fetchStatus()])
+      .then(([loadedProfile, loadedStatus]) => {
+        if (!isActive) return
+        setProfile(loadedProfile)
+        setStatus(loadedStatus)
+        setErrorMessage(null)
+      })
+      .catch((loadError: unknown) => {
+        if (isActive) setErrorMessage((loadError as Error).message)
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false)
+      })
+
+    return () => { isActive = false }
+  }, [])
 
   const handleSave = useCallback(async () => {
     setIsSaving(true)
