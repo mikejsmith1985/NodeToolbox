@@ -121,37 +121,37 @@ panel, which is exactly why it is independently shippable.
 
 ### Tests first (red)
 
-- [ ] T012 [P] [US2] Write failing unit tests in `client/src/views/ArtView/ai/piReviewAiAssist.test.ts` for the
+- [X] T012 [P] [US2] Write failing unit tests in `client/src/views/ArtView/ai/piReviewAiAssist.test.ts` for the
   prompt builder: includes per Feature the key, summary, priority, description, acceptance criteria and linked
   issues (FR-013); embeds the scale from `FEATURE_SIZING_SCALE` (FR-014); renders an absent description/AC as an
   **explicit absence**, never an empty label (FR-015); asks for a **size and never a point number**
   (FR-017, contracts/ai-reply-contract.md); instructs use of only the listed issue keys. **FR-031**: a page of
   N Features yields **one** prompt containing all N — assert with N>1 so a single-Feature fixture cannot pass
   the test vacuously
-- [ ] T013 [US2] Write failing unit tests in `client/src/views/ArtView/ai/piReviewAiAssist.test.ts` (same file as
+- [X] T013 [US2] Write failing unit tests in `client/src/views/ArtView/ai/piReviewAiAssist.test.ts` (same file as
   T012, so not parallel with it) for the parser, per
   `specs/016-pi-review-ai-assist/contracts/ai-reply-contract.md` — use its worked example verbatim: a `kind` other
   than `piReview` rejects the **whole** reply; a size outside the vocabulary drops to `null` but the **row
   survives** with its notes; an unknown `issueKey` lands in `unknownKeys` and is never applied (FR-021); a missing
   `issueKey` increments `unparsedCount`; a partial reply yields the valid items plus a report (FR-024); a reply
   claiming `points` has it **ignored** (points derive from the size); `XXL` yields `needsPoints` with no number
-- [ ] T014 [P] [US2] Write failing unit tests in `client/src/views/ArtView/ai/piReviewAiFetch.test.ts` (Jira mocked):
+- [X] T014 [P] [US2] Write failing unit tests in `client/src/views/ArtView/ai/piReviewAiFetch.test.ts` (Jira mocked):
   resolves AC field ids via `resolveAcceptanceCriteriaFieldIds`; flattens description and AC with
   `normalizeRichTextToPlainText`; returns `null` (not `''`) for absent fields; splits the row's dependency/risks
   cells on **`\n`**, not `', '` (research R-4); batches keys like `fetchPiReviewFeatureIssues` does
 
 ### Implementation (green)
 
-- [ ] T015 [US2] Create `client/src/views/ArtView/ai/piReviewAiAssist.ts` — `buildPiReviewAiPrompt(contexts)`
+- [X] T015 [US2] Create `client/src/views/ArtView/ai/piReviewAiAssist.ts` — `buildPiReviewAiPrompt(contexts)`
   returning the prompt text, embedding `FEATURE_SIZING_SCALE`. Model the shape on
   `client/src/views/FeatureCanvas/ai/canvasAiAssist.ts` (context header + per-item lines + inline JSON example).
   Make T012 green
-- [ ] T016 [US2] In the same file add `parsePiReviewAiReply(replyText, knownIssueKeys)` returning
+- [X] T016 [US2] In the same file add `parsePiReviewAiReply(replyText, knownIssueKeys)` returning
   `PiReviewAiRunResult` (data-model.md). Use the shared `client/src/utils/extractJsonPayload.ts` — the envelope is
   object-rooted precisely so no third ad-hoc array extractor is needed (research R-3). Guard `parsed.kind !== 'piReview'`.
   Be **lenient per field, strict per key**. Derive points via `readPointsForSize` — never read a `points` field.
   Make T013 green
-- [ ] T017 [US2] Create `client/src/views/ArtView/ai/piReviewAiFetch.ts` — `fetchPiReviewAiContexts(rows)` building
+- [X] T017 [US2] Create `client/src/views/ArtView/ai/piReviewAiFetch.ts` — `fetchPiReviewAiContexts(rows)` building
   `PiReviewAiFeatureContext[]`. Reuse `client/src/utils/acceptanceCriteria.ts` and
   `client/src/utils/richTextPlainText.ts` as-is (Article VII). Resolve AC field ids **once per fetch**, not per
   batch. This is a **separate on-demand fetch**: do NOT touch `DEFAULT_LINK_FIELDS` in

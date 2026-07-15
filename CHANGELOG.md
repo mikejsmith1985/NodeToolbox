@@ -8,9 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **PI Review — AI Assistance (feature 016)**: *(stub — fleshed out in Polish/T039)* an AI Assist panel on the PI
-  Review tab that sizes each Feature against the T-shirt scale and drafts risk/dependency/implementation notes for
-  review, plus the sizing scale shown in-app for manual sizing.
+- **PI Review — AI Assistance (feature 016)**: *(in progress — completed in Polish/T039)* an AI Assist panel on the
+  PI Review tab that sizes each Feature against the organisation's **T-shirt scale** (XS 10 · S 20 · M 40 · L 60 ·
+  XL 80 · XXL 100+) and drafts the risk, dependency and implementation detail worth telling the ART/RTE — for
+  **review**, row by row, before anything lands. The scale is also shown **in-app** for manual sizing, whether or not
+  AI Assist is unlocked, and links to the Confluence guidance. An accepted suggestion may touch exactly two cells:
+  **Point Estimate** and **Implementation Notes**. The Dependency and Risks columns are left alone — they mirror
+  Jira's issue links and are rebuilt from them on every page load, so the AI contributes the *explanation* those
+  columns cannot hold rather than competing with them. The model returns a **size**, never a point number: points are
+  derived from the scale by the app, so a suggestion can never contradict the rubric. An **XXL** Feature asks you for
+  the number rather than inventing one.
 - **PI Review — scheduled "Save to Confluence" (feature 015)**: a new **🗓️ PI Review Sync** panel in the Admin Hub
   lets you keep a team's PI Review Confluence page fresh **on a daily schedule**, without opening the app — while the
   manual **Save to Confluence** button stays exactly as it was for urgent updates. Per team you set an enable toggle,
