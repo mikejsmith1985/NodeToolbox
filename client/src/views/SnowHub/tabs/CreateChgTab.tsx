@@ -1,7 +1,7 @@
 // CreateChgTab.tsx — Create CHG workflow: Six-step Change Request Generator for building comprehensive ServiceNow CHG records from Jira issues.
 // Steps: 1-Fetch Issues → 2-Review Issues → 3-Change Details → 4-Planning & Content → 5-Environments → 6-Review & Create
 
-import type { ChangeEvent, KeyboardEvent } from 'react';
+import type { ChangeEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
@@ -18,7 +18,6 @@ import { useCrgFieldPins } from '../hooks/useCrgFieldPins.ts';
 import { useCrgState } from '../hooks/useCrgState.ts';
 import { useCtaskTemplates } from '../hooks/useCtaskTemplates.ts';
 import { useCrgTemplates } from '../hooks/useCrgTemplates.ts';
-import { setAiAssistUnlocked } from '../../../store/aiAssistStore.ts';
 import { parseAiAssistChgResponse, useAiAssist } from '../hooks/useAiAssist.ts';
 import { useAiAssistExchange } from '../hooks/useAiAssistExchange.ts';
 import type { SnowChoiceOptionMap } from '../hooks/useSnowChoiceOptions.ts';
@@ -2338,7 +2337,7 @@ export interface CrgTabProps {
  */
 export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
   const { state, actions } = useCrgState();
-  const { isUnlocked, verifyPassphrase, buildPrompt } = useAiAssist();
+  const { isUnlocked, buildPrompt } = useAiAssist();
   const {
     templates,
     defaultTemplateId,
@@ -2364,10 +2363,6 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
   } = useSnowChoiceOptions();
 
   // Modal visibility and passphrase input state for the hidden activation flow.
-  const [isPassphraseModalVisible, setIsPassphraseModalVisible] = useState(false);
-  const [passphraseInput, setPassphraseInput] = useState('');
-  const [passphraseError, setPassphraseError] = useState<string | null>(null);
-  const passphraseInputRef = useRef<HTMLInputElement>(null);
 
   // Prompt modal state — holds the generated prompt text the user pastes into AI Assist.
   const [aiAssistPrompt, setAiAssistPrompt] = useState<string | null>(null);
@@ -2458,55 +2453,6 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
     state.prdEnvironment.impactedPersonsAware,
     state.pfixEnvironment.impactedPersonsAware,
   ]);
-
-  // Listen for the hidden activation key combination: Ctrl+Alt+Z. It toggles —
-  // opens the passphrase gate when locked, and re-hides all AI Assist features when
-  // already unlocked.
-  useEffect(() => {
-    function handleGlobalKeyDown(keyboardEvent: globalThis.KeyboardEvent): void {
-      if (keyboardEvent.ctrlKey && keyboardEvent.altKey && keyboardEvent.key.toLowerCase() === 'z') {
-        keyboardEvent.preventDefault();
-        if (isUnlocked) {
-          setAiAssistUnlocked(false);
-          return;
-        }
-        setIsPassphraseModalVisible(true);
-        setPassphraseInput('');
-        setPassphraseError(null);
-      }
-    }
-
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleGlobalKeyDown);
-    };
-  }, [isUnlocked]);
-
-  // Auto-focus the passphrase input each time the modal becomes visible.
-  useEffect(() => {
-    if (isPassphraseModalVisible) {
-      passphraseInputRef.current?.focus();
-    }
-  }, [isPassphraseModalVisible]);
-
-  const handlePassphraseSubmit = useCallback(async () => {
-    const isAccepted = await verifyPassphrase(passphraseInput);
-
-    if (isAccepted) {
-      setIsPassphraseModalVisible(false);
-      setPassphraseInput('');
-    } else {
-      setPassphraseError('Incorrect passphrase');
-    }
-  }, [passphraseInput, verifyPassphrase]);
-
-  const handlePassphraseKeyDown = useCallback((keyboardEvent: KeyboardEvent<HTMLInputElement>) => {
-    if (keyboardEvent.key === 'Enter') {
-      void handlePassphraseSubmit();
-    } else if (keyboardEvent.key === 'Escape') {
-      setIsPassphraseModalVisible(false);
-    }
-  }, [handlePassphraseSubmit]);
 
   const handleEnhanceWithAiAssist = useCallback(() => {
     const selectedIssues = state.fetchedIssues.filter((issue) =>
@@ -2708,40 +2654,6 @@ export default function CrgTab({ mode = 'wizard' }: CrgTabProps) {
       ) : (
         renderCurrentStepPanel(state, actions, planningExtras, changeDetailsExtras, environmentExtras, resultsExtras)
       )}
-
-      {/* Hidden passphrase modal — only visible after Ctrl+Alt+Z, never in documentation */}
-      {isPassphraseModalVisible ? (
-        <div className={styles.passphraseOverlay}>
-          <div className={styles.passphraseModal}>
-            <input
-              className={styles.passphraseInput}
-              onChange={(event) => setPassphraseInput(event.target.value)}
-              onKeyDown={handlePassphraseKeyDown}
-              placeholder="Enter passphrase"
-              ref={passphraseInputRef}
-              type="password"
-              value={passphraseInput}
-            />
-            {passphraseError ? <p className={styles.passphraseError}>{passphraseError}</p> : null}
-            <div className={styles.passphraseActions}>
-              <button
-                className={styles.primaryButton}
-                onClick={() => void handlePassphraseSubmit()}
-                type="button"
-              >
-                Unlock
-              </button>
-              <button
-                className={styles.linkButton}
-                onClick={() => setIsPassphraseModalVisible(false)}
-                type="button"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {/* Prompt modal — shows the generated AI Assist prompt for copy/paste */}
       {aiAssistPrompt !== null ? (

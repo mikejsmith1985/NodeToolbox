@@ -34,7 +34,7 @@ priority order → Polish. This feature is **client-only**: every path below is 
 
 ## Phase 1: Setup (Shared)
 
-- [ ] T001 Add a `## [Unreleased]` stub entry to `CHANGELOG.md` naming feature 016 (one AI unlock prompt; PI Review
+- [X] T001 Add a `## [Unreleased]` stub entry to `CHANGELOG.md` naming feature 016 (one AI unlock prompt; PI Review
   AI Assistance), to be fleshed out in Polish. The pre-commit hook requires a staged CHANGELOG for any source change
 
 ---
@@ -47,10 +47,10 @@ card (US4), so the rubric on screen and the rubric given to the model can never 
 **⚠️ Blocks US2 and US4.** **Does NOT block US1** — the unlock fix depends on nothing and may proceed in parallel
 from the start.
 
-- [ ] T002 [P] Write failing unit tests in `client/src/views/ArtView/ai/piReviewSizing.test.ts`: the scale maps
+- [X] T002 [P] Write failing unit tests in `client/src/views/ArtView/ai/piReviewSizing.test.ts`: the scale maps
   XS→10, S→20, M→40, L→60, XL→80 exactly; `XXL` yields **no** number (research R-7); a size outside the vocabulary
   returns null and is never coerced (FR-020); the vocabulary is closed
-- [ ] T003 Create `client/src/views/ArtView/ai/piReviewSizing.ts`: export the frozen `FEATURE_SIZING_SCALE`
+- [X] T003 Create `client/src/views/ArtView/ai/piReviewSizing.ts`: export the frozen `FEATURE_SIZING_SCALE`
   constant, the `FeatureSizeName` type, `readPointsForSize(size)` returning `number | null`, and
   `SIZING_GUIDANCE_URL`. No magic numbers — the scale IS the constant (Article IV). Make T002 green
 
@@ -69,38 +69,38 @@ fixing it first means US2 is developed against one prompt, not five.
 
 ### Tests first (red)
 
-- [ ] T004 [US1] In `client/src/views/SprintDashboard/SprintDashboardView.test.tsx`: rewrite the four tests that
+- [X] T004 [US1] In `client/src/views/SprintDashboard/SprintDashboardView.test.tsx`: rewrite the four tests that
   assert on `getByLabelText('Protected tools passphrase')` (lines ~877, 909, 948, 1024, 1075) to unlock via the
   shared store — `act(() => setAiAssistUnlocked(true))`, the pattern already used at
   `client/src/views/AdminHub/AdminHubView.test.tsx:250`. Add a failing assertion that Ctrl+Alt+Z renders **no**
   view-owned passphrase prompt (Pointing and Release Notes)
-- [ ] T005 [P] [US1] In `client/src/views/SnowHub/tabs/CreateChgTab.test.tsx`: rewrite the four gate-owning tests
+- [X] T005 [P] [US1] In `client/src/views/SnowHub/tabs/CreateChgTab.test.tsx`: rewrite the four gate-owning tests
   (~754 "shows the passphrase modal when Ctrl+Alt+Z is pressed", ~764 "closes … when Cancel is clicked", ~775 and
   ~794 "unlocks AI Assist …") to unlock via the store, and add a failing assertion that Ctrl+Alt+Z renders no
   view-owned prompt. Keep every assertion about the `⚡ Run via AI Assist (auto)` button — the affordance stays
-- [ ] T006 [P] [US1] In `client/src/views/SprintDashboard/RiskManagementSection.test.tsx`: add a failing assertion
+- [X] T006 [P] [US1] In `client/src/views/SprintDashboard/RiskManagementSection.test.tsx`: add a failing assertion
   that Ctrl+Alt+Z renders no view-owned passphrase prompt (this file has no existing passphrase tests to rewrite)
 
 ### Implementation (green) — pure deletion
 
-- [ ] T007 [US1] In `client/src/views/SprintDashboard/SprintDashboardView.tsx`: remove **both** gates — the Pointing
+- [X] T007 [US1] In `client/src/views/SprintDashboard/SprintDashboardView.tsx`: remove **both** gates — the Pointing
   gate (keydown effect ~4327-4345, modal ~4727, `isPassphraseModalVisible` ~4139) and the Release Notes gate
   (keydown ~6060-6083, modal ~6608, state ~5863) — plus the local `HIDDEN_AI_ASSIST_SHORTCUT_KEY` (~156) and the now
   unused `verifyPassphrase` destructure. **Keep** every `isUnlocked` read and every AI affordance
-- [ ] T008 [P] [US1] In `client/src/views/SprintDashboard/RiskManagementSection.tsx`: remove the keydown effect
+- [X] T008 [P] [US1] In `client/src/views/SprintDashboard/RiskManagementSection.tsx`: remove the keydown effect
   (286-303), the passphrase focus effect (~306-311), the submit handler (~313-325), `isPassphraseModalVisible`
   (~228), the modal JSX (~511) and `HIDDEN_AI_ASSIST_SHORTCUT_KEY` (~30). **Keep** line ~218's `isUnlocked` and the
   `isAiAssistUnlocked` gate at ~442
-- [ ] T009 [P] [US1] In `client/src/views/SnowHub/tabs/CreateChgTab.tsx`: remove the keydown effect (~2465-2483),
+- [X] T009 [P] [US1] In `client/src/views/SnowHub/tabs/CreateChgTab.tsx`: remove the keydown effect (~2465-2483),
   `isPassphraseModalVisible` (~2367) and the modal JSX (~2713). **Keep** the `⚡ Run via AI Assist (auto)` button
   (~2765) and its unlock gate
-- [ ] T010 [US1] Remove any import left unused by T007–T009 (`setAiAssistUnlocked`, `verifyPassphrase`) and run
+- [X] T010 [US1] Remove any import left unused by T007–T009 (`setAiAssistUnlocked`, `verifyPassphrase`) and run
   `cd client; npx eslint src/views/SprintDashboard src/views/SnowHub` clean. `client/src/components/AiAssistUnlockGate/`
   and `client/src/store/aiAssistStore.ts` MUST remain **untouched** — the gate is the survivor
 
 ### Checkpoint
 
-- [ ] T011 [US1] Prove US1: `cd client; npx vitest run src/components/AiAssistUnlockGate src/views/SprintDashboard
+- [X] T011 [US1] Prove US1: `cd client; npx vitest run src/components/AiAssistUnlockGate src/views/SprintDashboard
   src/views/SnowHub src/views/AdminHub` green, and the gate's own five tests still pass unmodified. Manually walk
   **quickstart Scenarios A and B** — one prompt on all five surfaces, and every AI affordance still present after a
   single unlock (SC-001, SC-002). US1 is now shippable on its own

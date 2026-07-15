@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **PI Review — AI Assistance (feature 016)**: *(stub — fleshed out in Polish/T039)* an AI Assist panel on the PI
+  Review tab that sizes each Feature against the T-shirt scale and drafts risk/dependency/implementation notes for
+  review, plus the sizing scale shown in-app for manual sizing.
 - **PI Review — scheduled "Save to Confluence" (feature 015)**: a new **🗓️ PI Review Sync** panel in the Admin Hub
   lets you keep a team's PI Review Confluence page fresh **on a daily schedule**, without opening the app — while the
   manual **Save to Confluence** button stays exactly as it was for urgent updates. Per team you set an enable toggle,
@@ -34,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Reports Hub — Aging tab is now the metrics report only**: the actionable AI cleanup triage moved to the Team Dashboard (above), so the Aging tab focuses on the age breakdown (per-type counts, average/median/oldest age, day-range buckets). Its numbers and JQL are unchanged, and it now uses a lighter fetch (only the fields the age math needs) since it no longer assembles triage signals. *(feature 014)*
 
 ### Fixed
+- **AI Assist — Ctrl+Alt+Z raised several stacked passphrase prompts (feature 016)**: *(stub — fleshed out in
+  Polish/T039)* the app-level unlock gate never replaced the per-view gates that predate it, so one press could
+  stack up to four identical prompts. Now exactly one appears, everywhere.
 - **PI Review — Team Capacity section duplicated on the Confluence page**: each **Save to Confluence** could leave the previous Team Capacity block behind, so pages accumulated a stack of them (old `Dev/SL/SA`-format snapshots, empty "appears here after you save" placeholders, and the current one). The writer only ever replaced a *single* block — once the canonical section existed it updated that and returned, never cleaning up the older loose blocks left by earlier page formats. It now finds **every** Team Capacity block (canonical sections and legacy loose blocks alike), replaces the first with the fresh snapshot, and removes all the rest — so a save collapses the page back to exactly one capacity section. Existing stacked duplicates are cleaned up automatically the next time you Save to Confluence.
 - **PI Review — "Pull Features from Jira" returned nothing when Features live outside the team's project**: the pull was quietly adding a `project = <team key>` clause the hand-run query never had, so a query that returned (for example) 11 Features in Jira came back empty in the tool — because a team's Features commonly live in a separate portfolio/program project, or the team had no project key configured at all (in which case the pull skipped Jira entirely). The generated query now matches what you'd type by hand — `issuetype = Feature AND assignee = <PO> AND cf[PI] = <PI>`, with **no project clause** — since the Product Owner assignee already scopes the results to that team's work.
 - **Team Dashboard — Settings: PI Review Pages now has its own Save button**: after PI Review Pages became its own card, the only control that persisted a page edit was **"Update Active Team"** back up in the Saved Dashboard Teams card — easy to miss, so edits felt like they vanished. The PI Review Pages card now carries its own **"Save PI Review Pages"** button (labeled **"Save PI Review Pages as New Team"** when no team is active yet) right beside **+ Add PI**. It reuses the exact same team-profile save as "Update Active Team" (the pages live on the team profile — one source of truth, no separate persistence path), and is disabled with a hint until a **project key and board** are chosen, matching the team-save gate.
