@@ -159,17 +159,17 @@ pre-flight).
 
 ### Tests first ⚠️
 
-- [ ] T025 [P] [US2] Write failing test `client/src/views/PoTool/coaching/splitHeuristics.test.ts` — heuristics
+- [X] T025 [P] [US2] Write failing test `client/src/views/PoTool/coaching/splitHeuristics.test.ts` — heuristics
   resolve with **no network call** and **no gate** (INV-6, FR-010, SC-013)
-- [ ] T026 [P] [US3] Write failing test `client/src/views/PoTool/drafts/draftModel.test.ts` +
+- [X] T026 [P] [US3] Write failing test `client/src/views/PoTool/drafts/draftModel.test.ts` +
   `drafts/splitDraftStorage.test.ts` — key `tbxPoFeatureSplitDraft:<profileId>:<sourceFeatureKey>`; **load never
   throws** (absent/corrupt/old-version → empty or migrated); **save no-ops** when storage is blocked **and surfaces
   an availability flag**; identity taken from **arguments**, not payload; discard removes the entry
   (INV-1, INV-2, FR-043/046/047/048)
-- [ ] T027 [P] [US2] Write failing test `client/src/views/PoTool/jira/buildSplitCommit.test.ts` — pure diff:
+- [X] T027 [P] [US2] Write failing test `client/src/views/PoTool/jira/buildSplitCommit.test.ts` — pure diff:
   every create **and** every link itemized; increments carry the **source's own `issueTypeId`** (INV-J5, A17);
   non-empty `blockingIssues` (missing instance-required fields) ⇒ commit disabled (INV-4, FR-034)
-- [ ] T028 [P] [US2] Write failing test `client/src/views/PoTool/jira/runCommit.test.ts` — per-item outcomes
+- [X] T028 [P] [US2] Write failing test `client/src/views/PoTool/jira/runCommit.test.ts` — per-item outcomes
   carrying the instance's **actual** rejection reason; a **link failure is reported, never thrown**, and never
   undoes a create (INV-5, INV-J4, FR-015/041); an item with `createdJiraKey` is **not re-created** on retry (SC-011)
 - [ ] T029 [P] [US2] Write failing test `client/src/views/PoTool/hooks/usePoHygieneContext.test.ts` — wires the
@@ -178,17 +178,17 @@ pre-flight).
 
 ### Implementation
 
-- [ ] T030 [P] [US2] Implement `client/src/views/PoTool/coaching/splitHeuristics.ts` — authored deterministic
+- [X] T030 [P] [US2] Implement `client/src/views/PoTool/coaching/splitHeuristics.ts` — authored deterministic
   constants (by workflow step, business rule, data variation, happy-path-first, CRUD, effort-vs-value).
   **Advisory, never blocking** (FR-011, research R10)
-- [ ] T031 [US3] Implement `client/src/views/PoTool/drafts/draftModel.ts` + `drafts/splitDraftStorage.ts` — the
+- [X] T031 [US3] Implement `client/src/views/PoTool/drafts/draftModel.ts` + `drafts/splitDraftStorage.ts` — the
   canvas-overlay pattern (self-describing envelope, `canUseLocalStorage` guard, normalize-on-read, `schemaVersion`).
   **Deliberate divergence**: surface a storage-unavailable flag instead of failing silently (research R7, FR-047)
 - [ ] T032 [US2] Implement `client/src/views/PoTool/hooks/usePoHygieneContext.ts` — reuse `evaluateHygieneIssue`,
   the lifted field-config loader (T017), and the enterprise rules readers (research R8)
-- [ ] T033 [US2] Implement `client/src/views/PoTool/jira/buildSplitCommit.ts` (pure) — builds `CommitDiff` per
+- [X] T033 [US2] Implement `client/src/views/PoTool/jira/buildSplitCommit.ts` (pure) — builds `CommitDiff` per
   data-model.md
-- [ ] T034 [US2] Implement `client/src/views/PoTool/jira/runCommit.ts` — order **creates → links → updates**; reuse
+- [X] T034 [US2] Implement `client/src/views/PoTool/jira/runCommit.ts` — order **creates → links → updates**; reuse
   `createIssue` + `findMissingRequiredFields`; links **best-effort** via `createIssueLink` (T016).
   **MUST NOT** close, transition, or delete the original (FR-016b, INV-J2, SC-016)
 - [ ] T035 [US2] Implement `client/src/views/PoTool/FeatureSplitterTab.tsx` + `.module.css` + `.test.tsx` — load by
