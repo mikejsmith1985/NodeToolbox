@@ -9,11 +9,24 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **015-pi-review-scheduler** — server-side scheduled "Save to Confluence" for the PI Review tab, managed from a
-  new Admin Hub panel, keeping the manual Save button as the urgent option. Plan: `specs/015-pi-review-scheduler/plan.md`.
-  Key design: reuse the Standup Briefing scheduler triad + the PI Review pure logic; new `linkedom` server dependency
-  hosts the DOM so the existing save engine (`piReviewTable.ts`) runs server-side after two seams (predicate guards +
-  injected `DOMParser`). A run appends PO+PI Features and reconciles Priority/Estimate/Dependency/Risks (faithful
-  port of `reconcilePiReviewRowsWithJira`), preserving all human-curated content. Status: planned; next `/speckit-tasks`.
+- **017-po-feature-tools** — a new **PO Tool** that mounts the existing Feature Review + PI Review tabs (same
+  components, own team/PI selection) and adds two authoring tabs: **Feature Splitter** (a Feature → smaller peer
+  Features; original kept + linked, never closed) and **Feature Composition** (uploaded spreadsheets + Confluence
+  pages fetched by URL + pasted notes + Jira keys in one workspace → create or update a Feature). Both have
+  deterministic coaching, live hygiene, cross-session drafts, and a passphrase-gated propose-only AI assist.
+  Plan: `specs/017-po-feature-tools/plan.md`.
+  **Note**: renumbered 016 → 017 to avoid colliding with `feature/016-pi-review-ai-assist` (unmerged). That feature
+  reworks the **AI unlock**, which this feature's `contracts/ai-assist-json.md` depends on — reconcile if it lands first.
+  Key design: **client-only, zero new dependencies, overwhelmingly reuse.** Mount `ArtView/PiReviewTab` directly
+  (zero changes) — **never** `SprintDashboardPiReviewTab` (it drags in the capacity singleton). `FeatureReviewTab`
+  gains **one optional** `dashboardTeamProfileId?` prop (omitted ⇒ byte-identical, so Team Dashboard cannot regress).
+  The PO Tool keeps its own profile id and **never** writes `sprintDashboardActiveTeamProfileId`. SheetJS already
+  ships (dynamic-import it). Four small new seams: Confluence error `status`, a client storage-HTML→text port,
+  a client `createIssueLink` (best-effort), and exporting the hygiene field-config loader.
+  Contracts: `contracts/tab-reuse.md` (highest risk — the only shipped files touched), `jira-writes.md`,
+  `ai-assist-json.md`. Status: planned; next `/speckit-tasks`.
+
+- **015-pi-review-scheduler** — *(shipped — PRs #148/#149)* server-side scheduled "Save to Confluence" for the PI
+  Review tab, managed from an Admin Hub panel. Plan: `specs/015-pi-review-scheduler/plan.md`.
 <!-- SPECKIT END -->
 
