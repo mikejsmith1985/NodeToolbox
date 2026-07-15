@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { JiraIssue } from '../../types/jira.ts';
-import { buildBurnDownData } from './SprintDashboardView.tsx';
+import { buildBurnDownData } from './buildBurnDownData.ts';
 
 /** The two things the burndown actually reads about an issue, plus its optional status history. */
 interface BurnDownIssueFixture {
