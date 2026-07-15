@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Release script — a `-DryRun` was not dry, and a failed version bump still got tagged**: two faults in
+  `local-release.ps1`, both hit while cutting v0.69.0. (1) `-DryRun` **wrote the new version to `package.json`**
+  before announcing it would only preview — so a preview quietly primed the next real run to bump twice. It now
+  calculates the version it *would* use and writes nothing. (2) The version-bump commit's exit code was never
+  checked, so when the pre-commit hook refused it (releasing from `main`), the script carried on and published a
+  tag pointing at a commit that still held the **old** version — which is exactly what happened to v0.69.0. A
+  failed bump is now fatal, the release refuses to tag unless the commit really carries the version being
+  released, and attempting a bump from `main` fails in seconds rather than after a five-minute build.
 - **`npm test` ran every server test twice**: Forge keeps its worktrees inside the repo at
   `.forge/worktrees/`, and jest was discovering the tests in each of them alongside the real ones — 122 suites
   where there are 61. Worse, those copies belong to whatever branch the worktree happens to sit on, so a run

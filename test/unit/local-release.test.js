@@ -8,6 +8,7 @@
 
 'use strict';
 
+const fs               = require('fs');
 const path             = require('path');
 const { execFileSync } = require('child_process');
 
@@ -22,23 +23,134 @@ const describeOnWindows = process.platform === 'win32' ? describe : describe.ski
 const SCRIPT_PATH = path.join(__dirname, '..', '..', 'scripts', 'local-release.ps1');
 const REPO_ROOT   = path.join(__dirname, '..', '..');
 
-/** Runs local-release.ps1 with -DryRun and captures stdout. */
-function runDryRun() {
-  return execFileSync('powershell.exe', [
-    '-NoProfile',
-    '-ExecutionPolicy', 'Bypass',
-    '-File', SCRIPT_PATH,
-    '-DryRun',
-  ], {
+/**
+ * Runs local-release.ps1 with -DryRun and captures stdout.
+ *
+ * `bumpType` is optional. Passing one matters: every original test omitted it, so the version-bump
+ * path was never exercised in a dry run — which is exactly where the dry run used to write to disk.
+ */
+function runDryRun(bumpType) {
+  const scriptArguments = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', SCRIPT_PATH];
+  if (bumpType) {
+    scriptArguments.push(bumpType);
+  }
+  scriptArguments.push('-DryRun');
+
+  return execFileSync('powershell.exe', scriptArguments, {
     cwd:      REPO_ROOT,
     encoding: 'utf8',
     env:      { ...process.env },
   });
 }
 
+/** The version currently recorded in package.json, read fresh from disk. */
+function readPackageVersion() {
+  return JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')).version;
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 describeOnWindows('local-release.ps1', () => {
+  // A dry run that mutates the repo is worse than no dry run at all: it silently sets up the next
+  // real run to bump twice. These tests pass a bump type, which the original suite never did.
+  describe('-DryRun with a version bump — writes nothing', () => {
+    it('does NOT modify package.json', () => {
+      const versionBefore = readPackageVersion();
+
+      runDryRun('minor');
+
+      expect(readPackageVersion()).toBe(versionBefore);
+    });
+
+    it('does NOT modify package-lock.json', () => {
+      const lockPath = path.join(REPO_ROOT, 'package-lock.json');
+      const lockBefore = fs.readFileSync(lockPath, 'utf8');
+
+      runDryRun('minor');
+
+      expect(fs.readFileSync(lockPath, 'utf8')).toBe(lockBefore);
+    });
+
+    it('does not modify package.json for an explicit version either', () => {
+      const versionBefore = readPackageVersion();
+
+      runDryRun('9.9.9');
+
+      expect(readPackageVersion()).toBe(versionBefore);
+    });
+
+    it('still reports the version the release WOULD use, so the preview is useful', () => {
+      // Computing the next version without writing it is the whole trick.
+      const currentVersion = readPackageVersion();
+      const [major, minor] = currentVersion.split('.').map(Number);
+
+      const output = runDryRun('minor');
+
+      expect(output).toContain(`${major}.${minor + 1}.0`);
+    });
+
+    it('reports the next patch version for a patch bump', () => {
+      const [major, minor, patch] = readPackageVersion().split('.').map(Number);
+
+      const output = runDryRun('patch');
+
+      expect(output).toContain(`${major}.${minor}.${patch + 1}`);
+    });
+
+    it('reports the next major version for a major bump', () => {
+      const [major] = readPackageVersion().split('.').map(Number);
+
+      const output = runDryRun('major');
+
+      expect(output).toContain(`${major + 1}.0.0`);
+    });
+
+    it('reports an explicit version verbatim', () => {
+      const output = runDryRun('9.9.9');
+
+      expect(output).toContain('9.9.9');
+    });
+
+    it('names the zip after the version it would release, not the current one', () => {
+      const [major, minor] = readPackageVersion().split('.').map(Number);
+
+      const output = runDryRun('minor');
+
+      expect(output).toContain(`nodetoolbox-v${major}.${minor + 1}.0-exe.zip`);
+    });
+  });
+
+  // The release must never tag a commit that does not carry the version being released. That
+  // happened once (v0.69.0 pointed at a commit reading 0.68.7) because the version-bump commit was
+  // refused by the pre-commit hook and the script carried on regardless.
+  describe('bumping from main is caught before anything is built', () => {
+    /** The branch the repo is on right now — these assertions depend on it. */
+    function currentBranch() {
+      return execFileSync('git', ['branch', '--show-current'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
+    }
+
+    it('warns in the dry run when a bump would be attempted from main', () => {
+      if (currentBranch() !== 'main') {
+        // Only meaningful on main; on a feature branch there is nothing to warn about.
+        return;
+      }
+
+      expect(runDryRun('minor')).toMatch(/pre-commit hook refuses commits to main/i);
+    });
+
+    it('does NOT warn when releasing from a feature branch', () => {
+      if (currentBranch() === 'main') {
+        return;
+      }
+
+      expect(runDryRun('minor')).not.toMatch(/pre-commit hook refuses commits to main/i);
+    });
+
+    it('does not warn when no bump is requested, since nothing needs committing', () => {
+      expect(runDryRun()).not.toMatch(/pre-commit hook refuses commits to main/i);
+    });
+  });
+
   describe('-DryRun mode', () => {
     it('exits with code 0 in dry-run mode', () => {
       expect(() => runDryRun()).not.toThrow();
