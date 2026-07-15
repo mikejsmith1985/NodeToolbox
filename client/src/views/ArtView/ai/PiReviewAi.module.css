@@ -184,3 +184,15 @@
 .sizingHint a {
   color: #38bdf8;
 }
+
+/* The checkbox verdicts, kept visually distinct from the note lines they sit above: one is a
+   judgement about what the team does, the other is prose for the ART. */
+.suggestionBoxes {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--color-tone-info-fg);
+}

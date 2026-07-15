@@ -41,6 +41,10 @@ export interface PiReviewAiFeatureContext {
   currentPointEstimate: string
   /** Whether a human has already written notes — the model should add, not repeat. */
   hasExistingNotes: boolean
+  /** What the Dev Work box says today ('Yes' when ticked), so the model can see it before disagreeing. */
+  currentDevWork: string
+  /** What the Test Support box says today ('Yes' when ticked). */
+  currentTestSupport: string
 }
 
 /** Splits a Dependency/Risks cell into its entries. They are newline-joined, never comma-joined. */
@@ -119,6 +123,8 @@ export async function fetchPiReviewAiContexts(rows: readonly PiReviewRow[]): Pro
       linkedRisks: splitLinkedIssueCell(row.risks),
       currentPointEstimate: row.pointEstimate,
       hasExistingNotes: row.notes.trim() !== '',
+      currentDevWork: row.devWork,
+      currentTestSupport: row.testSupport,
     }
   })
 }

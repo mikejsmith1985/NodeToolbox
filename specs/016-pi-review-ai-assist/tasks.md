@@ -189,8 +189,10 @@ panel, which is exactly why it is independently shippable.
 
 ## Phase 5: User Story 3 — Stay in control (P3)
 
-**Goal**: The user accepts or rejects each suggestion row by row, and an accepted one touches **exactly two cells**:
-Point Estimate (replace) and Implementation Notes (append). Nothing else ever moves.
+**Goal**: The user accepts or rejects each suggestion row by row, and an accepted one touches **exactly four cells**:
+Point Estimate (replace), Implementation Notes (append), and the Dev Work / Test Support boxes (tick). Nothing
+else ever moves. *(Dev Work / Test Support added 2026-07-15 — reconcile passes them through, so unlike
+Dependency/Risks an accepted value survives a reload.)*
 
 **Independent test**: Given suggestions from US2, accept one → that row's estimate and notes update, the page reports
 unsaved changes, no Confluence write happens, and every other suggestion stays pending. Reject one → the row is

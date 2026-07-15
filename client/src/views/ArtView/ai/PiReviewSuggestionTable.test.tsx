@@ -16,6 +16,8 @@ function suggestion(overrides: Partial<PiReviewAiSuggestion> = {}): PiReviewAiSu
     riskNote: 'Vendor SLA unconfirmed.',
     dependencyNote: null,
     implementationNote: null,
+    devWork: null,
+    testSupport: null,
     rationale: 'Two integrations and a migration.',
     state: 'pending',
     ...overrides,
@@ -107,6 +109,30 @@ describe('PiReviewSuggestionTable', () => {
     expect(screen.getByText(/size not recognised/i)).toBeInTheDocument()
     expect(screen.getByText(/still useful/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^accept$/i })).toBeEnabled()
+  })
+
+  // ── The Dev Work / Test Support verdicts ──
+
+  it('shows what Accept will do to each box, so it is never a blind tick', () => {
+    renderTable([suggestion({ devWork: true, testSupport: false })])
+
+    expect(screen.getByText(/dev work/i)).toBeInTheDocument()
+    expect(screen.getByText(/test support/i)).toBeInTheDocument()
+  })
+
+  it('says nothing about a box the model had no verdict on', () => {
+    renderTable([suggestion({ devWork: null, testSupport: null })])
+
+    expect(screen.queryByText(/dev work/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/test support/i)).not.toBeInTheDocument()
+  })
+
+  it('distinguishes ticking a box from unticking one', () => {
+    renderTable([suggestion({ devWork: true, testSupport: false })])
+
+    // The user must be able to tell "we will build this" from "we will not only be testing it".
+    expect(screen.getByText(/dev work.*tick/i)).toBeInTheDocument()
+    expect(screen.getByText(/test support.*untick|test support.*clear/i)).toBeInTheDocument()
   })
 
   // ── XXL: "100+" is a floor, not a value (research R-7) ──

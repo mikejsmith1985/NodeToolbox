@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **PI Review AI Assistance now judges the Dev Work and Test Support boxes**: alongside the point estimate and the
+  notes, the AI now reads each Feature and says whether your team is being asked to **build** it (**Dev Work**) or
+  **only to support another team's testing** of what they built (**Test Support**) — the distinction a PO otherwise
+  makes by reading every description by hand. Both appear in the review list in plain English ("Dev Work — tick: the
+  team builds this") before you accept anything, so a tick is never a blind click, and each row is still accepted or
+  rejected on its own.
+  Three deliberate limits. The AI **only offers a verdict on a box your page's table actually has** — both are
+  optional PI Review columns, and a suggestion the table can't record would go nowhere. Where it **can't tell from
+  the Feature's description and acceptance criteria it says nothing**, rather than guessing at a tick you would have
+  to catch. And **saying nothing never unticks your box**: only an explicit verdict moves a checkbox, so silence
+  leaves your own judgement exactly where it was.
+  These two columns are safe for the AI to fill for the same reason Dependency and Risks are not: Jira never rebuilds
+  them, so an accepted tick survives the next page load. An accepted suggestion can now touch four cells — Point
+  Estimate, Implementation Notes, Dev Work and Test Support — and still nothing else. *(feature 016)*
+
 ### Fixed
 - **Hygiene — the user and issue pickers briefly showed results for what you had already stopped typing**: the
   fix controls' search boxes kept whatever the last search returned, with no record of which search it answered,

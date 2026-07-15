@@ -44,6 +44,27 @@ function readProposedEstimate(suggestion: PiReviewAiSuggestion): number | null {
   return suggestion.userSuppliedPoints ?? suggestion.derivedPoints
 }
 
+/**
+ * Plain-English lines for the checkbox verdicts, so Accept is never a blind tick.
+ *
+ * A box the model had no verdict on produces no line at all — showing "Dev Work: no" would read as
+ * a judgement when it was silence, and silence leaves the cell untouched.
+ */
+function readProposedBoxLines(suggestion: PiReviewAiSuggestion): string[] {
+  const boxLines: string[] = []
+  if (suggestion.devWork !== null) {
+    boxLines.push(suggestion.devWork
+      ? 'Dev Work — tick: the team builds this'
+      : 'Dev Work — untick: the team does not build this')
+  }
+  if (suggestion.testSupport !== null) {
+    boxLines.push(suggestion.testSupport
+      ? "Test Support — tick: the team only supports another team's testing"
+      : 'Test Support — untick: this is not only test support')
+  }
+  return boxLines
+}
+
 /** True once the suggestion carries everything it needs — XXL is blocked until a number is supplied. */
 function canAcceptSuggestion(suggestion: PiReviewAiSuggestion): boolean {
   return suggestion.state !== 'needsPoints'
@@ -65,6 +86,7 @@ function SuggestionRow({
 }) {
   const proposedEstimate = readProposedEstimate(suggestion)
   const proposedNoteLines = readProposedNoteLines(suggestion)
+  const proposedBoxLines = readProposedBoxLines(suggestion)
   const hasEstimateConflict = currentEstimate.trim() !== '' && proposedEstimate !== null
   const isXxlAwaitingNumber = suggestion.state === 'needsPoints'
 
@@ -110,6 +132,12 @@ function SuggestionRow({
             type="text"
           />
         </label>
+      )}
+
+      {proposedBoxLines.length > 0 && (
+        <ul className={styles.suggestionBoxes}>
+          {proposedBoxLines.map((boxLine) => <li key={boxLine}>{boxLine}</li>)}
+        </ul>
       )}
 
       {proposedNoteLines.length > 0 && (

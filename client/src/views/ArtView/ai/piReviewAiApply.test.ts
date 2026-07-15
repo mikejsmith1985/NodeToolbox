@@ -39,6 +39,8 @@ function suggestion(overrides: Partial<PiReviewAiSuggestion> = {}): PiReviewAiSu
     riskNote: null,
     dependencyNote: null,
     implementationNote: null,
+    devWork: null,
+    testSupport: null,
     rationale: 'Two integrations.',
     state: 'pending',
     ...overrides,
@@ -62,6 +64,7 @@ describe('applyPiReviewSuggestion — CW-1: only two cells may ever change', () 
     expect(nextRow.feature).toBe(originalRow.feature)
     expect(nextRow.carryOver).toBe(originalRow.carryOver)
     expect(nextRow.committed).toBe(originalRow.committed)
+    // A suggestion that says nothing about the boxes must leave them exactly as they were.
     expect(nextRow.devWork).toBe(originalRow.devWork)
     expect(nextRow.testSupport).toBe(originalRow.testSupport)
   })
@@ -83,14 +86,20 @@ describe('applyPiReviewSuggestion — CW-1: only two cells may ever change', () 
     expect(applyPiReviewSuggestion(row(), suggestion()).priority).toBe('High')
   })
 
-  it('changes exactly the two permitted keys and no others', () => {
+  it('changes only the four permitted keys and no others', () => {
     const originalRow = row()
-    const nextRow = applyPiReviewSuggestion(originalRow, suggestion({ riskNote: 'Something.' }))
+    const nextRow = applyPiReviewSuggestion(originalRow, suggestion({
+      riskNote: 'Something.',
+      devWork: true,
+      testSupport: true,
+    }))
 
     const changedKeys = (Object.keys(originalRow) as (keyof PiReviewRow)[])
       .filter((fieldName) => nextRow[fieldName] !== originalRow[fieldName])
 
-    expect(changedKeys.sort()).toEqual(['notes', 'pointEstimate'])
+    // Dev Work and Test Support joined the surface because — unlike Dependency/Risks — reconcile
+    // does not rebuild them from Jira, so an accepted value survives the next page load.
+    expect(changedKeys.sort()).toEqual(['devWork', 'notes', 'pointEstimate', 'testSupport'])
   })
 
   it('returns a new row rather than mutating the one it was given (CW-4, unit level)', () => {
@@ -178,6 +187,57 @@ describe('applyPiReviewSuggestion — notes', () => {
   })
 })
 
+// ── The Dev Work / Test Support boxes ──
+
+describe('applyPiReviewSuggestion — the checkboxes', () => {
+  it('ticks Dev Work when the team must build it', () => {
+    expect(applyPiReviewSuggestion(row(), suggestion({ devWork: true })).devWork).toBe('Yes')
+  })
+
+  it(`ticks Test Support when the team only supports another team's testing`, () => {
+    expect(applyPiReviewSuggestion(row(), suggestion({ testSupport: true })).testSupport).toBe('Yes')
+  })
+
+  it('writes the literal the table reads as ticked — not true, not "true"', () => {
+    // The renderer checks `cellValue === 'Yes'`; anything else is an unticked box.
+    const nextRow = applyPiReviewSuggestion(row(), suggestion({ devWork: true, testSupport: true }))
+
+    expect(nextRow.devWork).toBe('Yes')
+    expect(nextRow.testSupport).toBe('Yes')
+  })
+
+  it('unticks a box when the model says false', () => {
+    const nextRow = applyPiReviewSuggestion(row({ devWork: 'Yes' }), suggestion({ devWork: false }))
+
+    expect(nextRow.devWork).toBe('')
+  })
+
+  it('leaves a box alone when the model said nothing — silence is not a verdict', () => {
+    // The important one: absent must never untick a human's box.
+    const nextRow = applyPiReviewSuggestion(
+      row({ devWork: 'Yes', testSupport: 'Yes' }),
+      suggestion({ devWork: null, testSupport: null }),
+    )
+
+    expect(nextRow.devWork).toBe('Yes')
+    expect(nextRow.testSupport).toBe('Yes')
+  })
+
+  it('can tick one box without touching the other', () => {
+    const nextRow = applyPiReviewSuggestion(row({ testSupport: 'Yes' }), suggestion({ devWork: true }))
+
+    expect(nextRow.devWork).toBe('Yes')
+    expect(nextRow.testSupport).toBe('Yes')
+  })
+
+  it('applies a box verdict even when the size was unusable', () => {
+    const nextRow = applyPiReviewSuggestion(row(), suggestion({ size: null, derivedPoints: null, devWork: true }))
+
+    expect(nextRow.devWork).toBe('Yes')
+    expect(nextRow.pointEstimate).toBe('')
+  })
+})
+
 // ── CW-3: idempotence ──
 
 describe('applyPiReviewSuggestion — CW-3: applying twice equals applying once', () => {
@@ -193,6 +253,15 @@ describe('applyPiReviewSuggestion — CW-3: applying twice equals applying once'
     const appliedTwice = applyPiReviewSuggestion(appliedOnce, suggestion())
 
     expect(appliedTwice.pointEstimate).toBe(appliedOnce.pointEstimate)
+  })
+
+  it('is idempotent for the boxes too', () => {
+    const boxSuggestion = suggestion({ devWork: true, testSupport: false })
+    const appliedOnce = applyPiReviewSuggestion(row({ testSupport: 'Yes' }), boxSuggestion)
+    const appliedTwice = applyPiReviewSuggestion(appliedOnce, boxSuggestion)
+
+    expect(appliedTwice.devWork).toBe(appliedOnce.devWork)
+    expect(appliedTwice.testSupport).toBe(appliedOnce.testSupport)
   })
 })
 

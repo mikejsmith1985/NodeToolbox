@@ -10,12 +10,23 @@ Every rule below is enforced by a test, not by convention.
 
 ## The permitted write surface
 
-**Two cells. Nothing else.**
+**Four cells. Nothing else.**
 
 | Column | Operation | Rule |
 |---|---|---|
 | `pointEstimate` | **replace** | Only when the suggestion has a resolved number (`derivedPoints`, or `userSuppliedPoints` for XXL) |
 | `notes` | **append** | Via the existing `appendUniqueNoteLine` — never a raw assignment |
+| `devWork` | **tick / untick** | Only on an explicit boolean verdict. `'Yes'` ticks; `''` unticks |
+| `testSupport` | **tick / untick** | Same |
+
+**Why Dev Work and Test Support are permitted** *(added 2026-07-15)*: they are the mirror image of
+Dependency/Risks. Reconcile passes them straight through (`piReviewJira.ts` — they are absent from
+`reconcileSinglePiReviewRow`'s `nextRow`), so they are **human-owned** and an accepted value survives
+the next page load. They also carry exactly the judgement the prompt material supports: does our team
+build this, or only help test what another team built.
+
+**A `null` verdict is not `false`.** `null` means the model said nothing, and unticking a box on the
+strength of silence would quietly undo a human's judgement. Only an explicit boolean moves the cell.
 
 ## The forbidden surface
 
@@ -25,7 +36,6 @@ Every rule below is enforced by a test, not by convention.
 | `risks` | Same (`piReviewJira.ts:405`) |
 | `priority` | Overwritten from the Jira issue on every load; the AI was not asked to set it |
 | `carryOver`, `committed` | Human judgement outside the request's scope |
-| `devWork`, `testSupport` | Human judgement outside the request's scope |
 | `feature` | Identity. Set once when the Feature is pulled |
 | `rowId` | Internal |
 
@@ -100,8 +110,8 @@ provenance tracking by design, this copy is the only thing standing between the 
 
 ## Invariants
 
-- **CW-1**: For any suggestion in any state, every `PiReviewRow` field other than `pointEstimate` and `notes` is
-  unchanged.
+- **CW-1**: For any suggestion in any state, every `PiReviewRow` field other than `pointEstimate`, `notes`,
+  `devWork` and `testSupport` is unchanged.
 - **CW-2**: A suggestion that is not `accepted` has changed **no** field at all.
 - **CW-3**: Applying the same suggestion twice equals applying it once (notes dedupe; estimate is idempotent
   replace).

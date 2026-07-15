@@ -292,7 +292,8 @@ the tab, and reach the authoritative Confluence guidance in one click.
 - **PI Review AI prompt** — generated from the Features on the page plus the scale.
 - **Feature suggestion** — one AI result for one Feature: T-shirt size, the derived points, and note text (covering
   risk/dependency detail and implementation notes for the ART/RTE); plus a state of pending / accepted / rejected /
-  unparsed. On acceptance it can touch only two cells: **Point Estimate** and **Implementation Notes**.
+  unparsed. On acceptance it can touch only four cells: **Point Estimate**, **Implementation Notes**, and the
+  **Dev Work** / **Test Support** boxes.
 - **PI Review row** — existing. Its columns divide into human-owned (Carry-Over, Committed, Notes), Jira-mirrored
   (Priority, Dependency, Risks) and gap-filling (Point Estimate). See the constraint table above.
 
