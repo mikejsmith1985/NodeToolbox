@@ -9,26 +9,49 @@ import { useCallback, useEffect, useState } from 'react';
 
 import styles from './AdminHubView.module.css';
 
+/**
+ * The config as the server reports it.
+ *
+ * The webhook secret is deliberately absent: the server never returns it, the same way it never returns
+ * the Jira or Confluence credentials. This form only needs to know whether one is set.
+ */
 interface AiAssistConfig {
   webhookUrl: string;
-  webhookSecret: string;
+  hasWebhookSecret: boolean;
   parkingSpaceKey: string;
   parkingPageId: string;
   isEnabled: boolean;
 }
 
-const EMPTY_CONFIG: AiAssistConfig = { webhookUrl: '', webhookSecret: '', parkingSpaceKey: '', parkingPageId: '', isEnabled: false };
+const EMPTY_CONFIG: AiAssistConfig = { webhookUrl: '', hasWebhookSecret: false, parkingSpaceKey: '', parkingPageId: '', isEnabled: false };
 
 async function fetchAiAssistConfig(): Promise<AiAssistConfig> {
   const response = await fetch('/api/ai-assist/config');
   return (await response.json()) as AiAssistConfig;
 }
 
-async function saveAiAssistConfig(config: AiAssistConfig): Promise<void> {
+/**
+ * Saves the config.
+ *
+ * A blank secret means "leave the saved one alone" — the form was never given it, so it cannot send it
+ * back, and sending blank must not wipe it. Clearing is an explicit act, hence the separate flag.
+ */
+async function saveAiAssistConfig(
+  config: AiAssistConfig,
+  webhookSecretInput: string,
+  shouldClearWebhookSecret: boolean,
+): Promise<void> {
   const response = await fetch('/api/ai-assist/config', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config),
+    body: JSON.stringify({
+      webhookUrl: config.webhookUrl,
+      parkingSpaceKey: config.parkingSpaceKey,
+      parkingPageId: config.parkingPageId,
+      isEnabled: config.isEnabled,
+      webhookSecret: webhookSecretInput,
+      clearWebhookSecret: shouldClearWebhookSecret,
+    }),
   });
   if (!response.ok) throw new Error('Failed to save AI Assist config: ' + response.statusText);
 }
@@ -46,6 +69,9 @@ async function testAiAssistDispatch(): Promise<{ ok: boolean; message: string }>
 /** Renders the AI Assist Automation config form. Rendered only when the AI Assist tab is active (unlocked). */
 export function AiAssistAutomationPanel() {
   const [config, setConfig] = useState<AiAssistConfig>(EMPTY_CONFIG);
+  // Held separately from `config` because it is write-only: it is never loaded, only ever sent.
+  const [webhookSecretInput, setWebhookSecretInput] = useState('');
+  const [shouldClearWebhookSecret, setShouldClearWebhookSecret] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
@@ -61,14 +87,18 @@ export function AiAssistAutomationPanel() {
     setIsBusy(true);
     setStatusMessage(null);
     try {
-      await saveAiAssistConfig(config);
+      await saveAiAssistConfig(config, webhookSecretInput, shouldClearWebhookSecret);
+      // Re-read so the form reflects what the server actually holds now.
+      setConfig(await fetchAiAssistConfig());
+      setWebhookSecretInput('');
+      setShouldClearWebhookSecret(false);
       setStatusMessage('Saved.');
     } catch (saveError) {
       setStatusMessage(saveError instanceof Error ? saveError.message : 'Save failed.');
     } finally {
       setIsBusy(false);
     }
-  }, [config]);
+  }, [config, webhookSecretInput, shouldClearWebhookSecret]);
 
   const handleTest = useCallback(async () => {
     setIsBusy(true);
@@ -104,10 +134,31 @@ export function AiAssistAutomationPanel() {
           id="ai-assist-webhook-secret"
           className={styles.textInput}
           type="password"
-          value={config.webhookSecret}
-          placeholder="X-Automation-Webhook-Token (optional)"
-          onChange={(changeEvent) => updateField('webhookSecret', changeEvent.target.value)}
+          value={webhookSecretInput}
+          disabled={shouldClearWebhookSecret}
+          placeholder={
+            config.hasWebhookSecret
+              ? 'A secret is saved — type here only to replace it'
+              : 'X-Automation-Webhook-Token (optional)'
+          }
+          onChange={(changeEvent) => setWebhookSecretInput(changeEvent.target.value)}
         />
+        <p className={styles.adminDescription}>
+          {config.hasWebhookSecret
+            ? 'A secret is saved. For your safety it is never sent back to this screen, so it stays blank here — leave it blank and your saved secret is kept.'
+            : 'No secret is saved yet.'}
+        </p>
+        {config.hasWebhookSecret ? (
+          <label className={styles.fieldLabel} htmlFor="ai-assist-clear-secret">
+            <input
+              id="ai-assist-clear-secret"
+              type="checkbox"
+              checked={shouldClearWebhookSecret}
+              onChange={(changeEvent) => setShouldClearWebhookSecret(changeEvent.target.checked)}
+            />
+            {' '}Remove the saved secret when I save
+          </label>
+        ) : null}
       </div>
 
       <div className={styles.fieldRow}>
