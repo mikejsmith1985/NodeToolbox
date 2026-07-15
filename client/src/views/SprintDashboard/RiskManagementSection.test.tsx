@@ -1,6 +1,21 @@
-// RiskManagementSection.test.tsx — Tests for the Risk Management section utility functions.
+// RiskManagementSection.test.tsx — Tests for the Risk Management section utility functions, plus a
+// render guard proving this panel no longer owns an AI Assist unlock prompt (feature 016 Part 1).
 
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { mockJiraGet, mockJiraPut } = vi.hoisted(() => ({
+  mockJiraGet: vi.fn(),
+  mockJiraPut: vi.fn(),
+}));
+
+vi.mock('../../services/jiraApi.ts', () => ({
+  jiraGet: mockJiraGet,
+  jiraPut: mockJiraPut,
+}));
+
+import RiskManagementSection from './RiskManagementSection.tsx';
+import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
 
 // ── Inline test utilities (mirror the module-private helpers) ──
 
@@ -132,5 +147,53 @@ describe('parseAiAssistRiskResponse', () => {
     expect(errorMessage).toBeNull();
     expect(items[0].riskResponse).toBeUndefined();
     expect(items[0].priority).toBeUndefined();
+  });
+});
+
+// ── Feature 016 Part 1: the app-level gate is the sole owner of the unlock ──
+//
+// This panel is rendered on the PI Review tab, where it used to raise a SECOND passphrase modal on
+// top of the app-level AiAssistUnlockGate's — the "double lock screen" this feature removes. It must
+// now render none of its own, while still reading the shared unlock store for its AI affordance.
+
+describe('RiskManagementSection — AI Assist unlock', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.sessionStorage.clear();
+    setAiAssistUnlocked(false); // reset the shared unlock singleton between tests
+    mockJiraGet.mockResolvedValue({ issues: [] });
+  });
+
+  function renderRiskManagementSection() {
+    return render(
+      <RiskManagementSection
+        projectKey="TBX"
+        riskImpactDateFieldId="customfield_11111"
+        riskResponseFieldId="customfield_22222"
+        selectedPiName="PI 26.3"
+      />,
+    );
+  }
+
+  it('renders no passphrase prompt of its own on Ctrl+Alt+Z — the app-level gate owns the unlock', async () => {
+    renderRiskManagementSection();
+    await waitFor(() => expect(mockJiraGet).toHaveBeenCalled());
+
+    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: true });
+
+    expect(screen.queryByLabelText('Protected tools passphrase')).not.toBeInTheDocument();
+    expect(screen.queryByText(/unlock protected tools/i)).not.toBeInTheDocument();
+  });
+
+  it('does not re-lock the shared store on Ctrl+Alt+Z — only the app-level gate toggles the unlock', async () => {
+    setAiAssistUnlocked(true);
+    renderRiskManagementSection();
+    await waitFor(() => expect(mockJiraGet).toHaveBeenCalled());
+
+    // Previously this panel had its own toggle, so the app-level gate and this one both fired on a
+    // single press — unlocking and immediately re-locking. It must not participate at all now.
+    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: true });
+
+    expect(window.sessionStorage.getItem('tbxAiAssistUnlocked')).toBe('1');
   });
 });

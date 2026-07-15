@@ -15,11 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Both reused tabs are the **same components** the Team Dashboard uses, so they can never drift apart.
   - Confluence read failures now say **which** problem occurred — page missing, no permission, Confluence unreachable
     (e.g. VPN down), or Confluence not configured — instead of one generic message.
-
-### Changed
-- **Hygiene**: the Jira field-matching that decides which custom fields each hygiene check reads now lives in a shared
-  module, so other surfaces can apply the same rules without a second copy drifting out of step. No change in
-  behaviour.
+- **PI Review — AI Assistance (feature 016)**: a new **⚡ AI Assistance** panel on the PI Review tab (edit mode, once
+  AI Assist is unlocked with Ctrl+Alt+Z) reads every Feature already on your page — its description, acceptance
+  criteria, priority and linked issues — and comes back with, per Feature: a **point estimate** derived from the
+  organisation's **T-shirt scale**, and the **risk, dependency and implementation detail worth telling the ART/RTE**.
+  You read the full prompt before anything is sent, and **nothing reaches the table until you accept it, row by
+  row** — accept the ones you agree with, reject the rest, and Save to Confluence when you're ready. Both the manual
+  (copy prompt → paste reply) and automatic (**⚡ Run via AI Assist**) paths are available; if the automation is
+  unreachable the manual path still works.
+  An accepted suggestion touches **exactly two cells**: **Point Estimate** and **Implementation Notes**. The
+  **Dependency and Risks columns are never written** — they carry the keys Jira's issue links identify and are
+  rebuilt from them on every page load, so the AI supplies the *explanation* those columns cannot hold (as labelled
+  `Risk note:` / `Dependency note:` / `Implementation note:` lines) rather than competing with them. That means an AI
+  run and a page reload can never disagree, and your Carry-Over, Committed and existing Notes are never touched.
+  ⚠️ **An accepted estimate can update the Jira issue** when Jira has no estimate — it behaves exactly like one you
+  typed, because that is what it is. The panel says so before you accept.
+  The model returns a **size**, never a point number: points are derived from the scale by the app, so a suggestion
+  can't contradict the rubric, and a size the scale doesn't define is reported rather than guessed at. An **XXL**
+  Feature (the scale says "100+") asks *you* for the number rather than inventing one. A garbled or partial reply
+  yields the suggestions that did parse plus a plain account of the rest; a suggestion for a Feature that isn't on
+  your page is reported and ignored, never appended.
+- **PI Review — the sizing guide, in the app**: a **📐 Feature sizing guide** on the PI Review tab shows the T-shirt
+  scale (**XS 10 · S 20 · M 40 · L 60 · XL 80 · XXL 100+**) and links to the Confluence guidance that owns it. It's
+  visible **whether or not AI Assist is unlocked**, because most sizing is still done by hand — and it renders from
+  the same definition the AI prompt uses, so the two can't drift apart. *(feature 016)*
 - **PI Review — scheduled "Save to Confluence" (feature 015)**: a new **🗓️ PI Review Sync** panel in the Admin Hub
   lets you keep a team's PI Review Confluence page fresh **on a daily schedule**, without opening the app — while the
   manual **Save to Confluence** button stays exactly as it was for urgent updates. Per team you set an enable toggle,
@@ -40,12 +59,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Team Dashboard — Backlog Remediation panel**: the actionable Aging cleanup triage now lives on the Team Dashboard as a **per-team, persistent Remediation tab**, so each team keeps its own resumable backlog-cleanup queue and handled work does not resurface. It scopes the backlog from the active team profile automatically (**project-first**, and deliberately not narrowed by assignee so unassigned stale work — the prime cancel candidates — stays visible), with an optional per-team JQL override. Switching teams swaps the panel to that team's own queue with **no cross-team bleed** (verdicts and decisions are fully isolated per team). Each item has **Cancel / Keep / Dismiss / Snooze** controls: a decided item stays out of the queue and does **not** resurface on refresh unless it **materially changed** — its status category changed (e.g. reopened) or it was reassigned into the team — while a snoozed item returns after two weeks. **Bulk-closing** a cancel-safe feature group (preview → opt-out → commit, reusing the proven Feature Review write path) records the issues that actually transitioned as **canceled** in the queue, so they stay resolved across reloads. The whole panel is gated behind AI Assist exactly as the old triage was, and reuses the same copy-prompt → paste-reply round-trip. *(feature 014)*
 
 ### Changed
+- **Hygiene**: the Jira field-matching that decides which custom fields each hygiene check reads now lives in a shared
+  module, so other surfaces can apply the same rules without a second copy drifting out of step. No change in
+  behaviour.
 - **PI Review — the Team Dashboard PI selector now drives the page, and the toolbar is down to what you use**: the PI Review tab used to show its own row of PI chips (one per configured Confluence page) that ignored the **PI** selector sitting right above it. Now the dashboard's PI selector *is* the selector — pick **PI 26.3** and you get that PI's page, with no second row of chips and no wasted fetch of the other PI's page. If the selected PI has no page configured, the tab says so and points at Settings instead of silently showing a different PI. (ART's read-only PI Review still tabs between pages: it shows several teams at once and has no single driving PI.) The toolbar also lost two buttons that Jira ingest made obsolete — **Add PI Review Row** (hand-typed a blank row) and **Import PI Review XLSX** (replaced the whole table from a spreadsheet) — because Features now come from Jira via **Pull Features from Jira**, which is itself down to **one click**: it no longer opens a card with a second **Pull into table** button inside it. The Product Owner it will query, and the promise that re-running is safe, now read as a hint line under the toolbar.
 - **Team Dashboard — Capacity roles now match the roster's delivery roles exactly**: the capacity calculator's role set changed from the old abbreviations (`Dev, QE, Test Lead, BT, SL, SA, TPO, SM, PO, Dev Lead`) to the five roster delivery-role names — **Developer, Dev Lead, Internal Tester, External Tester, Systems Analyst** — so the role dropdown, the Confluence capacity readout, and "Seed from Roster" all speak one vocabulary (no more decoding `SL`/`SA`). Coordination roles that add no delivery capacity are no longer selectable. Capacity tables saved under the old codes are **rewritten to the new format on load** — `Dev→Developer`, `SL→Internal Tester`, `QE`/`BT`/`Test Lead→External Tester`, `SA→Systems Analyst` — and rows for retired roles (`SM`/`PO`/`TPO`) are dropped, so nothing renders a broken dropdown.
 - **PI Review pages are now configured on the Team Dashboard team (single source of truth)**: PI Review Confluence pages moved from ART Settings onto the **Team Dashboard team profile**, where you actually manage your teams. Configure them under **Settings → Saved Dashboard Teams → PI Review Pages** (a PI dropdown + Confluence URL per PI, with Add/Remove); because they're part of the team profile, adding/removing a page participates in the **Save / Revert** model like your other team config. The **ART view PI Review tab still displays** those pages (one sub-tab per PI), and its edit control is now a **quick-access "Edit in Team Dashboard"** link that jumps straight to that team's PI Review view — there's no second editor. Existing pages configured on the old ART-team records **migrate automatically** onto the matching Team Dashboard profile on first load, so nothing is lost.
 - **Reports Hub — Aging tab is now the metrics report only**: the actionable AI cleanup triage moved to the Team Dashboard (above), so the Aging tab focuses on the age breakdown (per-type counts, average/median/oldest age, day-range buckets). Its numbers and JQL are unchanged, and it now uses a lighter fetch (only the fields the age math needs) since it no longer assembles triage signals. *(feature 014)*
 
 ### Fixed
+- **AI Assist — Ctrl+Alt+Z raised several stacked passphrase prompts (feature 016)**: pressing **Ctrl+Alt+Z** could
+  raise **two prompts on the PI Review tab** and up to four elsewhere on the Team Dashboard, stacked on top of each
+  other. The app-level unlock gate was introduced to centralise the unlock — and the Admin Hub's copy was removed at
+  the time — but the four per-view gates that predate it (Pointing, Release Notes, Risk Management, and SnowHub's
+  Create CHG) were left in place, each listening for the same shortcut and rendering its own identical modal. They
+  all wrote the same shared unlock state, so the extra prompts were pure redundant UI: entering the passphrase in any
+  one of them already satisfied the rest. All four are removed; **exactly one prompt now appears, everywhere**, and
+  every "⚡ Run via AI Assist" affordance still unlocks from that single entry, with a second Ctrl+Alt+Z re-locking as
+  before.
 - **PI Review — Team Capacity section duplicated on the Confluence page**: each **Save to Confluence** could leave the previous Team Capacity block behind, so pages accumulated a stack of them (old `Dev/SL/SA`-format snapshots, empty "appears here after you save" placeholders, and the current one). The writer only ever replaced a *single* block — once the canonical section existed it updated that and returned, never cleaning up the older loose blocks left by earlier page formats. It now finds **every** Team Capacity block (canonical sections and legacy loose blocks alike), replaces the first with the fresh snapshot, and removes all the rest — so a save collapses the page back to exactly one capacity section. Existing stacked duplicates are cleaned up automatically the next time you Save to Confluence.
 - **PI Review — "Pull Features from Jira" returned nothing when Features live outside the team's project**: the pull was quietly adding a `project = <team key>` clause the hand-run query never had, so a query that returned (for example) 11 Features in Jira came back empty in the tool — because a team's Features commonly live in a separate portfolio/program project, or the team had no project key configured at all (in which case the pull skipped Jira entirely). The generated query now matches what you'd type by hand — `issuetype = Feature AND assignee = <PO> AND cf[PI] = <PI>`, with **no project clause** — since the Product Owner assignee already scopes the results to that team's work.
 - **Team Dashboard — Settings: PI Review Pages now has its own Save button**: after PI Review Pages became its own card, the only control that persisted a page edit was **"Update Active Team"** back up in the Saved Dashboard Teams card — easy to miss, so edits felt like they vanished. The PI Review Pages card now carries its own **"Save PI Review Pages"** button (labeled **"Save PI Review Pages as New Team"** when no team is active yet) right beside **+ Add PI**. It reuses the exact same team-profile save as "Update Active Team" (the pages live on the team profile — one source of truth, no separate persistence path), and is disabled with a hint until a **project key and board** are chosen, matching the team-save gate.

@@ -1,7 +1,9 @@
 // PiReviewTab.test.tsx — Unit tests for the multi-team Confluence-backed PI Review ART tab.
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
 
 import { ToastProvider } from '../../components/Toast/ToastProvider.tsx';
 import type { CapacitySummary } from '../SprintDashboard/capacityModel.ts';
@@ -1736,5 +1738,49 @@ describe('PiReviewTab', () => {
     expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).not.toContain(
       'data-node-toolbox-pi-review-boundary="hard-commit"',
     );
+  });
+});
+
+// ── Feature 016 Part 2: the AI Assistance panel's mount (FR-007, FR-008) ──
+//
+// The panel is an authoring tool behind a hidden capability, so it has two independent gates: the
+// shared AI Assist unlock, and the tab's own edit mode. Neither alone is enough.
+
+describe('PiReviewTab — AI Assistance mount', () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    act(() => setAiAssistUnlocked(false)); // reset the shared unlock singleton between tests
+  });
+
+  it('does not offer AI Assistance while AI Assist is locked, even in edit mode (FR-007)', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
+
+    expect(within(alphaSection).queryByText(/⚡ AI Assistance/i)).not.toBeInTheDocument();
+  });
+
+  it('does not offer AI Assistance in view mode, even when unlocked (FR-008)', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+    act(() => setAiAssistUnlocked(true));
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+
+    expect(within(alphaSection).getByText(/view mode is on/i)).toBeInTheDocument();
+    expect(within(alphaSection).queryByText(/⚡ AI Assistance/i)).not.toBeInTheDocument();
+  });
+
+  it('offers AI Assistance when unlocked and in edit mode', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE_WITH_FEATURE_KEY);
+    act(() => setAiAssistUnlocked(true));
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
+
+    expect(await within(alphaSection).findByText(/⚡ AI Assistance/i)).toBeInTheDocument();
   });
 });

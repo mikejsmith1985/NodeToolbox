@@ -1,19 +1,13 @@
 // RiskManagementSection.tsx — PI-scoped Risk Management panel for the PI Review tab.
 // Fetches Risk-type Jira issues for the active PI, displays them in a summary table, and
-// provides a hidden AI-assist workflow (Ctrl+Alt+Z passphrase gate) that builds an AI Assist
-// prompt and writes refined risk descriptions back to Jira on paste-back.
+// provides a hidden AI-assist workflow that builds an AI Assist prompt and writes refined risk
+// descriptions back to Jira on paste-back. The unlock itself belongs to the app-level
+// AiAssistUnlockGate; this panel only reads the shared unlock state.
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from 'react';
+import { useEffect, useState } from 'react';
 
 import type { JiraIssue } from '../../types/jira.ts';
 import { jiraGet, jiraPut } from '../../services/jiraApi.ts';
-import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
 import { useAiAssist } from '../SnowHub/hooks/useAiAssist.ts';
 import { useAiAssistExchange } from '../SnowHub/hooks/useAiAssistExchange.ts';
 import styles from './SprintDashboardView.module.css';
@@ -27,7 +21,6 @@ const RISK_PI_CUSTOMFIELD_ID = 'customfield_10301';
 const RISK_PI_CF_NUMBER = RISK_PI_CUSTOMFIELD_ID.replace('customfield_', '');
 
 const RISK_MANAGEMENT_MAX_RESULTS = 100;
-const HIDDEN_AI_ASSIST_SHORTCUT_KEY = 'z';
 
 type RiskSaveProgress = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -215,8 +208,7 @@ export default function RiskManagementSection({
 }: RiskManagementSectionProps) {
   // Unlock state comes from the shared aiAssistStore (via useAiAssist) so one
   // passphrase entry unlocks every AI Assist surface, including the Admin Hub config.
-  const { isUnlocked: isAiAssistUnlocked, verifyPassphrase } = useAiAssist();
-  const passphraseInputRef = useRef<HTMLInputElement | null>(null);
+  const { isUnlocked: isAiAssistUnlocked } = useAiAssist();
 
   const [riskIssues, setRiskIssues] = useState<JiraIssue[]>([]);
   const [isLoadingRisks, setIsLoadingRisks] = useState(false);
@@ -225,9 +217,6 @@ export default function RiskManagementSection({
   const [saveProgressByKey, setSaveProgressByKey] = useState<Record<string, RiskSaveProgress>>({});
   const [saveErrorByKey, setSaveErrorByKey] = useState<Record<string, string>>({});
 
-  const [isPassphraseModalVisible, setIsPassphraseModalVisible] = useState(false);
-  const [passphraseInput, setPassphraseInput] = useState('');
-  const [passphraseError, setPassphraseError] = useState<string | null>(null);
 
   const [isAiAssistModalVisible, setIsAiAssistModalVisible] = useState(false);
   const [generatedAiAssistPromptText, setGeneratedAiAssistPromptText] = useState('');
@@ -282,56 +271,6 @@ export default function RiskManagementSection({
   }, [projectKey, selectedPiName, riskImpactDateFieldId, riskResponseFieldId]);
 
   // ── Ctrl+Alt+Z shortcut to reveal the passphrase gate ──
-
-  useEffect(() => {
-    function handleKeyDown(keyboardEvent: KeyboardEvent) {
-      const isShortcutPressed =
-        keyboardEvent.ctrlKey
-        && keyboardEvent.altKey
-        && keyboardEvent.key.toLowerCase() === HIDDEN_AI_ASSIST_SHORTCUT_KEY;
-      if (!isShortcutPressed) return;
-      if (isAiAssistUnlocked) {
-        setAiAssistUnlocked(false); // toggle: re-hide all AI Assist features
-        return;
-      }
-      setIsPassphraseModalVisible(true);
-      setPassphraseInput('');
-      setPassphraseError(null);
-    }
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isAiAssistUnlocked]);
-
-  // ── Focus passphrase input when modal opens ──
-
-  useEffect(() => {
-    if (isPassphraseModalVisible) {
-      passphraseInputRef.current?.focus();
-    }
-  }, [isPassphraseModalVisible]);
-
-  // ── Passphrase handlers ──
-
-  const handlePassphraseSubmit = useCallback(async () => {
-    const isAccepted = await verifyPassphrase(passphraseInput);
-    if (isAccepted) {
-      // verifyPassphrase sets the shared aiAssistStore; no local flag to update.
-      setIsPassphraseModalVisible(false);
-      setPassphraseInput('');
-      setPassphraseError(null);
-      return;
-    }
-    setPassphraseError('Incorrect passphrase');
-  }, [passphraseInput, verifyPassphrase]);
-
-  const handlePassphraseKeyDown = useCallback(
-    (keyboardEvent: ReactKeyboardEvent<HTMLInputElement>) => {
-      if (keyboardEvent.key === 'Enter') {
-        void handlePassphraseSubmit();
-      }
-    },
-    [handlePassphraseSubmit],
-  );
 
   // ── AI Assist modal handlers ──
 
@@ -506,42 +445,6 @@ export default function RiskManagementSection({
           </table>
         </div>
       )}
-
-      {/* Passphrase gate — triggered by Ctrl+Alt+Z */}
-      {isPassphraseModalVisible ? (
-        <div aria-modal="true" className={styles.releasePromptOverlay} role="dialog">
-          <div className={styles.releasePromptModal}>
-            <h3 className={styles.releasePromptTitle}>Unlock protected tools</h3>
-            <input
-              aria-label="Protected tools passphrase"
-              className={styles.releasePromptInput}
-              onChange={(changeEvent) => setPassphraseInput(changeEvent.target.value)}
-              onKeyDown={handlePassphraseKeyDown}
-              placeholder="Enter passphrase"
-              ref={passphraseInputRef}
-              type="password"
-              value={passphraseInput}
-            />
-            {passphraseError ? <p className={styles.errorMessage}>{passphraseError}</p> : null}
-            <div className={styles.releasePromptActions}>
-              <button
-                className={styles.secondaryButton}
-                onClick={() => void handlePassphraseSubmit()}
-                type="button"
-              >
-                Unlock
-              </button>
-              <button
-                className={styles.textActionButton}
-                onClick={() => setIsPassphraseModalVisible(false)}
-                type="button"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {/* AI Assist modal — two-step: copy prompt / paste response */}
       {isAiAssistModalVisible ? (
