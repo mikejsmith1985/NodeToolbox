@@ -8,9 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **PO Tool — Feature Splitter & Feature Composition (feature 017)**: *in progress.* A new **PO Tool** that brings the
-  existing **Feature Review** and **PI Review** tabs together with its own team/PI selection (independent of the Team
-  Dashboard), plus two new authoring tabs. Adds **no new dependency**.
+- **PO Tool — Feature Splitter & Feature Composition (feature 017)**: *in progress.* A new **🧭 PO Tool** that brings
+  the existing **Feature Review** and **PI Review** tabs together with its own team/PI selection (independent of the
+  Team Dashboard), plus two new authoring tabs. Adds **no new dependency**.
+  - The PO Tool's team/PI choice is **its own** — switching team there never moves your Team Dashboard, and vice versa.
+  - Both reused tabs are the **same components** the Team Dashboard uses, so they can never drift apart.
+  - Confluence read failures now say **which** problem occurred — page missing, no permission, Confluence unreachable
+    (e.g. VPN down), or Confluence not configured — instead of one generic message.
+
+### Changed
+- **Hygiene**: the Jira field-matching that decides which custom fields each hygiene check reads now lives in a shared
+  module, so other surfaces can apply the same rules without a second copy drifting out of step. No change in
+  behaviour.
 - **PI Review — scheduled "Save to Confluence" (feature 015)**: a new **🗓️ PI Review Sync** panel in the Admin Hub
   lets you keep a team's PI Review Confluence page fresh **on a daily schedule**, without opening the app — while the
   manual **Save to Confluence** button stays exactly as it was for urgent updates. Per team you set an enable toggle,

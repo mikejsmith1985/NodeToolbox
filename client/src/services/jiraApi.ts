@@ -237,6 +237,26 @@ export async function createVersion(input: CreateVersionInput): Promise<{ id: st
   return jiraPost<{ id: string; name: string }>('/rest/api/2/version', input);
 }
 
+/** The link Jira creates between two issues. The type name must be one the instance actually defines. */
+export interface CreateIssueLinkInput {
+  type: { name: string };
+  inwardIssue: { key: string };
+  outwardIssue: { key: string };
+}
+
+/**
+ * Links two existing Jira issues.
+ *
+ * Used by the PO Tool's Feature Splitter to relate each newly created Feature back to the one it came
+ * from, so the split leaves a trail. Jira answers this endpoint with 201 and an empty body.
+ *
+ * Callers should treat a failure here as non-fatal: Jira offers no transaction across create + link, so
+ * a link error must never be allowed to undo or orphan an issue that was already created successfully.
+ */
+export async function createIssueLink(input: CreateIssueLinkInput): Promise<void> {
+  await jiraPost<void>('/rest/api/2/issueLink', input);
+}
+
 // ── Jira Template Maker helpers ──
 
 // A high page size that covers any realistic project's issue-type / field count in one request.

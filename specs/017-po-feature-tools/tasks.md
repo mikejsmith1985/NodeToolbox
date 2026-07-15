@@ -79,26 +79,26 @@ need (Layer 2). See "Dependencies & sequencing" — **Layer 2 does not block US1
 **Blocks US2, US4, US5, US6, US7. Does NOT block US1.** This is where **shared-file regression risk
 concentrates** — it lands isolated, unit-tested, with no UI depending on it yet (plan.md Layer 2).
 
-- [ ] T011 [P] Write failing test in `client/src/services/confluenceApi.test.ts` — a thrown Confluence error
+- [X] T011 [P] Write failing test in `client/src/services/confluenceApi.test.ts` — a thrown Confluence error
   **carries `response.status`** so callers can distinguish 404 / 403 / 502-unreachable / not-configured
   (research R2b, FR-023b, SC-018)
-- [ ] T012 [P] Write failing test `client/src/utils/confluenceStorageText.test.ts` — storage-format HTML → readable
+- [X] T012 [P] Write failing test `client/src/utils/confluenceStorageText.test.ts` — storage-format HTML → readable
   text: `<br>`→newline, block-tag closes→newline, tags stripped, `&nbsp;/&amp;/&lt;/&gt;/&quot;` decoded
   (research R2c)
-- [ ] T013 [P] Write failing test in `client/src/services/jiraApi.test.ts` — `createIssueLink` POSTs
+- [X] T013 [P] Write failing test in `client/src/services/jiraApi.test.ts` — `createIssueLink` POSTs
   `{type:{name}, inwardIssue:{key}, outwardIssue:{key}}` to `/rest/api/2/issueLink` and tolerates Jira's
   **201-with-empty-body** (research R3, contracts/jira-writes.md)
-- [ ] T014 Implement the Confluence error-status seam in `client/src/services/confluenceApi.ts` — **additive
+- [X] T014 Implement the Confluence error-status seam in `client/src/services/confluenceApi.ts` — **additive
   only**: attach the status; existing consumers keep reading `.message` unchanged (research R2b)
-- [ ] T015 [P] Implement `client/src/utils/confluenceStorageText.ts` — port of the server's `stripStorageHtml`
+- [X] T015 [P] Implement `client/src/utils/confluenceStorageText.ts` — port of the server's `stripStorageHtml`
   (~20 lines, pure). Output is **plain text**; it is never injected as HTML (research R2c)
-- [ ] T016 [P] Implement `createIssueLink` in `client/src/services/jiraApi.ts` (~3 lines over the existing
+- [X] T016 [P] Implement `createIssueLink` in `client/src/services/jiraApi.ts` (~3 lines over the existing
   `jiraPost`; body shape ported verbatim from the server's `sprintReleaseOrchestrator`)
-- [ ] T017 Lift/export the hygiene field-config loader out of `client/src/views/Hygiene/hooks/useHygieneState.ts`
+- [X] T017 Lift/export the hygiene field-config loader out of `client/src/views/Hygiene/hooks/useHygieneState.ts`
   into a shared, importable module, and **export** `HygieneFixControlProps` from
   `client/src/views/Hygiene/HygieneFixControl.tsx`. **Behavior-preserving refactor** — do not duplicate the loader
   (research R8; duplication would reproduce the drift the spec flags in A7)
-- [ ] T018 **Regression gate**: run `cd client && npx vitest run` — every existing Hygiene, Confluence, and Jira
+- [X] T018 **Regression gate**: run `cd client && npx vitest run` — every existing Hygiene, Confluence, and Jira
   test MUST be green **unedited**. If a test needed editing, a seam was not backward-compatible → revert and redo
 
 **Checkpoint**: shell renders with two empty tabs; all four seams unit-tested; no existing test edited.

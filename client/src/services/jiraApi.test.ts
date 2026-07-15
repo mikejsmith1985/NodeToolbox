@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { fetchJiraLabelSuggestions, getBoardSprints, jiraGet, jiraPost, jiraPut, searchIssuesByLabels, searchUsers, type JiraApiEventDetail } from './jiraApi.ts';
+import { createIssueLink, fetchJiraLabelSuggestions, getBoardSprints, jiraGet, jiraPost, jiraPut, searchIssuesByLabels, searchUsers, type JiraApiEventDetail } from './jiraApi.ts';
 
 const JIRA_PATH = '/rest/api/3/issue/ABC-123';
 const JIRA_RESPONSE = { key: 'ABC-123' };
@@ -305,5 +305,75 @@ describe('searchIssuesByLabels', () => {
     await expect(fetchJiraLabelSuggestions('Tra')).resolves.toEqual(['Transformers', 'Auto bots']);
     const calledUrl = vi.mocked(fetch).mock.calls[0][0] as string;
     expect(calledUrl).toContain('/jira-proxy/rest/api/2/jql/autocompletedata/suggestions?fieldName=labels&fieldValue=Tra');
+  });
+});
+
+// ── Issue links (feature 017) ──
+//
+// The Feature Splitter creates smaller Features and links each back to the original. Jira answers
+// /issueLink with 201 and NO body, which is why this is asserted explicitly.
+// See specs/017-po-feature-tools/contracts/jira-writes.md.
+
+describe('createIssueLink', () => {
+  it('posts the link shape Jira expects', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 201,
+      headers: EMPTY_RESPONSE_HEADERS,
+      text: () => Promise.resolve(''),
+    } as unknown as Response);
+
+    await createIssueLink({
+      type: { name: 'relates to' },
+      inwardIssue: { key: 'NEW-1' },
+      outwardIssue: { key: 'ORIG-1' },
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/jira-proxy/rest/api/2/issueLink',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          type: { name: 'relates to' },
+          inwardIssue: { key: 'NEW-1' },
+          outwardIssue: { key: 'ORIG-1' },
+        }),
+      }),
+    );
+  });
+
+  it('resolves on Jira\'s empty 201 rather than choking on the missing body', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 201,
+      headers: EMPTY_RESPONSE_HEADERS,
+      text: () => Promise.resolve(''),
+    } as unknown as Response);
+
+    await expect(
+      createIssueLink({
+        type: { name: 'relates to' },
+        inwardIssue: { key: 'NEW-1' },
+        outwardIssue: { key: 'ORIG-1' },
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('surfaces the instance\'s real rejection reason when the link is refused', async () => {
+    // A caller reports this verbatim per FR-041 — a generic error would hide, e.g., an unknown link type.
+    vi.mocked(fetch).mockResolvedValue({
+      ok: false,
+      status: 400,
+      headers: JSON_RESPONSE_HEADERS,
+      json: () => Promise.resolve({ errorMessages: ['No issue link type with name \'relates to\' found.'] }),
+    } as unknown as Response);
+
+    await expect(
+      createIssueLink({
+        type: { name: 'relates to' },
+        inwardIssue: { key: 'NEW-1' },
+        outwardIssue: { key: 'ORIG-1' },
+      }),
+    ).rejects.toThrow(/No issue link type/);
   });
 });
