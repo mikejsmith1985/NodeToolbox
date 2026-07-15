@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field your team does not use and left yours empty. Your configured field now wins, with the built-in kept as a
   fallback so a check still finds a value in either. **Which issues get flagged is unchanged**: the checks read every
   configured field, so only the field a *fix* writes to was ever affected.
+- **Home — Feature Canvas and Jira Template Maker showed a raw id in "Recently used"**: both tools were missing
+  from the recent-links labels, so visiting either left an entry reading `feature-canvas` or `jira-template-maker`
+  rather than the tool's name. Both are now labelled, and a test fails if any future tool is added without one.
 
 ### Added
 - **PO Tool — a home for Feature work (feature 017)**: a new **🧭 PO Tool** for the two jobs Product Owners

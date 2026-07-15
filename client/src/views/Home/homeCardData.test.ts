@@ -19,6 +19,21 @@ describe('homeCardData', () => {
     expect(RECENT_VIEW_LABELS['po-tool']).toBeTruthy();
   });
 
+  it('labels every card for the recent-links strip, so a recent link never shows a raw id', () => {
+    // Without this a newly added tool silently appears in recents as e.g. "feature-canvas".
+    const cardsWithoutLabel = APP_CARDS
+      .filter((appCard) => !RECENT_VIEW_LABELS[appCard.id])
+      .map((appCard) => appCard.id);
+
+    expect(cardsWithoutLabel).toEqual([]);
+  });
+
+  it('names each card in its recent label, so the strip reads like the card it links to', () => {
+    APP_CARDS.forEach((appCard) => {
+      expect(RECENT_VIEW_LABELS[appCard.id]).toContain(appCard.title);
+    });
+  });
+
   it('defines every required field for each card', () => {
     APP_CARDS.forEach((appCard) => {
       expect(appCard.id).toBeTruthy();
