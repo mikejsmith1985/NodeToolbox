@@ -29,13 +29,13 @@
     "build:client": "cd client && npm run build",
     "local-release": "powershell -ExecutionPolicy Bypass -File scripts\\local-release.ps1",
     "pretest": "npm run build:pi-review-engine",
-    "test": "jest --testPathPattern='test/' --forceExit",
+    "test": "jest --forceExit",
     "pretest:dom": "npm run build:pi-review-engine",
     "test:dom": "node --test test/server-dom/piReviewEngine.spec.js test/server-dom/piReviewRefresh.spec.js",
     "test:unit": "jest --testPathPattern='test/unit/' --forceExit",
     "test:integration": "jest --testPathPattern='test/integration/' --forceExit",
     "test:client": "cd client && npm test",
-    "test:watch": "jest --testPathPattern='test/' --watch"
+    "test:watch": "jest --watch"
   },
   "dependencies": {
     "compression": "^1.8.1",
