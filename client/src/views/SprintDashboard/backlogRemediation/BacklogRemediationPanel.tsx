@@ -81,13 +81,14 @@ export function BacklogRemediationPanel({ teamProfileId, projectKey, piName }: B
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [ingestError, setIngestError] = useState<string | null>(null);
 
-  // Point the store at this team's scope (and load its saved queue) whenever the active team/scope changes. Also
-  // clear the previous team's fetched detail so nothing — queue or inline detail — bleeds across a team switch.
+  // Point the store at this team's scope, which loads its saved queue.
+  //
+  // Nothing local is cleared here any more: SprintDashboardView keys this panel by scope, so a team
+  // switch remounts it and every local value starts fresh. That is both simpler and more thorough —
+  // the manual reset cleared three of the five, leaving a previous team's isLoading and ingestError
+  // on screen.
   useEffect(() => {
     setScope(teamProfileId, projectKey, piName);
-    setIssuesByKey(new Map());
-    setAcceptanceCriteriaFieldIds([]);
-    setFetchError(null);
   }, [setScope, teamProfileId, projectKey, piName]);
 
   // Derive the backlog scope from the team profile (project-first), honouring the per-team JQL override. Empty

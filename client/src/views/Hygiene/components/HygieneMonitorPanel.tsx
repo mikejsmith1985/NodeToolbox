@@ -76,12 +76,15 @@ function formatScanTime(isoDate: string | null): string {
  */
 export function HygieneMonitorPanel() {
   const [status, setStatus] = useState<HygieneMonitorStatus | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  // Starts true: the panel loads on mount, so the spinner is the honest first paint.
+  const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [scanningTeam, setScanningTeam] = useState<string | null>(null)
   const [lastScanResults, setLastScanResults] = useState<Record<string, ScanResult>>({})
 
-  const loadStatus = useCallback(async () => {
+  // Re-fetch on demand: the refresh button and the post-scan reload. Announcing the load up front is
+  // right here, because a user asked for it and expects the spinner to answer.
+  const refreshStatus = useCallback(async () => {
     setIsLoading(true)
     setErrorMessage(null)
     try {
@@ -94,9 +97,28 @@ export function HygieneMonitorPanel() {
     }
   }, [])
 
+  // The first load is deliberately NOT refreshStatus. On mount the state already says loading, so
+  // re-announcing it would force a second render and flash the empty panel first. Every setState
+  // below runs after the fetch settles, and isActive stops a late response touching an unmounted
+  // panel - which this effect previously did not guard against.
   useEffect(() => {
-    void loadStatus()
-  }, [loadStatus])
+    let isActive = true
+
+    fetchMonitorStatus()
+      .then((currentStatus) => {
+        if (!isActive) return
+        setStatus(currentStatus)
+        setErrorMessage(null)
+      })
+      .catch((loadError: unknown) => {
+        if (isActive) setErrorMessage((loadError as Error).message)
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false)
+      })
+
+    return () => { isActive = false }
+  }, [])
 
   const handleScanNow = useCallback(async (teamName: string) => {
     setScanningTeam(teamName)
@@ -105,13 +127,13 @@ export function HygieneMonitorPanel() {
       const result = await triggerScan(teamName)
       setLastScanResults((previous) => ({ ...previous, [teamName]: result }))
       // Reload the status so the panel reflects the new scan time.
-      await loadStatus()
+      await refreshStatus()
     } catch (scanError) {
       setErrorMessage('Scan failed: ' + (scanError as Error).message)
     } finally {
       setScanningTeam(null)
     }
-  }, [loadStatus])
+  }, [refreshStatus])
 
   return (
     <section
@@ -123,7 +145,7 @@ export function HygieneMonitorPanel() {
         <button
           type="button"
           className={styles.monitorRefreshButton}
-          onClick={() => { void loadStatus() }}
+          onClick={() => { void refreshStatus() }}
           disabled={isLoading}
           aria-label="Refresh hygiene monitor status"
         >

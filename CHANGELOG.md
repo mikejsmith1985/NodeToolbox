@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Panels briefly flashed empty before their spinner appeared**: the Hygiene Monitor, Sprint Release and Jira
+  Intake panels announced "loading" only *after* their first render, so you saw an empty panel for a frame first.
+  They now start in the loading state. They also stop writing to a panel you have already navigated away from.
+- **Team Dashboard — Backlog Remediation could show the previous team's error after switching teams**: switching
+  team cleared three of the panel's five local values, leaving a stale loading state and ingest error behind. The
+  panel now starts fresh on a team switch. The remediation queue itself is unaffected.
 - **Release script — a `-DryRun` was not dry, and a failed version bump still got tagged**: two faults in
   `local-release.ps1`, both hit while cutting v0.69.0. (1) `-DryRun` **wrote the new version to `package.json`**
   before announcing it would only preview — so a preview quietly primed the next real run to bump twice. It now

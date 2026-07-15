@@ -6941,7 +6941,12 @@ export default function SprintDashboardView() {
 
     if (activeTab === 'backlogremediation') {
       return (
+        // Keyed by scope: everything the panel holds locally is detail fetched for ONE team, so a
+        // scope change should start it fresh. Remounting does that natively and completely — the
+        // panel used to clear three of its five local values by hand and leak the other two.
+        // The remediation queue itself lives in the store, so it survives this untouched.
         <BacklogRemediationPanel
+          key={`${activeDashboardTeamProfileId}:${state.projectKey}:${state.selectedPiValue}`}
           teamProfileId={activeDashboardTeamProfileId}
           projectKey={state.projectKey}
           piName={state.selectedPiValue}
