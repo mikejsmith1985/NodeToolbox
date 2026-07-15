@@ -1,0 +1,380 @@
+/* FeatureCompositionTab.module.css — Layout for the composition workspace: gathered material on the
+   left, the Feature being written on the right, coaching underneath. */
+
+.compositionTab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Load bar ── */
+
+.loadBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.loadField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fieldLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.7;
+}
+
+.textInput,
+.selectInput {
+  padding: 6px 8px;
+  border: 1px solid var(--tbx-border, #d0d7de);
+  border-radius: 6px;
+  background: var(--tbx-input-bg, #fff);
+  color: inherit;
+  font: inherit;
+}
+
+.primaryButton,
+.secondaryButton,
+.dangerButton {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--tbx-border, #d0d7de);
+  font: inherit;
+  cursor: pointer;
+}
+
+.primaryButton {
+  background: var(--tbx-accent, #0969da);
+  border-color: var(--tbx-accent, #0969da);
+  color: #fff;
+  font-weight: 600;
+}
+
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  background: var(--tbx-surface, #fff);
+}
+
+.dangerButton {
+  background: transparent;
+  border-color: #cf222e;
+  color: #cf222e;
+}
+
+/* ── Messages ── */
+
+.errorBanner,
+.warningBanner,
+.infoBanner {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border-left: 4px solid;
+  font-size: 0.85rem;
+}
+
+.errorBanner {
+  border-color: #cf222e;
+  background: rgba(207, 34, 46, 0.08);
+}
+
+.warningBanner {
+  border-color: #bf8700;
+  background: rgba(191, 135, 0, 0.08);
+}
+
+.infoBanner {
+  border-color: #0969da;
+  background: rgba(9, 105, 218, 0.08);
+}
+
+/* ── Workspace ── */
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.4fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--tbx-border, #d0d7de);
+  border-radius: 8px;
+  background: var(--tbx-surface, #fff);
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.sourceFieldBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Source text is selectable and scrollable — the PO copies out of it. */
+.sourceText {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--tbx-border, #d0d7de);
+  border-radius: 6px;
+  background: var(--tbx-code-bg, #f6f8fa);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+/* ── Increments ── */
+
+.incrementList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.incrementCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--tbx-border, #d0d7de);
+  border-radius: 8px;
+}
+
+.incrementCardPending {
+  border-style: dashed;
+  border-color: var(--tbx-accent, #0969da);
+}
+
+.incrementHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.incrementIndex {
+  font-size: 0.75rem;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+.textArea {
+  min-height: 60px;
+  padding: 6px 8px;
+  border: 1px solid var(--tbx-border, #d0d7de);
+  border-radius: 6px;
+  background: var(--tbx-input-bg, #fff);
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+}
+
+.createdBadge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(26, 127, 55, 0.12);
+  color: #1a7f37;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+/* ── Hygiene ── */
+
+.hygieneList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hygieneFlag {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+}
+
+.hygieneFlagError {
+  background: rgba(207, 34, 46, 0.12);
+  color: #cf222e;
+}
+
+.hygieneFlagWarn {
+  background: rgba(191, 135, 0, 0.12);
+  color: #9a6700;
+}
+
+/* ── Coaching ── */
+
+.coachingList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.coachingItem {
+  padding: 8px;
+  border: 1px solid var(--tbx-border, #d0d7de);
+  border-radius: 6px;
+}
+
+.coachingName {
+  margin: 0 0 2px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.coachingText {
+  margin: 0;
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+.coachingPrompt {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+/* ── Review ── */
+
+.reviewList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.8rem;
+}
+
+.reviewList li {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--tbx-border, #d0d7de);
+}
+
+.outcomeCreated {
+  color: #1a7f37;
+}
+
+.outcomeFailed {
+  color: #cf222e;
+}
+
+/* ── Composition-specific ── */
+
+.loadFieldWide {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 260px;
+}
+
+.panelSubtitle {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.textAreaTall {
+  min-height: 120px;
+  padding: 6px 8px;
+  border: 1px solid var(--tbx-border, #d0d7de);
+  border-radius: 6px;
+  background: var(--tbx-input-bg, #fff);
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+}
+
+/* Drag-and-drop bypasses the picker's accept filter, so the reader re-checks the file itself. */
+.dropzone {
+  padding: 16px;
+  border: 2px dashed var(--tbx-border, #d0d7de);
+  border-radius: 8px;
+  text-align: center;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.dropzoneActive {
+  border-color: var(--tbx-accent, #0969da);
+  background: rgba(9, 105, 218, 0.06);
+}
+
+.hiddenInput {
+  display: none;
+}
+
+.sourceList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sourceCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--tbx-border, #d0d7de);
+  border-radius: 6px;
+}
+
+.sourceHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sourceTitle {
+  font-size: 0.85rem;
+}
+
+/* Where it came from — a PO reading their own workspace later needs this. */
+.sourceOrigin {
+  margin: 0;
+  font-size: 0.7rem;
+  opacity: 0.65;
+  word-break: break-all;
+}
+
+.checklistClean {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #1a7f37;
+}

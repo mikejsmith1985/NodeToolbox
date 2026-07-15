@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
-import type { JiraField } from '../../../types/jira.ts';
+import { loadHygieneFieldConfig } from '../checks/hygieneFieldConfig.ts';
 import {
   loadEnterpriseRulesFromStorage,
   readEnabledBuiltInCheckIds,
@@ -47,11 +47,6 @@ const BASE_HYGIENE_FIELDS = [
 const HYGIENE_MAX_RESULTS = 200;
 const DEFAULT_ASSIGNEE_CLAUSE = 'assignee = currentUser()';
 const EMPTY_FILTER = null;
-const ART_SETTINGS_STORAGE_KEY = 'tbxARTSettings';
-const DEFAULT_FEATURE_LINK_FIELD = 'customfield_10108';
-const DEFAULT_PI_FIELD_ID = 'customfield_10301';
-const DEFAULT_TARGET_START_FIELD_ID = 'customfield_10101';
-const DEFAULT_TARGET_END_FIELD_ID = 'customfield_10102';
 const MODERN_STORY_POINTS_FIELD = 'customfield_10028';
 const LEGACY_STORY_POINTS_FIELD = 'customfield_10016';
 
@@ -60,13 +55,6 @@ export const HYGIENE_FILTER_STORAGE_KEY = 'tbxHygieneFilter';
 
 export interface JiraSearchResponse {
   issues?: JiraIssue[];
-}
-
-interface ArtSettings {
-  featureLinkField?: string;
-  piFieldId?: string;
-  piReviewTargetStartFieldId?: string;
-  piReviewTargetEndFieldId?: string;
 }
 
 export interface HygieneState {
@@ -352,57 +340,6 @@ function buildCheckLabelsById(checkDefinitions: Array<{ checkId: string; label: 
     (labelLookup, checkDefinition) => ({ ...labelLookup, [checkDefinition.checkId]: checkDefinition.label }),
     {},
   );
-}
-
-async function loadHygieneFieldConfig(): Promise<HygieneFieldConfig> {
-  const availableFields = await jiraGet<JiraField[]>('/rest/api/2/field');
-  const artSettings = readArtSettings();
-
-  return resolveHygieneFieldConfig({
-    acceptanceCriteriaFieldIds: matchFieldIdsByName(availableFields, ['Acceptance Criteria']),
-    applicationFieldIds: matchFieldIdsByName(availableFields, ['Application']),
-    featureLinkFieldIds: [
-      artSettings.featureLinkField || DEFAULT_FEATURE_LINK_FIELD,
-      ...matchFieldIdsByName(availableFields, ['Feature Link', 'Epic Link']),
-    ],
-    initiativeTypeFieldIds: matchFieldIdsByName(availableFields, ['Initiative Type']),
-    parentLinkFieldIds: ['parent', ...matchFieldIdsByName(availableFields, ['Parent Link'])],
-    productOwnerFieldIds: matchFieldIdsByName(availableFields, ['Product Owner']),
-    programIncrementFieldIds: [
-      artSettings.piFieldId || DEFAULT_PI_FIELD_ID,
-      ...matchFieldIdsByName(availableFields, ['PI', 'Program Increment']),
-    ],
-    targetStartFieldIds: [
-      artSettings.piReviewTargetStartFieldId || DEFAULT_TARGET_START_FIELD_ID,
-      ...matchFieldIdsByName(availableFields, ['Target Start']),
-    ],
-    targetEndFieldIds: [
-      artSettings.piReviewTargetEndFieldId || DEFAULT_TARGET_END_FIELD_ID,
-      ...matchFieldIdsByName(availableFields, ['Target End']),
-    ],
-  });
-}
-
-function readArtSettings(): ArtSettings {
-  try {
-    return JSON.parse(window.localStorage.getItem(ART_SETTINGS_STORAGE_KEY) || '{}') as ArtSettings;
-  } catch {
-    return {};
-  }
-}
-
-function matchFieldIdsByName(availableFields: JiraField[], fieldNames: string[]): string[] {
-  const normalizedFieldNames = fieldNames.map((fieldName) => normalizeFieldName(fieldName));
-  return availableFields
-    .filter((availableField) => {
-      const normalizedAvailableFieldName = normalizeFieldName(availableField.name);
-      return normalizedFieldNames.some((normalizedFieldName) => normalizedAvailableFieldName === normalizedFieldName || normalizedAvailableFieldName.includes(normalizedFieldName));
-    })
-    .map((availableField) => availableField.id);
-}
-
-function normalizeFieldName(fieldName: string): string {
-  return fieldName.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 async function loadFeatureKeysWithPointedStories(

@@ -312,3 +312,74 @@ describe('hygiene check predicates', () => {
     expect(summary.countByCheck.stale).toBe(1);
   });
 });
+
+// ── Field precedence (fix) ──
+//
+// Every hygiene CHECK asks "does any configured field have a value?", so field order does not affect
+// whether an issue is flagged. But the direct-fix controls take the FIRST id in the list as the field to
+// write to. That makes order matter for exactly one thing: which field a fix targets.
+
+describe('resolveHygieneFieldConfig — a configured field outranks the built-in default', () => {
+  it('puts a workspace-configured Program Increment field first, so a fix writes where the team keeps it', () => {
+    // The bug this guards: an admin configures a PI field, and the direct fix writes to the built-in
+    // default instead — silently populating a field the team does not use, and leaving theirs empty.
+    const fieldConfig = resolveHygieneFieldConfig({ programIncrementFieldIds: ['customfield_99999'] });
+
+    expect(fieldConfig.programIncrementFieldIds[0]).toBe('customfield_99999');
+  });
+
+  it('still keeps the default as a fallback, so a check finds a value in either field', () => {
+    const fieldConfig = resolveHygieneFieldConfig({ programIncrementFieldIds: ['customfield_99999'] });
+
+    expect(fieldConfig.programIncrementFieldIds).toContain('customfield_10301');
+  });
+
+  it('applies the same precedence to every field that has a built-in default', () => {
+    const fieldConfig = resolveHygieneFieldConfig({
+      acceptanceCriteriaFieldIds: ['customfield_aaa'],
+      featureLinkFieldIds: ['customfield_bbb'],
+      parentLinkFieldIds: ['customfield_ccc'],
+      targetStartFieldIds: ['customfield_ddd'],
+      targetEndFieldIds: ['customfield_eee'],
+    });
+
+    expect(fieldConfig.acceptanceCriteriaFieldIds[0]).toBe('customfield_aaa');
+    expect(fieldConfig.featureLinkFieldIds[0]).toBe('customfield_bbb');
+    expect(fieldConfig.parentLinkFieldIds[0]).toBe('customfield_ccc');
+    expect(fieldConfig.targetStartFieldIds[0]).toBe('customfield_ddd');
+    expect(fieldConfig.targetEndFieldIds[0]).toBe('customfield_eee');
+  });
+
+  it('falls back to the default when nothing is configured', () => {
+    expect(resolveHygieneFieldConfig().programIncrementFieldIds[0]).toBe('customfield_10301');
+    expect(resolveHygieneFieldConfig({}).programIncrementFieldIds[0]).toBe('customfield_10301');
+  });
+
+  it('does not duplicate an id that is both configured and a default', () => {
+    const fieldConfig = resolveHygieneFieldConfig({ programIncrementFieldIds: ['customfield_10301'] });
+
+    expect(fieldConfig.programIncrementFieldIds).toEqual(['customfield_10301']);
+  });
+
+  it('leaves a field with no default configured-only, as before', () => {
+    const fieldConfig = resolveHygieneFieldConfig({ productOwnerFieldIds: ['customfield_777'] });
+
+    expect(fieldConfig.productOwnerFieldIds).toEqual(['customfield_777']);
+  });
+
+  it('still resolves an unconfigured, defaultless field to empty, so its check keeps skipping', () => {
+    // FR-028 elsewhere depends on this: a field this Jira does not have must not flag every issue.
+    expect(resolveHygieneFieldConfig().productOwnerFieldIds).toEqual([]);
+    expect(resolveHygieneFieldConfig().applicationFieldIds).toEqual([]);
+  });
+
+  it('does not change WHETHER an issue is flagged — checks read every field, not just the first', () => {
+    const fieldConfig = resolveHygieneFieldConfig({ programIncrementFieldIds: ['customfield_99999'] });
+    const issueWithPiInTheDefaultField = buildIssue({
+      issuetype: { name: 'Feature' },
+      customfield_10301: { value: 'PI 26.3' },
+    });
+
+    expect(checkMissingProgramIncrement(issueWithPiInTheDefaultField, fieldConfig)).toBeNull();
+  });
+});

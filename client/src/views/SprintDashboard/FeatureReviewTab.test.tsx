@@ -76,6 +76,7 @@ vi.mock('./featureReviewFixes.ts', () => ({
   searchFeatureReviewUsers: mockSearchFeatureReviewUsers,
 }));
 
+import { useSettingsStore } from '../../store/settingsStore.ts';
 import FeatureReviewTab from './FeatureReviewTab.tsx';
 
 function createFeatureIssue(): JiraIssue {
@@ -460,5 +461,147 @@ describe('FeatureReviewTab', () => {
       expect(screen.getByText('Feature review failed.')).toBeInTheDocument();
     });
     expect(mockShowToast).toHaveBeenCalledWith('Feature review failed.', 'error');
+  });
+});
+
+// ── Team-profile scoping (feature 017: PO Tool reuse seam) ──
+//
+// The PO Tool mounts THIS component with its own team selection, so the tab must be able to take the
+// team profile as an input instead of always reading the app-wide active team. Omitting the prop must
+// behave exactly as it did before, which is what keeps the Team Dashboard from regressing.
+// See specs/017-po-feature-tools/contracts/tab-reuse.md (INV-T2).
+
+describe('FeatureReviewTab — dashboardTeamProfileId scoping', () => {
+  const ALPHA_POINTS_FIELD_ID = 'customfield_ALPHA';
+  const BETA_POINTS_FIELD_ID = 'customfield_BETA';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    mockFetchFeatureReviewFieldConfig.mockResolvedValue({
+      acceptanceCriteriaFieldIds: ['customfield_10200'],
+      applicationFieldIds: [],
+      featureLinkFieldIds: ['customfield_10108'],
+      initiativeTypeFieldIds: [],
+      parentLinkFieldIds: ['parent'],
+      productOwnerFieldIds: [],
+      programIncrementFieldIds: ['customfield_10301'],
+      targetEndFieldIds: ['customfield_10102'],
+      targetStartFieldIds: ['customfield_10101'],
+    });
+    mockFetchFeatureReviewItems.mockResolvedValue([createFeatureReviewItem()]);
+    mockFetchFeatureReviewEditMeta.mockResolvedValue({});
+    mockFetchFeatureReviewFixVersions.mockResolvedValue([]);
+    mockFetchFeatureReviewTransitions.mockResolvedValue([]);
+  });
+
+  function seedTeamScopedConfigs(): void {
+    localStorage.setItem('nodetoolbox-art-teams', JSON.stringify([
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        projectKey: 'TBX',
+        piReviewPageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha',
+      },
+    ]));
+    // Two teams' configs, each with a distinct story-points field, so we can see which one was read.
+    localStorage.setItem(
+      'tbxSprintDashboardConfig:profile-alpha',
+      JSON.stringify({ customStoryPointsFieldId: ALPHA_POINTS_FIELD_ID }),
+    );
+    localStorage.setItem(
+      'tbxSprintDashboardConfig:profile-beta',
+      JSON.stringify({ customStoryPointsFieldId: BETA_POINTS_FIELD_ID }),
+    );
+    useSettingsStore.setState({
+      sprintDashboardActiveTeamProfileId: 'profile-alpha',
+      sprintDashboardTeamProfiles: [
+        {
+          id: 'profile-alpha', name: 'Alpha Team', projectKey: 'TBX', boardId: '42',
+          boardName: 'Alpha Board', boardType: 'scrum', scopeMode: 'pi', selectedSprintId: '',
+          selectedFixVersion: '', selectedPiValue: 'PI 26.3', piReviewPages: [],
+        },
+        {
+          id: 'profile-beta', name: 'Beta Team', projectKey: 'TBX', boardId: '42',
+          boardName: 'Beta Board', boardType: 'scrum', scopeMode: 'pi', selectedSprintId: '',
+          selectedFixVersion: '', selectedPiValue: 'PI 26.4', piReviewPages: [],
+        },
+      ],
+    });
+  }
+
+  /** The story-points field id the tab resolved — proves WHICH team profile's config it read. */
+  function readStoryPointsFieldIdPassedToFetch(): unknown {
+    return mockFetchFeatureReviewItems.mock.calls[0]?.[3];
+  }
+
+  it('scopes the dashboard config to the supplied team profile', async () => {
+    seedTeamScopedConfigs();
+
+    render(
+      <FeatureReviewTab
+        boardId={42}
+        boardName="Beta Board"
+        projectKey="TBX"
+        selectedPiName="PI 26.4"
+        dashboardTeamProfileId="profile-beta"
+      />,
+    );
+
+    await waitFor(() => expect(mockFetchFeatureReviewItems).toHaveBeenCalled());
+    expect(readStoryPointsFieldIdPassedToFetch()).toBe(BETA_POINTS_FIELD_ID);
+  });
+
+  it('falls back to the app-wide active team when no profile is supplied (Team Dashboard behaviour)', async () => {
+    seedTeamScopedConfigs();
+
+    render(
+      <FeatureReviewTab
+        boardId={42}
+        boardName="Alpha Board"
+        projectKey="TBX"
+        selectedPiName="PI 26.3"
+      />,
+    );
+
+    await waitFor(() => expect(mockFetchFeatureReviewItems).toHaveBeenCalled());
+    expect(readStoryPointsFieldIdPassedToFetch()).toBe(ALPHA_POINTS_FIELD_ID);
+  });
+
+  it('resolves the team name from the supplied profile, not the active one', async () => {
+    // The team name disambiguates ART teams sharing a project key, so it must follow the same profile.
+    seedTeamScopedConfigs();
+
+    render(
+      <FeatureReviewTab
+        boardId={42}
+        boardName="Beta Board"
+        projectKey="TBX"
+        selectedPiName="PI 26.4"
+        dashboardTeamProfileId="profile-beta"
+      />,
+    );
+
+    await waitFor(() => expect(mockFetchFeatureReviewItems).toHaveBeenCalled());
+    const artTeamPassedToFetch = mockFetchFeatureReviewItems.mock.calls[0]?.[0] as { name?: string };
+    expect(artTeamPassedToFetch.name).toBe('Alpha Team');
+  });
+
+  it('does not write the app-wide active team profile id', async () => {
+    seedTeamScopedConfigs();
+
+    render(
+      <FeatureReviewTab
+        boardId={42}
+        boardName="Beta Board"
+        projectKey="TBX"
+        selectedPiName="PI 26.4"
+        dashboardTeamProfileId="profile-beta"
+      />,
+    );
+
+    await waitFor(() => expect(mockFetchFeatureReviewItems).toHaveBeenCalled());
+    expect(useSettingsStore.getState().sprintDashboardActiveTeamProfileId).toBe('profile-alpha');
   });
 });

@@ -1,0 +1,106 @@
+/* PoToolView.module.css — Chrome for the PO Tool shell and its own team/PI selector. */
+
+.poToolView {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.poToolHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.poToolTitle {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.poToolSubtitle {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+/* ── Team selector ── */
+
+.teamSelector {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--tbx-border, #d0d7de);
+  border-radius: 8px;
+  background: var(--tbx-surface, #fff);
+}
+
+.teamSelectorField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+}
+
+.teamSelectorLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.7;
+}
+
+.teamSelectorControl {
+  padding: 6px 8px;
+  border: 1px solid var(--tbx-border, #d0d7de);
+  border-radius: 6px;
+  background: var(--tbx-input-bg, #fff);
+  color: inherit;
+  font: inherit;
+}
+
+/* Explains why this picker exists — a PO must know it will not move their Team Dashboard. */
+.teamSelectorNote {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.teamSelectorEmpty {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+/* ── Tab panels ── */
+
+.tabPanel {
+  min-height: 200px;
+}
+
+.placeholderPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px;
+  border: 1px dashed var(--tbx-border, #d0d7de);
+  border-radius: 8px;
+  text-align: center;
+  opacity: 0.85;
+}
+
+.placeholderTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.placeholderText {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
