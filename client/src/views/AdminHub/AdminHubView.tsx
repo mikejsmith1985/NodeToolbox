@@ -20,6 +20,7 @@ import { RepoMonitorPanel } from './RepoMonitorPanel.tsx'
 import { AiAssistAutomationPanel } from './AiAssistAutomationPanel.tsx'
 import { SprintReleasePanel } from './SprintReleasePanel.tsx'
 import { StandupBriefingPanel } from './StandupBriefingPanel.tsx'
+import { PiReviewSchedulerPanel } from './PiReviewSchedulerPanel.tsx'
 import { useAdminHubState } from './hooks/useAdminHubState.ts'
 import type {
   AdminHubActions,
@@ -68,13 +69,14 @@ const VIEW_SUBTITLE = 'Proxy configuration, PI field mappings, feature flags, an
 
 const TERMINAL_COMMAND = 'python "%USERPROFILE%\\Downloads\\toolbox-server.py"'
 
-type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'dev-panel' | 'sprint-release' | 'ai-assist'
+type AdminHubTab = 'main' | 'repo-monitor' | 'reports-config' | 'standup-briefing' | 'pi-review-scheduler' | 'dev-panel' | 'sprint-release' | 'ai-assist'
 
 const ADMIN_HUB_TAB_OPTIONS: { key: AdminHubTab; label: string }[] = [
   { key: 'main', label: '⚙️ Config' },
   { key: 'repo-monitor', label: '🔁 Repo Monitor' },
   { key: 'reports-config', label: '📊 Reports Config' },
   { key: 'standup-briefing', label: '📋 Standup' },
+  { key: 'pi-review-scheduler', label: '🗓️ PI Review Sync' },
   { key: 'sprint-release', label: '🚀 Sprint Release' },
 ]
 
@@ -2886,6 +2888,12 @@ export default function AdminHubView() {
       {activeAdminTab === 'standup-briefing' && (
         <section id="admin-hub-standup-briefing-panel" role="tabpanel" aria-labelledby="admin-hub-standup-briefing-tab">
           <StandupBriefingPanel />
+        </section>
+      )}
+
+      {activeAdminTab === 'pi-review-scheduler' && (
+        <section id="admin-hub-pi-review-scheduler-panel" role="tabpanel" aria-labelledby="admin-hub-pi-review-scheduler-tab">
+          <PiReviewSchedulerPanel />
         </section>
       )}
 
