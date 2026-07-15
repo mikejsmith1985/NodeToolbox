@@ -2,7 +2,7 @@
 // the Team Dashboard uses, scoped to the PO Tool's own team selection, without disturbing the dashboard.
 // See specs/017-po-feature-tools/contracts/tab-reuse.md (INV-T1..T5).
 
-import { render, screen, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -10,11 +10,13 @@ const {
   mockFeatureReviewTab,
   mockPiReviewTab,
   mockFeatureSplitterTab,
+  mockFeatureCompositionTab,
   mockSetRosterDashboardTeamProfileId,
 } = vi.hoisted(() => ({
   mockFeatureReviewTab: vi.fn(),
   mockPiReviewTab: vi.fn(),
   mockFeatureSplitterTab: vi.fn(),
+  mockFeatureCompositionTab: vi.fn(),
   mockSetRosterDashboardTeamProfileId: vi.fn(),
 }));
 
@@ -33,11 +35,18 @@ vi.mock('../ArtView/PiReviewTab.tsx', () => ({
   },
 }));
 
-// The Splitter is exercised in its own test; here we only assert HOW the shell mounts it.
+// The authoring tabs are exercised in their own tests; here we only assert HOW the shell mounts them.
 vi.mock('./FeatureSplitterTab', () => ({
   default: (props: Record<string, unknown>) => {
     mockFeatureSplitterTab(props);
     return <div data-testid="feature-splitter-tab" />;
+  },
+}));
+
+vi.mock('./FeatureCompositionTab', () => ({
+  default: (props: Record<string, unknown>) => {
+    mockFeatureCompositionTab(props);
+    return <div data-testid="feature-composition-tab" />;
   },
 }));
 
@@ -182,14 +191,15 @@ describe('PoToolView — authoring tabs', () => {
     );
   });
 
-  it('shows the Feature Composition placeholder until that tab is built', async () => {
+  it('mounts the Feature Composition seeded with the project of the PO Tool team', async () => {
     render(<PoToolView />);
 
     await userEvent.click(screen.getByRole('tab', { name: 'Feature Composition' }));
 
-    // Scoped to the panel: the tab itself also carries this label.
-    const activePanel = screen.getByRole('tabpanel');
-    expect(within(activePanel).getByText(/Gather Confluence pages/i)).toBeInTheDocument();
+    expect(screen.getByTestId('feature-composition-tab')).toBeInTheDocument();
+    expect(mockFeatureCompositionTab).toHaveBeenCalledWith(
+      expect.objectContaining({ dashboardTeamProfileId: 'profile-alpha', defaultProjectKey: 'ALPHA' }),
+    );
   });
 
   it('guides the PO when no team is saved rather than mounting an unscoped tab', () => {

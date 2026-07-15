@@ -6,6 +6,8 @@
 //
 // A draft is NEVER a Jira write. Nothing here reaches Jira until the PO reviews a diff and commits.
 
+import type { ReferencedSource } from '../sources/sourceModel';
+
 /** Bumped when the stored shape changes; a draft written by an older version is healed on read. */
 export const PO_DRAFT_SCHEMA_VERSION = 1;
 
@@ -168,5 +170,94 @@ export function normalizeSplitDraft(rawDraft: unknown, profileId: string, scopeK
     targetProjectKey: readString(candidate.targetProjectKey),
     increments: storedIncrements.map(normalizeIncrement),
     linkTypeName: readString(candidate.linkTypeName) || DEFAULT_SPLIT_LINK_TYPE,
+  };
+}
+
+// ── Composition ──
+
+/** A Feature being composed: the draft fields, plus the material it is being written from. */
+export interface CompositionDraft extends PoDraftEnvelope {
+  /** Set when enriching a Feature that already exists in Jira; null when creating a new one. */
+  existingIssueKey: string | null;
+  /** Required when creating; ignored when updating, since the issue already has a project. */
+  targetProjectKey: string | null;
+  /** Resolved from the target project's createmeta; ignored when updating. */
+  targetIssueTypeId: string | null;
+  summary: string;
+  description: string;
+  acceptanceCriteria: string;
+  /** Other Jira fields the PO set, keyed by field id. */
+  fields: Record<string, unknown>;
+  /** The PO's own words about the Feature — what the AI prompt leads with (FR-031). */
+  poNarrative: string;
+  /** Everything gathered to write from (FR-023). */
+  sources: ReferencedSource[];
+}
+
+/** Builds an empty composition draft — a fresh Feature, or the fallback for an unreadable draft. */
+export function createEmptyCompositionDraft(profileId: string, scopeKey: string): CompositionDraft {
+  return {
+    schemaVersion: PO_DRAFT_SCHEMA_VERSION,
+    profileId,
+    scopeKey,
+    updatedAtIso: '',
+    existingIssueKey: null,
+    targetProjectKey: null,
+    targetIssueTypeId: null,
+    summary: '',
+    description: '',
+    acceptanceCriteria: '',
+    fields: {},
+    poNarrative: '',
+    sources: [],
+  };
+}
+
+/** Keeps a stored source only if it still identifies itself; a shapeless one is dropped, not guessed at. */
+function normalizeSource(rawSource: unknown): ReferencedSource | null {
+  if (typeof rawSource !== 'object' || rawSource === null) {
+    return null;
+  }
+  const candidate = rawSource as Partial<ReferencedSource> & { kind?: string };
+  if (!readString(candidate.id) || !readString(candidate.kind)) {
+    return null;
+  }
+  if (!['confluence', 'workbook', 'jira', 'paste'].includes(candidate.kind as string)) {
+    return null;
+  }
+  return candidate as ReferencedSource;
+}
+
+/**
+ * Heals a stored composition draft.
+ *
+ * Same contract as the split draft: never throws, identity comes from the arguments, and anything
+ * unreadable degrades rather than taking the tab down (FR-046).
+ */
+export function normalizeCompositionDraft(
+  rawDraft: unknown,
+  profileId: string,
+  scopeKey: string,
+): CompositionDraft {
+  if (typeof rawDraft !== 'object' || rawDraft === null) {
+    return createEmptyCompositionDraft(profileId, scopeKey);
+  }
+  const candidate = rawDraft as Partial<CompositionDraft>;
+  const storedSources = Array.isArray(candidate.sources) ? candidate.sources : [];
+
+  return {
+    schemaVersion: PO_DRAFT_SCHEMA_VERSION,
+    profileId,
+    scopeKey,
+    updatedAtIso: readString(candidate.updatedAtIso),
+    existingIssueKey: typeof candidate.existingIssueKey === 'string' ? candidate.existingIssueKey : null,
+    targetProjectKey: typeof candidate.targetProjectKey === 'string' ? candidate.targetProjectKey : null,
+    targetIssueTypeId: typeof candidate.targetIssueTypeId === 'string' ? candidate.targetIssueTypeId : null,
+    summary: readString(candidate.summary),
+    description: readString(candidate.description),
+    acceptanceCriteria: readString(candidate.acceptanceCriteria),
+    fields: (typeof candidate.fields === 'object' && candidate.fields !== null ? candidate.fields : {}) as Record<string, unknown>,
+    poNarrative: readString(candidate.poNarrative),
+    sources: storedSources.map(normalizeSource).filter((source): source is ReferencedSource => source !== null),
   };
 }

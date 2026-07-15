@@ -13,13 +13,14 @@
 //     thrown — the same shape the server's sprint-release orchestrator has used for years.
 
 import { createIssue, createIssueLink } from '../../../services/jiraApi.ts';
+import type { CompositionCommitDiff } from './buildCompositionCommit';
 import type { PlannedIssueCreate, PlannedIssueLink, SplitCommitDiff } from './buildSplitCommit';
 
 /** What happened to one planned write. */
 export interface CommitOutcomeItem {
   /** The increment's localId, or `link:<localId>` for a link. */
   scope: string;
-  status: 'created' | 'linked' | 'failed';
+  status: 'created' | 'linked' | 'updated' | 'failed';
   /** The resulting Jira key, when something was created. */
   jiraKey?: string;
   /** Jira's actual rejection reason — never a generic message (FR-041). */
@@ -139,5 +140,69 @@ export async function runSplitCommit(
     items,
     createdKeysByLocalId,
     isFullySuccessful: items.every((item) => item.status !== 'failed'),
+  };
+}
+
+// ── Composition ──
+
+/** The write helpers a composition commit needs, injected so it can be proven without a real Jira. */
+export interface RunCompositionCommitDependencies {
+  createIssue: typeof createIssue;
+  /** Writes one field, resolving the payload shape against the instance's own metadata. */
+  saveField: (issueKey: string, fieldId: string, value: unknown) => Promise<void>;
+}
+
+/**
+ * Performs a reviewed composition: either creates the Feature or updates the existing one.
+ *
+ * The two paths never both run — the diff already decided which, and that is the property that stops a
+ * PO enriching a Feature and getting a duplicate instead (FR-036, SC-012).
+ *
+ * On update, each field is written individually and reported individually: a rejected field must not
+ * silently discard the ones that saved, and the PO needs to know which one Jira refused.
+ */
+export async function runCompositionCommit(
+  diff: CompositionCommitDiff,
+  dependencies: RunCompositionCommitDependencies,
+): Promise<CommitOutcome> {
+  const items: CommitOutcomeItem[] = [];
+  const createdKeysByLocalId: Record<string, string> = {};
+
+  if (diff.create) {
+    try {
+      const createdIssue = await dependencies.createIssue({
+        fields: {
+          project: { key: diff.create.projectKey },
+          issuetype: { id: diff.create.issueTypeId },
+          ...diff.create.fields,
+        },
+      });
+      items.push({ scope: 'feature', status: 'created', jiraKey: createdIssue.key });
+      createdKeysByLocalId.feature = createdIssue.key;
+    } catch (createError) {
+      items.push({ scope: 'feature', status: 'failed', failureReason: readFailureReason(createError) });
+    }
+  }
+
+  if (diff.update) {
+    for (const changedField of diff.update.changedFields) {
+      try {
+        await dependencies.saveField(diff.update.issueKey, changedField.fieldId, changedField.after);
+        items.push({ scope: changedField.fieldId, status: 'updated', jiraKey: diff.update.issueKey });
+      } catch (updateError) {
+        items.push({
+          scope: changedField.fieldId,
+          status: 'failed',
+          jiraKey: diff.update.issueKey,
+          failureReason: `${changedField.label} could not be saved: ${readFailureReason(updateError)}`,
+        });
+      }
+    }
+  }
+
+  return {
+    items,
+    createdKeysByLocalId,
+    isFullySuccessful: items.length > 0 && items.every((item) => item.status !== 'failed'),
   };
 }

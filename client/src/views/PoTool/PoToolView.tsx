@@ -15,6 +15,7 @@ import { useEffect, useMemo } from 'react';
 
 import { PrimaryTabs, type PrimaryTabOption } from '../../components/PrimaryTabs/PrimaryTabs';
 import PiReviewTab from '../ArtView/PiReviewTab.tsx';
+import FeatureCompositionTab from './FeatureCompositionTab';
 import FeatureSplitterTab from './FeatureSplitterTab';
 import FeatureReviewTab from '../SprintDashboard/FeatureReviewTab.tsx';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore';
@@ -94,17 +95,16 @@ export default function PoToolView() {
     }
 
     if (activeTab === 'splitter') {
-      return <FeatureSplitterTab dashboardTeamProfileId={selectedTeamProfileId} />;
+      // Keyed by team: a draft belongs to one team, so switching team starts a clean workspace.
+      return <FeatureSplitterTab key={selectedTeamProfileId} dashboardTeamProfileId={selectedTeamProfileId} />;
     }
 
     return (
-      <div className={styles.placeholderPanel}>
-        <p className={styles.placeholderTitle}>Feature Composition</p>
-        <p className={styles.placeholderText}>
-          Gather Confluence pages, spreadsheets, and Jira issues in one place while writing a Feature.
-          Coming next.
-        </p>
-      </div>
+      <FeatureCompositionTab
+        key={selectedTeamProfileId}
+        dashboardTeamProfileId={selectedTeamProfileId}
+        defaultProjectKey={selectedTeamProfile.projectKey}
+      />
     );
   }
 

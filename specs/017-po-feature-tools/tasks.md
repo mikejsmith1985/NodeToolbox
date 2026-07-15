@@ -215,46 +215,46 @@ update + SC-007).
 
 ### Tests first ⚠️
 
-- [ ] T037 [P] [US4] Write failing test `client/src/views/PoTool/sources/sourceModel.test.ts` — the
+- [X] T037 [P] [US4] Write failing test `client/src/views/PoTool/sources/sourceModel.test.ts` — the
   `ReferencedSource` union; every variant carries its **origin** (page URL / file name / issue key / "pasted")
   (FR-024)
-- [ ] T038 [P] [US4] Write failing test `client/src/views/PoTool/sources/workbookSource.test.ts` — `File` → rows via
+- [X] T038 [P] [US4] Write failing test `client/src/views/PoTool/sources/workbookSource.test.ts` — `File` → rows via
   **dynamically imported** SheetJS; multi-sheet exposes `availableSheetNames`; an unreadable file yields a clear
   non-technical message and **leaves the draft untouched** (FR-023a, spec edge cases)
-- [ ] T039 [P] [US4] Write failing test `client/src/views/PoTool/sources/confluenceSource.test.ts` — reuses
+- [X] T039 [P] [US4] Write failing test `client/src/views/PoTool/sources/confluenceSource.test.ts` — reuses
   `fetchConfluencePageByReference`; text is **stripped** via T015; the **four** failure conditions produce **four
   distinct** messages and **none** renders as "empty" (FR-023b, SC-018, INV-J6)
-- [ ] T040 [P] [US5] Write failing test `client/src/views/PoTool/FeatureCompositionTab.test.tsx` (checklist half) —
+- [X] T040 [P] [US5] Write failing test `client/src/views/PoTool/FeatureCompositionTab.test.tsx` (checklist half) —
   the live hygiene checklist updates as fields change and **never blocks** commit (FR-027, FR-029)
-- [ ] T041 [P] [US6] [US7] Write failing test `client/src/views/PoTool/jira/buildCompositionCommit.test.ts` — no key
+- [X] T041 [P] [US6] [US7] Write failing test `client/src/views/PoTool/jira/buildCompositionCommit.test.ts` — no key
   ⇒ **create** in the chosen project; key present ⇒ **update that issue, no duplicate**; the two paths are mutually
   exclusive; unsatisfied instance-required fields ⇒ **blocked, each named, no issue created** (FR-034/035/036,
   SC-008, SC-012, INV-J3)
-- [ ] T042 [P] [US4] Write failing test `client/src/views/PoTool/drafts/compositionDraftStorage.test.ts` — key
+- [X] T042 [P] [US4] Write failing test `client/src/views/PoTool/drafts/compositionDraftStorage.test.ts` — key
   `tbxPoFeatureCompositionDraft:<profileId>:<scopeKey>`; scopeKey = existing key, else a stable `new:<id>` so one
   composition resumes **one** draft (FR-043)
 
 ### Implementation
 
-- [ ] T043 [P] [US5] Implement `client/src/views/PoTool/coaching/definitionOfReady.ts` — authored deterministic DoR
+- [X] T043 [P] [US5] Implement `client/src/views/PoTool/coaching/definitionOfReady.ts` — authored deterministic DoR
   guidance; advisory, no gate, no network (FR-026, SC-013)
-- [ ] T044 [P] [US4] Implement `client/src/views/PoTool/sources/sourceModel.ts`
-- [ ] T045 [US4] Implement `client/src/views/PoTool/sources/workbookSource.ts` — **dynamic** `await import('xlsx')`,
+- [X] T044 [P] [US4] Implement `client/src/views/PoTool/sources/sourceModel.ts`
+- [X] T045 [US4] Implement `client/src/views/PoTool/sources/workbookSource.ts` — **dynamic** `await import('xlsx')`,
   mirroring the intake importer's parse pattern + typed error class. **Do not** refactor or relocate the shipped
   intake components (research R5 — avoids regression in an unrelated tool)
-- [ ] T046 [US4] Implement `client/src/views/PoTool/sources/confluenceSource.ts` — reuse
+- [X] T046 [US4] Implement `client/src/views/PoTool/sources/confluenceSource.ts` — reuse
   `resolveConfluencePageIdFromReference` + `fetchConfluencePageByReference`; branch on the status from T014; retain
   `pageUrl` as a reference (FR-024). **Client envelope**: read `page.body.storage.value` (contracts/jira-writes.md
   "Envelope trap")
-- [ ] T047 [US4] Implement `client/src/views/PoTool/drafts/compositionDraftStorage.ts` (reusing T031's envelope)
-- [ ] T048 [US6] [US7] Implement `client/src/views/PoTool/jira/buildCompositionCommit.ts` (pure) — create-vs-update
+- [X] T047 [US4] Implement `client/src/views/PoTool/drafts/compositionDraftStorage.ts` (reusing T031's envelope)
+- [X] T048 [US6] [US7] Implement `client/src/views/PoTool/jira/buildCompositionCommit.ts` (pure) — create-vs-update
   branch; required-field pre-flight; reuse `getProjectIssueTypes`/`getIssueTypeFields` for discovery (FR-037)
-- [ ] T049 [US4] [US5] [US6] [US7] Implement `client/src/views/PoTool/FeatureCompositionTab.tsx` + `.module.css` —
+- [X] T049 [US4] [US5] [US6] [US7] Implement `client/src/views/PoTool/FeatureCompositionTab.tsx` + `.module.css` —
   the workspace (four source types side-by-side with the draft, each removable + attributable), a dropzone mirroring
   the intake pattern (`.xlsx,.xls,.csv`), paste input, Jira-key references, DoR coaching, live hygiene checklist,
   project picker (create path), and commit via T048. Updates reuse the **instance-correct** field-write helpers so
   both Cloud and DC work (FR-038)
-- [ ] T050 [US4] [US6] [US7] Verify quickstart **Scenarios F, G, H** — including **SC-019**: `npx vite build`, then
+- [X] T050 [US4] [US6] [US7] Verify quickstart **Scenarios F, G, H** — including **SC-019**: `npx vite build`, then
   confirm SheetJS is **absent from the main chunk** (lazy chunk only), and **SC-007**: a Feature composed here opens
   in the Hygiene tool with **zero** flags
 

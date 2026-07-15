@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     as the one they came from. Each increment is graded against **your own hygiene rules as you type**. If a commit
     only partly succeeds, the successes are kept, the failures are explained in Jira's own words, and your draft
     survives so you can retry without creating anything twice.
+  - **Feature Composition**: write a Feature with everything it depends on in **one place** — pull in a
+    **Confluence page by URL**, drop an **Excel or CSV file**, reference **existing Jira issues**, and paste
+    anything else (a Teams thread, an email). Each source shows **where it came from**, so a figure is always
+    traceable. Alongside sits a **Definition of Ready** and a **live readiness checklist** graded by your own
+    hygiene rules as you type — advice, never a blocker. When you are happy, **create** the Feature in a project
+    you choose, or **enrich a Feature you already stubbed** — loading a key updates that issue and **cannot create
+    a duplicate**. Jira's own required fields are the only hard stop, and they are named before anything is written.
+    A Confluence page that cannot be added tells you **which** problem it hit: the page is missing, you lack
+    permission, Confluence is unreachable (check the VPN), or it is not set up here.
 - **PI Review — AI Assistance (feature 016)**: a new **⚡ AI Assistance** panel on the PI Review tab (edit mode, once
   AI Assist is unlocked with Ctrl+Alt+Z) reads every Feature already on your page — its description, acceptance
   criteria, priority and linked issues — and comes back with, per Feature: a **point estimate** derived from the

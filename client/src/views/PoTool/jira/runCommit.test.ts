@@ -197,3 +197,133 @@ describe('runSplitCommit — nothing to do', () => {
     expect(outcome.isFullySuccessful).toBe(true);
   });
 });
+
+// ── Composition ──
+
+import type { CompositionCommitDiff } from './buildCompositionCommit';
+import { runCompositionCommit, type RunCompositionCommitDependencies } from './runCommit';
+
+function buildCompositionDependencies(
+  overrides: Partial<RunCompositionCommitDependencies> = {},
+): RunCompositionCommitDependencies {
+  return {
+    createIssue: vi.fn().mockResolvedValue({ id: '5', key: 'ABC-9', self: '' }),
+    saveField: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  } as RunCompositionCommitDependencies;
+}
+
+describe('runCompositionCommit — creating (FR-035)', () => {
+  const CREATE_DIFF: CompositionCommitDiff = {
+    create: { projectKey: 'ABC', issueTypeId: '10001', fields: { summary: 'New Feature' } },
+    update: null,
+    blockers: [],
+  };
+
+  it('creates the Feature in the chosen project with the chosen type', async () => {
+    const dependencies = buildCompositionDependencies();
+
+    await runCompositionCommit(CREATE_DIFF, dependencies);
+
+    expect(dependencies.createIssue).toHaveBeenCalledWith({
+      fields: { project: { key: 'ABC' }, issuetype: { id: '10001' }, summary: 'New Feature' },
+    });
+  });
+
+  it('reports the new key back to the PO', async () => {
+    const outcome = await runCompositionCommit(CREATE_DIFF, buildCompositionDependencies());
+
+    expect(outcome.items).toEqual([{ scope: 'feature', status: 'created', jiraKey: 'ABC-9' }]);
+    expect(outcome.isFullySuccessful).toBe(true);
+  });
+
+  it('never updates anything on the create path (SC-012)', async () => {
+    const dependencies = buildCompositionDependencies();
+
+    await runCompositionCommit(CREATE_DIFF, dependencies);
+
+    expect(dependencies.saveField).not.toHaveBeenCalled();
+  });
+
+  it('surfaces Jira\'s real reason when the create is refused', async () => {
+    const dependencies = buildCompositionDependencies({
+      createIssue: vi.fn().mockRejectedValue(new Error('Field \'Business Value\' is required.')),
+    });
+
+    const outcome = await runCompositionCommit(CREATE_DIFF, dependencies);
+
+    expect(outcome.items[0].failureReason).toBe('Field \'Business Value\' is required.');
+    expect(outcome.isFullySuccessful).toBe(false);
+  });
+});
+
+describe('runCompositionCommit — updating (FR-036)', () => {
+  const UPDATE_DIFF: CompositionCommitDiff = {
+    create: null,
+    update: {
+      issueKey: 'ABC-7',
+      changedFields: [
+        { fieldId: 'summary', label: 'Summary', before: 'Old', after: 'New' },
+        { fieldId: 'description', label: 'Description', before: '', after: 'Fuller text' },
+      ],
+    },
+    blockers: [],
+  };
+
+  it('writes each changed field to the existing issue', async () => {
+    const dependencies = buildCompositionDependencies();
+
+    await runCompositionCommit(UPDATE_DIFF, dependencies);
+
+    expect(dependencies.saveField).toHaveBeenCalledWith('ABC-7', 'summary', 'New');
+    expect(dependencies.saveField).toHaveBeenCalledWith('ABC-7', 'description', 'Fuller text');
+  });
+
+  it('NEVER creates an issue on the update path — that is the duplicate bug (SC-012)', async () => {
+    const dependencies = buildCompositionDependencies();
+
+    await runCompositionCommit(UPDATE_DIFF, dependencies);
+
+    expect(dependencies.createIssue).not.toHaveBeenCalled();
+  });
+
+  it('reports each field individually', async () => {
+    const outcome = await runCompositionCommit(UPDATE_DIFF, buildCompositionDependencies());
+
+    expect(outcome.items).toEqual([
+      { scope: 'summary', status: 'updated', jiraKey: 'ABC-7' },
+      { scope: 'description', status: 'updated', jiraKey: 'ABC-7' },
+    ]);
+  });
+
+  it('keeps the fields that saved when one is rejected, and names the one that failed', async () => {
+    // A rejected field must not silently discard the ones that worked.
+    const dependencies = buildCompositionDependencies({
+      saveField: vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('Field is not on the screen.')),
+    });
+
+    const outcome = await runCompositionCommit(UPDATE_DIFF, dependencies);
+
+    expect(outcome.items[0].status).toBe('updated');
+    expect(outcome.items[1].status).toBe('failed');
+    expect(outcome.items[1].failureReason).toContain('Description could not be saved');
+    expect(outcome.isFullySuccessful).toBe(false);
+  });
+});
+
+describe('runCompositionCommit — nothing to do', () => {
+  it('writes nothing and claims no success for an empty diff', async () => {
+    const dependencies = buildCompositionDependencies();
+
+    const outcome = await runCompositionCommit(
+      { create: null, update: null, blockers: [] },
+      dependencies,
+    );
+
+    expect(dependencies.createIssue).not.toHaveBeenCalled();
+    expect(dependencies.saveField).not.toHaveBeenCalled();
+    expect(outcome.isFullySuccessful).toBe(false);
+  });
+});
