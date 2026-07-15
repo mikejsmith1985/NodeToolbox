@@ -31,6 +31,13 @@ import {
   type SprintDashboardTeamProfile,
 } from '../../store/settingsStore.ts';
 import type { JiraComment, JiraIssue, JiraTransition, JiraVersion } from '../../types/jira.ts';
+import {
+  buildBurnDownData,
+  BURN_COMPLETED_KEY,
+  BURN_IDEAL_KEY,
+  BURN_PROJECTED_KEY,
+  BURN_REMAINING_KEY,
+} from './buildBurnDownData.ts';
 import { copyElementReportToClipboard } from '../../utils/downloadElementImage.ts';
 import { normalizeRichTextToPlainText } from '../../utils/richTextPlainText.ts';
 import { useAiAssist } from '../SnowHub/hooks/useAiAssist.ts';
@@ -63,7 +70,6 @@ import {
   isStaleIssue,
   readStoryPoints,
   readStoryPointsValue,
-  DONE_STATUS_NAMES,
 } from './hooks/sprintDashboardIssueUtils.ts';
 import {
   buildReleaseNotesHeading,
@@ -137,10 +143,6 @@ const DASHBOARD_TEAM_ALIAS_LABEL = 'Team Name / Alias';
 const DASHBOARD_TEAM_NAME_PLACEHOLDER = 'e.g. Payments Team';
 
 // Burn-down chart lines use these named identifiers in recharts data.
-const BURN_IDEAL_KEY = 'ideal';
-const BURN_REMAINING_KEY = 'remaining';
-const BURN_COMPLETED_KEY = 'completed';
-const BURN_PROJECTED_KEY = 'projected';
 const BURNUP_TOGGLE_LABEL = 'Show Burnup';
 const JIRA_BROWSE_URL_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/';
 const OVERVIEW_GROUP_ORDER = ['In Progress', 'To Do', 'Done'] as const;
@@ -1262,147 +1264,6 @@ function calculateFlowCounts(issues: JiraIssue[]) {
   return { totalCount: issues.length, inProgressCount, inReviewCount, blockedCount, doneCount };
 }
 
-/**
- * Checks whether a given status is treated as completed.
- */
-function isStatusDone(statusName: string, issue: JiraIssue): boolean {
-  if (!statusName) return false;
-  if (statusName.toLowerCase() === issue.fields.status.name.toLowerCase()) {
-    return isDoneIssue(issue);
-  }
-  return DONE_STATUS_NAMES.includes(statusName.toLowerCase());
-}
-
-/**
- * Builds burn-down chart data points for the ideal, remaining, and completed lines.
- * Reconstructs issue status over each day of the sprint using issue changelogs.
- */
-export function buildBurnDownData(
-  sprintStartDate: string,
-  sprintEndDate: string,
-  issues: JiraIssue[],
-  isClosed: boolean,
-) {
-  const startMs = new Date(sprintStartDate).getTime();
-  const endMs = new Date(sprintEndDate).getTime();
-  const totalDays = Math.max(1, Math.ceil((endMs - startMs) / MS_PER_DAY));
-
-  const todayMs = Date.now();
-  const todayDayIndex = Math.floor((todayMs - startMs) / MS_PER_DAY);
-
-  // Pre-parse issues, their creation date, and status transitions from the changelog
-  const parsedIssues = issues.map((issue) => {
-    const createdMs = new Date(issue.fields.created).getTime();
-    const updatedMs = new Date(issue.fields.updated).getTime();
-
-    const transitions: Array<{ timestamp: number; from: string; to: string }> = [];
-    if (issue.changelog && Array.isArray(issue.changelog.histories)) {
-      for (const history of issue.changelog.histories) {
-        if (!history.created) continue;
-        const ts = new Date(history.created).getTime();
-        for (const item of history.items) {
-          if (item.field === 'status') {
-            transitions.push({
-              timestamp: ts,
-              from: item.fromString || '',
-              to: item.toString || '',
-            });
-          }
-        }
-      }
-    }
-    // Sort transitions chronologically
-    transitions.sort((a, b) => a.timestamp - b.timestamp);
-
-    return {
-      issue,
-      createdMs,
-      updatedMs,
-      transitions,
-    };
-  });
-
-  return Array.from({ length: totalDays + 1 }, (_, dayIndex) => {
-    const dayTimestamp = startMs + dayIndex * MS_PER_DAY;
-
-    // Ideal burndown trends from totalIssues down to 0
-    const totalIssues = issues.length;
-    const ideal = Math.round(totalIssues - (totalIssues / totalDays) * dayIndex);
-
-    // Calculate projected burnup to show the linear path from 0 to total issues across the sprint
-    const projected = Math.round((totalIssues / totalDays) * dayIndex);
-
-    // Only plot remaining and completed for past/current days if active, or all days if closed
-    const showPlot = isClosed || dayIndex <= todayDayIndex;
-
-    let remaining: number | undefined = undefined;
-    let completed: number | undefined = undefined;
-
-    if (showPlot) {
-      let activeCount = 0;
-      let doneCount = 0;
-
-      for (const parsed of parsedIssues) {
-        // Issue did not exist on this day yet (creation date fallback check)
-        if (parsed.createdMs > dayTimestamp) {
-          continue;
-        }
-
-        // No initialiser: every branch below assigns it, and seeding '' only hid that fact — an
-        // unassigned path would now be a compile error rather than a silently empty status.
-        let statusName: string;
-        if (parsed.transitions.length === 0) {
-          // Fallback when no changelog is available:
-          // If the issue is currently done, check if we are past the issue's updated timestamp.
-          // Otherwise assume it was not done (e.g. "To Do")
-          const currentDone = isDoneIssue(parsed.issue);
-          if (currentDone) {
-            if (dayTimestamp >= parsed.updatedMs) {
-              statusName = parsed.issue.fields.status.name;
-            } else {
-              statusName = 'To Do';
-            }
-          } else {
-            statusName = parsed.issue.fields.status.name;
-          }
-        } else {
-          // Trace history to determine status on this day
-          if (dayTimestamp < parsed.transitions[0].timestamp) {
-            statusName = parsed.transitions[0].from;
-          } else {
-            let lastTx = parsed.transitions[0];
-            for (const tx of parsed.transitions) {
-              if (tx.timestamp <= dayTimestamp) {
-                lastTx = tx;
-              } else {
-                break;
-              }
-            }
-            statusName = lastTx.to;
-          }
-        }
-
-        const isDone = isStatusDone(statusName, parsed.issue);
-        if (isDone) {
-          doneCount++;
-        } else {
-          activeCount++;
-        }
-      }
-
-      remaining = activeCount;
-      completed = doneCount;
-    }
-
-    return {
-      day: dayIndex,
-      [BURN_IDEAL_KEY]: ideal,
-      [BURN_REMAINING_KEY]: remaining,
-      [BURN_COMPLETED_KEY]: completed,
-      [BURN_PROJECTED_KEY]: projected,
-    };
-  });
-}
 
 // ── Issue card with move-to-sprint action ──
 
@@ -6941,7 +6802,12 @@ export default function SprintDashboardView() {
 
     if (activeTab === 'backlogremediation') {
       return (
+        // Keyed by scope: everything the panel holds locally is detail fetched for ONE team, so a
+        // scope change should start it fresh. Remounting does that natively and completely — the
+        // panel used to clear three of its five local values by hand and leak the other two.
+        // The remediation queue itself lives in the store, so it survives this untouched.
         <BacklogRemediationPanel
+          key={`${activeDashboardTeamProfileId}:${state.projectKey}:${state.selectedPiValue}`}
           teamProfileId={activeDashboardTeamProfileId}
           projectKey={state.projectKey}
           piName={state.selectedPiValue}

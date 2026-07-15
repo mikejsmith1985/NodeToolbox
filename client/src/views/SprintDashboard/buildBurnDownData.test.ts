@@ -1,6 +1,46 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { JiraIssue } from '../../types/jira.ts';
-import { buildBurnDownData } from './SprintDashboardView.tsx';
+import { buildBurnDownData } from './buildBurnDownData.ts';
+
+/** The two things the burndown actually reads about an issue, plus its optional status history. */
+interface BurnDownIssueFixture {
+  id: string;
+  key: string;
+  status: { name: string; statusCategory: { key: string } };
+  created: string;
+  updated: string;
+  changelog?: JiraIssue['changelog'];
+}
+
+/**
+ * Builds a JiraIssue for these tests.
+ *
+ * JiraIssue.fields requires several fields the burndown never looks at — priority, assignee,
+ * reporter, issuetype, description. Spelling them out in every fixture would bury the two that
+ * matter (the status and the timestamps), which is why each fixture used to be cast instead. Filling
+ * the irrelevant ones here once means a fixture states only what its test is really about.
+ */
+function buildBurnDownIssue(fixture: BurnDownIssueFixture): JiraIssue {
+  return {
+    id: fixture.id,
+    key: fixture.key,
+    ...(fixture.changelog ? { changelog: fixture.changelog } : {}),
+    fields: {
+      summary: `Issue ${fixture.id}`,
+      status: fixture.status,
+      created: fixture.created,
+      updated: fixture.updated,
+      priority: null,
+      assignee: null,
+      reporter: null,
+      issuetype: { name: 'Story', iconUrl: '' },
+      description: null,
+    },
+  };
+}
+
+const TO_DO_STATUS = { name: 'To Do', statusCategory: { key: 'new' } };
+const DONE_STATUS = { name: 'Done', statusCategory: { key: 'done' } };
 
 describe('buildBurnDownData', () => {
   const startDate = '2025-01-01T09:00:00.000Z';
@@ -8,16 +48,13 @@ describe('buildBurnDownData', () => {
 
   it('calculates the ideal burndown correctly', () => {
     const issues: JiraIssue[] = [
-      {
+      buildBurnDownIssue({
         id: '1',
         key: 'TBX-1',
-        fields: {
-          summary: 'Issue 1',
-          status: { name: 'To Do', statusCategory: { key: 'new' } },
-          created: '2025-01-01T00:00:00.000Z',
-          updated: '2025-01-01T00:00:00.000Z',
-        },
-      } as any,
+        status: TO_DO_STATUS,
+        created: '2025-01-01T00:00:00.000Z',
+        updated: '2025-01-01T00:00:00.000Z',
+      }),
     ];
     // isClosed = true
     const result = buildBurnDownData(startDate, endDate, issues, true);
@@ -33,26 +70,20 @@ describe('buildBurnDownData', () => {
 
   it('calculates the projected burnup correctly over multiple days', () => {
     const issues: JiraIssue[] = [
-      {
+      buildBurnDownIssue({
         id: '1',
         key: 'TBX-1',
-        fields: {
-          summary: 'Issue 1',
-          status: { name: 'To Do', statusCategory: { key: 'new' } },
-          created: '2025-01-01T00:00:00.000Z',
-          updated: '2025-01-01T00:00:00.000Z',
-        },
-      } as any,
-      {
+        status: TO_DO_STATUS,
+        created: '2025-01-01T00:00:00.000Z',
+        updated: '2025-01-01T00:00:00.000Z',
+      }),
+      buildBurnDownIssue({
         id: '2',
         key: 'TBX-2',
-        fields: {
-          summary: 'Issue 2',
-          status: { name: 'To Do', statusCategory: { key: 'new' } },
-          created: '2025-01-01T00:00:00.000Z',
-          updated: '2025-01-01T00:00:00.000Z',
-        },
-      } as any,
+        status: TO_DO_STATUS,
+        created: '2025-01-01T00:00:00.000Z',
+        updated: '2025-01-01T00:00:00.000Z',
+      }),
     ];
     const result = buildBurnDownData(startDate, endDate, issues, true);
 
@@ -63,9 +94,12 @@ describe('buildBurnDownData', () => {
 
   it('calculates completed and remaining over time with changelog', () => {
     // Issue 1 is completed on Day 5
-    const issue1: JiraIssue = {
+    const issue1 = buildBurnDownIssue({
       id: '1',
       key: 'TBX-1',
+      status: DONE_STATUS,
+      created: '2025-01-01T00:00:00.000Z',
+      updated: '2025-01-06T08:00:00.000Z',
       changelog: {
         histories: [
           {
@@ -84,13 +118,7 @@ describe('buildBurnDownData', () => {
           },
         ],
       },
-      fields: {
-        summary: 'Issue 1',
-        status: { name: 'Done', statusCategory: { key: 'done' } },
-        created: '2025-01-01T00:00:00.000Z',
-        updated: '2025-01-06T08:00:00.000Z',
-      },
-    } as any;
+    });
 
     const result = buildBurnDownData(startDate, endDate, [issue1], true);
 
@@ -108,16 +136,13 @@ describe('buildBurnDownData', () => {
   });
 
   it('handles fallbacks when no changelog is available using updated timestamp', () => {
-    const issue1: JiraIssue = {
+    const issue1 = buildBurnDownIssue({
       id: '1',
       key: 'TBX-1',
-      fields: {
-        summary: 'Issue 1',
-        status: { name: 'Done', statusCategory: { key: 'done' } },
-        created: '2025-01-01T00:00:00.000Z',
-        updated: '2025-01-06T08:00:00.000Z', // Day 5
-      },
-    } as any;
+      status: DONE_STATUS,
+      created: '2025-01-01T00:00:00.000Z',
+      updated: '2025-01-06T08:00:00.000Z', // Day 5
+    });
 
     const result = buildBurnDownData(startDate, endDate, [issue1], true);
 
@@ -136,16 +161,13 @@ describe('buildBurnDownData', () => {
     vi.useFakeTimers();
     vi.setSystemTime(today);
 
-    const issue1: JiraIssue = {
+    const issue1 = buildBurnDownIssue({
       id: '1',
       key: 'TBX-1',
-      fields: {
-        summary: 'Issue 1',
-        status: { name: 'To Do', statusCategory: { key: 'new' } },
-        created: '2025-01-01T00:00:00.000Z',
-        updated: '2025-01-01T00:00:00.000Z',
-      },
-    } as any;
+      status: TO_DO_STATUS,
+      created: '2025-01-01T00:00:00.000Z',
+      updated: '2025-01-01T00:00:00.000Z',
+    });
 
     const result = buildBurnDownData(startDate, endDate, [issue1], false); // active sprint
 

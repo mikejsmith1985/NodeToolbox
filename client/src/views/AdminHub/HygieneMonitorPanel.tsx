@@ -84,29 +84,41 @@ async function triggerScan(teamName: string): Promise<ScanResult> {
 /** Admin Hub panel for configuring per-team hygiene monitor settings. */
 export function HygieneMonitorPanel() {
   const [teams, setTeams] = useState<HygieneTeamConfig[]>([])
-  const [isLoading, setIsLoading] = useState(false)
+  // Starts true: the panel loads on mount, so the spinner is the honest first paint.
+  const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [scanResults, setScanResults] = useState<Record<string, ScanResult>>({})
   const [scanningTeam, setScanningTeam] = useState<string | null>(null)
 
-  const loadConfig = useCallback(async () => {
-    setIsLoading(true)
-    setErrorMessage(null)
-    try {
-      const config = await fetchHygieneConfig()
-      setTeams(config.teams ?? [])
-    } catch (loadError) {
-      setErrorMessage((loadError as Error).message)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
-
+  // Load the config once, on mount.
+  //
+  // Every setState here happens after the fetch settles, never while the effect body runs: the state
+  // already says loading, so announcing it again would only force a second render and show the empty
+  // panel for a frame before the spinner replaced it.
+  //
+  // isActive also stops a late response updating a panel the admin has already navigated away from,
+  // which this effect previously did not guard against.
   useEffect(() => {
-    void loadConfig()
-  }, [loadConfig])
+    let isActive = true
+
+    fetchHygieneConfig()
+      .then((config) => {
+        if (!isActive) return
+        setTeams(config.teams ?? [])
+        setErrorMessage(null)
+      })
+      .catch((loadError: unknown) => {
+        if (!isActive) return
+        setErrorMessage((loadError as Error).message)
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false)
+      })
+
+    return () => { isActive = false }
+  }, [])
 
   const handleSave = useCallback(async () => {
     setIsSaving(true)

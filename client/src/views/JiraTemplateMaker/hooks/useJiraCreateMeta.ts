@@ -27,50 +27,69 @@ export interface UseJiraCreateMetaResult {
   areFieldsLoading: boolean;
 }
 
+/** The issue types loaded for one project, remembered alongside the project they describe. */
+interface IssueTypesResult {
+  projectKey: string | null;
+  issueTypes: CreateMetaIssueType[];
+  errorMessage: string | null;
+}
+
+/** A field-load failure, remembered alongside the project it happened under. */
+interface FieldsError {
+  projectKey: string | null;
+  message: string | null;
+}
+
+/** Builds the cache key for one issue type's fields. Scoped by project so two projects cannot collide. */
+function buildFieldCacheKey(projectKey: string, issueTypeId: string): string {
+  return `${projectKey}:${issueTypeId}`;
+}
+
 /** Loads createmeta for a project key, re-fetching whenever the key changes. */
 export function useJiraCreateMeta(projectKey: string | null): UseJiraCreateMetaResult {
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [issueTypes, setIssueTypes] = useState<CreateMetaIssueType[]>([]);
-  const [fieldsByIssueType, setFieldsByIssueType] = useState<Record<string, FieldDescriptor[]>>({});
+  const [issueTypesResult, setIssueTypesResult] = useState<IssueTypesResult>({ projectKey: null, issueTypes: [], errorMessage: null });
+  const [fieldsByCacheKey, setFieldsByCacheKey] = useState<Record<string, FieldDescriptor[]>>({});
+  const [fieldsError, setFieldsError] = useState<FieldsError>({ projectKey: null, message: null });
   const [areFieldsLoading, setAreFieldsLoading] = useState<boolean>(false);
 
-  // Load the project's issue types whenever the project changes.
+  // Everything the caller sees is derived from one question: does the data on hand belong to the
+  // project being asked about? That makes switching project self-clearing — the previous project's
+  // issue types simply stop matching — where before an effect had to blank four values by hand, and
+  // did it on the way in, costing an extra render every time.
+  const hasResultForThisProject = issueTypesResult.projectKey === projectKey;
+  const issueTypes = hasResultForThisProject ? issueTypesResult.issueTypes : [];
+  // Loading is not a fact to store: it is simply "a project is chosen and its answer is not here yet".
+  const isLoading = projectKey !== null && !hasResultForThisProject;
+  const errorMessage = (fieldsError.projectKey === projectKey ? fieldsError.message : null)
+    ?? (hasResultForThisProject ? issueTypesResult.errorMessage : null);
+
+  // Load the project's issue types whenever the project changes. Nothing is set synchronously here:
+  // the derivations above already describe the in-between state correctly.
   useEffect(() => {
-    setFieldsByIssueType({});
     if (!projectKey) {
-      setIssueTypes([]);
-      setErrorMessage(null);
-      setIsLoading(false);
-      return;
+      return; // No project chosen; the derived values are already empty.
     }
 
     let isMounted = true;
-    setIsLoading(true);
-    setErrorMessage(null);
-
-    async function loadIssueTypes(): Promise<void> {
-      try {
-        const response = await getProjectIssueTypes(projectKey as string);
-        if (!isMounted) {
-          return;
-        }
+    getProjectIssueTypes(projectKey)
+      .then((response) => {
+        if (!isMounted) return;
         const loadedIssueTypes = response.values ?? [];
-        setIssueTypes(loadedIssueTypes);
-        setErrorMessage(loadedIssueTypes.length === 0 ? NO_ISSUE_TYPES_MESSAGE : null);
-      } catch (caught) {
-        if (isMounted) {
-          setIssueTypes([]);
-          setErrorMessage(`${ISSUE_TYPES_ERROR} (${caught instanceof Error ? caught.message : String(caught)})`);
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    }
+        setIssueTypesResult({
+          projectKey,
+          issueTypes: loadedIssueTypes,
+          errorMessage: loadedIssueTypes.length === 0 ? NO_ISSUE_TYPES_MESSAGE : null,
+        });
+      })
+      .catch((caught: unknown) => {
+        if (!isMounted) return;
+        setIssueTypesResult({
+          projectKey,
+          issueTypes: [],
+          errorMessage: `${ISSUE_TYPES_ERROR} (${caught instanceof Error ? caught.message : String(caught)})`,
+        });
+      });
 
-    void loadIssueTypes();
     return () => { isMounted = false; };
   }, [projectKey]);
 
@@ -78,28 +97,32 @@ export function useJiraCreateMeta(projectKey: string | null): UseJiraCreateMetaR
     if (!projectKey || !issueTypeId) {
       return;
     }
-    setFieldsByIssueType((cache) => {
-      if (cache[issueTypeId]) {
+    const cacheKey = buildFieldCacheKey(projectKey, issueTypeId);
+    setFieldsByCacheKey((cache) => {
+      if (cache[cacheKey]) {
         return cache; // already loaded
       }
       // Kick off the fetch outside the updater; mark loading.
       setAreFieldsLoading(true);
       void getIssueTypeFields(projectKey, issueTypeId)
         .then((response) => {
-          setFieldsByIssueType((current) => ({ ...current, [issueTypeId]: mapCreateMetaFieldList(response.values ?? []) }));
-          setErrorMessage(null);
+          setFieldsByCacheKey((current) => ({ ...current, [cacheKey]: mapCreateMetaFieldList(response.values ?? []) }));
+          setFieldsError({ projectKey, message: null });
         })
-        .catch((caught) => {
-          setErrorMessage(`${FIELDS_ERROR} (${caught instanceof Error ? caught.message : String(caught)})`);
+        .catch((caught: unknown) => {
+          setFieldsError({ projectKey, message: `${FIELDS_ERROR} (${caught instanceof Error ? caught.message : String(caught)})` });
         })
         .finally(() => setAreFieldsLoading(false));
       return cache;
     });
   }, [projectKey]);
 
+  // Reads through the project-scoped key, so a previous project's fields can never be handed back
+  // and no reset is needed when the project changes.
   const getFieldDescriptors = useCallback(
-    (issueTypeId: string): FieldDescriptor[] => fieldsByIssueType[issueTypeId] ?? [],
-    [fieldsByIssueType],
+    (issueTypeId: string): FieldDescriptor[] =>
+      (projectKey ? fieldsByCacheKey[buildFieldCacheKey(projectKey, issueTypeId)] : undefined) ?? [],
+    [fieldsByCacheKey, projectKey],
   );
 
   const hasCreatePermission = issueTypes.length > 0;

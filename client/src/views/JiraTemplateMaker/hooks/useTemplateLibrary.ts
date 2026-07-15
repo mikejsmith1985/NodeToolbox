@@ -77,7 +77,28 @@ export function useTemplateLibrary(): UseTemplateLibraryResult {
     }
   }, []);
 
-  useEffect(() => { void reload(); }, [reload]);
+  // The first load is deliberately not `reload`. isLoading already starts true, so re-announcing it
+  // would force a second render for nothing; and isActive stops a late response writing to a hook
+  // whose component has unmounted, which reload cannot guard on its own.
+  useEffect(() => {
+    let isActive = true;
+
+    loadJiraTemplates(SHARED_TEMPLATE_DATABASE_ID)
+      .then((store) => {
+        if (!isActive) return;
+        baseSnapshotRef.current = store;
+        setTemplates(store.templates);
+        setErrorMessage(null);
+      })
+      .catch(() => {
+        if (isActive) setErrorMessage(LOAD_ERROR_MESSAGE);
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => { isActive = false; };
+  }, []);
 
   /** Merges a working store against the freshly-fetched remote and persists when conflict-free. */
   const persistWorkingStore = useCallback(async (workingTemplates: JiraTemplate[]): Promise<{ ok: boolean; conflicts: string[] }> => {

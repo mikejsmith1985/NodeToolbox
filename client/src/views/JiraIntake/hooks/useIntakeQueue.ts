@@ -2,7 +2,7 @@
 // dedup against the local ledger. Owns the queue entries and exposes per-entry updates so the
 // create flow can reflect results. See contracts/intake-contracts.md §E and FR-2.1/2.2.
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { IntakeParseError, parseWorkbook, type RawRow } from '../lib/parseSubmissions.ts';
 import { normalizeSubmission } from '../lib/normalizeSubmission.ts';
@@ -55,16 +55,15 @@ function toQueueEntry(submission: IntakeSubmission, ledger: ProcessedEntry[]): Q
 export function useIntakeQueue(ledger: ProcessedEntry[]): UseIntakeQueueResult {
   const [entries, setEntries] = useState<QueueEntry[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  // Keep the latest ledger available to ingestFile without re-creating the callback each render.
-  const ledgerRef = useRef<ProcessedEntry[]>(ledger);
-  ledgerRef.current = ledger;
 
-  // Shared: normalize rows → newest-first → classify against the current ledger cache.
+  // Shared: normalize rows → newest-first → classify against the ledger as it stands right now.
+  // Reading `ledger` directly is safe because ingestFile/ingestRows are only ever called from the
+  // drop and pull handlers — no effect depends on their identity, so there is nothing to keep stable.
   const buildEntries = useCallback((rows: RawRow[]): QueueEntry[] => {
     const submissions = rows.map((row, index) => normalizeSubmission(row, index));
     const ordered = [...submissions].sort(byNewestFirst);
-    return ordered.map((submission) => toQueueEntry(submission, ledgerRef.current));
-  }, []);
+    return ordered.map((submission) => toQueueEntry(submission, ledger));
+  }, [ledger]);
 
   const ingestFile = useCallback(async (file: File): Promise<QueueEntry[]> => {
     try {
