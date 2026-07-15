@@ -27,12 +27,10 @@ import {
   parsePiReviewCapacitySummary,
   parseConfidenceVoteTable,
   parsePiReviewTable,
-  parsePiReviewRowsFromSpreadsheetSheets,
   type OptionalPiReviewColumnKey,
   type PiReviewColumnKey,
   type PiReviewCustomGroupingLine,
   type PiReviewRow,
-  type PiReviewSpreadsheetCellValue,
   type PiReviewTableBinding,
   type ConfidenceVoteRow,
   type ConfidenceVoteTableBinding,
@@ -72,7 +70,6 @@ const FINGER_FULL_HEIGHT = 18;
 const FINGER_FOLDED_HEIGHT = 8;
 const FINGER_RAISED_Y = 10;
 const FINGER_FOLDED_Y = 20;
-const SPREADSHEET_IMPORT_ACCEPT = '.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
 const STRETCH_GOALS_LINE_COLOR = '#f5c400';
 const DEFAULT_CUSTOM_GROUPING_LINE_COLOR = '#0ea5e9';
 const DEFAULT_CUSTOM_GROUPING_LINE_LABEL = 'New grouping';
@@ -170,6 +167,33 @@ function readConfiguredPiReviewTargets(teams: ArtTeam[]): PiReviewLoadTarget[] {
         };
       }),
   );
+}
+
+/**
+ * Narrows the configured pages to the one Program Increment the surrounding view has selected.
+ *
+ * Team Dashboard already has a PI selector, so it — not a second row of tabs in here — decides which
+ * PI Review page is on screen. ART's readout shows several teams at once with no single driving PI,
+ * so it keeps every page and tabs between them (this filter is not applied there).
+ *
+ * Legacy pages carry no PI of their own; they adopt whichever PI is selected, but only when no page
+ * explicitly claims that PI — an exact match always wins.
+ */
+function selectTargetsForSelectedPi(
+  configuredTargets: PiReviewLoadTarget[],
+  selectedPiName: string,
+): PiReviewLoadTarget[] {
+  const trimmedSelectedPiName = selectedPiName.trim();
+  if (trimmedSelectedPiName === '') {
+    return configuredTargets;
+  }
+
+  const targetsClaimingSelectedPi = configuredTargets.filter((target) => target.piName === trimmedSelectedPiName);
+  if (targetsClaimingSelectedPi.length > 0) {
+    return targetsClaimingSelectedPi;
+  }
+
+  return configuredTargets.filter((target) => target.piName === '');
 }
 
 function readDefaultPiReviewTargetKey(configuredTargets: PiReviewLoadTarget[]): string {
@@ -311,23 +335,6 @@ function downloadPiReviewCsv(rows: PiReviewRow[], selectedPiName: string, target
   downloadAnchor.download = `pi-review-${normalizedTargetLabel || 'team'}-${createPiReviewDownloadNameSegment(selectedPiName) || 'export'}.csv`;
   downloadAnchor.click();
   URL.revokeObjectURL(objectUrl);
-}
-
-async function readPiReviewSpreadsheetSheetsFromFile(file: File) {
-  const XLSX = await import('xlsx');
-  const workbookBuffer = await file.arrayBuffer();
-  const workbook = XLSX.read(workbookBuffer, { type: 'array', cellDates: true });
-
-  return workbook.SheetNames.map((sheetName) => {
-    const worksheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json<PiReviewSpreadsheetCellValue[]>(worksheet, {
-      header: 1,
-      blankrows: false,
-      defval: '',
-      raw: false,
-    });
-    return { sheetName, rows };
-  });
 }
 
 function readOptionalColumnsFromBinding(tableBinding: PiReviewTableBinding): Set<OptionalPiReviewColumnKey> {
@@ -718,7 +725,6 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
   // ── "Pull Features from Jira" controls ──
   // A pull is scoped by the page's PI plus the team's Product Owner(s), read from the imported roster.
   const rosterMembers = useStandupRosterStore((storeState) => storeState.rosterMembers);
-  const [isPullFeaturesOpen, setIsPullFeaturesOpen] = useState(false);
   const [isPullingFeatures, setIsPullingFeatures] = useState(false);
   const [transitionOptionsByFeatureKey, setTransitionOptionsByFeatureKey] = useState<Record<string, JiraTransition[]>>({});
   const [isStatusPickerOpenByFeatureKey, setIsStatusPickerOpenByFeatureKey] = useState<Record<string, boolean>>({});
@@ -740,7 +746,6 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
   const lastAutoLoadKeyRef = useRef('');
   const loadedSnapshotRef = useRef<PiReviewLoadedSnapshot | null>(null);
   const [hasLoadedSnapshot, setHasLoadedSnapshot] = useState(false);
-  const importFileInputRef = useRef<HTMLInputElement>(null);
   const pagePanelRef = useRef<HTMLElement>(null);
   const liveCapacitySummary = capacitySummaryOverride;
   const displayedCapacitySummary = liveCapacitySummary ?? savedCapacitySummary;
@@ -928,11 +933,6 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
     }
   }
 
-  function handleAddRow() {
-    setRows((currentRows) => [...currentRows, createEmptyPiReviewRow()]);
-    setHasUnsavedChanges(true);
-  }
-
   function handleMoveRow(rowId: string, directionOffset: -1 | 1) {
     setRows((currentRows) => {
       const currentRowIndex = currentRows.findIndex((row) => row.rowId === rowId);
@@ -972,48 +972,6 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
         : currentTableBinding,
     );
     setHasUnsavedChanges(true);
-  }
-
-  async function handleImportPiReviewFile(changeEvent: React.ChangeEvent<HTMLInputElement>) {
-    const selectedFile = changeEvent.target.files?.[0];
-    changeEvent.target.value = '';
-    if (!selectedFile || !tableBinding) {
-      return;
-    }
-
-    try {
-      const spreadsheetSheets = await readPiReviewSpreadsheetSheetsFromFile(selectedFile);
-      const importedTable = parsePiReviewRowsFromSpreadsheetSheets(spreadsheetSheets);
-      const nextVisibleOptionalColumns = new Set(visibleOptionalColumns);
-      for (const columnKey of OPTIONAL_PI_REVIEW_COLUMN_KEYS) {
-        if (importedTable.importedColumnKeys.includes(columnKey)) {
-          nextVisibleOptionalColumns.add(columnKey);
-        }
-      }
-
-      const nextColumnOrder: PiReviewColumnKey[] = [
-        ...CORE_PI_REVIEW_COLUMN_KEYS,
-        ...OPTIONAL_PI_REVIEW_COLUMN_KEYS.filter((columnKey) => nextVisibleOptionalColumns.has(columnKey)),
-      ];
-      setRows(importedTable.rows);
-      setVisibleOptionalColumns(nextVisibleOptionalColumns);
-      setTableBinding(createPiReviewTableBindingWithColumns(tableBinding, nextColumnOrder));
-      setCommitmentBoundaryIndex(null);
-      setCustomGroupingLines([]);
-      setJiraIssueMap({});
-      setFocusedCustomGroupingLineId(null);
-      setExpandedCustomGroupingLineId(null);
-      setLoadError(null);
-      setHasUnsavedChanges(true);
-      showToast(`Imported ${importedTable.rows.length} PI Review row(s) from ${selectedFile.name}. Save to Confluence when ready.`, 'success');
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to import the PI Review spreadsheet';
-      showToast(errorMessage, 'error');
-    }
-  }
-
-  function handleTogglePullFeatures() {
-    setIsPullFeaturesOpen((currentlyOpen) => !currentlyOpen);
   }
 
   /**
@@ -1824,36 +1782,11 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
           <>
             <button
               className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
-              disabled={isToolbarBusy || !tableBinding}
-              onClick={handleAddRow}
+              disabled={isToolbarBusy || !tableBinding || productOwners.length === 0}
+              onClick={() => void handlePullFeatures()}
               type="button"
             >
-              Add PI Review Row
-            </button>
-            <input
-              ref={importFileInputRef}
-              accept={SPREADSHEET_IMPORT_ACCEPT}
-              aria-label={`Import PI Review XLSX for ${target.targetLabel}`}
-              className={styles.hiddenFileInput}
-              disabled={isToolbarBusy || !tableBinding}
-              onChange={(event) => void handleImportPiReviewFile(event)}
-              type="file"
-            />
-            <button
-              className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
-              disabled={isToolbarBusy || !tableBinding}
-              onClick={() => importFileInputRef.current?.click()}
-              type="button"
-            >
-              Import PI Review XLSX
-            </button>
-            <button
-              className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
-              disabled={isToolbarBusy || !tableBinding}
-              onClick={handleTogglePullFeatures}
-              type="button"
-            >
-              {isPullFeaturesOpen ? 'Hide Pull Features' : 'Pull Features from Jira'}
+              {isPullingFeatures ? 'Pulling…' : 'Pull Features from Jira'}
             </button>
             <button
               className={joinClassNames(styles.actionButton, styles.actionButtonSecondary)}
@@ -1874,34 +1807,19 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
           </>
         )}
       </div>
-      {canEditContent && isPullFeaturesOpen && (
-        <div className={styles.pullFeaturesCard} data-export-exclude="true">
-          <p className={styles.pullFeaturesHint}>
-            Pull every <strong>Feature</strong> for <strong>{target.team.name}</strong> in{' '}
-            <strong>{effectivePiName.trim() || 'the selected PI'}</strong> that is assigned to the team's
-            Product Owner into the table. Existing rows are never duplicated.
-          </p>
+      {canEditContent && (
+        <p className={styles.pullFeaturesHint} data-export-exclude="true">
           {productOwners.length > 0 ? (
-            <p className={styles.pullFeaturesHint}>
-              Product Owner{productOwners.length === 1 ? '' : 's'} (from roster):{' '}
-              <strong>{productOwners.map((productOwner) => productOwner.displayName).join(', ')}</strong>
-            </p>
+            <>
+              <strong>Pull Features from Jira</strong> adds every Feature in{' '}
+              <strong>{effectivePiName.trim() || 'the selected PI'}</strong> assigned to{' '}
+              <strong>{productOwners.map((productOwner) => productOwner.displayName).join(', ')}</strong>. Safe to
+              re-run: new Features are appended and your Carry-Over, Committed and Notes entries are never touched.
+            </>
           ) : (
-            <p className={styles.pullFeaturesHint}>
-              No Product Owner is flagged in the team roster. Mark a roster member as Product Owner to enable the pull.
-            </p>
+            'No Product Owner is flagged in the team roster. Mark a roster member as Product Owner to enable Pull Features from Jira.'
           )}
-          <div className={styles.pullFeaturesActions}>
-            <button
-              className={joinClassNames(styles.actionButton, styles.actionButtonSuccess)}
-              disabled={isToolbarBusy || !tableBinding || productOwners.length === 0}
-              onClick={() => void handlePullFeatures()}
-              type="button"
-            >
-              {isPullingFeatures ? 'Pulling…' : 'Pull into table'}
-            </button>
-          </div>
-        </div>
+        </p>
       )}
       {jiraLoadDeltaDetails.length > 0 && (
         <details className={styles.deltaBanner} data-export-exclude="true">
@@ -2093,7 +2011,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
       {!isLoading && rows.length === 0 && !loadError && (
         <p className={styles.summaryValue}>
           {canEditContent
-            ? 'No PI Review rows have been added yet. Use Add PI Review Row to start building this page from Toolbox.'
+            ? 'No PI Review rows yet. Use Pull Features from Jira to bring in this PI’s Features.'
             : canShowAuthoringToolbar
               ? 'No PI Review rows have been added yet. Switch to Edit PI Review to start building this page from Toolbox.'
               : 'No PI Review rows have been added yet. Open this team in Team Dashboard to build the document.'}
@@ -2559,7 +2477,12 @@ export default function PiReviewTab({
   mode = 'authoring',
   teamCapacitySummaries = {},
 }: PiReviewTabProps) {
-  const configuredTargets = useMemo(() => readConfiguredPiReviewTargets(teams), [teams]);
+  const allConfiguredTargets = useMemo(() => readConfiguredPiReviewTargets(teams), [teams]);
+  // Authoring (Team Dashboard) is driven by that view's PI selector; readout (ART) shows every page.
+  const configuredTargets = useMemo(
+    () => (mode === 'authoring' ? selectTargetsForSelectedPi(allConfiguredTargets, selectedPiName) : allConfiguredTargets),
+    [allConfiguredTargets, mode, selectedPiName],
+  );
   const [requestedActiveTargetKey, setRequestedActiveTargetKey] = useState<string>(() => readDefaultPiReviewTargetKey(configuredTargets));
   const teamTabOptions = useMemo(
     () => configuredTargets.map((target) => ({ key: target.targetKey, label: target.targetLabel })),
@@ -2571,12 +2494,17 @@ export default function PiReviewTab({
   );
 
   if (configuredTargets.length === 0) {
+    // The team has pages, just none for the PI the dashboard is showing — say so precisely, since
+    // "configure a page" would be misleading advice when pages already exist for other PIs.
+    const hasPagesForOtherPis = allConfiguredTargets.length > 0;
     return (
         <div className={styles.piReviewTab}>
           <p className={styles.summaryValue}>
-            {mode === 'readout'
-              ? 'Add an explicit PI Review Page URL to each ART team in Settings, then use Team Dashboard for PI Review authoring.'
-              : 'Add an explicit PI Review Page URL to each ART team in Settings. PI Review pages no longer fall back to a shared default page.'}
+            {hasPagesForOtherPis
+              ? `No PI Review page is configured for ${selectedPiName.trim()}. Add one in Settings → Saved Dashboard Teams → PI Review Pages, or pick a PI that has a page.`
+              : mode === 'readout'
+                ? 'Add an explicit PI Review Page URL to each ART team in Settings, then use Team Dashboard for PI Review authoring.'
+                : 'Add an explicit PI Review Page URL to each ART team in Settings. PI Review pages no longer fall back to a shared default page.'}
           </p>
         </div>
       );

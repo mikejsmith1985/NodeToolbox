@@ -43,7 +43,6 @@ function isTableCellElement(node: unknown): node is HTMLTableCellElement {
 const STORAGE_WRAPPER_ID = 'pi-review-storage-wrapper';
 const REQUIRED_PI_REVIEW_COLUMN_COUNT = 8;
 const REQUIRED_CONFIDENCE_VOTE_COLUMN_COUNT = 3;
-const MIN_SPREADSHEET_IMPORT_COLUMN_COUNT = 4;
 const TOOLBOX_PI_REVIEW_TITLE = 'NodeToolbox PI Review';
 const TOOLBOX_PI_REVIEW_DESCRIPTION = 'This page section is managed by NodeToolbox so PI Review data can sync reliably.';
 const TEAM_CAPACITY_SECTION_TITLE = 'Team Capacity';
@@ -93,19 +92,6 @@ export interface PiReviewRow {
   notes: string;
   devWork: string;
   testSupport: string;
-}
-
-export type PiReviewSpreadsheetCellValue = string | number | boolean | Date | null | undefined;
-
-export interface PiReviewSpreadsheetSheet {
-  sheetName: string;
-  rows: PiReviewSpreadsheetCellValue[][];
-}
-
-export interface PiReviewSpreadsheetImportResult {
-  sheetName: string;
-  rows: PiReviewRow[];
-  importedColumnKeys: PiReviewColumnKey[];
 }
 
 export interface PiReviewTableBinding {
@@ -463,160 +449,6 @@ export function writePiReviewCapacitySummary(storageValue: string, capacitySumma
   }
 
   return storageWrapperElement.innerHTML;
-}
-
-function formatSpreadsheetCellValue(cellValue: PiReviewSpreadsheetCellValue): string {
-  if (cellValue === null || cellValue === undefined) {
-    return '';
-  }
-  if (cellValue instanceof Date) {
-    return cellValue.toISOString().slice(0, 10);
-  }
-  if (typeof cellValue === 'number') {
-    return Number.isInteger(cellValue) ? String(cellValue) : String(cellValue);
-  }
-  if (typeof cellValue === 'boolean') {
-    return cellValue ? 'Yes' : '';
-  }
-  return cellValue.replace(/\s+/g, ' ').trim();
-}
-
-function isSpreadsheetCheckboxValue(cellValue: string): boolean {
-  const normalizedCellValue = normalizeHeaderText(cellValue);
-  return [
-    '',
-    'yes',
-    'no',
-    'true',
-    'false',
-    'y',
-    'n',
-    'x',
-    'checked',
-    'unchecked',
-  ].includes(normalizedCellValue);
-}
-
-function shouldTreatCommittedColumnAsNotes(
-  spreadsheetRows: PiReviewSpreadsheetCellValue[][],
-  headerRowIndex: number,
-  cellIndex: number,
-): boolean {
-  const sampleValues = spreadsheetRows
-    .slice(headerRowIndex + 1, headerRowIndex + 8)
-    .map((row) => formatSpreadsheetCellValue(row[cellIndex]))
-    .filter((cellValue) => cellValue !== '');
-
-  if (sampleValues.length === 0) {
-    return false;
-  }
-
-  return sampleValues.some((cellValue) => cellValue.length > 12 || !isSpreadsheetCheckboxValue(cellValue));
-}
-
-function readSpreadsheetColumnKey(
-  headerText: string,
-  spreadsheetRows: PiReviewSpreadsheetCellValue[][],
-  headerRowIndex: number,
-  cellIndex: number,
-  usedColumnKeys: Set<PiReviewColumnKey>,
-  hasDedicatedNotesColumn: boolean,
-): PiReviewColumnKey | null {
-  const columnKey = readPiReviewColumnKeyFromHeader(headerText);
-  if (columnKey !== 'committed') {
-    return columnKey;
-  }
-
-  if (
-    !hasDedicatedNotesColumn
-    && !usedColumnKeys.has('notes')
-    && shouldTreatCommittedColumnAsNotes(spreadsheetRows, headerRowIndex, cellIndex)
-  ) {
-    return 'notes';
-  }
-
-  return columnKey;
-}
-
-function readSpreadsheetTableBinding(
-  spreadsheetRows: PiReviewSpreadsheetCellValue[][],
-): { headerRowIndex: number; columnKeysByIndex: Map<number, PiReviewColumnKey>; importedColumnKeys: PiReviewColumnKey[] } | null {
-  for (const [headerRowIndex, spreadsheetRow] of spreadsheetRows.entries()) {
-    const columnKeysByIndex = new Map<number, PiReviewColumnKey>();
-    const importedColumnKeys: PiReviewColumnKey[] = [];
-    const usedColumnKeys = new Set<PiReviewColumnKey>();
-    const hasDedicatedNotesColumn = spreadsheetRow.some((cellValue) =>
-      readPiReviewColumnKeyFromHeader(formatSpreadsheetCellValue(cellValue)) === 'notes',
-    );
-
-    spreadsheetRow.forEach((cellValue, cellIndex) => {
-      const headerText = formatSpreadsheetCellValue(cellValue);
-      const columnKey = readSpreadsheetColumnKey(
-        headerText,
-        spreadsheetRows,
-        headerRowIndex,
-        cellIndex,
-        usedColumnKeys,
-        hasDedicatedNotesColumn,
-      );
-      if (!columnKey || usedColumnKeys.has(columnKey)) {
-        return;
-      }
-
-      usedColumnKeys.add(columnKey);
-      importedColumnKeys.push(columnKey);
-      columnKeysByIndex.set(cellIndex, columnKey);
-    });
-
-    if (usedColumnKeys.has('feature') && usedColumnKeys.size >= MIN_SPREADSHEET_IMPORT_COLUMN_COUNT) {
-      return { headerRowIndex, columnKeysByIndex, importedColumnKeys };
-    }
-  }
-
-  return null;
-}
-
-function parsePiReviewRowsFromSpreadsheetRows(
-  spreadsheetRows: PiReviewSpreadsheetCellValue[][],
-  sheetName: string,
-): PiReviewSpreadsheetImportResult {
-  const tableBinding = readSpreadsheetTableBinding(spreadsheetRows);
-  if (!tableBinding) {
-    throw new Error(`Worksheet "${sheetName}" does not contain a PI Review table`);
-  }
-
-  const rows = spreadsheetRows
-    .slice(tableBinding.headerRowIndex + 1)
-    .map((spreadsheetRow, rowIndex) => {
-      const row = createEmptyPiReviewRow();
-      row.rowId = `imported-row-${rowIndex + 1}`;
-      tableBinding.columnKeysByIndex.forEach((columnKey, cellIndex) => {
-        row[columnKey] = formatSpreadsheetCellValue(spreadsheetRow[cellIndex]);
-      });
-      return row;
-    })
-    .filter((row) => tableBinding.importedColumnKeys.some((columnKey) => row[columnKey].trim() !== ''));
-
-  if (rows.length === 0) {
-    throw new Error(`Worksheet "${sheetName}" does not contain any importable PI Review rows`);
-  }
-
-  return { sheetName, rows, importedColumnKeys: tableBinding.importedColumnKeys };
-}
-
-/** Imports PI Review rows from the first worksheet that contains a recognizable PI Review table. */
-export function parsePiReviewRowsFromSpreadsheetSheets(
-  spreadsheetSheets: PiReviewSpreadsheetSheet[],
-): PiReviewSpreadsheetImportResult {
-  for (const spreadsheetSheet of spreadsheetSheets) {
-    try {
-      return parsePiReviewRowsFromSpreadsheetRows(spreadsheetSheet.rows, spreadsheetSheet.sheetName);
-    } catch {
-      // Confluence exports can include empty helper sheets; keep looking for the real table.
-    }
-  }
-
-  throw new Error('No imported worksheet contained a PI Review table');
 }
 
 function normalizeHeaderText(headerText: string): string {
