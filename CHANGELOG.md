@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **AI Assist Automation — the webhook secret was readable from the config endpoint**: `GET /api/ai-assist/config`
+  returned the saved **Webhook Secret in cleartext**, unlike every other credential in NodeToolbox — the Jira,
+  ServiceNow, GitHub, and Confluence settings all report only *whether* a credential is set and never hand back the
+  value. The AI Assist config now follows the same rule. In the Admin Hub the Webhook Secret box is now blank even
+  when a secret is saved, and tells you one is saved: **leave it blank and your secret is kept**, type in it to
+  replace it, or tick **Remove the saved secret** to clear it deliberately.
+
 ### Added
 - **PI Review — AI Assistance (feature 016)**: a new **⚡ AI Assistance** panel on the PI Review tab (edit mode, once
   AI Assist is unlocked with Ctrl+Alt+Z) reads every Feature already on your page — its description, acceptance
