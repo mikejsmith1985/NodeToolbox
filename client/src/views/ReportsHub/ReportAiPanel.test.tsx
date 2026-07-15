@@ -58,4 +58,75 @@ describe('ReportAiPanel', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Could not read the response.');
     expect(screen.getByText('results-slot')).toBeInTheDocument();
   });
+
+  // ── Feature 016: the automatic path, added additively for the PI Review panel ──
+  //
+  // The shell was manual-paste-only. Rather than fork it (which would make a third copy of a shell
+  // that already exists twice — the same duplication that produced four unlock gates), it gains two
+  // optional props. Its existing consumers pass neither and are unaffected.
+
+  it('has no auto button when onRunAuto is omitted — existing consumers are unchanged', () => {
+    act(() => setAiAssistUnlocked(true));
+    render(<ReportAiPanel title="AI triage" prompt="P" ingestLabel="Ingest" onIngest={vi.fn()} error={null} />);
+
+    expect(screen.queryByRole('button', { name: /run via ai assist/i })).not.toBeInTheDocument();
+  });
+
+  it('offers an auto path beside the manual one when onRunAuto is supplied', () => {
+    act(() => setAiAssistUnlocked(true));
+    const onRunAuto = vi.fn();
+    render(
+      <ReportAiPanel title="AI triage" prompt="P" ingestLabel="Ingest" onIngest={vi.fn()} error={null} onRunAuto={onRunAuto} />,
+    );
+
+    // Auto is a shortcut past the paste box, not a replacement for it: both paths stay available.
+    fireEvent.click(screen.getByRole('button', { name: /run via ai assist/i }));
+    expect(onRunAuto).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: /copy prompt/i })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/paste the assistant's json reply/i)).toBeInTheDocument();
+  });
+
+  it('disables the auto button while a run is in flight', () => {
+    act(() => setAiAssistUnlocked(true));
+    render(
+      <ReportAiPanel
+        error={null}
+        ingestLabel="Ingest"
+        isRunning
+        onIngest={vi.fn()}
+        onRunAuto={vi.fn()}
+        prompt="P"
+        title="AI triage"
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: /running/i })).toBeDisabled();
+  });
+
+  it('shows the advisory hint by default', () => {
+    act(() => setAiAssistUnlocked(true));
+    render(<ReportAiPanel title="AI triage" prompt="P" ingestLabel="Ingest" onIngest={vi.fn()} error={null} />);
+
+    expect(screen.getByText(/writes nothing to jira/i)).toBeInTheDocument();
+  });
+
+  it('lets a caller replace the advisory hint — it must not claim to write nothing when it can', () => {
+    // The PI Review panel CAN reach Jira (an accepted estimate arms the existing write-back), so the
+    // default "writes nothing to Jira" hint would be a lie there. FR-030 makes that disclosure a
+    // first-class requirement, so the shell must not hardcode the opposite claim.
+    act(() => setAiAssistUnlocked(true));
+    render(
+      <ReportAiPanel
+        error={null}
+        hint="review each suggestion · an accepted estimate can update the Jira issue"
+        ingestLabel="Ingest"
+        onIngest={vi.fn()}
+        prompt="P"
+        title="AI Assistance"
+      />,
+    );
+
+    expect(screen.getByText(/an accepted estimate can update the jira issue/i)).toBeInTheDocument();
+    expect(screen.queryByText(/writes nothing to jira/i)).not.toBeInTheDocument();
+  });
 });

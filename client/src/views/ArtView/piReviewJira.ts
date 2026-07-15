@@ -268,7 +268,15 @@ function formatLinkedIssue(issueLink: JiraIssueLink): string | null {
   return `${linkedIssue.key}${summarySegment}${statusSegment}`;
 }
 
-function appendUniqueNoteLine(existingNotes: string, prefixLabel: string, sourceValue: string): string {
+/**
+ * Appends a labelled note line, unless the value is blank-ish or the line is already present.
+ *
+ * Exported so the PI Review AI Assist panel writes notes with the SAME convention this file uses when
+ * it migrates Dependency/Risks text into the notes cell — a second implementation would drift from
+ * this one. Format: `Label: value`, lines joined with 
+.
+ */
+export function appendUniqueNoteLine(existingNotes: string, prefixLabel: string, sourceValue: string): string {
   if (!isMeaningfulFreeText(sourceValue)) {
     return existingNotes;
   }

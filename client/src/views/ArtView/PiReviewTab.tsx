@@ -15,6 +15,10 @@ import type { CapacitySummary } from '../SprintDashboard/capacityModel.ts';
 import type { JiraIssue, JiraTransition } from '../../types/jira.ts';
 import type { ArtTeam } from './hooks/useArtData.ts';
 import { downloadPiReviewPanelImage } from './piReviewPdf.ts';
+import { PiReviewAiPanel } from './ai/PiReviewAiPanel.tsx';
+import { PiReviewSizingCard } from './ai/PiReviewSizingCard.tsx';
+import { applyPiReviewSuggestion } from './ai/piReviewAiApply.ts';
+import type { PiReviewAiSuggestion } from './ai/piReviewAiAssist.ts';
 import {
   CONFIDENCE_VOTE_COLUMN_LABELS,
   CORE_PI_REVIEW_COLUMN_KEYS,
@@ -979,6 +983,21 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
    * table, then reconciles the new rows with Jira so priority, estimate, dependencies, and risks fill
    * in as on a page load. The PI and Product Owner together scope the pull; both are required.
    */
+  /**
+   * Applies one accepted AI suggestion to its row. The panel reviews; the tab writes — and only ever
+   * to Point Estimate and Implementation Notes (see ai/piReviewAiApply.ts). This marks the page
+   * dirty; publishing stays a deliberate Save to Confluence click.
+   */
+  function handleApplyAiSuggestion(suggestion: PiReviewAiSuggestion) {
+    setRows((currentRows) => currentRows.map((row) => (
+      extractPiReviewFeatureKey(row.feature) === suggestion.issueKey
+        ? applyPiReviewSuggestion(row, suggestion)
+        : row
+    )));
+    setHasUnsavedChanges(true);
+    showToast(`Applied the AI suggestion for ${suggestion.issueKey}. Save to Confluence when ready.`, 'success');
+  }
+
   async function handlePullFeatures() {
     if (!tableBinding) {
       return;
@@ -1820,6 +1839,12 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
             'No Product Owner is flagged in the team roster. Mark a roster member as Product Owner to enable Pull Features from Jira.'
           )}
         </p>
+      )}
+      {canShowAuthoringToolbar && <PiReviewSizingCard />}
+      {canEditContent && (
+        <div data-export-exclude="true">
+          <PiReviewAiPanel onApplySuggestion={handleApplyAiSuggestion} rows={rows} />
+        </div>
       )}
       {jiraLoadDeltaDetails.length > 0 && (
         <details className={styles.deltaBanner} data-export-exclude="true">
