@@ -221,7 +221,7 @@ export function buildPlanItems(
     // A null story point count is treated as 0: the item is still created (visible/ordered), just weightless.
     const rolePoints = issue.storyPoints ?? 0;
 
-    let devPoints: number | null = role === 'dev' ? rolePoints : null;
+    const devPoints: number | null = role === 'dev' ? rolePoints : null;
     let internalTestPoints: number | null = role === 'internalTest' ? rolePoints : null;
     const externalTestPoints: number | null = role === 'externalTest' ? rolePoints : null;
     let isTestEstimated = false;
