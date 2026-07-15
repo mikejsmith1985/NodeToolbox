@@ -9,7 +9,6 @@
 // PI Review (team-level Confluence authoring), and Releases (readiness by fix version).
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 import {
   CartesianGrid,
@@ -81,7 +80,6 @@ import {
 } from './hooks/releaseDevSkipRisk.ts';
 import { renderMarkdownReport } from '../../utils/markdownReport.tsx';
 import { useAiAssistExchange } from '../SnowHub/hooks/useAiAssistExchange.ts';
-import { setAiAssistUnlocked } from '../../store/aiAssistStore.ts';
 import { useSprintData } from './hooks/useSprintData.ts';
 import type { DashboardScopeMode, DashboardTab } from './hooks/useSprintData.ts';
 import styles from './SprintDashboardView.module.css';
@@ -153,7 +151,6 @@ const BLOCKERS_FILTER_LABEL = 'Show:';
 const RELEASE_FIELDS =
   'summary,status,assignee,priority,issuetype,fixVersions,description,customfield_10200,comment';
 const RELEASE_MAX_RESULTS = 50;
-const HIDDEN_AI_ASSIST_SHORTCUT_KEY = 'z';
 const POINTING_AI_ASSIST_ENHANCE_BUTTON_LABEL = '✦ Enhance with AI';
 const POINTING_AI_ASSIST_COPY_BUTTON_LABEL = '📋 Copy Prompt';
 const POINTING_AI_ASSIST_APPLY_BUTTON_LABEL = 'Apply estimates →';
@@ -4135,10 +4132,7 @@ function PointingTab({
   // ── AI Assist state ──
   // Unlock state comes from the shared aiAssistStore (via useAiAssist) so one
   // passphrase entry unlocks every AI Assist surface, including the Admin Hub config.
-  const { isUnlocked: isPointingAiAssistUnlocked, verifyPassphrase } = useAiAssist();
-  const [isPassphraseModalVisible, setIsPassphraseModalVisible] = useState(false);
-  const [passphraseInput, setPassphraseInput] = useState('');
-  const [passphraseError, setPassphraseError] = useState<string | null>(null);
+  const { isUnlocked: isPointingAiAssistUnlocked } = useAiAssist();
   const [isAiAssistModalVisible, setIsAiAssistModalVisible] = useState(false);
   const [generatedAiAssistPromptText, setGeneratedAiAssistPromptText] = useState('');
   const [aiAssistResponseInput, setAiAssistResponseInput] = useState('');
@@ -4148,7 +4142,6 @@ function PointingTab({
   // returned estimates without the manual copy-paste.
   const { isRunning: isPointingAiAssistRunning, runAiAssistExchange: runPointingAiAssistExchange } = useAiAssistExchange();
   const [pointingAiAssistAutoStatus, setPointingAiAssistAutoStatus] = useState<string | null>(null);
-  const passphraseInputRef = useRef<HTMLInputElement | null>(null);
 
   function rebuildPointingSession({
     nextPipelineRoleFilter = pipelineRoleFilter,
@@ -4322,35 +4315,6 @@ function PointingTab({
     void handleLoadAllDetails();
   }
 
-  // Ctrl+Alt+Z opens the passphrase gate; once unlocked the shortcut is a no-op.
-  useEffect(() => {
-    function handleGlobalKeyDown(keyboardEvent: globalThis.KeyboardEvent): void {
-      const isShortcutPressed = keyboardEvent.ctrlKey
-        && keyboardEvent.altKey
-        && (keyboardEvent.key.toLowerCase() === HIDDEN_AI_ASSIST_SHORTCUT_KEY || keyboardEvent.code === 'KeyZ');
-
-      if (!isShortcutPressed) return;
-      keyboardEvent.preventDefault();
-      if (isPointingAiAssistUnlocked) {
-        setAiAssistUnlocked(false); // toggle: re-hide all AI Assist features
-        return;
-      }
-      setIsPassphraseModalVisible(true);
-      setPassphraseInput('');
-      setPassphraseError(null);
-    }
-
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [isPointingAiAssistUnlocked]);
-
-  // Focus the passphrase input when the modal opens.
-  useEffect(() => {
-    if (isPassphraseModalVisible) {
-      passphraseInputRef.current?.focus();
-    }
-  }, [isPassphraseModalVisible]);
-
   function toggleTypeFilter(issueTypeName: string) {
     setSelectedTypes((previousTypes) => {
       const nextSelectedTypes = previousTypes.includes(issueTypeName)
@@ -4415,27 +4379,6 @@ function PointingTab({
   }
 
   // ── AI Assist handlers ──
-
-  const handlePointingPassphraseSubmit = useCallback(async () => {
-    const isAccepted = await verifyPassphrase(passphraseInput);
-    if (isAccepted) {
-      // verifyPassphrase sets the shared aiAssistStore; no local flag to update.
-      setIsPassphraseModalVisible(false);
-      setPassphraseInput('');
-      setPassphraseError(null);
-      return;
-    }
-    setPassphraseError('Incorrect passphrase');
-  }, [passphraseInput, verifyPassphrase]);
-
-  const handlePointingPassphraseKeyDown = useCallback(
-    (keyboardEvent: ReactKeyboardEvent<HTMLInputElement>) => {
-      if (keyboardEvent.key === 'Enter') {
-        void handlePointingPassphraseSubmit();
-      }
-    },
-    [handlePointingPassphraseSubmit],
-  );
 
   /** Builds the prompt from current queue state and opens the two-panel AI Assist modal. */
   function handleOpenAiAssistModal() {
@@ -4722,42 +4665,6 @@ function PointingTab({
           </table>
         </div>
       )}
-
-      {/* Passphrase gate — revealed by Ctrl+Alt+Z */}
-      {isPassphraseModalVisible ? (
-        <div aria-modal="true" className={styles.releasePromptOverlay} role="dialog">
-          <div className={styles.releasePromptModal}>
-            <h3 className={styles.releasePromptTitle}>Unlock protected tools</h3>
-            <input
-              aria-label="Protected tools passphrase"
-              className={styles.releasePromptInput}
-              onChange={(changeEvent) => setPassphraseInput(changeEvent.target.value)}
-              onKeyDown={handlePointingPassphraseKeyDown}
-              placeholder="Enter passphrase"
-              ref={passphraseInputRef}
-              type="password"
-              value={passphraseInput}
-            />
-            {passphraseError ? <p className={styles.errorMessage}>{passphraseError}</p> : null}
-            <div className={styles.releasePromptActions}>
-              <button
-                className={styles.secondaryButton}
-                onClick={() => void handlePointingPassphraseSubmit()}
-                type="button"
-              >
-                Unlock
-              </button>
-              <button
-                className={styles.textActionButton}
-                onClick={() => setIsPassphraseModalVisible(false)}
-                type="button"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {/* AI Assist modal — two panels: copy prompt / paste response */}
       {isAiAssistModalVisible ? (
@@ -5852,7 +5759,7 @@ function ReleasesTab({
 }) {
   // Unlock state comes from the shared aiAssistStore (via useAiAssist) so one
   // passphrase entry unlocks every AI Assist surface, including the Admin Hub config.
-  const { isUnlocked: isReleaseAiAssistUnlocked, verifyPassphrase } = useAiAssist();
+  const { isUnlocked: isReleaseAiAssistUnlocked } = useAiAssist();
   const [releaseEntries, setReleaseEntries] = useState<ReleaseRadarEntry[]>([]);
   const [isLoadingReleaseRadar, setIsLoadingReleaseRadar] = useState(false);
   const [releaseRadarError, setReleaseRadarError] = useState<string | null>(null);
@@ -5860,9 +5767,7 @@ function ReleasesTab({
   const [releaseNotesByVersionId, setReleaseNotesByVersionId] = useState<Record<string, ReleaseAiAssistTableDocument>>(
     () => readStoredReleaseNotes(projectKey),
   );
-  const [isPassphraseModalVisible, setIsPassphraseModalVisible] = useState(false);
-  const [passphraseInput, setPassphraseInput] = useState('');
-  const [passphraseError, setPassphraseError] = useState<string | null>(null);
+
   const [releasePromptModalState, setReleasePromptModalState] = useState<ReleasePromptModalState | null>(null);
   const [releaseImportModalState, setReleaseImportModalState] = useState<ReleaseImportModalState | null>(null);
   const [releaseExportErrorByVersionId, setReleaseExportErrorByVersionId] = useState<Record<string, string>>({});
@@ -5878,7 +5783,6 @@ function ReleasesTab({
   );
   const [devSkipRiskPromptModalState, setDevSkipRiskPromptModalState] = useState<ReleasePromptModalState | null>(null);
   const [devSkipRiskAutoStatus, setDevSkipRiskAutoStatus] = useState<string | null>(null);
-  const passphraseInputRef = useRef<HTMLInputElement | null>(null);
   const releaseNotesSectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
   useEffect(() => {
@@ -6055,76 +5959,12 @@ function ReleasesTab({
     };
   }, [projectKey, scopeMode, selectedSprintId, selectedFixVersionName, selectedPiValue]);
 
-  useEffect(() => {
-    function handleGlobalKeyDown(keyboardEvent: globalThis.KeyboardEvent): void {
-      const isHiddenShortcutPressed = keyboardEvent.ctrlKey
-        && keyboardEvent.altKey
-        && (
-          keyboardEvent.key.toLowerCase() === HIDDEN_AI_ASSIST_SHORTCUT_KEY
-          || keyboardEvent.code === 'KeyZ'
-        );
-
-      if (!isHiddenShortcutPressed) {
-        return;
-      }
-
-      keyboardEvent.preventDefault();
-      if (isReleaseAiAssistUnlocked) {
-        setAiAssistUnlocked(false); // toggle: re-hide all AI Assist features
-        return;
-      }
-      openReleaseUnlockModal();
-    }
-
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleGlobalKeyDown);
-    };
-  }, [isReleaseAiAssistUnlocked]);
-
-  useEffect(() => {
-    if (isPassphraseModalVisible) {
-      passphraseInputRef.current?.focus();
-    }
-  }, [isPassphraseModalVisible]);
-
   const atRiskCount = releaseEntries.filter(
     (entry) => entry.bucket === 'overdue' || entry.bucket === 'critical',
   ).length;
   const watchCount = releaseEntries.filter((entry) => entry.bucket === 'watch').length;
   const onTrackCount = releaseEntries.filter((entry) => entry.bucket === 'ontrack').length;
   const unscheduledCount = releaseEntries.filter((entry) => entry.bucket === 'nodate').length;
-
-  function openReleaseUnlockModal(): void {
-    setIsPassphraseModalVisible(true);
-    setPassphraseInput('');
-    setPassphraseError(null);
-  }
-
-  const handlePassphraseSubmit = useCallback(async () => {
-    const isPassphraseAccepted = await verifyPassphrase(passphraseInput);
-
-    if (isPassphraseAccepted) {
-      // verifyPassphrase sets the shared aiAssistStore; no local flag to update.
-      setIsPassphraseModalVisible(false);
-      setPassphraseInput('');
-      setPassphraseError(null);
-      return;
-    }
-
-    setPassphraseError('Incorrect passphrase');
-  }, [passphraseInput, verifyPassphrase]);
-
-  const handlePassphraseKeyDown = useCallback((keyboardEvent: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (keyboardEvent.key === 'Enter') {
-      void handlePassphraseSubmit();
-      return;
-    }
-
-    if (keyboardEvent.key === 'Escape') {
-      setIsPassphraseModalVisible(false);
-    }
-  }, [handlePassphraseSubmit]);
 
   const handleBuildReleasePrompt = useCallback((releaseEntry: ReleaseRadarEntry) => {
     const normalizedProjectKey = projectKey.trim().toUpperCase();
@@ -6604,45 +6444,6 @@ function ReleasesTab({
           })}
         </>
       )}
-
-      {isPassphraseModalVisible ? (
-        <div
-          aria-modal="true"
-          className={styles.releasePromptOverlay}
-          role="dialog"
-        >
-          <div className={styles.releasePromptModal}>
-            <h3 className={styles.releasePromptTitle}>Unlock protected tools</h3>
-            <input
-              aria-label="Protected tools passphrase"
-              className={styles.releasePromptInput}
-              onChange={(changeEvent) => setPassphraseInput(changeEvent.target.value)}
-              onKeyDown={handlePassphraseKeyDown}
-              placeholder="Enter passphrase"
-              ref={passphraseInputRef}
-              type="password"
-              value={passphraseInput}
-            />
-            {passphraseError ? <p className={styles.errorMessage}>{passphraseError}</p> : null}
-            <div className={styles.releasePromptActions}>
-              <button
-                className={styles.secondaryButton}
-                onClick={() => void handlePassphraseSubmit()}
-                type="button"
-              >
-                Unlock
-              </button>
-              <button
-                className={styles.textActionButton}
-                onClick={() => setIsPassphraseModalVisible(false)}
-                type="button"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {releasePromptModalState ? (
         <div

@@ -1,6 +1,6 @@
 // CreateChgTab.test.tsx — Unit tests for the Create CHG tab (Change Request Generator).
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -751,35 +751,26 @@ describe('CreateChgTab', () => {
     );
   });
 
-  it('shows the passphrase modal when Ctrl+Alt+Z is pressed', async () => {
+  // Feature 016 Part 1: this tab used to own a Ctrl+Alt+Z listener and its own passphrase modal,
+  // which stacked on top of the app-level AiAssistUnlockGate's. The gate is now the sole owner.
+  it('renders no passphrase prompt of its own on Ctrl+Alt+Z — the app-level gate owns the unlock', async () => {
     const user = userEvent.setup();
     mockState.currentStep = 4;
     render(<CreateChgTab />);
 
     await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-
-    expect(screen.getByPlaceholderText('Enter passphrase')).toBeInTheDocument();
-  });
-
-  it('closes the passphrase modal when Cancel is clicked', async () => {
-    const user = userEvent.setup();
-    mockState.currentStep = 4;
-    render(<CreateChgTab />);
-
-    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(screen.queryByPlaceholderText('Enter passphrase')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Unlock' })).not.toBeInTheDocument();
   });
 
   it('unlocks AI Assist and shows the hidden prompt button after correct passphrase on step 4', async () => {
-    const user = userEvent.setup();
     mockState.currentStep = 4;
     render(<CreateChgTab />);
 
-    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'ainow');
-    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this tab only reads the
+    // shared store, so unlock it directly rather than driving a prompt this tab no longer renders.
+    act(() => setAiAssistUnlocked(true));
 
     expect(await screen.findByRole('button', { name: '✦ Enhance with prompt' })).toBeInTheDocument();
   });
@@ -789,10 +780,9 @@ describe('CreateChgTab', () => {
     mockState.currentStep = 4;
     render(<CreateChgTab />);
 
-    // Unlock
-    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'ainow');
-    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this tab only reads the
+    // shared store, so unlock it directly rather than driving a prompt this tab no longer renders.
+    act(() => setAiAssistUnlocked(true));
 
     // Click enhance
     await user.click(await screen.findByRole('button', { name: '✦ Enhance with prompt' }));
@@ -807,9 +797,9 @@ describe('CreateChgTab', () => {
     mockState.currentStep = 4;
     render(<CreateChgTab />);
 
-    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'ainow');
-    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this tab only reads the
+    // shared store, so unlock it directly rather than driving a prompt this tab no longer renders.
+    act(() => setAiAssistUnlocked(true));
     await user.click(await screen.findByRole('button', { name: '✦ Enhance with prompt' }));
 
     // Close prompt modal
@@ -1257,13 +1247,12 @@ describe('CreateChgTab', () => {
   });
 
   it('shows Draft with AI Assist at step 3 after unlocking the gate', async () => {
-    const user = userEvent.setup();
     mockState.currentStep = 3;
     render(<CreateChgTab />);
 
-    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'ainow');
-    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this tab only reads the
+    // shared store, so unlock it directly rather than driving a prompt this tab no longer renders.
+    act(() => setAiAssistUnlocked(true));
 
     expect(await screen.findByRole('button', { name: /Draft with AI Assist/i })).toBeInTheDocument();
   });
@@ -1280,9 +1269,9 @@ describe('CreateChgTab', () => {
     });
     render(<CreateChgTab />);
 
-    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'ainow');
-    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this tab only reads the
+    // shared store, so unlock it directly rather than driving a prompt this tab no longer renders.
+    act(() => setAiAssistUnlocked(true));
 
     await user.click(await screen.findByRole('button', { name: /Draft with AI Assist/i }));
 
@@ -1310,13 +1299,12 @@ describe('CreateChgTab', () => {
   });
 
   it('shows Risk check with AI Assist at step 6 after unlocking the gate', async () => {
-    const user = userEvent.setup();
     mockState.currentStep = 6;
     render(<CreateChgTab />);
 
-    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'ainow');
-    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this tab only reads the
+    // shared store, so unlock it directly rather than driving a prompt this tab no longer renders.
+    act(() => setAiAssistUnlocked(true));
 
     expect(await screen.findByRole('button', { name: /Risk check with AI Assist/i })).toBeInTheDocument();
   });
@@ -1331,9 +1319,9 @@ describe('CreateChgTab', () => {
     });
     render(<CreateChgTab />);
 
-    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'ainow');
-    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this tab only reads the
+    // shared store, so unlock it directly rather than driving a prompt this tab no longer renders.
+    act(() => setAiAssistUnlocked(true));
 
     await user.click(await screen.findByRole('button', { name: /Risk check with AI Assist/i }));
 
@@ -1351,9 +1339,9 @@ describe('CreateChgTab', () => {
     });
     render(<CreateChgTab />);
 
-    await user.keyboard('{Control>}{Alt>}z{/Alt}{/Control}');
-    await user.type(screen.getByPlaceholderText('Enter passphrase'), 'ainow');
-    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this tab only reads the
+    // shared store, so unlock it directly rather than driving a prompt this tab no longer renders.
+    act(() => setAiAssistUnlocked(true));
 
     await user.click(await screen.findByRole('button', { name: /Risk check with AI Assist/i }));
 
