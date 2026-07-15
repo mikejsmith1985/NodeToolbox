@@ -1843,7 +1843,16 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
       {canShowAuthoringToolbar && <PiReviewSizingCard />}
       {canEditContent && (
         <div data-export-exclude="true">
-          <PiReviewAiPanel onApplySuggestion={handleApplyAiSuggestion} rows={rows} />
+          <PiReviewAiPanel
+            columnAvailability={{
+              // Dev Work and Test Support are optional columns — only ask the model for a verdict
+              // this page's table can actually record.
+              hasDevWorkColumn: visibleOptionalColumns.has('devWork'),
+              hasTestSupportColumn: visibleOptionalColumns.has('testSupport'),
+            }}
+            onApplySuggestion={handleApplyAiSuggestion}
+            rows={rows}
+          />
         </div>
       )}
       {jiraLoadDeltaDetails.length > 0 && (

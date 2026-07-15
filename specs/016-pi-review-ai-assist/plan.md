@@ -15,8 +15,8 @@ research verified there is no behaviour in the duplicates that the survivor lack
 
 **Part 2 — a PI Review AI panel.** A new `ArtView/ai/` module (mirroring the existing `FeatureCanvas/ai/`) builds one
 prompt covering every Feature on the page, dispatches it through the existing AI Assist exchange, and presents
-per-Feature suggestions the user accepts row by row. An accepted suggestion may touch **exactly two cells**: Point
-Estimate (replace) and Implementation Notes (append). Nothing else — Dependency, Risks and Priority are Jira mirrors
+per-Feature suggestions the user accepts row by row. An accepted suggestion may touch **exactly four cells**: Point
+Estimate (replace), Implementation Notes (append), and the Dev Work / Test Support boxes (tick). Nothing else — Dependency, Risks and Priority are Jira mirrors
 rebuilt on every load, so the AI supplies the *explanation* they cannot hold, as a labelled note line.
 
 The approach is overwhelmingly **reuse**: AC field resolution, rich-text flattening, JSON extraction, the exchange

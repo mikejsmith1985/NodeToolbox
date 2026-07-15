@@ -2,15 +2,22 @@
 //
 // This file is where the feature's central guarantee lives, so it is deliberately tiny and pure.
 //
-// An accepted suggestion may touch exactly TWO cells:
+// An accepted suggestion may touch exactly FOUR cells:
 //   • pointEstimate — replaced, when the suggestion resolved to a number
 //   • notes         — appended to, never overwritten
+//   • devWork       — ticked/unticked, when the model gave a verdict
+//   • testSupport   — ticked/unticked, when the model gave a verdict
 //
 // Everything else is off limits, and not by convention — by consequence. Dependency, Risks and
 // Priority are rebuilt from the Jira issue on every page load, so text written there would be
 // blanked (and, for Dependency/Risks, migrated into notes) the next time the page opened. The user
 // would watch their AI results move or vanish. Rather than fight that, the AI contributes the
 // explanation those columns cannot hold, as a labelled note line.
+//
+// Dev Work and Test Support are on the surface for the opposite reason: reconcile passes them
+// straight through, so they are human-owned and an accepted value survives the next load. They are
+// the PO's own judgement about what the team is being asked to do — build it, or only help test
+// what another team built — which is exactly the kind of reading the material supports.
 //
 // See specs/016-pi-review-ai-assist/contracts/cell-write-contract.md.
 
@@ -32,10 +39,29 @@ const NOTE_LABELS = {
   implementation: 'Implementation note',
 } as const
 
+/** The literal the PI Review table reads as a ticked box; anything else renders unticked. */
+const CHECKBOX_TICKED_VALUE = 'Yes'
+/** The literal written for an unticked box, matching what an empty row carries. */
+const CHECKBOX_UNTICKED_VALUE = ''
+
 /** The estimate this suggestion resolves to, or null when it must leave the cell alone. */
 function readResolvedEstimate(suggestion: PiReviewAiSuggestion): number | null {
   // XXL carries no derived number — "100+" is a floor. Only a user-supplied value unblocks it.
   return suggestion.userSuppliedPoints ?? suggestion.derivedPoints
+}
+
+/**
+ * Resolves one checkbox cell against the model's verdict.
+ *
+ * A null verdict means the model said nothing, and that is NOT the same as `false`: unticking a box
+ * on the strength of silence would quietly undo a human's judgement. Only an explicit verdict moves
+ * the cell.
+ */
+function applyCheckboxVerdict(currentValue: string, verdict: boolean | null): string {
+  if (verdict === null) {
+    return currentValue
+  }
+  return verdict ? CHECKBOX_TICKED_VALUE : CHECKBOX_UNTICKED_VALUE
 }
 
 /** Truncates AI text to the cap before it can reach a cell. */
@@ -72,9 +98,11 @@ export function applyPiReviewSuggestion(row: PiReviewRow, suggestion: PiReviewAi
   return {
     ...row,
     // An unresolved size (outside the scale, or an XXL with no number yet) leaves the cell alone —
-    // the suggestion is still worth accepting for its notes.
+    // the suggestion is still worth accepting for its notes and box verdicts.
     pointEstimate: resolvedEstimate === null ? row.pointEstimate : String(resolvedEstimate),
     notes: nextNotes,
+    devWork: applyCheckboxVerdict(row.devWork, suggestion.devWork),
+    testSupport: applyCheckboxVerdict(row.testSupport, suggestion.testSupport),
   }
 }
 

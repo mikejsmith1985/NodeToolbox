@@ -7,7 +7,13 @@
 import { describe, expect, it } from 'vitest'
 
 import { buildPiReviewAiPrompt, parsePiReviewAiReply } from './piReviewAiAssist.ts'
+import type { PiReviewAiColumnAvailability } from './piReviewAiAssist.ts'
 import type { PiReviewAiFeatureContext } from './piReviewAiFetch.ts'
+
+/** Which optional columns the page's table actually has. Both present unless a test says otherwise. */
+function columns(overrides: Partial<PiReviewAiColumnAvailability> = {}): PiReviewAiColumnAvailability {
+  return { hasDevWorkColumn: true, hasTestSupportColumn: true, ...overrides }
+}
 
 function context(overrides: Partial<PiReviewAiFeatureContext> = {}): PiReviewAiFeatureContext {
   return {
@@ -20,6 +26,8 @@ function context(overrides: Partial<PiReviewAiFeatureContext> = {}): PiReviewAiF
     linkedRisks: ['RISK-2 - Vendor SLA (Open)'],
     currentPointEstimate: '',
     hasExistingNotes: false,
+    currentDevWork: '',
+    currentTestSupport: '',
     ...overrides,
   }
 }
@@ -28,7 +36,7 @@ function context(overrides: Partial<PiReviewAiFeatureContext> = {}): PiReviewAiF
 
 describe('buildPiReviewAiPrompt', () => {
   it("carries every Feature's key, summary, priority, description, AC and linked issues (FR-013)", () => {
-    const prompt = buildPiReviewAiPrompt([context()])
+    const prompt = buildPiReviewAiPrompt([context()], columns())
 
     expect(prompt).toContain('ALPHA-1')
     expect(prompt).toContain('Enrollment support')
@@ -40,7 +48,7 @@ describe('buildPiReviewAiPrompt', () => {
   })
 
   it('embeds the T-shirt scale from the shared constant (FR-014)', () => {
-    const prompt = buildPiReviewAiPrompt([context()])
+    const prompt = buildPiReviewAiPrompt([context()], columns())
 
     // The rubric shown on the sizing card and the rubric given to the model are the same object.
     for (const rung of ['XS', 'S', 'M', 'L', 'XL', 'XXL', '10', '20', '40', '60', '80', '100+']) {
@@ -49,7 +57,7 @@ describe('buildPiReviewAiPrompt', () => {
   })
 
   it('states an absent description or AC explicitly rather than as an empty label (FR-015)', () => {
-    const prompt = buildPiReviewAiPrompt([context({ description: null, acceptanceCriteria: null })])
+    const prompt = buildPiReviewAiPrompt([context({ description: null, acceptanceCriteria: null })], columns())
 
     expect(prompt).toMatch(/description: \(none in Jira\)/)
     expect(prompt).toMatch(/acceptance criteria: \(none in Jira\)/)
@@ -58,7 +66,7 @@ describe('buildPiReviewAiPrompt', () => {
   })
 
   it('asks for a size and never a point number — the model cannot contradict the rubric (FR-017)', () => {
-    const prompt = buildPiReviewAiPrompt([context()])
+    const prompt = buildPiReviewAiPrompt([context()], columns())
 
     expect(prompt).toMatch(/"size"/)
     expect(prompt).not.toMatch(/"points"/)
@@ -66,13 +74,13 @@ describe('buildPiReviewAiPrompt', () => {
   })
 
   it('instructs the model to use only the listed issue keys (FR-021 guard, prompt side)', () => {
-    const prompt = buildPiReviewAiPrompt([context()])
+    const prompt = buildPiReviewAiPrompt([context()], columns())
 
     expect(prompt).toMatch(/only the issue keys listed|never invent/i)
   })
 
   it('asks for the reply envelope the parser expects (FR-016)', () => {
-    const prompt = buildPiReviewAiPrompt([context()])
+    const prompt = buildPiReviewAiPrompt([context()], columns())
 
     expect(prompt).toContain('"kind": "piReview"')
     expect(prompt).toContain('"items"')
@@ -87,7 +95,7 @@ describe('buildPiReviewAiPrompt', () => {
       context({ issueKey: 'ALPHA-3', summary: 'Three' }),
     ]
 
-    const prompt = buildPiReviewAiPrompt(everyFeature)
+    const prompt = buildPiReviewAiPrompt(everyFeature, columns())
 
     expect(prompt).toContain('ALPHA-1')
     expect(prompt).toContain('ALPHA-2')
@@ -95,8 +103,51 @@ describe('buildPiReviewAiPrompt', () => {
     expect(prompt).toMatch(/3 Features/)
   })
 
+  it('asks whether the team must BUILD it — the Dev Work box', () => {
+    const prompt = buildPiReviewAiPrompt([context()], columns())
+
+    expect(prompt).toContain('"devWork"')
+    expect(prompt).toMatch(/dev work/i)
+    // The distinction the PO actually draws: does OUR team write the code?
+    expect(prompt).toMatch(/development .*by (the|our) team|team .*must build|requires development/i)
+  })
+
+  it(`asks whether the team is ONLY supporting another team's testing — the Test Support box`, () => {
+    const prompt = buildPiReviewAiPrompt([context()], columns())
+
+    expect(prompt).toContain('"testSupport"')
+    expect(prompt).toMatch(/test support/i)
+    // "only" is the whole point — this is the case where we do NOT build it.
+    expect(prompt).toMatch(/only .*support(ing)? (the )?test/i)
+    expect(prompt).toMatch(/another team/i)
+  })
+
+  it(`does not ask for a column the page's table does not have`, () => {
+    // These are OPTIONAL columns. Asking for a value the table cannot hold would produce a
+    // suggestion that silently goes nowhere.
+    const withoutDevWork = buildPiReviewAiPrompt([context()], columns({ hasDevWorkColumn: false }))
+    expect(withoutDevWork).not.toContain('"devWork"')
+    expect(withoutDevWork).toContain('"testSupport"')
+
+    const withoutTestSupport = buildPiReviewAiPrompt([context()], columns({ hasTestSupportColumn: false }))
+    expect(withoutTestSupport).not.toContain('"testSupport"')
+    expect(withoutTestSupport).toContain('"devWork"')
+
+    const withNeither = buildPiReviewAiPrompt([context()], columns({ hasDevWorkColumn: false, hasTestSupportColumn: false }))
+    expect(withNeither).not.toContain('"devWork"')
+    expect(withNeither).not.toContain('"testSupport"')
+    // The rest of the prompt is unaffected.
+    expect(withNeither).toContain('"size"')
+  })
+
+  it('shows the model what each box says today, so it can disagree with intent', () => {
+    const prompt = buildPiReviewAiPrompt([context({ currentDevWork: 'Yes', currentTestSupport: '' })], columns())
+
+    expect(prompt).toMatch(/dev work (is )?already (ticked|checked|yes)|dev work: yes/i)
+  })
+
   it('tells the model the notes are for what Jira links cannot say', () => {
-    const prompt = buildPiReviewAiPrompt([context()])
+    const prompt = buildPiReviewAiPrompt([context()], columns())
 
     // The AI must not try to restate or set the Dependency/Risks columns — those mirror Jira.
     expect(prompt).toMatch(/do not restate|not the keys|why/i)
@@ -199,6 +250,44 @@ describe('parsePiReviewAiReply', () => {
     expect(result.suggestions).toHaveLength(1)
     expect(result.unknownKeys).toEqual(['GHOST-1'])
     expect(result.unparsedCount).toBe(1)
+  })
+
+  it('reads devWork and testSupport as booleans', () => {
+    const result = parsePiReviewAiReply(
+      reply([{ issueKey: 'ALPHA-1', size: 'M', devWork: true, testSupport: false }]),
+      KNOWN_KEYS,
+    )
+
+    expect(result.suggestions[0].devWork).toBe(true)
+    expect(result.suggestions[0].testSupport).toBe(false)
+  })
+
+  it('leaves a box absent — not false — when the model says nothing about it', () => {
+    // Absent must not mean "uncheck it": silence is not a judgement, and applying it would erase a
+    // human's tick.
+    const result = parsePiReviewAiReply(reply([{ issueKey: 'ALPHA-1', size: 'M' }]), KNOWN_KEYS)
+
+    expect(result.suggestions[0].devWork).toBeNull()
+    expect(result.suggestions[0].testSupport).toBeNull()
+  })
+
+  it('ignores a non-boolean box value rather than guessing what it meant', () => {
+    const result = parsePiReviewAiReply(
+      reply([{ issueKey: 'ALPHA-1', size: 'M', devWork: 'maybe', testSupport: 1 }]),
+      KNOWN_KEYS,
+    )
+
+    expect(result.suggestions[0].devWork).toBeNull()
+    expect(result.suggestions[0].testSupport).toBeNull()
+  })
+
+  it('keeps an item that carries only a box verdict and no size', () => {
+    const result = parsePiReviewAiReply(reply([{ issueKey: 'ALPHA-1', devWork: true }]), KNOWN_KEYS)
+
+    expect(result.suggestions).toHaveLength(1)
+    expect(result.suggestions[0].devWork).toBe(true)
+    expect(result.suggestions[0].size).toBeNull()
+    expect(result.unparsedCount).toBe(0)
   })
 
   it('marks XXL needsPoints with no number — 100+ is a floor the user resolves (R-7)', () => {

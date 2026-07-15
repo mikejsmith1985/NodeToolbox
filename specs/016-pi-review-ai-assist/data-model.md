@@ -3,7 +3,7 @@
 **Feature**: `016-pi-review-ai-assist` | **Date**: 2026-07-15
 
 Nothing here is persisted. Every entity below lives in component state for the life of one AI Assist run and is gone
-on unmount — except the two cells an accepted suggestion writes, which become ordinary unsaved `PiReviewRow` edits
+on unmount — except the four cells an accepted suggestion writes, which become ordinary unsaved `PiReviewRow` edits
 indistinguishable from typing.
 
 ---
@@ -35,7 +35,8 @@ an accepted suggestion may touch *is* the feature's central constraint.
 | `dependency` | Jira mirror (rebuilt from links every load) | ❌ |
 | `risks` | Jira mirror (rebuilt from links every load) | ❌ |
 | `committed` | human | ❌ |
-| `devWork`, `testSupport` | human | ❌ |
+| **`devWork`** | human | ✅ **tick/untick** — reconcile passes it through, so it survives a reload |
+| **`testSupport`** | human | ✅ **tick/untick** |
 | **`pointEstimate`** | Jira, with a gap | ✅ **replace** |
 | **`notes`** | human, append-only | ✅ **append** |
 
