@@ -16,7 +16,12 @@ import { useAiAssistExchange } from '../../SnowHub/hooks/useAiAssistExchange.ts'
 import { ReportAiPanel } from '../../ReportsHub/ReportAiPanel.tsx'
 import type { PiReviewRow } from '../piReviewTable.ts'
 import { extractPiReviewFeatureKey } from '../piReviewJira.ts'
-import { buildPiReviewAiPrompt, parsePiReviewAiReply, type PiReviewAiSuggestion } from './piReviewAiAssist.ts'
+import {
+  buildPiReviewAiPrompt,
+  parsePiReviewAiReply,
+  type PiReviewAiColumnAvailability,
+  type PiReviewAiSuggestion,
+} from './piReviewAiAssist.ts'
 import { fetchPiReviewAiContexts, type PiReviewAiFeatureContext } from './piReviewAiFetch.ts'
 import { PiReviewSuggestionTable } from './PiReviewSuggestionTable.tsx'
 import styles from './PiReviewAi.module.css'
@@ -31,10 +36,15 @@ import styles from './PiReviewAi.module.css'
 const JIRA_WRITE_DISCLOSURE =
   'review each suggestion · an accepted estimate can update the Jira issue when Jira has none';
 
-/** Props: the rows to size, and where an accepted suggestion goes. */
+/** Props: the rows to size, which optional columns exist, and where an accepted suggestion goes. */
 export interface PiReviewAiPanelProps {
   /** The PI Review rows currently on the page. */
   rows: readonly PiReviewRow[]
+  /**
+   * Which optional columns this page's table actually has. Dev Work and Test Support are optional,
+   * so the prompt must not ask for a verdict the table has nowhere to put.
+   */
+  columnAvailability: PiReviewAiColumnAvailability
   /** Called once per accepted suggestion; the tab applies it to the row and marks the page dirty. */
   onApplySuggestion: (suggestion: PiReviewAiSuggestion) => void
 }
@@ -52,7 +62,7 @@ function readCurrentEstimatesByKey(rows: readonly PiReviewRow[]): Record<string,
 }
 
 /** Renders the AI Assistance panel, or nothing when AI Assist is locked. */
-export function PiReviewAiPanel({ rows, onApplySuggestion }: PiReviewAiPanelProps): React.JSX.Element | null {
+export function PiReviewAiPanel({ rows, columnAvailability, onApplySuggestion }: PiReviewAiPanelProps): React.JSX.Element | null {
   const isUnlocked = useAiAssistStore((state) => state.isAiAssistUnlocked)
   const { isRunning, runAiAssistExchange } = useAiAssistExchange()
 
@@ -95,8 +105,8 @@ export function PiReviewAiPanel({ rows, onApplySuggestion }: PiReviewAiPanelProp
   }, [isUnlocked, hasFeatures, rows])
 
   const promptText = useMemo(
-    () => (featureContexts.length === 0 ? '' : buildPiReviewAiPrompt(featureContexts)),
-    [featureContexts],
+    () => (featureContexts.length === 0 ? '' : buildPiReviewAiPrompt(featureContexts, columnAvailability)),
+    [columnAvailability, featureContexts],
   )
 
   // Both paths land here. Auto is a shortcut past the paste box, never a second pipeline.

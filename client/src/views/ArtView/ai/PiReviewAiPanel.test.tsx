@@ -56,6 +56,8 @@ function contextFor(issueKey = 'ALPHA-1') {
     linkedRisks: ['RISK-2 - Vendor SLA (Open)'],
     currentPointEstimate: '',
     hasExistingNotes: false,
+    currentDevWork: '',
+    currentTestSupport: '',
   }
 }
 
@@ -63,8 +65,10 @@ function replyFor(items: unknown[]) {
   return JSON.stringify({ kind: 'piReview', items })
 }
 
+const BOTH_COLUMNS = { hasDevWorkColumn: true, hasTestSupportColumn: true }
+
 function renderPanel(rows: PiReviewRow[] = [row()], onApply = vi.fn()) {
-  render(<PiReviewAiPanel rows={rows} onApplySuggestion={onApply} />)
+  render(<PiReviewAiPanel columnAvailability={BOTH_COLUMNS} rows={rows} onApplySuggestion={onApply} />)
   return onApply
 }
 
@@ -99,7 +103,7 @@ beforeEach(() => {
 
 describe('PiReviewAiPanel — gating', () => {
   it('renders nothing while AI Assist is locked', () => {
-    const { container } = render(<PiReviewAiPanel rows={[row()]} onApplySuggestion={vi.fn()} />)
+    const { container } = render(<PiReviewAiPanel columnAvailability={BOTH_COLUMNS} rows={[row()]} onApplySuggestion={vi.fn()} />)
 
     expect(container).toBeEmptyDOMElement()
     expect(mockFetchContexts).not.toHaveBeenCalled()

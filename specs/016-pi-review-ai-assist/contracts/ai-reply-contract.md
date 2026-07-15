@@ -40,7 +40,13 @@ first `{` to last `}`.
 | `items[].riskNote` | ➖ | string | Capped at `MAX_AI_NOTE_LENGTH`; blank-ish → dropped |
 | `items[].dependencyNote` | ➖ | string | Capped; blank-ish → dropped |
 | `items[].implementationNote` | ➖ | string | Capped; blank-ish → dropped |
+| `items[].devWork` | ➖ | boolean | Strictly boolean. Absent/`null`/a string → no verdict, cell untouched |
+| `items[].testSupport` | ➖ | boolean | Same |
 | `items[].rationale` | ➖ | string | Review display only — **never written to a cell** |
+
+**The box fields are requested only when the page's table has those columns.** Dev Work and Test
+Support are optional PI Review columns; asking for a verdict the table cannot record would produce a
+suggestion that silently goes nowhere (`PiReviewAiColumnAvailability`).
 
 **`points` is deliberately not in the contract.** The model supplies a **size**; NodeToolbox derives the number from
 the scale. This is what makes FR-020 structurally true rather than a validation someone has to remember: the model

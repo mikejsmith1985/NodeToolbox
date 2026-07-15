@@ -53,9 +53,28 @@ export interface PiReviewAiSuggestion {
   riskNote: string | null
   dependencyNote: string | null
   implementationNote: string | null
+  /**
+   * Whether the team must BUILD this Feature. null when the model said nothing — silence is not a
+   * judgement, and treating it as `false` would erase a human's tick.
+   */
+  devWork: boolean | null
+  /** Whether the team is ONLY supporting another team's testing. null when the model said nothing. */
+  testSupport: boolean | null
   /** Shown in review so Accept is never a blind click. Never written to a cell. */
   rationale: string | null
   state: PiReviewSuggestionState
+}
+
+/**
+ * Which optional columns the page's table actually has.
+ *
+ * Dev Work and Test Support are optional PI Review columns — a page may carry neither. Asking the
+ * model for a value the table cannot hold would produce a suggestion that silently goes nowhere, so
+ * the prompt only requests the boxes the page can actually record.
+ */
+export interface PiReviewAiColumnAvailability {
+  hasDevWorkColumn: boolean
+  hasTestSupportColumn: boolean
 }
 
 /** The outcome of parsing one reply: what is usable, and an honest account of what was not. */
@@ -82,6 +101,8 @@ function buildFeatureBlock(context: PiReviewAiFeatureContext): string {
   if (context.priority) headerParts.push(`priority ${context.priority}`)
   if (context.currentPointEstimate.trim() !== '') headerParts.push(`current estimate ${context.currentPointEstimate}`)
   if (context.hasExistingNotes) headerParts.push('already has notes')
+  if (context.currentDevWork === 'Yes') headerParts.push('Dev Work: Yes')
+  if (context.currentTestSupport === 'Yes') headerParts.push('Test Support: Yes')
 
   const lines = [`- ${headerParts.join(' · ')} — ${context.summary}`]
   // An absent field is stated, not omitted: an empty label invites the model to invent content.
@@ -98,15 +119,43 @@ function buildFeatureBlock(context: PiReviewAiFeatureContext): string {
  * One run, one prompt: a PO fills a PI Review page in one sitting, so the prompt carries the whole
  * table and the reply comes back keyed by issue so each row can be accepted independently.
  */
-export function buildPiReviewAiPrompt(contexts: readonly PiReviewAiFeatureContext[]): string {
+export function buildPiReviewAiPrompt(
+  contexts: readonly PiReviewAiFeatureContext[],
+  columnAvailability: PiReviewAiColumnAvailability,
+): string {
   const featureBlocks = contexts.map(buildFeatureBlock).join('\n')
   const issueKeyList = contexts.map((context) => context.issueKey).join(', ')
+  const { hasDevWorkColumn, hasTestSupportColumn } = columnAvailability
+
+  // Only ask for the boxes this page can record — see PiReviewAiColumnAvailability.
+  const boxInstructions = [
+    hasDevWorkColumn
+      ? '  3. "devWork": true when this Feature requires development BY OUR TEAM — we write the code.'
+      : '',
+    hasTestSupportColumn
+      ? '  4. "testSupport": true when our team is ONLY supporting the testing of ANOTHER team\'s'
+        + '\n     development — they build it, we help test it. If we build it, that is not test support.'
+      : '',
+  ].filter(Boolean).join('\n');
+
+  const boxReplyFields = [
+    hasDevWorkColumn ? '      "devWork": true | false,' : '',
+    hasTestSupportColumn ? '      "testSupport": true | false,' : '',
+  ].filter(Boolean).join('\n');
+
+  const boxRules = hasDevWorkColumn || hasTestSupportColumn
+    ? '\n  - Judge the Dev Work / Test Support boxes from what the Feature asks OUR team to do. They answer'
+      + '\n    different questions: Dev Work is "do we build it"; Test Support is "do we only help test what'
+      + '\n    another team built". Omit a box entirely when the material does not tell you — saying nothing'
+      + '\n    is better than a guess, because a wrong tick is one a person has to catch.'
+    : '';
 
   return `You are helping a Product Owner prepare a SAFe PI Review page for ${contexts.length} Features.
 
 For each Feature below, decide:
   1. Its T-shirt size, using the scale. Judge from the description, acceptance criteria and links.
   2. What the ART/RTE needs to hear: the risks, the dependencies, and any implementation notes.
+${boxInstructions}
 
 ${buildSizingScaleBlock()}
 
@@ -120,7 +169,7 @@ Rules:
   - If a Feature has no description or acceptance criteria, say so in "rationale" rather than
     guessing a size silently.
   - Keep every note under ${MAX_AI_NOTE_LENGTH} characters and worth an RTE's attention.
-  - Omit a note field entirely when you have nothing useful to say about it.
+  - Omit a note field entirely when you have nothing useful to say about it.${boxRules}
 
 Features (${contexts.length} Features — cover every one):
 ${featureBlocks}
@@ -134,6 +183,7 @@ Reply with this JSON object and nothing else:
     {
       "issueKey": "<one of the keys above>",
       "size": "XS | S | M | L | XL | XXL",
+${boxReplyFields}
       "riskNote": "<why this is risky, or omit>",
       "dependencyNote": "<why the dependency matters, or omit>",
       "implementationNote": "<what the ART/RTE should know, or omit>",
@@ -157,6 +207,16 @@ function readNoteField(rawValue: unknown): string | null {
   return trimmedNote.length > MAX_AI_NOTE_LENGTH ? `${trimmedNote.slice(0, MAX_AI_NOTE_LENGTH)}…` : trimmedNote
 }
 
+/**
+ * Reads a checkbox verdict. Strictly boolean: a string, a number or a missing field all read as null.
+ *
+ * null means "the model did not say", which is deliberately NOT the same as false. Applying false
+ * would untick a box a human had ticked, on the strength of the model's silence.
+ */
+function readCheckboxField(rawValue: unknown): boolean | null {
+  return typeof rawValue === 'boolean' ? rawValue : null
+}
+
 /** Reads the size if the scale defines it; anything else becomes null rather than a nearby guess. */
 function readSizeField(rawValue: unknown): FeatureSizeName | null {
   return isFeatureSizeName(rawValue) ? (String(rawValue).trim().toUpperCase() as FeatureSizeName) : null
@@ -168,9 +228,17 @@ function readSuggestion(rawItem: Record<string, unknown>, issueKey: string): PiR
   const riskNote = readNoteField(rawItem.riskNote)
   const dependencyNote = readNoteField(rawItem.dependencyNote)
   const implementationNote = readNoteField(rawItem.implementationNote)
+  const devWork = readCheckboxField(rawItem.devWork)
+  const testSupport = readCheckboxField(rawItem.testSupport)
 
-  // Lenient per field, but an item with no size AND no note has told us nothing.
-  const hasAnyContent = size !== null || riskNote !== null || dependencyNote !== null || implementationNote !== null
+  // Lenient per field, but an item that says nothing at all has told us nothing. A box verdict on
+  // its own is a real answer, so it counts.
+  const hasAnyContent = size !== null
+    || riskNote !== null
+    || dependencyNote !== null
+    || implementationNote !== null
+    || devWork !== null
+    || testSupport !== null
   if (!hasAnyContent) {
     return null
   }
@@ -184,6 +252,8 @@ function readSuggestion(rawItem: Record<string, unknown>, issueKey: string): PiR
     riskNote,
     dependencyNote,
     implementationNote,
+    devWork,
+    testSupport,
     rationale: readNoteField(rawItem.rationale),
     // XXL is "100+" — a floor, not a value. It cannot be accepted until the user supplies a number.
     state: size === 'XXL' ? 'needsPoints' : 'pending',
