@@ -24,30 +24,62 @@ function createAiAssistExchangeRouter(configuration) {
 
   // GET /api/ai-assist/config — returns the AI Assist automation config. The config lives
   // behind the passphrase-gated Admin Hub section.
+  // Security: the webhook secret is NEVER returned, matching how /api/proxy-config reports its
+  // credentials. The Admin Hub only needs to know WHETHER one is set in order to render the form, and a
+  // config read that echoes a secret turns every reader of this endpoint into a way to lift it.
   router.get('/api/ai-assist/config', (req, res) => {
     const aiAssist = configuration.aiAssistAutomation || {};
     return res.json({
-      webhookUrl:      aiAssist.webhookUrl      || '',
-      webhookSecret:   aiAssist.webhookSecret   || '',
-      parkingSpaceKey: aiAssist.parkingSpaceKey || '',
-      parkingPageId:   aiAssist.parkingPageId   || '',
-      isEnabled:       !!aiAssist.isEnabled,
+      webhookUrl:       aiAssist.webhookUrl      || '',
+      hasWebhookSecret: !!aiAssist.webhookSecret,
+      parkingSpaceKey:  aiAssist.parkingSpaceKey || '',
+      parkingPageId:    aiAssist.parkingPageId   || '',
+      isEnabled:        !!aiAssist.isEnabled,
     });
   });
 
   // POST /api/ai-assist/config — saves the AI Assist automation config to memory and disk.
-  // Body: { webhookUrl, webhookSecret, parkingSpaceKey, isEnabled }
+  // Body: { webhookUrl, webhookSecret, parkingSpaceKey, parkingPageId, isEnabled }
+  //
+  // The secret MERGES rather than overwrites, mirroring /api/proxy-config. This pairs with the GET above:
+  // since the form is never sent the existing secret, it cannot send one back, and a blind overwrite
+  // would wipe the secret every time anyone saved an unrelated field. An omitted or blank secret
+  // therefore means "leave it alone"; clearing one is an explicit action (see the clearWebhookSecret flag).
   router.post('/api/ai-assist/config', (req, res) => {
-    const { webhookUrl, webhookSecret, parkingSpaceKey, parkingPageId, isEnabled } = req.body || {};
+    const { webhookUrl, webhookSecret, parkingSpaceKey, parkingPageId, isEnabled, clearWebhookSecret } = req.body || {};
+    const existingAiAssist = configuration.aiAssistAutomation || {};
+    const suppliedSecret = typeof webhookSecret === 'string' ? webhookSecret.trim() : '';
+
+    let resolvedWebhookSecret;
+    if (clearWebhookSecret === true) {
+      resolvedWebhookSecret = '';
+    } else if (suppliedSecret !== '') {
+      resolvedWebhookSecret = suppliedSecret;
+    } else {
+      resolvedWebhookSecret = existingAiAssist.webhookSecret || '';
+    }
+
     configuration.aiAssistAutomation = {
       webhookUrl:      typeof webhookUrl      === 'string' ? webhookUrl.trim()      : '',
-      webhookSecret:   typeof webhookSecret   === 'string' ? webhookSecret.trim()   : '',
+      webhookSecret:   resolvedWebhookSecret,
       parkingSpaceKey: typeof parkingSpaceKey === 'string' ? parkingSpaceKey.trim() : '',
       parkingPageId:   typeof parkingPageId   === 'string' ? parkingPageId.trim()   : '',
       isEnabled:       !!isEnabled,
     };
     saveConfigToDisk(configuration);
-    return res.json({ ok: true, config: configuration.aiAssistAutomation });
+
+    // The response echoes the config back for the form to re-render from — with the secret withheld,
+    // for the same reason the GET withholds it.
+    return res.json({
+      ok: true,
+      config: {
+        webhookUrl:       configuration.aiAssistAutomation.webhookUrl,
+        hasWebhookSecret: !!configuration.aiAssistAutomation.webhookSecret,
+        parkingSpaceKey:  configuration.aiAssistAutomation.parkingSpaceKey,
+        parkingPageId:    configuration.aiAssistAutomation.parkingPageId,
+        isEnabled:        configuration.aiAssistAutomation.isEnabled,
+      },
+    });
   });
 
   // POST /api/ai-assist/dispatch — Body: { correlationId: string, prompt: string }

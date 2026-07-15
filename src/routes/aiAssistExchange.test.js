@@ -21,10 +21,10 @@ function buildApp(configuration = {}) {
 beforeEach(() => jest.clearAllMocks());
 
 describe('AI Assist config endpoints', () => {
-  it('GET returns the current config (empty defaults)', async () => {
+  it('GET returns the current config, reporting the secret as absent rather than echoing it', async () => {
     const response = await request(buildApp({})).get('/api/ai-assist/config');
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ webhookUrl: '', webhookSecret: '', parkingSpaceKey: '', parkingPageId: '', isEnabled: false });
+    expect(response.body).toEqual({ webhookUrl: '', hasWebhookSecret: false, parkingSpaceKey: '', parkingPageId: '', isEnabled: false });
   });
 
   it('POST sanitises, saves to disk, and persists into configuration', async () => {
@@ -41,6 +41,84 @@ describe('AI Assist config endpoints', () => {
     const configuration = { aiAssistAutomation: { webhookUrl: 'https://x.atlassian.net/h', webhookSecret: 'k', parkingSpaceKey: 'AIASSIST', isEnabled: true } };
     const response = await request(buildApp(configuration)).get('/api/ai-assist/config');
     expect(response.body).toMatchObject({ webhookUrl: 'https://x.atlassian.net/h', parkingSpaceKey: 'AIASSIST', isEnabled: true });
+  });
+});
+
+// The rest of this router already refuses to echo a prompt or a secret on dispatch. The config read was
+// the one place that did — /api/proxy-config reports `hasCredentials` and states that raw credentials are
+// NEVER returned, and this endpoint now matches that.
+describe('AI Assist config — the webhook secret never leaves the server', () => {
+  const SAVED_CONFIG = {
+    aiAssistAutomation: {
+      webhookUrl: 'https://x.atlassian.net/h', webhookSecret: 'super-secret-token',
+      parkingSpaceKey: 'AIASSIST', parkingPageId: '781058099', isEnabled: true,
+    },
+  };
+
+  it('GET never returns the secret, however it is spelled', async () => {
+    const response = await request(buildApp({ ...SAVED_CONFIG })).get('/api/ai-assist/config');
+
+    expect(JSON.stringify(response.body)).not.toContain('super-secret-token');
+    expect(response.body.webhookSecret).toBeUndefined();
+  });
+
+  it('GET says WHETHER a secret is set, which is all the form needs to render', async () => {
+    const withSecret = await request(buildApp({ ...SAVED_CONFIG })).get('/api/ai-assist/config');
+    const withoutSecret = await request(buildApp({ aiAssistAutomation: { webhookUrl: 'https://x/h' } })).get('/api/ai-assist/config');
+
+    expect(withSecret.body.hasWebhookSecret).toBe(true);
+    expect(withoutSecret.body.hasWebhookSecret).toBe(false);
+  });
+
+  it('POST KEEPS an existing secret when the form does not send one', async () => {
+    // The pairing that makes withholding the secret safe: the form is never given the secret, so it
+    // cannot send it back, and a blind overwrite would wipe it whenever anyone saved another field.
+    const configuration = { ...SAVED_CONFIG };
+
+    await request(buildApp(configuration)).post('/api/ai-assist/config').send({
+      webhookUrl: 'https://x.atlassian.net/h', parkingSpaceKey: 'AIASSIST', isEnabled: true,
+    });
+
+    expect(configuration.aiAssistAutomation.webhookSecret).toBe('super-secret-token');
+  });
+
+  it('POST keeps an existing secret when the form sends a blank one', async () => {
+    const configuration = { ...SAVED_CONFIG };
+
+    await request(buildApp(configuration)).post('/api/ai-assist/config').send({
+      webhookUrl: 'https://x.atlassian.net/h', webhookSecret: '   ', isEnabled: true,
+    });
+
+    expect(configuration.aiAssistAutomation.webhookSecret).toBe('super-secret-token');
+  });
+
+  it('POST replaces the secret when the form sends a new one', async () => {
+    const configuration = { ...SAVED_CONFIG };
+
+    await request(buildApp(configuration)).post('/api/ai-assist/config').send({
+      webhookUrl: 'https://x.atlassian.net/h', webhookSecret: 'rotated-token', isEnabled: true,
+    });
+
+    expect(configuration.aiAssistAutomation.webhookSecret).toBe('rotated-token');
+  });
+
+  it('POST clears the secret only when explicitly asked to', async () => {
+    const configuration = { ...SAVED_CONFIG };
+
+    await request(buildApp(configuration)).post('/api/ai-assist/config').send({
+      webhookUrl: 'https://x.atlassian.net/h', clearWebhookSecret: true, isEnabled: true,
+    });
+
+    expect(configuration.aiAssistAutomation.webhookSecret).toBe('');
+  });
+
+  it('POST does not echo the secret back either', async () => {
+    const response = await request(buildApp({ ...SAVED_CONFIG })).post('/api/ai-assist/config').send({
+      webhookUrl: 'https://x.atlassian.net/h', webhookSecret: 'rotated-token', isEnabled: true,
+    });
+
+    expect(JSON.stringify(response.body)).not.toContain('rotated-token');
+    expect(response.body.config.hasWebhookSecret).toBe(true);
   });
 });
 
