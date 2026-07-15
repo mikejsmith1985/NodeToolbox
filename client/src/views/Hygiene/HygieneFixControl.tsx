@@ -177,20 +177,26 @@ function ValueFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit }: 
 /** Assignee / product-owner picker: search Jira users, pick one, then write the user field. */
 function UserFixInput({ issue, fieldId, label, isSubmitting, onSubmit }: FixInputProps) {
   const [query, setQuery] = useState('');
-  const [candidates, setCandidates] = useState<FixChoiceOption[]>([]);
+  // Results are kept with the query that produced them, so a result can never be shown against a
+  // query it does not answer.
+  const [candidateResult, setCandidateResult] = useState<{ query: string; options: FixChoiceOption[] }>({ query: '', options: [] });
   const [selectedIdentifier, setSelectedIdentifier] = useState('');
 
+  // Derived rather than synchronised. An empty box has no candidates, and the previous query's
+  // results are not this query's — so no effect has to clear them, and none can linger while a newer
+  // search is still in flight (which they briefly did when the results were plain state).
+  const candidates = query.trim() !== '' && candidateResult.query === query ? candidateResult.options : [];
+
   useEffect(() => {
-    let isActive = true;
     if (query.trim() === '') {
-      setCandidates([]);
-      return () => { isActive = false; };
+      return; // Nothing to search for; `candidates` is already empty by derivation.
     }
+    let isActive = true;
     searchFeatureReviewUsers(query)
       .then((users) => {
-        if (isActive) setCandidates(users.map((user) => ({ label: user.displayName, value: user.userIdentifier })));
+        if (isActive) setCandidateResult({ query, options: users.map((user) => ({ label: user.displayName, value: user.userIdentifier })) });
       })
-      .catch(() => { if (isActive) setCandidates([]); });
+      .catch(() => { if (isActive) setCandidateResult({ query, options: [] }); });
     return () => { isActive = false; };
   }, [query]);
 
@@ -225,18 +231,20 @@ function UserFixInput({ issue, fieldId, label, isSubmitting, onSubmit }: FixInpu
 /** Feature-link / parent-link picker: search issues (Feature/Epic for feature links), pick a key. */
 function IssueLinkFixInput({ issue, kind, fieldId, label, isSubmitting, onSubmit }: FixInputProps) {
   const [query, setQuery] = useState('');
-  const [matches, setMatches] = useState<FixChoiceOption[]>([]);
+  // Kept with the query that produced them - see the note in UserFixInput.
+  const [matchResult, setMatchResult] = useState<{ query: string; options: FixChoiceOption[] }>({ query: '', options: [] });
   const [selectedKey, setSelectedKey] = useState('');
 
+  const matches = query.trim() !== '' && matchResult.query === query ? matchResult.options : [];
+
   useEffect(() => {
-    let isActive = true;
     if (query.trim() === '') {
-      setMatches([]);
-      return () => { isActive = false; };
+      return; // Nothing to search for; `matches` is already empty by derivation.
     }
+    let isActive = true;
     searchLinkableIssues(query, kind === 'feature', readProjectKeyFromIssueKey(issue.key))
-      .then((issues) => { if (isActive) setMatches(issues); })
-      .catch(() => { if (isActive) setMatches([]); });
+      .then((issues) => { if (isActive) setMatchResult({ query, options: issues }); })
+      .catch(() => { if (isActive) setMatchResult({ query, options: [] }); });
     return () => { isActive = false; };
   }, [query, kind, issue.key]);
 

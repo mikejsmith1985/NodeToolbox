@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Hygiene — the user and issue pickers briefly showed results for what you had already stopped typing**: the
+  fix controls' search boxes kept whatever the last search returned, with no record of which search it answered,
+  so typing on past "abc" left the "abc" matches on screen until the newer results arrived. Results are now tied
+  to the query that produced them, so they disappear the moment they stop applying.
 - **Panels briefly flashed empty before their spinner appeared**: the Hygiene Monitor, Sprint Release and Jira
   Intake panels announced "loading" only *after* their first render, so you saw an empty panel for a frame first.
   They now start in the loading state. They also stop writing to a panel you have already navigated away from.
