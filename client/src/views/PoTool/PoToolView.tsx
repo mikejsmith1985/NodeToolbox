@@ -15,6 +15,7 @@ import { useEffect, useMemo } from 'react';
 
 import { PrimaryTabs, type PrimaryTabOption } from '../../components/PrimaryTabs/PrimaryTabs';
 import PiReviewTab from '../ArtView/PiReviewTab.tsx';
+import FeatureSplitterTab from './FeatureSplitterTab';
 import FeatureReviewTab from '../SprintDashboard/FeatureReviewTab.tsx';
 import { useStandupRosterStore } from '../SprintDashboard/hooks/useStandupRosterStore';
 import { buildArtTeamFromProfile } from './poToolArtTeam';
@@ -93,14 +94,7 @@ export default function PoToolView() {
     }
 
     if (activeTab === 'splitter') {
-      return (
-        <div className={styles.placeholderPanel}>
-          <p className={styles.placeholderTitle}>Feature Splitter</p>
-          <p className={styles.placeholderText}>
-            Break a large Feature into smaller Features that each deliver value. Coming next.
-          </p>
-        </div>
-      );
+      return <FeatureSplitterTab dashboardTeamProfileId={selectedTeamProfileId} />;
     }
 
     return (

@@ -15,8 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Both reused tabs are the **same components** the Team Dashboard uses, so they can never drift apart.
   - Confluence read failures now say **which** problem occurred — page missing, no permission, Confluence unreachable
     (e.g. VPN down), or Confluence not configured — instead of one generic message.
-  - **Feature Splitter** *(in progress)*: split coaching, cross-session drafts, and the reviewed-commit engine —
-    a split **creates smaller Features and links them to the original, and never closes or changes it**.
+  - **Feature Splitter**: load a Feature by key, see its wording beside your own, and carve it into smaller
+    Features that each deliver value — with always-on coaching on **how** to break it down (happy path first, by
+    workflow step, by business rule, and five more, each with a worked example). Your split **saves as you go** and
+    is still there days later. Before anything is written you see **every issue that will be created and every link
+    that will be made**; only then does Jira change. A split **creates smaller Features and links them back to the
+    original — it never closes, changes, or deletes the original**, and the new Features are the **same issue type**
+    as the one they came from. Each increment is graded against **your own hygiene rules as you type**. If a commit
+    only partly succeeds, the successes are kept, the failures are explained in Jira's own words, and your draft
+    survives so you can retry without creating anything twice.
 - **PI Review — AI Assistance (feature 016)**: a new **⚡ AI Assistance** panel on the PI Review tab (edit mode, once
   AI Assist is unlocked with Ctrl+Alt+Z) reads every Feature already on your page — its description, acceptance
   criteria, priority and linked issues — and comes back with, per Feature: a **point estimate** derived from the

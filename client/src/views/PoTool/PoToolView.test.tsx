@@ -6,9 +6,15 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockFeatureReviewTab, mockPiReviewTab, mockSetRosterDashboardTeamProfileId } = vi.hoisted(() => ({
+const {
+  mockFeatureReviewTab,
+  mockPiReviewTab,
+  mockFeatureSplitterTab,
+  mockSetRosterDashboardTeamProfileId,
+} = vi.hoisted(() => ({
   mockFeatureReviewTab: vi.fn(),
   mockPiReviewTab: vi.fn(),
+  mockFeatureSplitterTab: vi.fn(),
   mockSetRosterDashboardTeamProfileId: vi.fn(),
 }));
 
@@ -24,6 +30,14 @@ vi.mock('../ArtView/PiReviewTab.tsx', () => ({
   default: (props: Record<string, unknown>) => {
     mockPiReviewTab(props);
     return <div data-testid="pi-review-tab" />;
+  },
+}));
+
+// The Splitter is exercised in its own test; here we only assert HOW the shell mounts it.
+vi.mock('./FeatureSplitterTab', () => ({
+  default: (props: Record<string, unknown>) => {
+    mockFeatureSplitterTab(props);
+    return <div data-testid="feature-splitter-tab" />;
   },
 }));
 
@@ -157,14 +171,25 @@ describe('PoToolView — independent team selection (INV-T3, SC-015)', () => {
 });
 
 describe('PoToolView — authoring tabs', () => {
-  it('shows the Feature Splitter placeholder until that tab is built', async () => {
+  it('mounts the Feature Splitter scoped to the PO Tool team', async () => {
     render(<PoToolView />);
 
     await userEvent.click(screen.getByRole('tab', { name: 'Feature Splitter' }));
 
+    expect(screen.getByTestId('feature-splitter-tab')).toBeInTheDocument();
+    expect(mockFeatureSplitterTab).toHaveBeenCalledWith(
+      expect.objectContaining({ dashboardTeamProfileId: 'profile-alpha' }),
+    );
+  });
+
+  it('shows the Feature Composition placeholder until that tab is built', async () => {
+    render(<PoToolView />);
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Feature Composition' }));
+
     // Scoped to the panel: the tab itself also carries this label.
     const activePanel = screen.getByRole('tabpanel');
-    expect(within(activePanel).getByText(/deliver value/i)).toBeInTheDocument();
+    expect(within(activePanel).getByText(/Gather Confluence pages/i)).toBeInTheDocument();
   });
 
   it('guides the PO when no team is saved rather than mounting an unscoped tab', () => {

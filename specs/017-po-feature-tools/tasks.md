@@ -172,7 +172,7 @@ pre-flight).
 - [X] T028 [P] [US2] Write failing test `client/src/views/PoTool/jira/runCommit.test.ts` — per-item outcomes
   carrying the instance's **actual** rejection reason; a **link failure is reported, never thrown**, and never
   undoes a create (INV-5, INV-J4, FR-015/041); an item with `createdJiraKey` is **not re-created** on retry (SC-011)
-- [ ] T029 [P] [US2] Write failing test `client/src/views/PoTool/hooks/usePoHygieneContext.test.ts` — wires the
+- [X] T029 [P] [US2] Write failing test `client/src/views/PoTool/hooks/usePoHygieneContext.test.ts` — wires the
   **existing** `evaluateHygieneIssue` with the lifted field config + enterprise rules; a check whose field is
   **unconfigured** is **absent**, not reported missing (FR-028 — already the engine's behavior; this proves wiring)
 
@@ -184,20 +184,20 @@ pre-flight).
 - [X] T031 [US3] Implement `client/src/views/PoTool/drafts/draftModel.ts` + `drafts/splitDraftStorage.ts` — the
   canvas-overlay pattern (self-describing envelope, `canUseLocalStorage` guard, normalize-on-read, `schemaVersion`).
   **Deliberate divergence**: surface a storage-unavailable flag instead of failing silently (research R7, FR-047)
-- [ ] T032 [US2] Implement `client/src/views/PoTool/hooks/usePoHygieneContext.ts` — reuse `evaluateHygieneIssue`,
+- [X] T032 [US2] Implement `client/src/views/PoTool/hooks/usePoHygieneContext.ts` — reuse `evaluateHygieneIssue`,
   the lifted field-config loader (T017), and the enterprise rules readers (research R8)
 - [X] T033 [US2] Implement `client/src/views/PoTool/jira/buildSplitCommit.ts` (pure) — builds `CommitDiff` per
   data-model.md
 - [X] T034 [US2] Implement `client/src/views/PoTool/jira/runCommit.ts` — order **creates → links → updates**; reuse
   `createIssue` + `findMissingRequiredFields`; links **best-effort** via `createIssueLink` (T016).
   **MUST NOT** close, transition, or delete the original (FR-016b, INV-J2, SC-016)
-- [ ] T035 [US2] Implement `client/src/views/PoTool/FeatureSplitterTab.tsx` + `.module.css` + `.test.tsx` — load by
+- [X] T035 [US2] Implement `client/src/views/PoTool/FeatureSplitterTab.tsx` + `.module.css` + `.test.tsx` — load by
   key via **one** `jiraGet(..., fields=project,issuetype,…)` capturing both `project.key` **and** `issuetype.id`
   (research R4); copyable source panel; increment editor; coaching; per-increment hygiene reusing
   `HygieneFixControl`; target-project picker defaulting to the original's project (FR-016c); link-type picker from
   live `GET /rest/api/2/issueLinkType` defaulting to `'relates to'` (FR-037); review step; commit.
   **Report an empty/failed Jira read as a connectivity failure — never as "no data"** (spec A11)
-- [ ] T036 [US2] Verify quickstart **Scenarios B, C, D** — including the decisive check: **zero POST/PUT in the Dev
+- [X] T036 [US2] Verify quickstart **Scenarios B, C, D** — including the decisive check: **zero POST/PUT in the Dev
   Panel API log** before Commit (SC-006), and that the original's status/content are **unchanged** after a
   committed split (SC-016)
 
