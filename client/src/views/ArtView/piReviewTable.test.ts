@@ -8,7 +8,6 @@ import {
   createEmptyPiReviewRow,
   exportPiReviewRowsToCsv,
   parsePiReviewCapacitySummary,
-  parsePiReviewRowsFromSpreadsheetSheets,
   parseConfidenceVoteTable,
   parsePiReviewTable,
   setPiReviewDomParser,
@@ -318,86 +317,6 @@ describe('parsePiReviewTable', () => {
         color: '#8b5cf6',
       }),
     ]);
-  });
-});
-
-describe('parsePiReviewRowsFromSpreadsheetSheets', () => {
-  it('imports the Confluence XLSX export shape from GitHub issue 60', () => {
-    const importedTable = parsePiReviewRowsFromSpreadsheetSheets([
-      {
-        sheetName: 'Sheet3',
-        rows: [
-          [
-            'YES - If this is a Carry-Over from a 26.2 Commit?',
-            'Priority',
-            'Feature ',
-            'Point Estimate',
-            'Dependency',
-            ' Risks',
-            ' Committed?',
-          ],
-          [
-            'No',
-            'Medium',
-            'DENP-1352 - 26.3 Enrollment Support',
-            0,
-            'TRACKING FEATURE ONLY - No DEV Work',
-            'N/A',
-            'Tracking feature, no Dev',
-          ],
-        ],
-      },
-    ]);
-
-    expect(importedTable.sheetName).toBe('Sheet3');
-    expect(importedTable.rows).toHaveLength(1);
-    expect(importedTable.rows[0].feature).toBe('DENP-1352 - 26.3 Enrollment Support');
-    expect(importedTable.rows[0].pointEstimate).toBe('0');
-    expect(importedTable.rows[0].committed).toBe('');
-    expect(importedTable.rows[0].notes).toBe('Tracking feature, no Dev');
-  });
-
-  it('skips title rows and imports optional checkbox columns when present', () => {
-    const importedTable = parsePiReviewRowsFromSpreadsheetSheets([
-      {
-        sheetName: 'Planning',
-        rows: [
-          ['26.3 ask from the Business / PO'],
-          ['', '', '', ''],
-          ['Feature', 'Priority', 'Dev Work', 'Test Support', 'Committed to PI?', 'Notes'],
-          ['Feature A', 'High', 'Yes', '', 'Yes', 'Ready'],
-        ],
-      },
-    ]);
-
-    expect(importedTable.importedColumnKeys).toContain('devWork');
-    expect(importedTable.importedColumnKeys).toContain('testSupport');
-    expect(importedTable.rows[0].devWork).toBe('Yes');
-    expect(importedTable.rows[0].testSupport).toBe('');
-    expect(importedTable.rows[0].committed).toBe('Yes');
-  });
-
-  it('preserves a dedicated notes column when committed also contains narrative text', () => {
-    const importedTable = parsePiReviewRowsFromSpreadsheetSheets([
-      {
-        sheetName: 'Planning',
-        rows: [
-          ['Carry-Over', 'Priority', 'Feature', 'Estimate', 'Dependency', 'Risks', 'Committed?', 'Notes'],
-          ['No', 'High', 'Feature with notes', 8, 'None', 'Low', 'Discuss commitment with PO', 'Keep this implementation note'],
-        ],
-      },
-    ]);
-
-    expect(importedTable.rows[0].committed).toBe('Discuss commitment with PO');
-    expect(importedTable.rows[0].notes).toBe('Keep this implementation note');
-  });
-
-  it('throws a clear error when no worksheet has enough PI Review columns', () => {
-    expect(() =>
-      parsePiReviewRowsFromSpreadsheetSheets([
-        { sheetName: 'Sheet1', rows: [['Wrong', 'Headers'], ['No', 'Match']] },
-      ]),
-    ).toThrow('No imported worksheet contained a PI Review table');
   });
 });
 

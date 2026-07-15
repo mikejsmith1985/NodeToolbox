@@ -36,10 +36,6 @@
   align-items: center;
 }
 
-.hiddenFileInput {
-  display: none;
-}
-
 .pageSummaryCard {
   display: flex;
   flex-wrap: wrap;
@@ -888,26 +884,11 @@
 }
 
 /* "Pull Features from Blueprint" configuration card shown above the table in edit mode. */
-.pullFeaturesCard {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 14px 16px;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: var(--color-surface-2);
-}
-
 .pullFeaturesHint {
   margin: 0;
   font-size: 13px;
   color: var(--color-text-secondary);
   line-height: 1.5;
-}
-
-.pullFeaturesActions {
-  display: flex;
-  gap: 10px;
 }
 
 .deltaBannerSummary {

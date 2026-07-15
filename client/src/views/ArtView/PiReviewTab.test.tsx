@@ -2,7 +2,6 @@
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import * as XLSX from 'xlsx';
 
 import { ToastProvider } from '../../components/Toast/ToastProvider.tsx';
 import type { CapacitySummary } from '../SprintDashboard/capacityModel.ts';
@@ -140,6 +139,34 @@ const BETA_PAGE = {
   },
 };
 
+// A page carrying a second data row, for the structural tools (boundary lines, reordering) that
+// need more than one row to be meaningful. Rows come from Confluence or a Jira pull — never typed.
+const ALPHA_PAGE_WITH_TWO_ROWS = {
+  ...ALPHA_PAGE,
+  body: {
+    storage: {
+      value: ALPHA_PAGE.body.storage.value.replace(
+        '            </tr>\n          </tbody>\n        </table>\n        <h2>Confidence Vote Tracking</h2>',
+        `            </tr>
+            <tr>
+              <td>No</td>
+              <td>P2</td>
+              <td>Second feature</td>
+              <td>3</td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+        <h2>Confidence Vote Tracking</h2>`,
+      ),
+      representation: 'storage',
+    },
+  },
+};
+
 const ALPHA_PAGE_WITH_FEATURE_KEY = {
   ...ALPHA_PAGE,
   body: {
@@ -250,16 +277,6 @@ function createAlphaPageWithExtraPiReviewRows(extraRowsMarkup: string) {
   };
 }
 
-function createPiReviewImportFile(rows: unknown[][]): File {
-  const workbook = XLSX.utils.book_new();
-  const worksheet = XLSX.utils.aoa_to_sheet(rows);
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet3');
-  const workbookBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
-  return new File([workbookBuffer], '26.3 Commit.xlsx', {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  });
-}
-
 describe('PiReviewTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -330,7 +347,7 @@ describe('PiReviewTab', () => {
     expect(within(betaSection).getByText('Feature B')).toBeInTheDocument();
   });
 
-  it('renders one sub-tab per PI when a single team has multiple concurrent PI pages', async () => {
+  it('renders one sub-tab per PI in readout mode when a single team has multiple concurrent PI pages', async () => {
     mockFetchConfluencePageByReference.mockImplementation((pageReference: string) => {
       if (pageReference.includes('12345')) {
         return Promise.resolve(ALPHA_PAGE);
@@ -338,7 +355,8 @@ describe('PiReviewTab', () => {
       return Promise.resolve(BETA_PAGE);
     });
 
-    // One team planning two PIs at once — each PI has its own Confluence page.
+    // One team planning two PIs at once — each PI has its own Confluence page. Readout (ART) mode
+    // shows every configured page side by side, because there is no single driving PI selector there.
     renderPiReviewTab([
       {
         id: 'team-1',
@@ -352,7 +370,7 @@ describe('PiReviewTab', () => {
         isLoading: false,
         loadError: null,
       },
-    ]);
+    ], 'readout');
 
     // A single team with two PIs yields two sub-tabs labelled by the PI (not the team).
     const currentPiSection = await screen.findByRole('region', { name: /pi 26\.3 pi review/i });
@@ -368,6 +386,71 @@ describe('PiReviewTab', () => {
 
     expect(nextPiSection).toBeVisible();
     expect(within(nextPiSection).getByText('Feature B')).toBeInTheDocument();
+  });
+
+  it('shows only the page for the dashboard-selected PI in authoring mode, with no PI sub-tabs', async () => {
+    mockFetchConfluencePageByReference.mockImplementation((pageReference: string) =>
+      Promise.resolve(pageReference.includes('12345') ? ALPHA_PAGE : BETA_PAGE));
+
+    // The Team Dashboard PI selector is the single driver: PI 26.3 is selected, so the 26.4 page
+    // must not render at all — and with one page left there is nothing to tab between.
+    renderPiReviewTab([
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        piReviewPages: [
+          { piName: 'PI 26.3', pageUrl: 'https://example.atlassian.net/wiki/pages/12345/Alpha-263' },
+          { piName: 'PI 26.4', pageUrl: 'https://example.atlassian.net/wiki/pages/67890/Alpha-264' },
+        ],
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ]);
+
+    expect(await screen.findByRole('region', { name: /pi 26\.3 pi review/i })).toBeVisible();
+    expect(screen.queryByRole('region', { name: /pi 26\.4 pi review/i, hidden: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /pi 26\.4/i })).not.toBeInTheDocument();
+    // Only the selected PI's page is fetched — the other PI costs nothing.
+    expect(mockFetchConfluencePageByReference).toHaveBeenCalledTimes(1);
+  });
+
+  it('explains what to configure when no page matches the dashboard-selected PI', async () => {
+    renderPiReviewTab([
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        boardId: '42',
+        piReviewPages: [{ piName: 'PI 26.4', pageUrl: 'https://example.atlassian.net/wiki/pages/67890/Alpha-264' }],
+        sprintIssues: [],
+        isLoading: false,
+        loadError: null,
+      },
+    ]);
+
+    expect(await screen.findByText(/no pi review page is configured for pi 26\.3/i)).toBeInTheDocument();
+    expect(mockFetchConfluencePageByReference).not.toHaveBeenCalled();
+  });
+
+  it('adopts the dashboard-selected PI for a legacy page that carries no PI of its own', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+
+    expect(await screen.findByRole('region', { name: /alpha team pi review/i })).toBeVisible();
+  });
+
+  it('no longer offers manual row entry or spreadsheet import — Jira is the only source of Features', async () => {
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+
+    renderPiReviewTab([DEFAULT_TEAMS[0]]);
+    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
+    enterEditMode(alphaSection);
+
+    expect(within(alphaSection).queryByRole('button', { name: /add pi review row/i })).not.toBeInTheDocument();
+    expect(within(alphaSection).queryByRole('button', { name: /import pi review xlsx/i })).not.toBeInTheDocument();
+    expect(within(alphaSection).queryByLabelText(/import pi review xlsx/i)).not.toBeInTheDocument();
   });
 
   it('pulls Features into the table for the panel team, PI, and roster Product Owner', async () => {
@@ -408,10 +491,9 @@ describe('PiReviewTab', () => {
     const alphaSection = await screen.findByRole('region', { name: /pi 26\.3 pi review/i });
     enterEditMode(alphaSection);
 
-    // The Pull Features control only appears in edit mode; opening it reveals the pull panel.
+    // The Pull Features control only appears in edit mode, and pulls on a single click — a re-pull
+    // only ever appends new Features, so there is nothing to confirm first.
     fireEvent.click(within(alphaSection).getByRole('button', { name: /pull features from jira/i }));
-    const pullButton = await within(alphaSection).findByRole('button', { name: /pull into table/i });
-    fireEvent.click(pullButton);
 
     await waitFor(() => {
       expect(mockPullPiReviewFeatures).toHaveBeenCalledWith(
@@ -1067,45 +1149,6 @@ describe('PiReviewTab', () => {
     expect(mockUpdateConfluencePage.mock.calls[0][0].storageValue).toContain('<strong>Developer:</strong> 10 pts');
   });
 
-  it('imports a Confluence XLSX export as an unsaved PI Review draft', async () => {
-    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
-
-    renderPiReviewTab([DEFAULT_TEAMS[0]]);
-
-    const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
-    enterEditMode(alphaSection);
-    const importFile = createPiReviewImportFile([
-      [
-        'YES - If this is a Carry-Over from a 26.2 Commit?',
-        'Priority',
-        'Feature ',
-        'Point Estimate',
-        'Dependency',
-        ' Risks',
-        ' Committed?',
-      ],
-      [
-        'No',
-        'Medium',
-        'DENP-1352 - 26.3 Enrollment Support',
-        0,
-        'TRACKING FEATURE ONLY - No DEV Work',
-        'N/A',
-        'Tracking feature, no Dev',
-      ],
-    ]);
-
-    fireEvent.change(within(alphaSection).getByLabelText(/import pi review xlsx for alpha team/i), {
-      target: { files: [importFile] },
-    });
-
-    await waitFor(() => {
-      expect(within(alphaSection).getByDisplayValue('DENP-1352 - 26.3 Enrollment Support')).toBeInTheDocument();
-    });
-    expect(within(alphaSection).getByDisplayValue('Tracking feature, no Dev')).toBeInTheDocument();
-    expect(within(alphaSection).getByText(/unsaved changes/i)).toBeInTheDocument();
-  });
-
   it('pastes Jira date tables and updates the matching Jira issue dates immediately', async () => {
     mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE_WITH_FEATURE_KEY);
     mockJiraGet
@@ -1441,7 +1484,7 @@ describe('PiReviewTab', () => {
   });
 
   it('saves a single hard-commit boundary line between PI Review rows', async () => {
-    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE_WITH_TWO_ROWS);
     mockUpdateConfluencePage.mockImplementation((savePayload: { storageValue: string }) =>
       Promise.resolve({
         ...ALPHA_PAGE,
@@ -1459,7 +1502,6 @@ describe('PiReviewTab', () => {
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
     enterEditMode(alphaSection);
-    fireEvent.click(within(alphaSection).getByRole('button', { name: /add pi review row/i }));
     fireEvent.change(within(alphaSection).getByLabelText(/feature for alpha team row 2/i), {
       target: { value: 'Stretch goal feature' },
     });
@@ -1475,7 +1517,7 @@ describe('PiReviewTab', () => {
   });
 
   it('reorders rows so the commitment line can sit under the committed work', async () => {
-    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE);
+    mockFetchConfluencePageByReference.mockResolvedValue(ALPHA_PAGE_WITH_TWO_ROWS);
     mockUpdateConfluencePage.mockImplementation((savePayload: { storageValue: string }) =>
       Promise.resolve({
         ...ALPHA_PAGE,
@@ -1493,7 +1535,6 @@ describe('PiReviewTab', () => {
 
     const alphaSection = await screen.findByRole('region', { name: /alpha team pi review/i });
     enterEditMode(alphaSection);
-    fireEvent.click(within(alphaSection).getByRole('button', { name: /add pi review row/i }));
     fireEvent.change(within(alphaSection).getByLabelText(/feature for alpha team row 2/i), {
       target: { value: 'Committed feature' },
     });
