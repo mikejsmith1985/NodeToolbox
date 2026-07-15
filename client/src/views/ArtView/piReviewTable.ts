@@ -282,28 +282,15 @@ export function createEmptyConfidenceVoteRow(): ConfidenceVoteRow {
   };
 }
 
+/**
+ * Returns the first Team Capacity block's elements, or [] when the page has none.
+ *
+ * Delegates to collectCapacityBlocks so the read path and the write path agree on what a capacity
+ * block IS and where it may live — when these two drifted apart, the writer stopped finding blocks
+ * the reader could still see, and every save stacked another one (GH #160).
+ */
 function locateFallbackCapacityElements(documentNode: Document): HTMLElement[] {
-  const storageWrapperElement = readStorageWrapperElement(documentNode);
-  const wrapperChildren = Array.from(storageWrapperElement.children) as HTMLElement[];
-  const teamCapacityHeadingIndex = wrapperChildren.findIndex((childElement) =>
-    childElement.tagName.toLowerCase().startsWith('h')
-    && childElement.textContent?.trim().toLowerCase() === TEAM_CAPACITY_SECTION_TITLE.toLowerCase());
-  if (teamCapacityHeadingIndex < 0) {
-    return [];
-  }
-
-  const fallbackCapacityElements: HTMLElement[] = [wrapperChildren[teamCapacityHeadingIndex]];
-  for (let childIndex = teamCapacityHeadingIndex + 1; childIndex < wrapperChildren.length; childIndex += 1) {
-    const childElement = wrapperChildren[childIndex];
-    const childTagName = childElement.tagName.toLowerCase();
-    if (childTagName === 'table' || childTagName.startsWith('h')) {
-      break;
-    }
-
-    fallbackCapacityElements.push(childElement);
-  }
-
-  return fallbackCapacityElements;
+  return collectCapacityBlocks(documentNode)[0] ?? [];
 }
 
 /**
@@ -314,39 +301,57 @@ function locateFallbackCapacityElements(documentNode: Document): HTMLElement[] {
  */
 function collectCapacityBlocks(documentNode: Document): HTMLElement[][] {
   const storageWrapperElement = readStorageWrapperElement(documentNode);
-  const wrapperChildren = Array.from(storageWrapperElement.children) as HTMLElement[];
   const capacitySelector = `[${PI_REVIEW_CAPACITY_SECTION_ATTRIBUTE}="${PI_REVIEW_CAPACITY_SECTION_VALUE}"]`;
   const capacityBlocks: HTMLElement[][] = [];
+  // Elements already claimed by a block, so a heading inside a canonical section is not counted twice.
+  const claimedElements = new Set<Element>();
 
-  for (let childIndex = 0; childIndex < wrapperChildren.length; childIndex += 1) {
-    const childElement = wrapperChildren[childIndex];
+  function claimSubtree(element: Element): void {
+    claimedElements.add(element);
+    for (const descendant of Array.from(element.querySelectorAll('*'))) {
+      claimedElements.add(descendant);
+    }
+  }
+
+  function isTeamCapacityHeading(element: Element): boolean {
+    return element.tagName.toLowerCase().startsWith('h')
+      && element.textContent?.trim().toLowerCase() === TEAM_CAPACITY_SECTION_TITLE.toLowerCase();
+  }
+
+  // Scan the whole subtree in document order, not just the wrapper's direct children: Confluence
+  // nests body content in layout cells and keeps our <section> while stripping its data attributes,
+  // so a real page's capacity block is never where a flat scan looks.
+  for (const element of Array.from(storageWrapperElement.querySelectorAll('*'))) {
+    if (claimedElements.has(element)) {
+      continue;
+    }
 
     // A canonical section is self-contained — the one element is the whole block.
-    if (childElement.matches(capacitySelector)) {
-      capacityBlocks.push([childElement]);
+    if (element.matches(capacitySelector)) {
+      claimSubtree(element);
+      capacityBlocks.push([element as HTMLElement]);
       continue;
     }
 
-    // A legacy loose block starts at a bare "Team Capacity" heading and runs until the next
-    // heading, table, or canonical section.
-    const isTeamCapacityHeading = childElement.tagName.toLowerCase().startsWith('h')
-      && childElement.textContent?.trim().toLowerCase() === TEAM_CAPACITY_SECTION_TITLE.toLowerCase();
-    if (!isTeamCapacityHeading) {
+    if (!isTeamCapacityHeading(element)) {
       continue;
     }
 
-    const looseBlockElements: HTMLElement[] = [childElement];
-    let lookaheadIndex = childIndex + 1;
-    for (; lookaheadIndex < wrapperChildren.length; lookaheadIndex += 1) {
-      const followingElement = wrapperChildren[lookaheadIndex];
+    // A loose block starts at a bare "Team Capacity" heading and runs through its siblings — within
+    // whatever parent it actually landed in — until the next heading, table, or canonical section.
+    const looseBlockElements: HTMLElement[] = [element as HTMLElement];
+    let followingElement = element.nextElementSibling;
+    while (followingElement !== null) {
       const followingTagName = followingElement.tagName.toLowerCase();
       if (followingTagName === 'table' || followingTagName.startsWith('h') || followingElement.matches(capacitySelector)) {
         break;
       }
-      looseBlockElements.push(followingElement);
+      looseBlockElements.push(followingElement as HTMLElement);
+      followingElement = followingElement.nextElementSibling;
     }
+
+    looseBlockElements.forEach(claimSubtree);
     capacityBlocks.push(looseBlockElements);
-    childIndex = lookaheadIndex - 1; // resume after the block we just consumed
   }
 
   return capacityBlocks;

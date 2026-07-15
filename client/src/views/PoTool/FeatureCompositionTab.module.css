@@ -33,9 +33,9 @@
 .textInput,
 .selectInput {
   padding: 6px 8px;
-  border: 1px solid var(--tbx-border, #d0d7de);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--tbx-input-bg, #fff);
+  background: var(--color-field-bg);
   color: inherit;
   font: inherit;
 }
@@ -45,15 +45,15 @@
 .dangerButton {
   padding: 6px 12px;
   border-radius: 6px;
-  border: 1px solid var(--tbx-border, #d0d7de);
+  border: 1px solid var(--color-border);
   font: inherit;
   cursor: pointer;
 }
 
 .primaryButton {
-  background: var(--tbx-accent, #0969da);
-  border-color: var(--tbx-accent, #0969da);
-  color: #fff;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-text-on-accent);
   font-weight: 600;
 }
 
@@ -63,13 +63,13 @@
 }
 
 .secondaryButton {
-  background: var(--tbx-surface, #fff);
+  background: var(--color-card-bg);
 }
 
 .dangerButton {
   background: transparent;
-  border-color: #cf222e;
-  color: #cf222e;
+  border-color: var(--color-tone-danger-fg);
+  color: var(--color-tone-danger-fg);
 }
 
 /* ── Messages ── */
@@ -84,18 +84,18 @@
 }
 
 .errorBanner {
-  border-color: #cf222e;
-  background: rgba(207, 34, 46, 0.08);
+  border-color: var(--color-tone-danger-fg);
+  background: var(--color-tone-danger-bg);
 }
 
 .warningBanner {
-  border-color: #bf8700;
-  background: rgba(191, 135, 0, 0.08);
+  border-color: var(--color-tone-warning-fg);
+  background: var(--color-tone-warning-bg);
 }
 
 .infoBanner {
-  border-color: #0969da;
-  background: rgba(9, 105, 218, 0.08);
+  border-color: var(--color-accent);
+  background: var(--color-tone-info-bg);
 }
 
 /* ── Workspace ── */
@@ -118,9 +118,9 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  border: 1px solid var(--tbx-border, #d0d7de);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: var(--tbx-surface, #fff);
+  background: var(--color-card-bg);
 }
 
 .panelTitle {
@@ -140,9 +140,9 @@
   max-height: 220px;
   overflow-y: auto;
   padding: 8px;
-  border: 1px solid var(--tbx-border, #d0d7de);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--tbx-code-bg, #f6f8fa);
+  background: var(--color-field-bg-muted);
   font-size: 0.8rem;
   white-space: pre-wrap;
   user-select: text;
@@ -164,13 +164,13 @@
   flex-direction: column;
   gap: 6px;
   padding: 10px;
-  border: 1px solid var(--tbx-border, #d0d7de);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
 }
 
 .incrementCardPending {
   border-style: dashed;
-  border-color: var(--tbx-accent, #0969da);
+  border-color: var(--color-accent);
 }
 
 .incrementHeader {
@@ -189,9 +189,9 @@
 .textArea {
   min-height: 60px;
   padding: 6px 8px;
-  border: 1px solid var(--tbx-border, #d0d7de);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--tbx-input-bg, #fff);
+  background: var(--color-field-bg);
   color: inherit;
   font: inherit;
   resize: vertical;
@@ -200,8 +200,8 @@
 .createdBadge {
   padding: 2px 6px;
   border-radius: 4px;
-  background: rgba(26, 127, 55, 0.12);
-  color: #1a7f37;
+  background: var(--color-tone-success-bg);
+  color: var(--color-tone-success-fg);
   font-size: 0.7rem;
   font-weight: 600;
 }
@@ -224,13 +224,13 @@
 }
 
 .hygieneFlagError {
-  background: rgba(207, 34, 46, 0.12);
-  color: #cf222e;
+  background: var(--color-tone-danger-bg);
+  color: var(--color-tone-danger-fg);
 }
 
 .hygieneFlagWarn {
-  background: rgba(191, 135, 0, 0.12);
-  color: #9a6700;
+  background: var(--color-tone-warning-bg);
+  color: var(--color-tone-warning-fg);
 }
 
 /* ── Coaching ── */
@@ -246,7 +246,7 @@
 
 .coachingItem {
   padding: 8px;
-  border: 1px solid var(--tbx-border, #d0d7de);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
 }
 
@@ -279,15 +279,15 @@
 
 .reviewList li {
   padding: 4px 0;
-  border-bottom: 1px solid var(--tbx-border, #d0d7de);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .outcomeCreated {
-  color: #1a7f37;
+  color: var(--color-tone-success-fg);
 }
 
 .outcomeFailed {
-  color: #cf222e;
+  color: var(--color-tone-danger-fg);
 }
 
 /* ── Composition-specific ── */
@@ -309,9 +309,9 @@
 .textAreaTall {
   min-height: 120px;
   padding: 6px 8px;
-  border: 1px solid var(--tbx-border, #d0d7de);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--tbx-input-bg, #fff);
+  background: var(--color-field-bg);
   color: inherit;
   font: inherit;
   resize: vertical;
@@ -320,7 +320,7 @@
 /* Drag-and-drop bypasses the picker's accept filter, so the reader re-checks the file itself. */
 .dropzone {
   padding: 16px;
-  border: 2px dashed var(--tbx-border, #d0d7de);
+  border: 2px dashed var(--color-border);
   border-radius: 8px;
   text-align: center;
   font-size: 0.8rem;
@@ -328,8 +328,8 @@
 }
 
 .dropzoneActive {
-  border-color: var(--tbx-accent, #0969da);
-  background: rgba(9, 105, 218, 0.06);
+  border-color: var(--color-accent);
+  background: var(--color-tone-info-bg);
 }
 
 .hiddenInput {
@@ -350,7 +350,7 @@
   flex-direction: column;
   gap: 4px;
   padding: 8px;
-  border: 1px solid var(--tbx-border, #d0d7de);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
 }
 
@@ -376,5 +376,5 @@
 .checklistClean {
   margin: 0;
   font-size: 0.8rem;
-  color: #1a7f37;
+  color: var(--color-tone-success-fg);
 }
