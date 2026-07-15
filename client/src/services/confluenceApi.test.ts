@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  ConfluenceRequestError,
   createConfluenceDatabase,
   fetchConfluencePage,
   fetchConfluencePageByReference,
@@ -301,5 +302,83 @@ describe('saveSharedArtWorkspace', () => {
     expect(fetchSpy.mock.calls[2][0]).toBe('/confluence-proxy/wiki/api/v2/databases/db-123/properties/prop-1');
     expect(requestBody.version.number).toBe(5);
     expect(requestBody.value.artName).toBe('Systems Team');
+  });
+});
+
+// ── Failure classification (feature 017) ──
+//
+// A Confluence read can fail four materially different ways, and a PO needs to be told which one:
+// the page is missing, they cannot see it, Confluence is unreachable (VPN), or it is not configured.
+// The message alone cannot separate these, so the thrown error carries the HTTP status and the
+// proxy's own error code. See specs/017-po-feature-tools/contracts/jira-writes.md (INV-J6).
+
+describe('ConfluenceRequestError — failure classification', () => {
+  /** Runs a failing page load and hands back the thrown error for inspection. */
+  async function captureFailure(body: unknown, status: number): Promise<ConfluenceRequestError> {
+    mockFetchOnce(body, false, status);
+    try {
+      await fetchConfluencePage('12345');
+    } catch (thrownError) {
+      return thrownError as ConfluenceRequestError;
+    }
+    throw new Error('Expected fetchConfluencePage to reject.');
+  }
+
+  it('carries the HTTP status so a missing page is distinguishable', async () => {
+    const failure = await captureFailure({ message: 'No content found with id 12345' }, 404);
+
+    expect(failure).toBeInstanceOf(ConfluenceRequestError);
+    expect(failure.status).toBe(404);
+  });
+
+  it('carries the HTTP status so a permission failure is distinguishable from a missing page', async () => {
+    const failure = await captureFailure({ message: 'Not permitted' }, 403);
+
+    expect(failure.status).toBe(403);
+  });
+
+  it('exposes the proxy error code so an unreachable Confluence is distinguishable', async () => {
+    // The proxy reports transport failures as its own 502 — not something Confluence said.
+    const failure = await captureFailure(
+      { error: 'Proxy error', message: 'getaddrinfo ENOTFOUND zilverton.atlassian.net' },
+      502,
+    );
+
+    expect(failure.status).toBe(502);
+    expect(failure.proxyErrorCode).toBe('Proxy error');
+  });
+
+  it('exposes the proxy error code so an unconfigured Confluence is distinguishable from a network failure', async () => {
+    // Both are 502; only the proxy's error code separates "not set up" from "cannot reach".
+    const failure = await captureFailure(
+      { error: 'Confluence not configured', message: 'Set TBX_CONFLUENCE_URL and credentials' },
+      502,
+    );
+
+    expect(failure.status).toBe(502);
+    expect(failure.proxyErrorCode).toBe('Confluence not configured');
+  });
+
+  it('leaves proxyErrorCode absent when the failure came from Confluence itself', async () => {
+    const failure = await captureFailure({ message: 'Unauthorized' }, 401);
+
+    expect(failure.proxyErrorCode).toBeUndefined();
+  });
+
+  it('remains a plain Error to existing callers that only read the message', async () => {
+    // Every existing consumer renders error.message; that contract must not change.
+    const failure = await captureFailure({ message: 'Unauthorized' }, 401);
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure.message).toBe('Confluence GET page 12345 failed: Unauthorized');
+  });
+
+  it('still rewrites a DNS failure into actionable guidance', async () => {
+    const failure = await captureFailure(
+      { message: 'getaddrinfo ENOTFOUND zilverton.atlassian.net' },
+      502,
+    );
+
+    expect(failure.message).toContain('Could not resolve the configured Confluence host');
   });
 });
