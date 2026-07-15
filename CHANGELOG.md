@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`npm test` ran every server test twice**: Forge keeps its worktrees inside the repo at
+  `.forge/worktrees/`, and jest was discovering the tests in each of them alongside the real ones — 122 suites
+  where there are 61. Worse, those copies belong to whatever branch the worktree happens to sit on, so a run
+  could have failed (or passed) for reasons that had nothing to do with the branch being tested. Jest now skips
+  `.forge/`, and git ignores the worktrees so they can never be committed.
 - **Team Dashboard — Burndown could read a status as blank instead of failing loudly**: the burndown's per-day
   status lookup was seeded with an empty string before every branch overwrote it, so a future code path that
   forgot to set a status would have silently counted the issue as not-done rather than erroring. The seed is gone

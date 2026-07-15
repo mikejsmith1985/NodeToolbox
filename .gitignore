@@ -173,6 +173,12 @@ src/embeddedClient.js
 # only these transient job records are ignored.
 .forge/release-jobs/
 
+# Forge worktrees — transient checkouts of other branches, living inside the repo.
+# They are working copies, never source, and must not be committed. Jest is told to
+# skip them too (see testPathIgnorePatterns in package.json), or every test would be
+# discovered twice: once here and once in each worktree.
+.forge/worktrees/
+
 
 # Generated server-consumable PI Review engine bundle (esbuild from client TS — never hand-edit)
 src/services/generated/
