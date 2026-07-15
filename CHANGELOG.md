@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **PO Tool — Feature Splitter & Feature Composition (feature 017)**: *in progress.* A new **PO Tool** that brings the
+  existing **Feature Review** and **PI Review** tabs together with its own team/PI selection (independent of the Team
+  Dashboard), plus two new authoring tabs. Adds **no new dependency**.
 - **PI Review — scheduled "Save to Confluence" (feature 015)**: a new **🗓️ PI Review Sync** panel in the Admin Hub
   lets you keep a team's PI Review Confluence page fresh **on a daily schedule**, without opening the app — while the
   manual **Save to Confluence** button stays exactly as it was for urgent updates. Per team you set an enable toggle,

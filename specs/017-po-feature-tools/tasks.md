@@ -37,12 +37,12 @@ premise-prover):
 
 ## Phase 1: Setup (Shared)
 
-- [ ] T001 Create branch `feature/017-po-feature-tools` from an **up-to-date `main`** and commit the
+- [X] T001 Create branch `feature/017-po-feature-tools` from an **up-to-date `main`** and commit the
   `specs/017-po-feature-tools/` artifacts. **Do not** work on the stale `forge/wt-*` worktree branch — the
   pre-commit hook rejects it (plan.md "Branching note", Article III)
-- [ ] T002 [P] Add a `## [Unreleased]` stub to `CHANGELOG.md` naming feature 017 (PO Tool: Feature Splitter +
+- [X] T002 [P] Add a `## [Unreleased]` stub to `CHANGELOG.md` naming feature 017 (PO Tool: Feature Splitter +
   Feature Composition), to be fleshed out in Polish (Article VI)
-- [ ] T003 [P] Scaffold `client/src/views/PoTool/` with the subfolders `hooks/`, `coaching/`, `drafts/`, `ai/`,
+- [X] T003 [P] Scaffold `client/src/views/PoTool/` with the subfolders `hooks/`, `coaching/`, `drafts/`, `ai/`,
   `sources/`, `jira/` per plan.md's Source Code tree. **No new dependency is added** — confirm `xlsx` already
   resolves in `client/package.json` (research R5)
 
@@ -57,20 +57,20 @@ need (Layer 2). See "Dependencies & sequencing" — **Layer 2 does not block US1
 
 **Blocks every user story.**
 
-- [ ] T004 [P] Write failing test `client/src/views/PoTool/hooks/usePoToolState.test.ts` — the `PoToolTab` union
+- [X] T004 [P] Write failing test `client/src/views/PoTool/hooks/usePoToolState.test.ts` — the `PoToolTab` union
   (`'featurereview' | 'pireview' | 'splitter' | 'composition'`), tab switching, and that the tool's **own** selected
   team-profile id + PI persist to `tbxPoToolSelection` and restore
-- [ ] T005 [P] Write failing test `client/src/views/PoTool/poToolArtTeam.test.ts` — `buildArtTeamFromProfile`
+- [X] T005 [P] Write failing test `client/src/views/PoTool/poToolArtTeam.test.ts` — `buildArtTeamFromProfile`
   maps a team profile to an `ArtTeam` (id/name/projectKey/boardId/piReviewPages) with `sprintIssues: []`
   (contracts/tab-reuse.md; `PiReviewTab` never reads `sprintIssues`)
-- [ ] T006 Implement `client/src/views/PoTool/hooks/usePoToolState.ts` — the tab union lives here (research R9);
+- [X] T006 Implement `client/src/views/PoTool/hooks/usePoToolState.ts` — the tab union lives here (research R9);
   holds the PO Tool's own profile id. **MUST NOT** call `setSprintDashboardActiveTeamProfileId` (INV-T3)
-- [ ] T007 Implement `client/src/views/PoTool/poToolArtTeam.ts` (~10 lines, pure)
-- [ ] T008 Implement `client/src/views/PoTool/PoTeamSelector.tsx` + `.test.tsx` — the tool's **own** team/PI picker,
+- [X] T007 Implement `client/src/views/PoTool/poToolArtTeam.ts` (~10 lines, pure)
+- [X] T008 Implement `client/src/views/PoTool/PoTeamSelector.tsx` + `.test.tsx` — the tool's **own** team/PI picker,
   reading `sprintDashboardTeamProfiles` as a **read-only catalog** (contracts/tab-reuse.md "The rule")
-- [ ] T009 Implement `client/src/views/PoTool/PoToolView.tsx` + `.module.css` — shell using the shared
+- [X] T009 Implement `client/src/views/PoTool/PoToolView.tsx` + `.module.css` — shell using the shared
   `components/PrimaryTabs`; panel wrapper ids **must** match `${idPrefix}-${key}-tab|panel` for a11y (research R9)
-- [ ] T010 Register the tool: append to `APP_CARDS` **and** `RECENT_VIEW_LABELS` in
+- [X] T010 Register the tool: append to `APP_CARDS` **and** `RECENT_VIEW_LABELS` in
   `client/src/views/Home/homeCardData.ts`, and add the route const + `<Route>` + import in `client/src/App.tsx`.
   The card entry powers Admin Hub tool-visibility **for free** (FR-001, contracts/tab-reuse.md "Registration")
 
@@ -117,30 +117,30 @@ own data; neither selection moves; Team Dashboard's existing tests pass **unedit
 
 ### Tests first ⚠️
 
-- [ ] T019 [P] [US1] Write failing test in `client/src/views/SprintDashboard/FeatureReviewTab.test.tsx` — with
+- [X] T019 [P] [US1] Write failing test in `client/src/views/SprintDashboard/FeatureReviewTab.test.tsx` — with
   `dashboardTeamProfileId` **provided**, the tab scopes its config + team name to **that** profile; with it
   **omitted**, behavior is **identical to today** (FR-005b, INV-T2)
-- [ ] T020 [P] [US1] Write failing test `client/src/views/PoTool/PoToolView.test.tsx` — the PO Tool mounts
+- [X] T020 [P] [US1] Write failing test `client/src/views/PoTool/PoToolView.test.tsx` — the PO Tool mounts
   `ArtView/PiReviewTab` with `mode="authoring"` and its own `ArtTeam`, and mounts `FeatureReviewTab` with the PO
   Tool's own `dashboardTeamProfileId`; changing the PO Tool's team does **not** touch the app-wide active id
   (SC-015, INV-T3)
 
 ### Implementation
 
-- [ ] T021 [US1] Add the optional `dashboardTeamProfileId?: string` prop to
+- [X] T021 [US1] Add the optional `dashboardTeamProfileId?: string` prop to
   `client/src/views/SprintDashboard/FeatureReviewTab.tsx` and resolve `?? activeDashboardTeamProfileId`; feed the
   resolved id to **both** the team-name lookup and `loadDashboardConfigFromStorage(...)`.
   **Constraints (contracts/tab-reuse.md)**: keep the **inline selector** form so re-render granularity is identical
   when the prop is omitted; **do not** touch Team Dashboard's call site; **do not** extract the CSS module; **do
   not** relocate the file. Precedent: `StandupTab.tsx`'s identical optional prop
-- [ ] T022 [US1] Mount both reused tabs in `client/src/views/PoTool/PoToolView.tsx`: `ArtView/PiReviewTab`
+- [X] T022 [US1] Mount both reused tabs in `client/src/views/PoTool/PoToolView.tsx`: `ArtView/PiReviewTab`
   **directly** with `mode="authoring"` — **never** `SprintDashboardPiReviewTab` (it hardwires the active profile and
   drags in the capacity singleton — contracts/tab-reuse.md, INV-T4) — and `FeatureReviewTab` with the PO Tool's
   profile id
-- [ ] T023 [US1] Scope `useStandupRosterStore` to the PO Tool's profile on mount so PI Review's "Pull Features from
+- [X] T023 [US1] Scope `useStandupRosterStore` to the PO Tool's profile on mount so PI Review's "Pull Features from
   Jira" PO filter is correct — the established 3-line idiom from `FeatureCanvasView.tsx:65-67`. Safe: Team Dashboard
   re-asserts its stores on mount (research R1)
-- [ ] T024 [US1] Verify quickstart **Scenario A**, including the grep proof that `views/PoTool/` contains **zero**
+- [X] T024 [US1] Verify quickstart **Scenario A**, including the grep proof that `views/PoTool/` contains **zero**
   calls to `setSprintDashboardActiveTeamProfileId`, and that no `FeatureReviewTab`/`PiReviewTab` **copy** exists
   under `views/PoTool/` (SC-002, SC-003, SC-015)
 
