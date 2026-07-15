@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Hygiene — a configured field was ignored by direct fixes, which wrote to the built-in default instead**: if your
+  workspace configured its own **Program Increment**, **Acceptance Criteria**, **Feature Link**, **Parent Link**, or
+  **Target Start/End** field, the built-in default silently took precedence — so clicking a hygiene fix populated a
+  field your team does not use and left yours empty. Your configured field now wins, with the built-in kept as a
+  fallback so a check still finds a value in either. **Which issues get flagged is unchanged**: the checks read every
+  configured field, so only the field a *fix* writes to was ever affected.
+
 ### Added
 - **PI Review — AI Assistance (feature 016)**: a new **⚡ AI Assistance** panel on the PI Review tab (edit mode, once
   AI Assist is unlocked with Ctrl+Alt+Z) reads every Feature already on your page — its description, acceptance
