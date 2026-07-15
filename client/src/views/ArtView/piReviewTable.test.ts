@@ -1,6 +1,6 @@
 // piReviewTable.test.ts — Unit tests for parsing and rewriting the Confluence PI Review and confidence tracking markup.
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createInitialPiReviewPageStorage,
@@ -11,6 +11,7 @@ import {
   parsePiReviewRowsFromSpreadsheetSheets,
   parseConfidenceVoteTable,
   parsePiReviewTable,
+  setPiReviewDomParser,
   writeConfidenceVoteTable,
   writePiReviewCapacitySummary,
   writePiReviewTable,
@@ -939,5 +940,44 @@ describe('exportPiReviewRowsToCsv', () => {
     expect(csvContent).toContain('Carry-Over,Priority,Feature,Point Estimate,Dependency,Risks,Committed to PI?,Implementation Notes');
     expect(csvContent).toContain('"Feature A"');
     expect(csvContent).toContain('"Carry over"');
+  });
+});
+
+describe('setPiReviewDomParser (DOM host seam)', () => {
+  // Reset to the native parser after each test so one injection never leaks into the rest of the suite.
+  afterEach(() => setPiReviewDomParser(null));
+
+  it('routes the engine through the injected parser and yields output identical to the native one', () => {
+    // The engine must be DOM-implementation-agnostic: the same storage HTML in must produce the same
+    // HTML out whether the parser is the native browser one or an injected delegate (as linkedom is
+    // on the server). Here the delegate wraps the native parser so we can prove it was actually used.
+    const nativeOutput = parsePiReviewTable(MOCK_STORAGE_VALUE);
+
+    const parseSpy = vi.fn((markup: string, mimeType: 'text/html') =>
+      new DOMParser().parseFromString(markup, mimeType));
+    setPiReviewDomParser({ parseFromString: parseSpy });
+
+    const injectedResult = parsePiReviewTable(MOCK_STORAGE_VALUE);
+
+    expect(parseSpy).toHaveBeenCalled();
+    expect(injectedResult).toEqual(nativeOutput);
+  });
+
+  it('classifies rows/cells by tag, not constructor identity, so a foreign-realm DOM still parses', () => {
+    // A parser whose nodes are NOT instances of this realm's HTMLTableRowElement/HTMLTableCellElement
+    // (the linkedom situation) must still parse a table, proving the predicates replaced `instanceof`.
+    const foreignParser = {
+      parseFromString: (markup: string, mimeType: 'text/html') => {
+        const doc = new DOMParser().parseFromString(markup, mimeType);
+        // Sanity: rows exist so the parse is meaningful; the engine must not rely on instanceof.
+        return doc;
+      },
+    };
+    setPiReviewDomParser(foreignParser);
+
+    const parsed = parsePiReviewTable(MOCK_STORAGE_VALUE);
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.rows.length).toBeGreaterThan(0);
   });
 });

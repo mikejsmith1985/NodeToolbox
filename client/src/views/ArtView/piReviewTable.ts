@@ -2,6 +2,44 @@
 
 import type { CapacitySummary } from '../SprintDashboard/capacityModel.ts';
 
+// ── DOM host abstraction ──
+// This parse/serialize engine runs in two homes: the browser (real DOM) and a Node scheduler
+// (headless DOM via linkedom). Two seams keep it a single shared engine: (1) an injectable DOMParser
+// so Node can supply linkedom's parser, and (2) tag/nodeType predicates instead of
+// `instanceof HTML*Element` (linkedom does not expose browser-identity element constructors). The
+// browser injects nothing and uses its native `DOMParser`.
+
+/** Minimal DOMParser shape the engine needs — satisfied by both the browser's and linkedom's. */
+interface DomParserLike {
+  parseFromString(markup: string, mimeType: 'text/html'): Document;
+}
+
+let injectedDomParser: DomParserLike | null = null;
+
+/**
+ * Supplies the DOMParser the engine should use (e.g. linkedom's on the server). Pass `null` to fall
+ * back to the browser's native `DOMParser`. Call once before using the engine server-side.
+ */
+export function setPiReviewDomParser(domParser: DomParserLike | null): void {
+  injectedDomParser = domParser;
+}
+
+/** True when the node is an element (nodeType 1). Replaces `instanceof HTMLElement`. */
+function isElementNode(node: unknown): node is HTMLElement {
+  return node != null && (node as Node).nodeType === 1;
+}
+
+/** True when the node is a table row. Replaces `instanceof HTMLTableRowElement`. */
+function isTableRowElement(node: unknown): node is HTMLTableRowElement {
+  return isElementNode(node) && (node as Element).tagName.toLowerCase() === 'tr';
+}
+
+/** True when the node is a table cell (td/th). Replaces `instanceof HTMLTableCellElement`. */
+function isTableCellElement(node: unknown): node is HTMLTableCellElement {
+  const tagName = isElementNode(node) ? (node as Element).tagName.toLowerCase() : '';
+  return tagName === 'td' || tagName === 'th';
+}
+
 const STORAGE_WRAPPER_ID = 'pi-review-storage-wrapper';
 const REQUIRED_PI_REVIEW_COLUMN_COUNT = 8;
 const REQUIRED_CONFIDENCE_VOTE_COLUMN_COUNT = 3;
@@ -384,7 +422,7 @@ export function parsePiReviewCapacitySummary(storageValue: string): CapacitySumm
   const capacitySectionElement = documentNode.querySelector(
     `[${PI_REVIEW_CAPACITY_SECTION_ATTRIBUTE}="${PI_REVIEW_CAPACITY_SECTION_VALUE}"]`,
   );
-  if (capacitySectionElement instanceof HTMLElement) {
+  if (isElementNode(capacitySectionElement)) {
     return decodeCapacitySummary(capacitySectionElement.getAttribute(PI_REVIEW_CAPACITY_PAYLOAD_ATTRIBUTE));
   }
 
@@ -398,7 +436,7 @@ export function writePiReviewCapacitySummary(storageValue: string, capacitySumma
   const capacitySectionElement = readStorageWrapperElement(
     buildStorageDocument(createPiReviewCapacitySectionHtml(capacitySummary)),
   ).firstElementChild;
-  if (!(capacitySectionElement instanceof HTMLElement)) {
+  if (!isElementNode(capacitySectionElement)) {
     throw new Error('The PI Review capacity section could not be created');
   }
 
@@ -418,7 +456,7 @@ export function writePiReviewCapacitySummary(storageValue: string, capacitySumma
   const piReviewTableElement = piReviewTableBinding
     ? documentNode.querySelectorAll('table').item(piReviewTableBinding.tableIndex)
     : null;
-  if (piReviewTableElement instanceof HTMLElement) {
+  if (isElementNode(piReviewTableElement)) {
     piReviewTableElement.parentElement?.insertBefore(capacitySectionElement, piReviewTableElement);
   } else {
     storageWrapperElement.appendChild(capacitySectionElement);
@@ -658,7 +696,7 @@ function readConfidenceVoteColumnKeyFromHeader(headerText: string): ConfidenceVo
 }
 
 function buildStorageDocument(storageValue: string): Document {
-  const parser = new DOMParser();
+  const parser = injectedDomParser ?? new DOMParser();
   return parser.parseFromString(`<div id="${STORAGE_WRAPPER_ID}">${storageValue}</div>`, 'text/html');
 }
 
@@ -673,19 +711,19 @@ function readStorageWrapperElement(documentNode: Document): HTMLElement {
 
 function readTableRows(tableElement: HTMLTableElement): HTMLTableRowElement[] {
   return Array.from(tableElement.querySelectorAll('tr')).filter(
-    (rowElement): rowElement is HTMLTableRowElement => rowElement instanceof HTMLTableRowElement,
+    (rowElement): rowElement is HTMLTableRowElement => isTableRowElement(rowElement),
   );
 }
 
 function readRowCells(rowElement: HTMLTableRowElement): HTMLTableCellElement[] {
   return Array.from(rowElement.children).filter(
-    (cellElement): cellElement is HTMLTableCellElement => cellElement instanceof HTMLTableCellElement,
+    (cellElement): cellElement is HTMLTableCellElement => isTableCellElement(cellElement),
   );
 }
 
 function readRowCellValue(rowElement: HTMLTableRowElement, cellIndex: number): string {
   const cellElement = rowElement.children.item(cellIndex);
-  if (!(cellElement instanceof HTMLTableCellElement)) {
+  if (!isTableCellElement(cellElement)) {
     return '';
   }
 
@@ -895,7 +933,7 @@ function parsePiReviewCustomGroupingLineRow(
   }
 
   const groupingLineCell = rowCells.item(0);
-  if (!(groupingLineCell instanceof HTMLTableCellElement)) {
+  if (!isTableCellElement(groupingLineCell)) {
     return null;
   }
 
@@ -1094,7 +1132,7 @@ function replaceRowsAfterHeader<RowType extends Record<string, string>>(
   }
 
   const headerParentElement = headerRowElement.parentElement;
-  if (!(headerParentElement instanceof HTMLElement)) {
+  if (!isElementNode(headerParentElement)) {
     throw new Error('The PI Review table header row is not attached to a writable section');
   }
 

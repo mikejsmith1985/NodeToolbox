@@ -173,3 +173,6 @@ src/embeddedClient.js
 # only these transient job records are ignored.
 .forge/release-jobs/
 
+
+# Generated server-consumable PI Review engine bundle (esbuild from client TS — never hand-edit)
+src/services/generated/

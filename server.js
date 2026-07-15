@@ -140,6 +140,14 @@ app.use(createNotificationsRouter(configuration));
 // Standup briefing: /api/standup/*
 app.use(createStandupBriefingRouter(configuration));
 
+// PI Review scheduler: /api/pi-review-scheduler/* (feature 015). Lazy + guarded because it depends on
+// the generated engine bundle — a missing bundle disables the routes rather than crashing startup.
+try {
+  app.use(require('./src/routes/piReviewScheduler')(configuration));
+} catch (piReviewRouteError) {
+  console.error('  ⚠ PI Review scheduler routes unavailable: ' + piReviewRouteError.message);
+}
+
 // Report webhook delivery: POST /api/reports/deliver — server-mediated send of an
 // on-screen report to the team's Atlassian Automation webhook.
 app.use(createReportDeliveryRouter(configuration));
@@ -659,6 +667,14 @@ async function launchServer() {
   startStandupBriefingScheduler(configuration);
   startHygieneMonitorScheduler(configuration);
   startSprintReleaseScheduler(configuration);
+  // PI Review scheduler (feature 015). Lazy-required + guarded: it depends on the generated engine
+  // bundle (built by `prestart`/`prebuild:exe`), so on a raw `node server.js` without that build step
+  // it degrades to "disabled" with a warning rather than crashing the whole server.
+  try {
+    require('./src/services/piReviewScheduler').startPiReviewScheduler(configuration);
+  } catch (piReviewSchedulerError) {
+    console.error('  ⚠ PI Review scheduler unavailable: ' + piReviewSchedulerError.message);
+  }
 
   // Open the dashboard automatically when:
   //   --open      : passed explicitly by Launch Toolbox.bat (zip distribution)

@@ -9,8 +9,11 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- _None._ The most recent feature, **014-team-backlog-remediation** (per-team persistent Backlog
-  Remediation panel on the Team Dashboard), is shipped and closed; its artifacts live in
-  `specs/014-team-backlog-remediation/` for reference.
+- **015-pi-review-scheduler** — server-side scheduled "Save to Confluence" for the PI Review tab, managed from a
+  new Admin Hub panel, keeping the manual Save button as the urgent option. Plan: `specs/015-pi-review-scheduler/plan.md`.
+  Key design: reuse the Standup Briefing scheduler triad + the PI Review pure logic; new `linkedom` server dependency
+  hosts the DOM so the existing save engine (`piReviewTable.ts`) runs server-side after two seams (predicate guards +
+  injected `DOMParser`). A run appends PO+PI Features and reconciles Priority/Estimate/Dependency/Risks (faithful
+  port of `reconcilePiReviewRowsWithJira`), preserving all human-curated content. Status: planned; next `/speckit-tasks`.
 <!-- SPECKIT END -->
 

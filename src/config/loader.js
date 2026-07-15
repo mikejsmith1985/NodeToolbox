@@ -175,6 +175,11 @@ function saveConfigToDisk(configuration) {
           confluenceSpaceKey: '', targetBlogUrl: '', triggerUrl: '', triggerSecret: '', scheduleTime: '09:00', isEnabled: false,
         }),
       },
+      // PI Review scheduler — per-team schedules that refresh PI Review Confluence pages from Jira.
+      // No credential fields (auth reuses configuration.jira/confluence), so nothing to obfuscate.
+      piReview: {
+        teams: ((configuration.scheduler.piReview || {}).teams || []).map((team) => ({ ...team })),
+      },
     },
     // Hygiene monitor — deep-clone the teams array and the bounded history slice.
     // The per-team digestTriggerSecret is obfuscated below before writing.
