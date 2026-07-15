@@ -24,6 +24,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Estimate, Implementation Notes, Dev Work and Test Support — and still nothing else. *(feature 016)*
 
 ### Fixed
+- **PO Tool — dark mode was never actually implemented (GH #160)**: the PO Tool looked correct in light mode and
+  broke in dark — most visibly the **Team / Program Increment** card, which stayed white with near-white labels on
+  it. The cause was bigger than one card: the module referenced a `--tbx-*` variable namespace that **is defined
+  nowhere in the app**, so all 53 of its `var(--tbx-surface, #fff)`-style declarations silently and permanently fell
+  back to their hardcoded light-mode colours. It was never theme-aware; it just happened to match in light mode.
+  Every surface, border, input and status flag across **all four** PO Tool stylesheets (Team selector, Feature
+  Splitter, Feature Composition, and the AI panel) now uses the app's real design tokens, so both themes render
+  properly. Two near-miss token names elsewhere are fixed with it — Admin Hub used `--color-text` (real name:
+  `--color-text-primary`), which pinned light-grey text and broke **light** mode, and both Admin Hub and Team
+  Dashboard referenced other tokens that don't exist.
+- **PI Review — Team Capacity *still* duplicated on save, stacking a new block every time**: the previous fix
+  (v0.68.7) taught the writer to recognise capacity blocks in more **formats** but not at more **depths**. It looked
+  for existing blocks only among the storage wrapper's direct children, while the code that inserts a new block
+  searches the whole document — and a real Confluence page nests body content (in layout cells, and inside our own
+  `<section>` whose attributes Confluence strips). So on a real page the writer found nothing to replace, inserted
+  anyway, and left one more block behind **on every single save**, forever. The finder now scans at any depth and
+  walks the block's actual siblings, matching what the inserter has always done. Pages that already accumulated
+  several stacked blocks — including snapshots left over from an earlier PI — **collapse back to a single section on
+  your next Save to Confluence**. The reader was half-shallow the same way and is fixed with it. *(GH #160)*
+- **PI Review — the right edge was cut off in edit mode**: the workspace, the Done Editing button and the page
+  header ran past the right edge of the window with no way to reach them. Every level of the PI Review layout is a
+  grid or flex container, and their children default to refusing to shrink below their own content — so the widest
+  thing on the page (the edit-mode table, whose columns each carry a minimum width) set the width of everything
+  above it, and the table's own horizontal scrollbar never got the chance to do its job. The layout now lets those
+  containers shrink, so the page fits the window and the table scrolls inside its own frame. *(GH #160)*
 - **Hygiene — the user and issue pickers briefly showed results for what you had already stopped typing**: the
   fix controls' search boxes kept whatever the last search returned, with no record of which search it answered,
   so typing on past "abc" left the "abc" matches on screen until the newer results arrived. Results are now tied

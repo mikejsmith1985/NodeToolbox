@@ -558,6 +558,145 @@ describe('writePiReviewCapacitySummary', () => {
     expect(nextStorageValue.indexOf('Transformers Capacity'))
       .toBeLessThan(nextStorageValue.indexOf('<th>YES - If this is a Carry-Over'));
   });
+
+  // ── Nested blocks: what a real Confluence page actually looks like (GH #160) ──
+
+  /** The fresh snapshot a save writes; mirrors the flat fixtures above. */
+  const FRESH_CAPACITY_SUMMARY = {
+    summaryLabel: 'Transformers Capacity',
+    startDate: '2026-07-30',
+    endDate: '2026-10-07',
+    workDayCount: 50,
+    totalCapacityPoints: 549.5,
+    recommendedCapacityPoints: 439,
+    roleCapacities: {
+      Developer: 432,
+      'Dev Lead': 23.5,
+      'Internal Tester': 47,
+      'External Tester': 0,
+      'Systems Analyst': 47,
+    },
+  };
+
+  /** The PI Review table the capacity block is inserted above. */
+  const PI_REVIEW_TABLE_MARKUP = `
+    <table>
+      <tbody>
+        <tr>
+          <th>YES - If this is a Carry-Over</th>
+          <th>Priority</th>
+          <th>Feature</th>
+          <th>Point Estimate</th>
+          <th>Dependency</th>
+          <th>Risks</th>
+          <th>Committed to PI?</th>
+          <th>Implementation Notes</th>
+        </tr>
+      </tbody>
+    </table>`;
+
+  //
+  // Every fixture above puts the capacity block at the TOP LEVEL of the storage wrapper. Real pages
+  // don't: Confluence wraps body content in layout cells, and it keeps our <section> while stripping
+  // its data-* attributes. The finder scanned only direct children while the inserter searched the
+  // whole document via querySelectorAll('table') — so on a real page the finder saw nothing, the
+  // inserter fired anyway, and every save stacked one more block. Forever.
+
+  /** Wraps markup the way Confluence nests page content, so the block is never a wrapper child. */
+  function nestInLayoutCell(innerMarkup: string): string {
+    return `<ac:layout><ac:layout-section><ac:layout-cell>${innerMarkup}</ac:layout-cell></ac:layout-section></ac:layout>`;
+  }
+
+  const LOOSE_CAPACITY_BLOCK = `
+    <h2>Team Capacity</h2>
+    <p>Snapshot pulled from the NodeToolbox Capacity tab.</p>
+    <p><strong>Plan:</strong> STALE PLAN</p>
+    <p><strong>Date Range:</strong> 2026-05-21 to 2026-07-29</p>
+    <p><strong>Work Days:</strong> 50</p>
+    <p><strong>100% Capacity (pts):</strong> 549.5</p>
+    <p><strong>80% Capacity (pts):</strong> 439</p>
+    <ul><li><strong>Developer:</strong> 432 pts</li></ul>`;
+
+  it('replaces a Team Capacity block nested inside a Confluence layout cell', () => {
+    const nestedStorageValue = nestInLayoutCell(`
+      <h1>NodeToolbox PI Review</h1>
+      ${LOOSE_CAPACITY_BLOCK}
+      ${PI_REVIEW_TABLE_MARKUP}`);
+
+    const nextStorageValue = writePiReviewCapacitySummary(nestedStorageValue, FRESH_CAPACITY_SUMMARY);
+
+    // Exactly one block survives — the block was found despite being two levels down.
+    expect(nextStorageValue.match(/Team Capacity/g)).toHaveLength(1);
+    expect(nextStorageValue).toContain('Transformers Capacity');
+    expect(nextStorageValue).not.toContain('STALE PLAN');
+  });
+
+  it('collapses three nested stacked blocks into one — the exact ENFCT 26.4 shape from GH #160', () => {
+    // A 26.3 snapshot left over from a previous PI, plus two identical 26.4 saves: one block per
+    // save, oldest furthest from the table, because insertBefore(table) prepends each time.
+    const threeStackedBlocks = nestInLayoutCell(`
+      <h1>NodeToolbox PI Review</h1>
+      <h2>Team Capacity</h2>
+      <p>Snapshot pulled from the NodeToolbox Capacity tab.</p>
+      <p><strong>Plan:</strong> STALE 26.3 PLAN</p>
+      <p><strong>Date Range:</strong> 2026-05-21 to 2026-07-29</p>
+      <ul><li><strong>Developer:</strong> 432 pts</li></ul>
+      <h2>Team Capacity</h2>
+      <p>Snapshot pulled from the NodeToolbox Capacity tab.</p>
+      <p><strong>Plan:</strong> DUPLICATE 26.4 PLAN A</p>
+      <p><strong>Date Range:</strong> 2026-07-30 to 2026-10-07</p>
+      <ul><li><strong>Developer:</strong> 432 pts</li></ul>
+      <h2>Team Capacity</h2>
+      <p>Snapshot pulled from the NodeToolbox Capacity tab.</p>
+      <p><strong>Plan:</strong> DUPLICATE 26.4 PLAN B</p>
+      <p><strong>Date Range:</strong> 2026-07-30 to 2026-10-07</p>
+      <ul><li><strong>Developer:</strong> 432 pts</li></ul>
+      ${PI_REVIEW_TABLE_MARKUP}`);
+
+    const nextStorageValue = writePiReviewCapacitySummary(threeStackedBlocks, FRESH_CAPACITY_SUMMARY);
+
+    // The save that fixes the page: three become one, and every stale variant is gone.
+    expect(nextStorageValue.match(/Team Capacity/g)).toHaveLength(1);
+    expect(nextStorageValue.match(/data-node-toolbox-pi-review-capacity="summary"/g)).toHaveLength(1);
+    expect(nextStorageValue).not.toContain('STALE 26.3 PLAN');
+    expect(nextStorageValue).not.toContain('DUPLICATE 26.4 PLAN A');
+    expect(nextStorageValue).not.toContain('DUPLICATE 26.4 PLAN B');
+    expect(nextStorageValue).toContain('Transformers Capacity');
+  });
+
+  it('does not stack a second block when saving a nested page twice', () => {
+    // The regression that matters: save, then save the result again. Idempotent, or it's the bug.
+    const nestedStorageValue = nestInLayoutCell(`<h1>NodeToolbox PI Review</h1>${LOOSE_CAPACITY_BLOCK}${PI_REVIEW_TABLE_MARKUP}`);
+
+    const afterFirstSave = writePiReviewCapacitySummary(nestedStorageValue, FRESH_CAPACITY_SUMMARY);
+    const afterSecondSave = writePiReviewCapacitySummary(afterFirstSave, FRESH_CAPACITY_SUMMARY);
+
+    expect(afterSecondSave.match(/Team Capacity/g)).toHaveLength(1);
+    expect(afterSecondSave.match(/data-node-toolbox-pi-review-capacity="summary"/g)).toHaveLength(1);
+  });
+
+  it('replaces a nested canonical section whose data attributes Confluence stripped', () => {
+    // Confluence keeps <section> but drops data-*, so the canonical selector cannot match — the
+    // heading-text heuristic is what has to carry it, at whatever depth the section landed.
+    const strippedSection = nestInLayoutCell(`
+      <h1>NodeToolbox PI Review</h1>
+      <section>${LOOSE_CAPACITY_BLOCK}</section>
+      ${PI_REVIEW_TABLE_MARKUP}`);
+
+    const nextStorageValue = writePiReviewCapacitySummary(strippedSection, FRESH_CAPACITY_SUMMARY);
+
+    expect(nextStorageValue.match(/Team Capacity/g)).toHaveLength(1);
+    expect(nextStorageValue).not.toContain('STALE PLAN');
+  });
+
+  it('reads a nested capacity block back — the parser must see what the writer wrote', () => {
+    const nestedStorageValue = nestInLayoutCell(`<h1>NodeToolbox PI Review</h1>${LOOSE_CAPACITY_BLOCK}`);
+
+    const parsedSummary = parsePiReviewCapacitySummary(nestedStorageValue);
+
+    expect(parsedSummary?.summaryLabel).toBe('STALE PLAN');
+    expect(parsedSummary?.workDayCount).toBe(50);
+  });
 });
 
 describe('writePiReviewTable', () => {

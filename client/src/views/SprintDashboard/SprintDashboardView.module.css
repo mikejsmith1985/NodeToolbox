@@ -183,6 +183,8 @@
 
 .piReviewWorkspace {
   display: grid;
+  /* Same reason as .teamPanelShell: keep the PI Review workspace inside the viewport. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--spacing-md);
 }
 
@@ -405,7 +407,7 @@
   border: 1px solid var(--color-accent);
   border-radius: var(--radius-sm);
   background: var(--color-accent);
-  color: var(--color-on-accent, #fff);
+  color: var(--color-text-on-accent);
   font-size: var(--font-size-sm);
   font-weight: 600;
   cursor: pointer;

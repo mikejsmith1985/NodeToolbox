@@ -4,12 +4,15 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* Let descendants shrink instead of widening the page; the table scrolls inside .tableShell. */
+  min-width: 0;
 }
 
 .pagePanel {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
   padding: 16px;
   border: 1px solid var(--color-border);
   border-radius: 14px;
@@ -23,6 +26,9 @@
 
 .teamPanelShell {
   display: grid;
+  /* Without minmax(0, …) the single implicit column is min-content-sized: an edit-mode table of
+     8 min-width columns would widen the whole page rather than scroll inside .tableShell. */
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .teamPanelShell[hidden] {
@@ -615,6 +621,7 @@
 
 .tableTools {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   padding: 12px 14px;
   border: 1px solid var(--color-border);
