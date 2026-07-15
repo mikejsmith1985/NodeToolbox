@@ -1348,7 +1348,9 @@ export function buildBurnDownData(
           continue;
         }
 
-        let statusName = '';
+        // No initialiser: every branch below assigns it, and seeding '' only hid that fact — an
+        // unassigned path would now be a compile error rather than a silently empty status.
+        let statusName: string;
         if (parsed.transitions.length === 0) {
           // Fallback when no changelog is available:
           // If the issue is currently done, check if we are past the issue's updated timestamp.

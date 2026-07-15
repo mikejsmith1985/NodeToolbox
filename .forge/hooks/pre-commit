@@ -24,8 +24,16 @@ fi
 staged_files=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null)
 [[ -z "$staged_files" ]] && exit 0
 
+# Files that are tests rather than authored product code. Used to keep the CHANGELOG gate off
+# test-only commits: a test proves behaviour, it does not change it, so there is nothing for a user
+# to read about in the CHANGELOG. The test-file gate below already skips these same files.
+test_file_pattern='(_test\.go|\.test\.(js|jsx|ts|tsx)|\.spec\.(js|jsx|ts|tsx)|_test\.py|_test\.rs)$'
+
 # Filter to source files
 source_files=$(echo "$staged_files" | grep -E '\.(go|js|jsx|ts|tsx|py|rs|java|cs)$')
+
+# Product source only — tests excluded. This is what the CHANGELOG gate reads.
+product_source_files=$(echo "$source_files" | grep -vE "$test_file_pattern")
 
 # ── TEST FILE GATE (Gate 4) ─────────────────────────────────────────────
 # Every new source file must have a corresponding test file staged or on disk.
@@ -69,9 +77,11 @@ if [[ -n "$new_source_files" ]]; then
 fi
 
 # ── CHANGELOG CHECK (Gate 7 — upgraded to violation) ────────────────────
-# Source files changed but CHANGELOG.md not updated = blocking violation.
+# Product source changed but CHANGELOG.md not updated = blocking violation.
+# Test-only commits are exempt: they change no behaviour, so there is nothing to document, and
+# demanding an entry would only invite a fabricated one.
 has_source_changes=false
-[[ -n "$source_files" ]] && has_source_changes=true
+[[ -n "$product_source_files" ]] && has_source_changes=true
 changelog_updated=$(echo "$staged_files" | grep -c "CHANGELOG\.md$")
 if $has_source_changes && [[ "$changelog_updated" -eq 0 ]]; then
     violations+=("CHANGELOG: Source files changed but CHANGELOG.md was not updated")
