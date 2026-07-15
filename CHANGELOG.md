@@ -8,9 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **PO Tool — Feature Splitter & Feature Composition (feature 017)**: *in progress.* A new **🧭 PO Tool** that brings
-  the existing **Feature Review** and **PI Review** tabs together with its own team/PI selection (independent of the
-  Team Dashboard), plus two new authoring tabs. Adds **no new dependency**.
+- **PO Tool — a home for Feature work (feature 017)**: a new **🧭 PO Tool** for the two jobs Product Owners
+  currently do outside NodeToolbox — **breaking a too-large Feature down**, and **writing a Feature from scattered
+  material**. It brings the **Feature Review** and **PI Review** tabs you already know together with two new
+  authoring tabs, and moves hygiene from an after-the-fact audit to something that guides you **while you write**.
+  Adds **no new dependency**.
   - The PO Tool's team/PI choice is **its own** — switching team there never moves your Team Dashboard, and vice versa.
   - Both reused tabs are the **same components** the Team Dashboard uses, so they can never drift apart.
   - Confluence read failures now say **which** problem occurred — page missing, no permission, Confluence unreachable

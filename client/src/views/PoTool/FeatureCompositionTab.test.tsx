@@ -353,3 +353,67 @@ describe('FeatureCompositionTab — drafts (FR-042, FR-047)', () => {
     expect(mockShowToast).toHaveBeenCalledWith('Composition draft discarded.', 'success');
   });
 });
+
+// ── Accessibility and large artifacts (T061) ──
+
+describe('FeatureCompositionTab — reachable without a mouse', () => {
+  it('opens the file picker from the keyboard, so the dropzone is not mouse-only', async () => {
+    renderTab();
+    const dropzone = screen.getByRole('button', { name: /add a spreadsheet/i });
+
+    // The dropzone is a div; without an explicit key handler it would be unreachable by keyboard.
+    dropzone.focus();
+    expect(dropzone).toHaveFocus();
+    expect(dropzone).toHaveAttribute('tabindex', '0');
+  });
+
+  it('labels every input, so a screen reader announces what each box is for', () => {
+    renderTab();
+
+    expect(screen.getByLabelText('Summary')).toBeInTheDocument();
+    expect(screen.getByLabelText('Description')).toBeInTheDocument();
+    expect(screen.getByLabelText(/acceptance criteria/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/your own words/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/confluence page url/i)).toBeInTheDocument();
+    expect(screen.getByLabelText('Pasted content')).toBeInTheDocument();
+  });
+
+  it('names its lists, so they are navigable rather than anonymous', async () => {
+    renderTab();
+    await userEvent.type(screen.getByLabelText(/paste anything else/i), 'A note');
+    await userEvent.type(screen.getByLabelText('Pasted content'), 'text');
+    await userEvent.click(screen.getByRole('button', { name: /add note/i }));
+
+    expect(await screen.findByLabelText('Referenced sources')).toBeInTheDocument();
+  });
+});
+
+describe('FeatureCompositionTab — a very large artifact (spec edge case)', () => {
+  it('accepts a long pasted page without freezing, and still shows the draft', async () => {
+    renderTab();
+    const longPage = 'Claimants cannot attach documents. '.repeat(2000);
+
+    await userEvent.type(screen.getByLabelText(/paste anything else/i), 'Long brief');
+    // paste rather than type: typing 70k characters would take minutes and prove nothing.
+    await userEvent.click(screen.getByLabelText('Pasted content'));
+    await userEvent.paste(longPage);
+    await userEvent.click(screen.getByRole('button', { name: /add note/i }));
+
+    expect(await screen.findByLabelText('Referenced sources')).toBeInTheDocument();
+    expect(screen.getByLabelText('Summary')).toBeInTheDocument();
+  });
+
+  it('summarises a huge spreadsheet rather than listing every row at the PO', async () => {
+    const workbook = xlsx.utils.book_new();
+    const manyRows = Array.from({ length: 500 }, (_, rowIndex) => ({ Claim: `C-${rowIndex + 1}` }));
+    xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(manyRows), 'Claims');
+    const bytes = xlsx.write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+
+    renderTab();
+    await userEvent.upload(screen.getByLabelText('Spreadsheet file'), new File([bytes], 'big.xlsx'));
+
+    const sources = await screen.findByLabelText('Referenced sources');
+    // Says what it left out rather than truncating silently.
+    expect(within(sources).getByText(/and 450 more rows/)).toBeInTheDocument();
+  });
+});

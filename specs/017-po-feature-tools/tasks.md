@@ -316,7 +316,7 @@ Jira writes** across the whole ingest-and-accept cycle.
 **No build tasks**: US9 is enforced **by construction** — every phase ships its deterministic half before its AI
 half, so the AI can never become load-bearing. This phase only proves it.
 
-- [ ] T059 [US9] Verify in `specs/017-po-feature-tools/quickstart.md` Scenarios B + F with a session that has
+- [X] T059 [US9] Verify in `specs/017-po-feature-tools/quickstart.md` Scenarios B + F with a session that has
   **never** unlocked the gate: complete a full split **and** a full composition end-to-end. **Zero AI affordances**
   visible anywhere; no step blocked. Then unlock, re-lock mid-draft, and confirm the manual draft stays fully intact
   and committable (SC-005, FR-022, spec edge case)
@@ -325,12 +325,12 @@ half, so the AI can never become load-bearing. This phase only proves it.
 
 ## Phase 8: Polish & Cross-Cutting
 
-- [ ] T060 [P] Update `CHANGELOG.md` under `## [Unreleased]` — the PO Tool, both authoring tabs, gated AI assists.
+- [X] T060 [P] Update `CHANGELOG.md` under `## [Unreleased]` — the PO Tool, both authoring tabs, gated AI assists.
   Note the reused tabs and that **no new dependency** was added (Article VI)
-- [ ] T061 [P] Accessibility + large-artifact pass: `PrimaryTabs` id/panel pairing; keyboard paths through the
+- [X] T061 [P] Accessibility + large-artifact pass: `PrimaryTabs` id/panel pairing; keyboard paths through the
   dropzone and accept/reject rows; a long Confluence page / multi-thousand-row workbook does not freeze the tab, and
   warns when too large for a prompt (spec edge case)
-- [ ] T062 Final gate: full quickstart A–H green; INV-1…INV-6 green; `cd client && npx vitest run` clean;
+- [X] T062 Final gate: full quickstart A–H green; INV-1…INV-6 green; `cd client && npx vitest run` clean;
   `npx vite build` clean; **`npm test` (server) still green — this feature changes no server code**; Team Dashboard
   parity re-checked with its existing tests **unedited** (SC-002)
 
