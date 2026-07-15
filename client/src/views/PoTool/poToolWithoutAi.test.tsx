@@ -85,7 +85,19 @@ const SOURCE_FEATURE = {
   },
 };
 
+/**
+ * A user-event session per test.
+ *
+ * `delay: null` removes the artificial pause user-event inserts between keystrokes. These journeys
+ * type ~115 characters through a heavy tab, and the direct `userEvent.type(...)` API also re-runs
+ * setup() on every call — together that cost ~3.3s for a single test and ~6.5s for the file, which
+ * tipped over the 5s default under full-suite parallel load and made this file flaky. Event fidelity
+ * is unchanged: every keydown/keypress/keyup still fires. Only the waiting is gone.
+ */
+let user: ReturnType<typeof userEvent.setup>;
+
 beforeEach(() => {
+  user = userEvent.setup({ delay: null });
   vi.clearAllMocks();
   window.localStorage.clear();
   // The whole point: this session has NEVER unlocked AI Assist.
@@ -124,27 +136,27 @@ describe('US9 — a whole split, never having unlocked AI (FR-022, SC-005)', () 
     expect(findAnyAiAffordance()).toEqual([]);
 
     // 2. Load the Feature to split.
-    await userEvent.type(screen.getByLabelText(/feature key/i), 'ABC-1');
-    await userEvent.click(screen.getByRole('button', { name: /load feature/i }));
+    await user.type(screen.getByLabelText(/feature key/i), 'ABC-1');
+    await user.click(screen.getByRole('button', { name: /load feature/i }));
     await waitFor(() => expect(screen.getByText(/ABC-1 · Feature/)).toBeInTheDocument());
     expect(findAnyAiAffordance()).toEqual([]);
 
     // 3. Write two increments by hand.
     for (const summary of ['Submit a claim with one document', 'Handle a rejected claim']) {
-      await userEvent.click(screen.getByRole('button', { name: /add increment/i }));
+      await user.click(screen.getByRole('button', { name: /add increment/i }));
       const summaryInputs = screen.getAllByLabelText('Summary');
-      await userEvent.type(summaryInputs[summaryInputs.length - 1], summary);
+      await user.type(summaryInputs[summaryInputs.length - 1], summary);
     }
     expect(findAnyAiAffordance()).toEqual([]);
 
     // 4. Review — every write itemised, nothing written.
-    await userEvent.click(screen.getByRole('button', { name: /review 2 increment/i }));
+    await user.click(screen.getByRole('button', { name: /review 2 increment/i }));
     expect(within(screen.getByLabelText('Issues to create')).getAllByRole('listitem')).toHaveLength(2);
     expect(mockCreateIssue).not.toHaveBeenCalled();
     expect(findAnyAiAffordance()).toEqual([]);
 
     // 5. Commit — the split lands.
-    await userEvent.click(screen.getByRole('button', { name: /create 2 feature/i }));
+    await user.click(screen.getByRole('button', { name: /create 2 feature/i }));
     await waitFor(() => expect(mockCreateIssue).toHaveBeenCalledTimes(2));
     expect(mockCreateIssueLink).toHaveBeenCalledTimes(2);
 
@@ -154,16 +166,16 @@ describe('US9 — a whole split, never having unlocked AI (FR-022, SC-005)', () 
 
   it('lets a locked PO resume a split across sessions', async () => {
     const { unmount } = render(<FeatureSplitterTab dashboardTeamProfileId="profile-alpha" />);
-    await userEvent.type(screen.getByLabelText(/feature key/i), 'ABC-1');
-    await userEvent.click(screen.getByRole('button', { name: /load feature/i }));
+    await user.type(screen.getByLabelText(/feature key/i), 'ABC-1');
+    await user.click(screen.getByRole('button', { name: /load feature/i }));
     await waitFor(() => expect(screen.getByText(/ABC-1 · Feature/)).toBeInTheDocument());
-    await userEvent.click(screen.getByRole('button', { name: /add increment/i }));
-    await userEvent.type(screen.getAllByLabelText('Summary')[0], 'Written while locked');
+    await user.click(screen.getByRole('button', { name: /add increment/i }));
+    await user.type(screen.getAllByLabelText('Summary')[0], 'Written while locked');
     unmount();
 
     render(<FeatureSplitterTab dashboardTeamProfileId="profile-alpha" />);
-    await userEvent.type(screen.getByLabelText(/feature key/i), 'ABC-1');
-    await userEvent.click(screen.getByRole('button', { name: /load feature/i }));
+    await user.type(screen.getByLabelText(/feature key/i), 'ABC-1');
+    await user.click(screen.getByRole('button', { name: /load feature/i }));
 
     expect(await screen.findByDisplayValue('Written while locked')).toBeInTheDocument();
     expect(findAnyAiAffordance()).toEqual([]);
@@ -179,21 +191,21 @@ describe('US9 — a whole composition, never having unlocked AI (FR-022, SC-005)
     expect(findAnyAiAffordance()).toEqual([]);
 
     // 2. Gather material by hand.
-    await userEvent.type(screen.getByLabelText(/paste anything else/i), 'Teams thread');
-    await userEvent.type(screen.getByLabelText('Pasted content'), 'Jana confirmed the SLA is 48 hours.');
-    await userEvent.click(screen.getByRole('button', { name: /add note/i }));
+    await user.type(screen.getByLabelText(/paste anything else/i), 'Teams thread');
+    await user.type(screen.getByLabelText('Pasted content'), 'Jana confirmed the SLA is 48 hours.');
+    await user.click(screen.getByRole('button', { name: /add note/i }));
     expect(await screen.findByLabelText('Referenced sources')).toBeInTheDocument();
     expect(findAnyAiAffordance()).toEqual([]);
 
     // 3. Write the Feature by hand.
-    await userEvent.type(screen.getByLabelText('Summary'), 'Claimant document submission');
-    await userEvent.type(screen.getByLabelText('Description'), 'Claimants cannot attach documents today.');
+    await user.type(screen.getByLabelText('Summary'), 'Claimant document submission');
+    await user.type(screen.getByLabelText('Description'), 'Claimants cannot attach documents today.');
     await waitFor(() => expect(screen.getByLabelText(/issue type/i)).toBeInTheDocument());
-    await userEvent.selectOptions(screen.getByLabelText(/issue type/i), '10001');
+    await user.selectOptions(screen.getByLabelText(/issue type/i), '10001');
     expect(findAnyAiAffordance()).toEqual([]);
 
     // 4. Create it.
-    await userEvent.click(screen.getByRole('button', { name: /create feature in jira/i }));
+    await user.click(screen.getByRole('button', { name: /create feature in jira/i }));
     await waitFor(() => expect(mockCreateIssue).toHaveBeenCalledTimes(1));
 
     // 5. Still nothing AI.
@@ -203,13 +215,13 @@ describe('US9 — a whole composition, never having unlocked AI (FR-022, SC-005)
   it('lets a locked PO enrich an existing Feature end to end', async () => {
     render(<FeatureCompositionTab dashboardTeamProfileId="profile-alpha" defaultProjectKey="ABC" />);
 
-    await userEvent.type(screen.getByLabelText(/enrich an existing feature/i), 'ABC-7');
-    await userEvent.click(screen.getByRole('button', { name: 'Load' }));
+    await user.type(screen.getByLabelText(/enrich an existing feature/i), 'ABC-7');
+    await user.click(screen.getByRole('button', { name: 'Load' }));
     await waitFor(() => expect(screen.getByDisplayValue('Stub from last week')).toBeInTheDocument());
 
-    await userEvent.clear(screen.getByLabelText('Summary'));
-    await userEvent.type(screen.getByLabelText('Summary'), 'Claimant document submission');
-    await userEvent.click(screen.getByRole('button', { name: /save changes to ABC-7/i }));
+    await user.clear(screen.getByLabelText('Summary'));
+    await user.type(screen.getByLabelText('Summary'), 'Claimant document submission');
+    await user.click(screen.getByRole('button', { name: /save changes to ABC-7/i }));
 
     await waitFor(() => expect(mockSaveSimpleField).toHaveBeenCalled());
     expect(mockCreateIssue).not.toHaveBeenCalled();
@@ -224,8 +236,8 @@ describe('US9 — the sweep itself has teeth', () => {
     useAiAssistStore.setState({ isAiAssistUnlocked: true });
 
     render(<FeatureSplitterTab dashboardTeamProfileId="profile-alpha" />);
-    await userEvent.type(screen.getByLabelText(/feature key/i), 'ABC-1');
-    await userEvent.click(screen.getByRole('button', { name: /load feature/i }));
+    await user.type(screen.getByLabelText(/feature key/i), 'ABC-1');
+    await user.click(screen.getByRole('button', { name: /load feature/i }));
     await waitFor(() => expect(screen.getByText(/ABC-1 · Feature/)).toBeInTheDocument());
 
     expect(findAnyAiAffordance().length).toBeGreaterThan(0);
