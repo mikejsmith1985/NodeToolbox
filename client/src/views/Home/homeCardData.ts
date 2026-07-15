@@ -54,6 +54,16 @@ export const APP_CARDS: AppCardDef[] = [
     sectionKey: 'agile',
   },
   {
+    id: 'po-tool',
+    route: '/po-tool',
+    icon: '🧭',
+    title: 'PO Tool',
+    description:
+      'Product Owner hub for Feature work: Feature Review and PI Review on your own team selection, plus Feature Splitter and Feature Composition.',
+    tags: ['Feature', 'PO', 'Split', 'Compose'],
+    sectionKey: 'agile',
+  },
+  {
     id: 'art',
     route: '/art',
     icon: '🚂',
@@ -168,6 +178,7 @@ export const APP_CARDS: AppCardDef[] = [
 /** Human-friendly labels used for the Home view recent-links strip. */
 export const RECENT_VIEW_LABELS: Record<string, string> = {
   'sprint-dashboard': '🏃 Team Dashboard',
+  'po-tool': '🧭 PO Tool',
   'sprint-planning': '📋 Sprint Planning',
   'work-log': '⏱ Work Log',
   pointing: '🎲 Story Pointing',

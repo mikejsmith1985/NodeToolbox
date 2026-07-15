@@ -125,18 +125,50 @@ function formatConfluenceErrorDetail(errorDetail: string): string {
   return `Could not resolve the configured Confluence host. Check the Confluence base URL, VPN/DNS access, and Atlassian tenant name. Original error: ${errorDetail}`;
 }
 
+/**
+ * A failed Confluence request, carrying enough to tell the four failure modes apart.
+ *
+ * The message alone cannot distinguish "the page does not exist" from "you may not see it" from
+ * "Confluence is unreachable" — but a caller must be able to say which, because the actions a user
+ * takes are completely different (fix the link / request access / connect to the VPN). It stays a
+ * plain Error so existing callers that only render `.message` are unaffected.
+ */
+export class ConfluenceRequestError extends Error {
+  /** The upstream HTTP status: 404 missing, 401/403 no permission, 502 the proxy could not reach Confluence. */
+  readonly status: number;
+
+  /**
+   * The proxy's own error code, present only when the proxy (not Confluence) rejected the request.
+   * This is what separates "Confluence not configured" from a network failure — both surface as 502.
+   */
+  readonly proxyErrorCode?: string;
+
+  constructor(message: string, status: number, proxyErrorCode?: string) {
+    super(message);
+    this.name = 'ConfluenceRequestError';
+    this.status = status;
+    this.proxyErrorCode = proxyErrorCode;
+  }
+}
+
 /** Throws a descriptive error when Confluence returns a non-success response. */
 async function assertSuccessfulResponse(response: Response, messagePrefix: string): Promise<void> {
   if (!response.ok) {
     let errorDetail = String(response.status);
+    let proxyErrorCode: string | undefined;
     try {
-      const errorBody = await response.json() as { message?: string; reason?: string };
+      const errorBody = await response.json() as { message?: string; reason?: string; error?: string };
       errorDetail = errorBody.message ?? errorBody.reason ?? errorDetail;
+      proxyErrorCode = errorBody.error;
     } catch {
       // The HTTP status is still enough to surface the failure meaningfully.
     }
 
-    throw new Error(`${messagePrefix}: ${formatConfluenceErrorDetail(errorDetail)}`);
+    throw new ConfluenceRequestError(
+      `${messagePrefix}: ${formatConfluenceErrorDetail(errorDetail)}`,
+      response.status,
+      proxyErrorCode,
+    );
   }
 }
 

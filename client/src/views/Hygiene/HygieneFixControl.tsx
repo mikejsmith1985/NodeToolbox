@@ -47,7 +47,7 @@ const FIELD_ID_REQUIRED_KINDS = new Set<HygieneFixKind>([
 ]);
 
 /** Props shared by the fix control and its inline editors. */
-interface HygieneFixControlProps {
+export interface HygieneFixControlProps {
   issue: JiraIssue;
   flag: HygieneFlag;
   fieldConfig: HygieneFieldConfig;

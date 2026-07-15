@@ -16,6 +16,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configured field, so only the field a *fix* writes to was ever affected.
 
 ### Added
+- **PO Tool — a home for Feature work (feature 017)**: a new **🧭 PO Tool** for the two jobs Product Owners
+  currently do outside NodeToolbox — **breaking a too-large Feature down**, and **writing a Feature from scattered
+  material**. It brings the **Feature Review** and **PI Review** tabs you already know together with two new
+  authoring tabs, and moves hygiene from an after-the-fact audit to something that guides you **while you write**.
+  Adds **no new dependency**.
+  - The PO Tool's team/PI choice is **its own** — switching team there never moves your Team Dashboard, and vice versa.
+  - Both reused tabs are the **same components** the Team Dashboard uses, so they can never drift apart.
+  - Confluence read failures now say **which** problem occurred — page missing, no permission, Confluence unreachable
+    (e.g. VPN down), or Confluence not configured — instead of one generic message.
+  - **Feature Splitter**: load a Feature by key, see its wording beside your own, and carve it into smaller
+    Features that each deliver value — with always-on coaching on **how** to break it down (happy path first, by
+    workflow step, by business rule, and five more, each with a worked example). Your split **saves as you go** and
+    is still there days later. Before anything is written you see **every issue that will be created and every link
+    that will be made**; only then does Jira change. A split **creates smaller Features and links them back to the
+    original — it never closes, changes, or deletes the original**, and the new Features are the **same issue type**
+    as the one they came from. Each increment is graded against **your own hygiene rules as you type**. If a commit
+    only partly succeeds, the successes are kept, the failures are explained in Jira's own words, and your draft
+    survives so you can retry without creating anything twice.
+  - **Feature Composition**: write a Feature with everything it depends on in **one place** — pull in a
+    **Confluence page by URL**, drop an **Excel or CSV file**, reference **existing Jira issues**, and paste
+    anything else (a Teams thread, an email). Each source shows **where it came from**, so a figure is always
+    traceable. Alongside sits a **Definition of Ready** and a **live readiness checklist** graded by your own
+    hygiene rules as you type — advice, never a blocker. When you are happy, **create** the Feature in a project
+    you choose, or **enrich a Feature you already stubbed** — loading a key updates that issue and **cannot create
+    a duplicate**. Jira's own required fields are the only hard stop, and they are named before anything is written.
+    A Confluence page that cannot be added tells you **which** problem it hit: the page is missing, you lack
+    permission, Confluence is unreachable (check the VPN), or it is not set up here.
+  - **Optional AI help on both tabs** *(only once AI Assist is unlocked with Ctrl+Alt+Z — otherwise you will not
+    see it at all, and both tabs work fully without it)*: builds a prompt describing your Feature — or, when
+    composing, **your own words plus everything you gathered** — for you to run in your own assistant. **You read the
+    prompt before it goes anywhere.** Paste the reply back and it lands as **proposals you edit and accept one at a
+    time**; a proposal you do not accept is simply not created. **Nothing reaches Jira until you commit**, exactly as
+    before. A reply meant for a different feature is rejected outright, and one bad suggestion among five never costs
+    you the other four — you are told what was skipped and why.
 - **PI Review — AI Assistance (feature 016)**: a new **⚡ AI Assistance** panel on the PI Review tab (edit mode, once
   AI Assist is unlocked with Ctrl+Alt+Z) reads every Feature already on your page — its description, acceptance
   criteria, priority and linked issues — and comes back with, per Feature: a **point estimate** derived from the
@@ -60,6 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Team Dashboard — Backlog Remediation panel**: the actionable Aging cleanup triage now lives on the Team Dashboard as a **per-team, persistent Remediation tab**, so each team keeps its own resumable backlog-cleanup queue and handled work does not resurface. It scopes the backlog from the active team profile automatically (**project-first**, and deliberately not narrowed by assignee so unassigned stale work — the prime cancel candidates — stays visible), with an optional per-team JQL override. Switching teams swaps the panel to that team's own queue with **no cross-team bleed** (verdicts and decisions are fully isolated per team). Each item has **Cancel / Keep / Dismiss / Snooze** controls: a decided item stays out of the queue and does **not** resurface on refresh unless it **materially changed** — its status category changed (e.g. reopened) or it was reassigned into the team — while a snoozed item returns after two weeks. **Bulk-closing** a cancel-safe feature group (preview → opt-out → commit, reusing the proven Feature Review write path) records the issues that actually transitioned as **canceled** in the queue, so they stay resolved across reloads. The whole panel is gated behind AI Assist exactly as the old triage was, and reuses the same copy-prompt → paste-reply round-trip. *(feature 014)*
 
 ### Changed
+- **Hygiene**: the Jira field-matching that decides which custom fields each hygiene check reads now lives in a shared
+  module, so other surfaces can apply the same rules without a second copy drifting out of step. No change in
+  behaviour.
 - **PI Review — the Team Dashboard PI selector now drives the page, and the toolbar is down to what you use**: the PI Review tab used to show its own row of PI chips (one per configured Confluence page) that ignored the **PI** selector sitting right above it. Now the dashboard's PI selector *is* the selector — pick **PI 26.3** and you get that PI's page, with no second row of chips and no wasted fetch of the other PI's page. If the selected PI has no page configured, the tab says so and points at Settings instead of silently showing a different PI. (ART's read-only PI Review still tabs between pages: it shows several teams at once and has no single driving PI.) The toolbar also lost two buttons that Jira ingest made obsolete — **Add PI Review Row** (hand-typed a blank row) and **Import PI Review XLSX** (replaced the whole table from a spreadsheet) — because Features now come from Jira via **Pull Features from Jira**, which is itself down to **one click**: it no longer opens a card with a second **Pull into table** button inside it. The Product Owner it will query, and the promise that re-running is safe, now read as a hint line under the toolbar.
 - **Team Dashboard — Capacity roles now match the roster's delivery roles exactly**: the capacity calculator's role set changed from the old abbreviations (`Dev, QE, Test Lead, BT, SL, SA, TPO, SM, PO, Dev Lead`) to the five roster delivery-role names — **Developer, Dev Lead, Internal Tester, External Tester, Systems Analyst** — so the role dropdown, the Confluence capacity readout, and "Seed from Roster" all speak one vocabulary (no more decoding `SL`/`SA`). Coordination roles that add no delivery capacity are no longer selectable. Capacity tables saved under the old codes are **rewritten to the new format on load** — `Dev→Developer`, `SL→Internal Tester`, `QE`/`BT`/`Test Lead→External Tester`, `SA→Systems Analyst` — and rows for retired roles (`SM`/`PO`/`TPO`) are dropped, so nothing renders a broken dropdown.
 - **PI Review pages are now configured on the Team Dashboard team (single source of truth)**: PI Review Confluence pages moved from ART Settings onto the **Team Dashboard team profile**, where you actually manage your teams. Configure them under **Settings → Saved Dashboard Teams → PI Review Pages** (a PI dropdown + Confluence URL per PI, with Add/Remove); because they're part of the team profile, adding/removing a page participates in the **Save / Revert** model like your other team config. The **ART view PI Review tab still displays** those pages (one sub-tab per PI), and its edit control is now a **quick-access "Edit in Team Dashboard"** link that jumps straight to that team's PI Review view — there's no second editor. Existing pages configured on the old ART-team records **migrate automatically** onto the matching Team Dashboard profile on first load, so nothing is lost.

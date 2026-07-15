@@ -30,6 +30,7 @@ import ReportsHubView from './views/ReportsHub/ReportsHubView.tsx';
 import { ReportsHubRuntimeBoundary } from './views/ReportsHub/ReportsHubRuntimeBoundary.tsx';
 import SettingsView from './views/Settings/SettingsView.tsx';
 import SnowHubView from './views/SnowHub/SnowHubView.tsx';
+import PoToolView from './views/PoTool/PoToolView.tsx';
 import SprintDashboardView from './views/SprintDashboard/SprintDashboardView.tsx';
 import { migrateArtTeamPiReviewPagesToProfiles } from './views/SprintDashboard/sprintDashboardArtContext.ts';
 import TextToolsView from './views/TextTools/TextToolsView.tsx';
@@ -48,6 +49,7 @@ const JIRA_INTAKE_ROUTE = '/jira-intake';
 const MY_ISSUES_ROUTE = '/my-issues';
 const PERSONAL_TOOLBOX_ROUTE = '/personal-toolbox';
 const SPRINT_DASHBOARD_ROUTE = '/sprint-dashboard';
+const PO_TOOL_ROUTE = '/po-tool';
 const ART_ROUTE = '/art';
 const DSU_BOARD_ROUTE = '/dsu-board';
 const CODE_WALKTHROUGH_ROUTE = '/code-walkthrough';
@@ -197,6 +199,7 @@ export default function App() {
           <Route path={MY_ISSUES_ROUTE} element={<MyIssuesView />} />
           <Route path={PERSONAL_TOOLBOX_ROUTE} element={<PersonalToolboxView />} />
           <Route path={SPRINT_DASHBOARD_ROUTE} element={<SprintDashboardView />} />
+          <Route path={PO_TOOL_ROUTE} element={<PoToolView />} />
           <Route path={ART_ROUTE} element={<ArtView />} />
           <Route path={DSU_BOARD_ROUTE} element={<DsuBoardView />} />
           <Route path={CODE_WALKTHROUGH_ROUTE} element={<CodeWalkthroughView />} />

@@ -61,6 +61,12 @@ interface FeatureReviewTabProps {
   boardName: string | null;
   projectKey: string;
   selectedPiName: string;
+  /**
+   * Which saved team profile scopes this tab's config and team name. Optional: when omitted the tab
+   * follows the app-wide active team, which is what the Team Dashboard wants. The PO Tool supplies its
+   * own profile so the two tools can sit on different teams at once.
+   */
+  dashboardTeamProfileId?: string;
 }
 
 interface FeatureReviewQuickFixPanelProps {
@@ -696,23 +702,26 @@ export default function FeatureReviewTab({
   boardName,
   projectKey,
   selectedPiName,
+  dashboardTeamProfileId,
 }: FeatureReviewTabProps) {
   const { showToast } = useToast();
   const storedArtTeams = useMemo(() => readStoredArtTeams(), []);
   const activeDashboardTeamProfileId = useSettingsStore(
     (storeState) => storeState.sprintDashboardActiveTeamProfileId,
   );
+  // A caller-supplied profile wins; otherwise follow the app-wide active team as before.
+  const resolvedTeamProfileId = dashboardTeamProfileId ?? activeDashboardTeamProfileId;
   // The selected team's name disambiguates the ART team when several share a project key — without it
   // the rollup could show a different team's features (e.g. "Transformers" showing "Cleanup Crew").
   const activeTeamName = useSettingsStore(
-    (storeState) => storeState.sprintDashboardTeamProfiles.find((profile) => profile.id === storeState.sprintDashboardActiveTeamProfileId)?.name ?? '',
+    (storeState) => storeState.sprintDashboardTeamProfiles.find((profile) => profile.id === resolvedTeamProfileId)?.name ?? '',
   );
   const matchedArtTeam = useMemo(
     () => findMatchingArtTeam(storedArtTeams, boardId, projectKey, activeTeamName),
     [boardId, projectKey, storedArtTeams, activeTeamName],
   );
   const effectiveSelectedPiName = selectedPiName.trim() || readFallbackSelectedPiName();
-  const customStoryPointsFieldId = loadDashboardConfigFromStorage(activeDashboardTeamProfileId).customStoryPointsFieldId ?? '';
+  const customStoryPointsFieldId = loadDashboardConfigFromStorage(resolvedTeamProfileId).customStoryPointsFieldId ?? '';
   const boardLabel = readBoardLabel(boardName, boardId);
   const [featureReviewItems, setFeatureReviewItems] = useState<FeatureReviewItem[]>([]);
   const [featureReviewFieldConfig, setFeatureReviewFieldConfig] = useState<HygieneFieldConfig | null>(null);
