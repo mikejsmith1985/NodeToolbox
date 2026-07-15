@@ -110,17 +110,15 @@ describe('loadHygieneFieldConfig', () => {
     expect(fieldConfig.programIncrementFieldIds).toContain('customfield_99999');
   });
 
-  it('documents that the built-in default currently outranks a workspace-configured id', async () => {
-    // NOTE: this pins EXISTING behaviour, not desired behaviour. resolveHygieneFieldConfig merges as
-    // [...defaults, ...caller], and the first id wins downstream — so an admin who configures a PI
-    // field still gets customfield_10301 for direct fixes. That is surprising, but it predates the PO
-    // Tool and changing it would alter Hygiene's behaviour, which this lift must not do.
-    // Flagged for a separate fix; the test exists so the quirk cannot change unnoticed.
+  it('puts the workspace-configured id first, so a direct fix writes where the team keeps it', async () => {
+    // This originally pinned the opposite: the built-in default outranked a configured field, so an
+    // admin who configured a PI field still got customfield_10301 for direct fixes. That was left alone
+    // here because lifting this loader had to preserve behaviour, and fixed separately in #153.
     window.localStorage.setItem('tbxARTSettings', JSON.stringify({ piFieldId: 'customfield_99999' }));
 
     const fieldConfig = await loadHygieneFieldConfig();
 
-    expect(fieldConfig.programIncrementFieldIds[0]).toBe('customfield_10301');
+    expect(fieldConfig.programIncrementFieldIds[0]).toBe('customfield_99999');
   });
 
   it('still includes the name-matched field alongside the configured one', async () => {
