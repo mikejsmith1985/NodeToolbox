@@ -62,36 +62,84 @@ $SilentLauncherPath = Join-Path $RepoRoot 'Launch Toolbox Silent.vbs'
 
 # ── Version Resolution ─────────────────────────────────────────────────────────
 
-# Bump or set package.json version before reading it, if a bump type or explicit
-# version was given.
-# --no-git-tag-version prevents npm from making its own commit and tag — the
-# release script handles all git operations explicitly for full control.
-# --allow-same-version lets re-runs safely set the same version without erroring
-# (useful when a previous release attempt partially bumped the version).
-if ($BumpType -ne '') {
+<#
+.SYNOPSIS
+  Works out the version a bump WOULD produce, without touching anything.
+.DESCRIPTION
+  This exists so -DryRun can name the version, tag and zip accurately while writing nothing. It
+  mirrors what `npm version <type>` does: an explicit semver is taken verbatim; major/minor/patch
+  increment the current version and zero the parts below.
+#>
+function Resolve-NextVersion {
+    param(
+        [Parameter(Mandatory = $true)][string]$CurrentVersion,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$BumpType
+    )
+
+    if ($BumpType -eq '') { return $CurrentVersion }
+    # An explicit version is used as given — this is what stops a re-run double-bumping.
+    if ($BumpType -match '^\d+\.\d+\.\d+$') { return $BumpType }
+
+    if ($CurrentVersion -notmatch '^(\d+)\.(\d+)\.(\d+)') {
+        throw "Cannot bump '$CurrentVersion' - it is not a major.minor.patch version."
+    }
+    $currentMajor = [int]$Matches[1]
+    $currentMinor = [int]$Matches[2]
+    $currentPatch = [int]$Matches[3]
+
+    switch ($BumpType) {
+        'major' { return "$($currentMajor + 1).0.0" }
+        'minor' { return "$currentMajor.$($currentMinor + 1).0" }
+        'patch' { return "$currentMajor.$currentMinor.$($currentPatch + 1)" }
+        default { throw "Unknown bump type '$BumpType'. Use major, minor, patch, or an explicit version like 1.2.3." }
+    }
+}
+
+# Resolve the target version FIRST, from the current file, without writing. Everything downstream
+# (zip name, exe name, tag, dry-run plan) reads this — so a dry run describes the real release
+# exactly, while leaving the repo untouched.
+$CurrentVersion = (Get-Content $PackageJson -Raw | ConvertFrom-Json).version
+$AppVersion     = Resolve-NextVersion -CurrentVersion $CurrentVersion -BumpType $BumpType
+$GitTag         = "v$AppVersion"
+
+# A bump has to be committed, and the pre-commit hook refuses commits to main. Catch that here, in
+# seconds, rather than after a five-minute build - which is how a wrong tag got published once.
+# This mirrors the documented workflow: run from a feature branch, and the script merges it to main.
+$ReleaseBranch      = git -C $RepoRoot branch --show-current 2>$null
+$IsBumpingOnMain    = ($BumpType -ne '') -and ($ReleaseBranch -in @('main', 'master'))
+$BumpOnMainWarning  = "Releasing with a version bump from '$ReleaseBranch' will fail: the pre-commit hook refuses commits to main. Run this from a feature branch (the script merges it to main for you), or release without a bump type."
+
+if ($IsBumpingOnMain -and -not $DryRun) {
+    throw $BumpOnMainWarning
+}
+
+# Write the version only on a real run. A dry run that edits package.json is worse than useless: it
+# silently primes the NEXT real run to bump a second time (0.69.0 → dry-run → 0.70.0 → run → 0.71.0).
+# --no-git-tag-version keeps npm from making its own commit/tag; this script owns all git operations.
+# --allow-same-version lets a re-run set the same version without erroring.
+if ($BumpType -ne '' -and -not $DryRun) {
     Write-Host ""
     if ($BumpType -match '^\d+\.\d+\.\d+$') {
-        # Explicit version string (e.g. "0.0.14") — set it directly.
-        # This prevents double-bumping when the Release Manager card passes an exact
-        # next-version rather than a relative bump type.
-        Write-Host "  Setting explicit version ($BumpType)..."
+        Write-Host "  Setting explicit version ($AppVersion)..."
     } else {
-        Write-Host "  Bumping version ($BumpType)..."
+        Write-Host "  Bumping version ($CurrentVersion → $AppVersion)..."
     }
     Push-Location $RepoRoot
     try {
-        npm version $BumpType --no-git-tag-version --allow-same-version --silent
+        npm version $AppVersion --no-git-tag-version --allow-same-version --silent
         if ($LASTEXITCODE -ne 0) { throw "npm version bump failed with exit code $LASTEXITCODE" }
     } finally {
         Pop-Location
     }
-    Write-Host "       ✅ Version set"
-}
 
-# Read version after any bump so the zip/exe names always match the tag
-$PackageData    = Get-Content $PackageJson -Raw | ConvertFrom-Json
-$AppVersion     = $PackageData.version
-$GitTag         = "v$AppVersion"
+    # Trust but verify: the rest of the release names artifacts after $AppVersion, so if the file
+    # disagrees the zip and the tag would too.
+    $writtenVersion = (Get-Content $PackageJson -Raw | ConvertFrom-Json).version
+    if ($writtenVersion -ne $AppVersion) {
+        throw "Version bump wrote '$writtenVersion' but '$AppVersion' was expected - aborting before anything is tagged."
+    }
+    Write-Host "       ✅ Version set ($AppVersion)"
+}
 
 $PayloadExeFileName   = "nodetoolbox.exe"
 $PayloadExeOutputPath = Join-Path $DistDir $PayloadExeFileName
@@ -142,6 +190,11 @@ if ($DryRun) {
     foreach ($includedItem in $IncludedPaths) {
         $itemExists = if (Test-Path $includedItem) { '' } else { ' [MISSING]' }
         Write-Host "    $includedItem$itemExists"
+    }
+    Write-Host ""
+    if ($IsBumpingOnMain) {
+        Write-Host ""
+        Write-Host "  WARNING: $BumpOnMainWarning"
     }
     Write-Host ""
     Write-Host "  Run without -DryRun to build and publish the release."
@@ -266,11 +319,27 @@ try {
     $originalBranch = git branch --show-current 2>$null
 
     # Commit the version bump files if npm version changed them.
+    #
+    # The commit MUST be checked. It can fail for real reasons - most commonly the pre-commit hook
+    # refusing a direct commit to main - and an unchecked failure is silent: the push that follows
+    # reports "Everything up-to-date" and exits 0, the merge is a no-op, and the tag then lands on a
+    # commit whose package.json still holds the OLD version. That shipped once already (v0.69.0).
     if ($BumpType -ne '') {
         git add package.json package-lock.json
-        git commit -m "chore: bump version to $GitTag`n`nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
-        git push origin HEAD
-        if ($LASTEXITCODE -ne 0) { throw "git push of version bump failed with exit code $LASTEXITCODE" }
+
+        # Nothing staged means the version was already committed (a re-run at the same version).
+        # That is fine and must not be treated as a failure.
+        $stagedBumpFiles = git diff --cached --name-only
+        if ($stagedBumpFiles) {
+            git commit -m "chore: bump version to $GitTag`n`nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+            if ($LASTEXITCODE -ne 0) {
+                throw "The version bump commit failed (exit $LASTEXITCODE). Nothing has been tagged or published. If you are on '$originalBranch', note the pre-commit hook refuses commits to main - run this from a feature branch and the script will merge it to main for you."
+            }
+            git push origin HEAD
+            if ($LASTEXITCODE -ne 0) { throw "git push of version bump failed with exit code $LASTEXITCODE" }
+        } else {
+            Write-Host "       Version $AppVersion is already committed; nothing to bump."
+        }
     }
 
     # Merge the current branch into main so the release tag lives on main.
@@ -286,6 +355,16 @@ try {
     git push origin main
     if ($LASTEXITCODE -ne 0) { throw "git push main failed with exit code $LASTEXITCODE" }
     Write-Host "       ✅ Merged and pushed to main"
+
+    # The invariant this whole step exists to protect: the commit about to be tagged must actually
+    # contain the version being released. Checked against the committed tree, not the working tree,
+    # because an uncommitted bump is exactly the failure that produced a wrong v0.69.0 tag.
+    $committedPackageJson = git show HEAD:package.json
+    $committedVersion     = ($committedPackageJson | ConvertFrom-Json).version
+    if ($committedVersion -ne $AppVersion) {
+        throw "Refusing to tag $GitTag - the commit on main says version '$committedVersion', not '$AppVersion'. The version bump is not committed. Nothing has been tagged or published."
+    }
+    Write-Host "       Verified: main carries version $AppVersion"
 
     # Remove any stale local tag so we can recreate it pointing at HEAD (main).
     # Guard with git tag -l first to avoid a NativeCommandError under
