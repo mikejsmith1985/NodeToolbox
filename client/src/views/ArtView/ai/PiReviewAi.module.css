@@ -1,0 +1,186 @@
+/* PiReviewAi.module.css — Styles for the PI Review AI Assistance panel and its review table. */
+
+.aiPanelEmpty {
+  padding: 12px 14px;
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.aiStatus {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.aiWarning {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #fbbf24;
+}
+
+/* ── The review list ── */
+
+.suggestionList {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.suggestionRow {
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-2);
+}
+
+.suggestionHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.suggestionKey {
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+}
+
+.suggestionSize {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-surface-3, rgba(148, 163, 184, 0.16));
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.suggestionPoints {
+  font-size: 16px;
+  font-weight: 700;
+  color: #38bdf8;
+}
+
+/* A size the scale does not define: reported, never coerced to a neighbour. */
+.suggestionWarning {
+  font-size: 12px;
+  color: #fbbf24;
+}
+
+.suggestionRationale {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+/* The human's value is never replaced silently — this makes the trade explicit. */
+.suggestionConflict {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #fbbf24;
+}
+
+.suggestionPointsField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.suggestionPointsField input {
+  width: 90px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: inherit;
+}
+
+/* Exactly what Accept will append, labelled as it will appear in the cell. */
+.suggestionNotes {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.suggestionActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.suggestionAccept,
+.suggestionReject {
+  padding: 5px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.suggestionAccept {
+  border-color: #22c55e;
+  color: #22c55e;
+}
+
+.suggestionAccept:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.suggestionReject {
+  border-color: #f87171;
+  color: #f87171;
+}
+
+/* ── The sizing guide (visible whether or not AI Assist is unlocked) ── */
+
+.sizingCard {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-2);
+  font-size: 13px;
+}
+
+.sizingSummary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.sizingTable {
+  margin-top: 8px;
+  border-collapse: collapse;
+}
+
+.sizingTable th,
+.sizingTable td {
+  padding: 3px 18px 3px 0;
+  text-align: left;
+  font-weight: 400;
+}
+
+.sizingTable th {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sizingHint {
+  margin: 8px 0 2px;
+}
+
+.sizingHint a {
+  color: #38bdf8;
+}

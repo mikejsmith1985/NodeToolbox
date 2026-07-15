@@ -873,10 +873,9 @@ describe('SprintDashboardView', () => {
 
     expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
 
-    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: true });
-    const passphraseInput = screen.getByLabelText('Protected tools passphrase');
-    fireEvent.change(passphraseInput, { target: { value: 'ainow' } });
-    fireEvent.keyDown(passphraseInput, { key: 'Enter' });
+    // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this view only reads the
+    // shared store, so unlock it directly rather than driving a prompt this view no longer renders.
+    act(() => setAiAssistUnlocked(true));
 
     const buildPromptButton = await screen.findByRole('button', { name: /build ai assist prompt/i });
     fireEvent.click(buildPromptButton);
@@ -907,6 +906,44 @@ describe('SprintDashboardView', () => {
     expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /unlock hidden prompt/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Protected tools passphrase')).not.toBeInTheDocument();
+  });
+
+  // Feature 016 Part 1: the app-level AiAssistUnlockGate is the sole owner of the Ctrl+Alt+Z shortcut
+  // and its passphrase prompt. This view used to render two of its own (Pointing and Release Notes),
+  // which stacked on top of the app-level one. It must now render none.
+  it('renders no passphrase prompt of its own on Ctrl+Alt+Z — the app-level gate owns the unlock', async () => {
+    mockState.activeTab = 'releases';
+    mockJiraGet.mockImplementation((path: string) => {
+      if (path === '/rest/api/2/project/TBX/versions') {
+        return Promise.resolve([
+          { id: 'rel-1', name: 'Release 24.1', releaseDate: '2099-01-15', released: false, archived: false },
+        ]);
+      }
+      if (path.startsWith('/rest/api/2/search?jql=')) {
+        return Promise.resolve({ issues: [] });
+      }
+
+      return Promise.resolve({ values: [] });
+    });
+
+    render(<SprintDashboardView />);
+    expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: true });
+
+    expect(screen.queryByLabelText('Protected tools passphrase')).not.toBeInTheDocument();
+    expect(screen.queryByText(/unlock protected tools/i)).not.toBeInTheDocument();
+  });
+
+  it('renders no passphrase prompt of its own on Ctrl+Alt+Z from the Pointing tab', async () => {
+    mockState.activeTab = 'pointing';
+
+    render(<SprintDashboardView />);
+
+    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: true });
+
+    expect(screen.queryByLabelText('Protected tools passphrase')).not.toBeInTheDocument();
+    expect(screen.queryByText(/unlock protected tools/i)).not.toBeInTheDocument();
   });
 
   it('renders a release-notes table from a pasted AI Assist response', async () => {
@@ -944,10 +981,9 @@ describe('SprintDashboardView', () => {
 
     expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
 
-    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: true });
-    const passphraseInput = screen.getByLabelText('Protected tools passphrase');
-    fireEvent.change(passphraseInput, { target: { value: 'ainow' } });
-    fireEvent.keyDown(passphraseInput, { key: 'Enter' });
+    // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this view only reads the
+    // shared store, so unlock it directly rather than driving a prompt this view no longer renders.
+    act(() => setAiAssistUnlocked(true));
 
     fireEvent.click(await screen.findByRole('button', { name: /paste ai assist response/i }));
 
@@ -1020,10 +1056,9 @@ describe('SprintDashboardView', () => {
     render(<SprintDashboardView />);
     expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
 
-    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: true });
-    const passphraseInput = screen.getByLabelText('Protected tools passphrase');
-    fireEvent.change(passphraseInput, { target: { value: 'ainow' } });
-    fireEvent.keyDown(passphraseInput, { key: 'Enter' });
+    // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this view only reads the
+    // shared store, so unlock it directly rather than driving a prompt this view no longer renders.
+    act(() => setAiAssistUnlocked(true));
 
     // Open the prompt modal, then run the automated exchange instead of copy-paste.
     fireEvent.click(await screen.findByRole('button', { name: /Build AI Assist Prompt/i }));
@@ -1071,10 +1106,9 @@ describe('SprintDashboardView', () => {
 
     expect(await screen.findByText('Release 24.1')).toBeInTheDocument();
 
-    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: true });
-    const passphraseInput = screen.getByLabelText('Protected tools passphrase');
-    fireEvent.change(passphraseInput, { target: { value: 'ainow' } });
-    fireEvent.keyDown(passphraseInput, { key: 'Enter' });
+    // The app-level AiAssistUnlockGate owns the shortcut and the prompt; this view only reads the
+    // shared store, so unlock it directly rather than driving a prompt this view no longer renders.
+    act(() => setAiAssistUnlocked(true));
 
     fireEvent.click(await screen.findByRole('button', { name: /paste ai assist response/i }));
 

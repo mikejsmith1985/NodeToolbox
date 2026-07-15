@@ -9,11 +9,23 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **015-pi-review-scheduler** — server-side scheduled "Save to Confluence" for the PI Review tab, managed from a
-  new Admin Hub panel, keeping the manual Save button as the urgent option. Plan: `specs/015-pi-review-scheduler/plan.md`.
-  Key design: reuse the Standup Briefing scheduler triad + the PI Review pure logic; new `linkedom` server dependency
-  hosts the DOM so the existing save engine (`piReviewTable.ts`) runs server-side after two seams (predicate guards +
-  injected `DOMParser`). A run appends PO+PI Features and reconciles Priority/Estimate/Dependency/Risks (faithful
-  port of `reconcilePiReviewRowsWithJira`), preserving all human-curated content. Status: planned; next `/speckit-tasks`.
+- **016-pi-review-ai-assist** — one AI unlock prompt instead of five, plus an AI Assistance panel on the PI Review
+  tab. Plan: `specs/016-pi-review-ai-assist/plan.md`.
+  **Part 1**: four per-view Ctrl+Alt+Z gates (Pointing, Release Notes, Risk Management, SnowHub Create CHG) are
+  functional twins of the app-level `AiAssistUnlockGate` that superseded them — delete their listener/state/modal;
+  views keep reading `aiAssistStore` and keep their AI buttons. Pure deletion.
+  **Part 2**: new `client/src/views/ArtView/ai/` module (mirrors `FeatureCanvas/ai/`) — one prompt covering every
+  Feature, `{kind:'piReview',items[]}` reply keyed by issue key, per-row accept. **An accepted suggestion may touch
+  exactly two cells: `pointEstimate` (replace) and `notes` (append via the existing `appendUniqueNoteLine`).**
+  Dependency/Risks/Priority are Jira mirrors rebuilt every load — the AI never writes them; it supplies the
+  *explanation* as a labelled note line. The model returns a T-shirt **size**; points are derived from the scale
+  (XS 10 · S 20 · M 40 · L 60 · XL 80 · XXL = user-supplied). Reuses `acceptanceCriteria.ts`,
+  `richTextPlainText.ts`, `extractJsonPayload`, `useAiAssistExchange`, `ReportAiPanel` (extended, not forked).
+  Server untouched. Status: planned; next `/speckit-tasks`.
+
+- **015-pi-review-scheduler** — *(shipped, PR #148)* server-side scheduled "Save to Confluence" for the PI Review
+  tab, managed from an Admin Hub panel. `linkedom` hosts the DOM so the browser save engine (`piReviewTable.ts`) runs
+  server-side. **Constraint feature 016 must respect**: `piReviewJira.ts`/`piReviewTable.ts` are bundled into the
+  server engine (`npm run build:pi-review-engine`), so changes there must keep `npm run test:dom` green.
 <!-- SPECKIT END -->
 
