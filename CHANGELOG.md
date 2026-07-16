@@ -14,20 +14,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   buckets by statusCategory: `new` → To Do, `indeterminate` → In Progress, `done` → Done. Inside In Progress the
   Overview shows the approved workflow stages as sub-group headers: **Active**, **Internal Testing** ("Ready for
   Testing"), **External Testing** ("Ready for QA"), and **Ready to Accept**.
-
-### Changed
-- **Completion metrics across the ART now credit work when it is DELIVERED — at "Ready for QA" (External Testing)
-  or later — not when it reaches statusCategory Done ("Accepted")**: per the ART's Definition of Done, delivery to
-  External Test completes the team's work; the story is still tracked through "Ready to Accept" and "Accepted" but
-  earns its credit at hand-off to QA. The new shared rule (`client/src/utils/workflowDelivery.ts`) drives Points
-  Done, the On Track / At Risk health badge, the burn-down "completed" line, Scrum and Kanban throughput, default
-  cycle-time endpoints, Release Radar done counts, Feature Review done-child counts, blueprint feature completion
-  percent (delivered stories now weigh 1.0, up from 0.9 for "Ready to Accept" and 0.5 for "Ready for QA"), and ART
-  velocity / monthly stats. PI attribution follows the changelog: credit lands in the PI whose dates contain the
-  issue's entry into its current delivered run, so work delivered after the PI's last day is carry-over for the
-  next PI — and a regression out of "Ready for QA" (e.g. back to "Working" for a fix) forfeits the credit until
-  the work is re-delivered. Statuses report as statuses; delivery drives the math. *(Known limitation: the Metrics
-  tab's sprint predictability rows still use Jira's own sprint-report completed sets.)*
+- **Hygiene surfaces now agree with each other (GH #167)**: the Today report, the My Issues Hygiene tab and the
+  Team Dashboard Hygiene tab all run the same rules, but each answered a *different question* without saying so —
+  which is why "My stale issues: 2" could open a tab showing 0, and one team's 35 infractions sat next to another
+  team's suspicious 0. Four fixes:
+  - **The Today cards' drill-through now opens the same scope the card counted.** "My stale issues" counts your
+    work across *every* project; clicking it used to land on the Hygiene tab locked to one remembered project key.
+    It now opens Hygiene in a new **"All my projects"** scope with the stale filter pre-applied, so the list shows
+    exactly the issues the number counted. The **Unassigned** and **Sprint commitment gaps** cards count *team*
+    sprint issues but linked to the *personal* Hygiene tab — where an unassigned issue can never appear (it filters
+    to your own assignments); they now open the Team Dashboard's Hygiene tab.
+  - **An empty scope no longer masquerades as a perfect score.** The Hygiene view now reports how many issues it
+    *scanned*; when the search matches nothing it shows an amber "scope matched no issues" warning and a dash for
+    the score, instead of a green 100/100 indistinguishable from a healthy backlog — the most likely reason a team
+    showed zero infractions it didn't deserve.
+  - **The PI scope clause follows the configured PI field.** The Team Dashboard's Hygiene tab and the dashboard's
+    own PI queries hardcoded `cf[10301]`; a team whose Program Increment lives in a different custom field got an
+    empty scope (and, per the above, a silent perfect score). Both now derive the field from the ART settings.
+  - **One stale definition.** The rules engine's fallback threshold said 14 days while every live surface passes
+    the team's configured threshold (default 5) — the fallback and the Admin rule description now match reality.
 - **Every tool page silently gave up ~20% of the window at A+/A++ text size — the real cause behind PI Review
   "not fitting" (GH #160)**: the A+/A++ text buttons scale tool pages with CSS `zoom`, paired with a
   `width: calc(100% / zoom)` compensation written for the old browser behavior where zoom stretched percentage
@@ -45,6 +50,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already share extra space naturally. On a window genuinely narrower than the floors, the table scrolls
   horizontally inside its own frame and the page never widens or clips. Playwright layout tests cover full-width
   at all three text sizes, the 11-column fit (including at A++), and the narrow-window scroll fallback. *(GH #160)*
+
+### Changed
+- **Completion metrics across the ART now credit work when it is DELIVERED — at "Ready for QA" (External Testing)
+  or later — not when it reaches statusCategory Done ("Accepted")**: per the ART's Definition of Done, delivery to
+  External Test completes the team's work; the story is still tracked through "Ready to Accept" and "Accepted" but
+  earns its credit at hand-off to QA. The new shared rule (`client/src/utils/workflowDelivery.ts`) drives Points
+  Done, the On Track / At Risk health badge, the burn-down "completed" line, Scrum and Kanban throughput, default
+  cycle-time endpoints, Release Radar done counts, Feature Review done-child counts, blueprint feature completion
+  percent (delivered stories now weigh 1.0, up from 0.9 for "Ready to Accept" and 0.5 for "Ready for QA"), and ART
+  velocity / monthly stats. PI attribution follows the changelog: credit lands in the PI whose dates contain the
+  issue's entry into its current delivered run, so work delivered after the PI's last day is carry-over for the
+  next PI — and a regression out of "Ready for QA" (e.g. back to "Working" for a fix) forfeits the credit until
+  the work is re-delivered. Statuses report as statuses; delivery drives the math. *(Known limitation: the Metrics
+  tab's sprint predictability rows still use Jira's own sprint-report completed sets.)*
 
 ### Added
 - **PI Review — the editor is now genuinely responsive: it reflows into cards when the columns don't fit**: with

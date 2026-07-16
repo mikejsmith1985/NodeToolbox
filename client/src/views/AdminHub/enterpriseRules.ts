@@ -153,7 +153,8 @@ const BUILT_IN_RULE_DEFINITIONS: readonly Omit<EnterpriseBuiltInRule, 'isBuiltIn
     id: 'stale',
     checkId: 'stale',
     name: 'Stale Ticket',
-    description: 'Tickets in-progress with no updates for 14+ days should be reviewed.',
+    description:
+      "Tickets in-progress with no updates past the team's stale threshold (default 5 days) should be reviewed.",
   },
   {
     id: 'old-in-sprint',

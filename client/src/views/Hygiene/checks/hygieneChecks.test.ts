@@ -108,11 +108,15 @@ describe('hygiene check predicates', () => {
     expect(hygieneFlag).toBeNull();
   });
 
-  it('falls back to the fourteen-day default when no threshold is provided', () => {
-    // Exactly fourteen days old now flags because the threshold comparison is inclusive (>=).
-    const hygieneFlag = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: buildDateDaysAgo(14) }));
+  it('falls back to the same five-day default every live surface uses when no threshold is provided', () => {
+    // The fallback is aligned with the dashboard's DEFAULT_STALE_DAYS_THRESHOLD (5) so a caller
+    // that forgets the argument cannot quietly apply a different staleness rule than every other
+    // surface — the old fourteen-day fallback was one of the GH #167 count mismatches.
+    const flagAtThreshold = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: buildDateDaysAgo(5) }));
+    const noFlagBelowThreshold = checkStaleIssue(buildIssue({ status: ACTIVE_STATUS, updated: buildDateDaysAgo(4) }));
 
-    expect(hygieneFlag?.checkId).toBe('stale');
+    expect(flagAtThreshold?.checkId).toBe('stale'); // inclusive (>=) at exactly five days
+    expect(noFlagBelowThreshold).toBeNull();
   });
 
   it('uses the context stale threshold when evaluating a full issue', () => {
