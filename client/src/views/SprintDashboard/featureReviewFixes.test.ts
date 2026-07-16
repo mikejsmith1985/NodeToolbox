@@ -19,6 +19,7 @@ import {
   saveFeatureReviewTransition,
   saveFeatureReviewUserField,
   searchFeatureReviewUsers,
+  saveFeatureReviewStoryPoints,
 } from './featureReviewFixes.ts';
 
 describe('featureReviewFixes', () => {
@@ -115,5 +116,40 @@ describe('featureReviewFixes', () => {
       'Select a Jira transition before saving.',
     );
     expect(mockJiraPost).not.toHaveBeenCalled();
+  });
+
+  // ── saveFeatureReviewStoryPoints: editmeta-aware (GH #167) ──
+
+  it('writes story points to the first standard field the issue’s edit screen carries', async () => {
+    mockJiraGet.mockResolvedValue({ fields: { customfield_10028: { name: 'Story Points' } } });
+    mockJiraPut.mockResolvedValue(undefined);
+
+    await saveFeatureReviewStoryPoints('ENCUC-2135', '3');
+
+    expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/ENCUC-2135', {
+      fields: { customfield_10028: 3 },
+    });
+  });
+
+  it('falls back to an editable field NAMED like story points when no standard id is on the screen', async () => {
+    // The GH #167 failure: neither configured nor legacy ids were settable, and the blind write
+    // died with Jira's "not on the appropriate screen" 400. The screen's own field wins instead.
+    mockJiraGet.mockResolvedValue({ fields: { customfield_99001: { name: 'Story Points (QA)' } } });
+    mockJiraPut.mockResolvedValue(undefined);
+
+    await saveFeatureReviewStoryPoints('ENCUC-2135', '5');
+
+    expect(mockJiraPut).toHaveBeenCalledWith('/rest/api/2/issue/ENCUC-2135', {
+      fields: { customfield_99001: 5 },
+    });
+  });
+
+  it('fails with a readable message when no story-points field is editable, instead of a screen 400', async () => {
+    mockJiraGet.mockResolvedValue({ fields: { summary: { name: 'Summary' } } });
+
+    await expect(saveFeatureReviewStoryPoints('ENCUC-2135', '5')).rejects.toThrow(
+      /No story-points field is editable/,
+    );
+    expect(mockJiraPut).not.toHaveBeenCalled();
   });
 });

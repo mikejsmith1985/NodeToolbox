@@ -24,6 +24,8 @@ export interface FeatureReviewEditMetaAllowedValue {
 
 export interface FeatureReviewEditMetaField {
   allowedValues?: FeatureReviewEditMetaAllowedValue[];
+  /** Jira's human name for the field — how a project's non-standard story-points field is found. */
+  name?: string;
   schema?: {
     items?: string;
     type?: string;
@@ -322,28 +324,48 @@ export async function saveFeatureReviewFixVersion(issueKey: string, versionName:
   });
 }
 
-/** Saves child-story points from Feature Review using the configured ART story-points field. */
+/** How a project's own story-points field is recognised when none of the standard ids is editable. */
+const STORY_POINTS_FIELD_NAME_PATTERN = /story\s*points?/i;
+
+/**
+ * Saves story points to the field this issue can actually accept.
+ *
+ * Projects differ: the configured/standard ids (ART setting, customfield_10028, customfield_10016)
+ * may not be on an issue's edit screen at all — blind writes then fail with Jira's "cannot be set;
+ * not on the appropriate screen" 400 (seen on GH #167). The issue's edit metadata is the truth of
+ * what is settable, so the write targets the first standard candidate the screen carries, falling
+ * back to any editable field NAMED like story points, and otherwise fails with a readable message
+ * instead of a screen error.
+ */
 export async function saveFeatureReviewStoryPoints(issueKey: string, storyPointsValue: string): Promise<void> {
   const numericStoryPoints = Number(storyPointsValue);
-  const primaryStoryPointsFieldId = readStoredStoryPointsFieldId();
+  const editMetaFields = await fetchFeatureReviewEditMeta(issueKey);
 
-  try {
-    await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, {
-      fields: {
-        [primaryStoryPointsFieldId]: numericStoryPoints,
-      },
-    });
-  } catch (caughtError) {
-    if (primaryStoryPointsFieldId === FALLBACK_STORY_POINTS_FIELD_ID) {
-      throw caughtError;
-    }
+  const candidateFieldIds = [
+    readStoredStoryPointsFieldId(),
+    DEFAULT_STORY_POINTS_FIELD_ID,
+    FALLBACK_STORY_POINTS_FIELD_ID,
+  ];
+  const editableCandidate = candidateFieldIds.find((fieldId) => editMetaFields[fieldId] !== undefined);
+  const namedStoryPointsField = editableCandidate
+    ? undefined
+    : Object.entries(editMetaFields).find(([, editMetaField]) =>
+        STORY_POINTS_FIELD_NAME_PATTERN.test(editMetaField?.name ?? ''),
+      )?.[0];
 
-    await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, {
-      fields: {
-        [FALLBACK_STORY_POINTS_FIELD_ID]: numericStoryPoints,
-      },
-    });
+  const targetFieldId = editableCandidate ?? namedStoryPointsField;
+  if (!targetFieldId) {
+    throw new Error(
+      'No story-points field is editable on this issue (checked the configured and standard fields, '
+      + 'and no editable field is named like story points). Set the points in Jira directly.',
+    );
   }
+
+  await jiraPut(`/rest/api/2/issue/${encodeURIComponent(issueKey)}`, {
+    fields: {
+      [targetFieldId]: numericStoryPoints,
+    },
+  });
 }
 
 /** Reads the Jira project key from an issue key such as DENP-1370. */
