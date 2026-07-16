@@ -157,11 +157,13 @@ vi.mock('../../store/settingsStore', () => ({
     changeRequestGeneratorJiraUrl: string;
     changeRequestGeneratorSnowUrl: string;
     theme: string;
+    sprintDashboardTeamProfiles: unknown[];
   }) => unknown) =>
     selector({
       changeRequestGeneratorJiraUrl: '',
       changeRequestGeneratorSnowUrl: '',
       theme: 'dark',
+      sprintDashboardTeamProfiles: [],
     }),
 }));
 
@@ -171,6 +173,10 @@ vi.mock('../DevPanel/DevPanelView.tsx', () => ({
 
 vi.mock('./RepoMonitorPanel.tsx', () => ({
   RepoMonitorPanel: () => <div>Mock Repo Monitor Panel</div>,
+}));
+
+vi.mock('./MonthlyDeliveryPanel.tsx', () => ({
+  MonthlyDeliveryPanel: () => <div>Mock Monthly Delivery Panel</div>,
 }));
 
 import AdminHubView from './AdminHubView.tsx';
