@@ -25,13 +25,17 @@ beforeEach(() => {
 })
 
 describe('fetchStaleIssueContexts', () => {
-  it('fetches the last comment only for issues that will actually get a stale ask', async () => {
+  it('fetches the recent conversation (newest few, oldest-first) only for issues getting a stale ask', async () => {
     mockJiraGet.mockResolvedValue({
       fields: {
         comment: {
           comments: [
-            { author: { displayName: 'Old Author' }, created: '2026-06-01T10:00:00.000+0000', body: 'First.' },
-            { author: { displayName: 'Jordan, John' }, created: '2026-07-01T10:00:00.000+0000', body: 'Blocked till ESI Recon work is complete.' },
+            { author: { displayName: 'Ancient Author' }, created: '2026-01-01T10:00:00.000+0000', body: 'Kickoff.' },
+            { author: { displayName: 'A' }, created: '2026-05-01T10:00:00.000+0000', body: 'Two.' },
+            { author: { displayName: 'B' }, created: '2026-05-02T10:00:00.000+0000', body: 'Three.' },
+            { author: { displayName: 'C' }, created: '2026-05-03T10:00:00.000+0000', body: 'Four.' },
+            { author: { displayName: 'Sun, Zhiyong' }, created: '2026-06-16T13:50:00.000+0000', body: 'Pushed to dev, ready for internal testing' },
+            { author: { displayName: 'Smith, Michael' }, created: '2026-06-25T12:04:00.000+0000', body: 'Thank you Sun, Zhiyong' },
           ],
         },
       },
@@ -44,11 +48,17 @@ describe('fetchStaleIssueContexts', () => {
 
     expect(mockJiraGet).toHaveBeenCalledTimes(1)
     expect(String(mockJiraGet.mock.calls[0][0])).toContain('TBX-1')
-    expect(contexts['TBX-1']).toEqual({
-      lastCommentAuthor: 'Jordan, John',
-      lastCommentDate: '2026-07-01',
-      lastCommentBody: 'Blocked till ESI Recon work is complete.',
+    const recentComments = contexts['TBX-1'].recentComments
+    // The newest five, kept oldest-first — the "thanks" AND the comment beneath it that explains the wait.
+    expect(recentComments).toHaveLength(5)
+    expect(recentComments[0].body).toBe('Two.')
+    expect(recentComments[3]).toEqual({
+      author: 'Sun, Zhiyong',
+      date: '2026-06-16',
+      body: 'Pushed to dev, ready for internal testing',
     })
+    expect(recentComments[4].body).toBe('Thank you Sun, Zhiyong')
+    expect(recentComments.map((comment) => comment.body)).not.toContain('Kickoff.')
   })
 
   it('does not fetch for a stale issue whose blocked status already removed the ask', async () => {
@@ -62,7 +72,7 @@ describe('fetchStaleIssueContexts', () => {
 
     const contexts = await fetchStaleIssueContexts([finding('TBX-1', ['stale'])])
 
-    expect(contexts['TBX-1']).toEqual({ lastCommentAuthor: null, lastCommentDate: null, lastCommentBody: null })
+    expect(contexts['TBX-1']).toEqual({ recentComments: [] })
   })
 
   it('degrades a failed fetch to "no comment context" instead of failing the prompt build', async () => {
@@ -70,6 +80,6 @@ describe('fetchStaleIssueContexts', () => {
 
     const contexts = await fetchStaleIssueContexts([finding('TBX-1', ['stale'])])
 
-    expect(contexts['TBX-1']).toEqual({ lastCommentAuthor: null, lastCommentDate: null, lastCommentBody: null })
+    expect(contexts['TBX-1']).toEqual({ recentComments: [] })
   })
 })

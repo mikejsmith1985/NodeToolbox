@@ -88,27 +88,33 @@ describe('buildHygieneAiPrompt', () => {
     expect(promptText).toContain('TBX-2')
   })
 
-  it('carries the status and last comment beside a stale ask so the nudge is a judgement', () => {
+  it('carries the status and the recent CONVERSATION beside a stale ask — not just the newest line', () => {
+    // The user's real case: "Thank you" sits on top of "pushed to dev, ready for internal testing".
+    // Only the thread explains the wait; a single newest comment would not.
     const staleFinding = finding('TBX-1', ['stale'], { status: { name: 'In Progress' } })
 
     const promptText = buildHygieneAiPrompt([staleFinding], {
       'TBX-1': {
-        lastCommentAuthor: 'Jordan, John',
-        lastCommentDate: '2026-07-01',
-        lastCommentBody: 'Blocked till ESI Recon work is complete.',
+        recentComments: [
+          { author: 'Sun, Zhiyong', date: '2026-06-16', body: 'Pushed to dev, ready for internal testing' },
+          { author: 'Smith, Michael', date: '2026-06-25', body: 'Thank you Sun, Zhiyong' },
+        ],
       },
     })
 
     expect(promptText).toContain('status: In Progress')
-    expect(promptText).toContain('last comment (Jordan, John, 2026-07-01): Blocked till ESI Recon work is complete.')
-    // And the standing rule that tells the model when to say nothing.
+    expect(promptText).toContain('recent comments (oldest first):')
+    expect(promptText).toContain('- (Sun, Zhiyong, 2026-06-16) Pushed to dev, ready for internal testing')
+    expect(promptText).toContain('- (Smith, Michael, 2026-06-25) Thank you Sun, Zhiyong')
+    // And the standing rule that tells the model to read the WHOLE thread before nudging.
     expect(promptText).toContain('OMIT the stale fix')
+    expect(promptText).toContain('not just the newest line')
   })
 
   it('says "(none)" rather than omitting the comment line when a stale issue has no comments', () => {
     const promptText = buildHygieneAiPrompt([finding('TBX-1', ['stale'], { status: { name: 'In Progress' } })])
 
-    expect(promptText).toContain('last comment: (none)')
+    expect(promptText).toContain('recent comments: (none)')
   })
 })
 
