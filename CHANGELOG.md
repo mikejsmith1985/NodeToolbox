@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **PI Review AI Assistance — accept the fields you want, not the whole row**: an accepted suggestion used to apply
+  everything it carried in one click. Each proposed change — the point estimate, the notes, the Dev Work box, the
+  Test Support box — is now its own **ticked checkbox** in the review list, and you clear the ones you don't want
+  before clicking Accept. An XXL Feature whose estimate still needs a number no longer blocks Accept if you simply
+  untick the estimate and take its notes. Alongside this, **Implementation Notes are now overwritten, not appended**
+  — the same way the point estimate replaces its cell rather than adding to it — so accepting the same suggestion
+  twice can't stack duplicate note lines. Because overwrite could otherwise erase notes you typed yourself, the
+  per-field opt-out is the safeguard: untick **Notes** and your text stands. A suggestion that has nothing to say
+  about the notes still never blanks them. *(feature 016)*
 - **PI Review AI Assistance now judges the Dev Work and Test Support boxes**: alongside the point estimate and the
   notes, the AI now reads each Feature and says whether your team is being asked to **build** it (**Dev Work**) or
   **only to support another team's testing** of what they built (**Test Support**) — the distinction a PO otherwise
@@ -49,6 +58,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   thing on the page (the edit-mode table, whose columns each carry a minimum width) set the width of everything
   above it, and the table's own horizontal scrollbar never got the chance to do its job. The layout now lets those
   containers shrink, so the page fits the window and the table scrolls inside its own frame. *(GH #160)*
+- **PI Review — the row controls fell off the right edge, and Notes boxes opened too small to read (GH #160)**:
+  once the edit-mode table scrolled inside its frame, its widest section — the **Actions** column holding Move
+  up/down, the Stretch Goals and custom-line buttons, and Remove — sat at the far right, so reaching a row's
+  controls meant scrolling the whole table sideways every time. That column is now **pinned to the right edge**:
+  it stays in view as a solid rail no matter how far the table is scrolled, with the other columns sliding
+  underneath it. The **Implementation Notes** boxes also opened barely a line tall, forcing a manual drag on every
+  row; they now default to a comfortably readable height (still resizable), and their column is wider. Verified in
+  a real browser via a Playwright layout test (`test/e2e/pi-review-edit-layout.spec.js`). *(GH #160)*
 - **Hygiene — the user and issue pickers briefly showed results for what you had already stopped typing**: the
   fix controls' search boxes kept whatever the last search returned, with no record of which search it answered,
   so typing on past "abc" left the "abc" matches on screen until the newer results arrived. Results are now tied

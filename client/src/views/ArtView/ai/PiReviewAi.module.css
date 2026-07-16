@@ -110,6 +110,33 @@
   gap: 4px;
 }
 
+/* The proposed changes as a checklist — each offered cell is one includable row. */
+.suggestionFields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.suggestionField {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.suggestionField input[type='checkbox'] {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.suggestionFieldBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .suggestionActions {
   display: flex;
   gap: 8px;
@@ -185,14 +212,3 @@
   color: #38bdf8;
 }
 
-/* The checkbox verdicts, kept visually distinct from the note lines they sit above: one is a
-   judgement about what the team does, the other is prose for the ART. */
-.suggestionBoxes {
-  margin: 8px 0 0;
-  padding-left: 18px;
-  font-size: 13px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  color: var(--color-tone-info-fg);
-}

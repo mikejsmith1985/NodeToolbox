@@ -2,9 +2,10 @@
 //
 // This file is where the feature's central guarantee lives, so it is deliberately tiny and pure.
 //
-// An accepted suggestion may touch exactly FOUR cells:
+// An accepted suggestion may touch exactly FOUR cells, and the user chooses which of them per row
+// (an all-or-nothing accept would force an unwanted estimate to ride in with a wanted note):
 //   • pointEstimate — replaced, when the suggestion resolved to a number
-//   • notes         — appended to, never overwritten
+//   • notes         — replaced with the AI's composed note block (not appended), like the estimate
 //   • devWork       — ticked/unticked, when the model gave a verdict
 //   • testSupport   — ticked/unticked, when the model gave a verdict
 //
@@ -24,6 +25,26 @@
 import { appendUniqueNoteLine } from '../piReviewJira.ts'
 import type { PiReviewRow } from '../piReviewTable.ts'
 import { MAX_AI_NOTE_LENGTH, type PiReviewAiSuggestion } from './piReviewAiAssist.ts'
+
+/**
+ * Which of a suggestion's four cells the user chose to apply. A suggestion offers up to four edits;
+ * the review UI lets the PO tick each one on or off before accepting, so a good note need not drag
+ * an unwanted estimate onto the row with it. A `false` field is left exactly as it was.
+ */
+export interface PiReviewSuggestionFieldSelection {
+  pointEstimate: boolean
+  notes: boolean
+  devWork: boolean
+  testSupport: boolean
+}
+
+/** The default when a caller does not specify: apply everything the suggestion carries. */
+export const ALL_SUGGESTION_FIELDS_SELECTED: PiReviewSuggestionFieldSelection = {
+  pointEstimate: true,
+  notes: true,
+  devWork: true,
+  testSupport: true,
+}
 
 /**
  * The note labels, in the order they are appended.
@@ -69,7 +90,7 @@ function capNoteText(noteText: string): string {
   return noteText.length > MAX_AI_NOTE_LENGTH ? `${noteText.slice(0, MAX_AI_NOTE_LENGTH)}…` : noteText
 }
 
-/** Appends one AI note line, reusing the reconciliation's own convention and its dedupe. */
+/** Appends one AI note line to a block, reusing reconciliation's convention (label + dedupe). */
 function appendAiNote(notes: string, label: string, noteText: string | null): string {
   if (noteText === null) {
     return notes
@@ -78,31 +99,56 @@ function appendAiNote(notes: string, label: string, noteText: string | null): st
 }
 
 /**
+ * Composes the AI's note block from its up-to-three labelled lines, in reconciliation's order, or
+ * null when the suggestion carries no note at all.
+ *
+ * Built from an empty string rather than the row's notes: the block REPLACES the cell (like the
+ * estimate replaces its cell), so a repeat accept can never stack a second copy. Null vs empty is
+ * the "silence leaves the cell alone" signal the caller relies on — a suggestion with nothing to
+ * say about the notes must not blank a human's text.
+ */
+function composeAiNoteBlock(suggestion: PiReviewAiSuggestion): string | null {
+  let noteBlock = ''
+  noteBlock = appendAiNote(noteBlock, NOTE_LABELS.dependency, suggestion.dependencyNote)
+  noteBlock = appendAiNote(noteBlock, NOTE_LABELS.risk, suggestion.riskNote)
+  noteBlock = appendAiNote(noteBlock, NOTE_LABELS.implementation, suggestion.implementationNote)
+  return noteBlock === '' ? null : noteBlock
+}
+
+/**
  * Applies one accepted suggestion to its row, returning a new row.
  *
  * Pure: no I/O, no mutation. Accepting produces an unsaved edit indistinguishable from typing —
  * publishing it stays a deliberate Save to Confluence click.
  *
+ * Each of the four permitted cells is written only when the user selected it AND the suggestion
+ * actually carries a value for it; otherwise the cell is left exactly as it was. Overwriting notes
+ * (rather than appending) mirrors the estimate: an accepted suggestion states the cell, it does not
+ * add to it — which is why the per-field selection matters, so a note the user does not want cannot
+ * silently erase what they typed.
+ *
  * @param row - The row the suggestion belongs to.
  * @param suggestion - The suggestion the user has accepted.
- * @returns A new row with at most `pointEstimate` and `notes` changed.
+ * @param selection - Which of the four cells to apply (defaults to all).
+ * @returns A new row with at most `pointEstimate`, `notes`, `devWork` and `testSupport` changed.
  */
-export function applyPiReviewSuggestion(row: PiReviewRow, suggestion: PiReviewAiSuggestion): PiReviewRow {
+export function applyPiReviewSuggestion(
+  row: PiReviewRow,
+  suggestion: PiReviewAiSuggestion,
+  selection: PiReviewSuggestionFieldSelection = ALL_SUGGESTION_FIELDS_SELECTED,
+): PiReviewRow {
   const resolvedEstimate = readResolvedEstimate(suggestion)
-
-  let nextNotes = row.notes
-  nextNotes = appendAiNote(nextNotes, NOTE_LABELS.dependency, suggestion.dependencyNote)
-  nextNotes = appendAiNote(nextNotes, NOTE_LABELS.risk, suggestion.riskNote)
-  nextNotes = appendAiNote(nextNotes, NOTE_LABELS.implementation, suggestion.implementationNote)
+  const composedNotes = composeAiNoteBlock(suggestion)
 
   return {
     ...row,
     // An unresolved size (outside the scale, or an XXL with no number yet) leaves the cell alone —
     // the suggestion is still worth accepting for its notes and box verdicts.
-    pointEstimate: resolvedEstimate === null ? row.pointEstimate : String(resolvedEstimate),
-    notes: nextNotes,
-    devWork: applyCheckboxVerdict(row.devWork, suggestion.devWork),
-    testSupport: applyCheckboxVerdict(row.testSupport, suggestion.testSupport),
+    pointEstimate: selection.pointEstimate && resolvedEstimate !== null ? String(resolvedEstimate) : row.pointEstimate,
+    // Replace with the AI block when selected and present; silence (null) leaves the cell alone.
+    notes: selection.notes && composedNotes !== null ? composedNotes : row.notes,
+    devWork: selection.devWork ? applyCheckboxVerdict(row.devWork, suggestion.devWork) : row.devWork,
+    testSupport: selection.testSupport ? applyCheckboxVerdict(row.testSupport, suggestion.testSupport) : row.testSupport,
   }
 }
 

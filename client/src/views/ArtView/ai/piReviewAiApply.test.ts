@@ -124,10 +124,10 @@ describe('applyPiReviewSuggestion — CW-5', () => {
   })
 })
 
-// ── Notes: append-only, labelled, deduped, capped ──
+// ── Notes: overwrite with the AI block, labelled, capped ──
 
 describe('applyPiReviewSuggestion — notes', () => {
-  it('appends labelled lines using the convention reconciliation already writes', () => {
+  it('writes labelled lines using the convention reconciliation already writes', () => {
     const nextRow = applyPiReviewSuggestion(row(), suggestion({
       riskNote: 'Vendor SLA unconfirmed.',
       dependencyNote: 'Auth shim must land first.',
@@ -156,13 +156,15 @@ describe('applyPiReviewSuggestion — notes', () => {
     expect(nextRow.notes).not.toContain('<br')
   })
 
-  it('appends after existing notes and never overwrites them (FR-023 — a note cannot clobber)', () => {
+  it('overwrites existing notes with the AI block, like the estimate replaces the estimate cell', () => {
+    // The user asked for parity with points: an accepted note STATES the cell, it does not add to it.
+    // The per-field selection is the guard that lets them keep their own text (see the selection suite).
     const nextRow = applyPiReviewSuggestion(row({ notes: 'A human wrote this.' }), suggestion({ riskNote: 'R.' }))
 
-    expect(nextRow.notes).toBe('A human wrote this.\nRisk note: R.')
+    expect(nextRow.notes).toBe('Risk note: R.')
   })
 
-  it('drops blank-ish note values so they never reach a cell', () => {
+  it('leaves notes alone when every note value is blank-ish — silence never blanks the cell', () => {
     const nextRow = applyPiReviewSuggestion(row({ notes: 'Kept.' }), suggestion({
       riskNote: 'n/a',
       dependencyNote: '',
@@ -172,7 +174,7 @@ describe('applyPiReviewSuggestion — notes', () => {
     expect(nextRow.notes).toBe('Kept.')
   })
 
-  it('caps a long note at MAX_AI_NOTE_LENGTH before appending', () => {
+  it('caps a long note at MAX_AI_NOTE_LENGTH', () => {
     const nextRow = applyPiReviewSuggestion(row(), suggestion({ riskNote: 'x'.repeat(500) }))
 
     // The note line is "Risk note: " + the capped text (+ the ellipsis).
@@ -242,6 +244,7 @@ describe('applyPiReviewSuggestion — the checkboxes', () => {
 
 describe('applyPiReviewSuggestion — CW-3: applying twice equals applying once', () => {
   it('does not duplicate a note line on a repeat run (FR-027)', () => {
+    // Overwrite is idempotent by construction: the second run replaces the notes with the same block.
     const appliedOnce = applyPiReviewSuggestion(row(), suggestion({ riskNote: 'Vendor SLA unconfirmed.' }))
     const appliedTwice = applyPiReviewSuggestion(appliedOnce, suggestion({ riskNote: 'Vendor SLA unconfirmed.' }))
 
@@ -308,5 +311,91 @@ describe('applyPiReviewSuggestion — the estimate', () => {
 
     // 100+ is a floor, not a value. The app must never invent the number.
     expect(nextRow.pointEstimate).toBe('')
+  })
+})
+
+// ── Per-field selection: the user picks which of the four cells to apply ──
+
+describe('applyPiReviewSuggestion — field selection', () => {
+  const everything = suggestion({
+    size: 'L',
+    derivedPoints: 60,
+    riskNote: 'A risk.',
+    devWork: true,
+    testSupport: true,
+  })
+
+  it('applies all four cells when the selection includes them all', () => {
+    const nextRow = applyPiReviewSuggestion(row({ pointEstimate: '8', notes: 'Mine.' }), everything, {
+      pointEstimate: true,
+      notes: true,
+      devWork: true,
+      testSupport: true,
+    })
+
+    expect(nextRow.pointEstimate).toBe('60')
+    expect(nextRow.notes).toBe('Risk note: A risk.')
+    expect(nextRow.devWork).toBe('Yes')
+    expect(nextRow.testSupport).toBe('Yes')
+  })
+
+  it('leaves a deselected estimate alone while still applying the notes', () => {
+    const nextRow = applyPiReviewSuggestion(row({ pointEstimate: '8' }), everything, {
+      pointEstimate: false,
+      notes: true,
+      devWork: true,
+      testSupport: true,
+    })
+
+    expect(nextRow.pointEstimate).toBe('8') // the human's estimate stands
+    expect(nextRow.notes).toBe('Risk note: A risk.')
+  })
+
+  it('keeps the human notes when notes are deselected — the whole point of the opt-out', () => {
+    const nextRow = applyPiReviewSuggestion(row({ notes: 'A human wrote this.' }), everything, {
+      pointEstimate: true,
+      notes: false,
+      devWork: true,
+      testSupport: true,
+    })
+
+    expect(nextRow.notes).toBe('A human wrote this.')
+    expect(nextRow.pointEstimate).toBe('60') // the other selected fields still apply
+  })
+
+  it('leaves a deselected box exactly as it was', () => {
+    const nextRow = applyPiReviewSuggestion(row({ devWork: '', testSupport: 'Yes' }), everything, {
+      pointEstimate: true,
+      notes: true,
+      devWork: false,
+      testSupport: false,
+    })
+
+    expect(nextRow.devWork).toBe('') // deselected — the false verdict was not written
+    expect(nextRow.testSupport).toBe('Yes')
+  })
+
+  it('changes nothing when no field is selected', () => {
+    const originalRow = row({ pointEstimate: '8', notes: 'Mine.', devWork: 'Yes', testSupport: '' })
+    const nextRow = applyPiReviewSuggestion(originalRow, everything, {
+      pointEstimate: false,
+      notes: false,
+      devWork: false,
+      testSupport: false,
+    })
+
+    expect(nextRow).toEqual(originalRow)
+  })
+
+  it('defaults to applying everything when no selection is given', () => {
+    const withDefault = applyPiReviewSuggestion(row(), everything)
+    const withAll = applyPiReviewSuggestion(row(), everything, {
+      pointEstimate: true,
+      notes: true,
+      devWork: true,
+      testSupport: true,
+    })
+
+    expect(withDefault).toEqual(withAll)
   })
 })

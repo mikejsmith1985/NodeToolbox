@@ -15,9 +15,15 @@ Every rule below is enforced by a test, not by convention.
 | Column | Operation | Rule |
 |---|---|---|
 | `pointEstimate` | **replace** | Only when the suggestion has a resolved number (`derivedPoints`, or `userSuppliedPoints` for XXL) |
-| `notes` | **append** | Via the existing `appendUniqueNoteLine` — never a raw assignment |
+| `notes` | **replace** | With the AI's composed note block, or left alone when the suggestion carries no note |
 | `devWork` | **tick / untick** | Only on an explicit boolean verdict. `'Yes'` ticks; `''` unticks |
 | `testSupport` | **tick / untick** | Same |
+
+**Each cell is applied only when the user selected it** *(added 2026-07-16)*. `applyPiReviewSuggestion`
+takes a `PiReviewSuggestionFieldSelection` — one boolean per cell — and the review UI renders each offered
+change as a ticked checkbox the PO can clear before accepting. A `false` field is left exactly as it was.
+This is the safeguard that makes the notes *replace* (below) safe: a note the user does not want can never
+silently erase what they typed, because they can untick it.
 
 **Why Dev Work and Test Support are permitted** *(added 2026-07-15)*: they are the mirror image of
 Dependency/Risks. Reconcile passes them straight through (`piReviewJira.ts` — they are absent from
@@ -43,11 +49,19 @@ strength of silence would quietly undo a human's judgement. Only an explicit boo
 and `notes` is referentially unchanged. This is the single most valuable test in the feature — it is what makes the
 Q1 guarantee ("an AI run and a page reload can never disagree") mechanically true instead of aspirational.
 
-## Notes: the append rules
+## Notes: the compose-and-replace rules
 
-Reuse `appendUniqueNoteLine(notes, label, value)`, exported from `piReviewJira.ts`. **Do not reimplement the
-format** — reconciliation writes into this same column with this same convention when it migrates Dependency/Risks
-text, and a second implementation would drift from it (research R-4).
+The AI's note block is composed with `appendUniqueNoteLine(notes, label, value)` (exported from `piReviewJira.ts`)
+**onto an empty string**, then **replaces** the cell — it is not appended to the row's existing notes. This gives
+Notes parity with Point Estimate: an accepted suggestion *states* the cell rather than adding to it, so a repeat
+accept can never stack a second copy, and the per-field selection (above) is what lets a PO keep their own text.
+
+**Do not reimplement the label format** — reconciliation writes into this same column with this same convention when
+it migrates Dependency/Risks text, and a second implementation would drift from it (research R-4).
+
+**Silence leaves the cell alone.** When the suggestion carries no note (all three note fields blank-ish), the block
+composes to empty and the row's notes are untouched — the same "silence is not a verdict" rule the boxes follow. A
+note only ever *replaces*; it never *blanks*.
 
 | Note | Label | Produces |
 |---|---|---|
@@ -60,14 +74,15 @@ text, and a second implementation would drift from it (research R-4).
 that could not live in a Jira-mirrored column — and should read identically. `Implementation note` is new, for
 ART/RTE content that has no migration equivalent.
 
-What the reused function gives us for free:
-- **Append-only** — existing notes are never overwritten. This is why FR-023's "don't clobber human content" concerns
-  only the estimate: a note *cannot* clobber.
-- **Blank guarding** — `''`, `n/a`, `none`, `no`, `-`, `--` are skipped (`isMeaningfulFreeText`).
-- **Idempotence** — normalized-substring dedupe means accepting the same suggestion twice adds nothing (FR-027).
+What the reused function gives us for free (composing the block onto an empty string):
+- **Blank guarding** — `''`, `n/a`, `none`, `no`, `-`, `--` are skipped (`isMeaningfulFreeText`); if every note is
+  blank-ish the block is empty and the cell is left alone.
 - **`\n` joining** — matches what the writer emits and the parser reads back.
 
 Applied on top:
+- **Replace, not append** — the composed block replaces the cell, giving Notes parity with the estimate. Idempotent
+  by construction: a repeat accept writes the same block (FR-027). The clobber risk this creates is answered by the
+  per-field selection — the user unticks Notes to keep their own text — not by appending.
 - **Length cap** — each note is truncated to **`MAX_AI_NOTE_LENGTH = 300`** characters (with an ellipsis) **before**
   the call, matching the house constant `MAX_TEXT_SIGNAL_LENGTH` in `canvasAiAssist.ts:84`. Nothing caps this column
   today; a model reply could otherwise write unbounded text into a Confluence cell that renders on **one line**
@@ -75,10 +90,9 @@ Applied on top:
 
 ### Ordering
 
-Append in a fixed order so repeat runs and reconciliation produce a stable cell:
+Compose in a fixed order so repeat runs produce a stable cell:
 
 ```text
-<existing notes>
 Dependency note: …
 Risk note: …
 Implementation note: …
@@ -113,8 +127,8 @@ provenance tracking by design, this copy is the only thing standing between the 
 - **CW-1**: For any suggestion in any state, every `PiReviewRow` field other than `pointEstimate`, `notes`,
   `devWork` and `testSupport` is unchanged.
 - **CW-2**: A suggestion that is not `accepted` has changed **no** field at all.
-- **CW-3**: Applying the same suggestion twice equals applying it once (notes dedupe; estimate is idempotent
-  replace).
+- **CW-3**: Applying the same suggestion twice equals applying it once (notes and estimate are both idempotent
+  replaces).
 - **CW-4**: Applying a suggestion never triggers a Confluence write — it only marks the page dirty (FR-022).
 - **CW-5**: `description` and `acceptanceCriteria` never appear on a `PiReviewRow`. They are prompt inputs only —
   putting them on a row would enrol them in the "Jira updated N fields on load" delta and make them Jira-owned

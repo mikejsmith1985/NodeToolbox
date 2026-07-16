@@ -13,7 +13,10 @@
 // The copy/paste shell, the exchange hook and the clipboard helper ARE reused (see PiReviewAiPanel).
 // ───────────────────────────────────────────────────────────────────────────────────────────────
 
+import { useState } from 'react'
+
 import type { PiReviewAiSuggestion } from './piReviewAiAssist.ts'
+import type { PiReviewSuggestionFieldSelection } from './piReviewAiApply.ts'
 import styles from './PiReviewAi.module.css'
 
 /** Props for the review table: what the AI proposed, what the rows say now, and the three verdicts. */
@@ -22,12 +25,31 @@ export interface PiReviewSuggestionTableProps {
   suggestions: readonly PiReviewAiSuggestion[]
   /** Each Feature's current Point Estimate, so a conflict with a human value is visible not silent. */
   currentEstimatesByKey: Record<string, string>
-  /** Apply this one suggestion to its row. */
-  onAccept: (suggestion: PiReviewAiSuggestion) => void
+  /** Apply this one suggestion to its row, limited to the fields the user left ticked. */
+  onAccept: (suggestion: PiReviewAiSuggestion, selection: PiReviewSuggestionFieldSelection) => void
   /** Discard this one suggestion; its row is untouched. */
   onReject: (suggestion: PiReviewAiSuggestion) => void
   /** Supply the number an XXL suggestion needs before it can be accepted. */
   onSupplyPoints: (suggestion: PiReviewAiSuggestion, points: number) => void
+}
+
+/** Which of a suggestion's four cells actually carry a value to offer, so only those get a toggle. */
+interface SuggestionPresentFields {
+  pointEstimate: boolean
+  notes: boolean
+  devWork: boolean
+  testSupport: boolean
+}
+
+/** Reads which fields the suggestion carries — an absent field gets neither a checkbox nor an edit. */
+function readPresentFields(suggestion: PiReviewAiSuggestion): SuggestionPresentFields {
+  return {
+    // A recognised size puts an estimate on offer (XXL included — it just needs a number first).
+    pointEstimate: suggestion.size !== null,
+    notes: readProposedNoteLines(suggestion).length > 0,
+    devWork: suggestion.devWork !== null,
+    testSupport: suggestion.testSupport !== null,
+  }
 }
 
 /** The note lines a suggestion would append, labelled exactly as they will appear in the cell. */
@@ -65,12 +87,26 @@ function readProposedBoxLines(suggestion: PiReviewAiSuggestion): string[] {
   return boxLines
 }
 
-/** True once the suggestion carries everything it needs — XXL is blocked until a number is supplied. */
-function canAcceptSuggestion(suggestion: PiReviewAiSuggestion): boolean {
-  return suggestion.state !== 'needsPoints'
+/**
+ * True once Accept would actually do something: at least one offered field is still ticked, and the
+ * estimate — if it is the ticked field — is not an XXL still waiting for its number. Unticking the
+ * estimate lifts that XXL block, because a number is only needed for a field being applied.
+ */
+function canAcceptSelection(
+  present: SuggestionPresentFields,
+  selection: PiReviewSuggestionFieldSelection,
+  isXxlAwaitingNumber: boolean,
+): boolean {
+  const anyFieldSelected =
+    (present.pointEstimate && selection.pointEstimate)
+    || (present.notes && selection.notes)
+    || (present.devWork && selection.devWork)
+    || (present.testSupport && selection.testSupport)
+  const estimateBlockedByXxl = selection.pointEstimate && isXxlAwaitingNumber
+  return anyFieldSelected && !estimateBlockedByXxl
 }
 
-/** One row of the review: what is proposed, what it would replace, and the two verdicts. */
+/** One row of the review: each offered change is a labelled checkbox the user includes or excludes. */
 function SuggestionRow({
   suggestion,
   currentEstimate,
@@ -80,15 +116,28 @@ function SuggestionRow({
 }: {
   suggestion: PiReviewAiSuggestion
   currentEstimate: string
-  onAccept: (suggestion: PiReviewAiSuggestion) => void
+  onAccept: (suggestion: PiReviewAiSuggestion, selection: PiReviewSuggestionFieldSelection) => void
   onReject: (suggestion: PiReviewAiSuggestion) => void
   onSupplyPoints: (suggestion: PiReviewAiSuggestion, points: number) => void
 }) {
   const proposedEstimate = readProposedEstimate(suggestion)
   const proposedNoteLines = readProposedNoteLines(suggestion)
   const proposedBoxLines = readProposedBoxLines(suggestion)
+  const present = readPresentFields(suggestion)
   const hasEstimateConflict = currentEstimate.trim() !== '' && proposedEstimate !== null
   const isXxlAwaitingNumber = suggestion.state === 'needsPoints'
+
+  // Every offered field starts ticked, so a plain Accept applies the whole suggestion as before.
+  const [selection, setSelection] = useState<PiReviewSuggestionFieldSelection>(() => ({
+    pointEstimate: present.pointEstimate,
+    notes: present.notes,
+    devWork: present.devWork,
+    testSupport: present.testSupport,
+  }))
+
+  function toggleField(field: keyof PiReviewSuggestionFieldSelection): void {
+    setSelection((current) => ({ ...current, [field]: !current[field] }))
+  }
 
   function handleSupplyPoints(rawValue: string): void {
     const parsedPoints = Number(rawValue)
@@ -115,43 +164,87 @@ function SuggestionRow({
 
       {suggestion.rationale && <p className={styles.suggestionRationale}>{suggestion.rationale}</p>}
 
-      {hasEstimateConflict && (
-        <p className={styles.suggestionConflict}>
-          Replaces your estimate of <strong>{currentEstimate}</strong> with <strong>{proposedEstimate}</strong>.
-        </p>
-      )}
+      <div className={styles.suggestionFields}>
+        {present.pointEstimate && (
+          // A div wrapper, not a <label>: the XXL points input nested below must not sit inside a
+          // label (a label may hold only one control). The htmlFor ties the heading to the checkbox.
+          <div className={styles.suggestionField}>
+            <input
+              aria-label={`Apply point estimate for ${suggestion.issueKey}`}
+              checked={selection.pointEstimate}
+              id={`${suggestion.issueKey}-apply-estimate`}
+              onChange={() => toggleField('pointEstimate')}
+              type="checkbox"
+            />
+            <div className={styles.suggestionFieldBody}>
+              {hasEstimateConflict ? (
+                <label className={styles.suggestionConflict} htmlFor={`${suggestion.issueKey}-apply-estimate`}>
+                  Replaces your estimate of <strong>{currentEstimate}</strong> with <strong>{proposedEstimate}</strong>.
+                </label>
+              ) : (
+                <label htmlFor={`${suggestion.issueKey}-apply-estimate`}>
+                  Set Point Estimate{proposedEstimate !== null ? ` to ${proposedEstimate}` : ''}
+                </label>
+              )}
+              {isXxlAwaitingNumber && (
+                <label className={styles.suggestionPointsField}>
+                  Points
+                  <input
+                    aria-label={`Points for ${suggestion.issueKey}`}
+                    inputMode="numeric"
+                    onChange={(changeEvent) => handleSupplyPoints(changeEvent.target.value)}
+                    placeholder="100+"
+                    type="text"
+                  />
+                </label>
+              )}
+            </div>
+          </div>
+        )}
 
-      {isXxlAwaitingNumber && (
-        <label className={styles.suggestionPointsField}>
-          Points
-          <input
-            aria-label={`Points for ${suggestion.issueKey}`}
-            inputMode="numeric"
-            onChange={(changeEvent) => handleSupplyPoints(changeEvent.target.value)}
-            placeholder="100+"
-            type="text"
-          />
-        </label>
-      )}
+        {present.notes && (
+          // A div wrapper because the note lines are a <ul> (flow content a label may not contain).
+          <div className={styles.suggestionField}>
+            <input
+              aria-label={`Overwrite Implementation Notes for ${suggestion.issueKey}`}
+              checked={selection.notes}
+              id={`${suggestion.issueKey}-apply-notes`}
+              onChange={() => toggleField('notes')}
+              type="checkbox"
+            />
+            <div className={styles.suggestionFieldBody}>
+              <label htmlFor={`${suggestion.issueKey}-apply-notes`}>Overwrite Implementation Notes:</label>
+              <ul className={styles.suggestionNotes}>
+                {proposedNoteLines.map((noteLine) => <li key={noteLine}>{noteLine}</li>)}
+              </ul>
+            </div>
+          </div>
+        )}
 
-      {proposedBoxLines.length > 0 && (
-        <ul className={styles.suggestionBoxes}>
-          {proposedBoxLines.map((boxLine) => <li key={boxLine}>{boxLine}</li>)}
-        </ul>
-      )}
-
-      {proposedNoteLines.length > 0 && (
-        <ul className={styles.suggestionNotes}>
-          {proposedNoteLines.map((noteLine) => <li key={noteLine}>{noteLine}</li>)}
-        </ul>
-      )}
+        {proposedBoxLines.map((boxLine) => {
+          const isDevWorkLine = boxLine.startsWith('Dev Work')
+          const field = isDevWorkLine ? 'devWork' : 'testSupport'
+          return (
+            // Body is plain text, so a <label> wrapper is valid and gives the whole line as a target.
+            <label className={styles.suggestionField} key={boxLine}>
+              <input
+                aria-label={`Apply ${isDevWorkLine ? 'Dev Work' : 'Test Support'} for ${suggestion.issueKey}`}
+                checked={selection[field]}
+                onChange={() => toggleField(field)}
+                type="checkbox"
+              />
+              <span className={styles.suggestionFieldBody}>{boxLine}</span>
+            </label>
+          )
+        })}
+      </div>
 
       <div className={styles.suggestionActions}>
         <button
           className={styles.suggestionAccept}
-          disabled={!canAcceptSuggestion(suggestion)}
-          onClick={() => onAccept(suggestion)}
-          title={isXxlAwaitingNumber ? 'Set a point value for this XXL Feature before accepting.' : undefined}
+          disabled={!canAcceptSelection(present, selection, isXxlAwaitingNumber)}
+          onClick={() => onAccept(suggestion, selection)}
+          title={isXxlAwaitingNumber && selection.pointEstimate ? 'Set a point value for this XXL Feature, or untick the estimate.' : undefined}
           type="button"
         >
           Accept
@@ -167,9 +260,10 @@ function SuggestionRow({
 /**
  * Renders the pending AI suggestions for review, or nothing when there are none.
  *
- * Each row shows what would change and what it would replace, so Accept is an informed click. A row
- * can only ever affect two cells — Point Estimate and Implementation Notes — which is why this table
- * shows exactly those two and nothing else.
+ * Each row shows what would change and what it would replace, as a checklist the user tunes before
+ * accepting. A row can only ever affect four cells — Point Estimate, Implementation Notes, Dev Work
+ * and Test Support — and the user includes or excludes each one independently, so Accept is never
+ * all-or-nothing.
  */
 export function PiReviewSuggestionTable({
   suggestions,
