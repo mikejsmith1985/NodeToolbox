@@ -1,13 +1,13 @@
 // test/e2e/pi-review-edit-layout.spec.js — Browser-level layout regression for the PI Review editor.
 //
 // jsdom cannot measure layout, so these invariants are asserted in a real browser:
-//   1. The edit-mode table FITS a normal window — its read-only Jira-synced columns (Dependency,
-//      Risks) take a compact width so the editable columns and the Actions column stay inside the
-//      frame, rather than overflowing and pushing Actions off the right edge (the GH #160 report).
-//   2. The Actions column NEVER overlaps the Implementation Notes column. An earlier fix pinned
-//      Actions with position:sticky, which then covered the Notes cell the user was editing; this
-//      guards against that regression by asserting Notes always sits fully left of Actions.
-//   3. The Implementation Notes textareas default to a readable height.
+//   1. On a wide-enough window the editor renders as a TABLE and fits — Actions reachable, and never
+//      overlapping the Implementation Notes column.
+//   2. When the columns cannot fit (e.g. all 11 columns, incl. Dev Work + Test Support, on a normal
+//      window — the exact config from the GH #160 report), the same table REFLOWS into stacked
+//      cards: no horizontal overflow, every field still present and editable, and the row Actions
+//      (incl. Remove) fully visible — nothing cut off.
+//   3. The switch adapts to the column count: 8 columns stay a table at a width where 11 become cards.
 //
 // The PI Review tab is reached through the PO Tool (/po-tool). All Confluence/Jira traffic is
 // stubbed; team + roster state is seeded into localStorage before the bundle evaluates.
@@ -25,122 +25,71 @@ const TEAM_PROFILE_ID = 'team-e2e';
 const CONFLUENCE_PAGE_ID = '900001';
 const NETWORK_IDLE_TIMEOUT_MS = 10_000;
 
-// A typical modern content width. At this size the edit-mode table is meant to fit without a
-// horizontal scrollbar; that "fits" claim is asserted below rather than assumed.
-const CONTENT_VIEWPORT = { width: 1600, height: 860 };
-
-// Small allowances for sub-pixel rounding in getBoundingClientRect / scrollWidth.
 const FIT_TOLERANCE_PX = 8;
 const OVERLAP_TOLERANCE_PX = 2;
-
-// Minimum readable textarea height (border-box px). The CSS min-height is 132px content plus
-// padding/border; 120 is a safe lower bound that still fails the old 72px default.
 const MIN_READABLE_TEXTAREA_HEIGHT_PX = 120;
 
 const SCREENSHOT_DIR =
   'C:\\Users\\mikej\\AppData\\Local\\Temp\\claude\\C--ProjectsWin-NodeToolbox\\fb0e7472-5632-4b02-9c65-013b65e2f88f\\scratchpad';
 
-// A long note so the Implementation Notes cell is genuinely used — the column that the removed
-// sticky overlay used to cover.
-const LONG_NOTE = 'Risk note availability could interrupt downstream enrollment and create rework '
-  + 'across teams if the vendor window slips again this PI.';
+const LONG_NOTE = 'Risk note: API authentication, availability, or file retrieval failures could '
+  + 'interrupt enrollment intake and create manual operational work.';
 
-/** A PI Review table with three populated rows and plain-text feature names (no Jira keys → no
- *  Jira traffic). Header carries all eight core columns so parsePiReviewTable binds it. */
-const PI_REVIEW_STORAGE_HTML = [
-  '<table><thead><tr>',
-  '<th>Carry-Over</th><th>Priority</th><th>Feature</th><th>Point Estimate</th>',
-  '<th>Dependency</th><th>Risks</th><th>Committed to PI?</th><th>Implementation Notes</th>',
-  '</tr></thead><tbody>',
-  `<tr><td></td><td>High</td><td>Login flow</td><td>5</td><td></td><td></td><td>Yes</td><td>${LONG_NOTE}</td></tr>`,
-  `<tr><td></td><td>Medium</td><td>Search revamp</td><td>8</td><td></td><td></td><td>Yes</td><td>${LONG_NOTE}</td></tr>`,
-  `<tr><td></td><td>Low</td><td>Reporting</td><td>3</td><td></td><td></td><td>No</td><td>${LONG_NOTE}</td></tr>`,
-  '</tbody></table>',
-].join('');
+const CORE_HEADERS = [
+  'Carry-Over', 'Priority', 'Feature', 'Point Estimate',
+  'Dependency', 'Risks', 'Committed to PI?', 'Implementation Notes',
+];
+const OPTIONAL_HEADERS = ['Dev Work', 'Test Support'];
 
-const CONFLUENCE_PAGE_RESPONSE = {
-  id: CONFLUENCE_PAGE_ID,
-  type: 'page',
-  title: 'E2E PI Review',
-  version: { number: 1 },
-  body: { storage: { value: PI_REVIEW_STORAGE_HTML, representation: 'storage' } },
-};
+/** Builds a PI Review table with the given optional columns present and three populated rows. */
+function buildStorageHtml(includeOptional) {
+  const headers = includeOptional ? [...CORE_HEADERS, ...OPTIONAL_HEADERS] : CORE_HEADERS;
+  const headerCells = headers.map((label) => `<th>${label}</th>`).join('');
+  const coreCells = (feature, points, note) => [
+    '<td></td>', '<td>High</td>', `<td>${feature}</td>`, `<td>${points}</td>`,
+    '<td></td>', '<td></td>', '<td>Yes</td>', `<td>${note}</td>`,
+  ].join('');
+  const optionalCells = '<td>Yes</td><td></td>';
+  const row = (feature, points) =>
+    `<tr>${coreCells(feature, points, LONG_NOTE)}${includeOptional ? optionalCells : ''}</tr>`;
+  return [
+    `<table><thead><tr>${headerCells}</tr></thead><tbody>`,
+    row('DENP-1382 Automate CMS OEC downloads', '40'),
+    row('DENP-1387 Enhance IPM duplicate matching', '40'),
+    row('DENP-1393 H Contract migration', '80'),
+    '</tbody></table>',
+  ].join('');
+}
 
 // ── Seeding helpers ─────────────────────────────────────────────────────────────
 
-/**
- * Seeds the localStorage entries the PO Tool reads synchronously at store-module load, so a single
- * team with a PI Review page (matching the selected PI) and a Product Owner roster exist on boot.
- *
- * @param {import('@playwright/test').Page} page
- * @returns {Promise<void>}
- */
 async function seedPoToolState(page) {
   await page.addInitScript(
     ({ profileId, piName, pageId }) => {
-      const teamProfiles = [
-        {
-          id: profileId,
-          name: 'E2E Team',
-          projectKey: 'DASP',
-          boardId: '123',
-          boardName: 'E2E Board',
-          boardType: 'scrum',
-          scopeMode: 'sprint',
-          selectedSprintId: '',
-          selectedFixVersion: '',
-          selectedPiValue: piName,
-          piReviewPages: [{ piName, pageUrl: pageId }],
-        },
-      ];
-      const rosterMembers = {
-        rosterMembers: [
-          {
-            id: 'roster-member:po.user',
-            displayName: 'Pat Owner',
-            assigneeQueryValue: 'po.user',
-            roleCapabilities: { canProductOwner: true },
-          },
-        ],
-      };
-      window.localStorage.setItem('tbxSprintDashboardTeams', JSON.stringify(teamProfiles));
+      window.localStorage.setItem('tbxSprintDashboardTeams', JSON.stringify([{
+        id: profileId, name: 'E2E Team', projectKey: 'DASP', boardId: '123', boardName: 'E2E Board',
+        boardType: 'scrum', scopeMode: 'sprint', selectedSprintId: '', selectedFixVersion: '',
+        selectedPiValue: piName, piReviewPages: [{ piName, pageUrl: pageId }],
+      }]));
       window.localStorage.setItem('tbxSprintDashboardActiveTeamProfileId', profileId);
-      window.localStorage.setItem(
-        'tbxPoToolSelection',
-        JSON.stringify({ selectedTeamProfileId: profileId, selectedPiName: piName }),
-      );
-      window.localStorage.setItem(`tbxSprintDashboardRoster:${profileId}`, JSON.stringify(rosterMembers));
+      window.localStorage.setItem('tbxPoToolSelection', JSON.stringify({ selectedTeamProfileId: profileId, selectedPiName: piName }));
+      window.localStorage.setItem(`tbxSprintDashboardRoster:${profileId}`, JSON.stringify({ rosterMembers: [] }));
     },
     { profileId: TEAM_PROFILE_ID, piName: SELECTED_PI_NAME, pageId: CONFLUENCE_PAGE_ID },
   );
 }
 
-/**
- * Intercepts the Confluence page fetch (and, as a safety net, any Jira call the fake test host would
- * otherwise reject) so the editor loads deterministic rows without real integrations.
- *
- * @param {import('@playwright/test').Page} page
- * @returns {Promise<void>}
- */
-async function stubIntegrationTraffic(page) {
+async function stubIntegrationTraffic(page, includeOptional) {
+  const pageResponse = {
+    id: CONFLUENCE_PAGE_ID, type: 'page', title: 'E2E PI Review', version: { number: 1 },
+    body: { storage: { value: buildStorageHtml(includeOptional), representation: 'storage' } },
+  };
   await page.route('**/confluence-proxy/wiki/rest/api/content/**', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(CONFLUENCE_PAGE_RESPONSE),
-    }),
-  );
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(pageResponse) }));
   await page.route('**/jira-proxy/**', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ issues: [] }) }),
-  );
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ issues: [] }) }));
 }
 
-/**
- * Reads an element's on-screen rectangle so the test can compare column edges.
- *
- * @param {import('@playwright/test').Locator} locator
- * @returns {Promise<{ left: number, right: number, width: number, height: number }>}
- */
 async function readClientRect(locator) {
   return locator.evaluate((element) => {
     const rect = element.getBoundingClientRect();
@@ -148,57 +97,110 @@ async function readClientRect(locator) {
   });
 }
 
-// ── Test ──────────────────────────────────────────────────────────────────────
-
-test('PI Review editor: table fits, Actions never covers Notes, Notes are readable', async ({ page }) => {
-  await page.setViewportSize(CONTENT_VIEWPORT);
+/** Navigates to the PI Review editor in edit mode and returns the key locators. */
+async function openEditorInEditMode(page, { includeOptional, viewport }) {
+  await page.setViewportSize(viewport);
   await seedPoToolState(page);
-  await stubIntegrationTraffic(page);
+  await stubIntegrationTraffic(page, includeOptional);
 
   await page.goto(PO_TOOL_ROUTE);
   await page.getByTestId(PI_REVIEW_TAB_TEST_ID).click();
   await page.waitForLoadState('networkidle', { timeout: NETWORK_IDLE_TIMEOUT_MS });
 
-  // The Edit toggle enables only once the Confluence table has bound — a load-completion signal.
   const editToggleButton = page.getByRole('button', { name: 'Edit PI Review' });
   await expect(editToggleButton).toBeEnabled({ timeout: NETWORK_IDLE_TIMEOUT_MS });
   await editToggleButton.click();
+  // Edit-mode-ready signal that exists in BOTH the table and the card layout (the Actions column
+  // header is hidden in card mode, so it can't be the signal).
+  await expect(page.getByLabel(`Implementation Notes for ${SELECTED_PI_NAME} row 1`)).toBeVisible();
 
-  // Edit mode adds the Actions column and turns the Notes cells into real textareas.
-  const actionsHeader = page.getByRole('columnheader', { name: 'Actions' });
-  await expect(actionsHeader).toBeVisible();
+  return {
+    table: page.locator('section[aria-label$="PI Review"] [class*="dataTable"]').first(),
+    shell: page.locator('section[aria-label$="PI Review"] [class*="tableShell"]').first(),
+  };
+}
 
-  const tableShell = page.locator('section[aria-label$="PI Review"] [class*="tableShell"]').first();
-  await expect(tableShell).toBeVisible();
+// ── Tests ─────────────────────────────────────────────────────────────────────
 
-  // 1. The table fits this normal window — Actions is reachable without a horizontal scroll.
-  const shellScroll = await tableShell.evaluate((element) => ({
-    scrollWidth: element.scrollWidth,
-    clientWidth: element.clientWidth,
-  }));
+test('table path: 8 columns on a wide window render as a table that fits, Actions beside Notes', async ({ page }) => {
+  // 1900px is wide enough for the 8-column table, so it should NOT reflow to cards.
+  const { table, shell } = await openEditorInEditMode(page, {
+    includeOptional: false,
+    viewport: { width: 1900, height: 900 },
+  });
+
+  await expect(table).not.toHaveClass(/cardLayout/);
+
+  const shellScroll = await shell.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
   expect(shellScroll.scrollWidth).toBeLessThanOrEqual(shellScroll.clientWidth + FIT_TOLERANCE_PX);
 
-  // 2. The Actions column never overlaps the Implementation Notes column, at either scroll extreme.
-  const firstNotesCell = page.getByLabel(`Implementation Notes for ${SELECTED_PI_NAME} row 1`);
-  const firstRowActionCell = page.locator('section[aria-label$="PI Review"] [class*="rowActionCell"]').first();
-  await expect(firstNotesCell).toBeVisible();
-  await expect(firstRowActionCell).toBeVisible();
-
-  for (const scrollLeft of ['start', 'end']) {
-    await tableShell.evaluate((element, edge) => {
-      element.scrollLeft = edge === 'end' ? element.scrollWidth : 0;
-    }, scrollLeft);
-    const notesRect = await readClientRect(firstNotesCell);
-    const actionRect = await readClientRect(firstRowActionCell);
-    // Notes must end at or before Actions begins — never hidden behind it.
-    expect(notesRect.right, `Notes must not be covered by Actions at scroll ${scrollLeft}`)
-      .toBeLessThanOrEqual(actionRect.left + OVERLAP_TOLERANCE_PX);
-  }
-
-  // 3. The Notes textarea defaults to a readable height (the old default was 72px).
-  const notesRect = await readClientRect(firstNotesCell);
+  // As a table, Notes and Actions are separate columns — Notes must end before Actions begins.
+  const notesCell = page.getByLabel(`Implementation Notes for ${SELECTED_PI_NAME} row 1`);
+  const actionCell = page.locator('section[aria-label$="PI Review"] [class*="rowActionCell"]').first();
+  const notesRect = await readClientRect(notesCell);
+  const actionRect = await readClientRect(actionCell);
+  expect(notesRect.right).toBeLessThanOrEqual(actionRect.left + OVERLAP_TOLERANCE_PX);
   expect(notesRect.height).toBeGreaterThanOrEqual(MIN_READABLE_TEXTAREA_HEIGHT_PX);
+});
 
-  // Visual evidence for manual review.
-  await tableShell.screenshot({ path: `${SCREENSHOT_DIR}\\pi-review-edit-layout.png` });
+test('table path: 11 columns still render as a table when the window is genuinely wide enough', async ({ page }) => {
+  // At 2200px the 11-column table fits, so it stays a table with no horizontal overflow — the wide
+  // screen keeps the scannable grid.
+  const { table, shell } = await openEditorInEditMode(page, {
+    includeOptional: true,
+    viewport: { width: 2200, height: 1000 },
+  });
+
+  await expect(table).not.toHaveClass(/cardLayout/);
+  const shellScroll = await shell.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+  expect(shellScroll.scrollWidth).toBeLessThanOrEqual(shellScroll.clientWidth + FIT_TOLERANCE_PX);
+});
+
+test('card path: 11 columns on a normal window reflow to cards — nothing cut off (GH #160)', async ({ page }) => {
+  // The reported config — Dev Work + Test Support on — at a width where the 11-column table cannot
+  // fit. It must reflow to cards rather than clip the Actions column. (A 2091px physical screenshot
+  // at Windows 150% scaling is ~1400 CSS px, which is where the user actually was.)
+  const { table, shell } = await openEditorInEditMode(page, {
+    includeOptional: true,
+    viewport: { width: 1400, height: 1000 },
+  });
+
+  await expect(table).toHaveClass(/cardLayout/);
+
+  // No horizontal overflow — the whole editor fits the window width in card form.
+  const shellScroll = await shell.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+  expect(shellScroll.scrollWidth).toBeLessThanOrEqual(shellScroll.clientWidth + FIT_TOLERANCE_PX);
+
+  const shellRect = await readClientRect(shell);
+
+  // Every field is still present and editable, and each sits fully inside the window.
+  const notesTextarea = page.getByLabel(`Implementation Notes for ${SELECTED_PI_NAME} row 1`);
+  const devWorkCheckbox = page.getByLabel(`Dev Work for ${SELECTED_PI_NAME} row 1`);
+  await expect(notesTextarea).toBeVisible();
+  await expect(devWorkCheckbox).toBeVisible();
+
+  // The Dev Work checkbox still toggles — proof the reflow did not break the control.
+  await devWorkCheckbox.uncheck();
+  await expect(devWorkCheckbox).not.toBeChecked();
+  await devWorkCheckbox.check();
+  await expect(devWorkCheckbox).toBeChecked();
+
+  // The row Actions — the column that was cut off — are fully visible inside the window.
+  const removeButton = page.getByRole('button', { name: 'Remove' }).first();
+  await expect(removeButton).toBeVisible();
+  const removeRect = await readClientRect(removeButton);
+  expect(removeRect.right).toBeLessThanOrEqual(shellRect.right + OVERLAP_TOLERANCE_PX);
+  expect(removeRect.left).toBeGreaterThanOrEqual(shellRect.left - OVERLAP_TOLERANCE_PX);
+
+  await shell.screenshot({ path: `${SCREENSHOT_DIR}\\pi-review-cards-11col.png` });
+});
+
+test('adapts to column count: at 1850px 11 columns become cards while 8 stay a table', async ({ page }) => {
+  // Same window width; only the column count differs — proving the switch is column-aware, not a
+  // fixed viewport breakpoint. 8 columns fit at 1850px (table); 11 do not (cards).
+  const eightColumns = await openEditorInEditMode(page, { includeOptional: false, viewport: { width: 1850, height: 1000 } });
+  await expect(eightColumns.table).not.toHaveClass(/cardLayout/);
+
+  const elevenColumns = await openEditorInEditMode(page, { includeOptional: true, viewport: { width: 1850, height: 1000 } });
+  await expect(elevenColumns.table).toHaveClass(/cardLayout/);
 });

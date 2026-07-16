@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **PI Review — the editor is now genuinely responsive: it reflows into cards when the columns don't fit**: with
+  every optional column on (Dev Work + Test Support), the edit table is eleven columns wide and no amount of
+  column-trimming makes that fit a laptop screen — the row Actions kept getting clipped off the right edge. It now
+  adapts the only way a data grid can: on a window wide enough it stays the familiar scannable **table**; when the
+  columns can't fit, the *same* rows reflow into stacked **cards** — one card per Feature, every field on its own
+  labelled line, the Actions as a button row at the foot — so nothing is ever cut off and there's no sideways
+  scroll. The switch is driven by measuring the panel against the number of visible columns, so it happens at the
+  right width whether the table has eight columns or eleven. Crucially it is a **CSS-only reflow of the exact same
+  table** — every input, checkbox, textarea, the AI accept and the Jira sync are the identical elements, so editing
+  behaves the same in either shape. Verified in a real browser with Playwright layout tests covering both the table
+  and card paths at the eight- and eleven-column widths. *(GH #160)*
 - **PI Review AI Assistance — accept the fields you want, not the whole row**: an accepted suggestion used to apply
   everything it carried in one click. Each proposed change — the point estimate, the notes, the Dev Work box, the
   Test Support box — is now its own **ticked checkbox** in the review list, and you clear the ones you don't want
