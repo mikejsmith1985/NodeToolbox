@@ -77,6 +77,30 @@
   font-size: var(--font-size-sm);
 }
 
+/* Amber, not neutral: an empty scope is a configuration smell, never a clean bill of health. */
+.emptyScopeWarning {
+  padding: 12px 14px;
+  border: 1px solid var(--color-warning, #f59e0b);
+  border-radius: 10px;
+  background: var(--color-warning-soft, rgba(245, 158, 11, 0.12));
+  color: var(--color-warning, #f59e0b);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+/* The "All my projects" scope checkbox sits inline with the query fields. */
+.scopeToggleLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: end;
+  padding-bottom: 8px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
 .summaryGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));

@@ -4,8 +4,8 @@
 // ready grid, an errored card not blanking its siblings, the connection-required gate, and the
 // done-for-today confirmation.
 
-import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockUseTodayDashboard, mockUseChecklistCompletion } = vi.hoisted(() => ({
@@ -65,6 +65,30 @@ function renderDashboard() {
   );
 }
 
+/** Records the router location so navigation tests can assert the exact query the dashboard built. */
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location-probe">{`${location.pathname}${location.search}`}</output>;
+}
+
+function renderDashboardWithLocationProbe() {
+  render(
+    <MemoryRouter initialEntries={['/my-issues']}>
+      <Routes>
+        <Route
+          path="*"
+          element={(
+            <>
+              <TodayDashboard />
+              <LocationProbe />
+            </>
+          )}
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockUseTodayDashboard.mockReturnValue(buildDashboard());
@@ -72,6 +96,29 @@ beforeEach(() => {
 });
 
 describe('TodayDashboard', () => {
+  it('carries the destination scope params on drill-through, so the target answers what the card counted (GH #167)', () => {
+    // The "My stale issues" card counts cross-project; its Open must land Hygiene in the same scope
+    // with the stale filter applied — not on whatever single project key was last persisted there.
+    mockUseTodayDashboard.mockReturnValue(buildDashboard({
+      categories: buildCategories({
+        'my-stale': {
+          id: 'my-stale',
+          status: 'ready',
+          count: 2,
+          destination: { kind: 'myIssuesTab', tab: 'hygiene', search: { hygieneScope: 'mine', hygieneFilter: 'stale' } },
+        },
+      }),
+    }));
+
+    renderDashboardWithLocationProbe();
+    const myStaleCard = document.querySelector('[data-category="my-stale"]');
+    fireEvent.click(myStaleCard!.querySelector('button')!);
+
+    expect(screen.getByTestId('location-probe')).toHaveTextContent(
+      '/my-issues?tab=hygiene&hygieneScope=mine&hygieneFilter=stale',
+    );
+  });
+
   it('renders a card per catalog category once data is ready', () => {
     renderDashboard();
 

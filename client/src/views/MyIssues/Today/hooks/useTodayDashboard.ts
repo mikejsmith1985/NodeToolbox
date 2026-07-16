@@ -36,6 +36,8 @@ export type CategoryStatus = 'loading' | 'ready' | 'error' | 'not-configured';
 export interface TodayDestination {
   kind: 'myIssuesTab' | 'sprintTab' | 'dsuBoard';
   tab?: string;
+  /** Extra query params carried to the target, so the landing view opens in the SAME scope the card counted. */
+  search?: Record<string, string>;
 }
 
 /** The resolved state of one Today category, ready to render as a card. */
@@ -73,11 +75,19 @@ const UNTRIAGED_FIELDS = 'summary,status,priority,assignee,issuetype,created,upd
 const DESTINATIONS: Record<CategoryId, TodayDestination> = {
   mentions: { kind: 'myIssuesTab', tab: 'mentions' },
   blockers: { kind: 'sprintTab', tab: 'blockers' },
-  'my-stale': { kind: 'myIssuesTab', tab: 'hygiene' },
+  // The card counts MY stale issues across every project, so the drill-through must open Hygiene in
+  // the same cross-project personal scope with the stale filter applied — landing on a single
+  // persisted project key showed a different (often zero) answer than the card (GH #167).
+  'my-stale': { kind: 'myIssuesTab', tab: 'hygiene', search: { hygieneScope: 'mine', hygieneFilter: 'stale' } },
   'team-stale': { kind: 'sprintTab', tab: 'hygiene' },
-  unassigned: { kind: 'myIssuesTab', tab: 'hygiene' },
-  'commitment-gaps': { kind: 'myIssuesTab', tab: 'hygiene' },
-  'due-overdue': { kind: 'myIssuesTab', tab: 'hygiene' },
+  // Unassigned and commitment-gap counts come from the TEAM's sprint issues, so they must land on
+  // the team dashboard's Hygiene tab. The personal Hygiene tab filters to assignee = currentUser(),
+  // where an unassigned issue can never appear — the old link was a guaranteed zero (GH #167).
+  unassigned: { kind: 'sprintTab', tab: 'hygiene' },
+  'commitment-gaps': { kind: 'sprintTab', tab: 'hygiene' },
+  // Due/overdue is a my+team union; the personal cross-project scope shows at least the "my" half
+  // honestly rather than whatever project key was last persisted.
+  'due-overdue': { kind: 'myIssuesTab', tab: 'hygiene', search: { hygieneScope: 'mine' } },
   untriaged: { kind: 'dsuBoard' },
 };
 

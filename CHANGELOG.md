@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Hygiene surfaces now agree with each other (GH #167)**: the Today report, the My Issues Hygiene tab and the
+  Team Dashboard Hygiene tab all run the same rules, but each answered a *different question* without saying so —
+  which is why "My stale issues: 2" could open a tab showing 0, and one team's 35 infractions sat next to another
+  team's suspicious 0. Four fixes:
+  - **The Today cards' drill-through now opens the same scope the card counted.** "My stale issues" counts your
+    work across *every* project; clicking it used to land on the Hygiene tab locked to one remembered project key.
+    It now opens Hygiene in a new **"All my projects"** scope with the stale filter pre-applied, so the list shows
+    exactly the issues the number counted. The **Unassigned** and **Sprint commitment gaps** cards count *team*
+    sprint issues but linked to the *personal* Hygiene tab — where an unassigned issue can never appear (it filters
+    to your own assignments); they now open the Team Dashboard's Hygiene tab.
+  - **An empty scope no longer masquerades as a perfect score.** The Hygiene view now reports how many issues it
+    *scanned*; when the search matches nothing it shows an amber "scope matched no issues" warning and a dash for
+    the score, instead of a green 100/100 indistinguishable from a healthy backlog — the most likely reason a team
+    showed zero infractions it didn't deserve.
+  - **The PI scope clause follows the configured PI field.** The Team Dashboard's Hygiene tab and the dashboard's
+    own PI queries hardcoded `cf[10301]`; a team whose Program Increment lives in a different custom field got an
+    empty scope (and, per the above, a silent perfect score). Both now derive the field from the ART settings.
+  - **One stale definition.** The rules engine's fallback threshold said 14 days while every live surface passes
+    the team's configured threshold (default 5) — the fallback and the Admin rule description now match reality.
 - **Every tool page silently gave up ~20% of the window at A+/A++ text size — the real cause behind PI Review
   "not fitting" (GH #160)**: the A+/A++ text buttons scale tool pages with CSS `zoom`, paired with a
   `width: calc(100% / zoom)` compensation written for the old browser behavior where zoom stretched percentage

@@ -1011,7 +1011,14 @@ export default function MyIssuesView() {
       {/* ── Hygiene tab ── */}
       {activeTab === 'hygiene' && (
         <section id="my-issues-hygiene-panel" role="tabpanel" aria-labelledby="my-issues-hygiene-tab">
-          <HygieneView />
+          {/* Deep-link scope params (set by the Today cards) open Hygiene in the exact scope the
+              card counted — cross-project personal, optionally pre-filtered to one check. The key
+              forces a remount when the params change so a stale scope never lingers (GH #167). */}
+          <HygieneView
+            key={`${searchParams.get('hygieneScope') ?? ''}:${searchParams.get('hygieneFilter') ?? ''}`}
+            initialAllProjects={searchParams.get('hygieneScope') === 'mine'}
+            initialFilter={searchParams.get('hygieneFilter') ?? undefined}
+          />
         </section>
       )}
 

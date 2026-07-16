@@ -58,7 +58,13 @@ export default function TodayDashboard() {
   /** Resolves a card destination into a single navigation action (FR-009/FR-010). */
   function handleNavigate(destination: TodayDestination) {
     if (destination.kind === 'myIssuesTab') {
-      navigate(`${MY_ISSUES_PATH}?tab=${destination.tab ?? DEFAULT_MY_ISSUES_TAB}`);
+      // Carry the destination's scope params so the landing tab answers the SAME question the
+      // card counted (e.g. cross-project stale scope), not whatever scope it last persisted.
+      const queryParams = new URLSearchParams({
+        tab: destination.tab ?? DEFAULT_MY_ISSUES_TAB,
+        ...(destination.search ?? {}),
+      });
+      navigate(`${MY_ISSUES_PATH}?${queryParams.toString()}`);
       return;
     }
 

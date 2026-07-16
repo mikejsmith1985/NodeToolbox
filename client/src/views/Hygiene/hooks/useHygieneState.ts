@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
-import { loadHygieneFieldConfig } from '../checks/hygieneFieldConfig.ts';
+import { buildJqlFieldReference, loadHygieneFieldConfig } from '../checks/hygieneFieldConfig.ts';
 import {
   loadEnterpriseRulesFromStorage,
   readEnabledBuiltInCheckIds,
@@ -70,12 +70,21 @@ export interface HygieneState {
   fieldConfig: HygieneFieldConfig;
   isLoading: boolean;
   loadError: string | null;
+  /**
+   * How many issues the last run actually scanned, or null before the first run. This is what
+   * separates "N clean issues" from "the scope matched nothing" — without it, a broken scope
+   * (wrong project key, PI value no issue carries) silently renders as a perfect score (GH #167).
+   */
+  scannedIssueCount: number | null;
+  /** Standalone-only: search across every project the user is assigned in, matching the Today card. */
+  isAllProjectsScope: boolean;
 }
 
 export interface HygieneActions {
   setProjectKey: (projectKey: string) => void;
   setExtraJql: (extraJql: string) => void;
   selectFilter: (checkId: string | null) => void;
+  setAllProjectsScope: (isAllProjects: boolean) => void;
   loadHygiene: () => Promise<void>;
 }
 
@@ -85,6 +94,10 @@ export interface HygieneActions {
  * `assigneeClause` may be null/empty to scope the search to every in-scope issue
  * regardless of who it is assigned to — the team-mode behaviour, which keeps Hygiene
  * aligned with the dashboard's issue list (the dashboard is not assignee-filtered).
+ *
+ * `projectKey` may be empty for the "All my projects" scope: the project clause is
+ * dropped so the search matches the Today tab's cross-project personal count. That
+ * scope is only ever used with the assignee clause, which keeps the query bounded.
  */
 export function buildHygieneSearchPath(
   projectKey: string,
@@ -95,7 +108,8 @@ export function buildHygieneSearchPath(
   const normalizedProjectKey = projectKey.trim().toUpperCase();
   const extraJqlClause = extraJql.trim();
   const assigneeFilter = assigneeClause && assigneeClause.trim() ? ` AND ${assigneeClause.trim()}` : '';
-  const jqlText = `project=${normalizedProjectKey} AND statusCategory != Done${assigneeFilter}${extraJqlClause ? ` ${extraJqlClause}` : ''}`;
+  const projectClause = normalizedProjectKey ? `project=${normalizedProjectKey} AND ` : '';
+  const jqlText = `${projectClause}statusCategory != Done${assigneeFilter}${extraJqlClause ? ` ${extraJqlClause}` : ''}`;
   return `/rest/api/2/search?jql=${encodeURIComponent(jqlText)}&fields=${encodeURIComponent(buildUniqueFieldIds(requestedFields).join(','))}&maxResults=${HYGIENE_MAX_RESULTS}`;
 }
 
@@ -156,11 +170,25 @@ export interface useHygieneStateOptions {
    * from showing a previous team's data after the user switches teams.
    */
   projectKey?: string;
+  /**
+   * Start in the "All my projects" scope (standalone only; ignored in team mode). Set when the
+   * Today tab's cross-project cards deep-link here, so the drill-through shows exactly the
+   * issues the card counted instead of whatever single project key was last persisted.
+   */
+  initialAllProjects?: boolean;
+  /** Preselect one check filter on arrival (e.g. 'stale' from the "My stale issues" card). */
+  initialSelectedFilter?: string;
 }
 
 /** Owns Hygiene view state and actions so the render layer can stay declarative. */
 export function useHygieneState(options: useHygieneStateOptions = {}): HygieneState & HygieneActions {
-  const { isTeamMode = false, initialExtraJql = '', projectKey: controlledProjectKey } = options;
+  const {
+    isTeamMode = false,
+    initialExtraJql = '',
+    projectKey: controlledProjectKey,
+    initialAllProjects = false,
+    initialSelectedFilter,
+  } = options;
   // When the team dashboard supplies a project key, that prop is authoritative; the standalone
   // view falls back to the user's persisted key. This flag drives both seeding and persistence.
   const isProjectKeyControlled = controlledProjectKey !== undefined;
@@ -175,7 +203,15 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
   const projectKey = isProjectKeyControlled ? controlledProjectKey : standaloneProjectKey;
   const [extraJql, setExtraJql] = useState<string>(initialExtraJql);
   const [findings, setFindings] = useState<HygieneFinding[]>([]);
-  const [selectedFilter, setSelectedFilter] = useState<string | null>(() => readStoredFilter());
+  // "All my projects" is a standalone-only scope: team mode audits one team's project, and an
+  // unscoped team query (no project, no assignee) would scan the whole instance.
+  const [isAllProjectsScope, setAllProjectsScope] = useState<boolean>(initialAllProjects && !isTeamMode);
+  const [scannedIssueCount, setScannedIssueCount] = useState<number | null>(null);
+  // A deep-linked filter (e.g. 'stale' from the Today card) outranks the persisted one — the user
+  // arrived asking a specific question, and the answer must not be filtered by last week's choice.
+  const [selectedFilter, setSelectedFilter] = useState<string | null>(
+    () => initialSelectedFilter ?? readStoredFilter(),
+  );
   const [availableCheckIds, setAvailableCheckIds] = useState<string[]>(() => readEnabledEnterpriseCheckDefinitions().map((checkDefinition) => checkDefinition.checkId));
   const [checkLabelsById, setCheckLabelsById] = useState<Record<string, string>>(() => buildCheckLabelsById(readEnabledEnterpriseCheckDefinitions()));
   // The resolved field config powers the inline fix controls; it starts at defaults and is replaced
@@ -212,9 +248,11 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
   }, []);
 
   const loadHygiene = useCallback(async () => {
-    const normalizedProjectKey = projectKey.trim();
-    if (!normalizedProjectKey) {
+    // In the all-projects scope the project clause is dropped entirely; otherwise a key is required.
+    const normalizedProjectKey = isAllProjectsScope ? '' : projectKey.trim();
+    if (!normalizedProjectKey && !isAllProjectsScope) {
       setFindings([]);
+      setScannedIssueCount(null);
       setLoadError(null);
       return;
     }
@@ -254,6 +292,7 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
       );
       const loadedIssues = jiraSearchResponse.issues ?? [];
       const featureKeysWithPointedStories = await loadFeatureKeysWithPointedStories(loadedIssues, hygieneFieldConfig, customStoryPointsFieldId);
+      setScannedIssueCount(loadedIssues.length);
       setFindings(mapIssuesToFindings(loadedIssues, {
         customRules: enabledCustomRules,
         enabledBuiltInCheckIds,
@@ -266,10 +305,11 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
       const errorMessage = caughtError instanceof Error ? caughtError.message : 'Failed to load Hygiene results';
       setLoadError(errorMessage);
       setFindings([]);
+      setScannedIssueCount(null);
     } finally {
       setIsLoading(false);
     }
-  }, [activeDashboardTeamProfileId, extraJql, isTeamMode, projectKey]);
+  }, [activeDashboardTeamProfileId, extraJql, isAllProjectsScope, isTeamMode, projectKey]);
 
   return {
     projectKey,
@@ -283,9 +323,12 @@ export function useHygieneState(options: useHygieneStateOptions = {}): HygieneSt
     fieldConfig,
     isLoading,
     loadError,
+    scannedIssueCount,
+    isAllProjectsScope,
     setProjectKey: setStandaloneProjectKey,
     setExtraJql,
     selectFilter,
+    setAllProjectsScope,
     loadHygiene,
   };
 }
@@ -386,15 +429,6 @@ async function loadFeatureKeysWithPointedStories(
     }
     return featureKeySet;
   }, new Set<string>());
-}
-
-function buildJqlFieldReference(fieldId: string): string {
-  const customFieldMatch = /^customfield_(\d+)$/.exec(fieldId);
-  if (customFieldMatch) {
-    return `cf[${customFieldMatch[1]}]`;
-  }
-
-  return fieldId.includes(' ') ? `"${fieldId}"` : fieldId;
 }
 
 function readLinkedFeatureKey(issue: JiraIssue, fieldIds: string[]): string | null {

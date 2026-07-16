@@ -24,9 +24,17 @@ import styles from './HygieneView.module.css';
 const VIEW_TITLE = 'Hygiene';
 const VIEW_SUBTITLE = 'Check active Jira issues for missing ownership, stale work, and planning gaps.';
 const PROJECT_PLACEHOLDER = 'TBX';
+const ALL_PROJECTS_PROJECT_PLACEHOLDER = 'All my projects';
 const EXTRA_JQL_PLACEHOLDER = 'AND labels = hygiene ORDER BY updated DESC';
 const EMPTY_STATE_MESSAGE = 'Enter a project key and run Hygiene to find issue-health flags.';
 const NO_FLAGS_MESSAGE = 'No Hygiene flags found for the current project and filter.';
+// Shown when the search ran but matched zero issues. Distinct from NO_FLAGS_MESSAGE on purpose:
+// "everything is clean" and "the scope found nothing to check" must never look the same, or a wrong
+// project key / PI silently renders as a perfect score (GH #167).
+const EMPTY_SCOPE_MESSAGE =
+  'The current scope matched no Jira issues — check the project key, PI, and extra JQL. '
+  + 'No score is shown for an empty scope.';
+const EMPTY_SCOPE_SCORE_LABEL = '—';
 const NO_VALUE_LABEL = '—';
 const JIRA_BROWSE_PREFIX = 'https://jira.healthspring-jira-prod.aws.zilverton.com/browse/';
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -46,11 +54,27 @@ interface HygieneViewProps {
   initialExtraJql?: string;
   /** Team-supplied project key. When set, it is authoritative and follows the active team selection. */
   projectKey?: string;
+  /** Open in the cross-project "All my projects" scope (standalone only) — see useHygieneState. */
+  initialAllProjects?: boolean;
+  /** Preselect one check filter on arrival (e.g. 'stale' when deep-linked from the Today card). */
+  initialFilter?: string;
 }
 
 /** Renders the standalone Hygiene checker and delegates stateful Jira work to `useHygieneState`. */
-export default function HygieneView({ isTeamMode = false, initialExtraJql = '', projectKey }: HygieneViewProps = {}) {
-  const hygieneState = useHygieneState({ isTeamMode, initialExtraJql, projectKey });
+export default function HygieneView({
+  isTeamMode = false,
+  initialExtraJql = '',
+  projectKey,
+  initialAllProjects = false,
+  initialFilter,
+}: HygieneViewProps = {}) {
+  const hygieneState = useHygieneState({
+    isTeamMode,
+    initialExtraJql,
+    projectKey,
+    initialAllProjects,
+    initialSelectedFilter: initialFilter,
+  });
   const isAiAssistUnlocked = useAiAssistStore((storeState) => storeState.isAiAssistUnlocked);
   const jiraBaseUrl = useConnectionStore((state) => state.proxyStatus?.jira?.baseUrl ?? null);
   const hasAutoRunTriggeredRef = useRef(false);
@@ -63,7 +87,16 @@ export default function HygieneView({ isTeamMode = false, initialExtraJql = '', 
   const hasLoadedFindings = hygieneState.findings.length > 0;
   const hasVisibleFindings = hygieneState.filteredFindings.length > 0;
   const hasProjectKey = hygieneState.projectKey.trim().length > 0;
-  const shouldShowNoFlags = !hygieneState.isLoading && hasProjectKey && !hasVisibleFindings;
+  // The view is runnable with a project key OR in the all-projects scope (which needs none).
+  const hasRunnableScope = hasProjectKey || hygieneState.isAllProjectsScope;
+  // "Ran and matched nothing" — the state that must never masquerade as a clean bill of health.
+  const isScopeEmpty = !hygieneState.isLoading
+    && hygieneState.loadError === null
+    && hygieneState.scannedIssueCount === 0;
+  const shouldShowNoFlags = !hygieneState.isLoading
+    && hasRunnableScope
+    && !hasVisibleFindings
+    && !isScopeEmpty;
   const [expandedIssueKey, setExpandedIssueKey] = useState<string | null>(null);
   const [copiedCheckId, setCopiedCheckId] = useState<string | null>(null);
   // Fall back to defaults so the inline fix controls still resolve system fields before the first
@@ -87,12 +120,12 @@ export default function HygieneView({ isTeamMode = false, initialExtraJql = '', 
   }
 
   useEffect(() => {
-    if (hasAutoRunTriggeredRef.current || !hasProjectKey || isHygieneLoading) {
+    if (hasAutoRunTriggeredRef.current || !hasRunnableScope || isHygieneLoading) {
       return;
     }
     hasAutoRunTriggeredRef.current = true;
     void loadHygiene();
-  }, [hasProjectKey, isHygieneLoading, loadHygiene]);
+  }, [hasRunnableScope, isHygieneLoading, loadHygiene]);
 
   return (
     <section className={styles.hygieneView} aria-label={VIEW_TITLE}>
@@ -107,11 +140,25 @@ export default function HygieneView({ isTeamMode = false, initialExtraJql = '', 
           <input
             className={styles.textInput}
             aria-label="Project key"
-            placeholder={PROJECT_PLACEHOLDER}
-            value={hygieneState.projectKey}
+            disabled={hygieneState.isAllProjectsScope}
+            placeholder={hygieneState.isAllProjectsScope ? ALL_PROJECTS_PROJECT_PLACEHOLDER : PROJECT_PLACEHOLDER}
+            value={hygieneState.isAllProjectsScope ? '' : hygieneState.projectKey}
             onChange={(changeEvent) => hygieneState.setProjectKey(changeEvent.target.value)}
           />
         </label>
+        {/* Standalone only: the cross-project personal scope the Today cards count with. Team mode
+            audits one team's project, so the toggle is not offered there. */}
+        {!isTeamMode && (
+          <label className={styles.scopeToggleLabel}>
+            <input
+              type="checkbox"
+              aria-label="All my projects"
+              checked={hygieneState.isAllProjectsScope}
+              onChange={(changeEvent) => hygieneState.setAllProjectsScope(changeEvent.target.checked)}
+            />
+            All my projects
+          </label>
+        )}
         <label className={styles.fieldLabel}>
           Extra JQL (optional)
           <input
@@ -125,7 +172,7 @@ export default function HygieneView({ isTeamMode = false, initialExtraJql = '', 
         <button
           type="button"
           className={styles.buttonPrimary}
-          disabled={hygieneState.isLoading || !hygieneState.projectKey.trim()}
+          disabled={hygieneState.isLoading || !hasRunnableScope}
           onClick={() => {
             void hygieneState.loadHygiene();
           }}
@@ -142,7 +189,8 @@ export default function HygieneView({ isTeamMode = false, initialExtraJql = '', 
 
       <div className={styles.summaryGrid} aria-label="Hygiene summary tiles">
         <div className={styles.scoreTile} aria-label="Hygiene score tile">
-          <strong>{hygieneScore}/100</strong>
+          {/* A scope that matched nothing has no health to score — a dash, never a perfect 100. */}
+          <strong>{isScopeEmpty ? EMPTY_SCOPE_SCORE_LABEL : `${hygieneScore}/100`}</strong>
           <span className={styles.scoreLabel}>
             Hygiene Score
             <span className={styles.scoreInfoWrapper}>
@@ -165,7 +213,10 @@ export default function HygieneView({ isTeamMode = false, initialExtraJql = '', 
           onClick={() => hygieneState.selectFilter(null)}
         >
           <strong>{hygieneState.summary.totalIssues} issues</strong>
-          <span>{hygieneState.summary.totalFlags} flags total</span>
+          <span>
+            {hygieneState.summary.totalFlags} flags
+            {hygieneState.scannedIssueCount !== null ? ` · ${hygieneState.scannedIssueCount} scanned` : ' total'}
+          </span>
         </button>
         {hygieneState.availableCheckIds.map((checkId) =>
           renderSummaryTile(checkId, hygieneState, copiedCheckId, handleCopyCheckJql),
@@ -173,8 +224,13 @@ export default function HygieneView({ isTeamMode = false, initialExtraJql = '', 
       </div>
 
       {hygieneState.isLoading && <div className={styles.emptyState}>Loading Hygiene results…</div>}
-      {!hygieneState.isLoading && !hasLoadedFindings && !hygieneState.projectKey.trim() && (
+      {!hygieneState.isLoading && !hasLoadedFindings && !hasRunnableScope && (
         <div className={styles.emptyState}>{EMPTY_STATE_MESSAGE}</div>
+      )}
+      {isScopeEmpty && (
+        <div className={styles.emptyScopeWarning} role="status">
+          ⚠ {EMPTY_SCOPE_MESSAGE}
+        </div>
       )}
       {shouldShowNoFlags && <div className={styles.emptyState}>{NO_FLAGS_MESSAGE}</div>}
       {!hygieneState.isLoading && hasVisibleFindings && (

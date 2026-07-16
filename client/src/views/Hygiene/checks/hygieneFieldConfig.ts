@@ -41,6 +41,27 @@ export function readHygieneArtSettings(): HygieneArtSettings {
   }
 }
 
+/**
+ * The Program Increment custom field id an admin configured, or the platform default.
+ *
+ * Every JQL that scopes work by PI must derive its field from here. Hardcoding `cf[10301]`
+ * (the old behavior) meant a team whose PI lives in a different field got an empty scope —
+ * which the Hygiene view then rendered as a perfect score (GH #167).
+ */
+export function readConfiguredPiFieldId(): string {
+  return readHygieneArtSettings().piFieldId || DEFAULT_PI_FIELD_ID;
+}
+
+/** Converts a `customfield_N` id into its JQL `cf[N]` reference; other ids pass through (quoted if spaced). */
+export function buildJqlFieldReference(fieldId: string): string {
+  const customFieldMatch = /^customfield_(\d+)$/.exec(fieldId);
+  if (customFieldMatch) {
+    return `cf[${customFieldMatch[1]}]`;
+  }
+
+  return fieldId.includes(' ') ? `"${fieldId}"` : fieldId;
+}
+
 /** Field names differ only by spacing and case between instances, so compare them normalised. */
 function normalizeFieldName(fieldName: string): string {
   return fieldName.trim().replace(/\s+/g, ' ').toLowerCase();

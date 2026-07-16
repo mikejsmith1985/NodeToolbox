@@ -48,4 +48,40 @@ describe('TeamDashboardHygieneTab', () => {
 
     expect(window.localStorage.getItem(HYGIENE_PROJECT_KEY_STORAGE_KEY)).toBe('EXISTING');
   });
+
+  // ── GH #167: the PI scope clause must follow the configured PI field, never a hardcode ──
+
+  it('builds the PI scope clause from the default field when nothing is configured', () => {
+    render(
+      <TeamDashboardHygieneTab
+        projectKey="tbx"
+        scopeMode="pi"
+        selectedPiValue="PI 26.3 (05/21/26 - 07/29/26)"
+        selectedFixVersionName=""
+        selectedSprintId={null}
+      />,
+    );
+
+    expect(screen.getByRole('textbox', { name: 'Extra JQL' }))
+      .toHaveValue('AND cf[10301] = "PI 26.3 (05/21/26 - 07/29/26)"');
+  });
+
+  it('builds the PI scope clause from the ART-configured PI field when one is set', () => {
+    // A team whose PI lives in a different custom field used to get a hardcoded cf[10301] scope
+    // that matched nothing — which Hygiene then rendered as a perfect score.
+    window.localStorage.setItem('tbxARTSettings', JSON.stringify({ piFieldId: 'customfield_12345' }));
+
+    render(
+      <TeamDashboardHygieneTab
+        projectKey="tbx"
+        scopeMode="pi"
+        selectedPiValue="PI 26.3 (05/21/26 - 07/29/26)"
+        selectedFixVersionName=""
+        selectedSprintId={null}
+      />,
+    );
+
+    expect(screen.getByRole('textbox', { name: 'Extra JQL' }))
+      .toHaveValue('AND cf[12345] = "PI 26.3 (05/21/26 - 07/29/26)"');
+  });
 });

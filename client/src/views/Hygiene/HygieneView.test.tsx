@@ -29,6 +29,8 @@ interface OverrideHookState {
   checkLabelsById?: Record<string, string>;
   isLoading?: boolean;
   loadError?: string | null;
+  scannedIssueCount?: number | null;
+  isAllProjectsScope?: boolean;
 }
 
 function buildDateDaysAgo(dayCount: number): string {
@@ -96,9 +98,14 @@ function buildHookState(overrides: OverrideHookState = {}): ReturnType<typeof us
     fieldConfig: resolveHygieneFieldConfig(),
     isLoading: overrides.isLoading ?? false,
     loadError: overrides.loadError ?? null,
+    // Default to "scanned some issues" so pre-existing tests keep exercising the healthy path; the
+    // empty-scope tests override this to 0 explicitly.
+    scannedIssueCount: overrides.scannedIssueCount !== undefined ? overrides.scannedIssueCount : 25,
+    isAllProjectsScope: overrides.isAllProjectsScope ?? false,
     setProjectKey: vi.fn(),
     setExtraJql: vi.fn(),
     selectFilter: vi.fn(),
+    setAllProjectsScope: vi.fn(),
     loadHygiene: vi.fn(),
   };
 }
@@ -148,6 +155,81 @@ describe('HygieneView', () => {
     render(<HygieneView />);
 
     expect(hookState.loadHygiene).toHaveBeenCalledTimes(1);
+  });
+
+  // ── GH #167: an empty scope must never masquerade as a clean bill of health ──
+
+  it('shows an amber warning instead of a perfect score when the scope matched no issues', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'TBX', scannedIssueCount: 0 }));
+
+    render(<HygieneView />);
+
+    // The distinct empty-scope warning renders…
+    expect(screen.getByRole('status')).toHaveTextContent(/matched no Jira issues/i);
+    // …the score shows a dash, never 100/100…
+    expect(screen.getByLabelText('Hygiene score tile')).toHaveTextContent('—');
+    expect(screen.getByLabelText('Hygiene score tile')).not.toHaveTextContent('100/100');
+    // …and the "all clean" message is NOT shown, so the two states can never look alike.
+    expect(screen.queryByText(/No Hygiene flags found/i)).not.toBeInTheDocument();
+  });
+
+  it('still shows the clean-state message (not the warning) when issues were scanned and none flagged', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'TBX', scannedIssueCount: 25 }));
+
+    render(<HygieneView />);
+
+    expect(screen.getByText(/No Hygiene flags found/i)).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('surfaces the scanned-issue count on the summary tile', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'TBX', scannedIssueCount: 42 }));
+
+    render(<HygieneView />);
+
+    expect(screen.getByText(/0 flags · 42 scanned/)).toBeInTheDocument();
+  });
+
+  // ── GH #167: the "All my projects" scope backing the Today cards' drill-through ──
+
+  it('offers the All my projects toggle in standalone mode and forwards changes to the hook', () => {
+    const hookState = buildHookState();
+    mockUseHygieneState.mockReturnValue(hookState);
+
+    render(<HygieneView />);
+    fireEvent.click(screen.getByLabelText('All my projects'));
+
+    expect(hookState.setAllProjectsScope).toHaveBeenCalledWith(true);
+  });
+
+  it('hides the All my projects toggle in team mode — team hygiene audits one project', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ projectKey: 'ENCUC' }));
+
+    render(<HygieneView isTeamMode projectKey="ENCUC" />);
+
+    expect(screen.queryByLabelText('All my projects')).not.toBeInTheDocument();
+  });
+
+  it('runs without a project key in the All my projects scope, with the key input disabled', () => {
+    const hookState = buildHookState({ projectKey: '', isAllProjectsScope: true });
+    mockUseHygieneState.mockReturnValue(hookState);
+
+    render(<HygieneView initialAllProjects />);
+
+    expect(screen.getByLabelText('Project key')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Run Hygiene' })).toBeEnabled();
+    // The scope is runnable, so the view auto-runs exactly as a keyed scope would.
+    expect(hookState.loadHygiene).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes the deep-linked scope and filter through to the state hook', () => {
+    mockUseHygieneState.mockReturnValue(buildHookState({ isAllProjectsScope: true }));
+
+    render(<HygieneView initialAllProjects initialFilter="stale" />);
+
+    expect(mockUseHygieneState).toHaveBeenCalledWith(
+      expect.objectContaining({ initialAllProjects: true, initialSelectedFilter: 'stale' }),
+    );
   });
 
   it('shows a loading state while Jira search is running', () => {
@@ -208,7 +290,9 @@ describe('HygieneView', () => {
     render(<HygieneView />);
 
     expect(screen.getByText('3 issues')).toBeInTheDocument();
-    expect(screen.getByText('5 flags total')).toBeInTheDocument();
+    // The tile now carries the scanned count, so "everything clean" and "scope matched nothing"
+    // can never look alike (GH #167).
+    expect(screen.getByText('5 flags · 25 scanned')).toBeInTheDocument();
     expect(screen.getByText('Missing Feature Link')).toBeInTheDocument();
     expect(screen.getByText('Old in sprint')).toBeInTheDocument();
   });
