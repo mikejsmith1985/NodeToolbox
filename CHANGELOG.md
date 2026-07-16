@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Monthly Delivery Report — scheduled runs can now DELIVER the prompt, not just cache it**: when the schedule
+  fired (2nd Tuesday), the run built the AI-ready prompt and silently saved it to a file — nothing arrived
+  anywhere, and nothing in the app said it had run. The panel now takes an optional **Automation webhook URL (+
+  secret)**, and each run — scheduled or Run Now — posts the prompt through the **same webhook → Atlassian
+  Automation email channel every other scheduled report uses** (never a new channel). The panel shows what the run
+  did about delivery: delivered ✓, failed with the reason, or "skipped — no webhook configured". Leave the URL
+  empty and behavior is unchanged (prompt cached for manual copy).
+
 ### Fixed
+- **Monthly Delivery Report — the Enabled switch saves immediately**: it sat in the buffered form, so toggling it
+  and walking away silently discarded the change unless Save was clicked — which read exactly like "the enabled
+  setting doesn't persist". The master switch now commits on change (labelled "saves immediately"); the other
+  fields keep the explicit Save.
+- **Monthly Delivery / PI Review scheduler panels — themed at last**: both panels referenced layout classes
+  (`panelCard`, `panelActions`, `inputField`, …) that were never defined, so every button, card, status line and
+  input rendered browser-default and off-theme, and the generated-prompt box collapsed to the browser's intrinsic
+  textarea width. The classes now exist (app tokens: card surfaces, themed action/save buttons, full-width
+  fields), so the buttons match the application and the prompt box spans the card like every other field.
 - **Hygiene AI — stale asks now carry the recent CONVERSATION, not just the newest comment**: one comment is not
   enough to judge a nudge — a bare "Thank you" often sits on top of the "pushed to dev, ready for internal
   testing" that actually explains the wait. The prompt now includes each stale issue's last five comments (oldest

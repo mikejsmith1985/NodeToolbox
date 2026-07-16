@@ -181,12 +181,15 @@ function saveConfigToDisk(configuration) {
         teams: ((configuration.scheduler.piReview || {}).teams || []).map((team) => ({ ...team })),
       },
       // Monthly Delivery Report scheduler (feature 018) — snapshotted Team Dashboard teams plus the
-      // monthly fire time. No credential fields (auth reuses configuration.jira), nothing to obfuscate.
+      // monthly fire time and the delivery webhook (plain, matching the other surfaces' trigger
+      // fields). Jira auth reuses configuration.jira.
       monthlyDelivery: {
         isEnabled:          !!(configuration.scheduler.monthlyDelivery || {}).isEnabled,
         scheduleTime:       (configuration.scheduler.monthlyDelivery || {}).scheduleTime       || '08:00',
         featureLinkFieldId: (configuration.scheduler.monthlyDelivery || {}).featureLinkFieldId || 'customfield_10108',
         teams: ((configuration.scheduler.monthlyDelivery || {}).teams || []).map((team) => ({ ...team })),
+        triggerUrl:         (configuration.scheduler.monthlyDelivery || {}).triggerUrl         || '',
+        triggerSecret:      (configuration.scheduler.monthlyDelivery || {}).triggerSecret      || '',
       },
     },
     // Hygiene monitor — deep-clone the teams array and the bounded history slice.

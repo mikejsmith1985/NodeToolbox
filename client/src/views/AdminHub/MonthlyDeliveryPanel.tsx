@@ -22,6 +22,9 @@ interface MonthlyDeliveryConfig {
   scheduleTime: string
   featureLinkFieldId: string
   teams: MonthlyDeliveryTeamSnapshot[]
+  /** Atlassian Automation webhook the run's prompt is delivered to; empty = cache only. */
+  triggerUrl: string
+  triggerSecret: string
 }
 
 interface MonthlyDeliveryTeamOutcome {
@@ -39,6 +42,8 @@ interface MonthlyDeliveryRunResult {
   trigger?: 'scheduled' | 'manual'
   promptText?: string
   teams?: MonthlyDeliveryTeamOutcome[]
+  /** What the run did about delivery: skipped (no webhook), delivered, or failed with a reason. */
+  delivery?: { attempted: boolean; ok?: boolean; message?: string }
 }
 
 const COPY_PROMPT_IDLE_LABEL = '📋 Copy Prompt'
@@ -122,6 +127,28 @@ export function MonthlyDeliveryPanel() {
     setIsDirty(true)
   }
 
+  /**
+   * The master on/off switch saves IMMEDIATELY (committing the form as shown), unlike the buffered
+   * fields. A toggle that silently discarded itself unless the user remembered to click Save read
+   * as "the enabled setting doesn't persist" — which is exactly how it was reported.
+   */
+  async function handleToggleEnabled(isEnabled: boolean) {
+    if (config === null) return
+    const nextConfig = { ...config, isEnabled }
+    setConfig(nextConfig)
+    setIsSaving(true)
+    setStatusMessage('')
+    try {
+      await saveMonthlyDeliveryConfig(nextConfig)
+      setIsDirty(false)
+      setStatusMessage(isEnabled ? 'Saved — schedule enabled.' : 'Saved — schedule disabled.')
+    } catch (saveError) {
+      setStatusMessage(saveError instanceof Error ? saveError.message : 'Failed to save.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   /** Replaces the team list with a fresh snapshot of the Team Dashboard profiles. */
   function handleSnapshotTeams() {
     updateConfig({
@@ -189,7 +216,7 @@ export function MonthlyDeliveryPanel() {
           If this persists after a retry, the server build may be missing the monthly-delivery engine —
           check the server log for &quot;Monthly Delivery routes unavailable&quot;.
         </p>
-        <button type="button" onClick={handleRetryLoad}>Retry</button>
+        <button type="button" className={styles.actionButton} onClick={handleRetryLoad}>Retry</button>
       </div>
     )
   }
@@ -213,16 +240,36 @@ export function MonthlyDeliveryPanel() {
               type="checkbox"
               aria-label="Enable monthly schedule"
               checked={config.isEnabled}
-              onChange={(event) => updateConfig({ isEnabled: event.target.checked })}
+              disabled={isSaving}
+              onChange={(event) => void handleToggleEnabled(event.target.checked)}
             />
-            {' '}Enabled (fires on the 2nd Tuesday)
+            {' '}Enabled (fires on the 2nd Tuesday) — saves immediately
           </label>
         </div>
         <label>Schedule time (HH:MM)
           <input
             aria-label="Schedule time (HH:MM)"
+            className={styles.inputField}
             value={config.scheduleTime}
             onChange={(event) => updateConfig({ scheduleTime: event.target.value })}
+          />
+        </label>
+        <label>Automation webhook URL (optional — delivers the prompt like the other scheduled reports)
+          <input
+            aria-label="Automation webhook URL"
+            className={styles.inputField}
+            placeholder="https://api-private.atlassian.com/automation/webhooks/…"
+            value={config.triggerUrl}
+            onChange={(event) => updateConfig({ triggerUrl: event.target.value })}
+          />
+        </label>
+        <label>Automation webhook secret (optional)
+          <input
+            aria-label="Automation webhook secret"
+            className={styles.inputField}
+            type="password"
+            value={config.triggerSecret}
+            onChange={(event) => updateConfig({ triggerSecret: event.target.value })}
           />
         </label>
 
@@ -241,8 +288,8 @@ export function MonthlyDeliveryPanel() {
           )}
 
         <div className={styles.panelActions}>
-          <button type="button" onClick={handleSnapshotTeams}>Snapshot Teams</button>
-          <button type="button" disabled={isSaving} onClick={() => void handleSave()}>
+          <button type="button" className={styles.actionButton} onClick={handleSnapshotTeams}>Snapshot Teams</button>
+          <button type="button" className={styles.saveButton} disabled={isSaving} onClick={() => void handleSave()}>
             {isSaving ? 'Saving…' : 'Save'}
           </button>
         </div>
@@ -254,6 +301,7 @@ export function MonthlyDeliveryPanel() {
         <div className={styles.panelActions}>
           <button
             type="button"
+            className={styles.actionButton}
             disabled={isRunning || isDirty || hasNoTeamsConfigured}
             title={isDirty ? 'Save your changes before running — Run Now uses the saved configuration.' : undefined}
             onClick={() => void handleRunNow()}
@@ -262,6 +310,7 @@ export function MonthlyDeliveryPanel() {
           </button>
           <button
             type="button"
+            className={styles.actionButton}
             disabled={!lastRun.promptText}
             onClick={() => void handleCopyPrompt()}
           >
@@ -274,6 +323,13 @@ export function MonthlyDeliveryPanel() {
             <p className={styles.panelStatusLine}>
               Last run: {lastRun.coveredMonth} · {lastRun.ranAtIso} · {lastRun.trigger}
             </p>
+            {lastRun.delivery && (
+              <p className={styles.panelStatusLine}>
+                Delivery: {lastRun.delivery.attempted
+                  ? (lastRun.delivery.ok ? `✓ ${lastRun.delivery.message ?? 'delivered'}` : `⚠ ${lastRun.delivery.message ?? 'failed'}`)
+                  : 'skipped — no Automation webhook configured'}
+              </p>
+            )}
             {(lastRun.teams || []).map((teamOutcome, outcomeIndex) => (
               <p key={outcomeIndex} className={styles.panelStatusLine}>
                 {teamOutcome.teamName}: <strong>{teamOutcome.status}</strong>
