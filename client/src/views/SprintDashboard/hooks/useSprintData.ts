@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { jiraGet } from '../../../services/jiraApi.ts';
+import { buildJqlFieldReference, readConfiguredPiFieldId } from '../../Hygiene/checks/hygieneFieldConfig.ts';
 import { fetchPiNameSuggestions } from '../../../services/piNameSuggestions.ts';
 import { filterPiNamesToPlanningWindow } from '../../ArtView/hooks/artHelpers.ts';
 import { useConnectionStore } from '../../../store/connectionStore.ts';
@@ -22,9 +23,6 @@ import type { JiraBoard, JiraIssue, JiraSprint, JiraVersion } from '../../../typ
 const STANDUP_TIMER_SECONDS = 900; // 15 minutes
 const SPRINT_ISSUE_MAX_RESULTS = 200;
 const BOARD_SCOPE_SPRINT_MAX_RESULTS = 50;
-const PI_JQL_FIELD_ID = 'cf[10301]';
-// The same PI field in stored-id form, used to fetch the field's valid values (incl. future PIs).
-const PI_AUTOCOMPLETE_FIELD_ID = 'customfield_10301';
 const DASHBOARD_SCOPE_MODE_SPRINT = 'sprint';
 const DASHBOARD_SCOPE_MODE_FIX_VERSION = 'fixVersion';
 const DASHBOARD_SCOPE_MODE_PI = 'pi';
@@ -495,12 +493,14 @@ export function useSprintData(
       ).catch(() => []),
       jiraGet<{ issues?: JiraIssue[] }>(
         buildIssueSearchPath(
-          `project = "${escapeJqlValue(projectKey)}" AND ${PI_JQL_FIELD_ID} is not EMPTY ORDER BY updated DESC`,
+          // PI field derived from ART settings (default cf[10301]) — a hardcode here left teams
+          // with a different PI field showing an empty, silently "perfect" dashboard (GH #167).
+          `project = "${escapeJqlValue(projectKey)}" AND ${buildJqlFieldReference(readConfiguredPiFieldId())} is not EMPTY ORDER BY updated DESC`,
           sprintFieldListRef.current,
         ),
       ).catch(() => ({ issues: [] })),
       // The field's valid values include future PIs no issue references yet — the issue query can't see those.
-      fetchPiNameSuggestions(PI_AUTOCOMPLETE_FIELD_ID).catch(() => []),
+      fetchPiNameSuggestions(readConfiguredPiFieldId()).catch(() => []),
     ]);
 
     // Combine PIs actually used on issues with the field's valid values, then narrow to the planning
@@ -590,7 +590,7 @@ export function useSprintData(
     const scopedJql =
       scopeMode === DASHBOARD_SCOPE_MODE_FIX_VERSION
         ? `project = "${escapeJqlValue(projectKey)}" AND fixVersion = "${escapeJqlValue(resolvedFixVersionName)}" ORDER BY updated DESC`
-        : `project = "${escapeJqlValue(projectKey)}" AND ${PI_JQL_FIELD_ID} = "${escapeJqlValue(resolvedPiValue)}" ORDER BY updated DESC`;
+        : `project = "${escapeJqlValue(projectKey)}" AND ${buildJqlFieldReference(readConfiguredPiFieldId())} = "${escapeJqlValue(resolvedPiValue)}" ORDER BY updated DESC`;
     const issuesResponse = await jiraGet<JiraSprintIssuesResponse>(buildIssueSearchPath(scopedJql, sprintFieldListRef.current));
     setState((previousState) => ({
       ...previousState,

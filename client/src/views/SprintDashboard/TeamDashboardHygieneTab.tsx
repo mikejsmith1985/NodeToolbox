@@ -3,8 +3,8 @@
 import { useMemo } from 'react';
 
 import HygieneView from '../Hygiene/HygieneView.tsx';
+import { buildJqlFieldReference, readConfiguredPiFieldId } from '../Hygiene/checks/hygieneFieldConfig.ts';
 
-const PI_JQL_FIELD_ID = 'cf[10301]';
 const SCOPE_MODE_PI = 'pi';
 const SCOPE_MODE_FIX_VERSION = 'fixVersion';
 
@@ -28,7 +28,11 @@ function buildScopeJql(
   selectedSprintId: number | null,
 ): string {
   if (scopeMode === SCOPE_MODE_PI && selectedPiValue) {
-    return `AND ${PI_JQL_FIELD_ID} = "${selectedPiValue.replace(/"/g, '\\"')}"`;
+    // Derived from the ART-configured PI field, never hardcoded: a team whose PI lives in a
+    // different custom field would otherwise get an empty scope that rendered as a perfect
+    // hygiene score (GH #167). Defaults to cf[10301] when nothing is configured.
+    const piJqlFieldReference = buildJqlFieldReference(readConfiguredPiFieldId());
+    return `AND ${piJqlFieldReference} = "${selectedPiValue.replace(/"/g, '\\"')}"`;
   }
   if (scopeMode === SCOPE_MODE_FIX_VERSION && selectedFixVersionName) {
     return `AND fixVersion = "${selectedFixVersionName.replace(/"/g, '\\"')}"`;
