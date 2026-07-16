@@ -2060,7 +2060,7 @@ function PiReviewPagePanel({ target, selectedPiName, mode, capacitySummaryOverri
                 {visiblePiReviewColumnKeys.map((columnKey) => (
                   <th key={columnKey} scope="col">{PI_REVIEW_COLUMN_LABELS[columnKey]}</th>
                 ))}
-                {canEditContent && <th scope="col">Actions</th>}
+                {canEditContent && <th className={styles.rowActionHeader} scope="col">Actions</th>}
               </tr>
             </thead>
             <tbody>

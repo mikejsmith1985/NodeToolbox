@@ -235,7 +235,8 @@
 }
 
 .cellTextarea {
-  min-height: 72px;
+  /* Default tall enough to read a few lines of notes without a manual drag; still user-resizable. */
+  min-height: 132px;
   resize: vertical;
 }
 
@@ -284,12 +285,38 @@
 }
 
 .longCell {
-  min-width: clamp(140px, 20vw, 180px);
+  min-width: clamp(200px, 24vw, 300px);
 }
 
+/* Pin the row controls to the right edge so Move / Remove / grouping actions stay reachable no
+   matter how far the wide edit-mode table (up to 11 columns) is scrolled horizontally. */
 .rowActionCell {
+  position: sticky;
+  right: 0;
+  z-index: 1;
   width: 1%;
   white-space: nowrap;
+  /* Fully opaque (not the translucent surface tokens) so columns scrolling underneath cannot
+     bleed through the pinned rail. */
+  background: var(--color-bg);
+  box-shadow: -10px 0 14px -10px rgba(15, 23, 42, 0.5);
+}
+
+/* Compound selector so the opaque fill beats `.dataTable th`'s translucent gradient (which is
+   more specific than a lone class) — the header cell must not let Dependency bleed through. */
+.dataTable th.rowActionHeader {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: var(--color-bg);
+  box-shadow: -10px 0 14px -10px rgba(15, 23, 42, 0.5);
+}
+
+/* Keep the pinned action rail opaque through the odd-row tint and row hover, otherwise the
+   cells scrolling underneath would bleed through the sticky column. */
+.dataTable tbody tr:nth-child(odd) td.rowActionCell,
+.dataTable tbody tr:hover td.rowActionCell {
+  background: var(--color-bg);
 }
 
 .rowActionGroup {
