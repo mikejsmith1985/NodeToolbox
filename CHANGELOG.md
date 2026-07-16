@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same-month catch-up after downtime, never twice in a month); a **Run Now** button generates it ad-hoc and
   **Copy Prompt** puts the artifact on the clipboard. The team list is an explicit **Snapshot Teams** copy of the
   Team Dashboard profiles (the server cannot read browser storage) — re-snapshot and save to pick up team changes.
-  Month attribution is changelog-accurate: credit goes to the
+  A team whose data collection fails is flagged **DATA UNAVAILABLE** in the prompt and the panel — the run
+  finishes for the other teams and never fakes a clean result. Month attribution is changelog-accurate: credit goes to the
   month the issue *entered* its current delivered/done run, so reopened-and-refixed work is credited honestly and
   nothing is double-reported across months. Delivery classification is the same `workflowDelivery` ladder the
   Team Dashboard uses — bundled into the server engine, never reimplemented.

@@ -111,3 +111,86 @@ describe('MonthlyDeliveryPanel — configuration & team snapshot (US1)', () => {
     expect(screen.getByText(/unsaved changes/i)).toBeInTheDocument()
   })
 })
+
+describe('MonthlyDeliveryPanel — Run Now, last-run display, Copy Prompt (US2)', () => {
+  function completedRun() {
+    return {
+      hasRun: true,
+      ranAtIso: '2026-07-14T08:00:00.000Z',
+      coveredMonth: '2026-06',
+      trigger: 'manual',
+      promptText: 'THE PROMPT TEXT',
+      teams: [
+        { teamName: 'Transformers', status: 'ok', productionCount: 3, externalTestCount: 1, message: '' },
+        { teamName: 'Broken Team', status: 'error', productionCount: 0, externalTestCount: 0, message: 'Jira search failed: 401' },
+      ],
+    }
+  }
+
+  it('disables Run Now while there are unsaved edits and re-enables after saving', async () => {
+    installFetch({
+      'GET /api/monthly-delivery/config': () => savedConfig(),
+      'GET /api/monthly-delivery/status': () => noRunYet(),
+      'POST /api/monthly-delivery/config': () => ({ ok: true, teams: 1 }),
+    })
+
+    render(<MonthlyDeliveryPanel />)
+    expect(await screen.findByRole('button', { name: /run now/i })).toBeEnabled()
+
+    fireEvent.change(screen.getByLabelText('Schedule time (HH:MM)'), { target: { value: '09:30' } })
+    expect(screen.getByRole('button', { name: /run now/i })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: /^save$|saving/i }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /run now/i })).toBeEnabled())
+  })
+
+  it('runs now, then shows the covered month, per-team outcomes (including errors), and the prompt', async () => {
+    installFetch({
+      'GET /api/monthly-delivery/config': () => savedConfig(),
+      'GET /api/monthly-delivery/status': () => noRunYet(),
+      'POST /api/monthly-delivery/run-now': () => ({ ok: true, result: completedRun() }),
+    })
+
+    render(<MonthlyDeliveryPanel />)
+    fireEvent.click(await screen.findByRole('button', { name: /run now/i }))
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/run complete/i))
+    expect(screen.getByText(/2026-06/)).toBeInTheDocument()
+    expect(screen.getByText(/3 production, 1 external test/)).toBeInTheDocument()
+    expect(screen.getByText(/Jira search failed: 401/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Generated prompt')).toHaveValue('THE PROMPT TEXT')
+  })
+
+  it('Copy Prompt is disabled with no prompt, then copies the prompt and confirms', async () => {
+    const writeTextSpy = vi.fn(async () => {})
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: writeTextSpy } })
+    installFetch({
+      'GET /api/monthly-delivery/config': () => savedConfig(),
+      'GET /api/monthly-delivery/status': () => noRunYet(),
+      'POST /api/monthly-delivery/run-now': () => ({ ok: true, result: completedRun() }),
+    })
+
+    render(<MonthlyDeliveryPanel />)
+    const copyButton = await screen.findByRole('button', { name: /copy prompt/i })
+    expect(copyButton).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: /run now/i }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /copy prompt/i })).toBeEnabled())
+
+    fireEvent.click(screen.getByRole('button', { name: /copy prompt/i }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /copied/i })).toBeInTheDocument())
+    expect(writeTextSpy).toHaveBeenCalledWith('THE PROMPT TEXT')
+  })
+
+  it('shows the no-teams notice and disables Run Now when the saved config has zero teams (FR-006)', async () => {
+    installFetch({
+      'GET /api/monthly-delivery/config': () => ({ ...savedConfig(), teams: [] }),
+      'GET /api/monthly-delivery/status': () => noRunYet(),
+    })
+
+    render(<MonthlyDeliveryPanel />)
+
+    expect(await screen.findByText(/no teams configured — snapshot teams and save first/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /run now/i })).toBeDisabled()
+  })
+})

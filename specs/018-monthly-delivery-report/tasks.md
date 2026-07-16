@@ -79,27 +79,27 @@ teams, `toolbox-proxy.json` contains them, restart preserves them
 
 ### Tests for User Story 1 (RED first)
 
-- [ ] T010 [P] [US1] Create `test/unit/monthlyDeliveryRoute.test.js` (Jest, `piReviewSchedulerRoute.test.js`
+- [X] T010 [P] [US1] Create `test/unit/monthlyDeliveryRoute.test.js` *(landed at `src/routes/monthlyDelivery.test.js` — the pre-commit hook requires co-located tests)* (Jest, `piReviewSchedulerRoute.test.js`
       pattern) with failing cases: GET returns defaults when unset; POST sanitises (`scheduleTime` regex →
       fallback `"08:00"`, teams with empty `projectKey` dropped, `featureLinkFieldId` default), mutates
       `configuration.scheduler.monthlyDelivery` in place, and calls `saveConfigToDisk`; 400 on invalid body
-- [ ] T011 [P] [US1] Create `client/src/views/AdminHub/MonthlyDeliveryPanel.test.tsx` (vitest, `installFetch`
+- [X] T011 [P] [US1] Create `client/src/views/AdminHub/MonthlyDeliveryPanel.test.tsx` (vitest, `installFetch`
       stub pattern from `PiReviewSchedulerPanel.test.tsx`) with failing cases: loads and renders config; Snapshot
       Teams reads a mocked `useSettingsStore` `sprintDashboardTeamProfiles` and lists `{name, projectKey}`; Save
       POSTs the mapped snapshot body; dirty flag set on edit and cleared on save (`role="status"` shows saved)
 
 ### Implementation for User Story 1
 
-- [ ] T012 [US1] GREEN (server): create `src/routes/monthlyDelivery.js` — `createMonthlyDeliveryRouter(configuration)`
+- [X] T012 [US1] GREEN (server): create `src/routes/monthlyDelivery.js` — `createMonthlyDeliveryRouter(configuration)`
       with `GET /api/monthly-delivery/config` + `POST /api/monthly-delivery/config` per `contracts/http-api.md`
       (sanitisers as small named functions, `SCHEDULE_TIME_PATTERN` constant); mount in `server.js` beside the PI
       Review router (~line 146)
-- [ ] T013 [US1] GREEN (client): create `client/src/views/AdminHub/MonthlyDeliveryPanel.tsx` — config section
+- [X] T013 [US1] GREEN (client): create `client/src/views/AdminHub/MonthlyDeliveryPanel.tsx` — config section
       only (enable toggle, time input, snapshotted team list, Snapshot Teams button reading
       `useSettingsStore((s) => s.sprintDashboardTeamProfiles)` mapped to `{teamName, projectKey, boardId}` plus
       `featureLinkFieldId` from the ART settings source, Save). `StandupBriefingPanel` structure, AdminHub module
       CSS classes, file purpose comment
-- [ ] T014 [US1] Register the tab in `client/src/views/AdminHub/AdminHubView.tsx`: extend the `AdminHubTab` union,
+- [X] T014 [US1] Register the tab in `client/src/views/AdminHub/AdminHubView.tsx`: extend the `AdminHubTab` union,
       `ADMIN_HUB_TAB_OPTIONS` (label `📅 Monthly Delivery`), import + `<section role="tabpanel">` block; stub the
       panel and extend the settings-store mock in `client/src/views/AdminHub/AdminHubView.test.tsx` (line ~161)
       so the view suite stays green

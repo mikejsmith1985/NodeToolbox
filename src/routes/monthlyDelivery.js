@@ -7,6 +7,11 @@
 
 const express = require('express');
 const { saveConfigToDisk } = require('../config/loader');
+const {
+  runMonthlyDeliveryNow,
+  isMonthlyDeliveryRunInProgress,
+  readLastRunResult,
+} = require('../services/monthlyDeliveryScheduler');
 
 /** Fallback fire time when the posted value is missing or malformed. */
 const DEFAULT_SCHEDULE_TIME = '08:00';
@@ -79,6 +84,35 @@ function createMonthlyDeliveryRouter(configuration) {
       return res.status(500).json({ ok: false, message: 'Config save failed: ' + errorMessage });
     }
     return res.json({ ok: true, teams: sanitisedConfig.teams.length });
+  });
+
+  // POST run-now — generate the whole report immediately (one prompt covers all teams; there is no
+  // per-team run). Per-team Jira failures are reported INSIDE the 200 result, never as an HTTP error.
+  router.post('/api/monthly-delivery/run-now', async (req, res) => {
+    const configuredTeams = (((configuration.scheduler || {}).monthlyDelivery) || {}).teams || [];
+    if (configuredTeams.length === 0) {
+      return res.status(400).json({ ok: false, message: 'No teams configured — snapshot teams and save first.' });
+    }
+    if (isMonthlyDeliveryRunInProgress()) {
+      return res.status(409).json({ ok: false, message: 'A Monthly Delivery run is already in progress.' });
+    }
+    try {
+      const outcome = await runMonthlyDeliveryNow(configuration, { trigger: 'manual' });
+      if (!outcome.ok) {
+        const conflictStatus = outcome.isAlreadyRunning ? 409 : 400;
+        return res.status(conflictStatus).json({ ok: false, message: outcome.message });
+      }
+      return res.json({ ok: true, result: outcome.result });
+    } catch (runError) {
+      const errorMessage = runError instanceof Error ? runError.message : String(runError);
+      console.error('  ⚠ Monthly Delivery run-now error:', errorMessage);
+      return res.status(500).json({ ok: false, message: errorMessage });
+    }
+  });
+
+  // GET status — the persisted last RunResult verbatim (includes promptText for Copy Prompt).
+  router.get('/api/monthly-delivery/status', (req, res) => {
+    return res.json(readLastRunResult());
   });
 
   return router;
