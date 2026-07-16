@@ -191,14 +191,16 @@
   }
 }
 
+/* A+ / A++ tool text sizing.
+   Width and min-height deliberately STAY 100%. Under standardized CSS zoom (Chromium 128+, 2024) a
+   zoomed element fills its percentage width as-is and its inner coordinate space is already scaled
+   by the zoom factor — so the old `calc(100% / zoom)` compensation now double-shrinks the page,
+   leaving a dead right margin of ~11%/~19% at every text size above default (GH #160's real cause:
+   tool pages only ever got ~80% of the window at A++, before any table layout even started). */
 [data-tool-text-size="large"] {
   --tool-text-zoom: 1.12;
-  --tool-text-width: calc(100% / 1.12);
-  --tool-text-min-height: calc(100% / 1.12);
 }
 
 [data-tool-text-size="extra-large"] {
   --tool-text-zoom: 1.24;
-  --tool-text-width: calc(100% / 1.24);
-  --tool-text-min-height: calc(100% / 1.24);
 }

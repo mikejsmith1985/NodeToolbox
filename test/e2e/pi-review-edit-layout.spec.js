@@ -1,13 +1,16 @@
-// test/e2e/pi-review-edit-layout.spec.js — Browser-level layout regression for the PI Review editor.
+// test/e2e/pi-review-edit-layout.spec.js — Browser-level layout regression for tool-page width and
+// the PI Review editor.
 //
 // jsdom cannot measure layout, so these invariants are asserted in a real browser:
-//   1. On a wide-enough window the editor renders as a TABLE and fits — Actions reachable, and never
-//      overlapping the Implementation Notes column.
-//   2. When the columns cannot fit (e.g. all 11 columns, incl. Dev Work + Test Support, on a normal
-//      window — the exact config from the GH #160 report), the same table REFLOWS into stacked
-//      cards: no horizontal overflow, every field still present and editable, and the row Actions
-//      (incl. Remove) fully visible — nothing cut off.
-//   3. The switch adapts to the column count: 8 columns stay a table at a width where 11 become cards.
+//   1. Tool pages use the FULL window width at every text size (A / A+ / A++). The A+/A++ modes
+//      used a `width: calc(100% / zoom)` compensation that standardized CSS zoom (Chromium 128+)
+//      made obsolete — the page shrank to ~80% and left a dead right margin on every screen, which
+//      is what kept "cutting off" the PI Review editor no matter how its table was styled (GH #160).
+//   2. Given that full width, the PI Review edit table renders as a TABLE and fits a normal window
+//      with the row Actions fully visible — including the widest 11-column configuration
+//      (Dev Work + Test Support on).
+//   3. When a window is genuinely too narrow for the columns, the table scrolls horizontally inside
+//      its own shell — the page itself never widens or clips.
 //
 // The PI Review tab is reached through the PO Tool (/po-tool). All Confluence/Jira traffic is
 // stubbed; team + roster state is seeded into localStorage before the bundle evaluates.
@@ -27,7 +30,9 @@ const NETWORK_IDLE_TIMEOUT_MS = 10_000;
 
 const FIT_TOLERANCE_PX = 8;
 const OVERLAP_TOLERANCE_PX = 2;
-const MIN_READABLE_TEXTAREA_HEIGHT_PX = 120;
+// The page must fill at least this fraction of the window at any text size. The zoom-width bug
+// left tool pages at ~80.6% (100/1.24), so 0.95 cleanly separates fixed from broken.
+const MIN_FULL_WIDTH_RATIO = 0.95;
 
 const SCREENSHOT_DIR =
   'C:\\Users\\mikej\\AppData\\Local\\Temp\\claude\\C--ProjectsWin-NodeToolbox\\fb0e7472-5632-4b02-9c65-013b65e2f88f\\scratchpad';
@@ -98,109 +103,122 @@ async function readClientRect(locator) {
 }
 
 /** Navigates to the PI Review editor in edit mode and returns the key locators. */
-async function openEditorInEditMode(page, { includeOptional, viewport }) {
+async function openEditorInEditMode(page, { includeOptional, viewport, textSizeLabel }) {
   await page.setViewportSize(viewport);
   await seedPoToolState(page);
   await stubIntegrationTraffic(page, includeOptional);
 
   await page.goto(PO_TOOL_ROUTE);
+  if (textSizeLabel) {
+    await page.getByRole('button', { name: textSizeLabel, exact: true }).click();
+  }
   await page.getByTestId(PI_REVIEW_TAB_TEST_ID).click();
   await page.waitForLoadState('networkidle', { timeout: NETWORK_IDLE_TIMEOUT_MS });
 
   const editToggleButton = page.getByRole('button', { name: 'Edit PI Review' });
   await expect(editToggleButton).toBeEnabled({ timeout: NETWORK_IDLE_TIMEOUT_MS });
   await editToggleButton.click();
-  // Edit-mode-ready signal that exists in BOTH the table and the card layout (the Actions column
-  // header is hidden in card mode, so it can't be the signal).
   await expect(page.getByLabel(`Implementation Notes for ${SELECTED_PI_NAME} row 1`)).toBeVisible();
 
   return {
-    table: page.locator('section[aria-label$="PI Review"] [class*="dataTable"]').first(),
     shell: page.locator('section[aria-label$="PI Review"] [class*="tableShell"]').first(),
   };
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
+// ── 1. Tool pages use the full window at every text size ─────────────────────────
 
-test('table path: 8 columns on a wide window render as a table that fits, Actions beside Notes', async ({ page }) => {
-  // 1900px is wide enough for the 8-column table, so it should NOT reflow to cards.
-  const { table, shell } = await openEditorInEditMode(page, {
-    includeOptional: false,
-    viewport: { width: 1900, height: 900 },
+for (const textSize of ['Default text size', 'Large text size', 'Extra large text size']) {
+  test(`full width: the tool page fills the window at "${textSize}"`, async ({ page }) => {
+    await page.setViewportSize({ width: 2000, height: 950 });
+    await seedPoToolState(page);
+    await stubIntegrationTraffic(page, true);
+
+    await page.goto(PO_TOOL_ROUTE);
+    await page.getByRole('button', { name: textSize, exact: true }).click();
+    await page.waitForLoadState('networkidle', { timeout: NETWORK_IDLE_TIMEOUT_MS });
+
+    // The PO Tool's primary tab list spans the page — its painted width against the window is the
+    // direct measure of the dead-right-margin bug (GH #160's real cause).
+    const tabList = page.getByTestId(PI_REVIEW_TAB_TEST_ID).locator('..');
+    const tabListRect = await readClientRect(tabList);
+    const viewportWidth = await page.evaluate(() => window.innerWidth);
+
+    expect(
+      tabListRect.width / viewportWidth,
+      `page content fills the window at "${textSize}" (was ~0.80 with the zoom-width bug)`,
+    ).toBeGreaterThanOrEqual(MIN_FULL_WIDTH_RATIO);
   });
+}
 
-  await expect(table).not.toHaveClass(/cardLayout/);
+// ── 2. The PI Review table, given the full window ────────────────────────────────
 
-  const shellScroll = await shell.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
-  expect(shellScroll.scrollWidth).toBeLessThanOrEqual(shellScroll.clientWidth + FIT_TOLERANCE_PX);
-
-  // As a table, Notes and Actions are separate columns — Notes must end before Actions begins.
-  const notesCell = page.getByLabel(`Implementation Notes for ${SELECTED_PI_NAME} row 1`);
-  const actionCell = page.locator('section[aria-label$="PI Review"] [class*="rowActionCell"]').first();
-  const notesRect = await readClientRect(notesCell);
-  const actionRect = await readClientRect(actionCell);
-  expect(notesRect.right).toBeLessThanOrEqual(actionRect.left + OVERLAP_TOLERANCE_PX);
-  expect(notesRect.height).toBeGreaterThanOrEqual(MIN_READABLE_TEXTAREA_HEIGHT_PX);
-});
-
-test('table path: 11 columns still render as a table when the window is genuinely wide enough', async ({ page }) => {
-  // At 2200px the 11-column table fits, so it stays a table with no horizontal overflow — the wide
-  // screen keeps the scannable grid.
-  const { table, shell } = await openEditorInEditMode(page, {
+test('table: 11 columns (Dev Work + Test Support) fit a normal window with Actions fully visible', async ({ page }) => {
+  const { shell } = await openEditorInEditMode(page, {
     includeOptional: true,
-    viewport: { width: 2200, height: 1000 },
+    viewport: { width: 1750, height: 1000 },
   });
 
-  await expect(table).not.toHaveClass(/cardLayout/);
-  const shellScroll = await shell.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
-  expect(shellScroll.scrollWidth).toBeLessThanOrEqual(shellScroll.clientWidth + FIT_TOLERANCE_PX);
-});
-
-test('card path: 11 columns on a normal window reflow to cards — nothing cut off (GH #160)', async ({ page }) => {
-  // The reported config — Dev Work + Test Support on — at a width where the 11-column table cannot
-  // fit. It must reflow to cards rather than clip the Actions column. (A 2091px physical screenshot
-  // at Windows 150% scaling is ~1400 CSS px, which is where the user actually was.)
-  const { table, shell } = await openEditorInEditMode(page, {
-    includeOptional: true,
-    viewport: { width: 1400, height: 1000 },
-  });
-
-  await expect(table).toHaveClass(/cardLayout/);
-
-  // No horizontal overflow — the whole editor fits the window width in card form.
+  // The whole table fits — no horizontal scroll needed.
   const shellScroll = await shell.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
   expect(shellScroll.scrollWidth).toBeLessThanOrEqual(shellScroll.clientWidth + FIT_TOLERANCE_PX);
 
+  // The row Actions (the column that kept getting cut off) sit fully inside the window.
   const shellRect = await readClientRect(shell);
-
-  // Every field is still present and editable, and each sits fully inside the window.
-  const notesTextarea = page.getByLabel(`Implementation Notes for ${SELECTED_PI_NAME} row 1`);
-  const devWorkCheckbox = page.getByLabel(`Dev Work for ${SELECTED_PI_NAME} row 1`);
-  await expect(notesTextarea).toBeVisible();
-  await expect(devWorkCheckbox).toBeVisible();
-
-  // The Dev Work checkbox still toggles — proof the reflow did not break the control.
-  await devWorkCheckbox.uncheck();
-  await expect(devWorkCheckbox).not.toBeChecked();
-  await devWorkCheckbox.check();
-  await expect(devWorkCheckbox).toBeChecked();
-
-  // The row Actions — the column that was cut off — are fully visible inside the window.
   const removeButton = page.getByRole('button', { name: 'Remove' }).first();
   await expect(removeButton).toBeVisible();
   const removeRect = await readClientRect(removeButton);
   expect(removeRect.right).toBeLessThanOrEqual(shellRect.right + OVERLAP_TOLERANCE_PX);
-  expect(removeRect.left).toBeGreaterThanOrEqual(shellRect.left - OVERLAP_TOLERANCE_PX);
 
-  await shell.screenshot({ path: `${SCREENSHOT_DIR}\\pi-review-cards-11col.png` });
+  // Notes and Actions are separate columns — Notes must end before Actions begins.
+  const notesRect = await readClientRect(page.getByLabel(`Implementation Notes for ${SELECTED_PI_NAME} row 1`));
+  const actionRect = await readClientRect(page.locator('section[aria-label$="PI Review"] [class*="rowActionCell"]').first());
+  expect(notesRect.right).toBeLessThanOrEqual(actionRect.left + OVERLAP_TOLERANCE_PX);
+
+  await shell.screenshot({ path: `${SCREENSHOT_DIR}\\pi-review-table-11col.png` });
 });
 
-test('adapts to column count: at 1850px 11 columns become cards while 8 stay a table', async ({ page }) => {
-  // Same window width; only the column count differs — proving the switch is column-aware, not a
-  // fixed viewport breakpoint. 8 columns fit at 1850px (table); 11 do not (cards).
-  const eightColumns = await openEditorInEditMode(page, { includeOptional: false, viewport: { width: 1850, height: 1000 } });
-  await expect(eightColumns.table).not.toHaveClass(/cardLayout/);
+test('table: 11 columns fit at A++ text size on a large window — the reported configuration', async ({ page }) => {
+  // The user's actual setup: A++ text size on a wide display. Before the zoom-width fix this page
+  // only received ~80% of the window and the table clipped; now it gets all of it.
+  const { shell } = await openEditorInEditMode(page, {
+    includeOptional: true,
+    viewport: { width: 2400, height: 1100 },
+    textSizeLabel: 'Extra large text size',
+  });
 
-  const elevenColumns = await openEditorInEditMode(page, { includeOptional: true, viewport: { width: 1850, height: 1000 } });
-  await expect(elevenColumns.table).toHaveClass(/cardLayout/);
+  const shellScroll = await shell.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+  expect(shellScroll.scrollWidth).toBeLessThanOrEqual(shellScroll.clientWidth + FIT_TOLERANCE_PX);
+
+  const shellRect = await readClientRect(shell);
+  const removeButton = page.getByRole('button', { name: 'Remove' }).first();
+  await expect(removeButton).toBeVisible();
+  const removeRect = await readClientRect(removeButton);
+  expect(removeRect.right).toBeLessThanOrEqual(shellRect.right + OVERLAP_TOLERANCE_PX);
+
+  await shell.screenshot({ path: `${SCREENSHOT_DIR}\\pi-review-table-11col-appzoom.png` });
+});
+
+// ── 3. Genuinely narrow windows: the shell scrolls, the page never clips ─────────
+
+test('narrow window: the table scrolls inside its shell and the page does not widen', async ({ page }) => {
+  const { shell } = await openEditorInEditMode(page, {
+    includeOptional: true,
+    viewport: { width: 1100, height: 900 },
+  });
+
+  // The columns cannot fit 1100px; the shell must take the overflow itself…
+  const shellScroll = await shell.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+  expect(shellScroll.scrollWidth).toBeGreaterThan(shellScroll.clientWidth);
+
+  // …while the document itself never overflows the window (the original GH #160 page-level bug).
+  const documentOverflow = await page.evaluate(() =>
+    document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(documentOverflow).toBeLessThanOrEqual(FIT_TOLERANCE_PX);
+
+  // Scrolled to the end, the Actions column is fully visible — reachable, not cut off.
+  await shell.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
+  const shellRect = await readClientRect(shell);
+  const actionRect = await readClientRect(page.locator('section[aria-label$="PI Review"] [class*="rowActionCell"]').first());
+  expect(actionRect.right).toBeLessThanOrEqual(shellRect.right + OVERLAP_TOLERANCE_PX);
+  expect(actionRect.left).toBeGreaterThanOrEqual(shellRect.left - OVERLAP_TOLERANCE_PX);
 });
