@@ -180,6 +180,14 @@ function saveConfigToDisk(configuration) {
       piReview: {
         teams: ((configuration.scheduler.piReview || {}).teams || []).map((team) => ({ ...team })),
       },
+      // Monthly Delivery Report scheduler (feature 018) — snapshotted Team Dashboard teams plus the
+      // monthly fire time. No credential fields (auth reuses configuration.jira), nothing to obfuscate.
+      monthlyDelivery: {
+        isEnabled:          !!(configuration.scheduler.monthlyDelivery || {}).isEnabled,
+        scheduleTime:       (configuration.scheduler.monthlyDelivery || {}).scheduleTime       || '08:00',
+        featureLinkFieldId: (configuration.scheduler.monthlyDelivery || {}).featureLinkFieldId || 'customfield_10108',
+        teams: ((configuration.scheduler.monthlyDelivery || {}).teams || []).map((team) => ({ ...team })),
+      },
     },
     // Hygiene monitor — deep-clone the teams array and the bounded history slice.
     // The per-team digestTriggerSecret is obfuscated below before writing.

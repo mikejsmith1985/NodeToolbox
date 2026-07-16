@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Monthly Delivery Report (Admin Hub) — a scheduled, AI-ready "what did each team deliver last month?" prompt**:
+  a new server-side scheduler that, for every Team Dashboard team snapshotted into its Admin Hub panel, classifies
+  the prior calendar month's Stories and Tasks into **Delivered to Production** (entered a done-category status
+  that month, or carries a fix version released that month) and **Delivered to External Test** (entered the
+  "Ready for QA"-or-later delivered run that month), grouped under their parent Features. The output is a single
+  plain-text prompt — data plus analysis instructions — built for manual pasting into an AI agent that answers
+  "What was accomplished?". Fires on the 2nd Tuesday of each month at a configurable time (default 08:00, with
+  same-month catch-up after downtime, never twice in a month); a **Run Now** button generates it ad-hoc and
+  **Copy Prompt** puts the artifact on the clipboard. Month attribution is changelog-accurate: credit goes to the
+  month the issue *entered* its current delivered/done run, so reopened-and-refixed work is credited honestly and
+  nothing is double-reported across months. Delivery classification is the same `workflowDelivery` ladder the
+  Team Dashboard uses — bundled into the server engine, never reimplemented.
+
 ### Fixed
 - **Hygiene — a failed run no longer reads as a perfect score, and one bad field can no longer kill the whole
   scan (GH #167, round 2)**: the new "All my projects" scan could die with a Jira 400 because the child-story
