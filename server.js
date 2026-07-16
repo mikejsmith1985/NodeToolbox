@@ -148,6 +148,15 @@ try {
   console.error('  ⚠ PI Review scheduler routes unavailable: ' + piReviewRouteError.message);
 }
 
+// Monthly Delivery Report: /api/monthly-delivery/* (feature 018). Lazy + guarded because a run
+// depends on the generated monthlyDeliveryEngine bundle — a missing bundle disables the routes
+// rather than crashing startup.
+try {
+  app.use(require('./src/routes/monthlyDelivery')(configuration));
+} catch (monthlyDeliveryRouteError) {
+  console.error('  ⚠ Monthly Delivery routes unavailable: ' + monthlyDeliveryRouteError.message);
+}
+
 // Report webhook delivery: POST /api/reports/deliver — server-mediated send of an
 // on-screen report to the team's Atlassian Automation webhook.
 app.use(createReportDeliveryRouter(configuration));

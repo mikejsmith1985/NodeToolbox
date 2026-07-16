@@ -23,15 +23,15 @@ on US1's config surface. MVP = US1 + US2 together (config alone delivers nothing
 
 **Purpose**: Branch + the engine-bundle build pipeline every later phase requires
 
-- [ ] T001 Create branch `feature/monthly-delivery-report` from up-to-date `main` (NOT from a forge worktree
+- [X] T001 Create branch `feature/monthly-delivery-report` from up-to-date `main` (NOT from a forge worktree
       branch — the pre-commit hook rejects stale `forge/wt-*` lineage; sync `main` first)
-- [ ] T002 Create engine entry `client/src/utils/monthlyDeliveryEngine.entry.ts` re-exporting the pure functions
+- [X] T002 Create engine entry `client/src/utils/monthlyDeliveryEngine.entry.ts` re-exporting the pure functions
       listed in `contracts/engine-bundle.md` (initially the existing exports only; `resolveDoneEntryDateIso` is
       added in T006). MUST NOT export anything touching browser APIs — top-of-file purpose comment states this.
-- [ ] T003 Add `build:monthly-delivery-engine` esbuild script to `package.json` (mirror `build:pi-review-engine`:
+- [X] T003 Add `build:monthly-delivery-engine` esbuild script to `package.json` (mirror `build:pi-review-engine`:
       `--bundle --platform=node --format=cjs --outfile=src/services/generated/monthlyDeliveryEngine.cjs`) and
       chain it into `prestart`, `prebuild:exe`, `pretest`; run it once and confirm the `.cjs` compiles
-- [ ] T004 [P] Confirm `src/services/generated/` gitignore coverage includes the new
+- [X] T004 [P] Confirm `src/services/generated/` gitignore coverage includes the new
       `monthlyDeliveryEngine.cjs` (same treatment as `piReviewEngine.cjs`); extend `.gitignore` if needed
 
 **Checkpoint**: `npm run build:monthly-delivery-engine` succeeds; a Node REPL can
@@ -46,21 +46,21 @@ stories sit on
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T005 [P] RED: add failing vitest cases to `client/src/utils/workflowDelivery.test.ts` for
+- [X] T005 [P] RED: add failing vitest cases to `client/src/utils/workflowDelivery.test.ts` for
       `resolveDoneEntryDateIso(issue)`: returns ISO of the MOST RECENT transition into a done-category status
       (`DONE_CATEGORY_STATUS_NAMES`); null when never done, when changelog absent, and when the issue regressed
       out of done afterwards (per data-model.md classification rule 1)
-- [ ] T006 GREEN: implement `resolveDoneEntryDateIso` in `client/src/utils/workflowDelivery.ts` (pure, <40 lines,
+- [X] T006 GREEN: implement `resolveDoneEntryDateIso` in `client/src/utils/workflowDelivery.ts` (pure, <40 lines,
       doc comment explaining the business rule), add it to `monthlyDeliveryEngine.entry.ts` exports, rebuild the
       engine, confirm vitest green
-- [ ] T007 [P] RED: create `src/services/monthlyDeliveryScheduler.test.js` (Jest) with failing cases for the pure
+- [X] T007 [P] RED: create `src/services/monthlyDeliveryScheduler.test.js` (Jest) with failing cases for the pure
       helpers: `computeSecondTuesdayDate(year, monthIndex)` (all weekday offsets), `resolveCoveredMonth(today)`
       (prior calendar month, incl. January → December year rollover), `buildCoveredMonthWindow(coveredMonth)`
       (first day 00:00 local → last day 23:59:59.999, incl. leap February), and
       `hasAlreadyFiredThisMonth(storedDate, today)` (`YYYY-MM` prefix compare)
-- [ ] T008 GREEN: implement those pure helpers in `src/services/monthlyDeliveryScheduler.js` (named constants, no
+- [X] T008 GREEN: implement those pure helpers in `src/services/monthlyDeliveryScheduler.js` (named constants, no
       magic numbers, exported for tests per the scopeChange precedent)
-- [ ] T009 Extend the `scheduler:` whitelist in `saveConfigToDisk` (`src/config/loader.js`, ~lines 155–183) with
+- [X] T009 Extend the `scheduler:` whitelist in `saveConfigToDisk` (`src/config/loader.js`, ~lines 155–183) with
       the `monthlyDelivery` block (`isEnabled`, `scheduleTime`, `featureLinkFieldId`, `teams[]` — shapes per
       data-model.md); add/extend a loader Jest case proving the block round-trips through save→load (the
       confirmed silent-drop gotcha)
