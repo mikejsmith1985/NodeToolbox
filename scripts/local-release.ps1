@@ -169,6 +169,7 @@ if ($DryRun) {
     }
     Write-Host "  2. mkdir dist\           - create output directory"
     Write-Host "  3. npm run build:client  - compile React SPA into client/dist/"
+    Write-Host "  3b. engine bundles        - build:pi-review-engine + build:monthly-delivery-engine (pkg inputs)"
     Write-Host "  4. pkg                   - build self-contained payload exe at $PayloadExeOutputPath"
     Write-Host "  5. Compress-Archive      - bundle one user-facing zip into $ReleaseZipOutputPath"
     Write-Host "  6. gh release create     - publish GitHub Release $GitTag with the single zip asset"
@@ -263,6 +264,24 @@ try {
     Pop-Location
 }
 Write-Host "       ✅ Embedded client generated (src/embeddedClient.js)"
+
+# Step 3.7: Build the generated server engine bundles BEFORE pkg. This script calls `npx pkg`
+# directly (not `npm run build:exe`), so the package.json `prebuild:exe` hook never fires here.
+# The bundles are gitignored, so on a machine that never ran the dev flow they simply do not
+# exist — and pkg then ships an exe whose engine-dependent routes/schedulers silently disable
+# themselves (shipped in v0.74.0: Monthly Delivery panel never loaded). Building them explicitly
+# makes the release self-sufficient instead of depending on leftover dev artifacts.
+Write-Host "  [3.7/6] Building server engine bundles (pi-review, monthly-delivery)..."
+Push-Location $RepoRoot
+try {
+    npm run build:pi-review-engine --silent
+    if ($LASTEXITCODE -ne 0) { throw "PI Review engine build failed with exit code $LASTEXITCODE" }
+    npm run build:monthly-delivery-engine --silent
+    if ($LASTEXITCODE -ne 0) { throw "Monthly Delivery engine build failed with exit code $LASTEXITCODE" }
+} finally {
+    Pop-Location
+}
+Write-Host "       ✅ Engine bundles built (src/services/generated/)"
 
 # Step 4: Build the single-file Windows exe using @yao-pkg/pkg.
 # Bundles the Node.js runtime + all app code + public assets into one .exe.

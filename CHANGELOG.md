@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Monthly Delivery panel never loaded in the released exe (v0.74.0/v0.74.1)**: the release script calls
+  `npx pkg` directly, bypassing the `prebuild:exe` hook, so the gitignored `monthlyDeliveryEngine.cjs` bundle
+  was never built on the release machine and the exe shipped without it — the monthly-delivery routes and
+  scheduler silently disabled themselves at startup, and the Admin Hub panel's failed load rendered as an
+  eternal "Loading…". Two fixes: `local-release.ps1` now builds BOTH server engine bundles explicitly before
+  the exe build (no more depending on leftover dev artifacts — this also protected PI Review only by accident),
+  and a failed panel load now shows the actual error with a **Retry** button plus a pointer to the
+  "Monthly Delivery routes unavailable" server-log line, instead of hanging on Loading.
 - **Team Dashboard now opens on the tab you asked for — the Today cards' team drill-throughs actually land
   (GH #167)**: clicking a team-scoped card on My Issues → Today ("Team stale issues", "Unassigned in-progress",
   "Sprint commitment gaps", "Unblock issues") stores the target tab and navigates to the Team Dashboard — which
