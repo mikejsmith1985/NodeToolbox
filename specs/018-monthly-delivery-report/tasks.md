@@ -214,7 +214,7 @@ clear fired key, restart → fires once; second restart → does not)
 - [X] T030 Full regression sweep: `npm test` (server Jest incl. new suites), `cd client && npx vitest run`,
       `npm run build:pi-review-engine`, `npm run test:dom`, `cd client && npx vite build` — all green; then
       execute the remaining quickstart regression guardrails (existing scheduler routes spot-check)
-- [ ] T031 Open the PR (`feature/monthly-delivery-report` → `main`) with the spec/plan links and the quickstart
+- [X] T031 Open the PR (`feature/monthly-delivery-report` → `main`) with the spec/plan links and the quickstart
       evidence summary; squash-merge per house branching strategy
 
 ---
