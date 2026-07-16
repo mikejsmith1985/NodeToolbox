@@ -13,9 +13,13 @@ const os = require('os');
 const path = require('path');
 
 const { makeJiraApiRequest } = require('../utils/httpClient');
+const { isScheduledTimeReached, loadFiredDates, recordFiredDate } = require('./schedulerFiredState');
 const reportLayer = require('./monthlyDeliveryReport');
 
 // ── Constants ──
+
+/** How often (ms) the scheduler checks whether the monthly fire is due. */
+const SCHEDULE_CHECK_INTERVAL_MS = 60 * 1000;
 
 /** Stable name under which this scheduler's fired dates are persisted. */
 const FIRED_STATE_SCHEDULER_NAME = 'monthlyDelivery';
@@ -250,6 +254,80 @@ async function runMonthlyDeliveryNow(configuration, deps = {}) {
   }
 }
 
+// ── Scheduled tick ──
+
+/** Current local time as zero-padded "HH:MM". */
+function getCurrentTimeHHMM() {
+  const now = new Date();
+  return String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+}
+
+// In-memory fired dates, hydrated from the persistent fired-state file at scheduler start so a
+// same-month restart never re-fires.
+let moduleFiredDates = new Map();
+let schedulerIntervalHandle = null;
+
+/**
+ * One scheduler tick: fires the monthly run when due. The fire rule (data-model.md state diagram):
+ * enabled + teams configured + not fired this calendar month + today is ON the 2nd Tuesday at/after
+ * the scheduled time, or PAST it (same-month catch-up after downtime, any time of day). A skip for
+ * "no teams" or "run busy" never consumes the month — the tick simply retries. Every option is
+ * injectable for tests (piReview DI pattern). Returns true when it fired.
+ */
+function checkAndFireMonthlyDelivery(configuration, options = {}) {
+  const monthlyConfig = ((configuration.scheduler || {}).monthlyDelivery) || {};
+  if (!monthlyConfig.isEnabled || (monthlyConfig.teams || []).length === 0) {
+    return false;
+  }
+
+  const today = options.today || getTodayDateString();
+  const currentTime = options.currentTime || getCurrentTimeHHMM();
+  const firedDates = options.firedDates || moduleFiredDates;
+  const recordFired = options.recordFired
+    || ((configKey, dateString) => recordFiredDate(FIRED_STATE_SCHEDULER_NAME, configKey, dateString));
+  const runReport = options.runReport
+    || ((liveConfiguration) => runMonthlyDeliveryNow(liveConfiguration, { trigger: 'scheduled' }));
+  const isRunBusy = options.isRunBusy || isMonthlyDeliveryRunInProgress;
+
+  if (hasAlreadyFiredThisMonth(firedDates.get(FIRED_STATE_CONFIG_KEY), today)) {
+    return false;
+  }
+
+  const secondTuesday = computeSecondTuesdayDate(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1);
+  const scheduleTime = monthlyConfig.scheduleTime || DEFAULT_SCHEDULE_TIME;
+  const isDueNow = today > secondTuesday
+    || (today === secondTuesday && isScheduledTimeReached(scheduleTime, currentTime));
+  if (!isDueNow || isRunBusy()) {
+    return false;
+  }
+
+  firedDates.set(FIRED_STATE_CONFIG_KEY, today);
+  recordFired(FIRED_STATE_CONFIG_KEY, today);
+  Promise.resolve(runReport(configuration)).catch((runError) => {
+    console.error('  ⚠ Monthly Delivery scheduled run failed: ' + (runError instanceof Error ? runError.message : String(runError)));
+  });
+  return true;
+}
+
+/**
+ * Starts the Monthly Delivery scheduler: seeds fired state from disk, then ticks every 60 seconds
+ * reading the live configuration reference. Returns a stop function.
+ */
+function startMonthlyDeliveryScheduler(configuration) {
+  if (schedulerIntervalHandle !== null) {
+    return () => {};
+  }
+  moduleFiredDates = loadFiredDates(FIRED_STATE_SCHEDULER_NAME);
+  schedulerIntervalHandle = setInterval(() => checkAndFireMonthlyDelivery(configuration), SCHEDULE_CHECK_INTERVAL_MS);
+  console.log('  📅 Monthly Delivery scheduler started (2nd Tuesday, 60s tick).');
+  return function stopMonthlyDeliveryScheduler() {
+    if (schedulerIntervalHandle !== null) {
+      clearInterval(schedulerIntervalHandle);
+      schedulerIntervalHandle = null;
+    }
+  };
+}
+
 module.exports = {
   FIRED_STATE_SCHEDULER_NAME,
   FIRED_STATE_CONFIG_KEY,
@@ -261,4 +339,6 @@ module.exports = {
   runMonthlyDeliveryNow,
   isMonthlyDeliveryRunInProgress,
   readLastRunResult,
+  checkAndFireMonthlyDelivery,
+  startMonthlyDeliveryScheduler,
 };

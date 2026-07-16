@@ -9,7 +9,8 @@
 <!-- SPECKIT START -->
 ## Active Spec Kit Feature
 
-- **018-monthly-delivery-report** — *(planned — next `/speckit-tasks`)* a server-side **Monthly Delivery Report**
+- **018-monthly-delivery-report** — *(implemented on `feature/monthly-delivery-report` — PR pending; live-Jira
+  quickstart validation outstanding)* a server-side **Monthly Delivery Report**
   scheduler: on the **2nd Tuesday, 08:00** (configurable time), for every snapshotted Team Dashboard team, classify
   prior-month Stories/Tasks into 🚀 **Production** (done-category entry in-month OR fixVersion `released` in-month)
   vs 🧪 **External Test** (entered "Ready for QA"+ run in-month), grouped under parent Features, and emit **one
@@ -21,8 +22,9 @@
   DI-tick chassis with a new once-per-month guard (`YYYY-MM` prefix compare — `schedulerFiredState` unchanged).
   **Gotcha**: the new `configuration.scheduler.monthlyDelivery` block MUST be added to the `saveConfigToDisk`
   whitelist in `src/config/loader.js` or it silently fails to persist.
-  **Standing constraint (once implemented)**: `workflowDelivery.ts`/`featureLink.ts` become bundled server-engine
-  sources — changes must keep `npm run build:monthly-delivery-engine` and server Jest green.
+  **Standing constraint**: `workflowDelivery.ts`/`featureLink.ts` are bundled into the server engine
+  (`npm run build:monthly-delivery-engine`, chained into prestart/prebuild:exe/pretest), so changes there must
+  keep that build compiling and the server Jest suite green, in addition to their vitest suites.
 
 - **017-po-feature-tools** — a new **PO Tool** that mounts the existing Feature Review + PI Review tabs (same
   components, own team/PI selection) and adds two authoring tabs: **Feature Splitter** (a Feature → smaller peer

@@ -685,6 +685,14 @@ async function launchServer() {
     console.error('  ⚠ PI Review scheduler unavailable: ' + piReviewSchedulerError.message);
   }
 
+  // Monthly Delivery Report scheduler (feature 018). Same lazy + guarded treatment: it depends on
+  // the generated monthlyDeliveryEngine bundle, so a missing build disables it with a warning.
+  try {
+    require('./src/services/monthlyDeliveryScheduler').startMonthlyDeliveryScheduler(configuration);
+  } catch (monthlyDeliverySchedulerError) {
+    console.error('  ⚠ Monthly Delivery scheduler unavailable: ' + monthlyDeliverySchedulerError.message);
+  }
+
   // Open the dashboard automatically when:
   //   --open      : passed explicitly by Launch Toolbox.bat (zip distribution)
   //   process.pkg : bundled exe; but only when NOT launched by the VBS launcher.
